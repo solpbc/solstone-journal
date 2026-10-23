@@ -9443,22 +9443,26 @@ async fn tidy_up_members_follow_the_id_rules() {
         b"{\"id\":1,\"content\":\"a\",\"source_day\":\"20260101\"}\n",
     );
 
-    // Attributed note on ops:reimbur via relationship folder named ops:reimbur with {}
-    write(
-        j.path(),
-        "entities/ops:reimbur/entity.json",
-        json!({"id": "ops:reimbur", "name": "ops:reimbur", "type": "Person"}),
-    );
-    write(
-        j.path(),
-        "facets/work/entities/ops:reimbur/entity.json",
-        json!({}),
-    );
-    write_raw(
-        j.path(),
-        "facets/work/entities/ops:reimbur/observations.jsonl",
-        b"{\"id\":1,\"content\":\"a\",\"source_day\":\"20260101\"}\n",
-    );
+    // Attributed note on ops:reimbur via relationship folder named ops:reimbur with {}.
+    // Windows refuses a colon in a folder name, so this case cannot exist there.
+    #[cfg(not(windows))]
+    {
+        write(
+            j.path(),
+            "entities/ops:reimbur/entity.json",
+            json!({"id": "ops:reimbur", "name": "ops:reimbur", "type": "Person"}),
+        );
+        write(
+            j.path(),
+            "facets/work/entities/ops:reimbur/entity.json",
+            json!({}),
+        );
+        write_raw(
+            j.path(),
+            "facets/work/entities/ops:reimbur/observations.jsonl",
+            b"{\"id\":1,\"content\":\"a\",\"source_day\":\"20260101\"}\n",
+        );
+    }
 
     let (status, resp) = call(j.path(), "/app/entities/api/journal/tidy-up").await;
     assert_eq!(status, 200);
@@ -9836,16 +9840,18 @@ async fn tidy_up_damage_withholds_the_id_list_and_hide_names_the_first_path() {
     assert_eq!(status, 200);
 
     let damage = &resp["damage"];
-    assert_eq!(damage["count"], 4);
-    assert_eq!(
-        damage["paths"],
-        json!([
-            "facets/nofacet/entities/rel_bad/entity.json",
-            "facets/work/entities/rel_dangling/entity.json",
-            "facets/work/entities/rel_nonobj/entity.json",
-            "facets/work/entities/rel_unparseable/entity.json",
-        ])
-    );
+    #[cfg_attr(unix, allow(unused_mut))]
+    let mut expected_paths = vec![
+        "facets/nofacet/entities/rel_bad/entity.json",
+        "facets/work/entities/rel_dangling/entity.json",
+        "facets/work/entities/rel_nonobj/entity.json",
+        "facets/work/entities/rel_unparseable/entity.json",
+    ];
+    // Only unix plants the dangling symlink, so elsewhere its folder holds no record.
+    #[cfg(not(unix))]
+    expected_paths.retain(|path| *path != "facets/work/entities/rel_dangling/entity.json");
+    assert_eq!(damage["count"], expected_paths.len());
+    assert_eq!(damage["paths"], json!(expected_paths));
     let paths = damage["paths"].as_array().unwrap();
     let first_damaged_path = paths[0].as_str().unwrap().to_owned();
 

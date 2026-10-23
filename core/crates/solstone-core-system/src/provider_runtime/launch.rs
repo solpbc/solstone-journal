@@ -17,7 +17,7 @@ use serde_json::{Map, Value, json};
 use solstone_core_brain::bundled_runtime_desired_fingerprint;
 use solstone_core_local::endpoint::{LocalEndpointResolution, resolve_local_endpoint};
 use solstone_core_local::install::{
-    metal_candidate, pins,
+    metal_candidate, mlx_candidate, pins,
     readiness::{inspect_local, inspect_local_present, inspect_local_present_with_package},
 };
 use solstone_core_local::nvidia::{
@@ -107,6 +107,13 @@ pub enum LocalLaunchConfig {
         binary_path: Option<String>,
         unified_memory_mib: Option<u64>,
     },
+    Mlx {
+        common: LocalLaunchCommon,
+        binary_path: Option<String>,
+        #[cfg(all(test, feature = "full-tests"))]
+        fixture_pins: Option<&'static [pins::MlxFilePin]>,
+        unified_memory_mib: Option<u64>,
+    },
 }
 
 impl LocalLaunchConfig {
@@ -114,7 +121,8 @@ impl LocalLaunchConfig {
         match self {
             Self::Cuda { common, .. }
             | Self::Vulkan { common, .. }
-            | Self::Metal { common, .. } => common,
+            | Self::Metal { common, .. }
+            | Self::Mlx { common, .. } => common,
         }
     }
 
@@ -124,7 +132,7 @@ impl LocalLaunchConfig {
 
     fn platform(&self) -> Platform {
         match self {
-            Self::Metal { .. } => Platform::Darwin,
+            Self::Metal { .. } | Self::Mlx { .. } => Platform::Darwin,
             Self::Cuda { .. } => Platform::Linux,
             Self::Vulkan { platform, .. } => *platform,
         }
@@ -161,6 +169,7 @@ impl LocalLaunchConfig {
                 vulkan_binary_path: None,
                 metal_binary_path: None,
                 metal_unified_memory_mib: None,
+                mlx_binary_path: None,
                 lib_dir: lib_dir.clone(),
                 inherited_ld_library_path: std::env::var("LD_LIBRARY_PATH").ok(),
                 nvidia_probe: Some(nvidia_probe.clone()),
@@ -200,6 +209,7 @@ impl LocalLaunchConfig {
                 vulkan_binary_path: binary_path.clone(),
                 metal_binary_path: None,
                 metal_unified_memory_mib: None,
+                mlx_binary_path: None,
                 lib_dir: None,
                 inherited_ld_library_path: None,
                 nvidia_probe: None,
@@ -237,6 +247,43 @@ impl LocalLaunchConfig {
                 vulkan_binary_path: None,
                 metal_binary_path: binary_path.clone(),
                 metal_unified_memory_mib: *unified_memory_mib,
+                mlx_binary_path: None,
+                lib_dir: None,
+                inherited_ld_library_path: None,
+                nvidia_probe: None,
+                cuda_embedded_arch_set: Vec::new(),
+                cuda_min_driver_version: None,
+                cuda_artifact_trust: None,
+                cuda_persisted_installed_cuda_target: None,
+                vulkan_devices: None,
+                vulkan_selected_gpu_index: None,
+                vulkan_selected_gpu_name: None,
+                vulkan_selected_vram_mib: None,
+                vram_before_mib: None,
+                vulkan_probe_ok: None,
+            },
+            Self::Mlx {
+                common,
+                binary_path,
+                #[cfg(all(test, feature = "full-tests"))]
+                    fixture_pins: _,
+                unified_memory_mib,
+            } => PlanInput {
+                schema: PLAN_INPUT_SCHEMA.into(),
+                platform: Platform::Darwin,
+                backend_override: Some(PlanBackend::Mlx),
+                bind_address: LoopbackAddr::IPV4_LOOPBACK,
+                port,
+                desired_fingerprint_json: common.desired_fingerprint_json.clone(),
+                desired_fingerprint_sha256,
+                model_id: common.model_id.clone(),
+                model_path: common.model_path.clone(),
+                mmproj_path: None,
+                cuda_binary_path: None,
+                vulkan_binary_path: None,
+                metal_binary_path: None,
+                metal_unified_memory_mib: *unified_memory_mib,
+                mlx_binary_path: binary_path.clone(),
                 lib_dir: None,
                 inherited_ld_library_path: None,
                 nvidia_probe: None,
@@ -519,6 +566,25 @@ fn observe_truth(
     config: &LocalTruthConfig,
     follow: Option<&LocalFollow>,
 ) -> super::model::ProviderTruthObservation {
+    observe_truth_with_mlx(
+        shared,
+        config,
+        follow,
+        mlx_candidate::read_macos_local_backend_env,
+        mlx_candidate::inspect_present_default,
+    )
+}
+
+fn observe_truth_with_mlx(
+    shared: &LocalRuntimeShared,
+    config: &LocalTruthConfig,
+    follow: Option<&LocalFollow>,
+    select_mlx: impl FnOnce() -> Result<
+        mlx_candidate::MacosLocalBackend,
+        mlx_candidate::MacosLocalBackendError,
+    >,
+    inspect_mlx: impl FnOnce() -> Value,
+) -> super::model::ProviderTruthObservation {
     if !config.journal_path.is_dir() {
         return truth_unavailable();
     }
@@ -796,6 +862,23 @@ fn observe_truth(
             ),
         ])),
         LocalHost::Darwin => {
+            match select_mlx() {
+                Ok(mlx_candidate::MacosLocalBackend::Mlx) => {
+                    return observe_mlx_readiness(shared, inspect_mlx());
+                }
+                Ok(mlx_candidate::MacosLocalBackend::Metal) => {}
+                Err(error) => {
+                    let mut observation = truth(
+                        super::model::RuntimePhase::HostBlocked,
+                        "artifact-proof-failed",
+                        None,
+                        false,
+                        true,
+                    );
+                    observation.detail = Some(json!({"backend":"mlx", "error":error.to_string()}));
+                    return observation;
+                }
+            }
             let input = Map::from_iter([
                 (
                     "journal".into(),
@@ -991,6 +1074,64 @@ fn observe_truth(
     )
 }
 
+// Selected MLX is local-only here. It never reaches the download-follow authority.
+fn observe_mlx_readiness(
+    shared: &LocalRuntimeShared,
+    readiness: Value,
+) -> super::model::ProviderTruthObservation {
+    if readiness["ready"] != true {
+        let mut observation = truth(
+            super::model::RuntimePhase::ArtifactNotReady,
+            "artifact-proof-failed",
+            None,
+            false,
+            true,
+        );
+        observation.detail = Some(json!({"backend":"mlx", "error":readiness["detail"]}));
+        return observation;
+    }
+    let artifacts = &readiness["artifacts"];
+    let (Some(binary), Some(model), Some(target)) = (
+        artifacts["binary_path"].as_str(),
+        artifacts["model_path"].as_str(),
+        readiness["target"]["target_fingerprint_sha256"].as_str(),
+    ) else {
+        return truth_unavailable();
+    };
+    let Ok(desired) = bundled_runtime_desired_fingerprint(
+        "mlx",
+        "local/qwen3.5-4b",
+        target,
+        Some(binary),
+        model,
+        None,
+    ) else {
+        return truth_unavailable();
+    };
+    let fingerprint = desired.sha256.clone();
+    let launch = LocalLaunchConfig::Mlx {
+        common: LocalLaunchCommon {
+            desired_fingerprint_json: desired.json,
+            desired_fingerprint_sha256: fingerprint.clone(),
+            model_id: "local/qwen3.5-4b".into(),
+            model_path: model.into(),
+            mmproj_path: None,
+        },
+        binary_path: Some(binary.into()),
+        unified_memory_mib: None,
+        #[cfg(all(test, feature = "full-tests"))]
+        fixture_pins: None,
+    };
+    shared.record_launch_request(Some(fingerprint.clone()), launch);
+    truth(
+        super::model::RuntimePhase::Starting,
+        "launch-requested",
+        Some(fingerprint),
+        true,
+        true,
+    )
+}
+
 fn truth(
     phase: super::model::RuntimePhase,
     code: &'static str,
@@ -1085,7 +1226,12 @@ fn start_local_unix(
     let Some(journal_path) = journal_path else {
         return launch_failed();
     };
-    let Some(model_directory) = std::path::Path::new(&plan.model_path).parent() else {
+    let model_directory = if plan.backend == PlanBackend::Mlx {
+        Some(std::path::Path::new(&plan.model_path))
+    } else {
+        std::path::Path::new(&plan.model_path).parent()
+    };
+    let Some(model_directory) = model_directory else {
         return launch_failed();
     };
     let Ok(model_hold) = solstone_core_local::install::pins::hold_model_use(model_directory) else {
@@ -1193,6 +1339,28 @@ fn verify_launch_artifacts(
     plan: &solstone_core_local::plan::LaunchPlan,
     launch: &LocalLaunchConfig,
 ) -> bool {
+    if plan.backend == PlanBackend::Mlx {
+        #[cfg(all(test, feature = "full-tests"))]
+        if let LocalLaunchConfig::Mlx {
+            fixture_pins: Some(pins),
+            ..
+        } = launch
+        {
+            let Some(binary) = plan.binary_path.as_deref() else {
+                return false;
+            };
+            return mlx_readiness_matches_plan(
+                &mlx_candidate::inspect_fixture(
+                    std::path::Path::new(binary),
+                    std::path::Path::new(&plan.model_path),
+                    pins,
+                    true,
+                ),
+                plan,
+            );
+        }
+        return mlx_readiness_matches_plan(&mlx_candidate::inspect_verified_default(), plan);
+    }
     let mut input = Map::from_iter([
         (
             "journal".into(),
@@ -1208,6 +1376,7 @@ fn verify_launch_artifacts(
                 Err(_) => return false,
             }
         }
+        PlanBackend::Mlx => unreachable!("MLX was verified above"),
         PlanBackend::Cuda | PlanBackend::Vulkan => {
             if let LocalLaunchConfig::Cuda { nvidia_probe, .. } = launch {
                 let Ok(probe) = serde_json::to_value(nvidia_probe) else {
@@ -1222,6 +1391,7 @@ fn verify_launch_artifacts(
         PlanBackend::Cuda => "cuda",
         PlanBackend::Vulkan => "vulkan",
         PlanBackend::Metal => "metal",
+        PlanBackend::Mlx => "mlx",
     };
     readiness["ready"] == true
         && readiness["host"]["backend"] == backend
@@ -1235,6 +1405,37 @@ fn verify_launch_artifacts(
         && readiness["artifacts"]["binary_path"].as_str() == plan.binary_path.as_deref()
         && readiness["artifacts"]["model_path"].as_str() == Some(plan.model_path.as_str())
         && readiness["artifacts"]["projector_path"].as_str() == plan.mmproj_path.as_deref()
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+fn mlx_readiness_matches_plan(
+    readiness: &Value,
+    plan: &solstone_core_local::plan::LaunchPlan,
+) -> bool {
+    if readiness["ready"] != true || readiness["host"]["backend"] != "mlx" {
+        return false;
+    }
+    let artifacts = &readiness["artifacts"];
+    let (Some(binary), Some(model), Some(target)) = (
+        artifacts["binary_path"].as_str(),
+        artifacts["model_path"].as_str(),
+        readiness["target"]["target_fingerprint_sha256"].as_str(),
+    ) else {
+        return false;
+    };
+    artifacts["model_id"] == plan.model_id
+        && Some(binary) == plan.binary_path.as_deref()
+        && model == plan.model_path
+        && plan.mmproj_path.is_none()
+        && bundled_runtime_desired_fingerprint(
+            "mlx",
+            &plan.model_id,
+            target,
+            Some(binary),
+            model,
+            None,
+        )
+        .is_ok_and(|desired| desired.sha256 == plan.desired_fingerprint_sha256)
 }
 
 fn verify_launch_artifacts_windows(
@@ -1919,13 +2120,19 @@ fn warmup_health_probe(port: u16) -> WarmupHealth {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(all(unix, feature = "full-tests"))]
+    #[path = "mlx_tests.rs"]
+    mod mlx_tests;
     use super::*;
     use crate::process::{LaunchAuthority, ProcessObservation};
+    #[cfg(feature = "full-tests")]
     use crate::provider_runtime::ProviderName;
     use crate::provider_runtime::model::{ProviderFence, ProviderStopCleanupRequest, RuntimePhase};
     use crate::provider_runtime::store::ReadyProcessLookup;
+    #[cfg(feature = "full-tests")]
     use std::path::Path;
 
+    #[cfg(all(target_os = "linux", feature = "full-tests"))]
     fn make_file_executable(path: &Path) {
         #[cfg(unix)]
         {
@@ -2875,6 +3082,7 @@ mod tests {
             .unwrap();
     }
 
+    #[cfg(feature = "full-tests")]
     fn write_windows_model_tree_in_module(root: &Path) {
         use solstone_core_local::install::manifest;
         use solstone_core_local::install::pins;
@@ -2897,6 +3105,7 @@ mod tests {
             .unwrap();
     }
 
+    #[cfg(feature = "full-tests")]
     fn windows_test_package_in_module(
         root: &Path,
     ) -> solstone_core_local::install::windows_engine::WindowsLlamaPackage {

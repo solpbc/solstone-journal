@@ -204,11 +204,15 @@ fn relative_history_error_path(
         | EntityStoreError::HistoryEventNotObject { path },
     ) = error
     {
-        return path
-            .strip_prefix(journal_root)
-            .unwrap_or(path)
-            .to_string_lossy()
-            .into_owned();
+        // Reads resolve through the canonical journal root, so on macOS a root
+        // under a symlink (/var -> /private/var) only matches once canonical.
+        let canonical_root = std::fs::canonicalize(journal_root).ok();
+        let relative = path.strip_prefix(journal_root).ok().or_else(|| {
+            canonical_root
+                .as_deref()
+                .and_then(|root| path.strip_prefix(root).ok())
+        });
+        return relative.unwrap_or(path).to_string_lossy().into_owned();
     }
     format!("entities/{entity_dir}/history/events")
 }
@@ -1622,4 +1626,29 @@ pub fn unblock_journal_operation(
         unreadable,
         stopped,
     })
+}
+
+#[cfg(all(test, unix))]
+mod relative_history_error_path_tests {
+    use super::relative_history_error_path;
+    use solstone_core_entity::EntityStoreError;
+
+    #[test]
+    fn a_root_reached_through_a_symlink_still_reports_a_journal_relative_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let real_root = dir.path().join("real");
+        std::fs::create_dir(&real_root).unwrap();
+        let linked_root = dir.path().join("linked");
+        std::os::unix::fs::symlink(&real_root, &linked_root).unwrap();
+        let canonical_root = std::fs::canonicalize(&linked_root).unwrap();
+        let error = EntityStoreError::HistoryEventNotObject {
+            path: canonical_root
+                .join("entities/someone/history/events/00000000000000000001-a.json"),
+        };
+
+        assert_eq!(
+            relative_history_error_path(&linked_root, "someone", Some(&error)),
+            "entities/someone/history/events/00000000000000000001-a.json"
+        );
+    }
 }
