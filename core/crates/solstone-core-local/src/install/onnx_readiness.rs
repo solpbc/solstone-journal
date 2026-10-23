@@ -16,8 +16,8 @@ use std::ffi::OsStr;
 
 #[cfg(any(windows, test))]
 use solstone_core_distribution::windows_payload::{
-    VerifiedWindowsPayload, WINDOWS_ONNXRUNTIME_LIBRARY, WINDOWS_PYANNOTE_MODEL,
-    WINDOWS_SILERO_VAD_MODEL, WINDOWS_SPEAKERS_ANALYZE_WORKER, WINDOWS_VAD_ANALYZE_WORKER,
+    VerifiedWindowsPayload, WINDOWS_FIRERED_VAD_MODEL, WINDOWS_ONNXRUNTIME_LIBRARY,
+    WINDOWS_PYANNOTE_MODEL, WINDOWS_SPEAKERS_ANALYZE_WORKER, WINDOWS_VAD_ANALYZE_WORKER,
     WINDOWS_WESPEAKER_MODEL, verify_windows_payload,
 };
 
@@ -30,7 +30,7 @@ pub struct WindowsOnnxPackage {
     pub onnxruntime_library: PathBuf,
     pub wespeaker_model: PathBuf,
     pub pyannote_model: PathBuf,
-    pub silero_vad_model: PathBuf,
+    pub firered_vad_model: PathBuf,
 }
 
 /// Resolve ONNX helper inputs only from the complete, signed package
@@ -114,8 +114,8 @@ fn declared_onnx_members(
         pyannote_model: payload.pyannote_model_path().map_err(|error| {
             format!("signed ONNX app payload refuses {WINDOWS_PYANNOTE_MODEL}: {error}")
         })?,
-        silero_vad_model: payload.silero_vad_model_path().map_err(|error| {
-            format!("signed ONNX app payload refuses {WINDOWS_SILERO_VAD_MODEL}: {error}")
+        firered_vad_model: payload.firered_vad_model_path().map_err(|error| {
+            format!("signed ONNX app payload refuses {WINDOWS_FIRERED_VAD_MODEL}: {error}")
         })?,
     })
 }
@@ -151,7 +151,7 @@ mod tests {
             WINDOWS_ONNXRUNTIME_LIBRARY,
             WINDOWS_WESPEAKER_MODEL,
             WINDOWS_PYANNOTE_MODEL,
-            WINDOWS_SILERO_VAD_MODEL,
+            WINDOWS_FIRERED_VAD_MODEL,
         ];
         for member in members {
             let path = root.path().join(member);

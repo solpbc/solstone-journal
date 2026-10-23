@@ -20,7 +20,7 @@ pub use speaker_turns::{
 pub use filterbank::{
     WESPEAKER_EMBEDDING_SIZE, WESPEAKER_FFT_SIZE, WESPEAKER_FRAME_LENGTH_SAMPLES,
     WESPEAKER_FRAME_SHIFT_SAMPLES, WESPEAKER_MEL_BINS, WESPEAKER_SAMPLE_RATE_HZ,
-    compute_wespeaker_filterbank_cmn, row_l2_normalize,
+    compute_kaldi_filterbank, compute_wespeaker_filterbank_cmn, row_l2_normalize,
 };
 pub use segmentation::{
     DIARIZE_MIN_OVERLAP, MAX_SAME_WINDOW_TURN_GAP_S, PYANNOTE_CLASS_COUNT,

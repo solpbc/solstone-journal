@@ -31,8 +31,8 @@ const MIRRORED_MODEL_DIGESTS: &[(&str, &str, &str)] = &[
     ),
     (
         "core/crates/solstone-core-transcribe/src/model_assets.rs",
-        "SILERO_VAD_V6_SHA256",
-        "SILERO_VAD_SHA256",
+        "FIRERED_VAD_SHA256",
+        "FIRERED_VAD_SHA256",
     ),
 ];
 

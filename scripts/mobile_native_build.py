@@ -317,7 +317,7 @@ class Build:
         flags = []
         if name == "llama":
             openssl = self.openssl()
-            flags = ["-DLLAMA_BUILD_TESTS=OFF", "-DLLAMA_BUILD_EXAMPLES=OFF", "-DLLAMA_BUILD_SERVER=ON", "-DLLAMA_BUILD_TOOLS=ON", "-DLLAMA_OPENSSL=ON", "-DLLAMA_BUILD_NUMBER=11429", "-DLLAMA_BUILD_COMMIT=d812350", f"-DOPENSSL_ROOT_DIR={openssl}", f"-DOPENSSL_INCLUDE_DIR={openssl}/include", f"-DOPENSSL_CRYPTO_LIBRARY={openssl}/lib/libcrypto.a", f"-DOPENSSL_SSL_LIBRARY={openssl}/lib/libssl.a", "-DOPENSSL_USE_STATIC_LIBS=TRUE"]
+            flags = ["-DLLAMA_BUILD_TESTS=OFF", "-DLLAMA_BUILD_EXAMPLES=OFF", "-DLLAMA_BUILD_SERVER=ON", "-DLLAMA_BUILD_TOOLS=ON", "-DLLAMA_OPENSSL=ON", "-DLLAMA_BUILD_NUMBER=11669", "-DLLAMA_BUILD_COMMIT=620d222", f"-DOPENSSL_ROOT_DIR={openssl}", f"-DOPENSSL_INCLUDE_DIR={openssl}/include", f"-DOPENSSL_CRYPTO_LIBRARY={openssl}/lib/libcrypto.a", f"-DOPENSSL_SSL_LIBRARY={openssl}/lib/libssl.a", "-DOPENSSL_USE_STATIC_LIBS=TRUE"]
             header = "llama.h"
             code = '#include "llama.h"\nint main(void){llama_backend_init(); const char *s=llama_print_system_info(); llama_backend_free(); return s == 0;}\n'
         else:

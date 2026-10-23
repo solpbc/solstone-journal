@@ -433,6 +433,21 @@ fn bundled_identity(
     if id == "screen-ocr" {
         return screen_ocr_identity(target);
     }
+    if id == "mlx-helper" {
+        let lock = std::fs::read(
+            checkout.join("core/crates/solstone-core-local/mlx-helper/Package.resolved"),
+        )
+        .map_err(|e| EvidenceError::new(e.to_string()))?;
+        let digest = crate::digest::sha256_hex(&lock);
+        return Ok((
+            digest.clone(),
+            "https://github.com/solpbc/solstone-journal".into(),
+            vec![InputRef {
+                name: "mlx-helper/Package.resolved".into(),
+                sha256: digest,
+            }],
+        ));
+    }
     if target == "windows-x86_64" {
         match id {
             "ced-engine" => {
@@ -580,7 +595,7 @@ fn bundled_identity(
                 // The bundled place names: GeoNames cities500 as downloaded
                 // 2026-10-11 and Natural Earth at commit ca96624; see
                 // core/models/assets/geo/README.md. Change both with the file.
-                let ver = "geonames-20261022-dd5b1c8419f4-natural-earth-ca96624".to_string();
+                let ver = "geonames-20261023-f409664e2033-natural-earth-ca96624".to_string();
                 let src = "core/models/assets/geo/area-tier.bin".to_string();
                 let sha = read_digest_const(
                     &checkout.join("core/crates/solstone-core-location/src/asset.rs"),
@@ -595,20 +610,29 @@ fn bundled_identity(
                     }],
                 ))
             }
-            "silero-vad-model" => {
-                let ver = "v6".to_string();
-                let src = "core/models/assets/silero_vad_v6.onnx".to_string();
+            "firered-vad-model" => {
+                let ver = "c30ec49e8cc69642b0ee65362eba11b9d11c6e54".to_string();
+                let src = "core/models/assets/firered_vad.onnx".to_string();
                 let sha = read_digest_const(
                     &checkout.join("core/crates/solstone-core-transcribe/src/model_assets.rs"),
-                    "SILERO_VAD_V6_SHA256",
+                    "FIRERED_VAD_SHA256",
                 )?;
                 Ok((
                     ver,
                     src,
-                    vec![InputRef {
-                        name: "silero_vad_v6.onnx".to_string(),
-                        sha256: sha,
-                    }],
+                    vec![
+                        InputRef {
+                            name: "firered_vad.onnx".to_string(),
+                            sha256: sha,
+                        },
+                        InputRef {
+                            name: "firered_vad_cmvn.ark".to_string(),
+                            sha256: read_digest_const(
+                                &checkout.join("core/crates/solstone-core-vad-analyze/src/lib.rs"),
+                                "FIRERED_VAD_CMVN_SHA256",
+                            )?,
+                        },
+                    ],
                 ))
             }
             "rfdetr-model" => {
@@ -711,7 +735,7 @@ fn bundled_identity(
                 // The bundled place names: GeoNames cities500 as downloaded
                 // 2026-10-11 and Natural Earth at commit ca96624; see
                 // core/models/assets/geo/README.md. Change both with the file.
-                let ver = "geonames-20261022-dd5b1c8419f4-natural-earth-ca96624".to_string();
+                let ver = "geonames-20261023-f409664e2033-natural-earth-ca96624".to_string();
                 let src = "core/models/assets/geo/area-tier.bin".to_string();
                 let sha = read_digest_const(
                     &checkout.join("core/crates/solstone-core-location/src/asset.rs"),
@@ -726,20 +750,29 @@ fn bundled_identity(
                     }],
                 ))
             }
-            "silero-vad-model" => {
-                let ver = "v6".to_string();
-                let src = "core/models/assets/silero_vad_v6.onnx".to_string();
+            "firered-vad-model" => {
+                let ver = "c30ec49e8cc69642b0ee65362eba11b9d11c6e54".to_string();
+                let src = "core/models/assets/firered_vad.onnx".to_string();
                 let sha = read_digest_const(
                     &checkout.join("core/crates/solstone-core-transcribe/src/model_assets.rs"),
-                    "SILERO_VAD_V6_SHA256",
+                    "FIRERED_VAD_SHA256",
                 )?;
                 Ok((
                     ver,
                     src,
-                    vec![InputRef {
-                        name: "silero_vad_v6.onnx".to_string(),
-                        sha256: sha,
-                    }],
+                    vec![
+                        InputRef {
+                            name: "firered_vad.onnx".to_string(),
+                            sha256: sha,
+                        },
+                        InputRef {
+                            name: "firered_vad_cmvn.ark".to_string(),
+                            sha256: read_digest_const(
+                                &checkout.join("core/crates/solstone-core-vad-analyze/src/lib.rs"),
+                                "FIRERED_VAD_CMVN_SHA256",
+                            )?,
+                        },
+                    ],
                 ))
             }
             "rfdetr-model" => {
@@ -919,6 +952,9 @@ pub fn name_receipt_inputs(
         };
         let dest = entry_dest_str(entry);
         let inputs = match entry {
+            crate::inventory::Entry::Copy { .. } if id == "mlx-helper" => {
+                bundled_identity(&repo_root, target, id)?.2
+            }
             crate::inventory::Entry::ModelAsset {
                 source,
                 digest_source,
@@ -1151,7 +1187,14 @@ pub fn render_runtime_rows(
                 .iter()
                 .find(|a| a.origin_key == first.origin_key())
                 .expect("first artifact in catalog");
-            let source = catalog_source(first_artifact, &id, &repo_root)?;
+            let source_artifact = if id == "local-model-mlx" {
+                cat.iter()
+                    .find(|a| a.unit == "local-model-mlx" && a.filename == "model.safetensors")
+                    .ok_or_else(|| EvidenceError::new("MLX weights missing from catalog"))?
+            } else {
+                first_artifact
+            };
+            let source = catalog_source(source_artifact, &id, &repo_root)?;
             (ver, source, inputs)
         };
 
@@ -1304,13 +1347,50 @@ pub fn render_posix_evidence(
             return Err(EvidenceError::new(format!("digest-disagreement: {path}")));
         }
 
-        let (row_version, row_source, row_inputs) = match entry {
+        let (mut row_version, mut row_source, row_inputs) = match entry {
             crate::inventory::Entry::PinnedMembers { input, .. }
             | crate::inventory::Entry::PinnedNative { input, .. } => {
                 pinned_identity(input, id, request.checkout)?
             }
             _ => bundled_identity(request.checkout, request.target, id)?,
         };
+
+        if id == "mlx-helper" {
+            let build_path = request.stage.join("share/provenance/mlx-helper/build.json");
+            let build: serde_json::Value = serde_json::from_slice(
+                &std::fs::read(&build_path)
+                    .map_err(|e| EvidenceError::new(format!("MLX build provenance: {e}")))?,
+            )
+            .map_err(|e| EvidenceError::new(e.to_string()))?;
+            if build["source_commit"] != parsed["source_commit"]
+                || build["swift_package_resolved_sha256"] != row_inputs[0].sha256
+            {
+                return Err(EvidenceError::new(
+                    "MLX build source or dependency identity disagrees with release",
+                ));
+            }
+            row_version = build["source_commit"]
+                .as_str()
+                .ok_or_else(|| EvidenceError::new("MLX source commit missing"))?
+                .into();
+            row_source = format!("https://github.com/solpbc/solstone-journal/tree/{row_version}");
+            if path == "lib/libswiftCompatibilitySpan.dylib" {
+                let runtime = build["swift_runtime"].as_array().and_then(|rows| {
+                    rows.iter()
+                        .find(|row| row["filename"] == "libswiftCompatibilitySpan.dylib")
+                });
+                let expected = runtime
+                    .and_then(|row| row["sha256"].as_str())
+                    .ok_or_else(|| {
+                        EvidenceError::new("Swift compatibility library build receipt missing")
+                    })?;
+                if request.pre_signing.get(path).map(String::as_str) != Some(expected) {
+                    return Err(EvidenceError::new(
+                        "Swift compatibility library differs from the build toolchain receipt",
+                    ));
+                }
+            }
+        }
 
         let pre_signing = request.pre_signing.get(path).cloned();
 
@@ -2157,7 +2237,11 @@ fn entry_dest_matches(entry: &crate::inventory::Entry, path: &str) -> bool {
         crate::inventory::Entry::WindowsNative { dest, .. } => dest == path,
         crate::inventory::Entry::Bin { dest, .. } => dest == path,
         crate::inventory::Entry::Launcher { dest, .. } => dest == path,
-        crate::inventory::Entry::Copy { dest, .. } => dest == path,
+        crate::inventory::Entry::Copy { dest, .. } => {
+            dest == path
+                || (dest == "bin/mlx-helper"
+                    && path == "bin/mlx-swift_Cmlx.bundle/Contents/_CodeSignature/CodeResources")
+        }
         crate::inventory::Entry::PinnedNative { dest, .. } => dest == path,
         crate::inventory::Entry::PinnedMembers { staged, .. } => {
             staged.iter().any(|s| s.dest == path)
@@ -2249,7 +2333,10 @@ mod tests {
                 }
                 if r.id != "nvattest" {
                     for inp in &r.inputs {
-                        if let Some(art) = cat.iter().find(|a| a.filename == inp.name) {
+                        if let Some(art) = cat.iter().find(|a| {
+                            a.filename == inp.name
+                                && solstone_core_assets::unit_id(a.unit) == Some(r.id.as_str())
+                        }) {
                             assert_eq!(
                                 r.version, art.version,
                                 "version check for {} in {target}",
@@ -2807,7 +2894,7 @@ mod tests {
     }
 
     fn mutate_macos_macho(stage: &Path) {
-        let p = stage.join("lib/solstone_journal_models/libsilero_vad.dylib");
+        let p = stage.join("lib/solstone_journal_models/libfixture_model.dylib");
         let diff_macho = crate::macho::fixture(&crate::macho::FixtureSpec {
             filetype: crate::macho::MH_DYLIB,
             install_name: Some("@rpath/libmutated.dylib"),
@@ -2830,7 +2917,7 @@ mod tests {
 
         let payload_bytes = b"sample unsigned payload binary content";
         let payload_sha = crate::digest::sha256_hex(payload_bytes);
-        let archive_name = "silero_vad_member.tar.gz";
+        let archive_name = "firered_vad_member.tar.gz";
         let archive_bytes =
             make_tar_gz(&[("payload.bin", payload_bytes, tar::EntryType::Regular, None)]);
 
@@ -2865,9 +2952,9 @@ mod tests {
 
         set_bundled_identity_override(
             target,
-            "silero-vad-model",
+            "firered-vad-model",
             "1.0.0",
-            "https://example.com/silero",
+            "https://example.com/model",
             vec![InputRef {
                 name: archive_name.to_string(),
                 sha256: crate::digest::sha256_hex(&archive_bytes),
@@ -2940,7 +3027,7 @@ mod tests {
 
         let vad_bytes = b"vad-bytes";
         let vad_sha = crate::digest::sha256_hex(vad_bytes);
-        let file_name = "silero_vad_v6.onnx";
+        let file_name = "firered_vad.onnx";
         let member_dest = format!("lib/solstone_journal_models/assets/{file_name}");
 
         let version = env!("CARGO_PKG_VERSION");
@@ -2972,9 +3059,9 @@ mod tests {
 
         set_bundled_identity_override(
             target,
-            "silero-vad-model",
+            "firered-vad-model",
             "1.0.0",
-            "https://example.com/silero",
+            "https://example.com/model",
             vec![InputRef {
                 name: file_name.to_string(),
                 sha256: vad_sha.clone(),
@@ -3167,7 +3254,7 @@ mod tests {
 
         let nvat_bytes = b"libnvat.so regular binary bytes";
         let nvat_sha = crate::digest::sha256_hex(nvat_bytes);
-        let archive_name = "silero_vad_alias.tar.gz";
+        let archive_name = "firered_vad_alias.tar.gz";
         let archive_bytes = make_tar_gz(&[
             (
                 "lib/libnvat.so.1.2.2",
@@ -3214,9 +3301,9 @@ mod tests {
 
         set_bundled_identity_override(
             target,
-            "silero-vad-model",
+            "firered-vad-model",
             "1.0.0",
-            "https://example.com/silero",
+            "https://example.com/model",
             vec![InputRef {
                 name: archive_name.to_string(),
                 sha256: crate::digest::sha256_hex(&archive_bytes),
@@ -3322,12 +3409,12 @@ mod tests {
 
         let component_macho = fixture(&FixtureSpec {
             filetype: MH_DYLIB,
-            install_name: Some("@rpath/libsilero_vad.dylib"),
+            install_name: Some("@rpath/libfixture_model.dylib"),
             ..FixtureSpec::default()
         });
         let component_macho_sha = crate::digest::sha256_hex(&component_macho);
-        let component_dest = "lib/solstone_journal_models/libsilero_vad.dylib";
-        let archive_name = "silero_vad_macho.tar.gz";
+        let component_dest = "lib/solstone_journal_models/libfixture_model.dylib";
+        let archive_name = "firered_vad_macho.tar.gz";
         let archive_bytes = make_tar_gz(&[(
             component_dest,
             &component_macho,
@@ -3372,9 +3459,9 @@ mod tests {
 
         set_bundled_identity_override(
             target,
-            "silero-vad-model",
+            "firered-vad-model",
             "1.0.0",
-            "https://example.com/silero",
+            "https://example.com/model",
             vec![InputRef {
                 name: archive_name.to_string(),
                 sha256: crate::digest::sha256_hex(&archive_bytes),
@@ -3477,11 +3564,11 @@ mod tests {
 
         let component_macho = fixture(&FixtureSpec {
             filetype: MH_DYLIB,
-            install_name: Some("@rpath/libsilero_vad.dylib"),
+            install_name: Some("@rpath/libfixture_model.dylib"),
             ..FixtureSpec::default()
         });
-        let component_dest = "lib/solstone_journal_models/libsilero_vad.dylib";
-        let archive_name = "silero_vad_macho.tar.gz";
+        let component_dest = "lib/solstone_journal_models/libfixture_model.dylib";
+        let archive_name = "firered_vad_macho.tar.gz";
         let archive_bytes = make_tar_gz(&[(
             component_dest,
             &component_macho,
@@ -3526,9 +3613,9 @@ mod tests {
 
         set_bundled_identity_override(
             target,
-            "silero-vad-model",
+            "firered-vad-model",
             "1.0.0",
-            "https://example.com/silero",
+            "https://example.com/model",
             vec![InputRef {
                 name: archive_name.to_string(),
                 sha256: crate::digest::sha256_hex(&archive_bytes),
@@ -3767,7 +3854,7 @@ mod tests {
         use crate::provenance::Provenance;
 
         let payload_bytes = b"sample linux payload binary content";
-        let archive_name = "silero_vad_member.tar.gz";
+        let archive_name = "firered_vad_member.tar.gz";
         let archive_bytes =
             make_tar_gz(&[("payload.bin", payload_bytes, tar::EntryType::Regular, None)]);
 
@@ -3802,9 +3889,9 @@ mod tests {
 
         set_bundled_identity_override(
             target,
-            "silero-vad-model",
+            "firered-vad-model",
             "1.0.0",
-            "https://example.com/silero",
+            "https://example.com/model",
             vec![InputRef {
                 name: archive_name.to_string(),
                 sha256: crate::digest::sha256_hex(&archive_bytes),

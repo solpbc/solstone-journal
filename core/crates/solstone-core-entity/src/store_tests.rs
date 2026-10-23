@@ -26,12 +26,13 @@ use crate::{
     dismiss_ambiguity, guard_restore_does_not_cross_merge, guard_visible_event_collision,
     load_all_journal_entities, load_resolved_ambiguity_choice, publish_identity_change,
     read_ambiguities, read_entity_identity, read_identity_map, read_prepared_history,
-    read_visible_history, record_ambiguity_choice, record_ambiguity_group_choice,
-    record_ambiguity_observation, refresh_identity_map_cache, repair_entity_identities,
-    rescope_facet_ambiguities, restore_review, save_entity_identity,
-    save_entity_identity_with_timeout, set_forced_history_apply_failure,
-    set_forced_identity_write_failure, set_repair_identity_write_failure_on_attempt,
-    sweep_entity_review_policy, write_history_event_json_for_test,
+    read_visible_history, reconcile_prepared_history_reporting, record_ambiguity_choice,
+    record_ambiguity_group_choice, record_ambiguity_observation, refresh_identity_map_cache,
+    repair_entity_identities, rescope_facet_ambiguities, restore_review, save_entity_identity,
+    save_entity_identity_with_map, save_entity_identity_with_timeout,
+    set_forced_history_apply_failure, set_forced_identity_write_failure,
+    set_repair_identity_write_failure_on_attempt, sweep_entity_review_policy,
+    write_history_event_json_for_test,
 };
 
 const ENTITY_STORE_FIXTURE: &str = include_str!(concat!(
@@ -1487,6 +1488,69 @@ fn reconciliation_refusal_keeps_only_the_expected_partial_reconciliation() {
         tree_hash_excluding_locks(actual.path()),
         tree_hash_excluding_locks(expected.path())
     );
+}
+
+#[test]
+fn reconciliation_reporting_repair_failure_reports_durable_prefix_and_preserves_unreconciled() {
+    let actual = TempDir::new();
+    let current = json!({"id": "alice", "name": "After"});
+    let before = json!({"id": "alice", "name": "Before"});
+    let unrelated = json!({"id": "alice", "name": "Unrelated"});
+
+    let mut publish = history_event(1, "vh_publish", "update");
+    publish["entity_id"] = json!("alice");
+    publish["identity_before"] = before;
+    publish["identity_after"] = current.clone();
+
+    let mut repair = history_event(2, "vh_repair", "update");
+    repair["entity_id"] = json!("alice");
+    repair["identity_before"] = json!({"id": "alice", "name": "Else"});
+    repair["identity_after"] = unrelated;
+
+    write_json(actual.path(), "entities/alice/entity.json", &current);
+    write_json(
+        actual.path(),
+        "entities/alice/history/prepared/vh_a/event.json",
+        &publish,
+    );
+    write_json(
+        actual.path(),
+        "entities/alice/history/prepared/vh_b/event.json",
+        &repair,
+    );
+
+    let failure = reconcile_prepared_history_reporting(actual.path(), "alice")
+        .expect_err("repair required event must fail reconciliation");
+
+    assert!(
+        failure.durable,
+        "published prefix must report durable = true"
+    );
+    assert!(
+        matches!(
+            failure.error,
+            EntityWriteError::ReconciliationRepairRequired { .. }
+        ),
+        "expected ReconciliationRepairRequired, got {:?}",
+        failure.error
+    );
+
+    assert!(
+        !actual
+            .path()
+            .join("entities/alice/history/prepared/vh_a")
+            .exists()
+    );
+    assert!(
+        actual
+            .path()
+            .join("entities/alice/history/prepared/vh_b/event.json")
+            .exists()
+    );
+
+    let visible = read_visible_history(actual.path(), "alice").unwrap();
+    assert_eq!(visible.len(), 1);
+    assert_eq!(visible[0].version_id().unwrap(), "vh_publish");
 }
 
 #[test]
@@ -3763,5 +3827,101 @@ fn cancelled_entity_publication_after_file_lock_wait_and_positive_twins() {
                 assert_ne!(fs::read(&path).unwrap(), before);
             }
         }
+    }
+}
+
+#[test]
+fn save_entity_identity_with_map_matches_public_save() {
+    let j_public = tempfile::tempdir_in("/var/tmp").unwrap();
+    let j_map = tempfile::tempdir_in("/var/tmp").unwrap();
+
+    let payload = json!({
+        "id": "alice",
+        "name": "Alice Smith",
+        "email": "alice@example.com"
+    });
+    let op = crate::EntityOperationContext {
+        kind: crate::EntityOperationKind::Update,
+        caller: Value::Null,
+        actor: Value::Null,
+        metadata: json!({"note": "test"}),
+    };
+
+    for root in [j_public.path(), j_map.path()] {
+        let prep_dir = root.join("entities/alice/history/prepared/staging_prep1");
+        fs::create_dir_all(&prep_dir).unwrap();
+        let prep_event = json!({
+            "schema_version": 1,
+            "version_id": "vh_prep1",
+            "seq": 1,
+            "ts": "2026-10-22T00:00:00Z",
+            "entity_id": "alice",
+            "entity_dir": "alice",
+            "kind": "create",
+            "identity_before": null,
+            "identity_after": {
+                "id": "alice",
+                "name": "Alice Initial"
+            },
+            "operation": {
+                "kind": "create",
+                "caller": null,
+                "actor": null,
+                "metadata": {}
+            }
+        });
+        fs::write(
+            prep_dir.join("event.json"),
+            serde_json::to_vec_pretty(&prep_event).unwrap(),
+        )
+        .unwrap();
+    }
+
+    // Public path
+    save_entity_identity(j_public.path(), "alice", &payload, Some(&op)).unwrap();
+
+    // Map-taking path
+    let _lock = crate::hold_entity_trust_lock(j_map.path()).unwrap();
+    let map = read_identity_map(j_map.path()).unwrap();
+    save_entity_identity_with_map(j_map.path(), "alice", &payload, Some(&op), &map, None).unwrap();
+    drop(_lock);
+
+    // Verify prepared directory is empty on both
+    let prep_pub = read_prepared_history(j_public.path(), "alice").unwrap();
+    let prep_map = read_prepared_history(j_map.path(), "alice").unwrap();
+    assert!(prep_pub.is_empty());
+    assert!(prep_map.is_empty());
+
+    // Compare identity objects (identical except updated_at)
+    let mut id_pub = read_entity_identity(j_public.path(), "alice")
+        .unwrap()
+        .unwrap()
+        .value()
+        .clone();
+    let mut id_map = read_entity_identity(j_map.path(), "alice")
+        .unwrap()
+        .unwrap()
+        .value()
+        .clone();
+    id_pub.as_object_mut().unwrap().remove("updated_at");
+    id_map.as_object_mut().unwrap().remove("updated_at");
+    assert_eq!(id_pub, id_map);
+
+    // Compare history events (identical except version_id, ts, operation)
+    let evs_pub = read_visible_history(j_public.path(), "alice").unwrap();
+    let evs_map = read_visible_history(j_map.path(), "alice").unwrap();
+    assert_eq!(evs_pub.len(), evs_map.len());
+    for (e_pub, e_map) in evs_pub.iter().zip(evs_map.iter()) {
+        let mut v_pub = e_pub.value().clone();
+        let mut v_map = e_map.value().clone();
+        for obj in [
+            v_pub.as_object_mut().unwrap(),
+            v_map.as_object_mut().unwrap(),
+        ] {
+            obj.remove("version_id");
+            obj.remove("ts");
+            obj.remove("operation");
+        }
+        assert_eq!(v_pub, v_map);
     }
 }

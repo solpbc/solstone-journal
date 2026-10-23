@@ -46,7 +46,10 @@ impl InstallerRunner for RealInstallerRunner {
         // the foreground until their owner exits; timing out a privileged
         // package manager could return while it is still changing the system.
         let limit = if args.iter().any(|a| a == OsStr::new("--list")) {
-            Some(Duration::from_secs(30))
+            // latest, catalogue and signature each allow three 120-second
+            // stalled attempts plus retry delays. Leave room for that normal
+            // retry path; redirects and a trickling server remain bounded.
+            Some(Duration::from_secs(20 * 60))
         } else {
             None
         };
@@ -133,11 +136,14 @@ fn run_installer(
     let stdout = output_thread
         .join()
         .map_err(|_| std::io::Error::other("installer output reader failed"))??;
-    let mut stderr = error_thread
+    let stderr = error_thread
         .join()
         .map_err(|_| std::io::Error::other("installer diagnostic reader failed"))??;
     if timed_out {
-        stderr.extend_from_slice(b"installer timed out\n");
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::TimedOut,
+            "installer catalogue deadline exceeded",
+        ));
     }
     Ok(InstallerOutput {
         success: status.success() && !timed_out,
@@ -581,6 +587,22 @@ mod tests {
 mod process_tests {
     use super::*;
     #[test]
+    fn catalogue_can_finish_after_the_old_process_deadline() {
+        let dir = tempfile::tempdir().unwrap();
+        let script = dir.path().join("installer.sh");
+        std::fs::write(
+            &script,
+            "sleep 31\nprintf '{\"platform_version\":\"2.0.48-r1\"}\\n'\n",
+        )
+        .unwrap();
+        let args = build_list_argv(&script, "release", None).unwrap();
+        let output = RealInstallerRunner
+            .run(Path::new("/bin/sh"), &args, StdinMode::Closed)
+            .unwrap();
+        assert!(output.success, "{output:?}");
+        assert!(serde_json::from_slice::<serde_json::Value>(&output.stdout).is_ok());
+    }
+    #[test]
     fn real_shell_receives_installer_flags_and_captures_one_json_result() {
         let dir = tempfile::tempdir().unwrap();
         let script = dir.path().join("installer.sh");
@@ -607,15 +629,16 @@ mod process_tests {
         let marker = dir.path().join("late-write");
         std::fs::write(&script, format!("sleep 1; touch '{}'\n", marker.display())).unwrap();
         let args = vec![script.into_os_string()];
-        let output = run_installer(
+        let started = Instant::now();
+        let error = run_installer(
             Path::new("/bin/sh"),
             &args,
             StdinMode::Closed,
             Some(Duration::from_millis(50)),
         )
-        .unwrap();
-        assert!(!output.success);
-        assert!(String::from_utf8_lossy(&output.stderr).contains("timed out"));
+        .unwrap_err();
+        assert_eq!(error.kind(), std::io::ErrorKind::TimedOut);
+        assert!(started.elapsed() < Duration::from_millis(800));
         std::thread::sleep(Duration::from_millis(1100));
         assert!(!marker.exists());
     }

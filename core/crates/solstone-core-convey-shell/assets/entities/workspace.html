@@ -1977,6 +1977,87 @@ body.presentation-mode .entity-desc { color: var(--ink-soft); }
 .entity-merge-option-meta{font-size:0.8em;color:var(--ink-soft)}
 .entity-merge-empty{padding:10px;font-size:0.9em;color:var(--ink-soft)}
 .journal-entity-filter{display:flex;gap:10px;align-items:center;margin:12px 0}.journal-entity-filter select,.journal-entity-pages button{font:inherit;min-height:46px;padding:10px 14px;border:1px solid var(--hairline-2);background:var(--paper);border-radius:8px;color:inherit}.journal-entity-pages{display:flex;gap:16px;margin:24px 0}.journal-entity-pages button{cursor:pointer}.journal-entity-pages button:disabled{opacity:.5}.journal-entity-filter{min-width:0}.journal-entity-filter select{flex:1;min-width:0;max-width:100%}.journal-entity-filter select:focus-visible,.journal-entity-pages button:focus-visible{outline:2px solid var(--focus);outline-offset:3px}
+
+/* Journal-wide browse: folders, dense rows, tidy-up groups */
+.journal-browse { display: grid; grid-template-columns: 13rem minmax(0, 1fr); gap: 1.25em; align-items: start; }
+.journal-folders { display: flex; flex-direction: column; gap: 2px; position: sticky; top: 0.5em; }
+.journal-folder { display: flex; justify-content: space-between; gap: 0.5em; align-items: baseline; width: 100%; padding: 0.4em 0.6em; border: 0; border-radius: var(--radius-sm, 6px); background: transparent; color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
+.journal-folder:hover { background: var(--cream); }
+.journal-folder[aria-current="true"] { background: var(--cream-bright); font-weight: 600; }
+.journal-folder:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.journal-folder-count { color: var(--ink-faint); font-variant-numeric: tabular-nums; font-size: 0.85em; }
+.journal-folder-heading { margin: 0.9em 0.6em 0.2em; font-size: 0.75em; color: var(--ink-faint); text-transform: none; letter-spacing: 0; }
+.journal-browse-main { min-width: 0; }
+.journal-list-head { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5em 1em; margin-bottom: 0.5em; }
+.journal-list-head .entity-search-input { flex: 1 1 14rem; min-width: 0; max-width: 24rem; margin: 0; }
+.journal-list-range { color: var(--ink-soft); font-size: 0.9em; font-variant-numeric: tabular-nums; }
+.journal-list-pager { display: inline-flex; gap: 0.25em; margin-left: auto; }
+.journal-list-pager button, .journal-tidy-pager button { min-width: 2.25rem; min-height: 2.25rem; border: 1px solid var(--hairline-2); border-radius: var(--radius-sm, 6px); background: var(--paper); color: var(--ink); cursor: pointer; }
+.journal-list-pager button:disabled, .journal-tidy-pager button:disabled { opacity: 0.4; cursor: default; }
+.journal-rows { border-top: 1px solid var(--hairline); }
+.journal-row { display: grid; grid-template-columns: auto minmax(0, 1fr) 6rem 5rem 6rem 13rem; gap: 0.75em; align-items: center; padding: 0.45em 0.6em; border-bottom: 1px solid var(--hairline); cursor: pointer; }
+.journal-row:hover { background: var(--cream); }
+.journal-row:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+.journal-row-tick { display: flex; align-items: center; }
+.journal-row-tick input { width: 1.1rem; height: 1.1rem; margin: 0; }
+.journal-row-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink); }
+.journal-row-badge { margin-left: 0.5em; padding: 0 0.4em; border-radius: 999px; font-size: 0.75em; background: var(--cream-bright); color: var(--ink-soft); }
+.journal-row-type, .journal-row-notes, .journal-row-date { color: var(--ink-soft); font-size: 0.85em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.journal-row-notes { font-variant-numeric: tabular-nums; }
+.journal-row-dots { display: flex; gap: 3px; flex-wrap: wrap; }
+.journal-row-dots .entity-facet-dot { margin: 0; }
+.journal-rows-plain .journal-row { grid-template-columns: minmax(0, 1fr) 6rem 5rem 6rem 13rem; }
+.journal-row-meta { display: contents; }
+.journal-row-date { order: 1; }
+.journal-tidy-band { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: 0.75em; margin-bottom: 1em; }
+.journal-tidy-card { display: flex; flex-direction: column; gap: 0.25em; padding: 0.75em 0.9em; border: 1px solid var(--hairline-2); border-radius: 10px; background: var(--paper); }
+.journal-tidy-card-title { font-weight: 600; color: var(--ink); }
+.journal-tidy-card-sample { color: var(--ink-soft); font-size: 0.85em; overflow-wrap: anywhere; }
+.journal-tidy-card button { align-self: flex-start; margin-top: 0.25em; }
+.journal-tidy-panel h3 { margin: 0 0 0.25em; font-size: 1.15em; }
+.journal-tidy-lede { margin: 0 0 0.75em; color: var(--ink-soft); }
+.journal-tidy-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5em 1em; margin: 0.5em 0; }
+.journal-tidy-count { color: var(--ink-soft); font-size: 0.9em; font-variant-numeric: tabular-nums; }
+.journal-tidy-link { padding: 0; border: 0; background: none; color: var(--orange-text-aa, var(--orange-ink)); font: inherit; font-size: 0.9em; text-decoration: underline; cursor: pointer; }
+.journal-tidy-pager { display: inline-flex; gap: 0.25em; margin-left: auto; align-items: center; }
+.journal-tidy-actions { display: flex; flex-wrap: wrap; gap: 0.5em; align-items: center; margin-top: 0.9em; }
+.journal-tidy-note { margin: 0.75em 0 0; color: var(--ink-faint); font-size: 0.85em; }
+.journal-tidy-more { margin-top: 0.75em; color: var(--ink-soft); font-size: 0.9em; }
+.journal-tidy-more p { margin: 0.4em 0 0; }
+.journal-tidy-status { margin: 0.75em 0 0; color: var(--ink); }
+.journal-tidy-status-error { color: var(--danger); }
+.journal-tidy-paused { padding: 0.75em 0.9em; border-radius: 8px; background: var(--warn-wash); color: var(--warn-ink); overflow-wrap: anywhere; }
+.journal-dup-row { grid-template-columns: auto minmax(0, 1fr) minmax(0, 12rem); cursor: default; }
+.journal-dup-row .journal-row-name { white-space: normal; overflow-wrap: anywhere; }
+.journal-dup-facets { color: var(--ink-soft); font-size: 0.85em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.journal-dup-confirm { margin-top: 0.9em; padding: 0.9em; border: 1px solid var(--hairline-2); border-radius: 10px; background: var(--paper); }
+.journal-dup-confirm h4 { margin: 0 0 0.35em; }
+.journal-dup-confirm ul { max-height: 16rem; overflow: auto; margin: 0.5em 0; padding-left: 1.25em; overflow-wrap: anywhere; }
+.journal-tidy-toast { position: fixed; left: 50%; bottom: 1.25em; transform: translateX(-50%); z-index: 50; display: flex; flex-wrap: wrap; gap: 0.5em 0.9em; align-items: center; max-width: min(40rem, calc(100vw - 2em)); padding: 0.75em 1em; border-radius: 10px; background: var(--surface-dark); color: var(--ink-on-dark); box-shadow: 0 6px 24px rgba(0,0,0,0.18); }
+.journal-tidy-toast[hidden] { display: none; }
+@media (max-width: 700px) { .journal-tidy-toast { bottom: calc(var(--app-dock-height) + var(--chrome-gap)); } }
+.journal-tidy-toast-text { flex: 1 1 16rem; min-width: 0; overflow-wrap: anywhere; }
+.journal-tidy-toast-small { flex-basis: 100%; margin: 0; font-size: 0.8em; opacity: 0.85; overflow-wrap: anywhere; }
+.journal-tidy-toast button { min-height: 2rem; padding: 0.2em 0.75em; border: 1px solid currentColor; border-radius: 6px; background: transparent; color: inherit; font: inherit; cursor: pointer; }
+.journal-tidy-toast .journal-tidy-toast-close { border: 0; padding: 0 0.4em; font-size: 1.2em; line-height: 1; }
+.journal-detail-id-note { margin: 0.5em 0 0; padding: 0.5em 0.75em; border-radius: 8px; background: var(--cream); color: var(--ink-soft); font-size: 0.9em; }
+@media (max-width: 768px) {
+  .journal-browse { grid-template-columns: minmax(0, 1fr); gap: 0.75em; }
+  .journal-folders { position: static; flex-direction: row; overflow-x: auto; gap: 0.4em; padding-bottom: 0.25em; scrollbar-width: thin; }
+  .journal-folder { flex: 0 0 auto; width: auto; gap: 0.4em; padding: 0.35em 0.75em; border: 1px solid var(--hairline-2); border-radius: 999px; white-space: nowrap; }
+  .journal-folder-heading { display: none; }
+  .journal-row, .journal-rows-plain .journal-row { grid-template-columns: auto minmax(0, 1fr) auto; grid-template-areas: "tick name notes" "tick meta meta"; row-gap: 0.15em; }
+  .journal-rows-plain .journal-row { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "name notes" "meta meta"; }
+  .journal-row-tick { grid-area: tick; }
+  .journal-row-name { grid-area: name; }
+  .journal-row-notes { grid-area: notes; text-align: right; }
+  .journal-row-date { order: 0; }
+  .journal-row-meta { grid-area: meta; display: flex; flex-wrap: wrap; gap: 0.25em 0.75em; align-items: center; min-width: 0; }
+  .journal-dup-row { grid-template-columns: auto minmax(0, 1fr); grid-template-areas: "tick name" "tick meta"; }
+  .journal-dup-row .journal-row-name { white-space: normal; }
+  .journal-dup-facets { grid-area: meta; white-space: normal; }
+  .journal-list-pager { margin-left: 0; }
+}
 </style>
 
 <div class="workspace-content">
@@ -1996,24 +2077,30 @@ body.presentation-mode .entity-desc { color: var(--ink-soft); }
 
   <!-- Journal-wide entities view (all-facet mode) -->
   <div id="journal-entities-view" style="display: none;">
-    <div class="entities-section">
-      <h3>
-        <span>your entities</span>
-        <input type="text" id="journal-entity-card-search" class="entity-search-input" placeholder="search entities…" aria-label="search entity cards">
-        <span id="journal-card-search-count" class="entity-card-search-count" style="display: none;"></span>
-      </h3>
-      <p class="entities-subtitle">people, places, and things across your journal</p>
-      <p class="entity-card-legend" id="journal-entity-legend"><span class="entity-facet-dot" aria-hidden="true"></span>dots are the facets a name appears in, plus its type · the number is how many times it comes up</p>
-      <div class="entity-cards-container">
-        <div id="journal-entity-cards-error" class="journal-entity-cards-error" hidden></div>
-        <div id="journal-entity-cards-content"></div>
-        <div id="no-journal-entities" class="no-journal-entities" style="display: none;">
-          <h2>no entities yet</h2>
-          <p>Select a facet to add entities to your journal.</p>
+    <div class="journal-browse">
+      <nav class="journal-folders" id="journal-folders" aria-label="entity folders"></nav>
+      <div class="journal-browse-main">
+        <div class="journal-tidy-band" id="journal-tidy-band" hidden></div>
+        <div id="journal-list-panel">
+          <div class="journal-list-head">
+            <input type="text" id="journal-entity-card-search" class="entity-search-input" aria-label="search entities">
+            <span id="journal-card-search-count" class="journal-list-range"></span>
+            <span class="journal-list-pager" id="journal-list-pager"></span>
+          </div>
+          <p class="entity-card-legend" id="journal-entity-legend"><span class="entity-facet-dot" aria-hidden="true"></span>dots are the facets a name appears in, plus its type.</p>
+          <div id="journal-entity-cards-error" class="journal-entity-cards-error" hidden></div>
+          <div id="journal-entity-cards-content" class="journal-rows"></div>
+          <div id="no-journal-entities" class="no-journal-entities" style="display: none;">
+            <h2>no entities yet</h2>
+            <p>Select a facet to add entities to your journal.</p>
+          </div>
+          <div id="no-journal-card-matches" class="no-card-matches" style="display: none;"></div>
         </div>
-        <div id="no-journal-card-matches" class="no-card-matches" style="display: none;">no entities match your search.</div>
+        <section id="journal-ids-panel" class="journal-tidy-panel" hidden></section>
+        <section id="journal-dups-panel" class="journal-tidy-panel" hidden></section>
       </div>
     </div>
+    <div class="journal-tidy-toast" id="journal-tidy-toast" role="status" aria-live="polite" hidden></div>
   </div>
 
   <!-- Journal entity detail view (all-facet mode) -->
@@ -2298,7 +2385,10 @@ let journalSummaryRequest = 0;
 let journalEntityPage = 0;
 let journalEntityType = '';
 let journalEntitySearch = '';
-const JOURNAL_ENTITY_PAGE_SIZE = 60;
+const JOURNAL_ENTITY_PAGE_SIZE = 50;
+// The folder column: '' is all, a type bucket, 'hidden', or one of the two
+// tidy-up groups ('ids', 'duplicates').
+let journalFolder = '';
 let journalSearchDebounce = null;
 // merge-target picker: a typeahead over names, not a select of every entity
 let journalMergeTarget = null;
@@ -3040,7 +3130,7 @@ async function fetchEntityConnJson(url) {
 function loadEntityNetwork(entityId) {
   const query = new URLSearchParams({
     entity: entityId,
-    limit: '15',
+    limit: String(ENTITY_CONN_NEIGHBOR_FETCH),
     evidence_limit: '1',
   });
   return fetchEntityConnJson(`/app/entities/api/network?${query.toString()}`);
@@ -3082,7 +3172,7 @@ async function renderConnectionsSection(entityId, containerId, isPrincipal) {
     }
 
     const referenceDay = network.reference_day || '';
-    const neighbors = Array.isArray(network.neighbors) ? network.neighbors : [];
+    const neighbors = shownConnectionNeighbors(Array.isArray(network.neighbors) ? network.neighbors : []);
     const withYouSlot = renderConnectionsNetwork(container, entityId, neighbors, referenceDay, isPrincipal);
     let hasWithYou = false;
 
@@ -3196,6 +3286,68 @@ function renderConnectionsNetwork(container, entityId, neighbors, referenceDay, 
   }
 
   return withYouSlot;
+}
+
+// The panel shows 15 neighbours, read from a wider window so that dropping
+// extraction artifacts below still leaves it full.
+const ENTITY_CONN_NEIGHBOR_SHOWN = 15;
+const ENTITY_CONN_NEIGHBOR_FETCH = 40;
+
+// Function words a transcriber leaves behind. Mirrors EVIDENCE_RESIDUE_WORDS in
+// solstone-core-home/src/connections.rs; keep the two lists in step.
+const ENTITY_CONN_RESIDUE_WORDS = new Set([
+  'a', 'an', 'and', 'are', 'as', 'at', 'be', 'but', 'by', 'for', 'from', 'had', 'has', 'have',
+  'he', 'her', 'his', 'i', 'in', 'is', 'it', 'its', 'of', 'on', 'or', 'our', 'she', 'so', 'than',
+  'that', 'the', 'their', 'them', 'then', 'there', 'they', 'this', 'to', 'was', 'with',
+]);
+
+// Evidence that is at least 99% `mentioned`. Mirrors is_mention_dominant in
+// solstone-core-home/src/connections.rs.
+function isEntityConnMentionDominant(neighbor) {
+  const kinds = neighbor && typeof neighbor.kinds === 'object' ? neighbor.kinds : null;
+  if (!kinds) return false;
+  let total = 0;
+  let mentioned = 0;
+  Object.entries(kinds).forEach(([kind, value]) => {
+    const count = Math.max(0, Math.trunc(Number(value && value.count) || 0));
+    total += count;
+    if (kind === 'mentioned') mentioned += count;
+  });
+  return total > 0 && mentioned * 100 >= total * 99;
+}
+
+// A one-word name the owner has only ever mentioned ("just", "think") is an
+// extraction artifact, not a connection. Mirrors is_mention_only_word.
+function isEntityConnMentionOnlyWord(neighbor) {
+  const name = String(neighbor?.name || '').trim();
+  if (name.split(/\s+/).filter(Boolean).length !== 1) return false;
+  return isEntityConnMentionDominant(neighbor);
+}
+
+// A mention-dominant neighbour whose latest evidence is one residue token is
+// a transcription artifact, whatever name was attached to it ("Gallery At
+// Reunion (The)" matched on "The"). The token that is the row's own name is
+// real evidence. Mirrors is_residue_evidence.
+function isEntityConnResidueEvidence(neighbor) {
+  if (!isEntityConnMentionDominant(neighbor)) return false;
+  const first = Array.isArray(neighbor?.evidence) ? neighbor.evidence[0] : null;
+  const label = String(first?.label || '').trim();
+  if (!label || label.split(/\s+/).length !== 1) return false;
+  const token = label.toLowerCase().replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, '');
+  const name = String(neighbor?.name || '').trim().toLowerCase();
+  if (name && name === token) return false;
+  return !token
+    || Array.from(token).length === 1
+    || !/\p{L}/u.test(token)
+    || ENTITY_CONN_RESIDUE_WORDS.has(token);
+}
+
+// The neighbours the panel lists: home's connections card drops the same
+// artifacts, so an entity's panel and home agree on who is a connection.
+function shownConnectionNeighbors(neighbors) {
+  return neighbors
+    .filter(neighbor => !isEntityConnMentionOnlyWord(neighbor) && !isEntityConnResidueEvidence(neighbor))
+    .slice(0, ENTITY_CONN_NEIGHBOR_SHOWN);
 }
 
 function renderWithYouBlock(container, entityId, history, referenceDay) {
@@ -4078,12 +4230,13 @@ function renderJournalDetailView(entity) {
     indicators.push(`Last mentioned: ${displayDate}`);
   }
   if (entity.total_observation_count > 0) {
-    indicators.push(`${groupedCount(entity.total_observation_count)} mention${entity.total_observation_count !== 1 ? 's' : ''}`);
+    indicators.push(journalNotesLabel(entity.total_observation_count));
   }
   if (entity.facets && entity.facets.length > 0) {
     indicators.push(`${entity.facets.length} facet${entity.facets.length !== 1 ? 's' : ''}`);
   }
   document.getElementById('journal-detail-indicators').innerHTML = indicators.join(' · ');
+  renderJournalDetailIdNote(entity);
 
   // Facet relationships
   const facetsContainer = document.getElementById('journal-detail-facets');
@@ -4168,7 +4321,7 @@ function renderJournalDetailView(entity) {
       if (facet.observation_count > 0) {
         const obs = document.createElement('span');
         obs.className = 'facet-rel-obs';
-        obs.textContent = `${groupedCount(facet.observation_count)} mention${facet.observation_count !== 1 ? 's' : ''}`;
+        obs.textContent = journalNotesLabel(facet.observation_count);
         meta.appendChild(obs);
       }
 
@@ -5503,11 +5656,13 @@ async function fetchJournalSummary({allowTypeReset = true} = {}) {
   params.set('limit', String(JOURNAL_ENTITY_PAGE_SIZE));
   if (journalEntityType) params.set('type', journalEntityType);
   if (journalEntitySearch) params.set('q', journalEntitySearch);
+  params.set('hidden', journalFolder === 'hidden' ? 'only' : 'exclude');
   try {
     return await window.apiJson(`/app/entities/api/journal/summary?${params.toString()}`);
   } catch (err) {
     if (allowTypeReset && journalEntityType && err?.reasonCode === 'invalid_entity_type') {
       journalEntityType = '';
+      journalFolder = '';
       journalEntityPage = 0;
       writeJournalListState({replace: true});
       return fetchJournalSummary({allowTypeReset: false});
@@ -5566,6 +5721,7 @@ async function initEntities() {
   }
   loadEntityTypes();  // Load entity types first for UI elements
   loadEntities();
+  loadTidyGroups();
   reportUnfinishedEntityDeletes();
   setupCortexListener();
 
@@ -5797,15 +5953,17 @@ function entityCountLabel(count) {
 }
 
 function journalListStateKey() {
-  return `${journalEntitySearch}\u0000${journalEntityType}\u0000${journalEntityPage}`;
+  return `${journalEntitySearch}\u0000${journalFolder}\u0000${journalEntityPage}`;
 }
 
 /// The URL query is the source of truth for the list state, so browser history
 /// restores the search term, the type bucket and the page together.
 function readJournalListState() {
   const params = new URLSearchParams(location.search);
-  journalEntitySearch = (params.get('q') || '').trim();
-  journalEntityType = (params.get('type') || '').trim().toLowerCase();
+  journalFolder = (params.get('folder') || params.get('type') || '').trim().toLowerCase();
+  const isGroup = journalFolder === 'ids' || journalFolder === 'duplicates';
+  journalEntityType = journalFolder === 'hidden' || isGroup ? '' : journalFolder;
+  journalEntitySearch = isGroup ? '' : (params.get('q') || '').trim();
   const page = Number.parseInt(params.get('page') || '', 10);
   journalEntityPage = Number.isFinite(page) && page > 1 ? page - 1 : 0;
 }
@@ -5813,7 +5971,8 @@ function readJournalListState() {
 function writeJournalListState({replace = false} = {}) {
   const params = new URLSearchParams(location.search);
   if (journalEntitySearch) params.set('q', journalEntitySearch); else params.delete('q');
-  if (journalEntityType) params.set('type', journalEntityType); else params.delete('type');
+  params.delete('type');
+  if (journalFolder) params.set('folder', journalFolder); else params.delete('folder');
   if (journalEntityPage > 0) params.set('page', String(journalEntityPage + 1)); else params.delete('page');
   const query = params.toString();
   const url = `${location.pathname}${query ? `?${query}` : ''}${location.hash}`;
@@ -5853,96 +6012,207 @@ function showJournalListError(err) {
   box.hidden = false;
 }
 
-function renderJournalTypeFilter() {
-  const container = document.getElementById('journal-entity-cards-content');
-  let filter = document.getElementById('journal-entity-type-filter');
-  if (!filter) {
-    const label = document.createElement('label');
-    label.className = 'journal-entity-filter';
-    label.textContent = 'type ';
-    filter = document.createElement('select');
-    filter.id = 'journal-entity-type-filter';
-    label.append(filter);
-    container.before(label);
-    filter.addEventListener('change', () => {
-      journalEntityType = filter.value;
-      journalEntityPage = 0;
-      writeJournalListState();
-      loadJournalEntities({silent: true, queryChanged: true});
-    });
-  }
-  filter.replaceChildren();
-  const all = document.createElement('option');
-  all.value = '';
-  all.textContent = `all types (${groupedCount(journalSummary.entity_total || 0)})`;
-  filter.append(all);
-  const buckets = journalSummary.type_counts || [];
-  buckets.forEach(({bucket, count}) => {
-    const option = document.createElement('option');
-    option.value = bucket;
-    option.textContent = `${bucket} (${groupedCount(count)})`;
-    filter.append(option);
-  });
-  if (journalEntityType && !buckets.some(({bucket}) => bucket === journalEntityType)) {
-    const option = document.createElement('option');
-    option.value = journalEntityType;
-    option.textContent = `${journalEntityType} (0)`;
-    filter.append(option);
-  }
-  filter.value = journalEntityType;
-}
-
 function renderJournalEntities() {
   const container = document.getElementById('journal-entity-cards-content');
   const noEntities = document.getElementById('no-journal-entities');
   const countEl = document.getElementById('journal-card-search-count');
   const noMatchEl = document.getElementById('no-journal-card-matches');
   if (!container || !journalSummary) return;
+  renderJournalFolders();
+  renderTidyBand();
+  const groupFolder = journalFolder === 'ids' || journalFolder === 'duplicates';
+  document.getElementById('journal-list-panel').hidden = groupFolder;
+  document.getElementById('journal-ids-panel').hidden = journalFolder !== 'ids';
+  document.getElementById('journal-dups-panel').hidden = journalFolder !== 'duplicates';
+  if (journalFolder === 'ids') { renderIdsPanel(); return; }
+  if (journalFolder === 'duplicates') { renderDupsPanel(); return; }
   const items = journalSummary.items || [];
   const total = journalSummary.total || 0;
   const entityTotal = journalSummary.entity_total || 0;
   const start = journalSummary.offset || 0;
   const searchInput = document.getElementById('journal-entity-card-search');
-  if (searchInput && !journalSearchDebounce && searchInput.value.trim() !== journalEntitySearch) {
-    searchInput.value = journalEntitySearch;
+  if (searchInput) {
+    if (!journalSearchDebounce && searchInput.value.trim() !== journalEntitySearch) {
+      searchInput.value = journalEntitySearch;
+    }
+    searchInput.placeholder = `search ${groupedCount(journalFolderCount(journalFolder))} entities`;
   }
-  renderJournalTypeFilter();
   container.replaceChildren();
+  container.classList.add('journal-rows-plain');
   container.removeAttribute('aria-busy');
   noEntities.style.display = entityTotal ? 'none' : 'block';
   // `.no-card-matches` carries `display:none` in the stylesheet, so the
   // visible state has to name its own display value.
+  noMatchEl.textContent = journalEntitySearch ? `no entities match "${journalEntitySearch}".` : 'nothing here.';
   noMatchEl.style.display = entityTotal && !total ? 'block' : 'none';
-  countEl.style.display = '';
   countEl.textContent = total
-    ? `${groupedCount(start + 1)}–${groupedCount(start + items.length)} of ${entityCountLabel(total)}`
-    : entityCountLabel(0);
-  let label = null, grid = null;
-  items.forEach(entity => {
-    const bucket = entity.type_bucket || 'other';
-    if (bucket !== label) {
-      label = bucket;
-      const group = document.createElement('section'); group.className = 'entity-type-group';
-      const heading = document.createElement('h2'); heading.className = 'entity-type-header'; heading.textContent = label;
-      grid = document.createElement('div'); grid.className = 'entity-cards-grid'; group.append(heading, grid); container.append(group);
-    }
-    grid.append(createJournalEntityCard(entity));
-  });
+    ? `${groupedCount(start + 1)}–${groupedCount(start + items.length)} of ${groupedCount(total)}`
+    : '';
+  items.forEach(entity => container.append(createJournalEntityRow(entity)));
+  const pager = document.getElementById('journal-list-pager');
+  pager.replaceChildren();
   if (total > JOURNAL_ENTITY_PAGE_SIZE) {
-    const nav = document.createElement('nav'); nav.className = 'journal-entity-pages'; nav.setAttribute('aria-label','entity pages');
-    for (const [text,delta,disabled] of [['previous',-1,journalEntityPage===0],['next',1,start+items.length>=total]]) {
-      const button = document.createElement('button'); button.type = 'button'; button.textContent = text; button.disabled = disabled;
+    for (const [text, label, delta, disabled] of [['‹', 'previous page', -1, journalEntityPage === 0], ['›', 'next page', 1, start + items.length >= total]]) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.textContent = text;
+      button.setAttribute('aria-label', label);
+      button.disabled = disabled;
       button.onclick = () => {
         journalEntityPage += delta;
         writeJournalListState();
         loadJournalEntities({silent: true}).then(() => {
-          countEl.tabIndex = -1; countEl.focus(); countEl.scrollIntoView({block:'center'});
+          countEl.tabIndex = -1; countEl.focus(); countEl.scrollIntoView({block: 'center'});
         });
       };
-      nav.append(button);
+      pager.append(button);
     }
-    container.append(nav);
   }
+}
+
+const JOURNAL_FOLDERS = [
+  ['', 'all', 'all'],
+  ['person', 'people', 'people'],
+  ['company', 'companies', 'companies'],
+  ['project', 'projects', 'projects'],
+  ['tool', 'tools', 'tools'],
+  ['other', 'other', 'other'],
+  ['hidden', 'hidden', 'hidden'],
+];
+
+function journalFolderCount(folder) {
+  const counts = journalSummary?.folder_counts || {};
+  if (folder === 'ids') return tidyState.data?.id_shaped?.count || 0;
+  if (folder === 'duplicates') return tidyState.data?.duplicates?.count || 0;
+  const entry = JOURNAL_FOLDERS.find(([key]) => key === folder);
+  return entry ? (counts[entry[2]] || 0) : 0;
+}
+
+function selectJournalFolder(folder) {
+  journalFolder = folder;
+  journalEntityType = ['', 'hidden', 'ids', 'duplicates'].includes(folder) ? '' : folder;
+  journalEntitySearch = '';
+  journalEntityPage = 0;
+  const searchInput = document.getElementById('journal-entity-card-search');
+  if (searchInput) searchInput.value = '';
+  if (folder === 'ids') { tidyState.idsPage = 0; captureIdSelection(); }
+  if (folder === 'duplicates') tidyState.dupsPage = 0;
+  writeJournalListState();
+  if (folder === 'ids' || folder === 'duplicates') {
+    renderJournalEntities();
+    if (!tidyState.data && !tidyState.loading) loadTidyGroups();
+    return;
+  }
+  loadJournalEntities({silent: true, queryChanged: true});
+}
+
+function renderJournalFolders() {
+  const nav = document.getElementById('journal-folders');
+  if (!nav) return;
+  nav.replaceChildren();
+  const folderButton = (key, label, count) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'journal-folder';
+    button.dataset.folder = key;
+    button.setAttribute('aria-current', journalFolder === key ? 'true' : 'false');
+    const name = document.createElement('span');
+    name.textContent = label;
+    button.append(name);
+    if (count !== null) {
+      const num = document.createElement('span');
+      num.className = 'journal-folder-count';
+      num.textContent = groupedCount(count);
+      button.append(num);
+    }
+    button.onclick = () => selectJournalFolder(key);
+    return button;
+  };
+  JOURNAL_FOLDERS.forEach(([key, label]) => nav.append(folderButton(key, label, journalFolderCount(key))));
+  const heading = document.createElement('p');
+  heading.className = 'journal-folder-heading';
+  heading.textContent = 'worth a look';
+  nav.append(heading);
+  const loaded = Boolean(tidyState.data);
+  nav.append(folderButton('ids', 'look like an ID', loaded ? journalFolderCount('ids') : null));
+  nav.append(folderButton('duplicates', 'possible duplicates', loaded ? journalFolderCount('duplicates') : null));
+}
+
+/// The per-entity count is the notes count everywhere in this app. A null
+/// count (an unreadable notes file) is an empty cell, never "no notes".
+function journalNotesLabel(count) {
+  if (count === null || count === undefined) return '';
+  if (count === 0) return 'no notes';
+  return count === 1 ? '1 note' : `${groupedCount(count)} notes`;
+}
+
+function appendJournalRowCells(row, entity, {notes, day}) {
+  const name = document.createElement('span');
+  name.className = 'journal-row-name';
+  name.textContent = entity.name;
+  if (entity.is_principal) {
+    const badge = document.createElement('span');
+    badge.className = 'journal-row-badge';
+    badge.textContent = 'you';
+    name.append(badge);
+  }
+  if (entity.blocked) {
+    const badge = document.createElement('span');
+    badge.className = 'journal-row-badge';
+    badge.textContent = 'hidden';
+    name.append(badge);
+  }
+  const meta = document.createElement('span');
+  meta.className = 'journal-row-meta';
+  const type = document.createElement('span');
+  type.className = 'journal-row-type';
+  type.textContent = (entity.type_bucket || entity.type || 'other').toLowerCase();
+  const dots = document.createElement('span');
+  dots.className = 'journal-row-dots';
+  (entity.facets || []).forEach(facet => {
+    const record = typeof facet === 'string' ? facetRoster.find(f => f.name === facet) : facet;
+    const dot = document.createElement('span');
+    dot.className = 'entity-facet-dot';
+    dot.style.backgroundColor = record?.color || 'var(--ink-faint)';
+    dot.title = `facet: ${record?.title || record?.name || facet}`;
+    dot.setAttribute('role', 'img');
+    dot.setAttribute('aria-label', dot.title);
+    dots.append(dot);
+  });
+  const date = document.createElement('span');
+  date.className = 'journal-row-date';
+  // The weekday is dropped from dated days so the column stays narrow.
+  const shortDay = day ? (formatDateShort(day) || '').replace(/^[A-Za-z]{3}, /, '') : null;
+  if (shortDay) {
+    date.textContent = `last mentioned ${shortDay}`;
+    const absolute = formatMentionedDate(day);
+    if (absolute) date.title = `last mentioned ${absolute}`;
+  }
+  meta.append(type, dots, date);
+  const notesEl = document.createElement('span');
+  notesEl.className = 'journal-row-notes';
+  notesEl.textContent = journalNotesLabel(notes);
+  row.append(name, meta, notesEl);
+}
+
+function createJournalEntityRow(entity) {
+  const row = document.createElement('div');
+  row.className = 'journal-row';
+  row.setAttribute('role', 'button');
+  row.setAttribute('tabindex', '0');
+  row.dataset.entityId = entity.id;
+  appendJournalRowCells(row, entity, {
+    notes: entity.total_observation_count,
+    day: entity.last_active_ts ? entity.last_active_day : null,
+  });
+  row.onclick = () => navigateToEntity(entity.id);
+  row.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      navigateToEntity(entity.id);
+    }
+  });
+  return row;
 }
 
 function appendTypeIndicator(card, type) {
@@ -5968,90 +6238,6 @@ function appendDetailAffordance(card) {
   chevron.textContent = '\u203A';
   chevron.setAttribute('aria-hidden', 'true');
   card.appendChild(chevron);
-}
-
-function createJournalEntityCard(entity) {
-  const card = document.createElement('div');
-  card.className = 'entity-card';
-  card.setAttribute('role', 'button');
-  card.setAttribute('tabindex', '0');
-
-  // Principal styling for the journal owner
-  if (entity.is_principal) {
-    card.classList.add('entity-card-principal');
-
-    const principalBadge = document.createElement('div');
-    principalBadge.className = 'entity-card-principal-badge';
-    principalBadge.textContent = 'you';
-    card.appendChild(principalBadge);
-  }
-
-  // Blocked styling
-  if (entity.blocked) {
-    card.classList.add('entity-card-blocked');
-
-    const blockedBadge = document.createElement('div');
-    blockedBadge.className = 'entity-card-blocked-badge';
-    blockedBadge.textContent = 'hidden';
-    card.appendChild(blockedBadge);
-  }
-
-  card.onclick = () => navigateToEntity(entity.id);
-  card.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault();
-      navigateToEntity(entity.id);
-    }
-  });
-
-  // Mention count badge (top-right corner)
-  if (entity.total_observation_count > 0) {
-    const badge = document.createElement('div');
-    badge.className = 'entity-card-badge';
-    badge.textContent = groupedCount(entity.total_observation_count);
-    badge.title = `${groupedCount(entity.total_observation_count)} mention${entity.total_observation_count !== 1 ? 's' : ''}`;
-    badge.setAttribute('role', 'img');
-    badge.setAttribute('aria-label', badge.title);
-    card.appendChild(badge);
-  }
-
-  // Entity name
-  const nameEl = document.createElement('div');
-  nameEl.className = 'entity-card-name';
-  nameEl.textContent = entity.name;
-  card.appendChild(nameEl);
-
-  // Last-mentioned date
-  if (entity.last_active_ts) {
-    const dateEl = document.createElement('div');
-    dateEl.className = 'entity-card-date';
-    fillLastMentionedDate(dateEl, entity.last_active_day);
-    card.appendChild(dateEl);
-  }
-
-  // Facet dots
-  const facets = entity.facets || [];
-  if (facets.length > 0) {
-    const dotsContainer = document.createElement('div');
-    dotsContainer.className = 'entity-card-facet-dots';
-
-    facets.forEach(facet => {
-      const dot = document.createElement('span');
-      dot.className = 'entity-facet-dot';
-      dot.style.backgroundColor = facet.color || 'var(--ink-faint)';
-      dot.title = `facet: ${facet.title || facet.name}`;
-      dot.setAttribute('role', 'img');
-      dot.setAttribute('aria-label', dot.title);
-      dotsContainer.appendChild(dot);
-    });
-
-    card.appendChild(dotsContainer);
-  }
-
-  appendTypeIndicator(card, entity.type_bucket || entity.type);
-  appendDetailAffordance(card);
-
-  return card;
 }
 
 function renderEntityCards(searchTerm = '') {
@@ -6155,7 +6341,7 @@ function createEntityCard(entity) {
     const badge = document.createElement('div');
     badge.className = 'entity-card-mention-badge';
     badge.textContent = groupedCount(entity.observation_count);
-    badge.title = `${groupedCount(entity.observation_count)} mention${entity.observation_count > 1 ? 's' : ''}: times this entity came up`;
+    badge.title = journalNotesLabel(entity.observation_count);
     card.appendChild(badge);
   }
 
@@ -6476,4 +6662,1065 @@ async function confirmEntityDelete() {
     confirmBtn.disabled = false;
   }
 }
+
+// Tidy-up: the "look like an ID" and "possible duplicates" groups, bulk hide
+// with undo by operation, and merge / keep separate for duplicate pairs. The
+// groups read states the sets; every action acts on the set the owner saw and
+// re-reads afterwards only to refresh the view.
+const TIDY_PAGE_SIZE = 50;
+const TIDY_HIDE_BATCH = 50;
+// One merge per request: merges inside one request run back to back, so a
+// writer in another process polling the trust lock never gets a turn and gives
+// up after 10 s. The pause between requests is that turn.
+const TIDY_MERGE_BATCH = 1;
+const TIDY_GAP_MS = 100;
+const TIDY_RETRY_MS = 1000;
+const TIDY_OP_KEY = 'entities.tidyOperation';
+
+const tidyClock = {
+  sleep: (ms) => new Promise(resolve => setTimeout(resolve, ms)),
+};
+
+const tidyState = {
+  data: null,
+  error: null,
+  loading: false,
+  pending: null,
+  idsPage: 0,
+  dupsPage: 0,
+  idsPageData: null,
+  dupsPageData: null,
+  captured: null,
+  unticked: new Set(),
+  dupSelected: new Set(),
+  dupBusy: false,
+  dupStatus: null,
+  dupConfirm: null,
+  op: null,
+  running: false,
+};
+
+function tidyPlural(n, one, many) {
+  return n === 1 ? one : many;
+}
+
+function tidyPostJson(path, payload) {
+  return window.apiJson(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+}
+
+/// A thrown error with a 4xx status is the server answering "no"; anything
+/// else (a network error, a timeout, a 5xx, an unreadable body) leaves the
+/// outcome unknown.
+function tidyIsRefusal(err) {
+  return Boolean(err && err.status >= 400 && err.status < 500 && err.cause !== 'parse');
+}
+
+function tidyPathsText(paths) {
+  return paths.join(', ');
+}
+
+function tidyRecordsUnreadable(paths) {
+  return paths.length === 1
+    ? `a record in your journal can't be read (${paths[0]})`
+    : `${paths.length} records in your journal can't be read (${tidyPathsText(paths)})`;
+}
+
+async function fetchTidyPage(offset) {
+  return window.apiJson(`/app/entities/api/journal/tidy-up?offset=${offset}&limit=${TIDY_PAGE_SIZE}`);
+}
+
+/// Starts a groups read and keeps it, so a view that needs the result while
+/// one is already running waits for that read instead of skipping it.
+function loadTidyGroups(options) {
+  tidyState.pending = readTidyGroups(options);
+  return tidyState.pending;
+}
+
+async function readTidyGroups({attempts = 1} = {}) {
+  tidyState.loading = true;
+  let lastErr = null;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    if (attempt > 0) await tidyClock.sleep(TIDY_RETRY_MS);
+    try {
+      const data = await fetchTidyPage(0);
+      tidyState.data = data;
+      tidyState.idsPageData = tidyState.idsPage === 0 ? data : null;
+      tidyState.dupsPageData = tidyState.dupsPage === 0 ? data : null;
+      tidyState.error = null;
+      tidyState.loading = false;
+      if (journalFolder === 'ids' && !tidyState.captured) captureIdSelection();
+      if (tidyState.idsPage > 0 || tidyState.dupsPage > 0) await loadTidyPanelPages();
+      renderJournalEntities();
+      return true;
+    } catch (err) {
+      lastErr = err;
+    }
+  }
+  window.logError(lastErr, { context: 'entities: tidy-up groups failed' });
+  tidyState.error = lastErr;
+  tidyState.loading = false;
+  renderJournalEntities();
+  return false;
+}
+
+async function loadTidyPanelPages() {
+  try {
+    if (tidyState.idsPage > 0) tidyState.idsPageData = await fetchTidyPage(tidyState.idsPage * TIDY_PAGE_SIZE);
+    if (tidyState.dupsPage > 0) tidyState.dupsPageData = await fetchTidyPage(tidyState.dupsPage * TIDY_PAGE_SIZE);
+  } catch (err) {
+    window.logError(err, { context: 'entities: tidy-up page failed' });
+  }
+}
+
+/// After any hide, undo, merge or keep separate: refresh rows, folder counts
+/// and the band. This never decides what an action acts on.
+async function refreshAfterTidyAction() {
+  tidyState.captured = null;
+  tidyState.unticked = new Set();
+  await Promise.allSettled([
+    loadJournalEntities({refresh: true, silent: true}),
+    loadTidyGroups(),
+  ]);
+}
+
+function idMembers() {
+  return tidyState.data?.id_shaped?.members || null;
+}
+
+function captureIdSelection() {
+  const members = idMembers();
+  tidyState.captured = members ? members.slice() : null;
+  tidyState.unticked = new Set();
+}
+
+function idSelection() {
+  return (tidyState.captured || []).filter(id => !tidyState.unticked.has(id));
+}
+
+function dupMembers() {
+  return tidyState.data?.duplicates?.members || [];
+}
+
+function dupKey(pair) {
+  return `${pair[0]}\u0000${pair[1]}`;
+}
+
+function renderTidyBand() {
+  const band = document.getElementById('journal-tidy-band');
+  if (!band) return;
+  band.replaceChildren();
+  const data = tidyState.data;
+  if (!data || journalFolder === 'ids' || journalFolder === 'duplicates') {
+    band.hidden = true;
+    return;
+  }
+  const card = (title, sample, folder) => {
+    const el = document.createElement('div');
+    el.className = 'journal-tidy-card';
+    el.dataset.tidyCard = folder;
+    const heading = document.createElement('span');
+    heading.className = 'journal-tidy-card-title';
+    heading.textContent = title;
+    el.append(heading);
+    if (sample) {
+      const line = document.createElement('span');
+      line.className = 'journal-tidy-card-sample';
+      line.textContent = sample;
+      el.append(line);
+    }
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'btn btn-secondary';
+    button.textContent = 'review';
+    button.onclick = () => selectJournalFolder(folder);
+    el.append(button);
+    band.append(el);
+  };
+  const ids = data.id_shaped || {};
+  if (ids.count > 0) {
+    const names = (ids.items || []).slice(0, 3).map(item => item.name).filter(Boolean);
+    card(`${groupedCount(ids.count)} ${tidyPlural(ids.count, 'looks like an ID', 'look like an ID')}`,
+      names.length ? `e.g. ${names.join(', ')}` : '', 'ids');
+  }
+  const dups = data.duplicates || {};
+  if (dups.count > 0) {
+    const first = (dups.items || [])[0];
+    card(`${groupedCount(dups.count)} ${tidyPlural(dups.count, 'possible duplicate', 'possible duplicates')}`,
+      first ? `e.g. ${first.names[0]} and ${first.names[1]}` : '', 'duplicates');
+  }
+  band.hidden = band.children.length === 0;
+}
+
+function tidyLoadError(panel) {
+  const box = document.createElement('div');
+  box.className = 'journal-tidy-status journal-tidy-status-error';
+  box.dataset.tidyState = 'load-error';
+  const text = document.createElement('span');
+  text.textContent = "couldn't load this group. ";
+  const retry = document.createElement('button');
+  retry.type = 'button';
+  retry.className = 'journal-tidy-link';
+  retry.textContent = 'try again';
+  retry.onclick = () => {
+    if (tidyState.dupConfirm?.pendingReport) {
+      finishDuplicateReport(tidyState.dupConfirm.pendingReport);
+      return;
+    }
+    loadTidyGroups();
+  };
+  box.append(text, retry);
+  panel.append(box);
+}
+
+function tidyPager(page, total, onPage) {
+  const pager = document.createElement('span');
+  pager.className = 'journal-tidy-pager';
+  if (total <= TIDY_PAGE_SIZE) return pager;
+  const start = page * TIDY_PAGE_SIZE;
+  const range = document.createElement('span');
+  range.className = 'journal-tidy-count';
+  range.textContent = `${groupedCount(start + 1)}–${groupedCount(Math.min(total, start + TIDY_PAGE_SIZE))} of ${groupedCount(total)}`;
+  pager.append(range);
+  for (const [text, label, delta, disabled] of [['‹', 'previous page', -1, page === 0], ['›', 'next page', 1, start + TIDY_PAGE_SIZE >= total]]) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = text;
+    button.setAttribute('aria-label', label);
+    button.disabled = disabled;
+    button.onclick = () => onPage(page + delta);
+    pager.append(button);
+  }
+  return pager;
+}
+
+function renderIdsPanel() {
+  const panel = document.getElementById('journal-ids-panel');
+  if (!panel) return;
+  panel.replaceChildren();
+  if (!tidyState.data) {
+    if (tidyState.error) tidyLoadError(panel);
+    else panel.innerHTML = window.SurfaceState.loading({ text: 'loading…' });
+    return;
+  }
+  const group = tidyState.data.id_shaped || {};
+  const damage = tidyState.data.damage || {count: 0, paths: []};
+  const n = group.count || 0;
+  const title = document.createElement('h3');
+  title.textContent = `${groupedCount(n)} ${tidyPlural(n, 'looks like an ID', 'look like an ID')}`;
+  const lede = document.createElement('p');
+  lede.className = 'journal-tidy-lede';
+  lede.textContent = 'names shaped like codes, file names or request numbers. none has a note.';
+  panel.append(title, lede);
+  if (damage.count > 0 || !group.actionable || !group.members) {
+    const paused = document.createElement('p');
+    paused.className = 'journal-tidy-paused';
+    paused.dataset.tidyState = 'paused';
+    paused.textContent = `hiding is paused: ${tidyRecordsUnreadable(damage.paths || [])}.`;
+    panel.append(paused);
+    appendHiddenExplainer(panel);
+    return;
+  }
+  if (!tidyState.captured) captureIdSelection();
+  const captured = new Set(tidyState.captured);
+  const total = tidyState.captured.length;
+  const running = tidyState.running;
+  const bar = document.createElement('div');
+  bar.className = 'journal-tidy-bar';
+  const count = document.createElement('span');
+  count.className = 'journal-tidy-count';
+  count.dataset.tidyCount = 'ids';
+  const ticked = idSelection().length;
+  count.textContent = `${groupedCount(ticked)} of ${groupedCount(total)} ticked`;
+  bar.append(count, tidyPager(tidyState.idsPage, total, async (page) => {
+    tidyState.idsPage = page;
+    tidyState.idsPageData = page === 0 ? tidyState.data : null;
+    renderIdsPanel();
+    if (page > 0) {
+      try {
+        tidyState.idsPageData = await fetchTidyPage(page * TIDY_PAGE_SIZE);
+      } catch (err) {
+        tidyState.idsPageData = {id_shaped: {items: []}};
+      }
+      renderIdsPanel();
+    }
+  }));
+  panel.append(bar);
+  const note = document.createElement('p');
+  note.className = 'journal-tidy-note';
+  note.textContent = 'unticked ones stay as they are.';
+  panel.append(note);
+  const actions = document.createElement('div');
+  actions.className = 'journal-tidy-actions';
+  const notNow = document.createElement('button');
+  notNow.type = 'button';
+  notNow.className = 'btn btn-secondary';
+  notNow.textContent = 'not now';
+  notNow.onclick = () => selectJournalFolder('');
+  const hide = document.createElement('button');
+  hide.type = 'button';
+  hide.className = 'btn btn-primary';
+  hide.dataset.action = 'tidy-hide';
+  hide.textContent = `hide ${groupedCount(ticked)}`;
+  hide.disabled = running || ticked === 0 || Boolean(tidyState.op && tidyState.op.phase !== 'finished');
+  hide.onclick = () => startBulkHide();
+  actions.append(notNow, hide);
+  panel.append(actions);
+  if (running && tidyState.op?.phase === 'hiding') {
+    const progress = document.createElement('p');
+    progress.className = 'journal-tidy-status';
+    progress.setAttribute('role', 'status');
+    progress.textContent = `hiding… ${groupedCount(tidyState.op.done || 0)} of ${groupedCount(tidyState.op.selection.length)}`;
+    panel.append(progress);
+  }
+  const rows = document.createElement('div');
+  rows.className = 'journal-rows';
+  const pageItems = tidyState.idsPageData?.id_shaped?.items;
+  if (!pageItems) {
+    rows.innerHTML = window.SurfaceState.loading({ text: 'loading…' });
+  } else {
+    pageItems.forEach(item => {
+      const row = document.createElement('div');
+      row.className = 'journal-row';
+      row.dataset.entityId = item.id;
+      const tick = document.createElement('label');
+      tick.className = 'journal-row-tick';
+      const box = document.createElement('input');
+      box.type = 'checkbox';
+      box.setAttribute('aria-label', item.name);
+      const inCapture = captured.has(item.id);
+      box.checked = inCapture && !tidyState.unticked.has(item.id);
+      box.disabled = !inCapture || running;
+      box.onchange = () => {
+        if (box.checked) tidyState.unticked.delete(item.id);
+        else tidyState.unticked.add(item.id);
+        renderIdsPanel();
+      };
+      tick.append(box);
+      row.append(tick);
+      appendJournalRowCells(row, item, {notes: item.kept_notes_count, day: item.last_active_day});
+      row.querySelector('.journal-row-name').onclick = () => navigateToEntity(item.folder);
+      row.querySelector('.journal-row-name').style.cursor = 'pointer';
+      rows.append(row);
+    });
+  }
+  panel.append(rows);
+  appendHiddenExplainer(panel);
+}
+
+function appendHiddenExplainer(panel) {
+  const more = document.createElement('details');
+  more.className = 'journal-tidy-more';
+  const summary = document.createElement('summary');
+  summary.textContent = 'more about hidden';
+  const body = document.createElement('p');
+  body.textContent = "they move to hidden, where you can unhide them. connected agents can't reach them. your own entity is never in this group.";
+  more.append(summary, body);
+  panel.append(more);
+}
+
+// --- bulk hide and undo by operation ---------------------------------------
+
+function newTidyOperationId() {
+  const bytes = new Uint8Array(16);
+  window.crypto.getRandomValues(bytes);
+  return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+}
+
+function saveTidyOp() {
+  const op = tidyState.op;
+  if (!op) {
+    try { window.sessionStorage.removeItem(TIDY_OP_KEY); } catch (_) { /* storage unavailable */ }
+    return;
+  }
+  const stored = {
+    id: op.id,
+    selection: op.selection,
+    phase: op.phase,
+    hidden: Array.from(op.hidden),
+    other: Array.from(op.other),
+    undo: op.undo ? {
+      total: op.undo.total,
+      restored: Array.from(op.undo.restored),
+      failed: Array.from(op.undo.failed),
+      skipped: Array.from(op.undo.skipped),
+    } : null,
+  };
+  try { window.sessionStorage.setItem(TIDY_OP_KEY, JSON.stringify(stored)); } catch (_) { /* storage unavailable */ }
+}
+
+function restoreTidyOp() {
+  let stored = null;
+  try { stored = JSON.parse(window.sessionStorage.getItem(TIDY_OP_KEY) || 'null'); } catch (_) { stored = null; }
+  if (!stored || !stored.id || !Array.isArray(stored.selection)) return;
+  const op = {
+    id: stored.id,
+    selection: stored.selection,
+    phase: stored.phase,
+    hidden: new Set(stored.hidden || []),
+    other: new Set(stored.other || []),
+    unanswered: true,
+    done: 0,
+    nextBatch: 0,
+    undo: stored.undo ? {
+      total: stored.undo.total,
+      restored: new Set(stored.undo.restored || []),
+      failed: new Set(stored.undo.failed || []),
+      skipped: new Set(stored.undo.skipped || []),
+    } : null,
+    view: null,
+  };
+  // A reload can't know how its last request ended.
+  if (op.phase === 'hiding') op.view = 'hide-stopped';
+  else if (op.phase === 'done') op.view = 'hide-done';
+  else if (op.phase === 'undoing') op.view = 'undo-stopped';
+  else return;
+  tidyState.op = op;
+  renderTidyToast();
+}
+
+function startBulkHide() {
+  if (tidyState.running) return;
+  const selection = idSelection();
+  if (!selection.length) return;
+  tidyState.op = {
+    id: newTidyOperationId(),
+    selection,
+    phase: 'hiding',
+    hidden: new Set(),
+    other: new Set(),
+    unanswered: false,
+    done: 0,
+    nextBatch: 0,
+    undo: null,
+    view: 'hiding',
+  };
+  saveTidyOp();
+  runBulkHide(0);
+}
+
+async function runBulkHide(fromBatch) {
+  const op = tidyState.op;
+  if (!op || tidyState.running) return;
+  tidyState.running = true;
+  op.phase = 'hiding';
+  op.view = 'hiding';
+  op.nextBatch = fromBatch;
+  op.done = fromBatch * TIDY_HIDE_BATCH;
+  saveTidyOp();
+  renderTidyToast();
+  renderJournalEntities();
+  const batches = Math.ceil(op.selection.length / TIDY_HIDE_BATCH);
+  let outcome = 'done';
+  for (let b = fromBatch; b < batches; b += 1) {
+    if (b > fromBatch) await tidyClock.sleep(TIDY_GAP_MS);
+    const ids = op.selection.slice(b * TIDY_HIDE_BATCH, (b + 1) * TIDY_HIDE_BATCH);
+    let response = null;
+    let refusal = null;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      if (attempt > 0) await tidyClock.sleep(TIDY_RETRY_MS);
+      try {
+        response = await tidyPostJson('/app/entities/api/journal/block', {operation: op.id, ids});
+        break;
+      } catch (err) {
+        if (tidyIsRefusal(err)) { refusal = err; break; }
+        op.unanswered = true;
+      }
+    }
+    op.nextBatch = b;
+    if (response) {
+      (response.hidden || []).forEach(id => op.hidden.add(id));
+      (response.already_hidden || []).forEach(id => op.other.add(id));
+      (response.missing || []).forEach(id => op.other.add(id));
+      (response.unreadable || []).forEach(entry => op.other.add(entry.id));
+      op.done = Math.min(op.selection.length, (b + 1) * TIDY_HIDE_BATCH);
+      saveTidyOp();
+      if (response.stopped) { outcome = 'hide-stopped'; break; }
+      renderTidyToast();
+      renderJournalEntities();
+      continue;
+    }
+    if (!refusal) { outcome = 'hide-stopped'; break; }
+    if (op.unanswered) { outcome = 'hide-stopped'; break; }
+    if (b === 0) {
+      op.refusal = refusal;
+      outcome = 'hide-failed';
+      break;
+    }
+    outcome = 'hide-partial';
+    break;
+  }
+  tidyState.running = false;
+  if (outcome === 'done') {
+    op.phase = 'done';
+    op.view = 'hide-done';
+  } else if (outcome === 'hide-failed') {
+    op.phase = 'finished';
+    op.view = 'hide-failed';
+  } else if (outcome === 'hide-partial') {
+    op.phase = 'done';
+    op.view = 'hide-partial';
+  } else {
+    op.view = 'hide-stopped';
+  }
+  saveTidyOp();
+  if (op.phase === 'finished') { tidyState.op = op; try { window.sessionStorage.removeItem(TIDY_OP_KEY); } catch (_) { /* storage unavailable */ } }
+  renderTidyToast();
+  await refreshAfterTidyAction();
+}
+
+async function runTidyUndo() {
+  const op = tidyState.op;
+  if (!op || tidyState.running) return;
+  tidyState.running = true;
+  op.phase = 'undoing';
+  if (!op.undo) op.undo = {total: null, restored: new Set(), failed: new Set(), skipped: new Set()};
+  op.view = 'undoing';
+  saveTidyOp();
+  renderTidyToast();
+  let outcome = 'undo-done';
+  let previousRemaining = null;
+  let first = true;
+  for (;;) {
+    if (!first) await tidyClock.sleep(TIDY_GAP_MS);
+    first = false;
+    let response = null;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      if (attempt > 0) await tidyClock.sleep(TIDY_RETRY_MS);
+      try {
+        response = await tidyPostJson('/app/entities/api/journal/unblock', {operation: op.id, limit: TIDY_HIDE_BATCH});
+        break;
+      } catch (err) {
+        if (tidyIsRefusal(err)) break;
+      }
+    }
+    if (!response) { outcome = 'undo-stopped'; break; }
+    const restored = response.restored || [];
+    const failed = response.failed || [];
+    if (op.undo.total === null) op.undo.total = restored.length + failed.length + (response.remaining || 0);
+    let progressed = false;
+    restored.forEach(entry => {
+      if (!op.undo.restored.has(entry.id)) progressed = true;
+      op.undo.restored.add(entry.id);
+    });
+    failed.forEach(entry => op.undo.failed.add(entry.id));
+    (response.skipped || []).forEach(path => op.undo.skipped.add(path));
+    saveTidyOp();
+    renderTidyToast();
+    if (response.stopped) { outcome = 'undo-stopped'; break; }
+    if (!response.remaining) break;
+    if (!progressed && previousRemaining === response.remaining) { outcome = 'undo-stopped'; break; }
+    previousRemaining = response.remaining;
+  }
+  tidyState.running = false;
+  op.view = outcome;
+  if (outcome === 'undo-done') {
+    op.phase = 'finished';
+    try { window.sessionStorage.removeItem(TIDY_OP_KEY); } catch (_) { /* storage unavailable */ }
+  } else {
+    saveTidyOp();
+  }
+  renderTidyToast();
+  await refreshAfterTidyAction();
+}
+
+function dismissTidyToast() {
+  if (tidyState.running) return;
+  tidyState.op = null;
+  saveTidyOp();
+  renderTidyToast();
+  renderJournalEntities();
+}
+
+function undoProgressCount(op) {
+  const done = new Set([...op.undo.restored, ...op.undo.failed]).size;
+  return op.undo.total === null ? done : Math.min(done, op.undo.total);
+}
+
+function tidyToastContent(op) {
+  const t = op.selection.length;
+  const m = op.hidden.size;
+  const k = op.other.size;
+  switch (op.view) {
+    case 'hiding':
+      return {text: `hiding… ${groupedCount(op.done || 0)} of ${groupedCount(t)}`};
+    case 'hide-done': {
+      let text = m === 1 ? 'hid 1 entity.' : `hid ${groupedCount(m)} entities.`;
+      if (k > 0) text += k === 1 ? ' 1 was already hidden or gone.' : ` ${groupedCount(k)} were already hidden or gone.`;
+      return {
+        text,
+        small: m === 1
+          ? "undo puts it back, facets included. it's also under hidden whenever you want it."
+          : "undo puts them back, facets included. they're also under hidden whenever you want them.",
+        actions: m > 0 ? ['undo'] : [],
+      };
+    }
+    case 'hide-partial':
+      return {
+        text: `hid ${groupedCount(m)} of ${groupedCount(t)}. ${t - m === 1 ? "the rest wasn't hidden." : "the rest weren't hidden."}`,
+        actions: m > 0 ? ['undo'] : [],
+      };
+    case 'hide-stopped':
+      return {text: 'hiding stopped partway. undo puts back everything it hid.', actions: ['undo', 'retry-hide']};
+    case 'hide-failed': {
+      const err = op.refusal;
+      if (err?.reasonCode === 'entity_record_damaged' && err.serverMessage) {
+        return {text: `couldn't hide them: a record in your journal can't be read (${err.serverMessage}).`};
+      }
+      return {text: "couldn't hide them.", actions: ['retry-new']};
+    }
+    case 'undoing':
+      return {text: `putting back… ${groupedCount(undoProgressCount(op))} of ${groupedCount(op.undo.total ?? 0)}`};
+    case 'undo-done': {
+      const restored = op.undo.restored.size;
+      const failed = op.undo.failed.size;
+      let text;
+      if (failed > 0) {
+        text = `put back ${groupedCount(restored)} of ${groupedCount(op.undo.total ?? restored + failed)}. ${failed === 1 ? "1 couldn't be put back; it's still under hidden." : `${groupedCount(failed)} couldn't be put back; they're still under hidden.`}`;
+      } else {
+        text = restored === 1 ? 'put back 1 entity.' : `put back ${groupedCount(restored)} entities.`;
+      }
+      const skipped = Array.from(op.undo.skipped);
+      let small = null;
+      if (restored > 0 && skipped.length > 0) {
+        small = `${restored === 1 ? 'it may have come back without all its facets' : 'some may have come back without all their facets'}: ${tidyRecordsUnreadable(skipped)}.`;
+      }
+      return {text, small};
+    }
+    case 'undo-stopped': {
+      const restored = op.undo?.restored.size || 0;
+      return {
+        text: restored > 0
+          ? `undo stopped after putting back ${groupedCount(restored)} of ${groupedCount(op.undo.total ?? restored)}. the rest are still under hidden.`
+          : "undo stopped before putting any back. they're still under hidden.",
+        actions: ['retry-undo'],
+      };
+    }
+    default:
+      return null;
+  }
+}
+
+function renderTidyToast() {
+  const toast = document.getElementById('journal-tidy-toast');
+  if (!toast) return;
+  const op = tidyState.op;
+  const content = op ? tidyToastContent(op) : null;
+  toast.replaceChildren();
+  if (!content) {
+    toast.hidden = true;
+    return;
+  }
+  toast.dataset.tidyState = op.view;
+  const text = document.createElement('span');
+  text.className = 'journal-tidy-toast-text';
+  text.textContent = content.text;
+  toast.append(text);
+  (content.actions || []).forEach(action => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.dataset.action = action;
+    button.textContent = action === 'undo' ? 'undo' : 'try again';
+    button.onclick = () => {
+      if (action === 'undo') runTidyUndo();
+      else if (action === 'retry-hide') runBulkHide(op.nextBatch || 0);
+      else if (action === 'retry-undo') runTidyUndo();
+      else if (action === 'retry-new') { tidyState.op = null; renderTidyToast(); startBulkHide(); }
+    };
+    toast.append(button);
+  });
+  if (!tidyState.running) {
+    const close = document.createElement('button');
+    close.type = 'button';
+    close.className = 'journal-tidy-toast-close';
+    close.setAttribute('aria-label', 'dismiss');
+    close.textContent = '×';
+    close.onclick = dismissTidyToast;
+    toast.append(close);
+  }
+  if (content.small) {
+    const small = document.createElement('p');
+    small.className = 'journal-tidy-toast-small';
+    small.textContent = content.small;
+    toast.append(small);
+  }
+  toast.hidden = false;
+}
+
+// --- possible duplicates -----------------------------------------------------
+
+function facetDisplayTitle(slug) {
+  const record = facetRoster.find(f => f.name === slug);
+  return record?.title || slug;
+}
+
+function facetListText(facets) {
+  const titles = facets.map(facetDisplayTitle);
+  if (titles.length <= 1) return titles.length ? `in ${titles[0]}` : '';
+  if (titles.length === 2) return `in ${titles[0]} and ${titles[1]}`;
+  return `in ${titles.slice(0, -1).join(', ')} and ${titles[titles.length - 1]}`;
+}
+
+/// Accepting a merge closes every open suggestion naming the merged source,
+/// in any facet. Walk the selected pairs in member order and keep a pair
+/// unless its source or target is the source of a pair already kept; every
+/// other listed pair naming a kept source leaves the list without merging.
+function planDuplicateMerge(members, selected) {
+  const keptSources = new Set();
+  const kept = [];
+  members.forEach(member => {
+    if (!selected.has(dupKey(member.pair))) return;
+    const [source, target] = member.pair;
+    if (keptSources.has(source) || keptSources.has(target)) return;
+    kept.push(member);
+    keptSources.add(source);
+  });
+  const keptKeys = new Set(kept.map(member => dupKey(member.pair)));
+  const leaving = members.filter(member => !keptKeys.has(dupKey(member.pair))
+    && (keptSources.has(member.pair[0]) || keptSources.has(member.pair[1])));
+  return {kept, leaving};
+}
+
+function renderDupsPanel() {
+  const panel = document.getElementById('journal-dups-panel');
+  if (!panel) return;
+  panel.replaceChildren();
+  if (!tidyState.data) {
+    if (tidyState.error) tidyLoadError(panel);
+    else panel.innerHTML = window.SurfaceState.loading({ text: 'loading…' });
+    return;
+  }
+  const group = tidyState.data.duplicates || {};
+  const n = group.count || 0;
+  const title = document.createElement('h3');
+  title.textContent = `${groupedCount(n)} ${tidyPlural(n, 'possible duplicate', 'possible duplicates')}`;
+  const lede = document.createElement('p');
+  lede.className = 'journal-tidy-lede';
+  lede.textContent = "pairs that might be the same person or thing. a merge can't be undone.";
+  panel.append(title, lede);
+  if (group.error || (tidyState.error && tidyState.dupConfirm?.pendingReport)) {
+    tidyLoadError(panel);
+    return;
+  }
+  const members = dupMembers();
+  const memberKeys = new Set(members.map(member => dupKey(member.pair)));
+  for (const key of Array.from(tidyState.dupSelected)) {
+    if (!memberKeys.has(key)) tidyState.dupSelected.delete(key);
+  }
+  const t = tidyState.dupSelected.size;
+  const busy = tidyState.dupBusy;
+  const bar = document.createElement('div');
+  bar.className = 'journal-tidy-bar';
+  const count = document.createElement('span');
+  count.className = 'journal-tidy-count';
+  count.dataset.tidyCount = 'duplicates';
+  count.textContent = `${groupedCount(t)} of ${groupedCount(members.length)} ticked`;
+  const selectAll = document.createElement('button');
+  selectAll.type = 'button';
+  selectAll.className = 'journal-tidy-link';
+  selectAll.dataset.action = 'dup-select-all';
+  selectAll.textContent = `select all ${groupedCount(members.length)}`;
+  selectAll.disabled = busy;
+  selectAll.onclick = () => {
+    members.forEach(member => tidyState.dupSelected.add(dupKey(member.pair)));
+    tidyState.dupConfirm = null;
+    renderDupsPanel();
+  };
+  bar.append(count, selectAll);
+  if (t > 0) {
+    const clear = document.createElement('button');
+    clear.type = 'button';
+    clear.className = 'journal-tidy-link';
+    clear.dataset.action = 'dup-clear';
+    clear.textContent = 'clear selection';
+    clear.disabled = busy;
+    clear.onclick = () => {
+      tidyState.dupSelected.clear();
+      tidyState.dupConfirm = null;
+      renderDupsPanel();
+    };
+    bar.append(clear);
+  }
+  bar.append(tidyPager(tidyState.dupsPage, members.length, async (page) => {
+    tidyState.dupsPage = page;
+    tidyState.dupsPageData = page === 0 ? tidyState.data : null;
+    renderDupsPanel();
+    if (page > 0) {
+      try {
+        tidyState.dupsPageData = await fetchTidyPage(page * TIDY_PAGE_SIZE);
+      } catch (err) {
+        tidyState.dupsPageData = {duplicates: {items: []}};
+      }
+      renderDupsPanel();
+    }
+  }));
+  panel.append(bar);
+  const actions = document.createElement('div');
+  actions.className = 'journal-tidy-actions';
+  const notNow = document.createElement('button');
+  notNow.type = 'button';
+  notNow.className = 'btn btn-secondary';
+  notNow.textContent = 'not now';
+  notNow.onclick = () => selectJournalFolder('');
+  const keep = document.createElement('button');
+  keep.type = 'button';
+  keep.className = 'btn btn-secondary';
+  keep.dataset.action = 'dup-keep';
+  keep.textContent = `keep ${groupedCount(t)} separate`;
+  keep.disabled = busy || t === 0;
+  keep.onclick = () => keepDuplicatesSeparate();
+  const merge = document.createElement('button');
+  merge.type = 'button';
+  merge.className = 'btn btn-primary';
+  merge.dataset.action = 'dup-merge';
+  merge.textContent = `merge ${groupedCount(t)}`;
+  merge.disabled = busy || t === 0;
+  merge.onclick = () => {
+    tidyState.dupConfirm = {...planDuplicateMerge(members, tidyState.dupSelected), focus: true};
+    tidyState.dupStatus = null;
+    renderDupsPanel();
+  };
+  actions.append(notNow, keep, merge);
+  panel.append(actions);
+  if (tidyState.dupConfirm && tidyState.dupConfirm.kept && !busy && !tidyState.dupConfirm.pendingReport) {
+    const confirmBox = renderMergeConfirm(tidyState.dupConfirm);
+    panel.append(confirmBox);
+    if (tidyState.dupConfirm.focus) {
+      tidyState.dupConfirm.focus = false;
+      const heading = confirmBox.querySelector('h4');
+      heading.tabIndex = -1;
+      heading.focus();
+      confirmBox.scrollIntoView({block: 'nearest'});
+    }
+  }
+  if (tidyState.dupStatus) {
+    const status = document.createElement('p');
+    status.className = 'journal-tidy-status';
+    status.setAttribute('role', 'status');
+    status.dataset.tidyState = 'dup-status';
+    status.textContent = tidyState.dupStatus;
+    panel.append(status);
+  }
+  const rows = document.createElement('div');
+  rows.className = 'journal-rows';
+  const pageItems = tidyState.dupsPageData?.duplicates?.items;
+  if (!pageItems) {
+    rows.innerHTML = window.SurfaceState.loading({ text: 'loading…' });
+  } else {
+    pageItems.forEach(item => {
+      const key = dupKey(item.pair);
+      const row = document.createElement('label');
+      row.className = 'journal-row journal-dup-row';
+      const tick = document.createElement('span');
+      tick.className = 'journal-row-tick';
+      const box = document.createElement('input');
+      box.type = 'checkbox';
+      box.checked = tidyState.dupSelected.has(key);
+      box.disabled = busy || !memberKeys.has(key);
+      box.onchange = () => {
+        if (box.checked) tidyState.dupSelected.add(key);
+        else tidyState.dupSelected.delete(key);
+        tidyState.dupConfirm = null;
+        renderDupsPanel();
+      };
+      tick.append(box);
+      const name = document.createElement('span');
+      name.className = 'journal-row-name';
+      name.textContent = `${item.names[0]} merges into ${item.names[1]}`;
+      const facets = document.createElement('span');
+      facets.className = 'journal-dup-facets';
+      facets.textContent = facetListText(item.facets || []);
+      row.append(tick, name, facets);
+      rows.append(row);
+    });
+  }
+  panel.append(rows);
+}
+
+function renderMergeConfirm(plan) {
+  const t = plan.kept.length;
+  const box = document.createElement('div');
+  box.className = 'journal-dup-confirm';
+  box.dataset.tidyState = 'merge-confirm';
+  box.setAttribute('role', 'dialog');
+  box.setAttribute('aria-label', t === 1 ? 'merge 1 pair?' : `merge ${t} pairs?`);
+  const heading = document.createElement('h4');
+  heading.textContent = t === 1 ? 'merge 1 pair?' : `merge ${groupedCount(t)} pairs?`;
+  const body = document.createElement('p');
+  body.textContent = "each pair below becomes one entity. a merge can't be undone.";
+  const list = document.createElement('ul');
+  list.dataset.list = 'kept';
+  plan.kept.forEach(member => {
+    const li = document.createElement('li');
+    li.textContent = `${member.names[0]} → ${member.names[1]}`;
+    list.append(li);
+  });
+  box.append(heading, body, list);
+  if (plan.leaving.length) {
+    const k = plan.leaving.length;
+    const line = document.createElement('p');
+    line.textContent = k === 1
+      ? '1 more pair leaves the list without merging: it includes an entity merged away above.'
+      : `${groupedCount(k)} more pairs leave the list without merging: each includes an entity merged away above.`;
+    const leaving = document.createElement('ul');
+    leaving.dataset.list = 'leaving';
+    plan.leaving.forEach(member => {
+      const li = document.createElement('li');
+      li.textContent = `${member.names[0]} → ${member.names[1]}`;
+      leaving.append(li);
+    });
+    box.append(line, leaving);
+  }
+  const actions = document.createElement('div');
+  actions.className = 'journal-tidy-actions';
+  const cancel = document.createElement('button');
+  cancel.type = 'button';
+  cancel.className = 'btn btn-secondary';
+  cancel.textContent = 'cancel';
+  cancel.onclick = () => { tidyState.dupConfirm = null; renderDupsPanel(); };
+  const confirm = document.createElement('button');
+  confirm.type = 'button';
+  confirm.className = 'btn btn-primary';
+  confirm.dataset.action = 'dup-merge-confirm';
+  confirm.textContent = `merge ${groupedCount(t)}`;
+  confirm.onclick = () => runDuplicateMerge(plan);
+  actions.append(cancel, confirm);
+  box.append(actions);
+  return box;
+}
+
+async function runDuplicateMerge(plan) {
+  if (tidyState.dupBusy) return;
+  tidyState.dupBusy = true;
+  const t = plan.kept.length;
+  const statuses = new Map();
+  tidyState.dupStatus = `merging… 0 of ${groupedCount(t)}`;
+  renderDupsPanel();
+  for (let start = 0; start < t; start += TIDY_MERGE_BATCH) {
+    if (start > 0) await tidyClock.sleep(TIDY_GAP_MS);
+    const chunk = plan.kept.slice(start, start + TIDY_MERGE_BATCH);
+    const items = chunk.map(member => member.rows[0]);
+    let data = null;
+    try {
+      data = await tidyPostJson('/app/curation/api/entity/accept-batch', {items});
+    } catch (err) {
+      window.logError(err, { context: 'entities: merge batch failed' });
+      break;
+    }
+    (data.results || []).forEach((result, index) => {
+      const member = chunk[index];
+      if (!member) return;
+      const merged = result.status === 'accepted' || result.status === 'already_accepted';
+      statuses.set(dupKey(member.pair), merged ? 'merged' : (result.status === 'error' ? 'failed' : 'undecided'));
+    });
+    tidyState.dupStatus = `merging… ${groupedCount(Math.min(t, start + chunk.length))} of ${groupedCount(t)}`;
+    renderDupsPanel();
+  }
+  const report = {kind: 'merge', keys: plan.kept.map(member => dupKey(member.pair)), statuses};
+  tidyState.dupBusy = false;
+  await finishDuplicateReport(report);
+}
+
+async function keepDuplicatesSeparate() {
+  if (tidyState.dupBusy) return;
+  const members = dupMembers().filter(member => tidyState.dupSelected.has(dupKey(member.pair)));
+  if (!members.length) return;
+  tidyState.dupBusy = true;
+  tidyState.dupConfirm = null;
+  tidyState.dupStatus = null;
+  renderDupsPanel();
+  const rows = members.flatMap(member => member.rows);
+  for (let start = 0; start < rows.length; start += TIDY_HIDE_BATCH) {
+    if (start > 0) await tidyClock.sleep(TIDY_GAP_MS);
+    const items = rows.slice(start, start + TIDY_HIDE_BATCH);
+    let answered = false;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      if (attempt > 0) await tidyClock.sleep(TIDY_RETRY_MS);
+      try {
+        await tidyPostJson('/app/curation/api/entity/dismiss-batch', {items});
+        answered = true;
+        break;
+      } catch (err) {
+        if (tidyIsRefusal(err)) { answered = true; break; }
+      }
+    }
+    if (!answered) break;
+  }
+  tidyState.dupBusy = false;
+  await finishDuplicateReport({kind: 'keep', keys: members.map(member => dupKey(member.pair)), statuses: new Map()});
+}
+
+/// Re-read the groups, then report. A merge's answered statuses always win;
+/// the re-read decides only pairs whose request got no answer.
+async function finishDuplicateReport(report) {
+  tidyState.dupConfirm = {pendingReport: report};
+  const reread = await loadTidyGroups({attempts: 3});
+  const t = report.keys.length;
+  let m = 0;
+  let f = 0;
+  if (!reread) {
+    const undecided = report.keys.some(key => !['merged', 'failed'].includes(report.statuses.get(key)));
+    if (report.kind === 'keep' || undecided) {
+      renderDupsPanel();
+      return;
+    }
+  }
+  const listed = new Set(dupMembers().map(member => dupKey(member.pair)));
+  report.keys.forEach(key => {
+    const status = report.statuses.get(key);
+    if (status === 'merged') m += 1;
+    else if (status === 'failed') f += 1;
+    else if (listed.has(key)) f += 1;
+    else m += 1;
+  });
+  tidyState.dupConfirm = null;
+  tidyState.dupSelected.clear();
+  tidyState.dupStatus = report.kind === 'merge' ? mergeReportText(m, f, t) : keepReportText(m, f, t);
+  renderJournalEntities();
+  loadJournalEntities({refresh: true, silent: true});
+}
+
+function mergeReportText(m, f, t) {
+  if (f === 0) return t === 1 ? 'merged 1 pair.' : `merged ${groupedCount(t)} pairs.`;
+  if (m === 0) return t === 1 ? "couldn't merge it. it's still listed." : "couldn't merge them. they're still listed.";
+  return `merged ${groupedCount(m)} of ${groupedCount(t)} pairs. ${f === 1 ? "1 couldn't be merged." : `${groupedCount(f)} couldn't be merged.`}`;
+}
+
+function keepReportText(m, f, t) {
+  if (f === 0) return t === 1 ? 'kept 1 pair separate.' : `kept ${groupedCount(t)} pairs separate.`;
+  if (m === 0) return t === 1 ? "couldn't keep it separate. it's still listed." : "couldn't keep them separate. they're still listed.";
+  return `kept ${groupedCount(m)} of ${groupedCount(t)} pairs separate. ${f === 1 ? '1 is still listed.' : `${groupedCount(f)} are still listed.`}`;
+}
+
+// --- detail view -------------------------------------------------------------
+
+async function renderJournalDetailIdNote(entity) {
+  const host = document.getElementById('journal-detail-indicators');
+  if (!host) return;
+  host.querySelector('.journal-detail-id-note')?.remove();
+  if (!entity?.entity_id) return;
+  if (!tidyState.data) await (tidyState.loading && tidyState.pending ? tidyState.pending : loadTidyGroups());
+  const members = idMembers();
+  if (!members || !members.includes(entity.entity_id)) return;
+  if (currentDetailEntity && currentDetailEntity.id !== entity.id) return;
+  const note = document.createElement('p');
+  note.className = 'journal-detail-id-note';
+  note.dataset.tidyState = 'id-note';
+  note.append('this name looks like an ID. ');
+  const link = document.createElement('button');
+  link.type = 'button';
+  link.className = 'journal-tidy-link';
+  link.textContent = 'review the group';
+  link.onclick = () => {
+    navigateToList();
+    selectJournalFolder('ids');
+  };
+  note.append(link);
+  host.append(note);
+}
+
+restoreTidyOp();
 </script>

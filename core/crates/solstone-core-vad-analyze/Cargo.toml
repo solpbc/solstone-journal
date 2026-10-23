@@ -18,6 +18,7 @@ full-tests = ["runtime"]
 ort = { workspace = true, features = ["api-24", "std"], optional = true }
 serde_json.workspace = true
 sha2.workspace = true
+solstone-core-speakers.workspace = true
 
 [[bin]]
 name = "solstone-core-vad-analyze"

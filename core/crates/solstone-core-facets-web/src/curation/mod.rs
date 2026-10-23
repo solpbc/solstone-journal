@@ -219,11 +219,14 @@ fn load_state(root: &Path) -> Result<Value, String> {
     let mut entity_items = Vec::new();
     let mut set_aside_items = Vec::new();
     for row in load_merge_candidates(root, None, None).map_err(|error| error.to_string())? {
-        let status = row.get("status").and_then(Value::as_str).unwrap_or("open");
-        if is_row_suppressed(&row) && status == "open" {
-            set_aside_items.push(set_aside_merge_item(row));
-        } else if status == "open" {
-            entity_items.push(entity_item(row));
+        match solstone_core_entity::entity_merge_open_class(&row) {
+            solstone_core_entity::EntityMergeOpenClass::SuppressedOpen => {
+                set_aside_items.push(set_aside_merge_item(row));
+            }
+            solstone_core_entity::EntityMergeOpenClass::Open => {
+                entity_items.push(entity_item(row));
+            }
+            solstone_core_entity::EntityMergeOpenClass::Other => {}
         }
     }
     let mut ambiguity_items = Vec::new();
@@ -385,25 +388,14 @@ fn sorted(mut items: Vec<Value>) -> Vec<Value> {
             .get("composite")
             .and_then(Value::as_f64)
             .unwrap_or_default();
-        right_composite.total_cmp(&left_composite).then_with(|| {
-            left["key"]
-                .as_str()
-                .unwrap_or_default()
-                .cmp(right["key"].as_str().unwrap_or_default())
-        })
+        solstone_core_entity::cmp_composite_then_key(
+            left_composite,
+            left["key"].as_str().unwrap_or_default(),
+            right_composite,
+            right["key"].as_str().unwrap_or_default(),
+        )
     });
     items
-}
-
-fn integer(value: Option<&Value>) -> i64 {
-    value
-        .and_then(Value::as_i64)
-        .or_else(|| {
-            value
-                .and_then(Value::as_str)
-                .and_then(|value| value.parse().ok())
-        })
-        .unwrap_or_default()
 }
 
 #[allow(clippy::too_many_arguments)] // The API item shape has these exact independent fields.
@@ -435,7 +427,7 @@ fn object(row: &Value, key: &str) -> serde_json::Map<String, Value> {
 }
 
 fn facet_item(row: Value) -> Value {
-    let strength = integer(row.get("count"));
+    let strength = solstone_core_entity::json_i64(row.get("count"));
     let mut evidence = object(&row, "evidence");
     evidence.insert("count".to_owned(), Value::from(strength));
     evidence.insert(
@@ -459,7 +451,7 @@ fn facet_item(row: Value) -> Value {
 
 fn entity_item(row: Value) -> Value {
     let mut evidence = object(&row, "evidence");
-    let strength = integer(evidence.get("detection_count"));
+    let strength = solstone_core_entity::json_i64(evidence.get("detection_count"));
     // There is deliberately no native neighborhood/Jaccard reader. Keeping this
     // branch degraded is observable contract: only the strength contributes.
     evidence.insert("composite".to_owned(), Value::from(strength as f64));
@@ -468,7 +460,7 @@ fn entity_item(row: Value) -> Value {
     let target_slug = string(&row, "target_slug");
     item(
         "entity_merge",
-        format!("{facet}|{source_slug}|{target_slug}"),
+        solstone_core_entity::entity_merge_row_key(&facet, &source_slug, &target_slug),
         None,
         Some(facet),
         Some(string_or(&row, "source", &source_slug)),
@@ -515,7 +507,7 @@ fn ambiguity_item(row: Value) -> Value {
         None,
         None,
         Value::Object(evidence),
-        integer(row.get("occurrence_count")),
+        solstone_core_entity::json_i64(row.get("occurrence_count")),
     )
 }
 
@@ -533,7 +525,7 @@ fn set_aside_merge_item(row: Value) -> Value {
     let facet = string(&row, "facet");
     let source_slug = string(&row, "source_slug");
     let target_slug = string(&row, "target_slug");
-    let key = format!("{facet}|{source_slug}|{target_slug}");
+    let key = solstone_core_entity::entity_merge_row_key(&facet, &source_slug, &target_slug);
     if let Some(obj) = entity.as_object_mut() {
         obj.insert("kind".to_owned(), json!("entity_merge_set_aside"));
         obj.insert("reason".to_owned(), Value::String(reason));
@@ -595,7 +587,7 @@ fn include_speaker(root: &Path, row: &Value) -> bool {
         return false;
     }
     let evidence = object(row, "evidence");
-    let detection_count = integer(evidence.get("detection_count")).max(1);
+    let detection_count = solstone_core_entity::json_i64(evidence.get("detection_count")).max(1);
     let source_id = string(row, "source_id");
     let target_id = string(row, "target_id");
     find_assertion(root, &source_id, &target_id)
@@ -2063,5 +2055,92 @@ mod tests {
             .as_array()
             .expect("ambiguity_items");
         assert_eq!(amb_items[0]["name"], hostile_query);
+    }
+
+    #[test]
+    fn entity_merge_open_list_matches_parent_fixture() {
+        let root = crate::test_support::phase_root("established_empty");
+        let candidates = [
+            r#"{"facet":"work","source_slug":"echo","target_slug":"foxtrot","status":"open","evidence":{"detection_count":9}}"#,
+            r#"{"facet":"personal","source_slug":"carol","target_slug":"dora","evidence":{"detection_count":5}}"#,
+            r#"{"facet":"work","source_slug":"bravo","target_slug":"alpha","status":"open","evidence":{"detection_count":5}}"#,
+            r#"{"facet":"home","source_slug":"alpha","target_slug":"bravo","status":"open","evidence":{"detection_count":"3"}}"#,
+            r#"{"facet":"work","source_slug":"alpha","target_slug":"bravo","status":"open","evidence":{"detection_count":2}}"#,
+            r#"{"facet":"work","source_slug":"alpha","target_slug":"carol","status":"open","evidence":{"detection_count":1}}"#,
+            r#"{"facet":"work","source_slug":"golf","target_slug":"hotel","status":"open","evidence":{"detection_count":100},"review":{"suppression":{"reason":"stale","at":"2026-01-01T00:00:00Z","evidence_key":"work|golf|hotel"}}}"#,
+            r#"{"facet":"work","source_slug":"india","target_slug":"juliet","status":"dismissed","evidence":{"detection_count":100}}"#,
+        ].join("\n") + "\n";
+        crate::test_support::write(
+            &root.path().join("entities/review-candidates.jsonl"),
+            &candidates,
+        );
+        std::fs::create_dir_all(root.path().join("entities/echo")).expect("mkdir echo");
+        std::fs::write(
+            root.path().join("entities/echo/entity.json"),
+            r#"{"id":"echo","name":"Echo","blocked":"true"}"#,
+        )
+        .expect("write echo identity");
+
+        let state = load_state(root.path()).expect("load_state");
+        let items = state["entity_items"].as_array().expect("entity_items");
+        assert_eq!(items.len(), 6);
+
+        let expected = [
+            ("work|echo|foxtrot", 9, 9.0, "echo", "foxtrot", "work"),
+            ("personal|carol|dora", 5, 5.0, "carol", "dora", "personal"),
+            ("work|bravo|alpha", 5, 5.0, "bravo", "alpha", "work"),
+            ("home|alpha|bravo", 3, 3.0, "alpha", "bravo", "home"),
+            ("work|alpha|bravo", 2, 2.0, "alpha", "bravo", "work"),
+            ("work|alpha|carol", 1, 1.0, "alpha", "carol", "work"),
+        ];
+
+        for (index, (key, strength, composite, source_slug, target_slug, facet)) in
+            expected.iter().enumerate()
+        {
+            let item = &items[index];
+            assert_eq!(item["key"], *key, "item {index} key mismatch");
+            assert_eq!(
+                item["strength"], *strength,
+                "item {index} strength mismatch"
+            );
+            assert_eq!(
+                item["composite"], *composite,
+                "item {index} composite mismatch"
+            );
+            assert_eq!(
+                item["source_slug"], *source_slug,
+                "item {index} source_slug mismatch"
+            );
+            assert_eq!(
+                item["target_slug"], *target_slug,
+                "item {index} target_slug mismatch"
+            );
+            assert_eq!(item["facet"], *facet, "item {index} facet mismatch");
+        }
+
+        let set_aside = state["set_aside_items"]
+            .as_array()
+            .expect("set_aside_items");
+        let golf_hotel = set_aside
+            .iter()
+            .find(|item| item["source_slug"] == "golf" && item["target_slug"] == "hotel");
+        assert!(golf_hotel.is_some(), "golf/hotel must be in set-aside");
+        assert_eq!(golf_hotel.unwrap()["kind"], "entity_merge_set_aside");
+
+        let india_juliet = set_aside
+            .iter()
+            .find(|item| item["source_slug"] == "india" && item["target_slug"] == "juliet");
+        assert!(
+            india_juliet.is_none(),
+            "india/juliet must not be in set-aside"
+        );
+
+        let echo_foxtrot = set_aside
+            .iter()
+            .find(|item| item["source_slug"] == "echo" && item["target_slug"] == "foxtrot");
+        assert!(
+            echo_foxtrot.is_none(),
+            "echo/foxtrot must not be in set-aside"
+        );
     }
 }

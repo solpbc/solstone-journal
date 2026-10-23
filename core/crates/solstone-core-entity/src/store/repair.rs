@@ -214,6 +214,8 @@ pub fn repair_entity_identities(
     };
     let entities_dir = contained_path(journal_root, "entities")
         .map_err(EntityIdentityRepairError::DirectoryScan)?;
+    #[cfg(any(test, feature = "test-hooks"))]
+    super::test_counters::test_instrumentation::increment_entities_dir_listing();
     let entries =
         list_dir_entries(&entities_dir).map_err(EntityIdentityRepairError::DirectoryScan)?;
 

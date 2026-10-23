@@ -18,7 +18,20 @@ let package = Package(
         .target(name: "HelperServer", dependencies: [
             .product(name: "Hummingbird", package: "hummingbird"),
         ]),
+        .target(name: "GuidedGeneration", dependencies: [
+            .product(name: "MLXGuidedGeneration", package: "mlx-swift-lm"),
+            .product(name: "MLXLMCommon", package: "mlx-swift-lm"),
+            .product(name: "MLX", package: "mlx-swift"),
+        ], exclude: ["LICENSE"]),
+        .testTarget(name: "GuidedGenerationTests", dependencies: [
+            "GuidedGeneration", "HelperServer",
+            .product(name: "HummingbirdTesting", package: "hummingbird"),
+            .product(name: "MLXLMCommon", package: "mlx-swift-lm"),
+            .product(name: "MLX", package: "mlx-swift"),
+            .product(name: "MLXNN", package: "mlx-swift"),
+        ]),
         .executableTarget(name: "mlx-helper", dependencies: [
+            "GuidedGeneration",
             "HelperServer",
             .product(name: "Hummingbird", package: "hummingbird"),
             .product(name: "MLX", package: "mlx-swift"),

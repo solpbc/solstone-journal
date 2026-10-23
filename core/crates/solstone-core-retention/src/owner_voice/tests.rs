@@ -393,3 +393,46 @@ fn an_absent_original_is_not_owed() {
     fs::remove_file(&fixture.original).unwrap();
     assert_eq!(finish(&fixture), OwnerVoiceDeletion::NotOwed);
 }
+
+#[test]
+fn an_original_removed_after_verification_is_not_our_deletion() {
+    let fixture = fixture("analyzed");
+    let transcript = fs::read(&fixture.jsonl).unwrap();
+    let claims = OutputClaims::acquire([fixture.jsonl.clone()], LockOptions::default()).unwrap();
+    let _commit = claims.commit(&fixture.segment).unwrap();
+    {
+        let observation = InputObservation::capture(&claims, &fixture.original).unwrap();
+        assert_eq!(observation.input_size(), AUDIO.len() as u64);
+        assert_eq!(hex(&observation.input_sha256()), sha(AUDIO));
+    }
+    let name = "120000_300.m4a";
+    let content = ContentName::new(name).unwrap();
+    let facts = read_sidecar(&fixture.jsonl, Some(vocab::AUDIO_TRANSCRIPT_ROW_KEY));
+    let FileVerdict::Releasable(proven) = resolve_file(
+        &ClosedHandlerSet,
+        "20261020",
+        "watch",
+        "120000_300",
+        &content,
+        AUDIO.len() as u64,
+        &facts,
+    ) else {
+        panic!("fixture must prove the original before it disappears");
+    };
+
+    // A noncooperating remover acts after verification, before the retention door.
+    fs::remove_file(&fixture.original).unwrap();
+    assert_eq!(
+        release_proven(&fixture.journal, &fixture.segment, &proven, name, at()),
+        OwnerVoiceDeletion::Gone
+    );
+    assert_eq!(
+        retention_events_for_name(&fixture.segment, name).unwrap(),
+        RetentionEventsForName::default()
+    );
+    assert_eq!(fs::read(&fixture.jsonl).unwrap(), transcript);
+    assert_eq!(
+        owner_voice_deletion_state(&fixture.segment, &fixture.jsonl),
+        OwedState::NotOwed
+    );
+}

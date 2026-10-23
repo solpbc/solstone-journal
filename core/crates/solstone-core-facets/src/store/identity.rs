@@ -31,6 +31,11 @@ impl FacetEntityLinkSnapshot {
     pub fn value(&self) -> &Value {
         &self.value
     }
+
+    /// Consume snapshot into original relationship object.
+    pub fn into_value(self) -> Value {
+        self.value
+    }
 }
 
 /// Read a facet-scoped relationship and its durable cross-reference.

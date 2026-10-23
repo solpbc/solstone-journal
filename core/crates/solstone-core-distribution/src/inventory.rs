@@ -735,13 +735,20 @@ impl Entry {
 #[must_use]
 pub fn entry_component_id(entry: &Entry) -> Option<&'static str> {
     match entry {
+        Entry::Copy { dest, .. }
+            if dest == "bin/mlx-helper"
+                || dest == "lib/libswiftCompatibilitySpan.dylib"
+                || dest.starts_with("bin/mlx-swift_Cmlx.bundle/") =>
+        {
+            Some("mlx-helper")
+        }
         Entry::ModelAsset { source, .. } => {
             if source.contains("wespeaker") {
                 Some("wespeaker-model")
             } else if source.contains("pyannote") {
                 Some("pyannote-model")
-            } else if source.contains("silero_vad") {
-                Some("silero-vad-model")
+            } else if source.contains("firered_vad") {
+                Some("firered-vad-model")
             } else if source.contains("rfdetr-nano") {
                 Some("rfdetr-model")
             } else if source.contains("rfdetr-") {
@@ -1219,6 +1226,8 @@ fn validate_inventory(path: &Path, inventory: &Inventory) -> Result<(), Inventor
             Entry::Copy { dest, .. } => {
                 let expected = if is_notice_path(dest) {
                     DeliveryClass::Notice
+                } else if entry_component_id(entry).is_some() {
+                    DeliveryClass::Component
                 } else {
                     DeliveryClass::FirstParty
                 };
@@ -2252,6 +2261,69 @@ mod tests {
         // agent-facing install/crossover README for the Linux v1-to-v2
         // crossover arc, and macOS distribution is out of scope for that arc.
         const MACOS_ONLY: &[&str] = &[
+            "lib/libswiftCompatibilitySpan.dylib",
+            "share/licenses/mlx-helper/swift-runtime/LICENSE.txt",
+            "bin/mlx-helper",
+            "bin/mlx-swift_Cmlx.bundle/Contents/Info.plist",
+            "bin/mlx-swift_Cmlx.bundle/Contents/Resources/default.metallib",
+            "share/provenance/mlx-helper/build.json",
+            "share/licenses/mlx-helper/swift-crypto/BoringSSL-LICENSE",
+            "share/licenses/mlx-helper/swift-nio-ssl/BoringSSL-LICENSE",
+            "share/licenses/mlx-helper/Package.resolved",
+            "share/licenses/mlx-helper/async-http-client/LICENSE.txt",
+            "share/licenses/mlx-helper/async-http-client/NOTICE.txt",
+            "share/licenses/mlx-helper/eventsource/LICENSE.md",
+            "share/licenses/mlx-helper/guided-generation/LICENSE",
+            "share/licenses/mlx-helper/hummingbird/LICENSE.txt",
+            "share/licenses/mlx-helper/hummingbird/NOTICE.txt",
+            "share/licenses/mlx-helper/mlx-swift/LICENSE",
+            "share/licenses/mlx-helper/mlx-swift/Source/Cmlx/fmt/LICENSE",
+            "share/licenses/mlx-helper/mlx-swift/Source/Cmlx/json/LICENSE.MIT",
+            "share/licenses/mlx-helper/mlx-swift/Source/Cmlx/metal-cpp/LICENSE.txt",
+            "share/licenses/mlx-helper/mlx-swift-lm/LICENSE",
+            "share/licenses/mlx-helper/mlx-swift-lm/Libraries/MLXCXGrammar/xgrammar/LICENSE",
+            "share/licenses/mlx-helper/mlx-swift-lm/Libraries/MLXCXGrammar/xgrammar/NOTICE",
+            "share/licenses/mlx-helper/swift-algorithms/LICENSE.txt",
+            "share/licenses/mlx-helper/swift-asn1/LICENSE.txt",
+            "share/licenses/mlx-helper/swift-asn1/NOTICE.txt",
+            "share/licenses/mlx-helper/swift-async-algorithms/LICENSE.txt",
+            "share/licenses/mlx-helper/swift-atomics/LICENSE.txt",
+            "share/licenses/mlx-helper/swift-certificates/LICENSE.txt",
+            "share/licenses/mlx-helper/swift-certificates/NOTICE.txt",
+            "share/licenses/mlx-helper/swift-collections/LICENSE.txt",
+            "share/licenses/mlx-helper/swift-configuration/LICENSE.txt",
+            "share/licenses/mlx-helper/swift-configuration/NOTICE.txt",
+            "share/licenses/mlx-helper/swift-crypto/LICENSE.txt",
+            "share/licenses/mlx-helper/swift-crypto/NOTICE.txt",
+            "share/licenses/mlx-helper/swift-distributed-tracing/LICENSE.txt",
+            "share/licenses/mlx-helper/swift-http-structured-headers/LICENSE.txt",
+            "share/licenses/mlx-helper/swift-http-types/LICENSE.txt",
+            "share/licenses/mlx-helper/swift-http-types/NOTICE.txt",
+            "share/licenses/mlx-helper/swift-huggingface/LICENSE",
+            "share/licenses/mlx-helper/swift-jinja/LICENSE",
+            "share/licenses/mlx-helper/swift-log/LICENSE.txt",
+            "share/licenses/mlx-helper/swift-log/NOTICE.txt",
+            "share/licenses/mlx-helper/swift-metrics/LICENSE.txt",
+            "share/licenses/mlx-helper/swift-metrics/NOTICE.txt",
+            "share/licenses/mlx-helper/swift-nio/LICENSE.txt",
+            "share/licenses/mlx-helper/swift-nio/NOTICE.txt",
+            "share/licenses/mlx-helper/swift-nio/Sources/CNIOLLHTTP/LICENSE",
+            "share/licenses/mlx-helper/swift-nio-extras/LICENSE.txt",
+            "share/licenses/mlx-helper/swift-nio-extras/NOTICE.txt",
+            "share/licenses/mlx-helper/swift-nio-http2/LICENSE.txt",
+            "share/licenses/mlx-helper/swift-nio-http2/NOTICE.txt",
+            "share/licenses/mlx-helper/swift-nio-ssl/LICENSE.txt",
+            "share/licenses/mlx-helper/swift-nio-ssl/NOTICE.txt",
+            "share/licenses/mlx-helper/swift-nio-transport-services/LICENSE.txt",
+            "share/licenses/mlx-helper/swift-numerics/LICENSE.txt",
+            "share/licenses/mlx-helper/swift-service-context/LICENSE.txt",
+            "share/licenses/mlx-helper/swift-service-context/NOTICE.txt",
+            "share/licenses/mlx-helper/swift-service-lifecycle/LICENSE.txt",
+            "share/licenses/mlx-helper/swift-service-lifecycle/NOTICE.txt",
+            "share/licenses/mlx-helper/swift-syntax/LICENSE.txt",
+            "share/licenses/mlx-helper/swift-system/LICENSE.txt",
+            "share/licenses/mlx-helper/swift-transformers/LICENSE",
+            "share/licenses/mlx-helper/yyjson/LICENSE",
             "bin/parakeet-helper",
             "lib/solstone-ced/libced.dylib",
             "lib/solstone-nvattest/lib/libnvat.1.dylib",
@@ -2932,7 +3004,7 @@ zig_gnu = "x86_64-linux-gnu.2.28"
             .unwrap();
         let path = repo.join("core/distribution/inventory.toml");
         let inv = super::load_inventory(&path).expect("real inventory validates");
-        assert!(!inv.entry.is_empty());
+        assert!(!inv.entry.is_empty(), "inventory has no delivery entries");
         for entry in &inv.entry {
             assert!(entry.class().is_some());
         }
@@ -3206,12 +3278,13 @@ zig_gnu = "x86_64-linux-gnu.2.28"
             "pdfium",
             "wespeaker-model",
             "pyannote-model",
-            "silero-vad-model",
+            "firered-vad-model",
             "area-tier",
             "vulkan-loader",
             "msvc-runtime",
             "openmp",
             "screen-ocr",
+            "mlx-helper",
         ]
         .into_iter()
         .collect();

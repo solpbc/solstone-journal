@@ -60,7 +60,7 @@ impl Generation {
         if files.is_empty()
             || files.windows(2).any(|p| p[0].file == p[1].file)
             || files.iter().any(|m| {
-                !segment(&m.file)
+                !(segment(&m.file) || m.file == ".gitattributes")
                     || m.sha256.len() != 64
                     || !m.sha256.bytes().all(|b| b.is_ascii_hexdigit())
             })
@@ -441,6 +441,25 @@ pub fn collect(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn pinned_git_attributes_are_data_but_control_names_are_not() {
+        let member = |name: &str| Member {
+            file: name.into(),
+            sha256: "a".repeat(64),
+            size_bytes: 1,
+        };
+        assert!(Generation::new("local-model-mlx", vec![member(".gitattributes")]).is_ok());
+        for name in [
+            ".generation.json",
+            ".retiring.json",
+            ".unexpected",
+            "../weights",
+            "nested/weights",
+        ] {
+            assert!(Generation::new("local-model-mlx", vec![member(name)]).is_err());
+        }
+    }
+
     fn generation(root: &Path, bytes: &[u8]) -> (Generation, PathBuf) {
         let record = Generation::new(
             "test",

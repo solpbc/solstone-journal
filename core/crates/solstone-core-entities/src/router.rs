@@ -183,6 +183,10 @@ fn api_router_from_state(state: Arc<RouterState>) -> Router {
             get(journal_summary_route),
         )
         .route(
+            "/app/entities/api/journal/tidy-up",
+            get(journal_tidy_up_route),
+        )
+        .route(
             "/app/entities/api/journal/entity/{entity_id}",
             get(journal_entity_route)
                 .put(update_journal_entity_route)
@@ -203,6 +207,14 @@ fn api_router_from_state(state: Arc<RouterState>) -> Router {
         .route(
             "/app/entities/api/journal/entity/{entity_id}/unblock",
             post(unblock_journal_entity_route),
+        )
+        .route(
+            "/app/entities/api/journal/block",
+            post(block_journal_entities_route),
+        )
+        .route(
+            "/app/entities/api/journal/unblock",
+            post(unblock_journal_operation_route),
         )
         .route(
             "/app/entities/api/cancel-delete/{pending_id}",
@@ -2055,11 +2067,16 @@ async fn dismiss_facet_candidate_route(
     }
 }
 
-fn assemble_journal_entity_records(
+pub(crate) fn assemble_journal_entity_records(
     root: &Path,
     only: Option<&str>,
 ) -> Result<Vec<Value>, solstone_core_facets::FacetEntityWriteError> {
     let groups = solstone_core_entity::read_identity_group_map(root)?;
+    let winner_by_folder: HashMap<String, String> = groups
+        .groups
+        .iter()
+        .filter_map(|(id, dirs)| dirs.first().map(|dir| (dir.clone(), id.clone())))
+        .collect();
     let resolved = groups
         .groups
         .iter()
@@ -2083,13 +2100,20 @@ fn assemble_journal_entity_records(
         let identity_last_seen_ts = valid_last_seen_day(value)
             .filter(|&day| day <= today.as_str())
             .and_then(|day| solstone_core_entity::journal_day_start_ms(day, zone));
+        let entity_id = winner_by_folder
+            .get(&entity_dir)
+            .cloned()
+            .map(Value::String)
+            .unwrap_or(Value::Null);
+        let blocked = Value::Bool(solstone_core_entity::entity_is_hidden(value));
         records.push(json!({
             "id": entity_dir,
+            "entity_id": entity_id,
             "name": value.get("name").cloned().unwrap_or_else(|| json!("")),
             "type": value.get("type").cloned().unwrap_or_else(|| json!("")),
             "aka": value.get("aka").cloned().unwrap_or_else(|| json!([])),
             "is_principal": value.get("is_principal").cloned().unwrap_or_else(|| json!(false)),
-            "blocked": value.get("blocked").cloned().unwrap_or_else(|| json!(false)),
+            "blocked": blocked,
             "facets": [],
             "total_observation_count": 0,
             "last_active_ts": identity_last_seen_ts,
@@ -2254,7 +2278,7 @@ const JOURNAL_SUMMARY_MAX_LIMIT: usize = 100;
 const JOURNAL_TYPE_BUCKETS: [&str; 4] = ["person", "company", "project", "tool"];
 const JOURNAL_OTHER_BUCKET: &str = "other";
 
-fn journal_type_bucket(stored: &str) -> &'static str {
+pub(crate) fn journal_type_bucket(stored: &str) -> &'static str {
     let normalized = stored.trim().to_lowercase();
     JOURNAL_TYPE_BUCKETS
         .into_iter()
@@ -2262,7 +2286,7 @@ fn journal_type_bucket(stored: &str) -> &'static str {
         .unwrap_or(JOURNAL_OTHER_BUCKET)
 }
 
-fn journal_bucket_rank(bucket: &str) -> usize {
+pub(crate) fn journal_bucket_rank(bucket: &str) -> usize {
     JOURNAL_TYPE_BUCKETS
         .iter()
         .position(|candidate| *candidate == bucket)
@@ -2277,6 +2301,14 @@ struct JournalSummaryQuery {
     entity_type: Option<String>,
     q: Option<String>,
     sort: Option<String>,
+    hidden: Option<String>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum JournalHiddenFilter {
+    Include,
+    Exclude,
+    Only,
 }
 
 struct JournalSummaryParams {
@@ -2285,6 +2317,7 @@ struct JournalSummaryParams {
     bucket: Option<String>,
     needle: Option<String>,
     by_name: bool,
+    hidden: JournalHiddenFilter,
 }
 
 fn parse_journal_summary_query(
@@ -2329,12 +2362,24 @@ fn parse_journal_summary_query(
             )));
         }
     };
+    let hidden = match query.hidden.as_deref().map(str::trim) {
+        None | Some("") | Some("include") => JournalHiddenFilter::Include,
+        Some("exclude") => JournalHiddenFilter::Exclude,
+        Some("only") => JournalHiddenFilter::Only,
+        Some(_) => {
+            return Err(Box::new(refusal(
+                ReasonCode::InvalidRequestValue,
+                "hidden must be include, exclude or only",
+            )));
+        }
+    };
     Ok(JournalSummaryParams {
         offset: usize::try_from(offset).unwrap_or_default(),
         limit: usize::try_from(limit).unwrap_or_default(),
         bucket,
         needle: normalize_entity_search_value(query.q.clone()).map(|value| value.to_lowercase()),
         by_name,
+        hidden,
     })
 }
 
@@ -2343,6 +2388,7 @@ struct JournalSummaryRow {
     last_active_ts: i64,
     name_key: String,
     bucket: &'static str,
+    blocked: bool,
     item: Value,
 }
 
@@ -2354,6 +2400,13 @@ fn summarize_journal_entities(
     let entity_total = records.len();
     let mut type_counts: HashMap<&'static str, usize> = HashMap::new();
     let mut facet_counts: HashMap<String, usize> = HashMap::new();
+    let mut folder_all = 0usize;
+    let mut folder_people = 0usize;
+    let mut folder_companies = 0usize;
+    let mut folder_projects = 0usize;
+    let mut folder_tools = 0usize;
+    let mut folder_other = 0usize;
+    let mut folder_hidden = 0usize;
     let mut rows: Vec<JournalSummaryRow> = Vec::with_capacity(entity_total);
     for record in &records {
         let stored_type = record.get("type").and_then(Value::as_str).unwrap_or("");
@@ -2363,6 +2416,21 @@ fn summarize_journal_entities(
             .get("blocked")
             .and_then(Value::as_bool)
             .unwrap_or(false);
+        let entity_id = record.get("entity_id").cloned().unwrap_or(Value::Null);
+
+        if blocked {
+            folder_hidden += 1;
+        } else {
+            folder_all += 1;
+            match bucket {
+                "person" => folder_people += 1,
+                "company" => folder_companies += 1,
+                "project" => folder_projects += 1,
+                "tool" => folder_tools += 1,
+                _ => folder_other += 1,
+            }
+        }
+
         let empty = Vec::new();
         let facets = record
             .get("facets")
@@ -2404,8 +2472,10 @@ fn summarize_journal_entities(
             last_active_ts,
             name_key: name.to_lowercase(),
             bucket,
+            blocked,
             item: json!({
                 "id": record.get("id").cloned().unwrap_or_else(|| json!("")),
+                "entity_id": entity_id,
                 "name": name,
                 "type": stored_type,
                 "type_bucket": bucket,
@@ -2419,10 +2489,16 @@ fn summarize_journal_entities(
         });
     }
     rows.retain(|row| {
-        params
-            .bucket
-            .as_deref()
-            .is_none_or(|bucket| bucket == row.bucket)
+        let matches_hidden = match params.hidden {
+            JournalHiddenFilter::Include => true,
+            JournalHiddenFilter::Exclude => !row.blocked,
+            JournalHiddenFilter::Only => row.blocked,
+        };
+        matches_hidden
+            && params
+                .bucket
+                .as_deref()
+                .is_none_or(|bucket| bucket == row.bucket)
             && params
                 .needle
                 .as_deref()
@@ -2458,6 +2534,15 @@ fn summarize_journal_entities(
                 .map(|count| json!({"bucket": bucket, "count": count}))
         })
         .collect();
+    let folder_counts = json!({
+        "all": folder_all,
+        "people": folder_people,
+        "companies": folder_companies,
+        "projects": folder_projects,
+        "tools": folder_tools,
+        "other": folder_other,
+        "hidden": folder_hidden,
+    });
     Ok(json!({
         "items": items,
         "total": total,
@@ -2466,6 +2551,7 @@ fn summarize_journal_entities(
         "entity_total": entity_total,
         "type_counts": type_totals,
         "facet_counts": facet_counts,
+        "folder_counts": folder_counts,
     }))
 }
 
@@ -2487,6 +2573,56 @@ async fn journal_summary_route(
     .await
     {
         Ok(Ok(summary)) => Json(summary).into_response(),
+        _ => refusal(ReasonCode::EntityOperationFailed, "journal read failed"),
+    }
+}
+
+#[derive(Deserialize)]
+struct JournalTidyUpQuery {
+    offset: Option<String>,
+    limit: Option<String>,
+}
+
+async fn journal_tidy_up_route(
+    Extension(b): Extension<AccessBasis>,
+    State(root): State<Arc<RouterState>>,
+    Query(query): Query<JournalTidyUpQuery>,
+) -> Response {
+    if let Some(r) = admitted(&b) {
+        return r;
+    }
+    let offset = match index_plate_integer(query.offset.as_deref(), "offset", 0) {
+        Ok(v) => v,
+        Err(resp) => return *resp,
+    };
+    let limit = match index_plate_integer(
+        query.limit.as_deref(),
+        "limit",
+        JOURNAL_SUMMARY_DEFAULT_LIMIT as i64,
+    ) {
+        Ok(v) => v,
+        Err(resp) => return *resp,
+    };
+    if offset < 0 {
+        return refusal(
+            ReasonCode::InvalidRequestValue,
+            "offset must not be negative",
+        );
+    }
+    if limit < 0 || limit > JOURNAL_SUMMARY_MAX_LIMIT as i64 {
+        return refusal(
+            ReasonCode::InvalidRequestValue,
+            format!("limit must be between 0 and {JOURNAL_SUMMARY_MAX_LIMIT}"),
+        );
+    }
+    let offset = usize::try_from(offset).unwrap_or_default();
+    let limit = usize::try_from(limit).unwrap_or_default();
+    match solstone_core_serving::seam::run_blocking(move || {
+        crate::tidy::build_tidy_up_response(&root, offset, limit)
+    })
+    .await
+    {
+        Ok(Ok(response)) => Json(response).into_response(),
         _ => refusal(ReasonCode::EntityOperationFailed, "journal read failed"),
     }
 }
@@ -3109,6 +3245,171 @@ async fn unblock_journal_entity_route(
         ),
         Ok(Err(error)) => refusal(ReasonCode::EntityOperationFailed, error.to_string()),
         Err(_) => refusal(ReasonCode::EntityOperationFailed, "couldn't unhide entity"),
+    }
+}
+
+async fn block_journal_entities_route(
+    Extension(b): Extension<AccessBasis>,
+    State(root): State<Arc<RouterState>>,
+    request: Request,
+) -> Response {
+    if let Some(r) = admitted(&b) {
+        return r;
+    }
+    let bytes = match axum::body::to_bytes(request.into_body(), usize::MAX).await {
+        Ok(bytes) => bytes,
+        Err(_) => {
+            return refusal(
+                ReasonCode::InvalidRequestValue,
+                "request body could not be read",
+            );
+        }
+    };
+    let value: serde_json::Value = match serde_json::from_slice(&bytes) {
+        Ok(v) => v,
+        Err(_) => return refusal(ReasonCode::InvalidRequestValue, "body is not valid JSON"),
+    };
+    let Some(obj) = value.as_object() else {
+        return refusal(
+            ReasonCode::InvalidRequestValue,
+            "body must be a JSON object",
+        );
+    };
+
+    if !obj.contains_key("operation") {
+        return refusal(ReasonCode::MissingRequiredField, "operation is required");
+    }
+    let Some(operation) = obj.get("operation").and_then(Value::as_str) else {
+        return refusal(
+            ReasonCode::InvalidRequestValue,
+            "operation must be a string",
+        );
+    };
+    let operation = operation.to_owned();
+
+    if !obj.contains_key("ids") {
+        return refusal(ReasonCode::MissingRequiredField, "ids is required");
+    }
+    let Some(ids_array) = obj.get("ids").and_then(Value::as_array) else {
+        return refusal(ReasonCode::InvalidRequestValue, "ids must be an array");
+    };
+    let mut ids = Vec::with_capacity(ids_array.len());
+    for item in ids_array {
+        let Some(id_str) = item.as_str() else {
+            return refusal(
+                ReasonCode::InvalidRequestValue,
+                "ids elements must be strings",
+            );
+        };
+        ids.push(id_str.to_owned());
+    }
+
+    match solstone_core_serving::seam::run_blocking(move || {
+        solstone_core_facets::block_journal_entities(&root, &operation, &ids)
+    })
+    .await
+    {
+        Ok(Ok(report)) => Json(json!(report)).into_response(),
+        Ok(Err(e)) if e.is_lock_timeout() => refusal(ReasonCode::EntityBusy, "entity busy"),
+        Ok(Err(solstone_core_facets::BulkJournalError::InvalidOperationId(id))) => refusal(
+            ReasonCode::InvalidRequestValue,
+            format!("invalid operation id: {id}"),
+        ),
+        Ok(Err(solstone_core_facets::BulkJournalError::InvalidIdsCount(count))) => refusal(
+            ReasonCode::InvalidRequestValue,
+            format!("invalid ids count: {count}"),
+        ),
+        Ok(Err(solstone_core_facets::BulkJournalError::OperationUndone(op))) => refusal(
+            ReasonCode::OperationUndone,
+            format!("operation {op} has already been undone"),
+        ),
+        Ok(Err(solstone_core_facets::BulkJournalError::PrincipalEntityProtected { entity_id })) => {
+            refusal(
+                ReasonCode::PrincipalEntityProtected,
+                format!("principal entity is protected from this operation: {entity_id}"),
+            )
+        }
+        Ok(Err(solstone_core_facets::BulkJournalError::RelationshipsUnreadable { path })) => {
+            refusal(ReasonCode::EntityRecordDamaged, path)
+        }
+        Ok(Err(other)) => refusal(ReasonCode::EntityOperationFailed, other.to_string()),
+        Err(_) => refusal(ReasonCode::EntityOperationFailed, "batch block failed"),
+    }
+}
+
+async fn unblock_journal_operation_route(
+    Extension(b): Extension<AccessBasis>,
+    State(root): State<Arc<RouterState>>,
+    request: Request,
+) -> Response {
+    if let Some(r) = admitted(&b) {
+        return r;
+    }
+    let bytes = match axum::body::to_bytes(request.into_body(), usize::MAX).await {
+        Ok(bytes) => bytes,
+        Err(_) => {
+            return refusal(
+                ReasonCode::InvalidRequestValue,
+                "request body could not be read",
+            );
+        }
+    };
+    let value: serde_json::Value = match serde_json::from_slice(&bytes) {
+        Ok(v) => v,
+        Err(_) => return refusal(ReasonCode::InvalidRequestValue, "body is not valid JSON"),
+    };
+    let Some(obj) = value.as_object() else {
+        return refusal(
+            ReasonCode::InvalidRequestValue,
+            "body must be a JSON object",
+        );
+    };
+
+    if !obj.contains_key("operation") {
+        return refusal(ReasonCode::MissingRequiredField, "operation is required");
+    }
+    let Some(operation) = obj.get("operation").and_then(Value::as_str) else {
+        return refusal(
+            ReasonCode::InvalidRequestValue,
+            "operation must be a string",
+        );
+    };
+    let operation = operation.to_owned();
+
+    if !obj.contains_key("limit") {
+        return refusal(ReasonCode::MissingRequiredField, "limit is required");
+    }
+    let Some(limit_val) = obj.get("limit") else {
+        return refusal(ReasonCode::MissingRequiredField, "limit is required");
+    };
+    let Some(limit) = limit_val.as_i64() else {
+        return refusal(ReasonCode::InvalidRequestValue, "limit must be an integer");
+    };
+
+    match solstone_core_serving::seam::run_blocking(move || {
+        solstone_core_facets::unblock_journal_operation(&root, &operation, limit)
+    })
+    .await
+    {
+        Ok(Ok(report)) => Json(json!(report)).into_response(),
+        Ok(Err(e)) if e.is_lock_timeout() => refusal(ReasonCode::EntityBusy, "entity busy"),
+        Ok(Err(solstone_core_facets::BulkJournalError::InvalidOperationId(id))) => refusal(
+            ReasonCode::InvalidRequestValue,
+            format!("invalid operation id: {id}"),
+        ),
+        Ok(Err(solstone_core_facets::BulkJournalError::InvalidLimit(limit))) => refusal(
+            ReasonCode::InvalidRequestValue,
+            format!("invalid limit: {limit}"),
+        ),
+        Ok(Err(solstone_core_facets::BulkJournalError::OperationUndone(op))) => refusal(
+            ReasonCode::OperationUndone,
+            format!("operation {op} has already been undone"),
+        ),
+        Ok(Err(solstone_core_facets::BulkJournalError::RelationshipsUnreadable { path })) => {
+            refusal(ReasonCode::EntityRecordDamaged, path)
+        }
+        Ok(Err(other)) => refusal(ReasonCode::EntityOperationFailed, other.to_string()),
+        Err(_) => refusal(ReasonCode::EntityOperationFailed, "batch unblock failed"),
     }
 }
 

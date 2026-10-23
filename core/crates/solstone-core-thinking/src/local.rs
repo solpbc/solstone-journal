@@ -47,6 +47,10 @@ pub fn models() -> Value {
 }
 
 pub fn availability(journal: &Path, model: &str) -> Value {
+    #[cfg(target_os = "macos")]
+    if let Some(readiness) = selected_mlx_readiness(journal) {
+        return availability_payload(model, readiness);
+    }
     let mut input = Map::from_iter([
         (
             String::from("journal"),
@@ -74,7 +78,26 @@ pub fn availability(journal: &Path, model: &str) -> Value {
 /// running host discovery. The explicit availability route remains the caller
 /// that performs a current host check.
 pub fn provider_status_availability(journal: &Path, model: &str) -> Value {
+    #[cfg(target_os = "macos")]
+    if let Some(readiness) = selected_mlx_readiness(journal) {
+        return availability_payload(model, readiness);
+    }
     availability_payload(model, inspect_local_installed(journal, model))
+}
+
+#[cfg(target_os = "macos")]
+fn selected_mlx_readiness(journal: &Path) -> Option<Value> {
+    match solstone_core_local::read_macos_local_backend_env() {
+        Ok(solstone_core_local::MacosLocalBackend::Metal) => None,
+        Ok(solstone_core_local::MacosLocalBackend::Mlx) => {
+            Some(solstone_core_local::install::mlx_candidate::inspect_present_default(journal))
+        }
+        Err(_) => Some(json!({
+            "status":"proof-unavailable",
+            "reason_code":"local_probe_failed",
+            "artifacts":{"binary_installed":false,"model_installed":false},
+        })),
+    }
 }
 
 fn availability_payload(model: &str, readiness: Value) -> Value {
@@ -143,6 +166,14 @@ fn availability_payload(model: &str, readiness: Value) -> Value {
 }
 
 pub fn bootstrap_status(journal: &Path, _model: &str) -> Value {
+    #[cfg(target_os = "macos")]
+    match solstone_core_local::read_macos_local_backend_env() {
+        Ok(
+            solstone_core_local::MacosLocalBackend::Metal
+            | solstone_core_local::MacosLocalBackend::Mlx,
+        ) => {}
+        Err(_) => return unavailable_bootstrap_status("local_probe_failed"),
+    }
     match solstone_core_local::install::status::read_observed_status(journal, "local") {
         Ok(status) => {
             let held = match is_held(journal, "local") {
@@ -281,6 +312,10 @@ pub fn start_bootstrap(
         LocalEndpointResolution::Bundled
     ) {
         return BootstrapResponse::ByoEndpointActive;
+    }
+    #[cfg(target_os = "macos")]
+    if let Some(readiness) = selected_mlx_readiness(journal) {
+        return classify_bootstrap(journal, &readiness);
     }
     let mut input = Map::from_iter([
         (

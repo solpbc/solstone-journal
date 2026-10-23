@@ -60,10 +60,11 @@ impl std::error::Error for FetchSetError {}
 pub fn unit_id(unit: &str) -> Option<&'static str> {
     match unit {
         "llama-server" | "llama-server-vulkan" => Some("llama-server"),
-        "local-model" | "location-accuracy" | "llama-server-cuda" | "parakeet-server"
-        | "parakeet-model" | "parakeet-coreml" | "ced-engine" | "ced-model" | "restic"
-        | "rclone" | "nvattest" => Some(match unit {
+        "local-model" | "local-model-mlx" | "location-accuracy" | "llama-server-cuda"
+        | "parakeet-server" | "parakeet-model" | "parakeet-coreml" | "ced-engine" | "ced-model"
+        | "restic" | "rclone" | "nvattest" => Some(match unit {
             "local-model" => "local-model",
+            "local-model-mlx" => "local-model-mlx",
             "location-accuracy" => "location-accuracy",
             "llama-server-cuda" => "llama-server-cuda",
             "parakeet-server" => "parakeet-server",
@@ -523,6 +524,16 @@ fn candidates(target: &str) -> Result<Vec<RuntimeFetch>, FetchSetError> {
                 size_bytes: a2.size_bytes,
             });
 
+            // Optional MLX model: admitted on macOS, fetched only when selected.
+            for a in catalog().iter().filter(|a| a.unit == "local-model-mlx") {
+                rows.push(RuntimeFetch {
+                    unit: a.unit,
+                    origin_key: a.origin_key,
+                    sha256: a.sha256,
+                    size_bytes: a.size_bytes,
+                });
+            }
+
             // all 23 parakeet-coreml rows from catalog
             for a in catalog().iter().filter(|a| a.unit == "parakeet-coreml") {
                 rows.push(RuntimeFetch {
@@ -704,7 +715,11 @@ mod tests {
             ("windows-aarch64", ORACLE_WINDOWS_X86_64),
         ] {
             let set = runtime_fetch_set(target).expect("runtime_fetch_set succeeds");
-            let keys: Vec<_> = set.iter().map(RuntimeFetch::origin_key).collect();
+            let keys: Vec<_> = set
+                .iter()
+                .filter(|f| f.unit() != "local-model-mlx")
+                .map(RuntimeFetch::origin_key)
+                .collect();
             assert_eq!(keys, oracle, "mismatch for {target}");
         }
     }
@@ -762,6 +777,7 @@ mod tests {
             "llama-server-vulkan",
             "llama-server-cuda",
             "local-model",
+            "local-model-mlx",
             "parakeet-server",
             "parakeet-model",
             "parakeet-coreml",

@@ -697,6 +697,61 @@ pub fn model_identity(model_id: &str) -> Option<Value> {
     (model_id == "local/qwen3.5-4b").then(|| json!({"unit":"local-model","model_id":"local/qwen3.5-4b","repo":"unsloth/Qwen3.5-4B-GGUF","revision":"main","filename":"Qwen3.5-4B-Q4_K_M.gguf","sha256":"00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4","mmproj_filename":"mmproj-F16.gguf","mmproj_sha256":"cd88edcf8d031894960bb0c9c5b9b7e1fea6ebee02b9f7ce925a00d12891f864"}))
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MlxFilePin {
+    pub name: &'static str,
+    pub size: u64,
+    pub sha256: &'static str,
+}
+
+pub use solstone_core_assets::{MLX_QWEN_MODEL_ID, MLX_QWEN_REVISION};
+
+pub static MLX_QWEN_PINS: std::sync::LazyLock<Vec<MlxFilePin>> = std::sync::LazyLock::new(|| {
+    solstone_core_assets::catalog()
+        .iter()
+        .filter(|row| row.unit == "local-model-mlx")
+        .map(|row| MlxFilePin {
+            name: row.filename,
+            size: row.size_bytes,
+            sha256: row.sha256,
+        })
+        .collect()
+});
+
+pub fn mlx_model_generation() -> solstone_core_artifact_download::generation::Generation {
+    use solstone_core_artifact_download::generation::{Generation, Member};
+    let mut generation = Generation::new(
+        "local-model-mlx",
+        MLX_QWEN_PINS
+            .iter()
+            .map(|pin| Member {
+                file: pin.name.into(),
+                sha256: pin.sha256.into(),
+                size_bytes: pin.size,
+            })
+            .collect(),
+    )
+    .expect("valid pinned MLX inventory");
+    generation.identity = super::mlx_candidate::artifact_target_json(&MLX_QWEN_PINS).0;
+    generation
+}
+
+pub fn mlx_generation_record_present(directory: &Path) -> bool {
+    std::fs::read(directory.join(".generation.json"))
+        .ok()
+        .and_then(|bytes| {
+            serde_json::from_slice::<solstone_core_artifact_download::generation::Generation>(
+                &bytes,
+            )
+            .ok()
+        })
+        .is_some_and(|record| record.unit == "local-model-mlx")
+}
+
+pub fn mlx_model_directory(journal: &Path) -> PathBuf {
+    mlx_model_generation().directory(&cache_root(journal).join("models"))
+}
+
 pub fn parakeet_vulkan_pin(
     key: &str,
 ) -> Option<(&'static str, &'static str, &'static str, &'static str)> {

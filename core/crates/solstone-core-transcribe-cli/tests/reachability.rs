@@ -31,7 +31,7 @@ fn standalone_binary_reaches_transcript_publication_with_stubbed_onnx_helpers() 
     let assets = journal.join("model-assets");
     fs::create_dir_all(&assets).expect("model assets directory");
     for name in [
-        "silero_vad_v6.onnx",
+        "firered_vad.onnx",
         "wespeaker-resnet34-256.onnx",
         "pyannote-segmentation-3.0.onnx",
     ] {

@@ -6,32 +6,47 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- checking for updates on linux now allows more time for a slow connection and shows why a check failed.
+- backup requests on windows now report a timeout when the connection times out just before the request deadline.
+- fixed screen descriptions stopping with a blank notification when the on-device model lost its connection mid-request. your journal now retries that request.
+- on an entity's page, the line "this name looks like an ID" now shows when you open the page from a link or reload it. before, it showed only when you got there from the list.
+- on a phone, the message that shows hiding progress and undo on the entities page no longer sits under the bar at the bottom of the screen.
+- merging possible duplicates now merges one pair at a time, so other changes to your entities can save while a long merge runs. before, those changes could give up partway through a merge of many pairs.
+- an entity's connections no longer list words only ever mentioned in your journal, such as "just" or "think", or names matched on a single word like "the". home already left these out.
+
+## [2.0.56] - 2026-10-23
+
+on windows, 2.0.56 is the first update since 2.0.54, so it also brings everything listed under 2.0.55, including the windows changes there.
+
 ### Changed
 
-- breaking cli change: `journal` now prints the equivalent `solstone journal` command and exits without running it. `journal` will be removed in the next release. update scripts and any hand-written schedules or service commands that use it.
+- breaking CLI change: `journal` now prints the equivalent `solstone journal` command and exits with an error without running it. update scripts and any hand-written schedules or service commands that use it.
 - unhiding an entity now puts it back in the facets it was in when you hid it. a facet you removed it from yourself before hiding stays removed. this works for entities you hide from now on.
+- the entities page now shows your entities as rows instead of cards, sorted into folders by type, with hidden entities in a folder of their own. each row shows how many notes it has.
+- the entities page now has two lists to tidy up. names that look like an ID and have no notes, such as file names or request numbers, can be hidden all at once, and one undo puts them all back. possible duplicates can be merged or kept separate in one step. a merge asks first, lists every pair, and can't be undone. possible duplicate entities have moved here from the curation page.
+- restoring an earlier version of a hidden entity now asks you to unhide it first.
 
 ### Fixed
 
-- fixed local models using a different GPU from the one you selected.
+- security fix on windows, first listed under 2.0.55: someone impersonating the update server could supply altered journal software as an update; updates now require a valid sol pbc signature on the complete package.
+- on linux and windows, fixed local models using a different GPU from the one you selected. if that GPU can't be used, local models now don't start instead of using another one.
 - fixed Apple Health and Oura imports stopping with an error after saving when your journal also holds a large import from another source, such as a long ChatGPT history. imports already saved are kept and show up on your next Oura sync or Apple Health import, with nothing to redo.
 - fixed Oura sync failing with an error from Oura on some connections, including ones carried over from an earlier version.
-
 - in the map's day and week views, a visit no longer shows a second time as "no departure reported" once your phone has reported when you left. if you left after midnight, the day you arrived now shows when you left.
-
 - on mac, local transcription now recovers opening words that it could silently leave out of a long recording. existing transcripts keep the words they have.
 - on linux, windows and mac, local transcription no longer cuts quiet stretches out of a recording, such as a conversation from your watch. it now transcribes the whole recording, so background tv or radio may show up in your transcripts too. existing transcripts keep the words they have.
-
 - in your connections, plans inferred by older versions of your journal no longer count as events attended together.
-- in your connections, people linked only by a calendar invite no longer show as "events together" or "often around". they're now labeled "calendar only".
+- in your connections, people linked only by a calendar invite no longer show as "events together" or "often around", for you or for agents reading your journal. they're now labeled "calendar only".
 - on the page for someone linked to you only by a calendar invite, "with you" no longer counts moments together. it now says "on your calendar only" with the latest day.
-- in your connections, people linked to you only by a calendar invite now show by name. before, they could show as an id.
-- on home, a connection's row no longer shows its latest meeting or calendar title. before, it labeled it "transcribed as".
+- in your connections, people linked to you only by a calendar invite now show by name. before, they could show as an ID.
+- on home, a connection's row no longer shows its latest meeting or calendar title. before, the title showed up labeled "transcribed as".
 - an entity you delete no longer shows up in connections, for you or for agents reading your journal. before, it could stay listed, and asking for its connections found no match.
 - on windows, the journal window no longer shows "setup stopped before it finished" when your journal takes a while to start for the first time. the window now waits longer for it, and setup goes on to the window's home screen.
-
 - when the only sign that someone was in a conversation is a name two people in your journal share, such as a first name, the activity no longer lists one of them as attending. that person is listed as mentioned instead, unless their voice or their full name shows which one it was. activities already in your journal keep their people as they are.
 - agents reading your journal now see who attended an activity apart from who was only mentioned in it. before, both were listed as participants.
+- your morning briefing no longer treats people an activity only mentions, such as someone named in an email you read, as being there. it's now less likely to say you met or talked with someone you only read about.
 
 ## [2.0.55] - 2026-10-22
 

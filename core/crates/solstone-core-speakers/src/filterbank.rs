@@ -22,6 +22,21 @@ pub fn compute_wespeaker_filterbank_cmn(
     audio: &[f32],
     sample_rate_hz: u32,
 ) -> Result<FeatureMatrix, SpeakerFeatureError> {
+    let mut features = compute_kaldi_filterbank(audio, sample_rate_hz)?;
+    if features.frames > 0 {
+        subtract_column_mean(features.frames, features.bins, &mut features.data);
+    }
+    Ok(features)
+}
+
+/// Raw 80-bin Kaldi log filterbanks for normalized mono 16 kHz audio.
+///
+/// Uses 25 ms Povey windows, 10 ms shifts and snipped edges. The waveform is
+/// scaled to PCM16 units; no recording-level feature normalization is applied.
+pub fn compute_kaldi_filterbank(
+    audio: &[f32],
+    sample_rate_hz: u32,
+) -> Result<FeatureMatrix, SpeakerFeatureError> {
     if sample_rate_hz != WESPEAKER_SAMPLE_RATE_HZ {
         return Err(SpeakerFeatureError::UnsupportedSampleRate {
             expected: WESPEAKER_SAMPLE_RATE_HZ,
@@ -53,7 +68,6 @@ pub fn compute_wespeaker_filterbank_cmn(
             &mut data[output_start..output_start + WESPEAKER_MEL_BINS],
         );
     }
-    subtract_column_mean(frames, WESPEAKER_MEL_BINS, &mut data);
     FeatureMatrix::from_row_major(frames, WESPEAKER_MEL_BINS, data)
 }
 

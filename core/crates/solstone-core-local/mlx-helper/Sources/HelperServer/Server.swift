@@ -71,7 +71,10 @@ private func failure(_ message: String, status: HTTPResponse.Status = .badReques
 
 private func decodeBody<T: Decodable>(_ request: Request, as: T.Type) async throws -> T {
     let buffer = try await request.body.collect(upTo: 32 * 1024 * 1024)
-    return try JSONDecoder().decode(T.self, from: Data(buffer.readableBytesView))
+    let data = Data(buffer.readableBytesView)
+    let decoder = JSONDecoder()
+    decoder.userInfo[ChatRequest.requestBodyKey] = data
+    return try decoder.decode(T.self, from: data)
 }
 
 public func makeApplication(

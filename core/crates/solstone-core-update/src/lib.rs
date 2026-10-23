@@ -305,7 +305,8 @@ fn check_selected(
 
     let check_output = match runner.run(Path::new("/bin/sh"), &check_args, StdinMode::Closed) {
         Ok(out) => out,
-        Err(_) => {
+        Err(error) => {
+            let timed_out = error.kind() == std::io::ErrorKind::TimedOut;
             return UpdateReport {
                 availability: Availability::Unknown,
                 current: Some(pos.current_journal_version),
@@ -316,14 +317,29 @@ fn check_selected(
                 route: Some(pos.route_kind.as_str().to_owned()),
                 hold,
                 target: None,
-                code: Some("runner-failed".to_owned()),
-                message: Some("could not run installer.".to_owned()),
+                code: Some(
+                    if timed_out {
+                        "list-timeout"
+                    } else {
+                        "runner-failed"
+                    }
+                    .to_owned(),
+                ),
+                message: Some(if timed_out {
+                    "catalogue check timed out. check your connection and try again.".to_owned()
+                } else {
+                    format!(
+                        "could not run installer: {}",
+                        bounded_diagnostic(&error.to_string())
+                    )
+                }),
                 components: None,
             };
         }
     };
 
     if !check_output.success {
+        let (code, message) = catalogue_failure(&check_output);
         return UpdateReport {
             availability: Availability::Unknown,
             current: Some(pos.current_journal_version),
@@ -334,8 +350,8 @@ fn check_selected(
             route: Some(pos.route_kind.as_str().to_owned()),
             hold,
             target: None,
-            code: Some("list-failed".to_owned()),
-            message: Some("catalogue check failed.".to_owned()),
+            code: Some(code),
+            message: Some(message),
             components: None,
         };
     }
@@ -473,6 +489,52 @@ fn check_selected(
             components: None,
         }
     }
+}
+
+fn bounded_diagnostic(text: &str) -> String {
+    let mut result = String::new();
+    for character in text.chars() {
+        let character = if character.is_control() {
+            ' '
+        } else {
+            character
+        };
+        if result.len() + character.len_utf8() > 512 {
+            break;
+        }
+        result.push(character);
+    }
+    result.trim().to_owned()
+}
+
+fn catalogue_failure(output: &InstallerOutput) -> (String, String) {
+    let value = serde_json::from_slice::<serde_json::Value>(&output.stdout)
+        .unwrap_or(serde_json::Value::Null);
+    let code = value["root_code"]
+        .as_str()
+        .filter(|code| {
+            !code.is_empty()
+                && code.len() <= 64
+                && code
+                    .bytes()
+                    .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
+        })
+        .unwrap_or("list-failed")
+        .to_owned();
+    let detail = value["message"]
+        .as_str()
+        .map(bounded_diagnostic)
+        .filter(|message| !message.is_empty())
+        .unwrap_or_else(|| bounded_diagnostic(&String::from_utf8_lossy(&output.stderr)));
+    let message = if detail.is_empty() {
+        match output.exit_code {
+            Some(code) => format!("catalogue check failed (installer exit {code})."),
+            None => "catalogue check failed (installer terminated by a signal).".to_owned(),
+        }
+    } else {
+        format!("catalogue check failed: {detail}")
+    };
+    (code, message)
 }
 
 fn base_report(pos: &PositiveOwnership, hold: HoldState, lane: &str) -> UpdateReport {
@@ -1620,6 +1682,64 @@ mod tests {
         let etc = dir.path().join("etc");
         (dir, prefix, data, etc)
     }
+    #[test]
+    fn catalogue_refusal_and_timeout_reach_the_public_report() {
+        struct TimedOut;
+        impl InstallerRunner for TimedOut {
+            fn run(
+                &self,
+                _: &Path,
+                _: &[OsString],
+                _: StdinMode,
+            ) -> std::io::Result<InstallerOutput> {
+                Err(std::io::ErrorKind::TimedOut.into())
+            }
+        }
+        let (dir, prefix, data, etc) = fixture();
+        let fetch = ScriptedFetch {
+            script_path: dir.path().join("installer.sh"),
+            fetch_called: Mutex::new(false),
+        };
+        let exe = prefix.join("current/bin/solstone");
+        let report = check(
+            &TimedOut,
+            &fetch,
+            &MockPackageProbe(false),
+            &exe,
+            &data,
+            &etc,
+            true,
+            None,
+        );
+        assert_eq!(report.availability, Availability::Unknown);
+        assert_eq!(report.code.as_deref(), Some("list-timeout"));
+        assert!(report.message.unwrap().len() <= 512);
+
+        // Fields captured from the real installer's --list --json refusal.
+        let refusal = serde_json::json!({"root_code":"lane-invalid","message":"Invalid release lane: invalid"});
+        let runner = ScriptedRunner {
+            responses: Mutex::new(vec![response(false, refusal.clone())]),
+            recorded_args: Mutex::new(vec![]),
+        };
+        let report = check(
+            &runner,
+            &fetch,
+            &MockPackageProbe(false),
+            &exe,
+            &data,
+            &etc,
+            true,
+            None,
+        );
+        assert_eq!(report.availability, Availability::Unknown);
+        assert_eq!(report.code.as_deref(), refusal["root_code"].as_str());
+        assert!(
+            report
+                .message
+                .unwrap()
+                .contains(refusal["message"].as_str().unwrap())
+        );
+    }
     fn response(success: bool, value: serde_json::Value) -> InstallerOutput {
         InstallerOutput {
             success,
@@ -1776,6 +1896,36 @@ esac
         let actual = fs::read_to_string(marker).unwrap();
         assert!(actual.contains("--lane\nstaging\n") && actual.contains("--version\n2.0.49-r3\n"));
         assert!(actual.contains("--confirm-package-command\n") && actual.contains("--no-path\n"));
+    }
+}
+
+#[cfg(test)]
+mod diagnostic_tests {
+    use super::*;
+
+    #[test]
+    fn failure_details_are_bounded_and_control_free() {
+        let output = InstallerOutput {
+            success: false,
+            exit_code: Some(17),
+            stdout: serde_json::to_vec(
+                &serde_json::json!({"root_code":"x".repeat(65),"message":"é\n\u{1b}".repeat(500)}),
+            )
+            .unwrap(),
+            stderr: vec![],
+        };
+        let (code, message) = catalogue_failure(&output);
+        assert_eq!(code, "list-failed");
+        assert!(message.len() <= "catalogue check failed: ".len() + 512);
+        assert!(!message.chars().any(char::is_control));
+        let mut output = output;
+        output.stdout = b"not JSON".to_vec();
+        output.stderr = b"connection refused\n".repeat(500);
+        let (_, message) = catalogue_failure(&output);
+        assert!(message.contains("connection refused"));
+        assert!(message.len() <= "catalogue check failed: ".len() + 512);
+        output.stderr.clear();
+        assert!(catalogue_failure(&output).1.contains("17"));
     }
 }
 

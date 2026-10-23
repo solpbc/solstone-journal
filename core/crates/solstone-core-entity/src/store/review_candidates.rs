@@ -607,3 +607,54 @@ fn candidate_key_for_row(row: &Value) -> String {
 fn candidate_now_iso() -> String {
     Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true)
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EntityMergeOpenClass {
+    Open,
+    SuppressedOpen,
+    Other,
+}
+
+pub fn entity_merge_open_class(row: &Value) -> EntityMergeOpenClass {
+    let status = row.get("status").and_then(Value::as_str).unwrap_or("open");
+    let suppressed = row
+        .get("review")
+        .and_then(Value::as_object)
+        .and_then(|r| r.get("suppression"))
+        .is_some_and(|s| !s.is_null());
+    if status == "open" {
+        if suppressed {
+            EntityMergeOpenClass::SuppressedOpen
+        } else {
+            EntityMergeOpenClass::Open
+        }
+    } else {
+        EntityMergeOpenClass::Other
+    }
+}
+
+pub fn json_i64(value: Option<&Value>) -> i64 {
+    value
+        .and_then(Value::as_i64)
+        .or_else(|| {
+            value
+                .and_then(Value::as_str)
+                .and_then(|value| value.parse().ok())
+        })
+        .unwrap_or_default()
+}
+
+pub fn entity_merge_row_key(facet: &str, source_slug: &str, target_slug: &str) -> String {
+    format!("{facet}|{source_slug}|{target_slug}")
+}
+
+pub fn cmp_composite_then_key(
+    left_composite: f64,
+    left_key: &str,
+    right_composite: f64,
+    right_key: &str,
+) -> std::cmp::Ordering {
+    right_composite
+        .total_cmp(&left_composite)
+        .then_with(|| left_key.cmp(right_key))
+}

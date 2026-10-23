@@ -275,7 +275,8 @@ fn model_installed_before(journal: &Path) -> bool {
     entries.filter_map(Result::ok).any(|entry| {
         let name = entry.file_name();
         !name.to_string_lossy().starts_with('.')
-            && manifest::artifact_manifest_path(&entry.path()).is_file()
+            && (manifest::artifact_manifest_path(&entry.path()).is_file()
+                || pins::mlx_generation_record_present(&entry.path()))
     })
 }
 

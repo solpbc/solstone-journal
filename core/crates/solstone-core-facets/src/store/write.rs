@@ -223,6 +223,47 @@ pub fn save_facet_entity_link(
         .map_err(FacetWriteError::EntityLinkWrite)
 }
 
+/// Remove only `detached_by` without altering any other field.
+pub(crate) fn mutate_strip_detached_by(object: &mut serde_json::Map<String, Value>) -> bool {
+    object.remove("detached_by").is_some()
+}
+
+/// Set detached: true and optional marker, or no-op if already detached.
+pub(crate) fn mutate_detach_link(
+    object: &mut serde_json::Map<String, Value>,
+    detached_by: Option<&str>,
+) -> bool {
+    if object.get("detached") == Some(&Value::Bool(true)) {
+        false
+    } else {
+        object.insert("detached".to_owned(), Value::Bool(true));
+        if let Some(marker) = detached_by {
+            object.insert("detached_by".to_owned(), Value::String(marker.to_owned()));
+        } else {
+            object.remove("detached_by");
+        }
+        true
+    }
+}
+
+/// Reattach relationship by removing detached and detached_by markers.
+pub(crate) fn mutate_reattach_link(object: &mut serde_json::Map<String, Value>) -> bool {
+    let detached_removed = object.remove("detached").is_some();
+    let marker_removed = object.remove("detached_by").is_some();
+    detached_removed || marker_removed
+}
+
+/// Write a facet relationship JSON value directly without re-reading.
+pub(crate) fn write_facet_entity_link_raw(
+    journal_root: &Path,
+    facet_dir: &str,
+    entity_dir: &str,
+    relationship: &Value,
+) -> Result<(), FacetWriteError> {
+    let path = facet_entity_link_path(journal_root, facet_dir, entity_dir)?;
+    write_json(&path, relationship, json_options()).map_err(FacetWriteError::EntityLinkWrite)
+}
+
 /// Set or clear a relationship's detached marker while retaining every other field.
 pub fn set_facet_entity_link_detached(
     journal_root: &Path,
@@ -240,21 +281,9 @@ pub fn set_facet_entity_link_detached(
         .as_object_mut()
         .expect("facet entity link reader returns an object");
     let changed = if detached {
-        if object.get("detached") == Some(&Value::Bool(true)) {
-            false
-        } else {
-            object.insert("detached".to_owned(), Value::Bool(true));
-            if let Some(marker) = detached_by {
-                object.insert("detached_by".to_owned(), Value::String(marker.to_owned()));
-            } else {
-                object.remove("detached_by");
-            }
-            true
-        }
+        mutate_detach_link(object, detached_by)
     } else {
-        let detached_removed = object.remove("detached").is_some();
-        let marker_removed = object.remove("detached_by").is_some();
-        detached_removed || marker_removed
+        mutate_reattach_link(object)
     };
     if !changed {
         return Ok(false);
@@ -278,7 +307,7 @@ pub(crate) fn strip_facet_entity_link_detached_by(
     let object = relationship
         .as_object_mut()
         .expect("facet entity link reader returns an object");
-    if object.remove("detached_by").is_none() {
+    if !mutate_strip_detached_by(object) {
         return Ok(false);
     }
     let path = facet_entity_link_path(journal_root, facet_dir, entity_dir)?;

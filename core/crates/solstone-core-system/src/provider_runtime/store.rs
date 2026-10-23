@@ -183,6 +183,7 @@ pub(crate) fn resolve_current_process(
         return CurrentProcessResolution::Ambiguous;
     };
     if current[0].id != ready.process_id
+        || current[0].pid != ready.pid
         || current[0].name != ready.process_name
         || child.process_id != ready.process_id
         || child.pid != ready.pid
@@ -206,6 +207,12 @@ pub struct LocalRuntimeShared {
     ready_children: Mutex<BTreeMap<FenceKey, ReadyChild>>,
     children: Mutex<BTreeMap<String, LaunchAuthority>>,
     launch_credentials: Mutex<LaunchCredentials>,
+}
+
+/// A reaped child from the same coherent tuple as the accepted process.
+#[derive(Debug, Clone)]
+pub struct ConfirmedProviderExit {
+    pub(super) managed: ManagedProcess,
 }
 
 // Workers may stage credentials, but only the coordinator may admit them.
@@ -235,6 +242,23 @@ struct LocalRuntimeResults {
 }
 
 impl LocalRuntimeShared {
+    pub fn observe_exited_current_process(
+        &self,
+        processes: &[ManagedProcess],
+        now: Instant,
+    ) -> Option<ConfirmedProviderExit> {
+        let mut current = processes.iter().filter(|process| process.running);
+        let managed = current.next()?;
+        if current.next().is_some()
+            || self.observe_current_process(processes, now) != ProcessObservation::ConfirmedAbsent
+        {
+            return None;
+        }
+        Some(ConfirmedProviderExit {
+            managed: managed.clone(),
+        })
+    }
+
     pub fn record_launch_request(
         &self,
         desired_fingerprint: Option<String>,
@@ -1087,13 +1111,22 @@ impl RuntimeStore for FileRuntimeStore {
             {
                 return Err(RuntimeStoreError::Conflict);
             }
+            // A pending truth/probe can replace the publication fence after
+            // cleanup completes. Keep the owner captured while stopping.
+            let stopping_owner = self.cleanup_owner_for(self.last_fence.as_ref());
             let fence = self.capture_owner_fence(state);
             let ready_process = self.ready_process_for(fence.as_ref());
-            let cleanup_owner = self.cleanup_owner_for(fence.as_ref());
+            let cleanup_owner = if state.latest_phase == RuntimePhase::Stopped {
+                stopping_owner.or_else(|| self.cleanup_owner_for(fence.as_ref()))
+            } else {
+                self.cleanup_owner_for(fence.as_ref())
+            };
             if state.latest_phase == RuntimePhase::Stopped
                 && let Some(owner) = cleanup_owner.as_ref()
+                && let Err(error) = self.clear_port_if_owned(&current, owner)
             {
-                self.clear_port_if_owned(&current, owner)?;
+                self.last_fence = Some(owner.fence.clone());
+                return Err(error);
             }
             let process = match state.latest_phase {
                 RuntimePhase::Ready | RuntimePhase::ReadyProofUnavailable => ready_process.clone(),
@@ -1472,6 +1505,50 @@ mod tests {
             BTreeMap::from([(key.clone(), started_at)]),
             BTreeMap::from([(key, child)]),
         )
+    }
+
+    #[test]
+    fn confirmed_exit_requires_a_coherent_reaped_child() {
+        use crate::process::LaunchAuthority;
+        for outcome in 0..3 {
+            let shared = LocalRuntimeShared::default();
+            let fence = fence(1);
+            let ready = ready_process(4312);
+            let child = LaunchAuthority::scripted(
+                42,
+                move || match outcome {
+                    0 => Ok(Some(9)),
+                    1 => Ok(None),
+                    _ => Err(std::io::Error::other("unavailable")),
+                },
+                |_| Ok(()),
+            );
+            shared.register_ready_process(&fence, child, ready, Instant::now());
+            let process = current_process(Some(fence));
+            assert_eq!(
+                shared
+                    .observe_exited_current_process(std::slice::from_ref(&process), Instant::now())
+                    .is_some(),
+                outcome == 0
+            );
+            let mut wrong_pid = process.clone();
+            wrong_pid.pid = 99;
+            assert!(
+                shared
+                    .observe_exited_current_process(&[wrong_pid], Instant::now())
+                    .is_none()
+            );
+            assert!(
+                shared
+                    .observe_exited_current_process(&[process.clone(), process], Instant::now())
+                    .is_none()
+            );
+            assert!(
+                shared
+                    .observe_exited_current_process(&[], Instant::now())
+                    .is_none()
+            );
+        }
     }
 
     #[test]
@@ -2106,6 +2183,45 @@ mod tests {
         stopped.pending_stop_request = None;
         stopped.latest_phase = RuntimePhase::Stopped;
         (journal, store, stopped)
+    }
+
+    #[test]
+    fn stopped_cleanup_clears_owned_port_with_an_unfinished_truth_probe() {
+        for probe in [false, true] {
+            let (_journal, mut store, mut stopped) = prepare_for_clear();
+            if probe {
+                stopped.probe = Some(InFlight {
+                    fence: fence(2),
+                    result: None,
+                });
+            } else {
+                stopped.truth = Some(InFlight {
+                    fence: fence(2),
+                    result: None,
+                });
+            }
+            store.publish_state(&stopped).unwrap();
+            assert!(!store.port_path().exists());
+        }
+    }
+
+    #[test]
+    fn stopped_cleanup_retains_its_owner_after_a_port_read_failure() {
+        let (_journal, mut store, mut stopped) = prepare_for_clear();
+        stopped.truth = Some(InFlight {
+            fence: fence(2),
+            result: None,
+        });
+        fs::remove_file(store.port_path()).unwrap();
+        fs::create_dir(store.port_path()).unwrap();
+        assert_eq!(
+            store.publish_state(&stopped),
+            Err(RuntimeStoreError::Unavailable)
+        );
+        fs::remove_dir(store.port_path()).unwrap();
+        fs::write(store.port_path(), "4312").unwrap();
+        store.publish_state(&stopped).unwrap();
+        assert!(!store.port_path().exists());
     }
 
     #[test]
