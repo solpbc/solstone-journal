@@ -5,6 +5,9 @@ use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
 use std::{collections::BTreeMap, path::Path};
 
+mod bounded;
+pub use bounded::{ActivityInputSnapshot, activity_input_bounded};
+
 pub fn current(journal: &Path, unit: &Unit) -> Result<String, String> {
     unit.validate()?;
     match unit {
@@ -127,6 +130,14 @@ fn activity_hash_layout(
         }
         inputs.push(serde_json::json!({"segment":segment,"sense":sense}));
     }
+    activity_identity_hash(record, &spans, inputs)
+}
+
+fn activity_identity_hash(
+    record: &Map<String, Value>,
+    spans: &[String],
+    inputs: Vec<Value>,
+) -> Option<String> {
     let identity = serde_json::json!({
         "activity_id": record.get("id"), "activity": record.get("activity"),
         "facet": record.get("facet"), "segments": spans, "segment_inputs": inputs,

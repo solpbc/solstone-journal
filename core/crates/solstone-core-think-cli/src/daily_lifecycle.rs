@@ -3,6 +3,10 @@
 
 //! Whole-day catchup composition for the unscoped `journal think --day` mode.
 
+#[cfg(all(test, feature = "full-tests"))]
+#[path = "retained_activity_tests.rs"]
+mod retained_activity_tests;
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -324,7 +328,35 @@ fn run_with_phase_process(
                             && !outcome.result.timed_out
                             && outcome.blockers.as_ref().is_some_and(BTreeSet::is_empty)
                         {
+                            drop(outcome);
                             let sealed = (|| {
+                                if stream_generation(context)? != observed_generation
+                                    || read_raw_input_fingerprint(&context.journal, &context.day)
+                                        .map_err(|e| e.to_string())?
+                                        != observed_fingerprint
+                                {
+                                    return Err(
+                                        "requested day input changed during segment work".into()
+                                    );
+                                }
+                                let intent =
+                                    solstone_core_system::work_intent::read(&context.journal)?
+                                        .remove(&lease.day)
+                                        .ok_or("requested day disappeared")?;
+                                let progress =
+                                    intent.rebuild.ok_or("requested day lost its provenance")?;
+                                for day in progress.activity_days {
+                                    let mut activity_context = context.clone();
+                                    activity_context.day = day.clone();
+                                    activity_context.day_dir =
+                                        context.journal.join("chronicle").join(day);
+                                    activity_context.retry = None;
+                                    crate::activity_work::reconcile_retained(
+                                        &activity_context,
+                                        phase_log,
+                                        jobs,
+                                    )?;
+                                }
                                 if stream_generation(context)? != observed_generation
                                     || read_raw_input_fingerprint(&context.journal, &context.day)
                                         .map_err(|e| e.to_string())?
@@ -356,7 +388,12 @@ fn run_with_phase_process(
                                 )
                             })();
                             if let Err(error) = sealed {
-                                return failed_phase("rebuild_segment_seal", error);
+                                let result = failed_phase("rebuild_segment_seal", error);
+                                segment_outcome.replace(SegmentPhaseOutcome {
+                                    result: result.clone(),
+                                    blockers: None,
+                                });
+                                return result;
                             }
                         }
                     }
@@ -1462,7 +1499,12 @@ fn log_phase_complete(
     } else if result.failed != 0 {
         fields.insert("reason_code".to_owned(), Value::String("failed".to_owned()));
     }
-    log.log("phase.complete", context.now_ms, fields);
+    log.outcome(
+        "phase.complete",
+        context.now_ms,
+        fields,
+        &result.failed_names,
+    );
 }
 
 fn unix_seconds_f64() -> f64 {

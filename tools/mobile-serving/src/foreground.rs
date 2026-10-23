@@ -2257,6 +2257,101 @@ mod processing_proofs {
 
     type DateTimeUtc = chrono::DateTime<Utc>;
 
+    #[test]
+    fn hosted_wrapper_preserves_native_seal_failure_before_discarding_stderr() {
+        use sha2::{Digest, Sha256};
+        let _lock = TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner());
+        let (temp, payload) = journal_fixture();
+        let day = "20261016";
+        fs::create_dir_all(temp.path().join("chronicle").join(day)).unwrap();
+        let identity = solstone_core_think_cli::ActivityRetry {
+            day: day.into(),
+            facet: "home".into(),
+            activity: "held-writing".into(),
+        };
+        let bytes = serde_json::to_vec(&identity).unwrap();
+        let pending = temp
+            .path()
+            .join("health/activity-work")
+            .join(format!("{:x}.json", Sha256::digest(bytes)));
+        fs::create_dir_all(pending.parent().unwrap()).unwrap();
+        fs::write(
+            &pending,
+            json!({"version":1,"identity":identity,"input_hash":"retained",
+            "remaining":["work"],"uses":{},"attempts":0,"next_attempt_ms":0})
+            .to_string(),
+        )
+        .unwrap();
+        let original = fs::read(&pending).unwrap();
+        let request = solstone_core_system::work_intent::register(temp.path(), day, true).unwrap();
+        let now = Utc.with_ymd_and_hms(2026, 10, 17, 12, 0, 0).unwrap();
+        let host = ForegroundProcessingHost::open_bound(
+            Arc::new(JournalRoot::open(temp.path()).unwrap()),
+            &payload,
+            ScheduleNow::in_zone(now, chrono_tz::UTC),
+            None,
+            Arc::new(|| false),
+            Arc::new(AtomicBool::new(false)),
+            BackupWebDeps::new(temp.path().to_path_buf()),
+            true,
+        )
+        .unwrap();
+        let code = host.execute_worker_command(&owned(&[
+            "think",
+            "--day",
+            day,
+            "--from-scratch",
+            "--work-intent",
+            &request.id,
+        ]));
+        assert_ne!(code, 0);
+        let date = chrono::NaiveDate::parse_from_str(day, "%Y%m%d").unwrap();
+        let events = fold_oplogs(
+            JournalRoot::open(temp.path()).unwrap(),
+            &[date],
+            |events: &mut Vec<Value>, entry, input| {
+                if entry.name().source().display_slug() == "think" {
+                    for line in std::io::BufRead::lines(std::io::BufReader::new(input)) {
+                        let line = line?;
+                        events.push(serde_json::from_str(&line).unwrap());
+                    }
+                }
+                Ok(())
+            },
+        )
+        .unwrap();
+        let complete = events
+            .iter()
+            .find(|e| e["event"] == "run.complete")
+            .expect("native closing outcome survives wrapper");
+        assert!(complete["failed"].as_u64().unwrap() > 0);
+        let expected = json!({"stage":"rebuild_segment_seal","detail":"requested day has unfinished activity work"});
+        assert!(
+            complete["failure_details"]
+                .as_array()
+                .unwrap()
+                .contains(&expected),
+            "{events:?}"
+        );
+        assert!(events.iter().any(|e| {
+            e["event"] == "phase.complete"
+                && e["failure_details"]
+                    .as_array()
+                    .is_some_and(|details| details.contains(&expected))
+        }));
+        assert_eq!(fs::read(pending).unwrap(), original);
+        assert!(
+            solstone_core_system::work_intent::read(temp.path()).unwrap()[day]
+                .rebuild
+                .as_ref()
+                .unwrap()
+                .segments
+                .is_none()
+        );
+    }
+
     fn quiet_entries() -> Map<String, Value> {
         let mut entries = Map::new();
         for (name, tail, every, max_runtime) in [

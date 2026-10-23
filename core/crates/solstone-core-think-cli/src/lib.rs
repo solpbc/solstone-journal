@@ -803,7 +803,7 @@ fn logged_mode_outcome(
 ) -> Result<CliRun, CliError> {
     let (success, failed) = result
         .as_ref()
-        .map_or((0, 0), |result| (result.success, result.failed));
+        .map_or((0, 1), |result| (result.success, result.failed));
     let duration_ms = i64::try_from(run.started.elapsed().as_millis()).unwrap_or(i64::MAX);
     let mut fields = run.fields;
     fields.insert("success".to_owned(), serde_json::Value::from(success));
@@ -816,10 +816,15 @@ fn logged_mode_outcome(
         "duration_ms".to_owned(),
         serde_json::Value::from(duration_ms),
     );
-    log.log(
+    let failures = match &result {
+        Ok(result) => result.failed_names.as_slice(),
+        Err(error) => std::slice::from_ref(error),
+    };
+    log.outcome(
         "run.complete",
         run.started_ms.saturating_add(duration_ms),
         fields,
+        failures,
     );
     let log_error = log.finish().err();
     match (result, log_error) {
@@ -3549,6 +3554,32 @@ mod tests {
                 .starts_with("solstone journal think: 1 completed\nsense\n")
         );
         assert!(run.stderr.contains("think run log"));
+    }
+
+    #[test]
+    fn returned_native_error_is_durably_failed_with_untrusted_detail_withheld() {
+        let root = tempdir().unwrap();
+        let writer = run_log::RunLogWriter::open(root.path(), "20260813", "daily");
+        assert!(
+            logged_mode_outcome(
+                writer,
+                test_run_started(),
+                Err("credential-SENTINEL --argument-SENTINEL".into())
+            )
+            .is_err()
+        );
+        let events = oplog_records(root.path(), "20260813", "daily");
+        let complete = events
+            .iter()
+            .find(|e| e["event"] == "run.complete")
+            .unwrap();
+        assert_eq!(complete["failed"], 1);
+        assert_eq!(complete["failure_details"][0]["detail"], "detail withheld");
+        assert!(
+            !serde_json::to_string(complete)
+                .unwrap()
+                .contains("SENTINEL")
+        );
     }
 
     fn segment_dir(journal: &Path, day: &str, segment: &str) -> std::path::PathBuf {

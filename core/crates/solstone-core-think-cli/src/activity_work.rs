@@ -115,6 +115,37 @@ fn claim(context: &ThinkContext, identity: &ActivityRetry) -> Result<FileLock, S
     })
 }
 
+/// Reconciliation starts only new work. A retained record, including an empty
+/// record between publication and cleanup, belongs to its ordinary retry owner.
+pub(crate) fn claim_drained(
+    context: &ThinkContext,
+    facet: &str,
+    activity: &str,
+) -> Result<FileLock, String> {
+    let identity = ActivityRetry {
+        day: context.day.clone(),
+        facet: facet.into(),
+        activity: activity.into(),
+    };
+    let held = claim(context, &identity)?;
+    context.checkpoint()?;
+    let root =
+        solstone_core_journal_io::JournalRoot::open(&context.journal).map_err(|e| e.to_string())?;
+    let work_path = path(&context.journal, &identity)?;
+    let relative = work_path
+        .strip_prefix(&context.journal)
+        .map_err(|e| e.to_string())?;
+    // Presence alone holds this boundary, including malformed/empty records.
+    // Do not follow a separate pathname read after the bounded day census.
+    if solstone_core_journal_io::read_relative_file_bounded(&root, relative, 4 * 1024 * 1024)
+        .map_err(|e| e.to_string())?
+        .is_some()
+    {
+        return Err("retained activity has unfinished work".into());
+    }
+    Ok(held)
+}
+
 pub(crate) fn has_persisted_disposition(
     journal: &Path,
     day: &str,
@@ -578,12 +609,33 @@ pub(crate) fn rebuild_receipts(
     day: &str,
 ) -> Result<BTreeMap<String, String>, String> {
     require_day_drained(&context.journal, day)?;
+    let mut proof = BTreeMap::new();
+    for receipt in retained_receipts(context, day)? {
+        let record = retained_record(context, day, &receipt.facet, &receipt.activity)?;
+        if available_input(context, day, &record)? != receipt.input_hash {
+            return Err("completed activity input changed".into());
+        }
+        proof.insert(receipt.proof_path, receipt.input_hash);
+    }
+    Ok(proof)
+}
+
+struct RetainedReceipt {
+    path: PathBuf,
+    bytes: Vec<u8>,
+    proof_path: String,
+    facet: String,
+    activity: String,
+    input_hash: String,
+}
+
+fn retained_receipts(context: &ThinkContext, day: &str) -> Result<Vec<RetainedReceipt>, String> {
     let relative = Path::new("chronicle")
         .join(day)
         .join("health/talent-provenance/activity-inputs");
     let entries =
         crate::daily_lifecycle::rebuild_files(&context.journal, &relative)?.unwrap_or_default();
-    let mut proof = BTreeMap::new();
+    let mut receipts = Vec::new();
     for (path, bytes) in entries {
         if path.extension().and_then(|s| s.to_str()) != Some("json") {
             continue;
@@ -599,29 +651,167 @@ pub(crate) fn rebuild_receipts(
             .as_str()
             .ok_or("activity receipt has no input binding")?;
         if value["schema_version"] != 1
+            || expected.len() != 64
+            || !expected
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
             || crate::segment::activity_provenance_path(context, day, facet, activity)
                 != context.journal.join(&path)
         {
             return Err("activity receipt identity changed".into());
         }
-        let record =
-            solstone_core_facets::get_activity_record(&context.journal, facet, day, activity)
-                .map_err(|e| e.to_string())?
-                .ok_or("completed activity disappeared")?;
-        if crate::segment::compute_activity_input_hash(context, day, &record).as_deref()
-            != Some(expected)
-        {
-            return Err("completed activity input changed".into());
-        }
-        proof.insert(
-            path.strip_prefix(&relative)
+        // Validate components before either the facets reader or claim creates
+        // ancestry. The provenance path alone uses encoded names.
+        self::path(
+            &context.journal,
+            &ActivityRetry {
+                day: day.into(),
+                facet: facet.into(),
+                activity: activity.into(),
+            },
+        )?;
+        receipts.push(RetainedReceipt {
+            proof_path: path
+                .strip_prefix(&relative)
                 .map_err(|e| e.to_string())?
                 .to_string_lossy()
                 .into_owned(),
-            expected.to_owned(),
-        );
+            facet: facet.into(),
+            activity: activity.into(),
+            input_hash: expected.into(),
+            path,
+            bytes,
+        });
     }
-    Ok(proof)
+    Ok(receipts)
+}
+
+/// Parse the actual bounded no-follow bytes through the maintained strict row
+/// projection. A malformed sibling must not disappear through tolerant parsing.
+pub(crate) fn retained_record(
+    context: &ThinkContext,
+    day: &str,
+    facet: &str,
+    activity: &str,
+) -> Result<solstone_core_facets::ActivityRecord, String> {
+    let root =
+        solstone_core_journal_io::JournalRoot::open(&context.journal).map_err(|e| e.to_string())?;
+    let path = Path::new("facets")
+        .join(facet)
+        .join("activities")
+        .join(format!("{day}.jsonl"));
+    let read = || {
+        solstone_core_journal_io::read_relative_file_bounded(&root, &path, 4 * 1024 * 1024)
+            .map_err(|e| e.to_string())?
+            .ok_or("completed activity disappeared".to_owned())
+    };
+    let before = read()?;
+    context.checkpoint()?;
+    let mut records = solstone_core_facets::parse_activity_records_strict(&before.bytes)
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .filter(|r| r.get("id").and_then(serde_json::Value::as_str) == Some(activity));
+    let record = records.next().ok_or("completed activity disappeared")?;
+    if records.next().is_some() || before != read()? {
+        return Err("retained activity identity changed".into());
+    }
+    if record.get("facet").and_then(serde_json::Value::as_str) != Some(facet) {
+        return Err("retained activity identity changed".into());
+    }
+    root.revalidate().map_err(|e| e.to_string())?;
+    Ok(record)
+}
+
+/// Complete changed retained inputs through their selected activity owner,
+/// before the pure strict seal validator runs. Never use this on continuation.
+pub(crate) fn reconcile_retained(
+    context: &ThinkContext,
+    log: &mut crate::run_log::RunLogWriter,
+    max_concurrency: i64,
+) -> Result<(), String> {
+    require_day_drained(&context.journal, &context.day)?;
+    let receipts = retained_receipts(context, &context.day)?;
+    let expected = receipts
+        .iter()
+        .map(|receipt| receipt.proof_path.clone())
+        .collect::<BTreeSet<_>>();
+    for receipt in receipts {
+        context.checkpoint()?;
+        let held = claim_drained(context, &receipt.facet, &receipt.activity)?;
+        let root = solstone_core_journal_io::JournalRoot::open(&context.journal)
+            .map_err(|e| e.to_string())?;
+        let current = solstone_core_journal_io::read_relative_file_bounded(
+            &root,
+            &receipt.path,
+            4 * 1024 * 1024,
+        )
+        .map_err(|e| e.to_string())?
+        .ok_or("activity receipt disappeared")?;
+        if current.bytes != receipt.bytes {
+            return Err("activity receipt identity changed".into());
+        }
+        let record = retained_record(context, &context.day, &receipt.facet, &receipt.activity)?;
+        let hash = available_input(context, &context.day, &record)?;
+        if hash == receipt.input_hash {
+            continue;
+        }
+        if record
+            .get("hidden")
+            .is_some_and(solstone_core_facets::activity_value_truthy)
+            || solstone_core_talent_runtime::activity_contract::is_synthetic(&record)
+        {
+            return Err("retained activity is held".into());
+        }
+        let outcome = crate::activity::reconcile_retained(
+            context,
+            log,
+            &receipt.activity,
+            &receipt.facet,
+            &hash,
+            max_concurrency,
+            held,
+        )?;
+        if outcome.failed != 0 || outcome.timed_out {
+            return Err("retained activity work did not complete".into());
+        }
+        context.checkpoint()?;
+        let after = retained_record(context, &context.day, &receipt.facet, &receipt.activity)?;
+        if after
+            .get("hidden")
+            .is_some_and(solstone_core_facets::activity_value_truthy)
+            || available_input(context, &context.day, &after)? != hash
+        {
+            return Err("retained activity input changed during work".into());
+        }
+    }
+    let current = rebuild_receipts(context, &context.day)?;
+    if expected.iter().any(|path| !current.contains_key(path)) {
+        return Err("retained activity receipt disappeared".into());
+    }
+    Ok(())
+}
+
+/// The normal fingerprint also represents absent Sense/segments. Admission
+/// additionally requires every declared span to resolve uniquely to real input.
+pub(crate) fn available_input(
+    context: &ThinkContext,
+    day: &str,
+    record: &solstone_core_facets::ActivityRecord,
+) -> Result<String, String> {
+    solstone_core_talent_runtime::activity_contract::validated_span(record)
+        .map_err(|_| "retained activity span is unavailable".to_owned())?;
+    let input = solstone_core_system::work_retry::input::activity_input_bounded(
+        &context.journal,
+        day,
+        record,
+        || context.checkpoint(),
+    )?;
+    for sense in &input.sense {
+        if !crate::segment::valid_activity_sense(sense) {
+            return Err("retained activity Sense is malformed".into());
+        }
+    }
+    Ok(input.hash)
 }
 
 /// A broken sibling is a visible gap, not a reason to suppress all valid work.
@@ -832,7 +1022,404 @@ pub(crate) fn seed_activity_retries_checked(
 mod tests {
     use super::*;
 
-    #[cfg(unix)]
+    struct NoDispatch;
+    impl crate::context::CortexBoundary for NoDispatch {
+        fn dispatch_prepared(
+            &self,
+            _: &tokio::runtime::Runtime,
+            _: &solstone_core_cortex_client::CortexRequest,
+            _: Option<&str>,
+            _: &mut (dyn FnMut(&str) -> std::io::Result<()> + Send),
+        ) -> Result<String, crate::context::DispatchFailure> {
+            panic!("held input must not dispatch");
+        }
+        fn dispatch(
+            &self,
+            _: &tokio::runtime::Runtime,
+            _: &solstone_core_cortex_client::CortexRequest,
+        ) -> Result<String, crate::context::DispatchFailure> {
+            panic!("held input must not dispatch");
+        }
+        fn wait(
+            &self,
+            _: &tokio::runtime::Runtime,
+            _: &[String],
+            _: Option<Duration>,
+        ) -> Result<solstone_core_cortex_client::WaitForUsesReport, String> {
+            panic!("held input must not wait");
+        }
+    }
+
+    fn retained_fixture(root: &Path) -> (ThinkContext, PathBuf, PathBuf) {
+        let day = "20261016";
+        let segment = root.join("chronicle").join(day).join("notes/090000_300");
+        std::fs::create_dir_all(segment.join("talents")).unwrap();
+        std::fs::write(
+            segment.join("audio.jsonl"),
+            "{\"start\":\"00:00:01\",\"text\":\"Declared synthetic garden note.\"}\n",
+        )
+        .unwrap();
+        std::fs::write(
+            segment.join("talents/sense.json"),
+            r#"{"density":"active","content_type":"writing","facets":[]}"#,
+        )
+        .unwrap();
+        solstone_core_facets::create_facet(root, "home", "Home", "Test", "#123456", "", None)
+            .unwrap();
+        let record = serde_json::json!({"id":"writing_090000_300","activity":"writing","facet":"home","stream":"notes","segments":["090000_300"]}).as_object().unwrap().clone();
+        let _ = solstone_core_facets::append_activity_record(root, "home", day, record.clone())
+            .unwrap();
+        let payload = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../payload/solstone");
+        let context = ThinkContext::new(
+            root,
+            day.into(),
+            root.join("chronicle").join(day),
+            chrono::Utc::now().timestamp_millis(),
+        )
+        .unwrap()
+        .with_talent_roots(payload.join("talent"), payload.join("apps"))
+        .with_boundary(std::sync::Arc::new(NoDispatch));
+        let hash = crate::segment::compute_activity_input_hash(&context, day, &record).unwrap();
+        crate::segment::write_activity_provenance(
+            &context,
+            day,
+            "home",
+            "writing_090000_300",
+            &hash,
+        )
+        .unwrap();
+        let receipt =
+            crate::segment::activity_provenance_path(&context, day, "home", "writing_090000_300");
+        // The retained input is stale; only actual owning work may replace it.
+        std::fs::write(
+            segment.join("talents/sense.json"),
+            r#"{"density":"active","content_type":"reading","facets":[]}"#,
+        )
+        .unwrap();
+        (context, segment, receipt)
+    }
+
+    #[cfg(all(unix, feature = "full-tests"))]
+    #[test]
+    fn strict_retained_rows_consume_admitted_bytes_and_refuse_replacement() {
+        for shape in ["replace", "grow", "alias", "fifo"] {
+            let root = tempfile::tempdir().unwrap();
+            let (mut context, _, _) = retained_fixture(root.path());
+            let path = root.path().join("facets/home/activities/20261016.jsonl");
+            let original = std::fs::read(&path).unwrap();
+            let admitted = solstone_core_facets::parse_activity_records_strict(&original).unwrap();
+            let changed = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+            let callback_changed = changed.clone();
+            let callback_path = path.clone();
+            context.cancel_checkpoint = std::sync::Arc::new(move || {
+                if !callback_changed.swap(true, std::sync::atomic::Ordering::SeqCst) {
+                    if shape == "grow" {
+                        std::fs::write(&callback_path, vec![b' '; 4 * 1024 * 1024 + 1]).unwrap();
+                    } else {
+                        std::fs::rename(&callback_path, callback_path.with_extension("original"))
+                            .unwrap();
+                        match shape {
+                            "replace" => std::fs::write(&callback_path, &original).unwrap(),
+                            "alias" => std::os::unix::fs::symlink(
+                                callback_path.with_extension("original"),
+                                &callback_path,
+                            )
+                            .unwrap(),
+                            "fifo" => assert!(
+                                std::process::Command::new("mkfifo")
+                                    .arg(&callback_path)
+                                    .status()
+                                    .unwrap()
+                                    .success()
+                            ),
+                            _ => unreachable!(),
+                        }
+                    }
+                }
+                false
+            });
+            // The checkpoint replaces the path after the admitted read. The
+            // strict parser consumes that read's bytes; re-observation refuses.
+            assert!(
+                retained_record(&context, "20261016", "home", "writing_090000_300").is_err(),
+                "{shape}"
+            );
+            assert!(changed.load(std::sync::atomic::Ordering::SeqCst));
+            assert_eq!(admitted.len(), 1);
+        }
+    }
+
+    #[test]
+    fn changed_input_never_replaces_any_existing_work_disposition() {
+        for shape in [
+            "pending",
+            "running",
+            "uncertain",
+            "parked",
+            "blocked",
+            "muted",
+            "empty",
+        ] {
+            let root = tempfile::tempdir().unwrap();
+            let (context, _, receipt) = retained_fixture(root.path());
+            let original = std::fs::read(&receipt).unwrap();
+            let mut work = ActivityWork::begin(
+                &context,
+                "home",
+                "writing_090000_300",
+                "old-input".into(),
+                BTreeSet::from(["work".into()]),
+                false,
+            )
+            .unwrap();
+            match shape {
+                "running" | "uncertain" => {
+                    work.record
+                        .uses
+                        .insert("work".into(), format!("retained-{shape}"));
+                    if shape == "running" {
+                        let dir = root.path().join("talents/work");
+                        std::fs::create_dir_all(&dir).unwrap();
+                        std::fs::write(
+                            dir.join("retained-running_active.jsonl"),
+                            b"{\"use_id\":\"retained-running\"}\n",
+                        )
+                        .unwrap();
+                        assert_eq!(
+                            solstone_core_cortex_client::use_file_status(
+                                &root.path().join("talents"),
+                                "retained-running"
+                            )
+                            .unwrap(),
+                            solstone_core_cortex_client::UseFileStatus::Running
+                        );
+                    } else {
+                        assert_eq!(
+                            solstone_core_cortex_client::use_file_status(
+                                &root.path().join("talents"),
+                                "retained-uncertain"
+                            )
+                            .unwrap(),
+                            solstone_core_cortex_client::UseFileStatus::NotFound
+                        );
+                    }
+                }
+                "parked" => {
+                    work.record.parked.insert("work".into());
+                }
+                "blocked" => {
+                    work.record.blocked = Some(BlockedDisposition {
+                        reason_code: "retained".into(),
+                        message: "held".into(),
+                    });
+                }
+                "muted" => {
+                    work.record.muted_pause = true;
+                }
+                "empty" => {
+                    work.record.remaining.clear();
+                }
+                _ => {}
+            }
+            work.save().unwrap();
+            let work_path = work.path.clone();
+            drop(work);
+            let retained = std::fs::read(&work_path).unwrap();
+            assert!(
+                claim_drained(&context, "home", "writing_090000_300").is_err(),
+                "{shape}"
+            );
+            let mut log =
+                crate::run_log::RunLogWriter::open(root.path(), &context.day, "held-regression");
+            assert!(
+                reconcile_retained(&context, &mut log, 1).is_err(),
+                "{shape}"
+            );
+            assert_eq!(std::fs::read(work_path).unwrap(), retained, "{shape}");
+            assert_eq!(std::fs::read(receipt).unwrap(), original, "{shape}");
+        }
+    }
+
+    #[test]
+    fn unavailable_malformed_hidden_and_ineligible_inputs_cannot_refresh_provenance() {
+        for shape in [
+            "missing_segment",
+            "missing_sense",
+            "malformed_sense",
+            "incomplete_sense",
+            "malformed_receipt",
+            "empty_receipt_hash",
+            "invalid_receipt_hash",
+            "changed_receipt",
+            "owner_story",
+            "owner_participation",
+            "malformed_day",
+            "hidden",
+            "synthetic",
+            "disabled",
+            "cancelled",
+            "muted_destination",
+            "replaced_destination",
+            "missing_declaration",
+        ] {
+            let root = tempfile::tempdir().unwrap();
+            let (mut context, segment, receipt) = retained_fixture(root.path());
+            let original = std::fs::read(&receipt).unwrap();
+            match shape {
+                "missing_segment" => {
+                    std::fs::rename(&segment, root.path().join("retained-segment")).unwrap()
+                }
+                "missing_sense" => {
+                    std::fs::remove_file(segment.join("talents/sense.json")).unwrap()
+                }
+                "malformed_sense" => {
+                    std::fs::write(segment.join("talents/sense.json"), b"malformed").unwrap()
+                }
+                "incomplete_sense" => {
+                    std::fs::write(segment.join("talents/sense.json"), b"{}").unwrap();
+                }
+                "malformed_receipt" => {
+                    std::fs::write(&receipt, b"malformed").unwrap();
+                }
+                "empty_receipt_hash" | "invalid_receipt_hash" => {
+                    let mut value: serde_json::Value = serde_json::from_slice(&original).unwrap();
+                    value["input_hash"] =
+                        serde_json::Value::from(if shape == "empty_receipt_hash" {
+                            String::new()
+                        } else {
+                            "g".repeat(64)
+                        });
+                    std::fs::write(&receipt, serde_json::to_vec(&value).unwrap()).unwrap();
+                }
+                "changed_receipt" => {
+                    let mut value: serde_json::Value = serde_json::from_slice(&original).unwrap();
+                    value["activity_id"] = serde_json::Value::from("different-identity");
+                    std::fs::write(&receipt, serde_json::to_vec(&value).unwrap()).unwrap();
+                }
+                "owner_story" | "owner_participation" => {
+                    let patch = if shape == "owner_story" {
+                        serde_json::json!({"story":{"talent":"work","body":"Owner-written story","topics":[],"confidence":1.0}})
+                    } else {
+                        serde_json::json!({"participation":[]})
+                    };
+                    solstone_core_facets::update_activity_record(
+                        root.path(),
+                        "home",
+                        &context.day,
+                        "writing_090000_300",
+                        patch.as_object().unwrap(),
+                        "owner:test",
+                        "Preserve owned output",
+                        "2026-10-16T12:00:00Z",
+                    )
+                    .unwrap();
+                }
+                "malformed_day" => {
+                    use std::io::Write;
+                    let mut file = std::fs::OpenOptions::new()
+                        .append(true)
+                        .open(root.path().join("facets/home/activities/20261016.jsonl"))
+                        .unwrap();
+                    file.write_all(b"malformed retained sibling\n").unwrap();
+                }
+                "hidden" | "synthetic" => {
+                    let patch = if shape == "hidden" {
+                        serde_json::json!({"hidden":true})
+                    } else {
+                        serde_json::json!({"source":"anticipated"})
+                    };
+                    solstone_core_facets::update_activity_record(
+                        root.path(),
+                        "home",
+                        &context.day,
+                        "writing_090000_300",
+                        patch.as_object().unwrap(),
+                        "owner:test",
+                        "hold",
+                        "2026-10-16T12:00:00Z",
+                    )
+                    .unwrap();
+                }
+                "disabled" => {
+                    let payload = root.path().join("empty-payload");
+                    std::fs::create_dir_all(payload.join("talent")).unwrap();
+                    std::fs::create_dir_all(payload.join("apps")).unwrap();
+                    context =
+                        context.with_talent_roots(payload.join("talent"), payload.join("apps"));
+                }
+                "cancelled" => {
+                    context.cancel_checkpoint = std::sync::Arc::new(|| true);
+                }
+                "muted_destination" => {
+                    solstone_core_facets::create_facet(
+                        root.path(),
+                        "other",
+                        "Other",
+                        "Unrelated",
+                        "#654321",
+                        "",
+                        None,
+                    )
+                    .unwrap();
+                    solstone_core_facets::set_facet_muted(root.path(), "home", true).unwrap();
+                }
+                "replaced_destination" => {
+                    solstone_core_facets::create_facet(
+                        root.path(),
+                        "other",
+                        "Other",
+                        "Replacement fixture",
+                        "#654321",
+                        "",
+                        None,
+                    )
+                    .unwrap();
+                    let file = root.path().join("facets/home/facet.json");
+                    let mut value: serde_json::Value =
+                        serde_json::from_slice(&std::fs::read(&file).unwrap()).unwrap();
+                    let replacement: serde_json::Value = serde_json::from_slice(
+                        &std::fs::read(root.path().join("facets/other/facet.json")).unwrap(),
+                    )
+                    .unwrap();
+                    value["id"] = replacement["id"].clone();
+                    std::fs::write(file, serde_json::to_vec(&value).unwrap()).unwrap();
+                }
+                "missing_declaration" => {
+                    std::fs::remove_file(root.path().join("facets/home/facet.json")).unwrap();
+                }
+                _ => unreachable!(),
+            }
+            let mut log =
+                crate::run_log::RunLogWriter::open(root.path(), &context.day, "held-regression");
+            let retained_receipt = std::fs::read(&receipt).unwrap();
+            assert!(
+                reconcile_retained(&context, &mut log, 1).is_err(),
+                "{shape}"
+            );
+            assert_eq!(std::fs::read(receipt).unwrap(), retained_receipt, "{shape}");
+        }
+    }
+
+    #[test]
+    fn a_receipt_lost_after_inventory_is_not_recreated_by_reconciliation() {
+        let root = tempfile::tempdir().unwrap();
+        let (mut context, _, receipt) = retained_fixture(root.path());
+        let path = receipt.clone();
+        let deleted = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let flag = deleted.clone();
+        context.cancel_checkpoint = std::sync::Arc::new(move || {
+            if !flag.swap(true, std::sync::atomic::Ordering::SeqCst) {
+                std::fs::remove_file(&path).unwrap();
+            }
+            false
+        });
+        let mut log = crate::run_log::RunLogWriter::open(root.path(), &context.day, "lost-receipt");
+        assert!(reconcile_retained(&context, &mut log, 1).is_err());
+        assert!(deleted.load(std::sync::atomic::Ordering::SeqCst));
+        assert!(!receipt.exists());
+    }
+
+    #[cfg(all(unix, feature = "full-tests"))]
     #[test]
     fn rebuild_activity_observations_refuse_aliases_fifos_and_unbounded_receipts() {
         use std::os::unix::fs::symlink;
