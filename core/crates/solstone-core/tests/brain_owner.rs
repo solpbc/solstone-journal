@@ -38,28 +38,84 @@ fn bundled_runtime_fingerprint(journal: &TempDir) -> String {
         "local/qwen3.5-4b",
         cfg!(target_os = "macos"),
     );
-    let input = serde_json::Map::from_iter([
-        (
-            "journal".into(),
-            json!(journal.path().display().to_string()),
-        ),
-        ("model_id".into(), json!(model_id)),
-    ]);
-    let readiness = solstone_core_local::install::readiness::inspect_local_present(input);
-    solstone_core_brain::bundled_runtime_desired_fingerprint(
-        readiness["host"]["backend"].as_str().unwrap_or("metal"),
-        &model_id,
-        readiness["target"]["target_fingerprint_sha256"]
-            .as_str()
-            .unwrap_or(""),
-        readiness["artifacts"]["binary_path"].as_str(),
-        readiness["artifacts"]["model_path"]
-            .as_str()
-            .expect("model_path"),
-        readiness["artifacts"]["projector_path"].as_str(),
-    )
-    .expect("unified desired fingerprint")
-    .sha256
+    #[cfg(target_os = "macos")]
+    {
+        use solstone_core_local::install::{mlx_candidate, pins};
+        use std::os::unix::fs::PermissionsExt;
+
+        // Presence-only inventory: no model download or inference.
+        let fixture = journal.path().join("fence-fixture");
+        let model = fixture.join("model");
+        let resources = fixture.join("mlx-swift_Cmlx.bundle/Contents/Resources");
+        fs::create_dir_all(&model).expect("model fixture");
+        fs::create_dir_all(&resources).expect("helper resources");
+        fs::write(resources.join("default.metallib"), b"fixture").expect("metallib fixture");
+        let helper = fixture.join("mlx-helper");
+        fs::write(&helper, b"#!/bin/sh\nexit 1\n").expect("helper fixture");
+        fs::set_permissions(&helper, fs::Permissions::from_mode(0o755)).expect("executable");
+        for pin in pins::MLX_QWEN_PINS.iter() {
+            fs::File::create(model.join(pin.name))
+                .expect("inventory fixture")
+                .set_len(pin.size)
+                .expect("sparse inventory size");
+        }
+        let (_, target) = mlx_candidate::artifact_target_json(&pins::MLX_QWEN_PINS);
+        solstone_core_brain::bundled_runtime_desired_fingerprint(
+            "mlx",
+            &model_id,
+            &target,
+            helper.canonicalize().expect("helper path").to_str(),
+            model
+                .canonicalize()
+                .expect("model path")
+                .to_str()
+                .expect("UTF-8 model path"),
+            None,
+        )
+        .expect("unified desired fingerprint")
+        .sha256
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let input = serde_json::Map::from_iter([
+            (
+                "journal".into(),
+                json!(journal.path().display().to_string()),
+            ),
+            ("model_id".into(), json!(model_id)),
+        ]);
+        let readiness = solstone_core_local::install::readiness::inspect_local_present(input);
+        solstone_core_brain::bundled_runtime_desired_fingerprint(
+            readiness["host"]["backend"].as_str().unwrap_or("metal"),
+            &model_id,
+            readiness["target"]["target_fingerprint_sha256"]
+                .as_str()
+                .unwrap_or(""),
+            readiness["artifacts"]["binary_path"].as_str(),
+            readiness["artifacts"]["model_path"]
+                .as_str()
+                .expect("model_path"),
+            readiness["artifacts"]["projector_path"].as_str(),
+        )
+        .expect("unified desired fingerprint")
+        .sha256
+    }
+}
+
+fn fenced_refresh_command(journal: &TempDir) -> Command {
+    let mut command = Command::new(BINARY);
+    command.env("SOLSTONE_JOURNAL", journal.path());
+    #[cfg(target_os = "macos")]
+    command
+        .env(
+            "SOLSTONE_MLX_HELPER",
+            journal.path().join("fence-fixture/mlx-helper"),
+        )
+        .env(
+            "SOLSTONE_MLX_MODEL_DIR",
+            journal.path().join("fence-fixture/model"),
+        );
+    command
 }
 
 #[test]
@@ -132,7 +188,7 @@ fn owner_refresh_default_fence_compares_the_bundled_runtime_fingerprint() {
     let journal = TempDir::new_in("/var/tmp").expect("journal");
     write_bundled_config(&journal);
     let expected = bundled_runtime_fingerprint(&journal);
-    let matching = Command::new(BINARY)
+    let matching = fenced_refresh_command(&journal)
         .args([
             SENTINEL,
             "brain",
@@ -154,7 +210,7 @@ fn owner_refresh_default_fence_compares_the_bundled_runtime_fingerprint() {
 
     let state_path = solstone_core_brain::brain_state_path(journal.path());
     let before = fs::read(&state_path).expect("matching refresh writes state");
-    let stale = Command::new(BINARY)
+    let stale = fenced_refresh_command(&journal)
         .args([
             SENTINEL,
             "brain",
