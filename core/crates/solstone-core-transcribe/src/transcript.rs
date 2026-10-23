@@ -63,13 +63,11 @@ pub(crate) fn restore_statement_timestamps(
         .iter()
         .cloned()
         .map(|mut statement| {
-            restore_timestamp_field(&mut statement, "start", reduction);
-            restore_timestamp_field(&mut statement, "end", reduction);
+            restore_interval_timestamps(&mut statement, reduction);
             if let Some(Value::Array(words)) = statement.get_mut("words") {
                 for word in words {
                     if let Value::Object(word) = word {
-                        restore_timestamp_field(word, "start", reduction);
-                        restore_timestamp_field(word, "end", reduction);
+                        restore_interval_timestamps(word, reduction);
                     }
                 }
             }
@@ -114,16 +112,23 @@ pub(crate) fn remove_orphan_npz(jsonl_path: &Path, npz_path: &Path) -> Result<()
     Ok(())
 }
 
-fn restore_timestamp_field(
-    statement: &mut Map<String, Value>,
-    key: &str,
-    reduction: &AudioReduction,
-) {
-    if let Some(value) = statement.get(key).and_then(Value::as_f64) {
-        statement.insert(
-            key.to_owned(),
-            Value::from(reduction.restore_timestamp(value)),
+fn restore_interval_timestamps(interval: &mut Map<String, Value>, reduction: &AudioReduction) {
+    let start = interval.get("start").and_then(Value::as_f64);
+    let end = interval.get("end").and_then(Value::as_f64);
+    if let Some(start) = start {
+        interval.insert(
+            "start".to_owned(),
+            Value::from(reduction.restore_timestamp(start)),
         );
+    }
+    if let Some(end) = end {
+        // A zero-duration word/statement remains a point, including at a cut boundary.
+        let restored = if start == Some(end) {
+            reduction.restore_timestamp(end)
+        } else {
+            reduction.restore_end_timestamp(end)
+        };
+        interval.insert("end".to_owned(), Value::from(restored));
     }
 }
 
@@ -390,7 +395,7 @@ pub(crate) mod tests {
     use std::fs;
 
     use serde_json::{Map, Value, json};
-    use solstone_core_observe_audio::{AudioReduction, SpeechSegment};
+    use solstone_core_observe_audio::{AudioReduction, SpeechSegment, VadResult, reduce_audio};
 
     use super::{FullTranscriptWrite, restore_statement_timestamps, write_full_transcript};
     use crate::processing::analyzed_record;
@@ -510,20 +515,68 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn reduced_statement_and_word_intervals_follow_the_samples_on_both_sides_of_a_cut() {
+        let audio = (0..7 * 16_000)
+            .map(|sample| sample as f32)
+            .collect::<Vec<_>>();
+        let vad = VadResult {
+            duration_s: 7.0,
+            speech_duration_s: 2.0,
+            has_speech: true,
+            speech_segments: vec![(0.0, 1.0), (5.0, 6.0)],
+            noisy_rms: None,
+            noisy_s: 0.0,
+            loud_windows: 0,
+            speech_loud_windows: 0,
+        };
+        let (reduced, mapping) = reduce_audio(&audio, &vad).unwrap();
+        assert_eq!(&reduced[..32_000], &audio[..32_000]);
+        assert_eq!(&reduced[32_000..], &audio[64_000..]);
+        let intervals = [(1.5, 2.0), (2.0, 2.5), (1.75, 2.25), (2.0, 2.0)];
+        let statements = intervals
+            .iter()
+            .map(|&(start, end)| {
+                let Value::Object(statement) = json!({
+                    "start": start,
+                    "end": end,
+                    "words": [{"start": start, "end": end, "word": "sample"}],
+                }) else {
+                    unreachable!()
+                };
+                statement
+            })
+            .collect::<Vec<_>>();
+        let restored = restore_statement_timestamps(&statements, &mapping);
+        for (index, (expected_start, expected_end)) in
+            [(1.5, 2.0), (4.0, 4.5), (1.75, 4.25), (4.0, 4.0)]
+                .into_iter()
+                .enumerate()
+        {
+            assert_eq!(restored[index]["start"], expected_start);
+            assert_eq!(restored[index]["end"], expected_end);
+            assert_eq!(restored[index]["words"][0]["start"], expected_start);
+            assert_eq!(restored[index]["words"][0]["end"], expected_end);
+        }
+        // Restoring clones leaves the ASR's reduced-coordinate response untouched.
+        assert_eq!(statements[0]["end"], 2.0);
+        assert_eq!(statements[1]["start"], 2.0);
+    }
+
+    #[test]
     fn full_write_uses_timestamps_restored_before_speaker_analysis() {
         let reduction = AudioReduction {
             segments: vec![
                 SpeechSegment {
                     original_start_s: 0.0,
-                    original_end_s: 1.0,
+                    original_end_s: 2.0,
                     reduced_start_s: 0.0,
-                    reduced_end_s: 1.0,
+                    reduced_end_s: 2.0,
                 },
                 SpeechSegment {
-                    original_start_s: 8.0,
-                    original_end_s: 9.0,
-                    reduced_start_s: 3.0,
-                    reduced_end_s: 4.0,
+                    original_start_s: 7.0,
+                    original_end_s: 10.0,
+                    reduced_start_s: 2.0,
+                    reduced_end_s: 5.0,
                 },
             ],
             original_duration_s: 10.0,

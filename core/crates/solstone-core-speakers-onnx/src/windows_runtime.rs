@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! Windows helper bootstrap, shared by speakers and Silero VAD.
+//! Windows helper bootstrap, shared by speakers and FireRed VAD.
 
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -76,11 +76,11 @@ pub fn bootstrap_windows_vad_model(model: &Path) -> Result<PathBuf, String> {
     let package = bootstrap_windows_onnx()?;
     if !solstone_core_local::install::windows_member_path::matches_declared_member_path(
         model,
-        &package.silero_vad_model,
+        &package.firered_vad_model,
     ) {
         return Err(
-            "Silero VAD model is not a declared member of the signed app payload".to_owned(),
+            "FireRed VAD model is not a declared member of the signed app payload".to_owned(),
         );
     }
-    Ok(package.silero_vad_model)
+    Ok(package.firered_vad_model)
 }

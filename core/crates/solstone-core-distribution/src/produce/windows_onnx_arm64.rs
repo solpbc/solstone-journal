@@ -132,8 +132,8 @@ fn source_inputs(repo: &Path, files: &OnnxArm64Files) -> Result<InspectedInputs,
         exact(
             &read_bounded(&src, 512 * 1024 * 1024)?,
             "sources/onnxruntime-with-submodules.tar.gz",
-            299042275,
-            "e02777f4216104f8700321f3fdda9cebe5b7596f616dc916bc45fce943b21c56",
+            303422641,
+            "648bde764340ebdfc5dd9376b55d8effece5f6a1c568bedfdd5f27573633c949",
         )?;
         let inspected =
             source::inspect_onnx_windows_source_archive(&src).map_err(|e| e.to_string())?;

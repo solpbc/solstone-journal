@@ -88,15 +88,19 @@ pub use facet_id::{
 };
 pub use identity::{FacetEntityLinkSnapshot, read_facet_entity_link};
 pub use lifecycle::{
-    EntityBlockReport, EntityDeleteGuardOutcome, EntityDeleteReport, EntityHistoryReference,
-    EntityUnblockReport, FacetEntityLifecycleError, block_journal_entity,
-    delete_created_entity_if_unreferenced, delete_journal_entity, delete_journal_entity_after,
-    unblock_journal_entity,
+    BulkBlockReport, BulkJournalError, BulkUnblockReport, EntityBlockReport,
+    EntityDeleteGuardOutcome, EntityDeleteReport, EntityHistoryReference, EntityUnblockReport,
+    FacetEntityLifecycleError, FacetRelationshipPlan, FailedEntity, PlannedFacetRelationship,
+    RestoredEntity, StoppedReport, UnreadableEntityRecord, block_journal_entities,
+    block_journal_entity, delete_created_entity_if_unreferenced, delete_journal_entity,
+    delete_journal_entity_after, plan_facet_entity_relationships, unblock_journal_entity,
+    unblock_journal_operation,
 };
 #[cfg(any(test, feature = "test-hooks"))]
 pub use lifecycle::{
     block_journal_entity_with_hook, delete_created_entity_if_unreferenced_with_hook,
-    delete_journal_entity_with_hook, unblock_journal_entity_with_hook,
+    delete_journal_entity_with_hook, reset_undone_operation_for_test, test_hooks,
+    unblock_journal_entity_with_hook,
 };
 pub use logs::{read_log_file, write_log_file};
 pub use map::{list_declared_facet_names, list_facet_directories, list_facet_entity_directories};

@@ -23,10 +23,12 @@ solstone-core-journal-io.workspace = true
 
 [features]
 full-tests = []
-test-hooks = []
+test-hooks = ["solstone-core-entity/test-hooks"]
 
 [dev-dependencies]
+solstone-core-entity = { workspace = true, features = ["test-hooks"] }
 solstone-core-indexer-store = { workspace = true, features = ["test-fixtures"] }
+solstone-core-indexer-todo = { workspace = true }
 tempfile = "3"
 
 [lints]

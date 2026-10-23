@@ -83,6 +83,7 @@ pub enum ReasonCode {
     MissingRequestBody,
     MissingRequiredField,
     OperationNoLongerAvailable,
+    OperationUndone,
     PrincipalEntityProtected,
     ResolvedChoiceEntityAbsent,
     ResolvedChoiceEntityBlocked,
@@ -121,6 +122,7 @@ impl ReasonCode {
             Self::MissingRequestBody => "missing_request_body",
             Self::MissingRequiredField => "missing_required_field",
             Self::OperationNoLongerAvailable => "operation_no_longer_available",
+            Self::OperationUndone => "operation_undone",
             Self::PrincipalEntityProtected => "principal_entity_protected",
             Self::ResolvedChoiceEntityAbsent => "resolved_choice_entity_absent",
             Self::ResolvedChoiceEntityBlocked => "resolved_choice_entity_blocked",
@@ -144,7 +146,8 @@ impl ReasonCode {
             | Self::EntityMergeRecoveryPending
             | Self::EntityDeleteIncomplete
             | Self::EntityDeleteInProgress
-            | Self::EntityNotDeleted => StatusCode::CONFLICT,
+            | Self::EntityNotDeleted
+            | Self::OperationUndone => StatusCode::CONFLICT,
             Self::EntityDeleteUnknown
             | Self::EntityNotFound
             | Self::ResolvedChoiceEntityAbsent

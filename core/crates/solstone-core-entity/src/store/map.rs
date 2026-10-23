@@ -154,6 +154,8 @@ pub(super) fn identity_groups(
     journal_root: &Path,
 ) -> Result<(IdentityGroups, Vec<IdentityMapLoser>), EntityStoreError> {
     let entities_dir = contained_path(journal_root, "entities")?;
+    #[cfg(any(test, feature = "test-hooks"))]
+    super::test_counters::test_instrumentation::increment_entities_dir_listing();
     let mut groups = IdentityGroups::new();
     let mut losers = Vec::new();
     for entry in list_dir_entries(&entities_dir)? {

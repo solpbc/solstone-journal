@@ -46,7 +46,8 @@ pub const ONNX_WINDOWS_BUILD_FLAGS: &[&str] = &[
 ];
 
 pub const ONNX_WINDOWS_REDUCED_OPS_CONFIG_SHA256: &str =
-    "d624f0c4902d58df3a5513535450ad4a5c2fffdd95676b23d44c925886b2654d";
+    "d384e1263f8be457bc38173f6773861f94136f151946d7dceb4642e7a5c90ec0";
+pub const ONNX_WINDOWS_REDUCED_OPS_CONFIG_SIZE_BYTES: u64 = 541;
 
 pub const WESPEAKER_FILENAME: &str = "wespeaker-resnet34-256.onnx";
 pub const WESPEAKER_SIZE_BYTES: u64 = 26_534_365;
@@ -56,10 +57,10 @@ pub const PYANNOTE_FILENAME: &str = "pyannote-segmentation-3.0.onnx";
 pub const PYANNOTE_SIZE_BYTES: u64 = 5_986_908;
 pub const PYANNOTE_SHA256: &str =
     "057ee564753071c0b09b5b611648b50ac188d50846bff5f01e9f7bbf1591ea25";
-pub const SILERO_VAD_FILENAME: &str = "silero_vad_v6.onnx";
-pub const SILERO_VAD_SIZE_BYTES: u64 = 1_245_151;
-pub const SILERO_VAD_SHA256: &str =
-    "4cbf549b8326f60f80f2536d9eefeb450a9abe83365a098031c89719f1be17d2";
+pub const FIRERED_VAD_FILENAME: &str = "firered_vad.onnx";
+pub const FIRERED_VAD_SIZE_BYTES: u64 = 2_388_488;
+pub const FIRERED_VAD_SHA256: &str =
+    "a226e68e695548754a9ab5480a55bbcb8522aa69111cb97e4f093ddce63ad5dc";
 
 pub const ONNX_WINDOWS_PACKAGE_CLOSURE: &[&str] = &["onnxruntime.dll"];
 pub const ONNX_WINDOWS_NOTICE_NAMES: &[&str] = &[
@@ -128,7 +129,7 @@ pub struct OnnxWindowsBuildConfiguration {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum ModelRole {
     Pyannote,
-    SileroVad,
+    FireRedVad,
     Wespeaker,
 }
 
@@ -136,7 +137,7 @@ impl ModelRole {
     fn as_str(self) -> &'static str {
         match self {
             Self::Pyannote => "pyannote",
-            Self::SileroVad => "silero_vad",
+            Self::FireRedVad => "firered_vad",
             Self::Wespeaker => "wespeaker",
         }
     }
@@ -604,10 +605,10 @@ fn model_pin(role: ModelRole) -> (&'static str, u64, &'static str) {
     match role {
         ModelRole::Wespeaker => (WESPEAKER_FILENAME, WESPEAKER_SIZE_BYTES, WESPEAKER_SHA256),
         ModelRole::Pyannote => (PYANNOTE_FILENAME, PYANNOTE_SIZE_BYTES, PYANNOTE_SHA256),
-        ModelRole::SileroVad => (
-            SILERO_VAD_FILENAME,
-            SILERO_VAD_SIZE_BYTES,
-            SILERO_VAD_SHA256,
+        ModelRole::FireRedVad => (
+            FIRERED_VAD_FILENAME,
+            FIRERED_VAD_SIZE_BYTES,
+            FIRERED_VAD_SHA256,
         ),
     }
 }
@@ -616,7 +617,7 @@ fn model_source_role(role: ModelRole) -> &'static str {
     match role {
         ModelRole::Wespeaker => "wespeaker source",
         ModelRole::Pyannote => "pyannote source",
-        ModelRole::SileroVad => "silero_vad source",
+        ModelRole::FireRedVad => "firered_vad source",
     }
 }
 
@@ -624,7 +625,7 @@ fn model_filename_role(role: ModelRole) -> &'static str {
     match role {
         ModelRole::Wespeaker => "wespeaker filename",
         ModelRole::Pyannote => "pyannote filename",
-        ModelRole::SileroVad => "silero_vad filename",
+        ModelRole::FireRedVad => "firered_vad filename",
     }
 }
 
@@ -632,7 +633,7 @@ fn model_size_role(role: ModelRole) -> &'static str {
     match role {
         ModelRole::Wespeaker => "wespeaker size",
         ModelRole::Pyannote => "pyannote size",
-        ModelRole::SileroVad => "silero_vad size",
+        ModelRole::FireRedVad => "firered_vad size",
     }
 }
 
@@ -640,7 +641,7 @@ fn model_sha256_role(role: ModelRole) -> &'static str {
     match role {
         ModelRole::Wespeaker => "wespeaker sha256",
         ModelRole::Pyannote => "pyannote sha256",
-        ModelRole::SileroVad => "silero_vad sha256",
+        ModelRole::FireRedVad => "firered_vad sha256",
     }
 }
 
@@ -651,7 +652,7 @@ fn verify_model_inputs(models: &[ModelInputIdentity]) -> Result<(), OnnxWindowsE
     }
     let required = [
         ModelRole::Pyannote,
-        ModelRole::SileroVad,
+        ModelRole::FireRedVad,
         ModelRole::Wespeaker,
     ];
     let missing: Vec<String> = required
@@ -935,7 +936,7 @@ mod tests {
         vec![
             pinned_model(ModelRole::Wespeaker),
             pinned_model(ModelRole::Pyannote),
-            pinned_model(ModelRole::SileroVad),
+            pinned_model(ModelRole::FireRedVad),
         ]
     }
 
@@ -1372,19 +1373,19 @@ mod tests {
                 },
             ),
             (
-                "partial silero filename",
+                "partial firered filename",
                 |draft| {
                     if let Some(model) = mutate_models(draft)
                         .iter_mut()
-                        .find(|model| model.role == ModelRole::SileroVad)
+                        .find(|model| model.role == ModelRole::FireRedVad)
                     {
-                        model.filename = "silero_vad_v5.onnx".into();
+                        model.filename = "unsupported_vad.onnx".into();
                     }
                 },
                 unexpected(
-                    "silero_vad filename",
-                    SILERO_VAD_FILENAME,
-                    "silero_vad_v5.onnx",
+                    "firered_vad filename",
+                    FIRERED_VAD_FILENAME,
+                    "unsupported_vad.onnx",
                 ),
             ),
             (
@@ -1424,16 +1425,16 @@ mod tests {
                 unexpected("pyannote source", "Raw", "Converted"),
             ),
             (
-                "ort-format silero source",
+                "ort-format firered source",
                 |draft| {
                     if let Some(model) = mutate_models(draft)
                         .iter_mut()
-                        .find(|model| model.role == ModelRole::SileroVad)
+                        .find(|model| model.role == ModelRole::FireRedVad)
                     {
                         model.source = OnnxModelSource::OrtFormat;
                     }
                 },
-                unexpected("silero_vad source", "Raw", "OrtFormat"),
+                unexpected("firered_vad source", "Raw", "OrtFormat"),
             ),
         ];
 

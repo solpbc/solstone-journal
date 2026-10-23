@@ -11,7 +11,7 @@ use axum::body::{Body, to_bytes};
 use axum::http::Request;
 use rusqlite::Connection;
 use serde_json::{Value, json};
-use solstone_core_convey_http::identity::AccessBasis;
+use solstone_core_convey_http::identity::{AccessBasis, Carrier};
 use solstone_core_entity::{AmbiguityObservation, record_ambiguity_observation};
 use solstone_core_indexer_store::{db::db_path, scan::scan_journal};
 use tower::ServiceExt;
@@ -160,6 +160,22 @@ async fn post(root: &Path, uri: &str, body: Value) -> (u16, Value) {
         .body(Body::from(body.to_string()))
         .unwrap();
     request.extensions_mut().insert(AccessBasis::Localhost);
+    let response = crate::router(root).oneshot(request).await.unwrap();
+    let status = response.status().as_u16();
+    let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    (status, serde_json::from_slice(&bytes).unwrap())
+}
+async fn post_with_access(
+    root: &Path,
+    uri: &str,
+    body: Value,
+    access: AccessBasis,
+) -> (u16, Value) {
+    let mut request = Request::post(uri)
+        .header("content-type", "application/json")
+        .body(Body::from(body.to_string()))
+        .unwrap();
+    request.extensions_mut().insert(access);
     let response = crate::router(root).oneshot(request).await.unwrap();
     let status = response.status().as_u16();
     let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
@@ -2065,6 +2081,280 @@ async fn unblock_open_entity_is_operation_failed_at_bad_request() {
 }
 
 #[tokio::test]
+async fn bulk_routes_pairing_peer_rejected_with_agent_unavailable() {
+    let j = Journal::new();
+    seed_entity(j.path(), "a", "Alice");
+
+    let peer = AccessBasis::PairingPeer {
+        carrier: Carrier::Direct,
+    };
+
+    let (status, response) = post_with_access(
+        j.path(),
+        "/app/entities/api/journal/block",
+        json!({"operation": "bulk-peer-test", "ids": ["a"]}),
+        peer.clone(),
+    )
+    .await;
+    assert_eq!(status, 503);
+    assert_eq!(response["reason_code"], "agent_unavailable");
+
+    let (status, response) = post_with_access(
+        j.path(),
+        "/app/entities/api/journal/unblock",
+        json!({"operation": "bulk-peer-test", "limit": 10}),
+        peer,
+    )
+    .await;
+    assert_eq!(status, 503);
+    assert_eq!(response["reason_code"], "agent_unavailable");
+}
+
+#[tokio::test]
+async fn bulk_routes_missing_required_fields_return_bad_request() {
+    let j = Journal::new();
+    seed_entity(j.path(), "a", "Alice");
+
+    // Block missing operation
+    let (status, response) = post(
+        j.path(),
+        "/app/entities/api/journal/block",
+        json!({"ids": ["a"]}),
+    )
+    .await;
+    assert_eq!(status, 400);
+    assert_eq!(response["reason_code"], "missing_required_field");
+
+    // Block missing ids
+    let (status, response) = post(
+        j.path(),
+        "/app/entities/api/journal/block",
+        json!({"operation": "bulk-op"}),
+    )
+    .await;
+    assert_eq!(status, 400);
+    assert_eq!(response["reason_code"], "missing_required_field");
+
+    // Unblock missing operation
+    let (status, response) = post(
+        j.path(),
+        "/app/entities/api/journal/unblock",
+        json!({"limit": 10}),
+    )
+    .await;
+    assert_eq!(status, 400);
+    assert_eq!(response["reason_code"], "missing_required_field");
+
+    // Unblock missing limit
+    let (status, response) = post(
+        j.path(),
+        "/app/entities/api/journal/unblock",
+        json!({"operation": "bulk-op"}),
+    )
+    .await;
+    assert_eq!(status, 400);
+    assert_eq!(response["reason_code"], "missing_required_field");
+}
+
+#[tokio::test]
+async fn bulk_routes_invalid_request_values_and_types_return_bad_request() {
+    let j = Journal::new();
+    seed_entity(j.path(), "a", "Alice");
+
+    // Block non-object body
+    let (status, response) = post(
+        j.path(),
+        "/app/entities/api/journal/block",
+        json!("not an object"),
+    )
+    .await;
+    assert_eq!(status, 400);
+    assert_eq!(response["reason_code"], "invalid_request_value");
+
+    // Block operation not string
+    let (status, response) = post(
+        j.path(),
+        "/app/entities/api/journal/block",
+        json!({"operation": 123, "ids": ["a"]}),
+    )
+    .await;
+    assert_eq!(status, 400);
+    assert_eq!(response["reason_code"], "invalid_request_value");
+
+    // Block ids not array
+    let (status, response) = post(
+        j.path(),
+        "/app/entities/api/journal/block",
+        json!({"operation": "bulk-op", "ids": "a"}),
+    )
+    .await;
+    assert_eq!(status, 400);
+    assert_eq!(response["reason_code"], "invalid_request_value");
+
+    // Block ids element not string
+    let (status, response) = post(
+        j.path(),
+        "/app/entities/api/journal/block",
+        json!({"operation": "bulk-op", "ids": [123]}),
+    )
+    .await;
+    assert_eq!(status, 400);
+    assert_eq!(response["reason_code"], "invalid_request_value");
+
+    // Block ids empty
+    let (status, response) = post(
+        j.path(),
+        "/app/entities/api/journal/block",
+        json!({"operation": "bulk-op", "ids": []}),
+    )
+    .await;
+    assert_eq!(status, 400);
+    assert_eq!(response["reason_code"], "invalid_request_value");
+
+    // Unblock non-object body
+    let (status, response) = post(
+        j.path(),
+        "/app/entities/api/journal/unblock",
+        json!([1, 2, 3]),
+    )
+    .await;
+    assert_eq!(status, 400);
+    assert_eq!(response["reason_code"], "invalid_request_value");
+
+    // Unblock operation not string
+    let (status, response) = post(
+        j.path(),
+        "/app/entities/api/journal/unblock",
+        json!({"operation": true, "limit": 10}),
+    )
+    .await;
+    assert_eq!(status, 400);
+    assert_eq!(response["reason_code"], "invalid_request_value");
+
+    // Unblock limit not integer
+    let (status, response) = post(
+        j.path(),
+        "/app/entities/api/journal/unblock",
+        json!({"operation": "bulk-op", "limit": "10"}),
+    )
+    .await;
+    assert_eq!(status, 400);
+    assert_eq!(response["reason_code"], "invalid_request_value");
+
+    // Unblock limit zero
+    let (status, response) = post(
+        j.path(),
+        "/app/entities/api/journal/unblock",
+        json!({"operation": "bulk-op", "limit": 0}),
+    )
+    .await;
+    assert_eq!(status, 400);
+    assert_eq!(response["reason_code"], "invalid_request_value");
+}
+
+#[tokio::test]
+async fn bulk_undo_unused_operation_then_block_same_operation_fails_with_operation_undone() {
+    let j = Journal::new();
+    seed_entity(j.path(), "a", "Alice");
+
+    // Undo unused operation
+    let (status, response) = post(
+        j.path(),
+        "/app/entities/api/journal/unblock",
+        json!({"operation": "bulk-unused-then-block", "limit": 10}),
+    )
+    .await;
+    assert_eq!(status, 200);
+    assert_eq!(response["restored"].as_array().unwrap().len(), 0);
+
+    // Block with same operation fails with 409 operation_undone
+    let (status, response) = post(
+        j.path(),
+        "/app/entities/api/journal/block",
+        json!({"operation": "bulk-unused-then-block", "ids": ["a"]}),
+    )
+    .await;
+    assert_eq!(status, 409);
+    assert_eq!(response["reason_code"], "operation_undone");
+}
+
+#[tokio::test]
+async fn bulk_block_principal_entity_protected() {
+    let j = Journal::new();
+    seed_entity(j.path(), "a", "Alice");
+    write(
+        j.path(),
+        "entities/owner/entity.json",
+        json!({"id":"owner","name":"Owner","type":"Person","is_principal":true}),
+    );
+
+    let (status, response) = post(
+        j.path(),
+        "/app/entities/api/journal/block",
+        json!({"operation": "bulk-protect-principal", "ids": ["a", "owner"]}),
+    )
+    .await;
+    assert_eq!(status, 400);
+    assert_eq!(response["reason_code"], "principal_entity_protected");
+}
+
+#[tokio::test]
+async fn bulk_block_fails_with_entity_record_damaged_on_corrupt_relationship() {
+    let j = Journal::new();
+    seed_entity(j.path(), "a", "Alice");
+    seed_facet_entity(j.path(), "work", "a");
+    let bad_file = j.path().join("facets/work/entities/a/entity.json");
+    fs::write(&bad_file, b"not valid json").unwrap();
+
+    let (status, response) = post(
+        j.path(),
+        "/app/entities/api/journal/block",
+        json!({"operation": "bulk-damaged-rel", "ids": ["a"]}),
+    )
+    .await;
+    assert_eq!(status, 409);
+    assert_eq!(response["reason_code"], "entity_record_damaged");
+    let detail = response["detail"].as_str().unwrap();
+    assert_eq!(detail, "facets/work/entities/a/entity.json");
+    assert!(!detail.contains(j.path().to_str().unwrap()));
+}
+
+#[tokio::test]
+async fn bulk_block_and_unblock_localhost_success() {
+    let j = Journal::new();
+    seed_entity(j.path(), "a", "Alice");
+    seed_facet_entity(j.path(), "work", "a");
+
+    let (status, response) = post(
+        j.path(),
+        "/app/entities/api/journal/block",
+        json!({"operation": "bulk-happy-path", "ids": ["a"]}),
+    )
+    .await;
+    assert_eq!(status, 200);
+    assert_eq!(response["hidden"], json!(["a"]));
+    assert!(response["already_hidden"].as_array().unwrap().is_empty());
+
+    let (status, entity) = call(j.path(), "/app/entities/api/journal/entity/a").await;
+    assert_eq!(status, 200);
+    assert_eq!(entity["entity"]["blocked"], true);
+
+    let (status, response) = post(
+        j.path(),
+        "/app/entities/api/journal/unblock",
+        json!({"operation": "bulk-happy-path", "limit": 10}),
+    )
+    .await;
+    assert_eq!(status, 200);
+    assert_eq!(response["restored"].as_array().unwrap().len(), 1);
+    assert_eq!(response["restored"][0]["id"], "a");
+
+    let (status, entity) = call(j.path(), "/app/entities/api/journal/entity/a").await;
+    assert_eq!(status, 200);
+    assert_eq!(entity["entity"]["blocked"], false);
+}
+
+#[tokio::test]
 async fn journal_lists_entities() {
     let j = Journal::new();
     seed_entity(j.path(), "a", "Alice");
@@ -2243,6 +2533,7 @@ async fn journal_summary_carries_card_fields_without_facet_descriptions() {
     assert_eq!(items.len(), 10);
     let expected: BTreeSet<String> = [
         "id",
+        "entity_id",
         "name",
         "type",
         "type_bucket",
@@ -2472,6 +2763,7 @@ async fn journal_entity_assembly_matches_the_recorded_oracle() {
 
     let entity_keys: BTreeSet<_> = [
         "id",
+        "entity_id",
         "name",
         "type",
         "aka",
@@ -8859,4 +9151,1131 @@ async fn collision_loser_folder_with_own_name_returns_its_own_name_not_winner_na
     assert_eq!(status, 200);
     assert_eq!(body["peer_id"], "shared_id");
     assert_eq!(body["peer_name"], "Loser Name");
+}
+
+#[tokio::test]
+async fn tidy_up_members_follow_the_id_rules() {
+    let j = Journal::new();
+    write(j.path(), "facets/work/facet.json", json!({"title": "Work"}));
+
+    // 1. notes_v2.md - Person, notes_v2.md, last_seen 20260102, zero notes
+    write(
+        j.path(),
+        "entities/notes_v2.md/entity.json",
+        json!({"id": "notes_v2.md", "name": "notes_v2.md", "type": "Person", "last_seen": "20260102"}),
+    );
+    write(
+        j.path(),
+        "facets/work/entities/rel_notes/entity.json",
+        json!({"entity_id": "notes_v2.md", "last_seen": "20260102"}),
+    );
+
+    // 2. plan.pdf - Person, plan.pdf, last_seen 20260102, zero notes
+    write(
+        j.path(),
+        "entities/plan.pdf/entity.json",
+        json!({"id": "plan.pdf", "name": "plan.pdf", "type": "Person", "last_seen": "20260102"}),
+    );
+    write(
+        j.path(),
+        "facets/work/entities/rel_plan/entity.json",
+        json!({"entity_id": "plan.pdf", "last_seen": "20260102"}),
+    );
+
+    // Two entities sharing one ID-shaped name, same type, same day -> tiebroken by effective id
+    write(
+        j.path(),
+        "entities/aaa_tie.md/entity.json",
+        json!({"id": "aaa_tie.md", "name": "tkt_x7k2p9qa", "type": "Person", "last_seen": "20260101"}),
+    );
+    write(
+        j.path(),
+        "facets/work/entities/rel_aaa/entity.json",
+        json!({"entity_id": "aaa_tie.md", "last_seen": "20260101"}),
+    );
+
+    write(
+        j.path(),
+        "entities/zzz_tie.md/entity.json",
+        json!({"id": "zzz_tie.md", "name": "tkt_x7k2p9qa", "type": "Person", "last_seen": "20260101"}),
+    );
+    write(
+        j.path(),
+        "facets/work/entities/rel_zzz/entity.json",
+        json!({"entity_id": "zzz_tie.md", "last_seen": "20260101"}),
+    );
+
+    // 3. brief.toml - Person, name brief.toml, no last_seen, zero notes
+    write(
+        j.path(),
+        "entities/brief.toml/entity.json",
+        json!({"id": "brief.toml", "name": "brief.toml", "type": "Person"}),
+    );
+    write(
+        j.path(),
+        "facets/work/entities/rel_brief/entity.json",
+        json!({"entity_id": "brief.toml"}),
+    );
+    write_raw(
+        j.path(),
+        "facets/work/entities/rel_brief/observations.jsonl",
+        b"{\"id\":1,\"content\":\"a\",\"source_day\":\"20260101\",\"retired\":{\"at\":1,\"by\":\"owner\"}}\n",
+    );
+
+    // 4. docs/plan - folder folder-ada, name docs/plan, Person, zero notes
+    write(
+        j.path(),
+        "entities/folder-ada/entity.json",
+        json!({"id": "docs/plan", "name": "docs/plan", "type": "Person"}),
+    );
+    write(
+        j.path(),
+        "facets/work/entities/rel_docs/entity.json",
+        json!({"entity_id": "docs/plan"}),
+    );
+
+    // 5. a3f9c2e1 - Tool, name a3f9c2e1, last_seen 20260103, zero notes
+    write(
+        j.path(),
+        "entities/a3f9c2e1/entity.json",
+        json!({"id": "a3f9c2e1", "name": "a3f9c2e1", "type": "Tool"}),
+    );
+    write(
+        j.path(),
+        "facets/work/entities/rel_hex/entity.json",
+        json!({"entity_id": "a3f9c2e1", "last_seen": "20260103"}),
+    );
+
+    // Non-member: folder matches shape, name does not
+    write(
+        j.path(),
+        "entities/folder_shape.md/entity.json",
+        json!({"id": "real-person", "name": "Ada Lovelace", "type": "Person"}),
+    );
+    write(
+        j.path(),
+        "facets/work/entities/rel_folder_shape/entity.json",
+        json!({"entity_id": "real-person"}),
+    );
+
+    // --- Excluded cases ---
+    // Attached kept note
+    write(
+        j.path(),
+        "entities/kept_attached.txt/entity.json",
+        json!({"id": "kept_attached.txt", "name": "kept_attached.txt", "type": "Person"}),
+    );
+    write(
+        j.path(),
+        "facets/work/entities/rel_kept_att/entity.json",
+        json!({"entity_id": "kept_attached.txt"}),
+    );
+    write_raw(
+        j.path(),
+        "facets/work/entities/rel_kept_att/observations.jsonl",
+        b"{\"id\":1,\"content\":\"a\",\"source_day\":\"20260101\"}\n",
+    );
+
+    // Detached kept note
+    write(
+        j.path(),
+        "entities/kept_detached.txt/entity.json",
+        json!({"id": "kept_detached.txt", "name": "kept_detached.txt", "type": "Person"}),
+    );
+    write(
+        j.path(),
+        "facets/work/entities/rel_kept_det/entity.json",
+        json!({"entity_id": "kept_detached.txt", "detached": true}),
+    );
+    write_raw(
+        j.path(),
+        "facets/work/entities/rel_kept_det/observations.jsonl",
+        b"{\"id\":1,\"content\":\"a\",\"source_day\":\"20260101\"}\n",
+    );
+
+    // Kept note in facet directory with no facet.json
+    write(
+        j.path(),
+        "entities/nofacet_note.txt/entity.json",
+        json!({"id": "nofacet_note.txt", "name": "nofacet_note.txt", "type": "Person"}),
+    );
+    write(
+        j.path(),
+        "facets/nofacet/entities/rel_nofacet/entity.json",
+        json!({"entity_id": "nofacet_note.txt"}),
+    );
+    write_raw(
+        j.path(),
+        "facets/nofacet/entities/rel_nofacet/observations.jsonl",
+        b"{\"id\":1,\"content\":\"a\",\"source_day\":\"20260101\"}\n",
+    );
+
+    // Unreadable notes (a directory at observations.jsonl) attached
+    write(
+        j.path(),
+        "entities/unreadable_att.txt/entity.json",
+        json!({"id": "unreadable_att.txt", "name": "unreadable_att.txt", "type": "Person"}),
+    );
+    write(
+        j.path(),
+        "facets/work/entities/rel_unreadable_att/entity.json",
+        json!({"entity_id": "unreadable_att.txt"}),
+    );
+    fs::create_dir_all(
+        j.path()
+            .join("facets/work/entities/rel_unreadable_att/observations.jsonl"),
+    )
+    .unwrap();
+
+    // Unreadable notes detached
+    write(
+        j.path(),
+        "entities/unreadable_det.txt/entity.json",
+        json!({"id": "unreadable_det.txt", "name": "unreadable_det.txt", "type": "Person"}),
+    );
+    write(
+        j.path(),
+        "facets/work/entities/rel_unreadable_det/entity.json",
+        json!({"entity_id": "unreadable_det.txt", "detached": true}),
+    );
+    fs::create_dir_all(
+        j.path()
+            .join("facets/work/entities/rel_unreadable_det/observations.jsonl"),
+    )
+    .unwrap();
+
+    // Unparseable notes
+    write(
+        j.path(),
+        "entities/unparseable.txt/entity.json",
+        json!({"id": "unparseable.txt", "name": "unparseable.txt", "type": "Person"}),
+    );
+    write(
+        j.path(),
+        "facets/work/entities/rel_unparseable/entity.json",
+        json!({"entity_id": "unparseable.txt"}),
+    );
+    write_raw(
+        j.path(),
+        "facets/work/entities/rel_unparseable/observations.jsonl",
+        b"not json",
+    );
+
+    // blocked: true
+    write(
+        j.path(),
+        "entities/blocked_bool.txt/entity.json",
+        json!({"id": "blocked_bool.txt", "name": "blocked_bool.txt", "type": "Person", "blocked": true}),
+    );
+    write(
+        j.path(),
+        "facets/work/entities/rel_blocked_bool/entity.json",
+        json!({"entity_id": "blocked_bool.txt"}),
+    );
+
+    // blocked: "true" raw
+    write_raw(
+        j.path(),
+        "entities/blocked_str.txt/entity.json",
+        br#"{"id":"blocked_str.txt","name":"blocked_str.txt","type":"Person","blocked":"true"}"#,
+    );
+    write(
+        j.path(),
+        "facets/work/entities/rel_blocked_str/entity.json",
+        json!({"entity_id": "blocked_str.txt"}),
+    );
+
+    // is_principal: true Person
+    write(
+        j.path(),
+        "entities/princ_person.txt/entity.json",
+        json!({"id": "princ_person.txt", "name": "princ_person.txt", "type": "Person", "is_principal": true}),
+    );
+    write(
+        j.path(),
+        "facets/work/entities/rel_princ_person/entity.json",
+        json!({"entity_id": "princ_person.txt"}),
+    );
+
+    // Stray principal written raw
+    write_raw(
+        j.path(),
+        "entities/stray_princ.txt/entity.json",
+        br#"{"id":"stray_princ.txt","name":"stray_princ.txt","type":"Person","is_principal":"yes"}"#,
+    );
+    write(
+        j.path(),
+        "facets/work/entities/rel_stray_princ/entity.json",
+        json!({"entity_id": "stray_princ.txt"}),
+    );
+
+    // Collision: winner folder ada-folder, loser folder lost_id.md
+    write(
+        j.path(),
+        "entities/ada-folder/entity.json",
+        json!({"id": "lost_id.md", "name": "Ada Lovelace", "type": "Person"}),
+    );
+    write(
+        j.path(),
+        "entities/lost_id.md/entity.json",
+        json!({"name": "lost_id.md"}),
+    );
+    write(
+        j.path(),
+        "facets/work/entities/rel_lost/entity.json",
+        json!({"entity_id": "lost_id.md"}),
+    );
+
+    // Attributed note on tkt_x7k2p9qa via other-name
+    write(
+        j.path(),
+        "entities/tkt_x7k2p9qa/entity.json",
+        json!({"id": "tkt_x7k2p9qa", "name": "tkt_x7k2p9qa", "type": "Person"}),
+    );
+    write(
+        j.path(),
+        "facets/work/entities/other-name/entity.json",
+        json!({"entity_id": "tkt_x7k2p9qa"}),
+    );
+    write_raw(
+        j.path(),
+        "facets/work/entities/other-name/observations.jsonl",
+        b"{\"id\":1,\"content\":\"a\",\"source_day\":\"20260101\"}\n",
+    );
+
+    // Attributed note on ops:reimbur via relationship folder named ops:reimbur with {}
+    write(
+        j.path(),
+        "entities/ops:reimbur/entity.json",
+        json!({"id": "ops:reimbur", "name": "ops:reimbur", "type": "Person"}),
+    );
+    write(
+        j.path(),
+        "facets/work/entities/ops:reimbur/entity.json",
+        json!({}),
+    );
+    write_raw(
+        j.path(),
+        "facets/work/entities/ops:reimbur/observations.jsonl",
+        b"{\"id\":1,\"content\":\"a\",\"source_day\":\"20260101\"}\n",
+    );
+
+    let (status, resp) = call(j.path(), "/app/entities/api/journal/tidy-up").await;
+    assert_eq!(status, 200);
+
+    let members = resp["id_shaped"]["members"]
+        .as_array()
+        .expect("members is array");
+    let member_ids: Vec<&str> = members.iter().map(|m| m.as_str().unwrap()).collect();
+    assert_eq!(
+        member_ids,
+        vec![
+            "notes_v2.md",
+            "plan.pdf",
+            "aaa_tie.md",
+            "zzz_tie.md",
+            "brief.toml",
+            "docs/plan",
+            "a3f9c2e1",
+        ]
+    );
+
+    let items = resp["id_shaped"]["items"]
+        .as_array()
+        .expect("items is array");
+
+    let notes_item = items
+        .iter()
+        .find(|item| item["id"] == "notes_v2.md")
+        .expect("notes_v2.md item");
+    assert_eq!(notes_item["name"], "notes_v2.md");
+    assert_eq!(notes_item["last_active_day"], "20260102");
+
+    let plan_item = items
+        .iter()
+        .find(|item| item["id"] == "plan.pdf")
+        .expect("plan.pdf item");
+    assert_eq!(plan_item["name"], "plan.pdf");
+    assert_eq!(plan_item["last_active_day"], "20260102");
+
+    let aaa_item = items
+        .iter()
+        .find(|item| item["id"] == "aaa_tie.md")
+        .expect("aaa_tie.md item");
+    assert_eq!(aaa_item["name"], "tkt_x7k2p9qa");
+    assert_eq!(aaa_item["last_active_day"], "20260101");
+
+    let zzz_item = items
+        .iter()
+        .find(|item| item["id"] == "zzz_tie.md")
+        .expect("zzz_tie.md item");
+    assert_eq!(zzz_item["name"], "tkt_x7k2p9qa");
+    assert_eq!(zzz_item["last_active_day"], "20260101");
+
+    let brief_item = items
+        .iter()
+        .find(|item| item["id"] == "brief.toml")
+        .expect("brief.toml item");
+    assert_eq!(brief_item["kept_notes_count"], 0);
+
+    let docs_item = items
+        .iter()
+        .find(|item| item["id"] == "docs/plan")
+        .expect("docs/plan item");
+    assert_eq!(docs_item["name"], "docs/plan");
+    assert_eq!(docs_item["kept_notes_count"], 0);
+    let facets = docs_item["facets"].as_array().unwrap();
+    assert!(facets.iter().any(|f| f == "work"));
+
+    assert!(!member_ids.contains(&"folder-ada"));
+    assert!(!member_ids.contains(&"lost_id.md"));
+    assert!(!member_ids.contains(&"tkt_x7k2p9qa"));
+    assert!(!member_ids.contains(&"ops:reimbur"));
+    assert!(!member_ids.contains(&"blocked_bool.txt"));
+    assert!(!member_ids.contains(&"blocked_str.txt"));
+    assert!(!member_ids.contains(&"princ_person.txt"));
+    assert!(!member_ids.contains(&"stray_princ.txt"));
+    assert!(!member_ids.contains(&"real-person"));
+    assert!(!member_ids.contains(&"folder_shape.md"));
+}
+
+#[tokio::test]
+async fn tidy_up_pages_both_groups() {
+    let j = Journal::new();
+    write(j.path(), "facets/work/facet.json", json!({"title": "Work"}));
+    write(
+        j.path(),
+        "facets/personal/facet.json",
+        json!({"title": "Personal"}),
+    );
+    write(j.path(), "facets/home/facet.json", json!({"title": "Home"}));
+
+    // ID group entities
+    for id in ["notes_v2.md", "plan.pdf", "brief.toml", "a3f9c2e1"] {
+        write(
+            j.path(),
+            &format!("entities/{id}/entity.json"),
+            json!({"id": id, "name": id, "type": "Person"}),
+        );
+        write(
+            j.path(),
+            &format!("facets/work/entities/rel_{id}/entity.json"),
+            json!({"entity_id": id}),
+        );
+    }
+
+    // Duplicates group fixture
+    let candidates = [
+        r#"{"facet":"work","source_slug":"echo","target_slug":"foxtrot","status":"open","evidence":{"detection_count":9}}"#,
+        r#"{"facet":"personal","source_slug":"carol","target_slug":"dora","evidence":{"detection_count":5}}"#,
+        r#"{"facet":"work","source_slug":"bravo","target_slug":"alpha","status":"open","evidence":{"detection_count":5}}"#,
+        r#"{"facet":"home","source_slug":"alpha","target_slug":"bravo","status":"open","evidence":{"detection_count":"3"}}"#,
+        r#"{"facet":"work","source_slug":"alpha","target_slug":"bravo","status":"open","evidence":{"detection_count":2}}"#,
+        r#"{"facet":"work","source_slug":"alpha","target_slug":"carol","status":"open","evidence":{"detection_count":1}}"#,
+        r#"{"facet":"work","source_slug":"golf","target_slug":"hotel","status":"open","evidence":{"detection_count":100},"review":{"suppression":{"reason":"stale","at":"2026-01-01T00:00:00Z","evidence_key":"work|golf|hotel"}}}"#,
+        r#"{"facet":"work","source_slug":"india","target_slug":"juliet","status":"dismissed","evidence":{"detection_count":100}}"#,
+    ]
+    .join("\n")
+        + "\n";
+    write_raw(
+        j.path(),
+        "entities/review-candidates.jsonl",
+        candidates.as_bytes(),
+    );
+    write_raw(
+        j.path(),
+        "entities/echo/entity.json",
+        br#"{"id":"echo","name":"Echo","blocked":"true"}"#,
+    );
+
+    let (status, full) = call(j.path(), "/app/entities/api/journal/tidy-up").await;
+    assert_eq!(status, 200);
+
+    // Duplicates assertions
+    assert_eq!(full["duplicates"]["count"], 4);
+    let dup_members = full["duplicates"]["members"].as_array().unwrap();
+    assert_eq!(dup_members.len(), 4);
+    assert_eq!(dup_members[0]["pair"], json!(["carol", "dora"]));
+    assert_eq!(dup_members[1]["pair"], json!(["bravo", "alpha"]));
+    assert_eq!(dup_members[2]["pair"], json!(["alpha", "bravo"]));
+    assert_eq!(dup_members[3]["pair"], json!(["alpha", "carol"]));
+
+    let dup_items = full["duplicates"]["items"].as_array().unwrap();
+    assert_eq!(dup_items.len(), 4);
+    assert_eq!(dup_items[0]["facets"], json!(["personal"]));
+    assert_eq!(dup_items[0]["keys"], json!(["personal|carol|dora"]));
+    assert_eq!(dup_items[1]["facets"], json!(["work"]));
+    assert_eq!(dup_items[1]["keys"], json!(["work|bravo|alpha"]));
+    assert_eq!(dup_items[2]["facets"], json!(["home", "work"]));
+    assert_eq!(
+        dup_items[2]["keys"],
+        json!(["home|alpha|bravo", "work|alpha|bravo"])
+    );
+    assert_eq!(dup_items[3]["facets"], json!(["work"]));
+    assert_eq!(dup_items[3]["keys"], json!(["work|alpha|carol"]));
+
+    // Pagination for duplicates: offset 1, limit 2
+    let (status, paged_dups) = call(
+        j.path(),
+        "/app/entities/api/journal/tidy-up?offset=1&limit=2",
+    )
+    .await;
+    assert_eq!(status, 200);
+    assert_eq!(paged_dups["duplicates"]["count"], 4);
+    let paged_dup_items = paged_dups["duplicates"]["items"].as_array().unwrap();
+    assert_eq!(paged_dup_items.len(), 2);
+    assert_eq!(paged_dup_items[0]["pair"], json!(["bravo", "alpha"]));
+    assert_eq!(paged_dup_items[1]["pair"], json!(["alpha", "bravo"]));
+
+    // Two successive limit-2 pages concatenate to members
+    let (_, p0) = call(
+        j.path(),
+        "/app/entities/api/journal/tidy-up?offset=0&limit=2",
+    )
+    .await;
+    let (_, p1) = call(
+        j.path(),
+        "/app/entities/api/journal/tidy-up?offset=2&limit=2",
+    )
+    .await;
+    let mut concatenated_pairs = Vec::new();
+    for item in p0["duplicates"]["items"].as_array().unwrap() {
+        concatenated_pairs.push(item["pair"].clone());
+    }
+    for item in p1["duplicates"]["items"].as_array().unwrap() {
+        concatenated_pairs.push(item["pair"].clone());
+    }
+    let all_member_pairs: Vec<Value> = dup_members.iter().map(|m| m["pair"].clone()).collect();
+    assert_eq!(concatenated_pairs, all_member_pairs);
+
+    // Two successive pages for ID group concatenate to members
+    let mut id_concat = Vec::new();
+    let (_, id_p0) = call(
+        j.path(),
+        "/app/entities/api/journal/tidy-up?offset=0&limit=2",
+    )
+    .await;
+    let (_, id_p1) = call(
+        j.path(),
+        "/app/entities/api/journal/tidy-up?offset=2&limit=2",
+    )
+    .await;
+    for item in id_p0["id_shaped"]["items"].as_array().unwrap() {
+        id_concat.push(item["id"].as_str().unwrap().to_owned());
+    }
+    for item in id_p1["id_shaped"]["items"].as_array().unwrap() {
+        id_concat.push(item["id"].as_str().unwrap().to_owned());
+    }
+    let id_members_all: Vec<String> = full["id_shaped"]["members"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|m| m.as_str().unwrap().to_owned())
+        .collect();
+    assert_eq!(id_concat, id_members_all);
+
+    // Limit-100 pages concatenate to members for both groups
+    let (_, dup_100_p0) = call(
+        j.path(),
+        "/app/entities/api/journal/tidy-up?offset=0&limit=100",
+    )
+    .await;
+    let (_, dup_100_p1) = call(
+        j.path(),
+        "/app/entities/api/journal/tidy-up?offset=100&limit=100",
+    )
+    .await;
+    let mut dup_100_concat = Vec::new();
+    for item in dup_100_p0["duplicates"]["items"].as_array().unwrap() {
+        dup_100_concat.push(item["pair"].clone());
+    }
+    for item in dup_100_p1["duplicates"]["items"].as_array().unwrap() {
+        dup_100_concat.push(item["pair"].clone());
+    }
+    assert_eq!(dup_100_concat, all_member_pairs);
+
+    let (_, id_100_p0) = call(
+        j.path(),
+        "/app/entities/api/journal/tidy-up?offset=0&limit=100",
+    )
+    .await;
+    let (_, id_100_p1) = call(
+        j.path(),
+        "/app/entities/api/journal/tidy-up?offset=100&limit=100",
+    )
+    .await;
+    let mut id_100_concat = Vec::new();
+    for item in id_100_p0["id_shaped"]["items"].as_array().unwrap() {
+        id_100_concat.push(item["id"].as_str().unwrap().to_owned());
+    }
+    for item in id_100_p1["id_shaped"]["items"].as_array().unwrap() {
+        id_100_concat.push(item["id"].as_str().unwrap().to_owned());
+    }
+    assert_eq!(id_100_concat, id_members_all);
+}
+
+#[tokio::test]
+async fn tidy_up_refuses_bad_offset_and_limit() {
+    let j = Journal::new();
+    assert_oracle_refusal(
+        "tidy negative offset",
+        call(j.path(), "/app/entities/api/journal/tidy-up?offset=-1").await,
+        "invalid_request_value",
+        400,
+    );
+    assert_oracle_refusal(
+        "tidy negative limit",
+        call(j.path(), "/app/entities/api/journal/tidy-up?limit=-1").await,
+        "invalid_request_value",
+        400,
+    );
+    assert_oracle_refusal(
+        "tidy limit above 100",
+        call(j.path(), "/app/entities/api/journal/tidy-up?limit=101").await,
+        "invalid_request_value",
+        400,
+    );
+}
+
+#[tokio::test]
+async fn tidy_up_get_leaves_the_journal_unchanged() {
+    let j = Journal::new();
+    write(j.path(), "facets/work/facet.json", json!({"title": "Work"}));
+    write(
+        j.path(),
+        "entities/brief.toml/entity.json",
+        json!({"id": "brief.toml", "name": "brief.toml", "type": "Person"}),
+    );
+    write(
+        j.path(),
+        "facets/work/entities/rel_brief/entity.json",
+        json!({"entity_id": "brief.toml"}),
+    );
+
+    fn collect_files(
+        root: &Path,
+        dir: &Path,
+        out: &mut std::collections::BTreeMap<String, Vec<u8>>,
+    ) {
+        for entry in fs::read_dir(dir).unwrap() {
+            let entry = entry.unwrap();
+            let path = entry.path();
+            if path.is_dir() {
+                collect_files(root, &path, out);
+            } else if path.is_file() {
+                let rel = path
+                    .strip_prefix(root)
+                    .unwrap()
+                    .to_str()
+                    .unwrap()
+                    .to_owned();
+                let bytes = fs::read(&path).unwrap();
+                out.insert(rel, bytes);
+            }
+        }
+    }
+
+    let mut before = std::collections::BTreeMap::new();
+    collect_files(j.path(), j.path(), &mut before);
+
+    let (status, resp) = call(j.path(), "/app/entities/api/journal/tidy-up").await;
+    assert_eq!(status, 200);
+    assert_eq!(resp["id_shaped"]["count"], 1);
+
+    let mut after = std::collections::BTreeMap::new();
+    collect_files(j.path(), j.path(), &mut after);
+
+    assert_eq!(before, after);
+}
+
+#[tokio::test]
+async fn tidy_up_damage_withholds_the_id_list_and_hide_names_the_first_path() {
+    let j = Journal::new();
+    write(j.path(), "facets/work/facet.json", json!({"title": "Work"}));
+    write(
+        j.path(),
+        "entities/brief.toml/entity.json",
+        json!({"id": "brief.toml", "name": "brief.toml", "type": "Person"}),
+    );
+    write(
+        j.path(),
+        "facets/work/entities/rel_brief/entity.json",
+        json!({"entity_id": "brief.toml"}),
+    );
+
+    // 1. dangling entity.json symlink
+    let dangling = j
+        .path()
+        .join("facets/work/entities/rel_dangling/entity.json");
+    fs::create_dir_all(dangling.parent().unwrap()).unwrap();
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(j.path().join("missing-target"), &dangling).unwrap();
+
+    // 2. unparseable JSON
+    write_raw(
+        j.path(),
+        "facets/work/entities/rel_unparseable/entity.json",
+        b"not valid json",
+    );
+
+    // 3. non-object []
+    write_raw(
+        j.path(),
+        "facets/work/entities/rel_nonobj/entity.json",
+        b"[]",
+    );
+
+    // 4. damage inside a facet with no facet.json
+    write_raw(
+        j.path(),
+        "facets/nofacet/entities/rel_bad/entity.json",
+        b"not valid json",
+    );
+
+    let (status, resp) = call(j.path(), "/app/entities/api/journal/tidy-up").await;
+    assert_eq!(status, 200);
+
+    let damage = &resp["damage"];
+    assert_eq!(damage["count"], 4);
+    assert_eq!(
+        damage["paths"],
+        json!([
+            "facets/nofacet/entities/rel_bad/entity.json",
+            "facets/work/entities/rel_dangling/entity.json",
+            "facets/work/entities/rel_nonobj/entity.json",
+            "facets/work/entities/rel_unparseable/entity.json",
+        ])
+    );
+    let paths = damage["paths"].as_array().unwrap();
+    let first_damaged_path = paths[0].as_str().unwrap().to_owned();
+
+    assert_eq!(resp["id_shaped"]["actionable"], false);
+    assert_eq!(resp["id_shaped"]["count"], 1);
+    assert!(resp["id_shaped"]["items"].is_null());
+    assert!(resp["id_shaped"]["members"].is_null());
+
+    let hide_err = solstone_core_facets::block_journal_entity(j.path(), "brief.toml").unwrap_err();
+    assert!(matches!(
+        hide_err,
+        solstone_core_facets::FacetEntityLifecycleError::RelationshipsUnreadable { ref path }
+            if path == &first_damaged_path
+    ));
+
+    let (block_status, block_resp) = post(
+        j.path(),
+        "/app/entities/api/journal/entity/brief.toml/block",
+        json!({}),
+    )
+    .await;
+    assert_eq!(block_status, 409);
+    assert_eq!(block_resp["reason_code"], "entity_record_damaged");
+    assert_eq!(block_resp["detail"], first_damaged_path);
+}
+
+#[tokio::test]
+async fn tidy_up_empty_and_null_links_are_not_damage() {
+    let j = Journal::new();
+    write(j.path(), "facets/work/facet.json", json!({"title": "Work"}));
+    write(
+        j.path(),
+        "entities/brief.toml/entity.json",
+        json!({"id": "brief.toml", "name": "brief.toml", "type": "Person"}),
+    );
+    write(
+        j.path(),
+        "facets/work/entities/rel_brief/entity.json",
+        json!({"entity_id": "brief.toml"}),
+    );
+
+    // Empty file
+    write_raw(j.path(), "facets/work/entities/rel_empty/entity.json", b"");
+
+    // JSON null
+    write_raw(
+        j.path(),
+        "facets/work/entities/rel_null/entity.json",
+        b"null",
+    );
+
+    let (status, resp) = call(j.path(), "/app/entities/api/journal/tidy-up").await;
+    assert_eq!(status, 200);
+    assert_eq!(resp["damage"]["count"], 0);
+    assert_eq!(resp["id_shaped"]["actionable"], true);
+    let members = resp["id_shaped"]["members"].as_array().unwrap();
+    assert_eq!(members, &vec![json!("brief.toml")]);
+
+    assert!(solstone_core_facets::block_journal_entity(j.path(), "brief.toml").is_ok());
+}
+
+#[tokio::test]
+async fn tidy_up_candidate_load_failure_keeps_the_id_group() {
+    let j = Journal::new();
+    write(j.path(), "facets/work/facet.json", json!({"title": "Work"}));
+    write(
+        j.path(),
+        "entities/brief.toml/entity.json",
+        json!({"id": "brief.toml", "name": "brief.toml", "type": "Person"}),
+    );
+    write(
+        j.path(),
+        "facets/work/entities/rel_brief/entity.json",
+        json!({"entity_id": "brief.toml"}),
+    );
+
+    // Malformed review row where review.suppression is a string (fails validate_review_object)
+    write_raw(
+        j.path(),
+        "entities/review-candidates.jsonl",
+        b"{\"facet\":\"work\",\"source_slug\":\"a\",\"target_slug\":\"b\",\"status\":\"open\",\"review\":{\"suppression\":\"invalid string\"}}\n",
+    );
+
+    let (status, resp) = call(j.path(), "/app/entities/api/journal/tidy-up").await;
+    assert_eq!(status, 200);
+
+    assert!(resp["duplicates"]["error"].is_string());
+    assert!(resp["duplicates"]["count"].is_null());
+    assert!(resp["duplicates"]["items"].is_null());
+    assert!(resp["duplicates"]["members"].is_null());
+
+    assert_eq!(resp["id_shaped"]["count"], 1);
+    assert_eq!(resp["id_shaped"]["actionable"], true);
+    assert_eq!(resp["damage"]["count"], 0);
+}
+
+#[tokio::test]
+async fn journal_summary_hidden_splits_truthy_blocked_without_moving_folder_counts() {
+    let j = Journal::new();
+    write(j.path(), "facets/work/facet.json", json!({"title": "Work"}));
+
+    // One visible person
+    write(
+        j.path(),
+        "entities/folder-ada/entity.json",
+        json!({"id": "folder-ada", "name": "Ada Lovelace", "type": "Person"}),
+    );
+    write(
+        j.path(),
+        "facets/work/entities/rel_ada/entity.json",
+        json!({"entity_id": "folder-ada"}),
+    );
+
+    // One blocked: true
+    write(
+        j.path(),
+        "entities/ada-folder/entity.json",
+        json!({"id": "ada-folder", "name": "Ada Blocked Bool", "type": "Person", "blocked": true}),
+    );
+    write(
+        j.path(),
+        "facets/work/entities/rel_b1/entity.json",
+        json!({"entity_id": "ada-folder"}),
+    );
+
+    // One blocked: "true"
+    write(
+        j.path(),
+        "entities/notes_v2.md/entity.json",
+        json!({"id": "notes_v2.md", "name": "Notes Str", "type": "Person", "blocked": "true"}),
+    );
+    write(
+        j.path(),
+        "facets/work/entities/rel_b2/entity.json",
+        json!({"entity_id": "notes_v2.md"}),
+    );
+
+    let expected_folder_counts = json!({
+        "all": 1,
+        "people": 1,
+        "companies": 0,
+        "projects": 0,
+        "tools": 0,
+        "other": 0,
+        "hidden": 2,
+    });
+    let expected_type_counts = json!([{"bucket": "person", "count": 3}]);
+
+    // hidden=only returns exactly the two hidden ones, both with blocked: true
+    let (status, resp_only) = call(j.path(), "/app/entities/api/journal/summary?hidden=only").await;
+    assert_eq!(status, 200);
+    assert_eq!(resp_only["total"], 2);
+    assert_eq!(resp_only["entity_total"], 3);
+    assert_eq!(resp_only["folder_counts"], expected_folder_counts);
+    assert_eq!(resp_only["type_counts"], expected_type_counts);
+    let items_only = resp_only["items"].as_array().expect("items array");
+    assert_eq!(items_only.len(), 2);
+    let ids_only: BTreeSet<&str> = items_only
+        .iter()
+        .map(|item| item["id"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        ids_only,
+        ["ada-folder", "notes_v2.md"].into_iter().collect()
+    );
+    for item in items_only {
+        assert_eq!(item["blocked"], true);
+    }
+
+    // hidden=exclude returns neither of the hidden rows
+    let (status, resp_exclude) =
+        call(j.path(), "/app/entities/api/journal/summary?hidden=exclude").await;
+    assert_eq!(status, 200);
+    assert_eq!(resp_exclude["total"], 1);
+    assert_eq!(resp_exclude["entity_total"], 3);
+    assert_eq!(resp_exclude["folder_counts"], expected_folder_counts);
+    assert_eq!(resp_exclude["type_counts"], expected_type_counts);
+    let items_exclude = resp_exclude["items"].as_array().expect("items array");
+    assert_eq!(items_exclude.len(), 1);
+    assert_eq!(items_exclude[0]["id"], "folder-ada");
+    assert_eq!(items_exclude[0]["blocked"], false);
+
+    // Absent hidden returns all three, both hidden rows have blocked: true, and facet_counts does not include them
+    let (status, resp_all) = call(j.path(), "/app/entities/api/journal/summary").await;
+    assert_eq!(status, 200);
+    assert_eq!(resp_all["total"], 3);
+    assert_eq!(resp_all["entity_total"], 3);
+    assert_eq!(resp_all["folder_counts"], expected_folder_counts);
+    assert_eq!(resp_all["type_counts"], expected_type_counts);
+    assert_eq!(resp_all["facet_counts"]["work"], 1);
+    let items_all = resp_all["items"].as_array().expect("items array");
+    assert_eq!(items_all.len(), 3);
+    for item in items_all {
+        let is_hidden_id = item["id"] == "ada-folder" || item["id"] == "notes_v2.md";
+        assert_eq!(item["blocked"], is_hidden_id);
+    }
+
+    // Same folder_counts, entity_total, type_counts with type=person
+    let (status, resp_type) = call(j.path(), "/app/entities/api/journal/summary?type=person").await;
+    assert_eq!(status, 200);
+    assert_eq!(resp_type["folder_counts"], expected_folder_counts);
+    assert_eq!(resp_type["entity_total"], 3);
+    assert_eq!(resp_type["type_counts"], expected_type_counts);
+
+    // Same folder_counts, entity_total, type_counts with q set to the visible name
+    let (status, resp_q) = call(
+        j.path(),
+        "/app/entities/api/journal/summary?q=Ada%20Lovelace",
+    )
+    .await;
+    assert_eq!(status, 200);
+    assert_eq!(resp_q["folder_counts"], expected_folder_counts);
+    assert_eq!(resp_q["entity_total"], 3);
+    assert_eq!(resp_q["type_counts"], expected_type_counts);
+
+    // Same folder_counts, entity_total, type_counts with offset past the first page
+    let (status, resp_offset) = call(j.path(), "/app/entities/api/journal/summary?offset=10").await;
+    assert_eq!(status, 200);
+    assert_eq!(resp_offset["folder_counts"], expected_folder_counts);
+    assert_eq!(resp_offset["entity_total"], 3);
+    assert_eq!(resp_offset["type_counts"], expected_type_counts);
+}
+
+#[tokio::test]
+async fn journal_summary_refuses_unknown_hidden() {
+    let j = Journal::new();
+    seed_entity(j.path(), "folder-ada", "Ada");
+    assert_oracle_refusal(
+        "summary unknown hidden people",
+        call(j.path(), "/app/entities/api/journal/summary?hidden=people").await,
+        "invalid_request_value",
+        400,
+    );
+    assert_oracle_refusal(
+        "summary unknown hidden true",
+        call(j.path(), "/app/entities/api/journal/summary?hidden=true").await,
+        "invalid_request_value",
+        400,
+    );
+}
+
+#[tokio::test]
+async fn journal_summary_entity_id_is_null_for_a_collision_loser() {
+    let j = Journal::new();
+    // Folder folder-ada written id notes_v2.md (winner)
+    write(
+        j.path(),
+        "entities/folder-ada/entity.json",
+        json!({"id": "notes_v2.md", "name": "Ada", "type": "Person"}),
+    );
+    // Folder named notes_v2.md written id docs/plan (winner of that other id)
+    write(
+        j.path(),
+        "entities/notes_v2.md/entity.json",
+        json!({"id": "docs/plan", "name": "Plan", "type": "Person"}),
+    );
+    // Folder ada-folder written id lost_id.md (winner)
+    write(
+        j.path(),
+        "entities/ada-folder/entity.json",
+        json!({"id": "lost_id.md", "name": "Lost Winner", "type": "Person"}),
+    );
+    // Folder lost_id.md with no written id (collision loser)
+    write(
+        j.path(),
+        "entities/lost_id.md/entity.json",
+        json!({"name": "Lost Loser", "type": "Person"}),
+    );
+
+    let (status, summary) = call(j.path(), "/app/entities/api/journal/summary").await;
+    assert_eq!(status, 200);
+    let items = summary["items"].as_array().expect("items array");
+    assert_eq!(items.len(), 4);
+
+    let folder_ada = items
+        .iter()
+        .find(|item| item["id"] == "folder-ada")
+        .expect("folder-ada summary row");
+    assert_eq!(folder_ada["entity_id"], "notes_v2.md");
+    assert_eq!(folder_ada["blocked"], false);
+    assert_eq!(folder_ada["id"], "folder-ada");
+
+    let notes_v2 = items
+        .iter()
+        .find(|item| item["id"] == "notes_v2.md")
+        .expect("notes_v2.md summary row");
+    assert_eq!(notes_v2["entity_id"], "docs/plan");
+    assert_eq!(notes_v2["blocked"], false);
+    assert_eq!(notes_v2["id"], "notes_v2.md");
+
+    let ada_folder = items
+        .iter()
+        .find(|item| item["id"] == "ada-folder")
+        .expect("ada-folder summary row");
+    assert_eq!(ada_folder["entity_id"], "lost_id.md");
+    assert_eq!(ada_folder["blocked"], false);
+    assert_eq!(ada_folder["id"], "ada-folder");
+
+    let lost_id = items
+        .iter()
+        .find(|item| item["id"] == "lost_id.md")
+        .expect("lost_id.md summary row");
+    assert_eq!(lost_id["entity_id"], Value::Null);
+    assert_eq!(lost_id["blocked"], false);
+    assert_eq!(lost_id["id"], "lost_id.md");
+
+    // Detail route for folder-ada
+    let (detail_status, detail) =
+        call(j.path(), "/app/entities/api/journal/entity/folder-ada").await;
+    assert_eq!(detail_status, 200);
+    assert_eq!(detail["entity"]["entity_id"], "notes_v2.md");
+    assert_eq!(detail["entity"]["blocked"], false);
+    assert_eq!(detail["entity"]["id"], "folder-ada");
+}
+
+#[tokio::test]
+async fn tidy_up_items_carry_folder_names_and_rows() {
+    let j = Journal::new();
+    write(j.path(), "facets/work/facet.json", json!({"title": "Work"}));
+    write(j.path(), "facets/home/facet.json", json!({"title": "Home"}));
+
+    // ID shaped entities using synthetic collision style:
+    // folder folder-ada written id notes_v2.md
+    write(
+        j.path(),
+        "entities/folder-ada/entity.json",
+        json!({"id": "notes_v2.md", "name": "notes_v2.md", "type": "Person"}),
+    );
+    write(
+        j.path(),
+        "facets/work/entities/rel_notes/entity.json",
+        json!({"entity_id": "notes_v2.md"}),
+    );
+
+    // folder notes_v2.md written id docs/plan
+    write(
+        j.path(),
+        "entities/notes_v2.md/entity.json",
+        json!({"id": "docs/plan", "name": "docs/plan", "type": "Person"}),
+    );
+    write(
+        j.path(),
+        "facets/work/entities/rel_docs/entity.json",
+        json!({"entity_id": "docs/plan"}),
+    );
+
+    // Duplicates candidates: one duplicate pair with two facet rows
+    // First row in cmp_composite_then_key order (higher detection_count 10 vs 5)
+    // has source "" and non-string target (e.g. 123)
+    let candidates = [
+        r#"{"facet":"work","source_slug":"src_slug","target_slug":"tgt_slug","status":"open","source":"","target":123,"evidence":{"detection_count":10}}"#,
+        r#"{"facet":"home","source_slug":"src_slug","target_slug":"tgt_slug","status":"open","source":"Home Src","target":"Home Tgt","evidence":{"detection_count":5}}"#,
+    ]
+    .join("\n")
+        + "\n";
+    write_raw(
+        j.path(),
+        "entities/review-candidates.jsonl",
+        candidates.as_bytes(),
+    );
+
+    let (status, resp) = call(j.path(), "/app/entities/api/journal/tidy-up").await;
+    assert_eq!(status, 200);
+
+    // ID shaped assertions
+    let id_items = resp["id_shaped"]["items"]
+        .as_array()
+        .expect("id_shaped items array");
+    let notes_item = id_items
+        .iter()
+        .find(|item| item["id"] == "notes_v2.md")
+        .expect("notes_v2.md id item");
+    assert_eq!(notes_item["folder"], "folder-ada");
+
+    let docs_item = id_items
+        .iter()
+        .find(|item| item["id"] == "docs/plan")
+        .expect("docs/plan id item");
+    assert_eq!(docs_item["folder"], "notes_v2.md");
+
+    let id_members = resp["id_shaped"]["members"]
+        .as_array()
+        .expect("id_shaped members array");
+    let id_member_strings: Vec<&str> = id_members.iter().map(|m| m.as_str().unwrap()).collect();
+    assert!(id_member_strings.contains(&"notes_v2.md"));
+    assert!(id_member_strings.contains(&"docs/plan"));
+    assert!(!id_member_strings.contains(&"folder-ada"));
+
+    // Duplicates assertions
+    let dup_items = resp["duplicates"]["items"]
+        .as_array()
+        .expect("duplicates items array");
+    assert_eq!(dup_items.len(), 1);
+    let dup_item = &dup_items[0];
+    assert_eq!(dup_item["names"], json!(["", "tgt_slug"]));
+    assert_eq!(
+        dup_item["rows"],
+        json!([
+            {
+                "facet": "work",
+                "source_slug": "src_slug",
+                "target_slug": "tgt_slug",
+            },
+            {
+                "facet": "home",
+                "source_slug": "src_slug",
+                "target_slug": "tgt_slug",
+            }
+        ])
+    );
+
+    let dup_members = resp["duplicates"]["members"]
+        .as_array()
+        .expect("duplicates members array");
+    assert_eq!(dup_members.len(), 1);
+    let dup_member = &dup_members[0];
+    assert_eq!(dup_member["names"], json!(["", "tgt_slug"]));
+    assert_eq!(
+        dup_member["rows"],
+        json!([
+            {
+                "facet": "work",
+                "source_slug": "src_slug",
+                "target_slug": "tgt_slug",
+            },
+            {
+                "facet": "home",
+                "source_slug": "src_slug",
+                "target_slug": "tgt_slug",
+            }
+        ])
+    );
 }

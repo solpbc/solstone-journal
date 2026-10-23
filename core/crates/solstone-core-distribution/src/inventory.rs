@@ -740,8 +740,8 @@ pub fn entry_component_id(entry: &Entry) -> Option<&'static str> {
                 Some("wespeaker-model")
             } else if source.contains("pyannote") {
                 Some("pyannote-model")
-            } else if source.contains("silero_vad") {
-                Some("silero-vad-model")
+            } else if source.contains("firered_vad") {
+                Some("firered-vad-model")
             } else if source.contains("rfdetr-nano") {
                 Some("rfdetr-model")
             } else if source.contains("rfdetr-") {
@@ -2932,7 +2932,7 @@ zig_gnu = "x86_64-linux-gnu.2.28"
             .unwrap();
         let path = repo.join("core/distribution/inventory.toml");
         let inv = super::load_inventory(&path).expect("real inventory validates");
-        assert!(!inv.entry.is_empty());
+        assert!(!inv.entry.is_empty(), "inventory has no delivery entries");
         for entry in &inv.entry {
             assert!(entry.class().is_some());
         }
@@ -3206,7 +3206,7 @@ zig_gnu = "x86_64-linux-gnu.2.28"
             "pdfium",
             "wespeaker-model",
             "pyannote-model",
-            "silero-vad-model",
+            "firered-vad-model",
             "area-tier",
             "vulkan-loader",
             "msvc-runtime",

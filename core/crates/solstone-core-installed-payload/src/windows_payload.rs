@@ -56,7 +56,7 @@ pub const WINDOWS_WESPEAKER_MODEL: &str =
 pub const WINDOWS_PYANNOTE_MODEL: &str =
     "lib/solstone_journal_models/assets/pyannote-segmentation-3.0.onnx";
 /// The VAD model is a signed package member.
-pub const WINDOWS_SILERO_VAD_MODEL: &str = "lib/solstone_journal_models/assets/silero_vad_v6.onnx";
+pub const WINDOWS_FIRERED_VAD_MODEL: &str = "lib/solstone_journal_models/assets/firered_vad.onnx";
 /// The Parakeet server is a signed package executable, never an owner-installed service.
 pub const WINDOWS_PARAKEET_SERVER: &str = "lib/solstone-native/parakeet-server.exe";
 /// The Parakeet model is a signed package member, never copied into journal state.
@@ -198,8 +198,8 @@ impl VerifiedWindowsPayload {
     }
 
     /// Return the VAD model only when the verified package declares it.
-    pub fn silero_vad_model_path(&self) -> Result<PathBuf, WindowsPayloadError> {
-        self.declared_path(WINDOWS_SILERO_VAD_MODEL)
+    pub fn firered_vad_model_path(&self) -> Result<PathBuf, WindowsPayloadError> {
+        self.declared_path(WINDOWS_FIRERED_VAD_MODEL)
     }
 
     /// Return the Parakeet server only when the verified package declares it.

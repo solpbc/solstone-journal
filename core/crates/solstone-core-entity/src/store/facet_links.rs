@@ -415,6 +415,8 @@ impl LinkDirs {
                 }));
             }
         };
+        #[cfg(any(test, feature = "test-hooks"))]
+        super::test_counters::test_instrumentation::increment_relationship_read(&path);
         let value: Value = read_json(&path, Value::Null, MalformedPolicy::Raise)?;
         if value.is_null() {
             return Ok(None);
@@ -1126,6 +1128,8 @@ fn read_link_file(path: &Path) -> Result<LinkFile, LinkFolderError> {
     if !path_lexists(path)? {
         return Ok(LinkFile::Missing);
     }
+    #[cfg(any(test, feature = "test-hooks"))]
+    super::test_counters::test_instrumentation::increment_relationship_read(path);
     match read_json::<Value>(path, Value::Null, MalformedPolicy::Raise)? {
         Value::Object(object) => Ok(LinkFile::Object(object)),
         Value::Null => Ok(LinkFile::Null),

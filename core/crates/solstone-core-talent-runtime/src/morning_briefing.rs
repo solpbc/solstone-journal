@@ -29,6 +29,8 @@ pub struct DigestActivity {
     pub title: Option<String>,
     pub description: Option<String>,
     pub details: Option<String>,
+    /// Who attended. People an activity only mentions are left out, so the
+    /// briefing is never told they were there.
     pub participants: Vec<String>,
     pub entities: Vec<String>,
     pub source_limitation: bool,
@@ -406,17 +408,7 @@ fn load_digest_activities(
                         .filter(|s| !s.is_empty())
                         .map(str::to_owned);
                     let duration = record.get("duration").cloned().filter(|v| !v.is_null());
-                    let participants = record
-                        .get("participation")
-                        .and_then(Value::as_array)
-                        .into_iter()
-                        .flatten()
-                        .filter_map(|entry| entry.as_object())
-                        .map(|entry| {
-                            string_or(entry.get("name").or_else(|| entry.get("entity_id")), "")
-                        })
-                        .filter(|v| !v.is_empty())
-                        .collect::<Vec<_>>();
+                    let participants = attendee_names(&record);
                     let entities = record
                         .get("active_entities")
                         .and_then(Value::as_array)
@@ -500,6 +492,20 @@ fn load_digest_activities(
             .then_with(|| act_a.id.cmp(&act_b.id))
     });
     activities.into_iter().map(|(_, act)| act).collect()
+}
+
+/// The names of an activity's attendees.
+fn attendee_names(record: &Map<String, Value>) -> Vec<String> {
+    record
+        .get("participation")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_object)
+        .filter(|entry| entry.get("role").and_then(Value::as_str) == Some("attendee"))
+        .map(|entry| string_or(entry.get("name").or_else(|| entry.get("entity_id")), ""))
+        .filter(|v| !v.is_empty())
+        .collect()
 }
 
 /// One scheduled event as a digest line: its title, its time and the known
@@ -890,7 +896,10 @@ mod tests {
             "end": "10:00",
             "target_date": "20261019",
             "duration": 60,
-            "participation": [{"name": "Alice"}],
+            "participation": [
+                {"name": "Alice", "role": "attendee"},
+                {"name": "Perry Evans", "role": "mentioned"},
+            ],
             "active_entities": ["Acme Corp"],
             "story": {"body": "Alice presented the financial metrics."},
         });
@@ -918,7 +927,8 @@ mod tests {
         assert!(digest.contains("10:00"));
         assert!(digest.contains("20261019"));
         assert!(digest.contains("60"));
-        assert!(digest.contains("Alice"));
+        assert!(digest.contains("- participants: Alice\n"));
+        assert!(!digest.contains("Perry Evans"));
         assert!(digest.contains("Acme Corp"));
         assert!(digest.contains("Alice presented the financial metrics."));
         assert!(digest.contains("sol://facets/work/activities/20261019#act_1"));
@@ -1197,6 +1207,22 @@ mod tests {
         }
         // Invitees are never offered as people who took part.
         assert!(!rendered.contains("participants"));
+    }
+
+    #[test]
+    fn a_person_only_mentioned_is_never_offered_as_a_participant() {
+        let record = json!({
+            "participation": [
+                {"name": "Ada Lovelace", "role": "attendee", "source": "voice"},
+                {"name": "Perry Evans", "role": "mentioned", "source": "screen"},
+                {"name": "Grace Hopper", "source": "screen"},
+                {"entity_id": "atlas", "role": "attendee"},
+            ],
+        });
+        assert_eq!(
+            attendee_names(record.as_object().unwrap()),
+            vec!["Ada Lovelace", "atlas"]
+        );
     }
 
     #[test]

@@ -8,6 +8,15 @@ public struct RequestError: Error, Sendable {
 }
 
 public struct ChatRequest: Decodable, Sendable {
+    public let schemaText: String?
+    public static let requestBodyKey = CodingUserInfoKey(rawValue: "requestBody")!
+
+    public static func decode(_ data: Data) throws -> ChatRequest {
+        let decoder = JSONDecoder()
+        decoder.userInfo[requestBodyKey] = data
+        return try decoder.decode(Self.self, from: data)
+    }
+
     public let model: String?
     public let messages: [ChatMessage]
     public let temperature: Float?
@@ -26,9 +35,7 @@ public struct ChatRequest: Decodable, Sendable {
 
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        guard !c.contains(.response_format) else {
-            throw RequestError("response_format is not supported by this helper")
-        }
+        schemaText = try ResponseFormat.schemaText(decoder: decoder, container: c)
         model = try c.decodeIfPresent(String.self, forKey: .model)
         messages = try c.decode([ChatMessage].self, forKey: .messages)
         temperature = try c.decodeIfPresent(Float.self, forKey: .temperature)

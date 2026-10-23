@@ -340,3 +340,91 @@ fn a_merge_into_an_entity_later_merged_or_deleted_still_stands() {
     assert_eq!(find(&temporary, "linus"), None);
     assert!(accepts(&temporary, "grace", "em_1"));
 }
+
+#[test]
+fn entity_merge_open_class_partitions_status_and_suppression() {
+    use crate::{EntityMergeOpenClass, entity_merge_open_class};
+
+    let missing_status = json!({});
+    assert!(matches!(
+        entity_merge_open_class(&missing_status),
+        EntityMergeOpenClass::Open
+    ));
+
+    let explicit_open = json!({"status": "open"});
+    assert!(matches!(
+        entity_merge_open_class(&explicit_open),
+        EntityMergeOpenClass::Open
+    ));
+
+    let suppressed_open = json!({
+        "status": "open",
+        "review": {
+            "suppression": {
+                "reason": "stale",
+                "at": "2026-01-01T00:00:00Z",
+                "evidence_key": "k"
+            }
+        }
+    });
+    assert!(matches!(
+        entity_merge_open_class(&suppressed_open),
+        EntityMergeOpenClass::SuppressedOpen
+    ));
+
+    let null_suppression = json!({
+        "status": "open",
+        "review": {
+            "suppression": null
+        }
+    });
+    assert!(matches!(
+        entity_merge_open_class(&null_suppression),
+        EntityMergeOpenClass::Open
+    ));
+
+    let accepted = json!({"status": "accepted"});
+    assert!(matches!(
+        entity_merge_open_class(&accepted),
+        EntityMergeOpenClass::Other
+    ));
+
+    let dismissed = json!({"status": "dismissed"});
+    assert!(matches!(
+        entity_merge_open_class(&dismissed),
+        EntityMergeOpenClass::Other
+    ));
+}
+
+#[test]
+fn json_i64_reads_number_or_numeric_string() {
+    use crate::json_i64;
+
+    assert_eq!(json_i64(Some(&json!(42))), 42);
+    assert_eq!(json_i64(Some(&json!("123"))), 123);
+    assert_eq!(json_i64(None), 0);
+    assert_eq!(json_i64(Some(&json!("junk"))), 0);
+    assert_eq!(json_i64(Some(&json!({"a": 1}))), 0);
+    assert_eq!(json_i64(Some(&json!(true))), 0);
+    assert_eq!(json_i64(Some(&json!(null))), 0);
+}
+
+#[test]
+fn cmp_composite_then_key_orders_strength_then_key() {
+    use crate::cmp_composite_then_key;
+    use std::cmp::Ordering;
+
+    // Higher composite comes first (Less)
+    assert_eq!(cmp_composite_then_key(10.0, "k", 5.0, "k"), Ordering::Less);
+    assert_eq!(
+        cmp_composite_then_key(5.0, "k", 10.0, "k"),
+        Ordering::Greater
+    );
+    // Equal composite tiebreaks by key ascending
+    assert_eq!(cmp_composite_then_key(5.0, "a", 5.0, "b"), Ordering::Less);
+    assert_eq!(
+        cmp_composite_then_key(5.0, "b", 5.0, "a"),
+        Ordering::Greater
+    );
+    assert_eq!(cmp_composite_then_key(5.0, "a", 5.0, "a"), Ordering::Equal);
+}

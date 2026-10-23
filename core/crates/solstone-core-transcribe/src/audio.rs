@@ -26,7 +26,7 @@ use crate::resolve_model_asset;
 const VAD_BINARY_NAME: &str = "solstone-core-vad-analyze";
 #[cfg(not(windows))]
 const VAD_BINARY_ENV: &str = "SOLSTONE_VAD_BINARY";
-const REQUEST_SCHEMA: &str = "solstone-vad-request-v1";
+const REQUEST_SCHEMA: &str = "solstone-vad-request-v2";
 const RESPONSE_SCHEMA: &str = "solstone-vad-response-v1";
 const ERROR_SCHEMA: &str = "solstone-vad-error-v1";
 const NOISY_RMS_THRESHOLD: f64 = 0.01;
@@ -43,14 +43,14 @@ pub(crate) fn run_vad(
 ) -> Result<VadResult, TranscribeError> {
     #[cfg(not(windows))]
     let (model_path, binary) = (
-        resolve_model_asset("silero_vad_v6.onnx")?,
+        resolve_model_asset("firered_vad.onnx")?,
         resolve_vad_binary()?,
     );
     #[cfg(windows)]
     let (model_path, binary) = {
         let package = solstone_core_local::install::onnx_readiness::verified_windows_onnx_package()
             .map_err(|detail| TranscribeError::VadBinary { detail })?;
-        (package.silero_vad_model, package.vad_worker)
+        (package.firered_vad_model, package.vad_worker)
     };
     let temporary = tempfile::Builder::new()
         .prefix(VAD_TEMP_PREFIX)
@@ -114,10 +114,8 @@ pub(crate) fn run_vad_embedded(
     models: &Path,
     scratch: &Path,
 ) -> Result<VadResult, TranscribeError> {
-    let model = crate::model_assets::verify_digest(
-        "silero_vad_v6.onnx",
-        models.join("silero_vad_v6.onnx"),
-    )?;
+    let model =
+        crate::model_assets::verify_digest("firered_vad.onnx", models.join("firered_vad.onnx"))?;
     let temporary = tempfile::Builder::new()
         .prefix(VAD_TEMP_PREFIX)
         .tempdir_in(scratch)
@@ -239,7 +237,7 @@ fn vad_request(
     serde_json::to_vec(&json!({
         "schema": REQUEST_SCHEMA,
         "audio_f32le_path": audio_path,
-        "models": { "silero_vad_onnx_path": model_path },
+        "models": { "firered_vad_onnx_path": model_path },
         "min_speech_seconds": min_speech_seconds,
     }))
     .map_err(|error| {

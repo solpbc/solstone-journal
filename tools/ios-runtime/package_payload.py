@@ -19,7 +19,12 @@ models = adapter / 'Resources/AudioModels'
 if models.exists():
     shutil.rmtree(models)
 models.mkdir()
+notices = models / 'notices'
+notices.mkdir()
+repo = adapter.parents[1]
+shutil.copyfile(repo / 'core/distribution/licenses/fireredvad/LICENSE', notices / 'FireRedVAD-LICENSE.txt')
+shutil.copyfile(repo / 'core/distribution/model-notices.md', notices / 'NOTICE.md')
 if directory := os.environ.get('AUDIO_MODELS_DIR'):
-    for name in ('tdt-0.6b-v3-q8_0.gguf', 'silero_vad_v6.onnx',
+    for name in ('tdt-0.6b-v3-q8_0.gguf', 'firered_vad.onnx',
                  'wespeaker-resnet34-256.onnx', 'pyannote-segmentation-3.0.onnx'):
         shutil.copyfile(Path(directory) / name, models / name)

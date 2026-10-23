@@ -29,32 +29,6 @@
   gap: 0.85em;
 }
 
-.curation-batch {
-  display: flex;
-  flex-direction: column;
-  gap: 0.6em;
-  border: 1px solid var(--hairline);
-  border-radius: 8px;
-  padding: 0.85em;
-  color: var(--ink-soft);
-  background: var(--paper);
-}
-
-.curation-toolbar {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 0.55em;
-}
-
-.curation-toolbar-select {
-  display: flex;
-  align-items: center;
-  gap: 0.4em;
-  color: var(--ink-soft);
-  cursor: pointer;
-}
-
 .curation-item {
   border: 1px solid var(--hairline);
   border-radius: 8px;
@@ -79,22 +53,6 @@
   color: var(--ink-faint);
   font-size: 0.9em;
   line-height: 1.4;
-}
-
-.curation-group-lede {
-  margin: 0 0 0.6em;
-  color: var(--ink);
-  line-height: 1.45;
-}
-
-.curation-group-progress {
-  margin: 0 0 0.85em;
-  color: var(--ink-faint);
-  font-size: 0.9em;
-}
-
-.curation-group-progress:empty {
-  display: none;
 }
 
 .curation-select {
@@ -183,34 +141,6 @@
 }
 
 .curation-preview-error {
-  color: var(--danger);
-}
-
-.curation-batch-confirm {
-  color: var(--ink-soft);
-}
-
-.curation-batch-confirm[hidden] {
-  display: none;
-}
-
-.curation-batch-confirm-list {
-  margin: 0;
-  padding-left: 1.2em;
-  color: var(--ink-soft);
-  line-height: 1.45;
-}
-
-.curation-batch-status {
-  margin: 0;
-  color: var(--ink-soft);
-}
-
-.curation-batch-status[hidden] {
-  display: none;
-}
-
-.curation-batch-status-error {
   color: var(--danger);
 }
 
@@ -318,16 +248,11 @@
     flex-direction: column;
   }
 
-  .curation-toolbar {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
   .curation-button {
     width: 100%;
   }
 }
-.curation-group{border:1px solid var(--hairline);border-radius:12px;background:var(--paper)}.curation-group>summary{padding:18px;cursor:pointer;font-weight:600;min-height:48px}.curation-group-items{padding:0 18px 18px;display:grid;grid-template-columns:minmax(0,1fr);gap:16px}.curation-group-more{display:grid;gap:16px}.curation-group-more[hidden]{display:none}.curation-group-items .curation-item{min-width:0;overflow-wrap:anywhere}.curation-group-items .curation-item{content-visibility:auto;contain-intrinsic-block-size:auto 240px}.curation-group:focus-within{outline-color:var(--focus)}.curation-group>summary:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.curation-group{border:1px solid var(--hairline);border-radius:12px;background:var(--paper)}.curation-group>summary{padding:18px;cursor:pointer;font-weight:600;min-height:48px}.curation-group-items{padding:0 18px 18px;display:grid;grid-template-columns:minmax(0,1fr);gap:16px}.curation-group-items .curation-item{min-width:0;overflow-wrap:anywhere}.curation-group-items .curation-item{content-visibility:auto;contain-intrinsic-block-size:auto 240px}.curation-group:focus-within{outline-color:var(--focus)}.curation-group>summary:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
 /* Every disclosure inside a curation item is a tap target. The existing
    min-height only ever reached a group's own summary, so the per-interval
    and source-evidence disclosures measured 29-33px on phone (G2-B07). The
@@ -555,69 +480,11 @@ window.CUR_COPY = CUR_COPY;
     `;
   }
 
-  // G2-26: the same source/target pair can be surfaced once per facet it
-  // was detected in (91 of 835 pairs, 2-4x each). Group by pair so the
-  // owner sees one item per real question, with the facets it applies to.
-  function groupEntityItems(items) {
-    const groups = [];
-    const byPair = new Map();
-    items.forEach((item) => {
-      const pairKey = `${item.source_slug}|${item.target_slug}`;
-      let group = byPair.get(pairKey);
-      if (!group) {
-        group = {
-          source: item.source, target: item.target,
-          source_slug: item.source_slug, target_slug: item.target_slug,
-          facets: []
-        };
-        byPair.set(pairKey, group);
-        groups.push(group);
-      }
-      if (!group.facets.includes(item.facet)) group.facets.push(item.facet);
-    });
-    return groups;
-  }
-
   function formatFacetList(facets) {
     const names = facets.map(facetDisplayName);
     if (names.length <= 1) return names.join('');
     if (names.length === 2) return `${names[0]} and ${names[1]}`;
     return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
-  }
-
-  function entityGroupPayload(item) {
-    const ds = item?.dataset || {};
-    return {
-      source_slug: ds.sourceSlug || '',
-      target_slug: ds.targetSlug || '',
-      facets: JSON.parse(ds.facets || '[]')
-    };
-  }
-
-  function entityBatchItems(group) {
-    return group.facets.map((facet) => ({facet, source_slug: group.source_slug, target_slug: group.target_slug}));
-  }
-
-  function entityItemHtml(group) {
-    const multiFacet = group.facets.length > 1;
-    const dismissAttrs = multiFacet
-      ? `data-action="entity-dismiss-group"`
-      : `data-action="entity-dismiss" data-facet="${escapeHtml(group.facets[0])}" data-source-slug="${escapeHtml(group.source_slug)}" data-target-slug="${escapeHtml(group.target_slug)}"`;
-    return `
-      <article class="curation-item" data-curation-item data-kind="entity_merge" data-facets='${escapeHtml(JSON.stringify(group.facets))}' data-source-slug="${escapeHtml(group.source_slug)}" data-target-slug="${escapeHtml(group.target_slug)}" data-source="${escapeHtml(group.source)}" data-target="${escapeHtml(group.target)}">
-        <label class="curation-select">
-          <span class="curation-tap-target"><input type="checkbox" data-action="entity-select"></span>
-          <span class="curation-body">${escapeHtml(copyFormat(CUR_COPY.CUR_ENTITY_BODY, {a: group.source, b: group.target}))}</span>
-        </label>
-        ${multiFacet ? `<p class="curation-item-facets">${escapeHtml(copyFormat(CUR_COPY.CUR_ENTITY_FACETS_LABEL, {facets: formatFacetList(group.facets)}))}</p>` : ''}
-        <div class="curation-actions">
-          <button class="curation-button curation-button-primary" type="button" data-action="entity-preview">${escapeHtml(CUR_COPY.CUR_ENTITY_MERGE_ACTION)}</button>
-          <button class="curation-button" type="button" ${dismissAttrs}>${escapeHtml(CUR_COPY.CUR_ENTITY_DISMISS_ACTION)}</button>
-        </div>
-        <div class="curation-preview" hidden></div>
-        <p class="curation-item-error" hidden></p>
-      </article>
-    `;
   }
 
   function ambiguityItemHtml(item) {
@@ -726,23 +593,6 @@ window.CUR_COPY = CUR_COPY;
     `;
   }
 
-  function entityBatchHtml() {
-    return `
-      <div class="curation-batch" data-curation-batch>
-        <div class="curation-toolbar" data-curation-toolbar>
-          <label class="curation-toolbar-select">
-            <span class="curation-tap-target"><input type="checkbox" data-action="entity-select-all"></span>
-            <span>${escapeHtml(CUR_COPY.CUR_ENTITY_SELECT_ALL_ACTION)}</span>
-          </label>
-          <button class="curation-button curation-button-primary" type="button" data-action="entity-batch-merge" disabled>${escapeHtml(CUR_COPY.CUR_ENTITY_BATCH_MERGE_ACTION)}</button>
-          <button class="curation-button" type="button" data-action="entity-batch-dismiss" disabled>${escapeHtml(CUR_COPY.CUR_ENTITY_BATCH_DISMISS_ACTION)}</button>
-        </div>
-        <div class="curation-batch-confirm" hidden></div>
-        <p class="curation-batch-status" hidden></p>
-      </div>
-    `;
-  }
-
   function speakerItemHtml(item) {
     return `
       <article class="curation-item" data-curation-item data-kind="speaker_name_variant" data-key="${escapeHtml(item.key)}" data-source-id="${escapeHtml(item.source_slug)}" data-target-id="${escapeHtml(item.target_slug)}">
@@ -786,7 +636,7 @@ window.CUR_COPY = CUR_COPY;
       ? {signal: AbortSignal.timeout(CURATION_LOAD_TIMEOUT_MS)}
       : undefined;
   }
-  const PAGED_GROUP_FOR_REVIEW_GROUP = {merge: 'entity', ambiguity: 'ambiguity', set_aside: 'set_aside', pair: 'pair'};
+  const PAGED_GROUP_FOR_REVIEW_GROUP = {ambiguity: 'ambiguity', set_aside: 'set_aside', pair: 'pair'};
   let curationTotals = {};
 
   function unloadedCount(reviewGroupKey, loaded) {
@@ -806,47 +656,10 @@ window.CUR_COPY = CUR_COPY;
       : '';
   }
 
-  function reviewGroup(key, label, items, renderItem, toolbar = '') {
+  function reviewGroup(key, label, items, renderItem) {
     if (!items.length) return '';
     const unloaded = unloadedCount(key, items.length);
-    return `<details class="curation-group" data-review-group="${key}" data-group-unloaded="${unloaded}" ${openReviewGroups.has(key) ? 'open' : ''}><summary>${label} <span data-group-count>(${items.length + unloaded})</span></summary><div class="curation-group-items">${toolbar}${items.map(renderItem).join('')}${loadMoreHtml(key, items.length)}</div></details>`;
-  }
-
-  // G2-40: the duplicate-entity group is the one that shows up with
-  // hundreds of undifferentiated pairs and no way to tell it's ordered or
-  // to stop. `entityGroups` already arrives sorted highest-confidence-first
-  // (the server sorts entity_items by composite/detection_count before the
-  // client groups them by pair), so the first CURATION_ENTITY_BATCH_SIZE
-  // pairs are the ones most worth the owner's attention. Everything past
-  // that renders into the DOM (so counts and "left" stay accurate) but
-  // stays hidden behind an explicit "show the rest" action.
-  const CURATION_ENTITY_BATCH_SIZE = 10;
-  function entityMergeGroupHtml(entityGroups) {
-    if (!entityGroups.length) return '';
-    const unloaded = unloadedCount('merge', entityGroups.length);
-    const total = entityGroups.length + unloaded;
-    const visible = entityGroups.slice(0, CURATION_ENTITY_BATCH_SIZE);
-    const rest = entityGroups.slice(CURATION_ENTITY_BATCH_SIZE);
-    const lede = rest.length
-      ? `<p class="curation-group-lede">${escapeHtml(copyFormat(CUR_COPY.CUR_ENTITY_GROUP_LEDE, {count: visible.length}))}</p>`
-      : '';
-    const showRest = rest.length
-      ? `<div class="curation-group-more" data-group-more hidden>${rest.map(entityItemHtml).join('')}${loadMoreHtml('merge', entityGroups.length)}</div>
-         <button class="curation-button curation-button-link" type="button" data-action="curation-show-rest">${escapeHtml(copyFormat(CUR_COPY.CUR_ENTITY_SHOW_REST_ACTION, {count: rest.length}))}</button>`
-      : '';
-    return `<details class="curation-group" data-review-group="merge" data-group-total="${total}" data-group-unloaded="${unloaded}" ${openReviewGroups.has('merge') ? 'open' : ''}>
-      <summary>possible duplicate entities <span data-group-count>(${total})</span></summary>
-      <div class="curation-group-items">
-        ${lede}
-        <p class="curation-group-progress" data-group-progress></p>
-        ${entityBatchHtml()}
-        ${visible.map(entityItemHtml).join('')}
-        ${showRest}
-        <div class="curation-actions">
-          <button class="curation-button" type="button" data-action="curation-group-done">${escapeHtml(CUR_COPY.CUR_ENTITY_DONE_FOR_NOW_ACTION)}</button>
-        </div>
-      </div>
-    </details>`;
+    return `<details class="curation-group" data-review-group="${key}" data-group-unloaded="${unloaded}" ${openReviewGroups.has(key) ? 'open' : ''}><summary>${label} <span data-group-count>(${items.length + unloaded})</span></summary><div class="curation-group-items">${items.map(renderItem).join('')}${loadMoreHtml(key, items.length)}</div></details>`;
   }
 
   function refreshGroupCounts() {
@@ -854,14 +667,6 @@ window.CUR_COPY = CUR_COPY;
       const remaining = group.querySelectorAll('[data-curation-item], [data-review-history]').length
         + Number(group.dataset.groupUnloaded || 0);
       group.querySelector('[data-group-count]').textContent = `(${remaining})`;
-      const progress = group.querySelector('[data-group-progress]');
-      if (progress) {
-        const groupTotal = Number(group.dataset.groupTotal || remaining);
-        const reviewed = Math.max(0, groupTotal - remaining);
-        progress.textContent = remaining
-          ? copyFormat(CUR_COPY.CUR_ENTITY_PROGRESS_LABEL, {reviewed, left: remaining})
-          : '';
-      }
     });
     const count = root.querySelector('[data-review-total]');
     const unloaded = Array.from(root.querySelectorAll('[data-review-group]'))
@@ -879,13 +684,11 @@ window.CUR_COPY = CUR_COPY;
     curationFacetTitles = payload.facet_titles || {};
     curationTotals = payload.totals || {};
     const facetItems = groupFacetItems(payload.facet_items || []);
-    const entityItems = payload.entity_items || [];
-    const entityGroups = groupEntityItems(entityItems);
     const ambiguityGroups = payload.ambiguity_groups || [];
     const setAsideItems = payload.set_aside_items || [];
     const speakerItems = payload.speaker_items || [];
     const speakerCandidatePairItems = payload.speaker_candidate_pair_items || [];
-    const empty = !facetItems.length && !entityItems.length && !ambiguityGroups.length && !speakerItems.length && !speakerCandidatePairItems.length && !setAsideItems.length;
+    const empty = !facetItems.length && !ambiguityGroups.length && !speakerItems.length && !speakerCandidatePairItems.length && !setAsideItems.length;
     window.Drawer.preserveOpen(root, () => {
       root.innerHTML = `
         <h1 class="curation-header">${escapeHtml(CUR_COPY.CUR_HEADING)}</h1>
@@ -894,7 +697,6 @@ window.CUR_COPY = CUR_COPY;
         <div class="curation-outcomes" data-curation-outcomes></div>
         <div class="curation-list" data-curation-list>
           ${reviewGroup('facet', 'facet suggestions', facetItems, facetItemHtml)}
-          ${entityMergeGroupHtml(entityGroups)}
           ${reviewGroup('ambiguity', 'names to clarify', ambiguityGroups, ambiguityGroupHtml)}
           ${reviewGroup('speaker', 'possible duplicate speaker names', speakerItems, speakerItemHtml)}
           ${reviewGroup('pair', 'possible duplicate voices', speakerCandidatePairItems, speakerCandidatePairItemHtml)}
@@ -911,7 +713,6 @@ window.CUR_COPY = CUR_COPY;
         window.JournalClock.placeNote(setAsideSummary, { inside: true });
       }
       refreshGroupCounts();
-      refreshToolbar();
     });
   }
 
@@ -935,9 +736,7 @@ window.CUR_COPY = CUR_COPY;
     const reviewGroupKey = group?.dataset.reviewGroup;
     const paged = PAGED_GROUP_FOR_REVIEW_GROUP[reviewGroupKey];
     if (!group || !paged) return;
-    const shown = reviewGroupKey === 'merge'
-      ? group.querySelectorAll('[data-curation-item][data-kind="entity_merge"]').length
-      : group.querySelectorAll('[data-curation-item], [data-review-history]').length;
+    const shown = group.querySelectorAll('[data-curation-item], [data-review-history]').length;
     setBusy(button, true);
     clearLoadMoreError(button);
     let page;
@@ -950,19 +749,9 @@ window.CUR_COPY = CUR_COPY;
       return;
     }
     const items = Array.isArray(page?.items) ? page.items : [];
-    let html;
-    if (reviewGroupKey === 'merge') {
-      const present = new Set(Array.from(group.querySelectorAll('[data-kind="entity_merge"]'))
-        .map((node) => `${node.dataset.sourceSlug}|${node.dataset.targetSlug}`));
-      html = groupEntityItems(items)
-        .filter((pair) => !present.has(`${pair.source_slug}|${pair.target_slug}`))
-        .map(entityItemHtml).join('');
-    } else {
-      const render = {ambiguity: ambiguityGroupHtml, set_aside: setAsideItemHtml, pair: speakerCandidatePairItemHtml}[reviewGroupKey];
-      html = items.map(render).join('');
-    }
-    button.insertAdjacentHTML('beforebegin', html);
-    const loaded = reviewGroupKey === 'merge' ? groupEntityItems(items).length : items.length;
+    const render = {ambiguity: ambiguityGroupHtml, set_aside: setAsideItemHtml, pair: speakerCandidatePairItemHtml}[reviewGroupKey];
+    button.insertAdjacentHTML('beforebegin', items.map(render).join(''));
+    const loaded = items.length;
     const unloaded = Math.max(0, Number(page?.total || 0) - shown - loaded);
     group.dataset.groupUnloaded = String(unloaded);
     if (unloaded && loaded) {
@@ -972,7 +761,6 @@ window.CUR_COPY = CUR_COPY;
       button.remove();
     }
     refreshGroupCounts();
-    refreshToolbar();
   }
 
   function setBusy(button, busy) {
@@ -1022,8 +810,7 @@ window.CUR_COPY = CUR_COPY;
     }
   }
 
-  // Speaker identification can require repair. Entity merges instead settle
-  // recovery before a repeat commit, so a failed merge remains retryable.
+  // Speaker identification can require repair.
   function repairRequired(err) {
     return err?.payload?.operation_state === 'repair_required';
   }
@@ -1060,7 +847,6 @@ window.CUR_COPY = CUR_COPY;
     item.dataset.removing = 'true';
     item.remove();
     refreshGroupCounts();
-    refreshToolbar();
   }
 
   function appendMergeOutcome(mergeId, label) {
@@ -1073,105 +859,6 @@ window.CUR_COPY = CUR_COPY;
     text.textContent = label || CUR_COPY.CUR_ENTITY_MERGE_ACTION;
     row.appendChild(text);
     outcomes.appendChild(row);
-  }
-
-  function entityPayload(button) {
-    return {
-      facet: button.dataset.facet,
-      source_slug: button.dataset.sourceSlug,
-      target_slug: button.dataset.targetSlug
-    };
-  }
-
-  // G2-40: "select all" / batch merge must mean "all the owner can see",
-  // not "all, including the 825 still behind 'show the rest'". An item
-  // inside a not-yet-revealed `[data-group-more]` container is excluded
-  // from selection and from the batch toolbar's count until it's shown.
-  function isCurationItemRevealed(item) {
-    const moreContainer = item.closest('[data-group-more]');
-    return !moreContainer || !moreContainer.hidden;
-  }
-
-  function entityCheckboxes() {
-    return Array.from(root.querySelectorAll('[data-curation-item][data-kind="entity_merge"] input[data-action="entity-select"]'))
-      .filter((checkbox) => isCurationItemRevealed(checkbox));
-  }
-
-  function entityArticles() {
-    return Array.from(root.querySelectorAll('[data-curation-item][data-kind="entity_merge"]'))
-      .filter(isCurationItemRevealed);
-  }
-
-  function selectedEntityItems() {
-    return entityCheckboxes()
-      .filter((checkbox) => checkbox.checked)
-      .map((checkbox) => itemFor(checkbox))
-      .filter(Boolean);
-  }
-
-  // A grouped entity_merge item can represent more than one underlying
-  // facet-scoped review candidate (G2-26); a batch request needs one entry
-  // per facet, not one per visible card.
-  function entityItemPayloads(item) {
-    return entityBatchItems(entityGroupPayload(item));
-  }
-
-  function clearBatchConfirm() {
-    const confirm = root.querySelector('.curation-batch-confirm');
-    if (!confirm) return;
-    confirm.hidden = true;
-    confirm.innerHTML = '';
-  }
-
-  function clearBatchStatus() {
-    const status = root.querySelector('.curation-batch-status');
-    if (!status) return;
-    status.hidden = true;
-    status.textContent = '';
-    status.classList.remove('curation-batch-status-error');
-  }
-
-  function setBatchBusy(busy) {
-    const batch = root.querySelector('[data-curation-batch]');
-    if (!batch) return;
-    batch.querySelectorAll('button').forEach((batchButton) => setBusy(batchButton, busy));
-  }
-
-  function refreshToolbar() {
-    refreshGroupCounts();
-    const toolbar = root.querySelector('[data-curation-toolbar]');
-    const confirm = root.querySelector('.curation-batch-confirm');
-    if (!toolbar) return;
-    const articles = entityArticles();
-    const selected = selectedEntityItems();
-    const count = selected.length;
-    const total = articles.length;
-    if (total === 0) {
-      toolbar.hidden = true;
-      if (confirm) {
-        confirm.hidden = true;
-        confirm.innerHTML = '';
-      }
-      return;
-    }
-    toolbar.hidden = false;
-    const mergeButton = toolbar.querySelector('[data-action="entity-batch-merge"]');
-    const dismissButton = toolbar.querySelector('[data-action="entity-batch-dismiss"]');
-    const selectAll = toolbar.querySelector('[data-action="entity-select-all"]');
-    const mergeBase = CUR_COPY.CUR_ENTITY_BATCH_MERGE_ACTION;
-    const dismissBase = CUR_COPY.CUR_ENTITY_BATCH_DISMISS_ACTION;
-    if (mergeButton) {
-      mergeButton.textContent = count ? `${mergeBase} (${count})` : mergeBase;
-      mergeButton.disabled = count === 0;
-    }
-    if (dismissButton) {
-      dismissButton.textContent = count ? `${dismissBase} (${count})` : dismissBase;
-      dismissButton.disabled = count === 0;
-    }
-    if (selectAll) {
-      selectAll.checked = count === total && total > 0;
-      selectAll.indeterminate = count > 0 && count < total;
-    }
   }
 
   function speakerPayload(button) {
@@ -1195,9 +882,6 @@ window.CUR_COPY = CUR_COPY;
   }
 
   function payloadAttrs(payload) {
-    if (payload.facet !== undefined) {
-      return `data-facet="${escapeHtml(payload.facet)}" data-source-slug="${escapeHtml(payload.source_slug)}" data-target-slug="${escapeHtml(payload.target_slug)}"`;
-    }
     return `data-key="${escapeHtml(payload.key)}" data-source-id="${escapeHtml(payload.source_id)}" data-target-id="${escapeHtml(payload.target_id)}"`;
   }
 
@@ -1228,7 +912,7 @@ window.CUR_COPY = CUR_COPY;
     return rows;
   }
 
-  function renderPreview(item, payload, result, acceptAction = 'entity-accept', cancelAction = 'entity-cancel', groupFacets = null) {
+  function renderPreview(item, payload, result, acceptAction, cancelAction) {
     const previewNode = item.querySelector('.curation-preview');
     if (!previewNode) return;
     const preview = result.preview || {};
@@ -1240,17 +924,12 @@ window.CUR_COPY = CUR_COPY;
     const errorHtml = errors.length
       ? `<p class="curation-preview-error">${escapeHtml(CUR_COPY.CUR_ENTITY_PREVIEW_ERRORS)}</p>`
       : '';
-    // G2-26: a merge across more than one facet-scoped suggestion for the
-    // same pair confirms as one grouped action, not a re-run per facet.
-    const confirmAttrs = groupFacets && groupFacets.length > 1
-      ? `data-action="entity-accept-group" data-source-slug="${escapeHtml(payload.source_slug)}" data-target-slug="${escapeHtml(payload.target_slug)}" data-facets='${escapeHtml(JSON.stringify(groupFacets))}'`
-      : `data-action="${escapeHtml(acceptAction)}" ${payloadAttrs(payload)}`;
     previewNode.innerHTML = `
       <p class="curation-preview-lead">${escapeHtml(CUR_COPY.CUR_ENTITY_PREVIEW_LEAD)}</p>
       ${listHtml}
       ${errorHtml}
       <div class="curation-actions">
-        <button class="curation-button curation-button-primary" type="button" ${confirmAttrs}>${escapeHtml(CUR_COPY.CUR_ENTITY_CONFIRM_ACTION)}</button>
+        <button class="curation-button curation-button-primary" type="button" data-action="${escapeHtml(acceptAction)}" ${payloadAttrs(payload)}>${escapeHtml(CUR_COPY.CUR_ENTITY_CONFIRM_ACTION)}</button>
         <button class="curation-button" type="button" data-action="${escapeHtml(cancelAction)}">${escapeHtml(CUR_COPY.CUR_ENTITY_CANCEL_ACTION)}</button>
       </div>
     `;
@@ -1265,33 +944,6 @@ window.CUR_COPY = CUR_COPY;
 
     if (action === 'curation-load-more') {
       loadMoreInto(button);
-      return;
-    }
-
-    // G2-40: reveal the rest of a batched group in place, no re-fetch.
-    if (action === 'curation-show-rest') {
-      const more = button.previousElementSibling;
-      if (more && more.hasAttribute('data-group-more')) more.hidden = false;
-      // G2-47: the lede above the list sizes the job by the visible batch;
-      // once the rest is revealed, the job is the group's full total, not
-      // the original ten.
-      const group = button.closest('[data-review-group]');
-      const lede = group ? group.querySelector('.curation-group-lede') : null;
-      if (lede && group) {
-        const revealedTotal = Number(group.dataset.groupTotal) || entityArticles().length;
-        lede.textContent = copyFormat(CUR_COPY.CUR_ENTITY_GROUP_LEDE, {count: revealedTotal});
-      }
-      button.remove();
-      refreshToolbar();
-      return;
-    }
-
-    // G2-40: an explicit, labelled way to stop reviewing a group for now
-    // rather than the owner having to notice the summary bar also collapses
-    // it. No data changes; the group reopens with everything still there.
-    if (action === 'curation-group-done') {
-      const group = button.closest('[data-review-group]');
-      if (group) group.open = false;
       return;
     }
 
@@ -1371,7 +1023,7 @@ window.CUR_COPY = CUR_COPY;
       return;
     }
 
-    if (action === 'entity-cancel' || action === 'speaker-cancel') {
+    if (action === 'speaker-cancel') {
       const preview = item?.querySelector('.curation-preview');
       if (preview) {
         preview.hidden = true;
@@ -1456,212 +1108,6 @@ window.CUR_COPY = CUR_COPY;
         })
         .catch((err) => {
           if (action === 'speaker-pair-accept') {
-            showMutationError(item, button, err, CUR_COPY.CUR_ACTION_FAILED);
-          } else {
-            setBusy(button, false);
-            showError(item, window.SurfaceState?.serverMessageFrom(err) || CUR_COPY.CUR_ACTION_FAILED);
-          }
-        });
-      return;
-    }
-
-    if (action === 'entity-select' || action === 'entity-select-all') {
-      if (action === 'entity-select-all') {
-        entityCheckboxes().forEach((checkbox) => {
-          checkbox.checked = button.checked;
-        });
-      }
-      clearBatchConfirm();
-      refreshToolbar();
-      return;
-    }
-
-    if (action === 'entity-batch-merge' || action === 'entity-batch-dismiss') {
-      const mode = action === 'entity-batch-merge' ? 'merge' : 'dismiss';
-      const items = selectedEntityItems();
-      if (!items.length) return;
-      clearBatchStatus();
-      const confirm = root.querySelector('.curation-batch-confirm');
-      if (!confirm) return;
-      const lead = mode === 'merge'
-        ? CUR_COPY.CUR_ENTITY_BATCH_MERGE_LEAD
-        : CUR_COPY.CUR_ENTITY_BATCH_DISMISS_LEAD;
-      const actionCopy = mode === 'merge'
-        ? CUR_COPY.CUR_ENTITY_BATCH_CONFIRM_MERGE_ACTION
-        : CUR_COPY.CUR_ENTITY_BATCH_CONFIRM_DISMISS_ACTION;
-      confirm.innerHTML = `
-        <p class="curation-preview-lead">${escapeHtml(lead)}</p>
-        <ul class="curation-batch-confirm-list">
-          ${items.map((selectedItem) => {
-            const facets = JSON.parse(selectedItem.dataset.facets || '[]');
-            const pairText = `"${selectedItem.dataset.source}" and "${selectedItem.dataset.target}"`;
-            const facetsText = facets.length > 1
-              ? ` ${copyFormat(CUR_COPY.CUR_ENTITY_FACETS_LABEL, {facets: formatFacetList(facets)})}`
-              : '';
-            return `<li>${escapeHtml(pairText + facetsText)}</li>`;
-          }).join('')}
-        </ul>
-        <div class="curation-actions">
-          <button class="curation-button curation-button-primary" type="button" data-action="entity-batch-confirm" data-mode="${mode}">${escapeHtml(actionCopy)}</button>
-          <button class="curation-button" type="button" data-action="entity-batch-cancel">${escapeHtml(CUR_COPY.CUR_ENTITY_CANCEL_ACTION)}</button>
-        </div>
-      `;
-      confirm.hidden = false;
-      return;
-    }
-
-    if (action === 'entity-batch-cancel') {
-      clearBatchConfirm();
-      return;
-    }
-
-    if (action === 'entity-batch-confirm') {
-      const mode = button.dataset.mode;
-      const items = selectedEntityItems();
-      if (!items.length) return;
-      const path = mode === 'merge'
-        ? '/app/curation/api/entity/accept-batch'
-        : '/app/curation/api/entity/dismiss-batch';
-      setBatchBusy(true);
-      postJson(path, {items: items.flatMap(entityItemPayloads)})
-        .then((data) => {
-          const articlesByKey = {};
-          entityArticles().forEach((article) => {
-            articlesByKey[`${article.dataset.sourceSlug}|${article.dataset.targetSlug}`] = article;
-          });
-          const ok = mode === 'merge'
-            ? {accepted: 1, already_accepted: 1}
-            : {dismissed: 1, already_dismissed: 1};
-          // A grouped card can carry more than one underlying result (one per
-          // facet, G2-26): every successful result for the same pair removes
-          // the (single) card, but the undo outcome is only appended once —
-          // it is the same merge_id either way.
-          const successfulPairs = new Set();
-          const undoShownForPair = new Set();
-          (data.results || []).forEach((result) => {
-            const pairKey = `${result.source_slug}|${result.target_slug}`;
-            const article = articlesByKey[pairKey];
-            if (!article) return;
-            if (Object.prototype.hasOwnProperty.call(ok, result.status)) {
-              successfulPairs.add(pairKey);
-              if (mode === 'merge' && !undoShownForPair.has(pairKey)) {
-                undoShownForPair.add(pairKey);
-                appendMergeOutcome(result.merge_id, `${result.source_slug} → ${result.target_slug}`);
-              }
-              removeItem(article);
-              return;
-            }
-            const checkbox = article.querySelector('input[data-action="entity-select"]');
-            if (checkbox) checkbox.checked = false;
-            if (result.operation_state === 'repair_required') {
-              article.querySelectorAll('button, input').forEach((control) => setBusy(control, true));
-              showError(article, copyFormat(CUR_COPY.CUR_REPAIR_REQUIRED, {
-                detail: result.error,
-                remediation: result.safe_remediation || ''
-              }).trim());
-            } else {
-              showError(article, result.error);
-            }
-          });
-          const status = root.querySelector('.curation-batch-status');
-          if (status) {
-            // Counts are stated per selected pair, not per underlying
-            // facet-scoped request row, so a merge across N facets still
-            // reads as "1 of 1" rather than an inflated N of N (G2-26).
-            const okCount = successfulPairs.size;
-            const totalCount = items.length;
-            let text = copyFormat(
-              mode === 'merge'
-                ? CUR_COPY.CUR_ENTITY_BATCH_MERGE_SUMMARY
-                : CUR_COPY.CUR_ENTITY_BATCH_DISMISS_SUMMARY,
-              {ok: okCount, total: totalCount}
-            );
-            if (totalCount - okCount > 0) {
-              text += ' ' + copyFormat(CUR_COPY.CUR_ENTITY_BATCH_FAILED_NOTE, {failed: totalCount - okCount});
-            }
-            status.textContent = text;
-            status.classList.remove('curation-batch-status-error');
-            status.hidden = false;
-          }
-          clearBatchConfirm();
-          setBatchBusy(false);
-          refreshToolbar();
-        })
-        .catch((err) => {
-          if (!repairRequired(err)) setBatchBusy(false);
-          const status = root.querySelector('.curation-batch-status');
-          if (status) {
-            status.textContent = mutationErrorMessage(err, CUR_COPY.CUR_ACTION_FAILED);
-            status.classList.add('curation-batch-status-error');
-            status.hidden = false;
-          }
-        });
-      return;
-    }
-
-    if (action === 'entity-preview') {
-      // Preview only needs one facet-scoped candidate to check status and
-      // compute the (facet-independent) merge preview; the confirm step
-      // below still resolves every facet in the group (G2-26).
-      const group = entityGroupPayload(item);
-      const payload = {facet: group.facets[0], source_slug: group.source_slug, target_slug: group.target_slug};
-      setBusy(button, true);
-      postJson('/app/curation/api/entity/preview', payload)
-        .then((result) => {
-          setBusy(button, false);
-          renderPreview(item, payload, result, 'entity-accept', 'entity-cancel', group.facets);
-        })
-        .catch((err) => {
-          setBusy(button, false);
-          showError(item, window.SurfaceState?.serverMessageFrom(err) || CUR_COPY.CUR_ACTION_FAILED);
-        });
-      return;
-    }
-
-    if (action === 'entity-accept-group' || action === 'entity-dismiss-group') {
-      const group = entityGroupPayload(item);
-      const path = action === 'entity-accept-group'
-        ? '/app/curation/api/entity/accept-batch'
-        : '/app/curation/api/entity/dismiss-batch';
-      setBusy(button, true);
-      postJson(path, {items: entityBatchItems(group)})
-        .then((data) => {
-          const results = data.results || [];
-          const firstOk = results.find((result) => ['accepted', 'already_accepted', 'dismissed', 'already_dismissed'].includes(result.status));
-          const firstFailed = results.find((result) => !['accepted', 'already_accepted', 'dismissed', 'already_dismissed'].includes(result.status));
-          if (firstFailed && !firstOk) {
-            showMutationError(item, button, {serverMessage: firstFailed.error, payload: firstFailed}, CUR_COPY.CUR_ACTION_FAILED);
-            return;
-          }
-          if (action === 'entity-accept-group' && firstOk) {
-            appendMergeOutcome(firstOk.merge_id, `${item.dataset.source} → ${item.dataset.target}`);
-          }
-          removeItem(item);
-        })
-        .catch((err) => {
-          if (action === 'entity-accept-group') {
-            showMutationError(item, button, err, CUR_COPY.CUR_ACTION_FAILED);
-          } else {
-            setBusy(button, false);
-            showError(item, window.SurfaceState?.serverMessageFrom(err) || CUR_COPY.CUR_ACTION_FAILED);
-          }
-        });
-      return;
-    }
-
-    if (action === 'entity-accept' || action === 'entity-dismiss') {
-      const payload = entityPayload(button);
-      const path = action === 'entity-accept'
-        ? '/app/curation/api/entity/accept'
-        : '/app/curation/api/entity/dismiss';
-      setBusy(button, true);
-      postJson(path, payload)
-        .then((data) => {
-          if (action === 'entity-accept') appendMergeOutcome(data.merge_id, `${item.dataset.source} → ${item.dataset.target}`);
-          removeItem(item);
-        })
-        .catch((err) => {
-          if (action === 'entity-accept') {
             showMutationError(item, button, err, CUR_COPY.CUR_ACTION_FAILED);
           } else {
             setBusy(button, false);

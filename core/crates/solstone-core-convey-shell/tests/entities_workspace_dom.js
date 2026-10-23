@@ -622,6 +622,174 @@ async function main() {
     'semantic body pane has entity-conn-evidence class and is hidden',
   );
 
+  // Tidy-up: bulk hide batches and resume, undo numbers, merge planning.
+  const tidyStart = workspace.indexOf('// Tidy-up:');
+  const tidyEnd = workspace.indexOf('restoreTidyOp();', tidyStart);
+  check(tidyStart !== -1 && tidyEnd !== -1, 'workspace exposes the tidy-up block');
+  function tidyHarness(api, {stored = null} = {}) {
+    const storage = new Map(stored ? [['entities.tidyOperation', stored]] : []);
+    const log = {requests: [], sleeps: [], storedAtFirstRequest: null};
+    const context = {
+      console,
+      Promise,
+      Map,
+      Set,
+      Uint8Array,
+      journalFolder: '',
+      facetRoster: [{name: 'work', title: 'Work'}],
+      groupedCount: (n) => String(n),
+      renderJournalEntities: () => {},
+      loadJournalEntities: async () => {},
+      window: {
+        logError: () => {},
+        crypto: {getRandomValues: (bytes) => bytes.fill(7)},
+        sessionStorage: {
+          getItem: (key) => (storage.has(key) ? storage.get(key) : null),
+          setItem: (key, value) => storage.set(key, value),
+          removeItem: (key) => storage.delete(key),
+        },
+        apiJson: async (url, opts) => {
+          const body = opts && opts.body ? JSON.parse(opts.body) : null;
+          if (log.storedAtFirstRequest === null && body) log.storedAtFirstRequest = storage.get('entities.tidyOperation') || '';
+          log.requests.push({url, body});
+          return api(url, body, log.requests.length);
+        },
+      },
+    };
+    vm.runInNewContext(`${workspace.slice(tidyStart, tidyEnd)}\nthis.tidyClock = tidyClock; this.tidyState = tidyState;`, context, {filename: 'entities-tidy.js'});
+    context.tidyClock.sleep = async (ms) => { log.sleeps.push(ms); };
+    context.renderTidyToast = () => {};
+    context.renderIdsPanel = () => {};
+    context.renderDupsPanel = () => {};
+    return {context, log, storage};
+  }
+  const noLoss = (url) => {
+    if (url.includes('tidy-up')) return {id_shaped: {count: 0, members: [], items: []}, duplicates: {count: 0, members: [], items: []}, damage: {count: 0, paths: []}};
+    return null;
+  };
+
+  {
+    const members = Array.from({length: 118}, (_, i) => `id${i}`);
+    const {context, log} = tidyHarness((url, body) => noLoss(url) || {hidden: body.ids, already_hidden: [], missing: [], unreadable: []});
+    context.tidyState.captured = members;
+    context.tidyState.unticked = new Set(['id3', 'id110']);
+    context.startBulkHide();
+    context.startBulkHide();
+    await new Promise(resolve => setImmediate(resolve));
+    for (let i = 0; i < 20 && context.tidyState.running; i += 1) await new Promise(resolve => setImmediate(resolve));
+    const hides = log.requests.filter(r => r.url.endsWith('/journal/block'));
+    check(JSON.stringify(hides.map(r => r.body.ids.length)) === '[50,50,16]', 'bulk hide sends the 116 ticked ids in batches of 50, 50, 16');
+    check(new Set(hides.map(r => r.body.operation)).size === 1, 'every batch carries one operation id');
+    check(!hides.some(r => r.body.ids.includes('id3') || r.body.ids.includes('id110')), 'unticked ids are never sent');
+    check(log.sleeps.filter(ms => ms >= 100).length >= 2, 'batches after the first wait at least 100 ms');
+    check(JSON.parse(log.storedAtFirstRequest).phase === 'hiding', 'the operation is stored before the first request');
+    check(!log.requests.slice(0, 3).some(r => r.url.includes('tidy-up')), 'no groups read runs between the press and the last batch');
+    check(context.tidyState.op.view === 'hide-done' && context.tidyState.op.hidden.size === 116, 'a finished hide counts the hidden ids');
+  }
+
+  const settle = async (context) => {
+    for (let i = 0; i < 40 && (context.tidyState.running || context.tidyState.dupBusy); i += 1) await new Promise(resolve => setImmediate(resolve));
+    await new Promise(resolve => setImmediate(resolve));
+  };
+  const refusal = {status: 409, reasonCode: 'entity_busy_refusal', serverMessage: 'no'};
+
+  {
+    let calls = 0;
+    const {context, log} = tidyHarness((url) => {
+      const read = noLoss(url); if (read) return read;
+      calls += 1;
+      if (calls === 1) throw new TypeError('Failed to fetch');
+      throw refusal;
+    });
+    context.tidyState.captured = ['a', 'b'];
+    context.startBulkHide();
+    await settle(context);
+    const ops = new Set(log.requests.filter(r => r.body).map(r => r.body.operation));
+    check(context.tidyState.op.view === 'hide-stopped' && ops.size === 1, 'a lost first attempt then a refusal is stopped partway under the same operation');
+  }
+
+  {
+    const {context} = tidyHarness((url) => { const read = noLoss(url); if (read) return read; throw refusal; });
+    context.tidyState.captured = ['a'];
+    context.startBulkHide();
+    await settle(context);
+    check(context.tidyState.op.view === 'hide-failed', 'a refusal on a first batch with no earlier attempt means nothing was hidden');
+  }
+
+  {
+    let calls = 0;
+    const {context} = tidyHarness((url, body) => {
+      const read = noLoss(url); if (read) return read;
+      calls += 1;
+      if (calls === 1) throw new TypeError('Failed to fetch');
+      return {hidden: body.ids.filter(id => id !== 'x' && id !== 'y' && id !== 'z'), already_hidden: ['x', 'y'], missing: ['z'], unreadable: []};
+    });
+    context.tidyState.captured = ['a', 'b', 'x', 'y', 'z'];
+    context.startBulkHide();
+    await settle(context);
+    const content = context.tidyToastContent(context.tidyState.op);
+    check(context.tidyState.op.hidden.size === 2 && context.tidyState.op.other.size === 3, 'hide numbers come from the responses, not the ticked count');
+    check(content.text.includes('2') && content.text.includes('3'), 'the done toast states m and k');
+  }
+
+  {
+    const {context} = tidyHarness(() => null, {stored: JSON.stringify({id: 'op12345678', selection: ['a', 'b'], phase: 'hiding', hidden: [], other: []})});
+    context.restoreTidyOp();
+    check(context.tidyState.op.view === 'hide-stopped' && context.tidyState.op.unanswered, 'a reload while hiding restores the stopped-partway state as unanswered');
+  }
+
+  {
+    const responses = [
+      {restored: [{id: 'a', facets_reattached: []}], skipped: ['facets/w/entities/q/entity.json'], failed: [{id: 'x', reason: 'r'}], remaining: 2, unreadable: []},
+      {restored: [{id: 'b', facets_reattached: []}], skipped: ['facets/w/entities/q/entity.json'], failed: [{id: 'x', reason: 'r'}], remaining: 1, unreadable: []},
+      {restored: [{id: 'c', facets_reattached: []}], skipped: [], failed: [{id: 'x', reason: 'r'}], remaining: 0, unreadable: []},
+    ];
+    let n = 0;
+    const {context, log} = tidyHarness((url) => noLoss(url) || responses[n++]);
+    context.tidyState.op = {id: 'op12345678', selection: ['a', 'b', 'c', 'x'], phase: 'done', hidden: new Set(['a', 'b', 'c', 'x']), other: new Set(), view: 'hide-done', undo: null};
+    await context.runTidyUndo();
+    const op = context.tidyState.op;
+    const content = context.tidyToastContent(op);
+    check(op.undo.total === 4 && op.undo.restored.size === 3 && op.undo.failed.size === 1, 'undo denominator is the first response total and failures dedupe');
+    check(content.text.startsWith('put back 3 of 4.'), 'undo with a failure shows the put-back-of form');
+    check(content.small && content.small.split('facets/w/entities/q/entity.json').length === 2, 'the facets line names a skipped path once');
+    check(log.sleeps.filter(ms => ms >= 100).length >= 2, 'undo requests wait at least 100 ms');
+  }
+
+  {
+    const {context} = tidyHarness((url) => noLoss(url) || {restored: [], skipped: [], failed: [{id: 'x', reason: 'r'}], remaining: 3, unreadable: []});
+    context.tidyState.op = {id: 'op12345678', selection: ['x'], phase: 'done', hidden: new Set(['x']), other: new Set(), view: 'hide-done', undo: null};
+    await context.runTidyUndo();
+    check(context.tidyState.op.view === 'undo-stopped', 'undo with no progress stops instead of polling');
+  }
+
+  {
+    const {context} = tidyHarness(() => null);
+    const pair = (s, t, facets = ['work']) => ({pair: [s, t], names: [s, t], rows: facets.map(facet => ({facet, source_slug: s, target_slug: t}))});
+    const members = [pair('A', 'B'), pair('C', 'B'), pair('A', 'C'), pair('D', 'E', ['work', 'home']), pair('F', 'A'), pair('B', 'G'), pair('G', 'H')];
+    const selected = new Set(['A\u0000B', 'C\u0000B', 'A\u0000C', 'D\u0000E']);
+    const plan = context.planDuplicateMerge(members, selected);
+    check(JSON.stringify(plan.kept.map(m => m.pair.join(''))) === '["AB","CB","DE"]', 'the merge confirm keeps pairs that name no kept source');
+    check(JSON.stringify(plan.leaving.map(m => m.pair.join(''))) === '["AC","FA"]', 'listed pairs naming a kept source leave the list, ticked or not');
+  }
+
+  {
+    const pair = (i) => ({pair: [`s${i}`, `t${i}`], names: [`s${i}`, `t${i}`], rows: [{facet: 'work', source_slug: `s${i}`, target_slug: `t${i}`}]});
+    const members = Array.from({length: 60}, (_, i) => pair(i));
+    let batch = 0;
+    const {context, log} = tidyHarness((url, body) => {
+      if (url.includes('tidy-up')) return {id_shaped: {count: 0, members: []}, duplicates: {count: 40, members: members.slice(20), items: []}, damage: {count: 0, paths: []}};
+      batch += 1;
+      if (batch === 2) throw new TypeError('Failed to fetch');
+      return {results: body.items.map(() => ({status: 'accepted'}))};
+    });
+    context.tidyState.data = {duplicates: {members}};
+    await context.runDuplicateMerge({kept: members, leaving: []});
+    const accepts = log.requests.filter(r => r.url.endsWith('accept-batch'));
+    check(JSON.stringify(accepts.map(r => r.body.items.length)) === '[20,20]', 'merge sends 20 items per request and stops after a request with no response');
+    check(context.tidyState.dupStatus === 'merged 20 of 60 pairs. 40 couldn\'t be merged.', 'pairs with no answer are decided by the re-read');
+  }
+
   console.log(`DOM CASES: ${cases} passed`);
 }
 
