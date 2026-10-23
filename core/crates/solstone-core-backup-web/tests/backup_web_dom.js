@@ -327,8 +327,10 @@ function fixture(document) {
   const verifyHistory = add(offloadProof, 'p', { 'data-offload-verify-history': '', hidden: '' });
   const verifySuccessTime = add(verifyHistory, 'span', { 'data-offload-success-time': '' });
   const stallReason = add(offload, 'p', { 'data-offload-stall-reason': '', hidden: '' });
-  const saveOffload = add(offload, 'button', { 'data-action': 'offload-save' });
-  add(offload, 'button', { 'data-action': 'offload-enable' });
+  add(offload, 'p', { 'data-offload-unsupported': '', hidden: '' });
+  const offloadForm = add(offload, 'form', { 'data-offload-enable-form': '' });
+  const saveOffload = add(offloadForm, 'button', { 'data-action': 'offload-save' });
+  add(offloadForm, 'button', { 'data-action': 'offload-enable' });
   const teardownSection = add(management, 'section', { class: 'backup-teardown' });
   const teardownOpen = add(teardownSection, 'button', { 'data-action': 'teardown-open' });
   const teardownGate = add(teardownSection, 'div', { class: 'backup-teardown-gate', 'data-teardown-gate': '', hidden: '' });
@@ -1921,6 +1923,19 @@ asyncCase('teardown confirmation gate requires exact phrase and POSTs with no bo
   await settle();
   assert.strictEqual(teardownCalled, true);
   assert.strictEqual(teardownRequestBody, undefined);
+});
+
+asyncCase('unsupported host hides media-offload enrollment while keeping backup controls', async () => {
+  const harness=createHarness({
+    statusQueue:[{...status(),enabled:true,confirmed_recovery_key:true}],
+    respond(call) {
+      if(call.url === '/app/backup/offload/status') return response({success:true,enable_supported:false,offload:{enabled:false},days:[]});
+    },
+  });
+  await ready(harness);
+  assert.strictEqual(harness.root.querySelector('[data-offload-enable-form]').hidden,true);
+  assert.strictEqual(harness.root.querySelector('[data-offload-unsupported]').hidden,false);
+  assert.ok(harness.root.querySelector('[data-retention-form]'));
 });
 
 async function runAsyncCases() {
