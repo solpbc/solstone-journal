@@ -2736,7 +2736,7 @@ fn get_transcript(
     let entries = page
         .entries
         .into_iter()
-        .map(|item| item.text)
+        .map(|item| solstone_core_format::markdown::literal_text(&item.text))
         .collect::<Vec<_>>();
     let count = entries.len();
     let mut response_val = json!({"entries": entries, "next_cursor": next_cursor });
@@ -2855,8 +2855,11 @@ pub(crate) fn scope_ids(scope: &ConnectionScope) -> Vec<String> {
 }
 
 fn snippet(value: &str) -> String {
-    value.chars().take(MAX_SNIPPET_CHARS).collect()
+    solstone_core_format::markdown::literal_text(
+        &value.chars().take(MAX_SNIPPET_CHARS).collect::<String>(),
+    )
 }
+
 fn digest(value: &str) -> String {
     format!("{:x}", Sha256::digest(value.as_bytes()))
 }
@@ -2914,4 +2917,49 @@ fn index_error(error: solstone_core_indexer_query::IndexAccessError) -> Dispatch
         _ => ToolError::NotIndexed,
     };
     DispatchError::Tool(tool_error)
+}
+
+#[cfg(test)]
+mod literal_tests {
+    use pulldown_cmark::{Event, Options, Parser, Tag};
+
+    use super::{MAX_SNIPPET_CHARS, content_digest, snippet};
+
+    #[test]
+    fn audit_digest_tracks_presentation_and_ignores_randomized_references() {
+        let source = "![cover](https://example.test/cover.png)";
+        let before = serde_json::json!({"snippet":source, "reference":"first"});
+        let after = serde_json::json!({"snippet":snippet(source), "reference":"second"});
+        let replay = serde_json::json!({"snippet":snippet(source), "reference":"third"});
+        assert_ne!(content_digest(&before), content_digest(&after));
+        assert_eq!(content_digest(&after), content_digest(&replay));
+    }
+
+    #[test]
+    fn snippets_escape_legacy_markup_after_truncating_source_characters() {
+        let payload = "![cover](https://example.test/cover.png) <img src=x> &#33; 日本語\\";
+        for text in [
+            payload.to_owned(),
+            format!(
+                "{}![cover](https://example.test/cover.png)",
+                "é".repeat(MAX_SNIPPET_CHARS - 12)
+            ),
+        ] {
+            let escaped = snippet(&text);
+            let mut visible = String::new();
+            for event in Parser::new_ext(&escaped, Options::all()) {
+                match event {
+                    Event::Start(Tag::Image { .. } | Tag::Link { .. })
+                    | Event::Html(_)
+                    | Event::InlineHtml(_) => panic!("active snippet markup in {escaped:?}"),
+                    Event::Text(text) => visible.push_str(&text),
+                    _ => {}
+                }
+            }
+            assert_eq!(
+                visible,
+                text.chars().take(MAX_SNIPPET_CHARS).collect::<String>()
+            );
+        }
+    }
 }

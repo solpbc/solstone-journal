@@ -76,6 +76,7 @@ nix = { workspace = true, features = ["dir", "fs", "user", "resource"] }
 ipconfig = { version = "0.3.2", default-features = false }
 
 [dev-dependencies]
+pulldown-cmark.workspace = true
 proc-macro2 = "1.0.107"
 rusqlite.workspace = true
 serde.workspace = true
