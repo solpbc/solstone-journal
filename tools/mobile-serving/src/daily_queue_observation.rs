@@ -2,13 +2,9 @@
 // Copyright (c) 2026 sol pbc
 
 //! Optional development observations of existing events, never queue authority.
-use chrono::NaiveDate;
 use serde_json::{Value, json};
 use solstone_core_journal_io::JournalRoot;
-use solstone_core_system::{
-    partition::canonical_journal_command,
-    queue::{QueuedTaskSnapshot, TaskQueueEvent},
-};
+use solstone_core_system::queue::{QueuedTaskSnapshot, TaskQueueEvent};
 use std::{
     collections::hash_map::RandomState,
     hash::BuildHasher,
@@ -108,6 +104,20 @@ impl DailyQueueTap {
         ));
     }
 
+    pub(crate) fn binding(&self) -> Result<(String, String), &'static str> {
+        if self.closed.load(Ordering::Acquire) {
+            return Err("observer_stopped");
+        }
+        if self.invalid.load(Ordering::Acquire) {
+            return Err("observer_lost_or_reordered_event");
+        }
+        if self.root.revalidate_canonical_binding().is_err() {
+            self.invalid.store(true, Ordering::Release);
+            return Err("observer_root_changed");
+        }
+        Ok((self.root.identity().observation_id(), self.host.clone()))
+    }
+
     pub(crate) fn close(&self) {
         self.closed.store(true, Ordering::Release);
     }
@@ -169,63 +179,58 @@ impl DailyQueueTap {
 }
 
 fn project(row: &QueuedTaskSnapshot) -> Option<Value> {
-    // Unknown commands/references may contain unrelated content or credentials.
-    // Validate bounded fixed grammars before cloning anything into the observation.
-    if row.scheduler_name.is_some()
-        || row.references.len() != 1
-        || row.command.len() > 8
-        || row.command.iter().any(|arg| arg.len() > 64)
-        || row.references[0].len() > 96
+    let work = solstone_core_system::queue::DailyQueueWork::project(
+        row.day.as_deref(),
+        &row.command,
+        &row.references,
+        row.scheduler_name.as_deref(),
+    )?;
+    Some(json!(work))
+}
+
+pub(crate) fn live_read_age(
+    started: Instant,
+    finished: Instant,
+    now: Instant,
+) -> Result<u128, &'static str> {
+    if finished.checked_duration_since(started).is_none()
+        || now.checked_duration_since(finished).is_none()
     {
-        return None;
+        return Err("observer_live_clock_ambiguous");
     }
-    let day = row.day.as_deref()?;
-    if day.len() != 8
-        || !day.bytes().all(|c| c.is_ascii_digit())
-        || NaiveDate::parse_from_str(day, "%Y%m%d").is_err()
-    {
-        return None;
+    let age = now
+        .checked_duration_since(started)
+        .ok_or("observer_live_clock_ambiguous")?;
+    if age > MAX_AGE {
+        return Err("observer_live_read_stale");
     }
-    let (request_id, reference, command) = if row.command.len() == 8 {
-        let id = &row.command[7];
-        if id.len() != 32
-            || !id
-                .bytes()
-                .all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c))
-        {
-            return None;
-        }
-        (
-            Some(id.as_str()),
-            format!("supervisor-work-{day}-{id}"),
-            canonical_journal_command([
-                "think",
-                "--day",
-                day,
-                "--from-scratch",
-                "--work-intent",
-                id,
-            ]),
-        )
-    } else {
-        (
-            None,
-            format!("supervisor-work-{day}-daily"),
-            canonical_journal_command(["think", "--day", day, "--daily-only"]),
-        )
-    };
-    if row.command != command || row.references[0] != reference {
-        return None;
-    }
-    Some(json!({"day":day,"request_id":request_id,"reference":reference,"command":command}))
+    Ok(age.as_micros())
 }
 
 #[cfg(all(test, feature = "full-tests"))]
 mod tests {
     use super::*;
-    use solstone_core_system::partition::Partition;
+    use solstone_core_system::partition::{Partition, canonical_journal_command};
 
     const ID: &str = "0123456789abcdef0123456789abcdef";
+    #[test]
+    fn live_age_counts_validation_delay_and_rejects_clock_ambiguity() {
+        let start = Instant::now();
+        let finish = start + Duration::from_secs(4);
+        assert_eq!(
+            live_read_age(start, finish, start + Duration::from_secs(6)),
+            Err("observer_live_read_stale")
+        );
+        assert_eq!(
+            live_read_age(start, finish, start + Duration::from_secs(3)),
+            Err("observer_live_clock_ambiguous")
+        );
+        assert_eq!(
+            live_read_age(finish, start, finish),
+            Err("observer_live_clock_ambiguous")
+        );
+        assert_eq!(live_read_age(start, finish, finish), Ok(4_000_000));
+    }
     fn event() -> TaskQueueEvent {
         TaskQueueEvent::QueueChanged {
             partition: Partition::new("daily"),
