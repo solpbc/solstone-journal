@@ -62,6 +62,13 @@ fn real_restic_preserves_owner_names_and_excludes_operational_secrets() {
         "chronicle/notes/health/daily-units/owner.execution.lock",
         "chronicle/2026a003/health/daily-units/owner.execution.lock",
         "chronicle/20261003/health/daily-units-original/owner.execution.lock",
+        "chronicle/20260929/health/segment-think-original/owner.lock",
+        "chronicle/20260929/health/120001_0/owner.lock",
+        "chronicle/20260929/health/talent-provenance/activity-inputs/personal/activity.json",
+        "chronicle/20260929/health/stream.updated",
+        "chronicle/20260929/health/daily.updated",
+        "chronicle/20260929/health/sense-day.lease-notes",
+        "chronicle/notes/health/segment-think/import.document/120001_0.lock",
     ];
     let omitted = [
         "indexer/journal.sqlite",
@@ -86,6 +93,11 @@ fn real_restic_preserves_owner_names_and_excludes_operational_secrets() {
         "health/locks/backup-activity.lock",
         "chronicle/20261003/health/daily-units/u-entities.f-personal.execution.lock",
         "chronicle/20261003/health/daily-units/u-entities.f-personal.json.lock",
+        "chronicle/20260929/health/segment-think/import.document/120001_0.lock",
+        "chronicle/20260929/health/talent-provenance/activity-inputs/personal/activity.json.lock",
+        "chronicle/20260929/health/stream.updated.lock",
+        "chronicle/20260929/health/daily.updated.lock",
+        "chronicle/20260929/health/sense-day.lease",
         "health/sync/state",
         "health/scheduler.json",
         "mcp-endpoint/pop.ed25519.pk8",
@@ -160,13 +172,33 @@ fn real_restic_preserves_owner_names_and_excludes_operational_secrets() {
     let current_prepared = prepare_backup_args(&root).unwrap();
     let mut current = current_prepared.args.clone();
     current.push("--json".into());
-    let daily_execution = solstone_core_journal_io::locking::hold_lock(
-        root.join("chronicle/20261003/health/daily-units/u-entities.f-personal.execution"),
-        solstone_core_journal_io::locking::LockOptions::default(),
+    let processing_claims: Vec<_> = [
+        "chronicle/20261003/health/daily-units/u-entities.f-personal.execution",
+        "chronicle/20260929/health/segment-think/import.document/120001_0",
+        "chronicle/20260929/health/talent-provenance/activity-inputs/personal/activity.json",
+        "chronicle/20260929/health/stream.updated",
+        "chronicle/20260929/health/daily.updated",
+    ]
+    .into_iter()
+    .map(|path| {
+        solstone_core_journal_io::locking::hold_lock(
+            root.join(path),
+            solstone_core_journal_io::locking::LockOptions::default(),
+        )
+        .unwrap()
+    })
+    .collect();
+    let sense_lease_path = root.join("chronicle/20260929/health/sense-day.lease");
+    fs::remove_file(&sense_lease_path).unwrap();
+    let sense_lease = solstone_core_journal_io::acquire_file_lease(
+        &sense_lease_path,
+        solstone_core_journal_io::LeaseOptions::default(),
     )
-    .unwrap();
+    .unwrap()
+    .expect("fresh Sense lease acquired");
     let new_snapshot = snapshot_id(run(&current));
-    drop(daily_execution);
+    drop(sense_lease);
+    drop(processing_claims);
     assert_ne!(old_snapshot, new_snapshot);
     run(&["check".into()]);
     let previously_missing = [
@@ -186,6 +218,9 @@ fn real_restic_preserves_owner_names_and_excludes_operational_secrets() {
         "chronicle/notes/health/daily-units/owner.execution.lock",
         "chronicle/2026a003/health/daily-units/owner.execution.lock",
         "chronicle/20261003/health/daily-units-original/owner.execution.lock",
+        "chronicle/20260929/health/segment-think-original/owner.lock",
+        "chronicle/20260929/health/120001_0/owner.lock",
+        "chronicle/notes/health/segment-think/import.document/120001_0.lock",
     ];
     for (snapshot, previous) in [(old_snapshot, true), (new_snapshot, false)] {
         let restore = temp.path().join(format!("restored-{snapshot}"));
