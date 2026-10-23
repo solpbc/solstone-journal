@@ -37,7 +37,10 @@ use crate::processing::{
 };
 use crate::speakers::analyze_speakers;
 use crate::terminal::{TerminalWrite, TerminalWriteFailure, write_terminal, write_terminal_with};
-use crate::transcript::{FullTranscriptWrite, remove_orphan_npz, write_full_transcript};
+use crate::transcript::{
+    FullTranscriptWrite, remove_orphan_npz, restore_statement_timestamps, write_full_transcript,
+};
+use solstone_core_observe_audio::reduce_audio;
 
 const SPEAKER_EVIDENCE_VERSION: &str = "windowed-slots-v1";
 const SPEAKER_ANALYSIS_PRODUCER: &str = "solstone-core-speakers-analyze";
@@ -648,11 +651,18 @@ pub(crate) fn process_one_with(
             None,
         );
     })?;
-    // VAD admits a recording; its approximate ranges are not safe deletion boundaries.
-    // Keep every admitted sample, after the owner mask when one applies. Mobile's
-    // decoded-input bound and the confidential transport's real byte guard still apply.
-    let statement_audio = full_audio.as_slice();
-    let reduced_seconds = None;
+    // Trim long non-speech gaps after owner masking, preserving boundary context.
+    // Keep the original masked timeline for diarization and transcript publication.
+    let reduce_at = Instant::now();
+    let reduction = reduce_audio(&full_audio, &vad);
+    let (reduced_audio, reduction) = reduction
+        .map(|(audio, mapping)| (Some(audio), Some(mapping)))
+        .unwrap_or((None, None));
+    if reduction.is_some() {
+        timings.add_ms("reduce", elapsed_ms(reduce_at));
+    }
+    let statement_audio = reduced_audio.as_deref().unwrap_or(&full_audio);
+    let reduced_seconds = reduction.as_ref().map(|mapping| mapping.reduced_duration_s);
 
     let mut asr_at = None;
     #[cfg(all(feature = "embedded", unix))]
@@ -664,21 +674,24 @@ pub(crate) fn process_one_with(
         });
     let dispatch = || {
         if backend == "confidential" {
-            // Admit the complete masked request by its encoded byte size. Oversized
-            // input is an explicit retained-raw deferral, never permission to discard
-            // regions the detector classified as silence.
-            dispatch_confidential_with_cap(statement_audio.len(), audio_seconds, || {
-                asr_at = Some(Instant::now());
-                dispatch_backend(
-                    config,
-                    journal_path,
-                    &backend,
-                    statement_audio,
-                    attestation_state,
-                    #[cfg(all(feature = "embedded", unix))]
-                    embedded,
-                )
-            })
+            // The byte limit applies to the trimmed audio actually sent. A request
+            // still over budget is deferred with its original input retained.
+            dispatch_confidential_with_cap(
+                statement_audio.len(),
+                reduced_seconds.unwrap_or(audio_seconds),
+                || {
+                    asr_at = Some(Instant::now());
+                    dispatch_backend(
+                        config,
+                        journal_path,
+                        &backend,
+                        statement_audio,
+                        attestation_state,
+                        #[cfg(all(feature = "embedded", unix))]
+                        embedded,
+                    )
+                },
+            )
         } else {
             asr_at = Some(Instant::now());
             dispatch_backend(
@@ -796,6 +809,10 @@ pub(crate) fn process_one_with(
     }
 
     let statements = statements_from_words(&transcription.words);
+    let restored = reduction.as_ref().map_or_else(
+        || statements.clone(),
+        |mapping| restore_statement_timestamps(&statements, mapping),
+    );
     let speakers_at = Instant::now();
     #[cfg(all(feature = "embedded", unix))]
     let speaker_analysis = if let Some(runtime) = embedded {
@@ -804,9 +821,9 @@ pub(crate) fn process_one_with(
             audio_path,
             &full_audio,
             statement_audio,
-            None,
+            reduced_audio.as_deref(),
             &statements,
-            &statements,
+            &restored,
             runtime.models,
             runtime.scratch,
         )
@@ -815,9 +832,9 @@ pub(crate) fn process_one_with(
             audio_path,
             &full_audio,
             statement_audio,
-            None,
+            reduced_audio.as_deref(),
             &statements,
-            &statements,
+            &restored,
             SAMPLE_RATE,
             crate::speakers::MIN_STATEMENT_DURATION_S,
         )
@@ -827,9 +844,9 @@ pub(crate) fn process_one_with(
         audio_path,
         &full_audio,
         statement_audio,
-        None,
+        reduced_audio.as_deref(),
         &statements,
-        &statements,
+        &restored,
         SAMPLE_RATE,
         crate::speakers::MIN_STATEMENT_DURATION_S,
         #[cfg(windows)]
@@ -2598,6 +2615,109 @@ mod tests {
             }
             assert!(super::PROCESSING_TEST_VAD.with(|result| result.borrow().is_none()));
             assert_eq!(fs::read(&facts.path).unwrap(), original);
+        }
+    }
+
+    #[cfg(all(unix, feature = "embedded", feature = "full-tests"))]
+    #[test]
+    fn embedded_recognizer_receives_context_padded_speech_without_long_quiet_gaps() {
+        use std::cell::RefCell;
+
+        struct Recorder(RefCell<Vec<Vec<f32>>>);
+        impl crate::embedded::EmbeddedAsr for Recorder {
+            fn transcribe(&self, samples: &[f32]) -> Result<Value, String> {
+                self.0.borrow_mut().push(samples.to_vec());
+                Ok(json!({"text": "", "words": []}))
+            }
+
+            fn model_info(&self) -> crate::embedded::EmbeddedModelInfo {
+                crate::embedded::EmbeddedModelInfo {
+                    backend: "parakeet-cpp".into(),
+                    model: "fixture".into(),
+                    device: "cpu".into(),
+                    compute_type: "float32".into(),
+                }
+            }
+        }
+
+        for (speech, expected) in [
+            (vec![(5.0, 6.0), (15.0, 16.0)], vec![(4, 7), (14, 17)]),
+            (vec![(0.0, 20.0)], vec![(0, 20)]),
+            (Vec::new(), Vec::new()),
+        ] {
+            let root = tempfile::tempdir().unwrap();
+            let facts = input(root.path());
+            let rate = super::SAMPLE_RATE as usize;
+            let audio: Vec<f32> = (0..20 * rate)
+                .map(|index| (index / rate) as f32 / 32.0)
+                .collect();
+            fs::write(
+                &facts.path,
+                solstone_core_observe_audio::audio_to_wav_bytes(&audio, super::SAMPLE_RATE)
+                    .unwrap(),
+            )
+            .unwrap();
+            let original = fs::read(&facts.path).unwrap();
+            let decoded = solstone_core_observe_audio::decode_f32_mono(&facts.path).unwrap();
+            super::PROCESSING_TEST_VAD.with(|result| {
+                *result.borrow_mut() = Some(VadResult {
+                    duration_s: 20.0,
+                    speech_duration_s: speech.iter().map(|(start, end)| end - start).sum(),
+                    has_speech: !speech.is_empty(),
+                    speech_segments: speech,
+                    noisy_rms: None,
+                    noisy_s: 0.0,
+                    loud_windows: 0,
+                    speech_loud_windows: 0,
+                });
+            });
+            let recorder = Recorder(RefCell::new(Vec::new()));
+            let runtime = crate::embedded::EmbeddedContext {
+                models: root.path(),
+                scratch: root.path(),
+                asr: &recorder,
+                cancel: &|| false,
+                service_io: &|_| {},
+                owner_original_deleted: &|| {},
+            };
+            let config = solstone_core_journal_config::JournalConfigRead {
+                present: false,
+                sha256: None,
+                config: None,
+            };
+            super::process_one_with(
+                &facts.path,
+                root.path(),
+                false,
+                None,
+                &config,
+                &solstone_core_spp_ratls::AttestationStateStore::new(),
+                Some(&runtime),
+                None,
+            )
+            .unwrap();
+
+            let calls = recorder.0.borrow();
+            if expected.is_empty() {
+                assert!(calls.is_empty(), "no-speech must never reach recognition");
+            } else {
+                assert_eq!(calls.len(), 1);
+                let expected: Vec<f32> = expected
+                    .into_iter()
+                    .flat_map(|(start, end)| decoded[start * rate..end * rate].iter().copied())
+                    .collect();
+                assert_eq!(calls[0].len(), expected.len());
+                assert_eq!(
+                    calls[0], expected,
+                    "only original retained samples reach ASR"
+                );
+            }
+            assert_eq!(
+                fs::read(&facts.path).unwrap(),
+                original,
+                "raw input is unchanged"
+            );
+            assert!(super::PROCESSING_TEST_VAD.with(|result| result.borrow().is_none()));
         }
     }
 

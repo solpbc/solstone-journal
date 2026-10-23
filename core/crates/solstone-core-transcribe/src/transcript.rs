@@ -8,7 +8,6 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use serde_json::{Map, Value, json};
-#[cfg(test)]
 use solstone_core_observe_audio::AudioReduction;
 use solstone_core_observe_audio::VadResult;
 use solstone_core_speaker_id::writer::{WriteResponse, write_request};
@@ -57,7 +56,6 @@ struct PreparedPayload {
 ///
 /// The helper returns restored statements, and full publication consumes those returned
 /// statements directly rather than applying the reduction mapping a second time.
-#[cfg(test)]
 pub(crate) fn restore_statement_timestamps(
     statements: &[Map<String, Value>],
     reduction: &AudioReduction,
@@ -115,7 +113,6 @@ pub(crate) fn remove_orphan_npz(jsonl_path: &Path, npz_path: &Path) -> Result<()
     Ok(())
 }
 
-#[cfg(test)]
 fn restore_interval_timestamps(interval: &mut Map<String, Value>, reduction: &AudioReduction) {
     let start = interval.get("start").and_then(Value::as_f64);
     let end = interval.get("end").and_then(Value::as_f64);

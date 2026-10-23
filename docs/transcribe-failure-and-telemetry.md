@@ -143,7 +143,7 @@ One event name, four outcomes. Every attempt emits exactly one event.
 | `device` | resolved placement (`cpu` / `gpu`) when a placement record exists; configured device otherwise | whenever known (see below) |
 | `model` | model filename | success, and failures after the backend reported it |
 | `audio_seconds` | original decoded length, 1 dp | whenever decoded |
-| `reduced_seconds` | Historical length after silence trimming, 1 dp | Older events that used reduction |
+| `reduced_seconds` | Length sent to recognition after silence trimming, 1 dp | When long non-speech gaps were reduced |
 | `rtfx` | `audio_seconds / (asr_ms / 1000)`, 2 dp | success, when ASR took ≥ 1 ms |
 | `peak_rss_mib` | peak RSS of this process, MiB | always |
 | `timings` | nested `{<stage>_ms: int}` | always (only the stages that ran) |
@@ -160,17 +160,19 @@ One event name, four outcomes. Every attempt emits exactly one event.
 Only stages that actually ran appear. A stage split across several calls (`write` covers
 the jsonl and the npz) reports its total.
 
-Recognition receives the complete admitted buffer, with the owner mask applied when
-owner-only mode is active. VAD ranges do not trim recognition input. Confidential
-requests must fit the existing byte budget; an oversized request is deferred (`69`) with its raw
-input retained. Current processing omits the historical reduction fields below.
+Recognition receives the detected speech spans after owner masking when owner-only mode
+is active. Gaps longer than two seconds are trimmed, retaining one second of context
+at each speech boundary. Word and statement timestamps map back to the original
+recording. If no gap can be reduced, recognition receives the admitted buffer unchanged.
+Confidential requests must fit the existing byte budget after trimming; an oversized
+request is deferred (`69`) with its raw input retained.
 
 | Key | Stage |
 |-----|-------|
 | `queue_wait_ms` | Enqueue-to-spawn latency, so it *includes* any memory-gate throttle wait. Measured by `sense.py` and passed in via `SOL_QUEUE_WAIT_MS`; the handler cannot compute it itself. Absent when not supplied. |
 | `decode_ms` | `load_audio` |
 | `vad_ms` | `run_vad` |
-| `reduce_ms` | Historical silence-reduction time; omitted by current processing |
+| `reduce_ms` | Silence reduction before recognition; present when audio was trimmed |
 | `asr_ms` | `stt_transcribe` — the STT call itself |
 | `speakers_analyze_ms` | native helper request construction, invocation, response validation, speaker evidence, diarization, and statement embeddings |
 | `write_ms` | jsonl + npz writes |
