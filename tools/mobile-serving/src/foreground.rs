@@ -2334,13 +2334,14 @@ mod processing_proofs {
     use solstone_core_system::work_retry::{self, Unit};
 
     fn wait_until(mut ready: impl FnMut() -> bool) {
-        for _ in 0..100_000 {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while std::time::Instant::now() < deadline {
             if ready() {
                 return;
             }
-            std::thread::yield_now();
+            std::thread::sleep(std::time::Duration::from_millis(1));
         }
-        assert!(ready());
+        assert!(ready(), "condition did not become ready within 10 seconds");
     }
 
     fn owned(args: &[&str]) -> Vec<String> {
@@ -3758,22 +3759,10 @@ mod processing_proofs {
             BackupWebDeps::new(journal.clone()),
         )
         .unwrap();
-        for _ in 0..2_000_000 {
-            if entered.load(Ordering::Acquire) {
-                break;
-            }
-            std::thread::yield_now();
-        }
-        assert!(entered.load(Ordering::Acquire));
+        wait_until(|| entered.load(Ordering::Acquire));
         host.request_stop();
         release.store(true, Ordering::Release);
-        for _ in 0..2_000_000 {
-            if !host.queue().history().is_empty() {
-                break;
-            }
-            std::thread::yield_now();
-        }
-        assert!(!host.queue().history().is_empty());
+        wait_until(|| !host.queue().history().is_empty());
         assert!(weekly_selection_statuses(&journal).is_empty());
         assert!(scheduler_field(&journal, "weekly-agents", "last_status").is_none());
         drop(host);
@@ -3813,24 +3802,12 @@ mod processing_proofs {
             BackupWebDeps::new(journal.clone()),
         )
         .unwrap();
-        for _ in 0..2_000_000 {
-            if entered.load(Ordering::Acquire) {
-                break;
-            }
-            std::thread::yield_now();
-        }
-        assert!(entered.load(Ordering::Acquire));
+        wait_until(|| entered.load(Ordering::Acquire));
         let parked = temp.path().join("parked");
         fs::rename(&journal, &parked).unwrap();
         fs::create_dir(&journal).unwrap();
         release.store(true, Ordering::Release);
-        for _ in 0..2_000_000 {
-            if !host.queue().history().is_empty() {
-                break;
-            }
-            std::thread::yield_now();
-        }
-        assert!(!host.queue().history().is_empty());
+        wait_until(|| !host.queue().history().is_empty());
         assert!(weekly_selection_statuses(&parked).is_empty());
         assert!(weekly_selection_statuses(&journal).is_empty());
         assert!(scheduler_field(&parked, "weekly-agents", "last_status").is_none());
