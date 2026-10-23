@@ -3555,6 +3555,10 @@ async fn restore_prepare_activated_lease_is_cleared_once_operation_terminates() 
     crate::operation::finish(&deps.operations, generation, "done", None, None);
 
     let _ = wait_terminal(&deps).await;
+    // A status read can observe completion after its initial lease reconciliation.
+    // Exercise cleanup with a poll after the worker has actually settled.
+    let (status, _) = get_status_json(&deps).await;
+    assert_eq!(status, 200);
     let (status, body) = post_json(
         &deps,
         "/app/backup/restore-hosted/cancel",
