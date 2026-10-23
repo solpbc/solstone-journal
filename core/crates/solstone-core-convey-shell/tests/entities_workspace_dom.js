@@ -459,6 +459,57 @@ async function main() {
     return list;
   }
 
+  // The panel drops the extraction artifacts home's connections card drops.
+  // Cases mirror solstone-core-home/src/connections.rs's tests, so the two
+  // rules are checked against the same examples.
+  const mentions = count => ({mentioned: {count}});
+  [
+    ['make', {mentioned: {count: 1329}, 'co-present': {count: 4}}],
+    ['just', mentions(3249)],
+    ['Own', mentions(991)],
+    ['Élan', mentions(991)],
+    ['jean-luc', mentions(991)],
+  ].forEach(([name, kinds]) => {
+    check(connContext.isEntityConnMentionOnlyWord({name, kinds}), `${name} is a word the journal only ever mentioned`);
+  });
+  [
+    ['Ada', {'spoke-with': {count: 12}, mentioned: {count: 400}}],
+    ['ada', {'attended-with': {count: 3}, mentioned: {count: 40}}],
+    ['Ada Lovelace', mentions(900)],
+    ['studio 54', mentions(900)],
+    ['Kai', {mentioned: {count: 98}, 'spoke-with': {count: 2}}],
+    ['make', undefined],
+    ['make', {}],
+    ['   ', mentions(5)],
+  ].forEach(([name, kinds]) => {
+    check(!connContext.isEntityConnMentionOnlyWord({name, kinds}), `${JSON.stringify(name)} stays a connection`);
+  });
+  ['the', ' The ', 'and', 'A', 'x', '1979', '—', 'of'].forEach(label => {
+    check(connContext.isEntityConnResidueEvidence({name: 'Gallery At Reunion (The)', evidence: [{label}], kinds: mentions(40)}),
+      `${JSON.stringify(label)} is a token, not a connection`);
+  });
+  [
+    {name: 'Gallery At Reunion (The)', evidence: [{label: 'Reunion'}], kinds: mentions(40)},
+    {name: 'Gallery At Reunion (The)', evidence: [{label: 'the gallery'}], kinds: mentions(40)},
+    {name: 'Ada Lovelace', evidence: [{label: 'the'}], kinds: {mentioned: {count: 40}, 'spoke-with': {count: 9}}},
+    {name: 'Ada Lovelace', kinds: mentions(40)},
+    {name: 'Ada Lovelace', evidence: [{label: ''}], kinds: mentions(40)},
+    {name: 'He', evidence: [{label: 'He'}], kinds: mentions(40)},
+    {name: 'An', evidence: [{label: 'an'}], kinds: mentions(40)},
+    {name: '何', evidence: [{label: '何'}], kinds: mentions(40)},
+  ].forEach(row => {
+    check(!connContext.isEntityConnResidueEvidence(row), `${row.name} / ${JSON.stringify(row.evidence)} stays a connection`);
+  });
+  const fetched = [
+    {entity_id: 'just', name: 'just', kinds: mentions(3680), evidence: [{label: 'just'}]},
+    {entity_id: 'gallery', name: 'Gallery At Reunion (The)', kinds: mentions(5578), evidence: [{label: 'The'}]},
+    ...Array.from({length: 20}, (_, i) => ({entity_id: `p${i}`, name: `Person ${i}`, kinds: {'spoke-with': {count: 5}}})),
+  ];
+  const shown = connContext.shownConnectionNeighbors(fetched);
+  check(shown.length === 15, 'the panel stays full after dropping artifacts');
+  check(shown[0].entity_id === 'p0' && !shown.some(row => row.entity_id === 'just' || row.entity_id === 'gallery'),
+    'artifacts are dropped and the next real neighbours move up');
+
   const connContainer = new Element(connDoc, 'connections-container');
   const testNeighbors = [
     {entity_id:'sem', name:'Ada', evidence_class:'semantic', count:2, last_seen:'20260501', kinds:{'works-with':{weighted:1}}},
