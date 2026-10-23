@@ -13,6 +13,8 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- fixed your journal on a mac or linux getting stuck after it was force-stopped or lost power at the wrong moment. every start after that ended with "a helper process did not answer in time". it now starts normally.
+- fixed your journal on a mac sometimes giving up after it stopped unexpectedly. at the end of its wait it showed "a recent heartbeat from another run is present". this happened while the mac was syncing its clock.
 - security fix: imported image descriptions and agent search or transcript results could load images from outside your journal. image markup in those excerpts now stays text. thanks @dvanduzer for the report.
 - interrupted daily rebuilds on iphone can now continue from verified completed work, keeping accepted results. work with uncertain outcomes stays held for review.
 - fixed rebuilds stopping when retained activity history still uses an earlier activity name, or when there are no suggested entities.

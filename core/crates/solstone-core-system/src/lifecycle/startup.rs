@@ -30,6 +30,23 @@ pub const ADMISSION_WAIT_ACTIVE_COPY: &str = "another solstone start is waiting 
 pub const ADMISSION_WAIT_UNVERIFIABLE_COPY: &str =
     "startup status couldn't be verified.\nwait a moment, then try again.";
 
+/// How far behind the monotonic clock a slewed wall clock may fall during the
+/// wait. On macOS the monotonic clock is never adjusted while time sync slews
+/// the wall clock by up to 5000 ppm on a large offset, plus its frequency
+/// correction; this allowance stays above both. On Linux the two clocks slew
+/// together, so only a step separates them.
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+const WALL_CLOCK_SLEW_ALLOWANCE: f64 = 0.01;
+
+/// The wait is slept on the monotonic clock, so a wall-clock step cannot
+/// stretch or cut it, but freshness is judged on the wall clock. Lengthen it
+/// by the slew allowance, so the one rescan lands past the horizon it waited
+/// for rather than milliseconds short of it.
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+fn monotonic_wait_seconds(wall_seconds: f64) -> f64 {
+    wall_seconds / (1.0 - WALL_CLOCK_SLEW_ALLOWANCE)
+}
+
 struct SystemAdmissionWaitClock {
     started: Instant,
 }
@@ -260,7 +277,7 @@ impl SupervisorBootAdmission {
         let wait_seconds =
             (latest_horizon - first_wall_seconds).clamp(0.0, sync::FRESH_WINDOW_SECONDS);
         emit_wait_copy(ADMISSION_WAIT_TRANSIENT_COPY);
-        clock.sleep_until(wait_started_monotonic + wait_seconds);
+        clock.sleep_until(wait_started_monotonic + monotonic_wait_seconds(wait_seconds));
 
         let second_wall_seconds = clock.wall_seconds();
         let second_monotonic = clock.monotonic_seconds();
@@ -626,6 +643,61 @@ mod tests {
                 action();
             }
         }
+    }
+
+    /// The one wait starts at monotonic 10 against a heartbeat a full window
+    /// from expiry: it covers the window and a slew allowance, no more.
+    fn assert_one_wait_just_past_the_window(deadlines: &[f64]) {
+        assert_eq!(deadlines.len(), 1, "{deadlines:?}");
+        assert!(70.0 < deadlines[0] && deadlines[0] < 71.0, "{deadlines:?}");
+    }
+
+    /// A wall clock that time synchronisation slews to `rate` wall seconds per
+    /// monotonic second.
+    struct SlewedClock {
+        wall: f64,
+        monotonic: f64,
+        rate: f64,
+    }
+
+    impl AdmissionWaitClock for SlewedClock {
+        fn wall_seconds(&mut self) -> f64 {
+            self.wall
+        }
+
+        fn monotonic_seconds(&mut self) -> f64 {
+            self.monotonic
+        }
+
+        fn sleep_until(&mut self, deadline_seconds: f64) {
+            let slept = (deadline_seconds - self.monotonic).max(0.0);
+            self.monotonic += slept;
+            self.wall += slept * self.rate;
+        }
+    }
+
+    #[test]
+    fn a_slewed_wall_clock_does_not_leave_the_rescan_short_of_the_horizon() {
+        let temporary = temporary();
+        write_fresh_foreign_heartbeat(temporary.path(), 1_000);
+        let mut clock = SlewedClock {
+            wall: 1_000.0,
+            monotonic: 10.0,
+            rate: 1.0 - 5_500e-6,
+        };
+        let source = process_source(MarkerVerdict::NotSameOrExited);
+
+        let admission = SupervisorBootAdmission::acquire_with(
+            temporary.path(),
+            writer_id(),
+            &mut clock,
+            &source,
+            &mut |_| {},
+        )
+        .expect("a heartbeat that stopped a full window ago no longer holds the start");
+
+        assert!(clock.wall > 1_000.0 + sync::FRESH_WINDOW_SECONDS);
+        drop(admission);
     }
 
     #[test]
@@ -999,7 +1071,7 @@ mod tests {
         )
         .expect("admission after heartbeat becomes stale");
 
-        assert_eq!(clock.sleep_deadlines, vec![70.0]);
+        assert_one_wait_just_past_the_window(&clock.sleep_deadlines);
         assert_eq!(emitted, vec![ADMISSION_WAIT_TRANSIENT_COPY]);
         assert!(
             fs::read_dir(temporary.path().join("health/sync"))
@@ -1437,7 +1509,7 @@ mod tests {
                 AdmissionWaitTerminalReason::ClockDiscontinuity
             ))
         ));
-        assert_eq!(clock.sleep_deadlines, vec![70.0]);
+        assert_one_wait_just_past_the_window(&clock.sleep_deadlines);
     }
 
     #[test]
@@ -1459,7 +1531,7 @@ mod tests {
                 AdmissionWaitTerminalReason::ClockDiscontinuity
             ))
         ));
-        assert_eq!(clock.sleep_deadlines, vec![70.0]);
+        assert_one_wait_just_past_the_window(&clock.sleep_deadlines);
     }
 
     #[test]
@@ -1497,6 +1569,6 @@ mod tests {
                 AdmissionWaitTerminalReason::ActivityRemains
             ))
         ));
-        assert_eq!(clock.sleep_deadlines, vec![70.0]);
+        assert_one_wait_just_past_the_window(&clock.sleep_deadlines);
     }
 }
