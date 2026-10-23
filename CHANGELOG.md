@@ -8,6 +8,8 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- interrupted daily rebuilds on iphone can now continue from verified completed work, keeping accepted results. work with uncertain outcomes stays held for review.
+- fixed rebuilds stopping when retained activity history still uses an earlier activity name, or when there are no suggested entities.
 - transcription now trims long gaps between detected speech, keeping context around each speech span and restoring transcript times to the original recording. this avoids sending those gaps to the recognizer.
 - checking for updates on linux now allows more time for a slow connection and shows why a check failed.
 - backup requests on windows now report a timeout when the connection times out just before the request deadline.

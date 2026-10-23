@@ -38,8 +38,11 @@ impl ServingInstance {
             }
             match host.daily_queue_observation() {
                 Ok(Some(observation)) => status["daily_queue_observation"] = observation,
-                Ok(None) => {},
-                Err(error) => status["daily_queue_observation"] = json!({"error":error,"authorizes_release":false}),
+                Ok(None) => {}
+                Err(error) => {
+                    status["daily_queue_observation"] =
+                        json!({"error":error,"authorizes_release":false})
+                }
             }
             if host.failed() {
                 status["failed"] = json!(true);
@@ -443,9 +446,13 @@ fn run(v: Value) -> Result<Value, String> {
                 journal_mobile_serving::foreground::ForegroundProcessingHost::open_with_rebuild_recovery
             };
             let host = open_host(
-                Arc::clone(root), &payload,
-                Arc::new(move || PROCESSING_GENERATION.load(Ordering::SeqCst) & !1 != generation & !1),
-                processing_stop, backup,
+                Arc::clone(root),
+                &payload,
+                Arc::new(move || {
+                    PROCESSING_GENERATION.load(Ordering::SeqCst) & !1 != generation & !1
+                }),
+                processing_stop,
+                backup,
             );
             let host = match host {
                 Ok(host) => host,
