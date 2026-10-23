@@ -139,6 +139,13 @@ async fn corpus_replays_all_cases() {
             if let Some(expected_json) = case.get("json") {
                 #[allow(unused_mut)]
                 let mut expected_json = expected_json.clone();
+                // Native hosts add an explicit enrollment capability to the
+                // retained compatibility corpus's offload response.
+                if native && case["path"] == "/app/backup/offload/status" && response.status == 200
+                {
+                    expected_json["enable_supported"] =
+                        json!(!cfg!(any(target_os = "ios", target_os = "android")));
+                }
                 #[cfg(windows)]
                 if matches!(
                     case["path"].as_str(),
@@ -272,7 +279,11 @@ async fn offload_status_uses_injected_geometry_and_has_exact_shape() {
     assert_eq!(status, 200);
     assert_eq!(
         body.as_object().expect("object").len(),
-        13 + usize::from(cfg!(windows))
+        14 + usize::from(cfg!(windows))
+    );
+    assert_eq!(
+        body["enable_supported"],
+        !cfg!(any(target_os = "ios", target_os = "android"))
     );
     #[cfg(windows)]
     assert_eq!(body["cleanup_admission"], "ready");
