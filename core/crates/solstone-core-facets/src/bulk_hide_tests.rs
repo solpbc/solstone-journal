@@ -8,12 +8,13 @@ use std::path::Path;
 
 use serde_json::{Value, json};
 use solstone_core_entity::{
-    read_entity_identity, read_identity_map, read_visible_history, save_entity_identity,
+    entity_is_hidden, read_entity_identity, read_identity_map, read_prepared_history,
+    read_visible_history, save_entity_identity,
 };
 
 use crate::{
-    BulkJournalError, StoppedReport, block_journal_entities, block_journal_entity, create_facet,
-    test_hooks, unblock_journal_entity, unblock_journal_operation,
+    BulkJournalError, FailedEntity, StoppedReport, block_journal_entities, block_journal_entity,
+    create_facet, test_hooks, unblock_journal_entity, unblock_journal_operation,
 };
 
 fn temp_journal() -> tempfile::TempDir {
@@ -706,4 +707,406 @@ fn bulk_test_06_budget_counters_listings_reads_and_cache_no_scan() {
 
     let todo_status = solstone_core_indexer_todo::inspect(j_miss.path()).unwrap();
     assert!(!todo_status.keys.iter().any(|k| k == "@entity-search"));
+}
+
+fn make_history_event(
+    seq: i64,
+    version_id: &str,
+    entity_id: &str,
+    before: Option<Value>,
+    after: Value,
+) -> Value {
+    json!({
+        "schema_version": 1,
+        "version_id": version_id,
+        "seq": seq,
+        "ts": "2026-08-05T00:32:02Z",
+        "entity_id": entity_id,
+        "kind": "update",
+        "caller": null,
+        "actor": null,
+        "identity_before": before,
+        "identity_after": after,
+        "operation": {},
+    })
+}
+
+#[test]
+fn bulk_test_07_prepared_reconcile_failure_durability_and_cache_enqueue() {
+    // Sub-scenario 1: block_journal_entities on an already-hidden entity with prepared reconcile failure
+    {
+        let j1 = temp_journal();
+        create_facet(j1.path(), "work", "work", "", "blue", "💼", None).unwrap();
+        let e_hid = "e-hid";
+        let e_sec = "e-sec";
+        write_entity(
+            j1.path(),
+            e_hid,
+            json!({"id": e_hid, "name": "Already Hidden"}),
+        );
+        save_entity_identity(
+            j1.path(),
+            e_hid,
+            &json!({"id": e_hid, "name": "Already Hidden", "blocked": true}),
+            None,
+        )
+        .unwrap();
+        write_entity(
+            j1.path(),
+            e_sec,
+            json!({"id": e_sec, "name": "Second Visible Entity"}),
+        );
+
+        let current = read_entity_identity(j1.path(), e_hid).unwrap().unwrap();
+
+        let pub_event = make_history_event(
+            10,
+            "vh_1_pub",
+            e_hid,
+            Some(json!({"id": e_hid, "name": "Before", "blocked": true})),
+            current.value().clone(),
+        );
+        let rep_event = make_history_event(
+            11,
+            "vh_2_rep",
+            e_hid,
+            Some(json!({"id": e_hid, "name": "Mismatched"})),
+            json!({"id": e_hid, "name": "Unrelated"}),
+        );
+
+        let prep_dir = j1
+            .path()
+            .join("entities")
+            .join(e_hid)
+            .join("history/prepared");
+        fs::create_dir_all(prep_dir.join("vh_1_pub")).unwrap();
+        fs::write(
+            prep_dir.join("vh_1_pub/event.json"),
+            serde_json::to_vec_pretty(&pub_event).unwrap(),
+        )
+        .unwrap();
+        fs::create_dir_all(prep_dir.join("vh_2_rep")).unwrap();
+        fs::write(
+            prep_dir.join("vh_2_rep/event.json"),
+            serde_json::to_vec_pretty(&rep_event).unwrap(),
+        )
+        .unwrap();
+
+        let _ = fs::remove_dir_all(solstone_core_indexer_todo::root(j1.path()));
+        let cache_path = j1.path().join("entities/.identity-map-cache.json");
+        let _ = fs::remove_file(&cache_path);
+        assert!(!cache_path.exists());
+
+        let report = block_journal_entities(
+            j1.path(),
+            "bulk-op-sub1",
+            &[e_hid.to_owned(), e_sec.to_owned()],
+        )
+        .unwrap();
+
+        assert_eq!(
+            report.stopped,
+            Some(StoppedReport {
+                reason: "reconcile_failed".to_owned(),
+                id: Some(e_hid.to_owned()),
+            })
+        );
+        assert!(!report.hidden.contains(&e_hid.to_owned()));
+        assert!(!report.already_hidden.contains(&e_hid.to_owned()));
+        assert!(!report.hidden.contains(&e_sec.to_owned()));
+
+        let sec_identity = read_entity_identity(j1.path(), e_sec).unwrap().unwrap();
+        assert!(!entity_is_hidden(sec_identity.value()));
+
+        // Planning map cache updated
+        assert!(cache_path.exists());
+        let cache_val: Value =
+            serde_json::from_str(&fs::read_to_string(&cache_path).unwrap()).unwrap();
+        let cache_resolved: std::collections::HashMap<String, String> =
+            serde_json::from_value(cache_val["resolved"].clone()).unwrap();
+        let current_map = read_identity_map(j1.path()).unwrap();
+        assert_eq!(cache_resolved, current_map.resolved);
+
+        // Todo @entity-search enqueued
+        let todo_status = solstone_core_indexer_todo::inspect(j1.path()).unwrap();
+        assert!(todo_status.keys.iter().any(|k| k == "@entity-search"));
+
+        // Prepared prefix published and unreconciled preserved
+        assert!(!prep_dir.join("vh_1_pub").exists());
+        let prepared = read_prepared_history(j1.path(), e_hid).unwrap();
+        assert_eq!(prepared.len(), 1);
+        assert_eq!(prepared[0].staging_id, "vh_2_rep");
+        let visible = read_visible_history(j1.path(), e_hid).unwrap();
+        assert!(
+            visible
+                .iter()
+                .any(|e| e.version_id().unwrap() == "vh_1_pub")
+        );
+    }
+
+    // Sub-scenario 2: unblock_journal_operation with non-member hidden entity having prepared reconcile failure
+    {
+        let j2 = temp_journal();
+        create_facet(j2.path(), "work", "work", "", "blue", "💼", None).unwrap();
+        let e_other = "e-other";
+        write_entity(
+            j2.path(),
+            e_other,
+            json!({"id": e_other, "name": "Other Entity"}),
+        );
+        block_journal_entities(j2.path(), "bulk-op-other2", &[e_other.to_owned()]).unwrap();
+
+        let current = read_entity_identity(j2.path(), e_other).unwrap().unwrap();
+
+        let pub_event = make_history_event(
+            10,
+            "vh_1_pub",
+            e_other,
+            Some(json!({"id": e_other, "name": "Before", "blocked": true})),
+            current.value().clone(),
+        );
+        let rep_event = make_history_event(
+            11,
+            "vh_2_rep",
+            e_other,
+            Some(json!({"id": e_other, "name": "Mismatched"})),
+            json!({"id": e_other, "name": "Unrelated"}),
+        );
+
+        let prep_dir = j2
+            .path()
+            .join("entities")
+            .join(e_other)
+            .join("history/prepared");
+        fs::create_dir_all(prep_dir.join("vh_1_pub")).unwrap();
+        fs::write(
+            prep_dir.join("vh_1_pub/event.json"),
+            serde_json::to_vec_pretty(&pub_event).unwrap(),
+        )
+        .unwrap();
+        fs::create_dir_all(prep_dir.join("vh_2_rep")).unwrap();
+        fs::write(
+            prep_dir.join("vh_2_rep/event.json"),
+            serde_json::to_vec_pretty(&rep_event).unwrap(),
+        )
+        .unwrap();
+
+        let _ = fs::remove_dir_all(solstone_core_indexer_todo::root(j2.path()));
+        let cache_path = j2.path().join("entities/.identity-map-cache.json");
+        let _ = fs::remove_file(&cache_path);
+        assert!(!cache_path.exists());
+
+        let report = unblock_journal_operation(j2.path(), "bulk-op-target2", 50).unwrap();
+
+        // Non-member is NOT marked as failed
+        assert!(!report.failed.iter().any(|f| f.id == e_other));
+
+        // Planning map cache updated
+        assert!(cache_path.exists());
+        let cache_val: Value =
+            serde_json::from_str(&fs::read_to_string(&cache_path).unwrap()).unwrap();
+        let cache_resolved: std::collections::HashMap<String, String> =
+            serde_json::from_value(cache_val["resolved"].clone()).unwrap();
+        let current_map = read_identity_map(j2.path()).unwrap();
+        assert_eq!(cache_resolved, current_map.resolved);
+
+        // Todo @entity-search enqueued
+        let todo_status = solstone_core_indexer_todo::inspect(j2.path()).unwrap();
+        assert!(todo_status.keys.iter().any(|k| k == "@entity-search"));
+
+        // Prepared prefix published and unreconciled preserved
+        assert!(!prep_dir.join("vh_1_pub").exists());
+        let prepared = read_prepared_history(j2.path(), e_other).unwrap();
+        assert_eq!(prepared.len(), 1);
+        assert_eq!(prepared[0].staging_id, "vh_2_rep");
+        let visible = read_visible_history(j2.path(), e_other).unwrap();
+        assert!(
+            visible
+                .iter()
+                .any(|e| e.version_id().unwrap() == "vh_1_pub")
+        );
+    }
+
+    // Sub-scenario 3: unblock_journal_operation with member hidden entity having prepared reconcile failure
+    {
+        let j3 = temp_journal();
+        create_facet(j3.path(), "work", "work", "", "blue", "💼", None).unwrap();
+        let e_mem = "e-member";
+        write_entity(
+            j3.path(),
+            e_mem,
+            json!({"id": e_mem, "name": "Member Entity"}),
+        );
+        block_journal_entities(j3.path(), "bulk-op-target3", &[e_mem.to_owned()]).unwrap();
+
+        let current = read_entity_identity(j3.path(), e_mem).unwrap().unwrap();
+
+        let pub_event = make_history_event(
+            10,
+            "vh_1_pub",
+            e_mem,
+            Some(json!({"id": e_mem, "name": "Before", "blocked": true})),
+            current.value().clone(),
+        );
+        let rep_event = make_history_event(
+            11,
+            "vh_2_rep",
+            e_mem,
+            Some(json!({"id": e_mem, "name": "Mismatched"})),
+            json!({"id": e_mem, "name": "Unrelated"}),
+        );
+
+        let prep_dir = j3
+            .path()
+            .join("entities")
+            .join(e_mem)
+            .join("history/prepared");
+        fs::create_dir_all(prep_dir.join("vh_1_pub")).unwrap();
+        fs::write(
+            prep_dir.join("vh_1_pub/event.json"),
+            serde_json::to_vec_pretty(&pub_event).unwrap(),
+        )
+        .unwrap();
+        fs::create_dir_all(prep_dir.join("vh_2_rep")).unwrap();
+        fs::write(
+            prep_dir.join("vh_2_rep/event.json"),
+            serde_json::to_vec_pretty(&rep_event).unwrap(),
+        )
+        .unwrap();
+
+        let _ = fs::remove_dir_all(solstone_core_indexer_todo::root(j3.path()));
+        let cache_path = j3.path().join("entities/.identity-map-cache.json");
+        let _ = fs::remove_file(&cache_path);
+        assert!(!cache_path.exists());
+
+        let report = unblock_journal_operation(j3.path(), "bulk-op-target3", 50).unwrap();
+
+        // Member entity is reported in failed with "reconciliation_repair_required"
+        assert!(report.failed.contains(&FailedEntity {
+            id: e_mem.to_owned(),
+            reason: "reconciliation_repair_required".to_owned(),
+        }));
+        assert!(report.restored.is_empty());
+        assert_eq!(report.remaining, 0);
+        assert_eq!(report.stopped, None);
+
+        let current_after = read_entity_identity(j3.path(), e_mem).unwrap().unwrap();
+        assert!(entity_is_hidden(current_after.value()));
+
+        // Planning map cache updated
+        assert!(cache_path.exists());
+        let cache_val: Value =
+            serde_json::from_str(&fs::read_to_string(&cache_path).unwrap()).unwrap();
+        let cache_resolved: std::collections::HashMap<String, String> =
+            serde_json::from_value(cache_val["resolved"].clone()).unwrap();
+        let current_map = read_identity_map(j3.path()).unwrap();
+        assert_eq!(cache_resolved, current_map.resolved);
+
+        // Todo @entity-search enqueued
+        let todo_status = solstone_core_indexer_todo::inspect(j3.path()).unwrap();
+        assert!(todo_status.keys.iter().any(|k| k == "@entity-search"));
+
+        // Prepared prefix published and unreconciled preserved
+        assert!(!prep_dir.join("vh_1_pub").exists());
+        let prepared = read_prepared_history(j3.path(), e_mem).unwrap();
+        assert_eq!(prepared.len(), 1);
+        assert_eq!(prepared[0].staging_id, "vh_2_rep");
+        let visible = read_visible_history(j3.path(), e_mem).unwrap();
+        assert!(
+            visible
+                .iter()
+                .any(|e| e.version_id().unwrap() == "vh_1_pub")
+        );
+    }
+
+    // Sub-scenario 4: block_journal_entities on a visible entity with prepared reconcile failure
+    {
+        let j4 = temp_journal();
+        create_facet(j4.path(), "work", "work", "", "blue", "💼", None).unwrap();
+        let e_vis = "e-vis";
+        write_entity(
+            j4.path(),
+            e_vis,
+            json!({"id": e_vis, "name": "Visible Entity"}),
+        );
+
+        let current = read_entity_identity(j4.path(), e_vis).unwrap().unwrap();
+
+        let pub_event = make_history_event(
+            10,
+            "vh_1_pub",
+            e_vis,
+            Some(json!({"id": e_vis, "name": "Before"})),
+            current.value().clone(),
+        );
+        let rep_event = make_history_event(
+            11,
+            "vh_2_rep",
+            e_vis,
+            Some(json!({"id": e_vis, "name": "Mismatched"})),
+            json!({"id": e_vis, "name": "Unrelated"}),
+        );
+
+        let prep_dir = j4
+            .path()
+            .join("entities")
+            .join(e_vis)
+            .join("history/prepared");
+        fs::create_dir_all(prep_dir.join("vh_1_pub")).unwrap();
+        fs::write(
+            prep_dir.join("vh_1_pub/event.json"),
+            serde_json::to_vec_pretty(&pub_event).unwrap(),
+        )
+        .unwrap();
+        fs::create_dir_all(prep_dir.join("vh_2_rep")).unwrap();
+        fs::write(
+            prep_dir.join("vh_2_rep/event.json"),
+            serde_json::to_vec_pretty(&rep_event).unwrap(),
+        )
+        .unwrap();
+
+        let _ = fs::remove_dir_all(solstone_core_indexer_todo::root(j4.path()));
+        let cache_path = j4.path().join("entities/.identity-map-cache.json");
+        let _ = fs::remove_file(&cache_path);
+        assert!(!cache_path.exists());
+
+        let report =
+            block_journal_entities(j4.path(), "bulk-op-vis-save", &[e_vis.to_owned()]).unwrap();
+
+        assert_eq!(
+            report.stopped,
+            Some(StoppedReport {
+                reason: "entity_save_failed".to_owned(),
+                id: Some(e_vis.to_owned()),
+            })
+        );
+
+        let identity_after = read_entity_identity(j4.path(), e_vis).unwrap().unwrap();
+        assert!(!entity_is_hidden(identity_after.value()));
+
+        // Planning map cache updated
+        assert!(cache_path.exists());
+        let cache_val: Value =
+            serde_json::from_str(&fs::read_to_string(&cache_path).unwrap()).unwrap();
+        let cache_resolved: std::collections::HashMap<String, String> =
+            serde_json::from_value(cache_val["resolved"].clone()).unwrap();
+        let current_map = read_identity_map(j4.path()).unwrap();
+        assert_eq!(cache_resolved, current_map.resolved);
+
+        // Todo @entity-search enqueued
+        let todo_status = solstone_core_indexer_todo::inspect(j4.path()).unwrap();
+        assert!(todo_status.keys.iter().any(|k| k == "@entity-search"));
+
+        // Prepared prefix published and unreconciled preserved
+        assert!(!prep_dir.join("vh_1_pub").exists());
+        let prepared = read_prepared_history(j4.path(), e_vis).unwrap();
+        assert_eq!(prepared.len(), 1);
+        assert_eq!(prepared[0].staging_id, "vh_2_rep");
+        let visible = read_visible_history(j4.path(), e_vis).unwrap();
+        assert!(
+            visible
+                .iter()
+                .any(|e| e.version_id().unwrap() == "vh_1_pub")
+        );
+    }
 }

@@ -423,6 +423,30 @@ impl From<EntitySaveError> for EntityWriteError {
     }
 }
 
+#[derive(Debug)]
+pub struct PreparedReconcileFailure {
+    pub error: EntityWriteError,
+    pub durable: bool,
+}
+
+impl fmt::Display for PreparedReconcileFailure {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.error.fmt(formatter)
+    }
+}
+
+impl std::error::Error for PreparedReconcileFailure {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        self.error.source()
+    }
+}
+
+impl From<PreparedReconcileFailure> for EntityWriteError {
+    fn from(failure: PreparedReconcileFailure) -> Self {
+        failure.error
+    }
+}
+
 pub fn save_entity_identity_with_map(
     journal_root: &Path,
     identity_id: &str,
@@ -508,16 +532,16 @@ pub fn save_entity_identity_with_map(
         }
     };
 
-    match reconcile_prepared_history(journal_root, &entity_dir) {
+    match reconcile_prepared_history_reporting(journal_root, &entity_dir) {
         Ok(reconciled) => {
             if reconciled {
                 durable = true;
             }
         }
-        Err(err) => {
+        Err(failure) => {
             return Err(EntitySaveError {
-                error: err,
-                durable,
+                error: failure.error,
+                durable: durable || failure.durable,
             });
         }
     }
@@ -1126,48 +1150,97 @@ pub fn reconcile_prepared_history(
     journal_root: &Path,
     entity_dir: &str,
 ) -> Result<bool, EntityWriteError> {
+    reconcile_prepared_history_reporting(journal_root, entity_dir).map_err(|f| f.error)
+}
+
+pub fn reconcile_prepared_history_reporting(
+    journal_root: &Path,
+    entity_dir: &str,
+) -> Result<bool, PreparedReconcileFailure> {
     match classify_prepared_history_plan(journal_root, entity_dir) {
         Ok(planned) => {
             if planned.is_empty() {
                 return Ok(false);
             }
-            apply_prepared_history_plan(journal_root, entity_dir, planned)?;
+            apply_prepared_history_plan(journal_root, entity_dir, planned).map_err(|error| {
+                PreparedReconcileFailure {
+                    error,
+                    durable: false,
+                }
+            })?;
             Ok(true)
         }
         Err(EntityWriteError::ReconciliationRepairRequired { .. }) => {
             let mut modified = false;
-            for PreparedHistoryEvent { staging_id, event } in
-                read_prepared_history(journal_root, entity_dir)?
-            {
-                let current = read_entity_identity(journal_root, entity_dir)?;
-                match classify_prepared_history(entity_dir, &event, current.as_ref())? {
-                    PreparedHistoryOutcome::Publish => {
-                        apply_prepared_history_plan(
+            let events = match read_prepared_history(journal_root, entity_dir) {
+                Ok(events) => events,
+                Err(error) => {
+                    return Err(PreparedReconcileFailure {
+                        error: error.into(),
+                        durable: modified,
+                    });
+                }
+            };
+            for PreparedHistoryEvent { staging_id, event } in events {
+                let current = match read_entity_identity(journal_root, entity_dir) {
+                    Ok(current) => current,
+                    Err(error) => {
+                        return Err(PreparedReconcileFailure {
+                            error: error.into(),
+                            durable: modified,
+                        });
+                    }
+                };
+                match classify_prepared_history(entity_dir, &event, current.as_ref()) {
+                    Ok(PreparedHistoryOutcome::Publish) => {
+                        if let Err(error) = apply_prepared_history_plan(
                             journal_root,
                             entity_dir,
                             vec![(staging_id, event, PreparedHistoryOutcome::Publish)],
-                        )?;
+                        ) {
+                            return Err(PreparedReconcileFailure {
+                                error,
+                                durable: modified,
+                            });
+                        }
                         modified = true;
                     }
-                    PreparedHistoryOutcome::Discard => {
-                        apply_prepared_history_plan(
+                    Ok(PreparedHistoryOutcome::Discard) => {
+                        if let Err(error) = apply_prepared_history_plan(
                             journal_root,
                             entity_dir,
                             vec![(staging_id, event, PreparedHistoryOutcome::Discard)],
-                        )?;
+                        ) {
+                            return Err(PreparedReconcileFailure {
+                                error,
+                                durable: modified,
+                            });
+                        }
                         modified = true;
                     }
-                    PreparedHistoryOutcome::RepairRequired => {
-                        return Err(EntityWriteError::ReconciliationRepairRequired {
-                            entity_dir: entity_dir.to_owned(),
-                            version_id: staging_id,
+                    Ok(PreparedHistoryOutcome::RepairRequired) => {
+                        return Err(PreparedReconcileFailure {
+                            error: EntityWriteError::ReconciliationRepairRequired {
+                                entity_dir: entity_dir.to_owned(),
+                                version_id: staging_id,
+                            },
+                            durable: modified,
+                        });
+                    }
+                    Err(error) => {
+                        return Err(PreparedReconcileFailure {
+                            error: error.into(),
+                            durable: modified,
                         });
                     }
                 }
             }
             Ok(modified)
         }
-        Err(e) => Err(e),
+        Err(error) => Err(PreparedReconcileFailure {
+            error,
+            durable: false,
+        }),
     }
 }
 

@@ -37,7 +37,7 @@ use solstone_core_entity::{
     EntityLifecycleError, EntityOperationContext, EntityOperationKind, EntityStoreError,
     EntityTrustLockError, EntityWriteError, HistoryEvent, IdentitySnapshot,
     delete_entity_directory, read_entity_identity, read_identity_map, read_visible_history,
-    reconcile_prepared_history, remove_entity_ambiguity_references, save_entity_identity,
+    reconcile_prepared_history_reporting, remove_entity_ambiguity_references, save_entity_identity,
     save_entity_identity_with_map, write_resolved_identity_map_cache,
 };
 use solstone_core_journal_io::{DirEntryKind, contained_path, list_dir_entries, path_lexists};
@@ -1269,13 +1269,16 @@ pub fn block_journal_entities(
             hidden.push(id.clone());
         } else {
             // Already hidden
-            match reconcile_prepared_history(journal_root, entity_dir) {
+            match reconcile_prepared_history_reporting(journal_root, entity_dir) {
                 Ok(published_or_discarded) => {
                     if published_or_discarded {
                         durable_written = true;
                     }
                 }
-                Err(e) => {
+                Err(failure) => {
+                    if failure.durable {
+                        durable_written = true;
+                    }
                     if durable_written {
                         stopped = Some(StoppedReport {
                             reason: "reconcile_failed".to_owned(),
@@ -1283,7 +1286,7 @@ pub fn block_journal_entities(
                         });
                         break;
                     } else {
-                        return Err(BulkJournalError::PreWrite(e.to_string()));
+                        return Err(BulkJournalError::PreWrite(failure.error.to_string()));
                     }
                 }
             }
@@ -1414,10 +1417,13 @@ pub fn unblock_journal_operation(
             continue;
         }
 
-        let reconcile_result = reconcile_prepared_history(journal_root, entity_dir);
+        let reconcile_result = reconcile_prepared_history_reporting(journal_root, entity_dir);
         if reconcile_result
             .as_ref()
             .is_ok_and(|&reconciled| reconciled)
+            || reconcile_result
+                .as_ref()
+                .is_err_and(|failure| failure.durable)
         {
             durable_written = true;
         }
@@ -1458,18 +1464,20 @@ pub fn unblock_journal_operation(
                     history_events,
                 ));
             }
-            Err(EntityWriteError::ReconciliationRepairRequired { .. }) => {
-                failed.push(FailedEntity {
-                    id: effective_id.clone(),
-                    reason: "reconciliation_repair_required".to_owned(),
-                });
-            }
-            Err(_) => {
-                failed.push(FailedEntity {
-                    id: effective_id.clone(),
-                    reason: "reconciliation_failed".to_owned(),
-                });
-            }
+            Err(failure) => match failure.error {
+                EntityWriteError::ReconciliationRepairRequired { .. } => {
+                    failed.push(FailedEntity {
+                        id: effective_id.clone(),
+                        reason: "reconciliation_repair_required".to_owned(),
+                    });
+                }
+                _ => {
+                    failed.push(FailedEntity {
+                        id: effective_id.clone(),
+                        reason: "reconciliation_failed".to_owned(),
+                    });
+                }
+            },
         }
     }
 

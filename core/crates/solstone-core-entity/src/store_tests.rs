@@ -26,12 +26,13 @@ use crate::{
     dismiss_ambiguity, guard_restore_does_not_cross_merge, guard_visible_event_collision,
     load_all_journal_entities, load_resolved_ambiguity_choice, publish_identity_change,
     read_ambiguities, read_entity_identity, read_identity_map, read_prepared_history,
-    read_visible_history, record_ambiguity_choice, record_ambiguity_group_choice,
-    record_ambiguity_observation, refresh_identity_map_cache, repair_entity_identities,
-    rescope_facet_ambiguities, restore_review, save_entity_identity, save_entity_identity_with_map,
-    save_entity_identity_with_timeout, set_forced_history_apply_failure,
-    set_forced_identity_write_failure, set_repair_identity_write_failure_on_attempt,
-    sweep_entity_review_policy, write_history_event_json_for_test,
+    read_visible_history, reconcile_prepared_history_reporting, record_ambiguity_choice,
+    record_ambiguity_group_choice, record_ambiguity_observation, refresh_identity_map_cache,
+    repair_entity_identities, rescope_facet_ambiguities, restore_review, save_entity_identity,
+    save_entity_identity_with_map, save_entity_identity_with_timeout,
+    set_forced_history_apply_failure, set_forced_identity_write_failure,
+    set_repair_identity_write_failure_on_attempt, sweep_entity_review_policy,
+    write_history_event_json_for_test,
 };
 
 const ENTITY_STORE_FIXTURE: &str = include_str!(concat!(
@@ -1487,6 +1488,69 @@ fn reconciliation_refusal_keeps_only_the_expected_partial_reconciliation() {
         tree_hash_excluding_locks(actual.path()),
         tree_hash_excluding_locks(expected.path())
     );
+}
+
+#[test]
+fn reconciliation_reporting_repair_failure_reports_durable_prefix_and_preserves_unreconciled() {
+    let actual = TempDir::new();
+    let current = json!({"id": "alice", "name": "After"});
+    let before = json!({"id": "alice", "name": "Before"});
+    let unrelated = json!({"id": "alice", "name": "Unrelated"});
+
+    let mut publish = history_event(1, "vh_publish", "update");
+    publish["entity_id"] = json!("alice");
+    publish["identity_before"] = before;
+    publish["identity_after"] = current.clone();
+
+    let mut repair = history_event(2, "vh_repair", "update");
+    repair["entity_id"] = json!("alice");
+    repair["identity_before"] = json!({"id": "alice", "name": "Else"});
+    repair["identity_after"] = unrelated;
+
+    write_json(actual.path(), "entities/alice/entity.json", &current);
+    write_json(
+        actual.path(),
+        "entities/alice/history/prepared/vh_a/event.json",
+        &publish,
+    );
+    write_json(
+        actual.path(),
+        "entities/alice/history/prepared/vh_b/event.json",
+        &repair,
+    );
+
+    let failure = reconcile_prepared_history_reporting(actual.path(), "alice")
+        .expect_err("repair required event must fail reconciliation");
+
+    assert!(
+        failure.durable,
+        "published prefix must report durable = true"
+    );
+    assert!(
+        matches!(
+            failure.error,
+            EntityWriteError::ReconciliationRepairRequired { .. }
+        ),
+        "expected ReconciliationRepairRequired, got {:?}",
+        failure.error
+    );
+
+    assert!(
+        !actual
+            .path()
+            .join("entities/alice/history/prepared/vh_a")
+            .exists()
+    );
+    assert!(
+        actual
+            .path()
+            .join("entities/alice/history/prepared/vh_b/event.json")
+            .exists()
+    );
+
+    let visible = read_visible_history(actual.path(), "alice").unwrap();
+    assert_eq!(visible.len(), 1);
+    assert_eq!(visible[0].version_id().unwrap(), "vh_publish");
 }
 
 #[test]
