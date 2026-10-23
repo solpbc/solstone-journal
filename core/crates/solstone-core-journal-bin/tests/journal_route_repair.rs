@@ -77,7 +77,7 @@ impl Fixture {
     }
 
     fn dispatcher(&self) -> PathBuf {
-        self.prefix.join("current/bin/journal")
+        self.prefix.join("current/bin/solstone")
     }
 
     fn wrappers(&self) -> (PathBuf, PathBuf) {
@@ -193,7 +193,12 @@ impl Fixture {
 
     fn run_repair_from(&self, dispatcher: &Path, token: &str) -> Output {
         Command::new(dispatcher)
-            .args(["__journal-route-repair", "--route-lock-owner", token])
+            .args([
+                "journal",
+                "__journal-route-repair",
+                "--route-lock-owner",
+                token,
+            ])
             .env("HOME", &self.home)
             .env("SOLSTONE_JOURNAL", &self.journal)
             .output()
@@ -429,7 +434,7 @@ fn repair_handles_the_named_partial_route_shapes_without_creating_artifacts() {
     let wrapper = not_current.wrappers().0;
     let before = fs::read(&wrapper).expect("wrapper bytes");
     let fields = parse_record(
-        not_current.run_repair_from(&not_current.first_version.join("bin/journal"), TOKEN),
+        not_current.run_repair_from(&not_current.first_version.join("bin/solstone"), TOKEN),
         2,
     );
     assert_eq!(fields["refusal"], "not-current");
