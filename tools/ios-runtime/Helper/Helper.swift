@@ -19,7 +19,11 @@ struct Handler: XPCPeerHandler {
 }
 @main struct Worker: AppExtension {
   @AppExtensionPoint.Bind var boundExtensionPoint: AppExtensionPoint {
+    #if JOURNAL_OWNER_APP
+    AppExtensionPoint.Identifier(host: "app.solstone.journal.owner.dev", name: "journal")
+    #else
     AppExtensionPoint.Identifier(host: "app.solstone.journal.runtime.dev", name: "journal")
+    #endif
   }
   var configuration: some AppExtensionConfiguration {
     ConnectionHandler(onSessionRequest: { request in request.accept { _ in Handler() } })

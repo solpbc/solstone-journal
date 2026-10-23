@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 //! Development-only iOS helper bridge. Fault operations never enter a release binary.
+mod owner_response;
 use chrono::NaiveDate;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -306,6 +307,9 @@ fn wifi_address() -> Result<std::net::Ipv4Addr, String> {
 }
 fn run(v: Value) -> Result<Value, String> {
     let op = v["op"].as_str().ok_or("missing operation")?;
+    if op == "serve-suspend" {
+        journal_ios_processing_request_stop();
+    }
     if op == "serve-stop" && !journal_ios_processing_request_owner_stop() {
         return Err("owner Stop could not be saved; journal retained".into());
     }
@@ -514,14 +518,14 @@ fn run(v: Value) -> Result<Value, String> {
             }
             Ok(serving.status())
         }
-        "serve-stop" => {
+        "serve-stop" | "serve-suspend" => {
             let mut serving = SERVING.lock().map_err(|e| e.to_string())?;
             if let Some(current) = serving.as_ref() {
                 current.drain()?;
             }
             // An already admitted owner request may have reached storage while
             // the first cancellation was draining. Cover it before acknowledgement.
-            if !journal_ios_processing_request_owner_stop() {
+            if op == "serve-stop" && !journal_ios_processing_request_owner_stop() {
                 return Err("owner Stop could not be saved after drain; journal retained".into());
             }
             serving.take();

@@ -1,0 +1,24 @@
+{
+  "inputs": {
+    "parakeet": {
+      "url": "https://codeload.github.com/mudler/parakeet.cpp/tar.gz/5c9b0fbbd8e611d88e47d7e1ebae9bca9b447e8f",
+      "revision": "5c9b0fbbd8e611d88e47d7e1ebae9bca9b447e8f",
+      "sha256": "a6544898a6721a9ab54a8af37362cb9a79a8b50feaf16a597091790a8874debe"
+    },
+    "parakeet-ced": {
+      "url": "https://codeload.github.com/localai-org/ced.cpp/tar.gz/736a4ee46a31d4ff38b41add65ce0f2cf1aaa05f",
+      "revision": "736a4ee46a31d4ff38b41add65ce0f2cf1aaa05f",
+      "sha256": "f2134ae9b7ec554238ddaa8ad7781532deb3cee90e019f5d180154543712c50d"
+    },
+    "parakeet-voice-detect": {
+      "url": "https://codeload.github.com/localai-org/voice-detect.cpp/tar.gz/bca46bcbc2fe68169c2d7c414e9b290a7cb89911",
+      "revision": "bca46bcbc2fe68169c2d7c414e9b290a7cb89911",
+      "sha256": "dab2900847397089ecfc1730bb955e21f9d15974ed94707a7ce5c3ba5e6e41b9"
+    },
+    "ggml": {
+      "url": "https://codeload.github.com/ggml-org/ggml/tar.gz/e705c5fed490514458bdd2eaddc43bd098fcce9b",
+      "revision": "e705c5fed490514458bdd2eaddc43bd098fcce9b",
+      "sha256": "77eacb7cc20c2e47ffbaa5a69fe6f9fd9da0bea2a6431b7fae1a8283cb2c4e43"
+    }
+  }
+}
