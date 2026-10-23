@@ -6,9 +6,8 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use solstone_core_observe_audio::{
-    AudioReduction, SpeechSegment, VadResult, audio_to_wav_bytes, compute_loud_speech_windows,
-    compute_nonspeech_rms, decode_f32_mono, get_nonspeech_segments, reduce_audio,
-    write_f32le_exclusive,
+    VadResult, audio_to_wav_bytes, compute_loud_speech_windows, compute_nonspeech_rms,
+    decode_f32_mono, get_nonspeech_segments, reduce_audio, write_f32le_exclusive,
 };
 
 /// PCM-16 WAV captured from Python `audio_to_wav_bytes` for `WRITER_SAMPLES`.
@@ -70,80 +69,39 @@ fn wav_and_f32le_writers_match_the_frozen_python_wire() {
     assert_eq!(actual, EXPECTED_F32LE);
 }
 
-#[derive(Debug)]
-struct ReducedExpectation {
-    sample_count: usize,
-    reduced_duration_s: f64,
-    segments: &'static [SpeechSegment],
-}
-
 struct ReductionCase {
     duration_s: f64,
     speech: &'static [(f64, f64)],
-    expected: Option<ReducedExpectation>,
+    retained: Option<&'static [(usize, usize)]>,
 }
 
 #[test]
-fn reduction_and_timestamp_restoration_match_the_frozen_python_cases() {
+fn reduction_and_timestamp_restoration_follow_copied_samples() {
     let cases = [
         ReductionCase {
             duration_s: 4.0,
             speech: &[],
-            expected: None,
+            retained: None,
         },
         ReductionCase {
             duration_s: 4.0,
             speech: &[(0.0, 1.0), (3.0, 4.0)],
-            expected: None,
+            retained: None,
         },
         ReductionCase {
             duration_s: 4.0,
             speech: &[(0.0, 1.0), (2.999, 4.0)],
-            expected: None,
+            retained: None,
         },
         ReductionCase {
             duration_s: 7.0,
             speech: &[(0.0, 1.0), (5.0, 6.0)],
-            expected: Some(ReducedExpectation {
-                sample_count: 80_000,
-                reduced_duration_s: 5.0,
-                segments: &[
-                    SpeechSegment {
-                        original_start_s: 0.0,
-                        original_end_s: 1.0,
-                        reduced_start_s: 0.0,
-                        reduced_end_s: 1.0,
-                    },
-                    SpeechSegment {
-                        original_start_s: 5.0,
-                        original_end_s: 6.0,
-                        reduced_start_s: 3.0,
-                        reduced_end_s: 4.0,
-                    },
-                ],
-            }),
+            retained: Some(&[(0, 32_000), (64_000, 112_000)]),
         },
         ReductionCase {
             duration_s: 9.0,
             speech: &[(3.0, 4.0), (5.0, 6.0)],
-            expected: Some(ReducedExpectation {
-                sample_count: 80_000,
-                reduced_duration_s: 5.0,
-                segments: &[
-                    SpeechSegment {
-                        original_start_s: 3.0,
-                        original_end_s: 4.0,
-                        reduced_start_s: 1.0,
-                        reduced_end_s: 2.0,
-                    },
-                    SpeechSegment {
-                        original_start_s: 5.0,
-                        original_end_s: 6.0,
-                        reduced_start_s: 3.0,
-                        reduced_end_s: 4.0,
-                    },
-                ],
-            }),
+            retained: Some(&[(32_000, 112_000)]),
         },
     ];
     for case in cases {
@@ -160,39 +118,24 @@ fn reduction_and_timestamp_restoration_match_the_frozen_python_cases() {
             loud_windows: 0,
             speech_loud_windows: 0,
         };
-        match (reduce_audio(&audio, &vad), case.expected) {
+        match (reduce_audio(&audio, &vad), case.retained) {
             (None, None) => {}
-            (Some((reduced, mapping)), Some(expected)) => {
-                assert_eq!(reduced.len(), expected.sample_count);
-                assert_eq!(mapping.segments, expected.segments);
-                assert!((mapping.reduced_duration_s - expected.reduced_duration_s).abs() <= 1e-12);
+            (Some((reduced, mapping)), Some(retained)) => {
+                let originals = retained
+                    .iter()
+                    .flat_map(|&(start, end)| start..end)
+                    .collect::<Vec<_>>();
+                assert_eq!(reduced.len(), originals.len());
+                assert_eq!(mapping.reduced_duration_s, reduced.len() as f64 / 16_000.0);
+                for (index, (&sample, &original)) in reduced.iter().zip(&originals).enumerate() {
+                    assert_eq!(sample, audio[original]);
+                    let restored = mapping.restore_timestamp(index as f64 / 16_000.0);
+                    assert!((restored - original as f64 / 16_000.0).abs() <= 1e-12);
+                }
             }
-            (actual, expected) => panic!("reduction mismatch: {actual:?} vs {expected:?}"),
+            (actual, retained) => panic!("reduction mismatch: {actual:?} vs {retained:?}"),
         }
     }
-
-    let mapping = AudioReduction {
-        segments: vec![
-            SpeechSegment {
-                original_start_s: 3.0,
-                original_end_s: 4.0,
-                reduced_start_s: 1.0,
-                reduced_end_s: 2.0,
-            },
-            SpeechSegment {
-                original_start_s: 8.0,
-                original_end_s: 9.0,
-                reduced_start_s: 4.0,
-                reduced_end_s: 5.0,
-            },
-        ],
-        original_duration_s: 10.0,
-        reduced_duration_s: 6.0,
-    };
-    assert_eq!(
-        [0.5, 1.5, 3.0, 5.5].map(|time| mapping.restore_timestamp(time)),
-        [2.5, 3.5, 6.0, 9.5]
-    );
 }
 
 #[test]

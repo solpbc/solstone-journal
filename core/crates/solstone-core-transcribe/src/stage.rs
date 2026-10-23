@@ -1016,11 +1016,10 @@ fn first_pass_analysis(
 
 /// Whether silence reduction runs before transcription.
 ///
-/// 🔴 Desktop local engines get the whole recording. Reduction keeps only what Silero
-/// marked as speech, and Silero misses quiet speech: measured on an owner's journal
-/// 2026-10-22, it removed about 27% of the words in Apple Watch meeting recordings
-/// before any engine heard them. Confidential keeps reducing (its per-request limit),
-/// and so does the mobile runtime. The no-speech gate before this still applies.
+/// Desktop local engines receive the complete admitted recording. Speech ranges
+/// remain approximate, so only confidential requests and the mobile runtime
+/// reduce silence to meet their input limits. The earlier admission gate still
+/// applies to every backend.
 fn trims_silence(backend: &str, mobile: bool) -> bool {
     backend == "confidential" || mobile
 }

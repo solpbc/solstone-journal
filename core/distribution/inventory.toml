@@ -412,10 +412,10 @@ targets = ["linux-x86_64", "linux-aarch64", "macos-arm64", "windows-x86_64"]
 [[entry]]
 kind = "model-asset"
 class = "component"
-source = "core/models/assets/silero_vad_v6.onnx"
-dest = "lib/solstone_journal_models/assets/silero_vad_v6.onnx"
+source = "core/models/assets/firered_vad.onnx"
+dest = "lib/solstone_journal_models/assets/firered_vad.onnx"
 mode = 0o644
-digest_const = "SILERO_VAD_V6_SHA256"
+digest_const = "FIRERED_VAD_SHA256"
 digest_source = "core/crates/solstone-core-transcribe/src/model_assets.rs"
 targets = ["linux-x86_64", "linux-aarch64", "macos-arm64", "windows-x86_64"]
 
@@ -1348,6 +1348,14 @@ member = "archive.json"
 dest = "share/provenance/ffmpeg/archive.json"
 mode = 420
 targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "copy"
+class = "notice"
+source = "core/distribution/licenses/fireredvad/LICENSE"
+dest = "share/licenses/models/FireRedVAD-LICENSE.txt"
+mode = 420
+targets = ["linux-x86_64", "linux-aarch64", "macos-arm64", "windows-x86_64"]
 
 [[entry]]
 kind = "copy"

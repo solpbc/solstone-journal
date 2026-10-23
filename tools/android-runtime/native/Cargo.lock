@@ -6237,6 +6237,7 @@ dependencies = [
  "ort",
  "serde_json",
  "sha2 0.10.9",
+ "solstone-core-speakers",
  "solstone-core-speakers-onnx",
 ]
 

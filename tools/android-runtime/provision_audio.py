@@ -25,24 +25,29 @@ if a.parakeet:
  if a.parakeet.name!=field('filename'):p.error('maintained model filename required')
  with a.parakeet.open('rb') as f:
   if hashlib.file_digest(f,'sha256').hexdigest()!=field('sha256'):p.error('model differs from maintained catalog pin')
-models=([a.parakeet] if a.parakeet else [])+[repo/'core/models/assets'/name for name in ['silero_vad_v6.onnx','wespeaker-resnet34-256.onnx','pyannote-segmentation-3.0.onnx']]
+models=([a.parakeet] if a.parakeet else [])+[repo/'core/models/assets'/name for name in ['firered_vad.onnx','wespeaker-resnet34-256.onnx','pyannote-segmentation-3.0.onnx']]
 adb=[a.adb,'-s',a.serial]
 def run(*argv):return subprocess.check_output([*adb,*argv],stderr=subprocess.STDOUT,timeout=300).decode()
 run('shell','am','force-stop',a.package)
-run('shell','run-as',a.package,'mkdir','-p','files/audio-models')
+run('shell','run-as',a.package,'mkdir','-p','files/audio-models/notices')
+run('shell','run-as',a.package,'rm','-f','files/audio-models/silero_vad_v6.onnx')
 staging='/data/local/tmp/journal-audio-model-provision-'+a.package
 run('shell','mkdir','-p',staging)
 receipts=[]
+notice_receipts=[]
+payloads=[(model,'files/audio-models/'+model.name,receipts) for model in models]+[
+ (repo/'core/distribution/licenses/fireredvad/LICENSE','files/audio-models/notices/FireRedVAD-LICENSE.txt',notice_receipts),
+ (repo/'core/distribution/model-notices.md','files/audio-models/notices/NOTICE.md',notice_receipts),
+]
 try:
- for model in models:
-  sha=hashlib.file_digest(model.open('rb'),'sha256').hexdigest()
-  target='files/audio-models/'+model.name
-  run('push',str(model),staging+'/'+model.name)
-  run('shell','run-as',a.package,'cp',staging+'/'+model.name,target)
+ for source,target,records in payloads:
+  with source.open('rb') as handle:sha=hashlib.file_digest(handle,'sha256').hexdigest()
+  run('push',str(source),staging+'/'+source.name)
+  run('shell','run-as',a.package,'cp',staging+'/'+source.name,target)
   actual=run('shell','run-as',a.package,'sha256sum',target).split()[0]
-  if actual!=sha:raise RuntimeError('model transfer digest mismatch: '+model.name)
-  receipts.append(dict(name=model.name,sha256=sha,bytes=model.stat().st_size))
+  if actual!=sha:raise RuntimeError('payload transfer digest mismatch: '+source.name)
+  records.append(dict(name=pathlib.Path(target).name,sha256=sha,bytes=source.stat().st_size))
 finally:
- for model in models:run('shell','rm','-f',staging+'/'+model.name)
+ for source,_,_ in payloads:run('shell','rm','-f',staging+'/'+source.name)
  run('shell','rmdir',staging)
-print(json.dumps(dict(package=a.package,serial=a.serial,models=receipts)))
+print(json.dumps(dict(package=a.package,serial=a.serial,models=receipts,notices=notice_receipts)))

@@ -595,20 +595,29 @@ fn bundled_identity(
                     }],
                 ))
             }
-            "silero-vad-model" => {
-                let ver = "v6".to_string();
-                let src = "core/models/assets/silero_vad_v6.onnx".to_string();
+            "firered-vad-model" => {
+                let ver = "c30ec49e8cc69642b0ee65362eba11b9d11c6e54".to_string();
+                let src = "core/models/assets/firered_vad.onnx".to_string();
                 let sha = read_digest_const(
                     &checkout.join("core/crates/solstone-core-transcribe/src/model_assets.rs"),
-                    "SILERO_VAD_V6_SHA256",
+                    "FIRERED_VAD_SHA256",
                 )?;
                 Ok((
                     ver,
                     src,
-                    vec![InputRef {
-                        name: "silero_vad_v6.onnx".to_string(),
-                        sha256: sha,
-                    }],
+                    vec![
+                        InputRef {
+                            name: "firered_vad.onnx".to_string(),
+                            sha256: sha,
+                        },
+                        InputRef {
+                            name: "firered_vad_cmvn.ark".to_string(),
+                            sha256: read_digest_const(
+                                &checkout.join("core/crates/solstone-core-vad-analyze/src/lib.rs"),
+                                "FIRERED_VAD_CMVN_SHA256",
+                            )?,
+                        },
+                    ],
                 ))
             }
             "rfdetr-model" => {
@@ -726,20 +735,29 @@ fn bundled_identity(
                     }],
                 ))
             }
-            "silero-vad-model" => {
-                let ver = "v6".to_string();
-                let src = "core/models/assets/silero_vad_v6.onnx".to_string();
+            "firered-vad-model" => {
+                let ver = "c30ec49e8cc69642b0ee65362eba11b9d11c6e54".to_string();
+                let src = "core/models/assets/firered_vad.onnx".to_string();
                 let sha = read_digest_const(
                     &checkout.join("core/crates/solstone-core-transcribe/src/model_assets.rs"),
-                    "SILERO_VAD_V6_SHA256",
+                    "FIRERED_VAD_SHA256",
                 )?;
                 Ok((
                     ver,
                     src,
-                    vec![InputRef {
-                        name: "silero_vad_v6.onnx".to_string(),
-                        sha256: sha,
-                    }],
+                    vec![
+                        InputRef {
+                            name: "firered_vad.onnx".to_string(),
+                            sha256: sha,
+                        },
+                        InputRef {
+                            name: "firered_vad_cmvn.ark".to_string(),
+                            sha256: read_digest_const(
+                                &checkout.join("core/crates/solstone-core-vad-analyze/src/lib.rs"),
+                                "FIRERED_VAD_CMVN_SHA256",
+                            )?,
+                        },
+                    ],
                 ))
             }
             "rfdetr-model" => {
@@ -2807,7 +2825,7 @@ mod tests {
     }
 
     fn mutate_macos_macho(stage: &Path) {
-        let p = stage.join("lib/solstone_journal_models/libsilero_vad.dylib");
+        let p = stage.join("lib/solstone_journal_models/libfixture_model.dylib");
         let diff_macho = crate::macho::fixture(&crate::macho::FixtureSpec {
             filetype: crate::macho::MH_DYLIB,
             install_name: Some("@rpath/libmutated.dylib"),
@@ -2830,7 +2848,7 @@ mod tests {
 
         let payload_bytes = b"sample unsigned payload binary content";
         let payload_sha = crate::digest::sha256_hex(payload_bytes);
-        let archive_name = "silero_vad_member.tar.gz";
+        let archive_name = "firered_vad_member.tar.gz";
         let archive_bytes =
             make_tar_gz(&[("payload.bin", payload_bytes, tar::EntryType::Regular, None)]);
 
@@ -2865,9 +2883,9 @@ mod tests {
 
         set_bundled_identity_override(
             target,
-            "silero-vad-model",
+            "firered-vad-model",
             "1.0.0",
-            "https://example.com/silero",
+            "https://example.com/model",
             vec![InputRef {
                 name: archive_name.to_string(),
                 sha256: crate::digest::sha256_hex(&archive_bytes),
@@ -2940,7 +2958,7 @@ mod tests {
 
         let vad_bytes = b"vad-bytes";
         let vad_sha = crate::digest::sha256_hex(vad_bytes);
-        let file_name = "silero_vad_v6.onnx";
+        let file_name = "firered_vad.onnx";
         let member_dest = format!("lib/solstone_journal_models/assets/{file_name}");
 
         let version = env!("CARGO_PKG_VERSION");
@@ -2972,9 +2990,9 @@ mod tests {
 
         set_bundled_identity_override(
             target,
-            "silero-vad-model",
+            "firered-vad-model",
             "1.0.0",
-            "https://example.com/silero",
+            "https://example.com/model",
             vec![InputRef {
                 name: file_name.to_string(),
                 sha256: vad_sha.clone(),
@@ -3167,7 +3185,7 @@ mod tests {
 
         let nvat_bytes = b"libnvat.so regular binary bytes";
         let nvat_sha = crate::digest::sha256_hex(nvat_bytes);
-        let archive_name = "silero_vad_alias.tar.gz";
+        let archive_name = "firered_vad_alias.tar.gz";
         let archive_bytes = make_tar_gz(&[
             (
                 "lib/libnvat.so.1.2.2",
@@ -3214,9 +3232,9 @@ mod tests {
 
         set_bundled_identity_override(
             target,
-            "silero-vad-model",
+            "firered-vad-model",
             "1.0.0",
-            "https://example.com/silero",
+            "https://example.com/model",
             vec![InputRef {
                 name: archive_name.to_string(),
                 sha256: crate::digest::sha256_hex(&archive_bytes),
@@ -3322,12 +3340,12 @@ mod tests {
 
         let component_macho = fixture(&FixtureSpec {
             filetype: MH_DYLIB,
-            install_name: Some("@rpath/libsilero_vad.dylib"),
+            install_name: Some("@rpath/libfixture_model.dylib"),
             ..FixtureSpec::default()
         });
         let component_macho_sha = crate::digest::sha256_hex(&component_macho);
-        let component_dest = "lib/solstone_journal_models/libsilero_vad.dylib";
-        let archive_name = "silero_vad_macho.tar.gz";
+        let component_dest = "lib/solstone_journal_models/libfixture_model.dylib";
+        let archive_name = "firered_vad_macho.tar.gz";
         let archive_bytes = make_tar_gz(&[(
             component_dest,
             &component_macho,
@@ -3372,9 +3390,9 @@ mod tests {
 
         set_bundled_identity_override(
             target,
-            "silero-vad-model",
+            "firered-vad-model",
             "1.0.0",
-            "https://example.com/silero",
+            "https://example.com/model",
             vec![InputRef {
                 name: archive_name.to_string(),
                 sha256: crate::digest::sha256_hex(&archive_bytes),
@@ -3477,11 +3495,11 @@ mod tests {
 
         let component_macho = fixture(&FixtureSpec {
             filetype: MH_DYLIB,
-            install_name: Some("@rpath/libsilero_vad.dylib"),
+            install_name: Some("@rpath/libfixture_model.dylib"),
             ..FixtureSpec::default()
         });
-        let component_dest = "lib/solstone_journal_models/libsilero_vad.dylib";
-        let archive_name = "silero_vad_macho.tar.gz";
+        let component_dest = "lib/solstone_journal_models/libfixture_model.dylib";
+        let archive_name = "firered_vad_macho.tar.gz";
         let archive_bytes = make_tar_gz(&[(
             component_dest,
             &component_macho,
@@ -3526,9 +3544,9 @@ mod tests {
 
         set_bundled_identity_override(
             target,
-            "silero-vad-model",
+            "firered-vad-model",
             "1.0.0",
-            "https://example.com/silero",
+            "https://example.com/model",
             vec![InputRef {
                 name: archive_name.to_string(),
                 sha256: crate::digest::sha256_hex(&archive_bytes),
@@ -3767,7 +3785,7 @@ mod tests {
         use crate::provenance::Provenance;
 
         let payload_bytes = b"sample linux payload binary content";
-        let archive_name = "silero_vad_member.tar.gz";
+        let archive_name = "firered_vad_member.tar.gz";
         let archive_bytes =
             make_tar_gz(&[("payload.bin", payload_bytes, tar::EntryType::Regular, None)]);
 
@@ -3802,9 +3820,9 @@ mod tests {
 
         set_bundled_identity_override(
             target,
-            "silero-vad-model",
+            "firered-vad-model",
             "1.0.0",
-            "https://example.com/silero",
+            "https://example.com/model",
             vec![InputRef {
                 name: archive_name.to_string(),
                 sha256: crate::digest::sha256_hex(&archive_bytes),

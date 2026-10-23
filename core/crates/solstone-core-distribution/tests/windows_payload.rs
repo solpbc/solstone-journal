@@ -13,12 +13,12 @@ use solstone_core_distribution::controlled_build::{
 use solstone_core_distribution::manifest_verify::install_test_fixture_pin;
 use solstone_core_distribution::pe::PeInfo;
 use solstone_core_distribution::windows_payload::{
-    WINDOWS_CED_LIBRARY, WINDOWS_ONNXRUNTIME_LIBRARY, WINDOWS_PARAKEET_MODEL,
-    WINDOWS_PARAKEET_SERVER, WINDOWS_PAYLOAD_MANIFEST, WINDOWS_PAYLOAD_SIGNATURE,
-    WINDOWS_PDFIUM_LIBRARY, WINDOWS_PDFIUM_WORKER, WINDOWS_PYANNOTE_MODEL, WINDOWS_RFDETR_WORKER,
-    WINDOWS_SILERO_VAD_MODEL, WINDOWS_SPEAKERS_ANALYZE_WORKER, WINDOWS_VAD_ANALYZE_WORKER,
-    WINDOWS_WESPEAKER_MODEL, WindowsPayloadRefusal, render_windows_payload_manifest,
-    verify_windows_payload,
+    WINDOWS_CED_LIBRARY, WINDOWS_FIRERED_VAD_MODEL, WINDOWS_ONNXRUNTIME_LIBRARY,
+    WINDOWS_PARAKEET_MODEL, WINDOWS_PARAKEET_SERVER, WINDOWS_PAYLOAD_MANIFEST,
+    WINDOWS_PAYLOAD_SIGNATURE, WINDOWS_PDFIUM_LIBRARY, WINDOWS_PDFIUM_WORKER,
+    WINDOWS_PYANNOTE_MODEL, WINDOWS_RFDETR_WORKER, WINDOWS_SPEAKERS_ANALYZE_WORKER,
+    WINDOWS_VAD_ANALYZE_WORKER, WINDOWS_WESPEAKER_MODEL, WindowsPayloadRefusal,
+    render_windows_payload_manifest, verify_windows_payload,
 };
 
 const COMMIT: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
@@ -72,7 +72,11 @@ fn fixture() -> tempfile::TempDir {
     )
     .expect("wespeaker model");
     fs::write(root.path().join(WINDOWS_PYANNOTE_MODEL), b"pyannote model").expect("pyannote model");
-    fs::write(root.path().join(WINDOWS_SILERO_VAD_MODEL), b"silero model").expect("silero model");
+    fs::write(
+        root.path().join(WINDOWS_FIRERED_VAD_MODEL),
+        b"firered model",
+    )
+    .expect("firered model");
     fs::write(
         root.path().join(WINDOWS_PARAKEET_SERVER),
         b"Parakeet server",
@@ -215,9 +219,9 @@ fn signed_windows_payload_is_complete_and_refuses_mutation() {
     );
     assert_eq!(
         verified
-            .silero_vad_model_path()
+            .firered_vad_model_path()
             .expect("declared VAD model"),
-        root.path().join(WINDOWS_SILERO_VAD_MODEL)
+        root.path().join(WINDOWS_FIRERED_VAD_MODEL)
     );
     assert_eq!(
         verified
@@ -265,7 +269,7 @@ fn signed_windows_payload_is_complete_and_refuses_mutation() {
             .contains("digest")
     );
     admitted
-        .silero_vad_model_path()
+        .firered_vad_model_path()
         .expect("an unchanged member is still served");
     fs::write(root.path().join(WINDOWS_PARAKEET_MODEL), b"Parakeet model!").expect("resize");
     assert!(
