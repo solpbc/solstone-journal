@@ -218,6 +218,7 @@ pub fn require_tool_pins(apple: &Apple) -> Result<(), AppleError> {
 pub struct SignedMember {
     pub relative: String,
     pub payload: bool,
+    pub resource_bundle: bool,
     pub sha256: String,
     pub authority: String,
     pub team_identifier: String,
@@ -297,6 +298,7 @@ impl ArchiveMemberSigner for FakeArchiveMemberSigner {
         Ok(SignedMember {
             relative: relative_member_path.to_owned(),
             payload: false,
+            resource_bundle: false,
             sha256: crate::digest::sha256_hex(&bytes),
             authority: format!("fake:{}", self.marker),
             team_identifier: "fake".to_owned(),
@@ -338,7 +340,51 @@ pub fn sign_tree(stage: &Path, apple: &Apple) -> Result<Vec<SignedMember>, Apple
             apple,
         )?);
     }
+    let bundle_relative = "bin/mlx-swift_Cmlx.bundle";
+    let bundle = stage.join(bundle_relative);
+    if bundle.is_dir() {
+        codesign_at(&bundle, false, apple)?;
+        let signature = verify_resource_bundle(bundle_relative, &bundle, apple)?;
+        signed.push(signature);
+    }
     Ok(signed)
+}
+
+fn verify_resource_bundle(
+    relative: &str,
+    path: &Path,
+    apple: &Apple,
+) -> Result<SignedMember, AppleError> {
+    let codesign = if apple.codesign_path.is_empty() {
+        "codesign"
+    } else {
+        &apple.codesign_path
+    };
+    let display = path.to_string_lossy();
+    run(codesign, &["--verify", "--deep", "--strict", &display])?;
+    let report = run(codesign, &["-dv", "--verbose=4", &display])?;
+    let authority = field(&report, "Authority=").unwrap_or_default();
+    let team_identifier = field(&report, "TeamIdentifier=").unwrap_or_default();
+    let trusted_timestamp = report
+        .lines()
+        .any(|l| l.starts_with("Timestamp=") && !l.contains("none"));
+    if authority != apple.app_identity || team_identifier != apple.team_id || !trusted_timestamp {
+        return Err(AppleError::new(format!(
+            "resource bundle signature identity or timestamp missing: {relative}"
+        )));
+    }
+    let seal = fs::read(path.join("Contents/_CodeSignature/CodeResources"))?;
+    Ok(SignedMember {
+        relative: format!("{relative}/Contents/_CodeSignature/CodeResources"),
+        payload: false,
+        resource_bundle: true,
+        sha256: crate::digest::sha256_hex(&seal),
+        authority,
+        team_identifier,
+        hardened_runtime: report.contains("(runtime)"),
+        trusted_timestamp,
+        library_validation_disabled: false,
+    })
 }
 
 fn codesign_at(
@@ -453,6 +499,7 @@ pub fn verify_signed(
     Ok(SignedMember {
         relative: relative.to_owned(),
         payload,
+        resource_bundle: false,
         sha256: crate::digest::sha256_hex(&fs::read(path)?),
         authority,
         team_identifier,

@@ -24,6 +24,7 @@ pub mod manifest;
 pub mod metal_candidate;
 pub mod migration;
 pub mod mlx_candidate;
+mod mlx_install;
 mod model_cache;
 pub mod onnx_readiness;
 pub mod parakeet_readiness;
@@ -1130,6 +1131,16 @@ fn local_target_for_key_with_probe(
         ));
     }
 
+    if key == "aarch64-apple-darwin" {
+        match mlx_candidate::read_macos_local_backend_env()
+            .map_err(|e| failure("input", "unsupported_backend", e, 65))?
+        {
+            mlx_candidate::MacosLocalBackend::Mlx => {
+                return Ok(mlx_candidate::artifact_target_json(&pins::MLX_QWEN_PINS).0);
+            }
+            mlx_candidate::MacosLocalBackend::Metal => {}
+        }
+    }
     if key == "x86_64-windows" {
         let pkg = windows_engine::verified_windows_llama_package().map_err(|err| match err {
             windows_engine::WindowsLlamaPackageError::Missing(msg) => {
@@ -1408,6 +1419,25 @@ pub fn local_thinking_catalog_plan(
     nvidia_probe: Option<crate::NvidiaProbe>,
 ) -> Option<Vec<pins::ThinkingDownloadRow>> {
     let key = pins::platform_key();
+    if key == "aarch64-apple-darwin"
+        && matches!(
+            mlx_candidate::read_macos_local_backend_env(),
+            Ok(mlx_candidate::MacosLocalBackend::Mlx)
+        )
+    {
+        return Some(
+            solstone_core_assets::catalog()
+                .iter()
+                .filter(|a| a.unit == "local-model-mlx")
+                .map(|a| pins::ThinkingDownloadRow {
+                    unit: a.unit,
+                    platform: a.platform,
+                    filename: Some(a.filename),
+                    packaged: false,
+                })
+                .collect(),
+        );
+    }
     if key == "x86_64-windows" {
         return pins::thinking_download_rows(crate::Backend::Vulkan, &key);
     }
@@ -1770,6 +1800,9 @@ fn run_local_install(
     let backend = target["backend"]
         .as_str()
         .ok_or_else(|| failure("state", "fingerprint_malformed", "backend missing", 74))?;
+    if backend == "mlx" {
+        return mlx_install::install(&journal, status_value);
+    }
     let key = target["runtime_pin"]["artifact_key"]
         .as_str()
         .ok_or_else(|| {

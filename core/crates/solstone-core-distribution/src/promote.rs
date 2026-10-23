@@ -450,7 +450,10 @@ impl MacosSigning {
 
     #[must_use]
     pub fn executable_count(&self) -> usize {
-        self.members.iter().filter(|member| !member.payload).count()
+        self.members
+            .iter()
+            .filter(|member| !member.payload && !member.resource_bundle)
+            .count()
     }
 
     #[must_use]
@@ -465,7 +468,7 @@ impl MacosSigning {
             out.push_str(&format!(
                 "    {{\"path\": {:?}, \"kind\": {:?}, \"sha256\": {:?}, \"authority\": {:?}, \"team_identifier\": {:?}, \"hardened_runtime\": {}, \"trusted_timestamp\": {}, \"library_validation_disabled\": {}}}{comma}\n",
                 member.relative,
-                if member.payload { "payload" } else { "executable" },
+                if member.resource_bundle { "resource-bundle" } else if member.payload { "payload" } else { "executable" },
                 member.sha256,
                 member.authority,
                 member.team_identifier,

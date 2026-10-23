@@ -703,71 +703,53 @@ pub struct MlxFilePin {
     pub sha256: &'static str,
 }
 
-pub const MLX_QWEN_MODEL_ID: &str = "mlx-community/Qwen3.5-4B-MLX-4bit";
-pub const MLX_QWEN_REVISION: &str = "32f3e8ecf65426fc3306969496342d504bfa13f3";
+pub use solstone_core_assets::{MLX_QWEN_MODEL_ID, MLX_QWEN_REVISION};
 
-pub const MLX_QWEN_PINS: &[MlxFilePin] = &[
-    MlxFilePin {
-        name: ".gitattributes",
-        size: 1570,
-        sha256: "34448b82c17d60fec9b65b1f093c115ddbaadc04beb1b0140b6bfed2e012a930",
-    },
-    MlxFilePin {
-        name: "README.md",
-        size: 2273,
-        sha256: "49c0a725bdd22705d2d34b93cfe20463b673e3339ce4de8b81a340c05cfef5bc",
-    },
-    MlxFilePin {
-        name: "chat_template.jinja",
-        size: 7756,
-        sha256: "a4aee8afcf2e0711942cf848899be66016f8d14a889ff9ede07bca099c28f715",
-    },
-    MlxFilePin {
-        name: "config.json",
-        size: 3366,
-        sha256: "f3efc81b2ea8d96a45301037d3ccccbcccdef44a961845c87f286aaddbc6eaaa",
-    },
-    MlxFilePin {
-        name: "model.safetensors",
-        size: 3034300695,
-        sha256: "5fb9acd0246866381cf8c5c354c6db1019f6498eec4ccb4f5edcc71ffeacb2db",
-    },
-    MlxFilePin {
-        name: "model.safetensors.index.json",
-        size: 101944,
-        sha256: "52e534c41f7b97708329c85f762e5882bf48bd5955a422c6ae74eba321e6048a",
-    },
-    MlxFilePin {
-        name: "preprocessor_config.json",
-        size: 390,
-        sha256: "27225450ac9c6529872ee1924fcb0962ff5634834f817040f444118116f4e516",
-    },
-    MlxFilePin {
-        name: "processor_config.json",
-        size: 1300,
-        sha256: "14932921ca485d458a04dafd8069fbb0a4505622a48208d19ed247115801385b",
-    },
-    MlxFilePin {
-        name: "tokenizer.json",
-        size: 19989343,
-        sha256: "87a7830d63fcf43bf241c3c5242e96e62dd3fdc29224ca26fed8ea333db72de4",
-    },
-    MlxFilePin {
-        name: "tokenizer_config.json",
-        size: 1139,
-        sha256: "e98f1901ac6f0adff67b1d540bfa0c36ac1a0cf59eb72ed78146ef89aafa1182",
-    },
-    MlxFilePin {
-        name: "video_preprocessor_config.json",
-        size: 385,
-        sha256: "7768af27c1fafa9cc9011c1dc20067e03f8915e03b63504550e11d5066986d13",
-    },
-    MlxFilePin {
-        name: "vocab.json",
-        size: 6722759,
-        sha256: "ce99b4cb2983d118806ce0a8b777a35b093e2000a503ebde25853284c9dfa003",
-    },
-];
+pub static MLX_QWEN_PINS: std::sync::LazyLock<Vec<MlxFilePin>> = std::sync::LazyLock::new(|| {
+    solstone_core_assets::catalog()
+        .iter()
+        .filter(|row| row.unit == "local-model-mlx")
+        .map(|row| MlxFilePin {
+            name: row.filename,
+            size: row.size_bytes,
+            sha256: row.sha256,
+        })
+        .collect()
+});
+
+pub fn mlx_model_generation() -> solstone_core_artifact_download::generation::Generation {
+    use solstone_core_artifact_download::generation::{Generation, Member};
+    let mut generation = Generation::new(
+        "local-model-mlx",
+        MLX_QWEN_PINS
+            .iter()
+            .map(|pin| Member {
+                file: pin.name.into(),
+                sha256: pin.sha256.into(),
+                size_bytes: pin.size,
+            })
+            .collect(),
+    )
+    .expect("valid pinned MLX inventory");
+    generation.identity = super::mlx_candidate::artifact_target_json(&MLX_QWEN_PINS).0;
+    generation
+}
+
+pub fn mlx_generation_record_present(directory: &Path) -> bool {
+    std::fs::read(directory.join(".generation.json"))
+        .ok()
+        .and_then(|bytes| {
+            serde_json::from_slice::<solstone_core_artifact_download::generation::Generation>(
+                &bytes,
+            )
+            .ok()
+        })
+        .is_some_and(|record| record.unit == "local-model-mlx")
+}
+
+pub fn mlx_model_directory(journal: &Path) -> PathBuf {
+    mlx_model_generation().directory(&cache_root(journal).join("models"))
+}
 
 pub fn parakeet_vulkan_pin(
     key: &str,

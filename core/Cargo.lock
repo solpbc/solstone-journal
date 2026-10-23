@@ -5224,6 +5224,7 @@ dependencies = [
  "solstone-core-local",
  "solstone-core-spp-attest",
  "solstone-core-spp-ratls",
+ "tempfile",
  "ureq",
  "x509-parser 0.16.0",
 ]

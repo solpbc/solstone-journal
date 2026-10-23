@@ -241,7 +241,8 @@
   border: 1px solid var(--hairline);
 }
 
-.pulse-reflection-link {
+.pulse-reflection-link,
+.pulse-today-link {
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
@@ -251,11 +252,13 @@
   text-decoration: none;
 }
 
-.pulse-reflection-link:hover {
+.pulse-reflection-link:hover,
+.pulse-today-link:hover {
   text-decoration: underline;
 }
 
-.pulse-reflection-link:focus-visible {
+.pulse-reflection-link:focus-visible,
+.pulse-today-link:focus-visible {
   outline: 2px solid var(--warn-ink);
   outline-offset: 2px;
   border-radius: 4px;
@@ -303,6 +306,8 @@
 .pulse-connections-more {
   margin-left: 0.5rem;
   white-space: nowrap;
+  /* It can sit inside the italic coverage note; the way out reads upright. */
+  font-style: normal;
 }
 
 .pulse-activities {
@@ -462,6 +467,7 @@
 
 .pulse-connections-name,
 .pulse-connections-footer a,
+.pulse-connections-more,
 .pulse-connections-cluster a {
   color: var(--ink);
   text-decoration: none;
@@ -470,6 +476,7 @@
 
 .pulse-connections-name:hover,
 .pulse-connections-footer a:hover,
+.pulse-connections-more:hover,
 .pulse-connections-cluster a:hover {
   text-decoration: underline;
 }
@@ -1061,6 +1068,7 @@
   .pulse-vitals-note,
   .pulse-tell-more,
   .pulse-reflection-link,
+  .pulse-today-link,
   .pulse-briefing-status-link,
   .pulse-empty-state .pulse-empty-message a {
     display: inline-flex;

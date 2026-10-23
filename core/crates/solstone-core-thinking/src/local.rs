@@ -48,7 +48,7 @@ pub fn models() -> Value {
 
 pub fn availability(journal: &Path, model: &str) -> Value {
     #[cfg(target_os = "macos")]
-    if let Some(readiness) = selected_mlx_readiness() {
+    if let Some(readiness) = selected_mlx_readiness(journal) {
         return availability_payload(model, readiness);
     }
     let mut input = Map::from_iter([
@@ -79,18 +79,18 @@ pub fn availability(journal: &Path, model: &str) -> Value {
 /// that performs a current host check.
 pub fn provider_status_availability(journal: &Path, model: &str) -> Value {
     #[cfg(target_os = "macos")]
-    if let Some(readiness) = selected_mlx_readiness() {
+    if let Some(readiness) = selected_mlx_readiness(journal) {
         return availability_payload(model, readiness);
     }
     availability_payload(model, inspect_local_installed(journal, model))
 }
 
 #[cfg(target_os = "macos")]
-fn selected_mlx_readiness() -> Option<Value> {
+fn selected_mlx_readiness(journal: &Path) -> Option<Value> {
     match solstone_core_local::read_macos_local_backend_env() {
         Ok(solstone_core_local::MacosLocalBackend::Metal) => None,
         Ok(solstone_core_local::MacosLocalBackend::Mlx) => {
-            Some(solstone_core_local::install::mlx_candidate::inspect_present_default())
+            Some(solstone_core_local::install::mlx_candidate::inspect_present_default(journal))
         }
         Err(_) => Some(json!({
             "status":"proof-unavailable",
@@ -168,8 +168,10 @@ fn availability_payload(model: &str, readiness: Value) -> Value {
 pub fn bootstrap_status(journal: &Path, _model: &str) -> Value {
     #[cfg(target_os = "macos")]
     match solstone_core_local::read_macos_local_backend_env() {
-        Ok(solstone_core_local::MacosLocalBackend::Metal) => {}
-        Ok(solstone_core_local::MacosLocalBackend::Mlx) => return idle_bootstrap_status(),
+        Ok(
+            solstone_core_local::MacosLocalBackend::Metal
+            | solstone_core_local::MacosLocalBackend::Mlx,
+        ) => {}
         Err(_) => return unavailable_bootstrap_status("local_probe_failed"),
     }
     match solstone_core_local::install::status::read_observed_status(journal, "local") {
@@ -312,8 +314,8 @@ pub fn start_bootstrap(
         return BootstrapResponse::ByoEndpointActive;
     }
     #[cfg(target_os = "macos")]
-    if let Some(readiness) = selected_mlx_readiness() {
-        return mlx_bootstrap_response(&readiness);
+    if let Some(readiness) = selected_mlx_readiness(journal) {
+        return classify_bootstrap(journal, &readiness);
     }
     let mut input = Map::from_iter([
         (
@@ -335,20 +337,6 @@ pub fn start_bootstrap(
         inspect_local(input)
     };
     classify_bootstrap(journal, &readiness)
-}
-
-#[cfg(any(target_os = "macos", test))]
-fn mlx_bootstrap_response(readiness: &Value) -> BootstrapResponse {
-    if readiness["ready"] == true {
-        BootstrapResponse::Installed
-    } else {
-        BootstrapResponse::Unavailable(
-            readiness["reason_code"]
-                .as_str()
-                .unwrap_or("local_probe_failed")
-                .to_owned(),
-        )
-    }
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -592,23 +580,6 @@ mod tests {
         blocked_capability_refusal as check_blocked_capability_refusal, classify_bootstrap,
         default_model, runtime, runtime_status_for_phase, start_bootstrap,
     };
-
-    #[test]
-    fn mlx_bootstrap_never_starts_an_unrelated_download() {
-        assert_eq!(
-            super::mlx_bootstrap_response(&json!({"ready":true})),
-            BootstrapResponse::Installed
-        );
-        for readiness in [
-            json!({"ready":false,"reason_code":"artifact_missing"}),
-            json!({"status":"proof-unavailable"}),
-        ] {
-            assert!(matches!(
-                super::mlx_bootstrap_response(&readiness),
-                BootstrapResponse::Unavailable(_)
-            ));
-        }
-    }
 
     #[test]
     fn blocked_capability_refusal() {

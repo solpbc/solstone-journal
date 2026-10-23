@@ -116,13 +116,6 @@ pub fn resolve_mlx_helper(override_opt: Option<&str>) -> Result<PathBuf, String>
             path.display()
         ));
     }
-    let dev_path = PathBuf::from(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/mlx-helper/DerivedData/Build/Products/Release/mlx-helper"
-    ));
-    if is_valid_helper_executable(&dev_path) {
-        return dev_path.canonicalize().map_err(|error| error.to_string());
-    }
     if let Ok(current_exe) = std::env::current_exe()
         && let Some(parent) = current_exe.parent()
     {
@@ -132,6 +125,13 @@ pub fn resolve_mlx_helper(override_opt: Option<&str>) -> Result<PathBuf, String>
                 .canonicalize()
                 .map_err(|error| error.to_string());
         }
+    }
+    let dev_path = PathBuf::from(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/mlx-helper/DerivedData/Build/Products/Release/mlx-helper"
+    ));
+    if is_valid_helper_executable(&dev_path) {
+        return dev_path.canonicalize().map_err(|error| error.to_string());
     }
     Err("mlx-helper executable with metallib resource bundle not found".to_owned())
 }
@@ -158,6 +158,13 @@ pub fn resolve_mlx_model_dir(override_opt: Option<&str>) -> Result<PathBuf, Stri
         ));
     }
     Err("SOLSTONE_MLX_MODEL_DIR is unset or not a directory".to_owned())
+}
+
+/// Operator paths take precedence; ordinary installs are journal-scoped generations.
+pub fn model_directory(journal: &Path) -> PathBuf {
+    std::env::var_os(MODEL_DIR_ENV_KEY)
+        .map(|value| resolve_override_path(PathBuf::from(value)))
+        .unwrap_or_else(|| super::pins::mlx_model_directory(journal))
 }
 
 pub fn artifact_target_json(pins: &[MlxFilePin]) -> (Value, String) {
@@ -191,7 +198,9 @@ fn check_extra_loadable_names(model_dir: &Path, pins: &[MlxFilePin]) -> Result<(
             .map_err(|e| format!("failed file type: {e}"))?;
         let name = entry.file_name();
         // The download client's metadata directory is never a model input.
-        if file_type.is_dir() && name == ".cache" {
+        if (file_type.is_dir() && name == ".cache")
+            || (file_type.is_file() && name == ".generation.json")
+        {
             continue;
         }
         if !pins.iter().any(|pin| name == pin.name) {
@@ -351,17 +360,31 @@ fn prove_artifacts_with_pins(
     }))
 }
 
-pub fn inspect_verified_default() -> Value {
-    let helper = match resolve_mlx_helper(None) {
-        Ok(path) => path,
-        Err(error) => return failure_readiness("package_unavailable", &error),
-    };
-    let model = match resolve_mlx_model_dir(None) {
-        Ok(path) => path,
-        Err(error) => return failure_readiness("artifact_missing", &error),
-    };
-    prove_artifacts_with_pins(&model, &helper, MLX_QWEN_PINS)
-        .unwrap_or_else(|error| failure_readiness("sha256_mismatch", &error))
+pub fn inspect_verified_default(journal: &Path) -> Value {
+    let mut readiness = inspect_present_default(journal);
+    if readiness["ready"] != true {
+        return readiness;
+    }
+    let helper = Path::new(
+        readiness["artifacts"]["binary_path"]
+            .as_str()
+            .expect("ready helper path"),
+    );
+    let model = Path::new(
+        readiness["artifacts"]["model_path"]
+            .as_str()
+            .expect("ready model path"),
+    );
+    match prove_artifacts_with_pins(model, helper, &MLX_QWEN_PINS) {
+        Ok(proof) => proof,
+        Err(error) => {
+            readiness["ready"] = json!(false);
+            readiness["status"] = json!("missing-or-mismatched");
+            readiness["reason_code"] = json!("sha256_mismatch");
+            readiness["detail"] = json!(error);
+            readiness
+        }
+    }
 }
 
 /// Fixture-only inspection with small model inputs; absent from production builds.
@@ -376,8 +399,42 @@ pub fn inspect_fixture(helper: &Path, model: &Path, pins: &[MlxFilePin], verify:
     }
 }
 
-pub fn inspect_present_default() -> Value {
-    inspect_present_with_overrides(None, None, MLX_QWEN_PINS)
+pub fn inspect_present_default(journal: &Path) -> Value {
+    let directory = model_directory(journal);
+    let mut readiness = inspect_present_with_overrides(None, directory.to_str(), &MLX_QWEN_PINS);
+    let (target, hash) = artifact_target_json(&MLX_QWEN_PINS);
+    let canonical = super::fingerprint::canonical(target).expect("valid MLX target");
+    readiness["target"]["target_fingerprint_json"] = json!(canonical);
+    readiness["target"]["target_fingerprint_sha256"] = json!(hash);
+    readiness["install"] = super::status::read_observed_status(journal, "local")
+        .ok()
+        .filter(|state| state.target_fingerprint_sha256.as_deref() == Some(&hash))
+        .and_then(|state| serde_json::to_value(state).ok())
+        .unwrap_or(Value::Null);
+    // A managed generation is unavailable until every member has been verified
+    // and its exact control record published. Presence checks never hash weights.
+    if std::env::var_os(MODEL_DIR_ENV_KEY).is_none()
+        && readiness["reason_code"] != "package_unavailable"
+    {
+        let generation = super::pins::mlx_model_generation();
+        let sealed = fs::read(directory.join(".generation.json"))
+            .ok()
+            .and_then(|bytes| {
+                serde_json::from_slice::<solstone_core_artifact_download::generation::Generation>(
+                    &bytes,
+                )
+                .ok()
+            })
+            .as_ref()
+            == Some(&generation);
+        if !sealed {
+            readiness["ready"] = json!(false);
+            readiness["status"] = json!("missing-or-mismatched");
+            readiness["reason_code"] = json!("manifest_missing");
+            readiness["proof"] = json!({"model": {"status":"missing-or-mismatched", "reason_code":"manifest_missing"}});
+        }
+    }
+    readiness
 }
 
 fn failure_readiness(reason_code: &str, detail: &str) -> Value {
@@ -435,7 +492,7 @@ mod tests {
 
     #[test]
     fn test_mlx_artifact_target_sha256_and_properties() {
-        let (target, sha256) = artifact_target_json(MLX_QWEN_PINS);
+        let (target, sha256) = artifact_target_json(&MLX_QWEN_PINS);
         assert_eq!(target["provider"], "local");
         assert_eq!(target["backend"], "mlx");
         assert_eq!(target["model_id"], "local/qwen3.5-4b");

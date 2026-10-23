@@ -29,7 +29,7 @@ app_identity = "Developer ID Application: sol pbc (7QCG8V4M6H)"
 notary_profile = "sol-pbc-notary"
 keychain = "~/Library/Keychains/sol-signing.keychain-db"
 codesign_path = "/usr/bin/codesign"
-xcode = "Xcode 26.6"
+xcode = ""
 notarytool = "1.1.2 (41)"
 
 [[target]]
@@ -569,6 +569,494 @@ class = "first-party"
 source = "core/crates/solstone-core-transcribe/parakeet-helper/.build/release/parakeet-helper"
 dest = "bin/parakeet-helper"
 mode = 0o755
+targets = ["macos-arm64"]
+
+[[entry]]
+kind = "copy"
+class = "component"
+source = "core/crates/solstone-core-local/mlx-helper/DerivedData/Build/Products/Release/mlx-helper"
+dest = "bin/mlx-helper"
+mode = 0o755
+targets = ["macos-arm64"]
+
+[[entry]]
+kind = "copy"
+class = "component"
+source = "core/crates/solstone-core-local/mlx-helper/DerivedData/Build/Products/Release/swift-runtime/libswiftCompatibilitySpan.dylib"
+dest = "lib/libswiftCompatibilitySpan.dylib"
+mode = 0o644
+targets = ["macos-arm64"]
+
+[[entry]]
+kind = "copy"
+class = "notice"
+source = "core/distribution/licenses/mlx-helper/swift-runtime/LICENSE.txt"
+dest = "share/licenses/mlx-helper/swift-runtime/LICENSE.txt"
+mode = 0o644
+targets = ["macos-arm64"]
+
+[[entry]]
+kind = "copy"
+class = "component"
+source = "core/crates/solstone-core-local/mlx-helper/DerivedData/Build/Products/Release/mlx-swift_Cmlx.bundle/Contents/Info.plist"
+dest = "bin/mlx-swift_Cmlx.bundle/Contents/Info.plist"
+mode = 0o644
+targets = ["macos-arm64"]
+
+[[entry]]
+kind = "copy"
+class = "component"
+source = "core/crates/solstone-core-local/mlx-helper/DerivedData/Build/Products/Release/mlx-swift_Cmlx.bundle/Contents/Resources/default.metallib"
+dest = "bin/mlx-swift_Cmlx.bundle/Contents/Resources/default.metallib"
+mode = 0o644
+targets = ["macos-arm64"]
+
+[[entry]]
+kind = "copy"
+class = "notice"
+source = "core/crates/solstone-core-local/mlx-helper/DerivedData/Build/Products/Release/mlx-helper-build.json"
+dest = "share/provenance/mlx-helper/build.json"
+mode = 0o644
+targets = ["macos-arm64"]
+
+[[entry]]
+kind = "copy"
+class = "notice"
+source = "core/distribution/licenses/mlx-helper/Package.resolved"
+dest = "share/licenses/mlx-helper/Package.resolved"
+mode = 0o644
+targets = ["macos-arm64"]
+
+[[entry]]
+kind = "copy"
+class = "notice"
+source = "core/distribution/licenses/mlx-helper/async-http-client/LICENSE.txt"
+dest = "share/licenses/mlx-helper/async-http-client/LICENSE.txt"
+mode = 0o644
+targets = ["macos-arm64"]
+
+[[entry]]
+kind = "copy"
+class = "notice"
+source = "core/distribution/licenses/mlx-helper/async-http-client/NOTICE.txt"
+dest = "share/licenses/mlx-helper/async-http-client/NOTICE.txt"
+mode = 0o644
+targets = ["macos-arm64"]
+
+[[entry]]
+kind = "copy"
+class = "notice"
+source = "core/distribution/licenses/mlx-helper/eventsource/LICENSE.md"
+dest = "share/licenses/mlx-helper/eventsource/LICENSE.md"
+mode = 0o644
+targets = ["macos-arm64"]
+
+[[entry]]
+kind = "copy"
+class = "notice"
+source = "core/distribution/licenses/mlx-helper/guided-generation/LICENSE"
+dest = "share/licenses/mlx-helper/guided-generation/LICENSE"
+mode = 0o644
+targets = ["macos-arm64"]
+
+[[entry]]
+kind = "copy"
+class = "notice"
+source = "core/distribution/licenses/mlx-helper/hummingbird/LICENSE.txt"
+dest = "share/licenses/mlx-helper/hummingbird/LICENSE.txt"
+mode = 0o644
+targets = ["macos-arm64"]
+
+[[entry]]
+kind = "copy"
+class = "notice"
+source = "core/distribution/licenses/mlx-helper/hummingbird/NOTICE.txt"
+dest = "share/licenses/mlx-helper/hummingbird/NOTICE.txt"
+mode = 0o644
+targets = ["macos-arm64"]
+
+[[entry]]
+kind = "copy"
+class = "notice"
+source = "core/distribution/licenses/mlx-helper/mlx-swift/LICENSE"
+dest = "share/licenses/mlx-helper/mlx-swift/LICENSE"
+mode = 0o644
+targets = ["macos-arm64"]
+
+[[entry]]
+kind = "copy"
+class = "notice"
+source = "core/distribution/licenses/mlx-helper/mlx-swift/Source/Cmlx/fmt/LICENSE"
+dest = "share/licenses/mlx-helper/mlx-swift/Source/Cmlx/fmt/LICENSE"
+mode = 0o644
+targets = ["macos-arm64"]
+
+[[entry]]
+kind = "copy"
+class = "notice"
+source = "core/distribution/licenses/mlx-helper/mlx-swift/Source/Cmlx/json/LICENSE.MIT"
+dest = "share/licenses/mlx-helper/mlx-swift/Source/Cmlx/json/LICENSE.MIT"
+mode = 0o644
+targets = ["macos-arm64"]
+
+[[entry]]
+kind = "copy"
+class = "notice"
+source = "core/distribution/licenses/mlx-helper/mlx-swift/Source/Cmlx/metal-cpp/LICENSE.txt"
+dest = "share/licenses/mlx-helper/mlx-swift/Source/Cmlx/metal-cpp/LICENSE.txt"
+mode = 0o644
+targets = ["macos-arm64"]
+
+[[entry]]
+kind = "copy"
+class = "notice"
+source = "core/distribution/licenses/mlx-helper/mlx-swift-lm/LICENSE"
+dest = "share/licenses/mlx-helper/mlx-swift-lm/LICENSE"
+mode = 0o644
+targets = ["macos-arm64"]
+
+[[entry]]
+kind = "copy"
+class = "notice"
+source = "core/distribution/licenses/mlx-helper/mlx-swift-lm/Libraries/MLXCXGrammar/xgrammar/LICENSE"
+dest = "share/licenses/mlx-helper/mlx-swift-lm/Libraries/MLXCXGrammar/xgrammar/LICENSE"
+mode = 0o644
+targets = ["macos-arm64"]
+
+[[entry]]
+kind = "copy"
+class = "notice"
+source = "core/distribution/licenses/mlx-helper/mlx-swift-lm/Libraries/MLXCXGrammar/xgrammar/NOTICE"
+dest = "share/licenses/mlx-helper/mlx-swift-lm/Libraries/MLXCXGrammar/xgrammar/NOTICE"
+mode = 0o644
+targets = ["macos-arm64"]
+
+[[entry]]
+kind = "copy"
+class = "notice"
+source = "core/distribution/licenses/mlx-helper/swift-algorithms/LICENSE.txt"
+dest = "share/licenses/mlx-helper/swift-algorithms/LICENSE.txt"
+mode = 0o644
+targets = ["macos-arm64"]
+
+[[entry]]
+kind = "copy"
+class = "notice"
+source = "core/distribution/licenses/mlx-helper/swift-asn1/LICENSE.txt"
+dest = "share/licenses/mlx-helper/swift-asn1/LICENSE.txt"
+mode = 0o644
+targets = ["macos-arm64"]
+
+[[entry]]
+kind = "copy"
+class = "notice"
+source = "core/distribution/licenses/mlx-helper/swift-asn1/NOTICE.txt"
+dest = "share/licenses/mlx-helper/swift-asn1/NOTICE.txt"
+mode = 0o644
+targets = ["macos-arm64"]
+
+[[entry]]
+kind = "copy"
+class = "notice"
+source = "core/distribution/licenses/mlx-helper/swift-async-algorithms/LICENSE.txt"
+dest = "share/licenses/mlx-helper/swift-async-algorithms/LICENSE.txt"
+mode = 0o644
+targets = ["macos-arm64"]
+
+[[entry]]
+kind = "copy"
+class = "notice"
+source = "core/distribution/licenses/mlx-helper/swift-atomics/LICENSE.txt"
+dest = "share/licenses/mlx-helper/swift-atomics/LICENSE.txt"
+mode = 0o644
+targets = ["macos-arm64"]
+
+[[entry]]
+kind = "copy"
+class = "notice"
+source = "core/distribution/licenses/mlx-helper/swift-certificates/LICENSE.txt"
+dest = "share/licenses/mlx-helper/swift-certificates/LICENSE.txt"
+mode = 0o644
+targets = ["macos-arm64"]
+
+[[entry]]
+kind = "copy"
+class = "notice"
+source = "core/distribution/licenses/mlx-helper/swift-certificates/NOTICE.txt"
+dest = "share/licenses/mlx-helper/swift-certificates/NOTICE.txt"
+mode = 0o644
+targets = ["macos-arm64"]
+
+[[entry]]
+kind = "copy"
+class = "notice"
+source = "core/distribution/licenses/mlx-helper/swift-collections/LICENSE.txt"
+dest = "share/licenses/mlx-helper/swift-collections/LICENSE.txt"
+mode = 0o644
+targets = ["macos-arm64"]
+
+[[entry]]
+kind = "copy"
+class = "notice"
+source = "core/distribution/licenses/mlx-helper/swift-configuration/LICENSE.txt"
+dest = "share/licenses/mlx-helper/swift-configuration/LICENSE.txt"
+mode = 0o644
+targets = ["macos-arm64"]
+
+[[entry]]
+kind = "copy"
+class = "notice"
+source = "core/distribution/licenses/mlx-helper/swift-configuration/NOTICE.txt"
+dest = "share/licenses/mlx-helper/swift-configuration/NOTICE.txt"
+mode = 0o644
+targets = ["macos-arm64"]
+
+[[entry]]
+kind = "copy"
+class = "notice"
+source = "core/distribution/licenses/mlx-helper/swift-crypto/LICENSE.txt"
+dest = "share/licenses/mlx-helper/swift-crypto/LICENSE.txt"
+mode = 0o644
+targets = ["macos-arm64"]
+
+[[entry]]
+kind = "copy"
+class = "notice"
+source = "core/distribution/licenses/mlx-helper/swift-crypto/NOTICE.txt"
+dest = "share/licenses/mlx-helper/swift-crypto/NOTICE.txt"
+mode = 0o644
+targets = ["macos-arm64"]
+
+[[entry]]
+kind = "copy"
+class = "notice"
+source = "core/distribution/licenses/mlx-helper/swift-distributed-tracing/LICENSE.txt"
+dest = "share/licenses/mlx-helper/swift-distributed-tracing/LICENSE.txt"
+mode = 0o644
+targets = ["macos-arm64"]
+
+[[entry]]
+kind = "copy"
+class = "notice"
+source = "core/distribution/licenses/mlx-helper/swift-http-structured-headers/LICENSE.txt"
+dest = "share/licenses/mlx-helper/swift-http-structured-headers/LICENSE.txt"
+mode = 0o644
+targets = ["macos-arm64"]
+
+[[entry]]
+kind = "copy"
+class = "notice"
+source = "core/distribution/licenses/mlx-helper/swift-http-types/LICENSE.txt"
+dest = "share/licenses/mlx-helper/swift-http-types/LICENSE.txt"
+mode = 0o644
+targets = ["macos-arm64"]
+
+[[entry]]
+kind = "copy"
+class = "notice"
+source = "core/distribution/licenses/mlx-helper/swift-http-types/NOTICE.txt"
+dest = "share/licenses/mlx-helper/swift-http-types/NOTICE.txt"
+mode = 0o644
+targets = ["macos-arm64"]
+
+[[entry]]
+kind = "copy"
+class = "notice"
+source = "core/distribution/licenses/mlx-helper/swift-huggingface/LICENSE"
+dest = "share/licenses/mlx-helper/swift-huggingface/LICENSE"
+mode = 0o644
+targets = ["macos-arm64"]
+
+[[entry]]
+kind = "copy"
+class = "notice"
+source = "core/distribution/licenses/mlx-helper/swift-jinja/LICENSE"
+dest = "share/licenses/mlx-helper/swift-jinja/LICENSE"
+mode = 0o644
+targets = ["macos-arm64"]
+
+[[entry]]
+kind = "copy"
+class = "notice"
+source = "core/distribution/licenses/mlx-helper/swift-log/LICENSE.txt"
+dest = "share/licenses/mlx-helper/swift-log/LICENSE.txt"
+mode = 0o644
+targets = ["macos-arm64"]
+
+[[entry]]
+kind = "copy"
+class = "notice"
+source = "core/distribution/licenses/mlx-helper/swift-log/NOTICE.txt"
+dest = "share/licenses/mlx-helper/swift-log/NOTICE.txt"
+mode = 0o644
+targets = ["macos-arm64"]
+
+[[entry]]
+kind = "copy"
+class = "notice"
+source = "core/distribution/licenses/mlx-helper/swift-metrics/LICENSE.txt"
+dest = "share/licenses/mlx-helper/swift-metrics/LICENSE.txt"
+mode = 0o644
+targets = ["macos-arm64"]
+
+[[entry]]
+kind = "copy"
+class = "notice"
+source = "core/distribution/licenses/mlx-helper/swift-metrics/NOTICE.txt"
+dest = "share/licenses/mlx-helper/swift-metrics/NOTICE.txt"
+mode = 0o644
+targets = ["macos-arm64"]
+
+[[entry]]
+kind = "copy"
+class = "notice"
+source = "core/distribution/licenses/mlx-helper/swift-nio/LICENSE.txt"
+dest = "share/licenses/mlx-helper/swift-nio/LICENSE.txt"
+mode = 0o644
+targets = ["macos-arm64"]
+
+[[entry]]
+kind = "copy"
+class = "notice"
+source = "core/distribution/licenses/mlx-helper/swift-nio/NOTICE.txt"
+dest = "share/licenses/mlx-helper/swift-nio/NOTICE.txt"
+mode = 0o644
+targets = ["macos-arm64"]
+
+[[entry]]
+kind = "copy"
+class = "notice"
+source = "core/distribution/licenses/mlx-helper/swift-nio/Sources/CNIOLLHTTP/LICENSE"
+dest = "share/licenses/mlx-helper/swift-nio/Sources/CNIOLLHTTP/LICENSE"
+mode = 0o644
+targets = ["macos-arm64"]
+
+[[entry]]
+kind = "copy"
+class = "notice"
+source = "core/distribution/licenses/mlx-helper/swift-nio-extras/LICENSE.txt"
+dest = "share/licenses/mlx-helper/swift-nio-extras/LICENSE.txt"
+mode = 0o644
+targets = ["macos-arm64"]
+
+[[entry]]
+kind = "copy"
+class = "notice"
+source = "core/distribution/licenses/mlx-helper/swift-nio-extras/NOTICE.txt"
+dest = "share/licenses/mlx-helper/swift-nio-extras/NOTICE.txt"
+mode = 0o644
+targets = ["macos-arm64"]
+
+[[entry]]
+kind = "copy"
+class = "notice"
+source = "core/distribution/licenses/mlx-helper/swift-nio-http2/LICENSE.txt"
+dest = "share/licenses/mlx-helper/swift-nio-http2/LICENSE.txt"
+mode = 0o644
+targets = ["macos-arm64"]
+
+[[entry]]
+kind = "copy"
+class = "notice"
+source = "core/distribution/licenses/mlx-helper/swift-nio-http2/NOTICE.txt"
+dest = "share/licenses/mlx-helper/swift-nio-http2/NOTICE.txt"
+mode = 0o644
+targets = ["macos-arm64"]
+
+[[entry]]
+kind = "copy"
+class = "notice"
+source = "core/distribution/licenses/mlx-helper/swift-nio-ssl/LICENSE.txt"
+dest = "share/licenses/mlx-helper/swift-nio-ssl/LICENSE.txt"
+mode = 0o644
+targets = ["macos-arm64"]
+
+[[entry]]
+kind = "copy"
+class = "notice"
+source = "core/distribution/licenses/mlx-helper/swift-nio-ssl/NOTICE.txt"
+dest = "share/licenses/mlx-helper/swift-nio-ssl/NOTICE.txt"
+mode = 0o644
+targets = ["macos-arm64"]
+
+[[entry]]
+kind = "copy"
+class = "notice"
+source = "core/distribution/licenses/mlx-helper/swift-nio-transport-services/LICENSE.txt"
+dest = "share/licenses/mlx-helper/swift-nio-transport-services/LICENSE.txt"
+mode = 0o644
+targets = ["macos-arm64"]
+
+[[entry]]
+kind = "copy"
+class = "notice"
+source = "core/distribution/licenses/mlx-helper/swift-numerics/LICENSE.txt"
+dest = "share/licenses/mlx-helper/swift-numerics/LICENSE.txt"
+mode = 0o644
+targets = ["macos-arm64"]
+
+[[entry]]
+kind = "copy"
+class = "notice"
+source = "core/distribution/licenses/mlx-helper/swift-service-context/LICENSE.txt"
+dest = "share/licenses/mlx-helper/swift-service-context/LICENSE.txt"
+mode = 0o644
+targets = ["macos-arm64"]
+
+[[entry]]
+kind = "copy"
+class = "notice"
+source = "core/distribution/licenses/mlx-helper/swift-service-context/NOTICE.txt"
+dest = "share/licenses/mlx-helper/swift-service-context/NOTICE.txt"
+mode = 0o644
+targets = ["macos-arm64"]
+
+[[entry]]
+kind = "copy"
+class = "notice"
+source = "core/distribution/licenses/mlx-helper/swift-service-lifecycle/LICENSE.txt"
+dest = "share/licenses/mlx-helper/swift-service-lifecycle/LICENSE.txt"
+mode = 0o644
+targets = ["macos-arm64"]
+
+[[entry]]
+kind = "copy"
+class = "notice"
+source = "core/distribution/licenses/mlx-helper/swift-service-lifecycle/NOTICE.txt"
+dest = "share/licenses/mlx-helper/swift-service-lifecycle/NOTICE.txt"
+mode = 0o644
+targets = ["macos-arm64"]
+
+[[entry]]
+kind = "copy"
+class = "notice"
+source = "core/distribution/licenses/mlx-helper/swift-syntax/LICENSE.txt"
+dest = "share/licenses/mlx-helper/swift-syntax/LICENSE.txt"
+mode = 0o644
+targets = ["macos-arm64"]
+
+[[entry]]
+kind = "copy"
+class = "notice"
+source = "core/distribution/licenses/mlx-helper/swift-system/LICENSE.txt"
+dest = "share/licenses/mlx-helper/swift-system/LICENSE.txt"
+mode = 0o644
+targets = ["macos-arm64"]
+
+[[entry]]
+kind = "copy"
+class = "notice"
+source = "core/distribution/licenses/mlx-helper/swift-transformers/LICENSE"
+dest = "share/licenses/mlx-helper/swift-transformers/LICENSE"
+mode = 0o644
+targets = ["macos-arm64"]
+
+[[entry]]
+kind = "copy"
+class = "notice"
+source = "core/distribution/licenses/mlx-helper/yyjson/LICENSE"
+dest = "share/licenses/mlx-helper/yyjson/LICENSE"
+mode = 0o644
 targets = ["macos-arm64"]
 
 # FluidAudio is compiled into parakeet-helper; its licence and the texts for
@@ -2061,3 +2549,19 @@ class = "notice"
 source = "core/distribution/licenses/rclone"
 component = "rclone"
 targets = ["linux-x86_64", "linux-aarch64", "macos-arm64", "windows-x86_64"]
+
+[[entry]]
+kind = "copy"
+class = "notice"
+source = "core/distribution/licenses/mlx-helper/swift-nio-ssl/BoringSSL-LICENSE"
+dest = "share/licenses/mlx-helper/swift-nio-ssl/BoringSSL-LICENSE"
+mode = 0o644
+targets = ["macos-arm64"]
+
+[[entry]]
+kind = "copy"
+class = "notice"
+source = "core/distribution/licenses/mlx-helper/swift-crypto/BoringSSL-LICENSE"
+dest = "share/licenses/mlx-helper/swift-crypto/BoringSSL-LICENSE"
+mode = 0o644
+targets = ["macos-arm64"]

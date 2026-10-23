@@ -513,6 +513,11 @@ pub fn run(args: ProduceArgs) -> Result<ProduceReport, ProduceError> {
     )?;
 
     let result = (|| {
+        let mlx_toolchain = if target.os == OS_MACOS {
+            Some(mlx_toolchain_preflight()?)
+        } else {
+            None
+        };
         let host = rustc_host()?;
         let sysroot = command_stdout(Path::new("rustc"), &["--print", "sysroot"])?;
         let spec = onnx_runtime::spec_for(&args.target_id).ok_or_else(|| {
@@ -604,6 +609,11 @@ pub fn run(args: ProduceArgs) -> Result<ProduceReport, ProduceError> {
                 helper,
             );
             build_parakeet_helper(&checkout)?;
+            build_mlx_helper(
+                &checkout,
+                mlx_toolchain.as_ref().expect("macOS toolchain"),
+                &commit,
+            )?;
             return finish_produce(FinishProduce {
                 args: &args,
                 inventory: &inventory,
@@ -2408,6 +2418,210 @@ fn build_parakeet_helper(checkout: &Path) -> Result<(), ProduceError> {
     Ok(())
 }
 
+fn mlx_toolchain_preflight() -> Result<serde_json::Value, ProduceError> {
+    let xcode = command_stdout(Path::new("xcodebuild"), &["-version"])?;
+    let metal = command_stdout(Path::new("xcrun"), &["-find", "metal"])
+        .map_err(|e| ProduceError::new(format!("MLX requires the Xcode Metal toolchain; install it with xcodebuild -downloadComponent MetalToolchain: {e}")))?;
+    let metal_version = command_stdout(Path::new(&metal), &["--version"])
+        .map_err(|e| ProduceError::new(format!("MLX Metal toolchain is unavailable: {e}")))?;
+    let swift_version = command_stdout(Path::new("xcrun"), &["swiftc", "--version"])?;
+    Ok(
+        serde_json::json!({"xcodebuild_version":xcode, "metal_compiler":metal, "metal_version":metal_version, "swift_version":swift_version}),
+    )
+}
+
+fn build_mlx_helper(
+    checkout: &Path,
+    toolchain: &serde_json::Value,
+    commit: &str,
+) -> Result<(), ProduceError> {
+    use std::io::{BufRead, Write};
+    use std::process::Stdio;
+    use std::sync::Mutex;
+    let helper = checkout.join("core/crates/solstone-core-local/mlx-helper");
+    let expected_lock = fs::read(helper.join("Package.resolved"))?;
+    let notice_lock =
+        fs::read(checkout.join("core/distribution/licenses/mlx-helper/Package.resolved"))?;
+    if expected_lock != notice_lock {
+        return Err(ProduceError::new(
+            "MLX Swift lock disagrees with shipped notice revisions",
+        ));
+    }
+    let log_path = helper.join("build-release.log");
+    let log = Mutex::new(File::create(&log_path)?);
+    let mut child = Command::new("make")
+        .arg("mlx-helper")
+        .current_dir(checkout)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()?;
+    let stdout = child.stdout.take().expect("piped stdout");
+    let stderr = child.stderr.take().expect("piped stderr");
+    std::thread::scope(|scope| -> Result<(), ProduceError> {
+        let copy = |stream: &mut dyn io::Read| -> io::Result<()> {
+            for line in io::BufReader::new(stream).lines() {
+                let line = line?;
+                println!("{line}");
+                writeln!(log.lock().expect("MLX build log lock"), "{line}")?;
+            }
+            Ok(())
+        };
+        let out = scope.spawn(move || copy(&mut { stdout }));
+        let err = scope.spawn(move || copy(&mut { stderr }));
+        out.join()
+            .map_err(|_| ProduceError::new("MLX stdout reader failed"))??;
+        err.join()
+            .map_err(|_| ProduceError::new("MLX stderr reader failed"))??;
+        Ok(())
+    })?;
+    if !child.wait()?.success() {
+        return Err(ProduceError::new(format!(
+            "MLX Release build failed; see {}",
+            log_path.display()
+        )));
+    }
+    let build_log = fs::read_to_string(&log_path)?;
+    require_uninstrumented_mlx(&build_log)?;
+    let expected: serde_json::Value =
+        serde_json::from_slice(&expected_lock).map_err(|e| ProduceError::new(e.to_string()))?;
+    let state: serde_json::Value = serde_json::from_slice(&fs::read(
+        helper.join("DerivedData/SourcePackages/workspace-state.json"),
+    )?)
+    .map_err(|e| ProduceError::new(e.to_string()))?;
+    let dependencies = state["object"]["dependencies"]
+        .as_array()
+        .ok_or_else(|| ProduceError::new("MLX resolved dependency state missing"))?;
+    let mut observed = BTreeMap::new();
+    for dependency in dependencies {
+        let name = dependency["packageRef"]["identity"]
+            .as_str()
+            .ok_or_else(|| ProduceError::new("MLX package identity missing"))?;
+        let subpath = dependency["subpath"]
+            .as_str()
+            .ok_or_else(|| ProduceError::new("MLX checkout path missing"))?;
+        let revision = git_stdout(
+            &helper
+                .join("DerivedData/SourcePackages/checkouts")
+                .join(subpath),
+            &["rev-parse", "HEAD"],
+        )?;
+        if dependency["state"]["checkoutState"]["revision"] != revision {
+            return Err(ProduceError::new(
+                "MLX checkout differs from resolved build graph",
+            ));
+        }
+        if observed.insert(name.to_owned(), revision).is_some() {
+            return Err(ProduceError::new("duplicate MLX package identity"));
+        }
+    }
+    require_mlx_dependency_graph(&expected, &observed)?;
+    if fs::read(helper.join("Package.resolved"))? != expected_lock {
+        return Err(ProduceError::new(
+            "MLX build changed the committed Swift lock",
+        ));
+    }
+    let products = helper.join("DerivedData/Build/Products/Release");
+    let runtime_libraries = command_stdout(
+        Path::new("xcrun"),
+        &[
+            "swift-stdlib-tool",
+            "--print",
+            "--scan-executable",
+            &products.join("mlx-helper").to_string_lossy(),
+            "--platform",
+            "macosx",
+        ],
+    )?;
+    let runtime_dir = products.join("swift-runtime");
+    fs::create_dir_all(&runtime_dir)?;
+    let mut swift_runtime = Vec::new();
+    for library in runtime_libraries.lines().filter(|line| !line.is_empty()) {
+        let source = Path::new(library);
+        let name = source
+            .file_name()
+            .and_then(|name| name.to_str())
+            .ok_or_else(|| ProduceError::new("Swift runtime library name missing"))?;
+        if name != "libswiftCompatibilitySpan.dylib" {
+            return Err(ProduceError::new(format!(
+                "MLX requires an undeclared Swift runtime library: {name}; update the distribution inventory"
+            )));
+        }
+        let bytes = fs::read(source)?;
+        let destination = runtime_dir.join(name);
+        if crate::macho::parse_macho(&bytes).is_ok() {
+            fs::write(&destination, &bytes)?;
+        } else {
+            command_stdout(
+                Path::new("xcrun"),
+                &[
+                    "lipo",
+                    library,
+                    "-thin",
+                    "arm64",
+                    "-output",
+                    &destination.to_string_lossy(),
+                ],
+            )?;
+        }
+        let staged = fs::read(&destination)?;
+        let info =
+            crate::macho::parse_macho(&staged).map_err(|e| ProduceError::new(e.to_string()))?;
+        if info.cputype != crate::macho::cputype_arm64() {
+            return Err(ProduceError::new("MLX Swift runtime is not arm64"));
+        }
+        swift_runtime.push(serde_json::json!({"filename":name,"toolchain_source":library,"toolchain_source_sha256":sha256_hex(&bytes),"sha256":sha256_hex(&staged)}));
+    }
+    let provenance = serde_json::json!({"source_commit":commit, "configuration":"Release", "instrumented":false,
+        "toolchain":toolchain, "swift_package_resolved_sha256":sha256_hex(&expected_lock), "swift_pins":expected["pins"],
+        "swift_runtime":swift_runtime, "build_log_sha256":sha256_hex(build_log.as_bytes())});
+    fs::write(
+        helper.join("DerivedData/Build/Products/Release/mlx-helper-build.json"),
+        serde_json::to_vec_pretty(&provenance).map_err(|e| ProduceError::new(e.to_string()))?,
+    )?;
+    Ok(())
+}
+
+fn require_mlx_dependency_graph(
+    lock: &serde_json::Value,
+    observed: &BTreeMap<String, String>,
+) -> Result<(), ProduceError> {
+    let pins = lock["pins"]
+        .as_array()
+        .ok_or_else(|| ProduceError::new("MLX dependency pins missing"))?;
+    if pins.len() != observed.len()
+        || pins.iter().any(|pin| {
+            pin["identity"]
+                .as_str()
+                .and_then(|id| observed.get(id))
+                .map(String::as_str)
+                != pin["state"]["revision"].as_str()
+        })
+    {
+        return Err(ProduceError::new(
+            "MLX build resolved different Swift dependencies from the committed notice pins",
+        ));
+    }
+    Ok(())
+}
+
+fn require_uninstrumented_mlx(log: &str) -> Result<(), ProduceError> {
+    let flags = [
+        "-profile-generate",
+        "-profile-coverage-mapping",
+        "-fprofile-instr-generate",
+        "-fcoverage-mapping",
+        "-fprofile-generate",
+        "-fprofile-arcs",
+        "-ftest-coverage",
+    ];
+    if let Some(flag) = flags.iter().find(|flag| log.contains(**flag)) {
+        return Err(ProduceError::new(format!(
+            "MLX Release build is instrumented: {flag}"
+        )));
+    }
+    Ok(())
+}
+
 fn command_stdout(bin: &Path, args: &[&str]) -> Result<String, ProduceError> {
     let output = Command::new(bin)
         .args(args)
@@ -2436,6 +2650,30 @@ mod tests {
 
     use crate::archive_taxonomy::ContainerKind;
     use crate::inventory::{ArchiveExecutable, ArchiveSlot, PinnedInput};
+
+    #[test]
+    fn mlx_release_refuses_instrumentation_and_changed_dependency_graphs() {
+        assert!(require_uninstrumented_mlx("ENABLE_CODE_COVERAGE=NO swiftc -O").is_ok());
+        for flag in [
+            "-profile-generate",
+            "-profile-coverage-mapping",
+            "-fprofile-instr-generate",
+            "-fcoverage-mapping",
+        ] {
+            assert!(require_uninstrumented_mlx(&format!("clang {flag}")).is_err());
+        }
+        let lock = serde_json::json!({"pins":[{"identity":"dependency", "state":{"revision":"fixture-revision"}}]});
+        let observed = BTreeMap::from([("dependency".into(), "fixture-revision".into())]);
+        assert!(require_mlx_dependency_graph(&lock, &observed).is_ok());
+        assert!(require_mlx_dependency_graph(&lock, &BTreeMap::new()).is_err());
+        assert!(
+            require_mlx_dependency_graph(
+                &lock,
+                &BTreeMap::from([("dependency".into(), "different-revision".into())])
+            )
+            .is_err()
+        );
+    }
 
     /// Produce stages from a fresh per-run worktree, but `acquire catalog-inputs`
     /// writes restic and rclone under the source repository's ignored

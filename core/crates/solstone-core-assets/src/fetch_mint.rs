@@ -279,6 +279,34 @@ fn mint_runtime_fetch_impl(
 mod tests {
     use super::*;
     #[cfg(feature = "runtime-fetch-test")]
+    #[test]
+    fn mlx_model_mints_only_on_macos() {
+        let model: Vec<_> = catalog()
+            .iter()
+            .filter(|a| a.unit == "local-model-mlx")
+            .collect();
+        assert!(!model.is_empty());
+        for target in [
+            "linux-x86_64",
+            "linux-aarch64",
+            "windows-x86_64",
+            "macos-arm64",
+        ] {
+            for row in &model {
+                let query = RuntimeFetchQuery {
+                    unit: Some(row.unit),
+                    origin_key: Some(row.origin_key),
+                    ..Default::default()
+                };
+                assert_eq!(
+                    mint_runtime_fetch_for_target(target, &query).is_ok(),
+                    target == "macos-arm64"
+                );
+            }
+        }
+    }
+
+    #[cfg(feature = "runtime-fetch-test")]
     use crate::RuntimeFetch;
 
     #[test]

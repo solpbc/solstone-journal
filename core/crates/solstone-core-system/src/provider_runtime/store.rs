@@ -1111,13 +1111,22 @@ impl RuntimeStore for FileRuntimeStore {
             {
                 return Err(RuntimeStoreError::Conflict);
             }
+            // A pending truth/probe can replace the publication fence after
+            // cleanup completes. Keep the owner captured while stopping.
+            let stopping_owner = self.cleanup_owner_for(self.last_fence.as_ref());
             let fence = self.capture_owner_fence(state);
             let ready_process = self.ready_process_for(fence.as_ref());
-            let cleanup_owner = self.cleanup_owner_for(fence.as_ref());
+            let cleanup_owner = if state.latest_phase == RuntimePhase::Stopped {
+                stopping_owner.or_else(|| self.cleanup_owner_for(fence.as_ref()))
+            } else {
+                self.cleanup_owner_for(fence.as_ref())
+            };
             if state.latest_phase == RuntimePhase::Stopped
                 && let Some(owner) = cleanup_owner.as_ref()
+                && let Err(error) = self.clear_port_if_owned(&current, owner)
             {
-                self.clear_port_if_owned(&current, owner)?;
+                self.last_fence = Some(owner.fence.clone());
+                return Err(error);
             }
             let process = match state.latest_phase {
                 RuntimePhase::Ready | RuntimePhase::ReadyProofUnavailable => ready_process.clone(),
@@ -2174,6 +2183,45 @@ mod tests {
         stopped.pending_stop_request = None;
         stopped.latest_phase = RuntimePhase::Stopped;
         (journal, store, stopped)
+    }
+
+    #[test]
+    fn stopped_cleanup_clears_owned_port_with_an_unfinished_truth_probe() {
+        for probe in [false, true] {
+            let (_journal, mut store, mut stopped) = prepare_for_clear();
+            if probe {
+                stopped.probe = Some(InFlight {
+                    fence: fence(2),
+                    result: None,
+                });
+            } else {
+                stopped.truth = Some(InFlight {
+                    fence: fence(2),
+                    result: None,
+                });
+            }
+            store.publish_state(&stopped).unwrap();
+            assert!(!store.port_path().exists());
+        }
+    }
+
+    #[test]
+    fn stopped_cleanup_retains_its_owner_after_a_port_read_failure() {
+        let (_journal, mut store, mut stopped) = prepare_for_clear();
+        stopped.truth = Some(InFlight {
+            fence: fence(2),
+            result: None,
+        });
+        fs::remove_file(store.port_path()).unwrap();
+        fs::create_dir(store.port_path()).unwrap();
+        assert_eq!(
+            store.publish_state(&stopped),
+            Err(RuntimeStoreError::Unavailable)
+        );
+        fs::remove_dir(store.port_path()).unwrap();
+        fs::write(store.port_path(), "4312").unwrap();
+        store.publish_state(&stopped).unwrap();
+        assert!(!store.port_path().exists());
     }
 
     #[test]
