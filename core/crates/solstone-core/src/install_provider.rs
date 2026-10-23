@@ -13,7 +13,7 @@ use solstone_core_cli::InstallProviderOptions;
 use solstone_core_journal_config::read_journal_config;
 use solstone_core_local::install::{
     DispatchError, InstallVerb, dispatch, fingerprint, fit_report, install_parakeet_with_lease,
-    lease, local_backend_choice, metal_candidate, pins, readiness, status,
+    lease, local_backend_choice, metal_candidate, mlx_candidate, pins, readiness, status,
 };
 use solstone_core_local::{
     LocalEndpointResolution, MemorySource, discrete_hardware_gpu_count, is_discrete,
@@ -37,6 +37,7 @@ const WINDOWS_PARAKEET_BUNDLED: &str = "parakeet.cpp and its speech model come w
 const MAC_PARAKEET_UNAVAILABLE: &str =
     "parakeet.cpp can't run on a mac. a mac transcribes with its Core ML model instead.";
 const WINDOWS_LOCAL_DOWNLOAD_DISCLOSURE: &str = "local thinking downloads the model and vision projector (Apache-2.0) from updates.solstone.app when needed. the runtime is included with the journal. see THIRD_PARTY_NOTICES.md.";
+const MLX_LOCAL_DOWNLOAD_DISCLOSURE: &str = "local thinking downloads the model (Apache-2.0) from updates.solstone.app. the MLX runtime is included with the journal. see THIRD_PARTY_NOTICES.md.";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct InstallProviderOutcome {
@@ -418,6 +419,13 @@ where
     let readiness = readiness_provider(&journal);
     let mut stderr = vec![if os_name.eq_ignore_ascii_case("windows") {
         WINDOWS_LOCAL_DOWNLOAD_DISCLOSURE.to_owned()
+    } else if os_name == "darwin"
+        && matches!(
+            mlx_candidate::read_macos_local_backend_env(),
+            Ok(mlx_candidate::MacosLocalBackend::Mlx)
+        )
+    {
+        MLX_LOCAL_DOWNLOAD_DISCLOSURE.to_owned()
     } else {
         LOCAL_DOWNLOAD_DISCLOSURE.to_owned()
     }];
@@ -940,6 +948,15 @@ fn readiness_for(journal: &Path, provider_is_local: bool, os_name: &str, arch: &
         return readiness::inspect_parakeet(input);
     }
     if os_name == "darwin" && arch == "arm64" {
+        match mlx_candidate::read_macos_local_backend_env() {
+            Ok(mlx_candidate::MacosLocalBackend::Mlx) => {
+                return mlx_candidate::inspect_verified_default(journal);
+            }
+            Ok(mlx_candidate::MacosLocalBackend::Metal) => {}
+            Err(error) => {
+                return json!({"provider":"local", "ready":false, "status":"proof-unavailable", "reason_code":"local_probe_failed", "detail":error.to_string()});
+            }
+        }
         input.insert("backend".to_owned(), Value::String("metal".to_owned()));
         return metal_candidate::inspect_with(&input, "aarch64-apple-darwin").unwrap_or_else(
             |error| {

@@ -230,6 +230,63 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
+## MLX (macos local inference helper)
+
+macos packages include `mlx-helper` and its `mlx-swift_Cmlx.bundle` Metal
+resources. The helper compiles the Swift packages below at the revisions
+listed in its accompanying `Package.resolved`.
+
+| package | version or revision |
+|---|---|
+| [async-http-client](https://github.com/swift-server/async-http-client/tree/4c005f955e83f888d5616e579717a36d2dfc6301) | `1.36.2` |
+| [eventsource](https://github.com/mattt/EventSource/tree/86b5096ac59ab46e66bd1f6377c604bc1dab0bc2) | `1.5.1` |
+| [hummingbird](https://github.com/hummingbird-project/hummingbird/tree/e12178302dacb8226fc78157f89078a59c75dd98) | `2.28.0` |
+| [mlx-swift](https://github.com/ml-explore/mlx-swift/tree/19601207e9a0de51e03ee6ec0c3c5f3784275075) | `0.32.3` |
+| [mlx-swift-lm](https://github.com/ml-explore/mlx-swift-lm/tree/48114eedf3c3d4a682a6b1d644cc5af5c2945d10) | `48114eedf3c3` |
+| [swift-algorithms](https://github.com/apple/swift-algorithms/tree/87e50f483c54e6efd60e885f7f5aa946cee68023) | `1.2.1` |
+| [swift-asn1](https://github.com/apple/swift-asn1/tree/3b6410f7dee09eb33cdd26260c5fd47fda19b0e2) | `1.7.3` |
+| [swift-async-algorithms](https://github.com/apple/swift-async-algorithms/tree/13713a4ffdee8abd929f92568ee9462a46ae26e0) | `1.1.7` |
+| [swift-atomics](https://github.com/apple/swift-atomics/tree/0442cb5a3f98ab802acb777929fdb446bda11a34) | `1.3.1` |
+| [swift-certificates](https://github.com/apple/swift-certificates/tree/ff86b924ead66f853b8baf91f3c41926a8f36177) | `1.21.0` |
+| [swift-collections](https://github.com/apple/swift-collections/tree/35a1edcb8ebd2bfe251d587f0b69e62af28f508c) | `1.7.3` |
+| [swift-configuration](https://github.com/apple/swift-configuration/tree/4e916072eb34f3c136ae64bd2859d6072cdb1b6e) | `1.3.0` |
+| [swift-crypto](https://github.com/apple/swift-crypto/tree/da9d28d69ebe3894b18376c8f2395c2f37b8448f) | `4.5.2` |
+| [swift-distributed-tracing](https://github.com/apple/swift-distributed-tracing/tree/297b5b9c82a5631e3199ce3ec0993a3cfb0fbb84) | `1.7.2` |
+| [swift-http-structured-headers](https://github.com/apple/swift-http-structured-headers/tree/933538faa42c432d385f02e07df0ace7c5ecfc47) | `1.7.0` |
+| [swift-http-types](https://github.com/apple/swift-http-types/tree/bff4b6903cdc99dda49649dd52f46c11cfd3ed50) | `1.8.0` |
+| [swift-huggingface](https://github.com/huggingface/swift-huggingface/tree/c30143a4616f3fa994ee3ab3e3464f752845c07c) | `1.0.0` |
+| [swift-jinja](https://github.com/huggingface/swift-jinja/tree/1e4d0dc69f7ec1277131fb3853808229c5991825) | `2.5.2` |
+| [swift-log](https://github.com/apple/swift-log/tree/c9c6bb9d275ec0d95c3ad16391f3f045dc623104) | `1.16.2` |
+| [swift-metrics](https://github.com/apple/swift-metrics/tree/9467f9cc3c32b4386fad1ecc4618328887ef5758) | `2.12.0` |
+| [swift-nio](https://github.com/apple/swift-nio/tree/6db9d9abd92ad7399b8a564cafbb87d3507245fa) | `2.104.0` |
+| [swift-nio-extras](https://github.com/apple/swift-nio-extras/tree/41449336c8ecfadac6b4b5be75f9c3c306e61ced) | `1.35.1` |
+| [swift-nio-http2](https://github.com/apple/swift-nio-http2/tree/0f3e54e29c944c2e835ad52159da7d9e1c94ac69) | `1.46.0` |
+| [swift-nio-ssl](https://github.com/apple/swift-nio-ssl/tree/322f3c2a4a21df31c84ca416bf65ee5e9059e440) | `2.37.5` |
+| [swift-nio-transport-services](https://github.com/apple/swift-nio-transport-services/tree/67787bb645a5e67d2edcdfbe48a216cc549222d5) | `1.28.0` |
+| [swift-numerics](https://github.com/apple/swift-numerics/tree/0c0290ff6b24942dadb83a929ffaaa1481df04a2) | `1.1.1` |
+| [swift-service-context](https://github.com/apple/swift-service-context/tree/853ba3d9ce78851b9cc20108e8bd4f13f7fa546c) | `1.5.1` |
+| [swift-service-lifecycle](https://github.com/swift-server/swift-service-lifecycle/tree/a18ee16b8039866fd919bdb4e8e906882d4ecc75) | `2.13.0` |
+| [swift-syntax](https://github.com/swiftlang/swift-syntax/tree/79e4b74a295b6eb74a8b585e3a39d29e70c1dbd1) | `603.0.2` |
+| [swift-system](https://github.com/apple/swift-system/tree/869129b7bf4ecc57b97d0193ad29690ca2134750) | `1.8.1` |
+| [swift-transformers](https://github.com/huggingface/swift-transformers/tree/48473106a93b2d8dfb114b82f0628ebbb71734e7) | `1.3.5` |
+| [yyjson](https://github.com/ibireme/yyjson/tree/8b4a38dc994a110abaec8a400615567bd996105f) | `0.12.0` |
+
+`mlx-swift`, `mlx-swift-lm`, EventSource and yyjson use the MIT license. Hummingbird and
+the other Swift packages above use Apache-2.0; Swift packages may include
+the Swift runtime library exception in their license text.
+
+The helper includes a modified guided-generation loop from `mlx-swift-lm`
+under its MIT license. The changes batch forced tokens, preserve sampling
+controls and apply packed grammar masks. MLX also includes fmt and
+nlohmann/json (MIT), and Apple's metal-cpp (Apache-2.0). XGrammar is
+Apache-2.0. SwiftNIO and SwiftCrypto include their own dependency notices;
+the BoringSSL license texts accompany those packages.
+
+macos packages carry the license and notice texts under
+`share/licenses/mlx-helper/`, preserving their package and source paths.
+The modified loop's MIT notice is in `guided-generation/LICENSE` there.
+The model's separate attribution is in the local-model section below.
+
 ## FluidAudio (macos speech helper)
 
 The macos journal's speech helper (`bin/parakeet-helper`) compiles in

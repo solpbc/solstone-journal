@@ -571,7 +571,7 @@ fn observe_truth(
         config,
         follow,
         mlx_candidate::read_macos_local_backend_env,
-        mlx_candidate::inspect_present_default,
+        || mlx_candidate::inspect_present_default(&config.journal_path),
     )
 }
 
@@ -864,7 +864,15 @@ fn observe_truth_with_mlx(
         LocalHost::Darwin => {
             match select_mlx() {
                 Ok(mlx_candidate::MacosLocalBackend::Mlx) => {
-                    return observe_mlx_readiness(shared, inspect_mlx());
+                    let readiness = inspect_mlx();
+                    if let Some(follow) = follow {
+                        follow.observe(
+                            &config.journal_path,
+                            config_present.then_some(&journal_config),
+                            &readiness,
+                        );
+                    }
+                    return observe_mlx_readiness(shared, readiness);
                 }
                 Ok(mlx_candidate::MacosLocalBackend::Metal) => {}
                 Err(error) => {
@@ -1074,7 +1082,7 @@ fn observe_truth_with_mlx(
     )
 }
 
-// Selected MLX is local-only here. It never reaches the download-follow authority.
+// Selection and download admission happen before building the MLX launch request.
 fn observe_mlx_readiness(
     shared: &LocalRuntimeShared,
     readiness: Value,
@@ -1359,7 +1367,7 @@ fn verify_launch_artifacts(
                 plan,
             );
         }
-        return mlx_readiness_matches_plan(&mlx_candidate::inspect_verified_default(), plan);
+        return mlx_readiness_matches_plan(&mlx_candidate::inspect_verified_default(journal), plan);
     }
     let mut input = Map::from_iter([
         (

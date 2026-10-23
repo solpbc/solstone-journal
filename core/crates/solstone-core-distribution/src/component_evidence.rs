@@ -433,6 +433,21 @@ fn bundled_identity(
     if id == "screen-ocr" {
         return screen_ocr_identity(target);
     }
+    if id == "mlx-helper" {
+        let lock = std::fs::read(
+            checkout.join("core/crates/solstone-core-local/mlx-helper/Package.resolved"),
+        )
+        .map_err(|e| EvidenceError::new(e.to_string()))?;
+        let digest = crate::digest::sha256_hex(&lock);
+        return Ok((
+            digest.clone(),
+            "https://github.com/solpbc/solstone-journal".into(),
+            vec![InputRef {
+                name: "mlx-helper/Package.resolved".into(),
+                sha256: digest,
+            }],
+        ));
+    }
     if target == "windows-x86_64" {
         match id {
             "ced-engine" => {
@@ -919,6 +934,9 @@ pub fn name_receipt_inputs(
         };
         let dest = entry_dest_str(entry);
         let inputs = match entry {
+            crate::inventory::Entry::Copy { .. } if id == "mlx-helper" => {
+                bundled_identity(&repo_root, target, id)?.2
+            }
             crate::inventory::Entry::ModelAsset {
                 source,
                 digest_source,
@@ -1151,7 +1169,14 @@ pub fn render_runtime_rows(
                 .iter()
                 .find(|a| a.origin_key == first.origin_key())
                 .expect("first artifact in catalog");
-            let source = catalog_source(first_artifact, &id, &repo_root)?;
+            let source_artifact = if id == "local-model-mlx" {
+                cat.iter()
+                    .find(|a| a.unit == "local-model-mlx" && a.filename == "model.safetensors")
+                    .ok_or_else(|| EvidenceError::new("MLX weights missing from catalog"))?
+            } else {
+                first_artifact
+            };
+            let source = catalog_source(source_artifact, &id, &repo_root)?;
             (ver, source, inputs)
         };
 
@@ -1304,13 +1329,34 @@ pub fn render_posix_evidence(
             return Err(EvidenceError::new(format!("digest-disagreement: {path}")));
         }
 
-        let (row_version, row_source, row_inputs) = match entry {
+        let (mut row_version, mut row_source, row_inputs) = match entry {
             crate::inventory::Entry::PinnedMembers { input, .. }
             | crate::inventory::Entry::PinnedNative { input, .. } => {
                 pinned_identity(input, id, request.checkout)?
             }
             _ => bundled_identity(request.checkout, request.target, id)?,
         };
+
+        if id == "mlx-helper" {
+            let build_path = request.stage.join("share/provenance/mlx-helper/build.json");
+            let build: serde_json::Value = serde_json::from_slice(
+                &std::fs::read(&build_path)
+                    .map_err(|e| EvidenceError::new(format!("MLX build provenance: {e}")))?,
+            )
+            .map_err(|e| EvidenceError::new(e.to_string()))?;
+            if build["source_commit"] != parsed["source_commit"]
+                || build["swift_package_resolved_sha256"] != row_inputs[0].sha256
+            {
+                return Err(EvidenceError::new(
+                    "MLX build source or dependency identity disagrees with release",
+                ));
+            }
+            row_version = build["source_commit"]
+                .as_str()
+                .ok_or_else(|| EvidenceError::new("MLX source commit missing"))?
+                .into();
+            row_source = format!("https://github.com/solpbc/solstone-journal/tree/{row_version}");
+        }
 
         let pre_signing = request.pre_signing.get(path).cloned();
 
@@ -2157,7 +2203,11 @@ fn entry_dest_matches(entry: &crate::inventory::Entry, path: &str) -> bool {
         crate::inventory::Entry::WindowsNative { dest, .. } => dest == path,
         crate::inventory::Entry::Bin { dest, .. } => dest == path,
         crate::inventory::Entry::Launcher { dest, .. } => dest == path,
-        crate::inventory::Entry::Copy { dest, .. } => dest == path,
+        crate::inventory::Entry::Copy { dest, .. } => {
+            dest == path
+                || (dest == "bin/mlx-helper"
+                    && path == "bin/mlx-swift_Cmlx.bundle/Contents/_CodeSignature/CodeResources")
+        }
         crate::inventory::Entry::PinnedNative { dest, .. } => dest == path,
         crate::inventory::Entry::PinnedMembers { staged, .. } => {
             staged.iter().any(|s| s.dest == path)
@@ -2249,7 +2299,10 @@ mod tests {
                 }
                 if r.id != "nvattest" {
                     for inp in &r.inputs {
-                        if let Some(art) = cat.iter().find(|a| a.filename == inp.name) {
+                        if let Some(art) = cat.iter().find(|a| {
+                            a.filename == inp.name
+                                && solstone_core_assets::unit_id(a.unit) == Some(r.id.as_str())
+                        }) {
                             assert_eq!(
                                 r.version, art.version,
                                 "version check for {} in {target}",
