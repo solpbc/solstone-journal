@@ -778,7 +778,7 @@ async function main() {
     const members = Array.from({length: 60}, (_, i) => pair(i));
     let batch = 0;
     const {context, log} = tidyHarness((url, body) => {
-      if (url.includes('tidy-up')) return {id_shaped: {count: 0, members: []}, duplicates: {count: 40, members: members.slice(20), items: []}, damage: {count: 0, paths: []}};
+      if (url.includes('tidy-up')) return {id_shaped: {count: 0, members: []}, duplicates: {count: 59, members: members.slice(1), items: []}, damage: {count: 0, paths: []}};
       batch += 1;
       if (batch === 2) throw new TypeError('Failed to fetch');
       return {results: body.items.map(() => ({status: 'accepted'}))};
@@ -786,8 +786,8 @@ async function main() {
     context.tidyState.data = {duplicates: {members}};
     await context.runDuplicateMerge({kept: members, leaving: []});
     const accepts = log.requests.filter(r => r.url.endsWith('accept-batch'));
-    check(JSON.stringify(accepts.map(r => r.body.items.length)) === '[20,20]', 'merge sends 20 items per request and stops after a request with no response');
-    check(context.tidyState.dupStatus === 'merged 20 of 60 pairs. 40 couldn\'t be merged.', 'pairs with no answer are decided by the re-read');
+    check(JSON.stringify(accepts.map(r => r.body.items.length)) === '[1,1]', 'merge sends one item per request and stops after a request with no response');
+    check(context.tidyState.dupStatus === 'merged 1 of 60 pairs. 59 couldn\'t be merged.', 'pairs with no answer are decided by the re-read');
   }
 
   {
