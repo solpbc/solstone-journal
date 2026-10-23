@@ -468,7 +468,7 @@ fn failure_readiness(reason_code: &str, detail: &str) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::install::{fingerprint, manifest, pins};
+    use crate::install::{fingerprint, pins};
 
     #[test]
     fn test_select_macos_local_backend_matrix() {
@@ -516,6 +516,7 @@ mod tests {
     #[cfg(all(unix, feature = "full-tests"))]
     #[test]
     fn test_mlx_candidate_full_lifecycle_and_rejections() {
+        use crate::install::manifest;
         use std::os::unix::fs::PermissionsExt;
 
         let temp_dir = tempfile::Builder::new()

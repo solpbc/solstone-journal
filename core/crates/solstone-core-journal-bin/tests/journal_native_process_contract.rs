@@ -1573,12 +1573,12 @@ fn native_setup_full_run_never_reaches_a_poisoned_interpreter() {
     let harness = Harness::new();
     let context = harness.context();
     prove_poison_interpreters_live(&context);
-    let fixture = locate_workspace_binary("solstone-core-journal-bin", "setup-fixture-journal");
+    let fixture = Path::new(env!("CARGO_BIN_EXE_setup-fixture-journal"));
     let journal = context.sibling_dir.join("journal");
     let solstone = context.sibling_dir.join("solstone");
     fs::remove_file(&journal).expect("replace dispatcher journal link");
-    copy_executable(&fixture, &journal);
-    copy_executable(&fixture, &solstone);
+    std::os::unix::fs::symlink(fixture, &journal).expect("link setup fixture as journal");
+    std::os::unix::fs::symlink(fixture, &solstone).expect("link setup fixture as solstone");
     let run = |path: &Path, journal_path: &Path| {
         let _ = fs::remove_file(context.poison_marker);
         let output = Command::new(&journal)
