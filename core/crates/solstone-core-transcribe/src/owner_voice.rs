@@ -101,7 +101,9 @@ impl Window {
 }
 
 fn sample_index(seconds: f64, len: usize) -> usize {
-    ((seconds * SAMPLE_RATE as f64) as usize).min(len)
+    // VAD endpoints are sample coordinates carried through seconds; truncation can lose
+    // one sample on the round trip and incorrectly reject an exact 0.3 s window.
+    ((seconds * SAMPLE_RATE as f64).round() as usize).min(len)
 }
 
 /// The first VAD's speech as half-open sample ranges.
@@ -557,6 +559,37 @@ mod tests {
             }]
         );
         assert!(scored_windows(len, &speech, |_| false).is_empty());
+    }
+
+    #[test]
+    fn canonical_vad_endpoints_round_trip_to_the_original_samples() {
+        let len = 300 * SAMPLE_RATE;
+        for sample in (0..=len).step_by(160) {
+            assert_eq!(
+                sample_index(sample as f64 / SAMPLE_RATE as f64, len),
+                sample
+            );
+        }
+        assert_eq!(sample_index(-1.0, len), 0);
+        assert_eq!(sample_index(301.0, len), len);
+    }
+
+    #[test]
+    fn exactly_three_tenths_of_vad_speech_admits_the_window() {
+        let len = 18 * SAMPLE_RATE;
+        // The canonical 260960/16000 endpoint multiplies back to 260959.99999999997.
+        let ranges = speech_ranges(
+            &vad(vec![(256_160.0 / 16_000.0, 260_960.0 / 16_000.0)]),
+            len,
+        );
+        assert_eq!(
+            scored_windows(len, &ranges, |_| true),
+            vec![Window {
+                start: 16 * SAMPLE_RATE,
+                end: len,
+            }]
+        );
+        assert_eq!(ranges, vec![(256_160, 260_960)]);
     }
 
     #[test]

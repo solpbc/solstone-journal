@@ -57,7 +57,7 @@ Backend-specific policy:
 | Parakeet server unreachable, warming, or **dead mid-request** | Defer (`69`) | The server is a supervised process. It comes back. |
 | Confidential lane refuses cloud egress | Defer (`69`) | The lane may permit a local backend later; the audio must not be lost. |
 | Confidential backend already dispatched, then lane inactive or audio disabled | Defer (`69`) | The selected backend can no longer carry audio at dispatch time. The input is preserved for a later local or confidential retry. |
-| Confidential backend selected and decoded audio exceeds the hosted duration cap | Defer (`69`) | No fallback is attempted; the input stays on disk for a later retry after the provider limit is addressed. |
+| Confidential backend selected and the encoded request exceeds the byte budget | Defer (`69`) | No fallback is attempted; the input stays on disk for a later retry after the provider limit is addressed. |
 | Stranded confidential channel before dispatch and local RAM below floor | Fail (`1`) | `resolve_default_backend` surfaces the local-STT requirement before `_process_one`; no JSONL is written, input audio stays on disk, and the segment remains `incomplete`. |
 | Confidential hosted STT 400/413 or bad 200 contract | Defer (`69`) | Hosted STT is operated infrastructure. A 400 can be an engine-side regression, and owner audio is irreplaceable; preserving it for a post-fix drain is safer than failing permanently. |
 | Confidential hosted STT unreachable, backpressured, or unexpected status | Defer (`69`) | These are service-side or lane-side conditions. The deferred event carries the reason so health surfaces can show the condition without leaking content. |
@@ -101,7 +101,7 @@ Every deferred and failed event carries a machine-readable `reason`.
 | `confidential_egress_blocked` | `process_audio` | The confidential lane refused to send audio to a cloud backend. |
 | `confidential_lane_inactive` | confidential STT gate or backend | Confidential STT was selected, but the confidential lane was no longer active. |
 | `confidential_audio_disabled` | confidential STT gate | Confidential STT was selected under the lane, but `transcribe.confidential_audio` was off. |
-| `confidential_audio_too_long` | `process_audio` | Confidential STT was selected, but the decoded input exceeded the hosted audio duration cap. |
+| `confidential_audio_too_long` | `process_audio` | Confidential STT was selected, but the encoded WAV plus envelope allowance exceeded the request byte budget. |
 | `attestation_unreachable` | confidential probe status | Confidential attestation could not reach the gateway. Reused from the confidential lane health vocabulary. |
 | `attestation_failed` | confidential probe status | Confidential attestation completed but did not verify. Reused from the confidential lane health vocabulary. |
 | `attestation_not_yet_verified` | confidential probe status | Confidential provenance exists, but this process has no verified attestation session yet. Reused from the confidential lane health vocabulary. |
@@ -143,7 +143,7 @@ One event name, four outcomes. Every attempt emits exactly one event.
 | `device` | resolved placement (`cpu` / `gpu`) when a placement record exists; configured device otherwise | whenever known (see below) |
 | `model` | model filename | success, and failures after the backend reported it |
 | `audio_seconds` | original decoded length, 1 dp | whenever decoded |
-| `reduced_seconds` | length after silence-trimming, 1 dp | when reduction ran |
+| `reduced_seconds` | Historical length after silence trimming, 1 dp | Older events that used reduction |
 | `rtfx` | `audio_seconds / (asr_ms / 1000)`, 2 dp | success, when ASR took ≥ 1 ms |
 | `peak_rss_mib` | peak RSS of this process, MiB | always |
 | `timings` | nested `{<stage>_ms: int}` | always (only the stages that ran) |
@@ -160,18 +160,23 @@ One event name, four outcomes. Every attempt emits exactly one event.
 Only stages that actually ran appear. A stage split across several calls (`write` covers
 the jsonl and the npz) reports its total.
 
+Recognition receives the complete admitted buffer, with the owner mask applied when
+owner-only mode is active. VAD ranges do not trim recognition input. Confidential
+requests must fit the existing byte budget; an oversized request is deferred (`69`) with its raw
+input retained. Current processing omits the historical reduction fields below.
+
 | Key | Stage |
 |-----|-------|
 | `queue_wait_ms` | Enqueue-to-spawn latency, so it *includes* any memory-gate throttle wait. Measured by `sense.py` and passed in via `SOL_QUEUE_WAIT_MS`; the handler cannot compute it itself. Absent when not supplied. |
 | `decode_ms` | `load_audio` |
 | `vad_ms` | `run_vad` |
-| `reduce_ms` | `reduce_audio` (absent when reduction was skipped) |
+| `reduce_ms` | Historical silence-reduction time; omitted by current processing |
 | `asr_ms` | `stt_transcribe` — the STT call itself |
 | `speakers_analyze_ms` | native helper request construction, invocation, response validation, speaker evidence, diarization, and statement embeddings |
 | `write_ms` | jsonl + npz writes |
 
 Deferred and failed events carry whatever completed before the failure — typically
-`queue_wait`, `decode`, `vad`, `reduce`, and (on a mid-ASR death) `asr`.
+`queue_wait`, `decode`, `vad`, and (on a mid-ASR death) `asr`.
 
 ### The content-free guarantee
 

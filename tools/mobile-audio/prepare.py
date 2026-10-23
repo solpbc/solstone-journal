@@ -46,6 +46,7 @@ def main():
     field = lambda key: re.search(rf'{key}: "([^"]+)"', block)[1]
     model_dir = args.output / 'models'
     model_dir.mkdir(exist_ok=True)
+    (model_dir / 'silero_vad_v6.onnx').unlink(missing_ok=True)
     model = model_dir / field('filename')
     if args.model:
         shutil.copyfile(args.model, model)
@@ -56,10 +57,16 @@ def main():
         assert digest(partial) == field('sha256'), 'downloaded model digest mismatch'
         partial.rename(model)
     assert digest(model) == field('sha256'), 'Parakeet model digest mismatch'
-    for name in ('silero_vad_v6.onnx', 'wespeaker-resnet34-256.onnx', 'pyannote-segmentation-3.0.onnx'):
+    for name in ('firered_vad.onnx', 'wespeaker-resnet34-256.onnx', 'pyannote-segmentation-3.0.onnx'):
         shutil.copyfile(repo / 'core/models/assets' / name, model_dir / name)
+    notices = args.output / 'notices'
+    notices.mkdir(exist_ok=True)
+    for source, name in ((repo / 'core/distribution/licenses/fireredvad/LICENSE', 'FireRedVAD-LICENSE.txt'),
+                         (repo / 'core/distribution/model-notices.md', 'NOTICE.md')):
+        shutil.copyfile(source, notices / name)
     result = {'schema': 'mobile-audio-inputs/v1', 'native': records,
-              'models': [{'path': str(p), 'sha256': digest(p), 'size': p.stat().st_size} for p in sorted(model_dir.iterdir())]}
+              'models': [{'path': str(p), 'sha256': digest(p), 'size': p.stat().st_size} for p in sorted(model_dir.iterdir())],
+              'notices': [{'path': str(p), 'sha256': digest(p), 'size': p.stat().st_size} for p in sorted(notices.iterdir())]}
     (args.output / 'inputs.json').write_text(json.dumps(result, indent=2) + '\n')
     print(json.dumps(result))
 

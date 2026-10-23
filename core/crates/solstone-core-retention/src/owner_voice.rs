@@ -210,7 +210,7 @@ pub enum OwnerVoiceDeletion {
     Deleted,
     /// The original was deleted, but its event could not be written.
     DeletedUnrecorded,
-    /// The original was already gone; nothing was written.
+    /// The original is absent without a confirmed removal by this call.
     Gone,
     /// Nothing is owed for this transcript.
     NotOwed,
@@ -332,7 +332,7 @@ fn release_proven(
         RawReleaseClass::OwnerVoice,
         at,
     );
-    // Decide by what is now true on disk, not by the receipt's prose.
+    // A confirmed removal must also leave the original absent.
     // An unknown answer counts as still present: the deletion stays owed.
     if !matches!(path_lexists(&segment.join(name)), Ok(false)) {
         let detail = outcome
@@ -343,6 +343,13 @@ fn release_proven(
             .next()
             .unwrap_or_else(|| "the original is still present".to_owned());
         return OwnerVoiceDeletion::Owed(detail);
+    }
+    let expected = proven.rel();
+    if !outcome
+        .removed_paths()
+        .any(|removed| removed.as_str() == expected)
+    {
+        return OwnerVoiceDeletion::Gone;
     }
     match retention_events_for_name(segment, name) {
         Ok(events) if events.deleted => OwnerVoiceDeletion::Deleted,

@@ -224,12 +224,12 @@ fn shipping_closure_excludes_speaker_crates() {
 }
 
 #[test]
-fn vad_and_transcribe_share_the_silero_digest() {
+fn vad_and_transcribe_share_the_firered_digest() {
     let vad = read_repo_file("core/crates/solstone-core-vad-analyze/src/lib.rs");
     let transcribe = read_repo_file("core/crates/solstone-core-transcribe/src/model_assets.rs");
 
     assert_eq!(
-        rust_string_const(&vad, "SILERO_VAD_V6_SHA256"),
-        rust_string_const(&transcribe, "SILERO_VAD_V6_SHA256")
+        rust_string_const(&vad, "FIRERED_VAD_SHA256"),
+        rust_string_const(&transcribe, "FIRERED_VAD_SHA256")
     );
 }

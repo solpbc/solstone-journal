@@ -6607,7 +6607,10 @@ async function confirmEntityDelete() {
 // re-reads afterwards only to refresh the view.
 const TIDY_PAGE_SIZE = 50;
 const TIDY_HIDE_BATCH = 50;
-const TIDY_MERGE_BATCH = 20;
+// One merge per request: merges inside one request run back to back, so a
+// writer in another process polling the trust lock never gets a turn and gives
+// up after 10 s. The pause between requests is that turn.
+const TIDY_MERGE_BATCH = 1;
 const TIDY_GAP_MS = 100;
 const TIDY_RETRY_MS = 1000;
 const TIDY_OP_KEY = 'entities.tidyOperation';

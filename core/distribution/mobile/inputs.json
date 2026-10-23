@@ -2,9 +2,9 @@
   "version": 1,
   "inputs": {
     "llama": {
-      "url": "https://codeload.github.com/ggml-org/llama.cpp/tar.gz/d81235049384534c167caea52b85a694f6103d14",
-      "sha256": "6b58785f0a82898f4c3442417ff962e2d4b231b1bee5d033902ad90b27901e14",
-      "revision": "d81235049384534c167caea52b85a694f6103d14"
+      "url": "https://codeload.github.com/ggml-org/llama.cpp/tar.gz/620d2225cc436ab0b001e3200e590e3b286ef9ab",
+      "sha256": "1d4a987d9bd048f6e93107e838026438df70fbde237fc0c69c63d600512b4bd9",
+      "revision": "620d2225cc436ab0b001e3200e590e3b286ef9ab"
     },
     "parakeet": {
       "url": "https://codeload.github.com/mudler/parakeet.cpp/tar.gz/5c9b0fbbd8e611d88e47d7e1ebae9bca9b447e8f",

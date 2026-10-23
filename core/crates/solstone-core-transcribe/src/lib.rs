@@ -72,7 +72,7 @@ pub use args::{
     require_solstone, speakers_analyze_repair_text, vad_runtime_repair_for,
 };
 pub use model_assets::{
-    ModelAssetError, PYANNOTE_SEGMENTATION_SHA256, SILERO_VAD_V6_SHA256, WESPEAKER_RESNET34_SHA256,
+    FIRERED_VAD_SHA256, ModelAssetError, PYANNOTE_SEGMENTATION_SHA256, WESPEAKER_RESNET34_SHA256,
     resolve_model_asset,
 };
 pub use publication::publish_transcript_request;
@@ -1045,7 +1045,7 @@ mod tests {
     #[test]
     fn model_asset_errors_are_configuration_failures() {
         let error = TranscribeError::from(ModelAssetError::AssetNotFound {
-            asset: "silero_vad_v6.onnx".to_owned(),
+            asset: "firered_vad.onnx".to_owned(),
             searched: Vec::new(),
         });
 

@@ -29,10 +29,10 @@ use crate::controlled_build::{
 };
 use crate::digest::sha256_hex;
 use crate::onnx_windows::{
-    ONNX_RUNTIME_COMMIT, ONNX_RUNTIME_REPOSITORY, ONNX_WINDOWS_REDUCED_OPS_CONFIG_SHA256,
-    PYANNOTE_FILENAME, PYANNOTE_SHA256, PYANNOTE_SIZE_BYTES, SILERO_VAD_FILENAME,
-    SILERO_VAD_SHA256, SILERO_VAD_SIZE_BYTES, WESPEAKER_FILENAME, WESPEAKER_SHA256,
-    WESPEAKER_SIZE_BYTES,
+    FIRERED_VAD_FILENAME, FIRERED_VAD_SHA256, FIRERED_VAD_SIZE_BYTES, ONNX_RUNTIME_COMMIT,
+    ONNX_RUNTIME_REPOSITORY, ONNX_WINDOWS_REDUCED_OPS_CONFIG_SHA256,
+    ONNX_WINDOWS_REDUCED_OPS_CONFIG_SIZE_BYTES, PYANNOTE_FILENAME, PYANNOTE_SHA256,
+    PYANNOTE_SIZE_BYTES, WESPEAKER_FILENAME, WESPEAKER_SHA256, WESPEAKER_SIZE_BYTES,
 };
 use crate::provenance::Provenance;
 
@@ -866,7 +866,7 @@ fn validate_source_archive(
     require_models(&manifest.models)?;
     if manifest.reduced_ops_config.label != ONNX_WINDOWS_REDUCED_OPS_CONFIG_LABEL
         || manifest.reduced_ops_config.sha256 != ONNX_WINDOWS_REDUCED_OPS_CONFIG_SHA256
-        || manifest.reduced_ops_config.size != 711
+        || manifest.reduced_ops_config.size != ONNX_WINDOWS_REDUCED_OPS_CONFIG_SIZE_BYTES
     {
         return Err(OnnxWindowsSourceError::new(
             "ONNX source archive has an unexpected reduced-operator config identity",
@@ -1022,9 +1022,9 @@ fn read_models(repo_root: &Path) -> Result<Vec<InputIdentityEntry>, OnnxWindowsS
     for (name, size, sha256) in [
         (PYANNOTE_FILENAME, PYANNOTE_SIZE_BYTES, PYANNOTE_SHA256),
         (
-            SILERO_VAD_FILENAME,
-            SILERO_VAD_SIZE_BYTES,
-            SILERO_VAD_SHA256,
+            FIRERED_VAD_FILENAME,
+            FIRERED_VAD_SIZE_BYTES,
+            FIRERED_VAD_SHA256,
         ),
         (WESPEAKER_FILENAME, WESPEAKER_SIZE_BYTES, WESPEAKER_SHA256),
     ] {
@@ -1050,8 +1050,8 @@ fn require_models(models: &[InputIdentityEntry]) -> Result<(), OnnxWindowsSource
             (PYANNOTE_SIZE_BYTES, PYANNOTE_SHA256),
         ),
         (
-            format!("models/{SILERO_VAD_FILENAME}"),
-            (SILERO_VAD_SIZE_BYTES, SILERO_VAD_SHA256),
+            format!("models/{FIRERED_VAD_FILENAME}"),
+            (FIRERED_VAD_SIZE_BYTES, FIRERED_VAD_SHA256),
         ),
         (
             format!("models/{WESPEAKER_FILENAME}"),
@@ -1088,7 +1088,9 @@ fn read_reduced_ops_config(
     }
     let path = repo_root.join(&inputs.reduced_ops_config);
     let bytes = fs::read(&path)?;
-    if sha256_hex(&bytes) != ONNX_WINDOWS_REDUCED_OPS_CONFIG_SHA256 || bytes.len() != 711 {
+    if sha256_hex(&bytes) != ONNX_WINDOWS_REDUCED_OPS_CONFIG_SHA256
+        || bytes.len() as u64 != ONNX_WINDOWS_REDUCED_OPS_CONFIG_SIZE_BYTES
+    {
         return Err(OnnxWindowsSourceError::new(format!(
             "ONNX reduced-operator config has an unexpected identity: {}",
             path.display()

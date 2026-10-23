@@ -215,14 +215,13 @@ impl AudioWorker {
             .revalidate_canonical_binding()
             .map_err(|e| e.to_string())?;
         let generation = self.state.generation.load(Ordering::Acquire);
-        let cancel = || {
+        let interrupted = || {
             self.state.cancelled(generation)
                 || self.state.stop.load(Ordering::Acquire)
                 || cancelled()
                 || config.root.revalidate_canonical_binding().is_err()
-                || !accepted_input(config.root.canonical_path(), input).unwrap_or(false)
         };
-        if cancel() {
+        if interrupted() {
             return Ok(false);
         }
         let retry = {
@@ -235,6 +234,8 @@ impl AudioWorker {
                 InputDecision::Hold(error) => {
                     held.1.insert(input.to_path_buf());
                     self.state.input_failed(generation, input, &error);
+                    *self.state.status.lock().unwrap() =
+                        json!({"state":"failed","input":input,"error":error});
                     return Err(error);
                 }
                 InputDecision::Process(retry) => retry,
@@ -243,6 +244,18 @@ impl AudioWorker {
         if attempt.is_some_and(|attempt| retry.as_ref().map(|r| &r.attempt) != Some(attempt)) {
             return Err("audio retry permission changed".into());
         }
+        // Initial admission errors belong to the failure path above. Once
+        // admitted, any loss of the accepted bytes must still cancel work at
+        // embedded checkpoints and before publication.
+        let owner_original_deleted = Cell::new(false);
+        let cancel = || {
+            interrupted()
+                || input_custody_lost(
+                    config.root.canonical_path(),
+                    input,
+                    owner_original_deleted.get(),
+                )
+        };
         *self.state.status.lock().unwrap() = json!({"state":"processing","input":input});
         let started = Instant::now();
         let asr = LocalAsr {
@@ -259,6 +272,7 @@ impl AudioWorker {
             &asr,
             EmbeddedControl {
                 cancelled: &cancel,
+                owner_original_deleted: &|| owner_original_deleted.set(true),
                 service_io: &|phase| {
                     self.state.status.lock().unwrap()["service_io"] = match phase {
                         ConfidentialIoPhase::RequestFlushed => json!("awaiting_response"),
@@ -464,6 +478,7 @@ fn run(
                                     state.cancelled(generation)
                                         || authority.revalidate_canonical_binding().is_err()
                                 },
+                                owner_original_deleted: &|| {},
                                 service_io: &|phase| {
                                     let mut status = state.status.lock().unwrap();
                                     status["service_io"] = match phase {
@@ -529,6 +544,18 @@ fn run(
 
 fn accepted_input(root: &Path, input: &Path) -> Result<bool, String> {
     crate::custody::accepted_input(root, input)
+}
+
+#[cfg(feature = "processing")]
+fn input_custody_lost(root: &Path, input: &Path, owner_original_deleted: bool) -> bool {
+    if owner_original_deleted {
+        // Retention deleted the admitted original under the publication claim.
+        // Recreated bytes cannot inherit that completed deletion's authority.
+        !matches!(std::fs::symlink_metadata(input), Err(error)
+            if error.kind() == std::io::ErrorKind::NotFound)
+    } else {
+        !accepted_input(root, input).unwrap_or(false)
+    }
 }
 
 #[cfg(test)]
@@ -938,6 +965,185 @@ mod tests {
             decide_input(temp.path(), &audio_path2, &held),
             InputDecision::Skip
         );
+    }
+
+    #[cfg(feature = "processing")]
+    fn host_worker(root: &Path) -> AudioWorker {
+        AudioWorker::for_host(
+            Arc::new(solstone_core_journal_io::JournalRoot::open(root).unwrap()),
+            root.join("unused-models"),
+            root.join("unused-model"),
+            root.join("scratch"),
+            Arc::new(|| false),
+        )
+    }
+
+    #[cfg(feature = "processing")]
+    #[test]
+    fn active_host_reports_oversize_admission_and_holds_it_until_resume() {
+        let temp = tempfile::tempdir().unwrap();
+        let input = setup_fixture_audio(
+            temp.path(),
+            "20261012",
+            "device_audio",
+            "120000_1",
+            "audio.wav",
+            &vec![0; 16 * 1024 * 1024 + 1],
+        );
+        let worker = host_worker(temp.path());
+
+        let error = worker
+            .process_host_input(&input, None, &|| false)
+            .unwrap_err();
+        assert!(error.contains("16 MiB"), "{error}");
+        let status = worker.status();
+        assert_eq!(status["state"], "failed");
+        assert_eq!(status["input"], json!(input));
+        assert_eq!(status["recent_failures"].as_array().unwrap().len(), 1);
+        assert_eq!(status["recent_failures"][0]["error"], error);
+        assert_eq!(status["recent_failures"][0]["generation"], 0);
+        assert!(!input.with_extension("jsonl").exists());
+        assert!(!input.with_extension("npz").exists());
+
+        assert!(!worker.process_host_input(&input, None, &|| false).unwrap());
+        assert_eq!(
+            worker.status()["recent_failures"].as_array().unwrap().len(),
+            1
+        );
+        worker.resume();
+        assert!(
+            worker
+                .process_host_input(&input, None, &|| false)
+                .unwrap_err()
+                .contains("16 MiB")
+        );
+        assert_eq!(worker.status()["recent_failures"][1]["generation"], 1);
+    }
+
+    #[cfg(feature = "processing")]
+    #[test]
+    fn active_host_cancellation_precedes_input_admission() {
+        let temp = tempfile::tempdir().unwrap();
+        let input = setup_fixture_audio(
+            temp.path(),
+            "20261012",
+            "device_audio",
+            "120000_1",
+            "audio.wav",
+            &vec![0; 16 * 1024 * 1024 + 1],
+        );
+        let worker = host_worker(temp.path());
+        worker.cancel();
+        assert!(!worker.process_host_input(&input, None, &|| false).unwrap());
+        assert!(
+            worker.status()["recent_failures"]
+                .as_array()
+                .unwrap()
+                .is_empty()
+        );
+        assert!(!input.with_extension("jsonl").exists());
+        assert!(!input.with_extension("npz").exists());
+    }
+
+    #[cfg(feature = "processing")]
+    #[test]
+    fn committed_owner_deletion_requires_absence_even_if_accepted_bytes_reappear() {
+        let temp = tempfile::tempdir().unwrap();
+        let original = b"synthetic owner audio";
+        let input = setup_fixture_audio(
+            temp.path(),
+            "20261012",
+            "device_audio",
+            "120000_1",
+            "audio.wav",
+            original,
+        );
+        assert!(accepted_input(temp.path(), &input).unwrap());
+        assert!(!input_custody_lost(temp.path(), &input, false));
+        assert!(input_custody_lost(temp.path(), &input, true));
+
+        std::fs::remove_file(&input).unwrap();
+        assert!(input_custody_lost(temp.path(), &input, false));
+        assert!(!input_custody_lost(temp.path(), &input, true));
+
+        std::fs::write(&input, original).unwrap();
+        assert!(accepted_input(temp.path(), &input).unwrap());
+        assert!(!input_custody_lost(temp.path(), &input, false));
+        assert!(input_custody_lost(temp.path(), &input, true));
+
+        std::fs::write(&input, b"changed owner audio").unwrap();
+        assert!(!accepted_input(temp.path(), &input).unwrap());
+        assert!(input_custody_lost(temp.path(), &input, false));
+        assert!(input_custody_lost(temp.path(), &input, true));
+
+        #[cfg(unix)]
+        {
+            std::fs::remove_file(&input).unwrap();
+            std::os::unix::fs::symlink(input.with_extension("missing"), &input).unwrap();
+            assert!(input_custody_lost(temp.path(), &input, true));
+        }
+    }
+
+    #[cfg(feature = "processing")]
+    #[test]
+    fn active_host_cancels_on_custody_loss_after_admission() {
+        // These mutations occur at a real embedded checkpoint after admission.
+        // No model should be reached once the accepted input is lost or cancelled.
+        for change in ["cancel", "changed", "missing", "oversize", "receipt"] {
+            let temp = tempfile::tempdir().unwrap();
+            let input = setup_fixture_audio(
+                temp.path(),
+                "20261012",
+                "device_audio",
+                "120000_1",
+                "audio.wav",
+                b"speech",
+            );
+            let worker = host_worker(temp.path());
+            let changed = Cell::new(false);
+            let checkpoint = || {
+                if worker.status()["state"] == "processing" && !changed.replace(true) {
+                    match change {
+                        "changed" => std::fs::write(&input, b"change").unwrap(),
+                        "missing" => std::fs::remove_file(&input).unwrap(),
+                        "oversize" => File::options()
+                            .write(true)
+                            .open(&input)
+                            .unwrap()
+                            .set_len(16 * 1024 * 1024 + 1)
+                            .unwrap(),
+                        "receipt" => {
+                            std::fs::write(
+                                input.parent().unwrap().join("events.jsonl"),
+                                b"broken\n",
+                            )
+                            .unwrap();
+                        }
+                        "cancel" => (),
+                        _ => unreachable!(),
+                    }
+                }
+                change == "cancel" && changed.get()
+            };
+            assert!(
+                !worker
+                    .process_host_input(&input, None, &checkpoint)
+                    .unwrap()
+            );
+            assert!(
+                changed.get(),
+                "{change} did not reach the embedded checkpoint"
+            );
+            assert_eq!(worker.status()["state"], "cancelled", "{change}");
+            assert!(
+                worker.status()["recent_failures"]
+                    .as_array()
+                    .unwrap()
+                    .is_empty()
+            );
+            assert!(!input.with_extension("jsonl").exists(), "{change}");
+            assert!(!input.with_extension("npz").exists(), "{change}");
+        }
     }
 
     #[test]
