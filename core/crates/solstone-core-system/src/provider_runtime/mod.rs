@@ -67,8 +67,8 @@ pub use stop::{
     stop_before_replace_request,
 };
 pub use store::{
-    FenceKey, FileRuntimeStore, LocalReadySideEffect, LocalRuntimeShared, ReadyProcess,
-    ReadyProcessLookup, RuntimeClock, SystemRuntimeClock, read_current_detail,
+    ConfirmedProviderExit, FenceKey, FileRuntimeStore, LocalReadySideEffect, LocalRuntimeShared,
+    ReadyProcess, ReadyProcessLookup, RuntimeClock, SystemRuntimeClock, read_current_detail,
 };
 pub(crate) use store::{RuntimeHealthObservation, observe_runtime_health};
 pub use wedge::{CortexEventKind, CortexOutcomeEvent, WedgeState, observe_cortex_outcome};

@@ -51,6 +51,53 @@ struct SubmissionSeams<'a> {
 }
 
 impl ProviderRuntimeCoordinator {
+    #[allow(clippy::too_many_arguments)]
+    pub fn observe_process_exit(
+        &self,
+        now: ProviderRuntimeNow,
+        state: &mut ProviderRuntimeState,
+        processes: &[ManagedProcess],
+        exited: &super::store::ConfirmedProviderExit,
+        store: &mut dyn RuntimeStore,
+        sink: &mut dyn ProviderRuntimeEventSink,
+    ) {
+        let managed = &exited.managed;
+        let Some(fence) = managed.fence.as_ref() else {
+            return;
+        };
+        if state.shutdown_requested
+            || state.provider != super::model::ProviderName::Local
+            || !matches!(
+                state.latest_phase,
+                RuntimePhase::Ready | RuntimePhase::ReadyProofUnavailable
+            )
+            || state.start.is_some()
+            || state.pending_stop_request.is_some()
+            || state.stop_cleanup.is_some()
+            || !self.fence_matches(state, fence, state.retry.attempt_count)
+            || !processes.contains(managed)
+        {
+            return;
+        }
+        store.revoke_ready();
+        // Existing workers may still return a successful probe for the dead child.
+        state.generation += 1;
+        state.has_plan = false;
+        state.next_truth_at = 0.0;
+        schedule_launch_retry(state, now, sink);
+        let reason = super::model::ReasonCode::known("process-exited");
+        state.latest_reason_code = Some(reason.clone());
+        state.pending_stop_request = Some(make_stop_request(
+            state,
+            managed.clone(),
+            reason.clone(),
+            state.latest_phase,
+            Some(reason),
+            false,
+        ));
+        self.persist(state, store);
+    }
+
     pub fn new() -> Self {
         let sequence = NEXT_INCARNATION.fetch_add(1, Ordering::Relaxed);
         let nanos = SystemTime::now()
@@ -792,6 +839,10 @@ impl ProviderRuntimeCoordinator {
     ) {
         if state.shutdown_requested
             || state.truth.is_some()
+            || state
+                .pending_stop_request
+                .as_ref()
+                .is_some_and(|request| request.reason_code.as_str() == "process-exited")
             || now.monotonic_seconds < state.next_truth_at
         {
             return;
@@ -1032,6 +1083,224 @@ mod tests {
         ProviderProbeOutcome {
             status,
             reason_code: ReasonCode::known("probe-not-ready"),
+        }
+    }
+
+    #[test]
+    fn confirmed_exit_cleans_up_then_rechecks_intent_before_retry() {
+        let coordinator = ProviderRuntimeCoordinator::with_incarnation("test");
+        let mut state = state_for(ProviderName::Local);
+        state.latest_phase = RuntimePhase::Ready;
+        state.retry.attempt_count = 1;
+        state.generation = 4;
+        let fence = coordinator.fence(&state, 1);
+        let mut child = managed("local:42");
+        child.name = "local".into();
+        child.pid = 42;
+        child.fence = Some(fence.clone());
+        let mut processes = vec![child.clone()];
+        state.truth = Some(InFlight {
+            fence: fence.clone(),
+            result: Some(truth(
+                ProviderName::Local,
+                RuntimePhase::Starting,
+                Some("desired-a"),
+                Some("launch-requested"),
+            )),
+        });
+        state.probe = Some(InFlight {
+            fence,
+            result: Some(probe(ProbeStatus::Ready)),
+        });
+        let exited = super::super::store::ConfirmedProviderExit {
+            managed: child.clone(),
+        };
+        let mut store = InMemoryRuntimeStore::default();
+        let mut sink = VecEventSink::default();
+        coordinator.observe_process_exit(
+            now(10.0),
+            &mut state,
+            &processes,
+            &exited,
+            &mut store,
+            &mut sink,
+        );
+        assert_eq!(state.generation, 5);
+        assert_eq!(state.latest_phase, RuntimePhase::Backoff);
+        assert!(!state.has_plan);
+        assert_eq!(state.retry.attempt_count, 1);
+        assert_eq!(state.pending_stop_request.as_ref().unwrap().managed, child);
+        let workers = RecordingWorkers::default();
+        let mut truth_worker = workers.clone();
+        let mut lifecycle = workers.clone();
+        let mut probe_worker = workers.clone();
+        let mut context = ReconcileContext {
+            truth: &mut truth_worker,
+            lifecycle: &mut lifecycle,
+            probe: &mut probe_worker,
+            store: &mut store,
+            sink: &mut sink,
+            gate: None,
+        };
+        coordinator.reconcile(now(10.0), &mut state, &mut processes, &mut context);
+        assert_eq!(state.latest_phase, RuntimePhase::Stopping);
+        assert!(!state.stop_cancelled);
+        assert_eq!(*workers.calls.borrow(), ["stop-dispatch"]);
+        state.stop_cleanup.as_mut().unwrap().result = Some(stop(StopCleanupStatus::Stopped));
+        coordinator.reconcile(now(100.0), &mut state, &mut processes, &mut context);
+        assert!(processes.is_empty());
+        assert!(!state.has_plan);
+        assert_eq!(*workers.calls.borrow(), ["stop-dispatch", "truth-dispatch"]);
+        // Fresh intent can disable the provider; old successful workers cannot restart it.
+        let mut disabled = state.clone();
+        disabled.truth.as_mut().unwrap().result = Some(truth(
+            ProviderName::Local,
+            RuntimePhase::NotDesired,
+            None,
+            Some("intent-disabled"),
+        ));
+        coordinator.reconcile(now(101.0), &mut disabled, &mut processes, &mut context);
+        assert_eq!(disabled.latest_phase, RuntimePhase::NotDesired);
+        assert!(!workers.calls.borrow().contains(&"start-dispatch"));
+        // The unchanged valid target retries only after cleanup and fresh truth.
+        state.truth.as_mut().unwrap().result = Some(truth(
+            ProviderName::Local,
+            RuntimePhase::Starting,
+            Some("desired-a"),
+            Some("launch-requested"),
+        ));
+        coordinator.reconcile(now(101.0), &mut state, &mut processes, &mut context);
+        assert_eq!(state.retry.attempt_count, 2);
+        assert!(workers.calls.borrow().contains(&"start-dispatch"));
+    }
+
+    #[test]
+    fn confirmed_exit_retries_cleanup_without_replenishing_launch_budget() {
+        for exhausted in [false, true] {
+            let coordinator = ProviderRuntimeCoordinator::with_incarnation("test");
+            let mut state = state_for(ProviderName::Local);
+            state.latest_phase = RuntimePhase::Ready;
+            state.retry.attempt_count = if exhausted {
+                PROVIDER_RETRY_SCHEDULE_SECONDS.len() as u32
+            } else {
+                1
+            };
+            let original_attempt = state.retry.attempt_count;
+            let mut child = managed("local:42");
+            child.fence = Some(coordinator.fence(&state, original_attempt));
+            let mut processes = vec![child.clone()];
+            let exited = super::super::store::ConfirmedProviderExit {
+                managed: child.clone(),
+            };
+            let mut store = InMemoryRuntimeStore::default();
+            let mut sink = VecEventSink::default();
+            coordinator.observe_process_exit(
+                now(10.0),
+                &mut state,
+                &processes,
+                &exited,
+                &mut store,
+                &mut sink,
+            );
+            let workers = RecordingWorkers::default();
+            let mut truth_worker = workers.clone();
+            let mut lifecycle = workers.clone();
+            let mut probe_worker = workers.clone();
+            let mut context = ReconcileContext {
+                truth: &mut truth_worker,
+                lifecycle: &mut lifecycle,
+                probe: &mut probe_worker,
+                store: &mut store,
+                sink: &mut sink,
+                gate: None,
+            };
+            coordinator.reconcile(now(10.0), &mut state, &mut processes, &mut context);
+            state.stop_cleanup.as_mut().unwrap().result =
+                Some(stop(StopCleanupStatus::CleanupFailed));
+            coordinator.reconcile(now(11.0), &mut state, &mut processes, &mut context);
+            assert_eq!(state.latest_phase, RuntimePhase::CleanupFailed);
+            assert_eq!(processes, [child.clone()]);
+            assert_eq!(state.pending_stop_request.as_ref().unwrap().managed, child);
+            assert!(!state.has_plan);
+            assert_eq!(*workers.calls.borrow(), ["stop-dispatch"]);
+            let deadline = state.cleanup_next_at;
+            coordinator.reconcile(
+                now(deadline - 0.01),
+                &mut state,
+                &mut processes,
+                &mut context,
+            );
+            assert_eq!(*workers.calls.borrow(), ["stop-dispatch"]);
+            coordinator.reconcile(now(deadline), &mut state, &mut processes, &mut context);
+            assert_eq!(*workers.calls.borrow(), ["stop-dispatch", "stop-dispatch"]);
+            state.stop_cleanup.as_mut().unwrap().result = Some(stop(StopCleanupStatus::Stopped));
+            coordinator.reconcile(
+                now(deadline + 0.1),
+                &mut state,
+                &mut processes,
+                &mut context,
+            );
+            assert!(processes.is_empty());
+            assert!(state.pending_stop_request.is_none());
+            assert_eq!(
+                *workers.calls.borrow(),
+                ["stop-dispatch", "stop-dispatch", "truth-dispatch"]
+            );
+            state.truth.as_mut().unwrap().result = Some(truth(
+                ProviderName::Local,
+                RuntimePhase::Starting,
+                Some("desired-a"),
+                Some("launch-requested"),
+            ));
+            let retry_at = state.retry.next_at.max(deadline + 0.2);
+            coordinator.reconcile(now(retry_at), &mut state, &mut processes, &mut context);
+            assert_eq!(
+                workers.calls.borrow().contains(&"start-dispatch"),
+                !exhausted
+            );
+            assert_eq!(
+                state.retry.attempt_count,
+                original_attempt + u32::from(!exhausted)
+            );
+            if exhausted {
+                assert_eq!(state.latest_phase, RuntimePhase::Failed);
+            }
+        }
+    }
+
+    #[test]
+    fn confirmed_exit_refuses_stale_fences_and_shutdown() {
+        let coordinator = ProviderRuntimeCoordinator::with_incarnation("test");
+        let mut state = state_for(ProviderName::Local);
+        state.latest_phase = RuntimePhase::Ready;
+        state.retry.attempt_count = 1;
+        let mut child = managed("local:42");
+        child.fence = Some(coordinator.fence(&state, 1));
+        let exited = super::super::store::ConfirmedProviderExit {
+            managed: child.clone(),
+        };
+        let mut store = InMemoryRuntimeStore::default();
+        let mut sink = VecEventSink::default();
+        for mutation in 0..5 {
+            let mut current = state.clone();
+            let mut processes = vec![child.clone()];
+            match mutation {
+                0 => current.generation += 1,
+                1 => current.desired_fingerprint = Some("replacement".into()),
+                2 => current.shutdown_requested = true,
+                3 => processes.clear(),
+                _ => current.latest_phase = RuntimePhase::NotDesired,
+            }
+            coordinator.observe_process_exit(
+                now(1.0),
+                &mut current,
+                &processes,
+                &exited,
+                &mut store,
+                &mut sink,
+            );
+            assert!(current.pending_stop_request.is_none());
+            assert_eq!(current.retry.attempt_count, 1);
         }
     }
 

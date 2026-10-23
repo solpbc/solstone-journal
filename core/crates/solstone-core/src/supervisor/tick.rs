@@ -763,6 +763,20 @@ pub(crate) fn reconcile_providers(state: &mut SupervisorState) {
         in_flight.result = Some(result);
     }
     let mut local_sink = SupervisorProviderSink(state.server.clone());
+    if let Some(exited) = state
+        .local
+        .shared
+        .observe_exited_current_process(&state.local.processes, Instant::now())
+    {
+        state.local.coordinator.observe_process_exit(
+            now,
+            &mut state.local.state,
+            &state.local.processes,
+            &exited,
+            &mut state.local.store,
+            &mut local_sink,
+        );
+    }
     let mut local_context = ReconcileContext {
         truth: &mut state.local.truth,
         lifecycle: &mut state.local.lifecycle,
