@@ -163,6 +163,7 @@ mod tests {
     #[derive(Default)]
     struct WireGenerateTransport {
         posts: Vec<(String, String, Value)>,
+        completion_errors: std::collections::VecDeque<String>,
     }
 
     impl GenerateTransport for WireGenerateTransport {
@@ -215,6 +216,9 @@ mod tests {
                 "/v1/chat/completions" => {
                     self.posts
                         .push((base_url.to_owned(), path.to_owned(), body.clone()));
+                    if let Some(error) = self.completion_errors.pop_front() {
+                        return Err(error);
+                    }
                     Ok(HttpResponse {
                         status: 200,
                         body: json!({
@@ -255,6 +259,56 @@ mod tests {
             exclusive_admission: false,
             transport_retries: None,
         }
+    }
+
+    #[test]
+    fn bundled_completion_transport_failures_allow_retry_after_recovery() {
+        let journal = tempfile::tempdir().expect("temporary journal");
+        let request = oracle_generate_request("hello world", Some("Return JSON."), None);
+        let mut input = bundled_input(&request, journal.path()).expect("bundled input");
+        input.platform = Platform::Linux;
+        let mut transport = WireGenerateTransport {
+            completion_errors: ["Connection reset by peer", "Connection refused"]
+                .map(str::to_owned)
+                .into(),
+            ..WireGenerateTransport::default()
+        };
+
+        for attempt in 0..2 {
+            let result = generate_with(input.clone(), &mut transport, |_| ConnectOutcome::Ready {
+                server: oracle_server(),
+            });
+            let GenerateResult::Failure(failure) = result else {
+                panic!("expected transport failure, got {result:?}");
+            };
+            assert_eq!(transport.posts.len(), attempt + 1);
+            assert_eq!(failure.reason_code.as_deref(), Some("network_unreachable"));
+            assert_eq!(
+                failure.inference.as_ref().unwrap().reason_code.as_deref(),
+                Some("network_unreachable")
+            );
+            let refusal = crate::refusal_for(
+                &crate::LaneOutcome::BundledFailure(Box::new(failure)),
+                "local",
+                request.id.clone(),
+            );
+            assert_eq!(
+                refusal.reason_code.as_ref().map(|code| code.as_wire()),
+                Some("network_unreachable")
+            );
+            assert!(refusal.retryable);
+            assert!(!refusal.blocking);
+        }
+
+        let result = generate_with(input, &mut transport, |_| ConnectOutcome::Ready {
+            server: oracle_server(),
+        });
+        let GenerateResult::Success(success) = result else {
+            panic!("expected completion after recovery, got {result:?}");
+        };
+        assert_eq!(success.text, "ok");
+        assert_eq!(transport.posts.len(), 3);
+        assert!(transport.posts.windows(2).all(|pair| pair[0] == pair[1]));
     }
 
     #[test]

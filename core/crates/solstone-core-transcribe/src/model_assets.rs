@@ -23,9 +23,9 @@ pub const WESPEAKER_RESNET34_SHA256: &str =
 /// sha256 of the bundled pyannote segmentation graph.
 pub const PYANNOTE_SEGMENTATION_SHA256: &str =
     "057ee564753071c0b09b5b611648b50ac188d50846bff5f01e9f7bbf1591ea25";
-/// sha256 of the bundled Silero VAD v6 graph.
-pub const SILERO_VAD_V6_SHA256: &str =
-    "4cbf549b8326f60f80f2536d9eefeb450a9abe83365a098031c89719f1be17d2";
+/// sha256 of the bundled FireRed offline VAD graph.
+pub const FIRERED_VAD_SHA256: &str =
+    "a226e68e695548754a9ab5480a55bbcb8522aa69111cb97e4f093ddce63ad5dc";
 
 /// Failure to locate a bundled transcription model asset.
 #[derive(Debug)]
@@ -248,7 +248,7 @@ pub(crate) fn verify_digest(name: &str, path: PathBuf) -> Result<PathBuf, ModelA
 
 fn expected_sha256(name: &str) -> &'static str {
     match name {
-        "silero_vad_v6.onnx" => SILERO_VAD_V6_SHA256,
+        "firered_vad.onnx" => FIRERED_VAD_SHA256,
         "wespeaker-resnet34-256.onnx" => WESPEAKER_RESNET34_SHA256,
         "pyannote-segmentation-3.0.onnx" => PYANNOTE_SEGMENTATION_SHA256,
         _ => panic!("unknown bundled transcription model asset {name:?}"),
@@ -272,15 +272,15 @@ fn sha256_file(path: &Path) -> io::Result<String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        DATA_LIB_ASSETS_RELATIVE, ModelAssetError, PYANNOTE_SEGMENTATION_SHA256,
-        SILERO_VAD_V6_SHA256, resolve_model_asset_from,
+        DATA_LIB_ASSETS_RELATIVE, FIRERED_VAD_SHA256, ModelAssetError,
+        PYANNOTE_SEGMENTATION_SHA256, resolve_model_asset_from,
     };
     use serde_json::Value;
     use std::fs;
     use std::io;
     use std::path::{Path, PathBuf};
 
-    const ASSET: &str = "silero_vad_v6.onnx";
+    const ASSET: &str = "firered_vad.onnx";
 
     #[test]
     fn resolves_source_checkout_layout() {
@@ -489,7 +489,7 @@ mod tests {
         };
         assert_eq!(asset, ASSET);
         assert_eq!(path, corrupt_path);
-        assert_eq!(expected, SILERO_VAD_V6_SHA256);
+        assert_eq!(expected, FIRERED_VAD_SHA256);
         assert_ne!(actual, expected);
     }
 
@@ -520,7 +520,7 @@ mod tests {
             panic!("expected digest mismatch");
         };
         assert_eq!(path, corrupt_path);
-        assert_eq!(expected, SILERO_VAD_V6_SHA256);
+        assert_eq!(expected, FIRERED_VAD_SHA256);
         assert_ne!(actual, expected);
     }
 

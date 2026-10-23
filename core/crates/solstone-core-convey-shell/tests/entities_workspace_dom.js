@@ -459,6 +459,57 @@ async function main() {
     return list;
   }
 
+  // The panel drops the extraction artifacts home's connections card drops.
+  // Cases mirror solstone-core-home/src/connections.rs's tests, so the two
+  // rules are checked against the same examples.
+  const mentions = count => ({mentioned: {count}});
+  [
+    ['make', {mentioned: {count: 1329}, 'co-present': {count: 4}}],
+    ['just', mentions(3249)],
+    ['Own', mentions(991)],
+    ['Élan', mentions(991)],
+    ['jean-luc', mentions(991)],
+  ].forEach(([name, kinds]) => {
+    check(connContext.isEntityConnMentionOnlyWord({name, kinds}), `${name} is a word the journal only ever mentioned`);
+  });
+  [
+    ['Ada', {'spoke-with': {count: 12}, mentioned: {count: 400}}],
+    ['ada', {'attended-with': {count: 3}, mentioned: {count: 40}}],
+    ['Ada Lovelace', mentions(900)],
+    ['studio 54', mentions(900)],
+    ['Kai', {mentioned: {count: 98}, 'spoke-with': {count: 2}}],
+    ['make', undefined],
+    ['make', {}],
+    ['   ', mentions(5)],
+  ].forEach(([name, kinds]) => {
+    check(!connContext.isEntityConnMentionOnlyWord({name, kinds}), `${JSON.stringify(name)} stays a connection`);
+  });
+  ['the', ' The ', 'and', 'A', 'x', '1979', '—', 'of'].forEach(label => {
+    check(connContext.isEntityConnResidueEvidence({name: 'Gallery At Reunion (The)', evidence: [{label}], kinds: mentions(40)}),
+      `${JSON.stringify(label)} is a token, not a connection`);
+  });
+  [
+    {name: 'Gallery At Reunion (The)', evidence: [{label: 'Reunion'}], kinds: mentions(40)},
+    {name: 'Gallery At Reunion (The)', evidence: [{label: 'the gallery'}], kinds: mentions(40)},
+    {name: 'Ada Lovelace', evidence: [{label: 'the'}], kinds: {mentioned: {count: 40}, 'spoke-with': {count: 9}}},
+    {name: 'Ada Lovelace', kinds: mentions(40)},
+    {name: 'Ada Lovelace', evidence: [{label: ''}], kinds: mentions(40)},
+    {name: 'He', evidence: [{label: 'He'}], kinds: mentions(40)},
+    {name: 'An', evidence: [{label: 'an'}], kinds: mentions(40)},
+    {name: '何', evidence: [{label: '何'}], kinds: mentions(40)},
+  ].forEach(row => {
+    check(!connContext.isEntityConnResidueEvidence(row), `${row.name} / ${JSON.stringify(row.evidence)} stays a connection`);
+  });
+  const fetched = [
+    {entity_id: 'just', name: 'just', kinds: mentions(3680), evidence: [{label: 'just'}]},
+    {entity_id: 'gallery', name: 'Gallery At Reunion (The)', kinds: mentions(5578), evidence: [{label: 'The'}]},
+    ...Array.from({length: 20}, (_, i) => ({entity_id: `p${i}`, name: `Person ${i}`, kinds: {'spoke-with': {count: 5}}})),
+  ];
+  const shown = connContext.shownConnectionNeighbors(fetched);
+  check(shown.length === 15, 'the panel stays full after dropping artifacts');
+  check(shown[0].entity_id === 'p0' && !shown.some(row => row.entity_id === 'just' || row.entity_id === 'gallery'),
+    'artifacts are dropped and the next real neighbours move up');
+
   const connContainer = new Element(connDoc, 'connections-container');
   const testNeighbors = [
     {entity_id:'sem', name:'Ada', evidence_class:'semantic', count:2, last_seen:'20260501', kinds:{'works-with':{weighted:1}}},
@@ -778,7 +829,7 @@ async function main() {
     const members = Array.from({length: 60}, (_, i) => pair(i));
     let batch = 0;
     const {context, log} = tidyHarness((url, body) => {
-      if (url.includes('tidy-up')) return {id_shaped: {count: 0, members: []}, duplicates: {count: 40, members: members.slice(20), items: []}, damage: {count: 0, paths: []}};
+      if (url.includes('tidy-up')) return {id_shaped: {count: 0, members: []}, duplicates: {count: 59, members: members.slice(1), items: []}, damage: {count: 0, paths: []}};
       batch += 1;
       if (batch === 2) throw new TypeError('Failed to fetch');
       return {results: body.items.map(() => ({status: 'accepted'}))};
@@ -786,8 +837,32 @@ async function main() {
     context.tidyState.data = {duplicates: {members}};
     await context.runDuplicateMerge({kept: members, leaving: []});
     const accepts = log.requests.filter(r => r.url.endsWith('accept-batch'));
-    check(JSON.stringify(accepts.map(r => r.body.items.length)) === '[20,20]', 'merge sends 20 items per request and stops after a request with no response');
-    check(context.tidyState.dupStatus === 'merged 20 of 60 pairs. 40 couldn\'t be merged.', 'pairs with no answer are decided by the re-read');
+    check(JSON.stringify(accepts.map(r => r.body.items.length)) === '[1,1]', 'merge sends one item per request and stops after a request with no response');
+    check(context.tidyState.dupStatus === 'merged 1 of 60 pairs. 59 couldn\'t be merged.', 'pairs with no answer are decided by the re-read');
+  }
+
+  {
+    let release;
+    const gate = new Promise(resolve => { release = resolve; });
+    const {context} = tidyHarness(async () => {
+      await gate;
+      return {id_shaped: {count: 1, actionable: true, members: ['code-1'], items: []}, duplicates: {count: 0, members: [], items: []}, damage: {count: 0, paths: []}};
+    });
+    const doc = {createElement: () => {
+      const el = Object.assign(new Element(doc), {dataset: {}});
+      const append = el.append.bind(el);
+      el.append = (...nodes) => append(...nodes.filter(node => typeof node !== 'string'));
+      return el;
+    }};
+    const host = new Element(doc, 'journal-detail-indicators');
+    doc.getElementById = (id) => (id === 'journal-detail-indicators' ? host : null);
+    context.document = doc;
+    context.currentDetailEntity = null;
+    context.loadTidyGroups();
+    const shown = context.renderJournalDetailIdNote({id: 'code-1', entity_id: 'code-1'});
+    release();
+    await shown;
+    check(host.children.some(node => node.className === 'journal-detail-id-note'), 'a detail opened while the groups read is in flight shows the ID line once the read lands');
   }
 
   console.log(`DOM CASES: ${cases} passed`);

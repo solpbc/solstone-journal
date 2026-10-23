@@ -38,7 +38,10 @@ License notice: BSD 3-Clause License (BSD-3-Clause).
 |---|---|---|---|---|
 | `lib/solstone_journal_models/assets/wespeaker-resnet34-256.onnx` | WeSpeaker ResNet34 speaker embedding model trained on VoxCeleb | `wespeaker_en_voxceleb_resnet34.onnx` from the k2-fsa/sherpa-onnx `speaker-recongition-models` release | CC-BY-4.0 | `5ef208a9da1453335308a6b6f4e6dfbd7e183a38b604de0a57664f45d257fe94` |
 | `lib/solstone_journal_models/assets/pyannote-segmentation-3.0.onnx` | `pyannote/segmentation-3.0` speaker segmentation model | `onnx/model.onnx` from `onnx-community/pyannote-segmentation-3.0` | MIT | `057ee564753071c0b09b5b611648b50ac188d50846bff5f01e9f7bbf1591ea25` |
-| `lib/solstone_journal_models/assets/silero_vad_v6.onnx` | Silero VAD voice activity detection model | ONNX model from `snakers4/silero-vad` | MIT | `4cbf549b8326f60f80f2536d9eefeb450a9abe83365a098031c89719f1be17d2` |
+| `lib/solstone_journal_models/assets/firered_vad.onnx` | FireRedVAD offline voice activity detection model | `pretrained_models/onnx_models/fireredvad_vad.onnx` from `FireRedTeam/FireRedVAD` at `c30ec49e8cc69642b0ee65362eba11b9d11c6e54` | Apache-2.0 | `a226e68e695548754a9ab5480a55bbcb8522aa69111cb97e4f093ddce63ad5dc` |
+| Embedded `firered_vad_cmvn.ark` normalization statistics | FireRedVAD global normalization statistics, compiled into the VAD helper and mobile library | `pretrained_models/onnx_models/cmvn.ark` from the same FireRedVAD revision | Apache-2.0 | `c87f6f13edf0f0ec7535ddfc9cc3387d9268cb234b70182d566c5e2edf3ca473` |
+
+FireRedVAD attribution and source details ship in `share/licenses/models/NOTICE.md`. Its original Apache License 2.0 text ships as `share/licenses/models/FireRedVAD-LICENSE.txt`.
 
 ## bundled place names (area tier)
 

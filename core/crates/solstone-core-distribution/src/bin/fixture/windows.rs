@@ -14,8 +14,8 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use solstone_core_distribution::manifest_verify::install_test_fixture_pin;
 use solstone_core_distribution::windows_payload::{
-    WINDOWS_ONNXRUNTIME_LIBRARY, WINDOWS_PAYLOAD_MANIFEST, WINDOWS_PAYLOAD_SIGNATURE,
-    WINDOWS_PYANNOTE_MODEL, WINDOWS_SILERO_VAD_MODEL, WINDOWS_SPEAKERS_ANALYZE_WORKER,
+    WINDOWS_FIRERED_VAD_MODEL, WINDOWS_ONNXRUNTIME_LIBRARY, WINDOWS_PAYLOAD_MANIFEST,
+    WINDOWS_PAYLOAD_SIGNATURE, WINDOWS_PYANNOTE_MODEL, WINDOWS_SPEAKERS_ANALYZE_WORKER,
     WINDOWS_VAD_ANALYZE_WORKER, WINDOWS_WESPEAKER_MODEL, WindowsPayloadManifest,
     render_windows_payload_manifest, verify_windows_payload,
 };
@@ -166,7 +166,7 @@ fn validate(spec: &Spec) -> io::Result<()> {
         WINDOWS_ONNXRUNTIME_LIBRARY,
         WINDOWS_WESPEAKER_MODEL,
         WINDOWS_PYANNOTE_MODEL,
-        WINDOWS_SILERO_VAD_MODEL,
+        WINDOWS_FIRERED_VAD_MODEL,
         "bin/transcribe-native.exe",
         "bin/solstone-system-test-child.exe",
     ] {
@@ -427,7 +427,7 @@ mod tests {
             WINDOWS_ONNXRUNTIME_LIBRARY,
             WINDOWS_WESPEAKER_MODEL,
             WINDOWS_PYANNOTE_MODEL,
-            WINDOWS_SILERO_VAD_MODEL,
+            WINDOWS_FIRERED_VAD_MODEL,
             "bin/transcribe-native.exe",
             "bin/solstone-system-test-child.exe",
         ];

@@ -2363,13 +2363,13 @@ fn parse_journal_summary_query(
         }
     };
     let hidden = match query.hidden.as_deref().map(str::trim) {
-        None | Some("") => JournalHiddenFilter::Include,
+        None | Some("") | Some("include") => JournalHiddenFilter::Include,
         Some("exclude") => JournalHiddenFilter::Exclude,
         Some("only") => JournalHiddenFilter::Only,
         Some(_) => {
             return Err(Box::new(refusal(
                 ReasonCode::InvalidRequestValue,
-                "hidden must be exclude or only",
+                "hidden must be include, exclude or only",
             )));
         }
     };

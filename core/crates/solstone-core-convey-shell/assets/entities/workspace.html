@@ -2035,6 +2035,7 @@ body.presentation-mode .entity-desc { color: var(--ink-soft); }
 .journal-dup-confirm ul { max-height: 16rem; overflow: auto; margin: 0.5em 0; padding-left: 1.25em; overflow-wrap: anywhere; }
 .journal-tidy-toast { position: fixed; left: 50%; bottom: 1.25em; transform: translateX(-50%); z-index: 50; display: flex; flex-wrap: wrap; gap: 0.5em 0.9em; align-items: center; max-width: min(40rem, calc(100vw - 2em)); padding: 0.75em 1em; border-radius: 10px; background: var(--surface-dark); color: var(--ink-on-dark); box-shadow: 0 6px 24px rgba(0,0,0,0.18); }
 .journal-tidy-toast[hidden] { display: none; }
+@media (max-width: 700px) { .journal-tidy-toast { bottom: calc(var(--app-dock-height) + var(--chrome-gap)); } }
 .journal-tidy-toast-text { flex: 1 1 16rem; min-width: 0; overflow-wrap: anywhere; }
 .journal-tidy-toast-small { flex-basis: 100%; margin: 0; font-size: 0.8em; opacity: 0.85; overflow-wrap: anywhere; }
 .journal-tidy-toast button { min-height: 2rem; padding: 0.2em 0.75em; border: 1px solid currentColor; border-radius: 6px; background: transparent; color: inherit; font: inherit; cursor: pointer; }
@@ -3129,7 +3130,7 @@ async function fetchEntityConnJson(url) {
 function loadEntityNetwork(entityId) {
   const query = new URLSearchParams({
     entity: entityId,
-    limit: '15',
+    limit: String(ENTITY_CONN_NEIGHBOR_FETCH),
     evidence_limit: '1',
   });
   return fetchEntityConnJson(`/app/entities/api/network?${query.toString()}`);
@@ -3171,7 +3172,7 @@ async function renderConnectionsSection(entityId, containerId, isPrincipal) {
     }
 
     const referenceDay = network.reference_day || '';
-    const neighbors = Array.isArray(network.neighbors) ? network.neighbors : [];
+    const neighbors = shownConnectionNeighbors(Array.isArray(network.neighbors) ? network.neighbors : []);
     const withYouSlot = renderConnectionsNetwork(container, entityId, neighbors, referenceDay, isPrincipal);
     let hasWithYou = false;
 
@@ -3285,6 +3286,68 @@ function renderConnectionsNetwork(container, entityId, neighbors, referenceDay, 
   }
 
   return withYouSlot;
+}
+
+// The panel shows 15 neighbours, read from a wider window so that dropping
+// extraction artifacts below still leaves it full.
+const ENTITY_CONN_NEIGHBOR_SHOWN = 15;
+const ENTITY_CONN_NEIGHBOR_FETCH = 40;
+
+// Function words a transcriber leaves behind. Mirrors EVIDENCE_RESIDUE_WORDS in
+// solstone-core-home/src/connections.rs; keep the two lists in step.
+const ENTITY_CONN_RESIDUE_WORDS = new Set([
+  'a', 'an', 'and', 'are', 'as', 'at', 'be', 'but', 'by', 'for', 'from', 'had', 'has', 'have',
+  'he', 'her', 'his', 'i', 'in', 'is', 'it', 'its', 'of', 'on', 'or', 'our', 'she', 'so', 'than',
+  'that', 'the', 'their', 'them', 'then', 'there', 'they', 'this', 'to', 'was', 'with',
+]);
+
+// Evidence that is at least 99% `mentioned`. Mirrors is_mention_dominant in
+// solstone-core-home/src/connections.rs.
+function isEntityConnMentionDominant(neighbor) {
+  const kinds = neighbor && typeof neighbor.kinds === 'object' ? neighbor.kinds : null;
+  if (!kinds) return false;
+  let total = 0;
+  let mentioned = 0;
+  Object.entries(kinds).forEach(([kind, value]) => {
+    const count = Math.max(0, Math.trunc(Number(value && value.count) || 0));
+    total += count;
+    if (kind === 'mentioned') mentioned += count;
+  });
+  return total > 0 && mentioned * 100 >= total * 99;
+}
+
+// A one-word name the owner has only ever mentioned ("just", "think") is an
+// extraction artifact, not a connection. Mirrors is_mention_only_word.
+function isEntityConnMentionOnlyWord(neighbor) {
+  const name = String(neighbor?.name || '').trim();
+  if (name.split(/\s+/).filter(Boolean).length !== 1) return false;
+  return isEntityConnMentionDominant(neighbor);
+}
+
+// A mention-dominant neighbour whose latest evidence is one residue token is
+// a transcription artifact, whatever name was attached to it ("Gallery At
+// Reunion (The)" matched on "The"). The token that is the row's own name is
+// real evidence. Mirrors is_residue_evidence.
+function isEntityConnResidueEvidence(neighbor) {
+  if (!isEntityConnMentionDominant(neighbor)) return false;
+  const first = Array.isArray(neighbor?.evidence) ? neighbor.evidence[0] : null;
+  const label = String(first?.label || '').trim();
+  if (!label || label.split(/\s+/).length !== 1) return false;
+  const token = label.toLowerCase().replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, '');
+  const name = String(neighbor?.name || '').trim().toLowerCase();
+  if (name && name === token) return false;
+  return !token
+    || Array.from(token).length === 1
+    || !/\p{L}/u.test(token)
+    || ENTITY_CONN_RESIDUE_WORDS.has(token);
+}
+
+// The neighbours the panel lists: home's connections card drops the same
+// artifacts, so an entity's panel and home agree on who is a connection.
+function shownConnectionNeighbors(neighbors) {
+  return neighbors
+    .filter(neighbor => !isEntityConnMentionOnlyWord(neighbor) && !isEntityConnResidueEvidence(neighbor))
+    .slice(0, ENTITY_CONN_NEIGHBOR_SHOWN);
 }
 
 function renderWithYouBlock(container, entityId, history, referenceDay) {
@@ -6606,7 +6669,10 @@ async function confirmEntityDelete() {
 // re-reads afterwards only to refresh the view.
 const TIDY_PAGE_SIZE = 50;
 const TIDY_HIDE_BATCH = 50;
-const TIDY_MERGE_BATCH = 20;
+// One merge per request: merges inside one request run back to back, so a
+// writer in another process polling the trust lock never gets a turn and gives
+// up after 10 s. The pause between requests is that turn.
+const TIDY_MERGE_BATCH = 1;
 const TIDY_GAP_MS = 100;
 const TIDY_RETRY_MS = 1000;
 const TIDY_OP_KEY = 'entities.tidyOperation';
@@ -6619,6 +6685,7 @@ const tidyState = {
   data: null,
   error: null,
   loading: false,
+  pending: null,
   idsPage: 0,
   dupsPage: 0,
   idsPageData: null,
@@ -6666,7 +6733,14 @@ async function fetchTidyPage(offset) {
   return window.apiJson(`/app/entities/api/journal/tidy-up?offset=${offset}&limit=${TIDY_PAGE_SIZE}`);
 }
 
-async function loadTidyGroups({attempts = 1} = {}) {
+/// Starts a groups read and keeps it, so a view that needs the result while
+/// one is already running waits for that read instead of skipping it.
+function loadTidyGroups(options) {
+  tidyState.pending = readTidyGroups(options);
+  return tidyState.pending;
+}
+
+async function readTidyGroups({attempts = 1} = {}) {
   tidyState.loading = true;
   let lastErr = null;
   for (let attempt = 0; attempt < attempts; attempt += 1) {
@@ -7628,7 +7702,7 @@ async function renderJournalDetailIdNote(entity) {
   if (!host) return;
   host.querySelector('.journal-detail-id-note')?.remove();
   if (!entity?.entity_id) return;
-  if (!tidyState.data && !tidyState.loading) await loadTidyGroups();
+  if (!tidyState.data) await (tidyState.loading && tidyState.pending ? tidyState.pending : loadTidyGroups());
   const members = idMembers();
   if (!members || !members.includes(entity.entity_id)) return;
   if (currentDetailEntity && currentDetailEntity.id !== entity.id) return;

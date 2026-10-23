@@ -10,6 +10,16 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - on mac, local thinking now uses a runtime included with your journal. your existing setup keeps working while the new model files download. the switch waits for background thinking to finish. the journal removes the old files after the new runtime is ready.
 
+### Fixed
+
+- checking for updates on linux now allows more time for a slow connection and shows why a check failed.
+- backup requests on windows now report a timeout when the connection times out just before the request deadline.
+- fixed screen descriptions stopping with a blank notification when the on-device model lost its connection mid-request. your journal now retries that request.
+- on an entity's page, the line "this name looks like an ID" now shows when you open the page from a link or reload it. before, it showed only when you got there from the list.
+- on a phone, the message that shows hiding progress and undo on the entities page no longer sits under the bar at the bottom of the screen.
+- merging possible duplicates now merges one pair at a time, so other changes to your entities can save while a long merge runs. before, those changes could give up partway through a merge of many pairs.
+- an entity's connections no longer list words only ever mentioned in your journal, such as "just" or "think", or names matched on a single word like "the". home already left these out.
+
 ## [2.0.56] - 2026-10-23
 
 on windows, 2.0.56 is the first update since 2.0.54, so it also brings everything listed under 2.0.55, including the windows changes there.

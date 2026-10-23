@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use serde_json::Value;
 use solstone_core_backup::get_backup_config;
 
-#[cfg(any(test, feature = "test-hooks"))]
+#[cfg(all(not(windows), any(test, feature = "test-hooks")))]
 use crate::engine::run_backup_tool_resolution_started_hook;
 use crate::engine::{AdmittedBackupMode, AdmittedCapability, ClosedToolError};
 use crate::runner::ToolRunner;
@@ -16,7 +16,9 @@ use solstone_core_spp_attest::android_service_tools::{
     revalidate_installed_android_service_tools,
 };
 
+#[cfg(not(windows))]
 const RESTIC_MEMBER: &str = "lib/solstone-restic/restic";
+#[cfg(not(windows))]
 const RCLONE_MEMBER: &str = "lib/solstone-rclone/rclone";
 
 /// Captured pinned executable or admitted linked iOS implementation.
@@ -127,6 +129,7 @@ impl AndroidAuthority for LiveAndroidAuthority {
     }
 }
 
+#[cfg(not(windows))]
 fn map_android_refusal(
     refusal: &AndroidServiceToolsRefusal,
     needs_rclone: bool,
@@ -146,6 +149,7 @@ fn map_android_refusal(
     }
 }
 
+#[cfg(not(windows))]
 fn resolve_android_tools(
     authority: &dyn AndroidAuthority,
     needs_rclone: bool,
@@ -171,6 +175,7 @@ fn resolve_android_tools(
     })
 }
 
+#[cfg(not(windows))]
 fn resolve_android_restic_member(
     authority: &dyn AndroidAuthority,
 ) -> Result<PathBuf, ClosedToolError> {
