@@ -29,10 +29,12 @@ candidate_version() {
     esac
 }
 
+# Reads the journal identity through `<solstone launcher> journal --version`: the public `journal`
+# command only prints its replacement and exits 1 from 2.0.56 (f313edf64).
 assert_candidate_version() {
     local launcher=$1 actual expected
     expected="journal (solstone) $(candidate_version)"
-    actual=$("$launcher" --version)
+    actual=$("$launcher" journal --version) || fail "$launcher journal --version exited $?"
     [ "$actual" = "$expected" ] \
         || fail "$launcher reported '$actual', expected '$expected' from package metadata"
 }
@@ -158,7 +160,7 @@ case "$phase" in
         [ "$(command -v journal)" = "$HOME/.local/bin/journal" ] \
             || fail "bare journal does not resolve to the v1 owner path"
         journal --version | grep -F '1.0.22'
-        assert_candidate_version /usr/bin/journal
+        assert_candidate_version /usr/bin/solstone
 
         log "near-twin: exact recognition must fail before mutation or backup"
         sed -i 's/Edits will be overwritten/Changes will be overwritten/' "$HOME/.local/bin/journal"
@@ -242,7 +244,7 @@ case "$phase" in
         grep -Fq '# managed-version: 8' "$HOME/.local/bin/journal"
         grep -Fq '# managed-version: 8' "$HOME/.local/bin/solstone"
         [ ! -e "$HOME/.local/bin/sol" ] || fail "v1 sol authority survived crossover"
-        assert_candidate_version journal
+        assert_candidate_version solstone
         grep -Fq "ExecStart=$HOME/.local/bin/solstone journal start 5015" \
             "$HOME/.config/systemd/user/solstone.service"
         grep -Fq 'SOLSTONE_INSTALLATION_NAMESPACE=' "$HOME/.config/systemd/user/solstone.service"
@@ -288,7 +290,7 @@ PY
     verify-v2)
         wait_active
         assert_payload
-        assert_candidate_version journal
+        assert_candidate_version solstone
         grep -Fq "$(cat "$state_dir/v2-facet-id")" "$HOME/journal/facets/reference/facet.json" \
             || fail "the v2 facet id write did not persist"
         main=$(systemctl --user show solstone.service --property=MainPID --value)
