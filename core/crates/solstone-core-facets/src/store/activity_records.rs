@@ -228,6 +228,10 @@ fn read_rows_strict(path: &Path) -> Result<Vec<ActivityRecord>, ActivityRecordSt
         return Ok(Vec::new());
     }
     let text = read_text(path, String::new())?;
+    parse_rows_strict(&text)
+}
+
+fn parse_rows_strict(text: &str) -> Result<Vec<ActivityRecord>, ActivityRecordStoreError> {
     let mut rows = Vec::new();
     for line in text.lines() {
         let trimmed = line.trim();
@@ -428,6 +432,21 @@ pub fn read_activity_records_strict(
 ) -> Result<Vec<ActivityRecord>, ActivityRecordStoreError> {
     let rows = read_rows_strict(&day_path(root, facet, day)?)?;
     Ok(rows.into_iter().map(normalize).collect())
+}
+
+/// Apply the maintained strict projection to bytes already admitted by a
+/// bounded native reader. This never reopens a pathname during consumption.
+pub fn parse_activity_records_strict(
+    bytes: &[u8],
+) -> Result<Vec<ActivityRecord>, ActivityRecordStoreError> {
+    let text = std::str::from_utf8(bytes).map_err(|error| ReadError::Io {
+        path: PathBuf::from("activity rows"),
+        source: std::io::Error::new(std::io::ErrorKind::InvalidData, error),
+    })?;
+    Ok(parse_rows_strict(text)?
+        .into_iter()
+        .map(normalize)
+        .collect())
 }
 
 /// Admit a write to an existing declaration, adopting only a historical missing ID.
@@ -640,6 +659,21 @@ pub fn update_activity_record_checked(
             error.to_string(),
         ))
     })?;
+    // Derived publication must recheck manual holds while the normal facet
+    // trust lock excludes edits through the eventual patch publication. A
+    // pre-Generate observation cannot protect an edit made during Generate.
+    if matches!(actor, "story" | "participation") {
+        let rows = read_activity_records_strict(root, facet, day)?;
+        if rows
+            .iter()
+            .filter(|row| id(row) == record_id)
+            .any(|row| patch.keys().any(|key| activity_field_held(row, key)))
+        {
+            return Err(ActivityRecordStoreError::PublicationRefused {
+                detail: "activity output is held by owner".into(),
+            });
+        }
+    }
     checkpoint().map_err(|detail| ActivityRecordStoreError::PublicationRefused { detail })?;
     update_activity_record_with_check(
         root,
@@ -1020,6 +1054,72 @@ mod tests {
     }
 
     use super::*;
+
+    #[test]
+    fn checked_derived_publication_preserves_owner_holds_and_unrelated_fields() {
+        for (actor, field) in [("story", "story"), ("participation", "participation")] {
+            let root = tempfile::tempdir().unwrap();
+            crate::create_facet(root.path(), "home", "Home", "Test", "#123456", "", None).unwrap();
+            let row = serde_json::json!({"id":"writing_090000_300","activity":"writing","facet":"home","segments":["090000_300"]});
+            let _ = append_activity_record(
+                root.path(),
+                "home",
+                "20261016",
+                row.as_object().unwrap().clone(),
+            )
+            .unwrap();
+            let patch = Map::from_iter([(field.into(), Value::from("owner value"))]);
+            update_activity_record(
+                root.path(),
+                "home",
+                "20261016",
+                "writing_090000_300",
+                &patch,
+                "owner:test",
+                "hold",
+                "2026-10-16T12:00:00Z",
+            )
+            .unwrap();
+            let before = std::fs::read(day_path(root.path(), "home", "20261016").unwrap()).unwrap();
+            let derived = Map::from_iter([(field.into(), Value::from("derived replacement"))]);
+            let error = update_activity_record_checked(
+                root.path(),
+                "home",
+                "20261016",
+                "writing_090000_300",
+                &derived,
+                actor,
+                "derived",
+                "2026-10-16T12:01:00Z",
+                || Ok(()),
+            )
+            .unwrap_err();
+            assert_eq!(error.to_string(), "activity output is held by owner");
+            assert_eq!(
+                std::fs::read(day_path(root.path(), "home", "20261016").unwrap()).unwrap(),
+                before
+            );
+            let unheld = Map::from_iter([("unrelated".into(), Value::from("unheld output"))]);
+            update_activity_record_checked(
+                root.path(),
+                "home",
+                "20261016",
+                "writing_090000_300",
+                &unheld,
+                actor,
+                "unheld",
+                "2026-10-16T12:02:00Z",
+                || Ok(()),
+            )
+            .unwrap()
+            .unwrap();
+            let row = get_activity_record(root.path(), "home", "20261016", "writing_090000_300")
+                .unwrap()
+                .unwrap();
+            assert_eq!(row[field], "owner value");
+            assert_eq!(row["unrelated"], "unheld output");
+        }
+    }
 
     #[test]
     fn a_derived_update_sees_the_record_as_stored_when_it_writes() {
