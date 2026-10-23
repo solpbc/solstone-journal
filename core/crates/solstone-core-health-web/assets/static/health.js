@@ -25,7 +25,7 @@
     "HEALTH_GLANCE_DEVICES_UNKNOWN": "delivery from some of your devices isn't known right now.",
     "HEALTH_GLANCE_WORK_HELD": "some queued work is on hold for a safety check.",
     "HEALTH_GLANCE_WORK_UNAVAILABLE": "queued work status is unavailable right now.",
-    "HEALTH_GLANCE_OK": "the journal's live services and processing are working. the solstone app last added to your journal {age}.",
+    "HEALTH_GLANCE_OK": "the journal's live services and processing are working.",
     "HEALTH_GLANCE_BACKUP": "{headline}",
     "HEALTH_GLANCE_BRAIN_ATTENTION": "{headline}",
     "HEALTH_GLANCE_CHECKIN_STALE": "a journal run on {name} stopped checking in with your journal.",
@@ -1448,7 +1448,7 @@
     if (state.services.size > 0 || state.crashed.size > 0) {
       return {
         key: 'HEALTH_GLANCE_OK',
-        vars: { age: ageAgo(now - (state.lastEventTs || now)) },
+        vars: {},
       };
     }
 
