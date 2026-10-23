@@ -543,6 +543,26 @@ License notice: Apache License 2.0 (Apache-2.0).
 Apache-2.0 permits sol pbc's redistribution of these model files with its
 required notice and license terms.
 
+### Qwen3.5-4B MLX 4-bit model
+
+Attribution: `mlx-community/Qwen3.5-4B-MLX-4bit`, a 4-bit MLX conversion
+of `Qwen/Qwen3.5-4B` (Alibaba Cloud).
+
+Source:
+
+- Model repository: https://huggingface.co/mlx-community/Qwen3.5-4B-MLX-4bit
+- Pinned revision: `32f3e8ecf65426fc3306969496342d504bfa13f3`
+- Base model license:
+  https://huggingface.co/Qwen/Qwen3.5-4B/blob/851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a/LICENSE
+
+License notice: Apache License 2.0 (Apache-2.0).
+Copyright 2026 Alibaba Cloud.
+
+The conversion's pinned revision has no `LICENSE` file. Its model card
+identifies `Qwen/Qwen3.5-4B` as the base model. The base model's pinned
+`LICENSE` supplies the Apache-2.0 terms; a copy accompanies the mirrored
+model files as `LICENSE`.
+
 ## bundled sound-tag engine and model (ced.cpp)
 
 The journal packages include the ced.cpp sound-tag engine and the ced-tiny
