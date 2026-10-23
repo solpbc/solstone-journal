@@ -2523,86 +2523,7 @@ mod tests {
         );
         assert!(TEST_FETCH_RUNTIME_MEMBER_COUNT.with(std::cell::Cell::get) > 0);
 
-        // build_local_report_with on NVIDIA with both memory fields empty returns Ok and reaches executor:
-        let _g = AcquisitionTestGuard::new(true);
-        let journal = tempfile::tempdir().unwrap();
-        let nvd_empty = solstone_core_local::nvidia::NvidiaProbe {
-            schema: "solstone-nvidia-probe-v1".into(),
-            detected: true,
-            gpu_index: Some(0),
-            gpu_name: Some("NVIDIA".into()),
-            compute_cap: Some("8.9".into()),
-            arch: Some("sm_89".into()),
-            driver_cuda_major: Some(13),
-            vram_mib: None,
-            unified_memory_mib: None,
-            probe_error: None,
-        };
-        let (report, admission) = build_local_report_with(
-            journal.path(),
-            "linux",
-            "x86_64",
-            || nvd_empty,
-            || solstone_core_system::vulkan_observe::VulkanObservation {
-                devices: Vec::new(),
-                succeeded: true,
-            },
-            || None,
-        )
-        .expect("empty nvidia memory build_local_report_with returns Ok");
-        let _outcome = run_local_inner_with_platform(
-            || Ok(journal.path().to_path_buf()),
-            |_| missing_readiness(),
-            Some(report),
-            Some(admission),
-            install_local,
-            "linux",
-            "x86_64",
-        );
-        assert!(TEST_FETCH_RUNTIME_MEMBER_COUNT.with(std::cell::Cell::get) > 0);
-
-        // 3. IntegrityBlocked returns before the executor:
-        let _g = AcquisitionTestGuard::new(true);
-        let journal = tempfile::tempdir().unwrap();
-        let cuda_key = "x86_64-unknown-linux-gnu";
-        let (_, digest, _) = solstone_core_local::install::pins::cuda_pin(cuda_key).unwrap();
-        let install_dir = solstone_core_local::install::pins::cache_root(journal.path())
-            .join("cuda")
-            .join(cuda_key)
-            .join(digest);
-        fs::create_dir_all(&install_dir).unwrap();
-        fs::write(install_dir.join("llama-server"), b"corrupted launcher").unwrap();
-        fs::write(install_dir.join("libggml-cuda.so"), b"corrupted twin").unwrap();
-        let probe = solstone_core_local::nvidia::NvidiaProbe {
-            schema: "solstone-nvidia-probe-v1".into(),
-            detected: true,
-            gpu_index: Some(0),
-            gpu_name: Some("NVIDIA GeForce RTX 4090".into()),
-            compute_cap: Some("8.9".into()),
-            arch: Some("sm_89".into()),
-            driver_cuda_major: Some(13),
-            vram_mib: Some(24_576),
-            unified_memory_mib: None,
-            probe_error: None,
-        };
-        let report_res = build_local_report_with(
-            journal.path(),
-            "linux",
-            "x86_64",
-            || probe,
-            || solstone_core_system::vulkan_observe::VulkanObservation {
-                devices: Vec::new(),
-                succeeded: true,
-            },
-            || None,
-        );
-        assert_eq!(report_res.unwrap_err(), "cuda runtime integrity failure");
-        assert_eq!(
-            TEST_FETCH_RUNTIME_MEMBER_COUNT.with(std::cell::Cell::get),
-            0
-        );
-
-        // 4. Journal providers.local.vulkan_device_index:
+        // 3. Journal providers.local.vulkan_device_index:
         // Override from a below-bar device to a 6144 MiB device reaches acquisition:
         let _g = AcquisitionTestGuard::new(true);
         let journal = tempfile::tempdir().unwrap();
@@ -2717,7 +2638,7 @@ mod tests {
             0
         );
 
-        // 5. Unequal Vulkan cases through build_local_report_with:
+        // 4. Unequal Vulkan cases through build_local_report_with:
         // Case A: large NVIDIA memory, rejected arch (sm_70), dev0 eligible (8192), dev1 below-bar (4096), index 1
         let _g = AcquisitionTestGuard::new(true);
         TEST_ACQUIRE_MINT_COUNT.with(|c| c.set(0));
@@ -2855,6 +2776,93 @@ mod tests {
         );
         assert!(TEST_ACQUIRE_MINT_COUNT.with(std::cell::Cell::get) > 0);
         assert!(TEST_FETCH_RUNTIME_MEMBER_COUNT.with(std::cell::Cell::get) > 0);
+    }
+
+    // These cases require native CUDA pins: build_local_report_with injects
+    // hardware observations, while local_backend_choice resolves the host runtime.
+    #[cfg(all(target_os = "linux", feature = "full-tests"))]
+    #[test]
+    fn install_provider_cuda_admission_composed_lifecycle() {
+        use solstone_core_local::install::{AcquisitionTestGuard, TEST_FETCH_RUNTIME_MEMBER_COUNT};
+
+        // build_local_report_with on NVIDIA with both memory fields empty returns Ok and reaches executor:
+        let _g = AcquisitionTestGuard::new(true);
+        let journal = tempfile::tempdir().unwrap();
+        let nvd_empty = solstone_core_local::nvidia::NvidiaProbe {
+            schema: "solstone-nvidia-probe-v1".into(),
+            detected: true,
+            gpu_index: Some(0),
+            gpu_name: Some("NVIDIA".into()),
+            compute_cap: Some("8.9".into()),
+            arch: Some("sm_89".into()),
+            driver_cuda_major: Some(13),
+            vram_mib: None,
+            unified_memory_mib: None,
+            probe_error: None,
+        };
+        let (report, admission) = build_local_report_with(
+            journal.path(),
+            "linux",
+            "x86_64",
+            || nvd_empty,
+            || solstone_core_system::vulkan_observe::VulkanObservation {
+                devices: Vec::new(),
+                succeeded: true,
+            },
+            || None,
+        )
+        .expect("empty nvidia memory build_local_report_with returns Ok");
+        let _outcome = run_local_inner_with_platform(
+            || Ok(journal.path().to_path_buf()),
+            |_| missing_readiness(),
+            Some(report),
+            Some(admission),
+            install_local,
+            "linux",
+            "x86_64",
+        );
+        assert!(TEST_FETCH_RUNTIME_MEMBER_COUNT.with(std::cell::Cell::get) > 0);
+
+        // IntegrityBlocked returns before the executor:
+        let _g = AcquisitionTestGuard::new(true);
+        let journal = tempfile::tempdir().unwrap();
+        let cuda_key = solstone_core_local::install::pins::platform_key();
+        let (_, digest, _) = solstone_core_local::install::pins::cuda_pin(&cuda_key).unwrap();
+        let install_dir = solstone_core_local::install::pins::cache_root(journal.path())
+            .join("cuda")
+            .join(&cuda_key)
+            .join(digest);
+        fs::create_dir_all(&install_dir).unwrap();
+        fs::write(install_dir.join("llama-server"), b"corrupted launcher").unwrap();
+        fs::write(install_dir.join("libggml-cuda.so"), b"corrupted twin").unwrap();
+        let probe = solstone_core_local::nvidia::NvidiaProbe {
+            schema: "solstone-nvidia-probe-v1".into(),
+            detected: true,
+            gpu_index: Some(0),
+            gpu_name: Some("NVIDIA GeForce RTX 4090".into()),
+            compute_cap: Some("8.9".into()),
+            arch: Some("sm_89".into()),
+            driver_cuda_major: Some(13),
+            vram_mib: Some(24_576),
+            unified_memory_mib: None,
+            probe_error: None,
+        };
+        let report_res = build_local_report_with(
+            journal.path(),
+            "linux",
+            "x86_64",
+            || probe,
+            || solstone_core_system::vulkan_observe::VulkanObservation {
+                devices: Vec::new(),
+                succeeded: true,
+            },
+            || None,
+        );
+        assert_eq!(report_res.unwrap_err(), "cuda runtime integrity failure");
+        assert_eq!(
+            TEST_FETCH_RUNTIME_MEMBER_COUNT.with(std::cell::Cell::get),
+            0
+        );
     }
 
     #[cfg(all(target_os = "linux", feature = "full-tests"))]
