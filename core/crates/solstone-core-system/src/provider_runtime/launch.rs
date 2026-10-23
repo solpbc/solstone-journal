@@ -1921,11 +1921,14 @@ fn warmup_health_probe(port: u16) -> WarmupHealth {
 mod tests {
     use super::*;
     use crate::process::{LaunchAuthority, ProcessObservation};
+    #[cfg(feature = "full-tests")]
     use crate::provider_runtime::ProviderName;
     use crate::provider_runtime::model::{ProviderFence, ProviderStopCleanupRequest, RuntimePhase};
     use crate::provider_runtime::store::ReadyProcessLookup;
+    #[cfg(feature = "full-tests")]
     use std::path::Path;
 
+    #[cfg(all(target_os = "linux", feature = "full-tests"))]
     fn make_file_executable(path: &Path) {
         #[cfg(unix)]
         {
@@ -2875,6 +2878,7 @@ mod tests {
             .unwrap();
     }
 
+    #[cfg(feature = "full-tests")]
     fn write_windows_model_tree_in_module(root: &Path) {
         use solstone_core_local::install::manifest;
         use solstone_core_local::install::pins;
@@ -2897,6 +2901,7 @@ mod tests {
             .unwrap();
     }
 
+    #[cfg(feature = "full-tests")]
     fn windows_test_package_in_module(
         root: &Path,
     ) -> solstone_core_local::install::windows_engine::WindowsLlamaPackage {
