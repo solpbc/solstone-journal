@@ -77,7 +77,7 @@ impl Fixture {
     }
 
     fn journal_dispatcher(&self) -> PathBuf {
-        self.prefix.join("current/bin/journal")
+        self.prefix.join("current/bin/solstone")
     }
 
     fn service_path(&self) -> PathBuf {
@@ -157,7 +157,7 @@ impl Fixture {
     fn run_from(&self, dispatcher: &Path, path: Option<&str>) -> Output {
         let mut command = Command::new(dispatcher);
         command
-            .arg("__journal-route-inspect")
+            .args(["journal", "__journal-route-inspect"])
             .env("HOME", &self.home)
             .env("SOLSTONE_JOURNAL", &self.journal);
         if let Some(path) = path {
