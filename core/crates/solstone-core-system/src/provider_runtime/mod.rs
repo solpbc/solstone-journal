@@ -8,6 +8,7 @@ mod events;
 mod gate;
 mod launch;
 mod local_follow;
+mod macos_mlx;
 mod model;
 mod parakeet;
 mod parakeet_follow;

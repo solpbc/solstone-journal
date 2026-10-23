@@ -13,45 +13,6 @@ use super::pins::{MLX_QWEN_MODEL_ID, MLX_QWEN_PINS, MLX_QWEN_REVISION, MlxFilePi
 pub const HELPER_ENV_KEY: &str = "SOLSTONE_MLX_HELPER";
 pub const MODEL_DIR_ENV_KEY: &str = "SOLSTONE_MLX_MODEL_DIR";
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum MacosLocalBackend {
-    Metal,
-    Mlx,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct MacosLocalBackendError(pub String);
-
-impl std::fmt::Display for MacosLocalBackendError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl std::error::Error for MacosLocalBackendError {}
-
-pub fn select_macos_local_backend(
-    value: Option<&str>,
-) -> Result<MacosLocalBackend, MacosLocalBackendError> {
-    match value {
-        None | Some("metal") => Ok(MacosLocalBackend::Metal),
-        Some("mlx") => Ok(MacosLocalBackend::Mlx),
-        Some(other) => Err(MacosLocalBackendError(format!(
-            "invalid macOS local backend: {other:?}"
-        ))),
-    }
-}
-
-pub fn read_macos_local_backend_env() -> Result<MacosLocalBackend, MacosLocalBackendError> {
-    match std::env::var("SOLSTONE_MACOS_LOCAL_BACKEND") {
-        Ok(val) => select_macos_local_backend(Some(&val)),
-        Err(std::env::VarError::NotPresent) => select_macos_local_backend(None),
-        Err(std::env::VarError::NotUnicode(_)) => Err(MacosLocalBackendError(
-            "SOLSTONE_MACOS_LOCAL_BACKEND is not valid unicode".into(),
-        )),
-    }
-}
-
 pub fn resolve_override_path(path: PathBuf) -> PathBuf {
     let expanded = match path.to_str().and_then(|value| value.strip_prefix("~/")) {
         Some(remainder) => std::env::var_os("HOME")
@@ -95,6 +56,61 @@ fn is_valid_helper_executable(path: &Path) -> bool {
     metallib.is_file()
 }
 
+#[cfg(any(test, feature = "test-hooks"))]
+thread_local! {
+    static FIXTURE_HELPER: std::cell::RefCell<Option<PathBuf>> = const { std::cell::RefCell::new(None) };
+}
+
+/// A thread-bound packaged-helper fixture for admission/installer tests. The
+/// ordinary executable/resource checks still run; no process is launched.
+#[cfg(any(test, feature = "test-hooks"))]
+pub struct MlxHelperTestGuard {
+    _root: tempfile::TempDir,
+    previous: Option<PathBuf>,
+    _thread: std::marker::PhantomData<std::rc::Rc<()>>,
+}
+
+#[cfg(any(test, feature = "test-hooks"))]
+impl MlxHelperTestGuard {
+    pub fn new() -> Self {
+        let root = tempfile::tempdir().expect("MLX package fixture");
+        let helper = root.path().join("mlx-helper");
+        fs::write(&helper, b"fixture helper").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&helper, fs::Permissions::from_mode(0o700)).unwrap();
+        }
+        let resources = root.path().join("mlx-swift_Cmlx.bundle/Contents/Resources");
+        fs::create_dir_all(&resources).unwrap();
+        fs::write(
+            resources.join("default.metallib"),
+            b"fixture Metal resources",
+        )
+        .unwrap();
+        let previous = FIXTURE_HELPER.with(|slot| slot.replace(Some(helper)));
+        Self {
+            _root: root,
+            previous,
+            _thread: std::marker::PhantomData,
+        }
+    }
+}
+
+#[cfg(any(test, feature = "test-hooks"))]
+impl Default for MlxHelperTestGuard {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[cfg(any(test, feature = "test-hooks"))]
+impl Drop for MlxHelperTestGuard {
+    fn drop(&mut self) {
+        FIXTURE_HELPER.with(|slot| slot.replace(self.previous.take()));
+    }
+}
+
 pub fn resolve_mlx_helper(override_opt: Option<&str>) -> Result<PathBuf, String> {
     if let Some(explicit) = override_opt {
         let path = resolve_override_path(PathBuf::from(explicit));
@@ -105,6 +121,13 @@ pub fn resolve_mlx_helper(override_opt: Option<&str>) -> Result<PathBuf, String>
             "explicit MLX helper is not valid or missing metallib: {}",
             path.display()
         ));
+    }
+    #[cfg(any(test, feature = "test-hooks"))]
+    if let Some(path) = FIXTURE_HELPER.with(|slot| slot.borrow().clone()) {
+        if is_valid_helper_executable(&path) {
+            return path.canonicalize().map_err(|error| error.to_string());
+        }
+        return Err("MLX package fixture is invalid".into());
     }
     if let Some(env_val) = std::env::var_os(HELPER_ENV_KEY) {
         let path = resolve_override_path(PathBuf::from(env_val));
@@ -468,27 +491,9 @@ fn failure_readiness(reason_code: &str, detail: &str) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::install::{fingerprint, manifest, pins};
-
-    #[test]
-    fn test_select_macos_local_backend_matrix() {
-        assert_eq!(
-            select_macos_local_backend(None).unwrap(),
-            MacosLocalBackend::Metal
-        );
-        assert_eq!(
-            select_macos_local_backend(Some("metal")).unwrap(),
-            MacosLocalBackend::Metal
-        );
-        assert_eq!(
-            select_macos_local_backend(Some("mlx")).unwrap(),
-            MacosLocalBackend::Mlx
-        );
-        assert!(select_macos_local_backend(Some("")).is_err());
-        assert!(select_macos_local_backend(Some("MLX")).is_err());
-        assert!(select_macos_local_backend(Some("vulkan")).is_err());
-        assert!(select_macos_local_backend(Some("cuda")).is_err());
-    }
+    #[cfg(feature = "full-tests")]
+    use crate::install::manifest;
+    use crate::install::{fingerprint, pins};
 
     #[test]
     fn test_mlx_artifact_target_sha256_and_properties() {

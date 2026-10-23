@@ -1,7 +1,10 @@
 # mlx-helper
 
 A standalone Swift MLX inference server for Apple Silicon on macOS 15 or later.
-The journal does not use it yet, and release packages do not include it.
+The journal uses it for bundled local inference on macOS. Signed macOS release
+packages include the executable and its Metal resource bundle; the local
+installer downloads and verifies the pinned model files. See
+[provider installation and migration](../../../../docs/PROVIDERS.md#local-and-arbitrary-endpoints).
 
 From the repository root, build with `make mlx-helper`. This uses Xcode and its
 Metal toolchain and prints the executable and `mlx-swift_Cmlx.bundle` paths.

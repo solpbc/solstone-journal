@@ -1269,16 +1269,12 @@ pub fn current_setup_facts() -> SetupCatalogFacts {
     let thinking_download_bytes = match std::env::consts::OS {
         "windows" => model_sum,
         "macos" if std::env::consts::ARCH == "aarch64" => {
-            let macos_runtime = solstone_core_assets::resolve(
-                "llama-server-vulkan",
+            let assets = solstone_core_assets::resolve(
+                "local-model-mlx",
                 Some(solstone_core_assets::Platform::MacosArm64),
                 None,
             );
-            if macos_runtime.len() == 1 {
-                model_sum.map(|sum| sum.saturating_add(macos_runtime[0].size_bytes))
-            } else {
-                None
-            }
+            (!assets.is_empty()).then(|| assets.iter().map(|row| row.size_bytes).sum())
         }
         _ => None,
     };

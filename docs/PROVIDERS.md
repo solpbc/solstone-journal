@@ -37,7 +37,7 @@ models. See [Output and Context Budgets](#output-and-context-budgets).
 
 The Thinking app exposes six owner choices:
 
-- Bundled local, using Solstone's installed llama-server runtime.
+- Bundled local, using MLX on macOS and llama-server on Linux and Windows.
 - An owner-supplied OpenAI-compatible URL, model id, and optional bearer key.
 - OpenAI with an owner-supplied API key and model id.
 - ChatGPT, using the owner's own ChatGPT plan.
@@ -103,8 +103,23 @@ require:
 - stable local error classification.
 
 Bundled local posts to the supervisor-owned loopback server. Its install status
-lives under `health/providers/`, while artifact truth lives in provider manifests
-and the affirmative proof cache. A configured endpoint uses:
+lives under `health/providers/`. Artifact readiness comes from the installed
+manifests and model generations.
+
+On macOS, signed release packages include `mlx-helper` and its Metal resource
+bundle. The local installer downloads the pinned MLX model from the update
+origin. An existing installation keeps its installed llama-server serving while
+the MLX model downloads and verifies. The journal pauses admission of queued
+think and describe tasks, waits for existing tasks to finish, then stops the old
+runtime and starts MLX. If those tasks remain busy, the switch is deferred.
+Direct operator requests bypass that queue and can be interrupted by the swap. If MLX cannot start before the switch is saved,
+the installed llama-server resumes serving until a later attempt. Once MLX is
+ready and the switch is saved, the journal removes the unused managed
+llama-server, GGUF and projector caches. The saved switch persists across
+restarts; macOS does not download llama-server or switch back to it after
+migration. A runtime regression after migration requires a release rollback.
+
+A configured endpoint uses:
 
 - `providers.local.endpoint_url`
 - `providers.local.served_model_id`
@@ -264,11 +279,10 @@ readiness.
 
 `solstone-core assets` emits an additive declarative registry of downloadable
 artifacts. The installer pin tables remain the operational source for manifest
-identity and cache layout; the four native Rust fetch call sites (llama-server,
-parakeet-server, parakeet-model, and local-model) now resolve their download
-URLs through this registry. The remaining catalog rows stay declarative until
-their owners adopt the registry.
+identity and cache layout. Native runtime and model installers, including the
+macOS `local-model-mlx` installer, resolve their download URLs through this
+registry.
 
 There are no runtime compatibility shims for the retired shapes.
 
-Development-only macOS inference helper: [mlx-helper](../core/crates/solstone-core-local/mlx-helper/README.md).
+macOS local inference helper: [mlx-helper](../core/crates/solstone-core-local/mlx-helper/README.md).

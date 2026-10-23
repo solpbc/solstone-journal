@@ -1550,23 +1550,10 @@ fn bundled_runtime_readiness(
     let journal = journal.display().to_string();
     #[cfg(target_os = "macos")]
     {
-        let _ = nvidia_probe;
-        match solstone_core_local::read_macos_local_backend_env().ok()? {
-            solstone_core_local::MacosLocalBackend::Mlx => {
-                return Some(
-                    solstone_core_local::install::mlx_candidate::inspect_present_default(
-                        Path::new(&journal),
-                    ),
-                );
-            }
-            solstone_core_local::MacosLocalBackend::Metal => {}
-        }
-        solstone_core_local::install::metal_candidate::inspect_present(&Map::from_iter([
-            ("journal".into(), Value::String(journal)),
-            ("model_id".into(), Value::String(model_id.to_owned())),
-            ("backend".into(), Value::String("metal".into())),
-        ]))
-        .ok()
+        let _ = (nvidia_probe, model_id);
+        Some(
+            solstone_core_local::install::macos_mlx_migration::inspect_serving(Path::new(&journal)),
+        )
     }
     #[cfg(not(target_os = "macos"))]
     {

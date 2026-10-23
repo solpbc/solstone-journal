@@ -791,6 +791,7 @@ pub(crate) fn reconcile_providers(state: &mut SupervisorState) {
         &mut state.local.processes,
         &mut local_context,
     );
+    state.local.truth.reconcile_migration(&state.local.state);
     for effect in state.local.store.take_ready_side_effects() {
         submit_local_ready_side_effect(&state.queue, effect);
     }

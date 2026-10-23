@@ -220,7 +220,22 @@ pub fn build_local_fit_report(
     force_cpu: bool,
 ) -> FitReport {
     let artifact_key = local_artifact_key(os_name, arch);
-    let platform = if os_name == "windows" {
+    let platform = if os_name == "darwin" {
+        let supported = matches!(arch, "arm64" | "aarch64");
+        FitCheck {
+            name: "platform",
+            severity: if supported {
+                FitSeverity::Ok
+            } else {
+                FitSeverity::Blocked
+            },
+            detail: if supported {
+                "MLX runtime is included with the journal".to_owned()
+            } else {
+                format!("MLX requires macos on Apple silicon; got {os_name}/{arch}")
+            },
+        }
+    } else if os_name == "windows" {
         if arch == "x86_64" {
             match super::windows_engine::verified_windows_llama_package() {
                 Ok(_) => FitCheck {
@@ -262,11 +277,33 @@ pub fn build_local_fit_report(
         }
     };
     let ram = local_ram_check(model_id, available_ram);
-    let mut known = local_model_downloads(model_id);
-    if let (Some(generation), Some(staging)) = (
-        pins::model_generation(model_id),
-        pins::model_fetch_directory(journal, model_id),
-    ) {
+    let mut known = if os_name == "darwin" {
+        let fetch = pins::cache_root(journal)
+            .join("downloads/local-model-mlx")
+            .join(pins::mlx_model_generation().key());
+        vec![(
+            "MLX model",
+            pins::MLX_QWEN_PINS
+                .iter()
+                .map(|pin| {
+                    pin.size
+                        .saturating_sub(solstone_core_artifact_download::retained_prefix_bytes(
+                            &fetch.join(pin.name),
+                            pin.sha256,
+                            pin.size,
+                        ))
+                })
+                .sum(),
+        )]
+    } else {
+        local_model_downloads(model_id)
+    };
+    if os_name != "darwin"
+        && let (Some(generation), Some(staging)) = (
+            pins::model_generation(model_id),
+            pins::model_fetch_directory(journal, model_id),
+        )
+    {
         let installed = pins::model_directory(journal, model_id);
         for (index, name) in ["Qwen3.5-4B-Q4_K_M.gguf", "mmproj-F16.gguf"]
             .iter()
@@ -279,7 +316,7 @@ pub fn build_local_fit_report(
             }
         }
     }
-    let unknown = if os_name == "windows" {
+    let unknown = if matches!(os_name, "windows" | "darwin") {
         Vec::new()
     } else if os_name == "linux" && backend_choice.backend == Backend::Cuda {
         match pins::cuda_pin(&artifact_key) {

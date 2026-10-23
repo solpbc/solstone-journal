@@ -32,6 +32,7 @@ use crate::process::apply_parent_death_kill;
 use crate::process::{Disposition, LaunchError, SERVICE_SHUTDOWN_TIMEOUT};
 
 use super::local_follow::{LocalFollow, LocalInstallerLauncher};
+use super::macos_mlx::{MacosMlxHandover, MacosRuntimeChoice};
 use super::model::ManagedProcess;
 use super::model::{
     LaunchOutcomeStatus, ProviderFence, ProviderLaunchOutcome, ProviderProbeOutcome,
@@ -506,6 +507,7 @@ pub struct LocalTruthSeam {
     shared: Arc<LocalRuntimeShared>,
     config: LocalTruthConfig,
     follow: Option<Arc<LocalFollow>>,
+    migration: Option<Arc<MacosMlxHandover>>,
 }
 
 impl LocalTruthSeam {
@@ -530,10 +532,18 @@ impl LocalTruthSeam {
     }
 
     pub fn with_config(shared: Arc<LocalRuntimeShared>, config: LocalTruthConfig) -> Self {
+        let migration = (config.platform == LocalHost::Darwin).then(|| {
+            Arc::new(MacosMlxHandover::new(
+                config.journal_path.clone(),
+                Arc::new(super::store::SystemRuntimeClock::default()),
+                None,
+            ))
+        });
         Self {
             shared,
             config,
             follow: None,
+            migration,
         }
     }
 
@@ -546,6 +556,32 @@ impl LocalTruthSeam {
         self.follow = Some(Arc::new(LocalFollow::new(launcher)));
         self
     }
+
+    /// Admission pauses and reservations use the same queue mutex. Work already
+    /// reserved drains before the ordinary coordinator is asked to replace it.
+    #[must_use]
+    pub fn with_migration_queue(
+        mut self,
+        queue: crate::queue::TaskQueue,
+        clock: Arc<dyn RuntimeClock>,
+    ) -> Self {
+        if self.config.platform == LocalHost::Darwin {
+            self.migration = Some(Arc::new(MacosMlxHandover::new(
+                self.config.journal_path.clone(),
+                clock,
+                Some(queue),
+            )));
+        }
+        self
+    }
+
+    /// Called after ordinary reconciliation, so only its successful Ready
+    /// admission can publish the one-way migration decision.
+    pub fn reconcile_migration(&self, state: &ProviderRuntimeState) {
+        if let Some(migration) = &self.migration {
+            migration.advance(state, &self.shared);
+        }
+    }
 }
 
 impl TruthObservationSeam for LocalTruthSeam {
@@ -553,14 +589,29 @@ impl TruthObservationSeam for LocalTruthSeam {
         let shared = Arc::clone(&self.shared);
         let config = self.config.clone();
         let follow = self.follow.clone();
+        let migration = self.migration.clone();
         let fence = fence.clone();
         thread::spawn(move || {
-            let outcome = observe_truth(&shared, &config, follow.as_deref());
+            let outcome = observe_truth_with_mlx(
+                &shared,
+                &config,
+                follow.as_deref(),
+                |journal_config, predecessor, mlx| {
+                    migration.as_ref().map_or_else(
+                        || macos_choice_without_queue(&config.journal_path, predecessor),
+                        |migration| {
+                            migration.choose(journal_config, predecessor, mlx, follow.as_deref())
+                        },
+                    )
+                },
+                || mlx_candidate::inspect_present_default(&config.journal_path),
+            );
             shared.record_truth_result(&fence, outcome);
         });
     }
 }
 
+#[cfg(test)]
 fn observe_truth(
     shared: &LocalRuntimeShared,
     config: &LocalTruthConfig,
@@ -570,8 +621,23 @@ fn observe_truth(
         shared,
         config,
         follow,
-        mlx_candidate::read_macos_local_backend_env,
+        |_, predecessor, _| macos_choice_without_queue(&config.journal_path, predecessor),
         || mlx_candidate::inspect_present_default(&config.journal_path),
+    )
+}
+
+fn macos_choice_without_queue(
+    journal: &std::path::Path,
+    predecessor: &Value,
+) -> Result<MacosRuntimeChoice, String> {
+    use solstone_core_local::install::macos_mlx_migration::{MigrationState, read};
+    let state = read(journal).map_err(|error| error.to_string())?;
+    Ok(
+        if state != MigrationState::Committed && predecessor["ready"] == true {
+            MacosRuntimeChoice::Metal
+        } else {
+            MacosRuntimeChoice::Mlx
+        },
     )
 }
 
@@ -579,10 +645,7 @@ fn observe_truth_with_mlx(
     shared: &LocalRuntimeShared,
     config: &LocalTruthConfig,
     follow: Option<&LocalFollow>,
-    select_mlx: impl FnOnce() -> Result<
-        mlx_candidate::MacosLocalBackend,
-        mlx_candidate::MacosLocalBackendError,
-    >,
+    select_mlx: impl FnOnce(&Map<String, Value>, &Value, &Value) -> Result<MacosRuntimeChoice, String>,
     inspect_mlx: impl FnOnce() -> Value,
 ) -> super::model::ProviderTruthObservation {
     if !config.journal_path.is_dir() {
@@ -862,19 +925,21 @@ fn observe_truth_with_mlx(
             ),
         ])),
         LocalHost::Darwin => {
-            match select_mlx() {
-                Ok(mlx_candidate::MacosLocalBackend::Mlx) => {
-                    let readiness = inspect_mlx();
-                    if let Some(follow) = follow {
-                        follow.observe(
-                            &config.journal_path,
-                            config_present.then_some(&journal_config),
-                            &readiness,
-                        );
-                    }
-                    return observe_mlx_readiness(shared, readiness);
+            let input = Map::from_iter([
+                ("journal".into(), json!(config.journal_path)),
+                ("model_id".into(), json!(model_id)),
+                ("backend".into(), json!("metal")),
+            ]);
+            let predecessor = metal_candidate::inspect_present_with(&input, "aarch64-apple-darwin")
+                .unwrap_or_else(|_| json!({"ready":false,"status":"proof-unavailable"}));
+            let mlx = inspect_mlx();
+            match select_mlx(&journal_config, &predecessor, &mlx) {
+                Ok(MacosRuntimeChoice::Mlx) => {
+                    // Before the one-way decision, the migration-specific
+                    // follow path preserves every predecessor generation.
+                    return observe_mlx_readiness(shared, mlx);
                 }
-                Ok(mlx_candidate::MacosLocalBackend::Metal) => {}
+                Ok(MacosRuntimeChoice::Metal) => predecessor,
                 Err(error) => {
                     let mut observation = truth(
                         super::model::RuntimePhase::HostBlocked,
@@ -883,32 +948,16 @@ fn observe_truth_with_mlx(
                         false,
                         true,
                     );
-                    observation.detail = Some(json!({"backend":"mlx", "error":error.to_string()}));
+                    observation.detail = Some(json!({"backend":"mlx", "error":error}));
                     return observation;
                 }
             }
-            let input = Map::from_iter([
-                (
-                    "journal".into(),
-                    Value::String(config.journal_path.display().to_string()),
-                ),
-                ("model_id".into(), Value::String(model_id.clone())),
-                ("backend".into(), Value::String("metal".into())),
-            ]);
-            metal_candidate::inspect_present_with(&input, "aarch64-apple-darwin").unwrap_or_else(
-                |_| {
-                    json!({
-                        "provider":"local",
-                        "ready":false,
-                        "status":"proof-unavailable",
-                        "reason_code":"readiness_unavailable",
-                    })
-                },
-            )
         }
         LocalHost::Windows => unreachable!(),
     };
-    if let Some(follow) = follow {
+    if config.platform != LocalHost::Darwin
+        && let Some(follow) = follow
+    {
         follow.observe(
             &config.journal_path,
             config_present.then_some(&journal_config),

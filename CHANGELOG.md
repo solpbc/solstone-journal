@@ -6,6 +6,10 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- on mac, local thinking now uses a runtime included with your journal. your existing setup keeps working while the new model files download. the switch waits for background thinking to finish. the journal removes the old files after the new runtime is ready.
+
 ## [2.0.56] - 2026-10-23
 
 on windows, 2.0.56 is the first update since 2.0.54, so it also brings everything listed under 2.0.55, including the windows changes there.
