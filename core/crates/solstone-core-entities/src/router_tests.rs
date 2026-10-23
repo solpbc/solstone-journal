@@ -10049,6 +10049,12 @@ async fn journal_summary_hidden_splits_truthy_blocked_without_moving_folder_coun
         assert_eq!(item["blocked"], is_hidden_id);
     }
 
+    // hidden=include is the absent default, spelled out
+    let (status, resp_include) =
+        call(j.path(), "/app/entities/api/journal/summary?hidden=include").await;
+    assert_eq!(status, 200);
+    assert_eq!(resp_include, resp_all);
+
     // Same folder_counts, entity_total, type_counts with type=person
     let (status, resp_type) = call(j.path(), "/app/entities/api/journal/summary?type=person").await;
     assert_eq!(status, 200);
