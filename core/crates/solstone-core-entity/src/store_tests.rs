@@ -28,7 +28,7 @@ use crate::{
     read_ambiguities, read_entity_identity, read_identity_map, read_prepared_history,
     read_visible_history, record_ambiguity_choice, record_ambiguity_group_choice,
     record_ambiguity_observation, refresh_identity_map_cache, repair_entity_identities,
-    rescope_facet_ambiguities, restore_review, save_entity_identity,
+    rescope_facet_ambiguities, restore_review, save_entity_identity, save_entity_identity_with_map,
     save_entity_identity_with_timeout, set_forced_history_apply_failure,
     set_forced_identity_write_failure, set_repair_identity_write_failure_on_attempt,
     sweep_entity_review_policy, write_history_event_json_for_test,
@@ -3763,5 +3763,101 @@ fn cancelled_entity_publication_after_file_lock_wait_and_positive_twins() {
                 assert_ne!(fs::read(&path).unwrap(), before);
             }
         }
+    }
+}
+
+#[test]
+fn save_entity_identity_with_map_matches_public_save() {
+    let j_public = tempfile::tempdir_in("/var/tmp").unwrap();
+    let j_map = tempfile::tempdir_in("/var/tmp").unwrap();
+
+    let payload = json!({
+        "id": "alice",
+        "name": "Alice Smith",
+        "email": "alice@example.com"
+    });
+    let op = crate::EntityOperationContext {
+        kind: crate::EntityOperationKind::Update,
+        caller: Value::Null,
+        actor: Value::Null,
+        metadata: json!({"note": "test"}),
+    };
+
+    for root in [j_public.path(), j_map.path()] {
+        let prep_dir = root.join("entities/alice/history/prepared/staging_prep1");
+        fs::create_dir_all(&prep_dir).unwrap();
+        let prep_event = json!({
+            "schema_version": 1,
+            "version_id": "vh_prep1",
+            "seq": 1,
+            "ts": "2026-10-22T00:00:00Z",
+            "entity_id": "alice",
+            "entity_dir": "alice",
+            "kind": "create",
+            "identity_before": null,
+            "identity_after": {
+                "id": "alice",
+                "name": "Alice Initial"
+            },
+            "operation": {
+                "kind": "create",
+                "caller": null,
+                "actor": null,
+                "metadata": {}
+            }
+        });
+        fs::write(
+            prep_dir.join("event.json"),
+            serde_json::to_vec_pretty(&prep_event).unwrap(),
+        )
+        .unwrap();
+    }
+
+    // Public path
+    save_entity_identity(j_public.path(), "alice", &payload, Some(&op)).unwrap();
+
+    // Map-taking path
+    let _lock = crate::hold_entity_trust_lock(j_map.path()).unwrap();
+    let map = read_identity_map(j_map.path()).unwrap();
+    save_entity_identity_with_map(j_map.path(), "alice", &payload, Some(&op), &map, None).unwrap();
+    drop(_lock);
+
+    // Verify prepared directory is empty on both
+    let prep_pub = read_prepared_history(j_public.path(), "alice").unwrap();
+    let prep_map = read_prepared_history(j_map.path(), "alice").unwrap();
+    assert!(prep_pub.is_empty());
+    assert!(prep_map.is_empty());
+
+    // Compare identity objects (identical except updated_at)
+    let mut id_pub = read_entity_identity(j_public.path(), "alice")
+        .unwrap()
+        .unwrap()
+        .value()
+        .clone();
+    let mut id_map = read_entity_identity(j_map.path(), "alice")
+        .unwrap()
+        .unwrap()
+        .value()
+        .clone();
+    id_pub.as_object_mut().unwrap().remove("updated_at");
+    id_map.as_object_mut().unwrap().remove("updated_at");
+    assert_eq!(id_pub, id_map);
+
+    // Compare history events (identical except version_id, ts, operation)
+    let evs_pub = read_visible_history(j_public.path(), "alice").unwrap();
+    let evs_map = read_visible_history(j_map.path(), "alice").unwrap();
+    assert_eq!(evs_pub.len(), evs_map.len());
+    for (e_pub, e_map) in evs_pub.iter().zip(evs_map.iter()) {
+        let mut v_pub = e_pub.value().clone();
+        let mut v_map = e_map.value().clone();
+        for obj in [
+            v_pub.as_object_mut().unwrap(),
+            v_map.as_object_mut().unwrap(),
+        ] {
+            obj.remove("version_id");
+            obj.remove("ts");
+            obj.remove("operation");
+        }
+        assert_eq!(v_pub, v_map);
     }
 }

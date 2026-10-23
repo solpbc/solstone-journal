@@ -1284,6 +1284,8 @@ fn check_aka_cross_references(
 ) -> Result<(), EntityMergeError> {
     let directory = contained_path(journal, "entities")
         .map_err(|error| EntityMergeError::Refused(error.to_string()))?;
+    #[cfg(any(test, feature = "test-hooks"))]
+    super::test_counters::test_instrumentation::increment_entities_dir_listing();
     let mut ids = Vec::new();
     for entry in list_dir_entries(&directory)
         .map_err(|error| EntityMergeError::Refused(error.to_string()))?

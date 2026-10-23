@@ -55,6 +55,8 @@ impl IdentityCensus {
 /// Run an authoritative identity census using durable observations directly.
 pub fn scan_identity_census(journal_root: &Path) -> Result<IdentityCensus, EntityStoreError> {
     let entities_dir = contained_path(journal_root, "entities")?;
+    #[cfg(any(test, feature = "test-hooks"))]
+    super::test_counters::test_instrumentation::increment_entities_dir_listing();
 
     let entries = match list_dir_entries(&entities_dir) {
         Ok(entries) => entries,

@@ -11,7 +11,7 @@ use axum::body::{Body, to_bytes};
 use axum::http::Request;
 use rusqlite::Connection;
 use serde_json::{Value, json};
-use solstone_core_convey_http::identity::AccessBasis;
+use solstone_core_convey_http::identity::{AccessBasis, Carrier};
 use solstone_core_entity::{AmbiguityObservation, record_ambiguity_observation};
 use solstone_core_indexer_store::{db::db_path, scan::scan_journal};
 use tower::ServiceExt;
@@ -160,6 +160,22 @@ async fn post(root: &Path, uri: &str, body: Value) -> (u16, Value) {
         .body(Body::from(body.to_string()))
         .unwrap();
     request.extensions_mut().insert(AccessBasis::Localhost);
+    let response = crate::router(root).oneshot(request).await.unwrap();
+    let status = response.status().as_u16();
+    let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    (status, serde_json::from_slice(&bytes).unwrap())
+}
+async fn post_with_access(
+    root: &Path,
+    uri: &str,
+    body: Value,
+    access: AccessBasis,
+) -> (u16, Value) {
+    let mut request = Request::post(uri)
+        .header("content-type", "application/json")
+        .body(Body::from(body.to_string()))
+        .unwrap();
+    request.extensions_mut().insert(access);
     let response = crate::router(root).oneshot(request).await.unwrap();
     let status = response.status().as_u16();
     let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
@@ -2062,6 +2078,280 @@ async fn unblock_open_entity_is_operation_failed_at_bad_request() {
     .await;
     assert_eq!(status, 400);
     assert_eq!(response["reason_code"], "entity_operation_failed");
+}
+
+#[tokio::test]
+async fn bulk_routes_pairing_peer_rejected_with_agent_unavailable() {
+    let j = Journal::new();
+    seed_entity(j.path(), "a", "Alice");
+
+    let peer = AccessBasis::PairingPeer {
+        carrier: Carrier::Direct,
+    };
+
+    let (status, response) = post_with_access(
+        j.path(),
+        "/app/entities/api/journal/block",
+        json!({"operation": "bulk-peer-test", "ids": ["a"]}),
+        peer.clone(),
+    )
+    .await;
+    assert_eq!(status, 503);
+    assert_eq!(response["reason_code"], "agent_unavailable");
+
+    let (status, response) = post_with_access(
+        j.path(),
+        "/app/entities/api/journal/unblock",
+        json!({"operation": "bulk-peer-test", "limit": 10}),
+        peer,
+    )
+    .await;
+    assert_eq!(status, 503);
+    assert_eq!(response["reason_code"], "agent_unavailable");
+}
+
+#[tokio::test]
+async fn bulk_routes_missing_required_fields_return_bad_request() {
+    let j = Journal::new();
+    seed_entity(j.path(), "a", "Alice");
+
+    // Block missing operation
+    let (status, response) = post(
+        j.path(),
+        "/app/entities/api/journal/block",
+        json!({"ids": ["a"]}),
+    )
+    .await;
+    assert_eq!(status, 400);
+    assert_eq!(response["reason_code"], "missing_required_field");
+
+    // Block missing ids
+    let (status, response) = post(
+        j.path(),
+        "/app/entities/api/journal/block",
+        json!({"operation": "bulk-op"}),
+    )
+    .await;
+    assert_eq!(status, 400);
+    assert_eq!(response["reason_code"], "missing_required_field");
+
+    // Unblock missing operation
+    let (status, response) = post(
+        j.path(),
+        "/app/entities/api/journal/unblock",
+        json!({"limit": 10}),
+    )
+    .await;
+    assert_eq!(status, 400);
+    assert_eq!(response["reason_code"], "missing_required_field");
+
+    // Unblock missing limit
+    let (status, response) = post(
+        j.path(),
+        "/app/entities/api/journal/unblock",
+        json!({"operation": "bulk-op"}),
+    )
+    .await;
+    assert_eq!(status, 400);
+    assert_eq!(response["reason_code"], "missing_required_field");
+}
+
+#[tokio::test]
+async fn bulk_routes_invalid_request_values_and_types_return_bad_request() {
+    let j = Journal::new();
+    seed_entity(j.path(), "a", "Alice");
+
+    // Block non-object body
+    let (status, response) = post(
+        j.path(),
+        "/app/entities/api/journal/block",
+        json!("not an object"),
+    )
+    .await;
+    assert_eq!(status, 400);
+    assert_eq!(response["reason_code"], "invalid_request_value");
+
+    // Block operation not string
+    let (status, response) = post(
+        j.path(),
+        "/app/entities/api/journal/block",
+        json!({"operation": 123, "ids": ["a"]}),
+    )
+    .await;
+    assert_eq!(status, 400);
+    assert_eq!(response["reason_code"], "invalid_request_value");
+
+    // Block ids not array
+    let (status, response) = post(
+        j.path(),
+        "/app/entities/api/journal/block",
+        json!({"operation": "bulk-op", "ids": "a"}),
+    )
+    .await;
+    assert_eq!(status, 400);
+    assert_eq!(response["reason_code"], "invalid_request_value");
+
+    // Block ids element not string
+    let (status, response) = post(
+        j.path(),
+        "/app/entities/api/journal/block",
+        json!({"operation": "bulk-op", "ids": [123]}),
+    )
+    .await;
+    assert_eq!(status, 400);
+    assert_eq!(response["reason_code"], "invalid_request_value");
+
+    // Block ids empty
+    let (status, response) = post(
+        j.path(),
+        "/app/entities/api/journal/block",
+        json!({"operation": "bulk-op", "ids": []}),
+    )
+    .await;
+    assert_eq!(status, 400);
+    assert_eq!(response["reason_code"], "invalid_request_value");
+
+    // Unblock non-object body
+    let (status, response) = post(
+        j.path(),
+        "/app/entities/api/journal/unblock",
+        json!([1, 2, 3]),
+    )
+    .await;
+    assert_eq!(status, 400);
+    assert_eq!(response["reason_code"], "invalid_request_value");
+
+    // Unblock operation not string
+    let (status, response) = post(
+        j.path(),
+        "/app/entities/api/journal/unblock",
+        json!({"operation": true, "limit": 10}),
+    )
+    .await;
+    assert_eq!(status, 400);
+    assert_eq!(response["reason_code"], "invalid_request_value");
+
+    // Unblock limit not integer
+    let (status, response) = post(
+        j.path(),
+        "/app/entities/api/journal/unblock",
+        json!({"operation": "bulk-op", "limit": "10"}),
+    )
+    .await;
+    assert_eq!(status, 400);
+    assert_eq!(response["reason_code"], "invalid_request_value");
+
+    // Unblock limit zero
+    let (status, response) = post(
+        j.path(),
+        "/app/entities/api/journal/unblock",
+        json!({"operation": "bulk-op", "limit": 0}),
+    )
+    .await;
+    assert_eq!(status, 400);
+    assert_eq!(response["reason_code"], "invalid_request_value");
+}
+
+#[tokio::test]
+async fn bulk_undo_unused_operation_then_block_same_operation_fails_with_operation_undone() {
+    let j = Journal::new();
+    seed_entity(j.path(), "a", "Alice");
+
+    // Undo unused operation
+    let (status, response) = post(
+        j.path(),
+        "/app/entities/api/journal/unblock",
+        json!({"operation": "bulk-unused-then-block", "limit": 10}),
+    )
+    .await;
+    assert_eq!(status, 200);
+    assert_eq!(response["restored"].as_array().unwrap().len(), 0);
+
+    // Block with same operation fails with 409 operation_undone
+    let (status, response) = post(
+        j.path(),
+        "/app/entities/api/journal/block",
+        json!({"operation": "bulk-unused-then-block", "ids": ["a"]}),
+    )
+    .await;
+    assert_eq!(status, 409);
+    assert_eq!(response["reason_code"], "operation_undone");
+}
+
+#[tokio::test]
+async fn bulk_block_principal_entity_protected() {
+    let j = Journal::new();
+    seed_entity(j.path(), "a", "Alice");
+    write(
+        j.path(),
+        "entities/owner/entity.json",
+        json!({"id":"owner","name":"Owner","type":"Person","is_principal":true}),
+    );
+
+    let (status, response) = post(
+        j.path(),
+        "/app/entities/api/journal/block",
+        json!({"operation": "bulk-protect-principal", "ids": ["a", "owner"]}),
+    )
+    .await;
+    assert_eq!(status, 400);
+    assert_eq!(response["reason_code"], "principal_entity_protected");
+}
+
+#[tokio::test]
+async fn bulk_block_fails_with_entity_record_damaged_on_corrupt_relationship() {
+    let j = Journal::new();
+    seed_entity(j.path(), "a", "Alice");
+    seed_facet_entity(j.path(), "work", "a");
+    let bad_file = j.path().join("facets/work/entities/a/entity.json");
+    fs::write(&bad_file, b"not valid json").unwrap();
+
+    let (status, response) = post(
+        j.path(),
+        "/app/entities/api/journal/block",
+        json!({"operation": "bulk-damaged-rel", "ids": ["a"]}),
+    )
+    .await;
+    assert_eq!(status, 409);
+    assert_eq!(response["reason_code"], "entity_record_damaged");
+    let detail = response["detail"].as_str().unwrap();
+    assert_eq!(detail, "facets/work/entities/a/entity.json");
+    assert!(!detail.contains(j.path().to_str().unwrap()));
+}
+
+#[tokio::test]
+async fn bulk_block_and_unblock_localhost_success() {
+    let j = Journal::new();
+    seed_entity(j.path(), "a", "Alice");
+    seed_facet_entity(j.path(), "work", "a");
+
+    let (status, response) = post(
+        j.path(),
+        "/app/entities/api/journal/block",
+        json!({"operation": "bulk-happy-path", "ids": ["a"]}),
+    )
+    .await;
+    assert_eq!(status, 200);
+    assert_eq!(response["hidden"], json!(["a"]));
+    assert!(response["already_hidden"].as_array().unwrap().is_empty());
+
+    let (status, entity) = call(j.path(), "/app/entities/api/journal/entity/a").await;
+    assert_eq!(status, 200);
+    assert_eq!(entity["entity"]["blocked"], true);
+
+    let (status, response) = post(
+        j.path(),
+        "/app/entities/api/journal/unblock",
+        json!({"operation": "bulk-happy-path", "limit": 10}),
+    )
+    .await;
+    assert_eq!(status, 200);
+    assert_eq!(response["restored"].as_array().unwrap().len(), 1);
+    assert_eq!(response["restored"][0]["id"], "a");
+
+    let (status, entity) = call(j.path(), "/app/entities/api/journal/entity/a").await;
+    assert_eq!(status, 200);
+    assert_eq!(entity["entity"]["blocked"], false);
 }
 
 #[tokio::test]

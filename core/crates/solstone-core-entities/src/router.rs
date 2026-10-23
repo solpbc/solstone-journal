@@ -209,6 +209,14 @@ fn api_router_from_state(state: Arc<RouterState>) -> Router {
             post(unblock_journal_entity_route),
         )
         .route(
+            "/app/entities/api/journal/block",
+            post(block_journal_entities_route),
+        )
+        .route(
+            "/app/entities/api/journal/unblock",
+            post(unblock_journal_operation_route),
+        )
+        .route(
             "/app/entities/api/cancel-delete/{pending_id}",
             post(cancel_deferred_delete_route),
         )
@@ -3163,6 +3171,171 @@ async fn unblock_journal_entity_route(
         ),
         Ok(Err(error)) => refusal(ReasonCode::EntityOperationFailed, error.to_string()),
         Err(_) => refusal(ReasonCode::EntityOperationFailed, "couldn't unhide entity"),
+    }
+}
+
+async fn block_journal_entities_route(
+    Extension(b): Extension<AccessBasis>,
+    State(root): State<Arc<RouterState>>,
+    request: Request,
+) -> Response {
+    if let Some(r) = admitted(&b) {
+        return r;
+    }
+    let bytes = match axum::body::to_bytes(request.into_body(), usize::MAX).await {
+        Ok(bytes) => bytes,
+        Err(_) => {
+            return refusal(
+                ReasonCode::InvalidRequestValue,
+                "request body could not be read",
+            );
+        }
+    };
+    let value: serde_json::Value = match serde_json::from_slice(&bytes) {
+        Ok(v) => v,
+        Err(_) => return refusal(ReasonCode::InvalidRequestValue, "body is not valid JSON"),
+    };
+    let Some(obj) = value.as_object() else {
+        return refusal(
+            ReasonCode::InvalidRequestValue,
+            "body must be a JSON object",
+        );
+    };
+
+    if !obj.contains_key("operation") {
+        return refusal(ReasonCode::MissingRequiredField, "operation is required");
+    }
+    let Some(operation) = obj.get("operation").and_then(Value::as_str) else {
+        return refusal(
+            ReasonCode::InvalidRequestValue,
+            "operation must be a string",
+        );
+    };
+    let operation = operation.to_owned();
+
+    if !obj.contains_key("ids") {
+        return refusal(ReasonCode::MissingRequiredField, "ids is required");
+    }
+    let Some(ids_array) = obj.get("ids").and_then(Value::as_array) else {
+        return refusal(ReasonCode::InvalidRequestValue, "ids must be an array");
+    };
+    let mut ids = Vec::with_capacity(ids_array.len());
+    for item in ids_array {
+        let Some(id_str) = item.as_str() else {
+            return refusal(
+                ReasonCode::InvalidRequestValue,
+                "ids elements must be strings",
+            );
+        };
+        ids.push(id_str.to_owned());
+    }
+
+    match solstone_core_serving::seam::run_blocking(move || {
+        solstone_core_facets::block_journal_entities(&root, &operation, &ids)
+    })
+    .await
+    {
+        Ok(Ok(report)) => Json(json!(report)).into_response(),
+        Ok(Err(e)) if e.is_lock_timeout() => refusal(ReasonCode::EntityBusy, "entity busy"),
+        Ok(Err(solstone_core_facets::BulkJournalError::InvalidOperationId(id))) => refusal(
+            ReasonCode::InvalidRequestValue,
+            format!("invalid operation id: {id}"),
+        ),
+        Ok(Err(solstone_core_facets::BulkJournalError::InvalidIdsCount(count))) => refusal(
+            ReasonCode::InvalidRequestValue,
+            format!("invalid ids count: {count}"),
+        ),
+        Ok(Err(solstone_core_facets::BulkJournalError::OperationUndone(op))) => refusal(
+            ReasonCode::OperationUndone,
+            format!("operation {op} has already been undone"),
+        ),
+        Ok(Err(solstone_core_facets::BulkJournalError::PrincipalEntityProtected { entity_id })) => {
+            refusal(
+                ReasonCode::PrincipalEntityProtected,
+                format!("principal entity is protected from this operation: {entity_id}"),
+            )
+        }
+        Ok(Err(solstone_core_facets::BulkJournalError::RelationshipsUnreadable { path })) => {
+            refusal(ReasonCode::EntityRecordDamaged, path)
+        }
+        Ok(Err(other)) => refusal(ReasonCode::EntityOperationFailed, other.to_string()),
+        Err(_) => refusal(ReasonCode::EntityOperationFailed, "batch block failed"),
+    }
+}
+
+async fn unblock_journal_operation_route(
+    Extension(b): Extension<AccessBasis>,
+    State(root): State<Arc<RouterState>>,
+    request: Request,
+) -> Response {
+    if let Some(r) = admitted(&b) {
+        return r;
+    }
+    let bytes = match axum::body::to_bytes(request.into_body(), usize::MAX).await {
+        Ok(bytes) => bytes,
+        Err(_) => {
+            return refusal(
+                ReasonCode::InvalidRequestValue,
+                "request body could not be read",
+            );
+        }
+    };
+    let value: serde_json::Value = match serde_json::from_slice(&bytes) {
+        Ok(v) => v,
+        Err(_) => return refusal(ReasonCode::InvalidRequestValue, "body is not valid JSON"),
+    };
+    let Some(obj) = value.as_object() else {
+        return refusal(
+            ReasonCode::InvalidRequestValue,
+            "body must be a JSON object",
+        );
+    };
+
+    if !obj.contains_key("operation") {
+        return refusal(ReasonCode::MissingRequiredField, "operation is required");
+    }
+    let Some(operation) = obj.get("operation").and_then(Value::as_str) else {
+        return refusal(
+            ReasonCode::InvalidRequestValue,
+            "operation must be a string",
+        );
+    };
+    let operation = operation.to_owned();
+
+    if !obj.contains_key("limit") {
+        return refusal(ReasonCode::MissingRequiredField, "limit is required");
+    }
+    let Some(limit_val) = obj.get("limit") else {
+        return refusal(ReasonCode::MissingRequiredField, "limit is required");
+    };
+    let Some(limit) = limit_val.as_i64() else {
+        return refusal(ReasonCode::InvalidRequestValue, "limit must be an integer");
+    };
+
+    match solstone_core_serving::seam::run_blocking(move || {
+        solstone_core_facets::unblock_journal_operation(&root, &operation, limit)
+    })
+    .await
+    {
+        Ok(Ok(report)) => Json(json!(report)).into_response(),
+        Ok(Err(e)) if e.is_lock_timeout() => refusal(ReasonCode::EntityBusy, "entity busy"),
+        Ok(Err(solstone_core_facets::BulkJournalError::InvalidOperationId(id))) => refusal(
+            ReasonCode::InvalidRequestValue,
+            format!("invalid operation id: {id}"),
+        ),
+        Ok(Err(solstone_core_facets::BulkJournalError::InvalidLimit(limit))) => refusal(
+            ReasonCode::InvalidRequestValue,
+            format!("invalid limit: {limit}"),
+        ),
+        Ok(Err(solstone_core_facets::BulkJournalError::OperationUndone(op))) => refusal(
+            ReasonCode::OperationUndone,
+            format!("operation {op} has already been undone"),
+        ),
+        Ok(Err(solstone_core_facets::BulkJournalError::RelationshipsUnreadable { path })) => {
+            refusal(ReasonCode::EntityRecordDamaged, path)
+        }
+        Ok(Err(other)) => refusal(ReasonCode::EntityOperationFailed, other.to_string()),
+        Err(_) => refusal(ReasonCode::EntityOperationFailed, "batch unblock failed"),
     }
 }
 

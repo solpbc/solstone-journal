@@ -211,6 +211,8 @@ fn examine(journal: &Path) -> Result<EntityDoctorReport, EntityDoctorError> {
     if solstone_core_journal_io::path_lexists(&entities_dir)
         .map_err(|error| EntityDoctorError::Unreadable(error.to_string()))?
     {
+        #[cfg(any(test, feature = "test-hooks"))]
+        solstone_core_entity::increment_entities_dir_listing();
         for entry in solstone_core_journal_io::list_dir_entries(&entities_dir).map_err(|error| {
             EntityDoctorError::Unreadable(format!("entities can't be listed: {error}"))
         })? {

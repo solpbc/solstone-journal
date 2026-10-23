@@ -46,7 +46,7 @@ use super::identity::{
     IdentitySnapshot, entity_identity_destination_occupied, identity_destination_path,
     read_entity_identity,
 };
-use super::map::read_identity_map;
+use super::map::{EntityIdentityMap, read_identity_map};
 use super::paths::{
     ambiguities_path, events_dir, identity_map_cache_path, identity_path, prepared_dir,
 };
@@ -389,6 +389,58 @@ fn save_entity_identity_with_lock_options(
         None => hold_entity_trust_lock(journal_root)?,
     };
     let map = read_identity_map(journal_root)?;
+    let result =
+        save_entity_identity_with_map(journal_root, identity_id, identity, operation, &map, None)
+            .map_err(|save_err| save_err.error)?;
+
+    if result.changed {
+        rewrite_identity_map_cache(journal_root)?;
+    }
+    Ok(result)
+}
+
+#[derive(Debug)]
+pub struct EntitySaveError {
+    pub error: EntityWriteError,
+    pub durable: bool,
+}
+
+impl fmt::Display for EntitySaveError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.error.fmt(formatter)
+    }
+}
+
+impl std::error::Error for EntitySaveError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        self.error.source()
+    }
+}
+
+impl From<EntitySaveError> for EntityWriteError {
+    fn from(error: EntitySaveError) -> Self {
+        error.error
+    }
+}
+
+pub fn save_entity_identity_with_map(
+    journal_root: &Path,
+    identity_id: &str,
+    identity: &Value,
+    operation: Option<&EntityOperationContext>,
+    map: &EntityIdentityMap,
+    visible_history: Option<&[HistoryEvent]>,
+) -> Result<EntitySaveResult, EntitySaveError> {
+    let mut durable = false;
+    if identity_id.is_empty() {
+        return Err(EntitySaveError {
+            error: EntityWriteError::InvalidIdentity {
+                identity_id: identity_id.to_owned(),
+                detail: "identity id is empty".to_owned(),
+            },
+            durable: false,
+        });
+    }
     let (entity_dir, creating) = match map.resolved.get(identity_id) {
         Some(directory) => (directory.clone(), false),
         None => (identity_id.to_owned(), true),
@@ -397,38 +449,102 @@ fn save_entity_identity_with_lock_options(
         match super::retired::retired_state(journal_root, identity_id) {
             Ok(None) => {}
             Ok(Some(super::retired::RetiredState::Merged { successor })) => {
-                return Err(EntityWriteError::IdentityMerged {
-                    identity_id: identity_id.to_owned(),
-                    successor,
+                return Err(EntitySaveError {
+                    error: EntityWriteError::IdentityMerged {
+                        identity_id: identity_id.to_owned(),
+                        successor,
+                    },
+                    durable: false,
                 });
             }
             Ok(Some(super::retired::RetiredState::Deleted)) => {
-                return Err(EntityWriteError::IdentityDeleted {
-                    identity_id: identity_id.to_owned(),
+                return Err(EntitySaveError {
+                    error: EntityWriteError::IdentityDeleted {
+                        identity_id: identity_id.to_owned(),
+                    },
+                    durable: false,
                 });
             }
             Err(detail) => {
-                return Err(EntityWriteError::InvalidIdentity {
-                    identity_id: identity_id.to_owned(),
-                    detail,
+                return Err(EntitySaveError {
+                    error: EntityWriteError::InvalidIdentity {
+                        identity_id: identity_id.to_owned(),
+                        detail,
+                    },
+                    durable: false,
                 });
             }
         }
     }
-    if creating && entity_identity_destination_occupied(journal_root, &entity_dir)? {
-        return Err(EntityWriteError::CreateDestinationOccupied {
-            identity_id: identity_id.to_owned(),
-            path: identity_destination_path(journal_root, &entity_dir)?,
-        });
+    if creating {
+        match entity_identity_destination_occupied(journal_root, &entity_dir) {
+            Ok(true) => {
+                let dest = identity_destination_path(journal_root, &entity_dir)
+                    .unwrap_or_else(|_| PathBuf::from(&entity_dir));
+                return Err(EntitySaveError {
+                    error: EntityWriteError::CreateDestinationOccupied {
+                        identity_id: identity_id.to_owned(),
+                        path: dest,
+                    },
+                    durable: false,
+                });
+            }
+            Ok(false) => {}
+            Err(err) => {
+                return Err(EntitySaveError {
+                    error: err.into(),
+                    durable: false,
+                });
+            }
+        }
     }
-    let path = identity_path(journal_root, &entity_dir)?;
+    let path = match identity_path(journal_root, &entity_dir) {
+        Ok(p) => p,
+        Err(err) => {
+            return Err(EntitySaveError {
+                error: err.into(),
+                durable: false,
+            });
+        }
+    };
 
-    reconcile_prepared_history(journal_root, &entity_dir)?;
-    let before = read_entity_identity(journal_root, &entity_dir)?;
-    let after = without_stray_principal_flag(
-        before.as_ref().map(IdentitySnapshot::value),
-        normalized_identity(identity_id, identity)?,
-    );
+    match reconcile_prepared_history(journal_root, &entity_dir) {
+        Ok(reconciled) => {
+            if reconciled {
+                durable = true;
+            }
+        }
+        Err(err) => {
+            return Err(EntitySaveError {
+                error: err,
+                durable,
+            });
+        }
+    }
+
+    let before = match read_entity_identity(journal_root, &entity_dir) {
+        Ok(b) => b,
+        Err(err) => {
+            return Err(EntitySaveError {
+                error: err.into(),
+                durable,
+            });
+        }
+    };
+
+    let normalized = match normalized_identity(identity_id, identity) {
+        Ok(n) => n,
+        Err(err) => {
+            return Err(EntitySaveError {
+                error: err,
+                durable,
+            });
+        }
+    };
+
+    let after =
+        without_stray_principal_flag(before.as_ref().map(IdentitySnapshot::value), normalized);
+
     if before
         .as_ref()
         .is_some_and(|snapshot| python_json_equal(snapshot.value(), &after))
@@ -441,21 +557,56 @@ fn save_entity_identity_with_lock_options(
         });
     }
 
-    validate_operation(operation)?;
-    let event = build_history_event(
+    if let Err(err) = validate_operation(operation) {
+        return Err(EntitySaveError {
+            error: err,
+            durable,
+        });
+    }
+
+    let event = match build_history_event(
         &entity_dir,
         before.as_ref(),
         &after,
         operation,
         journal_root,
-    )?;
+        visible_history,
+    ) {
+        Ok(ev) => ev,
+        Err(err) => {
+            return Err(EntitySaveError {
+                error: err,
+                durable,
+            });
+        }
+    };
+
     let version_id = event["version_id"]
         .as_str()
         .expect("writer created version id");
-    stage_event(journal_root, &entity_dir, version_id, &event)?;
-    write_identity_snapshot(&path, &after).map_err(EntityWriteError::IdentityWrite)?;
-    publish_staged_event(journal_root, &entity_dir, version_id, &event)?;
-    rewrite_identity_map_cache(journal_root)?;
+
+    if let Err(err) = stage_event(journal_root, &entity_dir, version_id, &event) {
+        return Err(EntitySaveError {
+            error: err,
+            durable,
+        });
+    }
+    durable = true;
+
+    if let Err(err) = write_identity_snapshot(&path, &after) {
+        return Err(EntitySaveError {
+            error: EntityWriteError::IdentityWrite(err),
+            durable,
+        });
+    }
+
+    if let Err(err) = publish_staged_event(journal_root, &entity_dir, version_id, &event) {
+        return Err(EntitySaveError {
+            error: err,
+            durable,
+        });
+    }
+
     Ok(EntitySaveResult {
         entity_dir,
         changed: true,
@@ -971,30 +1122,53 @@ fn apply_prepared_history_plan(
     Ok(())
 }
 
-fn reconcile_prepared_history(
+pub fn reconcile_prepared_history(
     journal_root: &Path,
     entity_dir: &str,
-) -> Result<(), EntityWriteError> {
-    for PreparedHistoryEvent { staging_id, event } in
-        read_prepared_history(journal_root, entity_dir)?
-    {
-        let current = read_entity_identity(journal_root, entity_dir)?;
-        match classify_prepared_history(entity_dir, &event, current.as_ref())? {
-            PreparedHistoryOutcome::Publish => {
-                publish_staged_event(journal_root, entity_dir, &staging_id, event.value())?;
+) -> Result<bool, EntityWriteError> {
+    match classify_prepared_history_plan(journal_root, entity_dir) {
+        Ok(planned) => {
+            if planned.is_empty() {
+                return Ok(false);
             }
-            PreparedHistoryOutcome::Discard => {
-                discard_staged_event(journal_root, entity_dir, &staging_id)?;
-            }
-            PreparedHistoryOutcome::RepairRequired => {
-                return Err(EntityWriteError::ReconciliationRepairRequired {
-                    entity_dir: entity_dir.to_owned(),
-                    version_id: staging_id,
-                });
-            }
+            apply_prepared_history_plan(journal_root, entity_dir, planned)?;
+            Ok(true)
         }
+        Err(EntityWriteError::ReconciliationRepairRequired { .. }) => {
+            let mut modified = false;
+            for PreparedHistoryEvent { staging_id, event } in
+                read_prepared_history(journal_root, entity_dir)?
+            {
+                let current = read_entity_identity(journal_root, entity_dir)?;
+                match classify_prepared_history(entity_dir, &event, current.as_ref())? {
+                    PreparedHistoryOutcome::Publish => {
+                        apply_prepared_history_plan(
+                            journal_root,
+                            entity_dir,
+                            vec![(staging_id, event, PreparedHistoryOutcome::Publish)],
+                        )?;
+                        modified = true;
+                    }
+                    PreparedHistoryOutcome::Discard => {
+                        apply_prepared_history_plan(
+                            journal_root,
+                            entity_dir,
+                            vec![(staging_id, event, PreparedHistoryOutcome::Discard)],
+                        )?;
+                        modified = true;
+                    }
+                    PreparedHistoryOutcome::RepairRequired => {
+                        return Err(EntityWriteError::ReconciliationRepairRequired {
+                            entity_dir: entity_dir.to_owned(),
+                            version_id: staging_id,
+                        });
+                    }
+                }
+            }
+            Ok(modified)
+        }
+        Err(e) => Err(e),
     }
-    Ok(())
 }
 
 /// `identity` as a write leaves it, with a stray principal flag dropped
@@ -1037,13 +1211,21 @@ fn build_history_event(
     after: &Value,
     operation: Option<&EntityOperationContext>,
     journal_root: &Path,
+    visible_history: Option<&[HistoryEvent]>,
 ) -> Result<Value, EntityWriteError> {
     let kind = operation
         .map(|context| context.kind.as_str())
         .unwrap_or(if before.is_some() { "update" } else { "create" });
     let mut maximum = 0_i128;
-    for event in read_visible_history(journal_root, entity_dir)? {
-        maximum = maximum.max(event.sequence()?);
+    if let Some(events) = visible_history {
+        // The slice is valid only because the caller already reconciled under this same lock; this save reconciles again, which must be a no-op, then uses the slice.
+        for event in events {
+            maximum = maximum.max(event.sequence()?);
+        }
+    } else {
+        for event in read_visible_history(journal_root, entity_dir)? {
+            maximum = maximum.max(event.sequence()?);
+        }
     }
     let sequence = maximum
         .checked_add(1)
@@ -1208,7 +1390,37 @@ where
 
 pub fn rewrite_identity_map_cache(journal_root: &Path) -> Result<(), EntityWriteError> {
     let map = read_identity_map(journal_root)?;
-    write_identity_map_cache(journal_root, &map.resolved)?;
+    write_resolved_identity_map_cache(journal_root, &map.resolved)
+}
+
+pub fn write_resolved_identity_map_cache(
+    journal_root: &Path,
+    resolved: &HashMap<String, String>,
+) -> Result<(), EntityWriteError> {
+    #[cfg(any(test, feature = "test-hooks"))]
+    if let Some(mode) = super::test_counters::test_instrumentation::peek_cache_failure_hook()
+        && mode == super::test_counters::test_instrumentation::CacheFailMode::FailCache
+    {
+        super::test_counters::test_instrumentation::take_cache_failure_hook();
+        return Err(EntityWriteError::CacheWriteAfterCommit(
+            solstone_core_journal_io::errors::AtomicWriteError::Io {
+                path: PathBuf::from("test"),
+                source: std::io::Error::other("test hook cache failure"),
+            },
+        ));
+    }
+
+    write_identity_map_cache(journal_root, resolved)?;
+
+    #[cfg(any(test, feature = "test-hooks"))]
+    if let Some(mode) = super::test_counters::test_instrumentation::take_cache_failure_hook()
+        && mode == super::test_counters::test_instrumentation::CacheFailMode::FailEnqueue
+    {
+        return Err(EntityWriteError::SearchUpdateAfterCommit(
+            std::io::Error::other("test hook enqueue failure"),
+        ));
+    }
+
     solstone_core_indexer_todo::enqueue_token(
         journal_root,
         solstone_core_indexer_todo::Token::EntitySearch,

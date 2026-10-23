@@ -34,18 +34,19 @@ pub use store::{
     EntityIdentityRepairReport, EntityIdentityRepairSkip, EntityIdentityRepairSkipReason,
     EntityLifecycleError, EntityMergeError, EntityMergeOpenClass, EntityMergeOptions,
     EntityMergePreview, EntityMergeReport, EntityOperationContext, EntityOperationKind,
-    EntityReviewCandidateError, EntitySaveResult, EntityStoreError, EntityWriteError, HistoryEntry,
-    HistoryEvent, IdentityCensus, IdentityMapCacheLoad, IdentityMapLoser, IdentityMapLoserReason,
-    IdentityObservation, IdentitySnapshot, IncomingObservationRow, JournalEntity, MergeLogRow,
-    MergedEntity, NamedIdentityGroups, ObservationChange, ObservationEntityResolution,
-    ObservationErrorSource, ObservationLookup, ObservationLookupError, ObservationOperationCounts,
-    ObservationPage, ObservationPageItem, ObservationParseSource, ObservationReadOrder,
-    ObservationReadQuery, ObservationRow, ObservationStoreError, ObservationSummary,
-    ObservationWriteError, ObservationWriteOutcome, PREFIX_CUTOFF, ParsedObservations,
-    PreparedHistoryEvent, PreparedHistoryOutcome, PreparedIdentityChange, PreparedMergeProposals,
-    PreparedObservationBatch, RETIRED_ENTITIES_FILE, REVIEW_SWEEP_RECEIPT_RELATIVE_PATH, Retired,
-    RetiredEntities, RetiredRecordHold, RetiredState, ReviewRestoreTarget, TYPO_FLOOR,
-    VoiceprintArchive, VoiceprintEnvelope, VoiceprintItem, VoiceprintKey, VoiceprintNpzError,
+    EntityReviewCandidateError, EntitySaveError, EntitySaveResult, EntityStoreError,
+    EntityWriteError, HistoryEntry, HistoryEvent, IdentityCensus, IdentityMapCacheLoad,
+    IdentityMapLoser, IdentityMapLoserReason, IdentityObservation, IdentitySnapshot,
+    IncomingObservationRow, JournalEntity, MergeLogRow, MergedEntity, NamedIdentityGroups,
+    ObservationChange, ObservationEntityResolution, ObservationErrorSource, ObservationLookup,
+    ObservationLookupError, ObservationOperationCounts, ObservationPage, ObservationPageItem,
+    ObservationParseSource, ObservationReadOrder, ObservationReadQuery, ObservationRow,
+    ObservationStoreError, ObservationSummary, ObservationWriteError, ObservationWriteOutcome,
+    PREFIX_CUTOFF, ParsedObservations, PreparedHistoryEvent, PreparedHistoryOutcome,
+    PreparedIdentityChange, PreparedMergeProposals, PreparedObservationBatch,
+    RETIRED_ENTITIES_FILE, REVIEW_SWEEP_RECEIPT_RELATIVE_PATH, Retired, RetiredEntities,
+    RetiredRecordHold, RetiredState, ReviewRestoreTarget, TYPO_FLOOR, VoiceprintArchive,
+    VoiceprintEnvelope, VoiceprintItem, VoiceprintKey, VoiceprintNpzError,
     VoiceprintOperationError, VoiceprintRemoval, VoiceprintRemovalReport, VoiceprintSkipReasons,
     accept_merge_candidate, add_observation, add_observation_for_entity,
     adopt_configured_principal, ambiguity_group_revision, apply_ambiguity_review_policy,
@@ -71,8 +72,8 @@ pub use store::{
     preview_entity_merge, publish_identity_change, publish_merge_proposals, read_ambiguities,
     read_entity_identity, read_identity_group_map, read_identity_map, read_journal_principal,
     read_live_observations, read_merge_log, read_named_identity_groups, read_prepared_history,
-    read_retired_entities, read_visible_history, record_ambiguity_choice,
-    record_ambiguity_group_choice, record_ambiguity_observation,
+    read_retired_entities, read_visible_history, reconcile_prepared_history,
+    record_ambiguity_choice, record_ambiguity_group_choice, record_ambiguity_observation,
     record_ambiguity_observation_checked, record_deleted_entity, record_merge_candidate,
     record_merge_candidate_checked, record_observation_ops_strict, record_seeded_deletion,
     recover_interrupted_entity_merge, refresh_identity_map_cache,
@@ -80,16 +81,26 @@ pub use store::{
     rescope_facet_ambiguities, resolve_observation_entity_dir, restore_journal_entity_version,
     restore_review, retired_record_damage, retired_record_hold, retired_state, retry_add_for_test,
     retry_record_for_test, rewrite_identity_map_cache, rewrite_voiceprint_metadata,
-    save_entity_identity, save_voiceprints_batch, save_voiceprints_batch_checked,
-    scan_identity_census, serialize_observation_rows, standing_merge_for_suggestion,
-    sweep_entity_review_policy, try_load_entity_voiceprints_file,
+    save_entity_identity, save_entity_identity_with_map, save_voiceprints_batch,
+    save_voiceprints_batch_checked, scan_identity_census, serialize_observation_rows,
+    standing_merge_for_suggestion, sweep_entity_review_policy, try_load_entity_voiceprints_file,
     try_load_entity_voiceprints_in_dir, unblock_journal_entity, unrecognized_entity_files,
-    validate_review_object, voiceprint_key_from_metadata,
+    validate_review_object, voiceprint_key_from_metadata, write_resolved_identity_map_cache,
 };
 pub use trust_lock::{
     EntityTrustLock, EntityTrustLockError, FacetTrustLock, FacetTrustLockError,
     after_entity_trust_released, hold_entity_trust_lock, hold_entity_trust_lock_raw_for_test,
     hold_facet_trust_lock, hold_facet_trust_lock_raw_for_test, hold_facet_trust_lock_with_options,
+};
+
+#[cfg(any(test, feature = "test-hooks"))]
+pub use store::test_counters::test_instrumentation;
+#[cfg(any(test, feature = "test-hooks"))]
+pub use store::test_counters::test_instrumentation::{
+    CacheFailMode, CacheFailureGuard, entities_dir_listing_count, increment_entities_dir_listing,
+    increment_relationship_read, increment_visible_history_read, relationship_read_count_for_path,
+    reset_test_counters, set_write_resolved_cache_failure_hook, total_relationship_read_count,
+    total_visible_history_read_count, visible_history_read_count,
 };
 
 #[cfg(test)]

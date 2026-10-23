@@ -27,6 +27,8 @@ mod repair;
 pub(crate) mod retired;
 pub(crate) mod review_candidates;
 pub mod review_policy;
+#[cfg(any(test, feature = "test-hooks"))]
+pub mod test_counters;
 pub(crate) mod voiceprints;
 mod write;
 
@@ -122,10 +124,11 @@ pub use voiceprints::{
 };
 pub use write::{
     AmbiguityChoiceEntity, AmbiguityChoiceRequest, AmbiguityObservation, EntityOperationContext,
-    EntityOperationKind, EntitySaveResult, EntityWriteError, IdentityMapCacheLoad,
+    EntityOperationKind, EntitySaveError, EntitySaveResult, EntityWriteError, IdentityMapCacheLoad,
     PreparedIdentityChange, dismiss_ambiguity, prepare_identity_changes, publish_identity_change,
-    record_ambiguity_choice, record_ambiguity_observation, record_ambiguity_observation_checked,
-    refresh_identity_map_cache, rewrite_identity_map_cache, save_entity_identity,
+    reconcile_prepared_history, record_ambiguity_choice, record_ambiguity_observation,
+    record_ambiguity_observation_checked, refresh_identity_map_cache, rewrite_identity_map_cache,
+    save_entity_identity, save_entity_identity_with_map, write_resolved_identity_map_cache,
 };
 
 #[cfg(test)]

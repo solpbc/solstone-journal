@@ -79,6 +79,8 @@ pub fn read_visible_history(
     journal_root: &Path,
     entity_dir: &str,
 ) -> Result<Vec<HistoryEvent>, EntityStoreError> {
+    #[cfg(any(test, feature = "test-hooks"))]
+    super::test_counters::test_instrumentation::increment_visible_history_read(entity_dir);
     let directory = events_dir(journal_root, entity_dir)?;
     list_dir_entries(&directory)?
         .into_iter()
