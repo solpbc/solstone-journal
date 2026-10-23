@@ -17,16 +17,16 @@ mod wire;
 mod writer;
 
 /// Resolve an app-owned Callosum endpoint before opening a Unix socket.
-/// iOS container paths can exceed sockaddr_un even when their final symlink
+/// Mobile app paths can exceed sockaddr_un even when their final symlink
 /// points to a short app-private endpoint. Other Unix platforms keep the path.
 ///
 /// # Errors
-/// Returns an error when an iOS alias is missing, relative or too long.
+/// Returns an error when a mobile alias is missing, relative or too long.
 #[cfg(unix)]
 pub fn endpoint_path(
     path: &std::path::Path,
 ) -> std::io::Result<std::borrow::Cow<'_, std::path::Path>> {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if path.as_os_str().len() >= 104
         || std::fs::symlink_metadata(path).is_ok_and(|metadata| metadata.file_type().is_symlink())
     {
@@ -35,7 +35,11 @@ pub fn endpoint_path(
     Ok(std::borrow::Cow::Borrowed(path))
 }
 
-#[cfg(any(target_os = "ios", all(unix, test, feature = "full-tests")))]
+#[cfg(any(
+    target_os = "ios",
+    target_os = "android",
+    all(unix, test, feature = "full-tests")
+))]
 fn short_socket_alias(path: &std::path::Path) -> std::io::Result<std::path::PathBuf> {
     let target = std::fs::read_link(path)?;
     if !target.is_absolute() || target.as_os_str().len() >= 104 {

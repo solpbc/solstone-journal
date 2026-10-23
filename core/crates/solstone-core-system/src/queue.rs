@@ -133,6 +133,108 @@ pub struct QueuedTaskSnapshot {
     pub scheduler_name: Option<String>,
 }
 
+/// A bounded whitelist of daily work, without unrelated command content.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct DailyQueueWork {
+    pub day: String,
+    pub request_id: Option<String>,
+    pub reference: String,
+    pub command: Vec<String>,
+}
+
+impl DailyQueueWork {
+    /// Pure projection shared by historical events and the current owner read.
+    pub fn project(
+        day: Option<&str>,
+        command: &[String],
+        references: &[String],
+        scheduler: Option<&str>,
+    ) -> Option<Self> {
+        if scheduler.is_some()
+            || references.len() != 1
+            || !bounded_observation_command(command)
+            || references[0].len() > 96
+        {
+            return None;
+        }
+        let day = day?;
+        if day.len() != 8
+            || !day.bytes().all(|c| c.is_ascii_digit())
+            || chrono::NaiveDate::parse_from_str(day, "%Y%m%d").is_err()
+        {
+            return None;
+        }
+        let request_id = match command.len() {
+            8 => {
+                let id = &command[7];
+                if id.len() != 32
+                    || !id
+                        .bytes()
+                        .all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c))
+                {
+                    return None;
+                }
+                if !command.iter().map(String::as_str).eq([
+                    "solstone",
+                    "journal",
+                    "think",
+                    "--day",
+                    day,
+                    "--from-scratch",
+                    "--work-intent",
+                    id,
+                ]) {
+                    return None;
+                }
+                Some(id.as_str())
+            }
+            6 if command.iter().map(String::as_str).eq([
+                "solstone",
+                "journal",
+                "think",
+                "--day",
+                day,
+                "--daily-only",
+            ]) =>
+            {
+                None
+            }
+            _ => return None,
+        };
+        let reference = format!("supervisor-work-{day}-{}", request_id.unwrap_or("daily"));
+        if references[0] != reference {
+            return None;
+        }
+        Some(Self {
+            day: day.to_owned(),
+            request_id: request_id.map(str::to_owned),
+            reference,
+            command: command.to_vec(),
+        })
+    }
+}
+
+/// A coherent read of this queue owner, never a reservation or execution proof.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DailyQueueRead {
+    pub read_started: Instant,
+    pub read_finished: Instant,
+    pub ready: bool,
+    pub shutdown: bool,
+    pub global_hold: bool,
+    pub held: bool,
+    pub running_or_reserved: bool,
+    pub slot: Option<DailyQueueWork>,
+    pub index_conflict: bool,
+    pub queued: Vec<DailyQueueWork>,
+}
+
+const DAILY_OBSERVATION_LIMIT: usize = 32;
+
+fn bounded_observation_command(command: &[String]) -> bool {
+    !command.is_empty() && command.len() <= 8 && command.iter().all(|arg| arg.len() <= 64)
+}
+
 /// The most discovered tasks the queue takes from one replacement.
 pub const DISCOVERED_ADMISSION: usize = 4;
 
@@ -2813,6 +2915,108 @@ impl TaskQueue {
             active_count,
             forced,
         }
+    }
+
+    /// Read bounded daily state without waiting for its lock or changing work.
+    /// Normal producers can briefly wait behind this copy. Callers must still
+    /// validate root, Stop and policy after unlock; the result reserves nothing.
+    pub fn try_read_daily(&self) -> Result<DailyQueueRead, &'static str> {
+        let read_started = Instant::now();
+        let daily = Partition::new("daily");
+        let probe = crate::partition::canonical_journal_command(["think"]);
+        let mut queued = Vec::with_capacity(DAILY_OBSERVATION_LIMIT);
+        let state = self
+            .inner
+            .state
+            .try_lock()
+            .map_err(|_| "queue_observation_busy_or_poisoned")?;
+        if !state.ready || !state.pending.is_empty() {
+            return Err("queue_observation_pre_ready");
+        }
+        if state.shutdown {
+            return Err("queue_observation_shutdown");
+        }
+        if state.running.len() > DAILY_OBSERVATION_LIMIT
+            || state.active.len() > DAILY_OBSERVATION_LIMIT
+            || state.held.len() > DAILY_OBSERVATION_LIMIT
+            || state.queues.len() > 128
+            || state
+                .queues
+                .get(&daily)
+                .is_some_and(|rows| rows.len() > DAILY_OBSERVATION_LIMIT)
+        {
+            return Err("queue_observation_capacity");
+        }
+        let mut index_conflict = false;
+        for (partition, slot) in &state.running {
+            if partition.as_str().len() > 64
+                || slot.reference.len() > 96
+                || !bounded_observation_command(&slot.command)
+                || crate::partition::partition_for(&slot.command) != *partition
+            {
+                return Err("queue_observation_ambiguous");
+            }
+            index_conflict |= index_daily_pair_conflicts(&probe, &slot.command);
+        }
+        // Bound strings before comparisons; unknown active ownership cannot
+        // look like an idle lane or borrow another command's reservation.
+        for (reference, active) in &state.active {
+            if reference.len() > 96
+                || active.partition.as_str().len() > 64
+                || !bounded_observation_command(&active.command)
+                || !state.running.get(&active.partition).is_some_and(|slot| {
+                    &slot.reference == reference && slot.command == active.command
+                })
+            {
+                return Err("queue_observation_ambiguous");
+            }
+        }
+        if let Some(rows) = state.queues.get(&daily) {
+            for row in rows {
+                queued.push(
+                    DailyQueueWork::project(
+                        row.day.as_deref(),
+                        &row.command,
+                        &row.references,
+                        row.scheduler_name.as_deref(),
+                    )
+                    .ok_or("queue_observation_ambiguous")?,
+                );
+            }
+        }
+        let slot = state
+            .running
+            .get(&daily)
+            .map(|slot| {
+                DailyQueueWork::project(
+                    slot.command.get(4).map(String::as_str),
+                    &slot.command,
+                    std::slice::from_ref(&slot.reference),
+                    None,
+                )
+                .ok_or("queue_observation_ambiguous")
+            })
+            .transpose()?;
+        let (ready, shutdown, global_hold, held, running_or_reserved) = (
+            state.ready,
+            state.shutdown,
+            state.queue_hold.is_some(),
+            state.held.contains_key(&daily),
+            state.running.contains_key(&daily),
+        );
+        drop(state);
+        Ok(DailyQueueRead {
+            read_started,
+            read_finished: Instant::now(),
+            ready,
+            shutdown,
+            global_hold,
+            held,
+            running_or_reserved,
+            slot,
+            index_conflict,
+            queued,
+        })
     }
 
     pub fn collect_status_snapshot(&self, now: Instant) -> TaskQueueStatusSnapshot {
@@ -6432,6 +6636,212 @@ mod tests {
             priority: None,
             daily_catchup_provenance: provenance,
         })
+    }
+
+    #[cfg(feature = "full-tests")]
+    mod daily_read_proofs {
+        use super::*;
+        const ID: &str = "0123456789abcdef0123456789abcdef";
+
+        fn fixture() -> (TaskQueue, Vec<String>, String) {
+            let queue = queue(false, 10, VecDeque::new());
+            let command = crate::partition::canonical_journal_command([
+                "think",
+                "--day",
+                "20260104",
+                "--from-scratch",
+                "--work-intent",
+                ID,
+            ]);
+            let reference = format!("supervisor-work-20260104-{ID}");
+            let args: Vec<_> = command.iter().map(String::as_str).collect();
+            let mut submission = normalize_request(
+                command_request(&args, &reference, None),
+                queue.inner.options.cap_resolver.as_ref(),
+            );
+            submission.day = Some("20260104".into());
+            {
+                let mut state = queue.inner.state.lock().unwrap();
+                state.ready = true;
+                enqueue_locked(&mut state, submission);
+            }
+            (queue, command, reference)
+        }
+
+        #[test]
+        fn current_membership_is_exact_and_read_preserves_the_queue() {
+            let (queue, command, reference) = fixture();
+            let before = queue.collect_status_snapshot(Instant::now());
+            let read = queue.try_read_daily().unwrap();
+            assert!(read.ready && !read.shutdown && !read.running_or_reserved);
+            assert!(!read.held && !read.global_hold && !read.index_conflict);
+            assert!(read.read_finished >= read.read_started);
+            assert_eq!(read.queued.len(), 1);
+            assert_eq!(read.queued[0].request_id.as_deref(), Some(ID));
+            assert_eq!(read.queued[0].reference, reference);
+            assert_eq!(read.queued[0].command, command);
+            assert_eq!(queue.collect_status_snapshot(Instant::now()), before);
+        }
+
+        #[test]
+        fn reserved_slot_is_visible_without_an_active_process_and_rescan_conflict_is_preserved() {
+            let (queue, command, reference) = fixture();
+            {
+                let mut state = queue.inner.state.lock().unwrap();
+                state.queues.clear();
+                state.running.insert(
+                    Partition::new("daily"),
+                    RunningSlot {
+                        reference,
+                        command,
+                        background: false,
+                    },
+                );
+                state.running.insert(
+                    Partition::new("indexer"),
+                    RunningSlot {
+                        reference: "PRIVATE-OTHER-REFERENCE".into(),
+                        command: crate::partition::canonical_journal_command([
+                            "indexer", "--rescan",
+                        ]),
+                        background: false,
+                    },
+                );
+                assert!(state.active.is_empty());
+            }
+            let read = queue.try_read_daily().unwrap();
+            assert!(read.running_or_reserved && read.index_conflict);
+            assert!(read.queued.is_empty());
+            assert_eq!(read.slot.unwrap().request_id.as_deref(), Some(ID));
+            queue.inner.state.lock().unwrap().running.clear();
+        }
+
+        #[test]
+        fn contention_poison_capacity_and_unknown_membership_refuse() {
+            let (queue, _, _) = fixture();
+            {
+                let _state = queue.inner.state.lock().unwrap();
+                assert_eq!(
+                    queue.try_read_daily(),
+                    Err("queue_observation_busy_or_poisoned")
+                );
+            }
+            let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let _state = queue.inner.state.lock().unwrap();
+                panic!("deliberate local poison control");
+            }));
+            assert_eq!(
+                queue.try_read_daily(),
+                Err("queue_observation_busy_or_poisoned")
+            );
+            queue.inner.state.clear_poison();
+            {
+                let mut state = queue.inner.state.lock().unwrap();
+                let rows = state.queues.get_mut(&Partition::new("daily")).unwrap();
+                let row = rows[0].clone();
+                rows.extend(std::iter::repeat_n(row, DAILY_OBSERVATION_LIMIT));
+            }
+            assert_eq!(queue.try_read_daily(), Err("queue_observation_capacity"));
+            {
+                let mut state = queue.inner.state.lock().unwrap();
+                let rows = state.queues.get_mut(&Partition::new("daily")).unwrap();
+                rows.truncate(1);
+                rows[0].references.push("PRIVATE-COALESCED".into());
+            }
+            assert_eq!(queue.try_read_daily(), Err("queue_observation_ambiguous"));
+        }
+
+        #[test]
+        fn active_ownership_and_oversized_or_wrong_partition_slots_refuse() {
+            let (queue, command, reference) = fixture();
+            for (partition, reference) in [
+                ("segment".to_owned(), reference.clone()),
+                ("daily".to_owned(), "x".repeat(4096)),
+                ("x".repeat(4096), reference.clone()),
+            ] {
+                queue.inner.state.lock().unwrap().running.insert(
+                    Partition::new(partition),
+                    RunningSlot {
+                        reference,
+                        command: command.clone(),
+                        background: false,
+                    },
+                );
+                assert_eq!(queue.try_read_daily(), Err("queue_observation_ambiguous"));
+                queue.inner.state.lock().unwrap().running.clear();
+            }
+            add_active(&queue, "active");
+            queue.inner.state.lock().unwrap().running.insert(
+                Partition::new("svc"),
+                RunningSlot {
+                    reference: "active".into(),
+                    command: vec!["svc".into()],
+                    background: false,
+                },
+            );
+            assert!(queue.try_read_daily().is_ok());
+            queue
+                .inner
+                .state
+                .lock()
+                .unwrap()
+                .active
+                .get_mut("active")
+                .unwrap()
+                .command = vec!["different".into()];
+            assert_eq!(queue.try_read_daily(), Err("queue_observation_ambiguous"));
+            let mut state = queue.inner.state.lock().unwrap();
+            state.active.clear();
+            state.running.clear();
+        }
+
+        #[test]
+        fn readiness_shutdown_and_safety_holds_remain_distinct() {
+            let (queue, _, _) = fixture();
+            {
+                let mut state = queue.inner.state.lock().unwrap();
+                state.ready = false;
+            }
+            assert_eq!(queue.try_read_daily(), Err("queue_observation_pre_ready"));
+            {
+                let mut state = queue.inner.state.lock().unwrap();
+                state.ready = true;
+                state.shutdown = true;
+            }
+            assert_eq!(queue.try_read_daily(), Err("queue_observation_shutdown"));
+            {
+                let mut state = queue.inner.state.lock().unwrap();
+                state.shutdown = false;
+                state.queue_hold = Some(QueueHoldStatus {
+                    reason: QueueHoldReason::RecordsUnavailable,
+                    detail: "PRIVATE-HOLD".into(),
+                });
+                state.held.insert(
+                    Partition::new("daily"),
+                    HeldEntry {
+                        dispatch: dispatch("PRIVATE-HELD"),
+                        process: None,
+                        owner_uid: current_task_uid(),
+                        bound_identities: Vec::new(),
+                        bound_first_terminate_at: BTreeMap::new(),
+                        first_held_at: Instant::now(),
+                        first_held_at_unix: 0,
+                        reasons: vec![ReasonCode::RootLive],
+                        exit_code: 0,
+                        termination_error: None,
+                        snapshot_unavailable: true,
+                        persisted: false,
+                        records: Vec::new(),
+                    },
+                );
+            }
+            let read = queue.try_read_daily().unwrap();
+            assert!(read.held && read.global_hold);
+            assert!(!format!("{read:?}").contains("PRIVATE"));
+            let mut state = queue.inner.state.lock().unwrap();
+            state.held.clear();
+            state.queue_hold = None;
+        }
     }
 
     #[derive(Default)]

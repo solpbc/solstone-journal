@@ -86,6 +86,73 @@ impl<W: Write> RunLogWriter<W> {
         self.log_checked(event, now_ms, fields, &|| Ok(()));
     }
 
+    /// Keep controlled native causes before hosted callers discard stderr.
+    /// Model/provider/argument text is never copied into this diagnostic field.
+    pub(crate) fn outcome(
+        &mut self,
+        event: &str,
+        now_ms: i64,
+        mut fields: Map<String, Value>,
+        failures: &[String],
+    ) {
+        if !failures.is_empty() {
+            fields.insert(
+                "failure_details".into(),
+                Value::Array(
+                    failures
+                        .iter()
+                        .take(8)
+                        .map(|failure| safe_failure(failure))
+                        .collect(),
+                ),
+            );
+            fields.insert(
+                "failure_details_omitted".into(),
+                Value::from(failures.len().saturating_sub(8)),
+            );
+        }
+        // Bound the serialized record, including escaping, event, ts and LF.
+        // Existing invocation identity can contain a long ref; make omissions
+        // explicit instead of producing a record the operational reader drops.
+        let size = |fields: &Map<String, Value>| -> Result<usize, serde_json::Error> {
+            let mut record = fields.clone();
+            record.insert("event".into(), Value::from(event));
+            record.insert("ts".into(), Value::from(now_ms));
+            serde_json::to_vec(&record).map(|bytes| bytes.len() + 1)
+        };
+        let maximum = solstone_core_journal_io::operational_log::OPLOG_FOLLOW_MAX_RECORD_BYTES;
+        if size(&fields).is_ok_and(|size| size > maximum) {
+            let before = fields.len();
+            fields.retain(|key, value| {
+                matches!(
+                    key.as_str(),
+                    "mode"
+                        | "day"
+                        | "phase"
+                        | "success"
+                        | "failed"
+                        | "skipped"
+                        | "duration_ms"
+                        | "bounded"
+                        | "timeout_seconds"
+                        | "timeout_scope"
+                        | "reason_code"
+                        | "failure_details"
+                        | "failure_details_omitted"
+                ) && (matches!(key.as_str(), "failure_details")
+                    || value.as_str().is_none_or(|s| s.len() <= 128))
+            });
+            fields.insert(
+                "outcome_fields_omitted".into(),
+                Value::from(before - fields.len()),
+            );
+        }
+        match size(&fields) {
+            Ok(size) if size <= maximum => self.log(event, now_ms, fields),
+            _ => self.remember_error("think outcome exceeds operational log record budget".into()),
+        }
+    }
+
     pub(crate) fn log_checked(
         &mut self,
         event: &str,
@@ -152,6 +219,54 @@ impl<W: Write> RunLogWriter<W> {
     }
 }
 
+fn safe_failure(failure: &str) -> Value {
+    let (stage, detail) = failure
+        .split_once(" (")
+        .and_then(|(stage, detail)| detail.strip_suffix(')').map(|detail| (stage, detail)))
+        .unwrap_or(("run", failure));
+    let stage = match stage {
+        "rebuild_segment_seal"
+        | "segment_repair"
+        | "sense_batch"
+        | "daily"
+        | "daily_completion_input"
+        | "indexer"
+        | "journal_stats"
+        | "run" => stage,
+        _ => "native",
+    };
+    let detail = match detail {
+        "completed activity input changed"
+        | "requested day has unfinished activity work"
+        | "retained activity has unfinished work"
+        | "retained activity receipt disappeared"
+        | "activity receipt disappeared"
+        | "retained activity span exceeds recovery budget"
+        | "activity receipt identity changed"
+        | "completed activity disappeared"
+        | "retained activity identity changed"
+        | "retained activity is held"
+        | "retained activity output is held by owner"
+        | "retained activity has no eligible work"
+        | "retained activity work did not complete"
+        | "retained activity input changed during work"
+        | "retained activity input changed during admission"
+        | "retained activity span is unavailable"
+        | "retained activity source is unavailable"
+        | "retained activity source is ambiguous"
+        | "retained activity Sense is unavailable"
+        | "retained activity Sense is malformed"
+        | "segment work needs owner review"
+        | "requested day input changed during segment work"
+        | "thinking cancelled"
+        | "segment publication is not current"
+        | "unreadable segment receipts"
+        | "segment work has an unresolved disposition" => detail,
+        _ => "detail withheld",
+    };
+    serde_json::json!({"stage":stage,"detail":detail})
+}
+
 fn open_oplog(journal: &Path, day: &str, run: &str) -> Result<OplogWriter, String> {
     create_oplog_at(
         JournalRoot::open(journal).map_err(|error| error.to_string())?,
@@ -188,6 +303,67 @@ mod tests {
     use serde_json::{Map, Value};
 
     use super::RunLogWriter;
+
+    #[test]
+    fn native_failure_diagnostics_are_safe_bounded_and_explicit() {
+        let mut writer = RunLogWriter::with_sink(PathBuf::from("fixture"), Vec::<u8>::new());
+        let mut failures = vec![
+            "rebuild_segment_seal (completed activity input changed)".into(),
+            "daily (credential-SENTINEL model-body-SENTINEL --argument-SENTINEL)".into(),
+        ];
+        failures.extend((0..100).map(|_| format!("untrusted{}", "\"\n🌱".repeat(10_000))));
+        writer.outcome(
+            "run.complete",
+            1,
+            Map::from_iter([
+                ("failed".into(), Value::from(1)),
+                ("ref".into(), Value::from("\"\n🌱".repeat(10_000))),
+            ]),
+            &failures,
+        );
+        writer.finish().unwrap();
+        let bytes = writer.sink.as_ref().unwrap().lock().unwrap();
+        assert!(
+            bytes.len() <= solstone_core_journal_io::operational_log::OPLOG_FOLLOW_MAX_RECORD_BYTES
+        );
+        let text = String::from_utf8(bytes.clone()).unwrap();
+        for forbidden in [
+            "credential-SENTINEL",
+            "model-body-SENTINEL",
+            "argument-SENTINEL",
+            "untrusted",
+        ] {
+            assert!(!text.contains(forbidden));
+        }
+        let event: Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(
+            event["failure_details"][0],
+            serde_json::json!({"stage":"rebuild_segment_seal","detail":"completed activity input changed"})
+        );
+        assert_eq!(
+            event["failure_details"][1],
+            serde_json::json!({"stage":"daily","detail":"detail withheld"})
+        );
+        assert_eq!(event["failure_details_omitted"], 94);
+        assert_eq!(event["outcome_fields_omitted"], 1);
+    }
+
+    #[test]
+    fn success_has_no_failure_diagnostic_and_outcome_write_failure_stays_failed() {
+        let mut writer = RunLogWriter::with_sink(PathBuf::from("fixture"), Vec::<u8>::new());
+        writer.outcome("run.complete", 1, Map::new(), &[]);
+        let bytes = writer.sink.as_ref().unwrap().lock().unwrap();
+        let event: Value = serde_json::from_slice(&bytes).unwrap();
+        assert!(event.get("failure_details").is_none());
+        let mut broken = RunLogWriter::with_sink(PathBuf::from("fixture"), FlushFailure);
+        broken.outcome(
+            "run.complete",
+            1,
+            Map::new(),
+            &["thinking cancelled".into()],
+        );
+        assert!(broken.finish().is_err());
+    }
 
     #[cfg(feature = "full-tests")]
     #[test]

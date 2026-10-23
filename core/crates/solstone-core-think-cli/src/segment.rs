@@ -2636,6 +2636,20 @@ pub(crate) fn activity_event(
 /// The context an activity's talents run in: the day its record is filed
 /// under, with this run's boundaries and clock.
 pub(crate) fn activity_context(context: &ThinkContext, day: &str) -> Result<ThinkContext, String> {
+    if let Some(lease) = &context.rebuild
+        && day != lease.day
+    {
+        solstone_core_system::work_intent::update_rebuild(
+            &context.journal,
+            &lease.day,
+            &lease.id,
+            &|| context.checkpoint(),
+            |progress| {
+                progress.activity_days.insert(day.to_owned());
+                Ok(())
+            },
+        )?;
+    }
     let mut day_context = context.clone();
     day_context.day = day.to_owned();
     day_context.day_dir = context.journal.join("chronicle").join(day);

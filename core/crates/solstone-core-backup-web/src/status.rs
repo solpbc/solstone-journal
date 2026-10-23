@@ -132,6 +132,7 @@ pub fn offload(
     #[cfg(not(windows))]
     let operation = crate::operation::current(operations);
     let mut value = build_checked_offload_status(root).map_err(|_| ())?.value;
+    value["enable_supported"] = json!(!cfg!(any(target_os = "ios", target_os = "android")));
     let measured = measurement::snapshot(cache);
     let device = Map::from_iter([
         ("free_bytes".to_owned(), measured["free_bytes"].clone()),

@@ -35,7 +35,7 @@ use tempfile::NamedTempFile;
 const IMAGE_EXTENSIONS: [&str; 5] = ["png", "jpg", "jpeg", "webp", "gif"];
 const IMPORT_STREAM: &str = "import.image";
 const TRANSCRIPT_FILENAME: &str = "image_transcript.md";
-const VISION_PROMPT: &str = "Describe what is in this image faithfully and concisely. Transcribe any legible text verbatim. Return clean markdown.";
+const VISION_PROMPT: &str = "Describe what is in this image faithfully and concisely. Transcribe any legible text verbatim, including URLs only when they are visible in the image. Return plain text, without Markdown links or image markup. Never invent URLs or placeholder destinations.";
 const VISION_CONTEXT: &str = "import.image.vision";
 const PRIVATE_IMPORT_FILE_MODE: u32 = 0o600;
 const PRIVATE_IMPORT_DIR_MODE: u32 = 0o700;
@@ -1019,7 +1019,10 @@ fn render_model_block(description: &DescriptionOutcome) -> String {
         if line.is_empty() {
             MODEL_DERIVED_LINE_PREFIX.to_string()
         } else {
-            format!("{MODEL_DERIVED_LINE_PREFIX} {line}")
+            format!(
+                "{MODEL_DERIVED_LINE_PREFIX} {}",
+                solstone_core_format::markdown::literal_text(line)
+            )
         }
     }));
     lines.join("\n")
@@ -1504,6 +1507,35 @@ mod tests {
     }
 
     #[test]
+    fn model_descriptions_remain_literal_even_without_their_own_fences() {
+        use pulldown_cmark::{Event, Options, Parser, Tag};
+
+        let text = "![cover](https://example.test/cover.png)\n<img src=x> &amp; 日本語\n```markdown\n[open](https://example.test/)\n```";
+        for description in [
+            DescriptionOutcome::Generated(text.to_owned()),
+            DescriptionOutcome::Unavailable {
+                reason: text.to_owned(),
+            },
+        ] {
+            let rendered = render_image_markdown("photo", "PNG", 4, 5, "2026-01-02", &description);
+            assert_model_partition(&rendered, &description);
+            let (_, model) = rendered.split_once("\n---\n\n").unwrap();
+            let mut visible = String::new();
+            for event in Parser::new_ext(model, Options::all()) {
+                match event {
+                    Event::Start(Tag::Image { .. } | Tag::Link { .. })
+                    | Event::Html(_)
+                    | Event::InlineHtml(_) => panic!("active model markup in {model:?}"),
+                    Event::Text(value) => visible.push_str(&value),
+                    Event::SoftBreak | Event::HardBreak => visible.push('\n'),
+                    _ => {}
+                }
+            }
+            assert!(visible.contains(text), "{visible:?}");
+        }
+    }
+
+    #[test]
     fn transcript_has_a_structural_model_partition() {
         let description =
             DescriptionOutcome::Generated("A description.\n\nSecond line.".to_owned());
@@ -1539,7 +1571,9 @@ mod tests {
             }
             DescriptionOutcome::Unavailable { reason } => {
                 assert!(!header.contains(reason));
-                assert!(model.contains(reason));
+                for line in reason.lines() {
+                    assert!(model.contains(&solstone_core_format::markdown::literal_text(line)));
+                }
             }
         }
     }

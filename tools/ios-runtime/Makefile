@@ -6,6 +6,8 @@ CACHE_DIR ?= /var/tmp/journal-mobile-cache
 JOBS ?= 6
 DEVICE ?=
 DESTINATION ?= generic/platform=iOS
+PROJECT_SPEC ?= project.yml
+FINALIZE_ARGS ?=
 RUST_LIB := $(BUILD_ROOT)/rust/aarch64-apple-ios/debug/libsolstone_ios_runtime.a
 APPRAISAL_LIB := $(BUILD_ROOT)/appraisal-rust/aarch64-apple-ios/debug/libsolstone_ios_appraisal_helper.a
 APPRAISAL_NATIVE_WORK := $(BUILD_ROOT)/appraisal-native-work
@@ -29,10 +31,17 @@ backup-native:
 payload:
 	AUDIO_MODELS_DIR='$(AUDIO_MODELS_DIR)' python3 package_payload.py
 project: payload backup-native
-	xcodegen generate
+	xcodegen generate --spec $(PROJECT_SPEC)
 build: rust appraisal-rust appraisal-native project
 	xcodebuild -project JournalRuntimeDev.xcodeproj -scheme JournalRuntimeDev -configuration Debug -destination '$(DESTINATION)' -derivedDataPath $(BUILD_ROOT)/derived -allowProvisioningUpdates RUST_LIB=$(RUST_LIB) APPRAISAL_LIB=$(APPRAISAL_LIB) NVAT_LIB=$(NVAT_LIB) BACKUP_LIB=$(BACKUP_LIB) build
-	python3 finalize.py $(BUILD_ROOT) --nvattest-lib $(NVAT_LIB) --appraisal-build-record $(APPRAISAL_BUILD_RECORD) --appraisal-resources $(APPRAISAL_RESOURCES) --backup-lib $(BACKUP_LIB) --backup-work $(BACKUP_NATIVE_WORK)
+	python3 finalize.py $(BUILD_ROOT) --nvattest-lib $(NVAT_LIB) --appraisal-build-record $(APPRAISAL_BUILD_RECORD) --appraisal-resources $(APPRAISAL_RESOURCES) --backup-lib $(BACKUP_LIB) --backup-work $(BACKUP_NATIVE_WORK) $(FINALIZE_ARGS)
+.PHONY: build-owner install-owner
+build-owner:
+	@test -n "$(AUDIO_MODELS_DIR)" || (echo "Set AUDIO_MODELS_DIR to the verified mobile audio resources"; exit 2)
+	$(MAKE) build PROJECT_SPEC=project-owner.yml FINALIZE_ARGS='--bundle-identifier app.solstone.journal.owner.dev'
+install-owner: build-owner
+	@test -n "$(DEVICE)" || (echo "Set DEVICE to a connected device identifier"; exit 2)
+	xcrun devicectl device install app --device $(DEVICE) $(APP)
 install: build
 	@test -n "$(DEVICE)" || (echo "Set DEVICE to a connected device identifier"; exit 2)
 	xcrun devicectl device install app --device $(DEVICE) $(APP)
@@ -42,7 +51,7 @@ run:
 check:
 	cargo fmt --manifest-path native/Cargo.toml -- --check
 	cargo clippy --locked --manifest-path native/Cargo.toml --all-targets --no-deps -- -D warnings
-	cargo test --locked --manifest-path native/Cargo.toml
+	cargo test --locked --manifest-path native/Cargo.toml --features full-tests
 	cargo test --locked --manifest-path ../../core/Cargo.toml -p solstone-core-spp-attest --features test-hooks ios_appraisal::tests
 	cargo test --locked --manifest-path ../../core/Cargo.toml -p solstone-core-spp-attest --features test-hooks ios_service_tools::tests
 	cargo fmt --manifest-path appraisal-helper/Cargo.toml -- --check
@@ -50,3 +59,4 @@ check:
 	cargo test --locked --manifest-path appraisal-helper/Cargo.toml
 	python3 test_gpu_appraisal_receipt.py
 	python3 test_serving_receipts.py
+	python3 ../mobile-audio/test_prepare.py

@@ -4,7 +4,7 @@
 <dict>
 	<key>com.apple.security.application-groups</key>
 	<array>
-		<string>group.app.solstone.journal.runtime.dev</string>
+		<string>$(JOURNAL_APP_GROUP)</string>
 	</array>
 </dict>
 </plist>

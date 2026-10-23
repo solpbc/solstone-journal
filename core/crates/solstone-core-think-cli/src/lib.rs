@@ -18,6 +18,7 @@ pub use context::{CortexBoundary, DispatchFailure, IndexBoundary, ThinkContext};
 mod daily;
 mod daily_lifecycle;
 pub use daily_lifecycle::{INDEXER_ARGS, INDEXER_INPUTS_ARGS};
+mod daily_rebuild;
 mod day;
 mod dispatch;
 mod dry_run;
@@ -687,15 +688,37 @@ fn execute_parsed_command(
         return logged_mode_outcome(log, run, result);
     }
     let (mut log, run) = open_run_log(parsed, &context.journal, context.now_ms, &context.day);
-    if let Some(id) = &parsed.work_intent
-        && let Err(error) = solstone_core_system::work_intent::claim_from_scratch(
-            &context.journal,
-            &context.day,
-            id,
-        )
-    {
-        return logged_mode_outcome(log, run, Err(error));
+    let mut rebuild_context = context.clone();
+    let mut rebuild_args = parsed.clone();
+    if let Some(id) = &parsed.work_intent {
+        let claimed = if context.rebuild_recovery {
+            solstone_core_journal_io::JournalRoot::open(&context.journal)
+                .map_err(|e| e.to_string())
+                .and_then(|root| {
+                    solstone_core_system::work_intent::begin_rebuild(
+                        &context.journal,
+                        &context.day,
+                        id,
+                        &root.identity().observation_id(),
+                    )
+                })
+                .map(|lease| {
+                    rebuild_args.daily_only = lease.resumed;
+                    rebuild_context.rebuild = Some(std::sync::Arc::new(lease));
+                })
+        } else {
+            solstone_core_system::work_intent::claim_from_scratch(
+                &context.journal,
+                &context.day,
+                id,
+            )
+        };
+        if let Err(error) = claimed {
+            return logged_mode_outcome(log, run, Err(error));
+        }
     }
+    let context = &rebuild_context;
+    let parsed = &rebuild_args;
     let result = if parsed.weekly {
         weekly::run(
             context,
@@ -714,6 +737,13 @@ fn execute_parsed_command(
             sense_child_environment,
         )
     };
+    let result = result.and_then(|result| {
+        if context.rebuild.is_some() && result.failed == 0 {
+            daily_lifecycle::validate_rebuild(context)?;
+            daily_rebuild::require_complete(context)?;
+        }
+        Ok(result)
+    });
     let outcome = logged_mode_outcome(log, run, result);
     if let Some(id) = &parsed.work_intent {
         if let Err(error) = context.checkpoint() {
@@ -773,7 +803,7 @@ fn logged_mode_outcome(
 ) -> Result<CliRun, CliError> {
     let (success, failed) = result
         .as_ref()
-        .map_or((0, 0), |result| (result.success, result.failed));
+        .map_or((0, 1), |result| (result.success, result.failed));
     let duration_ms = i64::try_from(run.started.elapsed().as_millis()).unwrap_or(i64::MAX);
     let mut fields = run.fields;
     fields.insert("success".to_owned(), serde_json::Value::from(success));
@@ -786,10 +816,15 @@ fn logged_mode_outcome(
         "duration_ms".to_owned(),
         serde_json::Value::from(duration_ms),
     );
-    log.log(
+    let failures = match &result {
+        Ok(result) => result.failed_names.as_slice(),
+        Err(error) => std::slice::from_ref(error),
+    };
+    log.outcome(
         "run.complete",
         run.started_ms.saturating_add(duration_ms),
         fields,
+        failures,
     );
     let log_error = log.finish().err();
     match (result, log_error) {
@@ -3519,6 +3554,32 @@ mod tests {
                 .starts_with("solstone journal think: 1 completed\nsense\n")
         );
         assert!(run.stderr.contains("think run log"));
+    }
+
+    #[test]
+    fn returned_native_error_is_durably_failed_with_untrusted_detail_withheld() {
+        let root = tempdir().unwrap();
+        let writer = run_log::RunLogWriter::open(root.path(), "20260813", "daily");
+        assert!(
+            logged_mode_outcome(
+                writer,
+                test_run_started(),
+                Err("credential-SENTINEL --argument-SENTINEL".into())
+            )
+            .is_err()
+        );
+        let events = oplog_records(root.path(), "20260813", "daily");
+        let complete = events
+            .iter()
+            .find(|e| e["event"] == "run.complete")
+            .unwrap();
+        assert_eq!(complete["failed"], 1);
+        assert_eq!(complete["failure_details"][0]["detail"], "detail withheld");
+        assert!(
+            !serde_json::to_string(complete)
+                .unwrap()
+                .contains("SENTINEL")
+        );
     }
 
     fn segment_dir(journal: &Path, day: &str, segment: &str) -> std::path::PathBuf {

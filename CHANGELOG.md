@@ -6,12 +6,22 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- the journal’s night background now has gold stars, meteor trails and an aurora.
+
 ### Changed
 
 - on mac, local thinking now uses a runtime included with your journal. your existing setup keeps working while the new model files download. the switch waits for background thinking to finish. the journal removes the old files after the new runtime is ready.
 
 ### Fixed
 
+- fixed your journal on a mac or linux getting stuck after it was force-stopped or lost power at the wrong moment. every start after that ended with "a helper process did not answer in time". it now starts normally.
+- fixed your journal on a mac sometimes giving up after it stopped unexpectedly. at the end of its wait it showed "a recent heartbeat from another run is present". this happened while the mac was syncing its clock.
+- security fix: imported image descriptions and agent search or transcript results could load images from outside your journal. image markup in those excerpts now stays text. thanks @dvanduzer for the report.
+- interrupted daily rebuilds on iphone can now continue from verified completed work, keeping accepted results. work with uncertain outcomes stays held for review.
+- fixed rebuilds stopping when retained activity history still uses an earlier activity name, or when there are no suggested entities.
+- transcription now trims long gaps between detected speech, keeping context around each speech span and restoring transcript times to the original recording. this avoids sending those gaps to the recognizer.
 - checking for updates on linux now allows more time for a slow connection and shows why a check failed.
 - backup requests on windows now report a timeout when the connection times out just before the request deadline.
 - fixed screen descriptions stopping with a blank notification when the on-device model lost its connection mid-request. your journal now retries that request.
@@ -19,6 +29,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - on a phone, the message that shows hiding progress and undo on the entities page no longer sits under the bar at the bottom of the screen.
 - merging possible duplicates now merges one pair at a time, so other changes to your entities can save while a long merge runs. before, those changes could give up partway through a merge of many pairs.
 - an entity's connections no longer list words only ever mentioned in your journal, such as "just" or "think", or names matched on a single word like "the". home already left these out.
+- health's all-clear line no longer says when the solstone app last added to your journal. that time came from any event in your journal, so it could say "just now" before any device was set up.
 
 ## [2.0.56] - 2026-10-23
 

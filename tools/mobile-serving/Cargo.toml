@@ -32,6 +32,7 @@ processing = [
 axum = { version = "0.8.9", default-features = false }
 serde_json = "1"
 log = "0.4"
+http-body-util = "0.1"
 solstone-core-backup-web = { path = "../../core/crates/solstone-core-backup-web" }
 solstone-core-backup-runtime = { path = "../../core/crates/solstone-core-backup-runtime" }
 solstone-core-backup = { path = "../../core/crates/solstone-core-backup" }

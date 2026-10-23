@@ -20,7 +20,28 @@ python3 run_device.py mixed
 
 Pass the same retained debug keystore across checkouts; the builder does not create one. Read its signer SHA-256 from `build/artifact-manifest.json`. The installer checks APK bytes, package identity, signer and existing UID before a single streamed install. A signer conflict refuses installation without uninstalling or retrying.
 
-`run_device.py` targets the development handset recorded in its source. Pass `--serial SERIAL` or set `ANDROID_SERIAL` for another bench. It verifies the installed APK hash, wakes the screen and dismisses an unsecured keyguard. It leaves security settings unchanged. The app keeps the screen awake while its activity is visible.
+`run_device.py` targets the development handset recorded in its source. Pass `--serial SERIAL` or set `ANDROID_SERIAL` for another bench. It verifies the installed APK hash, wakes the screen and dismisses an unsecured keyguard. It leaves security settings unchanged. the development activity keeps the screen awake while it is visible.
+
+## internal owner build
+
+`--owner-app` packages a launcher named `journal`. it opens the existing journal setup and screens through a private in-app transport. start and stop are in the native bar; health carries processing and service status. a saved stop holds across reopening. the owner variant ignores development command files and keeps the screen's normal sleep behavior.
+
+build native libraries and prepare service tools first. run the current native `solstone-core assets` command and save its JSON catalog. supply that catalog and its pinned Parakeet speech model to the APK builder:
+
+```sh
+python3 build_apk.py --root "$PWD" --sdk "$ANDROID_HOME" --java "$JAVA_HOME" \
+  --debug-keystore /absolute/path/to/retained-debug-keystore.p12 \
+  --owner-app --application-id app.solstone.development.journal.processing \
+  --version-code 2026102301 \
+  --audio-model /absolute/path/to/tdt-0.6b-v3-q8_0.gguf \
+  --asset-catalog /absolute/path/to/assets.json
+```
+
+the builder verifies the speech model against the catalog and the checked-in voice models against their runtime pins. the APK includes those files and their notices. on first open, preparation copies missing files into app-private storage before starting the journal. existing model files must match; conflicting bytes are kept and startup refuses. no USB model provisioning is needed for this variant.
+
+install the exact signed APK with the retained signer. open `journal`, choose its mark, and choose thinking. local thinking is unavailable on android; select confidential processing, your own model, or decide later. pair devices from network. for an existing backup, finish initial setup, then use backup to restore it and restart the journal.
+
+use this internal build on a dedicated, plugged-in device with the app in the foreground. it does not promise background hosting. keep the solstone app separate. test a new journal with a separate application ID; preserve the existing package's signer and private data when updating it. this build is not a store release.
 
 ## Repeatable checks
 

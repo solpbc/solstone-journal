@@ -3,11 +3,16 @@
 
 //! Whole-day catchup composition for the unscoped `journal think --day` mode.
 
+#[cfg(all(test, feature = "full-tests"))]
+#[path = "retained_activity_tests.rs"]
+mod retained_activity_tests;
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use chrono::Utc;
 use serde_json::{Map, Value};
+use sha2::{Digest, Sha256};
 use solstone_core_journal_io::{
     HealthMarkerKind, HealthMarkerState, PublishOutcome, publish_daily_marker_if_current,
     read_health_marker,
@@ -143,6 +148,24 @@ fn run_with_phase_process(
     phase_process: &dyn PhaseProcessRunner,
     sense_child_environment: &solstone_core_system::process::ChildLaunchContext,
 ) -> Result<ModeResult, String> {
+    if context.rebuild.as_ref().is_some_and(|lease| lease.resumed) {
+        validate_rebuild(context)?;
+    }
+    let prior_uses = if context.rebuild.is_some() && !args.daily_only {
+        Some(
+            read_segment_progress(
+                &FilesystemHealthLogSource::new(&context.journal),
+                &context.day,
+            )
+            .map_err(|e| e.to_string())?
+            .value
+            .into_values()
+            .flat_map(|p| p.completed_uses.into_values())
+            .collect::<BTreeSet<_>>(),
+        )
+    } else {
+        None
+    };
     if args.daily_only {
         // A thought segment owed only its publication does not hold the day:
         // publish it here, with no model call, rather than wait for a repair.
@@ -299,6 +322,81 @@ fn run_with_phase_process(
                         args.no_activity_prompts,
                         refresh,
                     ));
+                    if let Some(lease) = &context.rebuild {
+                        let outcome = segment_outcome.borrow();
+                        if outcome.result.failed == 0
+                            && !outcome.result.timed_out
+                            && outcome.blockers.as_ref().is_some_and(BTreeSet::is_empty)
+                        {
+                            drop(outcome);
+                            let sealed = (|| {
+                                if stream_generation(context)? != observed_generation
+                                    || read_raw_input_fingerprint(&context.journal, &context.day)
+                                        .map_err(|e| e.to_string())?
+                                        != observed_fingerprint
+                                {
+                                    return Err(
+                                        "requested day input changed during segment work".into()
+                                    );
+                                }
+                                let intent =
+                                    solstone_core_system::work_intent::read(&context.journal)?
+                                        .remove(&lease.day)
+                                        .ok_or("requested day disappeared")?;
+                                let progress =
+                                    intent.rebuild.ok_or("requested day lost its provenance")?;
+                                for day in progress.activity_days {
+                                    let mut activity_context = context.clone();
+                                    activity_context.day = day.clone();
+                                    activity_context.day_dir =
+                                        context.journal.join("chronicle").join(day);
+                                    activity_context.retry = None;
+                                    crate::activity_work::reconcile_retained(
+                                        &activity_context,
+                                        phase_log,
+                                        jobs,
+                                    )?;
+                                }
+                                if stream_generation(context)? != observed_generation
+                                    || read_raw_input_fingerprint(&context.journal, &context.day)
+                                        .map_err(|e| e.to_string())?
+                                        != observed_fingerprint
+                                {
+                                    return Err(
+                                        "requested day input changed during segment work".into()
+                                    );
+                                }
+                                let receipts_digest =
+                                    rebuild_segment_receipts(context, prior_uses.as_ref())?;
+                                solstone_core_system::work_intent::update_rebuild(
+                                    &context.journal,
+                                    &context.day,
+                                    &lease.id,
+                                    &|| context.checkpoint(),
+                                    |p| {
+                                        if p.segments.is_some() {
+                                            return Err("segment phase already sealed".into());
+                                        }
+                                        p.segments =
+                                            Some(solstone_core_system::work_intent::SegmentSeal {
+                                                generation: observed_generation,
+                                                raw_fingerprint: observed_fingerprint.clone(),
+                                                receipts_digest,
+                                            });
+                                        Ok(())
+                                    },
+                                )
+                            })();
+                            if let Err(error) = sealed {
+                                let result = failed_phase("rebuild_segment_seal", error);
+                                segment_outcome.replace(SegmentPhaseOutcome {
+                                    result: result.clone(),
+                                    blockers: None,
+                                });
+                                return result;
+                            }
+                        }
+                    }
                     segment_outcome.borrow().result.clone()
                 }
                 "daily" => {
@@ -422,6 +520,387 @@ fn run_with_phase_process(
         |journal, now_ms, fields| helpers::emit(journal, now_ms, "daily_complete", fields),
     );
     Ok(total)
+}
+
+pub(crate) fn validate_rebuild(context: &ThinkContext) -> Result<(), String> {
+    context.rebuild_admission_checkpoint()
+}
+
+/// The execution observed a successful forced phase; retain its real uses and
+/// publication identities so an unrelated old-current phase cannot stand in for it.
+pub(crate) fn rebuild_segment_receipts(
+    context: &ThinkContext,
+    prior: Option<&BTreeSet<String>>,
+) -> Result<String, String> {
+    context.checkpoint()?;
+    let mut activity_proof = BTreeMap::new();
+    if let Some(lease) = &context.rebuild {
+        let intent = solstone_core_system::work_intent::read(&context.journal)?
+            .remove(&lease.day)
+            .ok_or("requested day disappeared")?;
+        let progress = intent.rebuild.ok_or("requested day lost its provenance")?;
+        for day in progress.activity_days {
+            activity_proof.insert(
+                day.clone(),
+                crate::activity_work::rebuild_receipts(context, &day)?,
+            );
+        }
+    } else {
+        activity_proof.insert(
+            context.day.clone(),
+            crate::activity_work::rebuild_receipts(context, &context.day)?,
+        );
+    }
+    if !solstone_core_system_health::day_segments_ready(&context.journal, &context.day)? {
+        return Err("segment publication is not current".into());
+    }
+    let progress = read_segment_progress(
+        &FilesystemHealthLogSource::new(&context.journal),
+        &context.day,
+    )
+    .map_err(|e| e.to_string())?;
+    if progress.malformed_line_count != 0 {
+        return Err("unreadable segment receipts".into());
+    }
+    let mut proof = Vec::new();
+    let (_, _, targets) = scan_day(
+        &FilesystemSegmentSource,
+        &context.journal,
+        &context.day,
+        Utc::now(),
+    )
+    .map_err(|e| e.to_string())?;
+    for target in targets {
+        if target.stream == "mcp.agent"
+            || !solstone_core_system_health::segment_requires_processing(&target.clone().into())
+        {
+            continue;
+        }
+        let p = solstone_core_system_health::lookup_segment_progress(
+            &progress.value,
+            &target.stream,
+            &target.key,
+        )
+        .ok_or("missing segment receipt")?;
+        if !p.capped_by_skip.is_empty() || !p.dispatched.is_subset(&p.completed) {
+            return Err("segment work has an unresolved disposition".into());
+        }
+        let segment = solstone_core_system_health::find_segment_dir(
+            &context.journal,
+            &context.day,
+            &target.key,
+            Some(&target.stream),
+        )
+        .ok_or("requested segment disappeared")?;
+        let mut outputs = BTreeMap::new();
+        rebuild_saved_outputs(&context.journal, &segment, &mut outputs)?;
+        let mut uses = BTreeMap::new();
+        for name in p
+            .dispatched
+            .iter()
+            .filter(|name| name.as_str() != "facet_routing")
+        {
+            let id = p
+                .completed_uses
+                .get(name)
+                .ok_or("segment completion lacks a use identity")?;
+            if prior.is_some_and(|old| old.contains(id)) {
+                return Err("forced segment target retained an earlier use".into());
+            }
+            let events =
+                solstone_core_cortex_client::read_completed_use_events(&context.journal, name, id)
+                    .map_err(|e| e.to_string())?;
+            let written = events.last().is_some_and(|event| {
+                event["event"] == "finish"
+                    && event.get("skip_reason").is_none()
+                    && event.get("output").is_some()
+            });
+            if !written
+                && !rebuild_conditional_receipt(
+                    context,
+                    &target.stream,
+                    &target.key,
+                    &segment,
+                    name,
+                    id,
+                    &events,
+                    &outputs,
+                )?
+            {
+                return Err("segment use has no accepted terminal outcome".into());
+            }
+            uses.insert(
+                name,
+                format!(
+                    "{:x}",
+                    Sha256::digest(serde_json::to_vec(&events).map_err(|e| e.to_string())?)
+                ),
+            );
+        }
+        let publication = segment
+            .strip_prefix(&context.journal)
+            .map_err(|e| e.to_string())?
+            .join("talents")
+            .join("publication.json");
+        if !outputs.contains_key(
+            publication
+                .to_str()
+                .ok_or("publication path is not UTF-8")?,
+        ) {
+            return Err("segment publication receipt disappeared".into());
+        }
+        proof.push(
+            serde_json::json!({"stream":target.stream,"segment":target.key,
+            "progress":format!("{p:?}"),"uses":uses,"outputs":outputs}),
+        );
+    }
+    context.checkpoint()?;
+    Ok(format!(
+        "{:x}",
+        Sha256::digest(serde_json::to_vec(&(proof, activity_proof)).map_err(|e| e.to_string())?)
+    ))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn rebuild_conditional_receipt(
+    context: &ThinkContext,
+    stream: &str,
+    key: &str,
+    segment: &std::path::Path,
+    name: &str,
+    id: &str,
+    events: &[Value],
+    outputs: &BTreeMap<String, String>,
+) -> Result<bool, String> {
+    // No-output must not certify a prior saved artifact as this use's result.
+    // Keep those bytes intact for their existing owner to reconcile.
+    let relative = segment
+        .strip_prefix(&context.journal)
+        .map_err(|e| e.to_string())?
+        .join("talents");
+    for path in outputs.keys() {
+        let path = std::path::Path::new(path);
+        if path.parent() == Some(relative.as_path())
+            && path
+                .file_name()
+                .and_then(|v| v.to_str())
+                .is_some_and(|file| file == name || file.starts_with(&format!("{name}.")))
+        {
+            return Ok(false);
+        }
+    }
+    let paths = solstone_core_talent_runtime::prepare::RuntimePaths {
+        talent_root: context.talent_root.clone(),
+        apps_root: context.apps_root.clone(),
+        templates_dir: context
+            .talent_root
+            .parent()
+            .ok_or("talent root has no package parent")?
+            .join("think/templates"),
+    };
+    solstone_core_talent_runtime::conditional_segment::receipt_is_applicable(
+        events,
+        id,
+        name,
+        &context.day,
+        stream,
+        key,
+        &paths,
+        &solstone_core_talent_runtime::ExecutionContext {
+            journal: context.journal.clone(),
+        },
+    )
+}
+
+// Bind saved owner outputs even in the direct-under-day layout, whose legacy
+// paths need not match the indexer's named-stream content patterns.
+fn rebuild_saved_outputs(
+    journal: &std::path::Path,
+    segment: &std::path::Path,
+    outputs: &mut BTreeMap<String, String>,
+) -> Result<(), String> {
+    let relative = segment
+        .strip_prefix(journal)
+        .map_err(|e| e.to_string())?
+        .join("talents");
+    let files = rebuild_files(journal, &relative)?.ok_or("saved outputs disappeared")?;
+    for (path, bytes) in files {
+        outputs.insert(
+            path.to_str()
+                .ok_or("saved output path is not UTF-8")?
+                .into(),
+            format!("{:x}", Sha256::digest(bytes)),
+        );
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+type RebuildReadHook = Box<dyn FnMut(&std::path::Path, bool)>;
+#[cfg(test)]
+thread_local! {
+    static REBUILD_READ_HOOK: std::cell::RefCell<Option<RebuildReadHook>> = const {
+        std::cell::RefCell::new(None)
+    };
+}
+
+#[cfg(test)]
+fn rebuild_child_hook(path: &std::path::Path, after: bool) {
+    REBUILD_READ_HOOK.with(|hook| {
+        if let Some(callback) = hook.borrow_mut().as_mut() {
+            callback(path, after);
+        }
+    });
+}
+
+/// Observe only the bounded recovery subtree through retained directory handles.
+/// Absence is permitted for optional activity state; a changed inventory refuses.
+pub(crate) fn rebuild_files(
+    journal: &std::path::Path,
+    relative: &std::path::Path,
+) -> Result<Option<BTreeMap<std::path::PathBuf, Vec<u8>>>, String> {
+    #[cfg(unix)]
+    use solstone_core_journal_io::{
+        FlatDirectory as Directory, list_flat_directory as list, open_flat_directory_bound as open,
+        read_observed_file_bounded as read,
+    };
+    use solstone_core_journal_io::{JournalEntryKind, JournalRoot};
+    #[cfg(windows)]
+    use solstone_core_journal_io::{
+        WindowsFlatDirectory as Directory, list_windows_flat_directory as list,
+        open_windows_flat_directory_bound as open, read_windows_observed_file_bounded as read,
+    };
+
+    fn acquire(
+        root: &JournalRoot,
+        relative: &std::path::Path,
+    ) -> Result<Option<Directory>, String> {
+        root.revalidate().map_err(|e| e.to_string())?;
+        let mut parent: Option<Directory> = None;
+        let mut diagnostic = root.canonical_path().to_path_buf();
+        for component in relative.components() {
+            let std::path::Component::Normal(name) = component else {
+                return Err("invalid saved-output directory".into());
+            };
+            let next = match &parent {
+                Some(parent) => open(parent, name, &diagnostic),
+                None => open(root, name, &diagnostic),
+            }
+            .map_err(|e| e.to_string())?;
+            let Some(next) = next else {
+                return Ok(None);
+            };
+            parent = Some(next);
+            diagnostic.push(name);
+        }
+        if relative.as_os_str().is_empty() {
+            return Err("saved-output directory is empty".into());
+        }
+        Ok(parent)
+    }
+
+    fn identity(directory: &Directory) -> solstone_core_journal_io::ObjectIdentity {
+        #[cfg(unix)]
+        {
+            directory.identity()
+        }
+        #[cfg(windows)]
+        {
+            directory.object_identity()
+        }
+    }
+
+    fn visit(
+        root: &JournalRoot,
+        directory: Directory,
+        relative: &std::path::Path,
+        depth: usize,
+        entries_left: &mut usize,
+        bytes_left: &mut usize,
+        outputs: &mut BTreeMap<std::path::PathBuf, Vec<u8>>,
+    ) -> Result<(), String> {
+        if depth > 4 {
+            return Err("saved outputs exceed recovery traversal depth".into());
+        }
+        let entries = list(&directory, *entries_left)
+            .map_err(|e| e.to_string())?
+            .ok_or("saved outputs exceed recovery entry budget")?;
+        *entries_left -= entries.len();
+        for entry in &entries {
+            let path = relative.join(&entry.name);
+            match entry.kind {
+                JournalEntryKind::Directory => {
+                    #[cfg(test)]
+                    rebuild_child_hook(&path, false);
+                    let child = open(
+                        &directory,
+                        &entry.name,
+                        &root.canonical_path().join(relative),
+                    )
+                    .map_err(|e| e.to_string())?
+                    .ok_or("saved-output directory disappeared")?;
+                    if !child.matches_entry(entry) {
+                        return Err(
+                            "saved-output directory changed during recovery observation".into()
+                        );
+                    }
+                    visit(
+                        root,
+                        child,
+                        &path,
+                        depth + 1,
+                        entries_left,
+                        bytes_left,
+                        outputs,
+                    )?;
+                    #[cfg(test)]
+                    rebuild_child_hook(&path, true);
+                }
+                JournalEntryKind::RegularFile => {
+                    if !matches!(
+                        path.extension().and_then(|e| e.to_str()),
+                        Some("md" | "json" | "jsonl")
+                    ) {
+                        continue;
+                    }
+                    let observed =
+                        read(&directory, &entry.name, (*bytes_left).min(4 * 1024 * 1024))
+                            .map_err(|e| e.to_string())?
+                            .ok_or("saved output disappeared")?;
+                    if observed.entry != *entry {
+                        return Err("saved output changed during recovery observation".into());
+                    }
+                    *bytes_left -= observed.bytes.len();
+                    outputs.insert(path, observed.bytes);
+                }
+                _ => return Err("saved output contains a nonregular entry".into()),
+            }
+        }
+        if list(&directory, 1024).map_err(|e| e.to_string())?.as_ref() != Some(&entries)
+            || identity(&acquire(root, relative)?.ok_or("saved-output directory disappeared")?)
+                != identity(&directory)
+        {
+            return Err("saved-output directory changed during recovery observation".into());
+        }
+        Ok(())
+    }
+    let root = JournalRoot::open(journal).map_err(|e| e.to_string())?;
+    let Some(directory) = acquire(&root, relative)? else {
+        root.revalidate().map_err(|e| e.to_string())?;
+        return Ok(None);
+    };
+    let mut outputs = BTreeMap::new();
+    visit(
+        &root,
+        directory,
+        relative,
+        0,
+        &mut 1024,
+        &mut (16 * 1024 * 1024),
+        &mut outputs,
+    )?;
+    root.revalidate().map_err(|e| e.to_string())?;
+    Ok(Some(outputs))
 }
 
 fn run_process_phase(
@@ -1020,7 +1499,12 @@ fn log_phase_complete(
     } else if result.failed != 0 {
         fields.insert("reason_code".to_owned(), Value::String("failed".to_owned()));
     }
-    log.log("phase.complete", context.now_ms, fields);
+    log.outcome(
+        "phase.complete",
+        context.now_ms,
+        fields,
+        &result.failed_names,
+    );
 }
 
 fn unix_seconds_f64() -> f64 {
@@ -2529,8 +3013,738 @@ mod tests {
         assert_eq!(marker_generation(journal.path()), Some(0));
     }
 
-    /// A segment thought before its publication was recorded holds nothing
-    /// back: daily-only work publishes it, with no model call, and goes on.
+    #[test]
+    #[cfg(unix)]
+    fn rebuild_observation_refuses_a_child_swapped_back_before_parent_recheck() {
+        struct ClearHook;
+        impl Drop for ClearHook {
+            fn drop(&mut self) {
+                REBUILD_READ_HOOK.with(|hook| hook.borrow_mut().take());
+            }
+        }
+        let journal = tempdir().unwrap();
+        let relative = std::path::Path::new("proof");
+        let child = journal.path().join(relative).join("facet");
+        let parked = journal.path().join("parked");
+        let replacement = journal.path().join("replacement");
+        fs::create_dir_all(&child).unwrap();
+        fs::create_dir(&replacement).unwrap();
+        fs::write(child.join("receipt.json"), "original").unwrap();
+        fs::write(replacement.join("receipt.json"), "replacement").unwrap();
+        assert_eq!(
+            rebuild_files(journal.path(), relative).unwrap().unwrap()
+                [&relative.join("facet/receipt.json")],
+            b"original"
+        );
+        let swapped = std::rc::Rc::new(std::cell::Cell::new(false));
+        let flag = swapped.clone();
+        let original = child.clone();
+        let held = parked.clone();
+        let other = replacement.clone();
+        REBUILD_READ_HOOK.with(|hook| {
+            *hook.borrow_mut() = Some(Box::new(move |path, after| {
+                if path != std::path::Path::new("proof/facet") {
+                    return;
+                }
+                if !after {
+                    fs::rename(&original, &held).unwrap();
+                    fs::rename(&other, &original).unwrap();
+                    flag.set(true);
+                } else {
+                    // Without the child/listing identity comparison, this
+                    // restores the parent's original inventory after reading D2.
+                    fs::rename(&original, &other).unwrap();
+                    fs::rename(&held, &original).unwrap();
+                }
+            }));
+        });
+        let clear = ClearHook;
+        let result = rebuild_files(journal.path(), relative);
+        drop(clear);
+        if parked.exists() {
+            fs::rename(&child, &replacement).unwrap();
+            fs::rename(&parked, &child).unwrap();
+        }
+        assert!(
+            swapped.get(),
+            "the replacement must occur after parent listing"
+        );
+        assert!(result.is_err(), "a restored parent must not admit D2 bytes");
+        assert_eq!(fs::read(child.join("receipt.json")).unwrap(), b"original");
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn rebuild_output_observation_refuses_aliases_and_over_budget_content() {
+        use std::os::unix::fs::symlink;
+        for case in [
+            "root_alias",
+            "child_alias",
+            "file_alias",
+            "depth",
+            "bytes",
+            "entries",
+        ] {
+            let journal = tempdir().unwrap();
+            let outside = tempdir().unwrap();
+            fs::write(outside.path().join("source.json"), "private outside bytes").unwrap();
+            let segment = journal.path().join("chronicle/20260101/notes/090000_300");
+            fs::create_dir_all(&segment).unwrap();
+            let talents = segment.join("talents");
+            if case == "root_alias" {
+                symlink(outside.path(), &talents).unwrap();
+            } else {
+                fs::create_dir(&talents).unwrap();
+                match case {
+                    "child_alias" => symlink(outside.path(), talents.join("unregistered")).unwrap(),
+                    "file_alias" => symlink(
+                        outside.path().join("source.json"),
+                        talents.join("sense.json"),
+                    )
+                    .unwrap(),
+                    "depth" => fs::create_dir_all(talents.join("a/b/c/d/e")).unwrap(),
+                    "bytes" => {
+                        fs::write(talents.join("sense.json"), vec![b'x'; 4 * 1024 * 1024 + 1])
+                            .unwrap()
+                    }
+                    "entries" => {
+                        for n in 0..1025 {
+                            fs::write(talents.join(format!("{n}.md")), "x").unwrap();
+                        }
+                    }
+                    _ => unreachable!(),
+                }
+            }
+            assert!(
+                rebuild_saved_outputs(journal.path(), &segment, &mut BTreeMap::new()).is_err(),
+                "{case}"
+            );
+            assert_eq!(
+                fs::read(outside.path().join("source.json")).unwrap(),
+                b"private outside bytes"
+            );
+        }
+    }
+
+    #[test]
+    #[cfg(all(unix, feature = "full-tests"))]
+    fn rebuild_seal_refuses_nonregular_or_oversized_publication_receipt() {
+        for case in ["alias", "fifo", "oversized"] {
+            let journal = tempdir().unwrap();
+            let context = context(journal.path());
+            let segment = context.day_dir.join("notes/090000_300");
+            fs::create_dir_all(segment.join("talents")).unwrap();
+            fs::write(
+                segment.join("audio.jsonl"),
+                "{\"start\":\"00:00:01\",\"text\":\"A garden meeting.\"}\n",
+            )
+            .unwrap();
+            RunLogWriter::open(journal.path(), DAY, "segment").log(
+                "sense.complete",
+                chrono::Utc::now().timestamp_millis() + 3_600_000,
+                Map::from_iter([
+                    ("mode".into(), Value::from("segment")),
+                    ("stream".into(), Value::from("notes")),
+                    ("segment".into(), Value::from("090000_300")),
+                    ("density".into(), Value::from("idle")),
+                ]),
+            );
+            segment::publish_saved_outputs(&context, &segment).unwrap();
+            assert!(rebuild_segment_receipts(&context, None).is_ok());
+            let publication = segment.join("talents/publication.json");
+            fs::remove_file(&publication).unwrap();
+            match case {
+                "alias" => {
+                    let other = journal.path().join("outside.json");
+                    fs::write(&other, "{}").unwrap();
+                    std::os::unix::fs::symlink(other, &publication).unwrap();
+                }
+                "fifo" => assert!(
+                    std::process::Command::new("mkfifo")
+                        .arg(&publication)
+                        .status()
+                        .unwrap()
+                        .success()
+                ),
+                "oversized" => fs::write(publication, vec![b'x'; 4 * 1024 * 1024 + 1]).unwrap(),
+                _ => unreachable!(),
+            }
+            assert!(rebuild_segment_receipts(&context, None).is_err(), "{case}");
+        }
+    }
+
+    #[test]
+    fn rebuild_seal_uses_supported_layout_and_nonprocessing_eligibility() {
+        for stream in [None, Some("notes")] {
+            let journal = tempdir().unwrap();
+            let mut context = context(journal.path());
+            let stream_name = stream.unwrap_or(solstone_core_journal_io::DEFAULT_STREAM);
+            let day = context.day_dir.clone();
+            let segment = stream
+                .map(|s| day.join(s))
+                .unwrap_or(day)
+                .join("090000_300");
+            fs::create_dir_all(segment.join("talents")).unwrap();
+            fs::write(
+                segment.join("audio.jsonl"),
+                "{\"start\":\"00:00:01\",\"text\":\"A garden meeting.\"}\n",
+            )
+            .unwrap();
+            fs::write(segment.join("talents/activity.md"), "A garden meeting.").unwrap();
+            RunLogWriter::open(journal.path(), DAY, "segment").log(
+                "sense.complete",
+                chrono::Utc::now().timestamp_millis() + 3_600_000,
+                Map::from_iter([
+                    ("mode".into(), Value::from("segment")),
+                    ("stream".into(), Value::from(stream_name)),
+                    ("segment".into(), Value::from("090000_300")),
+                    ("density".into(), Value::from("idle")),
+                ]),
+            );
+            segment::publish_saved_outputs(&context, &segment).unwrap();
+            let sealed = rebuild_segment_receipts(&context, None).unwrap();
+            let request =
+                solstone_core_system::work_intent::register(journal.path(), DAY, true).unwrap();
+            let lease = solstone_core_system::work_intent::begin_rebuild(
+                journal.path(),
+                DAY,
+                &request.id,
+                &solstone_core_journal_io::JournalRoot::open(journal.path())
+                    .unwrap()
+                    .identity()
+                    .observation_id(),
+            )
+            .unwrap();
+            solstone_core_system::work_intent::update_rebuild(
+                journal.path(),
+                DAY,
+                &request.id,
+                &|| Ok(()),
+                |p| {
+                    p.segments = Some(solstone_core_system::work_intent::SegmentSeal {
+                        generation: stream_generation(&context)?,
+                        raw_fingerprint: read_raw_input_fingerprint(journal.path(), DAY)
+                            .map_err(|e| e.to_string())?,
+                        receipts_digest: sealed.clone(),
+                    });
+                    Ok(())
+                },
+            )
+            .unwrap();
+            context.rebuild = Some(std::sync::Arc::new(lease));
+            context.rebuild_admission_checkpoint().unwrap();
+            fs::write(
+                segment.join("talents/activity.md"),
+                "changed after publication",
+            )
+            .unwrap();
+            assert!(
+                rebuild_segment_receipts(&context, None).map_or(true, |now| now != sealed),
+                "{stream:?}"
+            );
+            assert!(
+                context.rebuild_admission_checkpoint().is_err(),
+                "{stream:?}"
+            );
+        }
+        let journal = tempdir().unwrap();
+        let context = context(journal.path());
+        for stream in ["mcp.agent", "empty"] {
+            let segment = context.day_dir.join(stream).join("090000_1");
+            fs::create_dir_all(&segment).unwrap();
+            if stream == "mcp.agent" {
+                fs::write(segment.join("memory.md"), "An agent memory.").unwrap();
+            }
+        }
+        assert!(rebuild_segment_receipts(&context, None).is_ok());
+    }
+
+    fn conditional_segment_fixture(
+        journal: &std::path::Path,
+        stream: Option<&str>,
+    ) -> (ThinkContext, std::path::PathBuf) {
+        conditional_segment_fixture_with_detection(journal, stream, false)
+    }
+
+    fn conditional_segment_fixture_with_detection(
+        journal: &std::path::Path,
+        stream: Option<&str>,
+        detection: bool,
+    ) -> (ThinkContext, std::path::PathBuf) {
+        use solstone_core_talent_runtime::{ExecutionContext, prepare::RuntimePaths};
+        let context = context(journal);
+        let stream_name = stream.unwrap_or(solstone_core_journal_io::DEFAULT_STREAM);
+        let segment = stream
+            .map(|s| context.day_dir.join(s))
+            .unwrap_or(context.day_dir.clone())
+            .join("090000_300");
+        fs::create_dir_all(segment.join("talents")).unwrap();
+        fs::write(segment.join("audio.jsonl"), "{\"start\":\"00:00:01\",\"text\":\"A sufficiently detailed synthetic meeting about the garden project.\"}\n").unwrap();
+        fs::write(segment.join("090000_300_screen.wav"), b"synthetic media").unwrap();
+        fs::write(
+            segment.join("talents/sense.json"),
+            r#"{"density":"idle","content_type":"work","entities":[],"facets":[{"facet":"home"}]}"#,
+        )
+        .unwrap();
+        let paths = RuntimePaths {
+            talent_root: context.talent_root.clone(),
+            apps_root: context.apps_root.clone(),
+            templates_dir: context
+                .talent_root
+                .parent()
+                .unwrap()
+                .join("think/templates"),
+        };
+        fs::create_dir_all(&paths.templates_dir).unwrap();
+        let mut log = RunLogWriter::open(journal, DAY, "segment");
+        let now = Utc::now().timestamp_millis() + 3_600_000;
+        let coordinates =
+            serde_json::json!({"mode":"segment", "stream":stream_name,"segment":"090000_300"})
+                .as_object()
+                .unwrap()
+                .clone();
+        let mut sensed = coordinates.clone();
+        sensed.insert("density".into(), Value::from("idle"));
+        log.log("sense.complete", now, sensed);
+        for (ordinal, name) in ["documents", "screen"]
+            .into_iter()
+            .chain(detection.then_some("entities:detection"))
+            .enumerate()
+        {
+            let extra = if name == "entities:detection" {
+                r#", "hook":{"pre":"entities:detection"}, "load":{"transcripts":true,"percepts":false,"talents":false}"#
+            } else if name == "documents" {
+                r#", "hook":{"pre":"documents"}, "load":{"transcripts":true,"percepts":false,"talents":false}"#
+            } else {
+                r#", "load":{"transcripts":true,"percepts":"required","talents":false}"#
+            };
+            let talent_file = if name == "entities:detection" {
+                paths.apps_root.join("entities/talent/detection.md")
+            } else {
+                paths.talent_root.join(format!("{name}.md"))
+            };
+            fs::create_dir_all(talent_file.parent().unwrap()).unwrap();
+            fs::write(talent_file, format!("{{\n\"type\":\"generate\",\"schedule\":\"segment\",\"priority\":10,\"output\":\"json\",\"max_output_tokens\":1024{extra}\n}}\nSegment record")).unwrap();
+            let id = format!("conditional-{}", name.replace(':', "-"));
+            let output_name = if name == "entities:detection" {
+                "_entities_detection"
+            } else {
+                name
+            };
+            let mut request = serde_json::json!({"name":name,"use_id":id,"day":DAY,"segment":"090000_300","output":"json","output_path":segment.join("talents").join(format!("{output_name}.json"))}).as_object().unwrap().clone();
+            if let Some(stream) = stream {
+                request.insert("stream".into(), Value::from(stream));
+            }
+            let mut bytes = serde_json::to_vec(&request).unwrap();
+            bytes.push(b'\n');
+            let outcome = solstone_core_talent_runtime::execute_request(
+                request,
+                &paths,
+                &ExecutionContext {
+                    journal: journal.into(),
+                },
+                &|_: &solstone_core_generate::GenerateRequest| -> Result<
+                    solstone_core_generate::GenerateResponse,
+                    solstone_core_generate::ClientError,
+                > { panic!("an inapplicable talent must not Generate") },
+                &mut bytes,
+                &solstone_core_generate::Cancellation::never(),
+            );
+            assert!(
+                matches!(
+                    outcome,
+                    solstone_core_talent_runtime::RuntimeOutcome::Skipped { .. }
+                        | solstone_core_talent_runtime::RuntimeOutcome::PrepareSkipped { .. }
+                ),
+                "{outcome:?}"
+            );
+            solstone_core_talent_runtime::emit_outcome_for_test(&mut bytes, outcome);
+            let uses = journal.join("talents").join(name.replace(':', "--"));
+            fs::create_dir_all(&uses).unwrap();
+            fs::write(uses.join(format!("{id}.jsonl")), bytes).unwrap();
+            let mut fields = coordinates.clone();
+            fields.insert("name".into(), Value::from(name));
+            fields.insert("use_id".into(), Value::from(id));
+            log.log(
+                "talent.dispatch",
+                now + ordinal as i64 * 2 + 1,
+                fields.clone(),
+            );
+            fields.insert("state".into(), Value::from("finish"));
+            log.log("talent.complete", now + ordinal as i64 * 2 + 2, fields);
+        }
+        segment::publish_saved_outputs(&context, &segment).unwrap();
+        (context, segment)
+    }
+
+    #[test]
+    fn rebuild_seals_empty_detection_but_rechecks_current_sense_and_raw_source() {
+        for stream in [None, Some("notes")] {
+            for change in [
+                "sense",
+                "same_empty_sense",
+                "raw",
+                "republished_raw",
+                "prior_output",
+            ] {
+                let journal = tempdir().unwrap();
+                let (context, segment) =
+                    conditional_segment_fixture_with_detection(journal.path(), stream, true);
+                rebuild_segment_receipts(&context, None).unwrap();
+                assert!(
+                    rebuild_segment_receipts(
+                        &context,
+                        Some(&BTreeSet::from(["conditional-entities-detection".into()]))
+                    )
+                    .is_err()
+                );
+                let output = segment.join("talents/detection_outcome.json");
+                let old = b"prior owner output";
+                match change {
+                    "sense" => {
+                        fs::write(segment.join("talents/sense.json"), r#"{"density":"idle","content_type":"work","entities":[{"name":"Candidate"}],"facets":[{"facet":"home"}]}"#).unwrap();
+                        segment::publish_saved_outputs(&context, &segment).unwrap();
+                    }
+                    "same_empty_sense" => {
+                        fs::write(segment.join("talents/sense.json"), r#"{"density":"idle","content_type":"changed","entities":[],"facets":[{"facet":"home"}]}"#).unwrap();
+                        segment::publish_saved_outputs(&context, &segment).unwrap();
+                    }
+                    "raw" => fs::write(segment.join("audio.jsonl"), "{\"start\":\"00:00:01\",\"text\":\"The original captured source has changed.\"}\n").unwrap(),
+                    "republished_raw" => {
+                        fs::write(segment.join("audio.jsonl"), "{\"start\":\"00:00:01\",\"text\":\"Changed captured source with a new publication.\"}\n").unwrap();
+                        segment::publish_saved_outputs(&context, &segment).unwrap();
+                    }
+                    "prior_output" => {
+                        fs::write(&output, old).unwrap();
+                        segment::publish_saved_outputs(&context, &segment).unwrap();
+                    }
+                    _ => unreachable!(),
+                }
+                assert!(
+                    rebuild_segment_receipts(&context, None).is_err(),
+                    "{change}"
+                );
+                if change == "prior_output" {
+                    assert_eq!(fs::read(output).unwrap(), old);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn rebuild_seals_real_conditional_skips_and_rechecks_new_projection() {
+        for stream in [None, Some("notes")] {
+            let journal = tempdir().unwrap();
+            let (mut context, segment) = conditional_segment_fixture(journal.path(), stream);
+            let sealed = rebuild_segment_receipts(&context, None).unwrap();
+            assert!(
+                rebuild_segment_receipts(
+                    &context,
+                    Some(&BTreeSet::from(["conditional-screen".into()]))
+                )
+                .is_err()
+            );
+            let generation = stream_generation(&context).unwrap();
+            let raw = read_raw_input_fingerprint(journal.path(), DAY).unwrap();
+            let request =
+                solstone_core_system::work_intent::register(journal.path(), DAY, true).unwrap();
+            let root = solstone_core_journal_io::JournalRoot::open(journal.path()).unwrap();
+            let lease = solstone_core_system::work_intent::begin_rebuild(
+                journal.path(),
+                DAY,
+                &request.id,
+                &root.identity().observation_id(),
+            )
+            .unwrap();
+            solstone_core_system::work_intent::update_rebuild(
+                journal.path(),
+                DAY,
+                &request.id,
+                &|| Ok(()),
+                |p| {
+                    p.segments = Some(solstone_core_system::work_intent::SegmentSeal {
+                        generation,
+                        raw_fingerprint: raw.clone(),
+                        receipts_digest: sealed.clone(),
+                    });
+                    Ok(())
+                },
+            )
+            .unwrap();
+            context.rebuild = Some(Arc::new(lease));
+            context.rebuild_admission_checkpoint().unwrap();
+            // A derived media projection can appear without a new raw generation.
+            fs::write(segment.join("090000_300_screen.jsonl"), "{\"_solstone_processing\":{\"schema\":\"solstone.processing.v1\",\"state\":\"analyzed\",\"handler\":\"transcribe\",\"input_size\":15}}\n{\"start\":\"00:00:01\",\"text\":\"derived\"}\n").unwrap();
+            assert_eq!(stream_generation(&context).unwrap(), generation);
+            assert_eq!(
+                read_raw_input_fingerprint(journal.path(), DAY).unwrap(),
+                raw
+            );
+            assert!(context.rebuild_admission_checkpoint().is_err());
+            assert!(rebuild_segment_receipts(&context, None).is_err());
+        }
+    }
+
+    #[test]
+    fn conditional_seal_holds_prior_output_without_changing_or_certifying_it() {
+        for name in ["documents", "screen"] {
+            let journal = tempdir().unwrap();
+            let (context, segment) = conditional_segment_fixture(journal.path(), Some("notes"));
+            assert!(rebuild_segment_receipts(&context, None).is_ok());
+            let path = segment.join("talents").join(format!("{name}.json"));
+            let prior = br#"{"summary":"prior real output, now inapplicable"}"#;
+            fs::write(&path, prior).unwrap();
+            // Existing publication may still include old bytes; that never
+            // substitutes for this request's no-output disposition.
+            segment::publish_saved_outputs(&context, &segment).unwrap();
+            assert!(rebuild_segment_receipts(&context, None).is_err());
+            assert_eq!(fs::read(path).unwrap(), prior);
+        }
+    }
+
+    #[test]
+    fn conditional_seal_refuses_malformed_or_unterminated_durable_receipts() {
+        for kind in ["malformed", "unterminated", "wrong_request"] {
+            let journal = tempdir().unwrap();
+            let (context, _) = conditional_segment_fixture(journal.path(), Some("notes"));
+            assert!(rebuild_segment_receipts(&context, None).is_ok());
+            let path = journal
+                .path()
+                .join("talents/screen/conditional-screen.jsonl");
+            let mut bytes = fs::read(&path).unwrap();
+            match kind {
+                "malformed" => bytes.extend_from_slice(b"unreadable interrupted row\n"),
+                "unterminated" => {
+                    bytes.pop();
+                }
+                "wrong_request" => {
+                    bytes = String::from_utf8(bytes)
+                        .unwrap()
+                        .replace("conditional-screen", "different-use")
+                        .into_bytes();
+                }
+                _ => unreachable!(),
+            }
+            fs::write(path, bytes).unwrap();
+            assert!(rebuild_segment_receipts(&context, None).is_err(), "{kind}");
+        }
+    }
+
+    struct ActualSegmentCortex {
+        journal: std::path::PathBuf,
+        paths: solstone_core_talent_runtime::prepare::RuntimePaths,
+        completed: Mutex<BTreeMap<String, UseCompletion>>,
+    }
+
+    impl crate::context::CortexBoundary for ActualSegmentCortex {
+        fn dispatch(
+            &self,
+            runtime: &tokio::runtime::Runtime,
+            request: &CortexRequest,
+        ) -> Result<String, crate::context::DispatchFailure> {
+            self.dispatch_prepared(runtime, request, None, &mut |_| Ok(()))
+        }
+        fn dispatch_prepared(
+            &self,
+            _: &tokio::runtime::Runtime,
+            request: &CortexRequest,
+            reserved: Option<&str>,
+            prepare: &mut (dyn FnMut(&str) -> std::io::Result<()> + Send),
+        ) -> Result<String, crate::context::DispatchFailure> {
+            let id = reserved.map(str::to_owned).unwrap_or_else(|| {
+                solstone_core_journal_io::cortex_use::allocate_cortex_use_id(
+                    &self.journal,
+                    Utc::now().timestamp_millis(),
+                )
+                .unwrap()
+                .to_string()
+            });
+            prepare(&id).map_err(|_| crate::context::DispatchFailure::Unavailable)?;
+            let mut config = request.config.clone();
+            config.insert("name".into(), Value::from(request.name.clone()));
+            config.insert("use_id".into(), Value::from(id.clone()));
+            let mut bytes = serde_json::to_vec(&config).unwrap();
+            bytes.push(b'\n');
+            let generated = if request.name == "sense" {
+                r#"{"density":"active","content_type":"work","activity_summary":"A new synthetic garden meeting.","facets":[],"recommend":{"screen_record":true}}"#
+            } else {
+                r#"{"summary":"A prior synthetic saved result."}"#
+            };
+            let generate = |_: &solstone_core_generate::GenerateRequest| {
+                Ok(solstone_core_generate::GenerateResponse::Generated(
+                    Box::new(solstone_core_generate::GeneratedResponse {
+                        id: None,
+                        text: generated.into(),
+                        model: "test-model".into(),
+                        finish_reason: "stop".into(),
+                        usage: serde_json::json!({}),
+                        thinking: None,
+                        schema_validation: None,
+                        input_budget: None,
+                        request_budget: None,
+                        inference: None,
+                        hints_applied: vec![],
+                    }),
+                ))
+            };
+            let outcome = solstone_core_talent_runtime::execute_request(
+                config,
+                &self.paths,
+                &solstone_core_talent_runtime::ExecutionContext {
+                    journal: self.journal.clone(),
+                },
+                &generate,
+                &mut bytes,
+                &solstone_core_generate::Cancellation::never(),
+            );
+            let end_state = if matches!(
+                outcome,
+                solstone_core_talent_runtime::RuntimeOutcome::Finished { .. }
+                    | solstone_core_talent_runtime::RuntimeOutcome::Skipped { .. }
+                    | solstone_core_talent_runtime::RuntimeOutcome::PrepareSkipped { .. }
+            ) {
+                UseEndState::Finish
+            } else {
+                UseEndState::Error
+            };
+            solstone_core_talent_runtime::emit_outcome_for_test(&mut bytes, outcome);
+            let last: Value = serde_json::from_slice(
+                bytes
+                    .split(|byte| *byte == b'\n')
+                    .rfind(|row| !row.is_empty())
+                    .unwrap(),
+            )
+            .unwrap();
+            let dir = self.journal.join("talents").join(
+                solstone_core_journal_io::cortex_use::talent_directory_name(&request.name),
+            );
+            fs::create_dir_all(&dir).unwrap();
+            fs::write(dir.join(format!("{id}.jsonl")), bytes).unwrap();
+            self.completed.lock().unwrap().insert(
+                id.clone(),
+                UseCompletion {
+                    end_state,
+                    finish_fields: solstone_core_cortex_client::FinishFields {
+                        output_changed: last.get("output_changed").and_then(Value::as_bool),
+                    },
+                },
+            );
+            Ok(id)
+        }
+        fn wait(
+            &self,
+            _: &tokio::runtime::Runtime,
+            ids: &[String],
+            _: Option<Duration>,
+        ) -> Result<WaitForUsesReport, String> {
+            Ok(WaitForUsesReport {
+                completed: ids
+                    .iter()
+                    .map(|id| (id.clone(), self.completed.lock().unwrap()[id]))
+                    .collect(),
+                timed_out: vec![],
+            })
+        }
+    }
+
+    #[test]
+    fn forced_segment_refuses_stale_conditional_output_and_publishes_applicable_converse() {
+        for (name, stale) in [
+            ("documents", true),
+            ("screen", true),
+            ("documents", false),
+            ("screen", false),
+        ] {
+            let journal = tempdir().unwrap();
+            let mut context = context(journal.path())
+                .with_event_clock(Arc::new(|| Utc::now().timestamp_millis() + 3_600_000));
+            let stream = if name == "documents" && !stale {
+                "import.document"
+            } else {
+                "notes"
+            };
+            let segment = context.day_dir.join(stream).join("090000_300");
+            fs::create_dir_all(segment.join("talents")).unwrap();
+            fs::write(segment.join("audio.jsonl"), "{\"start\":\"00:00:01\",\"text\":\"A sufficiently detailed synthetic garden meeting.\"}\n").unwrap();
+            fs::write(
+                segment.join("talents/sense.json"),
+                r#"{"density":"idle","content_type":"work"}"#,
+            )
+            .unwrap();
+            let old = br#"{"summary":"prior saved output"}"#;
+            let output = segment.join("talents").join(format!("{name}.json"));
+            if stale {
+                fs::write(&output, old).unwrap();
+            }
+            if name == "screen" && !stale {
+                fs::write(segment.join("x_desktop_activity.jsonl"), "{\"v\":1,\"t\":\"desktop_activity\",\"kind\":\"foreground\",\"method\":\"ax\",\"ts\":1000,\"end_ts\":2000,\"app\":\"Synthetic garden planning\"}\n").unwrap();
+            }
+            segment::publish_saved_outputs(&context, &segment).unwrap();
+            let publication = fs::read(segment.join("talents/publication.json")).unwrap();
+            for talent in ["sense", "documents", "screen"] {
+                let extra = match talent {
+                    "documents" => {
+                        r#", "hook":{"pre":"documents"}, "load":{"transcripts":true,"percepts":false,"talents":false}"#
+                    }
+                    "screen" => {
+                        r#", "load":{"transcripts":true,"percepts":"required","talents":false}"#
+                    }
+                    _ => r#", "load":{"transcripts":true,"percepts":false,"talents":false}"#,
+                };
+                let priority = if talent == "sense" { 1 } else { 10 };
+                fs::write(context.talent_root.join(format!("{talent}.md")), format!("{{\n\"type\":\"generate\",\"schedule\":\"segment\",\"priority\":{priority},\"output\":\"json\",\"max_output_tokens\":1024{extra}\n}}\nSegment record")).unwrap();
+            }
+            let paths = solstone_core_talent_runtime::prepare::RuntimePaths {
+                talent_root: context.talent_root.clone(),
+                apps_root: context.apps_root.clone(),
+                templates_dir: context
+                    .talent_root
+                    .parent()
+                    .unwrap()
+                    .join("think/templates"),
+            };
+            fs::create_dir_all(&paths.templates_dir).unwrap();
+            context = context.with_boundary(Arc::new(ActualSegmentCortex {
+                journal: journal.path().into(),
+                paths,
+                completed: Mutex::new(BTreeMap::new()),
+            }));
+            let result = segment::run(
+                &context,
+                &mut log(journal.path()),
+                "090000_300",
+                true,
+                Some(stream),
+                2,
+                Some(Duration::from_secs(10)),
+                false,
+                &[],
+            )
+            .unwrap();
+            if stale {
+                assert!(result.failed > 0, "{name}: {result:?}");
+                assert_eq!(fs::read(output).unwrap(), old);
+                assert_eq!(
+                    fs::read(segment.join("talents/publication.json")).unwrap(),
+                    publication
+                );
+                assert!(
+                    !solstone_core_system::segment_publication::is_current(
+                        journal.path(),
+                        &segment,
+                        solstone_core_system_health::newest_segment_input_ms(&segment).unwrap()
+                    )
+                    .unwrap()
+                );
+            } else {
+                assert_eq!(result.failed, 0, "{name}: {result:?}");
+                assert!(output.is_file());
+                rebuild_segment_receipts(&context, None)
+                    .unwrap_or_else(|error| panic!("{name}: {error}"));
+            }
+        }
+    }
+
     #[test]
     fn daily_only_work_publishes_thought_segments_instead_of_waiting() {
         let journal = tempdir().unwrap();

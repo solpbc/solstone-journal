@@ -27,12 +27,18 @@ use tokio::{
 
 mod backup;
 mod brain;
+#[cfg(unix)]
+mod owner_response;
+#[cfg(unix)]
+pub use owner_response::OwnerResponseHead;
 
 #[cfg(feature = "audio")]
 pub(crate) mod audio;
 
 #[cfg(any(feature = "audio", feature = "processing"))]
 mod custody;
+#[cfg(feature = "processing")]
+mod daily_queue_observation;
 #[cfg(feature = "processing")]
 pub mod foreground;
 
@@ -47,7 +53,7 @@ pub struct MobileServing {
     #[cfg(feature = "audio")]
     audio: Option<audio::AudioWorker>,
     bus: solstone_core_callosum::CallosumSocketServer,
-    handle: EmbeddedConveyHandle,
+    handle: Arc<EmbeddedConveyHandle>,
     runtime: tokio::runtime::Runtime,
     root: Arc<JournalRoot>,
     interface_address: SocketAddrV4,
@@ -56,6 +62,8 @@ pub struct MobileServing {
     shutdown_complete: std::sync::atomic::AtomicBool,
     shutdown_failed: std::sync::atomic::AtomicBool,
     service_failures: Mutex<Vec<tokio::task::JoinError>>,
+    #[cfg(unix)]
+    owner_responses: owner_response::OwnerResponses,
     #[cfg(all(test, feature = "full-tests"))]
     shutdown_test_fault: Mutex<Option<Box<dyn FnOnce() + Send>>>,
 }
@@ -334,7 +342,7 @@ impl MobileServing {
             #[cfg(feature = "audio")]
             audio: None,
             bus,
-            handle,
+            handle: Arc::new(handle),
             runtime,
             root,
             interface_address: address,
@@ -346,6 +354,8 @@ impl MobileServing {
             shutdown_complete: std::sync::atomic::AtomicBool::new(false),
             shutdown_failed: std::sync::atomic::AtomicBool::new(false),
             service_failures: Mutex::new(Vec::new()),
+            #[cfg(unix)]
+            owner_responses: owner_response::OwnerResponses::default(),
             #[cfg(all(test, feature = "full-tests"))]
             shutdown_test_fault: Mutex::new(None),
         };
@@ -520,6 +530,41 @@ impl MobileServing {
         })
     }
 
+    /// Private app IPC only. `sink` must be a nonblocking pipe owned by the caller.
+    /// Response tasks retain this runtime's router and are canceled and joined at Stop.
+    /// A lost response is an unknown mutation outcome, never permission to replay it.
+    #[cfg(unix)]
+    pub fn open_owner_response(
+        &self,
+        id: u64,
+        method: &str,
+        uri: &str,
+        headers: &[(String, String)],
+        body: Vec<u8>,
+        sink: std::fs::File,
+    ) -> Result<std::sync::mpsc::Receiver<Result<OwnerResponseHead, String>>, String> {
+        self.root
+            .revalidate_canonical_binding()
+            .map_err(|e| e.to_string())?;
+        self.owner_responses.open(
+            self.runtime.handle(),
+            Arc::clone(&self.handle),
+            Arc::clone(&self.root),
+            self.stop.services.subscribe(),
+            id,
+            method,
+            uri,
+            headers,
+            body,
+            sink,
+        )
+    }
+
+    #[cfg(unix)]
+    pub fn cancel_owner_response(&self, id: u64) {
+        self.owner_responses.cancel(id);
+    }
+
     pub fn index(&self) -> Result<Value, String> {
         self.root
             .revalidate_canonical_binding()
@@ -568,6 +613,11 @@ impl MobileServing {
             }
         }
         self.handle.shutdown();
+        #[cfg(unix)]
+        if self.runtime.block_on(self.owner_responses.drain()).is_err() {
+            self.shutdown_failed.store(true, Ordering::Release);
+            return Err(ShutdownFailure);
+        }
         if let Some(services) = service_owner.take() {
             let _ = services.shutdown.send(true);
             self.runtime.block_on(async {
@@ -641,6 +691,175 @@ mod android_retirement;
 #[cfg(all(test, feature = "full-tests"))]
 mod tests {
     use super::*;
+    #[cfg(unix)]
+    fn owner_pipe(
+        server: &MobileServing,
+        id: u64,
+        method: &str,
+        uri: &str,
+        content_type: &str,
+        body: &str,
+    ) -> (OwnerResponseHead, std::os::unix::net::UnixStream) {
+        let (reader, writer) = std::os::unix::net::UnixStream::pair().unwrap();
+        reader
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .unwrap();
+        writer.set_nonblocking(true).unwrap();
+        let descriptor: std::os::fd::OwnedFd = writer.into();
+        let response = server
+            .open_owner_response(
+                id,
+                method,
+                uri,
+                &[("content-type".into(), content_type.into())],
+                body.as_bytes().to_vec(),
+                std::fs::File::from(descriptor),
+            )
+            .unwrap();
+        (
+            response
+                .recv_timeout(Duration::from_secs(5))
+                .unwrap()
+                .unwrap(),
+            reader,
+        )
+    }
+
+    #[cfg(unix)]
+    fn owner_bytes(
+        server: &MobileServing,
+        id: u64,
+        method: &str,
+        uri: &str,
+        content_type: &str,
+        body: &str,
+    ) -> (OwnerResponseHead, Vec<u8>) {
+        use std::io::Read;
+        let (head, mut reader) = owner_pipe(server, id, method, uri, content_type, body);
+        let mut bytes = Vec::new();
+        reader.read_to_end(&mut bytes).unwrap();
+        (head, bytes)
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn owner_pipe_preserves_setup_json_guard_redirect_assets_and_live_events() {
+        use std::io::{BufRead, BufReader};
+        let (server, _directory) = fixture();
+        let (head, _) = owner_bytes(&server, 1, "GET", "/app/backup/", "application/json", "");
+        assert!(matches!(head.status, 301 | 302 | 303 | 307 | 308));
+        assert!(
+            head.headers
+                .iter()
+                .any(|(key, value)| key == "location" && value.starts_with("/init"))
+        );
+        let (head, bytes) = owner_bytes(&server, 2, "GET", "/init/mark", "application/json", "");
+        assert_eq!(head.status, 200);
+        let mark: Value = serde_json::from_slice(&bytes).unwrap();
+        let body = json!({"proposal_id":mark["proposal_id"]}).to_string();
+        let (head, _) = owner_bytes(&server, 3, "POST", "/init/mark/lock", "text/plain", &body);
+        assert_eq!(head.status, 415);
+        let (head, _) = owner_bytes(
+            &server,
+            4,
+            "POST",
+            "/init/mark/lock",
+            "application/json",
+            &body,
+        );
+        assert_eq!(head.status, 200);
+        let (head, bytes) = owner_bytes(
+            &server,
+            5,
+            "POST",
+            "/init/finalize",
+            "application/json",
+            "{}",
+        );
+        assert_eq!(head.status, 200, "{}", String::from_utf8_lossy(&bytes));
+        let (head, bytes) = owner_bytes(
+            &server,
+            6,
+            "GET",
+            "/static/Comfortaa-Variable.woff2",
+            "application/json",
+            "",
+        );
+        assert_eq!(head.status, 200);
+        assert_eq!(
+            bytes,
+            include_bytes!(
+                "../../../core/crates/solstone-core-convey-shell/assets/static/Comfortaa-Variable.woff2"
+            )
+        );
+        let (head, reader) = owner_pipe(&server, 7, "GET", "/sse/events", "application/json", "");
+        assert_eq!(head.status, 200);
+        assert!(head.headers.iter().any(|(key,value)|key=="content-type" && value.starts_with("text/event-stream")));
+        let mut reader = BufReader::new(reader);
+        let mut connected = false;
+        for _ in 0..20 {
+            let mut line = String::new();
+            assert!(reader.read_line(&mut line).unwrap() > 0);
+            if line.contains("connected") {
+                connected = true;
+                break;
+            }
+        }
+        assert!(connected, "actual SSE connection must become live");
+        let client = solstone_core_callosum::CallosumOneShotSender::new(
+            server.root.canonical_path().join("health/callosum.sock"),
+            Duration::from_secs(5),
+        );
+        client
+            .send_line_confirmed(concat!(
+                r#"{"tract":"owner-pipe-check","event":"changed","text":"café 🐦"}"#,
+                "\n"
+            ))
+            .unwrap();
+        let mut delivered = false;
+        for _ in 0..20 {
+            let mut line = String::new();
+            assert!(reader.read_line(&mut line).unwrap() > 0);
+            if line.contains("owner-pipe-check") {
+                assert!(line.contains("café 🐦"));
+                delivered = true;
+                break;
+            }
+        }
+        assert!(delivered, "actual bus event must cross the response pipe");
+        server.cancel_owner_response(7);
+        let mut tail = String::new();
+        std::io::Read::read_to_string(&mut reader, &mut tail).unwrap();
+        server.shutdown_for_retirement().unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn unread_owner_pipes_do_not_block_stop_and_navigation_slots_are_reclaimed() {
+        let (server, _directory) = fixture();
+        for id in 1..=70 {
+            let (_, reader) = owner_pipe(&server, id, "GET", "/init", "text/html", "");
+            server.cancel_owner_response(id);
+            drop(reader);
+            // Join the owned tasks at this lifetime boundary; no timed poll is needed.
+            server
+                .runtime
+                .block_on(server.owner_responses.drain())
+                .unwrap();
+        }
+        let mut readers = Vec::new();
+        for id in 100..=115 {
+            readers.push(owner_pipe(&server, id, "GET", "/sse/events", "text/event-stream", "").1);
+        }
+        let started = Instant::now();
+        server.stop_handle().request_stop();
+        server.shutdown_for_retirement().unwrap();
+        assert!(
+            started.elapsed() < Duration::from_secs(5),
+            "non-reading views must not hold retirement"
+        );
+        drop(readers);
+    }
     fn fixture() -> (MobileServing, tempfile::TempDir) {
         let directory = tempfile::tempdir().unwrap();
         let probe = std::net::TcpListener::bind("127.0.0.1:0").unwrap();

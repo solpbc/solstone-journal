@@ -2271,6 +2271,7 @@ dependencies = [
  "axum",
  "chrono",
  "chrono-tz",
+ "http-body-util",
  "journal-mobile-audio",
  "log",
  "ort",
@@ -6173,6 +6174,7 @@ dependencies = [
  "solstone-core-format",
  "solstone-core-journal-io",
  "solstone-core-memory-original",
+ "solstone-core-processing-record",
 ]
 
 [[package]]

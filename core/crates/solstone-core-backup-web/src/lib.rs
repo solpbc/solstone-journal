@@ -618,9 +618,9 @@ async fn offload_config(deps: BackupWebDeps, body: Bytes) -> axum::response::Res
 }
 
 async fn offload_enable(deps: BackupWebDeps) -> axum::response::Response {
-    // Media offload needs the executable archive path, which iOS does not have.
+    // Mobile hosts do not schedule archive production or restore offloaded days.
     // Refuse before any setting changes so the device never shows it as on.
-    if cfg!(target_os = "ios") {
+    if cfg!(any(target_os = "ios", target_os = "android")) {
         return response::error(
             axum::http::StatusCode::BAD_REQUEST,
             "that action isn't available in the current state.",

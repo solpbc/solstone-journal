@@ -46,7 +46,7 @@ private struct HostAttemptRecord: Codable {
 
 final class AppraisalHostBridge: @unchecked Sendable {
   static let shared = AppraisalHostBridge()
-  private let appGroup = "group.app.solstone.journal.runtime.dev"
+  private let appGroup = RuntimeIdentity.group
   private let recordName = "gpu-appraisal-attempt.json"
   let lock = NSLock()
   private var currentSession: XPCSession?
@@ -363,7 +363,7 @@ final class AppraisalHostBridge: @unchecked Sendable {
       do {
         let monitor = try await AppExtensionPoint.Monitor(appExtensionPoint: .gpuAppraisal)
         let matches = monitor.identities.filter {
-          $0.bundleIdentifier == "app.solstone.journal.runtime.dev.gpu-appraisal"
+          $0.bundleIdentifier == RuntimeIdentity.appraisal
         }
         guard matches.count == 1, let identity = matches.first else {
           guard self.updateRecord(
@@ -645,20 +645,34 @@ final class PendingReply: @unchecked Sendable {
   var started = false
   var finished = false
   var servingActive = false
+  var rebuildObservation: RebuildObservation?
   let output = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
   let args = ProcessInfo.processInfo.arguments
   func argument(_ name: String, _ fallback: String) -> String {
     guard let i = args.firstIndex(of: name), i + 1 < args.count else { return fallback }
     return args[i + 1]
   }
-  var journal: String { argument("--suite", "development") }
+  var journal: String {
+    #if JOURNAL_OWNER_APP
+    return "owner"
+    #else
+    return argument("--suite", "development")
+    #endif
+  }
   func request(
     _ op: String, count: Int = 128, seconds: Int = 0, revision: Int = 0, mode: String = "reopen",
     root: String = "", payload: String = ""
   ) -> Request {
     Request(
       op: op, journal: journal, root: root, count: count, seconds: seconds, revision: revision,
-      mode: mode, payload: payload, storage: args.contains("--serve") ? "serving" : "private")
+      mode: mode, payload: payload, storage: ownerStorage)
+  }
+  private var ownerStorage: String {
+    #if JOURNAL_OWNER_APP
+    return "serving"
+    #else
+    return args.contains("--serve") ? "serving" : "private"
+    #endif
   }
   func log(_ event: String, _ value: Any) {
     do {
@@ -738,7 +752,10 @@ final class PendingReply: @unchecked Sendable {
     admitted.admissionGeneration = request.admissionGeneration ?? journal_ios_processing_generation()
     let queuedRequest = admitted
     if request.op == "serve-stop" {
-      journal_ios_processing_request_stop()
+      guard journal_ios_processing_request_owner_stop() else {
+        throw NSError(domain: "owner Stop could not be saved; journal retained", code: 1)
+      }
+      await stopRebuildObservation()
       await cancelAndDrain()
     }
     let start = ProcessInfo.processInfo.systemUptime
@@ -775,7 +792,7 @@ final class PendingReply: @unchecked Sendable {
   }
   func stopServing() {
     // This signal bypasses the queue a provider call may currently occupy.
-    journal_ios_processing_request_stop()
+    _ = journal_ios_processing_request_owner_stop()
     log("serve.stop-requested", ["generation": journal_ios_processing_generation()])
     Task {
       do {
@@ -802,12 +819,41 @@ final class PendingReply: @unchecked Sendable {
       }
     }
   }
+  func cancelRebuildObservation() {
+    rebuildObservation?.cancel()
+  }
+  func stopRebuildObservation() async {
+    guard let observer = rebuildObservation else { return }
+    await observer.stop()
+    if rebuildObservation === observer {
+      rebuildObservation = nil
+      log("work.intent.observer.stopped", ["descriptors_closed": true])
+    }
+  }
   func serve(_ duration: Int, admissionGeneration: UInt64) async throws {
     let port = Int(argument("--port", "37657")) ?? 37657
     var startRequest = request("serve-start", count: port)
     startRequest.admissionGeneration = admissionGeneration
-    _ = try await servingCall(request("open"), "serve.open")
+    if args.contains("--observe-daily-queue") {
+      startRequest.mode = "observe-daily-queue"
+    }
+    let opened = try await servingCall(request("open"), "serve.open")
     _ = try await servingCall(startRequest, "serve.start")
+    defer { cancelRebuildObservation() }
+    if args.contains("--observe-rebuild") {
+      guard let native = opened["journal"] as? [String: Any],
+        let result = native["result"] as? [String: Any], result["ok"] as? Bool == true,
+        let value = result["value"] as? [String: Any],
+        let root = value["root"] as? String, let identity = value["identity"] as? String else {
+        throw NSError(domain: "observer-native-root-unavailable", code: 1)
+      }
+      let observer = try RebuildObservation(root: root, identity: identity, seconds: duration) {
+        [weak self] value in self?.log("work.intent.observation", value)
+      }
+      rebuildObservation = observer
+      do { try observer.start() }
+      catch { await stopRebuildObservation(); throw error }
+    }
     if args.contains("--audio") {
       _ = try await servingCall(
         request("audio-enable", mode: argument("--audio-mode", "reopen")), "audio.enabled")
@@ -1061,8 +1107,14 @@ final class PendingReply: @unchecked Sendable {
 @main struct RuntimeDev: App {
   @Environment(\.scenePhase) var scenePhase
   @StateObject var runner = Runner()
+  #if JOURNAL_OWNER_APP
+  @StateObject var owner = OwnerJournal()
+  #endif
   var body: some Scene {
     WindowGroup {
+      #if JOURNAL_OWNER_APP
+      OwnerJournalView(owner: owner)
+      #else
       VStack(alignment: .leading, spacing: 16) {
         Text("journal development").font(.title)
         Text(runner.status).accessibilityIdentifier("runtime-status")
@@ -1084,11 +1136,14 @@ final class PendingReply: @unchecked Sendable {
       .onChange(of: scenePhase) { newPhase in
         if newPhase != .active {
           journal_ios_processing_request_stop()
+          runner.cancelRebuildObservation()
           Task {
+            await runner.stopRebuildObservation()
             await cancelAndDrain()
           }
         }
       }
+      #endif
     }
   }
 }

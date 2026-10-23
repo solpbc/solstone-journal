@@ -88,6 +88,13 @@ impl WindowsFlatDirectory {
         self.identity
     }
 
+    /// Compare this retained directory with the flat listing's identity representation.
+    pub fn matches_entry(&self, entry: &FlatDirectoryEntry) -> bool {
+        entry.kind == JournalEntryKind::Directory
+            && self.identity.volume_serial() == entry.device
+            && self.identity.folded_file_id() == entry.inode
+    }
+
     /// The bound directory's identity, comparable with a media directory's.
     pub fn object_identity(&self) -> crate::journal_root::ObjectIdentity {
         crate::journal_root::ObjectIdentity::from_volume_and_file_id(

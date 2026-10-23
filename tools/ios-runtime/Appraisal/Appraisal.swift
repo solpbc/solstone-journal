@@ -14,7 +14,7 @@ func ios_gpu_appraisal_execute(_ input: UnsafePointer<CChar>?) -> UnsafeMutableP
 @_silgen_name("ios_gpu_appraisal_free")
 func ios_gpu_appraisal_free(_ ptr: UnsafeMutablePointer<CChar>?)
 
-private let appGroup = "group.app.solstone.journal.runtime.dev"
+private let appGroup = RuntimeIdentity.group
 private let attemptRecordName = "gpu-appraisal-attempt.json"
 private let maximumRequestBytes = 1_114_112
 
@@ -280,7 +280,11 @@ struct AppraisalHandler: XPCPeerHandler {
 
 @main struct Appraisal: AppExtension {
   @AppExtensionPoint.Bind var boundExtensionPoint: AppExtensionPoint {
+    #if JOURNAL_OWNER_APP
+    AppExtensionPoint.Identifier(host: "app.solstone.journal.owner.dev", name: "gpu-appraisal")
+    #else
     AppExtensionPoint.Identifier(host: "app.solstone.journal.runtime.dev", name: "gpu-appraisal")
+    #endif
   }
   var configuration: some AppExtensionConfiguration {
     ConnectionHandler(onSessionRequest: { request in request.accept { _ in AppraisalHandler() } })

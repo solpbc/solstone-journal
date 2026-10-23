@@ -17,6 +17,7 @@ use solstone_core_system_health::{DataState, read_segment_data_state};
 
 pub mod activity_contract;
 pub mod assemble;
+pub mod conditional_segment;
 pub mod contract;
 mod daily_execution;
 pub mod daily_location;
@@ -485,7 +486,20 @@ pub fn execute_request(
         );
     }
     let Some(value) = request.get("_work_unit") else {
-        return execute_unclaimed(request, paths, context, generate, writer, cancellation);
+        let outcome = execute_unclaimed(
+            request,
+            paths,
+            context,
+            generate,
+            writer,
+            cancellation,
+            &mut None,
+        );
+        return if cancellation.is_cancelled() {
+            RuntimeOutcome::Cancelled
+        } else {
+            outcome
+        };
     };
     use solstone_core_system::work_retry::{self, Attempt, Unit};
     let refused = |error| {
@@ -567,7 +581,24 @@ pub fn execute_request(
             _ => {}
         }
     }
-    let outcome = execute_unclaimed(request, paths, context, generate, writer, cancellation);
+    let mut applicability_request = request.clone();
+    applicability_request.remove(conditional_segment::DETECTION_INPUT_KEY);
+    let mut conditional_binding = None;
+    let outcome = execute_unclaimed(
+        request,
+        paths,
+        context,
+        generate,
+        writer,
+        cancellation,
+        &mut conditional_binding,
+    );
+    if let Some(binding) = conditional_binding {
+        applicability_request.insert(
+            conditional_segment::DETECTION_INPUT_KEY.into(),
+            Value::from(binding),
+        );
+    }
     if cancellation.is_cancelled() || matches!(outcome, RuntimeOutcome::Cancelled) {
         return RuntimeOutcome::Cancelled;
     }
@@ -577,6 +608,16 @@ pub fn execute_request(
             Some(error.reason_code())
         }
         RuntimeOutcome::SchemaValidationFailed { .. } => Some("schema_invalid"),
+        RuntimeOutcome::Skipped { .. } | RuntimeOutcome::PrepareSkipped { .. }
+            if conditional_segment::skip_is_applicable(
+                &applicability_request,
+                paths,
+                context,
+                &outcome,
+            ) == Ok(true) =>
+        {
+            None
+        }
         _ => Some("talent_unfinished"),
     };
     if let Some(attempt) = attempt {
@@ -621,7 +662,9 @@ fn execute_unclaimed(
     generate: &dyn solstone_core_generate::GenerateExecutor,
     writer: &mut impl Write,
     cancellation: &solstone_core_generate::Cancellation,
+    conditional_binding: &mut Option<String>,
 ) -> RuntimeOutcome {
+    let mut validation_request = request.clone();
     let mut prepared =
         match prepare::prepare(request, paths, context, prepare::PrepareMode::Execute) {
             Ok(prepared) => prepared,
@@ -631,12 +674,42 @@ fn execute_unclaimed(
     if cancellation.is_cancelled() {
         return RuntimeOutcome::Cancelled;
     }
+    // Only the runtime's bound observation can qualify this no-output receipt.
+    // Never trust a caller's value, including one copied from an older use.
+    let binding_key = conditional_segment::DETECTION_INPUT_KEY;
+    validation_request.remove(binding_key);
+    prepared.config.remove(binding_key);
+    if prepared.name == "entities:detection" && prepared.config.get("skip_reason").is_none() {
+        match entities::detection::no_candidates_input_binding(&prepared, context) {
+            Ok(Some(binding)) => {
+                *conditional_binding = Some(binding.clone());
+                validation_request.insert(binding_key.into(), Value::from(binding.clone()));
+                prepared
+                    .config
+                    .insert(binding_key.into(), Value::from(binding));
+            }
+            Ok(None) => {}
+            Err(error) => {
+                return RuntimeOutcome::StageFailed(StageError::new(
+                    "prepare",
+                    "conditional_input",
+                    &prepared.name,
+                    error,
+                ));
+            }
+        }
+    }
     emit_start(writer, &prepared);
     if let Some(reason) = prepared.config.get("skip_reason").and_then(Value::as_str) {
-        return RuntimeOutcome::PrepareSkipped {
-            talent: prepared.name.clone(),
-            reason: reason.to_owned(),
-        };
+        return conditional_segment::validate_skip(
+            RuntimeOutcome::PrepareSkipped {
+                talent: prepared.name.clone(),
+                reason: reason.to_owned(),
+            },
+            &validation_request,
+            paths,
+            context,
+        );
     }
     let talent_type = prepared
         .config
@@ -670,11 +743,16 @@ fn execute_unclaimed(
         match gate(&prepared, context) {
             Ok(GateDecision::Proceed) => {}
             Ok(GateDecision::Skip(reason)) => {
-                return RuntimeOutcome::Skipped {
-                    stage: hook.to_owned(),
-                    talent: prepared.name.clone(),
-                    reason,
-                };
+                return conditional_segment::validate_skip(
+                    RuntimeOutcome::Skipped {
+                        stage: hook.to_owned(),
+                        talent: prepared.name.clone(),
+                        reason,
+                    },
+                    &validation_request,
+                    paths,
+                    context,
+                );
             }
             Err(error) => return RuntimeOutcome::StageFailed(error),
         }
@@ -720,7 +798,7 @@ fn execute_unclaimed(
 }
 
 fn emit_start(writer: &mut impl Write, prepared: &PreparedTalent) {
-    let event = Map::from_iter([
+    let mut event = Map::from_iter([
         ("event".to_owned(), json!("start")),
         ("name".to_owned(), json!(prepared.name)),
         (
@@ -744,6 +822,15 @@ fn emit_start(writer: &mut impl Write, prepared: &PreparedTalent) {
                 .unwrap_or(Value::Null),
         ),
     ]);
+    if let Some(binding) = prepared
+        .config
+        .get(conditional_segment::DETECTION_INPUT_KEY)
+    {
+        event.insert(
+            conditional_segment::DETECTION_INPUT_KEY.into(),
+            binding.clone(),
+        );
+    }
     emit(writer, Value::Object(event));
 }
 

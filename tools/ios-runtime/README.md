@@ -1,5 +1,19 @@
 # journal on a dedicated iOS device
 
+## ordinary owner app
+
+`make build-owner AUDIO_MODELS_DIR=<verified-mobile-models>` builds a separate development app, `app.solstone.journal.owner.dev`, with its own `group.app.solstone.journal.owner.dev` container. `make install-owner` adds installation to the same build. set `DEVICE` and a fresh `BUILD_ROOT`; keep the existing native audio library variables from the local-audio instructions below. the owner build requires bundled speech models. it does not read or update the older runtime development app or its journal.
+
+open **your journal** from its icon. the app opens the maintained journal setup page, where you choose the mark and an existing thinking provider. pair another device through the existing devices page. keep this device plugged in, on your Wi-Fi, with the app in the foreground. home and health show the journal's processing and service status.
+
+the native bar keeps **stop** available if the page fails. stop saves your choice before waiting for processing and serving to drain. opening the app again keeps that choice. **start** opens it again; **restart** first checks that the previous runtime has stopped. leaving the foreground pauses the runtime without treating that interruption as your stop choice. returning to the app resumes only work the journal's existing recovery rules allow. held or uncertain work stays visible in health; restarting does not approve it.
+
+this isolated build uses an existing bring-your-own thinking provider. its new helper identity is outside the fixed confidential-processing admission, so that path remains unavailable. no admission rule is loosened for the development app. backup is also unavailable for this app identity. the native speech resources are bundled and verified by the existing audio adapter; no USB model provisioning is part of ordinary use.
+
+the web view uses a private custom-scheme adapter to the maintained owner router. it preserves response headers and streams binary originals and live events without an owner HTTP listener. it accepts only its own journal origin and opens external consent links in the system browser. file uploads from this embedded page are bounded text requests; use a paired device for the mixed-media workload.
+
+build and host checks alone do not qualify physical lifecycle, recovery, upgrades or sustained capacity. this remains a development app, separate from public distribution.
+
 This development app exercises journal storage, indexing and search with a standard bundled ExtensionFoundation helper. Keep the device plugged in and the host app in the foreground. It requires iOS 26 and a development signing identity. It can serve the production authenticated journal API over a private Wi-Fi interface. It does not integrate with the capture app.
 
 The helper owns persistent files in its private `Documents/journal-<suite>` directory. The host sends typed operations over XPC and receives results. A supplied host path conveys no file authority. The bridge retains an admitted `JournalRoot` and checks its canonical binding before each operation; bound publication uses the production journal IO primitives. Indexing and queries use the production crates. For LAN serving, the foreground host retains the shared [mobile serving runtime](../mobile-serving/README.md). The host and helper independently select the same dedicated app-group journal; the helper performs indexing and export. The maintained router payload is bundled as a signed resource. Exported synthetic results go to the host's Documents directory for independent checking.
@@ -38,6 +52,16 @@ The controls repeat unpaced production searches with and without a retained read
 The host-loss command kills the observed host PID after indexing while the worker is active. The next command opens the same helper-owned journal from a cold host and verifies its files and index. The verifier fails on missing completion, a reported operation error, wrong content or FTS rows, or observed background heartbeats. Re-run the verifier against preserved console output with `--verify-only` and the same arguments. Keep failed runs alongside successful receipts.
 
 All data generated here is synthetic. The fault interface and test-hook dependency belong only to this development app. Do not embed this bridge in a release app.
+
+## Observing durable rebuild progress
+
+Add `--observe-rebuild` to a serving launch to collect read-only evidence from the journal opened by the native runtime. The selected synthetic suite must already contain its `health` and `talents/entities--entity_suggest` directories. The observer checks the native root identity and refuses replaced directories, unsupported file types and malformed records.
+
+Directory notifications trigger bounded reads of `health/work-intent.json` and active entity-suggestion use records. Each changed snapshot includes the original bytes, hashes and a monotonic timestamp. Notifications can coalesce; snapshots do not provide an atomic view across files or a complete event history. A temporary publication race refuses that sample and waits for another notification. These observations do not authorize an interruption or decide recovery eligibility.
+
+The observer allows at most 1 MiB per file, 2 MiB per snapshot, 16 MiB of emitted raw payload and 1,024 notification wakeups within the serving window. Unchanged and refused reads do not consume the emitted-payload allowance. Stop cancels observation and joins descriptor closure before reporting the observer stopped. The default launch leaves observation disabled.
+
+The macOS diagnostic in [RebuildObservationQualification.swift](diagnostics/RebuildObservationQualification.swift) exercises actual Darwin directory events, publication races, replaced identities, rejected file types and concurrent Stop callers. It checks descriptor closure at each Stop return and suppresses later observations. It supplies host controls; physical interruption and recovery require separate evidence.
 
 ## Authenticated LAN qualification
 
