@@ -665,53 +665,36 @@ pub(crate) fn process_one_with(
     let reduced_seconds = reduction.as_ref().map(|mapping| mapping.reduced_duration_s);
 
     let mut asr_at = None;
-    #[cfg(all(feature = "embedded", unix))]
-    let embedded_dispatched = embedded
-        .filter(|_| backend != "confidential")
-        .map(|runtime| {
-            asr_at = Some(Instant::now());
-            runtime.transcribe(statement_audio)
-        });
+    let dispatch = |samples: &[f32]| {
+        asr_at.get_or_insert_with(Instant::now);
+        #[cfg(all(feature = "embedded", unix))]
+        if let Some(runtime) = embedded.filter(|_| backend != "confidential") {
+            return runtime.transcribe(samples);
+        }
+        dispatch_backend(
+            config,
+            journal_path,
+            &backend,
+            samples,
+            attestation_state,
+            #[cfg(all(feature = "embedded", unix))]
+            embedded,
+        )
+    };
     let dispatch = || {
         if backend == "confidential" {
-            // The byte limit applies to the trimmed audio actually sent. A request
-            // still over budget is deferred with its original input retained.
+            // Keep the combined byte admission before any request. Splitting retained
+            // spans must not bypass the existing over-budget retained-raw deferral.
             dispatch_confidential_with_cap(
                 statement_audio.len(),
                 reduced_seconds.unwrap_or(audio_seconds),
-                || {
-                    asr_at = Some(Instant::now());
-                    dispatch_backend(
-                        config,
-                        journal_path,
-                        &backend,
-                        statement_audio,
-                        attestation_state,
-                        #[cfg(all(feature = "embedded", unix))]
-                        embedded,
-                    )
-                },
+                || transcribe_retained_intervals(statement_audio, reduction.as_ref(), dispatch),
             )
         } else {
-            asr_at = Some(Instant::now());
-            dispatch_backend(
-                config,
-                journal_path,
-                &backend,
-                statement_audio,
-                attestation_state,
-                #[cfg(all(feature = "embedded", unix))]
-                embedded,
-            )
+            transcribe_retained_intervals(statement_audio, reduction.as_ref(), dispatch)
         }
     };
-    #[cfg(all(feature = "embedded", unix))]
-    let dispatched = embedded_dispatched.unwrap_or_else(dispatch);
-    #[cfg(not(all(feature = "embedded", unix)))]
-    let dispatched = {
-        let mut dispatch = dispatch;
-        dispatch()
-    };
+    let dispatched = dispatch();
     if let Some(asr_at) = asr_at {
         timings.add_ms("asr", elapsed_ms(asr_at));
     }
@@ -1052,6 +1035,54 @@ where
         });
     }
     dispatch()
+}
+
+fn transcribe_retained_intervals<F>(
+    audio: &[f32],
+    reduction: Option<&solstone_core_observe_audio::AudioReduction>,
+    mut dispatch: F,
+) -> Result<(parakeet_cpp::TranscriptionResponse, parakeet_cpp::ModelInfo), TranscribeError>
+where
+    F: FnMut(
+        &[f32],
+    ) -> Result<
+        (parakeet_cpp::TranscriptionResponse, parakeet_cpp::ModelInfo),
+        TranscribeError,
+    >,
+{
+    let Some(reduction) = reduction else {
+        return dispatch(audio);
+    };
+    let mut combined = parakeet_cpp::TranscriptionResponse {
+        words: Vec::new(),
+        text: String::new(),
+    };
+    let mut model_info = None;
+    // Recognize each continuous retained interval once. Joining unrelated intervals
+    // changes utterance normalization/context and can blank an otherwise audible clip.
+    for segment in &reduction.segments {
+        let start = (segment.reduced_start_s * f64::from(SAMPLE_RATE)).round() as usize;
+        let end = (segment.reduced_end_s * f64::from(SAMPLE_RATE)).round() as usize;
+        let (mut transcript, info) = dispatch(&audio[start..end])?;
+        for word in &mut transcript.words {
+            // Bound each local result to its own interval. Offset addition can round
+            // an exclusive end past a cut into the next original interval.
+            word.start = (word.start + segment.reduced_start_s)
+                .clamp(segment.reduced_start_s, segment.reduced_end_s);
+            word.end = (word.end + segment.reduced_start_s)
+                .clamp(segment.reduced_start_s, segment.reduced_end_s);
+        }
+        if !combined.text.is_empty() && !transcript.text.is_empty() {
+            combined.text.push(' ');
+        }
+        combined.text.push_str(&transcript.text);
+        combined.words.extend(transcript.words);
+        model_info = Some(info);
+    }
+    Ok((
+        combined,
+        model_info.expect("a speech reduction contains retained intervals"),
+    ))
 }
 
 fn dispatch_backend(
@@ -2701,16 +2732,15 @@ mod tests {
             if expected.is_empty() {
                 assert!(calls.is_empty(), "no-speech must never reach recognition");
             } else {
-                assert_eq!(calls.len(), 1);
-                let expected: Vec<f32> = expected
-                    .into_iter()
-                    .flat_map(|(start, end)| decoded[start * rate..end * rate].iter().copied())
-                    .collect();
-                assert_eq!(calls[0].len(), expected.len());
-                assert_eq!(
-                    calls[0], expected,
-                    "only original retained samples reach ASR"
-                );
+                assert_eq!(calls.len(), expected.len());
+                for (actual, (start, end)) in calls.iter().zip(expected) {
+                    assert_eq!(actual.len(), (end - start) * rate);
+                    assert_eq!(
+                        actual.as_slice(),
+                        &decoded[start * rate..end * rate],
+                        "each continuous original interval reaches ASR exactly once"
+                    );
+                }
             }
             assert_eq!(
                 fs::read(&facts.path).unwrap(),
@@ -2719,6 +2749,115 @@ mod tests {
             );
             assert!(super::PROCESSING_TEST_VAD.with(|result| result.borrow().is_none()));
         }
+    }
+
+    #[test]
+    fn retained_intervals_are_recognized_once_and_restore_word_and_statement_times() {
+        let rate = super::SAMPLE_RATE as usize;
+        let audio = (0..20 * rate).map(|index| index as f32).collect::<Vec<_>>();
+        let vad = VadResult {
+            duration_s: 20.0,
+            speech_duration_s: 2.0,
+            has_speech: true,
+            speech_segments: vec![(5.0, 6.0), (15.0, 16.0)],
+            noisy_rms: None,
+            noisy_s: 0.0,
+            loud_windows: 0,
+            speech_loud_windows: 0,
+        };
+        let (reduced, mapping) = solstone_core_observe_audio::reduce_audio(&audio, &vad).unwrap();
+        let mut calls = 0;
+        let (transcript, _) =
+            super::transcribe_retained_intervals(&reduced, Some(&mapping), |samples| {
+                let start = if calls == 0 { 4 } else { 14 };
+                assert_eq!(samples, &audio[start * rate..(start + 3) * rate]);
+                calls += 1;
+                Ok((
+                    crate::backend::parakeet_cpp::TranscriptionResponse {
+                        words: vec![crate::backend::parakeet_cpp::TranscriptionWord {
+                            word: "hello.".into(),
+                            start: 1.0,
+                            end: 1.5,
+                            probability: None,
+                        }],
+                        text: "hello.".into(),
+                    },
+                    crate::backend::parakeet_cpp::ModelInfo {
+                        model: "fixture".into(),
+                        device: "cpu".into(),
+                        compute_type: "float32".into(),
+                    },
+                ))
+            })
+            .unwrap();
+        assert_eq!(
+            calls, 2,
+            "each retained interval gets one pass without retry"
+        );
+        assert_eq!(transcript.text, "hello. hello.");
+        assert_eq!(transcript.words[0].start, 1.0);
+        assert_eq!(transcript.words[1].start, 4.0);
+        let statements = super::statements_from_words(&transcript.words);
+        let restored = crate::transcript::restore_statement_timestamps(&statements, &mapping);
+        assert_eq!(restored.len(), 2);
+        for (statement, start) in restored.iter().zip([5.0, 15.0]) {
+            assert_eq!(statement["start"], json!(start));
+            assert_eq!(statement["end"], json!(start + 0.5));
+            assert_eq!(statement["words"][0]["start"], json!(start));
+            assert_eq!(statement["words"][0]["end"], json!(start + 0.5));
+        }
+        let mut calls = 0;
+        let failed = super::transcribe_retained_intervals(&reduced, Some(&mapping), |_| {
+            calls += 1;
+            Err(TranscribeError::Cancelled)
+        });
+        assert!(matches!(failed, Err(TranscribeError::Cancelled)));
+        assert_eq!(
+            calls, 1,
+            "cancellation stops before another interval is sent"
+        );
+    }
+
+    #[test]
+    fn nonintegral_utterance_end_stays_at_its_own_original_cut_boundary() {
+        let vad = VadResult {
+            duration_s: 12.0,
+            speech_duration_s: 3.06,
+            has_speech: true,
+            speech_segments: vec![(0.0, 1.0), (5.0, 6.06), (10.0, 11.0)],
+            noisy_rms: None,
+            noisy_s: 0.0,
+            loud_windows: 0,
+            speech_loud_windows: 0,
+        };
+        let (audio, mapping) =
+            solstone_core_observe_audio::reduce_audio(&vec![0.0; 12 * 16_000], &vad).unwrap();
+        let (transcript, _) =
+            super::transcribe_retained_intervals(&audio, Some(&mapping), |samples| {
+                Ok((
+                    crate::backend::parakeet_cpp::TranscriptionResponse {
+                        words: vec![crate::backend::parakeet_cpp::TranscriptionWord {
+                            word: "hello.".into(),
+                            start: 0.1,
+                            end: samples.len() as f64 / f64::from(super::SAMPLE_RATE),
+                            probability: None,
+                        }],
+                        text: "hello.".into(),
+                    },
+                    crate::backend::parakeet_cpp::ModelInfo {
+                        model: "fixture".into(),
+                        device: "cpu".into(),
+                        compute_type: "float32".into(),
+                    },
+                ))
+            })
+            .unwrap();
+        let restored = crate::transcript::restore_statement_timestamps(
+            &super::statements_from_words(&transcript.words),
+            &mapping,
+        );
+        assert_eq!(restored[1]["end"], json!(7.06));
+        assert_eq!(restored[1]["words"][0]["end"], json!(7.06));
     }
 
     #[test]

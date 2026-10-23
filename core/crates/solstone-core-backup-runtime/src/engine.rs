@@ -794,10 +794,10 @@ thread_local! {
     };
 }
 
-#[cfg(any(test, feature = "test-hooks"))]
+#[cfg(any(all(test, not(windows)), feature = "test-hooks"))]
 type BackupToolResolutionStartedHook = Box<dyn FnOnce(&Path)>;
 
-#[cfg(any(test, feature = "test-hooks"))]
+#[cfg(any(all(test, not(windows)), feature = "test-hooks"))]
 thread_local! {
     static ON_BACKUP_TOOL_RESOLUTION_STARTED: std::cell::RefCell<Option<BackupToolResolutionStartedHook>> = const {
         std::cell::RefCell::new(None)
@@ -842,7 +842,7 @@ fn run_on_backup_journal_resolved_hook() {
     }
 }
 
-#[cfg(any(test, feature = "test-hooks"))]
+#[cfg(all(not(windows), any(test, feature = "test-hooks")))]
 pub(crate) fn run_backup_tool_resolution_started_hook(resolved_journal: &Path) {
     let hook = ON_BACKUP_TOOL_RESOLUTION_STARTED.with(|slot| slot.borrow_mut().take());
     if let Some(hook) = hook {

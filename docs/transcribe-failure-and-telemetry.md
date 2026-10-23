@@ -164,8 +164,12 @@ Recognition receives the detected speech spans after owner masking when owner-on
 is active. Gaps longer than two seconds are trimmed, retaining one second of context
 at each speech boundary. Word and statement timestamps map back to the original
 recording. If no gap can be reduced, recognition receives the admitted buffer unchanged.
-Confidential requests must fit the existing byte budget after trimming; an oversized
-request is deferred (`69`) with its raw input retained.
+Each continuous retained interval is recognized once as its own utterance; unrelated
+intervals are not joined into one recognition context. Their word times are offset
+onto the reduced timeline before mapping back to the original recording. Statement
+embeddings use the reduced timeline; diarization and publication use the original.
+The combined trimmed input must fit the existing confidential byte budget before
+any interval is sent; an oversized input is deferred (`69`) with its raw retained.
 
 | Key | Stage |
 |-----|-------|
