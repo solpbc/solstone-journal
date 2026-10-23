@@ -10,6 +10,8 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - breaking cli change: `journal` now prints the equivalent `solstone journal` command and exits without running it. `journal` will be removed in the next release. update scripts and any hand-written schedules or service commands that use it.
 - unhiding an entity now puts it back in the facets it was in when you hid it. a facet you removed it from yourself before hiding stays removed. this works for entities you hide from now on.
+- the entities page now shows your entities as rows instead of cards, sorted into folders by type, with hidden entities in a folder of their own. each row shows how many notes it has.
+- the entities page now has two lists to tidy up. names that look like an ID, such as file names or request numbers, can be hidden all at once, and one undo puts them all back. possible duplicates can be merged or kept separate in one step. a merge asks first, lists every pair, and can't be undone. possible duplicate entities have moved here from the curation page.
 
 ### Fixed
 

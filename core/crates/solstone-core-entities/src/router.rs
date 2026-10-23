@@ -2072,6 +2072,11 @@ pub(crate) fn assemble_journal_entity_records(
     only: Option<&str>,
 ) -> Result<Vec<Value>, solstone_core_facets::FacetEntityWriteError> {
     let groups = solstone_core_entity::read_identity_group_map(root)?;
+    let winner_by_folder: HashMap<String, String> = groups
+        .groups
+        .iter()
+        .filter_map(|(id, dirs)| dirs.first().map(|dir| (dir.clone(), id.clone())))
+        .collect();
     let resolved = groups
         .groups
         .iter()
@@ -2095,13 +2100,20 @@ pub(crate) fn assemble_journal_entity_records(
         let identity_last_seen_ts = valid_last_seen_day(value)
             .filter(|&day| day <= today.as_str())
             .and_then(|day| solstone_core_entity::journal_day_start_ms(day, zone));
+        let entity_id = winner_by_folder
+            .get(&entity_dir)
+            .cloned()
+            .map(Value::String)
+            .unwrap_or(Value::Null);
+        let blocked = Value::Bool(solstone_core_entity::entity_is_hidden(value));
         records.push(json!({
             "id": entity_dir,
+            "entity_id": entity_id,
             "name": value.get("name").cloned().unwrap_or_else(|| json!("")),
             "type": value.get("type").cloned().unwrap_or_else(|| json!("")),
             "aka": value.get("aka").cloned().unwrap_or_else(|| json!([])),
             "is_principal": value.get("is_principal").cloned().unwrap_or_else(|| json!(false)),
-            "blocked": value.get("blocked").cloned().unwrap_or_else(|| json!(false)),
+            "blocked": blocked,
             "facets": [],
             "total_observation_count": 0,
             "last_active_ts": identity_last_seen_ts,
@@ -2289,6 +2301,14 @@ struct JournalSummaryQuery {
     entity_type: Option<String>,
     q: Option<String>,
     sort: Option<String>,
+    hidden: Option<String>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum JournalHiddenFilter {
+    Include,
+    Exclude,
+    Only,
 }
 
 struct JournalSummaryParams {
@@ -2297,6 +2317,7 @@ struct JournalSummaryParams {
     bucket: Option<String>,
     needle: Option<String>,
     by_name: bool,
+    hidden: JournalHiddenFilter,
 }
 
 fn parse_journal_summary_query(
@@ -2341,12 +2362,24 @@ fn parse_journal_summary_query(
             )));
         }
     };
+    let hidden = match query.hidden.as_deref().map(str::trim) {
+        None | Some("") => JournalHiddenFilter::Include,
+        Some("exclude") => JournalHiddenFilter::Exclude,
+        Some("only") => JournalHiddenFilter::Only,
+        Some(_) => {
+            return Err(Box::new(refusal(
+                ReasonCode::InvalidRequestValue,
+                "hidden must be exclude or only",
+            )));
+        }
+    };
     Ok(JournalSummaryParams {
         offset: usize::try_from(offset).unwrap_or_default(),
         limit: usize::try_from(limit).unwrap_or_default(),
         bucket,
         needle: normalize_entity_search_value(query.q.clone()).map(|value| value.to_lowercase()),
         by_name,
+        hidden,
     })
 }
 
@@ -2355,6 +2388,7 @@ struct JournalSummaryRow {
     last_active_ts: i64,
     name_key: String,
     bucket: &'static str,
+    blocked: bool,
     item: Value,
 }
 
@@ -2366,6 +2400,13 @@ fn summarize_journal_entities(
     let entity_total = records.len();
     let mut type_counts: HashMap<&'static str, usize> = HashMap::new();
     let mut facet_counts: HashMap<String, usize> = HashMap::new();
+    let mut folder_all = 0usize;
+    let mut folder_people = 0usize;
+    let mut folder_companies = 0usize;
+    let mut folder_projects = 0usize;
+    let mut folder_tools = 0usize;
+    let mut folder_other = 0usize;
+    let mut folder_hidden = 0usize;
     let mut rows: Vec<JournalSummaryRow> = Vec::with_capacity(entity_total);
     for record in &records {
         let stored_type = record.get("type").and_then(Value::as_str).unwrap_or("");
@@ -2375,6 +2416,21 @@ fn summarize_journal_entities(
             .get("blocked")
             .and_then(Value::as_bool)
             .unwrap_or(false);
+        let entity_id = record.get("entity_id").cloned().unwrap_or(Value::Null);
+
+        if blocked {
+            folder_hidden += 1;
+        } else {
+            folder_all += 1;
+            match bucket {
+                "person" => folder_people += 1,
+                "company" => folder_companies += 1,
+                "project" => folder_projects += 1,
+                "tool" => folder_tools += 1,
+                _ => folder_other += 1,
+            }
+        }
+
         let empty = Vec::new();
         let facets = record
             .get("facets")
@@ -2416,8 +2472,10 @@ fn summarize_journal_entities(
             last_active_ts,
             name_key: name.to_lowercase(),
             bucket,
+            blocked,
             item: json!({
                 "id": record.get("id").cloned().unwrap_or_else(|| json!("")),
+                "entity_id": entity_id,
                 "name": name,
                 "type": stored_type,
                 "type_bucket": bucket,
@@ -2431,10 +2489,16 @@ fn summarize_journal_entities(
         });
     }
     rows.retain(|row| {
-        params
-            .bucket
-            .as_deref()
-            .is_none_or(|bucket| bucket == row.bucket)
+        let matches_hidden = match params.hidden {
+            JournalHiddenFilter::Include => true,
+            JournalHiddenFilter::Exclude => !row.blocked,
+            JournalHiddenFilter::Only => row.blocked,
+        };
+        matches_hidden
+            && params
+                .bucket
+                .as_deref()
+                .is_none_or(|bucket| bucket == row.bucket)
             && params
                 .needle
                 .as_deref()
@@ -2470,6 +2534,15 @@ fn summarize_journal_entities(
                 .map(|count| json!({"bucket": bucket, "count": count}))
         })
         .collect();
+    let folder_counts = json!({
+        "all": folder_all,
+        "people": folder_people,
+        "companies": folder_companies,
+        "projects": folder_projects,
+        "tools": folder_tools,
+        "other": folder_other,
+        "hidden": folder_hidden,
+    });
     Ok(json!({
         "items": items,
         "total": total,
@@ -2478,6 +2551,7 @@ fn summarize_journal_entities(
         "entity_total": entity_total,
         "type_counts": type_totals,
         "facet_counts": facet_counts,
+        "folder_counts": folder_counts,
     }))
 }
 

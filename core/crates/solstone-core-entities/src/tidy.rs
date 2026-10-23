@@ -12,6 +12,7 @@ use crate::router::{assemble_journal_entity_records, journal_bucket_rank, journa
 #[derive(Debug, Serialize)]
 pub struct IdTidyUpRow {
     pub id: String,
+    pub folder: String,
     pub name: String,
     #[serde(rename = "type")]
     pub entity_type: String,
@@ -28,11 +29,20 @@ pub struct IdGroupResponse {
     pub members: Option<Vec<String>>,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct DuplicateReviewRow {
+    pub facet: String,
+    pub source_slug: String,
+    pub target_slug: String,
+}
+
 #[derive(Debug, Serialize)]
 pub struct DuplicateItem {
     pub pair: [String; 2],
+    pub names: [String; 2],
     pub facets: Vec<String>,
     pub keys: Vec<String>,
+    pub rows: Vec<DuplicateReviewRow>,
 }
 
 /// One suggested merge pair and the review keys that formed it.
@@ -43,7 +53,9 @@ pub struct DuplicateItem {
 #[derive(Debug, Serialize)]
 pub struct DuplicateMember {
     pub pair: [String; 2],
+    pub names: [String; 2],
     pub keys: Vec<String>,
+    pub rows: Vec<DuplicateReviewRow>,
 }
 
 #[derive(Debug, Serialize)]
@@ -77,9 +89,25 @@ pub enum TidyUpError {
 struct RawDuplicateRow {
     source_slug: String,
     target_slug: String,
+    source_name: String,
+    target_name: String,
     facet: String,
     key: String,
     composite: f64,
+}
+
+struct PairData {
+    names: [String; 2],
+    facets: Vec<String>,
+    keys: Vec<String>,
+    rows: Vec<DuplicateReviewRow>,
+}
+
+fn string_or(row: &Value, key: &str, fallback: &str) -> String {
+    row.get(key)
+        .and_then(Value::as_str)
+        .unwrap_or(fallback)
+        .to_owned()
 }
 
 pub fn build_tidy_up_response(
@@ -182,6 +210,7 @@ pub fn build_tidy_up_response(
 
         id_members.push(IdTidyUpRow {
             id: effective_id.clone(),
+            folder: winner_dir.clone(),
             name: name.to_owned(),
             entity_type,
             facets: unique_facets.into_iter().collect(),
@@ -275,9 +304,13 @@ pub fn build_tidy_up_response(
                         &source_slug,
                         &target_slug,
                     );
+                    let source_name = string_or(&row, "source", &source_slug);
+                    let target_name = string_or(&row, "target", &target_slug);
                     open_rows.push(RawDuplicateRow {
                         source_slug,
                         target_slug,
+                        source_name,
+                        target_name,
                         facet,
                         key,
                         composite,
@@ -295,18 +328,27 @@ pub fn build_tidy_up_response(
             });
 
             let mut pair_order = Vec::new();
-            let mut pair_data: HashMap<(String, String), (Vec<String>, Vec<String>)> =
-                HashMap::new();
+            let mut pair_data: HashMap<(String, String), PairData> = HashMap::new();
             for row in open_rows {
-                let pair = (row.source_slug, row.target_slug);
+                let pair = (row.source_slug.clone(), row.target_slug.clone());
                 let entry = pair_data.entry(pair.clone()).or_insert_with(|| {
                     pair_order.push(pair);
-                    (Vec::new(), Vec::new())
+                    PairData {
+                        names: [row.source_name, row.target_name],
+                        facets: Vec::new(),
+                        keys: Vec::new(),
+                        rows: Vec::new(),
+                    }
                 });
-                if !entry.0.contains(&row.facet) {
-                    entry.0.push(row.facet);
+                if !entry.facets.contains(&row.facet) {
+                    entry.facets.push(row.facet.clone());
                 }
-                entry.1.push(row.key);
+                entry.keys.push(row.key);
+                entry.rows.push(DuplicateReviewRow {
+                    facet: row.facet,
+                    source_slug: row.source_slug,
+                    target_slug: row.target_slug,
+                });
             }
 
             let is_slug_hidden = |slug: &str| -> bool {
@@ -327,10 +369,12 @@ pub fn build_tidy_up_response(
             let dup_members: Vec<DuplicateMember> = pair_order
                 .iter()
                 .map(|pair| {
-                    let (_, keys) = &pair_data[pair];
+                    let data = &pair_data[pair];
                     DuplicateMember {
                         pair: [pair.0.clone(), pair.1.clone()],
-                        keys: keys.clone(),
+                        names: data.names.clone(),
+                        keys: data.keys.clone(),
+                        rows: data.rows.clone(),
                     }
                 })
                 .collect();
@@ -340,11 +384,13 @@ pub fn build_tidy_up_response(
                 .skip(offset)
                 .take(limit)
                 .map(|pair| {
-                    let (facets, keys) = &pair_data[pair];
+                    let data = &pair_data[pair];
                     DuplicateItem {
                         pair: [pair.0.clone(), pair.1.clone()],
-                        facets: facets.clone(),
-                        keys: keys.clone(),
+                        names: data.names.clone(),
+                        facets: data.facets.clone(),
+                        keys: data.keys.clone(),
+                        rows: data.rows.clone(),
                     }
                 })
                 .collect();

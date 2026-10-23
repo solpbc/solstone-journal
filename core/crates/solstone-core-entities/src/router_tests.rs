@@ -2533,6 +2533,7 @@ async fn journal_summary_carries_card_fields_without_facet_descriptions() {
     assert_eq!(items.len(), 10);
     let expected: BTreeSet<String> = [
         "id",
+        "entity_id",
         "name",
         "type",
         "type_bucket",
@@ -2762,6 +2763,7 @@ async fn journal_entity_assembly_matches_the_recorded_oracle() {
 
     let entity_keys: BTreeSet<_> = [
         "id",
+        "entity_id",
         "name",
         "type",
         "aka",
@@ -9938,4 +9940,342 @@ async fn tidy_up_candidate_load_failure_keeps_the_id_group() {
     assert_eq!(resp["id_shaped"]["count"], 1);
     assert_eq!(resp["id_shaped"]["actionable"], true);
     assert_eq!(resp["damage"]["count"], 0);
+}
+
+#[tokio::test]
+async fn journal_summary_hidden_splits_truthy_blocked_without_moving_folder_counts() {
+    let j = Journal::new();
+    write(j.path(), "facets/work/facet.json", json!({"title": "Work"}));
+
+    // One visible person
+    write(
+        j.path(),
+        "entities/folder-ada/entity.json",
+        json!({"id": "folder-ada", "name": "Ada Lovelace", "type": "Person"}),
+    );
+    write(
+        j.path(),
+        "facets/work/entities/rel_ada/entity.json",
+        json!({"entity_id": "folder-ada"}),
+    );
+
+    // One blocked: true
+    write(
+        j.path(),
+        "entities/ada-folder/entity.json",
+        json!({"id": "ada-folder", "name": "Ada Blocked Bool", "type": "Person", "blocked": true}),
+    );
+    write(
+        j.path(),
+        "facets/work/entities/rel_b1/entity.json",
+        json!({"entity_id": "ada-folder"}),
+    );
+
+    // One blocked: "true"
+    write(
+        j.path(),
+        "entities/notes_v2.md/entity.json",
+        json!({"id": "notes_v2.md", "name": "Notes Str", "type": "Person", "blocked": "true"}),
+    );
+    write(
+        j.path(),
+        "facets/work/entities/rel_b2/entity.json",
+        json!({"entity_id": "notes_v2.md"}),
+    );
+
+    let expected_folder_counts = json!({
+        "all": 1,
+        "people": 1,
+        "companies": 0,
+        "projects": 0,
+        "tools": 0,
+        "other": 0,
+        "hidden": 2,
+    });
+    let expected_type_counts = json!([{"bucket": "person", "count": 3}]);
+
+    // hidden=only returns exactly the two hidden ones, both with blocked: true
+    let (status, resp_only) = call(j.path(), "/app/entities/api/journal/summary?hidden=only").await;
+    assert_eq!(status, 200);
+    assert_eq!(resp_only["total"], 2);
+    assert_eq!(resp_only["entity_total"], 3);
+    assert_eq!(resp_only["folder_counts"], expected_folder_counts);
+    assert_eq!(resp_only["type_counts"], expected_type_counts);
+    let items_only = resp_only["items"].as_array().expect("items array");
+    assert_eq!(items_only.len(), 2);
+    let ids_only: BTreeSet<&str> = items_only
+        .iter()
+        .map(|item| item["id"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        ids_only,
+        ["ada-folder", "notes_v2.md"].into_iter().collect()
+    );
+    for item in items_only {
+        assert_eq!(item["blocked"], true);
+    }
+
+    // hidden=exclude returns neither of the hidden rows
+    let (status, resp_exclude) =
+        call(j.path(), "/app/entities/api/journal/summary?hidden=exclude").await;
+    assert_eq!(status, 200);
+    assert_eq!(resp_exclude["total"], 1);
+    assert_eq!(resp_exclude["entity_total"], 3);
+    assert_eq!(resp_exclude["folder_counts"], expected_folder_counts);
+    assert_eq!(resp_exclude["type_counts"], expected_type_counts);
+    let items_exclude = resp_exclude["items"].as_array().expect("items array");
+    assert_eq!(items_exclude.len(), 1);
+    assert_eq!(items_exclude[0]["id"], "folder-ada");
+    assert_eq!(items_exclude[0]["blocked"], false);
+
+    // Absent hidden returns all three, both hidden rows have blocked: true, and facet_counts does not include them
+    let (status, resp_all) = call(j.path(), "/app/entities/api/journal/summary").await;
+    assert_eq!(status, 200);
+    assert_eq!(resp_all["total"], 3);
+    assert_eq!(resp_all["entity_total"], 3);
+    assert_eq!(resp_all["folder_counts"], expected_folder_counts);
+    assert_eq!(resp_all["type_counts"], expected_type_counts);
+    assert_eq!(resp_all["facet_counts"]["work"], 1);
+    let items_all = resp_all["items"].as_array().expect("items array");
+    assert_eq!(items_all.len(), 3);
+    for item in items_all {
+        let is_hidden_id = item["id"] == "ada-folder" || item["id"] == "notes_v2.md";
+        assert_eq!(item["blocked"], is_hidden_id);
+    }
+
+    // Same folder_counts, entity_total, type_counts with type=person
+    let (status, resp_type) = call(j.path(), "/app/entities/api/journal/summary?type=person").await;
+    assert_eq!(status, 200);
+    assert_eq!(resp_type["folder_counts"], expected_folder_counts);
+    assert_eq!(resp_type["entity_total"], 3);
+    assert_eq!(resp_type["type_counts"], expected_type_counts);
+
+    // Same folder_counts, entity_total, type_counts with q set to the visible name
+    let (status, resp_q) = call(
+        j.path(),
+        "/app/entities/api/journal/summary?q=Ada%20Lovelace",
+    )
+    .await;
+    assert_eq!(status, 200);
+    assert_eq!(resp_q["folder_counts"], expected_folder_counts);
+    assert_eq!(resp_q["entity_total"], 3);
+    assert_eq!(resp_q["type_counts"], expected_type_counts);
+
+    // Same folder_counts, entity_total, type_counts with offset past the first page
+    let (status, resp_offset) = call(j.path(), "/app/entities/api/journal/summary?offset=10").await;
+    assert_eq!(status, 200);
+    assert_eq!(resp_offset["folder_counts"], expected_folder_counts);
+    assert_eq!(resp_offset["entity_total"], 3);
+    assert_eq!(resp_offset["type_counts"], expected_type_counts);
+}
+
+#[tokio::test]
+async fn journal_summary_refuses_unknown_hidden() {
+    let j = Journal::new();
+    seed_entity(j.path(), "folder-ada", "Ada");
+    assert_oracle_refusal(
+        "summary unknown hidden people",
+        call(j.path(), "/app/entities/api/journal/summary?hidden=people").await,
+        "invalid_request_value",
+        400,
+    );
+    assert_oracle_refusal(
+        "summary unknown hidden true",
+        call(j.path(), "/app/entities/api/journal/summary?hidden=true").await,
+        "invalid_request_value",
+        400,
+    );
+}
+
+#[tokio::test]
+async fn journal_summary_entity_id_is_null_for_a_collision_loser() {
+    let j = Journal::new();
+    // Folder folder-ada written id notes_v2.md (winner)
+    write(
+        j.path(),
+        "entities/folder-ada/entity.json",
+        json!({"id": "notes_v2.md", "name": "Ada", "type": "Person"}),
+    );
+    // Folder named notes_v2.md written id docs/plan (winner of that other id)
+    write(
+        j.path(),
+        "entities/notes_v2.md/entity.json",
+        json!({"id": "docs/plan", "name": "Plan", "type": "Person"}),
+    );
+    // Folder ada-folder written id lost_id.md (winner)
+    write(
+        j.path(),
+        "entities/ada-folder/entity.json",
+        json!({"id": "lost_id.md", "name": "Lost Winner", "type": "Person"}),
+    );
+    // Folder lost_id.md with no written id (collision loser)
+    write(
+        j.path(),
+        "entities/lost_id.md/entity.json",
+        json!({"name": "Lost Loser", "type": "Person"}),
+    );
+
+    let (status, summary) = call(j.path(), "/app/entities/api/journal/summary").await;
+    assert_eq!(status, 200);
+    let items = summary["items"].as_array().expect("items array");
+    assert_eq!(items.len(), 4);
+
+    let folder_ada = items
+        .iter()
+        .find(|item| item["id"] == "folder-ada")
+        .expect("folder-ada summary row");
+    assert_eq!(folder_ada["entity_id"], "notes_v2.md");
+    assert_eq!(folder_ada["blocked"], false);
+    assert_eq!(folder_ada["id"], "folder-ada");
+
+    let notes_v2 = items
+        .iter()
+        .find(|item| item["id"] == "notes_v2.md")
+        .expect("notes_v2.md summary row");
+    assert_eq!(notes_v2["entity_id"], "docs/plan");
+    assert_eq!(notes_v2["blocked"], false);
+    assert_eq!(notes_v2["id"], "notes_v2.md");
+
+    let ada_folder = items
+        .iter()
+        .find(|item| item["id"] == "ada-folder")
+        .expect("ada-folder summary row");
+    assert_eq!(ada_folder["entity_id"], "lost_id.md");
+    assert_eq!(ada_folder["blocked"], false);
+    assert_eq!(ada_folder["id"], "ada-folder");
+
+    let lost_id = items
+        .iter()
+        .find(|item| item["id"] == "lost_id.md")
+        .expect("lost_id.md summary row");
+    assert_eq!(lost_id["entity_id"], Value::Null);
+    assert_eq!(lost_id["blocked"], false);
+    assert_eq!(lost_id["id"], "lost_id.md");
+
+    // Detail route for folder-ada
+    let (detail_status, detail) =
+        call(j.path(), "/app/entities/api/journal/entity/folder-ada").await;
+    assert_eq!(detail_status, 200);
+    assert_eq!(detail["entity"]["entity_id"], "notes_v2.md");
+    assert_eq!(detail["entity"]["blocked"], false);
+    assert_eq!(detail["entity"]["id"], "folder-ada");
+}
+
+#[tokio::test]
+async fn tidy_up_items_carry_folder_names_and_rows() {
+    let j = Journal::new();
+    write(j.path(), "facets/work/facet.json", json!({"title": "Work"}));
+    write(j.path(), "facets/home/facet.json", json!({"title": "Home"}));
+
+    // ID shaped entities using synthetic collision style:
+    // folder folder-ada written id notes_v2.md
+    write(
+        j.path(),
+        "entities/folder-ada/entity.json",
+        json!({"id": "notes_v2.md", "name": "notes_v2.md", "type": "Person"}),
+    );
+    write(
+        j.path(),
+        "facets/work/entities/rel_notes/entity.json",
+        json!({"entity_id": "notes_v2.md"}),
+    );
+
+    // folder notes_v2.md written id docs/plan
+    write(
+        j.path(),
+        "entities/notes_v2.md/entity.json",
+        json!({"id": "docs/plan", "name": "docs/plan", "type": "Person"}),
+    );
+    write(
+        j.path(),
+        "facets/work/entities/rel_docs/entity.json",
+        json!({"entity_id": "docs/plan"}),
+    );
+
+    // Duplicates candidates: one duplicate pair with two facet rows
+    // First row in cmp_composite_then_key order (higher detection_count 10 vs 5)
+    // has source "" and non-string target (e.g. 123)
+    let candidates = [
+        r#"{"facet":"work","source_slug":"src_slug","target_slug":"tgt_slug","status":"open","source":"","target":123,"evidence":{"detection_count":10}}"#,
+        r#"{"facet":"home","source_slug":"src_slug","target_slug":"tgt_slug","status":"open","source":"Home Src","target":"Home Tgt","evidence":{"detection_count":5}}"#,
+    ]
+    .join("\n")
+        + "\n";
+    write_raw(
+        j.path(),
+        "entities/review-candidates.jsonl",
+        candidates.as_bytes(),
+    );
+
+    let (status, resp) = call(j.path(), "/app/entities/api/journal/tidy-up").await;
+    assert_eq!(status, 200);
+
+    // ID shaped assertions
+    let id_items = resp["id_shaped"]["items"]
+        .as_array()
+        .expect("id_shaped items array");
+    let notes_item = id_items
+        .iter()
+        .find(|item| item["id"] == "notes_v2.md")
+        .expect("notes_v2.md id item");
+    assert_eq!(notes_item["folder"], "folder-ada");
+
+    let docs_item = id_items
+        .iter()
+        .find(|item| item["id"] == "docs/plan")
+        .expect("docs/plan id item");
+    assert_eq!(docs_item["folder"], "notes_v2.md");
+
+    let id_members = resp["id_shaped"]["members"]
+        .as_array()
+        .expect("id_shaped members array");
+    let id_member_strings: Vec<&str> = id_members.iter().map(|m| m.as_str().unwrap()).collect();
+    assert!(id_member_strings.contains(&"notes_v2.md"));
+    assert!(id_member_strings.contains(&"docs/plan"));
+    assert!(!id_member_strings.contains(&"folder-ada"));
+
+    // Duplicates assertions
+    let dup_items = resp["duplicates"]["items"]
+        .as_array()
+        .expect("duplicates items array");
+    assert_eq!(dup_items.len(), 1);
+    let dup_item = &dup_items[0];
+    assert_eq!(dup_item["names"], json!(["", "tgt_slug"]));
+    assert_eq!(
+        dup_item["rows"],
+        json!([
+            {
+                "facet": "work",
+                "source_slug": "src_slug",
+                "target_slug": "tgt_slug",
+            },
+            {
+                "facet": "home",
+                "source_slug": "src_slug",
+                "target_slug": "tgt_slug",
+            }
+        ])
+    );
+
+    let dup_members = resp["duplicates"]["members"]
+        .as_array()
+        .expect("duplicates members array");
+    assert_eq!(dup_members.len(), 1);
+    let dup_member = &dup_members[0];
+    assert_eq!(dup_member["names"], json!(["", "tgt_slug"]));
+    assert_eq!(
+        dup_member["rows"],
+        json!([
+            {
+                "facet": "work",
+                "source_slug": "src_slug",
+                "target_slug": "tgt_slug",
+            },
+            {
+                "facet": "home",
+                "source_slug": "src_slug",
+                "target_slug": "tgt_slug",
+            }
+        ])
+    );
 }
