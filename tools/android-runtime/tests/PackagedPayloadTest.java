@@ -134,7 +134,7 @@ public final class PackagedPayloadTest {
         if (readFailure) assets.failRead = "payload/solstone/talent/current.md";
         else assets.failList = "payload/to-file";
         expectFailure(assets, root);
-        if (!Files.exists(root.resolve("solstone/talent/current.md"))) throw new AssertionError("failure fixture must follow a real partial copy");
+        if (readFailure && Files.exists(root.resolve("solstone/talent/current.md"))) throw new AssertionError("failed copy published partial bytes");
         assets.failRead = null;
         assets.failList = null;
         PackagedPayload.unpack(assets, "payload", root.toFile());
@@ -163,11 +163,39 @@ public final class PackagedPayloadTest {
             retry(base.resolve("read-retry"), true);
             retry(base.resolve("list-retry"), false);
             destinationSymlinks(base.resolve("symlinks"));
+            reopenDoesNotTruncateActivePayload(base.resolve("reopen"));
             System.out.println("packaged payload upgrade, retry and no-follow checks passed");
         } finally {
             try (Stream<Path> paths = Files.walk(base)) {
                 for (Path path : (Iterable<Path>) paths.sorted(Comparator.reverseOrder())::iterator) Files.delete(path);
             }
         }
+    }
+    private static void reopenDoesNotTruncateActivePayload(Path root) throws Exception {
+        Files.createDirectories(root);
+        Path target=root.resolve("talent.md"); byte[] original="complete installed payload".getBytes(StandardCharsets.UTF_8);
+        Files.write(target,original);
+        java.util.concurrent.CountDownLatch reading=new java.util.concurrent.CountDownLatch(1),release=new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.atomic.AtomicReference<Throwable> failure=new java.util.concurrent.atomic.AtomicReference<>();
+        PackagedPayload.Assets assets=new PackagedPayload.Assets() {
+            public String[] list(String name) { return new String[0]; }
+            public InputStream open(String name) { return new ByteArrayInputStream(original) {
+                public synchronized int read(byte[] bytes,int offset,int length) {
+                    reading.countDown();
+                    try { release.await(); } catch(InterruptedException error) { Thread.currentThread().interrupt(); }
+                    return super.read(bytes,offset,length);
+                }
+            }; }
+        };
+        Thread reopen=new Thread(()->{
+            try { PackagedPayload.unpack(assets,"talent.md",target.toFile()); }
+            catch(Throwable error) { failure.set(error); }
+        });
+        reopen.start();
+        try {
+            if (!reading.await(5,java.util.concurrent.TimeUnit.SECONDS)) throw new AssertionError("asset read never started");
+            if (!Arrays.equals(Files.readAllBytes(target),original)) throw new AssertionError("reopening truncated a payload still in use");
+        } finally { release.countDown();reopen.join(5000); }
+        if (reopen.isAlive() || failure.get()!=null) throw new AssertionError("reopen did not complete",failure.get());
     }
 }
