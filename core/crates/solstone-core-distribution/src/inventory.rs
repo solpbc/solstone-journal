@@ -708,7 +708,9 @@ impl Entry {
 pub fn entry_component_id(entry: &Entry) -> Option<&'static str> {
     match entry {
         Entry::Copy { dest, .. }
-            if dest == "bin/mlx-helper" || dest.starts_with("bin/mlx-swift_Cmlx.bundle/") =>
+            if dest == "bin/mlx-helper"
+                || dest == "lib/libswiftCompatibilitySpan.dylib"
+                || dest.starts_with("bin/mlx-swift_Cmlx.bundle/") =>
         {
             Some("mlx-helper")
         }
@@ -2197,6 +2199,8 @@ mod tests {
         // agent-facing install/crossover README for the Linux v1-to-v2
         // crossover arc, and macOS distribution is out of scope for that arc.
         const MACOS_ONLY: &[&str] = &[
+            "lib/libswiftCompatibilitySpan.dylib",
+            "share/licenses/mlx-helper/swift-runtime/LICENSE.txt",
             "bin/mlx-helper",
             "bin/mlx-swift_Cmlx.bundle/Contents/Info.plist",
             "bin/mlx-swift_Cmlx.bundle/Contents/Resources/default.metallib",

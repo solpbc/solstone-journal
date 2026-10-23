@@ -582,6 +582,22 @@ targets = ["macos-arm64"]
 [[entry]]
 kind = "copy"
 class = "component"
+source = "core/crates/solstone-core-local/mlx-helper/DerivedData/Build/Products/Release/swift-runtime/libswiftCompatibilitySpan.dylib"
+dest = "lib/libswiftCompatibilitySpan.dylib"
+mode = 0o644
+targets = ["macos-arm64"]
+
+[[entry]]
+kind = "copy"
+class = "notice"
+source = "core/distribution/licenses/mlx-helper/swift-runtime/LICENSE.txt"
+dest = "share/licenses/mlx-helper/swift-runtime/LICENSE.txt"
+mode = 0o644
+targets = ["macos-arm64"]
+
+[[entry]]
+kind = "copy"
+class = "component"
 source = "core/crates/solstone-core-local/mlx-helper/DerivedData/Build/Products/Release/mlx-swift_Cmlx.bundle/Contents/Info.plist"
 dest = "bin/mlx-swift_Cmlx.bundle/Contents/Info.plist"
 mode = 0o644

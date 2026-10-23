@@ -1356,6 +1356,22 @@ pub fn render_posix_evidence(
                 .ok_or_else(|| EvidenceError::new("MLX source commit missing"))?
                 .into();
             row_source = format!("https://github.com/solpbc/solstone-journal/tree/{row_version}");
+            if path == "lib/libswiftCompatibilitySpan.dylib" {
+                let runtime = build["swift_runtime"].as_array().and_then(|rows| {
+                    rows.iter()
+                        .find(|row| row["filename"] == "libswiftCompatibilitySpan.dylib")
+                });
+                let expected = runtime
+                    .and_then(|row| row["sha256"].as_str())
+                    .ok_or_else(|| {
+                        EvidenceError::new("Swift compatibility library build receipt missing")
+                    })?;
+                if request.pre_signing.get(path).map(String::as_str) != Some(expected) {
+                    return Err(EvidenceError::new(
+                        "Swift compatibility library differs from the build toolchain receipt",
+                    ));
+                }
+            }
         }
 
         let pre_signing = request.pre_signing.get(path).cloned();

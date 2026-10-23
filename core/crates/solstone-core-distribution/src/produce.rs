@@ -2424,8 +2424,9 @@ fn mlx_toolchain_preflight() -> Result<serde_json::Value, ProduceError> {
         .map_err(|e| ProduceError::new(format!("MLX requires the Xcode Metal toolchain; install it with xcodebuild -downloadComponent MetalToolchain: {e}")))?;
     let metal_version = command_stdout(Path::new(&metal), &["--version"])
         .map_err(|e| ProduceError::new(format!("MLX Metal toolchain is unavailable: {e}")))?;
+    let swift_version = command_stdout(Path::new("xcrun"), &["swiftc", "--version"])?;
     Ok(
-        serde_json::json!({"xcodebuild_version":xcode, "metal_compiler":metal, "metal_version":metal_version}),
+        serde_json::json!({"xcodebuild_version":xcode, "metal_compiler":metal, "metal_version":metal_version, "swift_version":swift_version}),
     )
 }
 
@@ -2519,9 +2520,60 @@ fn build_mlx_helper(
             "MLX build changed the committed Swift lock",
         ));
     }
+    let products = helper.join("DerivedData/Build/Products/Release");
+    let runtime_libraries = command_stdout(
+        Path::new("xcrun"),
+        &[
+            "swift-stdlib-tool",
+            "--print",
+            "--scan-executable",
+            &products.join("mlx-helper").to_string_lossy(),
+            "--platform",
+            "macosx",
+        ],
+    )?;
+    let runtime_dir = products.join("swift-runtime");
+    fs::create_dir_all(&runtime_dir)?;
+    let mut swift_runtime = Vec::new();
+    for library in runtime_libraries.lines().filter(|line| !line.is_empty()) {
+        let source = Path::new(library);
+        let name = source
+            .file_name()
+            .and_then(|name| name.to_str())
+            .ok_or_else(|| ProduceError::new("Swift runtime library name missing"))?;
+        if name != "libswiftCompatibilitySpan.dylib" {
+            return Err(ProduceError::new(format!(
+                "MLX requires an undeclared Swift runtime library: {name}; update the distribution inventory"
+            )));
+        }
+        let bytes = fs::read(source)?;
+        let destination = runtime_dir.join(name);
+        if crate::macho::parse_macho(&bytes).is_ok() {
+            fs::write(&destination, &bytes)?;
+        } else {
+            command_stdout(
+                Path::new("xcrun"),
+                &[
+                    "lipo",
+                    library,
+                    "-thin",
+                    "arm64",
+                    "-output",
+                    &destination.to_string_lossy(),
+                ],
+            )?;
+        }
+        let staged = fs::read(&destination)?;
+        let info =
+            crate::macho::parse_macho(&staged).map_err(|e| ProduceError::new(e.to_string()))?;
+        if info.cputype != crate::macho::cputype_arm64() {
+            return Err(ProduceError::new("MLX Swift runtime is not arm64"));
+        }
+        swift_runtime.push(serde_json::json!({"filename":name,"toolchain_source":library,"toolchain_source_sha256":sha256_hex(&bytes),"sha256":sha256_hex(&staged)}));
+    }
     let provenance = serde_json::json!({"source_commit":commit, "configuration":"Release", "instrumented":false,
         "toolchain":toolchain, "swift_package_resolved_sha256":sha256_hex(&expected_lock), "swift_pins":expected["pins"],
-        "build_log_sha256":sha256_hex(build_log.as_bytes())});
+        "swift_runtime":swift_runtime, "build_log_sha256":sha256_hex(build_log.as_bytes())});
     fs::write(
         helper.join("DerivedData/Build/Products/Release/mlx-helper-build.json"),
         serde_json::to_vec_pretty(&provenance).map_err(|e| ProduceError::new(e.to_string()))?,

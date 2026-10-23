@@ -287,6 +287,10 @@ macos packages carry the license and notice texts under
 The modified loop's MIT notice is in `guided-generation/LICENSE` there.
 The model's separate attribution is in the local-model section below.
 
+The package also includes Swift's Span compatibility library from the build
+toolchain, under Apache-2.0 with the Swift runtime library exception. Its
+license is in `swift-runtime/LICENSE.txt` with the helper notices.
+
 ## FluidAudio (macos speech helper)
 
 The macos journal's speech helper (`bin/parakeet-helper`) compiles in
