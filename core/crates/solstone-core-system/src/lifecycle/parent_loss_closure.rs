@@ -3707,7 +3707,7 @@ mod tests {
                 .admissions
                 .iter()
                 .find(|admission| admission.launch_id == launch_id)
-                .map(|admission| admission.finding.clone())
+                .map(|admission| admission.finding)
                 .expect("the closure names the admission")
         };
         assert!(matches!(
