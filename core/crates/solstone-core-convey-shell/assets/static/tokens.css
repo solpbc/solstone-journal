@@ -55,7 +55,7 @@
   --cream:        #FCF3E4; /* warm page bg (product-chrome / trust surfaces) */
   --cream-bright: #FEFCF8; /* elevated cards / inputs on cream */
   --paper:        #FFFFFF; /* white page bg / grouped-list rows */
-  --panel: rgb(254 252 248 / 0.90); /* translucent container for text over the sun arc: the sun reads through at 10 %, and every text role clears AA over the worst-case ground, sun and glow */
+  --panel: rgb(254 252 248 / 0.95); /* translucent container for text over the sun arc: 95% cream-bright preserves normal orange-text contrast over the selected light-night ground */
   --surface-dark: #1A1A1A; /* dark contexts (white-on-dark) */
 
   /* ── ink (text) ──────────────────────────────────────────────────────── */
