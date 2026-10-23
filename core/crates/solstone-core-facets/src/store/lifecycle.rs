@@ -487,7 +487,8 @@ pub fn plan_facet_entity_relationships(
             .filter(|e| e.kind == DirEntryKind::Directory)
         {
             let relationship_dir = rel_entry.name.to_string_lossy().into_owned();
-            let link_rel = format!("facets/{facet_dir}/entities/{relationship_dir}/entity.json");
+            let link_rel = crate::facet_links::LinkDirs::for_facet(journal_root, &facet_dir)
+                .link_rel(&relationship_dir);
             let link_path = match contained_path(journal_root, &link_rel) {
                 Ok(p) => p,
                 Err(_) => {
@@ -737,7 +738,8 @@ fn unblock_journal_entity_inner(
             .filter(|e| e.kind == DirEntryKind::Directory)
         {
             let relationship_dir = rel_entry.name.to_string_lossy().into_owned();
-            let link_rel = format!("facets/{facet_dir}/entities/{relationship_dir}/entity.json");
+            let link_rel = crate::facet_links::LinkDirs::for_facet(journal_root, &facet_dir)
+                .link_rel(&relationship_dir);
             let link_path = match contained_path(journal_root, &link_rel) {
                 Ok(p) => p,
                 Err(_) => {
