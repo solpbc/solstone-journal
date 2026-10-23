@@ -6,6 +6,10 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- fixed screen descriptions stopping with a blank notification when the on-device model lost its connection mid-request. your journal now retries that request.
+
 ## [2.0.56] - 2026-10-23
 
 on windows, 2.0.56 is the first update since 2.0.54, so it also brings everything listed under 2.0.55, including the windows changes there.

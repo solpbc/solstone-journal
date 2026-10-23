@@ -53,6 +53,7 @@ name = "provider_environment_isolation"
 path = "tests/provider_environment_isolation.rs"
 
 [dev-dependencies]
+tempfile = "3.24.0"
 rcgen = { workspace = true }
 rustls = { workspace = true }
 sha2 = { workspace = true }

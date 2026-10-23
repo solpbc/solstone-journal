@@ -497,7 +497,15 @@ fn generate_with_connected_server_at<T: GenerateTransport>(
             None,
             None,
         ),
-        RemainingTimeout::PostError(detail) | RemainingTimeout::AdmissionError(detail) => {
+        RemainingTimeout::PostError(detail) => failure_with_inference(
+            Some("network_unreachable"),
+            detail,
+            inference_context,
+            "error",
+            None,
+            None,
+        ),
+        RemainingTimeout::AdmissionError(detail) => {
             failure_with_inference(None, detail, inference_context, "error", None, None)
         }
     };
