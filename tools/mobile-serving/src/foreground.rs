@@ -11,7 +11,7 @@ use std::sync::{Arc, Mutex, OnceLock, Weak};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use chrono::Utc;
-use serde_json::{Map, Value};
+use serde_json::{Map, Value, json};
 use solstone_core_backup_web::BackupWebDeps;
 use solstone_core_cortex::{CallableCortex, CallableRoots};
 use solstone_core_cortex_client::{
@@ -733,7 +733,7 @@ impl ForegroundProcessingHost {
         Self::open_bound_observed(root, payload, now, None, external, stop, backup, true, true)
     }
 
-    /// A bounded historical event read, not current queue or admission authority.
+    /// Historical emissions and a separate current owner read, never a reservation.
     pub fn daily_queue_observation(&self) -> Result<Option<Value>, &'static str> {
         let Some(tap) = &self.daily_observation else {
             return Ok(None);
@@ -742,12 +742,62 @@ impl ForegroundProcessingHost {
             tap.close();
             return Err("observer_stopped");
         }
-        let observation = tap.read();
+        let mut observation = match tap.read() {
+            Ok(value) => value,
+            // A stale emission stays unavailable; it must not hide the separate
+            // current read used to corroborate later request-owned progress.
+            Err("observer_emission_stale") => {
+                let (root, host) = tap.binding()?;
+                json!({"native_root":root,"host_instance":host,
+                    "historical_error":"observer_emission_stale","authorizes_release":false})
+            }
+            Err(error) => return Err(error),
+        };
+        let current = self.queue.try_read_daily()?;
+        // No config/root I/O or serialization runs under the queue state lock.
+        let policy_now = Utc::now();
+        let (settings, gate) =
+            solstone_core_system::processing::policy_at(&self.journal, policy_now)
+                .map_err(|_| "observer_policy_unavailable")?;
         if (self.cancelled)() {
             tap.close();
             return Err("observer_stopped");
         }
-        observation.map(Some)
+        let (root, host) = tap.binding()?;
+        if observation["native_root"] != root || observation["host_instance"] != host {
+            return Err("observer_binding_changed");
+        }
+        let age = crate::daily_queue_observation::live_read_age(
+            current.read_started,
+            current.read_finished,
+            Instant::now(),
+        )?;
+        observation["current"] = json!({
+            "native_root":root,"host_instance":host,"read_start_age_us":age,
+            "ready":current.ready,"shutdown":current.shutdown,"global_hold":current.global_hold,
+            "held":current.held,"running_or_reserved":current.running_or_reserved,
+            "slot":current.slot,"index_conflict":current.index_conflict,"queued":current.queued,
+            "policy_checked_at":policy_now.to_rfc3339(),
+            "policy":{"deferred":settings.deferred,"gate_open":gate.open,
+                "time_window":{"enabled":gate.time_window.enabled,"available":gate.time_window.available,
+                    "open":gate.time_window.open,"start":settings.gate.time_window.start.to_string(),
+                    "end":settings.gate.time_window.end.to_string()},
+                "display_powersave":{"enabled":gate.display_powersave.enabled,
+                    "available":gate.display_powersave.available,"open":gate.display_powersave.open}},
+            "atomic_with_policy_or_settings":false,"authorizes_release":false
+        });
+        // Check age again after bounded serialization; completion never resets it.
+        if (self.cancelled)() {
+            tap.close();
+            return Err("observer_stopped");
+        }
+        let final_age = crate::daily_queue_observation::live_read_age(
+            current.read_started,
+            current.read_finished,
+            Instant::now(),
+        )?;
+        observation["current"]["read_start_age_us"] = serde_json::json!(final_age);
+        Ok(Some(observation))
     }
     #[allow(clippy::too_many_arguments)]
     fn open_bound(
@@ -2378,6 +2428,11 @@ mod processing_proofs {
                 );
                 std::thread::sleep(Duration::from_millis(5));
             }
+            // Join this fixture's discovery pass before inspecting its output;
+            // the production observer neither stops discovery nor waits for it.
+            if let Some(mut discovery) = host.discovery.lock().unwrap().take() {
+                discovery.shutdown_checked().unwrap();
+            }
             if enabled {
                 let observation = host.daily_queue_observation().unwrap().unwrap();
                 let queued = observation["event"]["queued"].as_array().unwrap();
@@ -2398,6 +2453,21 @@ mod processing_proofs {
                     ]))
                 );
                 assert_eq!(observation["authorizes_release"], false);
+                assert_eq!(observation["current"]["queued"][0]["request_id"], intent.id);
+                assert_eq!(observation["current"]["running_or_reserved"], false);
+                assert_eq!(observation["current"]["policy"]["deferred"], true);
+                assert_eq!(
+                    observation["current"]["policy"]["time_window"]["open"],
+                    false
+                );
+                assert_eq!(
+                    observation["current"]["native_root"],
+                    observation["native_root"]
+                );
+                assert_eq!(
+                    observation["current"]["host_instance"],
+                    observation["host_instance"]
+                );
             } else {
                 assert!(host.daily_queue_observation().unwrap().is_none());
             }
@@ -2470,6 +2540,116 @@ mod processing_proofs {
         assert_eq!(checks.load(Ordering::Acquire), 2);
         armed.store(false, Ordering::Release);
         assert_eq!(host.daily_queue_observation(), Err("observer_stopped"));
+        host.shutdown().unwrap();
+    }
+
+    #[test]
+    fn live_observation_binds_each_host_and_refuses_unreadable_policy_and_root_drift() {
+        let _lock = TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner());
+        let (temp, payload) = journal_fixture();
+        hold_analysis(temp.path(), true);
+        let mut identities = Vec::new();
+        for _ in 0..2 {
+            let host = ForegroundProcessingHost::open_bound_observed(
+                Arc::new(JournalRoot::open(temp.path()).unwrap()),
+                &payload,
+                ScheduleNow::in_zone(Utc::now(), chrono_tz::UTC),
+                None,
+                Arc::new(|| false),
+                Arc::new(AtomicBool::new(false)),
+                BackupWebDeps::new(temp.path().to_path_buf()),
+                true,
+                true,
+            )
+            .unwrap();
+            let value = host.daily_queue_observation().unwrap().unwrap();
+            identities.push((value["native_root"].clone(), value["host_instance"].clone()));
+            assert_eq!(value["current"]["native_root"], value["native_root"]);
+            assert_eq!(value["current"]["host_instance"], value["host_instance"]);
+            assert_eq!(value["current"]["atomic_with_policy_or_settings"], false);
+            assert_eq!(value["authorizes_release"], false);
+            host.shutdown().unwrap();
+        }
+        assert_eq!(identities[0].0, identities[1].0);
+        assert_ne!(identities[0].1, identities[1].1);
+        let host = ForegroundProcessingHost::open_bound_observed(
+            Arc::new(JournalRoot::open(temp.path()).unwrap()),
+            &payload,
+            ScheduleNow::in_zone(Utc::now(), chrono_tz::UTC),
+            None,
+            Arc::new(|| false),
+            Arc::new(AtomicBool::new(false)),
+            BackupWebDeps::new(temp.path().to_path_buf()),
+            true,
+            true,
+        )
+        .unwrap();
+        if let Some(mut discovery) = host.discovery.lock().unwrap().take() {
+            discovery.shutdown_checked().unwrap();
+        }
+        let config = temp.path().join("config/journal.json");
+        let bytes = fs::read(&config).unwrap();
+        fs::write(&config, b"{").unwrap();
+        assert_eq!(
+            host.daily_queue_observation(),
+            Err("observer_policy_unavailable")
+        );
+        fs::write(config, bytes).unwrap();
+        let retained = temp.path().with_extension("observer-retained");
+        fs::rename(temp.path(), &retained).unwrap();
+        fs::create_dir(temp.path()).unwrap();
+        assert_eq!(host.daily_queue_observation(), Err("observer_stopped"));
+        fs::remove_dir(temp.path()).unwrap();
+        fs::rename(retained, temp.path()).unwrap();
+        assert_eq!(host.daily_queue_observation(), Err("observer_stopped"));
+        host.shutdown().unwrap();
+    }
+
+    #[test]
+    fn live_observation_counts_delay_in_its_final_root_checkpoint() {
+        use std::sync::atomic::AtomicUsize;
+        let _lock = TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner());
+        let (temp, payload) = journal_fixture();
+        hold_analysis(temp.path(), true);
+        let armed = Arc::new(AtomicBool::new(false));
+        let checks = Arc::new(AtomicUsize::new(0));
+        let caller = std::thread::current().id();
+        let external: Checkpoint = {
+            let armed = Arc::clone(&armed);
+            let checks = Arc::clone(&checks);
+            Arc::new(move || {
+                if armed.load(Ordering::Acquire)
+                    && std::thread::current().id() == caller
+                    && checks.fetch_add(1, Ordering::AcqRel) == 2
+                {
+                    std::thread::sleep(Duration::from_millis(5100));
+                }
+                false
+            })
+        };
+        let host = ForegroundProcessingHost::open_bound_observed(
+            Arc::new(JournalRoot::open(temp.path()).unwrap()),
+            &payload,
+            ScheduleNow::in_zone(Utc::now(), chrono_tz::UTC),
+            None,
+            external,
+            Arc::new(AtomicBool::new(false)),
+            BackupWebDeps::new(temp.path().to_path_buf()),
+            true,
+            true,
+        )
+        .unwrap();
+        armed.store(true, Ordering::Release);
+        assert_eq!(
+            host.daily_queue_observation(),
+            Err("observer_live_read_stale")
+        );
+        armed.store(false, Ordering::Release);
+        assert_eq!(checks.load(Ordering::Acquire), 3);
         host.shutdown().unwrap();
     }
 
