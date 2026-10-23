@@ -790,6 +790,30 @@ async function main() {
     check(context.tidyState.dupStatus === 'merged 20 of 60 pairs. 40 couldn\'t be merged.', 'pairs with no answer are decided by the re-read');
   }
 
+  {
+    let release;
+    const gate = new Promise(resolve => { release = resolve; });
+    const {context} = tidyHarness(async () => {
+      await gate;
+      return {id_shaped: {count: 1, actionable: true, members: ['code-1'], items: []}, duplicates: {count: 0, members: [], items: []}, damage: {count: 0, paths: []}};
+    });
+    const doc = {createElement: () => {
+      const el = Object.assign(new Element(doc), {dataset: {}});
+      const append = el.append.bind(el);
+      el.append = (...nodes) => append(...nodes.filter(node => typeof node !== 'string'));
+      return el;
+    }};
+    const host = new Element(doc, 'journal-detail-indicators');
+    doc.getElementById = (id) => (id === 'journal-detail-indicators' ? host : null);
+    context.document = doc;
+    context.currentDetailEntity = null;
+    context.loadTidyGroups();
+    const shown = context.renderJournalDetailIdNote({id: 'code-1', entity_id: 'code-1'});
+    release();
+    await shown;
+    check(host.children.some(node => node.className === 'journal-detail-id-note'), 'a detail opened while the groups read is in flight shows the ID line once the read lands');
+  }
+
   console.log(`DOM CASES: ${cases} passed`);
 }
 

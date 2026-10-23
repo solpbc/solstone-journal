@@ -2035,6 +2035,7 @@ body.presentation-mode .entity-desc { color: var(--ink-soft); }
 .journal-dup-confirm ul { max-height: 16rem; overflow: auto; margin: 0.5em 0; padding-left: 1.25em; overflow-wrap: anywhere; }
 .journal-tidy-toast { position: fixed; left: 50%; bottom: 1.25em; transform: translateX(-50%); z-index: 50; display: flex; flex-wrap: wrap; gap: 0.5em 0.9em; align-items: center; max-width: min(40rem, calc(100vw - 2em)); padding: 0.75em 1em; border-radius: 10px; background: var(--surface-dark); color: var(--ink-on-dark); box-shadow: 0 6px 24px rgba(0,0,0,0.18); }
 .journal-tidy-toast[hidden] { display: none; }
+@media (max-width: 700px) { .journal-tidy-toast { bottom: calc(var(--app-dock-height) + var(--chrome-gap)); } }
 .journal-tidy-toast-text { flex: 1 1 16rem; min-width: 0; overflow-wrap: anywhere; }
 .journal-tidy-toast-small { flex-basis: 100%; margin: 0; font-size: 0.8em; opacity: 0.85; overflow-wrap: anywhere; }
 .journal-tidy-toast button { min-height: 2rem; padding: 0.2em 0.75em; border: 1px solid currentColor; border-radius: 6px; background: transparent; color: inherit; font: inherit; cursor: pointer; }
@@ -6619,6 +6620,7 @@ const tidyState = {
   data: null,
   error: null,
   loading: false,
+  pending: null,
   idsPage: 0,
   dupsPage: 0,
   idsPageData: null,
@@ -6666,7 +6668,14 @@ async function fetchTidyPage(offset) {
   return window.apiJson(`/app/entities/api/journal/tidy-up?offset=${offset}&limit=${TIDY_PAGE_SIZE}`);
 }
 
-async function loadTidyGroups({attempts = 1} = {}) {
+/// Starts a groups read and keeps it, so a view that needs the result while
+/// one is already running waits for that read instead of skipping it.
+function loadTidyGroups(options) {
+  tidyState.pending = readTidyGroups(options);
+  return tidyState.pending;
+}
+
+async function readTidyGroups({attempts = 1} = {}) {
   tidyState.loading = true;
   let lastErr = null;
   for (let attempt = 0; attempt < attempts; attempt += 1) {
@@ -7628,7 +7637,7 @@ async function renderJournalDetailIdNote(entity) {
   if (!host) return;
   host.querySelector('.journal-detail-id-note')?.remove();
   if (!entity?.entity_id) return;
-  if (!tidyState.data && !tidyState.loading) await loadTidyGroups();
+  if (!tidyState.data) await (tidyState.loading && tidyState.pending ? tidyState.pending : loadTidyGroups());
   const members = idMembers();
   if (!members || !members.includes(entity.entity_id)) return;
   if (currentDetailEntity && currentDetailEntity.id !== entity.id) return;
