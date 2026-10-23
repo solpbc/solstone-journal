@@ -14,6 +14,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - on an entity's page, the line "this name looks like an ID" now shows when you open the page from a link or reload it. before, it showed only when you got there from the list.
 - on a phone, the message that shows hiding progress and undo on the entities page no longer sits under the bar at the bottom of the screen.
 - merging possible duplicates now merges one pair at a time, so other changes to your entities can save while a long merge runs. before, those changes could give up partway through a merge of many pairs.
+- an entity's connections no longer list words only ever mentioned in your journal, such as "just" or "think", or names matched on a single word like "the". home already left these out.
 
 ## [2.0.56] - 2026-10-23
 
