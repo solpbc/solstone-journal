@@ -222,6 +222,21 @@
 .pulse-narrative-content h2 { font-size: 1rem; margin: 0.75rem 0 0.5rem; color: var(--ink); }
 .pulse-narrative-content p { margin: 0 0 0.5rem; }
 
+/* A link inside generated text sits mid-sentence, so it keeps its underline:
+   colour alone would not set it apart from the words around it. */
+.pulse-narrative-content a,
+.pulse-reflection-memory a {
+  color: var(--orange-text-aa);
+  text-underline-offset: 2px;
+}
+
+.pulse-narrative-content a:focus-visible,
+.pulse-reflection-memory a:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
 .pulse-narrative-meta {
   margin-top: 0.5rem;
   font-size: 0.75rem;
