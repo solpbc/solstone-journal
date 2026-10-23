@@ -38,21 +38,14 @@ fn bundled_runtime_fingerprint(journal: &TempDir) -> String {
         "local/qwen3.5-4b",
         cfg!(target_os = "macos"),
     );
-    #[cfg_attr(not(target_os = "macos"), allow(unused_mut))]
-    let mut input = serde_json::Map::from_iter([
+    let input = serde_json::Map::from_iter([
         (
             "journal".into(),
             json!(journal.path().display().to_string()),
         ),
         ("model_id".into(), json!(model_id)),
     ]);
-    #[cfg(target_os = "macos")]
-    input.insert("backend".into(), json!("metal"));
-    #[cfg(target_os = "macos")]
-    let readiness =
-        solstone_core_local::install::metal_candidate::inspect(&input).expect("metal inspect");
-    #[cfg(not(target_os = "macos"))]
-    let readiness = solstone_core_local::install::readiness::inspect_local(input);
+    let readiness = solstone_core_local::install::readiness::inspect_local_present(input);
     solstone_core_brain::bundled_runtime_desired_fingerprint(
         readiness["host"]["backend"].as_str().unwrap_or("metal"),
         &model_id,

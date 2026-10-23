@@ -207,6 +207,7 @@ pub struct LocalRuntimeShared {
     ready_children: Mutex<BTreeMap<FenceKey, ReadyChild>>,
     children: Mutex<BTreeMap<String, LaunchAuthority>>,
     launch_credentials: Mutex<LaunchCredentials>,
+    ready_admission: Mutex<ReadyAdmission>,
 }
 
 /// A reaped child from the same coherent tuple as the accepted process.
@@ -222,6 +223,15 @@ struct LaunchCredentials {
     accepted: Option<FenceKey>,
     admitted: bool,
     closed: bool,
+}
+
+// Coordinator Ready admission is also meaningful on Unix, where the helper
+// has no staged HTTP credentials. This observes the existing store callbacks;
+// it does not grant inference access or alter the credential contract.
+#[derive(Debug, Default)]
+struct ReadyAdmission {
+    accepted: Option<FenceKey>,
+    admitted: bool,
 }
 
 impl std::fmt::Debug for LaunchCredentials {
@@ -696,17 +706,19 @@ impl LocalRuntimeShared {
         generation: u64,
         desired_fingerprint: &Option<String>,
     ) -> bool {
-        let creds = self
-            .launch_credentials
+        let admission = self
+            .ready_admission
             .lock()
             .expect("local runtime shared lock");
-        !creds.closed
-            && creds.admitted
-            && creds.accepted.as_ref().is_some_and(|key| {
-                key.generation == generation
-                    && &key.fingerprint == desired_fingerprint
-                    && creds.staged.contains_key(key)
+        admission.admitted
+            && admission.accepted.as_ref().is_some_and(|key| {
+                key.generation == generation && &key.fingerprint == desired_fingerprint
             })
+            && !self
+                .launch_credentials
+                .lock()
+                .expect("local runtime shared lock")
+                .closed
     }
 
     // Warmup can finish while durable Ready publication fails. This is only
@@ -742,15 +754,37 @@ pub trait ReadyProcessLookup: Send + Sync {
 impl ReadyProcessLookup for LocalRuntimeShared {
     fn accept_ready(&self, fence: &ProviderFence) {
         self.accept_launch_credentials(fence);
+        *self
+            .ready_admission
+            .lock()
+            .expect("local runtime shared lock") = ReadyAdmission {
+            accepted: Some(FenceKey::from(fence)),
+            admitted: true,
+        };
     }
     fn restore_ready(&self, fence: &ProviderFence) {
         self.restore_launch_credentials(fence);
+        let mut admission = self
+            .ready_admission
+            .lock()
+            .expect("local runtime shared lock");
+        if admission.accepted.as_ref() == Some(&FenceKey::from(fence)) {
+            admission.admitted = true;
+        }
     }
     fn invalidate_ready(&self) {
         self.invalidate_launch_credentials();
+        *self
+            .ready_admission
+            .lock()
+            .expect("local runtime shared lock") = ReadyAdmission::default();
     }
     fn suspend_ready(&self) {
         self.suspend_launch_credentials();
+        self.ready_admission
+            .lock()
+            .expect("local runtime shared lock")
+            .admitted = false;
     }
     fn ready_process_for_fence(&self, fence: &ProviderFence) -> Option<ReadyProcess> {
         self.ready_processes
@@ -1447,13 +1481,44 @@ mod tests {
         shared.stage_launch_credentials(&fence, 12345, b"fixture".to_vec());
         assert!(shared.warmed_generation_matches(7, &fence.fingerprint));
         assert!(!shared.admitted_generation_matches(7, &fence.fingerprint));
-        shared.accept_launch_credentials(&fence);
+        shared.accept_ready(&fence);
         assert!(shared.admitted_generation_matches(7, &fence.fingerprint));
         assert!(!shared.admitted_generation_matches(8, &fence.fingerprint));
         assert!(!shared.admitted_generation_matches(7, &Some("metal".into())));
-        shared.invalidate_launch_credentials();
+        shared.invalidate_ready();
         assert!(shared.warmed_generation_matches(7, &fence.fingerprint));
         assert!(!shared.admitted_generation_matches(7, &fence.fingerprint));
+    }
+
+    #[test]
+    fn coordinator_ready_admission_does_not_require_http_credentials() {
+        let shared = LocalRuntimeShared::default();
+        let fence = ProviderFence {
+            incarnation: "unix".into(),
+            generation: 7,
+            fingerprint: Some("mlx".into()),
+            attempt: 1,
+        };
+        assert!(shared.launch_credentials().is_none());
+        assert!(!shared.admitted_generation_matches(7, &fence.fingerprint));
+        shared.accept_ready(&fence);
+        assert!(shared.admitted_generation_matches(7, &fence.fingerprint));
+        assert!(shared.launch_credentials().is_none());
+        shared.suspend_ready();
+        assert!(!shared.admitted_generation_matches(7, &fence.fingerprint));
+        let mut stale = fence.clone();
+        stale.generation += 1;
+        shared.restore_ready(&stale);
+        assert!(!shared.admitted_generation_matches(7, &fence.fingerprint));
+        shared.restore_ready(&fence);
+        assert!(shared.admitted_generation_matches(7, &fence.fingerprint));
+        shared.invalidate_ready();
+        shared.restore_ready(&fence);
+        assert!(!shared.admitted_generation_matches(7, &fence.fingerprint));
+        shared.accept_ready(&fence);
+        shared.close_launch_credentials();
+        assert!(!shared.admitted_generation_matches(7, &fence.fingerprint));
+        assert!(shared.launch_credentials().is_none());
     }
 
     static NEXT_TEMP: AtomicU64 = AtomicU64::new(0);

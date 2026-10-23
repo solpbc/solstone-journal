@@ -385,7 +385,6 @@ mod tests {
             fingerprint: state.desired_fingerprint.clone(),
             attempt: state.retry.attempt_count,
         };
-        shared.stage_launch_credentials(&fence, 12345, b"fixture".to_vec());
         shared.accept_ready(&fence);
         state.latest_phase = RuntimePhase::Ready;
     }
@@ -833,15 +832,12 @@ mod tests {
                     if failed {
                         fail_starts -= 1;
                     }
-                    let managed = (!failed).then(|| {
-                        shared.stage_launch_credentials(&pending.fence, 12345, b"fixture".to_vec());
-                        ManagedProcess {
-                            id: id.into(),
-                            name: "local".into(),
-                            pid: 12345,
-                            running: true,
-                            fence: Some(pending.fence.clone()),
-                        }
+                    let managed = (!failed).then(|| ManagedProcess {
+                        id: id.into(),
+                        name: "local".into(),
+                        pid: 12345,
+                        running: true,
+                        fence: Some(pending.fence.clone()),
                     });
                     pending.result = Some(ProviderLaunchOutcome {
                         status: if failed {
@@ -885,7 +881,13 @@ mod tests {
                 if tick == 19 {
                     assert_eq!(state.latest_phase, RuntimePhase::Ready);
                     assert_eq!(state.desired_fingerprint.as_deref(), Some("old"));
-                    assert!(shared.launch_credentials().is_some());
+                    assert!(shared.launch_credentials().is_none());
+                    assert!(
+                        shared.admitted_generation_matches(
+                            state.generation,
+                            &state.desired_fingerprint
+                        )
+                    );
                     assert!(model.exists());
                     assert!(!events.iter().any(|event| event == "start-new"));
                 }
@@ -912,7 +914,13 @@ mod tests {
                 if macos_mlx_migration::read(journal.path()).unwrap() == MigrationState::Committed {
                     assert_eq!(state.latest_phase, RuntimePhase::Ready);
                     assert_eq!(state.desired_fingerprint.as_deref(), Some("new"));
-                    assert!(shared.launch_credentials().is_some());
+                    assert!(shared.launch_credentials().is_none());
+                    assert!(
+                        shared.admitted_generation_matches(
+                            state.generation,
+                            &state.desired_fingerprint
+                        )
+                    );
                     assert!(!model.exists());
                     break;
                 }
