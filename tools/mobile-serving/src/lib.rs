@@ -34,6 +34,8 @@ pub(crate) mod audio;
 #[cfg(any(feature = "audio", feature = "processing"))]
 mod custody;
 #[cfg(feature = "processing")]
+mod daily_queue_observation;
+#[cfg(feature = "processing")]
 pub mod foreground;
 
 pub struct OwnerResponse {

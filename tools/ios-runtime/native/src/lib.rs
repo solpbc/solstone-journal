@@ -36,6 +36,11 @@ impl ServingInstance {
             {
                 status["audio"] = host.audio_status();
             }
+            match host.daily_queue_observation() {
+                Ok(Some(observation)) => status["daily_queue_observation"] = observation,
+                Ok(None) => {},
+                Err(error) => status["daily_queue_observation"] = json!({"error":error,"authorizes_release":false}),
+            }
             if host.failed() {
                 status["failed"] = json!(true);
             }
@@ -432,7 +437,12 @@ fn run(v: Value) -> Result<Value, String> {
                 processing: None,
             });
             *STOP_ROOT.lock().unwrap_or_else(|p| p.into_inner()) = Some(Arc::clone(root));
-            let host = journal_mobile_serving::foreground::ForegroundProcessingHost::open_with_rebuild_recovery(
+            let open_host = if v["mode"].as_str() == Some("observe-daily-queue") {
+                journal_mobile_serving::foreground::ForegroundProcessingHost::open_with_rebuild_recovery_observed
+            } else {
+                journal_mobile_serving::foreground::ForegroundProcessingHost::open_with_rebuild_recovery
+            };
+            let host = open_host(
                 Arc::clone(root), &payload,
                 Arc::new(move || PROCESSING_GENERATION.load(Ordering::SeqCst) & !1 != generation & !1),
                 processing_stop, backup,

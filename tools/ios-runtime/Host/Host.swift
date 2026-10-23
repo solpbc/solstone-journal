@@ -821,6 +821,9 @@ final class PendingReply: @unchecked Sendable {
     let port = Int(argument("--port", "37657")) ?? 37657
     var startRequest = request("serve-start", count: port)
     startRequest.admissionGeneration = admissionGeneration
+    if args.contains("--observe-daily-queue") {
+      startRequest.mode = "observe-daily-queue"
+    }
     let opened = try await servingCall(request("open"), "serve.open")
     _ = try await servingCall(startRequest, "serve.start")
     defer { cancelRebuildObservation() }
