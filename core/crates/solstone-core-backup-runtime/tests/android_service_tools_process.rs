@@ -8,6 +8,8 @@
 //! `OnceLock` for admitted tools, this test runs in its own binary target to ensure
 //! isolation from other tests.
 
+#![cfg(not(windows))]
+
 use std::fs;
 use std::path::Path;
 

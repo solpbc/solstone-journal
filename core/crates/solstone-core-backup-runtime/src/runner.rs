@@ -211,6 +211,7 @@ fn run_unix_tool(
 }
 
 #[cfg(windows)]
+#[allow(clippy::too_many_arguments)] // Mirrors the independent process-boundary inputs below.
 fn launch_windows_helper(
     program: &Path,
     argv: &[OsString],
