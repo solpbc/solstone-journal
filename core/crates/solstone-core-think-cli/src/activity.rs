@@ -60,6 +60,18 @@ fn selected_work(
     context: &ThinkContext,
     record: &solstone_core_facets::ActivityRecord,
 ) -> Result<Option<(Vec<TalentConfig>, String)>, String> {
+    let Some(configs) = selected_configs(context, record)? else {
+        return Ok(None);
+    };
+    let input_hash = crate::segment::compute_activity_input_hash(context, &context.day, record)
+        .ok_or_else(|| "cannot fingerprint activity inputs".to_owned())?;
+    Ok(Some((configs, input_hash)))
+}
+
+fn selected_configs(
+    context: &ThinkContext,
+    record: &solstone_core_facets::ActivityRecord,
+) -> Result<Option<Vec<TalentConfig>>, String> {
     if activity_contract::is_synthetic(record) || !activity_contract::has_nonempty_span(record) {
         return Ok(None);
     }
@@ -80,9 +92,79 @@ fn selected_work(
     .into_iter()
     .filter(|config| activity_contract::matches_activity(&config.metadata, kind))
     .collect::<Vec<_>>();
-    let input_hash = crate::segment::compute_activity_input_hash(context, &context.day, record)
-        .ok_or_else(|| "cannot fingerprint activity inputs".to_owned())?;
-    Ok(Some((configs, input_hash)))
+    Ok(Some(configs))
+}
+
+fn selected_output_held(
+    configs: &[TalentConfig],
+    record: &solstone_core_facets::ActivityRecord,
+) -> bool {
+    configs.iter().any(|config| {
+        let hook = config
+            .metadata
+            .get("hook")
+            .and_then(|hook| hook.get("post"))
+            .and_then(Value::as_str);
+        let fields: &[&str] = match hook {
+            Some("story") => &["story", "relations"],
+            Some("participation") => &[
+                "participation",
+                "participation_confidence",
+                "participation_partial_input",
+            ],
+            _ => &[],
+        };
+        if fields.is_empty() {
+            record
+                .keys()
+                .any(|field| solstone_core_facets::activity_field_held(record, field))
+        } else {
+            fields
+                .iter()
+                .any(|field| solstone_core_facets::activity_field_held(record, field))
+        }
+    })
+}
+
+/// A stale completed receipt may start fresh selected work only after the
+/// caller took the normal activity claim and proved no unfinished record exists.
+pub(crate) fn reconcile_retained(
+    context: &ThinkContext,
+    log: &mut RunLogWriter,
+    activity: &str,
+    facet: &str,
+    expected: &str,
+    max_concurrency: i64,
+    held: FileLock,
+) -> Result<ModeResult, String> {
+    let record = crate::activity_work::retained_record(context, &context.day, facet, activity)?;
+    let Some(configs) = selected_configs(context, &record)? else {
+        return Err("retained activity has no eligible work".into());
+    };
+    if configs.is_empty() {
+        return Err("retained activity has no eligible work".into());
+    }
+    if selected_output_held(&configs, &record) {
+        return Err("retained activity output is held by owner".into());
+    }
+    let hash = crate::activity_work::available_input(context, &context.day, &record)?;
+    if hash != expected {
+        return Err("retained activity input changed during admission".into());
+    }
+    run_selected(
+        context,
+        log,
+        activity,
+        facet,
+        false,
+        false,
+        max_concurrency,
+        Some(held),
+        record,
+        configs,
+        hash,
+        0,
+    )
 }
 
 /// Run an activity record's selected talents in priority batches, each with
@@ -164,6 +246,38 @@ pub(crate) fn run_held(
     let Some((configs, input_hash)) = selected_work(context, &record)? else {
         return Ok(ModeResult::default());
     };
+    run_selected(
+        context,
+        log,
+        activity_id,
+        facet,
+        refresh,
+        reactivate,
+        max_concurrency,
+        held,
+        record,
+        configs,
+        input_hash,
+        adopted,
+    )
+}
+
+/// Shared ordinary execution after its caller has admitted the actual input.
+#[allow(clippy::too_many_arguments)]
+fn run_selected(
+    context: &ThinkContext,
+    log: &mut RunLogWriter,
+    activity_id: &str,
+    facet: &str,
+    refresh: bool,
+    reactivate: bool,
+    max_concurrency: i64,
+    held: Option<FileLock>,
+    record: solstone_core_facets::ActivityRecord,
+    configs: Vec<TalentConfig>,
+    input_hash: String,
+    adopted: usize,
+) -> Result<ModeResult, String> {
     let kind = record
         .get("activity")
         .and_then(Value::as_str)
@@ -182,6 +296,20 @@ pub(crate) fn run_held(
     if work.is_complete() {
         work.finish(context)?;
         return Ok(reconciled);
+    }
+
+    // An edit that arrived while Generate ran must remain held on later due
+    // retries, before another model call. Accepted uses were reconciled above.
+    if selected_output_held(&configs, &record) {
+        return block_destination(
+            &mut work,
+            context,
+            log,
+            activity_id,
+            facet,
+            "owner_field_held",
+            "activity output is held by owner",
+        );
     }
 
     let stored_id = work.destination_id().map(str::to_owned).or_else(|| {

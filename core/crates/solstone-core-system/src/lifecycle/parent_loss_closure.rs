@@ -714,8 +714,16 @@ pub(crate) fn unix_seconds() -> u64 {
         .unwrap_or_default()
 }
 
+/// Every drop is created exclusively and then filled, so a writer killed
+/// between the two leaves an empty file under the final name. No complete drop
+/// is empty: read one as the drop that was never written, rather than as
+/// unverifiable evidence that refuses every later start. That is the state a
+/// kill just before the create leaves, so every closure path already settles
+/// it; a child still writing its acknowledgement re-checks admission after the
+/// write and finds the generation sealed before this scan.
 fn read_drop_bytes(path: &Path) -> io::Result<Option<Vec<u8>>> {
     match fs::read(path) {
+        Ok(bytes) if bytes.is_empty() => Ok(None),
         Ok(bytes) => Ok(Some(bytes)),
         Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
         Err(error) => Err(error),
@@ -3021,6 +3029,7 @@ mod tests {
     use crate::lifecycle::parent_loss_admission::{
         AdmissionIdentity, AdmissionIntent, AdmissionResult, acknowledge_parent_loss_admission,
         write_parent_loss_admission_intent, write_parent_loss_admission_result,
+        write_parent_loss_admission_spawn_identity,
     };
     use crate::lifecycle::parent_loss_ledger::{ActiveGeneration, CoordinatorLease};
     use crate::lifecycle::{
@@ -3613,6 +3622,103 @@ mod tests {
             closure.admissions[0].finding,
             AdmissionFinding::NeverAcknowledged
         );
+    }
+
+    #[test]
+    fn a_drop_torn_by_the_kill_closes_and_retires_the_live_child() {
+        let directory = TempDir::new().expect("temporary root");
+        let (ledger, active) = open_generation(&directory);
+        let generation = active.generation;
+        let torn = |launch_id: &str, drop: &str| {
+            let path = ledger
+                .generation_path(generation)
+                .join("admissions")
+                .join(launch_id)
+                .join(drop);
+            fs::create_dir_all(path.parent().expect("admission directory")).expect("directory");
+            fs::File::create(path).expect("torn drop");
+        };
+        let identity = |launch_id: &str, child: ProcessInstance| AdmissionIdentity {
+            generation,
+            launch_id: launch_id.to_owned(),
+            instance: child,
+            uid: 501,
+            parent_launch_id: None,
+        };
+        let intent = |launch_id: &str| {
+            write_parent_loss_admission_intent(
+                directory.path(),
+                &AdmissionIntent::new(generation, launch_id, Some(HostedServiceKind::Sense), None),
+            )
+            .expect("intent");
+        };
+        // Killed while writing the spawn identity; the child acknowledged.
+        let spawn_torn = instance(4301, 43);
+        intent("spawn-torn");
+        torn("spawn-torn", "spawn-identity.json");
+        acknowledge_parent_loss_admission(directory.path(), identity("spawn-torn", spawn_torn))
+            .expect("ack");
+        // The child was writing its acknowledgement.
+        let ack_torn = instance(4302, 43);
+        intent("ack-torn");
+        write_parent_loss_admission_spawn_identity(
+            directory.path(),
+            &identity("ack-torn", ack_torn),
+        )
+        .expect("spawn identity");
+        torn("ack-torn", "acknowledgement.json");
+        // Killed while writing the result.
+        let result_torn = instance(4303, 43);
+        intent("result-torn");
+        write_parent_loss_admission_spawn_identity(
+            directory.path(),
+            &identity("result-torn", result_torn),
+        )
+        .expect("spawn identity");
+        acknowledge_parent_loss_admission(directory.path(), identity("result-torn", result_torn))
+            .expect("ack");
+        torn("result-torn", "result.json");
+        // Killed while writing the intent, before any child existed.
+        torn("intent-torn", "intent.json");
+        // The result-torn child has since exited; the other two outlive the kill.
+        let (source, retirer) = fake(&[(spawn_torn, 501), (ack_torn, 501)], &[4301, 4302], &[]);
+        let lease = acquire_lease(&ledger);
+
+        let successor = ledger
+            .reserve_generation_closing_abandoned(
+                instance(11, 3),
+                [],
+                &lease,
+                &authority(&source, &retirer, Duration::from_secs(2)),
+            )
+            .expect("a drop torn by the kill must not brick the journal");
+
+        assert_eq!(successor.generation, generation + 1);
+        let mut signals = retirer.signals.lock().expect("signals").clone();
+        signals.sort_unstable();
+        assert_eq!(
+            signals,
+            vec![(spawn_torn.pid, "term"), (ack_torn.pid, "term")],
+            "each child that outlived the kill is retired by the identity that was written"
+        );
+        let closure = closure_of(&ledger, generation);
+        let finding = |launch_id: &str| {
+            closure
+                .admissions
+                .iter()
+                .find(|admission| admission.launch_id == launch_id)
+                .map(|admission| admission.finding)
+                .expect("the closure names the admission")
+        };
+        assert!(matches!(
+            finding("spawn-torn"),
+            AdmissionFinding::Retired { .. }
+        ));
+        assert!(matches!(
+            finding("ack-torn"),
+            AdmissionFinding::Retired { .. }
+        ));
+        assert_eq!(finding("result-torn"), AdmissionFinding::Exited);
     }
 
     #[test]

@@ -149,6 +149,7 @@
     },
     "offload": {
       "title": "media offload",
+      "unsupported": "media offload isn't available on this device.",
       "stakes": "after this, your backup holds the only copy of your older days. if you lose your recovery key, no one can recover them. not even sol pbc.",
       "stalled_lead": "offload couldn't finish.",
       "backup_only_label": "kept only in backup",
@@ -1521,17 +1522,20 @@
     const loading = offloadState.status === 'loading';
     const unavailable = offloadState.status === 'unavailable';
     const payload = offloadState.payload || {};
+    const supported = payload.enable_supported !== false;
     const offload = payload.offload || {};
     const enabled = ready && offload.enabled === true;
     const hasBackupOnlyMedia = hasBackupOnly(payload);
-    const showControls = ready && !unavailable && !loading;
+    const showControls = supported && ready && !unavailable && !loading;
     const showUsage = ready && !unavailable && !loading;
     const showProof = ready && !unavailable && !loading && (enabled || hasBackupOnlyMedia);
     const unavailableElement = root.querySelector('[data-offload-unavailable]');
     if (unavailableElement) unavailableElement.hidden = !unavailable;
+    const unsupportedElement = root.querySelector('[data-offload-unsupported]');
+    if (unsupportedElement) unsupportedElement.hidden = supported || unavailable || loading;
 
     const readiness = root.querySelector('[data-offload-readiness]');
-    if (readiness) readiness.hidden = ready || unavailable || loading;
+    if (readiness) readiness.hidden = !supported || ready || unavailable || loading;
     const form = root.querySelector('[data-offload-enable-form]');
     const summary = root.querySelector('[data-offload-summary]');
     const proof = root.querySelector('[data-offload-proof]');

@@ -149,6 +149,7 @@ pub fn read_segment_progress<S: HealthLogSource>(
         .map(|key| {
             let mut dispatched = BTreeSet::new();
             let mut completed = BTreeSet::new();
+            let mut completed_uses = BTreeMap::new();
             let mut capped_by_skip = BTreeSet::new();
             // `None`: no Sense use was dispatched.  `Some(None)`: the latest
             // one has not completed.  `Some(Some(ts))`: it completed.
@@ -201,6 +202,11 @@ pub fn read_segment_progress<S: HealthLogSource>(
                         capped_by_skip.insert(name.clone());
                     }
                     if name_is_completed(&entries) {
+                        if let Some(id) =
+                            qualifying_terminal(&entries).and_then(|item| item.use_id.clone())
+                        {
+                            completed_uses.insert(name.clone(), id);
+                        }
                         completed.insert(name);
                     }
                 }
@@ -212,6 +218,7 @@ pub fn read_segment_progress<S: HealthLogSource>(
                 Some(Some(dispatched)) => sensed_at.map(|sensed| sensed.min(dispatched)),
             };
             let progress = SegmentProgress {
+                completed_uses,
                 sense_input_ms,
                 sensed: latest_sense.contains_key(&key),
                 density: latest_sense

@@ -20,7 +20,7 @@ enum Engine {
       case "private": base = URL(fileURLWithPath: NSHomeDirectory())
       case "serving":
         guard let group = FileManager.default.containerURL(
-          forSecurityApplicationGroupIdentifier: "group.app.solstone.journal.runtime.dev") else {
+          forSecurityApplicationGroupIdentifier: RuntimeIdentity.group) else {
           throw NSError(domain: "serving-group-unavailable", code: 1)
         }
         base = group

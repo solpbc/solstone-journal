@@ -29,15 +29,15 @@ def main():
         raise ValueError('successful Android native build receipt required')
     artifacts = receipt['artifacts']
     roles = [
-        ('restic-cli', 'restic-cli/restic', 'librestic.so'),
-        ('rclone-cli', 'rclone-cli/rclone', 'librclone.so'),
-        ('nvattest-cli', 'nvattest-cli/nvattest', 'libnvattest.so'),
-        ('nvattest-library', 'nvattest-library/libnvat.so', 'libnvat.so'),
-        ('nvattest-ca-bundle', 'nvattest-ca-bundle/ca-bundle.pem', 'ca-bundle.pem'),
+        ('restic-cli', 'artifacts/restic/restic', 'librestic.so'),
+        ('rclone-cli', 'artifacts/rclone/rclone', 'librclone.so'),
+        ('nvattest-cli', 'build/nvattest/nvattest', 'libnvattest.so'),
+        ('nvattest-library', 'build/nvattest/nv-attestation-sdk-build/libnvat.so', 'libnvat.so'),
+        ('nvattest-ca-bundle', 'artifacts/nvattest/ca-bundle.pem', 'ca-bundle.pem'),
     ]
     sources = []
     for component, relative, filename in roles:
-        source = args.native_build / 'artifacts' / relative
+        source = args.native_build / relative
         entries = [entry for entry in artifacts if entry.get('component') == component]
         if len(entries) != 1 or source.is_symlink() or not source.is_file():
             raise ValueError('one regular retained artifact required: ' + component)

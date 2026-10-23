@@ -11,6 +11,10 @@ use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Instant;
 
+#[cfg(any(target_os = "android", all(test, feature = "full-tests")))]
+mod callosum_endpoint;
+#[cfg(unix)]
+mod owner_response;
 mod retirement;
 
 static CANCEL: AtomicBool = AtomicBool::new(false);
@@ -63,6 +67,8 @@ impl ServingInstance {
     }
     fn status(&self) -> Result<Value, String> {
         let mut status = self.handle()?.status();
+        status["admission_generation"] = json!(THINKING_GENERATION.load(Ordering::SeqCst));
+        status["interface_address"] = json!(self.handle()?.interface_address());
         if let Some(host) = self.host.as_ref() {
             status["audio"] = host.audio_status();
             if host.failed() {
@@ -305,6 +311,8 @@ fn serving(root: &Path, command: &str) -> Result<Value, String> {
             ort::init_from(library).map_err(|e| e.to_string())?.commit();
             let binding =
                 std::sync::Arc::new(jio::JournalRoot::open(root).map_err(|e| e.to_string())?);
+            #[cfg(target_os = "android")]
+            callosum_endpoint::prepare(binding.canonical_path())?;
             let payload_dir = root
                 .parent()
                 .ok_or("app directory missing")?

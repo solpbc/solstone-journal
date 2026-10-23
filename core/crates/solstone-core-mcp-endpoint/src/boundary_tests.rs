@@ -248,6 +248,27 @@ fn probe(
     run_mcp_probe(journal.path(), CONNECTION, tool, &arguments)
 }
 
+fn literal_display_text(text: &str) -> String {
+    use pulldown_cmark::{Event, Options, Parser, Tag};
+
+    text.split('\n')
+        .map(|line| {
+            let mut visible = String::new();
+            for event in Parser::new_ext(line, Options::all()) {
+                match event {
+                    Event::Start(Tag::Image { .. } | Tag::Link { .. })
+                    | Event::Html(_)
+                    | Event::InlineHtml(_) => panic!("active tool markup in {text:?}"),
+                    Event::Text(text) | Event::Code(text) => visible.push_str(&text),
+                    _ => {}
+                }
+            }
+            visible
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 fn visible_search_page(result: &Value) -> Value {
     let results = result["results"]
         .as_array()
@@ -911,8 +932,74 @@ fn get_transcript_reads_recorded_speech_from_audio_jsonl() {
     let listed = probe(&journal, "list_transcripts", json!({})).unwrap();
     let reference = listed["transcripts"][0]["reference"].as_str().unwrap();
     let page = probe(&journal, "get_transcript", json!({"reference": reference})).unwrap();
-    assert_eq!(page["entries"], json!(["[00:00:02] spoken words"]));
+    assert_eq!(
+        literal_display_text(page["entries"][0].as_str().unwrap()),
+        "[00:00:02] spoken words"
+    );
+    assert_eq!(page["entries"].as_array().unwrap().len(), 1);
     assert!(page["next_cursor"].is_null());
+}
+
+#[test]
+fn legacy_image_markup_is_literal_in_search_and_every_transcript_page() {
+    let journal = fixture();
+    let payload = "![legacycover](https://example.test/cover.png) <img src=x> &amp; 日本語";
+    let index = solstone_core_indexer_store::db::open_index(journal.path()).unwrap();
+    index
+        .execute(
+            "UPDATE chunks SET content = ?1 WHERE path = ?2",
+            params![payload, PATH],
+        )
+        .unwrap();
+    drop(index);
+    let response = probe(&journal, "search", json!({"query":"legacycover"})).unwrap();
+    let hit = &response["results"][0];
+    assert_eq!(
+        literal_display_text(hit["snippet"].as_str().unwrap()),
+        payload
+    );
+    let text_channel = crate::jsonrpc::tool_result(response.clone(), None);
+    literal_display_text(text_channel["content"][0]["text"].as_str().unwrap());
+    assert_eq!(
+        visible_search_page(&response),
+        visible_search_page(&probe(&journal, "search", json!({"query":"legacycover"})).unwrap())
+    );
+    assert!(probe(&journal, "fetch", json!({"reference": hit["reference"]})).is_ok());
+
+    let transcript = journal
+        .path()
+        .join("chronicle")
+        .join(DAY)
+        .join(STREAM)
+        .join(SEGMENT)
+        .join("meeting_transcript.md");
+    // Put an opening fence on the last row of a page. Each next-page entry
+    // must be literal without relying on the preceding page's fence.
+    let source = format!(
+        "{}\n```markdown\n{payload}\n```\n",
+        "ordinary line\n".repeat(99).trim_end()
+    );
+    fs::write(&transcript, &source).unwrap();
+    let listed = probe(&journal, "list_transcripts", json!({})).unwrap();
+    let mut args = json!({"reference":listed["transcripts"][0]["reference"]});
+    let mut visible_entries = Vec::new();
+    let mut pages = 0;
+    loop {
+        let page = probe(&journal, "get_transcript", args.clone()).unwrap();
+        pages += 1;
+        for entry in page["entries"].as_array().unwrap() {
+            visible_entries.push(literal_display_text(entry.as_str().unwrap()));
+        }
+        let text_channel = crate::jsonrpc::tool_result(page.clone(), None);
+        literal_display_text(text_channel["content"][0]["text"].as_str().unwrap());
+        if page["next_cursor"].is_null() {
+            break;
+        }
+        args["cursor"] = page["next_cursor"].clone();
+    }
+    assert_eq!(pages, 2);
+    assert_eq!(visible_entries, source.lines().collect::<Vec<_>>());
+    assert_eq!(fs::read_to_string(&transcript).unwrap(), source);
 }
 
 #[test]
@@ -985,7 +1072,10 @@ fn transcript_local_names_page_under_a_transcripts_only_facet_grant() {
     let reference = listed["transcripts"][0]["reference"].as_str().unwrap();
     let first = probe(&journal, "get_transcript", json!({"reference":reference})).unwrap();
     // Only a voice-identified label names a speaker; a label without one names no one.
-    assert_eq!(first["entries"][98], "[00:00:01] Speaker 1: sentence 99");
+    assert_eq!(
+        literal_display_text(first["entries"][98].as_str().unwrap()),
+        "[00:00:01] Speaker 1: sentence 99"
+    );
     let second = probe(
         &journal,
         "get_transcript",
@@ -993,12 +1083,17 @@ fn transcript_local_names_page_under_a_transcripts_only_facet_grant() {
     )
     .unwrap();
     assert_eq!(
-        second["entries"],
-        json!([
+        second["entries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|entry| literal_display_text(entry.as_str().unwrap()))
+            .collect::<Vec<_>>(),
+        vec![
             "[00:00:01] Bea: sentence 101",
             "[00:00:01] Speaker 1: sentence 102",
             "[00:00:01] Speaker 1: sentence 103"
-        ])
+        ]
     );
     assert!(second["next_cursor"].is_null());
     for forbidden in [
@@ -1009,6 +1104,13 @@ fn transcript_local_names_page_under_a_transcripts_only_facet_grant() {
         "acoustic",
     ] {
         assert!(!second.to_string().contains(forbidden));
+        assert!(
+            second["entries"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|entry| !literal_display_text(entry.as_str().unwrap()).contains(forbidden))
+        );
     }
     assert_eq!(
         probe(&journal, "list_entities", json!({})),
@@ -1731,7 +1833,7 @@ fn a_summary_hit_links_only_to_its_own_streams_segment() {
     let entries = transcript["entries"].as_array().unwrap();
     let text: String = entries
         .iter()
-        .map(|e| e.as_str().unwrap())
+        .map(|e| literal_display_text(e.as_str().unwrap()))
         .collect::<Vec<_>>()
         .join(" ");
     assert!(text.contains("beta_transcript_token"));
@@ -1808,7 +1910,7 @@ fn activity_hits_link_their_segments_within_the_per_result_budget() {
 
     let hit0 = results
         .iter()
-        .find(|h| h["snippet"].as_str().unwrap().contains("Act-stream-beta"))
+        .find(|h| literal_display_text(h["snippet"].as_str().unwrap()).contains("Act-stream-beta"))
         .unwrap();
     let segments0 = hit0["segments"].as_array().expect("hit0 has segments");
     assert_eq!(segments0.len(), 1);
@@ -1823,7 +1925,7 @@ fn activity_hits_link_their_segments_within_the_per_result_budget() {
         .as_array()
         .unwrap()
         .iter()
-        .map(|e| e.as_str().unwrap())
+        .map(|e| literal_display_text(e.as_str().unwrap()))
         .collect::<Vec<_>>()
         .join(" ");
     assert!(entries0.contains("beta_transcript_token"));
@@ -1831,7 +1933,7 @@ fn activity_hits_link_their_segments_within_the_per_result_budget() {
 
     let hit1 = results
         .iter()
-        .find(|h| h["snippet"].as_str().unwrap().contains("Act-no-stream"))
+        .find(|h| literal_display_text(h["snippet"].as_str().unwrap()).contains("Act-no-stream"))
         .unwrap();
     let segments1 = hit1["segments"].as_array().expect("hit1 has segments");
     assert_eq!(segments1.len(), 3);
@@ -1850,7 +1952,7 @@ fn activity_hits_link_their_segments_within_the_per_result_budget() {
                 .as_array()
                 .unwrap()
                 .iter()
-                .map(|e| e.as_str().unwrap())
+                .map(|e| literal_display_text(e.as_str().unwrap()))
                 .collect::<Vec<_>>()
                 .join(" "),
         );
@@ -1940,19 +2042,28 @@ fn activity_links_require_the_live_record_to_match_the_indexed_one() {
     let results = search["results"].as_array().unwrap();
     let hit_launch = results
         .iter()
-        .find(|h| h["snippet"].as_str().unwrap().contains("Launch-Sync"))
+        .find(|h| literal_display_text(h["snippet"].as_str().unwrap()).contains("Launch-Sync"))
         .unwrap();
     let hit_mismatch = results
         .iter()
-        .find(|h| h["snippet"].as_str().unwrap().contains("Mismatched Title"))
+        .find(|h| literal_display_text(h["snippet"].as_str().unwrap()).contains("Mismatched Title"))
         .unwrap();
     let hit_twin = results
         .iter()
-        .find(|h| h["snippet"].as_str().unwrap().contains("Twin"))
+        .find(|h| literal_display_text(h["snippet"].as_str().unwrap()).contains("Twin"))
         .unwrap();
-    assert_eq!(hit_launch["snippet"].as_str(), Some(content0.as_str()));
-    assert_eq!(hit_mismatch["snippet"].as_str(), Some(content1.as_str()));
-    assert_eq!(hit_twin["snippet"].as_str(), Some(content2.as_str()));
+    assert_eq!(
+        literal_display_text(hit_launch["snippet"].as_str().unwrap()),
+        content0
+    );
+    assert_eq!(
+        literal_display_text(hit_mismatch["snippet"].as_str().unwrap()),
+        content1
+    );
+    assert_eq!(
+        literal_display_text(hit_twin["snippet"].as_str().unwrap()),
+        content2
+    );
     assert_eq!(hit_launch["hidden"], false);
     assert_eq!(hit_mismatch["hidden"], false);
     assert_eq!(hit_twin["hidden"], false);
@@ -2141,7 +2252,7 @@ fn chosen_facets_withhold_links_to_segments_partly_outside_scope() {
             .as_array()
             .unwrap()
             .iter()
-            .map(|e| e.as_str().unwrap())
+            .map(|e| literal_display_text(e.as_str().unwrap()))
             .collect::<Vec<_>>()
             .join(" ");
         assert!(entries.contains("alpha_transcript_token"));
@@ -6257,7 +6368,7 @@ fn capture_zone_isolates_multi_stream_segments_and_respects_access_grants() {
             .as_array()
             .unwrap()
             .iter()
-            .map(|e| e.as_str().unwrap())
+            .map(|e| literal_display_text(e.as_str().unwrap()))
             .collect::<Vec<_>>()
             .join(" ");
         if text.contains("alpha_transcript_token") {
@@ -6285,7 +6396,7 @@ fn capture_zone_isolates_multi_stream_segments_and_respects_access_grants() {
             .as_array()
             .unwrap()
             .iter()
-            .map(|e| e.as_str().unwrap())
+            .map(|e| literal_display_text(e.as_str().unwrap()))
             .collect::<Vec<_>>()
             .join(" ");
         if text.contains("alpha_transcript_token") {
@@ -6307,7 +6418,7 @@ fn capture_zone_isolates_multi_stream_segments_and_respects_access_grants() {
             .as_array()
             .unwrap()
             .iter()
-            .map(|e| e.as_str().unwrap())
+            .map(|e| literal_display_text(e.as_str().unwrap()))
             .collect::<Vec<_>>()
             .join(" ");
         if text.contains("alpha_transcript_token") {
@@ -6345,7 +6456,7 @@ fn capture_zone_isolates_multi_stream_segments_and_respects_access_grants() {
             .as_array()
             .unwrap()
             .iter()
-            .map(|e| e.as_str().unwrap())
+            .map(|e| literal_display_text(e.as_str().unwrap()))
             .collect::<Vec<_>>()
             .join(" ");
         assert!(!text.contains("beta_transcript_token"));
@@ -7729,8 +7840,8 @@ fn activity_hits_report_stored_hidden_and_saved_prose() {
     assert_eq!(hidden_hits.len(), 1);
     assert_eq!(hidden_hits[0]["hidden"], true);
     assert_eq!(
-        hidden_hits[0]["snippet"].as_str(),
-        Some(hidden_preview.as_str())
+        literal_display_text(hidden_hits[0]["snippet"].as_str().unwrap()),
+        hidden_preview
     );
     let hidden_fetch = probe(
         &journal,

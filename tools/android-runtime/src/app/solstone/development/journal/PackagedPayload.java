@@ -9,9 +9,13 @@ import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.StandardOpenOption;
+import java.nio.file.StandardCopyOption;
+import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Set;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 
 /** Installs only the app-owned packaged payload before the worker is bound. */
 final class PackagedPayload {
@@ -20,7 +24,7 @@ final class PackagedPayload {
         InputStream open(String name) throws IOException;
     }
 
-    static void unpack(Assets assets, String name, File destination) throws IOException {
+    static synchronized void unpack(Assets assets, String name, File destination) throws IOException {
         if (Files.isSymbolicLink(destination.toPath())) {
             throw new IOException("packaged payload destination is a symbolic link");
         }
@@ -41,16 +45,34 @@ final class PackagedPayload {
                 if (!current.contains(child.getName())) retire(child);
             }
         } else {
-            try (InputStream input = assets.open(name)) {
-                if (Files.isDirectory(destination.toPath(), LinkOption.NOFOLLOW_LINKS)) retire(destination);
-                try (OutputStream output = Files.newOutputStream(destination.toPath(), StandardOpenOption.CREATE,
-                        StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE, LinkOption.NOFOLLOW_LINKS)) {
-                    byte[] buffer = new byte[16384];
-                    int count;
-                    while ((count = input.read(buffer)) != -1) output.write(buffer, 0, count);
+            if (Files.isRegularFile(destination.toPath(),LinkOption.NOFOLLOW_LINKS)) {
+                try(InputStream packaged=assets.open(name);
+                    InputStream installed=Files.newInputStream(destination.toPath(),LinkOption.NOFOLLOW_LINKS)) {
+                    if (Arrays.equals(digest(packaged),digest(installed))) return;
                 }
             }
+            try (InputStream input = assets.open(name)) {
+                if (Files.isDirectory(destination.toPath(), LinkOption.NOFOLLOW_LINKS)) retire(destination);
+                Path stage=Files.createTempFile(destination.toPath().getParent(),".payload-",".stage");
+                try {
+                    try (OutputStream output = Files.newOutputStream(stage,StandardOpenOption.WRITE,LinkOption.NOFOLLOW_LINKS)) {
+                        byte[] buffer = new byte[16384];
+                        int count;
+                        while ((count = input.read(buffer)) != -1) output.write(buffer, 0, count);
+                    }
+                    Files.move(stage,destination.toPath(),StandardCopyOption.ATOMIC_MOVE,StandardCopyOption.REPLACE_EXISTING);
+                } finally { Files.deleteIfExists(stage); }
+            }
         }
+    }
+
+    private static byte[] digest(InputStream input) throws IOException {
+        MessageDigest digest;
+        try { digest=MessageDigest.getInstance("SHA-256"); }
+        catch(NoSuchAlgorithmException impossible) { throw new AssertionError(impossible); }
+        byte[] buffer=new byte[16384]; int count;
+        while((count=input.read(buffer)) != -1) digest.update(buffer,0,count);
+        return digest.digest();
     }
 
     private static File[] childrenOf(File directory) throws IOException {

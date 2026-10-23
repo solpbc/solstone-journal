@@ -16,6 +16,16 @@ def digest(path):
         return hashlib.file_digest(handle, 'sha256').hexdigest()
 
 
+def verify_audio_pins(receipt, current):
+    # Only these native sources enter the retained recognizer closure. An
+    # unrelated local-thinking engine update does not change speech inputs.
+    names = ('parakeet', 'parakeet-ced', 'parakeet-voice-detect', 'ggml')
+    for name in names:
+        recorded = receipt['inputs'][name]
+        assert all(recorded.get(field) == current[name][field]
+                   for field in ('url', 'revision', 'sha256')), f'audio source pin changed: {name}'
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--retained', type=Path, required=True)
@@ -25,7 +35,11 @@ def main():
     repo = Path(__file__).resolve().parents[2]
     receipt = json.loads((args.retained / 'receipts/mobile-native-build.json').read_text())
     assert receipt['status'] == 'passed' and receipt['exit'] == 0 and receipt['platform'] == 'ios'
-    assert receipt['inputs_sha256'] == digest(repo / 'core/distribution/mobile/inputs.json'), 'native source pins changed; rebuild with scripts/mobile_native_build.py'
+    current_pins = json.loads((repo / 'core/distribution/mobile/inputs.json').read_text())['inputs']
+    verify_audio_pins(receipt, current_pins)
+    ort_pin = re.search(r'^(?:override\s+)?IOS_ONNX_RUNTIME_LIB_DIGEST\s*[:?]?=\s*([0-9a-f]{64})\s*$',
+                        (repo / 'Makefile').read_text(), re.MULTILINE)
+    assert ort_pin, 'iOS ONNX Runtime digest pin missing'
     retained = json.loads((args.retained / 'retention.json').read_text())
     args.output.mkdir(parents=True, exist_ok=True)
     records = []
@@ -35,6 +49,8 @@ def main():
             continue
         source = Path(entry['retained_path'])
         assert digest(source) == entry['sha256'], f'native artifact digest mismatch: {source}'
+        if component == 'onnx-runtime':
+            assert entry['sha256'] == ort_pin[1], 'iOS ONNX Runtime pin changed'
         directory = args.output / ('onnx' if component == 'onnx-runtime' else 'parakeet')
         directory.mkdir(exist_ok=True)
         destination = directory / source.name
@@ -65,6 +81,8 @@ def main():
                          (repo / 'core/distribution/model-notices.md', 'NOTICE.md')):
         shutil.copyfile(source, notices / name)
     result = {'schema': 'mobile-audio-inputs/v1', 'native': records,
+              'verified_native_sources': {name: current_pins[name] for name in
+                  ('parakeet', 'parakeet-ced', 'parakeet-voice-detect', 'ggml')},
               'models': [{'path': str(p), 'sha256': digest(p), 'size': p.stat().st_size} for p in sorted(model_dir.iterdir())],
               'notices': [{'path': str(p), 'sha256': digest(p), 'size': p.stat().st_size} for p in sorted(notices.iterdir())]}
     (args.output / 'inputs.json').write_text(json.dumps(result, indent=2) + '\n')

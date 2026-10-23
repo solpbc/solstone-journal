@@ -22,18 +22,7 @@ pub const SCREEN_TEXT_CHUNK_LIMIT: usize = 65536;
 pub fn append_screen_text_line(record: &mut String, text: &str) {
     for line in text.lines() {
         record.push_str("- ");
-        for ch in line.chars() {
-            match ch {
-                '&' => record.push_str("&amp;"),
-                '<' => record.push_str("&lt;"),
-                '>' => record.push_str("&gt;"),
-                _ if ch.is_ascii_punctuation() => {
-                    record.push('\\');
-                    record.push(ch);
-                }
-                _ => record.push(ch),
-            }
-        }
+        record.push_str(&crate::markdown::literal_text(line));
         record.push('\n');
     }
 }
@@ -426,6 +415,16 @@ mod tests {
         assert!(!is_screen_text_path(
             "20260107/default/123456_300/talents/audio.md"
         ));
+    }
+
+    #[test]
+    fn literal_line_escaping_keeps_the_existing_list_format() {
+        let mut record = String::new();
+        append_screen_text_line(&mut record, "a & <b> ![x](u)\n\n日本語\\");
+        assert_eq!(
+            record,
+            "- a &amp; &lt;b&gt; \\!\\[x\\]\\(u\\)\n- \n- 日本語\\\\\n"
+        );
     }
 
     #[test]

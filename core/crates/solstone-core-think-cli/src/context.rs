@@ -144,6 +144,8 @@ impl CortexBoundary for NativeCortexBoundary {
 
 #[derive(Clone)]
 pub struct ThinkContext {
+    pub(crate) rebuild_recovery: bool,
+    pub(crate) rebuild: Option<Arc<solstone_core_system::work_intent::RebuildLease>>,
     pub(crate) journal: PathBuf,
     pub(crate) day: String,
     pub(crate) day_dir: PathBuf,
@@ -189,6 +191,8 @@ impl ThinkContext {
             cancel_checkpoint: Arc::clone(&cancel_checkpoint),
         });
         Self {
+            rebuild_recovery: false,
+            rebuild: None,
             journal: journal.to_path_buf(),
             day,
             day_dir,
@@ -226,6 +230,8 @@ impl ThinkContext {
         let (talent_root, apps_root) = package_roots()?;
         let allocator_now = now_ms;
         Ok(Self {
+            rebuild_recovery: false,
+            rebuild: None,
             journal: journal.to_path_buf(),
             day,
             day_dir,
@@ -259,16 +265,82 @@ impl ThinkContext {
         self
     }
 
+    /// Opt in only when all execution joins the host and explicit Stop is durable.
+    pub fn with_rebuild_recovery(mut self, enabled: bool) -> Self {
+        self.rebuild_recovery = enabled;
+        self
+    }
+
     pub(crate) fn checkpoint(&self) -> Result<(), String> {
         if (self.cancel_checkpoint)() {
             Err("thinking cancelled".into())
         } else {
+            if let Some(lease) = &self.rebuild {
+                let intents = solstone_core_system::work_intent::read(&self.journal)?;
+                if !intents.get(&lease.day).is_some_and(|intent| {
+                    intent.id == lease.id
+                        && intent.state == solstone_core_system::work_intent::IntentState::Claimed
+                        && !intent.owner_stopped
+                        && intent.rebuild.is_some()
+                }) {
+                    return Err("requested day is stopped or superseded".into());
+                }
+            }
             Ok(())
         }
     }
 
     pub(crate) fn event_now_ms(&self) -> i64 {
         (self.event_clock)()
+    }
+
+    /// The bounded request's input guard at reset/send admission. Publication
+    /// retains the existing daily source and cancellation guards.
+    pub(crate) fn rebuild_admission_checkpoint(&self) -> Result<(), String> {
+        self.checkpoint()?;
+        let Some(lease) = &self.rebuild else {
+            return Ok(());
+        };
+        let intent = solstone_core_system::work_intent::read(&self.journal)?
+            .remove(&lease.day)
+            .ok_or("requested day disappeared")?;
+        let progress = intent.rebuild.ok_or("requested day lost its provenance")?;
+        let seal = progress.segments.ok_or("segment work needs owner review")?;
+        let root = solstone_core_journal_io::JournalRoot::open(&self.journal)
+            .map_err(|e| e.to_string())?;
+        if root.identity().observation_id() != progress.root_binding
+            || solstone_core_system::catchup::read_raw_input_fingerprint(&self.journal, &lease.day)
+                .map_err(|e| e.to_string())?
+                != seal.raw_fingerprint
+        {
+            return Err("requested day input or root changed".into());
+        }
+        let generation = match solstone_core_journal_io::read_health_marker(
+            &self.journal,
+            &lease.day,
+            solstone_core_journal_io::HealthMarkerKind::Stream,
+        )
+        .map_err(|e| e.to_string())?
+        {
+            solstone_core_journal_io::HealthMarkerState::Versioned { marker, .. } => {
+                marker.generation
+            }
+            solstone_core_journal_io::HealthMarkerState::Absent
+            | solstone_core_journal_io::HealthMarkerState::LegacyEmpty { .. } => 0,
+            _ => return Err("stream health marker is malformed".into()),
+        };
+        if generation != seal.generation {
+            return Err("requested day generation changed".into());
+        }
+        let mut requested = self.clone();
+        requested.day = lease.day.clone();
+        requested.day_dir = self.journal.join("chronicle").join(&lease.day);
+        if crate::daily_lifecycle::rebuild_segment_receipts(&requested, None)?
+            != seal.receipts_digest
+        {
+            return Err("requested day segment receipts changed".into());
+        }
+        self.checkpoint()
     }
 
     #[cfg(test)]

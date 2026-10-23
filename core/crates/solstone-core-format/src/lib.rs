@@ -9,6 +9,7 @@ pub mod calendar;
 pub mod chunker;
 pub mod content;
 pub mod json;
+pub mod markdown;
 pub mod matcher;
 pub mod objects;
 pub mod paths;

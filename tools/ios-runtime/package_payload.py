@@ -22,6 +22,7 @@ models.mkdir()
 notices = models / 'notices'
 notices.mkdir()
 repo = adapter.parents[1]
+shutil.copyfile(repo / 'contracts/journal-web-host/v1.json', adapter / 'Resources/JournalWebHost.json')
 shutil.copyfile(repo / 'core/distribution/licenses/fireredvad/LICENSE', notices / 'FireRedVAD-LICENSE.txt')
 shutil.copyfile(repo / 'core/distribution/model-notices.md', notices / 'NOTICE.md')
 if directory := os.environ.get('AUDIO_MODELS_DIR'):
