@@ -337,9 +337,6 @@ public final class OwnerActivity extends ServingActivity {
             } else if (ownerStopped) {
                 runState="stopping";
                 ui.postDelayed(this::refreshStatus,1000);
-            } else if (stopped && automaticStartAllowed()) {
-                runState="recovering";reason="";
-                connectService(connectionGeneration.get(),worker,false);
             } else if ("worker disconnected".equals(row.optString("error"))) {
                 runState="recovering";reason="";
             } else if (nativeResult == null || !nativeResult.optBoolean("ok")) {
