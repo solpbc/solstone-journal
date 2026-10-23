@@ -590,11 +590,15 @@ fn bulk_test_05_journal_failure_mid_undo_and_failing_member_and_corrupt_other() 
     assert_eq!(rep_fail1.failed.len(), 1);
     assert_eq!(rep_fail1.failed[0].id, bad_id);
     assert_eq!(rep_fail1.remaining, 1);
-    assert!(rep_fail1.unreadable.iter().any(|u| u.id == corrupt_id
-        && u.path
-            == format!(
-                "entities/{corrupt_id}/history/events/00000000000000000001-vh_corrupt.json"
-            )));
+    // Compare as paths: the report carries the platform's separators.
+    let corrupt_rel =
+        format!("entities/{corrupt_id}/history/events/00000000000000000001-vh_corrupt.json");
+    assert!(
+        rep_fail1
+            .unreadable
+            .iter()
+            .any(|u| u.id == corrupt_id && Path::new(&u.path) == Path::new(&corrupt_rel))
+    );
 
     // Call 2 with hook still armed: bad_id in failed again, good_id2 restored, remaining 0
     let rep_fail2 = unblock_journal_operation(j.path(), op2, 1).unwrap();
