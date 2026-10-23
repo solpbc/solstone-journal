@@ -303,6 +303,8 @@
 .pulse-connections-more {
   margin-left: 0.5rem;
   white-space: nowrap;
+  /* It can sit inside the italic coverage note; the way out reads upright. */
+  font-style: normal;
 }
 
 .pulse-activities {
@@ -462,6 +464,7 @@
 
 .pulse-connections-name,
 .pulse-connections-footer a,
+.pulse-connections-more,
 .pulse-connections-cluster a {
   color: var(--ink);
   text-decoration: none;
@@ -470,6 +473,7 @@
 
 .pulse-connections-name:hover,
 .pulse-connections-footer a:hover,
+.pulse-connections-more:hover,
 .pulse-connections-cluster a:hover {
   text-decoration: underline;
 }
