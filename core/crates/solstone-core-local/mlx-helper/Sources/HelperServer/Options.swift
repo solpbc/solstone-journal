@@ -8,7 +8,7 @@ public struct Options: Sendable {
     public var port = 8080
     public var alias = "local/qwen3.5-4b"
     public var context = 16384
-    public var cacheLimitMB = 1024
+    public var cacheLimitMB = 512
 
     public init(arguments: [String]) throws {
         var i = 0

@@ -16,7 +16,7 @@ non-streaming `/v1/chat/completions` with text and base64 image data URLs.
 Structured output supports `response_format` with `json_object` or
 `json_schema` and `strict: true`. Schema text is compiled in its original field
 order. Compiled grammars are cached by exact schema text, with a new matcher
-for every request. The allocator cache defaults to 1024 MiB; use
+for every request. The allocator cache defaults to 512 MiB; use
 `--cache-limit-mb` to set another positive limit. Completion length is capped at
 the context space remaining after the prepared prompt; an oversized prompt is
 rejected. Budget exhaustion returns `finish_reason: "length"` with the partial
@@ -33,6 +33,8 @@ xcodebuild -scheme mlx-helper -destination 'platform=macOS,arch=arm64' \
 
 The tests exercise HTTP routes in memory and the guided loop on synthetic,
 weight-free models. Run them through Xcode so MLX's Metal resources are built.
+Use the executable from `make mlx-helper` for performance measurements; the test
+action can instrument its outputs for coverage.
 Use `make mlx-helper-clean` to remove this package's build outputs.
 
 The `Sources/GuidedGeneration` target carries seven Swift support files from
