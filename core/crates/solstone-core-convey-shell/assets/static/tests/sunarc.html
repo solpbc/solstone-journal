@@ -157,7 +157,7 @@
         `correct=${correctOp.toFixed(4)}, without_factor=${droppedFactorOp.toFixed(4)}, diff=${Math.abs(correctOp - droppedFactorOp).toFixed(4)}`);
     }
 
-    // 7. The § 4a worked numbers: SUNARC.both() (the sun-arc pattern's reference engine),
+    // 7. The § 4a solar vectors, with the selected 2026-10-23 night palette: SUNARC.both() (the sun-arc pattern's reference engine),
     // Denver 2026-09-23 (sunrise 408.26, sunset 1135.65 local minutes), both appearances, at
     // the spec's 393x852 table size and convey's 1280x820. Grounds and colours within 1 per
     // channel (§ 12), alphas within 0.001, positions within 0.5 px.
@@ -175,21 +175,21 @@
         ['sunset',1136,393,852,'dark','#392E26',0.0525,0.7344,0.0578,[601.86,1019.65,832.39,0.4553,'#F9BA36',0.2433]],
         ['sunset',1136,1280,820,'light','#FEFCF7',0.1444,0.7344,0.0578,[1688.07,1199.56,1736.79,0.6977,'#FFE296',0.3736]],
         ['sunset',1136,1280,820,'dark','#392E26',0.0525,0.7344,0.0578,[1688.07,1199.56,1736.79,0.4553,'#F9BA36',0.2439]],
-        ['19:41',1181,393,852,'light','#E9DECC',0,0.9937,null,[620.44,1086.72,832.39,0.944,'#FFE294',0.4161]],
+        ['19:41',1181,393,852,'light','#AEA393',0,0.9937,null,[620.44,1086.72,832.39,0.944,'#FFE294',0.4161]],
         ['19:41',1181,393,852,'dark','#2E241C',0,0.9937,null,[620.44,1086.72,832.39,0.6161,'#F8B836',0.2716]],
-        ['19:41',1181,1280,820,'light','#E9DECC',0,0.9937,null,[1759.4,1304.68,1736.79,0.944,'#FFE294',0.4162]],
+        ['19:41',1181,1280,820,'light','#AEA393',0,0.9937,null,[1759.4,1304.68,1736.79,0.944,'#FFE294',0.4162]],
         ['19:41',1181,1280,820,'dark','#2E241C',0,0.9937,null,[1759.4,1304.68,1736.79,0.6161,'#F8B836',0.2716]],
-        ['22:00',1320,393,852,'light','#DFD2BC',0,0.4341,null,[642.28,1176.83,832.39,0.4124,'#FFDC7F',0.1521]],
+        ['22:00',1320,393,852,'light','#9B8F7E',0,0.4341,null,[642.28,1176.83,832.39,0.4124,'#FFDC7F',0.1521]],
         ['22:00',1320,393,852,'dark','#2B2119',0,0.4341,null,[642.28,1176.83,832.39,0.2692,'#F1A739',0.0993]],
-        ['22:00',1320,1280,820,'light','#DFD2BC',0,0.4341,null,[1849.86,1447.74,1736.79,0.4124,'#FFDC7F',0.1532]],
+        ['22:00',1320,1280,820,'light','#9B8F7E',0,0.4341,null,[1849.86,1447.74,1736.79,0.4124,'#FFDC7F',0.1532]],
         ['22:00',1320,1280,820,'dark','#2B2119',0,0.4341,null,[1849.86,1447.74,1736.79,0.2692,'#F1A739',0.1]],
-        ['01:00',60,393,852,'light','#D7C9B0',0,0,null,null],
+        ['01:00',60,393,852,'light','#8C806E',0,0,null,null],
         ['01:00',60,393,852,'dark','#281E17',0,0,null,null],
-        ['01:00',60,1280,820,'light','#D7C9B0',0,0,null,null],
+        ['01:00',60,1280,820,'light','#8C806E',0,0,null,null],
         ['01:00',60,1280,820,'dark','#281E17',0,0,null,null],
-        ['05:30',330,393,852,'light','#E8DDCA',0,0.9381,null,[-249.94,-244.96,832.39,0.8912,'#FFE08F',0.3749]],
+        ['05:30',330,393,852,'light','#ACA191',0,0.9381,null,[-249.94,-244.96,832.39,0.8912,'#FFE08F',0.3749]],
         ['05:30',330,393,852,'dark','#2E241C',0,0.9381,null,[-249.94,-244.96,832.39,0.5816,'#F6B437',0.2447]],
-        ['05:30',330,1280,820,'light','#E8DDCA',0,0.9381,null,[-524.3,-489.22,1736.79,0.8912,'#FFE08F',0.3798]],
+        ['05:30',330,1280,820,'light','#ACA191',0,0.9381,null,[-524.3,-489.22,1736.79,0.8912,'#FFE08F',0.3798]],
         ['05:30',330,1280,820,'dark','#2E241C',0,0.9381,null,[-524.3,-489.22,1736.79,0.5816,'#F6B437',0.2478]],
       ];
       const hexDiff = (a, b) => Math.max(...[1, 3, 5].map((k) => Math.abs(parseInt(a.substr(k, 2), 16) - parseInt(b.substr(k, 2), 16))));
@@ -375,7 +375,7 @@
 
       const htmlAttrsAfter = attrsOf(document.documentElement) + ' | ' + attrsOf(document.body);
       const pass = noonLight === 'light' && noonDark === 'dark' && nightDark === 'dark' && nightLight === 'light' &&
-        noonDarkGround === 'rgb(57, 46, 38)' && nightLightGround === 'rgb(215, 201, 176)' &&
+        noonDarkGround === 'rgb(57, 46, 38)' && nightLightGround === 'rgb(140, 128, 110)' &&
         !isLightRow(tokens.groundDarkDay) && lightGrounds.every(isLightRow) &&
         rootAttrsAfter === rootAttrsBefore &&
         seen.light.size === 1 && seen.light.has('light') && seen.dark.size === 1 && seen.dark.has('dark') &&
@@ -653,11 +653,11 @@
       });
       const twilightBg = testContainer.querySelector('.sunarc-twilight').style.backgroundImage;
       const haloBg = testContainer.querySelector('.sunarc-glow').style.backgroundImage;
-      const order = Array.from(testContainer.children).map((el) => el.className).join(',');
+      const order = Array.from(testContainer.children).map((el) => el.className || el.tagName.toLowerCase()).join(',');
       instance.teardown();
       testContainer.remove();
       assert('21_glows_painted_closest_side_under_the_sun',
-        /closest-side/.test(twilightBg) && /closest-side/.test(haloBg) && order === 'sunarc-twilight,sunarc-glow,sunarc-sun',
+        /closest-side/.test(twilightBg) && /closest-side/.test(haloBg) && order === 'sunarc-twilight,sunarc-glow,canvas,canvas,sunarc-sun',
         `twilight=${twilightBg.slice(0, 48)}..., halo=${haloBg.slice(0, 48)}..., order=${order}`);
     }
 
