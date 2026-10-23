@@ -1141,7 +1141,8 @@ fn a_rebound_same_user_cache_cannot_replace_retained_ancestry_or_shorten_grace()
 
 fn retained_descendant_recovery(rebind_cache: bool) {
     use solstone_core_system::process::InstanceCensus;
-    let journal = TempJournal::new("retained-real-descendant");
+    // The canonical macOS temp path must leave room for health/callosum.sock.
+    let journal = TempJournal::new("desc");
     let ledger = ParentLossLedger::open(&journal.root).unwrap();
     let fixture_ready = journal.root.join("fixture-ready");
     let fixture = env!("CARGO_BIN_EXE_solstone-core-system-test-child");
