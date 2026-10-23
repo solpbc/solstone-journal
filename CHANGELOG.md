@@ -9,6 +9,9 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed
 
 - fixed screen descriptions stopping with a blank notification when the on-device model lost its connection mid-request. your journal now retries that request.
+- on an entity's page, the line "this name looks like an ID" now shows when you open the page from a link or reload it. before, it showed only when you got there from the list.
+- on a phone, the message that shows hiding progress and undo on the entities page no longer sits under the bar at the bottom of the screen.
+- merging possible duplicates now merges one pair at a time, so other changes to your entities can save while a long merge runs. before, those changes could give up partway through a merge of many pairs.
 
 ## [2.0.56] - 2026-10-23
 
