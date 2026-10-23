@@ -240,6 +240,8 @@ def build_receipt(
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("build_root", type=pathlib.Path)
+    parser.add_argument("--bundle-identifier", default="app.solstone.journal.runtime.dev",
+                        choices=("app.solstone.journal.runtime.dev", "app.solstone.journal.owner.dev"))
     parser.add_argument("--nvattest-lib", type=pathlib.Path, required=True)
     parser.add_argument("--appraisal-build-record", type=pathlib.Path, required=True)
     parser.add_argument("--appraisal-resources", type=pathlib.Path, required=True)
@@ -362,12 +364,12 @@ def main() -> int:
 
     info = plistlib.loads((appraisal / "Info.plist").read_bytes())
     if (
-        info.get("CFBundleIdentifier") != APPRAISAL_BUNDLE_ID
+        info.get("CFBundleIdentifier") != args.bundle_identifier + ".gpu-appraisal"
         or info.get("CFBundleExecutable") != "Appraisal"
         or info.get("EXAppExtensionAttributes", {}).get(
             "EXExtensionPointIdentifier"
         )
-        != APPRAISAL_EXTENSION_ID
+        != args.bundle_identifier + ".gpu-appraisal"
     ):
         raise ValueError("generated appraisal extension identity drifted")
 

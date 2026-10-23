@@ -10,6 +10,8 @@ settings:
     CODE_SIGN_STYLE: Automatic
     CODE_SIGN_ENTITLEMENTS: Shared/Serving.entitlements
     DEVELOPMENT_TEAM: 7QCG8V4M6H
+    JOURNAL_BUNDLE_IDENTIFIER: app.solstone.journal.runtime.dev
+    JOURNAL_APP_GROUP: group.app.solstone.journal.runtime.dev
     SWIFT_OBJC_BRIDGING_HEADER: Shared/Bridge.h
     OTHER_LDFLAGS: $(RUST_LIB) $(BACKUP_LIB) -lc++ -lz -liconv -framework CoreFoundation -framework Foundation -framework
       Security -framework SystemConfiguration -framework Metal -framework MetalKit -framework Accelerate
@@ -36,7 +38,7 @@ targets:
       buildPhase: resources
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: app.solstone.journal.runtime.dev
+        PRODUCT_BUNDLE_IDENTIFIER: $(JOURNAL_BUNDLE_IDENTIFIER)
         EX_ENABLE_EXTENSION_POINT_GENERATION: true
         INFOPLIST_KEY_UILaunchScreen_Generation: true
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: true
@@ -62,7 +64,7 @@ targets:
     - sdk: ExtensionFoundation.framework
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: app.solstone.journal.runtime.dev.worker
+        PRODUCT_BUNDLE_IDENTIFIER: $(JOURNAL_BUNDLE_IDENTIFIER).worker
         EX_ENABLE_EXTENSION_POINT_GENERATION: true
         APPLICATION_EXTENSION_API_ONLY: true
         SKIP_INSTALL: true
@@ -71,11 +73,12 @@ targets:
     platform: iOS
     sources:
     - Appraisal
+    - Shared/Identity.swift
     dependencies:
     - sdk: ExtensionFoundation.framework
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: app.solstone.journal.runtime.dev.gpu-appraisal
+        PRODUCT_BUNDLE_IDENTIFIER: $(JOURNAL_BUNDLE_IDENTIFIER).gpu-appraisal
         EX_ENABLE_EXTENSION_POINT_GENERATION: true
         APPLICATION_EXTENSION_API_ONLY: true
         SKIP_INSTALL: true

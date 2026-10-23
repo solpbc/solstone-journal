@@ -46,7 +46,7 @@ private struct HostAttemptRecord: Codable {
 
 final class AppraisalHostBridge: @unchecked Sendable {
   static let shared = AppraisalHostBridge()
-  private let appGroup = "group.app.solstone.journal.runtime.dev"
+  private let appGroup = RuntimeIdentity.group
   private let recordName = "gpu-appraisal-attempt.json"
   let lock = NSLock()
   private var currentSession: XPCSession?
@@ -363,7 +363,7 @@ final class AppraisalHostBridge: @unchecked Sendable {
       do {
         let monitor = try await AppExtensionPoint.Monitor(appExtensionPoint: .gpuAppraisal)
         let matches = monitor.identities.filter {
-          $0.bundleIdentifier == "app.solstone.journal.runtime.dev.gpu-appraisal"
+          $0.bundleIdentifier == RuntimeIdentity.appraisal
         }
         guard matches.count == 1, let identity = matches.first else {
           guard self.updateRecord(
@@ -652,14 +652,27 @@ final class PendingReply: @unchecked Sendable {
     guard let i = args.firstIndex(of: name), i + 1 < args.count else { return fallback }
     return args[i + 1]
   }
-  var journal: String { argument("--suite", "development") }
+  var journal: String {
+    #if JOURNAL_OWNER_APP
+    return "owner"
+    #else
+    return argument("--suite", "development")
+    #endif
+  }
   func request(
     _ op: String, count: Int = 128, seconds: Int = 0, revision: Int = 0, mode: String = "reopen",
     root: String = "", payload: String = ""
   ) -> Request {
     Request(
       op: op, journal: journal, root: root, count: count, seconds: seconds, revision: revision,
-      mode: mode, payload: payload, storage: args.contains("--serve") ? "serving" : "private")
+      mode: mode, payload: payload, storage: ownerStorage)
+  }
+  private var ownerStorage: String {
+    #if JOURNAL_OWNER_APP
+    return "serving"
+    #else
+    return args.contains("--serve") ? "serving" : "private"
+    #endif
   }
   func log(_ event: String, _ value: Any) {
     do {
@@ -1094,8 +1107,14 @@ final class PendingReply: @unchecked Sendable {
 @main struct RuntimeDev: App {
   @Environment(\.scenePhase) var scenePhase
   @StateObject var runner = Runner()
+  #if JOURNAL_OWNER_APP
+  @StateObject var owner = OwnerJournal()
+  #endif
   var body: some Scene {
     WindowGroup {
+      #if JOURNAL_OWNER_APP
+      OwnerJournalView(owner: owner)
+      #else
       VStack(alignment: .leading, spacing: 16) {
         Text("journal development").font(.title)
         Text(runner.status).accessibilityIdentifier("runtime-status")
@@ -1124,6 +1143,7 @@ final class PendingReply: @unchecked Sendable {
           }
         }
       }
+      #endif
     }
   }
 }

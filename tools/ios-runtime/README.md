@@ -1,5 +1,19 @@
 # journal on a dedicated iOS device
 
+## ordinary owner app
+
+`make build-owner AUDIO_MODELS_DIR=<verified-mobile-models>` builds a separate development app, `app.solstone.journal.owner.dev`, with its own `group.app.solstone.journal.owner.dev` container. `make install-owner` adds installation to the same build. set `DEVICE` and a fresh `BUILD_ROOT`; keep the existing native audio library variables from the local-audio instructions below. the owner build requires bundled speech models. it does not read or update the older runtime development app or its journal.
+
+open **your journal** from its icon. the app opens the maintained journal setup page, where you choose the mark and an existing thinking provider. pair another device through the existing devices page. keep this device plugged in, on your Wi-Fi, with the app in the foreground. home and health show the journal's processing and service status.
+
+the native bar keeps **stop** available if the page fails. stop saves your choice before waiting for processing and serving to drain. opening the app again keeps that choice. **start** opens it again; **restart** first checks that the previous runtime has stopped. leaving the foreground pauses the runtime without treating that interruption as your stop choice. returning to the app resumes only work the journal's existing recovery rules allow. held or uncertain work stays visible in health; restarting does not approve it.
+
+this isolated build uses an existing bring-your-own thinking provider. its new helper identity is outside the fixed confidential-processing admission, so that path remains unavailable. no admission rule is loosened for the development app. the native speech resources are bundled and verified by the existing audio adapter; no USB model provisioning is part of ordinary use.
+
+the web view uses a private custom-scheme adapter to the maintained owner router. it preserves response headers and streams binary originals and live events without an owner HTTP listener. it accepts only its own journal origin and opens external consent links in the system browser. file uploads from this embedded page are bounded text requests; use a paired device for the mixed-media workload.
+
+build and host checks alone do not qualify physical lifecycle, recovery, upgrades or sustained capacity. this remains a development app, separate from public distribution.
+
 This development app exercises journal storage, indexing and search with a standard bundled ExtensionFoundation helper. Keep the device plugged in and the host app in the foreground. It requires iOS 26 and a development signing identity. It can serve the production authenticated journal API over a private Wi-Fi interface. It does not integrate with the capture app.
 
 The helper owns persistent files in its private `Documents/journal-<suite>` directory. The host sends typed operations over XPC and receives results. A supplied host path conveys no file authority. The bridge retains an admitted `JournalRoot` and checks its canonical binding before each operation; bound publication uses the production journal IO primitives. Indexing and queries use the production crates. For LAN serving, the foreground host retains the shared [mobile serving runtime](../mobile-serving/README.md). The host and helper independently select the same dedicated app-group journal; the helper performs indexing and export. The maintained router payload is bundled as a signed resource. Exported synthetic results go to the host's Documents directory for independent checking.

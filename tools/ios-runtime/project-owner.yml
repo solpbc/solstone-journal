@@ -1,0 +1,15 @@
+include:
+  - project.yml
+settings:
+  base:
+    JOURNAL_BUNDLE_IDENTIFIER: app.solstone.journal.owner.dev
+    JOURNAL_APP_GROUP: group.app.solstone.journal.owner.dev
+    SWIFT_ACTIVE_COMPILATION_CONDITIONS: $(inherited) JOURNAL_OWNER_APP
+targets:
+  JournalRuntimeDev:
+    sources:
+      - path: Resources/JournalWebHost.json
+        buildPhase: resources
+    settings:
+      base:
+        INFOPLIST_KEY_CFBundleDisplayName: your journal
