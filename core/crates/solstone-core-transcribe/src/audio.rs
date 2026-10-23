@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! Decoded-audio VAD, reduction, and sound-tagging boundaries.
+//! Decoded-audio VAD and sound-tagging boundaries.
 
 #[cfg(not(windows))]
 use std::env;
@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use serde_json::{Value, json};
-use solstone_core_observe_audio::{AudioReduction, VadResult, reduce_audio, write_f32le_exclusive};
+use solstone_core_observe_audio::{VadResult, write_f32le_exclusive};
 #[cfg(not(windows))]
 use solstone_core_system::process::{Disposition, LaunchError, launch};
 use solstone_core_system_health::sanitize_os_bytes_for_terminal_bounded;
@@ -29,8 +29,6 @@ const VAD_BINARY_ENV: &str = "SOLSTONE_VAD_BINARY";
 const REQUEST_SCHEMA: &str = "solstone-vad-request-v2";
 const RESPONSE_SCHEMA: &str = "solstone-vad-response-v1";
 const ERROR_SCHEMA: &str = "solstone-vad-error-v1";
-const NOISY_RMS_THRESHOLD: f64 = 0.01;
-const REDUCTION_SPEECH_RATIO_THRESHOLD: f64 = 0.7;
 const SAMPLE_RATE_HZ: f64 = 16_000.0;
 /// Name prefix of the scratch directory that holds one VAD pass's decoded audio.
 pub(crate) const VAD_TEMP_PREFIX: &str = "solstone-transcribe-vad-";
@@ -143,31 +141,6 @@ pub(crate) fn run_vad_embedded(
             detail: error.to_string(),
         })?;
     result
-}
-
-/// Return the local VAD input's speech fraction, avoiding a zero-duration NaN.
-pub(crate) fn speech_ratio(vad: &VadResult) -> f64 {
-    if vad.duration_s == 0.0 {
-        0.0
-    } else {
-        vad.speech_duration_s / vad.duration_s
-    }
-}
-
-/// True when noisy, speech-dense audio should bypass silence reduction.
-pub(crate) fn should_skip_reduction(vad: &VadResult, ratio: f64) -> bool {
-    vad.is_noisy(NOISY_RMS_THRESHOLD) && ratio >= REDUCTION_SPEECH_RATIO_THRESHOLD
-}
-
-/// Reduce silence unless the VAD result is noisy and speech-dense.
-pub(crate) fn reduce_audio_if_needed(
-    audio: &[f32],
-    vad: &VadResult,
-    ratio: f64,
-) -> Option<(Vec<f32>, AudioReduction)> {
-    (!should_skip_reduction(vad, ratio))
-        .then(|| reduce_audio(audio, vad))
-        .flatten()
 }
 
 /// Sound tagging is intentionally best-effort.
@@ -457,68 +430,15 @@ mod tests {
     #[cfg(not(windows))]
     use std::path::PathBuf;
 
-    use serde_json::json;
-    use solstone_core_observe_audio::VadResult;
-
     use super::{
-        ERROR_SCHEMA, RESPONSE_SCHEMA, parse_vad_error, parse_vad_response, should_skip_reduction,
-        speech_ratio, vad_binary_candidate_from,
+        ERROR_SCHEMA, RESPONSE_SCHEMA, parse_vad_error, parse_vad_response,
+        vad_binary_candidate_from,
     };
     use crate::TranscribeError;
+    use serde_json::json;
 
     #[cfg(not(windows))]
     use super::{VAD_BINARY_ENV, VAD_BINARY_NAME};
-
-    fn vad(noisy: bool) -> VadResult {
-        VadResult {
-            duration_s: 1.0,
-            speech_duration_s: 0.5,
-            has_speech: true,
-            speech_segments: vec![(0.0, 0.5)],
-            noisy_rms: noisy.then_some(0.02),
-            noisy_s: 0.5,
-            loud_windows: 0,
-            speech_loud_windows: 0,
-        }
-    }
-
-    #[test]
-    fn reduction_skips_for_noisy_audio_at_speech_ratio_threshold() {
-        assert!(should_skip_reduction(&vad(true), 0.7));
-    }
-
-    #[test]
-    fn reduction_does_not_skip_for_noisy_audio_below_speech_ratio_threshold() {
-        assert!(!should_skip_reduction(&vad(true), 0.699));
-    }
-
-    #[test]
-    fn reduction_does_not_skip_for_quiet_audio_at_speech_ratio_threshold() {
-        assert!(!should_skip_reduction(&vad(false), 0.7));
-    }
-
-    #[test]
-    fn reduction_does_not_skip_for_quiet_audio_below_speech_ratio_threshold() {
-        assert!(!should_skip_reduction(&vad(false), 0.699));
-    }
-
-    #[test]
-    fn speech_ratio_divides_speech_duration_by_duration() {
-        let mut result = vad(false);
-        result.duration_s = 4.0;
-        result.speech_duration_s = 1.5;
-
-        assert_eq!(speech_ratio(&result), 0.375);
-    }
-
-    #[test]
-    fn speech_ratio_is_zero_for_zero_duration() {
-        let mut result = vad(false);
-        result.duration_s = 0.0;
-        result.speech_duration_s = 1.0;
-
-        assert_eq!(speech_ratio(&result), 0.0);
-    }
 
     #[test]
     #[cfg(not(windows))]

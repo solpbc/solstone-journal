@@ -18,7 +18,7 @@ use solstone_core_spp_ratls::AttestationStateStore;
 
 use crate::TranscribeError;
 use crate::args::should_skip_process_one_processed;
-use crate::audio::{reduce_audio_if_needed, run_vad, speech_ratio, tag_audio};
+use crate::audio::{run_vad, tag_audio};
 #[cfg(target_os = "macos")]
 use crate::backend::parakeet_coreml;
 use crate::backend::parakeet_cpp;
@@ -37,10 +37,7 @@ use crate::processing::{
 };
 use crate::speakers::analyze_speakers;
 use crate::terminal::{TerminalWrite, TerminalWriteFailure, write_terminal, write_terminal_with};
-use crate::transcript::{
-    FullTranscriptWrite, remove_orphan_npz, restore_statement_timestamps, write_full_transcript,
-};
-use solstone_core_observe_audio::reduce_audio;
+use crate::transcript::{FullTranscriptWrite, remove_orphan_npz, write_full_transcript};
 
 const SPEAKER_EVIDENCE_VERSION: &str = "windowed-slots-v1";
 const SPEAKER_ANALYSIS_PRODUCER: &str = "solstone-core-speakers-analyze";
@@ -579,7 +576,14 @@ pub(crate) fn process_one_with(
             context_attempt.as_ref(),
         )?;
         drop(observation);
-        finish_voice_only_deletion(journal_path, &facts, &claim, &commit);
+        finish_voice_only_deletion(
+            journal_path,
+            &facts,
+            &claim,
+            &commit,
+            #[cfg(all(feature = "embedded", unix))]
+            embedded,
+        );
         drop(commit);
         finish_context_output(
             journal_path,
@@ -644,46 +648,11 @@ pub(crate) fn process_one_with(
             None,
         );
     })?;
-    #[cfg(all(feature = "embedded", unix))]
-    let mobile = embedded.is_some();
-    #[cfg(not(all(feature = "embedded", unix)))]
-    let mobile = false;
-    let reduce_at = Instant::now();
-    let reduction = trims_silence(&backend, mobile)
-        .then(|| reduce_audio_if_needed(&full_audio, &vad, speech_ratio(&vad)))
-        .flatten();
-    if reduction.is_some() {
-        timings.add_ms("reduce", elapsed_ms(reduce_at));
-    }
-    let (mut reduced_audio, mut reduction) = reduction
-        .map(|(audio, reduction)| (Some(audio), Some(reduction)))
-        .unwrap_or((None, None));
-    let mut reduced_seconds = reduced_audio
-        .as_ref()
-        .map(|audio| audio.len() as f64 / f64::from(SAMPLE_RATE));
-    // 🔴 Reduce anyway when the confidential limit would otherwise refuse this audio.
-    //
-    // `reduce_audio_if_needed` declines when the VAD result is noisy AND speech-dense,
-    // which is a sensible default -- but the confidential STT refuses ANY request over
-    // its per-request limit, and the segmenter targets ~300 s, so real segments land
-    // 1-5 s over it constantly. Measured on an owner's journal 2026-09-01: 60
-    // `confidential_audio_too_long` refusals, the sampled ones 301-305 s, none of them
-    // reduced. That is the difference between a transcript and silently losing the
-    // recording, so when the alternative is refusal we reduce to speech-only -- which
-    // is what an STT wants regardless.
-    //
-    // 🔒 Confidential-only and last-resort: no other backend reaches this, and audio
-    // still too long after reduction is still refused below.
-    if backend == "confidential"
-        && reduced_audio.is_none()
-        && !confidential::confidential_request_fits(full_audio.len())
-        && let Some((audio, info)) = reduce_audio(&full_audio, &vad)
-    {
-        reduced_seconds = Some(audio.len() as f64 / f64::from(SAMPLE_RATE));
-        reduced_audio = Some(audio);
-        reduction = Some(info);
-    }
-    let statement_audio = reduced_audio.as_deref().unwrap_or(&full_audio);
+    // VAD admits a recording; its approximate ranges are not safe deletion boundaries.
+    // Keep every admitted sample, after the owner mask when one applies. Mobile's
+    // decoded-input bound and the confidential transport's real byte guard still apply.
+    let statement_audio = full_audio.as_slice();
+    let reduced_seconds = None;
 
     let mut asr_at = None;
     #[cfg(all(feature = "embedded", unix))]
@@ -695,35 +664,21 @@ pub(crate) fn process_one_with(
         });
     let dispatch = || {
         if backend == "confidential" {
-            // 🔴 Cap on what is actually SENT, not on the whole segment. `statement_audio`
-            // below is the VAD-reduced audio, and speech is usually a fraction of a
-            // segment -- so capping on `audio_seconds` refused recordings whose speech
-            // was comfortably inside the limit.
-            //
-            // Measured on an owner's journal 2026-09-01: of 176 recent segments, 134
-            // (76%) run longer than 300 s, and V2 had transcribed only 14 of 37 long
-            // segments (38%) where V1 transcribed 503 of 503 (100%). Most of that gap is
-            // this line: a 314 s recording with a minute of speech was refused as
-            // `confidential_audio_too_long` without the reduced audio ever being measured.
-            //
-            // 🔒 The limit itself is unchanged, and audio that is genuinely too long after
-            // reduction is still refused.
-            dispatch_confidential_with_cap(
-                statement_audio.len(),
-                reduced_seconds.unwrap_or(audio_seconds),
-                || {
-                    asr_at = Some(Instant::now());
-                    dispatch_backend(
-                        config,
-                        journal_path,
-                        &backend,
-                        statement_audio,
-                        attestation_state,
-                        #[cfg(all(feature = "embedded", unix))]
-                        embedded,
-                    )
-                },
-            )
+            // Admit the complete masked request by its encoded byte size. Oversized
+            // input is an explicit retained-raw deferral, never permission to discard
+            // regions the detector classified as silence.
+            dispatch_confidential_with_cap(statement_audio.len(), audio_seconds, || {
+                asr_at = Some(Instant::now());
+                dispatch_backend(
+                    config,
+                    journal_path,
+                    &backend,
+                    statement_audio,
+                    attestation_state,
+                    #[cfg(all(feature = "embedded", unix))]
+                    embedded,
+                )
+            })
         } else {
             asr_at = Some(Instant::now());
             dispatch_backend(
@@ -798,7 +753,14 @@ pub(crate) fn process_one_with(
             context_attempt.as_ref(),
         )?;
         drop(observation);
-        finish_voice_only_deletion(journal_path, &facts, &claim, &commit);
+        finish_voice_only_deletion(
+            journal_path,
+            &facts,
+            &claim,
+            &commit,
+            #[cfg(all(feature = "embedded", unix))]
+            embedded,
+        );
         drop(commit);
         finish_context_output(
             journal_path,
@@ -834,10 +796,6 @@ pub(crate) fn process_one_with(
     }
 
     let statements = statements_from_words(&transcription.words);
-    let restored = reduction.as_ref().map_or_else(
-        || statements.clone(),
-        |mapping| restore_statement_timestamps(&statements, mapping),
-    );
     let speakers_at = Instant::now();
     #[cfg(all(feature = "embedded", unix))]
     let speaker_analysis = if let Some(runtime) = embedded {
@@ -846,9 +804,9 @@ pub(crate) fn process_one_with(
             audio_path,
             &full_audio,
             statement_audio,
-            reduced_audio.as_deref(),
+            None,
             &statements,
-            &restored,
+            &statements,
             runtime.models,
             runtime.scratch,
         )
@@ -857,9 +815,9 @@ pub(crate) fn process_one_with(
             audio_path,
             &full_audio,
             statement_audio,
-            reduced_audio.as_deref(),
+            None,
             &statements,
-            &restored,
+            &statements,
             SAMPLE_RATE,
             crate::speakers::MIN_STATEMENT_DURATION_S,
         )
@@ -869,9 +827,9 @@ pub(crate) fn process_one_with(
         audio_path,
         &full_audio,
         statement_audio,
-        reduced_audio.as_deref(),
+        None,
         &statements,
-        &restored,
+        &statements,
         SAMPLE_RATE,
         crate::speakers::MIN_STATEMENT_DURATION_S,
         #[cfg(windows)]
@@ -949,7 +907,14 @@ pub(crate) fn process_one_with(
         redo,
     })?;
     drop(observation);
-    finish_voice_only_deletion(journal_path, &facts, &claim, &commit);
+    finish_voice_only_deletion(
+        journal_path,
+        &facts,
+        &claim,
+        &commit,
+        #[cfg(all(feature = "embedded", unix))]
+        embedded,
+    );
     drop(commit);
     finish_context_output(
         journal_path,
@@ -1012,16 +977,6 @@ fn first_pass_analysis(
         #[cfg(windows)]
         generation,
     )
-}
-
-/// Whether silence reduction runs before transcription.
-///
-/// Desktop local engines receive the complete admitted recording. Speech ranges
-/// remain approximate, so only confidential requests and the mobile runtime
-/// reduce silence to meet their input limits. The earlier admission gate still
-/// applies to every backend.
-fn trims_silence(backend: &str, mobile: bool) -> bool {
-    backend == "confidential" || mobile
 }
 
 /// VAD over the voice-only masked audio, through the same transport as the first VAD.
@@ -1474,6 +1429,7 @@ fn finish_voice_only_deletion(
     facts: &InputFacts,
     claim: &OutputClaims,
     commit: &solstone_core_segment::output_attempt::SegmentCommit<'_>,
+    #[cfg(all(feature = "embedded", unix))] embedded: Option<&crate::embedded::EmbeddedContext<'_>>,
 ) {
     use solstone_core_retention::owner_voice::{OwnerVoiceDeletion, finish_owner_voice_deletion};
     if !facts
@@ -1484,7 +1440,16 @@ fn finish_voice_only_deletion(
     }
     let jsonl = facts.path.with_extension("jsonl");
     match finish_owner_voice_deletion(journal_path, &jsonl, claim, commit, chrono::Utc::now()) {
-        OwnerVoiceDeletion::Deleted | OwnerVoiceDeletion::Gone => {}
+        outcome @ (OwnerVoiceDeletion::Deleted | OwnerVoiceDeletion::DeletedUnrecorded) => {
+            if outcome == OwnerVoiceDeletion::DeletedUnrecorded {
+                log::warn!("voice-only original deleted but deletion event was not recorded");
+            }
+            #[cfg(all(feature = "embedded", unix))]
+            if let Some(runtime) = embedded {
+                (runtime.owner_original_deleted)();
+            }
+        }
+        OwnerVoiceDeletion::Gone => {}
         outcome => log::warn!("voice-only original not deleted now: {outcome:?}"),
     }
 }
@@ -1630,16 +1595,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn desktop_local_engines_get_the_whole_recording() {
-        for backend in ["parakeet", "parakeet-cpp", "whisper"] {
-            assert!(!super::trims_silence(backend, false), "{backend}");
-            assert!(super::trims_silence(backend, true), "{backend} on mobile");
-        }
-        assert!(super::trims_silence("confidential", false));
-        assert!(super::trims_silence("confidential", true));
-    }
-
     use chrono::DateTime;
     use serde_json::{Value, json};
     use solstone_core_observe_audio::{AudioError, VadResult};
@@ -1657,6 +1612,158 @@ mod tests {
     use crate::TranscribeError;
     use crate::event::Timings;
     use crate::terminal::TerminalWriteFailure;
+
+    #[cfg(all(feature = "embedded", unix))]
+    #[test]
+    fn only_committed_owner_deletion_completes_embedded_custody() {
+        use std::cell::Cell;
+        use std::os::unix::fs::PermissionsExt;
+
+        use sha2::{Digest, Sha256};
+        use solstone_core_segment::output_attempt::{InputObservation, OutputClaims};
+
+        // This exercises publication/retention/checkpoint lifetime only. The
+        // recognizer must not run; physical owner tests execute the real models.
+        struct UnusedAsr;
+        impl crate::embedded::EmbeddedAsr for UnusedAsr {
+            fn transcribe(&self, _: &[f32]) -> Result<Value, String> {
+                panic!("no inference belongs to a publication lifetime test")
+            }
+            fn model_info(&self) -> crate::embedded::EmbeddedModelInfo {
+                panic!("no model belongs to a publication lifetime test")
+            }
+        }
+
+        for state in ["empty", "analyzed"] {
+            for change in [
+                "none",
+                "unrecorded",
+                "missing",
+                "changed",
+                "interrupted",
+                "reappeared",
+                "reappeared_identical",
+            ] {
+                let root = tempfile::tempdir().unwrap();
+                let segment = root.path().join("chronicle/20261023/device_audio/120000_1");
+                fs::create_dir_all(&segment).unwrap();
+                let raw = segment.join("audio.wav");
+                let audio = b"synthetic owner audio";
+                fs::write(&raw, audio).unwrap();
+                let mut facts = capture_input_facts(&raw).unwrap();
+                let owner = json!({
+                    "version": 1, "speech_s": 1.0, "kept_s": 1.0, "left_out_s": 0.0,
+                    "windows_scored": 1, "windows_kept": 1,
+                    "original": {"name": "audio.wav", "size": audio.len(),
+                        "sha256": format!("{:x}", Sha256::digest(audio))},
+                    "print": {"sha256": "0".repeat(64)}
+                });
+                facts
+                    .record_extra
+                    .insert("owner_voice".into(), owner.clone());
+                let jsonl = raw.with_extension("jsonl");
+                let claims = OutputClaims::acquire([jsonl.clone()], Default::default()).unwrap();
+                let observation = InputObservation::capture(&claims, &raw).unwrap();
+                let commit = observation.commit(&claims).unwrap();
+                let header = json!({"raw": "audio.wav", "_solstone_processing": {
+                    "schema": vocab::SCHEMA, "handler": vocab::HANDLER_TRANSCRIBE,
+                    "state": state, "reason_code": if state == "empty" { "no_speech" } else { "ok" },
+                    "input_size": audio.len(), "owner_voice_filter": true, "owner_voice": owner
+                }});
+                let mut published = format!("{header}\n");
+                if state == "analyzed" {
+                    published
+                        .push_str("{\"start\":\"12:00:00\",\"text\":\"public fixture owner\"}\n");
+                }
+                fs::write(&jsonl, &published).unwrap();
+                drop(observation);
+
+                let authorized = Cell::new(false);
+                let interrupted = Cell::new(false);
+                let cancel = || {
+                    interrupted.get()
+                        || if authorized.get() {
+                            !matches!(fs::symlink_metadata(&raw), Err(error)
+                                if error.kind() == std::io::ErrorKind::NotFound)
+                        } else {
+                            match fs::read(&raw) {
+                                Ok(current) => current != audio,
+                                Err(_) => true,
+                            }
+                        }
+                };
+                let notify = || authorized.set(true);
+                let runtime = crate::embedded::EmbeddedContext {
+                    models: root.path(),
+                    scratch: root.path(),
+                    asr: &UnusedAsr,
+                    cancel: &cancel,
+                    service_io: &|_| {},
+                    owner_original_deleted: &notify,
+                };
+                let events = segment.join("events.jsonl");
+                match change {
+                    "missing" => fs::remove_file(&raw).unwrap(),
+                    "changed" => fs::write(&raw, b"different owner bytes").unwrap(),
+                    "unrecorded" => {
+                        fs::write(&events, b"").unwrap();
+                        fs::set_permissions(&events, fs::Permissions::from_mode(0o444)).unwrap();
+                        // A privileged test user can bypass mode bits. That
+                        // environment cannot exercise this append-failure control.
+                        if fs::OpenOptions::new().append(true).open(&events).is_ok() {
+                            eprintln!(
+                                "skip unrecorded-event control: test user can append to a read-only file"
+                            );
+                            continue;
+                        }
+                    }
+                    _ => (),
+                }
+                super::finish_voice_only_deletion(
+                    root.path(),
+                    &facts,
+                    &claims,
+                    &commit,
+                    Some(&runtime),
+                );
+                assert_eq!(
+                    authorized.get(),
+                    !matches!(change, "missing" | "changed"),
+                    "{state}/{change}"
+                );
+                if change == "unrecorded" {
+                    assert!(fs::read(&events).unwrap().is_empty());
+                }
+                if change == "interrupted" {
+                    interrupted.set(true);
+                } else if change == "reappeared" {
+                    fs::write(&raw, b"different owner bytes").unwrap();
+                } else if change == "reappeared_identical" {
+                    fs::write(&raw, audio).unwrap();
+                }
+                drop(commit);
+                let finished =
+                    super::finish_context_output(root.path(), &jsonl, None, &raw, &|| {
+                        runtime.checkpoint()
+                    });
+                assert_eq!(
+                    finished.is_ok(),
+                    matches!(change, "none" | "unrecorded"),
+                    "{state}/{change}"
+                );
+                assert_eq!(
+                    fs::read_to_string(&jsonl).unwrap(),
+                    published,
+                    "{state}/{change}"
+                );
+                assert_eq!(
+                    raw.exists(),
+                    matches!(change, "changed" | "reappeared" | "reappeared_identical"),
+                    "{state}/{change}"
+                );
+            }
+        }
+    }
 
     #[cfg(all(test, feature = "full-tests"))]
     #[test]
@@ -3369,6 +3476,7 @@ mod tests {
         let stub_asr = StubAsr;
         let cancel_fn = || false;
         let embedded = crate::embedded::EmbeddedContext {
+            owner_original_deleted: &|| {},
             models: root.path(),
             scratch: root.path(),
             asr: &stub_asr,
