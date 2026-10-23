@@ -23,6 +23,7 @@ pub mod lease;
 pub mod manifest;
 pub mod metal_candidate;
 pub mod migration;
+pub mod mlx_candidate;
 mod model_cache;
 pub mod onnx_readiness;
 pub mod parakeet_readiness;

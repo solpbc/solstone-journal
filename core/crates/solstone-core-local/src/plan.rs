@@ -74,6 +74,8 @@ pub struct PlanInput {
     pub vram_before_mib: Option<u64>,
     #[serde(default)]
     pub vulkan_probe_ok: Option<bool>,
+    #[serde(default)]
+    pub mlx_binary_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
@@ -82,6 +84,7 @@ pub enum PlanBackend {
     Cuda,
     Vulkan,
     Metal,
+    Mlx,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -188,6 +191,7 @@ pub fn plan(input: PlanInput) -> PlanOutcome {
     }
     match input.platform {
         Platform::Darwin if input.backend_override == Some(PlanBackend::Metal) => plan_metal(input),
+        Platform::Darwin if input.backend_override == Some(PlanBackend::Mlx) => plan_mlx(input),
         Platform::Darwin => rejected("Metal backend selection is required on Darwin"),
         Platform::Linux => plan_linux(input),
         Platform::Windows => plan_windows(input),
@@ -296,6 +300,7 @@ fn plan_linux(input: PlanInput) -> PlanOutcome {
             }
             PlanBackend::Vulkan => plan_vulkan(input, "backend explicitly selected by caller"),
             PlanBackend::Metal => rejected("Metal backend override is not valid on Linux"),
+            PlanBackend::Mlx => rejected("MLX backend override is not valid on Linux"),
         };
     }
     let cuda_candidate = if let Some(probe) = input.nvidia_probe.as_ref() {
@@ -433,6 +438,64 @@ fn plan_metal(input: PlanInput) -> PlanOutcome {
     )
 }
 
+fn plan_mlx(input: PlanInput) -> PlanOutcome {
+    if input.model_id != "local/qwen3.5-4b" {
+        return rejected("MLX requires the bundled model alias");
+    }
+    let Some(binary) = input.mlx_binary_path.clone() else {
+        return rejected("mlx binary path is required");
+    };
+    if input.mmproj_path.is_some() {
+        return rejected("mmproj path is not valid for MLX");
+    }
+    if input.bind_address.to_string() != "127.0.0.1" {
+        return rejected("MLX bind address must be 127.0.0.1");
+    }
+    if input.model_path.is_empty() {
+        return rejected("model path is required");
+    }
+    let (selected_tier, metal_tier) = metal_tier(input.metal_unified_memory_mib);
+    let argv = vec![
+        binary.clone(),
+        "--model".into(),
+        input.model_path.clone(),
+        "--host".into(),
+        "127.0.0.1".into(),
+        "--port".into(),
+        input.port.to_string(),
+        "--alias".into(),
+        "local/qwen3.5-4b".into(),
+        "--ctx".into(),
+        selected_tier.context_tokens.to_string(),
+    ];
+    PlanOutcome::Launch(Box::new(LaunchPlan {
+        schema: LAUNCH_SCHEMA,
+        backend: PlanBackend::Mlx,
+        desired_fingerprint_json: input.desired_fingerprint_json,
+        desired_fingerprint_sha256: input.desired_fingerprint_sha256,
+        binary_path: Some(binary),
+        model_path: input.model_path,
+        mmproj_path: None,
+        lib_dir: None,
+        model_id: input.model_id,
+        gpu_index: None,
+        gpu_name: None,
+        gpu_vram_mib: None,
+        vram_before_mib: None,
+        context_tokens: Some(selected_tier.context_tokens),
+        parallel_slots: Some(1),
+        prompt_cache_mib: None,
+        metal_tier: Some(metal_tier),
+        visible_devices_env_name: None,
+        visible_devices_env_value: None,
+        extra_env: BTreeMap::new(),
+        backend_reason: "Darwin MLX runtime".into(),
+        bind_address: input.bind_address,
+        port: input.port,
+        argv,
+    }))
+}
+
 fn llama_plan(
     input: PlanInput,
     backend: PlanBackend,
@@ -529,6 +592,7 @@ fn base_plan(
             PlanBackend::Cuda => input.cuda_binary_path,
             PlanBackend::Vulkan => input.vulkan_binary_path,
             PlanBackend::Metal => input.metal_binary_path,
+            PlanBackend::Mlx => input.mlx_binary_path,
         },
         model_path: input.model_path,
         mmproj_path: input.mmproj_path,
@@ -627,6 +691,7 @@ mod tests {
             vulkan_selected_vram_mib: None,
             vram_before_mib: Some(7),
             vulkan_probe_ok: None,
+            mlx_binary_path: None,
         }
     }
     fn launch(input: PlanInput) -> LaunchPlan {
@@ -989,6 +1054,88 @@ mod tests {
         let mut unspecified = input(1);
         unspecified.platform = Platform::Darwin;
         assert_rejected(unspecified, "Metal backend selection is required on Darwin");
+    }
+
+    #[test]
+    fn metal_launch_wire_is_unchanged_from_before_mlx() {
+        let input: PlanInput =
+            serde_json::from_str(include_str!("../tests/fixtures/metal-plan-input.json")).unwrap();
+        let actual = serde_json::to_string(&plan(input)).unwrap() + "\n";
+        assert_eq!(
+            actual,
+            include_str!("../tests/fixtures/metal-plan-output.json")
+        );
+    }
+
+    #[test]
+    fn mlx_plan_is_darwin_only_and_constructs_exact_argv() {
+        let mut mlx_input = input(1);
+        mlx_input.platform = Platform::Darwin;
+        mlx_input.model_id = "local/qwen3.5-4b".into();
+        mlx_input.backend_override = Some(PlanBackend::Mlx);
+        mlx_input.mlx_binary_path = Some("/path/to/mlx-helper".into());
+        mlx_input.model_path = "/path/to/model-dir".into();
+        mlx_input.mmproj_path = None;
+        mlx_input.metal_unified_memory_mib = None;
+        let plan = launch(mlx_input.clone());
+        assert_eq!(plan.backend, PlanBackend::Mlx);
+        assert_eq!(plan.binary_path.as_deref(), Some("/path/to/mlx-helper"));
+        assert_eq!(plan.model_path, "/path/to/model-dir");
+        assert_eq!(plan.mmproj_path, None);
+        assert_eq!(plan.context_tokens, Some(16_384));
+        assert_eq!(plan.parallel_slots, Some(1));
+        assert_eq!(plan.prompt_cache_mib, None);
+        assert_eq!(
+            plan.argv,
+            vec![
+                "/path/to/mlx-helper",
+                "--model",
+                "/path/to/model-dir",
+                "--host",
+                "127.0.0.1",
+                "--port",
+                "4010",
+                "--alias",
+                "local/qwen3.5-4b",
+                "--ctx",
+                "16384",
+            ]
+        );
+        assert!(!plan.argv.iter().any(|arg| arg == "--parallel"));
+        assert!(!plan.argv.iter().any(|arg| arg == "--cache-limit-mb"));
+        assert!(!plan.argv.iter().any(|arg| arg == "--kv-unified"));
+
+        // Capable tier context
+        let mut capable = mlx_input.clone();
+        capable.metal_unified_memory_mib = Some(16_000);
+        let capable_plan = launch(capable);
+        assert_eq!(capable_plan.context_tokens, Some(32_768));
+        assert_eq!(capable_plan.argv[9], "--ctx");
+        assert_eq!(capable_plan.argv[10], "32768");
+
+        // Missing binary path
+        let mut missing_bin = mlx_input.clone();
+        missing_bin.mlx_binary_path = None;
+        assert_rejected(missing_bin, "mlx binary path is required");
+
+        // Non-None mmproj
+        let mut with_mmproj = mlx_input.clone();
+        with_mmproj.mmproj_path = Some("/mm".into());
+        assert_rejected(with_mmproj, "mmproj path is not valid for MLX");
+
+        // Non-127.0.0.1 loopback
+        let mut ipv6 = mlx_input.clone();
+        ipv6.bind_address = LoopbackAddr::IPV6_LOOPBACK;
+        assert_rejected(ipv6, "MLX bind address must be 127.0.0.1");
+
+        // Rejections on Linux and Windows
+        let mut linux_mlx = mlx_input.clone();
+        linux_mlx.platform = Platform::Linux;
+        assert_rejected(linux_mlx, "MLX backend override is not valid on Linux");
+
+        let mut win_mlx = mlx_input;
+        win_mlx.platform = Platform::Windows;
+        assert_rejected(win_mlx, "only Vulkan backend is valid on Windows");
     }
     #[test]
     fn plan_is_repeatable_without_side_effects() {

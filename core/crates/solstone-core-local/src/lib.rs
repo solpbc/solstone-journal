@@ -39,6 +39,10 @@ pub use install::apple_memory::{
     APPLE_SILICON_TOTAL_MEMORY_MIN_BYTES, AppleTotalMemoryVerdict, apple_physical_memory_bytes,
     apple_total_memory_verdict,
 };
+pub use install::mlx_candidate::read_macos_local_backend_env;
+pub use install::mlx_candidate::{
+    MacosLocalBackend, MacosLocalBackendError, select_macos_local_backend,
+};
 pub use install::{
     DispatchError as InstallDispatchError, InstallEnvelope, InstallVerb, LocalHardwareAdmission,
     dispatch as dispatch_install, run_local_with_gpu_admission,

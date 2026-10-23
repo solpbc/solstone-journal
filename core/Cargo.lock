@@ -6665,6 +6665,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
+ "solstone-core-artifact-download",
  "solstone-core-assets",
  "solstone-core-brain",
  "solstone-core-distribution",
