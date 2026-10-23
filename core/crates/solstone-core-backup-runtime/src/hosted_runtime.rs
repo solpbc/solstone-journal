@@ -144,7 +144,7 @@ impl HttpTransport for UreqHttpTransport {
         };
         remaining()?;
         let response = response.map_err(|error| {
-            if error.to_string().contains("timeout") {
+            if request_timed_out(&error) {
                 HttpError::Timeout
             } else {
                 HttpError::Unreachable
@@ -173,7 +173,7 @@ impl HttpTransport for UreqHttpTransport {
                 Ok(0) => break,
                 Ok(length) => body.extend_from_slice(&buffer[..length]),
                 Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
-                Err(_) => return Err(HttpError::Other),
+                Err(error) => return Err(body_read_error(&error)),
             }
         }
         remaining()?;
@@ -182,6 +182,37 @@ impl HttpTransport for UreqHttpTransport {
             headers,
             body,
         })
+    }
+}
+
+fn request_timed_out(error: &ureq::Error) -> bool {
+    match error {
+        ureq::Error::Timeout(_) => true,
+        ureq::Error::Io(error) => io_timed_out(error),
+        _ => false,
+    }
+}
+
+fn io_timed_out(error: &std::io::Error) -> bool {
+    matches!(
+        error.kind(),
+        std::io::ErrorKind::TimedOut | std::io::ErrorKind::WouldBlock
+    )
+}
+
+fn body_read_error(error: &std::io::Error) -> HttpError {
+    // ureq preserves its global deadline as an inner Error::Timeout while
+    // into_io labels the outer error Other. It can expire just before our
+    // entry clock reaches its deadline; elapsed time is not its error type.
+    if io_timed_out(error)
+        || error
+            .get_ref()
+            .and_then(|inner| inner.downcast_ref::<ureq::Error>())
+            .is_some_and(request_timed_out)
+    {
+        HttpError::Timeout
+    } else {
+        HttpError::Other
     }
 }
 
@@ -483,6 +514,27 @@ pub fn resolve_runtime(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn typed_timeouts_survive_the_body_io_wrapper() {
+        use std::io::{Error, ErrorKind};
+        let timeout = ureq::Error::Timeout(ureq::Timeout::Global).into_io();
+        assert_eq!(timeout.kind(), ErrorKind::Other);
+        assert_eq!(body_read_error(&timeout), HttpError::Timeout);
+        for kind in [ErrorKind::TimedOut, ErrorKind::WouldBlock] {
+            assert_eq!(body_read_error(&Error::from(kind)), HttpError::Timeout);
+            assert!(request_timed_out(&ureq::Error::Io(Error::from(kind))));
+        }
+        for kind in [
+            ErrorKind::UnexpectedEof,
+            ErrorKind::ConnectionReset,
+            ErrorKind::Other,
+        ] {
+            let error = Error::new(kind, "not a timeout, despite this diagnostic");
+            assert_eq!(body_read_error(&error), HttpError::Other);
+            assert!(!request_timed_out(&ureq::Error::Io(error)));
+        }
+    }
     use std::cell::RefCell;
     struct Fixture(Result<HttpResponse, HttpError>);
     impl HttpTransport for Fixture {

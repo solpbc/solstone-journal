@@ -8,6 +8,8 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- checking for updates on linux now allows more time for a slow connection and shows why a check failed.
+- backup requests on windows now report a timeout when the connection times out just before the request deadline.
 - fixed screen descriptions stopping with a blank notification when the on-device model lost its connection mid-request. your journal now retries that request.
 
 ## [2.0.56] - 2026-10-23
