@@ -38,6 +38,10 @@ pub const PRODUCERS: &[(Family, &str)] = &[
         Family::Calendar,
         "ingest calendar note publication and calendar import publication",
     ),
+    (
+        Family::PossibleNames,
+        "possible-names talent publication through solstone-core-possible-names",
+    ),
 ];
 
 pub const CATCH_ALL_ONLY: &[(Family, &str)] = &[(

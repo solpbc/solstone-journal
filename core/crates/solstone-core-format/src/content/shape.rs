@@ -62,6 +62,7 @@ pub fn resolve_content_shape(content_path: &Path, rel: &str) -> ContentResolutio
                 | Family::DesktopActivity
                 | Family::ScreenText
                 | Family::Calendar
+                | Family::PossibleNames
         )
     {
         return ContentResolution::Indexed(spec.family);

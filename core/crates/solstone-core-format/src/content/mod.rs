@@ -29,6 +29,7 @@ use serde_json::{Map, Value};
 use crate::chunker::format_markdown;
 use crate::matcher::{PatternSpec, Resolver, patterns_for_root as filter_patterns_for_root};
 
+pub mod possible_names;
 pub mod screen_text;
 
 pub use crate::matcher::PatternRoot;
@@ -66,6 +67,8 @@ pub enum Family {
     ScreenText,
     /// Calendar notes from a linked device. This family is path-selected only.
     Calendar,
+    /// Possible names a segment's audio may refer to. This family is path-selected only.
+    PossibleNames,
 }
 
 /// Content that can be rendered for direct consumption but is deliberately
@@ -77,7 +80,7 @@ pub enum RawPerceptFamily {
 }
 
 #[cfg(test)]
-const ALL_FAMILIES: [Family; 20] = [
+const ALL_FAMILIES: [Family; 21] = [
     Family::Markdown,
     Family::Event,
     Family::Activity,
@@ -98,6 +101,7 @@ const ALL_FAMILIES: [Family; 20] = [
     Family::DesktopActivity,
     Family::ScreenText,
     Family::Calendar,
+    Family::PossibleNames,
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -259,6 +263,18 @@ pub(crate) const INDEX_FAMILY_PATTERNS: &[FamilyPattern] = &[
         root: PatternRoot::DayRooted,
         disposition: IndexDisposition::Admitted {
             category: AdmittedCategory::ScreenText,
+            basis: ScopeBasis::SegmentAssigned,
+        },
+    },
+    // Possible names for a segment's audio: only the labelled canonical name
+    // is indexed. Readers re-check every entry before a hit is shown
+    // (`solstone-core-possible-names`).
+    FamilyPattern {
+        pattern: "*/*/*/talents/possible_names.json",
+        family: Family::PossibleNames,
+        root: PatternRoot::DayRooted,
+        disposition: IndexDisposition::Admitted {
+            category: AdmittedCategory::Transcripts,
             basis: ScopeBasis::SegmentAssigned,
         },
     },
@@ -618,6 +634,7 @@ pub fn produce_chunks_by_shape(
         Family::MorningBriefing => morning_briefing::render(records),
         Family::Workout => workout::render(records),
         Family::Calendar => render_calendar(records),
+        Family::PossibleNames => possible_names::render(records),
         Family::AgentMemory => ProducedChunks {
             chunks: Vec::new(),
             agent_override: Some("memory".to_string()),
@@ -888,7 +905,8 @@ fn parse_records_for_family(family: Family, text: &str) -> Vec<JsonObject> {
         | Family::Screen
         | Family::Sense
         | Family::MorningBriefing
-        | Family::Workout => parse_json_object(text),
+        | Family::Workout
+        | Family::PossibleNames => parse_json_object(text),
         Family::AgentMemory => Vec::new(),
         _ => parse_jsonl_objects(text),
     }

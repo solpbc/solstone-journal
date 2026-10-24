@@ -3592,3 +3592,158 @@ fn screen_text_denial_preserves_case_and_near_name_siblings() {
     );
     fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn possible_name_rows_return_only_through_an_admission_that_runs_inside_the_query() {
+    let (root, connection) = seeded_root("possible-name-admission");
+    let names = "20260101/default/100000_60/talents/possible_names.json";
+    let brief = "20260101/default/100000_60/talents/brief.md";
+    insert(
+        &connection,
+        "possible name: Friar",
+        names,
+        "20260101",
+        "",
+        "possible_names",
+        "default",
+        0,
+    );
+    insert(
+        &connection,
+        "possible name: Ana Lima",
+        names,
+        "20260101",
+        "",
+        "possible_names",
+        "default",
+        1,
+    );
+    insert(
+        &connection,
+        "the brief mentions Friar",
+        brief,
+        "20260101",
+        "",
+        "brief",
+        "default",
+        0,
+    );
+    insert(
+        &connection,
+        "Lima beans",
+        brief,
+        "20260101",
+        "",
+        "brief",
+        "default",
+        1,
+    );
+    for path in [names, brief] {
+        connection
+            .execute(
+                "INSERT INTO chunk_classification(path, category, basis, eligible, unclassified) VALUES (?, 'transcripts', 'segment_assigned', 1, 0)",
+                [path],
+            )
+            .unwrap();
+    }
+    connection
+        .execute(
+            "REPLACE INTO chunk_classification_backfill(id, cursor, completed, stalled, stalled_path, resume_count) VALUES (1, ?, 1, 0, NULL, 0)",
+            [brief],
+        )
+        .unwrap();
+    drop(connection);
+
+    // Without an admission, neither owner nor connection searches return them.
+    let owner = search(&root, &request("Friar"), reference_date()).unwrap();
+    assert_eq!(
+        owner
+            .results
+            .iter()
+            .map(|h| (h.metadata.path.as_str(), h.metadata.idx))
+            .collect::<Vec<_>>(),
+        [(brief, 0)]
+    );
+    let boundary = connection_boundary(&["transcripts"], ConnectionScope::WholeJournal);
+    let plain = connection_search(&root, &boundary, "Friar");
+    assert_eq!(plain.results.len(), 1);
+
+    // The admission sees each row's path, index and content, and decides.
+    let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let recorded = std::sync::Arc::clone(&seen);
+    let admission: crate::PossibleNameAdmission =
+        std::sync::Arc::new(move |path: &str, idx: i64, content: &str| {
+            recorded
+                .lock()
+                .unwrap()
+                .push((path.to_owned(), idx, content.to_owned()));
+            idx == 0
+        });
+    let admitted = crate::search_connection_with_possible_names(
+        &root,
+        &boundary,
+        &ConnectionSearchRequest {
+            query: "possible name".to_string(),
+            limit: 50,
+            ..ConnectionSearchRequest::default()
+        },
+        reference_date(),
+        std::sync::Arc::clone(&admission),
+    )
+    .unwrap();
+    assert_eq!(
+        admitted
+            .results
+            .iter()
+            .map(|h| (h.metadata.path.as_str(), h.metadata.idx))
+            .collect::<Vec<_>>(),
+        [(names, 0)]
+    );
+    assert!(seen.lock().unwrap().contains(&(
+        names.to_owned(),
+        1,
+        "possible name: Ana Lima".to_owned()
+    )));
+    // A refused row is not there to hold off relaxing: only it holds every
+    // word, so the query relaxes to the brief that holds one.
+    let refused = crate::search_connection_with_possible_names(
+        &root,
+        &boundary,
+        &ConnectionSearchRequest {
+            query: "Ana Lima".to_string(),
+            limit: 50,
+            relax: true,
+            ..ConnectionSearchRequest::default()
+        },
+        reference_date(),
+        admission,
+    )
+    .unwrap();
+    assert_eq!(
+        refused
+            .results
+            .iter()
+            .map(|h| (h.metadata.path.as_str(), h.metadata.idx))
+            .collect::<Vec<_>>(),
+        [(brief, 1)]
+    );
+    assert!(refused.relaxed);
+
+    // Owner sessions count only what they admit.
+    let mut owner_index = open_owner_index(&root, OwnerBoundary).unwrap();
+    let counts = owner_index
+        .resolve_counts(&request("possible"), reference_date())
+        .unwrap();
+    assert_eq!(counts.counts.total, 0);
+    owner_index
+        .admit_possible_names(std::sync::Arc::new(|_: &str, _: i64, content: &str| {
+            content.ends_with("Ana Lima")
+        }))
+        .unwrap();
+    let counts = owner_index
+        .resolve_counts(&request("possible"), reference_date())
+        .unwrap();
+    assert_eq!(counts.counts.total, 1);
+    drop(owner_index);
+    fs::remove_dir_all(root).expect("cleanup");
+}

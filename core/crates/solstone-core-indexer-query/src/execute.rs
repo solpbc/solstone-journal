@@ -77,11 +77,36 @@ pub fn search_counts_connection(
     ))
 }
 
+/// Connection search. Possible-name rows are never returned.
 pub fn search_connection(
     journal: &Path,
     boundary: &ConnectionBoundary,
     request: &ConnectionSearchRequest,
     reference_date: NaiveDate,
+) -> Result<ConnectionSearchResponse, IndexAccessError> {
+    search_connection_admitting(journal, boundary, request, reference_date, None)
+}
+
+/// Connection search that returns the possible-name rows `admission` admits.
+///
+/// `admission` runs inside the query, before a row can match, relax the query,
+/// rank, count or anchor a continuation, so a row it refuses leaves no trace.
+pub fn search_connection_with_possible_names(
+    journal: &Path,
+    boundary: &ConnectionBoundary,
+    request: &ConnectionSearchRequest,
+    reference_date: NaiveDate,
+    admission: PossibleNameAdmission,
+) -> Result<ConnectionSearchResponse, IndexAccessError> {
+    search_connection_admitting(journal, boundary, request, reference_date, Some(admission))
+}
+
+fn search_connection_admitting(
+    journal: &Path,
+    boundary: &ConnectionBoundary,
+    request: &ConnectionSearchRequest,
+    reference_date: NaiveDate,
+    admission: Option<PossibleNameAdmission>,
 ) -> Result<ConnectionSearchResponse, IndexAccessError> {
     let compilation = compile_query(&request.query, reference_date);
     let no_tokenizable_term = matches!(compilation.outcome, CompileOutcome::NoTokenizableTerm);
@@ -95,6 +120,9 @@ pub fn search_connection(
         }
         Err(error) => return Err(error),
     };
+    if let Some(admission) = admission {
+        connection.admit_possible_names(admission)?;
+    }
     // A query with no searchable word still lists a bounded day range, as an
     // empty query does; without a day bound it finds nothing.
     let day_bounded =
@@ -373,6 +401,7 @@ pub(crate) fn plan_from_outcome_with_boundary(
         },
     };
     plan.where_clause = visible_rows(&plan.where_clause);
+    plan.where_clause.push_str(POSSIBLE_NAME_ROWS_ADMITTED);
     if let Some(boundary) = boundary {
         append_connection_prefilter(&mut plan, boundary);
     }
@@ -514,6 +543,15 @@ pub fn open_owner_index(
 }
 
 impl OwnerIndex {
+    /// Let this session's searches and counts return the possible-name rows
+    /// `admission` admits. Until then, they return none.
+    pub fn admit_possible_names(
+        &mut self,
+        admission: PossibleNameAdmission,
+    ) -> Result<(), IndexAccessError> {
+        self.connection.admit_possible_names(admission)
+    }
+
     /// Check the source identity captured with a screen-text hit before release.
     /// Ordinary families retain their existing release rules.
     pub fn screen_text_hit_current(&self, hit: &SearchHit) -> bool {
@@ -635,10 +673,62 @@ impl QueryConnection {
     pub(crate) fn journal_root(&self) -> Option<&Path> {
         self.path.parent().and_then(|p| p.parent())
     }
+
+    fn admit_possible_names(
+        &mut self,
+        admission: PossibleNameAdmission,
+    ) -> Result<(), IndexAccessError> {
+        register_possible_name_admission(&self.connection, Some(admission))
+            .map_err(|error| self.classify(error))
+    }
 }
 
 fn visible_rows(clause: &str) -> String {
     format!("{clause} AND NOT ({AUTHORED_CHAT_PATH_PREDICATE})")
+}
+
+/// A query plan returns a possible-name row only when the session's
+/// admission says so. Without one, the function refuses every such row.
+const POSSIBLE_NAME_ROWS_ADMITTED: &str =
+    " AND solstone_possible_name_admitted(chunks.path, chunks.idx, chunks.content)";
+const POSSIBLE_NAME_ADMISSION_FUNCTION: &str = "solstone_possible_name_admitted";
+
+/// Decides whether one indexed possible-name row may be returned: the stored
+/// path, chunk index and chunk content. Rows of every other family pass
+/// without calling it.
+pub type PossibleNameAdmission = std::sync::Arc<dyn Fn(&str, i64, &str) -> bool + Send + Sync>;
+
+fn register_possible_name_admission(
+    connection: &Connection,
+    admission: Option<PossibleNameAdmission>,
+) -> rusqlite::Result<()> {
+    connection.create_scalar_function(
+        POSSIBLE_NAME_ADMISSION_FUNCTION,
+        3,
+        // Not deterministic: an admission reads the journal as it is now.
+        FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DIRECTONLY,
+        move |context| {
+            let path = context.get_raw(0).as_str().unwrap_or_default();
+            if !solstone_core_format::content::possible_names::is_possible_names_path(path) {
+                return Ok(true);
+            }
+            let Some(admission) = admission.as_ref() else {
+                return Ok(false);
+            };
+            let idx = match context.get_raw(1) {
+                rusqlite::types::ValueRef::Integer(idx) => idx,
+                rusqlite::types::ValueRef::Text(text) => {
+                    match std::str::from_utf8(text).ok().and_then(|t| t.parse().ok()) {
+                        Some(idx) => idx,
+                        None => return Ok(false),
+                    }
+                }
+                _ => return Ok(false),
+            };
+            let content = context.get_raw(2).as_str().unwrap_or_default();
+            Ok(admission(path, idx, content))
+        },
+    )
 }
 
 fn open_index_reader(
@@ -1023,6 +1113,8 @@ impl QueryConnection {
                     Ok(solstone_core_format::content::screen_text::is_screen_text_path(&path))
                 },
             )
+            .map_err(|error| classify_sql_error(path.clone(), error))?;
+        register_possible_name_admission(&connection, None)
             .map_err(|error| classify_sql_error(path.clone(), error))?;
         Ok(Self {
             connection,
