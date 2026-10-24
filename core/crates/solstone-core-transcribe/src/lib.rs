@@ -37,8 +37,9 @@ mod config;
 mod embedded;
 #[cfg(all(feature = "embedded", unix))]
 pub use embedded::{
-    EmbeddedAsr, EmbeddedControl, EmbeddedModelInfo, RetryContext, embedded_already_processed,
-    embedded_retry_context, embedded_retryable_failure, process_embedded,
+    EMBEDDED_AUDIO_MAX_SAMPLES, EmbeddedAsr, EmbeddedControl, EmbeddedModelInfo, RetryContext,
+    embedded_already_processed, embedded_retry_context, embedded_retryable_failure,
+    process_embedded,
 };
 #[allow(dead_code)]
 mod event;

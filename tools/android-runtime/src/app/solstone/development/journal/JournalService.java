@@ -89,7 +89,7 @@ public class JournalService extends Service {
                 }
                 final String admittedOp = admitted;
                 final long generation = thinkingAdmission.generation();
-                if (isStop) execution.beginStop(() -> Native.run("", "cancel", 1));
+                if (isStop) execution.beginStop(JournalService.this::cancelNativeWork);
                 final ThinkingAdmission.Ticket ticket = isThinking ? thinkingAdmission.admit() : null;
                 if (isThinking && ticket == null) {
                     respond(reply,id,"{\"ok\":false,\"error\":\"thinking is stopped or busy\"}",0);
@@ -128,6 +128,23 @@ public class JournalService extends Service {
             }
         });
     }
+    void cancelNativeWork() {
+        String result = Native.run("", "cancel", 1);
+        // A positive observation follows actual cancellation delivery. No
+        // response body, input path, samples, output or credential is logged.
+        try {
+            JSONObject value = new JSONObject(result).optJSONObject("value");
+            if (value != null && value.optBoolean("native_call_active_after_cancel")) {
+                final long observedAt = SystemClock.elapsedRealtime();
+                // Persistence must not hold the main Handler or delay retirement.
+                // A full/closed queue loses this optional witness, never Stop.
+                try {
+                    ownerRequests.execute(() -> evidence("native_asr_call_active_after_cancel",
+                        "active after Stop cancellation signalled; observed_elapsed_ms=" + observedAt));
+                } catch (RejectedExecutionException ignored) { /* No evidence is not proof of idle. */ }
+            }
+        } catch (JSONException ignored) { /* Unknown observation cannot establish overlap. */ }
+    }
     void respond(Messenger to,int id,String result,long nanos) {
         Message m=Message.obtain(null,1); m.arg1=id;
         Bundle b=new Bundle(); b.putString("result",result); b.putLong("nanos",nanos); b.putInt("pid",Process.myPid()); b.putInt("uid",Process.myUid()); b.putInt("threads",Thread.activeCount());
@@ -149,7 +166,7 @@ public class JournalService extends Service {
         destroyed = true;
         ownerRequests.shutdown();
         evidence("service_destroyed","last binding released");
-        execution.retire(() -> Native.run("", "cancel", 1), () -> Native.run("", "serve:{\"op\":\"stop\"}", 1));
+        execution.retire(this::cancelNativeWork, () -> Native.run("", "serve:{\"op\":\"stop\"}", 1));
         super.onDestroy();
     }
 }

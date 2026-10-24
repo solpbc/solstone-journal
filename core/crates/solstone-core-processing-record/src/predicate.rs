@@ -56,7 +56,10 @@ pub fn is_failure_exhausted(record: &Value) -> bool {
         .is_some_and(|code| {
             matches!(
                 code,
-                vocab::REASON_CORRUPT_INPUT | vocab::REASON_NO_AUDIO_STREAM
+                vocab::REASON_CORRUPT_INPUT
+                    | vocab::REASON_NO_AUDIO_STREAM
+                    | vocab::REASON_EMBEDDED_DURATION
+                    | vocab::REASON_EMBEDDED_INPUT
             )
         })
     {
@@ -139,6 +142,23 @@ mod tests {
                 is_failure_exhausted(record),
                 expected,
                 "failure-exhaustion vector {name}",
+            );
+        }
+    }
+
+    #[test]
+    fn embedded_resource_holds_do_not_prove_originals_can_be_removed() {
+        for reason in [
+            vocab::REASON_EMBEDDED_DURATION,
+            vocab::REASON_EMBEDDED_INPUT,
+        ] {
+            let record = serde_json::json!({"schema":vocab::SCHEMA,
+                "handler":vocab::HANDLER_TRANSCRIBE,"state":"failed",
+                "reason_code":reason,"input_size":42,"attempts":1});
+            assert!(is_failure_exhausted(&record));
+            assert_eq!(
+                evaluate_terminal_proof(Some(&record), vocab::HANDLER_TRANSCRIBE, 42),
+                TerminalProofOutcome::Refused
             );
         }
     }

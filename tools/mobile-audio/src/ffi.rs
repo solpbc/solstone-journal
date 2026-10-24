@@ -61,20 +61,26 @@ impl Context {
         }
     }
 
-    pub(super) fn transcribe(&self, samples: &[f32]) -> Result<serde_json::Value, String> {
+    pub(super) fn transcribe(
+        &self,
+        samples: &[f32],
+        native_call: &dyn Fn(bool),
+    ) -> Result<serde_json::Value, String> {
         let length = c_int::try_from(samples.len()).map_err(|e| e.to_string())?;
         // SAFETY: one clip's declared length equals the live slice length. The
         // context is uniquely owned on this thread. The result is freed exactly
         // once after copying, including when JSON decoding fails.
         unsafe {
-            let result = parakeet_capi_transcribe_pcm_batch_json(
-                self.0.as_ptr(),
-                samples.as_ptr(),
-                &length,
-                1,
-                16_000,
-                0,
-            );
+            let result = crate::observe_native_call(native_call, || {
+                parakeet_capi_transcribe_pcm_batch_json(
+                    self.0.as_ptr(),
+                    samples.as_ptr(),
+                    &length,
+                    1,
+                    16_000,
+                    0,
+                )
+            });
             if result.is_null() {
                 return Err(self.error());
             }

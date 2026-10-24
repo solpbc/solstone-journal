@@ -44,9 +44,8 @@ pub(crate) fn accepted_input(root: &Path, input: &Path) -> Result<bool, String> 
     }
     let mut file = File::open(input).map_err(|e| e.to_string())?;
     let size = file.metadata().map_err(|e| e.to_string())?.len();
-    if size > 16 * 1024 * 1024 {
-        return Err("embedded input exceeds 16 MiB encoded input limit".into());
-    }
+    // The processing owner records execution-budget refusals durably. Custody
+    // still verifies the entire accepted receipt with a constant-size buffer.
     if !file.metadata().map_err(|e| e.to_string())?.is_file() {
         return Err("input is not a regular file".into());
     }

@@ -2221,7 +2221,7 @@ mod tests {
     #[cfg(feature = "full-tests")]
     use std::path::Path;
 
-    #[cfg(all(target_os = "linux", feature = "full-tests"))]
+    #[cfg(all(unix, feature = "full-tests"))]
     fn make_file_executable(path: &Path) {
         #[cfg(unix)]
         {
