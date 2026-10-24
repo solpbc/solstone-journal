@@ -412,7 +412,7 @@ fn windows_component_evidence_error_conditions() {
         )
         .unwrap_err();
     assert!(
-        err.message.starts_with("verification-failed:"),
+        err.message.starts_with("verification-failed: target\n"),
         "{}",
         err.message
     );

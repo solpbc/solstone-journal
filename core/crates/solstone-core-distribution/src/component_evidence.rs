@@ -415,13 +415,13 @@ fn screen_ocr_member_input(path: &str, final_sha256: &str, inputs: &[InputRef]) 
     })
 }
 
+type Identity = (String, String, Vec<InputRef>);
+
 /// Windows ARM rows whose identity differs from the Intel package: archives
 /// pinned per architecture, the ARM NVIDIA attestation SDK revision, and the
 /// components ARM builds from source. Every other Windows row shares the
 /// Intel identity table, keyed by target where the pin is per target.
-fn windows_aarch64_identity(
-    id: &str,
-) -> Option<Result<(String, String, Vec<InputRef>), EvidenceError>> {
+fn windows_aarch64_identity(id: &str) -> Option<Result<Identity, EvidenceError>> {
     fn archive(pin: &crate::produce::windows_archives::ArchivePin) -> (String, Vec<InputRef>) {
         let (base, name) = pin.url.rsplit_once('/').unwrap_or((pin.url, pin.url));
         (
@@ -447,6 +447,8 @@ fn windows_aarch64_identity(
             let revision = crate::nvattest_windows_arm64::SDK_REVISION.to_string();
             Some(Ok((revision.clone(), revision, Vec::new())))
         }
+        // Built from the upstream release tarball: the row names the release
+        // and that tarball; the receipt binds the revision and the build.
         "restic" => Some(Ok((
             crate::restic_windows::VERSION.to_string(),
             crate::restic_windows::SOURCE_URL.to_string(),
@@ -1898,18 +1900,12 @@ pub fn render_windows_component_evidence_for_target(
     if observed_dirty {
         return Err(EvidenceError::new("windows-evidence-dirty-tree"));
     }
-    let verified = match architecture {
-        solstone_core_installed_payload::WindowsArchitecture::X86_64 => {
-            solstone_core_installed_payload::windows_payload::verify_windows_payload(payload_root)
-        }
-        solstone_core_installed_payload::WindowsArchitecture::Aarch64 => {
-            solstone_core_installed_payload::windows_payload::verify_windows_payload_for_architecture(
-                payload_root,
-                architecture,
-            )
-        }
-    }
-    .map_err(|e| EvidenceError::new(format!("verification-failed: {e}")))?;
+    let verified =
+        solstone_core_installed_payload::windows_payload::verify_windows_payload_for_architecture(
+            payload_root,
+            architecture,
+        )
+        .map_err(|e| EvidenceError::new(format!("verification-failed: {e}")))?;
     let target = architecture.target_id();
 
     if verified.manifest().source_commit != observed_head {
@@ -1986,7 +1982,11 @@ pub fn render_windows_component_evidence_for_target(
         // The verifier's CA bundle carries no receipt of its own; it is named
         // from its production pin, as `name_receipt_inputs` names it.
         if id == "nvattest" && dest.ends_with(".pem") {
-            let pins = crate::nvattest_windows::production_pins();
+            let pins = if target == "windows-aarch64" {
+                crate::nvattest_windows_arm64::pins()
+            } else {
+                crate::nvattest_windows::production_pins()
+            };
             row_inputs = vec![InputRef {
                 name: "ca-bundle.pem".to_string(),
                 sha256: pins.ca_bundle.sha256.to_string(),

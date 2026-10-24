@@ -22,7 +22,7 @@ use solstone_core_distribution::publish;
 use solstone_core_distribution::rfdetr_windows_source;
 
 fn usage() -> &'static str {
-    "usage: solstone-distribution <validate|produce|dev-package|check-installed|ffmpeg-bindings|publish|sign|acquire|journal-artifacts|register-v2-origin|fetch-set|windows-component-evidence|windows-native-inputs|ced-windows|ced-windows-arm64|ffmpeg-windows|onnx-windows|onnx-windows-arm64|parakeet-windows|parakeet-windows-arm64|rfdetr-windows|rfdetr-windows-arm64|restic-windows|openmp-windows|llama-windows|llama-windows-arm64|nvattest-windows|nvattest-windows-arm64|cleanroom-plan|cleanroom-serve|cleanroom-generate-serve|help> [ARG]\n\nThe inventory lists files, not an SBOM. Code compiled into an executable is outside it: FFmpeg, the WebView2 loader, Velopack, the Rust crates, and FluidAudio in parakeet-helper."
+    "usage: solstone-distribution <validate|produce|dev-package|check-installed|ffmpeg-bindings|publish|sign|acquire|journal-artifacts|register-v2-origin|fetch-set|windows-component-evidence|windows-native-inputs|ced-windows|ced-windows-arm64|ffmpeg-windows|onnx-windows|onnx-windows-arm64|parakeet-windows|parakeet-windows-arm64|rfdetr-windows|rfdetr-windows-arm64|restic-windows|openmp-windows|llama-windows|llama-windows-arm64|nvattest-windows|nvattest-windows-arm64|cleanroom-plan|cleanroom-serve|cleanroom-generate-serve|help> [ARG]\n\nwindows-component-evidence PAYLOAD OUT [--windows-target windows-x86_64|windows-aarch64] (default windows-x86_64)\n\nThe inventory lists files, not an SBOM. Code compiled into an executable is outside it: FFmpeg, the WebView2 loader, Velopack, the Rust crates, and FluidAudio in parakeet-helper."
 }
 
 fn main() -> ExitCode {
