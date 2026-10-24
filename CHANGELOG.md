@@ -10,6 +10,9 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - the journal’s night background now has gold stars, meteor trails and an aurora.
 
+### Changed
+
+- in a meeting, a person whose voice your journal recognized on at least two lines is now listed as attending, even if nothing written that day named them, and so is a voice you haven't named yet, like "Speaker 2". a single matched line is no longer enough unless you assigned that line yourself, so that person is listed as mentioned. activities already in your journal keep their people as they are.
 
 ### Fixed
 
