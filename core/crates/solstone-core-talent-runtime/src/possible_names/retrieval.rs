@@ -106,6 +106,8 @@ pub(crate) struct Action {
     pub product: bool,
     /// Every word of the name already occurs in the segment's derived text.
     pub in_segment_derived: bool,
+    /// The entity is filed under one of the segment's own facets.
+    pub segment_facet: bool,
 }
 
 impl Action {
@@ -128,6 +130,9 @@ impl Action {
         }
         if !self.route.enabled() {
             return Some("route_disabled");
+        }
+        if ALIAS_NEEDS_SEGMENT_FACET && self.route == Route::Alias && !self.segment_facet {
+            return Some("alias_outside_segment_facets");
         }
         None
     }
@@ -242,11 +247,13 @@ fn keys(entities: &[CandidateEntity]) -> Keys {
 }
 
 /// Every entity matched in the segment, one action each, before the gate.
-/// `derived` is the segment's derived text, case folded.
+/// `derived` is the segment's derived text, case folded; `segment_facets`
+/// are the facets the segment is filed under.
 pub(crate) fn find_actions(
     statements: &[Statement],
     entities: &[CandidateEntity],
     derived: &str,
+    segment_facets: &[String],
 ) -> Vec<Action> {
     type Rank = (u8, bool, u64, usize);
     let keys = keys(entities);
@@ -358,6 +365,7 @@ pub(crate) fn find_actions(
                             .collect(),
                         product: is_product(&entity.name),
                         in_segment_derived: false,
+                        segment_facet: false,
                     };
                     best.insert(index, (rank, action));
                 }
@@ -368,6 +376,9 @@ pub(crate) fn find_actions(
         .into_iter()
         .map(|(index, (_, mut action))| {
             action.in_segment_derived = in_derived_text(&entities[index].name, derived);
+            action.segment_facet = segment_facets
+                .iter()
+                .any(|facet| entities[index].facets.contains_key(facet));
             action
         })
         .collect::<Vec<_>>();

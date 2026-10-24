@@ -5,13 +5,17 @@
 //! evaluated. Changing one changes [`super::talent_version`], so the next
 //! think of a segment regenerates its possible names.
 
-/// Routes the gate lets through. A disabled route still matches and still
-/// counts as a competitor; only its actions are dropped, as evaluated.
+/// Routes the gate lets through (the evaluated `G2` configuration). A
+/// disabled route still matches and still counts as a competitor; only its
+/// actions are dropped, as evaluated.
 pub(crate) const ROUTE_CANONICAL: bool = true;
 pub(crate) const ROUTE_ALIAS: bool = true;
-pub(crate) const ROUTE_FIRST: bool = true;
-pub(crate) const ROUTE_PHONETIC: bool = true;
+pub(crate) const ROUTE_FIRST: bool = false;
+pub(crate) const ROUTE_PHONETIC: bool = false;
 pub(crate) const ROUTE_SPELLING: bool = true;
+/// An alias match is offered only when its entity is filed under one of the
+/// segment's own facets (`talents/facets.json`); none listed means no match.
+pub(crate) const ALIAS_NEEDS_SEGMENT_FACET: bool = true;
 
 /// A name or alias is matched only when its compact key has this many
 /// characters.
@@ -60,6 +64,7 @@ pub(crate) fn fingerprint() -> String {
             "phonetic": ROUTE_PHONETIC,
             "spelling": ROUTE_SPELLING,
         },
+        "alias_needs_segment_facet": ALIAS_NEEDS_SEGMENT_FACET,
         "form_chars": [MIN_FORM_CHARS, MAX_FORM_CHARS],
         "sound_key_chars": MIN_SOUND_KEY_CHARS,
         "sound_span_chars": MIN_SOUND_SPAN_CHARS,

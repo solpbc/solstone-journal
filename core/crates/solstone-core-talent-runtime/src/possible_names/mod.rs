@@ -102,11 +102,18 @@ pub(crate) fn talent_version(system_instruction: &str) -> String {
     format!("{TALENT_VERSION_PREFIX}-{}", &hex(&digest)[..12])
 }
 
-/// SHA-256 over the canonical serialization of the registry candidates were
-/// drawn from: ids in order, with name, type, aka and facet descriptions.
-fn registry_revision(entities: &[CandidateEntity]) -> String {
+/// SHA-256 over the canonical serialization of the registry as this segment
+/// sees it: every candidate entity (ids in order, with name, type, aka and
+/// facet descriptions) and the facets the segment is filed under, which decide
+/// which alias matches the gate admits and head the packet. Re-filing a
+/// segment therefore regenerates its possible names like a registry change.
+fn registry_revision(entities: &[CandidateEntity], segment_facets: &[String]) -> String {
     hex(&Sha256::digest(
-        serde_json::to_vec(entities).expect("registry serializes"),
+        serde_json::to_vec(&json!({
+            "entities": entities,
+            "segment_facets": segment_facets,
+        }))
+        .expect("registry serializes"),
     ))
 }
 
@@ -179,10 +186,15 @@ fn plan_segment(
     };
     let statements = read_statements(transcript);
     let entities = load_candidate_entities(journal)?;
-    let registry_revision = registry_revision(&entities);
-    let talent_version = talent_version(system_instruction);
     let facets = read_facets(segment_dir);
-    let pool = retrieval::find_actions(&statements, &entities, &read_derived_text(segment_dir));
+    let registry_revision = registry_revision(&entities, &facets);
+    let talent_version = talent_version(system_instruction);
+    let pool = retrieval::find_actions(
+        &statements,
+        &entities,
+        &read_derived_text(segment_dir),
+        &facets,
+    );
     let candidates = retrieval::select(&pool);
     let registry = entities
         .iter()

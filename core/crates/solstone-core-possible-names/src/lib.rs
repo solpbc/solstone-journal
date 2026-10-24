@@ -47,7 +47,8 @@ pub struct Sidecar {
     pub talent_version: String,
     /// The transcript the entries address, as it was when they were chosen.
     pub source: SidecarSource,
-    /// Hex revision of the entity registry the candidates were drawn from.
+    /// Hex revision of the entity registry the candidates were drawn from, as
+    /// the segment saw it (its own facets included). Only the talent compares it.
     pub registry_revision: String,
     pub generated_at_ms: i64,
     /// Accepted choices. Empty when the talent abstained.

@@ -47,7 +47,7 @@ fn statements(texts: &[&str]) -> Vec<Statement> {
 }
 
 fn find(texts: &[&str], entities: &[CandidateEntity]) -> Vec<Action> {
-    find_actions(&statements(texts), entities, "")
+    find_actions(&statements(texts), entities, "", &[])
 }
 
 fn only(actions: &[Action], id: &str) -> Action {
@@ -190,12 +190,14 @@ fn the_gate_keeps_only_capitalized_mid_sentence_names_worth_offering() {
     assert_eq!(reason("soul"), Some("product"));
     assert_eq!(reason("ada"), Some("not_capitalized_mid_sentence"));
     assert_eq!(reason("tuck"), Some("not_every_word_capitalized"));
-    assert_eq!(reason("lin"), None);
+    // First names and sound matches are found but not offered (G2).
+    assert_eq!(reason("lin"), Some("route_disabled"));
 
     let named = find_actions(
         &statements(&["we saw Ada Lovelace"]),
         &entities,
         &super::retrieval::casefold("Notes about ADA and lovelace."),
+        &[],
     );
     assert_eq!(
         only(&named, "ada").drop_reason(),
@@ -205,6 +207,7 @@ fn the_gate_keeps_only_capitalized_mid_sentence_names_worth_offering() {
         &statements(&["we saw Ada Lovelace"]),
         &entities,
         "notes about ada",
+        &[],
     );
     assert_eq!(only(&partial, "ada").drop_reason(), None);
 }
@@ -217,7 +220,7 @@ fn a_first_name_needs_few_rivals() {
     ];
     let actions = find(&["call Ada now"], &two);
     assert_eq!(only(&actions, "a1").competitors, ["a2"]);
-    assert_eq!(only(&actions, "a1").drop_reason(), None);
+    assert_eq!(only(&actions, "a1").drop_reason(), Some("route_disabled"));
     let mut three = two.to_vec();
     three.push(entity("a3", "Ada King", "Person", &[], &[]));
     let actions = find(&["call Ada now"], &three);
@@ -316,7 +319,7 @@ fn the_packet_renders_exactly_as_evaluated() {
         "Hello there.",
         "I asked Kathryn about Margarete and the plan.",
     ]);
-    let candidates = select(&find_actions(&statements, &entities, ""));
+    let candidates = select(&find_actions(&statements, &entities, "", &[]));
     let registry = entities
         .iter()
         .map(|entity| (entity.entity_id.as_str(), entity))
@@ -333,14 +336,8 @@ fn the_packet_renders_exactly_as_evaluated() {
          CANDIDATES\n\
          N0: \"Kathryn\"\n   \
          matched [[Kathryn]] in line 2: same normalized spelling as the name\n   \
-         filed under: home\n   \
-         other candidates for the same words: N1\n\
-         N1: \"Catherine\" (Person)\n   \
-         matched [[Kathryn]] in line 2: sounds like the name\n   \
-         filed under: work\n   \
-         note: Cousin from Ohio\n   \
-         other candidates for the same words: N0\n\
-         N2: \"Margarethe\" (Person)\n   \
+         filed under: home\n\
+         N1: \"Margarethe\" (Person)\n   \
          matched [[Margarete]] in line 2: close spelling of the name\n   \
          also known as: Grete, Gretl, Marga, Maggie\n   \
          filed under: home, work\n   \
@@ -361,7 +358,7 @@ fn a_note_is_cut_to_two_hundred_characters() {
     let packet = packet::render(
         &statements,
         &[],
-        &select(&find_actions(&statements, &entities, "")),
+        &select(&find_actions(&statements, &entities, "", &[])),
         &registry,
     );
     assert!(packet.ends_with(&format!("note: {}", "é".repeat(200))));
@@ -519,9 +516,9 @@ impl Journal {
             context: ExecutionContext { journal },
             _root: root,
         };
-        fixture.entity("cath", "Catherine", &[("work", "Cousin from Ohio")]);
+        fixture.entity("marg", "Margarethe", &[("work", "Aunt from Bremen")]);
         fixture.entity("ada", "Ada Lovelace", &[("work", "")]);
-        fixture.transcript(&["I asked Kathryn about it.", "Ada Lovelace came."]);
+        fixture.transcript(&["I asked Margarete about it.", "Ada Lovelace came."]);
         fs::write(
             fixture.segment().join("talents/facets.json"),
             r#"[{"facet":"work"},{"facet":""},"bad"]"#,
@@ -639,10 +636,10 @@ fn the_talent_frames_its_request_writes_accepted_names_and_then_stays_fresh() {
     assert_eq!(
         text,
         "This recording is filed under: work\n\nTRANSCRIPT\n\
-         [1] I asked [[Kathryn]] about it.\n[2] Ada Lovelace came.\n\n\
-         CANDIDATES\nN0: \"Catherine\" (Person)\n   \
-         matched [[Kathryn]] in line 1: sounds like the name\n   \
-         filed under: work\n   note: Cousin from Ohio"
+         [1] I asked [[Margarete]] about it.\n[2] Ada Lovelace came.\n\n\
+         CANDIDATES\nN0: \"Margarethe\" (Person)\n   \
+         matched [[Margarete]] in line 1: close spelling of the name\n   \
+         filed under: work\n   note: Aunt from Bremen"
     );
 
     let sidecar = journal.sidecar().expect("sidecar written");
@@ -657,10 +654,10 @@ fn the_talent_frames_its_request_writes_accepted_names_and_then_stays_fresh() {
         [SidecarEntry {
             sentence: 1,
             start_byte: 8,
-            end_byte: 15,
-            heard: "Kathryn".to_owned(),
-            entity_id: "cath".to_owned(),
-            name: "Catherine".to_owned(),
+            end_byte: 17,
+            heard: "Margarete".to_owned(),
+            entity_id: "marg".to_owned(),
+            name: "Margarethe".to_owned(),
         }]
     );
     assert!(journal.queued());
@@ -677,9 +674,9 @@ fn the_talent_frames_its_request_writes_accepted_names_and_then_stays_fresh() {
 
     // A registry change regenerates; abstaining writes an empty list.
     journal.entity(
-        "cath",
-        "Catherine",
-        &[("work", "Cousin from Ohio"), ("home", "")],
+        "marg",
+        "Margarethe",
+        &[("work", "Aunt from Bremen"), ("home", "")],
     );
     *model.text.lock().unwrap() = r#"{"N0":"no"}"#.to_owned();
     assert!(matches!(
@@ -690,6 +687,23 @@ fn the_talent_frames_its_request_writes_accepted_names_and_then_stays_fresh() {
     let abstained = journal.sidecar().unwrap();
     assert!(abstained.entries.is_empty());
     assert_ne!(abstained.registry_revision, sidecar.registry_revision);
+    assert_eq!(skip_reason(&journal.run(&model)), Some("fresh"));
+
+    // Re-filing the segment regenerates even with the same transcript.
+    fs::write(
+        journal.segment().join("talents/facets.json"),
+        r#"[{"facet":"home"}]"#,
+    )
+    .unwrap();
+    assert!(matches!(
+        journal.run(&model),
+        RuntimeOutcome::Finished { .. }
+    ));
+    assert_eq!(model.calls(), 3);
+    assert_ne!(
+        journal.sidecar().unwrap().registry_revision,
+        abstained.registry_revision
+    );
 }
 
 #[test]
@@ -766,7 +780,7 @@ fn the_evaluation_packet_reports_what_a_run_would_send() {
     );
     assert_eq!(report["json_schema"], packet::schema(1));
     assert_eq!(report["candidates"][0]["id"], "N0");
-    assert_eq!(report["candidates"][0]["action"]["route"], "phonetic");
+    assert_eq!(report["candidates"][0]["action"]["route"], "spelling");
     assert_eq!(report["pool"][1]["action"]["entity_id"], "ada");
     assert_eq!(report["pool"][1]["dropped"], "not_capitalized_mid_sentence");
     assert!(journal.sidecar().is_none());
@@ -799,7 +813,7 @@ fn retrieval_and_packet_reproduce_the_evaluated_prototype() {
     let facets: Vec<String> = serde_json::from_value(fixture["segment_facets"].clone()).unwrap();
     let derived = super::retrieval::casefold(fixture["derived_text"].as_str().unwrap());
 
-    let pool = find_actions(&statements, &entities, &derived);
+    let pool = find_actions(&statements, &entities, &derived, &facets);
     let mut got = pool
         .iter()
         .map(|action| {
@@ -814,6 +828,7 @@ fn retrieval_and_packet_reproduce_the_evaluated_prototype() {
                 "sentence_start": action.sentence_start,
                 "all_words_cap": action.all_words_cap,
                 "in_segment_derived": action.in_segment_derived,
+                "kept": action.drop_reason().is_none(),
             })
         })
         .collect::<Vec<_>>();
@@ -836,4 +851,38 @@ fn retrieval_and_packet_reproduce_the_evaluated_prototype() {
         fixture["expected_packet"].as_str().unwrap()
     );
     assert_eq!(packet::schema(candidates.len()), fixture["expected_schema"]);
+}
+
+#[test]
+fn an_alias_needs_its_entity_filed_under_a_segment_facet() {
+    let entities = [
+        entity(
+            "bob",
+            "Robert Smith",
+            "Person",
+            &["Bobby"],
+            &[("travel", ""), ("work", "")],
+        ),
+        entity("ann", "Ann Lee", "Person", &["Annie"], &[("home", "")]),
+    ];
+    let spoken = statements(&["we called Bobby and Annie today"]);
+    let gate = |facets: &[&str]| {
+        let facets = facets
+            .iter()
+            .map(|facet| (*facet).to_owned())
+            .collect::<Vec<_>>();
+        find_actions(&spoken, &entities, "", &facets)
+            .into_iter()
+            .map(|action| (action.entity_id.clone(), action.drop_reason()))
+            .collect::<BTreeMap<_, _>>()
+    };
+    let outside = Some("alias_outside_segment_facets");
+    assert_eq!(gate(&["work"])["bob"], None);
+    assert_eq!(gate(&["work"])["ann"], outside);
+    assert_eq!(gate(&["home", "travel"])["bob"], None);
+    assert_eq!(gate(&[])["bob"], outside);
+    // The facet rule runs last: a disabled route keeps its own reason.
+    let first = [entity("ann", "Ann Lee", "Person", &[], &[("home", "")])];
+    let actions = find_actions(&statements(&["we called Ann today"]), &first, "", &[]);
+    assert_eq!(only(&actions, "ann").drop_reason(), Some("route_disabled"));
 }

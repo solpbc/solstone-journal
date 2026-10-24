@@ -89,8 +89,10 @@ per local day; owner-write conflicts do not become successful capped results.
 
 After Sense, every segment with a speech transcript (`audio.jsonl`, or its only
 speech transcript) runs `entities:possible_names`. Its pre-step finds
-facet-attached registry entities whose name, alias, a person's first name, sound
-or close spelling matches a span of the speech, keeps at most twelve, and asks the
+facet-attached registry entities whose name, alias or close spelling matches a
+span of the speech (first-name and sound matches are found but, as evaluated, not
+offered; an alias only for an entity filed under one of the segment's facets),
+keeps at most twelve, and asks the
 owner's active brain at temperature 0, with the prompt as the system instruction
 and the packet as the only text, to answer `yes` or `no` for each against a schema
 built for that request. Accepted spans are written to
@@ -100,7 +102,8 @@ route switches are constants in
 `solstone-core-talent-runtime/src/possible_names/policy.rs`.
 
 A sidecar with the same transcript digest, registry revision and talent version
-is fresh, and Generate is skipped. No candidates skips Generate too and replaces
+is fresh, and Generate is skipped. The registry revision also covers the segment's
+own facet list, so a re-filed segment regenerates. No candidates skips Generate too and replaces
 an older list with an empty one. A malformed answer fails the talent and writes
 nothing. The talent never gates publication (`SEGMENT_NONGATING_TALENTS`).
 `solstone-core __possible-names-packet <segment-dir>` prints, for evaluation, the
