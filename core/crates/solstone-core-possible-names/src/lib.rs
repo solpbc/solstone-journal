@@ -384,6 +384,117 @@ fn load_attached(journal_root: &Path) -> Result<BTreeMap<String, AttachedEntity>
     Ok(attached)
 }
 
+/// One entity the talent may offer as a possible name: the same population
+/// [`Registry::admits`] shows, read whole.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct CandidateEntity {
+    pub entity_id: String,
+    /// Canonical name.
+    pub name: String,
+    /// Entity type, empty when none is recorded.
+    #[serde(rename = "type")]
+    pub entity_type: String,
+    /// Recorded alternative names, in stored order, blank ones left out.
+    pub aka: Vec<String>,
+    /// Each non-detached facet relationship by facet directory, with its
+    /// description (empty when it has none).
+    pub facets: BTreeMap<String, String>,
+}
+
+/// Every entity a possible name may be drawn from, by id: unblocked, with a
+/// non-detached facet relationship and a canonical name, and neither merged
+/// nor deleted. Reads go through the entity and facet stores.
+pub fn load_candidate_entities(journal_root: &Path) -> Result<Vec<CandidateEntity>, String> {
+    let map = solstone_core_entity::read_identity_map(journal_root)
+        .map_err(|error| format!("entity identities could not be read: {error}"))?;
+    let facet_dirs = solstone_core_facets::list_facet_directories(journal_root)
+        .map_err(|error| format!("facets could not be listed: {error}"))?;
+    let mut found = BTreeMap::<String, CandidateEntity>::new();
+    for facet_dir in facet_dirs {
+        let entities = solstone_core_facets::list_scoped_facet_entities_tolerant_with_resolved_ids(
+            journal_root,
+            &facet_dir,
+            false,
+            false,
+            &map.resolved,
+        )
+        .map_err(|error| format!("facet {facet_dir} could not be read: {error}"))?;
+        for entity in entities {
+            let Some(name) = entity.identity.get("name").and_then(Value::as_str) else {
+                continue;
+            };
+            let description = entity
+                .relationship
+                .get("description")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_owned();
+            found
+                .entry(entity.entity_id.clone())
+                .or_insert_with(|| CandidateEntity {
+                    entity_id: entity.entity_id.clone(),
+                    name: name.to_owned(),
+                    entity_type: entity
+                        .identity
+                        .get("type")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default()
+                        .to_owned(),
+                    aka: entity
+                        .identity
+                        .get("aka")
+                        .and_then(Value::as_array)
+                        .into_iter()
+                        .flatten()
+                        .filter_map(Value::as_str)
+                        .filter(|aka| !aka.trim().is_empty())
+                        .map(str::to_owned)
+                        .collect(),
+                    facets: BTreeMap::new(),
+                })
+                .facets
+                .insert(facet_dir.clone(), description);
+        }
+    }
+    Ok(found
+        .into_values()
+        .filter(|entity| {
+            matches!(
+                solstone_core_entity::retired_record_hold(journal_root, &entity.entity_id),
+                solstone_core_entity::RetiredRecordHold::Free
+            )
+        })
+        .collect())
+}
+
+/// The speech transcript a segment's possible names address: `audio.jsonl`
+/// when the segment has one, otherwise its only speech transcript. `None` when
+/// it has none, or several and no `audio.jsonl`. An imported AI chat is never
+/// speech, so it is never addressed.
+#[must_use]
+pub fn speech_transcript(segment_dir: &Path) -> Option<String> {
+    let origin = solstone_core_journal_io::segment_origin(segment_dir);
+    let mut names = fs::read_dir(segment_dir)
+        .ok()?
+        .flatten()
+        .filter(|entry| entry.file_type().is_ok_and(|kind| kind.is_file()))
+        .filter_map(|entry| entry.file_name().into_string().ok())
+        .filter(|name| is_transcript_file_name(name))
+        .filter(|name| {
+            !matches!(
+                solstone_core_format::content::classify(&format!("{origin}/{name}")),
+                solstone_core_format::content::ContentResolution::Indexed(
+                    solstone_core_format::content::Family::AiChat
+                )
+            )
+        })
+        .collect::<Vec<_>>();
+    if names.iter().any(|name| name == "audio.jsonl") {
+        return Some("audio.jsonl".to_owned());
+    }
+    (names.len() == 1).then(|| names.remove(0))
+}
+
 /// The entries of a segment's sidecar this viewer may be shown now, in
 /// sidecar order. Every reader calls this (or [`live_entries_with`]).
 ///

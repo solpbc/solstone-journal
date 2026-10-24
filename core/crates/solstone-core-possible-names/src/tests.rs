@@ -304,3 +304,75 @@ fn indexed_paths_name_their_segment() {
         assert_eq!(segment_dir_for_indexed_path(root, rel), None, "{rel}");
     }
 }
+
+#[test]
+fn candidates_are_the_entities_a_reader_admits_with_their_relationships() {
+    let fixture = Fixture::new();
+    fixture.entity("gone", "Gone", &["alpha"]);
+    fixture.entity("hidden", "Hidden", &["alpha"]);
+    fixture.identity(
+        "hidden",
+        json!({"id": "hidden", "name": "Hidden", "blocked": true}),
+    );
+    fixture.entity("loose", "Loose", &[]);
+    fixture.entity("cut", "Cut", &["beta"]);
+    fixture.link("beta", "cut", true);
+    fixture.identity(
+        "ana",
+        json!({"id": "ana", "name": "Ana Lima", "type": "Person", "aka": ["Ana", " ", 3, "A. Lima"]}),
+    );
+    fixture.link("alpha", "ana", false);
+    fs::write(
+        fixture.path().join("facets/beta/entities/ana/entity.json"),
+        json!({"entity_id": "ana", "description": "Runs the lab"}).to_string(),
+    )
+    .unwrap();
+    fs::write(
+        fixture.path().join("entities/retired.json"),
+        json!({"ids": {"gone": {"state": "deleted", "dir": "gone"}}}).to_string(),
+    )
+    .unwrap();
+
+    let candidates = load_candidate_entities(fixture.path()).unwrap();
+    assert_eq!(
+        candidates
+            .iter()
+            .map(|entity| entity.entity_id.as_str())
+            .collect::<Vec<_>>(),
+        ["ana", "friar"]
+    );
+    let ana = &candidates[0];
+    assert_eq!(ana.name, "Ana Lima");
+    assert_eq!(ana.entity_type, "Person");
+    assert_eq!(ana.aka, ["Ana", "A. Lima"]);
+    assert_eq!(
+        ana.facets,
+        BTreeMap::from([
+            ("alpha".to_owned(), String::new()),
+            ("beta".to_owned(), "Runs the lab".to_owned()),
+        ])
+    );
+    assert_eq!(candidates[1].entity_type, "");
+}
+
+#[test]
+fn the_addressed_transcript_is_audio_or_the_only_speech_file() {
+    let root = tempfile::tempdir().unwrap();
+    let dir = root.path().join(SEGMENT);
+    fs::create_dir_all(&dir).unwrap();
+    assert_eq!(speech_transcript(&dir), None);
+    fs::write(dir.join("screen.jsonl"), "{}\n").unwrap();
+    fs::write(dir.join("mic_audio.jsonl"), "{}\n").unwrap();
+    assert_eq!(speech_transcript(&dir).as_deref(), Some("mic_audio.jsonl"));
+    fs::write(dir.join("sys_audio.jsonl"), "{}\n").unwrap();
+    assert_eq!(speech_transcript(&dir), None);
+    fs::write(dir.join("audio.jsonl"), "{}\n").unwrap();
+    assert_eq!(speech_transcript(&dir).as_deref(), Some("audio.jsonl"));
+
+    let chat = root
+        .path()
+        .join("chronicle/20261024/import.chatgpt/090000_300");
+    fs::create_dir_all(&chat).unwrap();
+    fs::write(chat.join("conversation_transcript.jsonl"), "{}\n").unwrap();
+    assert_eq!(speech_transcript(&chat), None);
+}
