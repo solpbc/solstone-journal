@@ -13,6 +13,8 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- security fix: updated notification encryption to remove a timing weakness. someone able to measure encryption operations on the same computer could have used it to learn information about a notification's encryption key.
+
 - work and conversation stories no longer take their text from a reserved field in custom thinking settings.
 - each transcript an agent reads now says where it came from, in the words your journal uses, such as "your mac · audio". before, when two devices added to your journal over the same minutes, an agent saw two identical entries. thanks @dvanduzer for the report.
 - the journal's titles, topics, summaries and stories now spell solstone and sol pbc correctly for common speech-to-text mix-ups. transcripts keep what was heard.
