@@ -65,7 +65,7 @@ pub(crate) fn prepare(
     for source in sources
         .iter()
         .flatten()
-        .filter(|s| s.file.ends_with("audio.jsonl"))
+        .filter(|s| s.is_speech_transcript())
     {
         let mut record_cursor = 0;
         for ((chunk, record), at) in source.chunks.iter().zip(&source.chunk_offsets) {
