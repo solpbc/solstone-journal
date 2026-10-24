@@ -24,6 +24,7 @@ mod speaker_coordinates;
 
 use percept_absence::PerceptFamily;
 pub use percept_absence::screen_inputs_absent;
+pub use solstone_core_processing_record::is_transcribe_output;
 
 pub use speaker_coordinates::{next_statement_ordinal, speaker_label_source};
 
@@ -200,6 +201,34 @@ impl From<SourceCounts> for Value {
 }
 
 pub const MIN_INPUT_CHARS: usize = 50;
+
+/// Whether a segment file is a speech transcript.
+///
+/// Transcribe names a transcript after its recording, so one recorded under
+/// any other name is known by the processing record transcribe wrote at its
+/// head rather than by its name.
+pub fn is_speech_transcript_file(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| {
+            name.ends_with("audio.jsonl")
+                || name.ends_with("_transcript.jsonl")
+                || solstone_core_format::audio_archive::is_audio_archive_transcript_name(name)
+        })
+        || solstone_core_processing_record::is_transcribe_output(path)
+}
+
+impl EntrySource {
+    /// Whether this source is a speech transcript, by name or by the
+    /// processing record transcribe wrote at its head.
+    pub fn is_speech_transcript(&self) -> bool {
+        self.file.ends_with("audio.jsonl")
+            || self
+                .records
+                .first()
+                .is_some_and(solstone_core_processing_record::header_names_transcribe)
+    }
+}
 
 pub fn is_no_input(text: &str, counts: &SourceCounts) -> bool {
     counts.total() == 0 || text.trim().len() < MIN_INPUT_CHARS
@@ -691,13 +720,7 @@ fn process_segment(
         }
         let mut transcript = files
             .iter()
-            .filter(|path| {
-                path.file_name()
-                    .and_then(|name| name.to_str())
-                    .is_some_and(|name| {
-                        name.ends_with("audio.jsonl") || (name.ends_with("_transcript.jsonl") || solstone_core_format::audio_archive::is_audio_archive_transcript_name(name))
-                    })
-            })
+            .filter(|path| is_speech_transcript_file(path))
             .collect::<Vec<_>>();
         transcript.sort();
         transcript.dedup();
@@ -1549,6 +1572,47 @@ mod tests {
 
     fn only(stems: &[&str]) -> TalentSource {
         TalentSource::Only(stems.iter().map(|stem| (*stem).to_owned()).collect())
+    }
+
+    #[test]
+    fn speech_recorded_under_any_name_reaches_segment_material() {
+        // Captured from a phone journal: `note-0.wav` and its transcript.
+        let root = TempDir::new().unwrap();
+        let capture = root
+            .path()
+            .join("chronicle")
+            .join(DAY)
+            .join("device_audio")
+            .join("140000_12");
+        fs::create_dir_all(&capture).unwrap();
+        fs::write(capture.join("note-0.wav"), b"RIFF").unwrap();
+        fs::write(
+            capture.join("note-0.jsonl"),
+            concat!(
+                r#"{"raw":"note-0.wav","backend":"parakeet-cpp","duration":11.05,"_solstone_processing":{"schema":"solstone.processing.v1","state":"analyzed","reason_code":"ok","handler":"transcribe","input_size":353678,"attempted_at":"2026-10-24T15:46:08Z"}}"#,
+                "\n",
+                r#"{"start":"14:00:00","text":"Maya checked the orchard irrigation pump this morning.","sentence_id":1}"#,
+                "\n",
+            ),
+        )
+        .unwrap();
+        // A JSONL transcribe did not write is never read as speech.
+        fs::write(
+            capture.join("events.jsonl"),
+            "{\"start\":\"14:00:01\",\"text\":\"ingest bookkeeping\"}\n",
+        )
+        .unwrap();
+        let everything = sources(true, true, TalentSource::All);
+        let (segment, counts) = cluster_period(
+            root.path(),
+            DAY,
+            "140000_12",
+            &everything,
+            Some("device_audio"),
+        );
+        assert!(segment.contains("orchard irrigation pump"), "{segment}");
+        assert!(!segment.contains("ingest bookkeeping"), "{segment}");
+        assert_eq!(counts.total(), 1);
     }
 
     #[test]

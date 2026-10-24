@@ -18,6 +18,11 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - weekly reflections started on saturday now use the previous completed week, so they can finish without including the current day.
 - on-device transcription in the development journal app now accepts up to two minutes of single-track audio. recordings above its processing limits stay held, with the original kept and an explanation in health.
+- some recordings stayed "waiting for media processing" in health, and that day's summaries waited with them. they now finish processing.
+- after you save a model or select check again, the thinking page now shows the check's result as soon as your journal has it. before, it showed "thinking status unavailable" until you reloaded the page.
+- when your journal runs on a phone, health's live panels now show what your journal is running. before, they stayed on "waiting for live updates".
+- when your journal runs on a phone, setup and the network page no longer say it's on a computer.
+
 - security fix: updated notification encryption to remove a timing weakness. someone able to measure encryption operations on the same computer could have used it to learn information about a notification's encryption key.
 - when something your journal sends for processing is too long for the model, your journal now uses the model's own count, when it gives one, to trim it closer to what fits. before, it cut the input to half the space it expected, which often dropped more than it needed to.
 

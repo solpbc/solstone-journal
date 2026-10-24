@@ -69,20 +69,17 @@ impl CallosumOneShotSender {
             let address_path = crate::endpoint_path(&self.socket_path)
                 .map_err(|_| CallosumOneShotError::Unavailable)?;
 
-            let mut stream = if expected.is_some() {
-                let socket =
-                    socket2::Socket::new(socket2::Domain::UNIX, socket2::Type::STREAM, None)
-                        .map_err(|_| CallosumOneShotError::Unavailable)?;
-                let address = socket2::SockAddr::unix(&address_path)
-                    .map_err(|_| CallosumOneShotError::Unavailable)?;
-                socket
-                    .connect_timeout(&address, self.timeout)
-                    .map_err(|_| CallosumOneShotError::Unavailable)?;
-                let descriptor: std::os::fd::OwnedFd = socket.into();
-                UnixStream::from(descriptor)
-            } else {
-                UnixStream::connect(&address_path).map_err(|_| CallosumOneShotError::Unavailable)?
-            };
+            // Unconfirmed status/event sends also run on threads Stop joins.
+            // Bound connection establishment, not only writes after connect.
+            let socket = socket2::Socket::new(socket2::Domain::UNIX, socket2::Type::STREAM, None)
+                .map_err(|_| CallosumOneShotError::Unavailable)?;
+            let address = socket2::SockAddr::unix(&address_path)
+                .map_err(|_| CallosumOneShotError::Unavailable)?;
+            socket
+                .connect_timeout(&address, self.timeout)
+                .map_err(|_| CallosumOneShotError::Unavailable)?;
+            let descriptor: std::os::fd::OwnedFd = socket.into();
+            let mut stream = UnixStream::from(descriptor);
             stream
                 .set_write_timeout(Some(self.timeout))
                 .map_err(|_| CallosumOneShotError::Unavailable)?;
@@ -298,6 +295,49 @@ mod tests {
             r#"{"tract":"supervisor","event":"request","ref":"browser:fixture","cmd":["solstone","journal","indexer","--rescan-file","20260930/device_browser_9e92ab54/174500_599/browser_pages.jsonl"]}"#,
         )
         .unwrap()
+    }
+
+    #[cfg(all(target_os = "linux", feature = "full-tests"))]
+    #[test]
+    fn unconfirmed_send_bounds_connect_when_backlog_is_full() {
+        use std::os::unix::net::UnixStream;
+        use std::sync::mpsc;
+
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("callosum.sock");
+        let listener =
+            socket2::Socket::new(socket2::Domain::UNIX, socket2::Type::STREAM, None).unwrap();
+        let address = socket2::SockAddr::unix(&path).unwrap();
+        listener.bind(&address).unwrap();
+        listener.listen(0).unwrap();
+        let queued = UnixStream::connect(&path).unwrap();
+        let probe =
+            socket2::Socket::new(socket2::Domain::UNIX, socket2::Type::STREAM, None).unwrap();
+        assert!(
+            probe
+                .connect_timeout(&address, Duration::from_millis(100))
+                .is_err(),
+            "control must establish a saturated, nonaccepting backlog"
+        );
+        let (started, ready) = mpsc::channel();
+        let (send, receive) = mpsc::channel();
+        let worker = std::thread::spawn(move || {
+            let sender = super::CallosumOneShotSender::new(&path, Duration::from_millis(100));
+            started.send(()).unwrap();
+            let _ =
+                send.send(sender.send_line("{\"tract\":\"supervisor\",\"event\":\"status\"}\n"));
+        });
+        ready.recv_timeout(Duration::from_secs(5)).unwrap();
+        let result = receive.recv_timeout(Duration::from_secs(1));
+        // Closing the listener releases even an incorrectly blocking sender,
+        // so the regression never leaves a detached test thread behind.
+        drop(listener);
+        drop(queued);
+        worker.join().unwrap();
+        assert_eq!(
+            result.expect("connect must finish within its bound"),
+            Err(super::CallosumOneShotError::Unavailable)
+        );
     }
 
     #[test]

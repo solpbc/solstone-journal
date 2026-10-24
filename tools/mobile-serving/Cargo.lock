@@ -5676,6 +5676,7 @@ dependencies = [
  "solstone-core-journal-io",
  "solstone-core-local",
  "solstone-core-npy",
+ "solstone-core-processing-record",
  "solstone-core-segment",
  "solstone-core-speaker-id",
  "solstone-core-system",

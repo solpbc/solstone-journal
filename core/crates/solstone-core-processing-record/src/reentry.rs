@@ -4,7 +4,7 @@
 //! Bounded JSONL evidence reads and analysis-output re-entry decisions.
 
 use std::fs::File;
-use std::io::{BufReader, Read};
+use std::io::{BufRead, BufReader, Read};
 use std::path::Path;
 
 use serde_json::Value;
@@ -43,6 +43,45 @@ pub fn read_processing_record_header(path: &Path) -> Option<Value> {
         .get("_solstone_processing")
         .filter(|record| record.is_object())
         .cloned()
+}
+
+/// Whether a JSONL metadata header carries transcribe's processing record.
+pub fn header_names_transcribe(header: &serde_json::Map<String, Value>) -> bool {
+    header
+        .get("_solstone_processing")
+        .and_then(|record| record.get("handler"))
+        .and_then(Value::as_str)
+        == Some(vocab::HANDLER_TRANSCRIBE)
+}
+
+/// Whether transcribe wrote this file, judged by its own header.
+///
+/// Transcribe names a transcript after its recording, so a recording that is
+/// not named `audio.*` or `*_audio.*` gets a transcript that no transcript
+/// name matches. Readers that know transcripts by name check this as well.
+/// Only transcribe writes its processing record, so no other JSONL passes, and
+/// the header stays with the transcript after its recording is released.
+///
+/// Only the first line is read, so asking this of a large JSONL costs little.
+pub fn is_transcribe_output(path: &Path) -> bool {
+    if path.extension().and_then(|extension| extension.to_str()) != Some("jsonl") {
+        return false;
+    }
+    let Ok(file) = File::open(path) else {
+        return false;
+    };
+    let mut line = Vec::new();
+    if BufReader::new(file.take(vocab::MAX_FIRST_ROW_BYTES as u64))
+        .read_until(b'\n', &mut line)
+        .is_err()
+    {
+        return false;
+    }
+    serde_json::from_slice::<Value>(line.trim_ascii_end())
+        .ok()
+        .as_ref()
+        .and_then(Value::as_object)
+        .is_some_and(header_names_transcribe)
 }
 
 /// Return whether either of the first two nonblank JSONL rows carries `row_key`
@@ -94,7 +133,8 @@ mod tests {
     use serde_json::json;
 
     use super::{
-        jsonl_has_row_with_key, read_processing_record_header, should_reenter_analysis_output,
+        is_transcribe_output, jsonl_has_row_with_key, read_processing_record_header,
+        should_reenter_analysis_output,
     };
     use crate::test_support::reserve_temp_path;
     use crate::vocab;
@@ -338,5 +378,43 @@ mod tests {
             vocab::HANDLER_DESCRIBE
         ));
         fs::remove_file(path).expect("remove sidecar");
+    }
+
+    #[test]
+    fn transcribe_output_is_known_by_its_header_not_its_name() {
+        // Header captured from a phone journal's `note-0.jsonl`.
+        let segment = reserve_temp_path("solstone-processing-record-transcribe-output");
+        fs::create_dir(&segment).expect("create segment");
+        let transcript = segment.join("note-0.jsonl");
+        write(
+            &transcript,
+            concat!(
+                r#"{"raw":"note-0.wav","backend":"parakeet-cpp","duration":11.05,"_solstone_processing":{"schema":"solstone.processing.v1","state":"analyzed","reason_code":"ok","handler":"transcribe","input_size":353678,"attempted_at":"2026-10-24T15:46:08Z"}}"#,
+                "\n",
+                r#"{"start":"14:00:00","text":"Maya checked the orchard irrigation pump this morning."}"#,
+                "\n",
+            ),
+        );
+        assert!(is_transcribe_output(&transcript));
+
+        let described = segment.join("camera.jsonl");
+        write(
+            &described,
+            "{\"_solstone_processing\":{\"schema\":\"solstone.processing.v1\",\"state\":\"analyzed\",\"handler\":\"describe\"}}\n",
+        );
+        assert!(!is_transcribe_output(&described));
+
+        let unrelated = segment.join("events.jsonl");
+        write(
+            &unrelated,
+            "{\"start\":\"14:00:00\",\"text\":\"handler transcribe\"}\n",
+        );
+        assert!(!is_transcribe_output(&unrelated));
+
+        let not_jsonl = transcript.with_extension("txt");
+        fs::copy(&transcript, &not_jsonl).expect("copy transcript");
+        assert!(!is_transcribe_output(&not_jsonl));
+        assert!(!is_transcribe_output(&segment.join("absent.jsonl")));
+        fs::remove_dir_all(segment).expect("remove segment");
     }
 }

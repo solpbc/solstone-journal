@@ -33,6 +33,9 @@ use solstone_core_system::request::{BusTaskRequest, ExecutionRequest, ScheduledR
 use solstone_core_system::schedule::{
     CheckReport, ScheduleEngine, ScheduleError, ScheduleNow, ScheduleSubmissionSink,
 };
+use solstone_core_system::status_wire::{
+    ServiceCandidate, SupervisorStatusWireInput, project_supervisor_status,
+};
 use solstone_core_think_cli::planner::{
     FlushState, PendingFlush, WorkDiscovery, check_activity_settle, check_segment_flush,
     day_still_closing,
@@ -186,6 +189,128 @@ impl IndexBoundary for HostIndexBoundary {
     }
 }
 
+/// The talents the cortex boundary is running now, for the status Health reads.
+#[derive(Clone, Default)]
+struct RunningUses(Arc<Mutex<BTreeMap<String, RunningUse>>>);
+struct RunningUse {
+    name: String,
+    provider: Value,
+    started: Instant,
+}
+struct RunningUseGuard {
+    uses: RunningUses,
+    use_id: String,
+}
+impl RunningUses {
+    fn begin(&self, use_id: &str, request: &CortexRequest) -> RunningUseGuard {
+        let provider = request
+            .config
+            .get("provider")
+            .cloned()
+            .unwrap_or_else(|| Value::String("unknown".into()));
+        if let Ok(mut running) = self.0.lock() {
+            running.insert(
+                use_id.to_owned(),
+                RunningUse {
+                    name: request.name.clone(),
+                    provider,
+                    started: Instant::now(),
+                },
+            );
+        }
+        RunningUseGuard {
+            uses: self.clone(),
+            use_id: use_id.to_owned(),
+        }
+    }
+    /// The cortex status fields. Talents run in-process here, so there is no
+    /// separate cortex queue.
+    fn status(&self) -> Option<Map<String, Value>> {
+        let running = self.0.lock().ok()?;
+        let uses = running
+            .iter()
+            .map(|(use_id, running)| {
+                json!({
+                    "use_id": use_id,
+                    "name": running.name,
+                    "provider": running.provider,
+                    "elapsed_seconds": running.started.elapsed().as_secs(),
+                })
+            })
+            .collect::<Vec<_>>();
+        Some(Map::from_iter([
+            ("running_uses".into(), json!(running.len())),
+            ("uses".into(), Value::Array(uses)),
+            ("queue_depth".into(), json!(0)),
+        ]))
+    }
+}
+impl Drop for RunningUseGuard {
+    fn drop(&mut self) {
+        if let Ok(mut running) = self.uses.0.lock() {
+            running.remove(&self.use_id);
+        }
+    }
+}
+
+const STATUS_INTERVAL: Duration = Duration::from_secs(5);
+
+/// Publish what this runtime holds, in the shape Health reads from the desktop
+/// supervisor and cortex. On a phone the runtime is the journal's one service:
+/// it runs the task queue, the schedules and every talent in-process, so it is
+/// the only service row. Called while the runtime runs, never after it stops
+/// or fails, so Health's own staleness rule clears the panels then.
+fn publish_status(
+    journal: &Path,
+    queue: &TaskQueue,
+    engine: &Mutex<ScheduleEngine>,
+    running: &RunningUses,
+    started: Instant,
+) {
+    let Ok(schedules) = engine.lock().map(|engine| {
+        engine.collect_status(ScheduleNow::in_zone(
+            Utc::now(),
+            solstone_core_journal_config::owner_zone(journal),
+        ))
+    }) else {
+        return;
+    };
+    let Some(cortex) = running.status() else {
+        return;
+    };
+    let supervisor = project_supervisor_status(SupervisorStatusWireInput {
+        services: vec![ServiceCandidate::SupervisorSelf {
+            reference: "journal".into(),
+            pid: std::process::id(),
+            uptime_seconds: started.elapsed().as_secs(),
+        }],
+        crashed: Vec::new(),
+        queue: queue.collect_status_snapshot(Instant::now()),
+        stale_heartbeats: Vec::new(),
+        schedules,
+        callosum_clients: 0,
+        sense_pending_queue_depth: None,
+        sense_pending_age_ms: None,
+        sense_pending_received: false,
+    });
+    for (tract, fields) in [("supervisor", supervisor), ("cortex", cortex)] {
+        let envelope = solstone_core_callosum::CallosumEnvelope {
+            tract: tract.into(),
+            event: "status".into(),
+            ts: Some(now_ms()),
+            extra: fields,
+        };
+        if let Ok(mut line) = serde_json::to_string(&envelope) {
+            line.push('\n');
+            let _ = solstone_core_callosum::CallosumOneShotSender::new(
+                journal.join("health/callosum.sock"),
+                Duration::from_secs(1),
+            )
+            .send_line(&line);
+        }
+    }
+}
+
 struct HostCortexBoundary {
     journal: PathBuf,
     talent_root: PathBuf,
@@ -195,6 +320,7 @@ struct HostCortexBoundary {
     client: CortexRequestClient,
     cancelled: Checkpoint,
     owner: Arc<CallableCortex>,
+    running: RunningUses,
 }
 impl CortexBoundary for HostCortexBoundary {
     fn dispatch(
@@ -232,6 +358,7 @@ impl CortexBoundary for HostCortexBoundary {
         extra.extend(request.config.clone());
         extra.insert("name".into(), Value::String(request.name.clone()));
         extra.insert("use_id".into(), Value::String(use_id.clone()));
+        let _running = self.running.begin(&use_id, request);
         let outcome = self
             .owner
             .execute(
@@ -620,6 +747,7 @@ struct HostedCommand {
     generator: HostGenerator,
     cancelled: Checkpoint,
     cortex_owner: Arc<CallableCortex>,
+    running: RunningUses,
     failed: Arc<AtomicBool>,
     backup: BackupWebDeps,
     #[cfg(feature = "audio")]
@@ -637,6 +765,7 @@ pub struct ForegroundProcessingHost {
     discovery: Mutex<Option<WorkDiscovery>>,
     sense_handle: Mutex<Option<std::thread::JoinHandle<()>>>,
     schedule_handle: Mutex<Option<std::thread::JoinHandle<()>>>,
+    running: RunningUses,
     stop: Arc<AtomicBool>,
     cancelled: Checkpoint,
     failed: Arc<AtomicBool>,
@@ -906,6 +1035,7 @@ impl ForegroundProcessingHost {
             let flush = Arc::new(Mutex::new(FlushState::default()));
             #[cfg(feature = "audio")]
             let audio_state = Arc::new(Mutex::new(None));
+            let running = RunningUses::default();
             let hosted = Arc::new(HostedCommand {
                 rebuild_recovery,
                 journal: journal.clone(),
@@ -916,6 +1046,7 @@ impl ForegroundProcessingHost {
                 generator: generator.clone(),
                 cancelled: Arc::clone(&cancelled),
                 cortex_owner,
+                running: running.clone(),
                 failed: Arc::clone(&failed),
                 backup,
                 #[cfg(feature = "audio")]
@@ -991,6 +1122,7 @@ impl ForegroundProcessingHost {
                 discovery: Mutex::new(Some(discovery)),
                 sense_handle: Mutex::new(None),
                 schedule_handle: Mutex::new(None),
+                running,
                 stop,
                 cancelled,
                 failed,
@@ -1059,6 +1191,7 @@ impl ForegroundProcessingHost {
             client: CortexRequestClient::new(&hosted.journal, CortexRequestPolicy::think()),
             cancelled: Arc::clone(&cancelled),
             owner: Arc::clone(&hosted.cortex_owner),
+            running: hosted.running.clone(),
         });
         let executor = Arc::new(HostSenseExecutor {
             journal: hosted.journal.clone(),
@@ -1211,13 +1344,24 @@ impl ForegroundProcessingHost {
         let journal = self.journal.clone();
         let cancelled = Arc::clone(&self.cancelled);
         let flush = Arc::clone(&self.flush);
+        let running = self.running.clone();
+        let failed = Arc::clone(&self.failed);
         let schedule = std::thread::Builder::new()
             .name("journal-schedule".into())
             .spawn(move || {
+                let started = Instant::now();
                 let mut last_settle_scan = Instant::now();
                 let mut last_index_check = Instant::now() - Duration::from_secs(30);
+                let mut last_status = Instant::now() - STATUS_INTERVAL;
                 while !cancelled() {
                     let tick = Instant::now();
+                    if last_status.elapsed() >= STATUS_INTERVAL
+                        && !failed.load(Ordering::Acquire)
+                        && !queue.callable_workers_failed()
+                    {
+                        last_status = tick;
+                        publish_status(&journal, &queue, &engine, &running, started);
+                    }
                     queue.resume_processing();
                     let today = Utc::now()
                         .with_timezone(&solstone_core_journal_config::owner_zone(&journal))
@@ -1609,6 +1753,121 @@ mod tests {
         )
         .unwrap();
         (temp, payload)
+    }
+
+    #[test]
+    fn running_uses_report_what_the_cortex_boundary_is_running() {
+        let running = RunningUses::default();
+        let mut request = CortexRequest::new("prompt", "sense");
+        request.config.insert("provider".into(), json!("google"));
+        let guard = running.begin("use-1", &request);
+        let status = running.status().unwrap();
+        assert_eq!(status["running_uses"], 1);
+        assert_eq!(status["uses"][0]["use_id"], "use-1");
+        assert_eq!(status["uses"][0]["name"], "sense");
+        assert_eq!(status["uses"][0]["provider"], "google");
+        drop(guard);
+        let status = running.status().unwrap();
+        assert_eq!(status["running_uses"], 0);
+        assert_eq!(status["uses"], json!([]));
+    }
+
+    #[test]
+    fn the_runtime_publishes_its_status_while_it_runs_and_not_after_stop() {
+        use solstone_core_callosum::{CallosumReceiveEvent, CallosumSocketConnection};
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let (temp, payload) = setup_test_journal();
+        let socket = temp.path().join("health/callosum.sock");
+        fs::create_dir_all(socket.parent().unwrap()).unwrap();
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(1)
+            .enable_all()
+            .build()
+            .unwrap();
+        let bus = runtime
+            .block_on(solstone_core_callosum::CallosumSocketServer::bind(&socket))
+            .unwrap();
+        let mut observer = runtime.block_on(async {
+            let mut observer = CallosumSocketConnection::new(&socket, Map::new());
+            observer.start();
+            observer
+        });
+        let mut host = ForegroundProcessingHost::open_with_executor(
+            temp.path(),
+            &payload,
+            ScheduleNow::in_zone(Utc::now(), chrono_tz::UTC),
+            Arc::new(StubGenerateExecutor),
+            backup_deps(temp.path()),
+        )
+        .unwrap();
+        host.discovery
+            .lock()
+            .unwrap()
+            .take()
+            .unwrap()
+            .shutdown_checked()
+            .unwrap();
+        host.start_workers().unwrap();
+        let (supervisor, cortex) = runtime.block_on(async {
+            let mut supervisor = None;
+            let mut cortex = None;
+            let _ = tokio::time::timeout(Duration::from_secs(20), async {
+                while supervisor.is_none() || cortex.is_none() {
+                    match observer.next_event().await {
+                        Some(CallosumReceiveEvent::Envelope { envelope, .. })
+                            if envelope.event == "status" =>
+                        {
+                            match envelope.tract.as_str() {
+                                "supervisor" => supervisor = Some(envelope.extra),
+                                "cortex" => cortex = Some(envelope.extra),
+                                _ => {}
+                            }
+                        }
+                        Some(_) => {}
+                        None => break,
+                    }
+                }
+            })
+            .await;
+            (supervisor, cortex)
+        });
+        let supervisor = supervisor.expect("the runtime publishes its status");
+        let services = supervisor["services"].as_array().unwrap();
+        assert_eq!(
+            services.len(),
+            1,
+            "the runtime is the one service: {services:?}"
+        );
+        assert_eq!(services[0]["name"], "supervisor");
+        assert_eq!(services[0]["pid"], std::process::id());
+        assert_eq!(supervisor["crashed"], json!([]));
+        assert!(supervisor["queues"].is_object());
+        assert!(supervisor["schedules"].is_array());
+        let cortex = cortex.expect("the runtime publishes what it is thinking");
+        assert_eq!(cortex["running_uses"], 0);
+        assert_eq!(cortex["uses"], json!([]));
+
+        host.shutdown().unwrap();
+        let after_stop = runtime.block_on(async {
+            tokio::time::timeout(STATUS_INTERVAL * 2, async {
+                loop {
+                    match observer.next_event().await {
+                        Some(CallosumReceiveEvent::Envelope { envelope, .. })
+                            if envelope.event == "status" =>
+                        {
+                            return true;
+                        }
+                        Some(_) => {}
+                        None => return false,
+                    }
+                }
+            })
+            .await
+            .unwrap_or(false)
+        });
+        assert!(!after_stop, "a stopped runtime publishes no status");
+        runtime.block_on(observer.stop());
+        runtime.block_on(bus.stop());
     }
 
     #[test]

@@ -56,6 +56,7 @@ solstone-core-facets.workspace = true
 solstone-core-journal-config.workspace = true
 solstone-core-journal-io.workspace = true
 solstone-core-npy.workspace = true
+solstone-core-processing-record.workspace = true
 solstone-core-segment.workspace = true
 solstone-core-speaker-id.workspace = true
 zip = { version = "=9.0.3", default-features = false, features = ["deflate"] }

@@ -50,7 +50,7 @@ pub const LANES: [Lane; 3] = [
 
 /// Availability message when the current device has no admitted hardware check.
 pub const CONFIDENTIAL_NOT_ON_PLATFORM: &str =
-    "confidential processing isn't available on your journal's computer yet.";
+    "confidential processing isn't available yet where your journal lives.";
 
 pub const CONFIDENTIAL_LANE_DETAIL: ConfidentialLaneDetail = ConfidentialLaneDetail {
     heading: "confidential processing",
@@ -1056,7 +1056,7 @@ pub const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
                             (
                                 "reason",
                                 CopyValue::String(
-                                    "local thinking needs supported hardware on your journal's computer.",
+                                    "local thinking needs supported hardware where your journal lives.",
                                 ),
                             ),
                         ]),
@@ -1302,7 +1302,9 @@ pub fn current_setup_facts() -> SetupCatalogFacts {
 
 /// Shared copy uses named placeholders; measured download facts live in setup state.
 /// This stays callable before a journal exists or a runtime install plan is selected.
-pub fn setup_copy(_facts: &SetupCatalogFacts) -> serde_json::Value {
+pub fn setup_copy(facts: &SetupCatalogFacts) -> serde_json::Value {
+    // A phone can be the journal itself; everywhere else it is a computer.
+    let on_phone = matches!(facts.platform, "ios" | "android");
     let choices = LANES
         .into_iter()
         .map(|mut lane| {
@@ -1328,7 +1330,11 @@ pub fn setup_copy(_facts: &SetupCatalogFacts) -> serde_json::Value {
         "fits": {
             "title": "how it fits together",
             "journal_term": "your journal",
-            "journal": "lives on your journal's computer and keeps everything that goes into it.",
+            "journal": if on_phone {
+                "lives on this phone and keeps everything that goes into it."
+            } else {
+                "lives on your journal's computer and keeps everything that goes into it."
+            },
             "app_term": "the solstone app",
             "app": "runs on each device you choose and takes in what you share with it. all of it goes into your journal.",
             "thinking_term": "thinking",
@@ -1374,7 +1380,11 @@ pub fn setup_copy(_facts: &SetupCatalogFacts) -> serde_json::Value {
             "complete": "ready",
             "cancelled": "cancelled"
         },
-        "footer": "your journal is kept on your journal's computer. thinking uses the option you choose.",
+        "footer": if on_phone {
+            "your journal is kept on this phone. thinking uses the option you choose."
+        } else {
+            "your journal is kept on your journal's computer. thinking uses the option you choose."
+        },
         "help": {
             "text": "stuck, or have a question?",
             "link": "support.solstone.app",
