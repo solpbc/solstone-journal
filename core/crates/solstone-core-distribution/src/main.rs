@@ -65,6 +65,27 @@ fn main() -> ExitCode {
                 eprintln!("{}", usage());
                 return ExitCode::from(2);
             };
+            // Intel stays the default; ARM is named explicitly, never read
+            // from the manifest being checked.
+            let architecture = match (args.next().as_deref(), args.next(), args.next()) {
+                (None, _, _) => solstone_core_installed_payload::WindowsArchitecture::X86_64,
+                (Some("--windows-target"), Some(target), None) => {
+                    match solstone_core_installed_payload::WindowsArchitecture::ALL
+                        .into_iter()
+                        .find(|architecture| architecture.target_id() == target)
+                    {
+                        Some(architecture) => architecture,
+                        None => {
+                            eprintln!("unknown --windows-target {target}");
+                            return ExitCode::from(2);
+                        }
+                    }
+                }
+                _ => {
+                    eprintln!("{}", usage());
+                    return ExitCode::from(2);
+                }
+            };
             let dirty = std::process::Command::new("git")
                 .args(["status", "--porcelain"])
                 .output()
@@ -75,12 +96,13 @@ fn main() -> ExitCode {
                 .output()
                 .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
                 .unwrap_or_default();
-            match solstone_core_distribution::component_evidence::render_windows_component_evidence(
+            match solstone_core_distribution::component_evidence::render_windows_component_evidence_for_target(
                 &payload_root,
                 &head,
                 dirty,
                 None,
                 &out_dir,
+                architecture,
             ) {
                 Ok(()) => ExitCode::SUCCESS,
                 Err(error) => {

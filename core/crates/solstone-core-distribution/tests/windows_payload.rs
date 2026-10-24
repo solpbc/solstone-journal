@@ -398,6 +398,24 @@ fn windows_component_evidence_error_conditions() {
         err.message
             .starts_with("windows-evidence-version-mismatch:")
     );
+
+    // An Intel payload never renders as ARM: the caller's architecture, not the
+    // manifest, selects the verifier.
+    let err =
+        solstone_core_distribution::component_evidence::render_windows_component_evidence_for_target(
+            root.path(),
+            COMMIT,
+            false,
+            None,
+            out.path(),
+            solstone_core_installed_payload::WindowsArchitecture::Aarch64,
+        )
+        .unwrap_err();
+    assert!(
+        err.message.starts_with("verification-failed:"),
+        "{}",
+        err.message
+    );
 }
 
 fn sample_controlled_receipt(outputs: &[(&str, &str)]) -> ControlledBuildReceipt {
