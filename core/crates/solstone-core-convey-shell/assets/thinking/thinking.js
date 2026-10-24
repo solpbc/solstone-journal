@@ -15,6 +15,7 @@
     runtimePollGeneration: 0,
     confidentialPollGeneration: 0,
     localConfirmGeneration: 0,
+    brainFollowGeneration: 0,
     selectedByoProvider: '',
     byoMode: 'pick',
     byoSelectedModel: '',
@@ -1139,6 +1140,7 @@
     });
     if (target !== 'main') {
       stopLocalConfirmation();
+      stopBrainFollow();
     } else if (previous && previous !== 'main') {
       // A setup page can change what the lane cards should say, and the main view
       // renders from the providers it last fetched.
@@ -2857,6 +2859,7 @@
     const response = await api('api/brain/check', {method: 'POST', body: '{}'});
     if (response.brain) state.providers.brain = response.brain;
     renderGlance();
+    followBrainCheck({newEvidence: true});
   }
 
   async function refreshConfidentialReadiness() {
@@ -4012,6 +4015,38 @@
     }
   }
 
+  // A save or a check sends processing to check thinking again, and its result
+  // lands seconds to tens of seconds later. Re-read what the journal reports
+  // until that check is in, so the card shows it without a reload. A check the
+  // owner asked for waits for new evidence; a save waits only while the journal
+  // says a check is still due. Nothing here decides readiness.
+  function brainCheckOutstanding() {
+    const brain = state.providers?.brain || {};
+    return brain.state === 'checking' || brain.action?.refresh === true;
+  }
+
+  function stopBrainFollow() {
+    state.brainFollowGeneration += 1;
+  }
+
+  async function followBrainCheck({newEvidence = false} = {}) {
+    stopBrainFollow();
+    const generation = state.brainFollowGeneration;
+    const before = state.providers?.brain?.evidence?.observed_at ?? null;
+    if (!newEvidence && !brainCheckOutstanding()) return;
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      await sleep(pollIntervalMs * 2);
+      if (generation !== state.brainFollowGeneration) return;
+      try {
+        await refreshProviders();
+      } catch (_) {
+        continue;
+      }
+      const observed = state.providers?.brain?.evidence?.observed_at ?? null;
+      if (!brainCheckOutstanding() && (!newEvidence || observed !== before)) return;
+    }
+  }
+
   async function refreshKeys() {
     state.keys = await api('api/keys');
     renderAll();
@@ -4261,6 +4296,7 @@
       body: JSON.stringify(payload),
     });
     renderAll();
+    followBrainCheck();
   }
 
   async function activateLane(target) {
@@ -4435,6 +4471,7 @@
       clearByoModelResolutionTargets();
       showView('main');
       renderAll();
+      followBrainCheck();
     } else if (result.status === 'restored') {
       clearByoModelResolutionTargets();
     }
@@ -5169,6 +5206,7 @@
       state.providers = providers;
       await refreshChatGpt();
       renderAll();
+      followBrainCheck();
     } catch (err) {
       if (err?.reasonCode === 'settings_saved_unlogged') {
         await refreshChatGpt();

@@ -284,6 +284,8 @@ async function main() {
     openLane,
     renderLaneSwitch,
     showView,
+    followBrainCheck,
+    requestBrainCheck,
     applyCopy,
     runProviderLabel,
     CHATGPT_ATTEMPT_STORAGE_KEY,
@@ -3967,6 +3969,111 @@ async function main() {
   }
 
   window.apiJson = originalApiJson;
+
+  {
+    // A save or a check is followed until the journal reports the result, so
+    // the card turns over without a reload, and only what the journal reports
+    // is ever shown.
+    const savedSetTimeout = context.setTimeout;
+    let clock = 0;
+    let timerId = 1;
+    const timers = new Map();
+    context.setTimeout = (fn, delay) => {
+      const id = timerId++;
+      timers.set(id, {fn, at: clock + (Number(delay) || 0)});
+      return id;
+    };
+    async function tick(ms) {
+      clock += ms;
+      for (const [id, timer] of Array.from(timers.entries())) {
+        if (timer.at <= clock) {
+          timers.delete(id);
+          timer.fn();
+        }
+      }
+      await settle();
+      await settle();
+    }
+    const checks = [];
+    const baseApiJson = window.apiJson;
+    window.apiJson = (url, options) => {
+      if (url === 'api/brain/check') return checks.shift()();
+      return baseApiJson(url, options);
+    };
+    const base = thinking.state.providers;
+    const due = {label: 'check again', refresh: true};
+    const withBrain = (state, observed, extra = {}) => ({
+      ...base,
+      brain: {state, evidence: {observed_at: observed}, ...extra},
+    });
+    const reads = () => requests.filter((url) => url.startsWith('api/providers')).length;
+    providerResponses.length = 0;
+    thinking.showView('main');
+
+    // After a save the card follows the check to its result, then stops.
+    thinking.state.providers = withBrain('unknown', 't0', {action: due});
+    let start = reads();
+    providerResponses.push(() => Promise.resolve(withBrain('checking', 't0')));
+    providerResponses.push(() => Promise.resolve(withBrain('ready', 't1')));
+    let followed = thinking.followBrainCheck();
+    await tick(3000);
+    assert.strictEqual(thinking.state.providers.brain.state, 'checking', 'a running check is shown as running');
+    await tick(3000);
+    await followed;
+    assert.strictEqual(thinking.state.providers.brain.state, 'ready', 'the result shows without a reload');
+    await tick(30000);
+    assert.strictEqual(reads() - start, 2, 'the follow stops once the result is in');
+
+    // A save the journal has already settled needs no follow.
+    thinking.state.providers = withBrain('ready', 't1');
+    start = reads();
+    await thinking.followBrainCheck();
+    assert.strictEqual(reads() - start, 0, 'a settled save reads nothing more');
+
+    // A check that never lands stops after a bounded time and never reads as ready.
+    thinking.state.providers = withBrain('unknown', 't0', {action: due});
+    start = reads();
+    for (let i = 0; i < 40; i += 1) providerResponses.push(() => Promise.resolve(withBrain('unknown', 't0', {action: due})));
+    followed = thinking.followBrainCheck();
+    for (let i = 0; i < 40; i += 1) await tick(3000);
+    await followed;
+    await tick(30000);
+    assert.strictEqual(reads() - start, 40, 'the follow is bounded');
+    assert.strictEqual(thinking.state.providers.brain.state, 'unknown', 'an unanswered check is never shown as ready');
+
+    // A check the owner asks for waits for new evidence, even from a ready card.
+    thinking.state.providers = withBrain('ready', 't1');
+    start = reads();
+    checks.push(() => Promise.resolve({ok: true, brain: withBrain('ready', 't1').brain}));
+    providerResponses.push(() => Promise.resolve(withBrain('ready', 't1')));
+    providerResponses.push(() => Promise.resolve(withBrain('blocked', 't2')));
+    await thinking.requestBrainCheck();
+    await tick(3000);
+    assert.strictEqual(reads() - start, 1);
+    await tick(3000);
+    assert.strictEqual(thinking.state.providers.brain.state, 'blocked', 'the new result replaces the old one');
+    await tick(30000);
+    assert.strictEqual(reads() - start, 2, 'the check follow stops on new evidence');
+
+    // An unreachable journal is retried, and leaving the page stops the follow.
+    thinking.state.providers = withBrain('unknown', 't0', {action: due});
+    start = reads();
+    providerResponses.push(() => Promise.reject(new Error('journal unreachable')));
+    providerResponses.push(() => Promise.resolve(withBrain('checking', 't0')));
+    followed = thinking.followBrainCheck();
+    await tick(3000);
+    await tick(3000);
+    assert.strictEqual(thinking.state.providers.brain.state, 'checking', 'a failed read is retried');
+    thinking.showView('confidential-setup');
+    await tick(3000);
+    await followed;
+    await tick(30000);
+    assert.strictEqual(reads() - start, 2, 'leaving the page stops the follow');
+
+    thinking.state.providers = base;
+    window.apiJson = baseApiJson;
+    context.setTimeout = savedSetTimeout;
+  }
 
   console.log(`DOM CASES: ${passedCases}/${executedCases} passed`);
 }
