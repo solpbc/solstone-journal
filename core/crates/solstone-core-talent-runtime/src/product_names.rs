@@ -186,6 +186,12 @@ pub(crate) fn prepare(
     );
 }
 
+/// `text` with every product misspelling the fix knows rewritten to its
+/// canonical spelling.
+pub(crate) fn canonical_spelling(text: &str) -> String {
+    spelling::normalize(text).0
+}
+
 pub(crate) fn model_text(config: &Map<String, Value>) -> Option<&str> {
     config.get(VIEW_KEY)?.get("text")?.as_str()
 }

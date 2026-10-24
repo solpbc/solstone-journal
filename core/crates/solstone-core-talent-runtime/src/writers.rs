@@ -87,6 +87,10 @@ pub enum WriteIntent {
         markdown: String,
         document: String,
     },
+    PossibleNames {
+        segment_dir: PathBuf,
+        sidecar: solstone_core_possible_names::Sidecar,
+    },
 }
 
 pub fn write_output_if_configured(
@@ -527,6 +531,22 @@ fn apply_with_sources(
                 &document,
                 sources,
                 cancellation,
+            )?;
+            Ok(CommitDisposition::Written)
+        }
+        CommitPlan::Write(WriteIntent::PossibleNames {
+            segment_dir,
+            sidecar,
+        }) => {
+            crate::possible_names::apply_result(&context.journal, &segment_dir, &sidecar).map_err(
+                |detail| {
+                    StageError::new(
+                        "write-intent",
+                        "entities:possible_names",
+                        crate::possible_names::TALENT,
+                        detail,
+                    )
+                },
             )?;
             Ok(CommitDisposition::Written)
         }

@@ -71,6 +71,16 @@ pub fn assemble_prompt_preview(
         }
     }
 
+    let framed = prepared.framed_request.as_ref().map(|framed| {
+        vec![
+            ContentPart::Text {
+                text: framed.system_instruction.clone(),
+            },
+            ContentPart::Text {
+                text: framed.text.clone(),
+            },
+        ]
+    });
     let parts = prepared
         .terminal_sense
         .as_ref()
@@ -86,6 +96,7 @@ pub fn assemble_prompt_preview(
             }
             parts
         })
+        .or(framed)
         .unwrap_or_else(|| generate_contents(&prepared))
         .into_iter()
         .filter_map(|part| match part {

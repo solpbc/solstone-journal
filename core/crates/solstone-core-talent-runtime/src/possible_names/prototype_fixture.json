@@ -1,0 +1,440 @@
+{
+ "_note": "Generated once by running the evaluated prototype (pool2.py retrieval, variants.gate_g1, variants.V2.build with SYSTEM_V2E) over these inputs. The Rust port must reproduce the pool and the packet exactly.",
+ "segment_facets": [
+  "work",
+  "home"
+ ],
+ "derived_text": "Talked with Grace Hopper about the compiler.",
+ "entities": [
+  {
+   "entity_id": "ada",
+   "name": "Ada Lovelace",
+   "type": "Person",
+   "aka": [
+    "Countess of Lovelace",
+    "AAL"
+   ],
+   "facets": {
+    "work": "Wrote the first program"
+   }
+  },
+  {
+   "entity_id": "ada_b",
+   "name": "Ada Byron",
+   "type": "Person",
+   "aka": [],
+   "facets": {
+    "home": ""
+   }
+  },
+  {
+   "entity_id": "friar",
+   "name": "Friar",
+   "type": "",
+   "aka": [
+    "Brother Friar"
+   ],
+   "facets": {
+    "home": "Neighbor",
+    "work": ""
+   }
+  },
+  {
+   "entity_id": "grace",
+   "name": "Grace Hopper",
+   "type": "Person",
+   "aka": [],
+   "facets": {
+    "work": "Compiler pioneer"
+   }
+  },
+  {
+   "entity_id": "marg",
+   "name": "Margarethe Keller",
+   "type": "Person",
+   "aka": [
+    "Grete",
+    "Gretl",
+    "Marga",
+    "Maggie",
+    "Meg"
+   ],
+   "facets": {
+    "home": "Aunt from Bremen, visits in spring and brings bread from the bakery near the station"
+   }
+  },
+  {
+   "entity_id": "sol",
+   "name": "Solstone",
+   "type": "Tool",
+   "aka": [],
+   "facets": {
+    "work": "Our journal"
+   }
+  },
+  {
+   "entity_id": "sunst",
+   "name": "Sunstone",
+   "type": "Company",
+   "aka": [],
+   "facets": {
+    "work": "A vendor"
+   }
+  },
+  {
+   "entity_id": "kath",
+   "name": "Kathryn Janeway",
+   "type": "Person",
+   "aka": [
+    "Captain Janeway"
+   ],
+   "facets": {
+    "work": "Captain"
+   }
+  },
+  {
+   "entity_id": "cath",
+   "name": "Catherine",
+   "type": "Person",
+   "aka": [],
+   "facets": {
+    "home": "Cousin"
+   }
+  },
+  {
+   "entity_id": "cognova",
+   "name": "Cognova",
+   "type": "Company",
+   "aka": [
+    "Cognova Labs"
+   ],
+   "facets": {
+    "work": "Client"
+   }
+  },
+  {
+   "entity_id": "jl",
+   "name": "Jean-Luc Picard",
+   "type": "Person",
+   "aka": [],
+   "facets": {
+    "work": "Captain of the Enterprise"
+   }
+  },
+  {
+   "entity_id": "thompson",
+   "name": "Thompson",
+   "type": "Person",
+   "aka": [],
+   "facets": {
+    "home": ""
+   }
+  },
+  {
+   "entity_id": "strasse",
+   "name": "Straße Café",
+   "type": "Place",
+   "aka": [],
+   "facets": {
+    "home": "Café"
+   }
+  },
+  {
+   "entity_id": "philip",
+   "name": "Philip Fry",
+   "type": "Person",
+   "aka": [],
+   "facets": {
+    "home": "Delivery boy"
+   }
+  }
+ ],
+ "statements": [
+  "Hello there. I met Ada yesterday and Ada Lovelace today.",
+  "We asked the Fryer and then Fryer said no.",
+  "The Countess of Lovelace wrote it, said Grace Hopper.",
+  "Then Grete and Margarethe Kellar went with Kognova to the Sunstone office.",
+  "Ask Solstone, or ask Catherin about Kathryn.",
+  "We met Jean-Luc Picard and Captain Janeway at the Strasse Cafe.",
+  "I told Fillip and Tomson, ok?",
+  "Ada, please call AAL.\nThen Friar went home",
+  "Our Cognova Labs deal; Philip agreed."
+ ],
+ "expected_pool": [
+  {
+   "entity_id": "ada",
+   "route": "canonical",
+   "sentence": 1,
+   "start_byte": 37,
+   "heard": "Ada Lovelace",
+   "competitors": [],
+   "cap": true,
+   "sentence_start": false,
+   "all_words_cap": true,
+   "in_segment_derived": false
+  },
+  {
+   "entity_id": "ada_b",
+   "route": "first",
+   "sentence": 1,
+   "start_byte": 19,
+   "heard": "Ada",
+   "competitors": [
+    "ada"
+   ],
+   "cap": true,
+   "sentence_start": false,
+   "all_words_cap": true,
+   "in_segment_derived": false
+  },
+  {
+   "entity_id": "cath",
+   "route": "phonetic",
+   "sentence": 5,
+   "start_byte": 21,
+   "heard": "Catherin",
+   "competitors": [],
+   "cap": true,
+   "sentence_start": false,
+   "all_words_cap": true,
+   "in_segment_derived": false
+  },
+  {
+   "entity_id": "cognova",
+   "route": "canonical",
+   "sentence": 9,
+   "start_byte": 4,
+   "heard": "Cognova",
+   "competitors": [],
+   "cap": true,
+   "sentence_start": false,
+   "all_words_cap": true,
+   "in_segment_derived": false
+  },
+  {
+   "entity_id": "friar",
+   "route": "canonical",
+   "sentence": 8,
+   "start_byte": 27,
+   "heard": "Friar",
+   "competitors": [],
+   "cap": true,
+   "sentence_start": false,
+   "all_words_cap": true,
+   "in_segment_derived": false
+  },
+  {
+   "entity_id": "grace",
+   "route": "canonical",
+   "sentence": 3,
+   "start_byte": 40,
+   "heard": "Grace Hopper",
+   "competitors": [],
+   "cap": true,
+   "sentence_start": false,
+   "all_words_cap": true,
+   "in_segment_derived": true
+  },
+  {
+   "entity_id": "jl",
+   "route": "canonical",
+   "sentence": 6,
+   "start_byte": 7,
+   "heard": "Jean-Luc Picard",
+   "competitors": [],
+   "cap": true,
+   "sentence_start": false,
+   "all_words_cap": true,
+   "in_segment_derived": false
+  },
+  {
+   "entity_id": "kath",
+   "route": "alias",
+   "sentence": 6,
+   "start_byte": 27,
+   "heard": "Captain Janeway",
+   "competitors": [],
+   "cap": true,
+   "sentence_start": false,
+   "all_words_cap": true,
+   "in_segment_derived": false
+  },
+  {
+   "entity_id": "marg",
+   "route": "alias",
+   "sentence": 4,
+   "start_byte": 5,
+   "heard": "Grete",
+   "competitors": [],
+   "cap": true,
+   "sentence_start": false,
+   "all_words_cap": true,
+   "in_segment_derived": false
+  },
+  {
+   "entity_id": "philip",
+   "route": "first",
+   "sentence": 9,
+   "start_byte": 23,
+   "heard": "Philip",
+   "competitors": [],
+   "cap": true,
+   "sentence_start": false,
+   "all_words_cap": true,
+   "in_segment_derived": false
+  },
+  {
+   "entity_id": "sol",
+   "route": "canonical",
+   "sentence": 5,
+   "start_byte": 4,
+   "heard": "Solstone",
+   "competitors": [],
+   "cap": true,
+   "sentence_start": false,
+   "all_words_cap": true,
+   "in_segment_derived": false
+  },
+  {
+   "entity_id": "strasse",
+   "route": "spelling",
+   "sentence": 6,
+   "start_byte": 50,
+   "heard": "Strasse Cafe",
+   "competitors": [],
+   "cap": true,
+   "sentence_start": false,
+   "all_words_cap": true,
+   "in_segment_derived": false
+  },
+  {
+   "entity_id": "sunst",
+   "route": "canonical",
+   "sentence": 4,
+   "start_byte": 58,
+   "heard": "Sunstone",
+   "competitors": [],
+   "cap": true,
+   "sentence_start": false,
+   "all_words_cap": true,
+   "in_segment_derived": false
+  },
+  {
+   "entity_id": "thompson",
+   "route": "spelling",
+   "sentence": 7,
+   "start_byte": 18,
+   "heard": "Tomson",
+   "competitors": [],
+   "cap": true,
+   "sentence_start": false,
+   "all_words_cap": true,
+   "in_segment_derived": false
+  }
+ ],
+ "expected_packet": "This recording is filed under: work, home\n\nTRANSCRIPT\n[1] Hello there. I met [[Ada]] yesterday and [[Ada Lovelace]] today.\n[2] We asked the Fryer and then Fryer said no.\n[3] The Countess of Lovelace wrote it, said Grace Hopper.\n[4] Then [[Grete]] and Margarethe Kellar went with Kognova to the [[Sunstone]] office.\n[5] Ask Solstone, or ask [[Catherin]] about Kathryn.\n[6] We met [[Jean-Luc Picard]] and [[Captain Janeway]] at the [[Strasse Cafe]].\n[7] I told Fillip and [[Tomson]], ok?\n[8] Ada, please call AAL.\nThen [[Friar]] went home\n[9] Our [[Cognova]] Labs deal; [[Philip]] agreed.\n\nCANDIDATES\nN0: \"Ada Byron\" (Person)\n   matched [[Ada]] in line 1: first name of a person in the registry\n   filed under: home\nN1: \"Ada Lovelace\" (Person)\n   matched [[Ada Lovelace]] in line 1: same normalized spelling as the name\n   also known as: Countess of Lovelace, AAL\n   filed under: work\n   note: Wrote the first program\nN2: \"Margarethe Keller\" (Person)\n   matched [[Grete]] in line 4: same normalized spelling as a known alias\n   also known as: Grete, Gretl, Marga, Maggie\n   filed under: home\n   note: Aunt from Bremen, visits in spring and brings bread from the bakery near the station\nN3: \"Sunstone\" (Company)\n   matched [[Sunstone]] in line 4: same normalized spelling as the name\n   filed under: work\n   note: A vendor\nN4: \"Catherine\" (Person)\n   matched [[Catherin]] in line 5: sounds like the name\n   filed under: home\n   note: Cousin\nN5: \"Jean-Luc Picard\" (Person)\n   matched [[Jean-Luc Picard]] in line 6: same normalized spelling as the name\n   filed under: work\n   note: Captain of the Enterprise\nN6: \"Kathryn Janeway\" (Person)\n   matched [[Captain Janeway]] in line 6: same normalized spelling as a known alias\n   also known as: Captain Janeway\n   filed under: work\n   note: Captain\nN7: \"Straße Café\" (Place)\n   matched [[Strasse Cafe]] in line 6: close spelling of the name\n   filed under: home\n   note: Café\nN8: \"Thompson\" (Person)\n   matched [[Tomson]] in line 7: close spelling of the name\n   filed under: home\nN9: \"Friar\"\n   matched [[Friar]] in line 8: same normalized spelling as the name\n   also known as: Brother Friar\n   filed under: home, work\n   note: Neighbor\nN10: \"Cognova\" (Company)\n   matched [[Cognova]] in line 9: same normalized spelling as the name\n   also known as: Cognova Labs\n   filed under: work\n   note: Client\nN11: \"Philip Fry\" (Person)\n   matched [[Philip]] in line 9: first name of a person in the registry\n   filed under: home\n   note: Delivery boy",
+ "expected_schema": {
+  "type": "object",
+  "properties": {
+   "N0": {
+    "type": "string",
+    "enum": [
+     "yes",
+     "no"
+    ]
+   },
+   "N1": {
+    "type": "string",
+    "enum": [
+     "yes",
+     "no"
+    ]
+   },
+   "N2": {
+    "type": "string",
+    "enum": [
+     "yes",
+     "no"
+    ]
+   },
+   "N3": {
+    "type": "string",
+    "enum": [
+     "yes",
+     "no"
+    ]
+   },
+   "N4": {
+    "type": "string",
+    "enum": [
+     "yes",
+     "no"
+    ]
+   },
+   "N5": {
+    "type": "string",
+    "enum": [
+     "yes",
+     "no"
+    ]
+   },
+   "N6": {
+    "type": "string",
+    "enum": [
+     "yes",
+     "no"
+    ]
+   },
+   "N7": {
+    "type": "string",
+    "enum": [
+     "yes",
+     "no"
+    ]
+   },
+   "N8": {
+    "type": "string",
+    "enum": [
+     "yes",
+     "no"
+    ]
+   },
+   "N9": {
+    "type": "string",
+    "enum": [
+     "yes",
+     "no"
+    ]
+   },
+   "N10": {
+    "type": "string",
+    "enum": [
+     "yes",
+     "no"
+    ]
+   },
+   "N11": {
+    "type": "string",
+    "enum": [
+     "yes",
+     "no"
+    ]
+   }
+  },
+  "required": [
+   "N0",
+   "N1",
+   "N2",
+   "N3",
+   "N4",
+   "N5",
+   "N6",
+   "N7",
+   "N8",
+   "N9",
+   "N10",
+   "N11"
+  ],
+  "additionalProperties": false
+ }
+}

@@ -105,6 +105,9 @@ pub(crate) fn decorate(mut plan: CommitPlan, prepared: &PreparedTalent) -> Commi
                 *body = markdown(body, partial.as_ref());
                 *document = json_text(document, partial.as_ref());
             }
+            // Possible names carry no model text; a clipped packet still
+            // answers every candidate it offered.
+            WriteIntent::PossibleNames { .. } => {}
         }
     }
     plan

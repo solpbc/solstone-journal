@@ -29,6 +29,7 @@ pub mod morning_briefing;
 pub mod owner_actors;
 mod partial_input;
 pub mod participation;
+pub mod possible_names;
 pub mod prepare;
 mod product_names;
 mod prompt_context;
@@ -58,8 +59,8 @@ mod test_support;
 use contract::{CommitDisposition, GateDecision, PrePostState, resolve_hook};
 pub use transcript::{activity_span_transcript, agent_speakers, voice_names};
 
-/// Config key honored only by the speaker_attribution pre-step.
-/// Not a general per-stage dry-run flag.
+/// Config key honored by the speaker_attribution and possible-names pre-steps,
+/// which then write nothing. Not a general per-stage dry-run flag.
 pub(crate) const DRY_RUN_KEY: &str = "dry_run";
 
 #[derive(Clone, Debug)]
@@ -74,6 +75,14 @@ pub(crate) struct StockTask {
     pub json_schema: Option<Value>,
 }
 
+/// A request a stage frames itself: its instruction as the system
+/// instruction and one text as the only content.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct FramedRequest {
+    pub system_instruction: String,
+    pub text: String,
+}
+
 #[derive(Clone, Debug)]
 pub struct PreparedTalent {
     pub name: String,
@@ -82,6 +91,8 @@ pub struct PreparedTalent {
     pub(crate) journal_config: Option<Map<String, Value>>,
     pub(crate) stock_task: Option<StockTask>,
     pub(crate) terminal_sense: Option<terminal_sense::Candidate>,
+    /// Set only by a stage's prompt override; a request cannot supply it.
+    pub(crate) framed_request: Option<FramedRequest>,
 }
 
 impl PreparedTalent {
@@ -93,6 +104,7 @@ impl PreparedTalent {
             journal_config: None,
             stock_task: None,
             terminal_sense: None,
+            framed_request: None,
         }
     }
 }
@@ -1594,11 +1606,20 @@ fn native_generate_request(prepared: &PreparedTalent) -> Result<GenerateRequest,
             Some(seconds)
         }
     };
+    let (system_instruction, contents) = match &prepared.framed_request {
+        Some(framed) => (
+            Some(framed.system_instruction.clone()),
+            vec![ContentPart::Text {
+                text: framed.text.clone(),
+            }],
+        ),
+        None => (None, generate_contents(prepared)),
+    };
     Ok(GenerateRequest {
         id: None,
         context: prepared.name.clone(),
-        contents: generate_contents(prepared),
-        system_instruction: None,
+        contents,
+        system_instruction,
         temperature: prepared
             .config
             .get("temperature")

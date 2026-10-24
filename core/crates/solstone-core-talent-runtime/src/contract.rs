@@ -20,6 +20,7 @@ pub enum StageId {
     EntityObserver,
     SpeakerAttribution,
     WeeklyReflection,
+    PossibleNames,
 }
 
 #[derive(Clone, Copy)]
@@ -69,6 +70,7 @@ pub enum PrePostState {
     EntityObserver(crate::entities::observer::ObserverState),
     SpeakerAttribution(crate::speaker_attribution::SpeakerAttributionState),
     WeeklyReflection(crate::weekly_reflection::WeeklyReflectionState),
+    PossibleNames(Box<crate::possible_names::PossibleNamesState>),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -109,7 +111,7 @@ pub struct StageSpec {
     pub output_override: Option<OutputOverrideFn>,
 }
 
-pub const HOOK_TABLE: [HookBinding; 13] = [
+pub const HOOK_TABLE: [HookBinding; 14] = [
     HookBinding {
         hook: "documents",
         stage: StageId::Documents,
@@ -161,6 +163,10 @@ pub const HOOK_TABLE: [HookBinding; 13] = [
     HookBinding {
         hook: "weekly_reflection",
         stage: StageId::WeeklyReflection,
+    },
+    HookBinding {
+        hook: "entities:possible_names",
+        stage: StageId::PossibleNames,
     },
 ];
 
@@ -339,6 +345,20 @@ pub static WEEKLY_REFLECTION: StageSpec = StageSpec {
     writes_as_intent: Some(crate::writers::apply_prepared),
     output_override: None,
 };
+pub static POSSIBLE_NAMES: StageSpec = StageSpec {
+    stage: StageId::PossibleNames,
+    gate: None,
+    build: Some(crate::possible_names::build),
+    prompt_override: Some(crate::possible_names::apply_prompt_override),
+    commit: Some(CommitSpec {
+        parse: crate::possible_names::parse,
+        commit: crate::possible_names::commit,
+    }),
+    unavailable_commit: None,
+    unavailable_before_generate: None,
+    writes_as_intent: Some(crate::writers::apply_prepared),
+    output_override: None,
+};
 
 pub fn resolve_hook(hook: &str) -> Option<&'static StageSpec> {
     let binding = HOOK_TABLE.iter().find(|binding| binding.hook == hook)?;
@@ -356,6 +376,7 @@ pub fn resolve_hook(hook: &str) -> Option<&'static StageSpec> {
         StageId::EntityObserver => &ENTITY_OBSERVER,
         StageId::SpeakerAttribution => &SPEAKER_ATTRIBUTION,
         StageId::WeeklyReflection => &WEEKLY_REFLECTION,
+        StageId::PossibleNames => &POSSIBLE_NAMES,
     })
 }
 

@@ -43,6 +43,9 @@ solstone-core-system-health.workspace = true
 solstone-core-system.workspace = true
 solstone-core-generate-wire.workspace = true
 solstone-core-transcripts.workspace = true
+solstone-core-possible-names.workspace = true
+rapidfuzz.workspace = true
+unicode-normalization.workspace = true
 solstone-core-speaker-id.workspace = true
 solstone-core-speaker-resolve.workspace = true
 
