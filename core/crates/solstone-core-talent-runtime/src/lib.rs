@@ -39,7 +39,13 @@ pub mod speaker_attribution;
 pub mod story;
 #[cfg(test)]
 mod story_source_conformance;
+mod terminal_sense;
 mod transcript;
+#[cfg(feature = "test-hooks")]
+#[doc(hidden)]
+pub use terminal_sense::{
+    inspect as inspect_terminal_sense, inspect_codec as inspect_terminal_codec,
+};
 pub mod weekly_reflection;
 
 #[cfg(test)]
@@ -61,10 +67,34 @@ pub struct ExecutionContext {
     pub journal: PathBuf,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct StockTask {
+    pub user_instruction: Option<String>,
+    pub prompt: Option<String>,
+    pub json_schema: Option<Value>,
+}
+
 #[derive(Clone, Debug)]
 pub struct PreparedTalent {
     pub name: String,
     pub config: Map<String, Value>,
+    pub(crate) entry_sources: Vec<Option<solstone_core_transcripts::EntrySource>>,
+    pub(crate) journal_config: Option<Map<String, Value>>,
+    pub(crate) stock_task: Option<StockTask>,
+    pub(crate) terminal_sense: Option<terminal_sense::Candidate>,
+}
+
+impl PreparedTalent {
+    pub fn new(name: String, config: Map<String, Value>) -> Self {
+        Self {
+            name,
+            config,
+            entry_sources: Vec::new(),
+            journal_config: None,
+            stock_task: None,
+            terminal_sense: None,
+        }
+    }
 }
 
 pub(crate) fn detected_resolution_entities(
@@ -1027,6 +1057,29 @@ fn generate_response(
     context: &ExecutionContext,
     generate: &dyn solstone_core_generate::GenerateExecutor,
     writer: &mut impl Write,
+    cancellation: &solstone_core_generate::Cancellation,
+) -> Result<GeneratedTalentResponse, RuntimeOutcome> {
+    // These receipts belong to this execution, never to a caller-supplied value.
+    prepared.config.remove(INPUT_BUDGET_KEY);
+    prepared.config.remove(story::INPUT_WHOLE_KEY);
+    if let Some(candidate) = prepared.terminal_sense.take() {
+        return terminal_sense::execute(
+            candidate,
+            prepared,
+            context,
+            generate,
+            writer,
+            cancellation,
+        );
+    }
+    native_generate_response(prepared, context, generate, writer)
+}
+
+fn native_generate_response(
+    prepared: &mut PreparedTalent,
+    context: &ExecutionContext,
+    generate: &dyn solstone_core_generate::GenerateExecutor,
+    writer: &mut impl Write,
 ) -> Result<GeneratedTalentResponse, RuntimeOutcome> {
     let _ = prepared.config.remove(INPUT_BUDGET_KEY);
     let _ = prepared.config.remove(story::INPUT_WHOLE_KEY);
@@ -1137,63 +1190,64 @@ pub(crate) fn generate_and_write(
     stage: Option<(&'static contract::StageSpec, PrePostState)>,
     cancellation: &solstone_core_generate::Cancellation,
 ) -> RuntimeOutcome {
-    let (response, usage, degraded) = match generate_response(prepared, context, generate, writer) {
-        Ok(response) => {
-            if cancellation.is_cancelled() {
-                return RuntimeOutcome::Cancelled;
-            }
-            response
-        }
-        Err(outcome) => {
-            if cancellation.is_cancelled() {
-                return RuntimeOutcome::Cancelled;
-            }
-            if let Some((stage, state)) = stage
-                && stage.unavailable_commit.is_some()
-            {
-                let mapped_reason = match &outcome {
-                    RuntimeOutcome::SchemaValidationFailed { .. } => {
-                        Some(("schema_exhausted".to_owned(), None, None))
-                    }
-                    RuntimeOutcome::GenerateRefused { error, response } => {
-                        let wire = response
-                            .reason_code
-                            .as_ref()
-                            .map(ReasonCodeValue::as_wire)
-                            .unwrap_or("");
-                        Some((
-                            format!("refused:{wire}"),
-                            error.usage.clone(),
-                            error.degraded.clone(),
-                        ))
-                    }
-                    RuntimeOutcome::StageFailed(err)
-                        if err.phase == "generate" && err.stage == "runtime" =>
-                    {
-                        Some((
-                            "transport".to_owned(),
-                            err.usage.clone(),
-                            err.degraded.clone(),
-                        ))
-                    }
-                    _ => None,
-                };
-                if let Some((reason, u, d)) = mapped_reason {
-                    return finish_unavailable(
-                        &reason,
-                        prepared,
-                        (stage, &state),
-                        context,
-                        writer,
-                        u,
-                        d,
-                        cancellation,
-                    );
+    let (response, usage, degraded) =
+        match generate_response(prepared, context, generate, writer, cancellation) {
+            Ok(response) => {
+                if cancellation.is_cancelled() {
+                    return RuntimeOutcome::Cancelled;
                 }
+                response
             }
-            return outcome;
-        }
-    };
+            Err(outcome) => {
+                if cancellation.is_cancelled() {
+                    return RuntimeOutcome::Cancelled;
+                }
+                if let Some((stage, state)) = stage
+                    && stage.unavailable_commit.is_some()
+                {
+                    let mapped_reason = match &outcome {
+                        RuntimeOutcome::SchemaValidationFailed { .. } => {
+                            Some(("schema_exhausted".to_owned(), None, None))
+                        }
+                        RuntimeOutcome::GenerateRefused { error, response } => {
+                            let wire = response
+                                .reason_code
+                                .as_ref()
+                                .map(ReasonCodeValue::as_wire)
+                                .unwrap_or("");
+                            Some((
+                                format!("refused:{wire}"),
+                                error.usage.clone(),
+                                error.degraded.clone(),
+                            ))
+                        }
+                        RuntimeOutcome::StageFailed(err)
+                            if err.phase == "generate" && err.stage == "runtime" =>
+                        {
+                            Some((
+                                "transport".to_owned(),
+                                err.usage.clone(),
+                                err.degraded.clone(),
+                            ))
+                        }
+                        _ => None,
+                    };
+                    if let Some((reason, u, d)) = mapped_reason {
+                        return finish_unavailable(
+                            &reason,
+                            prepared,
+                            (stage, &state),
+                            context,
+                            writer,
+                            u,
+                            d,
+                            cancellation,
+                        );
+                    }
+                }
+                return outcome;
+            }
+        };
     if cancellation.is_cancelled() {
         return RuntimeOutcome::Cancelled;
     }
@@ -1507,6 +1561,13 @@ fn emit_generate_input(writer: &mut impl Write, request: &GenerateRequest) {
 /// declared `max_output_tokens`, which config validation requires; there is no
 /// default to fall back on.
 fn generate_request(prepared: &PreparedTalent) -> Result<GenerateRequest, String> {
+    if let Some(candidate) = &prepared.terminal_sense {
+        return Ok(candidate.request.clone());
+    }
+    native_generate_request(prepared)
+}
+
+fn native_generate_request(prepared: &PreparedTalent) -> Result<GenerateRequest, String> {
     let max_output_tokens = prepared
         .config
         .get("max_output_tokens")
@@ -1550,6 +1611,7 @@ fn generate_request(prepared: &PreparedTalent) -> Result<GenerateRequest, String
         attempt_index: 0,
         exclusive_admission: false,
         transport_retries: None,
+        endpoint_binding: None,
     })
 }
 
@@ -2217,13 +2279,13 @@ mod tests {
     fn criterion_23_injected_one_shot_path_reaches_the_client() {
         let root = tempfile::tempdir().unwrap();
         let client = OneShotClient::at_path(test_support::one_shot_stub(root.path(), "stubbed"));
-        let prepared = PreparedTalent {
-            name: "plain".to_owned(),
-            config: Map::from_iter([
+        let prepared = PreparedTalent::new(
+            "plain".to_owned(),
+            Map::from_iter([
                 ("max_output_tokens".to_owned(), json!(1024)),
                 ("prompt".to_owned(), Value::String("hello".to_owned())),
             ]),
-        };
+        );
         let request = generate_request(&prepared).unwrap();
         let GenerateResponse::Generated(response) = client.execute(&request).unwrap() else {
             panic!("stub generates")
@@ -2248,13 +2310,13 @@ mod tests {
         let client = configure_generate_client(OneShotClient::at_path(
             test_support::generate_one_shot_stub(root.path(), "generated"),
         ));
-        let prepared = PreparedTalent {
-            name: "plain".to_owned(),
-            config: Map::from_iter([
+        let prepared = PreparedTalent::new(
+            "plain".to_owned(),
+            Map::from_iter([
                 ("max_output_tokens".to_owned(), json!(1024)),
                 ("prompt".to_owned(), Value::String("hello".to_owned())),
             ]),
-        };
+        );
         let request = generate_request(&prepared).unwrap();
         let GenerateResponse::Generated(response) = client.execute(&request).unwrap() else {
             panic!("stub generates")
@@ -3952,11 +4014,8 @@ mod tests {
                     if let Some(transcript) = transcript {
                         config.insert("transcript".into(), json!(transcript));
                     }
-                    let request = generate_request(&PreparedTalent {
-                        name: "plain".into(),
-                        config,
-                    })
-                    .unwrap();
+                    let request =
+                        generate_request(&PreparedTalent::new("plain".into(), config)).unwrap();
                     let input =
                         solstone_core_generate_wire::bundled_input(&request, Path::new("unused"))
                             .unwrap();
@@ -3988,10 +4047,7 @@ mod tests {
     fn transcript_fitting_and_explicit_message_separators_keep_their_contract() {
         use solstone_core_local::{build_messages, fit_contents};
         for transcript in ["source".to_owned(), format!("{}NEWEST", "x".repeat(8_000))] {
-            let request = generate_request(&PreparedTalent {
-                name: "plain".into(),
-                config: source_config(json!({"max_output_tokens":64,"transcript":transcript,"user_instruction":"EARLY_RULE","prompt":"context"})),
-            }).unwrap();
+            let request = generate_request(&PreparedTalent::new("plain".into(), source_config(json!({"max_output_tokens":64,"transcript":transcript,"user_instruction":"EARLY_RULE","prompt":"context"})))).unwrap();
             assert_eq!(
                 request.contents,
                 vec![
@@ -4025,10 +4081,7 @@ mod tests {
                 );
             }
         }
-        let request = generate_request(&PreparedTalent {
-            name: "plain".into(),
-            config: source_config(json!({"max_output_tokens":64,"messages":[{"content":"A"},{"content":""},{"content":"B"}]})),
-        }).unwrap();
+        let request = generate_request(&PreparedTalent::new("plain".into(), source_config(json!({"max_output_tokens":64,"messages":[{"content":"A"},{"content":""},{"content":"B"}]})))).unwrap();
         let input =
             solstone_core_generate_wire::bundled_input(&request, Path::new("unused")).unwrap();
         assert_eq!(
@@ -4093,11 +4146,8 @@ mod tests {
     }
 
     fn retry_test_request(name: &str) -> GenerateRequest {
-        generate_request(&PreparedTalent {
-            name: name.into(),
-            config: json!({"max_output_tokens":9216,"prompt":"document activity","json_schema":{"type":"object"}})
-                .as_object().unwrap().clone(),
-        }).unwrap()
+        generate_request(&PreparedTalent::new(name.into(), json!({"max_output_tokens":9216,"prompt":"document activity","json_schema":{"type":"object"}})
+                .as_object().unwrap().clone())).unwrap()
     }
 
     #[test]
@@ -4179,13 +4229,13 @@ mod tests {
 
     #[test]
     fn generate_request_preserves_and_validates_the_talent_timeout() {
-        let mut prepared = PreparedTalent {
-            name: "sense".into(),
-            config: json!({"max_output_tokens":6912,"prompt":"Assess the segment."})
+        let mut prepared = PreparedTalent::new(
+            "sense".into(),
+            json!({"max_output_tokens":6912,"prompt":"Assess the segment."})
                 .as_object()
                 .unwrap()
                 .clone(),
-        };
+        );
         assert_eq!(generate_request(&prepared).unwrap().timeout_s, None);
         for value in [json!(480), json!(480.5), json!(0), json!(-1)] {
             prepared.config.insert("timeout_s".into(), value.clone());
@@ -4216,9 +4266,9 @@ mod tests {
         let context = ExecutionContext {
             journal: root.path().join("journal"),
         };
-        let mut prepared = PreparedTalent {
-            name: "screen".into(),
-            config: json!({
+        let mut prepared = PreparedTalent::new(
+            "screen".into(),
+            json!({
                 "max_output_tokens":9216,
                 "prompt":"Document the screen activity.",
                 "transcript":"10:00 opened src/main.rs; 10:01 fixed E0425; 10:02 tests passed.",
@@ -4227,7 +4277,7 @@ mod tests {
             .as_object()
             .unwrap()
             .clone(),
-        };
+        );
         let stub = test_support::sequenced_one_shot_stub(
             root.path(),
             &[
@@ -4250,6 +4300,7 @@ mod tests {
             &context,
             &OneShotClient::at_path(&stub),
             &mut output,
+            &solstone_core_generate::Cancellation::never(),
         )
         .unwrap();
         assert!(response.0.contains("tests passed"));
@@ -4281,14 +4332,14 @@ mod tests {
         let path = root.path().join("screen.json");
         let previous = br#"{"narrative":"Earlier complete output","entities":[]}"#;
         fs::write(&path, previous).unwrap();
-        let mut prepared = PreparedTalent {
-            name: "screen".into(),
-            config: json!({"max_output_tokens":9216,"prompt":"screen activity",
+        let mut prepared = PreparedTalent::new(
+            "screen".into(),
+            json!({"max_output_tokens":9216,"prompt":"screen activity",
                 "json_schema":{"type":"object"},"output":"json","output_path":path})
             .as_object()
             .unwrap()
             .clone(),
-        };
+        );
         let refused = test_support::refused_response_value(
             Some("incomplete_json_length"),
             true,

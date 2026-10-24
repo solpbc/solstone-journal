@@ -8,6 +8,8 @@ mod bundled;
 pub mod chatgpt;
 mod confidential;
 mod credential_binding;
+mod endpoint_binding;
+pub use endpoint_binding::endpoint_configuration_binding;
 mod dispatch;
 mod endpoint;
 mod google;

@@ -134,6 +134,31 @@ fn respond_config(
     } else {
         crate::lane::resolve_lane_with(config, |_| None)
     };
+    if let Some(expected) = request.endpoint_binding.as_deref() {
+        let model = if process_overrides {
+            crate::overrides::configured_model(config)
+        } else {
+            crate::overrides::configured_model_with(config, |_| None)
+        };
+        if crate::endpoint_binding::resolved_binding(&provider, &outcome, model.as_deref())
+            .as_deref()
+            != Some(expected)
+        {
+            return Ok(solstone_core_generate::GenerateResponse::Refused(
+                crate::refusal_for(
+                    &crate::LaneOutcome::EndpointFailure(crate::EndpointFailure {
+                        reason_code: Some("endpoint_configuration_changed".to_owned()),
+                        detail: Some(
+                            "the endpoint configuration changed after this request was prepared."
+                                .to_owned(),
+                        ),
+                    }),
+                    &provider,
+                    request_id,
+                ),
+            ));
+        }
+    }
     if !matches!(outcome, crate::LaneOutcome::ConfidentialEndpoint(_)) {
         endpoint_runtime.drain_idle_pool();
     }
@@ -742,6 +767,81 @@ fn log_schema_validation(validation: &Value) {
 mod tests {
     use super::*;
     #[test]
+    fn bound_request_codecs_preserve_dispatch_refusal_before_any_provider_work() {
+        use solstone_core_generate::{ContentPart, GenerateRequest, GenerateResponse};
+        let config = json!({"providers":{"active":{"provider":"local","model":"local/model"},"local":{"endpoint_url":"https://example.test","served_model_id":"model"}},"services":{"confidential":{}}});
+        let (provider, lane) =
+            crate::lane::resolve_lane_with(config.as_object().unwrap(), |_| None);
+        let binding =
+            crate::endpoint_binding::resolved_binding(&provider, &lane, Some("local/model"))
+                .unwrap();
+        let request = GenerateRequest {
+            id: Some("bound".into()),
+            context: "test".into(),
+            contents: vec![ContentPart::Text {
+                text: "data".into(),
+            }],
+            system_instruction: None,
+            temperature: 0.3,
+            max_output_tokens: 10,
+            timeout_s: None,
+            json_output: false,
+            json_schema: None,
+            attempt_index: 0,
+            exclusive_admission: false,
+            transport_retries: None,
+            endpoint_binding: Some(binding),
+        };
+        let one = solstone_core_generate::decode_one_shot_request(
+            &solstone_core_generate::encode_one_shot_request(&request).unwrap(),
+        )
+        .unwrap();
+        let session = solstone_core_generate::decode_session_request_line(
+            &solstone_core_generate::encode_session_request_line(&request).unwrap(),
+        )
+        .unwrap();
+        for decoded in [one, session] {
+            assert_eq!(decoded.endpoint_binding, request.endpoint_binding);
+            let mut changed = config.clone();
+            changed["providers"]["local"]["served_model_id"] = json!("different");
+            let cancelled = solstone_core_generate::Cancellation::never();
+            let response = respond_config(
+                &decoded,
+                &crate::EndpointRuntime::new(1),
+                Path::new("must-not-be-read"),
+                changed.as_object().unwrap(),
+                |_| panic!("must not acquire local runtime"),
+                false,
+                true,
+                &GenerateCallContext {
+                    priority: Default::default(),
+                    cancellation: &cancelled,
+                },
+            )
+            .unwrap();
+            let GenerateResponse::Refused(response) = response else {
+                panic!("changed configuration executed")
+            };
+            assert_eq!(
+                response
+                    .reason_code
+                    .as_ref()
+                    .map(solstone_core_generate::ReasonCodeValue::as_wire),
+                Some("endpoint_configuration_changed")
+            );
+        }
+        let mut ordinary = request;
+        ordinary.endpoint_binding = None;
+        let encoded = solstone_core_generate::encode_one_shot_request(&ordinary).unwrap();
+        assert!(
+            serde_json::from_str::<Value>(&encoded)
+                .unwrap()
+                .get("endpoint_binding")
+                .is_none()
+        );
+    }
+
+    #[test]
     fn anthropic_generated_response_preserves_thinking_blocks() {
         let request = solstone_core_generate::GenerateRequest {
             id: Some("request".into()),
@@ -756,6 +856,7 @@ mod tests {
             attempt_index: 0,
             exclusive_admission: false,
             transport_retries: None,
+            endpoint_binding: None,
         };
         let response = anthropic_generated_response(
             &request,
@@ -936,6 +1037,7 @@ mod tests {
             attempt_index: 0,
             exclusive_admission: false,
             transport_retries: None,
+            endpoint_binding: None,
         };
 
         let cancelled = Arc::new(AtomicBool::new(false));

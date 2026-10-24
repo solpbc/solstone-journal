@@ -394,6 +394,7 @@ mod tests {
                 attempt_index: 0,
                 exclusive_admission: false,
                 transport_retries: None,
+                endpoint_binding: None,
             };
             stdin.push_str(
                 &solstone_core_generate::encode_session_request_line(&request)

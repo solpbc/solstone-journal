@@ -471,6 +471,7 @@ mod tests {
             attempt_index: 0,
             exclusive_admission: false,
             transport_retries: Some(0),
+            endpoint_binding: None,
         }
     }
 
@@ -490,6 +491,7 @@ mod tests {
             attempt_index: 0,
             exclusive_admission: false,
             transport_retries: Some(0),
+            endpoint_binding: None,
         }
     }
 
@@ -1473,6 +1475,7 @@ mod loopback {
             attempt_index: 0,
             exclusive_admission: false,
             transport_retries: Some(0),
+            endpoint_binding: None,
         }
     }
 
@@ -1492,6 +1495,7 @@ mod loopback {
             attempt_index: 0,
             exclusive_admission: false,
             transport_retries: Some(0),
+            endpoint_binding: None,
         }
     }
 

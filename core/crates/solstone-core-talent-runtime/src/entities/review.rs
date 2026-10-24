@@ -1202,9 +1202,9 @@ mod tests {
             detect(root.path(), "20260106", candidate_name);
             detect(root.path(), "20260107", candidate_name);
 
-            let prepared = PreparedTalent {
-                name: "entities:entities_review".to_owned(),
-                config: json!({
+            let prepared = PreparedTalent::new(
+                "entities:entities_review".to_owned(),
+                json!({
                     "day": "20260108",
                     "facet": "work",
                     "type": "generate",
@@ -1213,7 +1213,7 @@ mod tests {
                 .as_object()
                 .unwrap()
                 .clone(),
-            };
+            );
             let context = ExecutionContext {
                 journal: root.path().to_path_buf(),
             };
@@ -1304,9 +1304,9 @@ mod tests {
             detect(root.path(), "20260107", name);
         }
 
-        let prepared = PreparedTalent {
-            name: "entities:entities_review".to_owned(),
-            config: json!({
+        let prepared = PreparedTalent::new(
+            "entities:entities_review".to_owned(),
+            json!({
                 "day": "20260108",
                 "facet": "work",
                 "type": "generate",
@@ -1315,7 +1315,7 @@ mod tests {
             .as_object()
             .unwrap()
             .clone(),
-        };
+        );
         let context = ExecutionContext {
             journal: root.path().to_path_buf(),
         };
@@ -1443,9 +1443,9 @@ mod tests {
         detect(root1.path(), "20260106", "Jordan Rivera");
         detect(root1.path(), "20260107", "Jordan Rivera");
 
-        let prepared1 = PreparedTalent {
-            name: "entities:entities_review".to_owned(),
-            config: json!({
+        let prepared1 = PreparedTalent::new(
+            "entities:entities_review".to_owned(),
+            json!({
                 "day": "20260108",
                 "facet": "work",
                 "type": "generate",
@@ -1454,7 +1454,7 @@ mod tests {
             .as_object()
             .unwrap()
             .clone(),
-        };
+        );
         let context1 = ExecutionContext {
             journal: root1.path().to_path_buf(),
         };
@@ -1536,9 +1536,9 @@ mod tests {
         detect(root2.path(), "20260106", "Jordan Rivera");
         detect(root2.path(), "20260107", "Jordan Rivera");
 
-        let prepared2 = PreparedTalent {
-            name: "entities:entities_review".to_owned(),
-            config: json!({
+        let prepared2 = PreparedTalent::new(
+            "entities:entities_review".to_owned(),
+            json!({
                 "day": "20260108",
                 "facet": "work",
                 "type": "generate",
@@ -1547,7 +1547,7 @@ mod tests {
             .as_object()
             .unwrap()
             .clone(),
-        };
+        );
         let context2 = ExecutionContext {
             journal: root2.path().to_path_buf(),
         };
@@ -1597,9 +1597,9 @@ mod tests {
         detect(root3.path(), "20260106", "Jordan Rivera");
         detect(root3.path(), "20260107", "Jordan Rivera");
 
-        let prepared3 = PreparedTalent {
-            name: "entities:entities_review".to_owned(),
-            config: json!({
+        let prepared3 = PreparedTalent::new(
+            "entities:entities_review".to_owned(),
+            json!({
                 "day": "20260108",
                 "facet": "work",
                 "type": "generate",
@@ -1608,7 +1608,7 @@ mod tests {
             .as_object()
             .unwrap()
             .clone(),
-        };
+        );
         let context3 = ExecutionContext {
             journal: root3.path().to_path_buf(),
         };
@@ -1668,9 +1668,9 @@ mod tests {
         detect(root1.path(), "20260106", "Jordan Rivera");
         detect(root1.path(), "20260107", "Jordan Rivera");
 
-        let prepared1 = PreparedTalent {
-            name: "entities:entities_review".to_owned(),
-            config: json!({
+        let prepared1 = PreparedTalent::new(
+            "entities:entities_review".to_owned(),
+            json!({
                 "day": "20260108",
                 "facet": "work",
                 "type": "generate",
@@ -1679,7 +1679,7 @@ mod tests {
             .as_object()
             .unwrap()
             .clone(),
-        };
+        );
         let context1 = ExecutionContext {
             journal: root1.path().to_path_buf(),
         };
@@ -1811,9 +1811,9 @@ mod tests {
         detect(root2.path(), "20260106", "Jordan Rivera");
         detect(root2.path(), "20260107", "Jordan Rivera");
 
-        let prepared2 = PreparedTalent {
-            name: "entities:entities_review".to_owned(),
-            config: json!({
+        let prepared2 = PreparedTalent::new(
+            "entities:entities_review".to_owned(),
+            json!({
                 "day": "20260108",
                 "facet": "work",
                 "type": "generate",
@@ -1822,7 +1822,7 @@ mod tests {
             .as_object()
             .unwrap()
             .clone(),
-        };
+        );
         let context2 = ExecutionContext {
             journal: root2.path().to_path_buf(),
         };
@@ -1893,9 +1893,9 @@ mod tests {
         detect(root3.path(), "20260106", "Jordan Rivera");
         detect(root3.path(), "20260107", "Jordan Rivera");
 
-        let prepared3 = PreparedTalent {
-            name: "entities:entities_review".to_owned(),
-            config: json!({
+        let prepared3 = PreparedTalent::new(
+            "entities:entities_review".to_owned(),
+            json!({
                 "day": "20260108",
                 "facet": "work",
                 "type": "generate",
@@ -1904,7 +1904,7 @@ mod tests {
             .as_object()
             .unwrap()
             .clone(),
-        };
+        );
         let context3 = ExecutionContext {
             journal: root3.path().to_path_buf(),
         };

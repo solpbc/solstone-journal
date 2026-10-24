@@ -2561,10 +2561,10 @@ mod tests {
                         "activities": [{"day":"20260813", "activity": "meeting_1", "facet": "work", "ts": 2}, {"day":"20260812", "activity":"meeting_1", "facet":"work", "ts":4}],
                     })
                 );
-                let mut prepared = solstone_core_talent_runtime::PreparedTalent {
-                    name: "pulse".to_owned(),
-                    config: request.config.clone(),
-                };
+                let mut prepared = solstone_core_talent_runtime::PreparedTalent::new(
+                    "pulse".to_owned(),
+                    request.config.clone(),
+                );
                 prepared.config.insert(
                     "prompt".to_owned(),
                     Value::String("$completed_since".to_owned()),

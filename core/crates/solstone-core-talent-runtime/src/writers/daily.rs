@@ -1412,10 +1412,7 @@ mod tests {
         let context = ExecutionContext {
             journal: root.path().into(),
         };
-        let prepared = PreparedTalent {
-            name: "entities:entities_review".into(),
-            config: Default::default(),
-        };
+        let prepared = PreparedTalent::new("entities:entities_review".into(), Default::default());
         let error = prepare_daily_publication(
             CommitPlan::Write(WriteIntent::EntitiesReview {
                 output: "not-json".into(),
@@ -1446,10 +1443,7 @@ mod tests {
         let context = ExecutionContext {
             journal: root.path().into(),
         };
-        let mut prepared = PreparedTalent {
-            name: "daily_schedule".into(),
-            config: Default::default(),
-        };
+        let mut prepared = PreparedTalent::new("daily_schedule".into(), Default::default());
         let path = root.path().join("config/schedules.json");
         solstone_core_system::schedule::set_schedule_metadata(
             &path,
@@ -1486,10 +1480,8 @@ mod tests {
         let prior =
             solstone_core_facets::read_facet_entity_observations(root.path(), "work", "ada")
                 .unwrap();
-        let mut prepared = PreparedTalent {
-            name: "entities:entity_observer".into(),
-            config: Default::default(),
-        };
+        let mut prepared =
+            PreparedTalent::new("entities:entity_observer".into(), Default::default());
         prepared
             .config
             .insert("_daily_observation_before".into(), json!({"ada":prior}));
@@ -2032,13 +2024,13 @@ mod tests {
             .to_string(),
         )
         .unwrap();
-        let mut prepared = PreparedTalent {
-            name: "entities:entity_observer".into(),
-            config: json!({"facet":"work", "day":"20260910"})
+        let mut prepared = PreparedTalent::new(
+            "entities:entity_observer".into(),
+            json!({"facet":"work", "day":"20260910"})
                 .as_object()
                 .unwrap()
                 .clone(),
-        };
+        );
         let state = crate::entities::observer::build(
             &mut prepared,
             &ExecutionContext {
@@ -2488,9 +2480,9 @@ mod tests {
         let journal = root.path();
         let path = journal.join("facets/work/facet.json");
         std::fs::write(&path, b"{").unwrap();
-        let prepared = PreparedTalent {
-            name: "entities:entities_review".into(),
-            config: json!({
+        let prepared = PreparedTalent::new(
+            "entities:entities_review".into(),
+            json!({
                 "day":"20260910",
                 "facet":"work",
                 "_daily_artifact_before": {},
@@ -2499,7 +2491,7 @@ mod tests {
             .as_object()
             .unwrap()
             .clone(),
-        };
+        );
         let error = prepare_frozen_output_action(
             journal,
             &journal.join("facets/work/entities/20260910_review_outcome.json"),

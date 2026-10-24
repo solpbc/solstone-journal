@@ -187,6 +187,7 @@ fn request() -> GenerateRequest {
         attempt_index: 0,
         exclusive_admission: false,
         transport_retries: None,
+        endpoint_binding: None,
     }
 }
 

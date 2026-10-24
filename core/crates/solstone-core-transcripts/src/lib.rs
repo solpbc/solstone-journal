@@ -250,6 +250,7 @@ struct Segment {
 enum PerceptProjection {
     Generic,
     ScreenTalent,
+    TerminalSense,
 }
 
 #[derive(Debug)]
@@ -364,6 +365,25 @@ pub fn cluster_period_with_memory(
         sources,
         stream,
         PerceptProjection::Generic,
+    )
+}
+
+/// Ordinary segment rendering with complete bounded terminal source records.
+/// Retained records are private preparation input, never a different transcript view.
+pub fn cluster_period_for_terminal_sense_with_memory(
+    root: &Path,
+    day: &str,
+    key: &str,
+    sources: &Sources,
+    stream: Option<&str>,
+) -> (ScreenTranscript, SourceCounts, MemoryContext) {
+    cluster_period_with_projection_and_memory(
+        root,
+        day,
+        key,
+        sources,
+        stream,
+        PerceptProjection::TerminalSense,
     )
 }
 
@@ -1046,7 +1066,12 @@ fn raw_content_with_speakers(
         _ => {
             let (records, unparsed_lines) = parse_raw_percept_records(&text);
             let produced = produce_raw_percept_chunks_by_shape(family, Some(&rel), &records);
-            if text.len() <= ENTRY_SOURCE_MAX_BYTES {
+            let source_limit = if projection == PerceptProjection::TerminalSense {
+                8 * 1024 * 1024
+            } else {
+                ENTRY_SOURCE_MAX_BYTES
+            };
+            if text.len() <= source_limit {
                 source = Some(EntrySource {
                     path: path.to_owned(),
                     sha256: source_sha256,
