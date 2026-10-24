@@ -3,6 +3,10 @@
 
 use super::progressive_frames::clock;
 use super::python_json::{DumpOptions, python_dumps};
+use super::state_codec::RESTART_KEY;
+
+/// A markdown entry header, the boundary ordinary input fitting keeps whole.
+const ENTRY_HEADER: &str = "## ";
 use serde_json::{Map, Value, json};
 
 pub(crate) const INTRO: &str = "Chronological screen changes. A complete display anchor starts each
@@ -38,10 +42,16 @@ pub(crate) fn encode(records: &[Value], base_ms: i64) -> String {
     for record in records {
         let mut metadata = record.as_object().cloned().unwrap_or_default();
         metadata.shift_remove("pane_updates");
+        let restart = metadata.shift_remove(RESTART_KEY) == Some(Value::Bool(true));
         let ts = record["frame_metadata"]["timestamp"]
             .as_f64()
             .unwrap_or(0.0);
-        metadata.insert("native_clock".into(), json!(clock(base_ms, ts)));
+        let native_clock = clock(base_ms, ts);
+        if restart {
+            // An entry boundary for ordinary input fitting, which keeps the newest whole entries.
+            parts.push(format!("{ENTRY_HEADER}{native_clock}\n"));
+        }
+        metadata.insert("native_clock".into(), json!(native_clock));
 
         parts.push(format!(
             "Observation: {}\n",
@@ -168,7 +178,11 @@ pub(crate) fn decode(text: &str, base_ms: i64) -> Result<Vec<Value>, &'static st
     };
 
     while cursor < raw.len() {
-        let header_bytes = read_line(&mut cursor)?;
+        let mut header_bytes = read_line(&mut cursor)?;
+        let entry_clock = header_bytes.strip_prefix(ENTRY_HEADER.as_bytes());
+        if entry_clock.is_some() {
+            header_bytes = read_line(&mut cursor)?;
+        }
         let start_tag = b"Observation: ";
         if !header_bytes.starts_with(start_tag) {
             return Err("observation header missing");
@@ -187,6 +201,9 @@ pub(crate) fn decode(text: &str, base_ms: i64) -> Result<Vec<Value>, &'static st
             .ok_or("missing ts")?;
         if native_clock != clock(base_ms, ts) {
             return Err("clock differs");
+        }
+        if entry_clock.is_some_and(|entry| entry != native_clock.as_bytes()) {
+            return Err("entry clock differs");
         }
 
         let mut pane_updates = Vec::new();

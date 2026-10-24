@@ -79,7 +79,6 @@ pub struct PreparedTalent {
     pub name: String,
     pub config: Map<String, Value>,
     pub(crate) entry_sources: Vec<Option<solstone_core_transcripts::EntrySource>>,
-    pub(crate) journal_config: Option<Map<String, Value>>,
     pub(crate) stock_task: Option<StockTask>,
     pub(crate) terminal_sense: Option<terminal_sense::Candidate>,
 }
@@ -90,7 +89,6 @@ impl PreparedTalent {
             name,
             config,
             entry_sources: Vec::new(),
-            journal_config: None,
             stock_task: None,
             terminal_sense: None,
         }
@@ -1075,6 +1073,22 @@ fn generate_response(
     native_generate_response(prepared, context, generate, writer)
 }
 
+/// A request fitted to the served window may have dropped the oldest input.
+/// Keep that fact beside the output so a writer can say its result is partial.
+/// Only the fitter drops input, and it reports every drop.
+pub(crate) fn record_input_budget(prepared: &mut PreparedTalent, budget: Option<&Value>) {
+    let clipped = budget.map(|budget| budget.get("clipped").and_then(Value::as_bool));
+    if let (Some(budget), Some(Some(true))) = (budget, clipped) {
+        prepared
+            .config
+            .insert(INPUT_BUDGET_KEY.to_owned(), budget.clone());
+    } else if matches!(clipped, None | Some(Some(false))) {
+        prepared
+            .config
+            .insert(story::INPUT_WHOLE_KEY.to_owned(), Value::Bool(true));
+    }
+}
+
 fn native_generate_response(
     prepared: &mut PreparedTalent,
     context: &ExecutionContext,
@@ -1088,13 +1102,7 @@ fn native_generate_response(
     }
     match screen_batch::generate_if_needed(prepared, context, generate, Some(writer)) {
         Some(Ok(response)) => {
-            if let Some(budget) = response.input_budget {
-                prepared.config.insert(INPUT_BUDGET_KEY.to_owned(), budget);
-            } else {
-                prepared
-                    .config
-                    .insert(story::INPUT_WHOLE_KEY.to_owned(), Value::Bool(true));
-            }
+            record_input_budget(prepared, response.input_budget.as_ref());
             Ok((response.text, None, None))
         }
         Some(Err(outcome)) => Err(outcome),
@@ -1153,24 +1161,7 @@ fn native_generate_response(
                     } else {
                         Some(Box::new(response.usage.clone()))
                     };
-                    // A request fitted to the served window may have
-                    // dropped the oldest input. Keep that fact beside the
-                    // output so a writer can say its result is partial.
-                    if let Some(budget) = response.input_budget.as_ref().filter(|budget| {
-                        budget.get("clipped").and_then(Value::as_bool) == Some(true)
-                    }) {
-                        prepared
-                            .config
-                            .insert(INPUT_BUDGET_KEY.to_owned(), budget.clone());
-                    }
-                    // Only the fitter drops input, and it reports every drop.
-                    if response.input_budget.as_ref().is_none_or(|budget| {
-                        budget.get("clipped").and_then(Value::as_bool) == Some(false)
-                    }) {
-                        prepared
-                            .config
-                            .insert(story::INPUT_WHOLE_KEY.to_owned(), Value::Bool(true));
-                    }
+                    record_input_budget(prepared, response.input_budget.as_ref());
                     Ok((checked.text, usage, None))
                 }
                 GenerateResponse::Refused(response) => Err(RuntimeOutcome::GenerateRefused {

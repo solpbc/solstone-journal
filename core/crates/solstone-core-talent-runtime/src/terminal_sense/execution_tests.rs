@@ -45,12 +45,6 @@ fn setup() -> (PreparedTalent, Value) {
     let original = crate::native_generate_request(&prepared).unwrap();
     let mut request = original.clone();
     request.json_schema = Some(schema(&schema_native, 0, &bound, &rows).unwrap());
-    request.contents.insert(
-        0,
-        ContentPart::Text {
-            text: String::new(),
-        },
-    );
     prepared.terminal_sense = Some(Candidate {
         request,
         original,
@@ -210,11 +204,7 @@ fn retries_and_native_fallback_retain_all_usage_and_original_input() {
 }
 #[test]
 fn cancellation_and_security_or_transport_refusals_do_not_fall_back() {
-    for code in [
-        "attestation_failed",
-        "http_401",
-        "connection_error",
-    ] {
+    for code in ["attestation_failed", "http_401", "connection_error"] {
         let (mut prepared, _) = setup();
         let response = solstone_core_generate_wire::refusal_for(
             &solstone_core_generate_wire::LaneOutcome::EndpointFailure(
@@ -240,8 +230,34 @@ fn cancellation_and_security_or_transport_refusals_do_not_fall_back() {
 }
 
 #[test]
-fn protected_fitting_refusals_take_one_unchanged_native_fallback() {
-    for code in ["context_preserved_overflow", "context_budget_exceeded"] {
+fn a_trimmed_timeline_is_an_ordinary_partial_result() {
+    let (mut prepared, value) = setup();
+    let budget =
+        json!({"clipped":true,"dropped_chars":120,"dropped_entries":2,"budget_tokens":900});
+    let GenerateResponse::Generated(mut response) = generated(&value.to_string(), true, 100, 10)
+    else {
+        unreachable!()
+    };
+    response.input_budget = Some(budget.clone());
+    let (result, calls, events) = run(&mut prepared, vec![GenerateResponse::Generated(response)]);
+    let crate::RuntimeOutcome::Finished { output, .. } = result else {
+        panic!("trimmed candidate failed")
+    };
+    assert!(output.contains("Is the launch ready?"));
+    assert_eq!(calls.len(), 1);
+    assert_eq!(prepared.config.get(crate::INPUT_BUDGET_KEY), Some(&budget));
+    assert!(prepared.config.get(crate::story::INPUT_WHOLE_KEY).is_none());
+    assert!(!events.iter().any(|e| e["branch"] == "native_fallback"));
+}
+
+#[test]
+fn context_window_refusals_take_one_unchanged_native_fallback() {
+    for code in [
+        "context_budget_exceeded",
+        "context_fitted_overflow",
+        "context_preserved_overflow",
+        "context_window_exceeded",
+    ] {
         let (mut prepared, _) = setup();
         let original = crate::native_generate_request(&prepared).unwrap();
         let response = solstone_core_generate_wire::refusal_for(

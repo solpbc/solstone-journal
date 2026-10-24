@@ -7,6 +7,8 @@ use super::state_codec::{decode as restore_states, encode as encode_states};
 use serde_json::{Map, Value, json};
 
 pub(crate) const INTRO: &str = super::instructions::RAW_CHANGES_INTRO;
+const ROSTER_EMITTED: &str = "Global window rosters are emitted initially and on change.\n";
+const ROSTER_OMITTED: &str = "The global inactive-window roster is omitted.\n";
 
 pub(crate) fn prepare(
     frames: &[Value],
@@ -77,9 +79,9 @@ pub(crate) fn encode(records: &[Value], base_ms: i64) -> String {
         .iter()
         .any(|r| r["roster_update"]["present"].as_bool() == Some(true));
     let availability = if roster {
-        "Global window rosters are emitted initially and on change.\n"
+        ROSTER_EMITTED
     } else {
-        "The global inactive-window roster is omitted.\n"
+        ROSTER_OMITTED
     };
     format!("{INTRO}{availability}{}", &text[display::INTRO.len()..])
 }
@@ -88,17 +90,17 @@ pub(crate) fn decode(text: &str, base_ms: i64) -> Result<Vec<Value>, &'static st
     if !text.starts_with(INTRO) {
         return Err("missing native-byte timeline guide");
     }
-    let rest = &text[INTRO.len()..];
-    let opt1 = "Global window rosters are emitted initially and on change.\n";
-    let opt2 = "The global inactive-window roster is omitted.\n";
-    let (availability_len, _) = if rest.starts_with(opt1) {
-        (opt1.len(), true)
-    } else if rest.starts_with(opt2) {
-        (opt2.len(), false)
-    } else {
-        return Err("missing roster availability");
-    };
-
-    let display_text = format!("{}{}", display::INTRO, &rest[availability_len..]);
+    let (_, timeline) = split_guide(text).ok_or("missing roster availability")?;
+    let display_text = format!("{}{timeline}", display::INTRO);
     display::decode(&display_text, base_ms)
+}
+
+/// Split an encoded timeline into its reading guide and its observations. The
+/// guide travels with the preserved instructions, so a fitted timeline stays readable.
+pub(crate) fn split_guide(text: &str) -> Option<(&str, &str)> {
+    let rest = text.strip_prefix(INTRO)?;
+    let availability = [ROSTER_EMITTED, ROSTER_OMITTED]
+        .into_iter()
+        .find(|line| rest.starts_with(line))?;
+    Some(text.split_at(INTRO.len() + availability.len()))
 }
