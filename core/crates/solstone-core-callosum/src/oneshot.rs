@@ -297,7 +297,8 @@ mod tests {
         .unwrap()
     }
 
-    #[cfg(all(target_os = "linux", feature = "full-tests"))]
+    #[cfg(all(test, feature = "full-tests"))]
+    #[cfg(target_os = "linux")]
     #[test]
     fn unconfirmed_send_bounds_connect_when_backlog_is_full() {
         use std::os::unix::net::UnixStream;
