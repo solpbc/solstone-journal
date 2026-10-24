@@ -105,6 +105,33 @@ pub(crate) fn prepare(prepared: &PreparedTalent, context: &ExecutionContext) -> 
         {
             return None;
         }
+        if source.file.ends_with("_desktop_activity.jsonl")
+            && !source.records.is_empty()
+            && source.records.iter().all(|record| {
+                record.get("v").and_then(Value::as_u64) == Some(1)
+                    && record.get("t").and_then(Value::as_str) == Some("desktop_activity")
+                    && record.get("method").and_then(Value::as_str) == Some("tmux")
+                    && matches!(
+                        record.get("kind").and_then(Value::as_str),
+                        Some("terminal" | "availability")
+                    )
+            })
+        {
+            let start = source.rendered_range.start.checked_add(source_shift)?;
+            let end = source.rendered_range.end.checked_add(source_shift)?;
+            let activity = source
+                .chunks
+                .iter()
+                .map(|(chunk, _)| chunk.as_str())
+                .collect::<Vec<_>>()
+                .join("\n\n");
+            if original_text.get(start..end)? != activity.trim() {
+                return None;
+            }
+            // Keep existing executable/context text verbatim; only screen sources
+            // are replaced by the timeline. No unknown source is skipped.
+            continue;
+        }
         let mut frames: Vec<Value> = source
             .records
             .iter()

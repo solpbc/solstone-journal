@@ -289,3 +289,66 @@ fn capture_metadata_preserves_complete_sense_requests_on_native_and_fallback_pat
         assert_eq!(encode(&old), encode(&new));
     }
 }
+
+#[test]
+fn tmux_executable_points_do_not_disable_the_native_timeline() {
+    let (_root, paths, context, request) = setup(&display());
+    let activity = context
+        .journal
+        .join("chronicle/20261021/device/100000_300/100000_desktop_activity.jsonl");
+    fs::write(&activity, format!("{}\n", json!({"v":1,"t":"desktop_activity","kind":"terminal","method":"tmux","ts":1792576800000_i64,"end_ts":1792576800000_i64,"session":"main","window":"work","exe":"bash"}))).unwrap();
+    let prepared = crate::prepare::prepare(
+        request.clone(),
+        &paths,
+        &context,
+        crate::prepare::PrepareMode::Preview,
+    )
+    .unwrap();
+    assert_eq!(prepared.config["source_counts"]["percepts"], 2);
+    assert!(
+        prepared.terminal_sense.is_some(),
+        "executable points must not disable TC"
+    );
+    let encoded = solstone_core_generate::encode_one_shot_request(
+        &crate::generate_request(&prepared).unwrap(),
+    )
+    .unwrap();
+    let activity_source = prepared
+        .entry_sources
+        .iter()
+        .flatten()
+        .find(|s| s.file.ends_with("_desktop_activity.jsonl"))
+        .unwrap();
+    let activity_text = activity_source
+        .chunks
+        .iter()
+        .map(|(chunk, _)| chunk.as_str())
+        .collect::<Vec<_>>()
+        .join("\n\n");
+    assert!(encoded.contains("bash"));
+    let ContentPart::Text {
+        text: candidate_text,
+    } = &prepared.terminal_sense.as_ref().unwrap().request.contents[0]
+    else {
+        panic!("text input")
+    };
+    assert!(candidate_text.contains(activity_text.trim()));
+    let native = solstone_core_generate::encode_one_shot_request(
+        &crate::native_generate_request(&prepared).unwrap(),
+    )
+    .unwrap();
+    assert_ne!(encoded, native);
+    // A non-tmux activity source must retain the conservative native fallback.
+    let text = fs::read_to_string(&activity)
+        .unwrap()
+        .replace("\"tmux\"", "\"other\"");
+    fs::write(&activity, text).unwrap();
+    let other = crate::prepare::prepare(
+        request,
+        &paths,
+        &context,
+        crate::prepare::PrepareMode::Preview,
+    )
+    .unwrap();
+    assert!(other.terminal_sense.is_none());
+}

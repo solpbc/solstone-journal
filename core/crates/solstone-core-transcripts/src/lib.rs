@@ -973,14 +973,15 @@ fn process_segment(
                         stream.as_deref().unwrap_or_default(),
                         segment.key
                     );
-                    let content = produce_chunks(Family::DesktopActivity, &rel, &text)
+                    let produced = produce_chunks(Family::DesktopActivity, &rel, &text);
+                    let content = produced
                         .chunks
-                        .into_iter()
-                        .map(|chunk| chunk.content)
+                        .iter()
+                        .map(|chunk| chunk.content.as_str())
                         .collect::<Vec<_>>()
                         .join("\n\n");
                     if !content.is_empty() {
-                        entries.push(entry(
+                        let mut activity_entry = entry(
                             start,
                             end,
                             segment,
@@ -988,7 +989,43 @@ fn process_segment(
                             content,
                             stream.clone(),
                             None,
-                        ));
+                        );
+                        // Terminal preparation may preserve this context beside its screen
+                        // timeline only when it can bind it to these same producer bytes.
+                        if projection == PerceptProjection::TerminalSense
+                            && text.len() <= ENTRY_SOURCE_MAX_BYTES
+                        {
+                            let (records, unparsed_lines) = parse_raw_percept_records(&text);
+                            let mut offset = 0;
+                            let chunk_offsets = produced
+                                .chunks
+                                .iter()
+                                .map(|chunk| {
+                                    let at = offset;
+                                    offset += chunk.content.len() + 2;
+                                    at
+                                })
+                                .collect();
+                            activity_entry.source = Some(EntrySource {
+                                path: path.to_owned(),
+                                sha256: format!("{:x}", Sha256::digest(text.as_bytes())),
+                                rendered_range: 0..0,
+                                stream: segment.record_stream().map(str::to_owned),
+                                file: name.to_owned(),
+                                records,
+                                unparsed_lines,
+                                chunks: produced
+                                    .chunks
+                                    .iter()
+                                    .filter_map(|chunk| {
+                                        Some((chunk.content.clone(), chunk.source.clone()?))
+                                    })
+                                    .collect(),
+                                chunk_offsets,
+                                voice_named: BTreeSet::new(),
+                            });
+                        }
+                        entries.push(activity_entry);
                     }
                 }
                 Err(error) => {
