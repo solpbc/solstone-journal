@@ -3904,6 +3904,13 @@ mod tests {
 
     #[tokio::test]
     async fn vapid_key_endpoint_lifecycle_and_permissions() {
+        set_test_clock(Some(
+            OffsetDateTime::parse(
+                "2026-09-24T12:00:00Z",
+                &time::format_description::well_known::Rfc3339,
+            )
+            .expect("fixture clock"),
+        ));
         let root_life = root();
         let app = api_router(root_life.path(), PORTAL_URL);
 
@@ -4152,7 +4159,13 @@ mod tests {
         setup_authorized_client(root.path(), CID_A);
         let transport = Arc::new(MockTransport::default());
         let app = api_router_with_transport(root.path(), PORTAL_URL, transport.clone());
-        set_test_clock(None);
+        set_test_clock(Some(
+            OffsetDateTime::parse(
+                "2026-09-24T12:00:00Z",
+                &time::format_description::well_known::Rfc3339,
+            )
+            .expect("fixture clock"),
+        ));
 
         call(&app, "GET", "/api/push/vapid-key", Body::empty(), None).await;
 
@@ -4196,7 +4209,13 @@ mod tests {
         setup_authorized_client(root.path(), CID_A);
         let transport = Arc::new(MockTransport::default());
         let app = api_router_with_transport(root.path(), PORTAL_URL, transport.clone());
-        set_test_clock(None);
+        set_test_clock(Some(
+            OffsetDateTime::parse(
+                "2026-09-24T12:00:00Z",
+                &time::format_description::well_known::Rfc3339,
+            )
+            .expect("fixture clock"),
+        ));
 
         call(&app, "GET", "/api/push/vapid-key", Body::empty(), None).await;
 
