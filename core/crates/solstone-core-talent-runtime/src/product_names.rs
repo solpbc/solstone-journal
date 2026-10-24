@@ -10,7 +10,7 @@ use sha2::{Digest, Sha256};
 use solstone_core_transcripts::EntrySource;
 
 pub(crate) const VIEW_KEY: &str = "_product_spelling_view";
-const TALENTS: &[&str] = &["sense", "work", "conversation"];
+const TALENTS: &[&str] = &["sense", "work", "conversation", "screen", "participation"];
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 struct Line {
@@ -188,6 +188,55 @@ pub(crate) fn prepare(
 
 pub(crate) fn model_text(config: &Map<String, Value>) -> Option<&str> {
     config.get(VIEW_KEY)?.get("text")?.as_str()
+}
+
+/// Plan screen batches in view coordinates, without reusing the full view in
+/// each batch. The caller's original transcript and source coordinates stay put.
+pub(crate) fn screen_batch_view(
+    prepared: &PreparedTalent,
+) -> Result<Option<PreparedTalent>, String> {
+    let Some(v) = view(&prepared.config) else {
+        return Ok(None);
+    };
+    let mut candidate = prepared.clone();
+    let Some(cuts) = candidate
+        .config
+        .get_mut("_screen_batch_cuts")
+        .and_then(Value::as_array_mut)
+    else {
+        return Ok(None);
+    };
+    for cut in cuts {
+        for field in ["byte_offset", "observation_byte_offset"] {
+            let at = cut
+                .get(field)
+                .and_then(Value::as_u64)
+                .and_then(|at| usize::try_from(at).ok())
+                .ok_or("screen_source_unbatchable: invalid spelling-view cut")?;
+            let mut delta = 0isize;
+            for line in &v.lines {
+                for edit in &line.edits {
+                    let start = line.original_start + edit.start;
+                    let end = line.original_start + edit.end;
+                    if at > start && at < end {
+                        return Err("screen_source_unbatchable: cut splits a spelling edit".into());
+                    }
+                    if at >= end {
+                        delta += edit.replacement.len() as isize - (end - start) as isize;
+                    }
+                }
+            }
+            cut[field] = json!(
+                at.checked_add_signed(delta)
+                    .ok_or("screen_source_unbatchable: invalid spelling-view offset")?
+            );
+        }
+    }
+    candidate
+        .config
+        .insert("transcript".into(), Value::String(v.text));
+    candidate.config.remove(VIEW_KEY);
+    Ok(Some(candidate))
 }
 
 pub(crate) fn event(config: &Map<String, Value>) -> Option<Value> {
@@ -728,6 +777,37 @@ mod tests {
             .filter(|event| event["event"] == "product_quote_gap")
             .map(|event| event["field"].as_str().unwrap().to_owned())
             .collect()
+    }
+
+    #[test]
+    fn screen_and_participation_requests_change_only_bound_speech() {
+        let root = tempfile::tempdir().unwrap();
+        let path = speech(
+            root.path(),
+            &[json!({
+                "start":"09:00:01", "text":"I use Soulstone journal, made by Soul PBC."
+            })],
+        );
+        let raw = fs::read(&path).unwrap();
+        let loaded = load(root.path(), None);
+        let original = loaded.text.clone() + "\n### Screen Activity\nSoulstone.cpp /work/Soulstone";
+        for name in ["screen", "participation"] {
+            let mut c = config(&original);
+            prepare(name, &mut c, &loaded.sources);
+            let prepared = PreparedTalent {
+                name: name.into(),
+                config: c,
+            };
+            let parts = crate::generate_contents(&prepared);
+            let ContentPart::Text { text } = &parts[0] else {
+                panic!("text input")
+            };
+            assert!(text.contains("I use solstone journal, made by sol pbc."));
+            assert!(text.contains("Soulstone.cpp /work/Soulstone"));
+            assert_eq!(prepared.config["transcript"], original);
+            assert!(event(&prepared.config).is_some());
+            assert_eq!(fs::read(&path).unwrap(), raw);
+        }
     }
 
     #[test]

@@ -55,6 +55,18 @@ where
     {
         return None;
     }
+    let spelling_view = match crate::product_names::screen_batch_view(prepared) {
+        Ok(view) => view,
+        Err(detail) => {
+            return Some(Err(RuntimeOutcome::StageFailed(stage_error(
+                "generate",
+                "screen_batch",
+                prepared,
+                detail,
+            ))));
+        }
+    };
+    let prepared = spelling_view.as_ref().unwrap_or(prepared);
     let cuts = match screen_cuts(prepared) {
         Ok(Some(cuts)) => cuts,
         Ok(None) => return None,
@@ -969,6 +981,111 @@ mod tests {
             count_for(batch),
             batch.config["max_output_tokens"].as_u64().unwrap()
         )));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn spelling_view_batches_keep_their_own_input_and_original_screen_literals() {
+        let speech = "é We use Soulstone journal, made by Soul PB C.";
+        let prefix = format!("Audio\n{speech}\n");
+        let first = unit(
+            "10:00:00",
+            observation(json!([{
+                "id":"%1", "index":0, "active":true, "geometry":[0,0,80,24],
+                "op":"snapshot", "lines":["Soulstone.cpp first_batch"]
+            }])),
+            5_100,
+        );
+        let second = unit(
+            "10:00:01",
+            observation(json!([{
+                "id":"%1", "index":0, "active":true, "geometry":[0,0,80,24],
+                "op":"splice", "start_line":0, "delete_count":1, "lines":["second_batch"]
+            }])),
+            5_100,
+        );
+        let transcript = format!("{prefix}{first}{second}");
+        let record = json!({"start":"10:00:00", "text":speech})
+            .as_object()
+            .unwrap()
+            .clone();
+        let source = solstone_core_transcripts::EntrySource {
+            path: "fixture_audio.jsonl".into(),
+            sha256: "fixture".into(),
+            rendered_range: 0..prefix.len(),
+            stream: None,
+            file: "audio.jsonl".into(),
+            records: vec![record.clone()],
+            unparsed_lines: 0,
+            chunks: vec![(speech.into(), record)],
+            chunk_offsets: vec!["Audio\n".len()],
+            voice_named: BTreeSet::new(),
+        };
+        let mut original = prepared(&transcript);
+        original.config.insert("_screen_batch_cuts".into(), Value::Array(
+            test_cuts(&transcript).iter().map(|c| json!({
+                "byte_offset":c.byte_offset, "observation_byte_offset":c.observation_byte_offset,
+                "reset_carry":c.reset_carry,
+            })).collect()
+        ));
+        crate::product_names::prepare("screen", &mut original.config, &[Some(source)]);
+        let full = crate::generate_contents(&original);
+        let root = TempDir::new().unwrap();
+        fs::create_dir_all(root.path().join("config")).unwrap();
+        fs::write(root.path().join("config/journal.json"),
+            r#"{"providers":{"active":{"provider":"local","model":"local-model"}},"services":{"confidential":{}}}"#).unwrap();
+        let captured = std::sync::Mutex::new(Vec::new());
+        let executor = |request: &solstone_core_generate::GenerateRequest| {
+            captured.lock().unwrap().push(request.clone());
+            Ok(GenerateResponse::Generated(Box::new(
+                solstone_core_generate::GeneratedResponse {
+                    id: None,
+                    text: json!({"narrative":"A batch.","entities":[]}).to_string(),
+                    model: "test-model".into(),
+                    usage: json!({}),
+                    finish_reason: "stop".into(),
+                    thinking: None,
+                    schema_validation: None,
+                    input_budget: None,
+                    request_budget: None,
+                    inference: None,
+                    hints_applied: Vec::new(),
+                },
+            )))
+        };
+        let outcome = generate_if_needed_with(
+            &original,
+            &ExecutionContext {
+                journal: root.path().into(),
+            },
+            &executor,
+            None,
+            |input: &GenerateInput| {
+                Ok(ExactTextCount {
+                    input_tokens: input.contents.to_string().len() as u32,
+                    window: 16_384,
+                    slots: 1,
+                })
+            },
+        );
+        assert!(matches!(outcome, Some(Ok(_))), "{outcome:?}");
+        let requests = captured.into_inner().unwrap();
+        assert_eq!(requests.len(), 2);
+        let text = |request: &solstone_core_generate::GenerateRequest| {
+            let solstone_core_generate::ContentPart::Text { text } = &request.contents[0] else {
+                panic!("text input")
+            };
+            text.clone()
+        };
+        assert!(text(&requests[0]).contains("é We use solstone journal, made by sol pbc."));
+        assert!(text(&requests[0]).contains("Soulstone.cpp first_batch"));
+        assert!(!text(&requests[0]).contains("second_batch"));
+        assert!(text(&requests[1]).contains("second_batch"));
+        assert!(text(&requests[1]).contains("prior_tmux_state"));
+        assert!(text(&requests[1]).contains("Soulstone.cpp first_batch"));
+        assert!(requests.iter().all(|r| r.contents != full));
+        assert_eq!(original.config["transcript"], transcript);
+        assert!(crate::product_names::event(&original.config).is_some());
     }
 
     #[test]

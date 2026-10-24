@@ -1030,6 +1030,9 @@ fn generate_response(
 ) -> Result<GeneratedTalentResponse, RuntimeOutcome> {
     let _ = prepared.config.remove(INPUT_BUDGET_KEY);
     let _ = prepared.config.remove(story::INPUT_WHOLE_KEY);
+    if let Some(event) = product_names::event(&prepared.config) {
+        emit(writer, event);
+    }
     match screen_batch::generate_if_needed(prepared, context, generate, Some(writer)) {
         Some(Ok(response)) => {
             if let Some(budget) = response.input_budget {
@@ -1046,9 +1049,6 @@ fn generate_response(
             let request = generate_request(prepared).map_err(|detail| {
                 RuntimeOutcome::StageFailed(stage_error("generate", "runtime", prepared, detail))
             })?;
-            if let Some(event) = product_names::event(&prepared.config) {
-                emit(writer, event);
-            }
             if prepared.name == "pulse" {
                 emit_generate_input(writer, &request);
             }
