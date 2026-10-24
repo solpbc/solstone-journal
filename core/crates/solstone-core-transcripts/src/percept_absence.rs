@@ -213,13 +213,17 @@ mod tests {
         symlink("missing", &path).unwrap();
         assert!(screen_inputs_absent(root.path(), &segment).is_err());
         fs::remove_file(path).unwrap();
-        fs::write(
+        match fs::write(
             segment
                 .path()
                 .join(std::ffi::OsStr::from_bytes(b"invalid\xff")),
             "",
-        )
-        .unwrap();
-        assert!(screen_inputs_absent(root.path(), &segment).is_err());
+        ) {
+            Ok(()) => assert!(screen_inputs_absent(root.path(), &segment).is_err()),
+            // APFS stores only valid UTF-8 names and refuses this one with
+            // EILSEQ, so the case cannot be set up there.
+            Err(error) if cfg!(target_os = "macos") && error.raw_os_error() == Some(92) => {}
+            Err(error) => panic!("{error}"),
+        }
     }
 }
