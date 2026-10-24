@@ -48,6 +48,7 @@ members = [
     "crates/solstone-core-brain-cli",
     "crates/solstone-core-callosum",
     "crates/solstone-core-cortex-client",
+    "crates/solstone-core-possible-names",
     "crates/solstone-core-processing-record",
     "crates/solstone-core-retention",
     "crates/solstone-core-retention-cli",
@@ -215,6 +216,7 @@ solstone-core-top = { path = "crates/solstone-core-top" }
 solstone-core-operational-logs = { path = "crates/solstone-core-operational-logs" }
 solstone-core-support-web = { path = "crates/solstone-core-support-web" }
 solstone-core-talent-config = { path = "crates/solstone-core-talent-config" }
+solstone-core-possible-names = { path = "crates/solstone-core-possible-names" }
 solstone-core-processing-record = { path = "crates/solstone-core-processing-record" }
 solstone-core-retention = { path = "crates/solstone-core-retention" }
 solstone-core-retention-cli = { path = "crates/solstone-core-retention-cli" }

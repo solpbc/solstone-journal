@@ -6917,6 +6917,7 @@ fn removed_segment_marker_matrix_withheld_from_all_read_tools() {
             &seg_obj,
             None,
             solstone_core_talent_runtime::agent_speakers(journal.path()).as_ref(),
+            None,
         )
         .unwrap();
         let perm_record = PermissionStore::open(journal.path())
@@ -7422,6 +7423,7 @@ fn door_seam_remove_segments_withholds_retained_references_without_leak() {
         &seg1_obj,
         None,
         solstone_core_talent_runtime::agent_speakers(journal.path()).as_ref(),
+        None,
     )
     .unwrap();
     let perm_record = PermissionStore::open(journal.path())

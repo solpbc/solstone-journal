@@ -121,6 +121,18 @@ pub(crate) fn search_response_with_index(
         order: Default::default(),
     };
     let reference = today(journal_root);
+    // Possible names are found by the canonical name they label, and only
+    // while they still hold; one that doesn't never matches or counts.
+    let possible_names = std::sync::Arc::new(solstone_core_possible_names::LiveSegments::new(
+        journal_root,
+        solstone_core_possible_names::Viewer::Owner,
+    ));
+    let admitted = std::sync::Arc::clone(&possible_names);
+    if let Err(error) = owner_index.admit_possible_names(std::sync::Arc::new(
+        move |path: &str, idx: i64, content: &str| admitted.indexed(path, idx, content).is_some(),
+    )) {
+        return search_failed(&error);
+    }
     let filtered_resolved = match owner_index.resolve_counts(&request, reference) {
         Ok(resolved) => resolved,
         Err(error) => return search_failed(&error),
@@ -211,6 +223,10 @@ pub(crate) fn search_response_with_index(
                     "idx": hit.metadata.idx,
                     "score": hit.score,
                 });
+                if solstone_core_possible_names::is_possible_names_path(&hit.metadata.path) {
+                    // Tentative: the journal's guess at who or what was meant.
+                    hit_obj["possible_name"] = Value::Bool(true);
+                }
                 if let Some(offset_ms) = hit.metadata.group_offset_ms {
                     if let Some(segment) =
                         solstone_core_format::content::screen_text::screen_text_segment(&hit.metadata.path)

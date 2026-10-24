@@ -19,12 +19,14 @@ use solstone_core_journal_io::paths::{PathOrDay, StreamLocation, iter_segments};
 use solstone_core_memory_original::{OriginalRead, read_original};
 
 mod percept_absence;
+mod possible_name_labels;
 mod segment_page;
 mod speaker_coordinates;
 
 use percept_absence::PerceptFamily;
 pub use percept_absence::screen_inputs_absent;
 
+pub use possible_name_labels::{PossibleNameLabels, label_statement, statement_text};
 pub use speaker_coordinates::{next_statement_ordinal, speaker_label_source};
 
 pub use segment_page::{
@@ -2385,7 +2387,7 @@ mod tests {
         )
         .unwrap()
         .unwrap();
-        let page = read_segment_transcript_page(&native, None, None).unwrap();
+        let page = read_segment_transcript_page(&native, None, None, None).unwrap();
         let entries = page
             .entries
             .iter()

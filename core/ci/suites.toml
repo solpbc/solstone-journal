@@ -1201,6 +1201,17 @@ default_full = false
 runtime = "pdf"
 
 [[package_suites]]
+id = "package::solstone-core-possible-names"
+package = "solstone-core-possible-names"
+set = "component"
+areas = ["entities"]
+platforms = ["linux", "macos", "windows"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = false
+runtime = "none"
+
+[[package_suites]]
 id = "package::solstone-core-processing-record"
 package = "solstone-core-processing-record"
 set = "component"

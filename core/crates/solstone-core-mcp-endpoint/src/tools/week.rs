@@ -273,6 +273,7 @@ fn project_sunday(
 
     let mut activities = Vec::new();
     let mut memories = Vec::new();
+    let possible_names = crate::possible_names::ConnectionPossibleNames::new(journal, snapshot);
     for group in ranked {
         let rep = group.representative;
         let reference = codec()
@@ -332,7 +333,7 @@ fn project_sunday(
             more_segments: false,
             activity_record: Some(&rep.record),
         }];
-        let mut checker = LiveTranscriptPages::default();
+        let mut checker = LiveTranscriptPages::new(std::sync::Arc::clone(&possible_names));
         let mut response_checks = 0;
         issue_segment_links(
             journal,

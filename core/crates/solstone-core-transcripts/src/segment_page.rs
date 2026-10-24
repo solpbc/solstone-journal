@@ -19,7 +19,8 @@ use solstone_core_format::content::{
 };
 use solstone_core_journal_io::paths::{Segment, segment_origin};
 
-use crate::{VoiceNames, next_statement_ordinal, speaker_label_source};
+use crate::possible_name_labels::label_line;
+use crate::{PossibleNameLabels, VoiceNames, next_statement_ordinal, speaker_label_source};
 
 /// Who an agent's transcript line names: only a speaker the journal's voice
 /// gate names (the same gate an activity's Story reads), with the owner's own
@@ -149,14 +150,21 @@ fn peek_untimed(path: &Path) -> bool {
 /// Segment-local speaker labels supply names only, and only as `speakers` allows;
 /// the entity profile is never projected. Without `speakers`, lines keep the
 /// stored diarization label.
+///
+/// `possible_names` are the labels this reader may show; the caller decides
+/// which (`solstone-core-possible-names`). Each is inserted after the speech
+/// it labels, and the set is part of the page version, so a continuation never
+/// mixes pages from before and after it changed.
 pub fn read_segment_transcript_page(
     segment: &Segment,
     cursor: Option<&SegmentTranscriptCursor>,
     speakers: Option<&AgentSpeakers>,
+    possible_names: Option<&PossibleNameLabels>,
 ) -> Result<SegmentTranscriptPage, SegmentTranscriptReadError> {
     let files = transcript_files(segment.path())?;
     let labels = speakers.and_then(|speakers| local_speaker_names(segment.path(), speakers));
-    let version = source_version(&files, &labels)?;
+    let possible_names = possible_names.filter(|labels| !labels.statements.is_empty());
+    let version = source_version(&files, &labels, possible_names)?;
     let untimed = files
         .iter()
         .filter(|path| path.extension().and_then(|ext| ext.to_str()) == Some("jsonl"))
@@ -195,6 +203,14 @@ pub fn read_segment_transcript_page(
                     )
             })
             .map(|(_, names)| names);
+        let name_labels = possible_names.filter(|labels| {
+            labels.file == name
+                && is_speech_transcript_name(name)
+                && !matches!(
+                    classify(&format!("{segment_origin}/{name}")),
+                    ContentResolution::Indexed(Family::AiChat)
+                )
+        });
         let mut consumed = 0;
         let mut stopped_in_window = false;
         for (line, line_end) in complete_lines(&window)? {
@@ -207,7 +223,14 @@ pub fn read_segment_transcript_page(
                     .insert("speaker".into(), Value::String(speaker.clone()));
                 Some(value.to_string())
             });
-            let text = project_line(&segment_origin, name, named_line.as_deref().unwrap_or(line));
+            let named = named_line.as_deref().unwrap_or(line);
+            let labelled_line = name_labels
+                .and_then(|labels| label_line(named, labels.statements.get(&sentence_id?)?));
+            let text = project_line(
+                &segment_origin,
+                name,
+                labelled_line.as_deref().unwrap_or(named),
+            );
             if !text.trim().is_empty() {
                 entries.push(SegmentTranscriptEntry {
                     channel: source_channel(&segment_origin, name),
@@ -284,9 +307,13 @@ fn is_transcript_name(name: &str) -> bool {
 fn source_version(
     files: &[PathBuf],
     labels: &Option<(String, BTreeMap<i64, String>)>,
+    possible_names: Option<&PossibleNameLabels>,
 ) -> Result<SegmentTranscriptVersion, SegmentTranscriptReadError> {
     let mut hasher = DefaultHasher::new();
     labels.hash(&mut hasher);
+    if let Some(possible_names) = possible_names {
+        possible_names.hash(&mut hasher);
+    }
     for path in files {
         let metadata = fs::metadata(path).map_err(|_| SegmentTranscriptReadError::Io)?;
         path.file_name().hash(&mut hasher);
@@ -548,7 +575,7 @@ mod tests {
             .pop()
             .unwrap();
 
-        let first = read_segment_transcript_page(&segment, None, None).unwrap();
+        let first = read_segment_transcript_page(&segment, None, None, None).unwrap();
         assert!(!first.entries.is_empty());
         assert!(
             first
@@ -584,7 +611,7 @@ mod tests {
             .pop()
             .unwrap();
 
-        let page = read_segment_transcript_page(&segment, None, None).unwrap();
+        let page = read_segment_transcript_page(&segment, None, None, None).unwrap();
         assert_eq!(
             page.entries,
             vec![
@@ -637,25 +664,25 @@ mod tests {
 
         // Verify import.audio page
         let seg = segments.iter().find(|s| s.path() == seg_audio).unwrap();
-        let page = read_segment_transcript_page(seg, None, None).unwrap();
+        let page = read_segment_transcript_page(seg, None, None, None).unwrap();
         assert_eq!(page.entries.len(), 1);
         assert_eq!(page.entries[0].text, "[00:00:02] spoken words");
 
         // Verify custom _audio.jsonl page
         let seg = segments.iter().find(|s| s.path() == seg_custom).unwrap();
-        let page = read_segment_transcript_page(seg, None, None).unwrap();
+        let page = read_segment_transcript_page(seg, None, None, None).unwrap();
         assert_eq!(page.entries.len(), 1);
         assert_eq!(page.entries[0].text, "[00:00:02] spoken words");
 
         // Verify import.chatgpt page
         let seg = segments.iter().find(|s| s.path() == seg_chatgpt).unwrap();
-        let page = read_segment_transcript_page(seg, None, None).unwrap();
+        let page = read_segment_transcript_page(seg, None, None, None).unwrap();
         assert_eq!(page.entries.len(), 1);
         assert_eq!(page.entries[0].text, "[00:00:00] **Ana Lima:** Hello all.");
 
         // Verify import.text page
         let seg = segments.iter().find(|s| s.path() == seg_text).unwrap();
-        let page = read_segment_transcript_page(seg, None, None).unwrap();
+        let page = read_segment_transcript_page(seg, None, None, None).unwrap();
         assert_eq!(page.entries.len(), 1);
         assert_eq!(page.entries[0].text, "[00:00:00] **Ana Lima:** Hello all.");
 
@@ -692,7 +719,7 @@ mod tests {
             .unwrap()
             .pop()
             .unwrap();
-        let page = read_segment_transcript_page(&segment, None, None).unwrap();
+        let page = read_segment_transcript_page(&segment, None, None, None).unwrap();
         assert_eq!(page.entries.len(), 1, "{:?}", page.entries);
         assert!(page.entries[0].text.contains("send the deck on friday"));
         assert!(
@@ -723,14 +750,15 @@ mod tests {
             .pop()
             .unwrap();
 
-        let first = read_segment_transcript_page(&segment, None, None).unwrap();
+        let first = read_segment_transcript_page(&segment, None, None, None).unwrap();
         assert!(first.untimed);
         assert_eq!(first.entries.len(), MAX_TRANSCRIPT_PAGE_ITEMS);
         assert_eq!(first.entries[0].channel, "Imported Text");
         assert_eq!(first.entries[0].text, "[00:00:00] **User:** turn 1");
         assert!(first.next.is_some());
 
-        let second = read_segment_transcript_page(&segment, first.next.as_ref(), None).unwrap();
+        let second =
+            read_segment_transcript_page(&segment, first.next.as_ref(), None, None).unwrap();
         assert!(second.untimed);
         assert_eq!(second.entries.len(), 10);
         assert_eq!(second.entries[0].text, "[00:00:00] **User:** turn 101");
@@ -760,7 +788,7 @@ mod tests {
         let pages = segments
             .iter()
             .map(|segment| {
-                read_segment_transcript_page(segment, None, None)
+                read_segment_transcript_page(segment, None, None, None)
                     .unwrap()
                     .entries
             })
@@ -789,7 +817,7 @@ mod tests {
             .pop()
             .unwrap();
 
-        let first = read_segment_transcript_page(&segment, None, None).unwrap();
+        let first = read_segment_transcript_page(&segment, None, None, None).unwrap();
         assert_eq!(first.entries.len(), MAX_TRANSCRIPT_PAGE_ITEMS);
         assert_eq!(first.entries[0].text, "line 1");
         assert_eq!(
@@ -797,7 +825,8 @@ mod tests {
             "line 100"
         );
 
-        let second = read_segment_transcript_page(&segment, first.next.as_ref(), None).unwrap();
+        let second =
+            read_segment_transcript_page(&segment, first.next.as_ref(), None, None).unwrap();
         assert_eq!(
             second
                 .entries
@@ -880,14 +909,15 @@ mod tests {
             .unwrap()
             .pop()
             .unwrap();
-        let first = read_segment_transcript_page(&segment, None, Some(&speakers())).unwrap();
+        let first = read_segment_transcript_page(&segment, None, Some(&speakers()), None).unwrap();
         assert_eq!(
             first.entries[0].text,
             "[00:00:01] (mic) Bea (owner): sentence 1"
         );
         assert_eq!(first.entries[99].text, "[00:00:01] (mic) Ada: sentence 100");
         let second =
-            read_segment_transcript_page(&segment, first.next.as_ref(), Some(&speakers())).unwrap();
+            read_segment_transcript_page(&segment, first.next.as_ref(), Some(&speakers()), None)
+                .unwrap();
         assert_eq!(
             second
                 .entries
@@ -913,7 +943,7 @@ mod tests {
         )
         .unwrap();
         assert!(matches!(
-            read_segment_transcript_page(&segment, first.next.as_ref(), Some(&speakers())),
+            read_segment_transcript_page(&segment, first.next.as_ref(), Some(&speakers()), None),
             Err(super::SegmentTranscriptReadError::Changed)
         ));
     }
@@ -939,7 +969,8 @@ mod tests {
             .unwrap()
             .pop()
             .unwrap();
-        let read = || read_segment_transcript_page(&segment, None, Some(&speakers())).unwrap();
+        let read =
+            || read_segment_transcript_page(&segment, None, Some(&speakers()), None).unwrap();
         let named = read();
         assert_eq!(named.entries[0].text, "[00:00:01] Ada: sentence 1");
         for id in 2..=6 {
@@ -980,7 +1011,7 @@ mod tests {
         // Without agent speakers, every line keeps its stored label.
         fs::write(dir.join("talents/speaker_labels.json"), labels).unwrap();
         assert!(
-            read_segment_transcript_page(&segment, None, None)
+            read_segment_transcript_page(&segment, None, None, None)
                 .unwrap()
                 .entries
                 .iter()
@@ -1011,7 +1042,7 @@ mod tests {
             .unwrap()
             .pop()
             .unwrap();
-        let page = read_segment_transcript_page(&segment, None, Some(&speakers())).unwrap();
+        let page = read_segment_transcript_page(&segment, None, Some(&speakers()), None).unwrap();
         assert_eq!(page.entries[0].text, "[00:00:00] **User:** hello");
     }
 
@@ -1052,7 +1083,7 @@ mod tests {
             .pop()
             .unwrap();
 
-        let page = read_segment_transcript_page(&segment, None, None).unwrap();
+        let page = read_segment_transcript_page(&segment, None, None, None).unwrap();
         assert_eq!(page.entries.len(), 2);
 
         let flagged_entry = &page.entries[0].text;
@@ -1116,5 +1147,100 @@ mod tests {
             chunks_flagged.chunks[0].occurrence_time_ms,
             chunks_unflagged.chunks[0].occurrence_time_ms
         );
+    }
+
+    fn possible_names(file: &str, rows: &[(i64, usize, &str)]) -> crate::PossibleNameLabels {
+        let mut labels = crate::PossibleNameLabels {
+            file: file.to_owned(),
+            ..Default::default()
+        };
+        for (sentence, end, name) in rows {
+            labels
+                .statements
+                .entry(*sentence)
+                .or_default()
+                .push((*end, (*name).to_owned()));
+        }
+        labels
+    }
+
+    #[test]
+    fn possible_names_follow_their_words_and_bind_the_page_version() {
+        let root = tempfile::tempdir().unwrap();
+        let dir = root.path().join("chronicle/20260914/default/090000_300");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(
+            dir.join("audio.jsonl"),
+            "{\"raw\":\"audio.flac\"}\n\
+             {\"start\":\"00:00:01\",\"speaker\":1,\"text\":\"ask Fryer to call anna\"}\n\
+             {\"start\":\"00:00:02\",\"speaker\":2,\"text\":\"heard wrong\",\"corrected\":\"ask Fryer again\"}\n",
+        )
+        .unwrap();
+        let segment = iter_segments(root.path(), PathOrDay::Day("20260914"))
+            .unwrap()
+            .pop()
+            .unwrap();
+        let plain = read_segment_transcript_page(&segment, None, None, None).unwrap();
+        let labels = possible_names(
+            "audio.jsonl",
+            &[(1, 22, "Ana Lima"), (1, 9, "Friar"), (2, 9, "Friar")],
+        );
+        let labelled = read_segment_transcript_page(&segment, None, None, Some(&labels)).unwrap();
+        assert_eq!(
+            labelled
+                .entries
+                .iter()
+                .map(|entry| entry.text.as_str())
+                .collect::<Vec<_>>(),
+            [
+                "[00:00:01] Speaker 1: ask Fryer (possible name: Friar) to call anna (possible name: Ana Lima)",
+                "[00:00:02] Speaker 2: ask Fryer (possible name: Friar) again",
+            ]
+        );
+        assert_ne!(plain.version, labelled.version);
+
+        // No label to show reads exactly as no labels at all.
+        let empty = possible_names("audio.jsonl", &[]);
+        let unlabelled = read_segment_transcript_page(&segment, None, None, Some(&empty)).unwrap();
+        assert_eq!(unlabelled, plain);
+
+        // Labels for another file show nothing but still bind the version.
+        let other = possible_names("mic_audio.jsonl", &[(1, 9, "Friar")]);
+        let elsewhere = read_segment_transcript_page(&segment, None, None, Some(&other)).unwrap();
+        assert_eq!(elsewhere.entries, plain.entries);
+
+        // A continuation minted before the labels changed is refused.
+        let changed = possible_names("audio.jsonl", &[(1, 9, "Friar Tuck")]);
+        let cursor = super::SegmentTranscriptCursor {
+            source_index: 0,
+            byte_offset: 0,
+            statement_ordinal: 0,
+            version: labelled.version.clone(),
+        };
+        assert!(matches!(
+            read_segment_transcript_page(&segment, Some(&cursor), None, Some(&changed)),
+            Err(super::SegmentTranscriptReadError::Changed)
+        ));
+    }
+
+    #[test]
+    fn possible_names_never_label_imported_chat() {
+        let root = tempfile::tempdir().unwrap();
+        let dir = root
+            .path()
+            .join("chronicle/20260914/import.chatgpt/090000_300");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(
+            dir.join("imported_audio.jsonl"),
+            "{\"start\":\"00:00:00\",\"speaker\":\"User\",\"text\":\"hello Fryer\"}\n",
+        )
+        .unwrap();
+        let segment = iter_segments(root.path(), PathOrDay::Day("20260914"))
+            .unwrap()
+            .pop()
+            .unwrap();
+        let labels = possible_names("imported_audio.jsonl", &[(1, 11, "Friar")]);
+        let page = read_segment_transcript_page(&segment, None, None, Some(&labels)).unwrap();
+        assert_eq!(page.entries[0].text, "[00:00:00] **User:** hello Fryer");
     }
 }

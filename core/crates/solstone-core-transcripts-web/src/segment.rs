@@ -49,6 +49,8 @@ struct SegmentContext<'a> {
     /// The journal's owner zone, which the page shows every time in.
     zone: Tz,
     now: DateTime<Utc>,
+    /// Possible names the owner may be shown beside the speech they label.
+    possible_names: Vec<solstone_core_possible_names::LiveEntry>,
 }
 
 pub(crate) async fn segment_content(
@@ -105,6 +107,11 @@ fn prepare_segment(
         root,
         zone,
         now,
+        possible_names: solstone_core_possible_names::live_entries(
+            root,
+            &dir,
+            &solstone_core_possible_names::Viewer::Owner,
+        ),
     };
     let unclaimed_images = solstone_core_system_health::unclaimed_image_state(&dir, stream, now)
         .map_err(|error| {
@@ -578,6 +585,8 @@ fn audio_chunks(
                     .to_owned()
             });
         let mut markdown = strip_speaker_prefix(&markdown, row.get("speaker"));
+        let possible_names =
+            possible_name_marks(&markdown, row, name, sid, &context.possible_names);
         if row.get("turn_boundary_suspect").and_then(Value::as_bool) == Some(true) {
             markdown = format!("{markdown} [{POSSIBLE_SPEAKER_CHANGE_WITHIN_SENTENCE}]");
         }
@@ -591,6 +600,11 @@ fn audio_chunks(
             obj.insert("audio_url".into(), json!(audio_url));
             obj.insert("audio_file".into(), json!(audio_url));
             obj.insert("audio_origin".into(), json!(origin_ms));
+        }
+        if !possible_names.is_empty()
+            && let Some(obj) = chunk.as_object_mut()
+        {
+            obj.insert("possible_names".into(), Value::Array(possible_names));
         }
         if let Some(label) = sid
             .and_then(|id| speakers.labels.get(&id))
@@ -948,6 +962,61 @@ fn local_time(zone: Tz, milliseconds: i64) -> String {
 fn participants(content: Option<&Value>) -> Vec<Value> {
     content.and_then(|value| value.get("meeting")).and_then(Value::as_object).and_then(|meeting| meeting.get("participants")).and_then(Value::as_array).into_iter().flatten().filter_map(|participant| { let box_2d = participant.get("box_2d").and_then(Value::as_array)?; (participant.get("video").and_then(Value::as_bool) == Some(true) && box_2d.len() == 4).then(|| json!({"name":participant.get("name").and_then(Value::as_str).unwrap_or("Unknown"),"status":participant.get("status").and_then(Value::as_str).unwrap_or("unknown"),"top":box_2d[0].as_f64().unwrap_or(0.0)/10.0,"left":box_2d[1].as_f64().unwrap_or(0.0)/10.0,"height":(box_2d[2].as_f64().unwrap_or(0.0)-box_2d[0].as_f64().unwrap_or(0.0))/10.0,"width":(box_2d[3].as_f64().unwrap_or(0.0)-box_2d[1].as_f64().unwrap_or(0.0))/10.0})) }).collect()
 }
+/// Where each possible name for this statement sits in its shown text: right
+/// after the words it labels, as a UTF-16 offset the page slices at. The text
+/// itself is never changed; the page shows the name beside it, as tentative.
+fn possible_name_marks(
+    markdown: &str,
+    row: &Map<String, Value>,
+    file: &str,
+    sentence: Option<i64>,
+    entries: &[solstone_core_possible_names::LiveEntry],
+) -> Vec<Value> {
+    let Some(sentence) = sentence.and_then(|sentence| u64::try_from(sentence).ok()) else {
+        return Vec::new();
+    };
+    let mut labels = entries
+        .iter()
+        .filter(|entry| entry.file == file && entry.sentence == sentence)
+        .collect::<Vec<_>>();
+    if labels.is_empty() {
+        return Vec::new();
+    }
+    let Some((_, words)) = solstone_core_transcripts::statement_text(row) else {
+        return Vec::new();
+    };
+    // The audio renderer follows a statement's words with its emotion.
+    let emotion = match row.get("emotion") {
+        None | Some(Value::Null) | Some(Value::Bool(false)) => String::new(),
+        Some(Value::String(emotion))
+            if emotion.is_empty() || emotion.eq_ignore_ascii_case("neutral") =>
+        {
+            String::new()
+        }
+        Some(Value::String(emotion)) => format!(" *({emotion})*"),
+        Some(_) => return Vec::new(),
+    };
+    let Some(start) = markdown
+        .strip_suffix(&format!("{words}{emotion}"))
+        .map(str::len)
+    else {
+        return Vec::new();
+    };
+    labels.sort_by_key(|entry| entry.end_byte);
+    labels
+        .into_iter()
+        .filter_map(|entry| {
+            let at = start + entry.end_byte;
+            markdown.is_char_boundary(at).then(|| {
+                json!({
+                    "at": markdown[..at].encode_utf16().count(),
+                    "name": entry.name,
+                })
+            })
+        })
+        .collect()
+}
+
 fn strip_speaker_prefix(markdown: &str, speaker: Option<&Value>) -> String {
     let markdown = markdown
         .strip_prefix("[")
@@ -1051,6 +1120,81 @@ mod tests {
         }
         let instant = Utc.with_ymd_and_hms(2026, 7, 31, 15, 0, 5).unwrap();
         assert_eq!(local_time(denver, instant.timestamp_millis()), "09:00:05");
+    }
+
+    #[test]
+    fn possible_names_sit_beside_the_words_they_label_while_they_hold() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        let entity = root.join("entities/friar");
+        std::fs::create_dir_all(&entity).unwrap();
+        std::fs::write(
+            entity.join("entity.json"),
+            json!({"id": "friar", "name": "Friar"}).to_string(),
+        )
+        .unwrap();
+        let link = root.join("facets/work/entities/friar");
+        std::fs::create_dir_all(&link).unwrap();
+        std::fs::write(
+            link.join("entity.json"),
+            json!({"entity_id": "friar"}).to_string(),
+        )
+        .unwrap();
+        let seg_dir = root.join("chronicle/20260101/default/120000_60");
+        std::fs::create_dir_all(&seg_dir).unwrap();
+        std::fs::write(
+            seg_dir.join("audio.jsonl"),
+            "{\"raw\":\"audio.flac\"}\n\
+             {\"start\":\"00:00:01\",\"source\":\"mic\",\"speaker\":1,\"text\":\"café with Fryer\",\"emotion\":\"happy\"}\n\
+             {\"start\":\"00:00:02\",\"speaker\":2,\"text\":\"nothing to label\"}\n",
+        )
+        .unwrap();
+        let sidecar = solstone_core_possible_names::Sidecar::new(
+            "test-1",
+            solstone_core_possible_names::SidecarSource {
+                file: "audio.jsonl".to_owned(),
+                sha256: solstone_core_possible_names::source_sha256(&seg_dir, "audio.jsonl")
+                    .unwrap(),
+            },
+            "rev",
+            1,
+            vec![solstone_core_possible_names::SidecarEntry {
+                sentence: 1,
+                start_byte: 11,
+                end_byte: 16,
+                heard: "Fryer".to_owned(),
+                entity_id: "friar".to_owned(),
+                name: "Friar".to_owned(),
+            }],
+        );
+        solstone_core_possible_names::write(&seg_dir, &sidecar).unwrap();
+        let audio = || {
+            prepare_segment(root, "20260101", "default", "120000_60", Utc::now()).unwrap()["chunks"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|chunk| chunk["type"] == "audio")
+                .cloned()
+                .collect::<Vec<_>>()
+        };
+        let chunks = audio();
+        // The words are what was said; the name sits after "Fryer", counted in
+        // UTF-16 units of the shown text.
+        assert_eq!(chunks[0]["markdown"], "(mic) café with Fryer *(happy)*");
+        let at = "(mic) café with Fryer".encode_utf16().count();
+        assert_eq!(
+            chunks[0]["possible_names"],
+            json!([{"at": at, "name": "Friar"}])
+        );
+        assert!(chunks[1].get("possible_names").is_none());
+
+        // A renamed entity's suggestion is hidden until the talent runs again.
+        std::fs::write(
+            entity.join("entity.json"),
+            json!({"id": "friar", "name": "Brother Friar"}).to_string(),
+        )
+        .unwrap();
+        assert!(audio()[0].get("possible_names").is_none());
     }
 
     #[test]

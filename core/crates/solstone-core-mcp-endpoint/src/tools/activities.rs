@@ -797,6 +797,11 @@ pub(crate) fn execute_get_sources(
 
     // The same voice gate the activity's Story reads names who spoke.
     let speakers = solstone_core_talent_runtime::agent_speakers(journal_root);
+    // Source units are the activity's own source, word for word: no possible
+    // name is inserted into them. Links to a segment still bind the version
+    // this connection's `get_transcript` reads, possible names included.
+    let possible_names =
+        crate::possible_names::ConnectionPossibleNames::new(journal_root, snapshot);
     for segment in ordered {
         let Ok(identity) = segment.record_identity() else {
             any_denied_or_unreadable = true;
@@ -843,6 +848,7 @@ pub(crate) fn execute_get_sources(
                 &segment,
                 cursor.as_ref(),
                 speakers.as_ref(),
+                None,
             ) {
                 Ok(page) => {
                     segment_untimed = page.untimed;
@@ -914,7 +920,10 @@ pub(crate) fn execute_get_sources(
             more_segments: false,
             activity_record: Some(&dummy_record),
         }];
-        let mut checker = LiveTranscriptPages::with_speakers(speakers.clone());
+        let mut checker = LiveTranscriptPages::with_speakers(
+            speakers.clone(),
+            std::sync::Arc::clone(&possible_names),
+        );
         let mut response_checks = 0;
         issue_segment_links(
             journal_root,

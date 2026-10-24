@@ -5,6 +5,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
+use std::sync::Arc;
 
 use serde_json::{Map, Value, json};
 use solstone_core_format::content::{ContentResolution, Family, classify};
@@ -21,6 +22,7 @@ use crate::dispatch::{
     source_label, source_labels,
 };
 use crate::permissions::ConnectionReadSnapshot;
+use crate::possible_names::ConnectionPossibleNames;
 use crate::references::{ReferenceTarget, SegmentReference};
 
 pub(crate) trait TranscriptPageCheck {
@@ -33,19 +35,29 @@ pub(crate) trait TranscriptPageCheck {
 
 /// Live first-page checks for one response. Who spoke is resolved once, the
 /// first time a segment carries speaker labels, so every link in the response
-/// binds the same rendering.
-#[derive(Default)]
+/// binds the same rendering. Possible names are the ones this connection's
+/// `get_transcript` shows, so a link binds the version that read will see.
 pub(crate) struct LiveTranscriptPages {
     speakers: Option<Option<solstone_core_transcripts::AgentSpeakers>>,
+    possible_names: Arc<ConnectionPossibleNames>,
 }
 
 impl LiveTranscriptPages {
+    pub(crate) fn new(possible_names: Arc<ConnectionPossibleNames>) -> Self {
+        Self {
+            speakers: None,
+            possible_names,
+        }
+    }
+
     /// Checks that render who spoke exactly as the caller's own read did.
     pub(crate) fn with_speakers(
         speakers: Option<solstone_core_transcripts::AgentSpeakers>,
+        possible_names: Arc<ConnectionPossibleNames>,
     ) -> Self {
         Self {
             speakers: Some(speakers),
+            possible_names,
         }
     }
 }
@@ -63,7 +75,13 @@ impl TranscriptPageCheck for LiveTranscriptPages {
         } else {
             None
         };
-        match solstone_core_transcripts::read_segment_transcript_page(segment, None, speakers) {
+        let possible_names = self.possible_names.labels(segment.path());
+        match solstone_core_transcripts::read_segment_transcript_page(
+            segment,
+            None,
+            speakers,
+            possible_names.as_ref(),
+        ) {
             Ok(page) if !page.entries.is_empty() => Ok(Some(page.version.fingerprint())),
             Ok(_) => Ok(None),
             Err(_) => Err(()),

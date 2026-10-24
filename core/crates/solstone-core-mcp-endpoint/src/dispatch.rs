@@ -5,7 +5,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 
 use chrono::{DateTime, Utc};
 use serde_json::{Map, Value, json};
@@ -15,13 +15,15 @@ use solstone_core_indexer_query::{
     AdmittedCategory, ConnectionBoundary, ConnectionScope, ConnectionSearchRequest,
     ConnectionStartAfter, IndexedEntry, OwnMemoryOpenError, QueryBoundary,
     indexed_path_has_later_chunk, memory_row_matches_original, open_own_memory_index,
-    read_indexed_entry, read_indexed_path_entries, read_own_memory_row, search_connection,
+    read_indexed_entry, read_indexed_path_entries, read_own_memory_row,
+    search_connection_with_possible_names,
 };
 use solstone_core_indexer_store::classification::{FacetDeclarationSet, classify_source};
 use solstone_core_journal_io::paths::{
     PathOrDay, Segment, day_dirs, iter_segments_skipping_unreadable_streams,
 };
 use solstone_core_memory_original::{OriginalRead, read_original};
+use solstone_core_possible_names::is_possible_names_path;
 use solstone_core_transcripts::segment_clock;
 
 use solstone_core_mcp_audit::{Admission, AuditCoordinates, Outcome, result_shape};
@@ -31,6 +33,7 @@ use crate::activity_admit::{
 };
 use crate::audit;
 use crate::permissions::{ConnectionReadSnapshot, PermissionDecision, evaluate_connection_read};
+use crate::possible_names::ConnectionPossibleNames;
 use crate::references::{
     CursorReference, EntityListCursor, EntityReference, EntryReference, FacetListCursor,
     ReferenceCodec, ReferenceKind, ReferenceTarget, SegmentReference, TranscriptListCursor,
@@ -1219,9 +1222,12 @@ fn search(
     let mut relaxed = false;
     let mut has_more = false;
     let mut anchor: Option<SearchAnchor> = None;
+    // Possible-name rows are admitted inside the query, so one this connection
+    // may not see never matches, counts, relaxes the query or anchors a cursor.
+    let possible_names = ConnectionPossibleNames::new(journal_root, snapshot);
     while results.len() < request.limit && examined < MAX_SEARCH_EXAMINED_ROWS {
         let batch = (MAX_SEARCH_EXAMINED_ROWS - examined).min(100);
-        let response = search_connection(
+        let response = search_connection_with_possible_names(
             journal_root,
             &boundary,
             &ConnectionSearchRequest {
@@ -1242,6 +1248,7 @@ fn search(
             Utc::now()
                 .with_timezone(&solstone_core_journal_config::owner_zone(journal_root))
                 .date_naive(),
+            possible_names.admission(),
         )
         .map_err(index_error)?;
         index_coverage_complete &= response.coverage_complete;
@@ -1315,6 +1322,21 @@ fn search(
             if let Some(anchor) = anchor.as_mut() {
                 anchor.activity_proof = activity_proof.clone();
             }
+            // A possible name serves its label and the words it labels, which
+            // the segment's transcript grant (this row's own classification)
+            // lets this connection read.
+            let is_possible_name = is_possible_names_path(&hit.metadata.path);
+            let served_text = if is_possible_name {
+                let Some(entry) =
+                    possible_names.indexed(&hit.metadata.path, hit.metadata.idx, &hit.text)
+                else {
+                    live_dropped = true;
+                    continue;
+                };
+                crate::possible_names::matched_text(&entry)
+            } else {
+                served_text
+            };
             let memory_origin = if hit.metadata.stream.starts_with("agent-memory-") {
                 let Some(origin) =
                     memory_hit_origin(journal_root, &hit.metadata.path, &hit.metadata.stream)
@@ -1355,7 +1377,7 @@ fn search(
                 more_segments: false,
                 activity_record: record.as_ref(),
             }];
-            let mut checker = LiveTranscriptPages::default();
+            let mut checker = LiveTranscriptPages::new(Arc::clone(&possible_names));
             if allowed && !is_screen_text {
                 issue_segment_links(
                     journal_root,
@@ -1410,6 +1432,10 @@ fn search(
                 "snippet": snippet(&served_text),
                 "reference": reference,
             });
+            if is_possible_name {
+                // Tentative: the journal's guess at who or what was meant.
+                value["possible_name"] = Value::Bool(true);
+            }
             if let Some(offset_ms) = hit.metadata.group_offset_ms {
                 if let Some(segment) =
                     solstone_core_format::content::screen_text::screen_text_segment(
@@ -1698,6 +1724,7 @@ fn fetch(
             if !live_allows(journal_root, &boundary, &entry.path, Some(&entry.stream)) {
                 return Err(DispatchError::Tool(ToolError::ReferenceNotFound));
             }
+            let possible_names = ConnectionPossibleNames::new(journal_root, snapshot);
             if is_screen_text {
                 #[cfg(feature = "test-hooks")]
                 crate::source_freeze_barrier::checkpoint(
@@ -1781,6 +1808,13 @@ fn fetch(
                     // `stream`, and the resolver would then cross streams.
                     (cleaned_text, Some(a.hidden), Some(a.record))
                 }
+                // A possible name is re-checked for this connection now, as search did.
+                ActivityAdmit::NotActivity(content) if is_possible_names_path(&entry.path) => {
+                    let live = possible_names
+                        .indexed(&entry.path, entry.idx, &content)
+                        .ok_or(DispatchError::Tool(ToolError::ReferenceNotFound))?;
+                    (crate::possible_names::matched_text(&live), None, None)
+                }
                 ActivityAdmit::NotActivity(content) => {
                     let text = match markdown_fetch(
                         journal_root,
@@ -1815,7 +1849,7 @@ fn fetch(
                 more_segments: false,
                 activity_record: record.as_ref(),
             }];
-            let mut checker = LiveTranscriptPages::default();
+            let mut checker = LiveTranscriptPages::new(possible_names);
             let mut response_checks = 0;
             if allowed {
                 issue_segment_links(
@@ -1901,7 +1935,8 @@ fn fetch(
                 more_segments: false,
                 activity_record: Some(&record),
             }];
-            let mut checker = LiveTranscriptPages::default();
+            let mut checker =
+                LiveTranscriptPages::new(ConnectionPossibleNames::new(journal_root, snapshot));
             let mut response_checks = 0;
             if allowed {
                 issue_segment_links(
@@ -2458,6 +2493,7 @@ fn list_transcripts(
         );
 
         let speakers = solstone_core_talent_runtime::agent_speakers(journal_root);
+        let possible_names = ConnectionPossibleNames::new(journal_root, snapshot);
         for (segment, stream, name, clock) in matching_segments {
             let start_seconds = clock.as_ref().map(|c| c.start_seconds).unwrap_or(0);
             if !is_after_cursor(day, start_seconds, &stream, &name, cursor.as_ref()) {
@@ -2486,6 +2522,7 @@ fn list_transcripts(
                     &segment,
                     None,
                     speakers.as_ref(),
+                    possible_names.labels(segment.path()).as_ref(),
                 ))
             } else {
                 None
@@ -2684,10 +2721,15 @@ fn get_transcript(
     );
     let page_res = if allowed {
         let speakers = solstone_core_talent_runtime::agent_speakers(journal_root);
+        // A possible name is shown beside the words it may refer to, only
+        // while it holds and only for an entity this connection may see.
+        let possible_names =
+            ConnectionPossibleNames::new(journal_root, snapshot).labels(segment.path());
         Some(solstone_core_transcripts::read_segment_transcript_page(
             &segment,
             continuation.as_ref(),
             speakers.as_ref(),
+            possible_names.as_ref(),
         ))
     } else {
         None

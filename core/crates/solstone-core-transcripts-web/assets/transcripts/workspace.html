@@ -1791,6 +1791,13 @@
   line-height: 1.5;
 }
 
+/* A possible name the journal suggests for the words before it: tentative,
+   never part of what was said. */
+.tr-possible-name {
+  color: var(--ink-faint);
+  font-style: italic;
+}
+
 .tr-entry-meta {
   font-size: 11px;
   color: var(--ink-faint);
@@ -2594,6 +2601,22 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
 <script>
 (() => {
   const escapeHtml = (value) => window.AppServices.escapeHtml(value);
+  // An audio line's words as captured, with each possible name the journal
+  // suggests shown right after the words it may refer to, as tentative.
+  // `at` is a UTF-16 offset into the words; the words themselves never change.
+  const renderAudioText = (item) => {
+    const text = item.markdown || '';
+    const marks = Array.isArray(item.possible_names) ? item.possible_names : [];
+    let html = '';
+    let cursor = 0;
+    marks.forEach((mark) => {
+      const at = Math.min(text.length, Math.max(cursor, Number(mark.at) || 0));
+      html += escapeHtml(text.slice(cursor, at));
+      html += ` <span class="tr-possible-name">(possible name: ${escapeHtml(mark.name || '')})</span>`;
+      cursor = at;
+    });
+    return html + escapeHtml(text.slice(cursor));
+  };
   // Timeline bounds - computed dynamically from content
   const DEFAULT_START = 8 * 60;   // 8:00 AM default
   const DEFAULT_END = 20 * 60;    // 8:00 PM default
@@ -5776,7 +5799,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
         html += '<div class="tr-entry-content">';
         html += '<span class="sr-only">audio: </span>';
         html += `<div class="tr-speaker-slot" data-speaker-slot>${renderSpeakerSlot(item, idx, data)}</div>`;
-        html += `<div class="tr-entry-text">${escapeHtml(item.markdown)}</div>`;
+        html += `<div class="tr-entry-text">${renderAudioText(item)}</div>`;
         html += '</div></div>';
       } else if (item.type === 'markdown' || item.type === 'transcript') {
         const timeStr = item.time || '';
