@@ -794,6 +794,43 @@ fn the_evaluation_packet_reports_what_a_run_would_send() {
 }
 
 #[test]
+fn a_name_search_already_finds_through_sense_is_not_offered() {
+    let journal = Journal::new();
+    journal.transcript(&["I asked Margarete about it.", "Then Ada Lovelace came."]);
+    let ada = |report: &serde_json::Value| {
+        report["pool"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["action"]["entity_id"] == "ada")
+            .unwrap()["dropped"]
+            .clone()
+    };
+    let talents = journal.segment().join("talents");
+    let report = inspect_packet(&journal.segment(), &journal.paths).unwrap();
+    assert_eq!(ada(&report), serde_json::Value::Null);
+    // Sense's entity list is part of what search indexes for the segment
+    // (`sense.json` renders it), so the name is already findable.
+    fs::write(
+        talents.join("sense.json"),
+        json!({"activity_summary": "A visit.",
+               "entities": [{"name": "Ada Lovelace", "type": "Person"}]})
+        .to_string(),
+    )
+    .unwrap();
+    let report = inspect_packet(&journal.segment(), &journal.paths).unwrap();
+    assert_eq!(ada(&report), "already_in_derived_text");
+    // Unrendered fields of sense.json are not indexed text.
+    fs::write(
+        talents.join("sense.json"),
+        json!({"activity_summary": "A visit.", "unrendered": "Ada Lovelace"}).to_string(),
+    )
+    .unwrap();
+    let report = inspect_packet(&journal.segment(), &journal.paths).unwrap();
+    assert_eq!(ada(&report), serde_json::Value::Null);
+}
+
+#[test]
 fn retrieval_and_packet_reproduce_the_evaluated_prototype() {
     let fixture: Value =
         serde_json::from_str(include_str!("prototype_fixture.json")).expect("fixture");

@@ -38,6 +38,7 @@ use std::path::{Path, PathBuf};
 
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
+use solstone_core_format::content::{Family, produce_chunks};
 use solstone_core_possible_names::{
     CandidateEntity, Sidecar, SidecarEntry, SidecarSource, load_candidate_entities,
     speech_transcript,
@@ -59,11 +60,14 @@ const HOOK: &str = "entities:possible_names";
 /// The policy generation; the prompt and every [`policy`] constant are
 /// hashed after it.
 const TALENT_VERSION_PREFIX: &str = "possible-names-v1";
-/// Derived text whose words already make a canonical name findable.
-const DERIVED_TEXT: [&str; 3] = [
-    "talents/activity.md",
-    "talents/sense.md",
-    "talents/topics.md",
+/// Derived files whose indexed words already make a canonical name findable,
+/// with the content family search renders each as. `sense.json` is read as
+/// search indexes it (its rendering includes Sense's entity list), as the
+/// evaluated prototype read these files' index chunks.
+const DERIVED_TEXT: [(&str, Family); 3] = [
+    ("talents/activity.md", Family::Markdown),
+    ("talents/sense.json", Family::Sense),
+    ("talents/topics.md", Family::Markdown),
 ];
 
 /// What the pre-step found, carried to the prompt and the commit.
@@ -158,10 +162,23 @@ fn read_facets(segment_dir: &Path) -> Vec<String> {
         .collect()
 }
 
+/// The segment's derived text as search holds it: each file's index chunks.
 fn read_derived_text(segment_dir: &Path) -> String {
+    let origin = solstone_core_journal_io::segment_origin(segment_dir);
     let text = DERIVED_TEXT
         .iter()
-        .map(|name| fs::read_to_string(segment_dir.join(name)).unwrap_or_default())
+        .map(|(name, family)| {
+            fs::read_to_string(segment_dir.join(name))
+                .map(|text| {
+                    produce_chunks(*family, &format!("{origin}/{name}"), &text)
+                        .chunks
+                        .into_iter()
+                        .map(|chunk| chunk.content)
+                        .collect::<Vec<_>>()
+                        .join("\n")
+                })
+                .unwrap_or_default()
+        })
         .collect::<Vec<_>>()
         .join("\n");
     retrieval::casefold(&text)
