@@ -3904,6 +3904,14 @@ mod tests {
 
     #[tokio::test]
     async fn vapid_key_endpoint_lifecycle_and_permissions() {
+        // Keep the stored September 24 devices inside their 30-day lifetime.
+        set_test_clock(Some(
+            OffsetDateTime::parse(
+                "2026-09-24T00:00:00Z",
+                &time::format_description::well_known::Rfc3339,
+            )
+            .unwrap(),
+        ));
         let root_life = root();
         let app = api_router(root_life.path(), PORTAL_URL);
 
@@ -3973,6 +3981,7 @@ mod tests {
         crate::vapid::set_test_absent_hook(None);
         assert_eq!(status_race, StatusCode::OK);
         assert_eq!(body_race["public_key"].as_str().unwrap().len(), 87);
+        set_test_clock(None);
     }
 
     #[tokio::test]
@@ -4152,7 +4161,14 @@ mod tests {
         setup_authorized_client(root.path(), CID_A);
         let transport = Arc::new(MockTransport::default());
         let app = api_router_with_transport(root.path(), PORTAL_URL, transport.clone());
-        set_test_clock(None);
+        // Keep the stored September 24 devices inside their 30-day lifetime.
+        set_test_clock(Some(
+            OffsetDateTime::parse(
+                "2026-09-24T00:00:00Z",
+                &time::format_description::well_known::Rfc3339,
+            )
+            .unwrap(),
+        ));
 
         call(&app, "GET", "/api/push/vapid-key", Body::empty(), None).await;
 
@@ -4188,6 +4204,7 @@ mod tests {
         assert_eq!(body_test["items"][0]["outcome"], "failed");
         assert_eq!(body_test["items"][0]["reason"], "encrypt_failed");
         assert_eq!(transport.bytes_calls.lock().unwrap().len(), 0);
+        set_test_clock(None);
     }
 
     #[tokio::test]
@@ -4196,7 +4213,14 @@ mod tests {
         setup_authorized_client(root.path(), CID_A);
         let transport = Arc::new(MockTransport::default());
         let app = api_router_with_transport(root.path(), PORTAL_URL, transport.clone());
-        set_test_clock(None);
+        // Keep the stored September 24 devices inside their 30-day lifetime.
+        set_test_clock(Some(
+            OffsetDateTime::parse(
+                "2026-09-24T00:00:00Z",
+                &time::format_description::well_known::Rfc3339,
+            )
+            .unwrap(),
+        ));
 
         call(&app, "GET", "/api/push/vapid-key", Body::empty(), None).await;
 
@@ -4259,6 +4283,7 @@ mod tests {
             .unwrap();
         assert_eq!(valid_item["outcome"], "sent");
         assert_eq!(transport.bytes_calls.lock().unwrap().len(), 1);
+        set_test_clock(None);
     }
 
     #[tokio::test]
