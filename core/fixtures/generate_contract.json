@@ -628,6 +628,12 @@
       "retryable": true
     },
     {
+      "blocking": false,
+      "code": "endpoint_configuration_changed",
+      "overrides_live_taxonomy": false,
+      "retryable": false
+    },
+    {
       "blocking": true,
       "code": "gpu_probe_failed",
       "overrides_live_taxonomy": false,
@@ -893,7 +899,8 @@
       "system_instruction": null,
       "temperature": 0.3,
       "timeout_s": null,
-      "transport_retries": null
+      "transport_retries": null,
+      "endpoint_binding": null
     },
     "fields": [
       "schema",
@@ -908,7 +915,8 @@
       "json_schema",
       "attempt_index",
       "exclusive_admission",
-      "transport_retries"
+      "transport_retries",
+      "endpoint_binding"
     ],
     "forbidden_fields": [
       "provider",

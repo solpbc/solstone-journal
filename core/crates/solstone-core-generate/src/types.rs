@@ -27,6 +27,8 @@ pub struct GenerateRequest {
     pub attempt_index: u64,
     pub exclusive_admission: bool,
     pub transport_retries: Option<u64>,
+    /// Reject dispatch if the resolved endpoint configuration changed. Never selects a lane.
+    pub endpoint_binding: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

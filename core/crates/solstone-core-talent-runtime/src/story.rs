@@ -691,9 +691,9 @@ mod tests {
                 json!({"labels":[{"sentence_id":1,"speaker":"jordan","method":method}]})
                     .to_string(),
             );
-            let prepared = PreparedTalent {
-                name: talent.into(),
-                config: Map::from_iter([
+            let prepared = PreparedTalent::new(
+                talent.into(),
+                Map::from_iter([
                     ("facet".into(), json!("work")),
                     (
                         "destination_id".into(),
@@ -705,7 +705,7 @@ mod tests {
                     ("day".into(), json!("20260101")),
                     ("activity".into(), json!({"id":"meeting-1"})),
                 ]),
-            };
+            );
             let output = json!({
                 "body":"You agreed to send the deck.",
                 "topics":[],
@@ -791,9 +791,9 @@ mod tests {
             .map(|row| row.to_string() + "\n")
             .concat(),
         );
-        let prepared = PreparedTalent {
-            name: "work".into(),
-            config: Map::from_iter([
+        let prepared = PreparedTalent::new(
+            "work".into(),
+            Map::from_iter([
                 ("facet".into(), json!("work")),
                 (
                     "destination_id".into(),
@@ -805,7 +805,7 @@ mod tests {
                 ("day".into(), json!("20260101")),
                 ("activity".into(), json!({"id":"activity-1"})),
             ]),
-        };
+        );
         let output = json!({
             "body":"You and your agent fixed the retry path.",
             "topics":[],
@@ -854,10 +854,7 @@ mod tests {
 
     #[test]
     fn a_story_with_a_body_and_no_topics_is_kept_and_an_empty_body_is_not() {
-        let prepared = PreparedTalent {
-            name: "work".into(),
-            config: Map::new(),
-        };
+        let prepared = PreparedTalent::new("work".into(), Map::new());
         let story = |body: &str| {
             json!({"body":body,"topics":[],"confidence":0.9,"relations":[]}).to_string()
         };
@@ -875,10 +872,7 @@ mod tests {
 
     #[test]
     fn story_parse_accepts_exactly_four_fields_and_rejects_extra_keys() {
-        let prepared = PreparedTalent {
-            name: "work".into(),
-            config: Map::new(),
-        };
+        let prepared = PreparedTalent::new("work".into(), Map::new());
         let valid = json!({
             "body": "Valid work narrative.",
             "topics": ["code"],
@@ -928,9 +922,9 @@ mod tests {
             "{\"id\":\"owner-id\",\"name\":\"Different\",\"type\":\"person\"}\n",
         )
         .unwrap();
-        let prepared = PreparedTalent {
-            name: "conversation".into(),
-            config: Map::from_iter([
+        let prepared = PreparedTalent::new(
+            "conversation".into(),
+            Map::from_iter([
                 ("max_output_tokens".to_owned(), json!(1024)),
                 ("facet".into(), json!("work")),
                 (
@@ -943,7 +937,7 @@ mod tests {
                 ("day".into(), json!("20260101")),
                 ("activity".into(), json!({"id":"activity-1"})),
             ]),
-        };
+        );
         let value = r#"{
           "body":"A completed conversation.", "topics":["work"], "confidence":0.9,
           "relations":[{"from":"owner-id","to":"Different","kind":"works-with","note":""}]
@@ -993,9 +987,9 @@ mod tests {
             "{\"id\":\"owner-id\",\"name\":\"Different owner\",\"aka\":[\"Owner\"],\"type\":\"person\"}\n{\"id\":\"counterparty-id\",\"name\":\"Different counterparty\",\"emails\":[\"counterparty@example.com\"],\"type\":\"person\"}\n",
         )
         .unwrap();
-        let prepared = PreparedTalent {
-            name: "conversation".into(),
-            config: Map::from_iter([
+        let prepared = PreparedTalent::new(
+            "conversation".into(),
+            Map::from_iter([
                 ("max_output_tokens".to_owned(), json!(1024)),
                 ("facet".into(), json!("work")),
                 (
@@ -1008,7 +1002,7 @@ mod tests {
                 ("day".into(), json!("20260101")),
                 ("activity".into(), json!({"id":"activity-1"})),
             ]),
-        };
+        );
         let valid = r#"{
           "body":"A completed conversation.", "topics":["Work"], "confidence":0.9,
           "relations":[{"from":"Owner","to":"counterparty@example.com","kind":"works-with","note":"colleagues"}]
@@ -1088,9 +1082,9 @@ mod tests {
         let activity_path = root.path().join("facets/work/activities/20260101.jsonl");
         fs::create_dir_all(activity_path.parent().unwrap()).unwrap();
         fs::write(&activity_path, "{\"id\":\"activity-1\"}\n").unwrap();
-        let prepared = PreparedTalent {
-            name: "work".into(),
-            config: Map::from_iter([
+        let prepared = PreparedTalent::new(
+            "work".into(),
+            Map::from_iter([
                 ("max_output_tokens".to_owned(), json!(1024)),
                 ("facet".into(), json!("work")),
                 (
@@ -1103,7 +1097,7 @@ mod tests {
                 ("day".into(), json!("20260101")),
                 ("activity".into(), json!({"id":"activity-1"})),
             ]),
-        };
+        );
         // Partial input comes from the response input_budget when clipped is true,
         // not from a request field and not from a partial_input field in the model body.
         let output = json!({
@@ -1167,9 +1161,9 @@ mod tests {
         let activity_path = root.path().join("facets/work/activities/20260101.jsonl");
         fs::create_dir_all(activity_path.parent().unwrap()).unwrap();
         fs::write(&activity_path, "{\"id\":\"activity-1\"}\n").unwrap();
-        let mut prepared = PreparedTalent {
-            name: "work".into(),
-            config: Map::from_iter([
+        let mut prepared = PreparedTalent::new(
+            "work".into(),
+            Map::from_iter([
                 ("max_output_tokens".into(), json!(1024)),
                 ("facet".into(), json!("work")),
                 (
@@ -1186,7 +1180,7 @@ mod tests {
                     json!({"clipped": true, "dropped_entries": 3, "dropped_chars": 90_000}),
                 ),
             ]),
-        };
+        );
         let output = json!({
             "body": "You worked through a long terminal session.",
             "topics": ["work"],

@@ -776,7 +776,10 @@ pub fn thaw(packet: &Value) -> Result<ThawedStage, String> {
     } else if hook != expected {
         return Err("frozen daily packet state mismatch".to_owned());
     }
-    Ok((PreparedTalent { name, config }, Some((stage, state))))
+    Ok((
+        PreparedTalent::new(name.to_owned(), config),
+        Some((stage, state)),
+    ))
 }
 
 pub fn packet_digest(packet: &Value) -> String {
@@ -935,9 +938,9 @@ mod tests {
         solstone_core_facets::create_facet(root.path(), "work", "Work", "", "", "", None).unwrap();
         let path = root.path().join("facets/work/facet.json");
         std::fs::write(&path, b"{").unwrap();
-        let prepared = PreparedTalent {
-            name: "entities:entities_review".to_owned(),
-            config: json!({
+        let prepared = PreparedTalent::new(
+            "entities:entities_review".to_owned(),
+            json!({
                 "type":"generate","max_output_tokens":1024,
                 "day":"20260910",
                 "facet":"work",
@@ -947,7 +950,7 @@ mod tests {
             .as_object()
             .unwrap()
             .clone(),
-        };
+        );
         let outcome = freeze(
             prepared,
             &ExecutionContext {
@@ -975,9 +978,9 @@ mod tests {
     #[test]
     fn review_admission_snapshot_types_missing_facet_as_owning_facet_changed() {
         let root = tempfile::tempdir().unwrap();
-        let prepared = PreparedTalent {
-            name: "entities:entities_review".to_owned(),
-            config: json!({
+        let prepared = PreparedTalent::new(
+            "entities:entities_review".to_owned(),
+            json!({
                 "type":"generate","max_output_tokens":1024,
                 "day":"20260910",
                 "facet":"missing",
@@ -987,7 +990,7 @@ mod tests {
             .as_object()
             .unwrap()
             .clone(),
-        };
+        );
         let outcome = freeze(
             prepared,
             &ExecutionContext {
@@ -1019,10 +1022,7 @@ mod tests {
             ("skip_reason".to_owned(), json!("no_input")),
         ]);
         let packet = freeze(
-            PreparedTalent {
-                name: "daily_schedule".to_owned(),
-                config,
-            },
+            PreparedTalent::new("daily_schedule".to_owned(), config),
             &context,
         )
         .unwrap();
@@ -1092,10 +1092,7 @@ mod tests {
                 config.insert(key.clone(), value.clone());
             }
         }
-        PreparedTalent {
-            name: name.to_owned(),
-            config,
-        }
+        PreparedTalent::new(name.to_owned(), config)
     }
 
     fn text_parts(prepared: &PreparedTalent) -> Vec<String> {

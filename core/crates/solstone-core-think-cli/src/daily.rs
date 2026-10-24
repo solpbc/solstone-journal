@@ -3084,10 +3084,10 @@ esac
             .to_string();
         let make_packet = |day: &str| {
             solstone_core_talent_runtime::daily_prepare::freeze(
-                solstone_core_talent_runtime::PreparedTalent { name:"daily_schedule".into(), config:json!({
+                solstone_core_talent_runtime::PreparedTalent::new("daily_schedule".into(), json!({
                     "name":"daily_schedule", "day":day,"type":"generate","max_output_tokens":1024,"model":"test-model","provider":"test",
                     "prompt":"Choose daily time from $activity_spans.","hook":{"pre":"daily_schedule","post":"daily_schedule"}
-                }).as_object().unwrap().clone() }, &context
+                }).as_object().unwrap().clone()), &context
             ).unwrap()
         };
         // The persisted prior-window packet is the restart boundary. Publication
@@ -4442,9 +4442,9 @@ esac
     }
 
     fn briefing_packet(root: &std::path::Path) -> Value {
-        let prepared = solstone_core_talent_runtime::PreparedTalent {
-            name: "morning_briefing".to_owned(),
-            config: json!({
+        let prepared = solstone_core_talent_runtime::PreparedTalent::new(
+            "morning_briefing".to_owned(),
+            json!({
                 "day":"20260101",
                 "type":"generate",
                 "max_output_tokens":1024,
@@ -4455,7 +4455,7 @@ esac
             .as_object()
             .unwrap()
             .clone(),
-        };
+        );
         solstone_core_talent_runtime::daily_prepare::freeze(
             prepared,
             &solstone_core_talent_runtime::ExecutionContext {

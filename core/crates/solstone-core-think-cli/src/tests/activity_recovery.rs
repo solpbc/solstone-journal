@@ -1098,10 +1098,10 @@ fn raw_output_refuses_replaced_or_muted_destination_without_writing() {
     config.insert("facet".to_owned(), Value::String("work".to_owned()));
     config.insert("destination_id".to_owned(), Value::String(original_id));
 
-    let prepared = solstone_core_talent_runtime::PreparedTalent {
-        name: "participation".to_owned(),
-        config: config.clone(),
-    };
+    let prepared = solstone_core_talent_runtime::PreparedTalent::new(
+        "participation".to_owned(),
+        config.clone(),
+    );
 
     // Valid output writes
     let wrote = solstone_core_talent_runtime::writers::write_output_if_configured(
@@ -1131,10 +1131,8 @@ fn raw_output_refuses_replaced_or_muted_destination_without_writing() {
         "output_path".to_owned(),
         Value::String(output_path2.display().to_string()),
     );
-    let prepared2 = solstone_core_talent_runtime::PreparedTalent {
-        name: "participation".to_owned(),
-        config: config2,
-    };
+    let prepared2 =
+        solstone_core_talent_runtime::PreparedTalent::new("participation".to_owned(), config2);
 
     let err = solstone_core_talent_runtime::writers::write_output_if_configured(
         &prepared2,

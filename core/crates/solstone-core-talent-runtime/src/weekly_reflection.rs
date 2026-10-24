@@ -1681,15 +1681,15 @@ mod tests {
         )
         .unwrap();
 
-        let mut prepared = PreparedTalent {
-            name: "weekly_reflection".to_owned(),
-            config: Map::from_iter([
+        let mut prepared = PreparedTalent::new(
+            "weekly_reflection".to_owned(),
+            Map::from_iter([
                 ("max_output_tokens".to_owned(), json!(1024)),
                 ("day".to_owned(), Value::String("20260308".to_owned())),
                 ("today".to_owned(), Value::String("20260316".to_owned())),
                 ("prompt".to_owned(), Value::String("old prompt".to_owned())),
             ]),
-        };
+        );
 
         let state = build(&mut prepared, &context).unwrap();
 
@@ -1736,10 +1736,7 @@ mod tests {
             if let Some(d) = day_val {
                 config.insert("day".to_owned(), Value::String(d.to_owned()));
             }
-            let mut prepared = PreparedTalent {
-                name: "weekly_reflection".to_owned(),
-                config,
-            };
+            let mut prepared = PreparedTalent::new("weekly_reflection".to_owned(), config);
             let result = build(&mut prepared, &context);
             assert!(matches!(result, Err(RuntimeOutcome::StageFailed(_))));
             assert!(!journal.path().join("reflections/weekly").exists());
@@ -1750,13 +1747,13 @@ mod tests {
         check_fail(Some("20990104"));
         check_fail(Some("20260927"));
 
-        let mut prep_ok = PreparedTalent {
-            name: "weekly_reflection".to_owned(),
-            config: Map::from_iter([
+        let mut prep_ok = PreparedTalent::new(
+            "weekly_reflection".to_owned(),
+            Map::from_iter([
                 ("max_output_tokens".to_owned(), json!(1024)),
                 ("day".to_owned(), Value::String("20200105".to_owned())),
             ]),
-        };
+        );
         let res_ok = build(&mut prep_ok, &context);
         assert!(res_ok.is_ok());
     }
@@ -1788,15 +1785,15 @@ mod tests {
         )
         .unwrap();
 
-        let mut prepared = PreparedTalent {
-            name: "weekly_reflection".to_owned(),
-            config: Map::from_iter([
+        let mut prepared = PreparedTalent::new(
+            "weekly_reflection".to_owned(),
+            Map::from_iter([
                 ("max_output_tokens".to_owned(), json!(1024)),
                 ("day".to_owned(), Value::String("20260920".to_owned())),
                 ("provider".to_owned(), Value::String("google".to_owned())),
                 ("model".to_owned(), Value::String("gemini".to_owned())),
             ]),
-        };
+        );
 
         let pre_state = build(&mut prepared, &context).unwrap();
         let PrePostState::WeeklyReflection(ref state) = pre_state else {
@@ -2231,9 +2228,9 @@ mod tests {
         let context = ExecutionContext {
             journal: fixture_journal.clone(),
         };
-        let mut prepared = PreparedTalent {
-            name: "weekly_reflection".to_owned(),
-            config: Map::from_iter([
+        let mut prepared = PreparedTalent::new(
+            "weekly_reflection".to_owned(),
+            Map::from_iter([
                 ("max_output_tokens".to_owned(), json!(1024)),
                 ("day".to_owned(), Value::String("20260308".to_owned())),
                 ("today".to_owned(), Value::String("20260316".to_owned())),
@@ -2243,7 +2240,7 @@ mod tests {
                     Value::String("gemini-custom-flash-test".to_owned()),
                 ),
             ]),
-        };
+        );
 
         let pre_state = build(&mut prepared, &context).expect("build against fixtures journal");
         let PrePostState::WeeklyReflection(ref state) = pre_state else {
@@ -3175,16 +3172,16 @@ Weekly prompt
 
         #[test]
         fn test_apply_prompt_override_with_none_state_returns_err() {
-            let mut prepared = PreparedTalent {
-                name: "weekly_reflection".to_owned(),
-                config: Map::from_iter([
+            let mut prepared = PreparedTalent::new(
+                "weekly_reflection".to_owned(),
+                Map::from_iter([
                     ("max_output_tokens".to_owned(), json!(1024)),
                     (
                         "prompt".to_owned(),
                         Value::String("Some prompt template".to_owned()),
                     ),
                 ]),
-            };
+            );
             let res = apply_prompt_override(&mut prepared, &PrePostState::None);
             assert!(res.is_err());
         }

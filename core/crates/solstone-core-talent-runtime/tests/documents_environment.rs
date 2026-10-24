@@ -43,15 +43,15 @@ fn criterion_11_child_uses_the_production_gate() {
     let Ok(expectation) = env::var("DOCUMENTS_GATE_EXPECTATION") else {
         return;
     };
-    let mut prepared = PreparedTalent {
-        name: "documents".to_owned(),
-        config: Map::from_iter([(
+    let mut prepared = PreparedTalent::new(
+        "documents".to_owned(),
+        Map::from_iter([(
             "env".to_owned(),
             serde_json::json!({
                 "SOL_STREAM":"import.document"
             }),
         )]),
-    };
+    );
     let bound = env::var("DOCUMENTS_GATE_BOUND").unwrap();
     if !bound.is_empty() {
         prepared

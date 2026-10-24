@@ -124,6 +124,10 @@ pub(crate) fn load_transcript(
     } else if let Some(segment) = composed.get("segment").and_then(Value::as_str) {
         if screen_projection {
             cluster_period_for_screen_talent_with_memory(journal, day, segment, &sources, stream)
+        } else if composed.get("name").and_then(Value::as_str) == Some("sense") {
+            solstone_core_transcripts::cluster_period_for_terminal_sense_with_memory(
+                journal, day, segment, &sources, stream,
+            )
         } else {
             cluster_period_with_memory(journal, day, segment, &sources, stream)
         }

@@ -12,7 +12,7 @@ Replies contain `ok` and either `value` or `error`. HTTP values contain `status`
 | `op` | Behavior |
 | --- | --- |
 | `pair` | Supply `link`, `label` and a new `credential` file path. Uses the production direct pairing ceremony; relay links are refused. Creates the credential file with mode 0600 and reports only public identity and endpoints. |
-| `request` | Sends one request through the production one-shot transport. `auth` defaults to `paired`; `missing` omits the certificate and `invalid` supplies an unrelated self-signed identity. |
+| `request` | Sends one request through the production one-shot transport. `auth` defaults to `paired`; `missing` omits the certificate and `invalid` supplies an unrelated self-signed identity. `body_encoding: hex` returns the exact response bytes as `body_hex` instead of a text `body`. |
 | `connect` | Opens a retained TLS carrier using `host`, `port` and `credential`. |
 | `held` | Sends a small request on that carrier using a fresh SPL stream ID. |
 | `closed` | Waits for EOF or a TLS error on the retained carrier; answers control pings while waiting. Use after revocation to observe actual carrier closure. |

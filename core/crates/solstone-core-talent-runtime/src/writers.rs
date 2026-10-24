@@ -643,13 +643,13 @@ mod tests {
             .join("chronicle/20261011/default/120000_60/talents/sense.json");
         fs::create_dir_all(output.parent().unwrap()).unwrap();
         fs::write(&output, "bytes from an earlier version").unwrap();
-        let prepared = PreparedTalent {
-            name: "sense".into(),
-            config: json!({"schedule":"segment", "output_path":output})
+        let prepared = PreparedTalent::new(
+            "sense".into(),
+            json!({"schedule":"segment", "output_path":output})
                 .as_object()
                 .unwrap()
                 .clone(),
-        };
+        );
         let context = ExecutionContext {
             journal: root.path().into(),
         };
@@ -685,15 +685,15 @@ mod tests {
                 fs::create_dir_all(row_path.parent().unwrap()).unwrap();
                 // Historical rows without destination_id must still be fenced by preparation.
                 fs::write(&row_path, format!("{row}\n")).unwrap();
-                let prepared = PreparedTalent {
-                    name: hook.to_owned(),
-                    config: json!({
+                let prepared = PreparedTalent::new(
+                    hook.to_owned(),
+                    json!({
                         "facet":"work", "day":"20260101", "activity":row, "destination_id":id
                     })
                     .as_object()
                     .unwrap()
                     .clone(),
-                };
+                );
                 let state = PrePostState::None;
                 let plan = if hook == "story" {
                     crate::story::commit(
@@ -805,15 +805,15 @@ mod tests {
         solstone_core_facets::create_facet(&journal, "work", "Work", "", "", "", None).unwrap();
         let id = solstone_core_facets::observe_facet_write_identity(&journal, "work").unwrap();
         let path = journal.join("facets/work/activities/out.json");
-        let mut prepared = PreparedTalent {
-            name: "test".to_owned(),
-            config: json!({
+        let mut prepared = PreparedTalent::new(
+            "test".to_owned(),
+            json!({
                 "facet":"work", "activity":{"id":"a"}, "destination_id":id, "output_path":path
             })
             .as_object()
             .unwrap()
             .clone(),
-        };
+        );
         let context = ExecutionContext {
             journal: journal.clone(),
         };

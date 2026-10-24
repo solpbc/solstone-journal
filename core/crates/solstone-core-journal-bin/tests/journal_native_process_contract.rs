@@ -1467,7 +1467,9 @@ fn native_backup_grammar_never_reaches_a_poisoned_interpreter() {
         config,
         serde_json::to_vec(&serde_json::json!({"backup": {
             "enabled": true,
-            "daily_key": "daily",
+            // The runner refuses any restic argument that contains the key, and
+            // backup excludes name `daily` paths, so the key cannot be a bare word.
+            "daily_key": "synthetic-daily-backup-key",
             "recovery_key": recovery,
             "destination": {
                 "repository": "s3:bucket/prefix",

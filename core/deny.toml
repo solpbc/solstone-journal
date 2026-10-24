@@ -35,19 +35,6 @@ ignore = [
     # serde_yaml_ng leaves unsafe-libyaml.
     # Upstream: https://rustsec.org/advisories/RUSTSEC-2024-0449
     { id = "RUSTSEC-2024-0449", reason = "VPE exception: unsafe-libyaml 0.2.11 is unmaintained, not vulnerable; reached only via serde_yaml_ng in solstone-core-user-skill to read the name field of the owner's local SKILL.md frontmatter" },
-    # VPE exception, 2026-10-24: crypto-bigint 0.5.5 via p256 0.13.2 /
-    # elliptic-curve 0.13.8. RUSTSEC-2026-0387 reports timing variability in
-    # operations meant to be constant-time; the fix is crypto-bigint >=0.7.6,
-    # which the p256 0.13 line cannot use. spl-core relay_window.rs uses p256
-    # only to parse and encode a peer public key into an id (no secret
-    # arithmetic). solstone-core-push uses p256 ECDH for Web Push payload
-    # encryption with a fresh ephemeral secret per message on the owner's own
-    # computer; exploiting the timing variability needs a local observer of that
-    # process and yields at most one message's ephemeral key. Owner VPE. Remove
-    # when spl-rust adopts p256 0.14 (0.14.0 is published), solstone-core-push
-    # moves to p256 0.14, and the lock resolves crypto-bigint >=0.7.6.
-    # Upstream: https://rustsec.org/advisories/RUSTSEC-2026-0387
-    { id = "RUSTSEC-2026-0387", reason = "VPE exception: crypto-bigint 0.5.5 via p256 0.13.2; spl-core parses public keys only, solstone-core-push Web Push ECDH uses a fresh ephemeral secret per message on the owner's computer; remove when spl-rust and solstone-core-push move to p256 0.14 and the lock resolves crypto-bigint >=0.7.6" },
 ]
 
 [licenses]

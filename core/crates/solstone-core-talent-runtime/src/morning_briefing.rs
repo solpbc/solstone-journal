@@ -866,10 +866,7 @@ mod tests {
 
     #[test]
     fn gate_keeps_reference_day_reasons() {
-        let prepared = PreparedTalent {
-            name: "morning_briefing".into(),
-            config: Map::new(),
-        };
+        let prepared = PreparedTalent::new("morning_briefing".into(), Map::new());
         let context = ExecutionContext {
             journal: Default::default(),
         };
@@ -1052,9 +1049,9 @@ mod tests {
         let context = ExecutionContext {
             journal: root.path().to_owned(),
         };
-        let mut prepared = PreparedTalent {
-            name: "morning_briefing".into(),
-            config: Map::from_iter([
+        let mut prepared = PreparedTalent::new(
+            "morning_briefing".into(),
+            Map::from_iter([
                 ("day".into(), json!("20261019")),
                 ("max_output_tokens".into(), json!(2560)),
                 ("json_schema".into(), json!({"type": "object"})),
@@ -1063,7 +1060,7 @@ mod tests {
                     json!("Prompt with $activity_digest and $briefing_metadata"),
                 ),
             ]),
-        };
+        );
         let state = build(&mut prepared, &context).unwrap();
         apply_prompt_override(&mut prepared, &state).unwrap();
 
@@ -1111,9 +1108,9 @@ mod tests {
         let context = ExecutionContext {
             journal: root.path().to_owned(),
         };
-        let mut prepared = PreparedTalent {
-            name: "morning_briefing".into(),
-            config: Map::from_iter([
+        let mut prepared = PreparedTalent::new(
+            "morning_briefing".into(),
+            Map::from_iter([
                 ("day".into(), json!("20261019")),
                 ("max_output_tokens".into(), json!(1024)),
                 ("json_schema".into(), json!({"type": "object"})),
@@ -1123,7 +1120,7 @@ mod tests {
                 ),
                 ("_daily_location_text".into(), json!("Denver, Colorado")),
             ]),
-        };
+        );
         let state = build(&mut prepared, &context).unwrap();
         apply_prompt_override(&mut prepared, &state).unwrap();
 
@@ -1154,16 +1151,16 @@ mod tests {
             journal: root.path().to_owned(),
         };
         let huge_instruction = "X".repeat(100_000);
-        let mut prepared = PreparedTalent {
-            name: "morning_briefing".into(),
-            config: Map::from_iter([
+        let mut prepared = PreparedTalent::new(
+            "morning_briefing".into(),
+            Map::from_iter([
                 ("day".into(), json!("20261019")),
                 ("max_output_tokens".into(), json!(1024)),
                 ("json_schema".into(), json!({"type": "object"})),
                 ("user_instruction".into(), json!(huge_instruction)),
                 ("prompt".into(), json!("Short prompt")),
             ]),
-        };
+        );
         let state = build(&mut prepared, &context).unwrap();
         let result = apply_prompt_override(&mut prepared, &state);
         assert!(
@@ -1261,9 +1258,9 @@ mod tests {
             generated: "2026-10-20T07:00:00Z".into(),
             model: "test-model".into(),
         });
-        let mut prepared = PreparedTalent {
-            name: "morning_briefing".into(),
-            config: Map::from_iter([
+        let mut prepared = PreparedTalent::new(
+            "morning_briefing".into(),
+            Map::from_iter([
                 ("day".into(), json!("20261019")),
                 ("max_output_tokens".into(), json!(1024)),
                 ("json_schema".into(), json!({"type": "object"})),
@@ -1272,7 +1269,7 @@ mod tests {
                     json!("Prompt with $activity_digest and $briefing_metadata"),
                 ),
             ]),
-        };
+        );
         apply_prompt_override(&mut prepared, &state).unwrap();
         let prompt = prepared.config["prompt"].as_str().unwrap();
         assert!(

@@ -316,7 +316,7 @@ pub(crate) fn execute_with_paths(
                 format!("unsupported talent type: {talent_type}"),
             ));
         }
-        match crate::generate_response(&mut prepared, context, generate, writer) {
+        match crate::generate_response(&mut prepared, context, generate, writer, cancellation) {
             Ok((response, usage, degraded)) => (response, usage, degraded),
             Err(_) if cancellation.is_cancelled() => return RuntimeOutcome::Cancelled,
             Err(outcome) => return outcome,
@@ -703,13 +703,13 @@ mod tests {
             let relative = "chronicle/20260101/talents/plain.md";
             let path = context.journal.join(relative);
             let identity = DailyUnitIdentity::new("20260101", "plain", None);
-            let prepared = PreparedTalent {
-                name: "plain".into(),
-                config: json!({"day":"20260101", "output_path":path})
+            let prepared = PreparedTalent::new(
+                "plain".into(),
+                json!({"day":"20260101", "output_path":path})
                     .as_object()
                     .unwrap()
                     .clone(),
-            };
+            );
             let mut actions = vec![json!({"owner":"output", "path":relative,
                 "facet_identity":null, "before":null, "after":b"saved daily searchable text".to_vec()})];
             if mode == "later_action" {
@@ -903,10 +903,7 @@ mod tests {
             .to_string(),
         )
         .unwrap();
-        let prepared = PreparedTalent {
-            name: "entities:entity_observer".into(),
-            config: json!({"day":"20260910", "facet":"work", "type":"generate", "max_output_tokens":1024, "prompt":"$observer_context", "model":"test-model", "provider":"test", "hook":{"pre":"entities:entity_observer", "post":"entities:entity_observer"}}).as_object().unwrap().clone(),
-        };
+        let prepared = PreparedTalent::new("entities:entity_observer".into(), json!({"day":"20260910", "facet":"work", "type":"generate", "max_output_tokens":1024, "prompt":"$observer_context", "model":"test-model", "provider":"test", "hook":{"pre":"entities:entity_observer", "post":"entities:entity_observer"}}).as_object().unwrap().clone());
         let identity = DailyUnitIdentity::new("20260910", &prepared.name, Some("work".into()));
         (context, prepared, identity)
     }
@@ -1471,9 +1468,9 @@ mod tests {
         }
         let identity =
             DailyUnitIdentity::new("20260108", "entities:entities_review", Some("work".into()));
-        let prepared = PreparedTalent {
-            name: "entities:entities_review".to_owned(),
-            config: json!({
+        let prepared = PreparedTalent::new(
+            "entities:entities_review".to_owned(),
+            json!({
                 "day":"20260108", "facet":"work", "type":"generate", "max_output_tokens":1024,
                 "prompt":"frozen review evidence", "model":"test-model", "provider":"test",
                 "hook":{"pre":"entities:entities_review", "post":"entities:entities_review"}
@@ -1481,7 +1478,7 @@ mod tests {
             .as_object()
             .unwrap()
             .clone(),
-        };
+        );
         let packet = crate::daily_prepare::freeze(prepared, &context).unwrap();
         let mut record = DailyUnitRecord::new(identity.clone(), "E", "C");
         record.lock_token = Some("attempt".to_owned());
@@ -1699,9 +1696,9 @@ mod tests {
                 )
                 .unwrap();
             }
-            let prepared = PreparedTalent {
-                name: "entities:entities_review".to_owned(),
-                config: json!({
+            let prepared = PreparedTalent::new(
+                "entities:entities_review".to_owned(),
+                json!({
                     "day":"20260108", "facet":"work", "type":"generate", "max_output_tokens":1024,
                     "prompt":"review", "model":"test-model", "provider":"test",
                     "hook":{"pre":"entities:entities_review", "post":"entities:entities_review"},
@@ -1709,7 +1706,7 @@ mod tests {
                 .as_object()
                 .unwrap()
                 .clone(),
-            };
+            );
             let packet = crate::daily_prepare::freeze(prepared, &context).unwrap();
             let mut record = DailyUnitRecord::new(
                 DailyUnitIdentity::new("20260108", "entities:entities_review", Some("work".into())),
@@ -1798,9 +1795,9 @@ mod tests {
             .unwrap();
         };
         propose("20260105", "first");
-        let prepared = PreparedTalent {
-            name: "entities:entities_review".to_owned(),
-            config: json!({
+        let prepared = PreparedTalent::new(
+            "entities:entities_review".to_owned(),
+            json!({
                 "day":"20260108", "facet":"work", "type":"generate", "max_output_tokens":1024,
                 "prompt":"review", "model":"test-model", "provider":"test",
                 "hook":{"pre":"entities:entities_review", "post":"entities:entities_review"},
@@ -1808,7 +1805,7 @@ mod tests {
             .as_object()
             .unwrap()
             .clone(),
-        };
+        );
         let packet = crate::daily_prepare::freeze(prepared, &context).unwrap();
         assert_eq!(
             packet["prepared"]["config"]["_daily_review_inputs"]["prior"]
@@ -2002,9 +1999,9 @@ mod tests {
 
         // 1a. Receipt-free action_plan is cleared for merge_proposal_preparation
         propose("20260105", "first");
-        let review_prep = PreparedTalent {
-            name: "entities:entities_review".to_owned(),
-            config: json!({
+        let review_prep = PreparedTalent::new(
+            "entities:entities_review".to_owned(),
+            json!({
                 "day":"20260108", "facet":"work", "type":"generate", "max_output_tokens":1024,
                 "prompt":"review", "model":"test-model", "provider":"test",
                 "hook":{"pre":"entities:entities_review", "post":"entities:entities_review"},
@@ -2012,7 +2009,7 @@ mod tests {
             .as_object()
             .unwrap()
             .clone(),
-        };
+        );
         let review_packet = crate::daily_prepare::freeze(review_prep, &context).unwrap();
         let review_identity =
             DailyUnitIdentity::new("20260108", "entities:entities_review", Some("work".into()));
@@ -2064,9 +2061,9 @@ mod tests {
             )
             .unwrap();
         }
-        let review_prep2 = PreparedTalent {
-            name: "entities:entities_review".to_owned(),
-            config: json!({
+        let review_prep2 = PreparedTalent::new(
+            "entities:entities_review".to_owned(),
+            json!({
                 "day":"20260109", "facet":"work", "type":"generate", "max_output_tokens":1024,
                 "prompt":"review", "model":"test-model", "provider":"test",
                 "hook":{"pre":"entities:entities_review", "post":"entities:entities_review"},
@@ -2074,7 +2071,7 @@ mod tests {
             .as_object()
             .unwrap()
             .clone(),
-        };
+        );
         let review_packet2 = crate::daily_prepare::freeze(review_prep2, &context).unwrap();
         let (thawed_prep2, thawed_stage2) = crate::daily_prepare::thaw(&review_packet2).unwrap();
         let (spec2, state2) = thawed_stage2.unwrap();
@@ -2161,20 +2158,18 @@ mod tests {
 
         // 3. Current-attempt owner_action receipt keeps plan and packet, while receipts only on accepted do not.
         // Also: started receipt without a commit does not take the fresh-prep path.
-        let review_for = |day: &str| {
-            let prepared = PreparedTalent {
-                name: "entities:entities_review".to_owned(),
-                config: json!({
+        let review_for =
+            |day: &str| {
+                let prepared = PreparedTalent::new("entities:entities_review".to_owned(), json!({
                     "day":day, "facet":"work", "type":"generate", "max_output_tokens":1024,
                     "prompt":"review", "model":"test-model", "provider":"test",
                     "hook":{"pre":"entities:entities_review", "post":"entities:entities_review"},
                 })
                 .as_object()
                 .unwrap()
-                .clone(),
+                .clone());
+                crate::daily_prepare::freeze(prepared, &context).unwrap()
             };
-            crate::daily_prepare::freeze(prepared, &context).unwrap()
-        };
         let merge_response = json!({"response":json!({"promotions":[],
             "merges":[{"source":"Ada", "canonical":"Ada Lovelace", "evidence":"same person"}]})
         .to_string()});
@@ -2290,9 +2285,9 @@ mod tests {
         }
 
         // Plan A: new Person Jordan Rivera (the grant)
-        let prep_a = PreparedTalent {
-            name: "entities:entities_review".to_owned(),
-            config: json!({
+        let prep_a = PreparedTalent::new(
+            "entities:entities_review".to_owned(),
+            json!({
                 "day":"20260108", "facet":"work", "type":"generate", "max_output_tokens":1024,
                 "prompt":"review", "model":"test-model", "provider":"test",
                 "hook":{"pre":"entities:entities_review", "post":"entities:entities_review"},
@@ -2300,7 +2295,7 @@ mod tests {
             .as_object()
             .unwrap()
             .clone(),
-        };
+        );
         let packet_a = crate::daily_prepare::freeze(prep_a, &context).unwrap();
         let (thawed_prep_a, thawed_stage_a) = crate::daily_prepare::thaw(&packet_a).unwrap();
         let (spec_a, state_a) = thawed_stage_a.unwrap();
@@ -2325,9 +2320,9 @@ mod tests {
             crate::writers::prepare_daily_publication(plan_a, &thawed_prep_a, &context).unwrap();
 
         // Plan B: Sam Lee, then Jo (whose frozen identity after has is_principal)
-        let prep_b = PreparedTalent {
-            name: "entities:entities_review".to_owned(),
-            config: json!({
+        let prep_b = PreparedTalent::new(
+            "entities:entities_review".to_owned(),
+            json!({
                 "day":"20260108", "facet":"work", "type":"generate", "max_output_tokens":1024,
                 "prompt":"review", "model":"test-model", "provider":"test",
                 "hook":{"pre":"entities:entities_review", "post":"entities:entities_review"},
@@ -2335,7 +2330,7 @@ mod tests {
             .as_object()
             .unwrap()
             .clone(),
-        };
+        );
         let packet_b = crate::daily_prepare::freeze(prep_b, &context).unwrap();
         let (thawed_prep_b, thawed_stage_b) = crate::daily_prepare::thaw(&packet_b).unwrap();
         let (spec_b, state_b) = thawed_stage_b.unwrap();
@@ -2547,9 +2542,9 @@ mod tests {
         }
 
         // Before creating any person, prepare a Jo-only promotion
-        let prep_orig = PreparedTalent {
-            name: "entities:entities_review".to_owned(),
-            config: json!({
+        let prep_orig = PreparedTalent::new(
+            "entities:entities_review".to_owned(),
+            json!({
                 "day":"20260108", "facet":"work", "type":"generate", "max_output_tokens":1024,
                 "prompt":"review", "model":"test-model", "provider":"test",
                 "hook":{"pre":"entities:entities_review", "post":"entities:entities_review"},
@@ -2557,7 +2552,7 @@ mod tests {
             .as_object()
             .unwrap()
             .clone(),
-        };
+        );
         let packet_orig = crate::daily_prepare::freeze(prep_orig, &context).unwrap();
         let (thawed_prep_orig, thawed_stage_orig) =
             crate::daily_prepare::thaw(&packet_orig).unwrap();
@@ -2649,9 +2644,9 @@ mod tests {
         assert_eq!(loaded_rec1.action_plan, Some(frozen_plan.clone()));
 
         // Separate freeze / thaw / parse / commit / prepare_daily_publication for Jo only
-        let prep_new = PreparedTalent {
-            name: "entities:entities_review".to_owned(),
-            config: json!({
+        let prep_new = PreparedTalent::new(
+            "entities:entities_review".to_owned(),
+            json!({
                 "day":"20260108", "facet":"work", "type":"generate", "max_output_tokens":1024,
                 "prompt":"review", "model":"test-model", "provider":"test",
                 "hook":{"pre":"entities:entities_review", "post":"entities:entities_review"},
@@ -2659,7 +2654,7 @@ mod tests {
             .as_object()
             .unwrap()
             .clone(),
-        };
+        );
         let packet_new = crate::daily_prepare::freeze(prep_new, &context).unwrap();
         let (thawed_prep_new, thawed_stage_new) = crate::daily_prepare::thaw(&packet_new).unwrap();
         let (spec_new, state_new) = thawed_stage_new.unwrap();
@@ -2760,9 +2755,9 @@ mod tests {
             )
             .unwrap();
         }
-        let prepared = PreparedTalent {
-            name: "entities:entities_review".to_owned(),
-            config: json!({
+        let prepared = PreparedTalent::new(
+            "entities:entities_review".to_owned(),
+            json!({
                 "day":"20260108", "facet":"work", "type":"generate", "max_output_tokens":1024,
                 "prompt":"review", "model":"test-model", "provider":"test",
                 "hook":{"pre":"entities:entities_review", "post":"entities:entities_review"},
@@ -2770,7 +2765,7 @@ mod tests {
             .as_object()
             .unwrap()
             .clone(),
-        };
+        );
         let packet = crate::daily_prepare::freeze(prepared, &context).unwrap();
         let identity =
             DailyUnitIdentity::new("20260108", "entities:entities_review", Some("work".into()));
@@ -3119,9 +3114,9 @@ mod tests {
             .join("chronicle/20260108/phone/120000_1/location.jsonl");
         fs::create_dir_all(location.parent().unwrap()).unwrap();
         fs::write(&location, b"before\n").unwrap();
-        let prepared = PreparedTalent {
-            name: "entities:entities_review".to_owned(),
-            config: json!({
+        let prepared = PreparedTalent::new(
+            "entities:entities_review".to_owned(),
+            json!({
                 "day":"20260108", "facet":"work", "type":"generate", "max_output_tokens":1024,
                 "prompt":"review", "model":"test-model", "provider":"test",
                 "hook":{"pre":"entities:entities_review", "post":"entities:entities_review"},
@@ -3129,7 +3124,7 @@ mod tests {
             .as_object()
             .unwrap()
             .clone(),
-        };
+        );
         let packet = crate::daily_prepare::freeze(prepared, &context).unwrap();
         assert!(
             packet["prepared"]["config"]

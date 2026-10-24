@@ -454,10 +454,7 @@ mod tests {
             v.lines[0].source_sha256,
             format!("{:x}", Sha256::digest(&raw))
         );
-        let prepared = PreparedTalent {
-            name: "sense".into(),
-            config: c,
-        };
+        let prepared = PreparedTalent::new("sense".into(), c);
         let b = verify(
             &prepared,
             &json!({"quotes":[{"speaker":"Speaker 1","text":"é Today I use solstone journal."}]})
@@ -663,10 +660,7 @@ mod tests {
                 Some(body)
             );
             c.extend(json!({"facet":"work","destination_id":solstone_core_facets::observe_facet_write_identity(root.path(),"work").unwrap(),"day":"20260101","activity":{"id":"meeting-1"}}).as_object().unwrap().clone());
-            let prepared = PreparedTalent {
-                name: "conversation".into(),
-                config: c,
-            };
+            let prepared = PreparedTalent::new("conversation".into(), c);
             let supported = json!({"from":"you","to":"solstone","kind":"uses","note":"","quote":"I use solstone journal every morning."});
             let output=json!({"body":"A discussion of the journal.","topics":[],"confidence":0.9,"relations":[
                 {"from":"you","to":"solstone","kind":"uses","note":"","quote":"I invented a solstone quantum phone."},
@@ -794,10 +788,7 @@ mod tests {
         for name in ["screen", "participation"] {
             let mut c = config(&original);
             prepare(name, &mut c, &loaded.sources);
-            let prepared = PreparedTalent {
-                name: name.into(),
-                config: c,
-            };
+            let prepared = PreparedTalent::new(name.into(), c);
             let parts = crate::generate_contents(&prepared);
             let ContentPart::Text { text } = &parts[0] else {
                 panic!("text input")
@@ -826,10 +817,7 @@ mod tests {
         prepare("conversation", &mut c, &loaded.sources);
         let destination = root.path().join("result.json");
         fs::write(&destination, "existing output").unwrap();
-        let mut prepared = PreparedTalent {
-            name: "conversation".into(),
-            config: c,
-        };
+        let mut prepared = PreparedTalent::new("conversation".into(), c);
         let output = json!({"body":"They said \"I invented a solstone quantum phone.\"", "relations":[],"topics":[],"confidence":0.9}).to_string();
         let mut events = Vec::new();
         let result = crate::generate_and_write(

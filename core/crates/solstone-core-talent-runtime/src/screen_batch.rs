@@ -657,13 +657,13 @@ mod tests {
     use tempfile::TempDir;
 
     fn prepared(transcript: &str) -> PreparedTalent {
-        PreparedTalent {
-            name: "screen".into(),
-            config: Map::from_iter([
+        PreparedTalent::new(
+            "screen".to_owned(),
+            Map::from_iter([
                 ("transcript".into(), Value::String(transcript.into())),
                 ("max_output_tokens".into(), Value::from(12_288)),
             ]),
-        }
+        )
     }
 
     fn count_for(candidate: &PreparedTalent) -> ExactTextCount {

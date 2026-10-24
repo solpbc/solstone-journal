@@ -771,10 +771,7 @@ mod tests {
         let context = ExecutionContext {
             journal: root.path().to_owned(),
         };
-        let prepared = |config| PreparedTalent {
-            name: "entities:detection".to_owned(),
-            config,
-        };
+        let prepared = |config| PreparedTalent::new("entities:detection".to_owned(), config);
         assert!(
             matches!(gate(&prepared(Map::new()), &context).unwrap(), GateDecision::Skip(reason) if reason == "no_sense")
         );

@@ -98,6 +98,8 @@ reads that file. ⛔ **No implementation holds its own copy of any vocabulary.**
   them and then takes a branch that never reads them. That is exactly the state `hints_applied` makes
   visible instead of invisible.
 
+- **`endpoint_binding`** — an optional, reject-only precondition from `endpoint_configuration_binding`. It hashes the resolved public endpoint descriptor, including the configured model and applicable process overrides, without credentials. Dispatch still selects the lane from the owner's configuration and refuses `endpoint_configuration_changed` before content admission or provider execution if the descriptor differs. The binding is omitted from ordinary requests and never enters a provider body. A caller that uses it retains the same value across retries and fallback calls; refreshing it would remove the precondition.
+
 ⛔ **Unknown request fields are refused, not ignored.** A caller sending a field the boundary does not
 know is a caller that believes something false about the contract.
 

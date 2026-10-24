@@ -1134,6 +1134,7 @@ fn tile_context(
         attempt_index: 0,
         exclusive_admission: false,
         transport_retries: None,
+        endpoint_binding: None,
     };
     match wire.execute(&request) {
         Ok(GenerateResponse::Generated(response)) => parse_context(&response.text),

@@ -67,6 +67,7 @@ pub fn request(
         attempt_index,
         exclusive_admission: false,
         transport_retries: None,
+        endpoint_binding: None,
     }
 }
 

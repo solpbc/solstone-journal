@@ -102,6 +102,7 @@ mod tests {
             attempt_index: 2,
             exclusive_admission: true,
             transport_retries: None,
+            endpoint_binding: None,
         }
     }
 
@@ -258,6 +259,7 @@ mod tests {
             attempt_index: 0,
             exclusive_admission: false,
             transport_retries: None,
+            endpoint_binding: None,
         }
     }
 
