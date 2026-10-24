@@ -1761,6 +1761,71 @@ fn ledger_posture(fixture: &Fixture) -> AuthorizedClientsRead {
     AuthorizationLedger::new(&fixture.root).read_state()
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn embedded_door_returns_complete_original_beyond_initial_window() {
+    let fixture = Fixture::established(1);
+    let path = fixture
+        .root
+        .join("chronicle/20261024/device_long_audio/120000_120/audio.wav");
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    let original: Vec<u8> = (0..3_840_044).map(|index| (index % 251) as u8).collect();
+    fs::write(&path, &original).unwrap();
+    let handle = solstone_core_convey_shell::bind_embedded_device_door(
+        fixture.root.clone(),
+        std::net::SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0),
+    )
+    .await
+    .expect("embedded door");
+    let address = handle.live_door_addr().expect("established door");
+    let uri = "/app/transcripts/api/serve_file/20261024/device_long_audio/120000_120/audio.wav";
+    let owner = handle
+        .request_owner(
+            axum::http::Request::builder()
+                .uri(uri)
+                .body(axum::body::Body::empty())
+                .unwrap(),
+        )
+        .await;
+    assert_eq!(owner.status(), StatusCode::OK);
+    assert_eq!(
+        axum::body::to_bytes(owner.into_body(), original.len())
+            .await
+            .unwrap(),
+        original
+    );
+    let range = request_once(
+        Arc::new(fixture.client_config(0)),
+        "127.0.0.1",
+        address.port(),
+        "GET",
+        uri,
+        &[("Range".into(), "bytes=0-262143".into())],
+        &[],
+    )
+    .await
+    .expect("bounded range control");
+    assert_eq!(range.status, 206);
+    assert_eq!(range.body, original[..262_144]);
+    let full = tokio::time::timeout(
+        Duration::from_secs(15),
+        request_once(
+            Arc::new(fixture.client_config(0)),
+            "127.0.0.1",
+            address.port(),
+            "GET",
+            uri,
+            &[],
+            &[],
+        ),
+    )
+    .await
+    .expect("full original read must finish")
+    .expect("full original response");
+    assert_eq!(full.status, 200);
+    assert_eq!(full.body, original);
+    handle.shutdown();
+}
+
 #[tokio::test]
 async fn embedded_door_composes_production_auth_and_refuses_replaced_root() {
     let fixture = Fixture::established(1);

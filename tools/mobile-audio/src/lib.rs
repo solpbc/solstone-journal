@@ -49,6 +49,31 @@ fn verify_model(path: &Path) -> Result<(), String> {
 }
 
 impl Parakeet {
+    /// Observe the outstanding native call without recording samples or output.
+    /// `true` brackets only the C API invocation, after input/model admission;
+    /// `false` is delivered before copying or decoding its returned JSON.
+    pub fn transcribe_observed(
+        &self,
+        samples: &[f32],
+        native_call: &dyn Fn(bool),
+    ) -> Result<Value, String> {
+        if samples.is_empty()
+            || samples.len() > EMBEDDED_AUDIO_MAX_SAMPLES
+            || samples.iter().any(|v| !v.is_finite())
+        {
+            return Err("Parakeet requires finite mono 16 kHz samples, at most 120 seconds".into());
+        }
+        #[cfg(feature = "native")]
+        {
+            normalize(self.context.transcribe(samples, native_call)?)
+        }
+        #[cfg(not(feature = "native"))]
+        {
+            let _ = native_call;
+            Err("native Parakeet support was not compiled".into())
+        }
+    }
+
     /// Identity of the maintained recognizer, before allocating its context.
     pub fn pinned_model_info() -> EmbeddedModelInfo {
         EmbeddedModelInfo {
@@ -84,25 +109,25 @@ impl Parakeet {
 
 impl EmbeddedAsr for Parakeet {
     fn transcribe(&self, samples: &[f32]) -> Result<Value, String> {
-        if samples.is_empty()
-            || samples.len() > EMBEDDED_AUDIO_MAX_SAMPLES
-            || samples.iter().any(|v| !v.is_finite())
-        {
-            return Err("Parakeet requires finite mono 16 kHz samples, at most 120 seconds".into());
-        }
-        #[cfg(feature = "native")]
-        {
-            normalize(self.context.transcribe(samples)?)
-        }
-        #[cfg(not(feature = "native"))]
-        {
-            Err("native Parakeet support was not compiled".into())
-        }
+        self.transcribe_observed(samples, &|_| {})
     }
 
     fn model_info(&self) -> EmbeddedModelInfo {
         Self::pinned_model_info()
     }
+}
+
+#[cfg(any(feature = "native", test))]
+fn observe_native_call<T>(observer: &dyn Fn(bool), call: impl FnOnce() -> T) -> T {
+    struct Active<'a>(&'a dyn Fn(bool));
+    impl Drop for Active<'_> {
+        fn drop(&mut self) {
+            (self.0)(false);
+        }
+    }
+    observer(true);
+    let _active = Active(observer);
+    call()
 }
 
 #[cfg(any(feature = "native", test))]
@@ -131,6 +156,39 @@ fn normalize(mut batch: Value) -> Result<Value, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn observation_is_active_only_during_the_call_and_clears_on_unwind() {
+        use std::cell::{Cell, RefCell};
+        let active = Cell::new(false);
+        let events = RefCell::new(Vec::new());
+        let observe = |value| {
+            active.set(value);
+            events.borrow_mut().push(value);
+        };
+        let result: Result<(), &str> = observe_native_call(&observe, || {
+            assert!(active.get());
+            Err("native failure")
+        });
+        assert_eq!(result, Err("native failure"));
+        assert!(!active.get());
+        assert_eq!(*events.borrow(), vec![true, false]);
+        let panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            observe_native_call(&observe, || panic!("native adapter panic"));
+        }));
+        assert!(panic.is_err());
+        assert!(!active.get());
+        assert_eq!(*events.borrow(), vec![true, false, true, false]);
+    }
+
+    #[cfg(not(feature = "native"))]
+    #[test]
+    fn refused_input_or_uncompiled_native_never_claims_an_active_call() {
+        let asr = Parakeet {};
+        let observe = |_| panic!("no C API invocation was admitted");
+        for samples in [&[][..], &[f32::NAN][..], &[0.0][..]] {
+            assert!(asr.transcribe_observed(samples, &observe).is_err());
+        }
+    }
     #[test]
     fn native_word_contract_is_normalized_without_losing_timings() {
         let value = normalize(serde_json::json!([{"text":"Hello","words":[{"w":"Hello","start":0.1,"end":0.8,"conf":0.9}]}])).unwrap();

@@ -1135,14 +1135,19 @@ impl ForegroundProcessingHost {
         if let Some(discovery) = self.discovery.lock().unwrap().as_ref() {
             discovery.request();
         }
-        for _ in 0..1_000_000 {
+        let discovered_by = Instant::now() + Duration::from_secs(10);
+        loop {
             if self.queue.history().len() > finished {
                 break;
             }
             if discovery_promise(&self.journal).is_some_and(|promise| Some(promise) != promised) {
                 break;
             }
-            std::thread::yield_now();
+            assert!(
+                Instant::now() < discovered_by,
+                "discovery did not publish its pass"
+            );
+            std::thread::sleep(Duration::from_millis(1));
         }
         hold_analysis(&self.journal, false);
         self.queue.resume_processing();
@@ -1150,11 +1155,13 @@ impl ForegroundProcessingHost {
             .queue
             .any_reference(|reference| reference.starts_with("supervisor-"))
         {
-            for _ in 0..1_000_000 {
-                if self.queue.history().len() > finished {
-                    break;
-                }
-                std::thread::yield_now();
+            let finished_by = Instant::now() + Duration::from_secs(10);
+            while self.queue.history().len() <= finished {
+                assert!(
+                    Instant::now() < finished_by,
+                    "discovered command did not finish"
+                );
+                std::thread::sleep(Duration::from_millis(1));
             }
         }
         self.queue.resume_processing();
@@ -1343,6 +1350,17 @@ impl ForegroundProcessingHost {
             .as_ref()
             .map(|c| c.worker.status())
             .unwrap_or_else(|| serde_json::json!({"state":"disabled"}))
+    }
+    /// A positive observation is useful after signalling cancellation. Busy,
+    /// absent and unobserved states are unknown, without delaying Stop.
+    #[cfg(feature = "audio")]
+    pub fn native_call_active(&self) -> Option<bool> {
+        self.audio_state
+            .try_lock()
+            .ok()?
+            .as_ref()?
+            .worker
+            .native_call_active()
     }
     pub fn run_sense_pass(&self) -> Result<(), String> {
         Self::sense_pass(&self.journal, self.executor())

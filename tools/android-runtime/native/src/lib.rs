@@ -769,7 +769,14 @@ fn run(root: &Path, op: &str, count: usize) -> Result<Value, Box<dyn std::error:
     if op == "cancel" {
         CANCEL.store(true, Ordering::Release);
         request_serving_stop();
-        return Ok(json!({"cancel_requested":true}));
+        // Observe only after cancellation is signalled. Never delay Stop to
+        // obtain evidence; null means busy, absent or not observed, not idle.
+        let native_call_active_after_cancel = SERVING
+            .try_lock()
+            .ok()
+            .and_then(|server| server.as_ref()?.host.as_ref()?.native_call_active());
+        return Ok(json!({"cancel_requested":true,
+            "native_call_active_after_cancel":native_call_active_after_cancel}));
     }
     if op == "begin" {
         CANCEL.store(false, Ordering::Release);

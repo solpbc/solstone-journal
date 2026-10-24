@@ -30,6 +30,7 @@ struct LocalAsr<'a> {
     scratch: &'a Path,
     loaded: RefCell<Option<journal_mobile_audio::Parakeet>>,
     load_ms: Cell<Option<f64>>,
+    native_call: &'a dyn Fn(bool),
 }
 
 impl solstone_core_transcribe::EmbeddedAsr for LocalAsr<'_> {
@@ -44,7 +45,10 @@ impl solstone_core_transcribe::EmbeddedAsr for LocalAsr<'_> {
             self.load_ms
                 .set(Some(started.elapsed().as_secs_f64() * 1000.));
         }
-        loaded.as_ref().unwrap().transcribe(samples)
+        loaded
+            .as_ref()
+            .unwrap()
+            .transcribe_observed(samples, self.native_call)
     }
 
     fn model_info(&self) -> solstone_core_transcribe::EmbeddedModelInfo {
@@ -258,11 +262,15 @@ impl AudioWorker {
         };
         *self.state.status.lock().unwrap() = json!({"state":"processing","input":input});
         let started = Instant::now();
+        let native_call = |active| {
+            self.state.status.lock().unwrap()["native_call_active"] = json!(active);
+        };
         let asr = LocalAsr {
             model: &config.model,
             scratch: &config.scratch,
             loaded: RefCell::new(None),
             load_ms: Cell::new(None),
+            native_call: &native_call,
         };
         let result = process_embedded(
             input,
@@ -315,6 +323,15 @@ impl AudioWorker {
 
     pub fn status(&self) -> Value {
         self.state.snapshot()
+    }
+
+    pub fn native_call_active(&self) -> Option<bool> {
+        self.state
+            .status
+            .try_lock()
+            .ok()?
+            .get("native_call_active")
+            .and_then(Value::as_bool)
     }
     pub fn cancel(&self) {
         self.state.request_cancel();
@@ -381,11 +398,15 @@ fn run(
     }
     let root = authority.canonical_path();
     let started = Instant::now();
+    let native_call = |active| {
+        state.status.lock().unwrap()["native_call_active"] = json!(active);
+    };
     let asr = LocalAsr {
         model,
         scratch,
         loaded: RefCell::new(None),
         load_ms: Cell::new(None),
+        native_call: &native_call,
     };
     let worker_start_ms = started.elapsed().as_secs_f64() * 1000.;
     *state.status.lock().unwrap() = json!({"state":"ready","worker_start_ms":worker_start_ms,"model_load_ms":asr.load_ms.get()});
