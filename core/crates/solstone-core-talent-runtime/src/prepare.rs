@@ -303,13 +303,15 @@ pub fn prepare(
     crate::product_names::prepare(&name, &mut composed, &entry_sources);
     let mut prepared = PreparedTalent::new(name, composed);
     if prepared.name == "sense" {
-        let stock_body = include_str!("../../../payload/solstone/talent/sense.md")
-            .split_once("\n}\n")
+        // The packaged talent as installed, before any owner override.
+        let stock_file = std::fs::read_to_string(paths.talent_root.join("sense.md")).ok();
+        let stock_body = stock_file
+            .as_deref()
+            .and_then(|file| file.split_once("\n}\n"))
             .map(|(_, body)| body.trim());
-        let stock_schema = serde_json::from_str::<Value>(include_str!(
-            "../../../payload/solstone/talent/sense.schema.json"
-        ))
-        .ok();
+        let stock_schema = std::fs::read_to_string(paths.talent_root.join("sense.schema.json"))
+            .ok()
+            .and_then(|schema| serde_json::from_str::<Value>(&schema).ok());
         let mut normalized_schema = prepared.config.get("json_schema").cloned();
         if let Some(schema) = &mut normalized_schema
             && let Some(facets) =
@@ -322,10 +324,6 @@ pub fn prepare(
             && Some(config.body.trim()) == stock_body
             && normalized_schema == stock_schema;
         prepared.entry_sources = entry_sources;
-        prepared.journal_config =
-            solstone_core_journal_config::read_journal_config(&context.journal)
-                .ok()
-                .and_then(|r| r.config);
         if stock {
             prepared.stock_task = Some(crate::StockTask {
                 user_instruction: prepared

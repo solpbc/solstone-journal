@@ -51,20 +51,6 @@ pub(crate) fn prepare(prepared: &PreparedTalent, context: &ExecutionContext) -> 
     {
         return None;
     }
-    let config = prepared.journal_config.as_ref()?;
-    let (provider, lane) = solstone_core_generate_wire::resolve_lane(config);
-    let model = solstone_core_generate_wire::overrides::configured_model(config)?;
-    let solstone_core_generate_wire::LaneOutcome::ConfidentialEndpoint(endpoint) = lane else {
-        return None;
-    };
-    if provider != "local"
-        || model != "local/qwen3.5-4b"
-        || endpoint.served_model_id != "Qwen/Qwen3.5-4B"
-        || endpoint.is_bundled
-        || !endpoint.is_confidential
-    {
-        return None;
-    }
     let counts = prepared.config.get("source_counts")?;
     if counts["transcripts"] != 0
         || counts["talents"] != 0
@@ -81,7 +67,7 @@ pub(crate) fn prepare(prepared: &PreparedTalent, context: &ExecutionContext) -> 
     if sources.len() != counts["percepts"].as_u64()? as usize {
         return None;
     }
-    let mut original = crate::native_generate_request(prepared).ok()?;
+    let original = crate::native_generate_request(prepared).ok()?;
     if original.system_instruction.is_some() || original.contents.len() != 2 {
         return None;
     }
@@ -98,6 +84,7 @@ pub(crate) fn prepare(prepared: &PreparedTalent, context: &ExecutionContext) -> 
         0
     };
     let mut all_frames = Vec::new();
+    let mut guides: Vec<String> = Vec::new();
     let base_ms = base_ms(prepared)?;
     let day = prepared.config.get("day")?.as_str()?;
     let segment = prepared.config.get("segment")?.as_str()?;
@@ -156,10 +143,13 @@ pub(crate) fn prepare(prepared: &PreparedTalent, context: &ExecutionContext) -> 
             return None;
         }
         let (visible, records) = raw_changes::prepare(&frames, true).ok()?;
-        let replacement = raw_changes::encode(&records, base_ms);
-        if raw_changes::restore(&raw_changes::decode(&replacement, base_ms).ok()?).ok()? != visible
-        {
+        let encoded = raw_changes::encode(&records, base_ms);
+        if raw_changes::restore(&raw_changes::decode(&encoded, base_ms).ok()?).ok()? != visible {
             return None;
+        }
+        let (guide, replacement) = raw_changes::split_guide(&encoded)?;
+        if !guides.iter().any(|known| known == guide) {
+            guides.push(guide.to_owned());
         }
         // Offsets are checked against the original body, before any replacement.
         let original_at = original_text.find(&old)?;
@@ -171,7 +161,7 @@ pub(crate) fn prepare(prepared: &PreparedTalent, context: &ExecutionContext) -> 
         {
             return None;
         }
-        text = text.replacen(&old, &replacement, 1);
+        text = text.replacen(&old, replacement, 1);
         all_frames.extend(frames);
     }
     let bound = ui::choose(&all_frames)?;
@@ -181,13 +171,9 @@ pub(crate) fn prepare(prepared: &PreparedTalent, context: &ExecutionContext) -> 
         return None;
     }
     let mut request = original.clone();
+    // The timeline stays in the ordinary input position, so fitting trims it like any
+    // talent's input. Everything the output binding reads is preserved below.
     request.contents[0] = ContentPart::Text { text };
-    request.contents.insert(
-        0,
-        ContentPart::Text {
-            text: String::new(),
-        },
-    );
     let mut cards = String::new();
     for (i, row) in inputs.iter().enumerate() {
         let mut meta = row.as_object()?.clone();
@@ -204,9 +190,10 @@ pub(crate) fn prepare(prepared: &PreparedTalent, context: &ExecutionContext) -> 
         ));
     }
     request.system_instruction = Some(format!(
-        "{}\n\nInput availability: zero transcript sources. quotes must be []; screen-derived entities use source screen. Preserve uncertain and reported status.\n\n{}",
+        "{}\n\nInput availability: zero transcript sources. quotes must be []; screen-derived entities use source screen. Preserve uncertain and reported status.\n\n{}\n\n{}",
         instructions::FOCUS_PREPARE_FOCUS,
-        instructions::INTENT_EXAMPLES_PREPARE_EXAMPLES
+        instructions::INTENT_EXAMPLES_PREPARE_EXAMPLES,
+        guides.concat()
     ));
     request.contents.extend([
         ContentPart::Text {
@@ -231,9 +218,6 @@ pub(crate) fn prepare(prepared: &PreparedTalent, context: &ExecutionContext) -> 
         &bound,
         &passages,
     )?);
-    let binding = solstone_core_generate_wire::endpoint_configuration_binding(config)?;
-    request.endpoint_binding = Some(binding.clone());
-    original.endpoint_binding = Some(binding);
     Some(Candidate {
         request,
         original,

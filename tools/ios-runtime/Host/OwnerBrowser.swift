@@ -2,6 +2,7 @@
 // Copyright (c) 2026 sol pbc
 #if JOURNAL_OWNER_APP
 import Darwin
+import SafariServices
 import SwiftUI
 @preconcurrency import WebKit
 
@@ -217,10 +218,19 @@ final class OwnerRead: @unchecked Sendable {
   func webView(_ webView: WKWebView, stop task: WKURLSchemeTask) {
     requests.removeValue(forKey: ObjectIdentifier(task))?.read.cancel()
   }
+  // Leaving the app pauses the journal, which would drop a service turn-on that is
+  // waiting for its consent page. Show outside pages over the journal instead.
   private func external(_ url: URL) {
     guard ["https", "http"].contains(url.scheme?.lowercased() ?? ""),
           url.host != nil, url.user == nil, url.password == nil else { return }
-    UIApplication.shared.open(url)
+    guard let top = topController() else { UIApplication.shared.open(url); return }
+    top.present(SFSafariViewController(url: url), animated: true)
+  }
+  private func topController() -> UIViewController? {
+    guard let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+          var top = scene.windows.first(where: { $0.isKeyWindow })?.rootViewController else { return nil }
+    while let presented = top.presentedViewController { top = presented }
+    return top
   }
   func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction,
                decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
@@ -251,8 +261,7 @@ final class OwnerRead: @unchecked Sendable {
   }
   func webViewWebContentProcessDidTerminate(_ webView: WKWebView) { close(); owner.pageFailed() }
   private func alert(_ message: String, confirm: Bool, done: @escaping (Bool) -> Void) {
-    guard let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-          let root = scene.windows.first(where: { $0.isKeyWindow })?.rootViewController else { done(false); return }
+    guard let root = topController() else { done(false); return }
     let alert = UIAlertController(title: nil, message: message, preferredStyle: .alert)
     alert.addAction(UIAlertAction(title: "ok", style: .default) { _ in done(true) })
     if confirm { alert.addAction(UIAlertAction(title: "cancel", style: .cancel) { _ in done(false) }) }

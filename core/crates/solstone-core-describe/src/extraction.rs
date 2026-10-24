@@ -83,7 +83,6 @@ pub fn request(
         attempt_index: attempt,
         exclusive_admission: false,
         transport_retries: None,
-        endpoint_binding: None,
     })
 }
 

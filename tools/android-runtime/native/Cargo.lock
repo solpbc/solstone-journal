@@ -4744,7 +4744,6 @@ dependencies = [
  "ring",
  "serde",
  "serde_json",
- "sha2 0.10.9",
  "solstone-core-brain",
  "solstone-core-chatgpt-auth",
  "solstone-core-generate",
@@ -5921,6 +5920,7 @@ dependencies = [
  "solstone-core-talent-cli",
  "solstone-core-talent-config",
  "solstone-core-transcripts",
+ "unicode-normalization",
 ]
 
 [[package]]

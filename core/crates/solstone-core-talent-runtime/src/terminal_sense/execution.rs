@@ -6,6 +6,7 @@ use crate::{ExecutionContext, GeneratedTalentResponse, PreparedTalent, RuntimeOu
 use serde_json::{Value, json};
 use solstone_core_generate::{
     Cancellation, ClientError, GenerateExecutor, GenerateRequest, GenerateResponse,
+    ReasonCodeValue, RefusedResponse,
 };
 use std::{io::Write, sync::Mutex};
 
@@ -52,16 +53,14 @@ impl Usage {
         Some(Box::new(v))
     }
 }
-struct BoundExecutor<'a> {
+/// Counts every candidate and fallback attempt, so usage covers the whole sequence.
+struct TrackingExecutor<'a> {
     inner: &'a dyn GenerateExecutor,
-    binding: Option<String>,
     usage: Mutex<Usage>,
 }
-impl GenerateExecutor for BoundExecutor<'_> {
+impl GenerateExecutor for TrackingExecutor<'_> {
     fn execute(&self, request: &GenerateRequest) -> Result<GenerateResponse, ClientError> {
-        let mut request = request.clone();
-        request.endpoint_binding = self.binding.clone();
-        let result = self.inner.execute(&request);
+        let result = self.inner.execute(request);
         if let Ok(response) = &result {
             self.usage.lock().unwrap().add(response);
         } else {
@@ -79,9 +78,8 @@ pub(crate) fn execute(
     writer: &mut impl Write,
     cancellation: &Cancellation,
 ) -> Result<GeneratedTalentResponse, RuntimeOutcome> {
-    let tracking = BoundExecutor {
+    let tracking = TrackingExecutor {
         inner: generate,
-        binding: candidate.request.endpoint_binding.clone(),
         usage: Mutex::new(Usage::default()),
     };
     let result = run(
@@ -145,44 +143,21 @@ fn run(
     }
     let cause = match response {
         GenerateResponse::Cancelled => return Err(RuntimeOutcome::Cancelled),
-        GenerateResponse::Generated(response) => {
-            if response
-                .input_budget
-                .as_ref()
-                .is_some_and(|b| b["clipped"] == true)
-            {
-                "protected_input_clipped"
-            } else if let Ok(text) = candidate.render(&response.text) {
-                prepared
-                    .config
-                    .insert(crate::story::INPUT_WHOLE_KEY.into(), Value::Bool(true));
+        GenerateResponse::Generated(response) => match candidate.render(&response.text) {
+            Ok(text) => {
+                crate::record_input_budget(prepared, response.input_budget.as_ref());
                 return Ok((text, None, None));
-            } else {
-                "invalid_source_binding"
             }
+            Err(_) => "invalid_source_binding",
+        },
+        GenerateResponse::Refused(response) if exceeds_context_window(&response) => {
+            "input_exceeds_context_window"
         }
         GenerateResponse::Refused(response) => {
-            let code = response
-                .reason_code
-                .as_ref()
-                .map(solstone_core_generate::ReasonCodeValue::as_wire)
-                .unwrap_or("");
-            if matches!(
-                code,
-                "context_preserved_overflow" | "context_budget_exceeded"
-            ) {
-                "protected_input_refused"
-            } else {
-                return Err(RuntimeOutcome::GenerateRefused {
-                    error: crate::stage_error(
-                        "generate",
-                        "runtime",
-                        prepared,
-                        response.detail.clone(),
-                    ),
-                    response: Box::new(response),
-                });
-            }
+            return Err(RuntimeOutcome::GenerateRefused {
+                error: crate::stage_error("generate", "runtime", prepared, response.detail.clone()),
+                response: Box::new(response),
+            });
         }
     };
     if cancellation.is_cancelled() {
@@ -192,9 +167,21 @@ fn run(
         writer,
         json!({"event":"terminal_sense","branch":"native_fallback","cause":cause}),
     );
-    // The wrapper retains the original endpoint precondition across the native
-    // bounded retry sequence. It never refreshes it to follow a changed lane.
     crate::native_generate_response(prepared, context, generate, writer)
+}
+
+/// Fitting trims the timeline like any input. These refusals mean even the
+/// preserved instructions, cards and passages do not fit the context window.
+fn exceeds_context_window(response: &RefusedResponse) -> bool {
+    matches!(
+        response.reason_code.as_ref().map(ReasonCodeValue::as_wire),
+        Some(
+            "context_budget_exceeded"
+                | "context_fitted_overflow"
+                | "context_preserved_overflow"
+                | "context_window_exceeded"
+        )
+    )
 }
 
 #[cfg(test)]

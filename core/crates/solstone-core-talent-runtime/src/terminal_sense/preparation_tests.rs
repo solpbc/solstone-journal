@@ -24,28 +24,31 @@ fn setup(
     ] {
         fs::create_dir_all(path).unwrap();
     }
-    fs::write(
-        talent_root.join("sense.md"),
-        include_str!("../../../../payload/solstone/talent/sense.md"),
-    )
-    .unwrap();
-    fs::write(
-        talent_root.join("sense.schema.json"),
-        include_str!("../../../../payload/solstone/talent/sense.schema.json"),
-    )
-    .unwrap();
-    fs::write(
-        templates_dir.join("segment_preamble.md"),
-        include_str!("../../../../payload/solstone/think/templates/segment_preamble.md"),
-    )
-    .unwrap();
+    let payload = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../payload/solstone");
+    for (from, to) in [
+        ("talent/sense.md", talent_root.join("sense.md")),
+        (
+            "talent/sense.schema.json",
+            talent_root.join("sense.schema.json"),
+        ),
+        (
+            "think/templates/segment_preamble.md",
+            templates_dir.join("segment_preamble.md"),
+        ),
+    ] {
+        fs::copy(payload.join(from), to).unwrap();
+    }
     fs::create_dir_all(journal.join("facets/work")).unwrap();
     fs::write(
         journal.join("facets/work/facet.json"),
         r#"{"title":"Work"}"#,
     )
     .unwrap();
-    fs::write(journal.join("config/journal.json"),json!({"providers":{"active":{"provider":"local","model":"local/qwen3.5-4b"},"local":{"endpoint_url":"https://example.test","served_model_id":"Qwen/Qwen3.5-4B"}},"services":{"confidential":{}}}).to_string()).unwrap();
+    fs::write(
+        journal.join("config/journal.json"),
+        json!({"providers":{"active":{"provider":"test","model":"test-model"}}}).to_string(),
+    )
+    .unwrap();
     let raw = json!({"timestamp":0.001,"analysis":{"primary":"tmux","visual_description":"A terminal"},"content":{"tmux":{"session":"main","window":{"id":"@0","index":0,"name":"work"},"windows":[{"id":"@0","index":0,"name":"work","active":true}],"panes":[{"id":"%0","index":0,"active":true,"content":screen}]}}});
     fs::write(
         journal.join("chronicle/20261021/device/100000_300/tmux_main_screen.jsonl"),
@@ -109,7 +112,7 @@ fn native_loaded_source_bytes_and_identities_qualify_only_when_they_match() {
     assert!(prepare(&wrong, &context).is_none());
 }
 #[test]
-fn native_preparation_falls_back_for_unsupported_ui_styles_and_profiles() {
+fn native_preparation_falls_back_for_unsupported_ui_styles() {
     for text in [
         display().replace("❯ Is", "❯ \x1b[2mIs"),
         display().replace("❯ Is", "❯ \x1b[9mIs"),
@@ -127,7 +130,58 @@ fn native_preparation_falls_back_for_unsupported_ui_styles_and_profiles() {
         .unwrap();
         assert!(p.terminal_sense.is_none());
     }
+}
+#[test]
+fn every_thinking_backend_prepares_the_same_candidate() {
     let (_root, paths, context, request) = setup(&display());
+    let mut candidates = Vec::new();
+    for config in [
+        json!({"providers":{"active":{"provider":"test","model":"test-model"}}}),
+        json!({"providers":{"active":{"provider":"local","model":"local/qwen3.5-4b"}}}),
+        json!({"providers":{"active":{"provider":"local","model":"local/qwen3.5-4b"},"local":{"endpoint_url":"https://example.test","served_model_id":"Qwen/Qwen3.5-4B"}},"services":{"confidential":{}}}),
+        json!({"providers":{"active":{"provider":"local","model":"local/other"},"local":{"endpoint_url":"https://example.test","served_model_id":"other","served_context_window":16384}}}),
+        json!({"providers":{"active":{"provider":"openai","model":"openai-model"}}}),
+        json!({"providers":{"active":{"provider":"anthropic","model":"anthropic-model"}}}),
+        json!({"providers":{"active":{"provider":"google","model":"google-model"}}}),
+    ] {
+        fs::write(
+            context.journal.join("config/journal.json"),
+            config.to_string(),
+        )
+        .unwrap();
+        let p = crate::prepare::prepare(
+            request.clone(),
+            &paths,
+            &context,
+            crate::prepare::PrepareMode::Preview,
+        )
+        .unwrap();
+        let candidate = p
+            .terminal_sense
+            .expect("terminal input takes the candidate");
+        candidates
+            .push(solstone_core_generate::encode_one_shot_request(&candidate.request).unwrap());
+    }
+    assert!(candidates.windows(2).all(|pair| pair[0] == pair[1]));
+}
+#[test]
+fn ordinary_fitting_trims_the_timeline_from_complete_screens() {
+    use solstone_core_local::generate::{estimate_tokens, fit_contents};
+    let (_root, paths, context, request) = setup(&display());
+    let frames: String = (0..60)
+        .map(|i| {
+            let log: String = (0..=i).map(|j| format!("build step {j} finished\n")).collect();
+            let raw = json!({"timestamp":0.001 + 5.0 * f64::from(i),"analysis":{"primary":"tmux","visual_description":"A terminal"},"content":{"tmux":{"session":"main","window":{"id":"@0","index":0,"name":"work"},"windows":[{"id":"@0","index":0,"name":"work","active":true}],"panes":[{"id":"%0","index":0,"active":true,"content":format!("{log}{}", display())}]}}});
+            format!("{raw}\n")
+        })
+        .collect();
+    fs::write(
+        context
+            .journal
+            .join("chronicle/20261021/device/100000_300/tmux_main_screen.jsonl"),
+        frames,
+    )
+    .unwrap();
     let p = crate::prepare::prepare(
         request,
         &paths,
@@ -135,20 +189,65 @@ fn native_preparation_falls_back_for_unsupported_ui_styles_and_profiles() {
         crate::prepare::PrepareMode::Preview,
     )
     .unwrap();
-    for kind in ["plain", "different_model", "different_provider"] {
-        let mut p = p.clone();
-        let config = p.journal_config.as_mut().unwrap();
-        match kind {
-            "plain" => {
-                config.shift_remove("services");
+    let request = p
+        .terminal_sense
+        .expect("terminal input takes the candidate")
+        .request;
+    let contents = Value::Array(
+        request
+            .contents
+            .iter()
+            .map(|part| match part {
+                ContentPart::Text { text } => json!(text),
+                ContentPart::Image { .. } => panic!("terminal Sense sends text"),
+            })
+            .collect(),
+    );
+    let system = request.system_instruction.as_deref();
+    let max_output_tokens = u32::try_from(request.max_output_tokens).unwrap();
+    let (mut refused, mut whole, mut from_complete_screens) = (false, false, 0);
+    for window in (1024..=262_144).step_by(512) {
+        let mut count = estimate_tokens;
+        match fit_contents(&contents, system, max_output_tokens, window, &mut count) {
+            Err(error) => {
+                assert_eq!(error.reason_code, "context_preserved_overflow");
+                assert!(!whole && from_complete_screens == 0);
+                refused = true;
             }
-            "different_model" => {
-                config["providers"]["active"]["model"] = json!("local/other");
+            Ok((fitted, None)) => {
+                assert_eq!(fitted, contents);
+                whole = true;
+                break;
             }
-            _ => {
-                config["providers"]["active"]["provider"] = json!("openai");
+            Ok((fitted, Some(budget))) => {
+                assert!(budget.clipped);
+                // Only the timeline is trimmed; instructions, cards and passages stay whole.
+                assert_eq!(
+                    fitted.as_array().unwrap()[1..],
+                    contents.as_array().unwrap()[1..]
+                );
+                let kept = fitted[0].as_str().unwrap();
+                let kept = &kept[kept.find("\n\n").unwrap() + 2..];
+                if !kept.starts_with("## ") {
+                    continue;
+                }
+                from_complete_screens += 1;
+                let first = &kept[..kept.find("End observation.\n").unwrap()];
+                let observation = first
+                    .lines()
+                    .find_map(|line| line.strip_prefix("Observation: "))
+                    .unwrap();
+                let observation: Value = serde_json::from_str(observation).unwrap();
+                assert_eq!(observation["roster_update"]["mode"], "full");
+                assert!(observation.get("restart").is_none());
+                let panes = first
+                    .lines()
+                    .filter(|line| line.starts_with("Pane change: "))
+                    .collect::<Vec<_>>();
+                assert!(!panes.is_empty());
+                assert!(panes.iter().all(|line| line.contains(r#""mode":"full""#)));
             }
         }
-        assert!(prepare(&p, &context).is_none());
     }
+    assert!(refused && whole && from_complete_screens > 1);
 }

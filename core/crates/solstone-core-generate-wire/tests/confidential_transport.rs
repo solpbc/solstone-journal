@@ -33,7 +33,6 @@ fn request(timeout_s: Option<f64>) -> GenerateRequest {
         attempt_index: 0,
         exclusive_admission: false,
         transport_retries: None,
-        endpoint_binding: None,
     }
 }
 

@@ -47,7 +47,6 @@ fn topics_request(text: &str) -> GenerateRequest {
         attempt_index: 0,
         exclusive_admission: false,
         transport_retries: None,
-        endpoint_binding: None,
     }
 }
 static WARN_LINES: Mutex<Vec<String>> = Mutex::new(Vec::new());
@@ -1238,7 +1237,6 @@ fn a_session_child_that_exited_between_calls_is_replaced_before_the_next_call() 
         attempt_index: 0,
         exclusive_admission: false,
         transport_retries: None,
-        endpoint_binding: None,
     };
 
     let first = adapter

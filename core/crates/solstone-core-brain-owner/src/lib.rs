@@ -1164,7 +1164,6 @@ fn generate_component(
         attempt_index: 0,
         exclusive_admission: false,
         transport_retries: Some(0),
-        endpoint_binding: None,
     };
     let cancellation = Cancellation::from_fn(cancelled);
     let result = probe.execute_generate(&request, journal, config, &cancellation);
@@ -3158,7 +3157,6 @@ mod tests {
                 attempt_index: 0,
                 exclusive_admission: false,
                 transport_retries: Some(0),
-                endpoint_binding: None,
             };
 
             let snapshot = json!({
@@ -3384,7 +3382,6 @@ mod tests {
                 attempt_index: 0,
                 exclusive_admission: false,
                 transport_retries: Some(0),
-                endpoint_binding: None,
             };
             for file_config in [&a, &b, &a] {
                 std::fs::write(&file, serde_json::to_vec(file_config).unwrap()).unwrap();

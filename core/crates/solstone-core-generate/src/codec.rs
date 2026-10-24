@@ -111,7 +111,7 @@ pub fn encode_one_shot_request(request: &GenerateRequest) -> Result<String, Stri
             }
         })
         .collect::<Vec<_>>();
-    let mut value = json!({
+    serde_json::to_string(&json!({
         "schema": schema("request"),
         "id": request.id,
         "context": request.context,
@@ -125,11 +125,8 @@ pub fn encode_one_shot_request(request: &GenerateRequest) -> Result<String, Stri
         "attempt_index": request.attempt_index,
         "exclusive_admission": request.exclusive_admission,
         "transport_retries": request.transport_retries,
-    });
-    if let Some(binding) = &request.endpoint_binding {
-        value["endpoint_binding"] = Value::String(binding.clone());
-    }
-    serde_json::to_string(&value).map_err(|error| error.to_string())
+    }))
+    .map_err(|error| error.to_string())
 }
 
 pub fn decode_one_shot_request(input: &str) -> Result<GenerateRequest, String> {
@@ -163,7 +160,6 @@ pub fn decode_one_shot_request(input: &str) -> Result<GenerateRequest, String> {
         return Err("contents must be non-empty".to_owned());
     }
     Ok(GenerateRequest {
-        endpoint_binding: optional_string(&object, "endpoint_binding")?,
         id: optional_string(&object, "id")?,
         context: string(&object, "context")?,
         contents,
@@ -453,7 +449,6 @@ mod tests {
             attempt_index: 0,
             exclusive_admission: false,
             transport_retries: None,
-            endpoint_binding: None,
         }
     }
 

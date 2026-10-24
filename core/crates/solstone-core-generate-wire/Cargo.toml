@@ -10,7 +10,6 @@ license.workspace = true
 publish = false
 
 [dependencies]
-sha2.workspace = true
 base64 = "0.22.1"
 chrono.workspace = true
 image.workspace = true
