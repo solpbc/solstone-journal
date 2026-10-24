@@ -5283,6 +5283,7 @@ dependencies = [
  "solstone-core-journal-io",
  "solstone-core-mcp-audit",
  "solstone-core-memory-original",
+ "solstone-core-possible-names",
  "solstone-core-retention",
  "solstone-core-segment",
  "solstone-core-sol-link",
@@ -5364,6 +5365,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "solstone-core-possible-names"
+version = "2.0.56"
+dependencies = [
+ "log",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "solstone-core-entity",
+ "solstone-core-facets",
+ "solstone-core-format",
+ "solstone-core-journal-io",
+ "solstone-core-transcripts",
+]
+
+[[package]]
 name = "solstone-core-processing-record"
 version = "2.0.56"
 dependencies = [
@@ -5428,6 +5444,7 @@ dependencies = [
  "solstone-core-journal-config",
  "solstone-core-journal-io",
  "solstone-core-memory-original",
+ "solstone-core-possible-names",
  "tokio",
 ]
 
@@ -6064,6 +6081,7 @@ dependencies = [
  "solstone-core-journal-io",
  "solstone-core-journal-stats-cli",
  "solstone-core-npy",
+ "solstone-core-possible-names",
  "solstone-core-processing-record",
  "solstone-core-retention",
  "solstone-core-segment",
