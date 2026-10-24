@@ -1051,9 +1051,23 @@ mod tests {
                 // A second canonical directory cannot erase the uncertainty.
                 #[cfg(unix)]
                 {
-                    fs::create_dir(original).unwrap();
-                    let (outcome, _, _) = run(&request, &paths, &context);
-                    assert!(matches!(outcome, RuntimeOutcome::StageFailed(_)));
+                    match fs::create_dir(original) {
+                        Ok(()) => {
+                            let (outcome, _, _) = run(&request, &paths, &context);
+                            assert!(matches!(outcome, RuntimeOutcome::StageFailed(_)));
+                        }
+                        // On a case-insensitive filesystem (default APFS) the canonical
+                        // name already is the renamed directory, so no second one can exist.
+                        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                            use std::os::unix::fs::MetadataExt;
+                            assert_eq!(
+                                fs::metadata(original).unwrap().ino(),
+                                fs::metadata(&renamed).unwrap().ino(),
+                                "{spelling}: {error}"
+                            );
+                        }
+                        Err(error) => panic!("{spelling}: {error}"),
+                    }
                 }
             }
         }
