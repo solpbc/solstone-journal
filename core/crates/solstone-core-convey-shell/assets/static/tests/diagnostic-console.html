@@ -204,6 +204,24 @@
     window.logError(new Error('strip check'), { context: 'smoke' });
     assert('error-handler does not create bottom strip', !document.getElementById('error-log'));
     assert('error-handler routes to diagnostic console', diagnostic.list().length === 1 && diagnostic.list()[0].detail.message === 'strip check');
+    const entryDetailText = id => document.querySelector(`#diagnostic-console-list [data-entry-id="${id}"] .diagnostic-console-entry-detail`)?.textContent || '';
+    const plainText = entryDetailText(diagnostic.list()[0].id);
+    assert('a logged error shows its message and context in its details', plainText.includes('strip check') && plainText.includes('smoke'), plainText);
+
+    diagnostic.clear();
+    const notFound = new Error('Request failed (HTTP 404)');
+    notFound.status = 404;
+    window.logError(notFound, { context: 'workspace-fragment-mount', url: '/app/network/api/missing' });
+    const notFoundEntry = diagnostic.list()[0];
+    const notFoundText = entryDetailText(notFoundEntry.id);
+    assert('a logged error with a status still shows its message and url', notFoundText.includes('Request failed (HTTP 404)') && notFoundText.includes('/app/network/api/missing') && !notFoundText.includes('HTTP 404 ·'), notFoundText);
+    document.querySelector(`[data-diagnostic-send="${notFoundEntry.id}"]`).click();
+    assert('sending a logged error still carries its status', window.reportCalls.at(-1).apiError?.status === 404);
+
+    diagnostic.clear();
+    const requestEntry = diagnostic.push({ severity: 'error', source: 'api', summary: 'request', detail: { apiError: { method: 'POST', status: 500, statusText: 'Server Error', url: '/bad', serverMessage: 'broken' } } });
+    const requestText = entryDetailText(requestEntry.id);
+    assert('a request failure still shows its request line', requestText.includes('POST · HTTP 500 Server Error · /bad') && requestText.includes('broken'), requestText);
 
     // navigation aborts must not reach system messages (X-06)
     diagnostic.clear();
