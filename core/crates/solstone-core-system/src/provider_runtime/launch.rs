@@ -508,6 +508,7 @@ pub struct LocalTruthSeam {
     config: LocalTruthConfig,
     follow: Option<Arc<LocalFollow>>,
     migration: Option<Arc<MacosMlxHandover>>,
+    maintenance: Option<super::mlx_recycle::MlxRecycle>,
 }
 
 impl LocalTruthSeam {
@@ -544,6 +545,7 @@ impl LocalTruthSeam {
             config,
             follow: None,
             migration,
+            maintenance: None,
         }
     }
 
@@ -566,6 +568,10 @@ impl LocalTruthSeam {
         clock: Arc<dyn RuntimeClock>,
     ) -> Self {
         if self.config.platform == LocalHost::Darwin {
+            self.maintenance = Some(super::mlx_recycle::MlxRecycle::new(
+                queue.clone(),
+                clock.clone(),
+            ));
             self.migration = Some(Arc::new(MacosMlxHandover::new(
                 self.config.journal_path.clone(),
                 clock,
@@ -573,6 +579,26 @@ impl LocalTruthSeam {
             )));
         }
         self
+    }
+
+    /// Observe maintenance only for the currently selected bundled local provider.
+    pub fn mlx_maintenance_request(
+        &self,
+        state: &ProviderRuntimeState,
+        processes: &[ManagedProcess],
+    ) -> Option<ManagedProcess> {
+        let maintenance = self.maintenance.as_ref()?;
+        let active = solstone_core_journal_config::read_journal_config(&self.config.journal_path)
+            .ok()
+            .and_then(|read| read.config)
+            .is_some_and(|config| super::macos_mlx::bundled_active(&config));
+        maintenance.advance(state, processes, &self.shared, active)
+    }
+
+    pub fn cancel_mlx_maintenance_request(&self) {
+        if let Some(maintenance) = &self.maintenance {
+            maintenance.cancel_request();
+        }
     }
 
     /// Called after ordinary reconciliation, so only its successful Ready

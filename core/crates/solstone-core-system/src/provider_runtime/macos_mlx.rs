@@ -275,7 +275,7 @@ impl MacosMlxHandover {
     }
 }
 
-fn bundled_active(config: &Map<String, Value>) -> bool {
+pub(super) fn bundled_active(config: &Map<String, Value>) -> bool {
     config
         .get("providers")
         .and_then(|value| value.get("active"))

@@ -77,7 +77,7 @@ public final class StructuredGenerator: @unchecked Sendable {
             tokenizer: tokenizer, jsonSchema: schema, fastForward: true,
             hostTokenizer: context.tokenizer)
         // An arbitrary client can supply distinct schemas indefinitely.
-        if order.count == 32 { compiled.removeValue(forKey: order.removeFirst()) }
+        if order.count == 8 { compiled.removeValue(forKey: order.removeFirst()) }
         order.append(key)
         compiled[key] = grammar
         return (try grammar.freshMatcher(), tokenizer.vocabSize)

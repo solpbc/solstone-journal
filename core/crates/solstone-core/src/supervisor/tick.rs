@@ -792,6 +792,19 @@ pub(crate) fn reconcile_providers(state: &mut SupervisorState) {
         &mut local_context,
     );
     state.local.truth.reconcile_migration(&state.local.state);
+    if let Some(managed) = state
+        .local
+        .truth
+        .mlx_maintenance_request(&state.local.state, &state.local.processes)
+        && !state.local.coordinator.request_local_maintenance(
+            &mut state.local.state,
+            &state.local.processes,
+            &managed,
+            &mut state.local.store,
+        )
+    {
+        state.local.truth.cancel_mlx_maintenance_request();
+    }
     for effect in state.local.store.take_ready_side_effects() {
         submit_local_ready_side_effect(&state.queue, effect);
     }

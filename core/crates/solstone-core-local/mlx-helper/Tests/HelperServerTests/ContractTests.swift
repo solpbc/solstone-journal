@@ -200,3 +200,54 @@ struct ContractTests {
         #expect(results.sorted() == Array(0..<20))
     }
 }
+
+struct MaintenanceContractTests {
+    @Test func activityObservationIsReadOnlyAndSeesBusySlot() async throws {
+        let slot = FIFOSlot()
+        let initial = await slot.activity()
+        #expect(initial.generation == 0 && initial.idle)
+        let repeated = await slot.activity()
+        #expect(repeated.generation == 0 && repeated.idle)
+        try await slot.run {
+            let busy = await slot.activity()
+            #expect(busy.generation == 1 && !busy.idle)
+        }
+        let finished = await slot.activity()
+        #expect(finished.generation == 1 && finished.idle)
+        enum Failure: Error { case expected }
+        do { try await slot.run { throw Failure.expected } }
+        catch Failure.expected {}
+        let failed = await slot.activity()
+        #expect(failed.generation == 2 && failed.idle)
+    }
+
+    @Test func maintenanceObservationDoesNotPreventIdle() async throws {
+        let state = ModelState()
+        let backend = StubBackend()
+        let app = makeApplication(options: try Options(arguments: ["--model", "/model"]), state: state,
+                                  footprint: { 4242 })
+        try await app.test(.router) { client in
+            try await client.execute(uri: "/maintenance", method: .get) { response in
+                #expect(response.status == .serviceUnavailable)
+            }
+            await state.ready(backend)
+            for _ in 0..<2 {
+                try await client.execute(uri: "/maintenance", method: .get) { response in
+                    #expect(response.status == .ok)
+                    let root = try #require(JSONSerialization.jsonObject(with: Data(response.body.readableBytesView)) as? [String: Any])
+                    #expect(root["footprint_bytes"] as? Int == 4242)
+                    #expect(root["activity_generation"] as? Int == 0)
+                    #expect(root["idle"] as? Bool == true)
+                }
+            }
+            try await client.execute(uri: "/tokenize", method: .post, headers: [.contentType: "application/json"], body: .init(string: #"{"content":"hello"}"#)) { response in
+                #expect(response.status == .ok)
+            }
+            try await client.execute(uri: "/maintenance", method: .get) { response in
+                let root = try #require(JSONSerialization.jsonObject(with: Data(response.body.readableBytesView)) as? [String: Any])
+                #expect(root["activity_generation"] as? Int == 1)
+                #expect(root["idle"] as? Bool == true)
+            }
+        }
+    }
+}

@@ -232,6 +232,8 @@ struct LaunchCredentials {
 struct ReadyAdmission {
     accepted: Option<FenceKey>,
     admitted: bool,
+    admitted_at: Option<Instant>,
+    mlx_baseline: Option<super::mlx_recycle::MaintenanceSnapshot>,
 }
 
 impl std::fmt::Debug for LaunchCredentials {
@@ -721,6 +723,42 @@ impl LocalRuntimeShared {
                 .closed
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
+    pub(super) fn record_mlx_admission_for_test(
+        &self,
+        fence: &ProviderFence,
+        admitted_at: Instant,
+        baseline: super::mlx_recycle::MaintenanceSnapshot,
+    ) {
+        *self.ready_admission.lock().unwrap() = ReadyAdmission {
+            accepted: Some(FenceKey::from(fence)),
+            admitted: true,
+            admitted_at: Some(admitted_at),
+            mlx_baseline: Some(baseline),
+        };
+    }
+
+    pub(super) fn mlx_ready_baseline(
+        &self,
+        generation: u64,
+        fingerprint: &Option<String>,
+    ) -> Option<(Instant, super::mlx_recycle::MaintenanceSnapshot)> {
+        let admission = self
+            .ready_admission
+            .lock()
+            .expect("local runtime shared lock");
+        if admission.admitted
+            && admission
+                .accepted
+                .as_ref()
+                .is_some_and(|key| key.generation == generation && &key.fingerprint == fingerprint)
+        {
+            Some((admission.admitted_at?, admission.mlx_baseline?))
+        } else {
+            None
+        }
+    }
+
     // Warmup can finish while durable Ready publication fails. This is only
     // evidence for a pre-commit return, never authority to commit a migration.
     pub(super) fn warmed_generation_matches(
@@ -753,6 +791,18 @@ pub trait ReadyProcessLookup: Send + Sync {
 
 impl ReadyProcessLookup for LocalRuntimeShared {
     fn accept_ready(&self, fence: &ProviderFence) {
+        // Capture before public Ready admission. Subsequent probes restore the
+        // same baseline and timer instead of treating activity as a new Ready.
+        let mlx_baseline = if matches!(
+            self.launch_request_for(&fence.fingerprint),
+            Some(LocalLaunchConfig::Mlx { .. })
+        ) {
+            self.ready_process_for_fence(fence)
+                .and_then(|process| super::mlx_recycle::capture_ready_baseline(&process))
+        } else {
+            None
+        };
+        let admitted_at = Some(Instant::now());
         self.accept_launch_credentials(fence);
         *self
             .ready_admission
@@ -760,6 +810,8 @@ impl ReadyProcessLookup for LocalRuntimeShared {
             .expect("local runtime shared lock") = ReadyAdmission {
             accepted: Some(FenceKey::from(fence)),
             admitted: true,
+            admitted_at,
+            mlx_baseline,
         };
     }
     fn restore_ready(&self, fence: &ProviderFence) {

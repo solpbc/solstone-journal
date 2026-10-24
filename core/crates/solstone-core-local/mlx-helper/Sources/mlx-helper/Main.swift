@@ -31,10 +31,10 @@ struct Main {
         let options = try Options(arguments: arguments)
         let state = ModelState()
         let started = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
-        let app = makeApplication(options: options, state: state) {
+        let app = makeApplication(options: options, state: state, onRunning: {
             started.continuation.yield(())
             started.continuation.finish()
-        }
+        })
         // A load failure cancels the listener and exits nonzero. It cannot leave
         // an apparently live server stuck in the loading state.
         try await withThrowingTaskGroup(of: Void.self) { group in

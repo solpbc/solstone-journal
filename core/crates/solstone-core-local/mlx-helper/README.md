@@ -14,12 +14,16 @@ the Metal shaders needed at runtime.
 Run the executable with `--model /absolute/path/to/local/model`; `--help` lists
 the options. All model and tokenizer files must already be in that directory.
 The server accepts literal loopback addresses only and serializes inference
-requests in FIFO order. It supports `/health`, `/props`, `/tokenize`, and
+requests in FIFO order. It supports `/health`, `/props`, `/maintenance`, `/tokenize`, and
 non-streaming `/v1/chat/completions` with text and base64 image data URLs.
 Structured output supports `response_format` with `json_object` or
 `json_schema` and `strict: true`. Schema text is compiled in its original field
 order. Compiled grammars are cached by exact schema text, with a new matcher
-for every request. The allocator cache defaults to 512 MiB; use
+for every request, retaining at most eight compiled grammars. `/maintenance`
+reports the helper PID, native memory footprint, slot activity generation and
+idle state without reserving inference or resetting idle tracking. the journal
+uses this observation for [idle runtime maintenance](../../../../docs/PROVIDERS.md#local-and-arbitrary-endpoints).
+the allocator cache defaults to 512 MiB; use
 `--cache-limit-mb` to set another positive limit. Completion length is capped at
 the context space remaining after the prepared prompt; an oversized prompt is
 rejected. Budget exhaustion returns `finish_reason: "length"` with the partial
