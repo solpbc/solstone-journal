@@ -61,11 +61,12 @@ const HOOK: &str = "entities:possible_names";
 /// hashed after it.
 const TALENT_VERSION_PREFIX: &str = "possible-names-v1";
 /// Derived files whose indexed words already make a canonical name findable,
-/// with the content family search renders each as. `sense.json` is read as
-/// search indexes it (its rendering includes Sense's entity list), as the
-/// evaluated prototype read these files' index chunks.
-const DERIVED_TEXT: [(&str, Family); 3] = [
+/// with the content family search renders each as: the activity, sense and
+/// topics chunks the evaluated prototype read. `sense.json` is read as search
+/// indexes it, and its rendering includes Sense's entity list.
+const DERIVED_TEXT: [(&str, Family); 4] = [
     ("talents/activity.md", Family::Markdown),
+    ("talents/sense.md", Family::Markdown),
     ("talents/sense.json", Family::Sense),
     ("talents/topics.md", Family::Markdown),
 ];
