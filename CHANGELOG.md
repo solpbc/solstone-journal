@@ -21,6 +21,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - when your journal runs on a phone, health's live panels now show what your journal is running. before, they stayed on "waiting for live updates".
 - when your journal runs on a phone, setup and the network page no longer say it's on a computer.
 - security fix: updated notification encryption to remove a timing weakness. someone able to measure encryption operations on the same computer could have used it to learn information about a notification's encryption key.
+- the welcome on a new journal's home page no longer promises tasks or calendar events, which that page doesn't show.
 - when something your journal sends for processing is too long for the model, your journal now uses the model's own count, when it gives one, to trim it closer to what fits. before, it cut the input to half the space it expected, which often dropped more than it needed to.
 - work and conversation stories no longer take their text from a reserved field in custom thinking settings.
 - each transcript an agent reads now says where it came from, in the words your journal uses, such as "your mac · audio". before, when two devices added to your journal over the same minutes, an agent saw two identical entries. thanks @dvanduzer for the report.
