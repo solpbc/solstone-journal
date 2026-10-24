@@ -10,5 +10,5 @@ rustls = { version = "0.23", default-features = false, features = ["ring", "std"
 tokio = { version = "1", features = ["rt", "net", "time", "io-util", "macros"] }
 tokio-rustls = { version = "0.26", default-features = false, features = ["ring"] }
 rcgen = "0.13"
-spl-core = { git = "https://github.com/solpbc/spl-rust", tag = "v0.11.1" }
-spl-transport = { git = "https://github.com/solpbc/spl-rust", tag = "v0.11.1" }
+spl-core = { git = "https://github.com/solpbc/spl-rust", tag = "v0.12.0" }
+spl-transport = { git = "https://github.com/solpbc/spl-rust", tag = "v0.12.0" }

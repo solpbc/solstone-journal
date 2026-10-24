@@ -67,7 +67,12 @@ async fn connect(v: &Value) -> Result<Stream, Error> {
         .connect(ServerName::try_from("spl.local")?, tcp)
         .await?)
 }
-fn response(r: spl_core::http::HttpResponse) -> Value {
+fn response(r: spl_core::http::HttpResponse, v: &Value) -> Value {
+    // Exact-original checks need the received bytes, not a lossy text view.
+    if v["body_encoding"].as_str() == Some("hex") {
+        let hex: String = r.body.iter().map(|b| format!("{b:02x}")).collect();
+        return json!({"status":r.status,"body_hex":hex});
+    }
     json!({"status":r.status,"body":String::from_utf8_lossy(&r.body)})
 }
 // Fault and held-carrier controls use the same SPL framing/assembly library.
@@ -136,7 +141,7 @@ async fn exchange(stream: &mut Stream, id: u32, v: &Value) -> Result<Value, Erro
             return Err(error.into());
         }
     }
-    Ok(response(assembler.into_response()?))
+    Ok(response(assembler.into_response()?, v))
 }
 fn body(v: &Value) -> Result<Vec<u8>, Error> {
     if let Some(file) = v["body_file"].as_str() {
@@ -213,7 +218,7 @@ async fn command(
                     &body(v)?,
                 )
                 .await?;
-                return Ok(response(result));
+                return Ok(response(result, v));
             }
             if !matches!(v["carrier"].as_str(), None | Some("direct")) {
                 return Err("unknown carrier".into());
@@ -229,7 +234,7 @@ async fn command(
                 &body(v)?,
             )
             .await?;
-            Ok(response(result))
+            Ok(response(result, v))
         }
         "connect" => {
             *held = Some(connect(v).await?);
