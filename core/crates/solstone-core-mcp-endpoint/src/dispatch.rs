@@ -3,7 +3,7 @@
 
 //! Shared, transport-independent execution of authenticated MCP tool calls.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 use std::sync::OnceLock;
 
@@ -2408,6 +2408,7 @@ fn list_transcripts(
             None
         };
 
+    let sources = source_labels(journal_root);
     let mut segments = Vec::new();
     let mut targets = Vec::new();
     let mut unreadable = 0;
@@ -2544,6 +2545,7 @@ fn list_transcripts(
                 "title": format!("Transcript segment — {}", day),
                 "date": day,
                 "time": time_str,
+                "source": source_label(&sources, &stream),
                 "reference": reference,
             });
             if let Some(zone) =
@@ -2739,7 +2741,11 @@ fn get_transcript(
         .map(|item| solstone_core_format::markdown::literal_text(&item.text))
         .collect::<Vec<_>>();
     let count = entries.len();
-    let mut response_val = json!({"entries": entries, "next_cursor": next_cursor });
+    let mut response_val = json!({
+        "entries": entries,
+        "source": source_label(&source_labels(journal_root), &reference.stream),
+        "next_cursor": next_cursor,
+    });
     if page.untimed {
         response_val["untimed"] = Value::Bool(true);
     }
@@ -2784,6 +2790,22 @@ pub(crate) fn differing_capture_zone(
 /// assignment. The path need not exist: `classify_source` reads `facets.json`.
 pub(crate) fn segment_assignment_probe_path(day: &str, stream: &str, segment: &str) -> String {
     format!("{day}/{stream}/{segment}/talents/transcript.md")
+}
+
+/// Where each stream's segments came from, in the owner's words. ⛔ Never a
+/// stream name: an agent tells two same-time segments apart by this label and
+/// matches a listed segment to its text with it.
+pub(crate) fn source_labels(journal_root: &Path) -> BTreeMap<String, String> {
+    use solstone_core_home::provenance::{agent_stream_labels, load_stream_labels};
+    agent_stream_labels(&load_stream_labels(journal_root))
+}
+
+pub(crate) fn source_label(labels: &BTreeMap<String, String>, stream: &str) -> String {
+    use solstone_core_home::provenance::{ProvenancePart, provenance_label};
+    labels
+        .get(stream)
+        .cloned()
+        .unwrap_or_else(|| provenance_label(&ProvenancePart::Unknown, None))
 }
 
 /// The facets this connection may reach, resolved from the live journal.
