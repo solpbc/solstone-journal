@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 
 use serde_json::{Value, json};
 use solstone_core_format::markdown::literal_text;
-use solstone_core_possible_names::{Sidecar, SidecarEntry, SidecarSource, source_sha256, write};
+use solstone_core_possible_names::{Sidecar, SidecarEntry, SidecarSource, source_sha256};
 
 use crate::dispatch::{McpProbeError, run_mcp_probe};
 use crate::permissions::{PermissionStore, ReadPermission, ReadScope};
@@ -118,7 +118,7 @@ impl Journal {
             1,
             entries,
         );
-        write(&dir, &sidecar).unwrap();
+        solstone_core_possible_names::write(&dir, &sidecar).unwrap();
     }
 
     fn index(&self) {
@@ -293,6 +293,24 @@ fn a_query_for_the_name_finds_the_recording_through_its_possible_name() {
         journal.probe("fetch", json!({"reference": hit["reference"]})),
         Err(McpProbeError::Unavailable)
     );
+
+    // The talent regenerates the file and enqueues it, as any producer does;
+    // the drain replaces the old rows with the new name.
+    journal.possible_names("090000_300", &[(4, "Fryer", "friar", "Brother Friar")]);
+    let sidecar = journal
+        .segment_dir("090000_300")
+        .join("talents/possible_names.json");
+    solstone_core_indexer_store::todo::enqueue_path(journal.path(), &sidecar).unwrap();
+    solstone_core_indexer_store::todo::drain_now(journal.path()).unwrap();
+    let regenerated = possible_name_hits(&journal.search("Brother", 10, None));
+    assert_eq!(regenerated.len(), 1);
+    assert_eq!(
+        regenerated[0]["snippet"].as_str().unwrap(),
+        literal_text("possible name: Brother Friar (heard as \"Fryer\")")
+    );
+    // A second pass over unchanged files indexes nothing again.
+    let again = solstone_core_indexer_store::scan::scan_journal(journal.path(), false).unwrap();
+    assert_eq!((again.indexed, again.removed), (0, 0));
 }
 
 #[test]
