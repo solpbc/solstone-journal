@@ -216,7 +216,7 @@ struct OwnerJournalView: View {
         if owner.phase == .running || owner.phase == .unavailable && !owner.canStart {
           HStack {
             Button("home") { owner.show("/") }
-            Button("health") { owner.show("/health") }
+            Button("health") { owner.show("/app/health/") }
           }
         }
       }.padding(12).background(.bar)
