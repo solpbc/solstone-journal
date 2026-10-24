@@ -3540,7 +3540,7 @@ mod processing_proofs {
 
     fn week_start_for_today() -> String {
         let today = Utc::now().with_timezone(&chrono_tz::UTC).date_naive();
-        let days_since_saturday = (today.weekday().num_days_from_sunday() + 1) % 7;
+        let days_since_saturday = today.weekday().num_days_from_sunday() + 1;
         let end = today - chrono::Duration::days(i64::from(days_since_saturday));
         let start = end - chrono::Duration::days(6);
         assert!(end < today);

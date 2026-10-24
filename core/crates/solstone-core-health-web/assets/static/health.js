@@ -1235,6 +1235,8 @@
     const reasons = {
       corrupt_input: 'the recording could not be read. replace its source before trying again.',
       no_audio_stream: 'the recording has no audio stream.',
+      'embedded-duration-budget': 'this recording exceeds the audio processing limit on this device. the original is kept. use a shorter recording, reduce its audio tracks, or process it on a computer.',
+      'embedded-input-budget': 'this recording is larger than the 16 mib limit on this device. the original is kept. use a smaller recording or process it on a computer.',
       segment_prerequisites: 'waiting for the recordings on this day.',
       spending_confirmation: 'waiting for permission to process older work.',
       thinking_unavailable: 'choose a model in thinking before this work can run.',

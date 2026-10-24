@@ -13,6 +13,8 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- weekly reflections started on saturday now use the previous completed week, so they can finish without including the current day.
+- on-device transcription in the development journal app now accepts up to two minutes of single-track audio. recordings above its processing limits stay held, with the original kept and an explanation in health.
 - work and conversation stories no longer take their text from a reserved field in custom thinking settings.
 - each transcript an agent reads now says where it came from, in the words your journal uses, such as "your mac · audio". before, when two devices added to your journal over the same minutes, an agent saw two identical entries. thanks @dvanduzer for the report.
 - the journal's titles, topics, summaries and stories now spell solstone and sol pbc correctly for common speech-to-text mix-ups. transcripts keep what was heard.

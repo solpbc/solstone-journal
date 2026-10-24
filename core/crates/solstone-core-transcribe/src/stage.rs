@@ -350,16 +350,52 @@ pub(crate) fn process_one_with(
         timings.add_ms("queue_wait", queue_wait_ms);
     }
     #[cfg(all(feature = "embedded", unix))]
+    let record_embedded_refusal = |error: &TranscribeError, timings: &Timings| {
+        checkpoint()?;
+        let commit = commit_input(&observation, &claim, audio_path, &checkpoint)?;
+        backend_failure(&facts, redo, error, context_attempt.as_ref())?;
+        drop(commit);
+        finish_context_output(
+            journal_path,
+            &facts.path.with_extension("jsonl"),
+            context_attempt.as_ref(),
+            audio_path,
+            &checkpoint,
+        )?;
+        emit_event(
+            audio_path,
+            journal_path,
+            TranscribedOutcome::Deferred,
+            Some(backend_error_reason(error)),
+            None,
+            Some(error),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            timings,
+            None,
+        );
+        Ok::<(), TranscribeError>(())
+    };
+    #[cfg(all(feature = "embedded", unix))]
     if embedded.is_some() && facts.input_size > 16 * 1024 * 1024 {
-        return Err(TranscribeError::ParakeetCppDeferred {
-            reason: "embedded-input-budget".into(),
+        let error = TranscribeError::ParakeetCppDeferred {
+            reason: solstone_core_processing_record::vocab::REASON_EMBEDDED_INPUT.into(),
             detail: "embedded audio exceeds 16 MiB input budget; original retained".into(),
-        });
+        };
+        record_embedded_refusal(&error, &timings)?;
+        return Err(error);
     }
     let decoded_at = Instant::now();
     #[cfg(all(feature = "embedded", unix))]
     let decoded = if embedded.is_some() {
-        solstone_core_observe_audio::decode_f32_mono_bounded(audio_path, SAMPLE_RATE as usize * 30)
+        solstone_core_observe_audio::decode_f32_mono_bounded(
+            audio_path,
+            crate::embedded::EMBEDDED_AUDIO_MAX_SAMPLES,
+        )
     } else {
         decode_f32_mono(audio_path)
     };
@@ -367,11 +403,14 @@ pub(crate) fn process_one_with(
     let decoded = decode_f32_mono(audio_path);
     let full_audio = match decoded {
         Err(AudioError::DecodedSampleLimit { .. }) => {
-            return Err(TranscribeError::ParakeetCppDeferred {
-                reason: "embedded-duration-budget".into(),
-                detail: "embedded decoded sample budget exceeds 30 seconds; original retained"
+            let error = TranscribeError::ParakeetCppDeferred {
+                reason: solstone_core_processing_record::vocab::REASON_EMBEDDED_DURATION.into(),
+                detail: "embedded decoded sample budget exceeds 120 seconds; original retained"
                     .into(),
-            });
+            };
+            #[cfg(all(feature = "embedded", unix))]
+            record_embedded_refusal(&error, &timings)?;
+            return Err(error);
         }
         Ok(audio) => audio,
         Err(error) => {
@@ -3674,7 +3713,7 @@ mod tests {
 
     #[cfg(all(feature = "embedded", unix))]
     #[test]
-    fn retry_context_interrupted_run_leaves_retry_pending() {
+    fn retry_context_budget_refusal_publishes_and_settles_its_attempt() {
         use solstone_core_journal_config::JournalConfigRead;
         use solstone_core_segment::output_attempt::OutputClaims;
         use solstone_core_spp_ratls::AttestationStateStore;
@@ -3770,13 +3809,14 @@ mod tests {
             .unwrap()
             .unwrap();
         assert!(record.consumed.contains(&context.attempt.cause));
-        assert_eq!(record.attempt, Some(context.attempt.clone()));
+        assert_eq!(record.attempt, None);
+        assert_eq!(record.reason, "embedded-input-budget");
+        assert!(record.held);
 
         let header = read_header(&jsonl);
-        assert!(
-            header["_solstone_processing"]
-                .get("retry_attempt")
-                .is_none()
+        assert_eq!(
+            header["_solstone_processing"]["retry_attempt"]["cause"],
+            context.attempt.cause
         );
 
         assert!(raw::finish_output(root.path(), &evidence.unit, &context.attempt).is_err());

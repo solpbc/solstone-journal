@@ -1819,10 +1819,16 @@ mod tests {
     #[test]
     fn weekly_reflection_week_snaps_correctly() {
         let cases = [
-            ("20260815", "20260809"), // Saturday -> completed Saturday is 20260815, start is 20260809
+            ("20260815", "20260802"), // Saturday -> previous completed Saturday is 20260808
             ("20260816", "20260809"), // Sunday -> completed Saturday is 20260815, start is 20260809
             ("20260813", "20260802"), // Thursday -> completed Saturday is 20260808, start is 20260802
             ("20260930", "20260920"), // Wednesday -> completed Saturday is 20260926, start is 20260920
+            ("20260801", "20260719"), // Saturday across a month boundary
+            ("20260802", "20260726"), // Sunday across a month boundary
+            ("20220101", "20211219"), // Saturday across a year boundary
+            ("20220102", "20211226"), // Sunday across a year boundary
+            ("20240302", "20240218"), // Saturday after leap day
+            ("20240303", "20240225"), // Sunday after leap day
         ];
         for (day, expected_start) in cases {
             let journal = tempdir().unwrap();

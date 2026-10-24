@@ -266,7 +266,8 @@ pub(crate) struct DispatchSettings<'a> {
 
 pub(crate) fn snap_weekly_reflection_start(day_str: &str) -> String {
     let day = NaiveDate::parse_from_str(day_str, "%Y%m%d").expect("validated day");
-    let days_since_saturday = (day.weekday().num_days_from_sunday() + 1) % 7;
+    // The current Saturday is still in progress. Select a strictly completed week.
+    let days_since_saturday = day.weekday().num_days_from_sunday() + 1;
     let end = day - ChronoDuration::days(i64::from(days_since_saturday));
     let start = end - ChronoDuration::days(6);
     start.format("%Y%m%d").to_string()

@@ -892,7 +892,7 @@ mod tests {
     }
 
     #[test]
-    fn foreground_scan_holds_pre_record_custody_and_budget_errors() {
+    fn foreground_scan_leaves_budget_status_to_the_processing_owner() {
         let temp = tempfile::tempdir().unwrap();
         let segment = temp.path().join("chronicle/20261012/device_audio/120000_1");
         std::fs::create_dir_all(&segment).unwrap();
@@ -925,13 +925,15 @@ mod tests {
             "audio.wav",
             &vec![0; 16 * 1024 * 1024 + 1],
         );
-        let decision = decide_input(temp.path(), &audio_path, &held);
-        let error_msg = match decision {
-            InputDecision::Hold(msg) => {
-                assert!(msg.contains("16 MiB"), "unexpected hold: {msg}");
-                msg
-            }
-            other => panic!("expected Hold, got {other:?}"),
+        assert_eq!(
+            decide_input(temp.path(), &audio_path, &held),
+            InputDecision::Process(None)
+        );
+        // The wrapper still holds genuine custody errors before processing.
+        std::fs::write(segment.join("events.jsonl"), b"{broken custody receipt\n").unwrap();
+        let error_msg = match decide_input(temp.path(), &audio_path, &held) {
+            InputDecision::Hold(error) => error,
+            other => panic!("expected custody hold, got {other:?}"),
         };
         state.input_failed(0, &audio_path, &error_msg);
         held.insert(audio_path.clone());
@@ -980,7 +982,7 @@ mod tests {
 
     #[cfg(feature = "processing")]
     #[test]
-    fn active_host_reports_oversize_admission_and_holds_it_until_resume() {
+    fn active_host_persists_oversize_refusal_without_repeating_it_on_resume() {
         let temp = tempfile::tempdir().unwrap();
         let input = setup_fixture_audio(
             temp.path(),
@@ -1002,7 +1004,14 @@ mod tests {
         assert_eq!(status["recent_failures"].as_array().unwrap().len(), 1);
         assert_eq!(status["recent_failures"][0]["error"], error);
         assert_eq!(status["recent_failures"][0]["generation"], 0);
-        assert!(!input.with_extension("jsonl").exists());
+        let record = solstone_core_processing_record::read_processing_record_header(
+            &input.with_extension("jsonl"),
+        )
+        .unwrap();
+        assert_eq!(record["reason_code"], "embedded-input-budget");
+        assert!(solstone_core_processing_record::is_failure_exhausted(
+            &record
+        ));
         assert!(!input.with_extension("npz").exists());
 
         assert!(!worker.process_host_input(&input, None, &|| false).unwrap());
@@ -1011,13 +1020,11 @@ mod tests {
             1
         );
         worker.resume();
-        assert!(
-            worker
-                .process_host_input(&input, None, &|| false)
-                .unwrap_err()
-                .contains("16 MiB")
+        assert!(!worker.process_host_input(&input, None, &|| false).unwrap());
+        assert_eq!(
+            worker.status()["recent_failures"].as_array().unwrap().len(),
+            1
         );
-        assert_eq!(worker.status()["recent_failures"][1]["generation"], 1);
     }
 
     #[cfg(feature = "processing")]
@@ -1355,10 +1362,6 @@ mod tests {
             .unwrap()
             .set_len(16 * 1024 * 1024 + 1)
             .unwrap();
-        assert!(
-            accepted_input(temp.path(), &input)
-                .unwrap_err()
-                .contains("16 MiB")
-        );
+        assert!(!accepted_input(temp.path(), &input).unwrap());
     }
 }

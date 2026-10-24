@@ -71,6 +71,7 @@ ort = { version = "=2.0.0-rc.12", default-features = false, features = ["load-dy
 
 [dev-dependencies]
 tempfile = "3"
+solstone-core-processing-record = { path = "../../core/crates/solstone-core-processing-record" }
 solstone-core-system = { path = "../../core/crates/solstone-core-system" }
 solstone-core-installed-payload = { path = "../../core/crates/solstone-core-installed-payload" }
 

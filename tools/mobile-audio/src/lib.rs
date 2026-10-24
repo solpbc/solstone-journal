@@ -7,6 +7,7 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::{fs::File, io::Read, path::Path};
 
+use solstone_core_transcribe::EMBEDDED_AUDIO_MAX_SAMPLES;
 pub use solstone_core_transcribe::{
     EmbeddedAsr, EmbeddedModelInfo, discover_audio_files, process_embedded,
 };
@@ -84,10 +85,10 @@ impl Parakeet {
 impl EmbeddedAsr for Parakeet {
     fn transcribe(&self, samples: &[f32]) -> Result<Value, String> {
         if samples.is_empty()
-            || samples.len() > 30 * 16_000
+            || samples.len() > EMBEDDED_AUDIO_MAX_SAMPLES
             || samples.iter().any(|v| !v.is_finite())
         {
-            return Err("Parakeet requires finite mono 16 kHz samples, at most 30 seconds".into());
+            return Err("Parakeet requires finite mono 16 kHz samples, at most 120 seconds".into());
         }
         #[cfg(feature = "native")]
         {
