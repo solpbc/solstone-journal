@@ -917,6 +917,7 @@
   const TALENT_NAMES = {
     'entities:detection': 'entity detection',
     'entities:entity_observer': 'entity facts',
+    'entities:possible_names': 'possible names',
     screen: 'screen descriptions',
   };
 

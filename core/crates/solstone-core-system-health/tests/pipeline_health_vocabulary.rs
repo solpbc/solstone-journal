@@ -12,7 +12,7 @@ fn vocabulary_constants_match_inlined_expectations() {
     assert_eq!(json!(SEGMENT_FLOOR_TALENTS), json!(["documents"]), "floor");
     assert_eq!(
         json!(SEGMENT_NONGATING_TALENTS),
-        json!(["entities:detection"]),
+        json!(["entities:detection", "entities:possible_names"]),
         "nongating"
     );
     assert_eq!(

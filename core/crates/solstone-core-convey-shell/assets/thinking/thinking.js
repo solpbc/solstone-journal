@@ -124,6 +124,7 @@
   const talentLabels = {
     'entities:detection': 'entity detection',
     'entities:entity_observer': 'entity facts',
+    'entities:possible_names': 'possible names',
     screen: 'screen descriptions',
   };
   // Filled from each day payload's `talents` map; empty until one arrives.

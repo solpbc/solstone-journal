@@ -1413,14 +1413,14 @@ mod tests {
 
     fn seed_oracle_case(journal: &Path, line: usize, now_ms: i64) {
         match line {
-            102 | 126 | 135 => {
+            108 | 132 | 141 => {
                 for facet in ["personal", "work"] {
                     let declaration = journal.join("facets").join(facet).join("facet.json");
                     fs::create_dir_all(declaration.parent().unwrap()).unwrap();
                     fs::write(declaration, "{}\n").unwrap();
                 }
             }
-            187 => {
+            194 => {
                 for (key, body) in [
                     ("093000_600", "browser_first.jsonl"),
                     ("141500_900", "browser_second.jsonl"),
@@ -1430,7 +1430,7 @@ mod tests {
                     fs::write(segment.join(body), "browser content\n").unwrap();
                 }
             }
-            215 => {
+            223 => {
                 let cadence = journal.join("health/cadence.json");
                 fs::create_dir_all(cadence.parent().unwrap()).unwrap();
                 fs::write(cadence, format!(r#"{{"pulse":{now_ms}}}"#)).unwrap();
@@ -5794,6 +5794,48 @@ mod tests {
     }
 
     #[test]
+    fn possible_names_are_dispatched_after_sense_only_for_a_segment_with_speech() {
+        let journal = tempdir().unwrap();
+        let roots = tempdir().unwrap();
+        let metadata = "{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"schedule\":\"segment\",\"priority\":2,\"output\":\"json\"\n}";
+        let (talent_root, apps_root) = talent_roots(
+            roots.path(),
+            &[
+                ("sense", metadata),
+                ("documents", metadata),
+                ("entities:possible_names", metadata),
+            ],
+        );
+        let (context, recorder) = recorder_context(journal.path(), "20260813", 9);
+        let context = context.with_talent_roots(talent_root, apps_root);
+        let segment = segment_dir(journal.path(), "20260813", "090000_300");
+        write_sense_output(
+            &context,
+            "090000_300",
+            serde_json::json!({"density":"active","content_type":"work","recommend":{}}),
+        );
+        let dispatched = |recorder: &Recorder| {
+            recorder
+                .requests
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|request| request.name == "entities:possible_names")
+                .count()
+        };
+        run_segment(&context, journal.path(), "090000_300", true, false);
+        assert_eq!(dispatched(&recorder), 0);
+        let log = oplog_records(journal.path(), &context.day, "segment");
+        assert!(log.iter().any(|row| row["event"] == "talent.skip"
+            && row["name"] == "entities:possible_names"
+            && row["reason"] == "no_transcript"));
+
+        fs::write(segment.join("audio.jsonl"), "{\"start\":\"00:00:01\"}\n").unwrap();
+        run_segment(&context, journal.path(), "090000_300", true, false);
+        assert_eq!(dispatched(&recorder), 1);
+    }
+
+    #[test]
     fn selected_nongating_failures_remain_visible_without_failing_segment_repair() {
         struct FailingTalent {
             recorder: Arc<Recorder>,
@@ -5863,7 +5905,7 @@ mod tests {
                 context::CortexBoundary::wait(&*self.recorder, runtime, ids, deadline)
             }
         }
-        for name in ["entities:detection", "documents"] {
+        for name in ["entities:detection", "entities:possible_names", "documents"] {
             for failure in [
                 "terminal",
                 "timeout",
@@ -5882,6 +5924,7 @@ mod tests {
                         ("sense", metadata),
                         ("documents", metadata),
                         ("entities:detection", metadata),
+                        ("entities:possible_names", metadata),
                     ],
                 );
                 let (context, recorder) = recorder_context(journal.path(), "20260813", 9);
@@ -5907,7 +5950,8 @@ mod tests {
                         failure,
                         selected_use: Mutex::new(None),
                     }));
-                segment_dir(journal.path(), "20260813", "090000_300");
+                let segment = segment_dir(journal.path(), "20260813", "090000_300");
+                fs::write(segment.join("audio.jsonl"), "{\"start\":\"00:00:01\"}\n").unwrap();
                 write_sense_output(
                     &context,
                     "090000_300",
@@ -6112,7 +6156,7 @@ mod tests {
         let blocks = oracle_blocks();
         assert_eq!(
             blocks.iter().map(|(line, _, _)| *line).collect::<Vec<_>>(),
-            vec![26, 47, 59, 71, 75, 84, 90, 96, 102, 126, 135, 187, 215]
+            vec![30, 51, 64, 77, 81, 90, 96, 102, 108, 132, 141, 194, 223]
         );
         assert_eq!(blocks.len(), 13);
         assert!(oracle_dry_run_argv(&["--dry-run"]).is_err());
@@ -6141,7 +6185,7 @@ mod tests {
 
     #[test]
     fn dry_run_binds_success_stdout_and_exact_write_set() {
-        // The fixture's measured side effect contract (lines 153-171) is only
+        // The fixture's measured side effect contract (lines 160-178) is only
         // meaningful together with successful planner stdout and exit status.
         let journal = tempdir().unwrap();
         let args = oracle_dry_run_argv(&["--day", "20260101"]).unwrap();

@@ -21,6 +21,10 @@
 ### Their rows are deleted below and the daily totals reduced to match; scenario
 ### D's cadence seed names pulse, not steward; the identity bootstrap is gone.
 ###
+### The entities:possible_names talent was added after this capture. Its
+### orchestrator row is added below each speaker_attribution row; its status
+### names the possible-names sidecar, not a talent output file.
+###
 ### The coverage boundary of this capture is stated at the foot of the file.
 
 ### journal think --day 20260101
@@ -51,6 +55,7 @@ Sense orchestrator (linear):
   1. sense (gen/json) (new) — mandatory
   2. screen (gen/json) (new) — if recommend.screen_record
   3. speaker_attribution (gen/json) (new) — if recommend.speaker_attribution + audio embeddings
+  4. entities:possible_names (gen/json) (new) — if a speech transcript (never gates the segment)
 
   idle segments: write stubs only (unless --refresh)
   activity state machine: updates per segment
@@ -63,6 +68,7 @@ Sense orchestrator (linear):
   1. sense (gen/json) (new) — mandatory
   2. screen (gen/json) (new) — if recommend.screen_record
   3. speaker_attribution (gen/json) (new) — if recommend.speaker_attribution + audio embeddings
+  4. entities:possible_names (gen/json) (new) — if a speech transcript (never gates the segment)
 
   idle segments: write stubs only (unless --refresh)
   activity state machine: updates per segment
@@ -139,6 +145,7 @@ Sense orchestrator (linear):
   1. sense (gen/json) (new) — mandatory
   2. screen (gen/json) (new) — if recommend.screen_record
   3. speaker_attribution (gen/json) (new) — if recommend.speaker_attribution + audio embeddings
+  4. entities:possible_names (gen/json) (new) — if a speech transcript (never gates the segment)
 
   idle segments: write stubs only (unless --refresh)
   activity state machine: updates per segment
@@ -194,6 +201,7 @@ Sense orchestrator (linear):
   1. sense (gen/json) — mandatory
   2. screen (gen/json) — if recommend.screen_record
   3. speaker_attribution (gen/json) — if recommend.speaker_attribution + audio embeddings
+  4. entities:possible_names (gen/json) — if a speech transcript (never gates the segment)
 
   idle segments: write stubs only (unless --refresh)
   activity state machine: updates per segment

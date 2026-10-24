@@ -9,6 +9,7 @@ solstone/apps/entities/talent/entity_observer.md
 solstone/apps/entities/talent/entity_observer.schema.json
 solstone/apps/entities/talent/entity_suggest.md
 solstone/apps/entities/talent/entity_suggest.schema.json
+solstone/apps/entities/talent/possible_names.md
 solstone/apps/health/talent/health/SKILL.md
 solstone/apps/transcripts/talent/transcripts/SKILL.md
 solstone/talent/conversation.md

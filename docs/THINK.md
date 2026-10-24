@@ -85,6 +85,28 @@ separately from historical daily coverage. Failure caps apply to the current evi
 and contract. Capped environmental failures receive one persisted, bounded revalidation
 per local day; owner-write conflicts do not become successful capped results.
 
+## Possible names
+
+After Sense, every segment with a speech transcript (`audio.jsonl`, or its only
+speech transcript) runs `entities:possible_names`. Its pre-step finds
+facet-attached registry entities whose name, alias, a person's first name, sound
+or close spelling matches a span of the speech, keeps at most twelve, and asks the
+owner's active brain at temperature 0, with the prompt as the system instruction
+and the packet as the only text, to answer `yes` or `no` for each against a schema
+built for that request. Accepted spans are written to
+`talents/possible_names.json` by `solstone-core-possible-names` and queued for
+search; readers show an entry only while it still holds. Retrieval thresholds and
+route switches are constants in
+`solstone-core-talent-runtime/src/possible_names/policy.rs`.
+
+A sidecar with the same transcript digest, registry revision and talent version
+is fresh, and Generate is skipped. No candidates skips Generate too and replaces
+an older list with an empty one. A malformed answer fails the talent and writes
+nothing. The talent never gates publication (`SEGMENT_NONGATING_TALENTS`).
+`solstone-core __possible-names-packet <segment-dir>` prints, for evaluation, the
+exact prompt, packet, schema and candidates a run would send, without calling
+Generate or writing anything.
+
 ## Terminal segment Sense
 
 On the native confidential Qwen3.5-4B profile, Sense can encode complete terminal-only segments as a reversible state timeline. Pane text, styles, links, identities, observation times and retained analysis remain reconstructible. Other inputs and unsupported interface layouts keep the ordinary native request.

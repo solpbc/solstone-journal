@@ -851,6 +851,21 @@ fn select_agents<'a>(
             stream,
         );
     }
+    let possible_names = solstone_core_talent_runtime::possible_names::TALENT;
+    if !solstone_core_talent_runtime::possible_names::has_speech_transcript(segment_dir) {
+        log_skip(
+            log,
+            context,
+            possible_names,
+            segment,
+            "no_transcript",
+            stream,
+        );
+    } else if let Some(config) = by_name.get(possible_names) {
+        selected.push(config);
+    } else {
+        log_skip(log, context, possible_names, segment, "no_config", stream);
+    }
     let recommend = sense
         .get("recommend")
         .and_then(Value::as_object)

@@ -267,6 +267,7 @@ The JSON frontmatter for a talent can include:
 - `schedule`: Scheduling configuration for automated execution
   - `"daily"`: Run automatically at the configured daily scheduler time
     (`00:15` for a newly initialized schedule configuration)
+- `temperature`: The talent's sampling temperature (default 0.3); a request cannot change it
 - `priority`: Execution order for scheduled prompts (integer, **required** for scheduled prompts)
   - Lower numbers run first (e.g., priority 10 runs before priority 40)
   - See [Execution Order](#execution-order) for priority bands

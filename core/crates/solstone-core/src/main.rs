@@ -785,6 +785,7 @@ fn main() -> ExitCode {
             admitted.as_ref(),
         ),
         Ok(Command::TalentWorker(args)) => run_talent_worker(args),
+        Ok(Command::PossibleNamesPacket(segment)) => run_possible_names_packet(&segment),
         Ok(Command::ParentLossCoordinator(args)) => run_parent_loss_coordinator(args),
         Ok(Command::Reprocess(args)) => run_reprocess(args),
         Ok(Command::JournalStats(args)) => run_journal_stats(args),
@@ -1497,6 +1498,33 @@ fn run_talent_worker(args: Vec<OsString>) -> ExitCode {
         return ExitCode::from(EXIT_TEMPFAIL);
     }
     solstone_core_talent_runtime::run_worker(&arguments, &journal)
+}
+
+/// Evaluation only: the possible-names request for one segment, as JSON.
+#[cfg(any(unix, windows))]
+fn run_possible_names_packet(segment: &std::path::Path) -> ExitCode {
+    let report =
+        solstone_core_talent_runtime::runtime_paths_from_current_executable().and_then(|paths| {
+            solstone_core_talent_runtime::possible_names::inspect_packet(segment, &paths)
+        });
+    match report {
+        Ok(report) => {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&report).expect("report serializes")
+            );
+            ExitCode::SUCCESS
+        }
+        Err(error) => {
+            eprintln!("possible names packet: {error}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+#[cfg(not(any(unix, windows)))]
+fn run_possible_names_packet(_segment: &std::path::Path) -> ExitCode {
+    unavailable()
 }
 
 #[cfg(not(any(unix, windows)))]

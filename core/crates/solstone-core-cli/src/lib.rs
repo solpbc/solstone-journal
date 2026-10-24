@@ -686,8 +686,12 @@ pub enum Command {
     SetupCopy(Vec<OsString>),
     Version,
     Assets,
-    Warm { json: bool },
-    Check { json: bool },
+    Warm {
+        json: bool,
+    },
+    Check {
+        json: bool,
+    },
     CheckUsage,
     CheckHelp,
     JournalPath(JournalPathOptions),
@@ -711,15 +715,22 @@ pub enum Command {
     Backup(Vec<OsString>),
     Maintenance(Vec<OsString>),
     TalentWorker(Vec<OsString>),
+    /// Private: print what the possible-names talent would send for one
+    /// segment directory, for evaluation. Never calls Generate or writes.
+    PossibleNamesPacket(PathBuf),
     ParentLossCoordinator(Vec<OsString>),
     JournalRouteInspect,
-    JournalRouteRepair { lock_owner: String },
+    JournalRouteRepair {
+        lock_owner: String,
+    },
     Reprocess(Vec<OsString>),
     JournalStats(Vec<OsString>),
     Talent(Vec<OsString>),
     Share(Vec<OsString>),
     Backfill(Vec<OsString>),
-    BackfillFacetIds { commit: bool },
+    BackfillFacetIds {
+        commit: bool,
+    },
     BackfillFacetIdsHelp,
     BackfillFacetIdsUsage,
     FacetCandidates,
@@ -756,20 +767,30 @@ pub enum Command {
     StartInvalid(SupervisorUsageError),
     StartHelp,
     SupervisorLifecycleRedirect(&'static str),
-    Health { verbose: bool, debug: bool },
+    Health {
+        verbose: bool,
+        debug: bool,
+    },
     HealthUsage,
     HealthHelp,
-    Top { verbose: bool, debug: bool },
+    Top {
+        verbose: bool,
+        debug: bool,
+    },
     TopUsage,
     TopHelp,
     HealthLogs(HealthLogsArgs),
     HealthLogsUsage(HealthLogsArgs),
     HealthLogsHelp(HealthLogsArgs),
-    Heartbeat { force: bool },
+    Heartbeat {
+        force: bool,
+    },
     HeartbeatUsage,
     HeartbeatHelp,
     Service(ServiceParseOutcome),
-    Navigate { path: String },
+    Navigate {
+        path: String,
+    },
     NavigateUsage,
     NavigateFacetRetired(&'static str),
     NavigateHelp,
@@ -1579,6 +1600,10 @@ pub fn evaluate_args(args: &[OsString]) -> Result<Command, UsageError> {
         [command, ..] if command == OsStr::new("__talent-worker") => {
             Ok(Command::TalentWorker(args.to_vec()))
         }
+        [command, segment] if command == OsStr::new("__possible-names-packet") => {
+            Ok(Command::PossibleNamesPacket(PathBuf::from(segment)))
+        }
+        [command, ..] if command == OsStr::new("__possible-names-packet") => Err(UsageError),
         [command, ..] if command == OsStr::new("__parent-loss-coordinator") => {
             Ok(Command::ParentLossCoordinator(args.to_vec()))
         }
@@ -9912,6 +9937,18 @@ mod tests {
             evaluate_args(&args(&["backfill-facet-ids", "--nonsense"])),
             Ok(Command::BackfillFacetIdsUsage)
         );
+    }
+
+    #[test]
+    fn possible_names_packet_takes_exactly_one_segment_directory() {
+        assert_eq!(
+            evaluate_args(&args(&["__possible-names-packet", "/j/chronicle/d/s"])),
+            Ok(Command::PossibleNamesPacket(PathBuf::from(
+                "/j/chronicle/d/s"
+            )))
+        );
+        assert!(evaluate_args(&args(&["__possible-names-packet"])).is_err());
+        assert!(evaluate_args(&args(&["__possible-names-packet", "a", "b"])).is_err());
     }
 
     #[test]

@@ -5908,6 +5908,7 @@ dependencies = [
  "jsonschema",
  "log",
  "nix 0.30.1",
+ "rapidfuzz",
  "regex",
  "serde",
  "serde_json",
@@ -5927,6 +5928,7 @@ dependencies = [
  "solstone-core-journal-io",
  "solstone-core-local",
  "solstone-core-location",
+ "solstone-core-possible-names",
  "solstone-core-segment",
  "solstone-core-speaker-id",
  "solstone-core-speaker-resolve",
@@ -5935,6 +5937,7 @@ dependencies = [
  "solstone-core-talent-cli",
  "solstone-core-talent-config",
  "solstone-core-transcripts",
+ "unicode-normalization",
 ]
 
 [[package]]

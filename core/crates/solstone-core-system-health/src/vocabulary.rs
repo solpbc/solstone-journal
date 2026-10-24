@@ -29,7 +29,7 @@ impl DataState {
 }
 
 pub const SEGMENT_FLOOR_TALENTS: &[&str] = &["documents"];
-pub const SEGMENT_NONGATING_TALENTS: &[&str] = &["entities:detection"];
+pub const SEGMENT_NONGATING_TALENTS: &[&str] = &["entities:detection", "entities:possible_names"];
 pub const SEGMENT_SUPERSEDED_TALENTS: &[(&str, &str)] = &[("entities", "entities:detection")];
 pub const SEGMENT_NO_PROCESSING_MODALITIES: &[&str] = &["markdown", "browser"];
 pub const CAP: usize = 5;

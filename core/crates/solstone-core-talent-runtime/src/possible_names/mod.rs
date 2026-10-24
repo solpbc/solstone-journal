@@ -398,6 +398,13 @@ pub fn commit(
     }))
 }
 
+/// Whether a segment has the speech transcript possible names address, so
+/// thinking dispatches the talent for it.
+#[must_use]
+pub fn has_speech_transcript(segment_dir: &Path) -> bool {
+    speech_transcript(segment_dir).is_some()
+}
+
 /// Save a segment's possible names and queue them for search.
 pub(crate) fn apply_result(
     journal: &Path,

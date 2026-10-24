@@ -176,6 +176,10 @@ fn print_segment_orchestrator(
         ("entities", "entities"),
         ("screen", "screen"),
         ("speaker_attribution", "speaker_attribution"),
+        (
+            solstone_core_talent_runtime::possible_names::TALENT,
+            solstone_core_talent_runtime::possible_names::TALENT,
+        ),
     ];
     let mut step = 1;
     for (name, _label) in aliases {
@@ -200,7 +204,8 @@ fn print_segment_orchestrator(
             "sense" => "mandatory",
             "entities" => "always for non-idle",
             "screen" => "if recommend.screen_record",
-            _ => "if recommend.speaker_attribution + audio embeddings",
+            "speaker_attribution" => "if recommend.speaker_attribution + audio embeddings",
+            _ => "if a speech transcript (never gates the segment)",
         };
         let type_label = if is_gen { "gen" } else { "cog" };
         writeln!(
@@ -306,7 +311,14 @@ fn output_status(
     if segment == Some("<each>") {
         return String::new();
     }
-    let path = if name == "weekly_reflection" {
+    let path = if name == solstone_core_talent_runtime::possible_names::TALENT {
+        // Its output is the possible-names sidecar, not a talent output file.
+        let Some(segment) = segment else {
+            return String::new();
+        };
+        get_output_path(&context.day_dir, name, Some(segment), format, facet, stream)
+            .with_file_name("possible_names.json")
+    } else if name == "weekly_reflection" {
         let start = crate::dispatch::snap_weekly_reflection_start(&context.day);
         context
             .journal
