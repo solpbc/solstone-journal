@@ -18,7 +18,8 @@ use solstone_core_backup::archive_admission::{
 };
 use solstone_core_backup_runtime::{
     ClosedToolError, DirectReadFinishOwner, DirectReadFinishState, OwnedArchiveAdmissionFailure,
-    OwnedDirectReadFinish, admit_prepared_archive_owned_creator_installed, resolve_restic_member,
+    OwnedDirectReadFinish, UreqHttpTransport, admit_prepared_archive_owned_creator_installed,
+    resolve_rclone_member, resolve_restic_member,
 };
 use solstone_core_journal_io::activity::ActivityLease;
 use solstone_core_journal_io::{JournalRoot, JournalRootError};
@@ -435,8 +436,17 @@ pub fn run_cli_offload(
             );
         }
     };
-    let restic = match resolve_restic_member(&executable) {
-        Ok(restic) => restic,
+    let operated = prepared.configuration().binding().is_some();
+    let tools = resolve_restic_member(&executable).and_then(|restic| {
+        let rclone = if operated {
+            Some(resolve_rclone_member(&executable)?)
+        } else {
+            None
+        };
+        Ok((restic, rclone))
+    });
+    let (restic, rclone) = match tools {
+        Ok(tools) => tools,
         Err(error) => {
             return OwnedOffloadCliRun::receive(
                 Custody::PreparedHold {
@@ -469,7 +479,13 @@ pub fn run_cli_offload(
     }
     let creator = match catch_unwind(AssertUnwindSafe(|| {
         test_cut(CliUnwindPhase::Admission);
-        admit_prepared_archive_owned_creator_installed(prepared, &restic)
+        admit_prepared_archive_owned_creator_installed(
+            prepared,
+            &restic,
+            rclone.as_deref(),
+            env!("CARGO_PKG_VERSION"),
+            &UreqHttpTransport,
+        )
     })) {
         Ok(Ok(creator)) => creator,
         Ok(Err(failure)) => {

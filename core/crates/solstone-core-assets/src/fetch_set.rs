@@ -81,6 +81,17 @@ pub fn unit_id(unit: &str) -> Option<&'static str> {
     }
 }
 
+const WINDOWS_BUNDLED_IDS: &[&str] = &[
+    "llama-server",
+    "parakeet-server",
+    "parakeet-model",
+    "ced-engine",
+    "ced-model",
+    "restic",
+    "rclone",
+    "nvattest",
+];
+
 /// Compiled bundled catalog-unit IDs per target.
 ///
 /// POSIX targets bundle: ced-engine, ced-model, restic, rclone, nvattest.
@@ -99,19 +110,8 @@ static COMPILED_BUNDLED_IDS: &[(&str, &[&str])] = &[
         "macos-arm64",
         &["ced-engine", "ced-model", "restic", "rclone", "nvattest"],
     ),
-    (
-        "windows-x86_64",
-        &[
-            "llama-server",
-            "parakeet-server",
-            "parakeet-model",
-            "ced-engine",
-            "ced-model",
-            "restic",
-            "rclone",
-            "nvattest",
-        ],
-    ),
+    ("windows-x86_64", WINDOWS_BUNDLED_IDS),
+    ("windows-aarch64", WINDOWS_BUNDLED_IDS),
 ];
 
 /// Return compiled bundled catalog IDs for `target`.
@@ -544,7 +544,7 @@ fn candidates(target: &str) -> Result<Vec<RuntimeFetch>, FetchSetError> {
             // nvattest macos-arm64
             rows.push(nvattest_row("macos-arm64"));
         }
-        "windows-x86_64" => {
+        "windows-x86_64" | "windows-aarch64" => {
             // ced-model
             let a = find_catalog_row("ced-model", "ced-tiny-q8_0.gguf", None);
             rows.push(RuntimeFetch {
@@ -674,12 +674,13 @@ mod tests {
     ];
 
     #[test]
-    fn oracle_equality_for_all_four_targets() {
+    fn oracle_equality_for_supported_targets() {
         for (target, oracle) in [
             ("linux-x86_64", ORACLE_LINUX_X86_64),
             ("linux-aarch64", ORACLE_LINUX_AARCH64),
             ("macos-arm64", ORACLE_MACOS_ARM64),
             ("windows-x86_64", ORACLE_WINDOWS_X86_64),
+            ("windows-aarch64", ORACLE_WINDOWS_X86_64),
         ] {
             let set = runtime_fetch_set(target).expect("runtime_fetch_set succeeds");
             let keys: Vec<_> = set
@@ -768,6 +769,7 @@ mod tests {
             "linux-aarch64",
             "macos-arm64",
             "windows-x86_64",
+            "windows-aarch64",
         ] {
             let set = runtime_fetch_set(target).unwrap();
             for item in set {
@@ -835,14 +837,17 @@ mod tests {
             });
         }
 
-        let win_set = runtime_fetch_set("windows-x86_64").expect("windows fetch set");
-        assert!(!win_set.iter().any(|f| f.unit() == "nvattest"));
+        for target in ["windows-x86_64", "windows-aarch64"] {
+            let win_set = runtime_fetch_set(target).expect("windows fetch set");
+            assert!(!win_set.iter().any(|f| f.unit() == "nvattest"));
+        }
 
         for target in [
             "linux-x86_64",
             "linux-aarch64",
             "macos-arm64",
             "windows-x86_64",
+            "windows-aarch64",
         ] {
             let set = runtime_fetch_set(target).expect("fetch set");
             for f in set {

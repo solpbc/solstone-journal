@@ -108,6 +108,22 @@ pub(crate) fn journal(root: &Path, case: &Value) -> (RuntimePaths, ExecutionCont
         talent_root.join(schema),
     )
     .unwrap();
+    if let Some(body) = case.get("definition_source_body") {
+        let path = talent_root.join(format!("{talent}.md"));
+        let mut definition = solstone_core_talent_config::read_frontmatter(&path).unwrap();
+        definition
+            .metadata
+            .insert(crate::story::SOURCE_BODY_KEY.to_owned(), body.clone());
+        fs::write(
+            path,
+            format!(
+                "{}\n{}",
+                serde_json::to_string_pretty(&definition.metadata).unwrap(),
+                definition.body
+            ),
+        )
+        .unwrap();
+    }
     fs::create_dir_all(root.join("apps")).unwrap();
     (
         RuntimePaths {
@@ -154,6 +170,21 @@ fn run(case: &Value) -> Run {
     });
     if let Some(extra) = case.get("request").and_then(Value::as_object) {
         request.as_object_mut().unwrap().extend(extra.clone());
+    }
+    if let Some(body) = case.get("definition_source_body") {
+        let prepared = crate::prepare::prepare(
+            request.as_object().unwrap().clone(),
+            &paths,
+            &context,
+            crate::prepare::PrepareMode::Execute,
+        )
+        .unwrap();
+        assert_ne!(
+            prepared.config.get(crate::story::SOURCE_BODY_KEY),
+            Some(body),
+            "{}: a definition cannot supply the source-word body",
+            case["name"]
+        );
     }
     let outcome = execute_request(
         request.as_object().unwrap().clone(),
@@ -334,6 +365,94 @@ fn a_request_added_instruction_reaches_the_model_and_keeps_its_body() {
             output, added.response,
             "{name}: the response is returned as is"
         );
+    }
+}
+
+#[test]
+fn a_definition_cannot_supply_the_story_source_body() {
+    let all = cases();
+    let audio = all
+        .iter()
+        .find(|case| case["name"] == "an_unidentified_utterance_keeps_negation_and_latest_status")
+        .unwrap();
+    let screen = all
+        .iter()
+        .find(|case| case["name"] == "a_terminal_pane_keeps_the_model_body")
+        .unwrap();
+    for talent in ["work", "conversation"] {
+        for mode in [
+            "screen", "prompt", "schema", "audio", "partial", "payload", "disabled",
+        ] {
+            let mut case = if mode == "screen" || mode == "payload" {
+                screen.clone()
+            } else {
+                audio.clone()
+            };
+            case["name"] = json!(format!("{talent}-{mode}-definition-source-body"));
+            case["talent"] = json!(talent);
+            case["definition_source_body"] = json!("Definition-supplied words are not source.");
+            match mode {
+                "prompt" => case["request"] = json!({"prompt":"Write a distinct account."}),
+                "schema" => case["request"] = json!({"json_schema":{"type":"object"}}),
+                "partial" => {
+                    case["input_budget"] =
+                        json!({"clipped":true,"dropped_entries":1,"dropped_chars":18});
+                }
+                "payload" => {
+                    case["request"] = json!({
+                        "_source_body":"Request-supplied words are not source either.",
+                        "_input_whole":true
+                    });
+                }
+                "disabled" => case["request"] = json!({"disabled":true}),
+                _ => {}
+            }
+            let run = run(&case);
+            if mode == "disabled" {
+                assert!(
+                    matches!(
+                        run.outcome,
+                        RuntimeOutcome::PrepareSkipped { ref reason, .. } if reason == "disabled"
+                    ),
+                    "{}: {:?}",
+                    case["name"],
+                    run.outcome
+                );
+                assert!(run.requests.is_empty());
+                assert!(!run.record.contains_key("story"));
+                continue;
+            }
+            let RuntimeOutcome::Finished {
+                output,
+                disposition,
+                ..
+            } = run.outcome
+            else {
+                panic!("{}: {:?}", case["name"], run.outcome);
+            };
+            assert_eq!(run.requests.len(), 1, "{}", case["name"]);
+            assert_eq!(disposition, CommitDisposition::CommittedNoOutput);
+            let expected = if mode == "audio" {
+                &case["expect"]["body"]
+            } else {
+                &case["response"]["body"]
+            };
+            assert_eq!(run.record["story"]["body"], *expected, "{}", case["name"]);
+            let returned: Value = serde_json::from_str(&output).unwrap();
+            assert_eq!(returned["body"], *expected, "{}", case["name"]);
+            assert_eq!(
+                run.record["story"].get("partial_input").is_some(),
+                mode == "partial",
+                "{}",
+                case["name"]
+            );
+            assert_eq!(
+                returned.get("partial_input"),
+                run.record["story"].get("partial_input"),
+                "{}",
+                case["name"]
+            );
+        }
     }
 }
 

@@ -671,13 +671,13 @@ mod tests {
         let state = PrePostState::SpeakerAttribution(SpeakerAttributionState {
             resolved: output(vec![7]),
         });
-        let mut prepared = PreparedTalent {
-            name: "speaker_attribution".to_owned(),
-            config: Map::from_iter([(
+        let mut prepared = PreparedTalent::new(
+            "speaker_attribution".to_owned(),
+            Map::from_iter([(
                 "prompt".to_owned(),
                 Value::String("$unmatched_context".to_owned()),
             )]),
-        };
+        );
         apply_prompt_override(&mut prepared, &state).unwrap();
         assert_eq!(
             prepared.config["prompt"],
@@ -733,13 +733,13 @@ mod tests {
             expected
         );
         assert!(!expected.exists());
-        let mut prepared = PreparedTalent {
-            name: "speaker_attribution".to_owned(),
-            config: Map::from_iter([
+        let mut prepared = PreparedTalent::new(
+            "speaker_attribution".to_owned(),
+            Map::from_iter([
                 ("day".to_owned(), Value::String("20260101".to_owned())),
                 ("segment".to_owned(), Value::String("090000_300".to_owned())),
             ]),
-        };
+        );
         let _ = build(
             &mut prepared,
             &ExecutionContext {
@@ -765,14 +765,14 @@ mod tests {
     #[test]
     fn criterion_7_build_writes_unless_dry_run() {
         let root = tempfile::tempdir().unwrap();
-        let mut prepared = PreparedTalent {
-            name: "speaker_attribution".to_owned(),
-            config: Map::from_iter([
+        let mut prepared = PreparedTalent::new(
+            "speaker_attribution".to_owned(),
+            Map::from_iter([
                 ("day".to_owned(), Value::String("20260101".to_owned())),
                 ("segment".to_owned(), Value::String("090000_300".to_owned())),
                 ("stream".to_owned(), Value::String("main".to_owned())),
             ]),
-        };
+        );
         let _ = build(
             &mut prepared,
             &ExecutionContext {
@@ -809,10 +809,7 @@ mod tests {
     fn missing_context_skips_generation() {
         // Derived from solstone/talent/speaker_attribution.py:37.
         let root = tempfile::tempdir().unwrap();
-        let mut prepared = PreparedTalent {
-            name: "speaker_attribution".to_owned(),
-            config: Map::new(),
-        };
+        let mut prepared = PreparedTalent::new("speaker_attribution".to_owned(), Map::new());
         let outcome = build(
             &mut prepared,
             &ExecutionContext {
@@ -839,14 +836,14 @@ mod tests {
         )
         .unwrap();
         std::fs::write(segment.join("transcript.npz"), "fixture").unwrap();
-        let mut prepared = PreparedTalent {
-            name: "speaker_attribution".to_owned(),
-            config: Map::from_iter([
+        let mut prepared = PreparedTalent::new(
+            "speaker_attribution".to_owned(),
+            Map::from_iter([
                 ("day".to_owned(), Value::String("20260101".to_owned())),
                 ("segment".to_owned(), Value::String("090000_300".to_owned())),
                 ("stream".to_owned(), Value::String("main".to_owned())),
             ]),
-        };
+        );
         let outcome = build(
             &mut prepared,
             &ExecutionContext {
@@ -962,13 +959,13 @@ mod tests {
             panic!("expected resolved");
         };
         let state = PrePostState::SpeakerAttribution(SpeakerAttributionState { resolved });
-        let mut prepared = PreparedTalent {
-            name: "speaker_attribution".to_owned(),
-            config: Map::from_iter([(
+        let mut prepared = PreparedTalent::new(
+            "speaker_attribution".to_owned(),
+            Map::from_iter([(
                 "prompt".to_owned(),
                 Value::String("$unmatched_context".to_owned()),
             )]),
-        };
+        );
         apply_prompt_override(&mut prepared, &state).unwrap();
         let prompt = prepared.config["prompt"].as_str().expect("prompt text");
         assert!(

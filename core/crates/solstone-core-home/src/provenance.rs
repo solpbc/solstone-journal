@@ -106,6 +106,7 @@ pub enum LabelTableStatus {
 pub struct StreamLabelRow {
     pub name: String,
     pub part: ProvenancePart,
+    pub created_at: u64,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -154,7 +155,11 @@ pub fn load_stream_labels(journal: &Path) -> StreamLabelTable {
     let mut rows = Vec::with_capacity(records.len());
     for (stem, record) in records {
         let part = classify_record(&stem, &record, &descriptions, &ledger_clients);
-        rows.push(StreamLabelRow { name: stem, part });
+        rows.push(StreamLabelRow {
+            name: stem,
+            part,
+            created_at: record.created_at,
+        });
     }
 
     StreamLabelTable {
@@ -506,6 +511,51 @@ pub fn rendered_stream_labels(table: &StreamLabelTable) -> Option<BTreeMap<Strin
     }
 
     Some(result)
+}
+
+/// Labels for an agent: the owner's words, distinct per stream, and free of
+/// any stream name. A client name that contains a stream name is dropped, and
+/// streams that would still read alike are numbered in the order they were
+/// created ("your mac · audio (2)"). A failed table yields no labels.
+pub fn agent_stream_labels(table: &StreamLabelTable) -> BTreeMap<String, String> {
+    if table.status == LabelTableStatus::Failed {
+        return BTreeMap::new();
+    }
+    let names: Vec<String> = table
+        .rows
+        .iter()
+        .map(|row| row.name.to_lowercase())
+        .collect();
+    let mut rows: Vec<(&StreamLabelRow, String)> = table
+        .rows
+        .iter()
+        .map(|row| {
+            let parenthetical = compute_parenthetical(row, &table.rows).filter(|identity| {
+                let identity = identity.to_lowercase();
+                !names.iter().any(|name| identity.contains(name.as_str()))
+            });
+            (row, provenance_label(&row.part, parenthetical))
+        })
+        .collect();
+    rows.sort_by(|(a, _), (b, _)| a.created_at.cmp(&b.created_at).then(a.name.cmp(&b.name)));
+
+    let mut counts: BTreeMap<String, usize> = BTreeMap::new();
+    for (_, label) in &rows {
+        *counts.entry(label.clone()).or_default() += 1;
+    }
+    let mut seen: BTreeMap<String, usize> = BTreeMap::new();
+    rows.into_iter()
+        .map(|(row, label)| {
+            let label = if counts[&label] > 1 {
+                let ordinal = seen.entry(label.clone()).or_default();
+                *ordinal += 1;
+                format!("{label} ({ordinal})")
+            } else {
+                label
+            };
+            (row.name.clone(), label)
+        })
+        .collect()
 }
 
 /// What a label says, as parts a page can compare without reading its words:
@@ -1871,5 +1921,67 @@ mod tests {
             resolve_stream_label(&table, "s1").device_word(),
             Some(DeviceWord::Mac)
         );
+    }
+
+    fn write_created(root: &Path, name: &str, created_at: u64, platform: Option<&str>) {
+        let stream = json!({
+            "name": name, "kind": "observer", "host": null, "platform": platform,
+            "created_at": created_at, "last_day": null, "last_segment": null, "seq": 1
+        });
+        write_file(root, &format!("streams/{name}.json"), &stream.to_string());
+    }
+
+    #[test]
+    fn agent_labels_number_alike_streams_by_creation_and_never_carry_a_stream_name() {
+        let root = make_journal();
+        // Older unbound streams name themselves by host, which the dashboard
+        // shows in parentheses; an agent must not read it.
+        write_created(root.path(), "zqboronstudio", 20, Some("macos"));
+        write_created(root.path(), "zqmvecair", 10, Some("macos"));
+        let table = load_stream_labels(root.path());
+
+        let labels = agent_stream_labels(&table);
+        assert_eq!(labels["zqmvecair"], "your mac (1)");
+        assert_eq!(labels["zqboronstudio"], "your mac (2)");
+        let dashboard = rendered_stream_labels(&table).unwrap();
+        assert_eq!(dashboard["zqboronstudio"], "your mac (zqboronstudio)");
+    }
+
+    #[test]
+    fn agent_labels_keep_a_client_name_that_is_not_a_stream_name() {
+        let root = make_journal();
+        describe(
+            root.path(),
+            &[
+                ("sha256:1", Some("boron"), Some("macos"), None),
+                ("sha256:2", Some("mvec"), Some("macos"), None),
+            ],
+        );
+        write_stream(
+            root.path(),
+            "device",
+            "observer",
+            Some("sha256:1"),
+            Some(""),
+            None,
+        );
+        write_stream(
+            root.path(),
+            "macos",
+            "observer",
+            Some("sha256:2"),
+            Some(""),
+            None,
+        );
+        let labels = agent_stream_labels(&load_stream_labels(root.path()));
+        assert_eq!(labels["device"], "your mac (boron)");
+        assert_eq!(labels["macos"], "your mac (mvec)");
+    }
+
+    #[test]
+    fn agent_labels_are_empty_when_the_table_failed() {
+        let root = make_journal();
+        write_file(root.path(), "streams/broken.json", "{not json");
+        assert!(agent_stream_labels(&load_stream_labels(root.path())).is_empty());
     }
 }

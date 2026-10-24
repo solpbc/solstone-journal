@@ -2,6 +2,7 @@
 // Copyright (c) 2026 sol pbc
 
 use serde_json::{Value, json};
+use solstone_core_installed_payload::WindowsArchitecture;
 use std::path::{Path, PathBuf};
 
 use solstone_core_assets::Platform;
@@ -1104,7 +1105,7 @@ pub fn thinking_download_rows(
         },
     ];
 
-    if platform_key == "x86_64-windows" {
+    if WindowsArchitecture::from_runtime_key(platform_key).is_some() {
         let mut rows = vec![ThinkingDownloadRow {
             unit: "llama-server",
             platform: None,
@@ -1184,12 +1185,19 @@ mod tests {
             assert_eq!(m2.unit, "local-model");
         }
 
-        let win_rows =
-            thinking_download_rows(crate::Backend::Vulkan, "x86_64-windows").expect("win rows");
-        let win_runtime = &win_rows[0];
-        assert!(win_runtime.packaged);
-        assert!(
-            solstone_core_assets::resolve(win_runtime.unit, win_runtime.platform, None).is_empty()
-        );
+        for arch in WindowsArchitecture::ALL {
+            let win_rows = thinking_download_rows(crate::Backend::Vulkan, arch.runtime_key())
+                .expect("win rows");
+            let win_runtime = &win_rows[0];
+            assert!(win_runtime.packaged);
+            assert!(
+                solstone_core_assets::resolve(win_runtime.unit, win_runtime.platform, None)
+                    .is_empty()
+            );
+            assert_eq!(win_rows.len(), 3);
+        }
+        for key in ["arm64-windows", "arm64ec-windows", "x86-windows"] {
+            assert!(thinking_download_rows(crate::Backend::Vulkan, key).is_none());
+        }
     }
 }

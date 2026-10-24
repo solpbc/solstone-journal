@@ -156,11 +156,16 @@ fn compiled_fetch_target() -> Result<&'static str, FetchMintError> {
     {
         Ok("windows-x86_64")
     }
+    #[cfg(all(target_os = "windows", target_arch = "aarch64"))]
+    {
+        Ok("windows-aarch64")
+    }
     #[cfg(not(any(
         all(target_os = "linux", target_arch = "x86_64"),
         all(target_os = "linux", target_arch = "aarch64"),
         all(target_os = "macos", target_arch = "aarch64"),
-        all(target_os = "windows", target_arch = "x86_64")
+        all(target_os = "windows", target_arch = "x86_64"),
+        all(target_os = "windows", target_arch = "aarch64")
     )))]
     {
         Err(FetchMintError)
@@ -349,7 +354,7 @@ mod tests {
 
     #[cfg(feature = "runtime-fetch-test")]
     #[test]
-    fn four_target_complement_agrees_with_runtime_fetch_set() {
+    fn supported_target_complement_agrees_with_runtime_fetch_set() {
         use crate::inventory_for_tests;
 
         let targets = [
@@ -357,6 +362,7 @@ mod tests {
             "linux-aarch64",
             "macos-arm64",
             "windows-x86_64",
+            "windows-aarch64",
         ];
         let all_inventory = inventory_for_tests();
 

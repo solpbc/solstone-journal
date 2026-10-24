@@ -71,7 +71,22 @@ pub fn assemble_prompt_preview(
         }
     }
 
-    let parts = generate_contents(&prepared)
+    let parts = prepared
+        .terminal_sense
+        .as_ref()
+        .map(|candidate| {
+            let mut parts = candidate.request.contents.clone();
+            if let Some(system) = &candidate.request.system_instruction {
+                parts.insert(
+                    0,
+                    ContentPart::Text {
+                        text: system.clone(),
+                    },
+                );
+            }
+            parts
+        })
+        .unwrap_or_else(|| generate_contents(&prepared))
         .into_iter()
         .filter_map(|part| match part {
             ContentPart::Text { text } => Some(text),

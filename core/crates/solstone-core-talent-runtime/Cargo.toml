@@ -45,6 +45,7 @@ solstone-core-generate-wire.workspace = true
 solstone-core-transcripts.workspace = true
 solstone-core-speaker-id.workspace = true
 solstone-core-speaker-resolve.workspace = true
+unicode-normalization.workspace = true
 
 [target.'cfg(unix)'.dependencies]
 nix = { workspace = true, features = ["fs"] }

@@ -6,25 +6,45 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-### Added
-
-- the journal’s night background now has gold stars, meteor trails and an aurora.
-
 ### Changed
 
 - on mac, local thinking now uses a runtime included with your journal. your existing setup keeps working while the new model files download. the switch waits for background thinking to finish. the journal removes the old files after the new runtime is ready.
+- when everything that went into your journal for a stretch came from your terminal, the description of that stretch now quotes the text that was on screen, such as an input line, instead of paraphrasing it. this works with whichever model your journal thinks with.
+- in a meeting, a person whose voice your journal recognized on at least two lines is now listed as attending, even if nothing written that day named them, and so is a voice you haven't named yet, like "Speaker 2". a single matched line is no longer enough unless you assigned that line yourself, so that person is listed as mentioned. activities already in your journal keep their people as they are.
 
 ### Fixed
 
+- when a moment has no recording, or its recording never says a name that only appeared on screen, that name is no longer marked as heard. it's listed as coming from the screen, and repeats are dropped. names that were said keep their source. thanks @dvanduzer for the report.
+- some recordings stayed "waiting for media processing" in health, and that day's summaries waited with them. they now finish processing.
+- after you save a model or select check again, the thinking page now shows the check's result as soon as your journal has it. before, it showed "thinking status unavailable" until you reloaded the page.
+- when your journal runs on a phone, health's live panels now show what your journal is running. before, they stayed on "waiting for live updates".
+- when your journal runs on a phone, setup and the network page no longer say it's on a computer.
+- security fix: updated notification encryption to remove a timing weakness. someone able to measure encryption operations on the same computer could have used it to learn information about a notification's encryption key.
+- when something your journal sends for processing is too long for the model, your journal now uses the model's own count, when it gives one, to trim it closer to what fits. before, it cut the input to half the space it expected, which often dropped more than it needed to.
+- work and conversation stories no longer take their text from a reserved field in custom thinking settings.
+- each transcript an agent reads now says where it came from, in the words your journal uses, such as "your mac · audio". before, when two devices added to your journal over the same minutes, an agent saw two identical entries. thanks @dvanduzer for the report.
+- fixed "show details" in system messages showing only a status, or nothing at all, for some errors. it shows the error's message, context and stack again.
+
+## [2.0.57] - 2026-10-24
+
+### Added
+
+- the journal's night background now has gold stars, meteor trails and an aurora.
+
+### Changed
+
+- local transcription on linux, windows and mac skips long gaps with no speech again, keeping a little of the recording around each part with speech. times in your transcripts still match the recording. 2.0.56 transcribed the whole recording.
+
+### Fixed
+
+- security fix: imported image descriptions, and results your agents get from search or transcripts, could load images from outside your journal. image markup in those excerpts now stays text. thanks @dvanduzer for the report.
+- the journal's titles, topics, summaries and stories now spell solstone and sol pbc correctly for common speech-to-text mix-ups. transcripts keep what was said.
 - fixed your journal on a mac or linux getting stuck after it was force-stopped or lost power at the wrong moment. every start after that ended with "a helper process did not answer in time". it now starts normally.
 - fixed your journal on a mac sometimes giving up after it stopped unexpectedly. at the end of its wait it showed "a recent heartbeat from another run is present". this happened while the mac was syncing its clock.
-- security fix: imported image descriptions and agent search or transcript results could load images from outside your journal. image markup in those excerpts now stays text. thanks @dvanduzer for the report.
-- interrupted daily rebuilds on iphone can now continue from verified completed work, keeping accepted results. work with uncertain outcomes stays held for review.
-- fixed rebuilds stopping when retained activity history still uses an earlier activity name, or when there are no suggested entities.
-- transcription now trims long gaps between detected speech, keeping context around each speech span and restoring transcript times to the original recording. this avoids sending those gaps to the recognizer.
+- when a start can't continue because a helper process stopped, the message now says "a helper process stopped before it was ready" instead of "did not answer in time". on a mac or linux, `solstone journal health logs` now shows the helper's own reason.
+- media offload now works with encrypted backup operated by sol pbc. since 2.0.42, offload stopped before moving anything into that backup. nothing was removed, and your media stayed on this computer.
 - checking for updates on linux now allows more time for a slow connection and shows why a check failed.
-- backup requests on windows now report a timeout when the connection times out just before the request deadline.
-- fixed screen descriptions stopping with a blank notification when the on-device model lost its connection mid-request. your journal now retries that request.
+- fixed screen descriptions stopping when the on-device model lost its connection mid-request. your journal now restarts the on-device model if it stopped, and retries that request.
 - on an entity's page, the line "this name looks like an ID" now shows when you open the page from a link or reload it. before, it showed only when you got there from the list.
 - on a phone, the message that shows hiding progress and undo on the entities page no longer sits under the bar at the bottom of the screen.
 - merging possible duplicates now merges one pair at a time, so other changes to your entities can save while a long merge runs. before, those changes could give up partway through a merge of many pairs.

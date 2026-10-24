@@ -577,13 +577,13 @@ mod tests {
 
     #[test]
     fn suggest_gate_proceeds_with_day_and_facet() {
-        let talent = PreparedTalent {
-            name: "entities:entity_suggest".into(),
-            config: serde_json::json!({"day": "20260910", "facet": "work"})
+        let talent = PreparedTalent::new(
+            "entities:entity_suggest".into(),
+            serde_json::json!({"day": "20260910", "facet": "work"})
                 .as_object()
                 .unwrap()
                 .clone(),
-        };
+        );
         let context = ExecutionContext {
             journal: std::path::PathBuf::from("/tmp/nonexistent"),
         };
@@ -594,13 +594,13 @@ mod tests {
     fn suggest_build_no_active_entities_returns_empty_context() {
         let temp = tempfile::tempdir().unwrap();
         solstone_core_facets::create_facet(temp.path(), "work", "Work", "", "", "", None).unwrap();
-        let mut talent = PreparedTalent {
-            name: "entities:entity_suggest".into(),
-            config: serde_json::json!({"day": "20260910", "facet": "work"})
+        let mut talent = PreparedTalent::new(
+            "entities:entity_suggest".into(),
+            serde_json::json!({"day": "20260910", "facet": "work"})
                 .as_object()
                 .unwrap()
                 .clone(),
-        };
+        );
         let context = ExecutionContext {
             journal: temp.path().to_path_buf(),
         };
@@ -634,9 +634,9 @@ mod tests {
         )
         .unwrap();
 
-        let mut talent = PreparedTalent {
-            name: "entities:entity_suggest".into(),
-            config: serde_json::json!({
+        let mut talent = PreparedTalent::new(
+            "entities:entity_suggest".into(),
+            serde_json::json!({
                 "day": "20260910",
                 "facet": "work",
                 "prompt": "Context:\n$suggest_context\nEnd"
@@ -644,7 +644,7 @@ mod tests {
             .as_object()
             .unwrap()
             .clone(),
-        };
+        );
         let context = ExecutionContext {
             journal: temp.path().to_path_buf(),
         };
@@ -682,9 +682,9 @@ mod tests {
         )
         .unwrap();
 
-        let mut talent = PreparedTalent {
-            name: "entities:entity_suggest".into(),
-            config: serde_json::json!({
+        let mut talent = PreparedTalent::new(
+            "entities:entity_suggest".into(),
+            serde_json::json!({
                 "day": "20260910",
                 "facet": "work",
                 "prompt": "$suggest_context"
@@ -692,7 +692,7 @@ mod tests {
             .as_object()
             .unwrap()
             .clone(),
-        };
+        );
         let context = ExecutionContext {
             journal: temp.path().to_path_buf(),
         };
@@ -766,16 +766,16 @@ mod tests {
         })
         .to_string();
 
-        let talent = PreparedTalent {
-            name: "entities:entity_suggest".into(),
-            config: serde_json::json!({
+        let talent = PreparedTalent::new(
+            "entities:entity_suggest".into(),
+            serde_json::json!({
                 "day": "20260910",
                 "facet": "work"
             })
             .as_object()
             .unwrap()
             .clone(),
-        };
+        );
         let state = PrePostState::EntitySuggest(SuggestState {
             context: None,
             served_ids: BTreeSet::from(["ada".into()]),

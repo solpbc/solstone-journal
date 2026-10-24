@@ -83,6 +83,14 @@ pub const TARGETS: &[TargetSpec] = &[
         library_name: "pdfium.dll",
         library_sha256: "0aa3abb1aa20798094c1a5f2d8cdea45b24a6e12cdc6c774de261dd522dbdf81",
     },
+    TargetSpec {
+        key: "windows-aarch64",
+        archive_name: "pdfium-win-arm64.tgz",
+        archive_sha256: "7d580ba612765063f9bb76b5c6571db5144714a4dc9cd6d448763d788de8f9fb",
+        library_member: "bin/pdfium.dll",
+        library_name: "pdfium.dll",
+        library_sha256: "8f2b2aa5b5047d429c2026d5ec8c5cf13859d9e7fab1f56e4fd7a580a2bc3737",
+    },
 ];
 
 const ROOT_MEMBERS: &[&str] = &["LICENSE", "PDFiumConfig.cmake", "VERSION", "args.gn"];
@@ -569,7 +577,7 @@ mod tests {
     }
 
     #[test]
-    fn windows_x86_64_is_pinned_and_windows_aarch64_is_not() {
+    fn windows_architectures_have_distinct_pins_and_the_same_notice_layout() {
         const PINS: &[(&str, &str, &str)] = &[
             (
                 "linux-x86_64",
@@ -596,6 +604,11 @@ mod tests {
                 "bf25149815b34b00042f48a886653d469c817529dd9cccabb4b509b6465a9526",
                 "0aa3abb1aa20798094c1a5f2d8cdea45b24a6e12cdc6c774de261dd522dbdf81",
             ),
+            (
+                "windows-aarch64",
+                "7d580ba612765063f9bb76b5c6571db5144714a4dc9cd6d448763d788de8f9fb",
+                "8f2b2aa5b5047d429c2026d5ec8c5cf13859d9e7fab1f56e4fd7a580a2bc3737",
+            ),
         ];
         for (key, archive_sha256, library_sha256) in PINS {
             let spec = spec_for(key).unwrap_or_else(|| panic!("missing {key}"));
@@ -606,7 +619,12 @@ mod tests {
         assert_eq!(windows.archive_name, "pdfium-win-x64.tgz");
         assert_eq!(windows.library_member, "bin/pdfium.dll");
         assert_eq!(windows.library_name, "pdfium.dll");
-        assert!(spec_for("windows-aarch64").is_none());
+        let arm = spec_for("windows-aarch64").expect("windows-aarch64");
+        assert_eq!(arm.archive_name, "pdfium-win-arm64.tgz");
+        assert_eq!(expected_members(windows), expected_members(arm));
+        for member in NOTICE_MEMBERS {
+            assert_eq!(notice_sha256(windows, member), notice_sha256(arm, member));
+        }
     }
 
     #[test]

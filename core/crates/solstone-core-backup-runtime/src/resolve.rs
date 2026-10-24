@@ -458,6 +458,35 @@ pub fn resolve_restic_member(executable: &Path) -> Result<PathBuf, ClosedToolErr
     }
 }
 
+/// Resolve the pinned rclone binary, the operated append-only transport.
+pub fn resolve_rclone_member(executable: &Path) -> Result<PathBuf, ClosedToolError> {
+    #[cfg(not(windows))]
+    {
+        let package = admit_package(executable, true)?;
+        package
+            .member(RCLONE_MEMBER)
+            .map_err(|refusal| ClosedToolError::RcloneUnavailable {
+                detail: refusal.code.to_owned(),
+                guidance: refusal.guidance.to_owned(),
+            })
+    }
+
+    #[cfg(windows)]
+    {
+        let _ = executable;
+        crate::windows_tool::verify_package_and_get_tool(
+            solstone_core_installed_payload::windows_payload::WINDOWS_RCLONE_WORKER,
+        )
+        .map_err(|err| {
+            let msg = err.to_string();
+            ClosedToolError::RcloneUnavailable {
+                detail: msg.clone(),
+                guidance: msg,
+            }
+        })
+    }
+}
+
 #[cfg(not(windows))]
 pub fn resolve_restic_member_for_platform(
     executable: &Path,

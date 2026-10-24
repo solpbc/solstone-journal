@@ -4,6 +4,7 @@
 use super::test_support::*;
 use super::*;
 use crate::pe;
+use solstone_core_installed_payload::WindowsArchitecture;
 
 const CAPTURED_REPORT: &[u8] =
     include_bytes!("../../fixtures/nvattest-windows-build/build-report.json");
@@ -610,7 +611,7 @@ fn delay_imports_and_forwarders_outside_the_allowlist_refuse() {
     let mut delayed = clear_dll(crate::pe_dependencies::tests::with_import(true));
     delayed[0x280..0x280 + 17].copy_from_slice(b"unauthorized.dll\0");
     assert_eq!(
-        crate::pe_dependencies::inspect_dependencies(&delayed)
+        crate::pe_dependencies::inspect_dependencies(&delayed, WindowsArchitecture::X86_64)
             .unwrap()
             .delay_imports,
         ["unauthorized.dll"]

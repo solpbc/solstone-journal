@@ -7,7 +7,8 @@
 //! locks. Keep ambiguous inert files: a name alone cannot establish ownership.
 
 /// Root-relative patterns. `*` spans one component; `**` spans directories.
-/// A matching directory also omits its descendants.
+/// A matching directory also omits its descendants. The numeric day selector
+/// uses eight `[0-9]` classes, shared with restic's glob syntax.
 pub const COPY_EXCLUDES: &[&str] = &[
     "indexer",
     "cache",
@@ -37,6 +38,14 @@ pub const COPY_EXCLUDES: &[&str] = &[
     "health/**/*.lock",
     "health/**/*.tmp",
     "health/**/.tmp*",
+    // Per-day processing claims are process-local. Keep durable health records
+    // and raw content, including a capture stream literally named health.
+    "chronicle/[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]/health/daily-units/*.lock",
+    "chronicle/[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]/health/segment-think/**/*.lock",
+    "chronicle/[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]/health/talent-provenance/**/*.lock",
+    "chronicle/[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]/health/stream.updated.lock",
+    "chronicle/[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]/health/daily.updated.lock",
+    "chronicle/[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]/health/sense-day.lease",
     // Atomic candidates can contain credentials before their final rename.
     "config/**/*.lock",
     "config/**/*.tmp",
@@ -94,6 +103,10 @@ fn prefix_matches(pattern: &[&str], path: &[&str]) -> bool {
 }
 
 fn component_matches(pattern: &str, name: &str) -> bool {
+    // Keep the journal day selector identical to restic's numeric glob.
+    if pattern == "[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]" {
+        return name.len() == 8 && name.bytes().all(|byte| byte.is_ascii_digit());
+    }
     let mut parts = pattern.split('*');
     let first = parts.next().unwrap_or_default();
     let Some(mut rest) = name.strip_prefix(first) else {
@@ -147,6 +160,13 @@ mod tests {
             "health/callosum.pipe-secret",
             "health/supervisor.process_instance",
             "health/locks/backup-activity.lock",
+            "chronicle/20261003/health/daily-units/u-entities%3Aentity_suggest.f-personal.execution.lock",
+            "chronicle/20261003/health/daily-units/u-entities%3Aentity_suggest.f-personal.json.lock",
+            "chronicle/20260929/health/segment-think/import.document/120001_0.lock",
+            "chronicle/20260929/health/talent-provenance/activity-inputs/personal/activity.json.lock",
+            "chronicle/20260929/health/stream.updated.lock",
+            "chronicle/20260929/health/daily.updated.lock",
+            "chronicle/20260929/health/sense-day.lease",
             "health/sync/state",
             "mcp-endpoint/pop.ed25519.pk8",
             "config/chatgpt-sign-in.json.unreadable-1",
@@ -181,6 +201,19 @@ mod tests {
             "health/retention.log",
             "health/pruning-runs/run.jsonl",
             "chronicle/20260101/health/talent-provenance/run.json",
+            "chronicle/20261003/health/daily-units/u-entities%3Aentity_suggest.f-personal.json",
+            "chronicle/20261003/import.audio/120001_7/owner.execution.lock",
+            "chronicle/20261003/health/daily-units-original/owner.execution.lock",
+            "chronicle/20260929/health/segment-think-original/owner.lock",
+            "chronicle/20260929/health/120001_0/owner.lock",
+            "chronicle/20260929/health/talent-provenance/activity-inputs/personal/activity.json",
+            "chronicle/20260929/health/stream.updated",
+            "chronicle/20260929/health/daily.updated",
+            "chronicle/20260929/health/sense-day.lease-notes",
+            "chronicle/notes/health/segment-think/import.document/120001_0.lock",
+            "chronicle/notes/health/daily-units/owner.execution.lock",
+            "chronicle/2026a003/health/daily-units/owner.execution.lock",
+            "chronicle/202610031/health/daily-units/owner.execution.lock",
         ] {
             assert!(!copy_excluded(path), "owner path excluded: {path}");
         }

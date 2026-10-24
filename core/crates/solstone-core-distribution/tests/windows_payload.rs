@@ -18,8 +18,10 @@ use solstone_core_distribution::windows_payload::{
     WINDOWS_PAYLOAD_SIGNATURE, WINDOWS_PDFIUM_LIBRARY, WINDOWS_PDFIUM_WORKER,
     WINDOWS_PYANNOTE_MODEL, WINDOWS_RFDETR_WORKER, WINDOWS_SPEAKERS_ANALYZE_WORKER,
     WINDOWS_VAD_ANALYZE_WORKER, WINDOWS_WESPEAKER_MODEL, WindowsPayloadRefusal,
-    render_windows_payload_manifest, verify_windows_payload,
+    render_windows_payload_manifest, render_windows_payload_manifest_for_architecture,
+    verify_windows_payload, verify_windows_payload_for_architecture,
 };
+use solstone_core_installed_payload::{WindowsArchitecture, compiled_windows_architecture};
 
 const COMMIT: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const LOCK: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
@@ -93,12 +95,28 @@ fn keypair() -> &'static KeyPair {
 }
 
 fn sign_payload_manifest(root: &std::path::Path) {
+    sign_payload_manifest_for_architecture(root, compiled_windows_architecture());
+}
+
+fn sign_payload_manifest_for_architecture(
+    root: &std::path::Path,
+    architecture: WindowsArchitecture,
+) {
     let manifest_path = root.join(WINDOWS_PAYLOAD_MANIFEST);
     let sig_path = root.join(WINDOWS_PAYLOAD_SIGNATURE);
     let _ = fs::remove_file(&manifest_path);
     let _ = fs::remove_file(&sig_path);
 
-    let manifest = render_windows_payload_manifest(root, COMMIT, LOCK).expect("manifest");
+    let manifest =
+        render_windows_payload_manifest_for_architecture(root, COMMIT, LOCK, architecture)
+            .expect("manifest");
+    if architecture == compiled_windows_architecture() {
+        assert_eq!(
+            manifest,
+            render_windows_payload_manifest(root, COMMIT, LOCK).expect("native manifest"),
+            "the existing API retains the native manifest bytes"
+        );
+    }
     let kp = keypair();
     let pin = root.join("payload.pub");
     fs::write(&pin, kp.pk.to_box().expect("public box").to_bytes()).expect("pin");
@@ -115,6 +133,33 @@ fn sign_payload_manifest(root: &std::path::Path) {
     fs::create_dir_all(manifest_path.parent().expect("manifest parent")).expect("provenance");
     fs::write(&manifest_path, manifest).expect("write manifest");
     fs::write(sig_path, signature.into_string()).expect("write signature");
+}
+
+#[test]
+fn signed_foreign_architecture_cannot_select_its_own_expected_target() {
+    for architecture in WindowsArchitecture::ALL {
+        let root = fixture();
+        sign_payload_manifest_for_architecture(root.path(), architecture);
+        let foreign = if architecture == WindowsArchitecture::X86_64 {
+            WindowsArchitecture::Aarch64
+        } else {
+            WindowsArchitecture::X86_64
+        };
+        let admitted = verify_windows_payload_for_architecture(root.path(), architecture)
+            .expect("explicit expected architecture");
+        assert_eq!(admitted.manifest().target, architecture.target_id());
+        let refused = verify_windows_payload_for_architecture(root.path(), foreign)
+            .expect_err("a valid signature cannot authorize a foreign target");
+        assert_eq!(refused.kind, WindowsPayloadRefusal::Target);
+        if architecture == compiled_windows_architecture() {
+            verify_windows_payload(root.path()).expect("the compiled architecture admits its tree");
+        } else {
+            assert_eq!(
+                verify_windows_payload(root.path()).unwrap_err().kind,
+                WindowsPayloadRefusal::Target
+            );
+        }
+    }
 }
 
 #[test]

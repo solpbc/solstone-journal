@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 
 use chrono::{Duration, NaiveDate, NaiveDateTime};
 use serde_json::{Map, Value};
+use sha2::{Digest, Sha256};
 use solstone_core_format::agent_memory::{Coordinate, Origin, SourceKey};
 use solstone_core_format::content::{
     Family, RawPerceptFamily, iter_talent_text_projections, parse_raw_percept_records,
@@ -23,6 +24,7 @@ mod speaker_coordinates;
 
 use percept_absence::PerceptFamily;
 pub use percept_absence::screen_inputs_absent;
+pub use solstone_core_processing_record::is_transcribe_output;
 
 pub use speaker_coordinates::{next_statement_ordinal, speaker_label_source};
 
@@ -139,6 +141,11 @@ pub const ENTRY_SOURCE_MAX_BYTES: usize = 64 * 1024;
 /// entry was rendered from.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct EntrySource {
+    /// Original producer bytes, before speaker-name projection.
+    pub path: PathBuf,
+    pub sha256: String,
+    /// Content range in the assembled transcript, excluding its entry heading.
+    pub rendered_range: std::ops::Range<usize>,
     pub stream: Option<String>,
     /// The file's name in its segment directory.
     pub file: String,
@@ -148,6 +155,8 @@ pub struct EntrySource {
     pub unparsed_lines: usize,
     /// Each rendered chunk beside the record it was rendered from.
     pub chunks: Vec<(String, Map<String, Value>)>,
+    /// Chunk starts in the assembled transcript; usize::MAX when trimmed away.
+    pub chunk_offsets: Vec<usize>,
     /// Sentence ids whose speaker the voice gate named in these records.
     pub voice_named: BTreeSet<i64>,
 }
@@ -192,6 +201,34 @@ impl From<SourceCounts> for Value {
 }
 
 pub const MIN_INPUT_CHARS: usize = 50;
+
+/// Whether a segment file is a speech transcript.
+///
+/// Transcribe names a transcript after its recording, so one recorded under
+/// any other name is known by the processing record transcribe wrote at its
+/// head rather than by its name.
+pub fn is_speech_transcript_file(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| {
+            name.ends_with("audio.jsonl")
+                || name.ends_with("_transcript.jsonl")
+                || solstone_core_format::audio_archive::is_audio_archive_transcript_name(name)
+        })
+        || solstone_core_processing_record::is_transcribe_output(path)
+}
+
+impl EntrySource {
+    /// Whether this source is a speech transcript, by name or by the
+    /// processing record transcribe wrote at its head.
+    pub fn is_speech_transcript(&self) -> bool {
+        self.file.ends_with("audio.jsonl")
+            || self
+                .records
+                .first()
+                .is_some_and(solstone_core_processing_record::header_names_transcribe)
+    }
+}
 
 pub fn is_no_input(text: &str, counts: &SourceCounts) -> bool {
     counts.total() == 0 || text.trim().len() < MIN_INPUT_CHARS
@@ -242,6 +279,7 @@ struct Segment {
 enum PerceptProjection {
     Generic,
     ScreenTalent,
+    TerminalSense,
 }
 
 #[derive(Debug)]
@@ -356,6 +394,25 @@ pub fn cluster_period_with_memory(
         sources,
         stream,
         PerceptProjection::Generic,
+    )
+}
+
+/// Ordinary segment rendering with complete bounded terminal source records.
+/// Retained records are private preparation input, never a different transcript view.
+pub fn cluster_period_for_terminal_sense_with_memory(
+    root: &Path,
+    day: &str,
+    key: &str,
+    sources: &Sources,
+    stream: Option<&str>,
+) -> (ScreenTranscript, SourceCounts, MemoryContext) {
+    cluster_period_with_projection_and_memory(
+        root,
+        day,
+        key,
+        sources,
+        stream,
+        PerceptProjection::TerminalSense,
     )
 }
 
@@ -663,13 +720,7 @@ fn process_segment(
         }
         let mut transcript = files
             .iter()
-            .filter(|path| {
-                path.file_name()
-                    .and_then(|name| name.to_str())
-                    .is_some_and(|name| {
-                        name.ends_with("audio.jsonl") || (name.ends_with("_transcript.jsonl") || solstone_core_format::audio_archive::is_audio_archive_transcript_name(name))
-                    })
-            })
+            .filter(|path| is_speech_transcript_file(path))
             .collect::<Vec<_>>();
         transcript.sort();
         transcript.dedup();
@@ -1010,6 +1061,7 @@ fn raw_content_with_speakers(
             return None;
         }
     };
+    let source_sha256 = format!("{:x}", Sha256::digest(text.as_bytes()));
     let text = match speakers {
         Some(speakers) => name_speakers(&text, speakers),
         None => text,
@@ -1037,8 +1089,16 @@ fn raw_content_with_speakers(
         _ => {
             let (records, unparsed_lines) = parse_raw_percept_records(&text);
             let produced = produce_raw_percept_chunks_by_shape(family, Some(&rel), &records);
-            if text.len() <= ENTRY_SOURCE_MAX_BYTES {
+            let source_limit = if projection == PerceptProjection::TerminalSense {
+                8 * 1024 * 1024
+            } else {
+                ENTRY_SOURCE_MAX_BYTES
+            };
+            if text.len() <= source_limit {
                 source = Some(EntrySource {
+                    path: path.to_owned(),
+                    sha256: source_sha256,
+                    rendered_range: 0..0,
                     stream: segment.record_stream().map(str::to_owned),
                     file: name.to_owned(),
                     chunks: produced
@@ -1046,6 +1106,7 @@ fn raw_content_with_speakers(
                         .iter()
                         .filter_map(|chunk| Some((chunk.content.clone(), chunk.source.clone()?)))
                         .collect(),
+                    chunk_offsets: Vec::new(),
                     records,
                     unparsed_lines,
                     voice_named: speakers
@@ -1065,11 +1126,15 @@ fn raw_content_with_speakers(
         rendered.push_str(&header);
     }
     let mut tmux_chunk_offsets = Vec::new();
+    let mut source_chunk_offsets = Vec::new();
     for (index, chunk) in chunks.into_iter().enumerate() {
         if !rendered.is_empty() {
             rendered.push('\n');
         }
         let chunk_start = rendered.len();
+        if chunk.source.is_some() {
+            source_chunk_offsets.push(chunk_start);
+        }
         rendered.push_str(&chunk.content);
         if tmux_chunk_indices.contains(&index) {
             tmux_chunk_offsets.push(chunk_start);
@@ -1088,6 +1153,9 @@ fn raw_content_with_speakers(
             reset_carry: index == 0,
         })
         .collect();
+    if let Some(source) = &mut source {
+        source.chunk_offsets = source_chunk_offsets;
+    }
     Some(RawContent {
         text: rendered,
         screen_cuts,
@@ -1254,6 +1322,7 @@ fn groups_to_markdown(mut entries: Vec<Entry>) -> ScreenTranscript {
     let mut lines = Vec::new();
     let mut pending_cuts = Vec::new();
     let mut sources = Vec::new();
+    let mut source_ranges = Vec::new();
     for group in groups {
         let first = &group[0];
         lines.push(format!(
@@ -1299,6 +1368,7 @@ fn groups_to_markdown(mut entries: Vec<Entry>) -> ScreenTranscript {
             let trimmed_start = entry.content.len() - entry.content.trim_start().len();
             let content_line = lines.len();
             lines.push(trimmed.into());
+            source_ranges.push((content_line, trimmed.len(), trimmed_start));
             for cut in entry.screen_cuts {
                 if cut.byte_offset < trimmed_start || cut.observation_byte_offset < trimmed_start {
                     continue;
@@ -1326,6 +1396,18 @@ fn groups_to_markdown(mut entries: Vec<Entry>) -> ScreenTranscript {
         byte_offset = byte_offset.saturating_add(line.len()).saturating_add(1);
     }
     let text = lines.join("\n");
+    for (source, (line, len, trimmed_start)) in sources.iter_mut().zip(source_ranges) {
+        if let Some(source) = source {
+            let start = line_offsets[line];
+            source.rendered_range = start..start + len;
+            for at in &mut source.chunk_offsets {
+                *at = at
+                    .checked_sub(trimmed_start)
+                    .and_then(|offset| start.checked_add(offset))
+                    .unwrap_or(usize::MAX);
+            }
+        }
+    }
     let mut cuts = pending_cuts
         .into_iter()
         .filter_map(
@@ -1490,6 +1572,47 @@ mod tests {
 
     fn only(stems: &[&str]) -> TalentSource {
         TalentSource::Only(stems.iter().map(|stem| (*stem).to_owned()).collect())
+    }
+
+    #[test]
+    fn speech_recorded_under_any_name_reaches_segment_material() {
+        // Captured from a phone journal: `note-0.wav` and its transcript.
+        let root = TempDir::new().unwrap();
+        let capture = root
+            .path()
+            .join("chronicle")
+            .join(DAY)
+            .join("device_audio")
+            .join("140000_12");
+        fs::create_dir_all(&capture).unwrap();
+        fs::write(capture.join("note-0.wav"), b"RIFF").unwrap();
+        fs::write(
+            capture.join("note-0.jsonl"),
+            concat!(
+                r#"{"raw":"note-0.wav","backend":"parakeet-cpp","duration":11.05,"_solstone_processing":{"schema":"solstone.processing.v1","state":"analyzed","reason_code":"ok","handler":"transcribe","input_size":353678,"attempted_at":"2026-10-24T15:46:08Z"}}"#,
+                "\n",
+                r#"{"start":"14:00:00","text":"Maya checked the orchard irrigation pump this morning.","sentence_id":1}"#,
+                "\n",
+            ),
+        )
+        .unwrap();
+        // A JSONL transcribe did not write is never read as speech.
+        fs::write(
+            capture.join("events.jsonl"),
+            "{\"start\":\"14:00:01\",\"text\":\"ingest bookkeeping\"}\n",
+        )
+        .unwrap();
+        let everything = sources(true, true, TalentSource::All);
+        let (segment, counts) = cluster_period(
+            root.path(),
+            DAY,
+            "140000_12",
+            &everything,
+            Some("device_audio"),
+        );
+        assert!(segment.contains("orchard irrigation pump"), "{segment}");
+        assert!(!segment.contains("ingest bookkeeping"), "{segment}");
+        assert_eq!(counts.total(), 1);
     }
 
     #[test]

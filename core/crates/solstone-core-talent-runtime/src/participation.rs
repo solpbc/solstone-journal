@@ -3,7 +3,7 @@
 
 //! Participation post-hook.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 
 use chrono::{SecondsFormat, Utc};
@@ -13,6 +13,9 @@ use solstone_core_system_health::find_segment_dir;
 use crate::contract::{CommitPlan, ParsedOutput, PrePostState};
 use crate::writers::WriteIntent;
 use crate::{PreparedTalent, StageError, detected_resolution_entities, stage_error};
+
+/// Matched lines that show a voice was heard in an activity.
+const HEARD_LINES: usize = 2;
 
 pub fn parse(
     output: &str,
@@ -174,30 +177,52 @@ pub(crate) fn apply_result_cancellable(
         .into_iter()
         .filter(solstone_core_entity::is_admissible_person)
         .collect::<Vec<_>>();
-    let admitted_entity_ids = admitted
-        .iter()
-        .map(|entity| entity.id.clone())
-        .collect::<BTreeSet<_>>();
     let people = admitted
         .iter()
         .map(solstone_core_entity::JournalEntity::resolution_entity)
         .collect::<Vec<_>>();
-    let mut attributed = BTreeSet::new();
+    // A voice is heard on the evidence the talent's transcripts name it by:
+    // an acoustic match or the owner's own assignment, never a name inferred
+    // from what was said.
+    let voices = solstone_core_transcripts::VoiceNames {
+        principal: owner.id.clone().unwrap_or_default(),
+        owner_voice_confirmed: false,
+        people: people
+            .iter()
+            .filter_map(|person| Some((person.id.clone()?, person.name.clone())))
+            .filter(|(id, _)| owner.id.as_ref() != Some(id))
+            .collect(),
+    };
+    let mut voice_lines = BTreeMap::<String, usize>::new();
+    let mut assigned = BTreeSet::new();
     let mut named_speakers = Vec::new();
     let mut sentences = Vec::new();
     for segment in &segments {
         sentences.extend(transcript_sentences(journal, day, segment, stream));
     }
     for segment in segments {
-        attributed.extend(attributed_entity_ids(
-            journal,
-            day,
-            segment,
-            stream,
-            &admitted_entity_ids,
-        ));
+        for (speaker, by_owner) in voice_labels(journal, day, segment, stream, &voices) {
+            if by_owner {
+                assigned.insert(speaker.clone());
+            }
+            *voice_lines.entry(speaker).or_default() += 1;
+        }
         named_speakers.extend(named_speakers_for_segment(journal, day, segment, stream));
     }
+    // A voice was heard in the activity when two or more of its lines match
+    // it, or the owner assigned one to it. A single stray match is noise.
+    // This holds for a named person and for a recurring voice the journal
+    // has not named yet ("Speaker 2") alike.
+    let attributed = voice_lines
+        .into_iter()
+        .filter(|(speaker, lines)| *lines >= HEARD_LINES || assigned.contains(speaker))
+        .map(|(speaker, _)| speaker)
+        .collect::<BTreeSet<_>>();
+    let heard = people
+        .iter()
+        .filter(|person| person.id.as_ref().is_some_and(|id| attributed.contains(id)))
+        .cloned()
+        .collect::<Vec<_>>();
     for entry in &mut resolved {
         if entry.get("role").and_then(Value::as_str) != Some("attendee")
             || !matches!(
@@ -206,6 +231,16 @@ pub(crate) fn apply_result_cancellable(
             )
         {
             continue;
+        }
+        // A name the day's text never named resolves to the one heard voice
+        // that answers to it: someone only heard is never detected.
+        if entry.get("entity_id").is_none_or(Value::is_null)
+            && let Some(id) = entry
+                .get("name")
+                .and_then(Value::as_str)
+                .and_then(|name| only_person_answering(&heard, name))
+        {
+            entry.insert("entity_id".to_owned(), Value::String(id.to_owned()));
         }
         let entity_id = entry.get("entity_id").and_then(Value::as_str);
         let introduction = entry
@@ -327,21 +362,32 @@ fn meeting_detected(
         .unwrap_or(false)
 }
 
-fn attributed_entity_ids(
+/// The voice of each line in a segment that a voice match or the owner's own
+/// assignment names, and whether the owner assigned it.
+fn voice_labels(
     journal: &std::path::Path,
     day: &str,
     segment: &str,
     stream: Option<&str>,
-    admitted_entity_ids: &BTreeSet<String>,
-) -> BTreeSet<String> {
+    voices: &solstone_core_transcripts::VoiceNames,
+) -> Vec<(String, bool)> {
     segment_talent_json(journal, day, segment, stream, "speaker_labels.json")
         .and_then(|value| value.get("labels").and_then(Value::as_array).cloned())
         .unwrap_or_default()
         .iter()
-        .filter_map(|label| label.get("speaker").and_then(Value::as_str))
-        .filter(|speaker| !speaker.is_empty())
-        .filter(|speaker| admitted_entity_ids.contains(*speaker))
-        .map(str::to_owned)
+        .filter_map(Value::as_object)
+        .filter(|label| voices.name_for(label).is_some())
+        .filter_map(|label| {
+            let speaker = label.get("speaker").and_then(Value::as_str)?;
+            let by_owner = label
+                .get("method")
+                .and_then(Value::as_str)
+                .is_some_and(|method| method.starts_with("user_"));
+            voices
+                .people
+                .contains_key(speaker)
+                .then(|| (speaker.to_owned(), by_owner))
+        })
         .collect()
 }
 
@@ -775,7 +821,7 @@ mod tests {
             (json!([]), json!([]), "Hi, I'm Alex Stone from the lab."),
             // A voice bound to one of them.
             (
-                json!([{"speaker":"alex-stone"}]),
+                json!([{"speaker":"alex-stone","method":"acoustic"},{"speaker":"alex-stone","method":"acoustic"}]),
                 json!(["Alex"]),
                 "I am Alex.",
             ),
@@ -895,7 +941,7 @@ mod tests {
         let root = tempfile::tempdir().expect("temporary journal");
         write_participation_fixture(
             root.path(),
-            json!({"labels":[{"speaker":"tool"}]}),
+            json!({"labels":[{"speaker":"tool","method":"acoustic"},{"speaker":"tool","method":"acoustic"}]}),
             json!([]),
         );
 
@@ -927,7 +973,7 @@ mod tests {
         let root = tempfile::tempdir().expect("temporary journal");
         write_participation_fixture(
             root.path(),
-            json!({"labels":[{"speaker":"person"}]}),
+            json!({"labels":[{"speaker":"person","method":"acoustic"},{"speaker":"person","method":"acoustic"}]}),
             json!([]),
         );
 
@@ -938,6 +984,161 @@ mod tests {
 
         assert_eq!(entry["entity_id"], "person");
         assert_eq!(entry["role"], "attendee");
+    }
+
+    /// Grace is admitted but never named in the day's text, so she is not
+    /// among the day's detected entities.
+    fn write_heard_fixture(root: &Path, labels: Value) {
+        write_participation_fixture(root, json!({ "labels": labels }), json!([]));
+        write_entity(root, "grace", "Grace Hopper", "Person");
+    }
+
+    #[test]
+    fn a_heard_voice_the_day_never_named_stays_an_attendee() {
+        for name in ["Grace Hopper", "Grace"] {
+            let root = tempfile::tempdir().expect("temporary journal");
+            write_heard_fixture(root.path(), grace_heard_twice());
+
+            let entry = apply(
+                root.path(),
+                json!({"name":name,"role":"attendee","source":"voice"}),
+            );
+
+            assert_eq!(entry["entity_id"], "grace", "{name}");
+            assert_eq!(entry["role"], "attendee", "{name}");
+        }
+    }
+
+    #[test]
+    fn a_name_two_heard_voices_answer_to_names_no_one() {
+        let root = tempfile::tempdir().expect("temporary journal");
+        write_heard_fixture(
+            root.path(),
+            json!([
+                {"speaker":"grace","method":"acoustic"},
+                {"speaker":"grace","method":"acoustic"},
+                {"speaker":"grace-brewster","method":"acoustic_cluster"},
+                {"speaker":"grace-brewster","method":"acoustic_cluster"},
+            ]),
+        );
+        write_entity(root.path(), "grace-brewster", "Grace Brewster", "Person");
+
+        let entry = apply(
+            root.path(),
+            json!({"name":"Grace","role":"attendee","source":"voice"}),
+        );
+
+        assert_eq!(entry["entity_id"], Value::Null);
+        assert_eq!(entry["role"], "mentioned");
+    }
+
+    #[test]
+    fn a_name_inferred_from_what_was_said_is_not_a_heard_voice() {
+        for (speaker, name) in [("grace", "Grace Hopper"), ("person", "Ada Lovelace")] {
+            let root = tempfile::tempdir().expect("temporary journal");
+            write_heard_fixture(
+                root.path(),
+                json!([
+                    {"speaker":speaker,"method":"contextual"},
+                    {"speaker":speaker,"method":"contextual"},
+                ]),
+            );
+
+            let entry = apply(
+                root.path(),
+                json!({"name":name,"role":"attendee","source":"voice"}),
+            );
+
+            assert_eq!(entry["role"], "mentioned", "{name}");
+        }
+    }
+
+    fn grace_heard_twice() -> Value {
+        json!([
+            {"speaker":"grace","method":"acoustic"},
+            {"speaker":"grace","method":"acoustic_cluster"},
+        ])
+    }
+
+    #[test]
+    fn one_stray_voice_match_is_not_attending() {
+        for name in ["Grace Hopper", "Ada Lovelace"] {
+            let root = tempfile::tempdir().expect("temporary journal");
+            write_heard_fixture(
+                root.path(),
+                json!([
+                    {"speaker":"grace","method":"acoustic"},
+                    {"speaker":"person","method":"acoustic"},
+                ]),
+            );
+
+            let entry = apply(
+                root.path(),
+                json!({"name":name,"role":"attendee","source":"voice"}),
+            );
+
+            assert_eq!(entry["role"], "mentioned", "{name}");
+        }
+    }
+
+    #[test]
+    fn one_line_the_owner_assigned_is_attending() {
+        let root = tempfile::tempdir().expect("temporary journal");
+        write_heard_fixture(
+            root.path(),
+            json!([{"speaker":"grace","method":"user_assigned"}]),
+        );
+
+        let entry = apply(
+            root.path(),
+            json!({"name":"Grace Hopper","role":"attendee","source":"voice"}),
+        );
+
+        assert_eq!(entry["entity_id"], "grace");
+        assert_eq!(entry["role"], "attendee");
+    }
+
+    #[test]
+    fn a_recurring_unnamed_voice_heard_twice_is_attending() {
+        let cases = [
+            (
+                json!([{"speaker":"speaker_2","method":"acoustic_cluster"},{"speaker":"speaker_2","method":"acoustic_cluster"}]),
+                "attendee",
+                json!("speaker_2"),
+            ),
+            (
+                json!([{"speaker":"speaker_2","method":"acoustic_cluster"}]),
+                "mentioned",
+                Value::Null,
+            ),
+        ];
+        for (labels, role, entity_id) in cases {
+            let root = tempfile::tempdir().expect("temporary journal");
+            write_heard_fixture(root.path(), labels);
+            write_entity(root.path(), "speaker_2", "Speaker 2", "Person");
+
+            let entry = apply(
+                root.path(),
+                json!({"name":"Speaker 2","role":"attendee","source":"speaker_label"}),
+            );
+
+            assert_eq!(entry["role"], role);
+            assert_eq!(entry["entity_id"], entity_id);
+        }
+    }
+
+    #[test]
+    fn a_heard_voice_never_names_a_screen_or_mentioned_entry() {
+        let root = tempfile::tempdir().expect("temporary journal");
+        write_heard_fixture(root.path(), grace_heard_twice());
+
+        for entry in [
+            json!({"name":"Grace","role":"mentioned","source":"voice"}),
+            json!({"name":"Grace","role":"attendee","source":"screen"}),
+        ] {
+            let entry = apply(root.path(), entry);
+            assert_eq!(entry["entity_id"], Value::Null);
+        }
     }
 
     #[test]

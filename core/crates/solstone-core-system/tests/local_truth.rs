@@ -575,6 +575,7 @@ fn follow_launches_any_phase(root: &Path) -> Vec<PathBuf> {
 
 fn windows_test_package() -> solstone_core_local::install::windows_engine::WindowsLlamaPackage {
     solstone_core_local::install::windows_engine::WindowsLlamaPackage {
+        architecture: solstone_core_installed_payload::WindowsArchitecture::X86_64,
         package_root: PathBuf::from(r"C:\test\package"),
         engine: PathBuf::from(r"C:\test\package\bin\llama-server.exe"),
         loader: PathBuf::from(r"C:\test\package\bin\vulkan-1.dll"),
@@ -652,83 +653,86 @@ fn setup_windows_follow_fixture(root: &Path) {
 
 #[test]
 fn windows_follow_launches_once_when_the_model_pin_moves() {
-    let root = var_tmp("windows-follow-pin-move");
-    setup_windows_follow_fixture(&root);
-    let pkg = windows_test_package();
+    for arch in solstone_core_installed_payload::WindowsArchitecture::ALL {
+        let root = var_tmp("windows-follow-pin-move");
+        setup_windows_follow_fixture(&root);
+        let mut pkg = windows_test_package();
+        pkg.architecture = arch;
 
-    let readiness = solstone_core_local::install::readiness::inspect_local_present_with_package(
-        serde_json::Map::from_iter([
-            (
-                "journal".into(),
-                serde_json::Value::String(root.display().to_string()),
-            ),
-            (
-                "model_id".into(),
-                serde_json::Value::String("local/qwen3.5-4b".into()),
-            ),
-            ("backend".into(), serde_json::Value::String("vulkan".into())),
-            (
-                "artifact_key".into(),
-                serde_json::Value::String("x86_64-windows".into()),
-            ),
-        ]),
-        Some(pkg.clone()),
-    );
-    assert_eq!(readiness["proof"]["binary"]["status"], "ready");
-    assert_eq!(readiness["proof"]["binary"]["reason_code"], "ready");
-    assert_eq!(
-        readiness["proof"]["model"]["status"],
-        "missing-or-mismatched"
-    );
-    // The moved pin selects an empty sibling; the older flat generation stays
-    // available for downgrade while prior opt-in still admits one update.
-    assert_eq!(
-        readiness["proof"]["model"]["reason_code"],
-        "manifest_missing"
-    );
-
-    let launched = Arc::new(std::sync::Mutex::new(Vec::new()));
-    let recorder = launched.clone();
-    let shared = Arc::new(LocalRuntimeShared::default());
-    let mut seam = LocalTruthSeam::with_config(
-        shared.clone(),
-        LocalTruthConfig {
-            windows_package: Some(pkg),
-            journal_path: root.clone(),
-            platform: LocalHost::Windows,
-            arch: "x86_64",
-            nvidia_probe: Some(undetected_probe()),
-            vulkan: VulkanObservation {
-                devices: vec![VulkanDevice {
-                    index: 0,
-                    name: "Integrated GPU".into(),
-                    device_type: Some(1),
-                    vram_mib: 8192,
-                }],
-                succeeded: true,
-            },
-        },
-    )
-    .with_installer(Arc::new(move |journal: &Path| {
-        recorder.lock().unwrap().push(journal.to_path_buf());
-        Ok(())
-    }));
-
-    let state = ProviderRuntimeState::new(ProviderName::Local);
-    for attempt in 1..=2 {
-        let fence = fence(attempt);
-        seam.dispatch_truth(&state, &fence);
-        let obs = shared.wait_for_truth_result(&fence);
-        assert_eq!(obs.phase, RuntimePhase::ArtifactNotReady);
-        assert_eq!(
-            obs.reason_code.as_ref().map(ReasonCode::as_str),
-            Some("manifest-missing")
+        let readiness = solstone_core_local::install::readiness::inspect_local_present_with_package(
+            serde_json::Map::from_iter([
+                (
+                    "journal".into(),
+                    serde_json::Value::String(root.display().to_string()),
+                ),
+                (
+                    "model_id".into(),
+                    serde_json::Value::String("local/qwen3.5-4b".into()),
+                ),
+                ("backend".into(), serde_json::Value::String("vulkan".into())),
+                (
+                    "artifact_key".into(),
+                    serde_json::Value::String(arch.runtime_key().into()),
+                ),
+            ]),
+            Some(pkg.clone()),
         );
-    }
+        assert_eq!(readiness["proof"]["binary"]["status"], "ready");
+        assert_eq!(readiness["proof"]["binary"]["reason_code"], "ready");
+        assert_eq!(
+            readiness["proof"]["model"]["status"],
+            "missing-or-mismatched"
+        );
+        // The moved pin selects an empty sibling; the older flat generation stays
+        // available for downgrade while prior opt-in still admits one update.
+        assert_eq!(
+            readiness["proof"]["model"]["reason_code"],
+            "manifest_missing"
+        );
 
-    assert_eq!(launched.lock().unwrap().len(), 1);
-    assert_eq!(launched.lock().unwrap()[0], root);
-    let _ = std::fs::remove_dir_all(root);
+        let launched = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let recorder = launched.clone();
+        let shared = Arc::new(LocalRuntimeShared::default());
+        let mut seam = LocalTruthSeam::with_config(
+            shared.clone(),
+            LocalTruthConfig {
+                windows_package: Some(pkg),
+                journal_path: root.clone(),
+                platform: LocalHost::Windows,
+                arch: arch.architecture(),
+                nvidia_probe: Some(undetected_probe()),
+                vulkan: VulkanObservation {
+                    devices: vec![VulkanDevice {
+                        index: 0,
+                        name: "Integrated GPU".into(),
+                        device_type: Some(1),
+                        vram_mib: 8192,
+                    }],
+                    succeeded: true,
+                },
+            },
+        )
+        .with_installer(Arc::new(move |journal: &Path| {
+            recorder.lock().unwrap().push(journal.to_path_buf());
+            Ok(())
+        }));
+
+        let state = ProviderRuntimeState::new(ProviderName::Local);
+        for attempt in 1..=2 {
+            let fence = fence(attempt);
+            seam.dispatch_truth(&state, &fence);
+            let obs = shared.wait_for_truth_result(&fence);
+            assert_eq!(obs.phase, RuntimePhase::ArtifactNotReady);
+            assert_eq!(
+                obs.reason_code.as_ref().map(ReasonCode::as_str),
+                Some("manifest-missing")
+            );
+        }
+
+        assert_eq!(launched.lock().unwrap().len(), 1);
+        assert_eq!(launched.lock().unwrap()[0], root);
+        let _ = std::fs::remove_dir_all(root);
+    }
 }
 
 #[test]
@@ -916,9 +920,12 @@ fn windows_follow_does_not_launch() {
             .expect("set mode 0000");
     });
 
-    // Host blocked: bad arch
-    run_case("bad-arch", |_, config| {
+    // Host blocked: a supported architecture with a foreign package.
+    run_case("foreign-package-arch", |_, config| {
         config.arch = "aarch64";
+    });
+    run_case("hybrid-arch", |_, config| {
+        config.arch = "arm64ec";
     });
 
     // Host blocked: empty vulkan

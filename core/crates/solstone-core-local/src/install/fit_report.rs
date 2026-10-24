@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 #[cfg(unix)]
 use nix::sys::statvfs::statvfs;
 use solstone_core_assets::resolve;
+use solstone_core_installed_payload::WindowsArchitecture;
 #[cfg(windows)]
 use std::os::windows::ffi::OsStrExt;
 
@@ -236,13 +237,16 @@ pub fn build_local_fit_report(
             },
         }
     } else if os_name == "windows" {
-        if arch == "x86_64" {
-            match super::windows_engine::verified_windows_llama_package() {
+        if let Some(windows_arch) = WindowsArchitecture::from_architecture(arch) {
+            match super::windows_engine::verified_windows_llama_package()
+                .and_then(|pkg| pkg.require_runtime_key(windows_arch.runtime_key()))
+            {
                 Ok(_) => FitCheck {
                     name: "platform",
                     severity: FitSeverity::Ok,
-                    detail: "signed llama-server package payload is supported for windows/x86_64"
-                        .to_string(),
+                    detail: format!(
+                        "signed llama-server package payload is supported for windows/{arch}"
+                    ),
                 },
                 Err(super::windows_engine::WindowsLlamaPackageError::Missing(detail)) => FitCheck {
                     name: "platform",
@@ -259,7 +263,9 @@ pub fn build_local_fit_report(
             FitCheck {
                 name: "platform",
                 severity: FitSeverity::Blocked,
-                detail: format!("llama-server requires windows/x86_64; got {os_name}/{arch}"),
+                detail: format!(
+                    "llama-server requires a supported windows architecture; got {os_name}/{arch}"
+                ),
             }
         }
     } else {
@@ -1220,18 +1226,20 @@ mod tests {
     }
 
     #[test]
-    fn rfdetr_fit_report_windows_x64_is_ok_without_cache_bytes() {
+    fn rfdetr_fit_report_windows_architectures_are_ok_without_cache_bytes() {
         let journal = tempfile::tempdir().unwrap();
-        let report = build_rfdetr_fit_report_with_free_bytes(
-            journal.path(),
-            "windows",
-            "x86_64",
-            Err("disk query failed".to_owned()),
-        );
-        assert_eq!(report.overall(), FitSeverity::Ok);
-        assert_eq!(report.checks.len(), 1);
-        assert_eq!(report.checks[0].name, "platform");
-        assert_eq!(report.checks[0].severity, FitSeverity::Ok);
+        for architecture in ["x86_64", "arm64", "aarch64"] {
+            let report = build_rfdetr_fit_report_with_free_bytes(
+                journal.path(),
+                "windows",
+                architecture,
+                Err("disk query failed".to_owned()),
+            );
+            assert_eq!(report.overall(), FitSeverity::Ok);
+            assert_eq!(report.checks.len(), 1);
+            assert_eq!(report.checks[0].name, "platform");
+            assert_eq!(report.checks[0].severity, FitSeverity::Ok);
+        }
     }
 
     #[test]
@@ -1239,8 +1247,8 @@ mod tests {
         let journal = tempfile::tempdir().unwrap();
         let report = build_rfdetr_fit_report_with_free_bytes(
             journal.path(),
-            "windows",
-            "arm64",
+            "linux",
+            "mips",
             Ok(100 * 1024 * 1024 * 1024),
         );
         assert_eq!(report.overall(), FitSeverity::Blocked);

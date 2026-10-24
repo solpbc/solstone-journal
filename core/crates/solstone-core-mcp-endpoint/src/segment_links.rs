@@ -18,6 +18,7 @@ use solstone_core_transcripts::segment_clock;
 
 use crate::dispatch::{
     DispatchPrincipal, boundary, codec, differing_capture_zone, segment_assignment_probe_path,
+    source_label, source_labels,
 };
 use crate::permissions::ConnectionReadSnapshot;
 use crate::references::{ReferenceTarget, SegmentReference};
@@ -104,6 +105,8 @@ pub(crate) fn issue_segment_links(
     };
     let transcript_boundary = boundary(snapshot, Some(AdmittedCategory::Transcripts), None);
     let owner_zone = solstone_core_journal_config::owner_zone(journal_root);
+    // Read once a link is issued: most subjects name no segment.
+    let mut sources = None;
 
     let mut day_cache: BTreeMap<String, Vec<Segment>> = BTreeMap::new();
 
@@ -164,6 +167,10 @@ pub(crate) fn issue_segment_links(
                 if let Ok(token) = codec().mint(principal.connection, snapshot.generation, target) {
                     let mut link_val = json!({
                         "time": clock.label,
+                        "source": source_label(
+                            sources.get_or_insert_with(|| source_labels(journal_root)),
+                            identity.stream,
+                        ),
                         "reference": token,
                     });
                     if let Some(zone) = differing_capture_zone(

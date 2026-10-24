@@ -214,8 +214,11 @@ The input is fitted to the window less the reply ceiling, holding back at most
 a quarter of the window for the reply, and the ceiling is clamped to what
 remains after the input. When too little room is left for a reply, the
 request fails as `context_budget_exceeded` instead of being sent. An endpoint
-smaller than the window assumed for it answers with a context refusal; a
-generate call then refits its input against half the window, up to four times.
+smaller than the window assumed for it, or one that counts the input as larger
+than the estimate did, answers with a context refusal. A generate call then
+refits its input, up to four times. When the refusal reports the input's real
+size, the refit can scale the window by how far the estimate missed, so it
+keeps more input than halving would. Otherwise it halves the window.
 
 Bundled local fits against the window its own server was launched with, and
 confidential processing against the service's own 262,144. Neither reads

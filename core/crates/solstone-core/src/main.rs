@@ -1561,9 +1561,19 @@ fn run_parent_loss_coordinator(args: Vec<OsString>) -> ExitCode {
         Ok(value) => value,
         Err(error) => {
             eprintln!("parent-loss coordinator: bootstrap failed: {error}");
+            // stderr is not kept; the supervisor logs what arrives here.
+            let mut channel = std::io::stdout();
+            let _ = writeln!(channel, "bootstrap failed: {error}");
+            let _ = channel.flush();
             return ExitCode::from(EXIT_TEMPFAIL);
         }
     };
+    // The supervisor closes its end of the refusal channel once this process
+    // is ready, so a later write to it would fail. Nothing writes to stdout
+    // after this point, and /dev/null keeps it that way.
+    if let Ok(null) = std::fs::OpenOptions::new().write(true).open("/dev/null") {
+        let _ = nix::unistd::dup2_stdout(null);
+    }
     match coordinator.run() {
         Ok(_) => ExitCode::SUCCESS,
         Err(error) => {

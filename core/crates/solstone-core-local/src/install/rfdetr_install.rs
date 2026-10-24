@@ -102,7 +102,7 @@ pub fn rfdetr_platform_supported(os_name: &str, arch: &str) -> bool {
 pub fn rfdetr_uses_package_payload(os_name: &str, arch: &str) -> bool {
     matches!(
         (os_name, arch.to_ascii_lowercase().as_str()),
-        ("windows", "amd64" | "x64" | "x86_64")
+        ("windows", "amd64" | "x64" | "x86_64" | "arm64" | "aarch64")
     )
 }
 
@@ -842,18 +842,18 @@ mod tests {
     fn unsupported_platform_only_writes_a_sidecar_on_install() {
         let journal = tempfile::tempdir().unwrap();
         assert_eq!(
-            check_rfdetr_model(journal.path(), "windows", "arm64").unwrap(),
+            check_rfdetr_model(journal.path(), "linux", "mips").unwrap(),
             RfdetrInstallRecord::PlatformUnavailable
         );
         assert!(!sidecar_path(journal.path()).exists());
         assert_eq!(
-            install_rfdetr(journal.path(), "windows", "arm64", false).unwrap(),
+            install_rfdetr(journal.path(), "linux", "mips", false).unwrap(),
             RfdetrInstallRecord::PlatformUnavailable
         );
         assert!(sidecar_path(journal.path()).is_file());
     }
     #[test]
-    fn windows_x64_is_package_payload_and_does_not_write_cache() {
+    fn windows_architectures_use_package_payload_without_writing_cache() {
         let journal = tempfile::tempdir().unwrap();
         let pre_existing = root(journal.path()).join("existing.bin");
         fs::create_dir_all(root(journal.path())).unwrap();
@@ -861,17 +861,20 @@ mod tests {
         let mtime_before = fs::metadata(&pre_existing).unwrap().modified().unwrap();
 
         // On non-Windows test runners, package verification fails with missing runtime / absent
-        let check_res = check_rfdetr_model(journal.path(), "windows", "x86_64");
-        assert!(check_res.is_err());
-        assert!(!sidecar_path(journal.path()).exists());
+        for architecture in ["x86_64", "amd64", "arm64", "aarch64"] {
+            assert!(rfdetr_uses_package_payload("windows", architecture));
+            let check_res = check_rfdetr_model(journal.path(), "windows", architecture);
+            assert!(check_res.is_err());
+            assert!(!sidecar_path(journal.path()).exists());
 
-        let install_res = install_rfdetr(journal.path(), "windows", "x86_64", false);
-        assert!(install_res.is_err());
-        assert!(!sidecar_path(journal.path()).exists());
+            let install_res = install_rfdetr(journal.path(), "windows", architecture, false);
+            assert!(install_res.is_err());
+            assert!(!sidecar_path(journal.path()).exists());
 
-        let install_force_res = install_rfdetr(journal.path(), "windows", "x86_64", true);
-        assert!(install_force_res.is_err());
-        assert!(!sidecar_path(journal.path()).exists());
+            let install_force_res = install_rfdetr(journal.path(), "windows", architecture, true);
+            assert!(install_force_res.is_err());
+            assert!(!sidecar_path(journal.path()).exists());
+        }
 
         // Ensure pre-existing files are untouched
         assert_eq!(fs::read(&pre_existing).unwrap(), b"do-not-touch");

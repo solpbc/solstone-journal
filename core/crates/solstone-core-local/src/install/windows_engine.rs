@@ -3,6 +3,7 @@
 
 //! Signed Windows package binding for llama-server engine, Vulkan loader, and Vulkan probe.
 
+use solstone_core_installed_payload::WindowsArchitecture;
 #[cfg(any(windows, test))]
 use std::path::Path;
 use std::path::PathBuf;
@@ -18,6 +19,7 @@ use std::ffi::OsStr;
 /// The verified package locations and digests required for Windows local inference operations.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct WindowsLlamaPackage {
+    pub architecture: WindowsArchitecture,
     pub package_root: PathBuf,
     pub engine: PathBuf,
     pub loader: PathBuf,
@@ -33,6 +35,17 @@ pub enum WindowsLlamaPackageError {
     Missing(String),
     #[error("{0}")]
     Invalid(String),
+}
+
+impl WindowsLlamaPackage {
+    pub fn require_runtime_key(self, key: &str) -> Result<Self, WindowsLlamaPackageError> {
+        if self.architecture.runtime_key() != key {
+            return Err(WindowsLlamaPackageError::Invalid(format!(
+                "signed payload target differs from {key}"
+            )));
+        }
+        Ok(self)
+    }
 }
 
 #[cfg(any(windows, test))]
@@ -61,6 +74,7 @@ pub fn set_test_windows_llama_package(pkg: Option<WindowsLlamaPackage>) {
 impl WindowsLlamaPackage {
     pub fn mock() -> Self {
         Self {
+            architecture: solstone_core_installed_payload::compiled_windows_architecture(),
             package_root: PathBuf::from("C:\\test"),
             engine: PathBuf::from("C:\\test\\lib\\solstone-native\\llama-server.exe"),
             loader: PathBuf::from("C:\\test\\lib\\solstone-native\\vulkan-1.dll"),
@@ -117,6 +131,8 @@ pub fn verified_windows_llama_package_at(
         .parent()
         .ok_or_else(|| Missing("package bin directory has no package root".to_owned()))?;
     let payload = verify_windows_payload(package_root)?;
+    let architecture = WindowsArchitecture::from_target_id(&payload.manifest().target)
+        .ok_or_else(|| Invalid("signed payload target is unsupported".to_owned()))?;
 
     let engine = payload.llama_server_path()?;
     let loader = payload.vulkan_loader_path()?;
@@ -141,6 +157,7 @@ pub fn verified_windows_llama_package_at(
     let probe_sha256 = find_digest(WINDOWS_VULKAN_PROBE)?;
 
     Ok(WindowsLlamaPackage {
+        architecture,
         package_root: package_root.to_path_buf(),
         engine,
         loader,

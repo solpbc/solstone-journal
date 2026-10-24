@@ -57,6 +57,18 @@ fn real_restic_preserves_owner_names_and_excludes_operational_secrets() {
         "chronicle/20260101/health/talent-provenance/run.json",
         "config/journal.json",
         "chronicle/20260102/indexer/indexer.sqlite/original.key",
+        "chronicle/20261003/health/daily-units/u-entities.f-personal.json",
+        "chronicle/20261003/import.audio/120001_7/owner.execution.lock",
+        "chronicle/notes/health/daily-units/owner.execution.lock",
+        "chronicle/2026a003/health/daily-units/owner.execution.lock",
+        "chronicle/20261003/health/daily-units-original/owner.execution.lock",
+        "chronicle/20260929/health/segment-think-original/owner.lock",
+        "chronicle/20260929/health/120001_0/owner.lock",
+        "chronicle/20260929/health/talent-provenance/activity-inputs/personal/activity.json",
+        "chronicle/20260929/health/stream.updated",
+        "chronicle/20260929/health/daily.updated",
+        "chronicle/20260929/health/sense-day.lease-notes",
+        "chronicle/notes/health/segment-think/import.document/120001_0.lock",
     ];
     let omitted = [
         "indexer/journal.sqlite",
@@ -79,6 +91,13 @@ fn real_restic_preserves_owner_names_and_excludes_operational_secrets() {
         "health/callosum.pipe-secret",
         "health/local.port",
         "health/locks/backup-activity.lock",
+        "chronicle/20261003/health/daily-units/u-entities.f-personal.execution.lock",
+        "chronicle/20261003/health/daily-units/u-entities.f-personal.json.lock",
+        "chronicle/20260929/health/segment-think/import.document/120001_0.lock",
+        "chronicle/20260929/health/talent-provenance/activity-inputs/personal/activity.json.lock",
+        "chronicle/20260929/health/stream.updated.lock",
+        "chronicle/20260929/health/daily.updated.lock",
+        "chronicle/20260929/health/sense-day.lease",
         "health/sync/state",
         "health/scheduler.json",
         "mcp-endpoint/pop.ed25519.pk8",
@@ -153,7 +172,33 @@ fn real_restic_preserves_owner_names_and_excludes_operational_secrets() {
     let current_prepared = prepare_backup_args(&root).unwrap();
     let mut current = current_prepared.args.clone();
     current.push("--json".into());
+    let processing_claims: Vec<_> = [
+        "chronicle/20261003/health/daily-units/u-entities.f-personal.execution",
+        "chronicle/20260929/health/segment-think/import.document/120001_0",
+        "chronicle/20260929/health/talent-provenance/activity-inputs/personal/activity.json",
+        "chronicle/20260929/health/stream.updated",
+        "chronicle/20260929/health/daily.updated",
+    ]
+    .into_iter()
+    .map(|path| {
+        solstone_core_journal_io::locking::hold_lock(
+            root.join(path),
+            solstone_core_journal_io::locking::LockOptions::default(),
+        )
+        .unwrap()
+    })
+    .collect();
+    let sense_lease_path = root.join("chronicle/20260929/health/sense-day.lease");
+    fs::remove_file(&sense_lease_path).unwrap();
+    let sense_lease = solstone_core_journal_io::acquire_file_lease(
+        &sense_lease_path,
+        solstone_core_journal_io::LeaseOptions::default(),
+    )
+    .unwrap()
+    .expect("fresh Sense lease acquired");
     let new_snapshot = snapshot_id(run(&current));
+    drop(sense_lease);
+    drop(processing_claims);
     assert_ne!(old_snapshot, new_snapshot);
     run(&["check".into()]);
     let previously_missing = [
@@ -169,6 +214,13 @@ fn real_restic_preserves_owner_names_and_excludes_operational_secrets() {
         "imports/health-dedupe.sqlite-notes/original.key",
         "imports/health-dedupe.sqlite-wal/original.key",
         "chronicle/20260101/indexer/120001_60.sqlite/original.key",
+        "chronicle/20261003/import.audio/120001_7/owner.execution.lock",
+        "chronicle/notes/health/daily-units/owner.execution.lock",
+        "chronicle/2026a003/health/daily-units/owner.execution.lock",
+        "chronicle/20261003/health/daily-units-original/owner.execution.lock",
+        "chronicle/20260929/health/segment-think-original/owner.lock",
+        "chronicle/20260929/health/120001_0/owner.lock",
+        "chronicle/notes/health/segment-think/import.document/120001_0.lock",
     ];
     for (snapshot, previous) in [(old_snapshot, true), (new_snapshot, false)] {
         let restore = temp.path().join(format!("restored-{snapshot}"));
@@ -279,9 +331,12 @@ fn pinned_windows_restic(directory: &Path) -> std::path::PathBuf {
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../../distribution/licenses/restic/LICENSE"),
     )
     .expect("canonical restic license path");
-    let admitted =
-        solstone_core_distribution::produce::windows_archives::admit_restic(&archive, &license)
-            .expect("producer pins admit restic fixture");
+    let admitted = solstone_core_distribution::produce::windows_archives::admit_restic(
+        &archive,
+        &license,
+        solstone_core_installed_payload::WindowsArchitecture::X86_64,
+    )
+    .expect("producer pins admit restic fixture");
     let executable = directory.join("restic.exe");
     fs::write(&executable, &admitted.outputs()["restic.exe"]).unwrap();
     executable

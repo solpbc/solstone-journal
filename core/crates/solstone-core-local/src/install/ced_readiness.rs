@@ -261,6 +261,9 @@ pub fn ced_target_and_library(os: &str, arch: &str) -> Option<(&'static str, &'s
             ))
         }
         ("windows", "x86_64") => Some((solstone_core_installed_payload::TARGET_WINDOWS_X86_64, "")),
+        ("windows", "aarch64" | "arm64") => {
+            Some((solstone_core_installed_payload::TARGET_WINDOWS_AARCH64, ""))
+        }
         _ => None,
     }
 }
@@ -519,6 +522,29 @@ mod tests {
     use super::*;
     use solstone_core_installed_payload::render_installed_payload;
     use std::fs;
+
+    #[test]
+    fn windows_ced_selects_its_package_target_for_both_native_architectures() {
+        for (arch, target) in [
+            (
+                "x86_64",
+                solstone_core_installed_payload::TARGET_WINDOWS_X86_64,
+            ),
+            (
+                "aarch64",
+                solstone_core_installed_payload::TARGET_WINDOWS_AARCH64,
+            ),
+            (
+                "arm64",
+                solstone_core_installed_payload::TARGET_WINDOWS_AARCH64,
+            ),
+        ] {
+            assert_eq!(ced_target_and_library("windows", arch), Some((target, "")));
+        }
+        for arch in ["x86", "arm64ec", "mips"] {
+            assert_eq!(ced_target_and_library("windows", arch), None);
+        }
+    }
 
     fn write_rendered_manifest(root: &Path, target: &str) {
         let manifest_bytes = render_installed_payload(

@@ -1070,13 +1070,13 @@ mod tests {
     fn observer_missing_suggestions_artifact_returns_stage_failed() {
         let temp = tempfile::tempdir().unwrap();
         solstone_core_facets::create_facet(temp.path(), "work", "Work", "", "", "", None).unwrap();
-        let mut talent = PreparedTalent {
-            name: "entities:entity_observer".into(),
-            config: serde_json::json!({"day": "20260910", "facet": "work"})
+        let mut talent = PreparedTalent::new(
+            "entities:entity_observer".into(),
+            serde_json::json!({"day": "20260910", "facet": "work"})
                 .as_object()
                 .unwrap()
                 .clone(),
-        };
+        );
         let context = ExecutionContext {
             journal: temp.path().to_path_buf(),
         };
@@ -1106,13 +1106,13 @@ mod tests {
         )
         .unwrap();
 
-        let mut talent = PreparedTalent {
-            name: "entities:entity_observer".into(),
-            config: serde_json::json!({"day": "20260910", "facet": "work"})
+        let mut talent = PreparedTalent::new(
+            "entities:entity_observer".into(),
+            serde_json::json!({"day": "20260910", "facet": "work"})
                 .as_object()
                 .unwrap()
                 .clone(),
-        };
+        );
         let context = ExecutionContext {
             journal: temp.path().to_path_buf(),
         };
@@ -1176,9 +1176,9 @@ mod tests {
         )
         .unwrap();
 
-        let mut talent = PreparedTalent {
-            name: "entities:entity_observer".into(),
-            config: serde_json::json!({
+        let mut talent = PreparedTalent::new(
+            "entities:entity_observer".into(),
+            serde_json::json!({
                 "day": "20260910",
                 "facet": "work",
                 "prompt": "Prompt:\n$observer_context\nEnd"
@@ -1186,7 +1186,7 @@ mod tests {
             .as_object()
             .unwrap()
             .clone(),
-        };
+        );
         let context = ExecutionContext {
             journal: temp.path().to_path_buf(),
         };
@@ -1281,9 +1281,9 @@ mod tests {
         )
         .unwrap();
 
-        let mut talent = PreparedTalent {
-            name: "entities:entity_observer".into(),
-            config: serde_json::json!({
+        let mut talent = PreparedTalent::new(
+            "entities:entity_observer".into(),
+            serde_json::json!({
                 "day": "20260910",
                 "facet": "work",
                 "prompt": "$observer_context"
@@ -1291,7 +1291,7 @@ mod tests {
             .as_object()
             .unwrap()
             .clone(),
-        };
+        );
         let context = ExecutionContext {
             journal: temp.path().to_path_buf(),
         };
@@ -1382,16 +1382,16 @@ mod tests {
         })
         .to_string();
 
-        let talent = PreparedTalent {
-            name: "entities:entity_observer".into(),
-            config: serde_json::json!({
+        let talent = PreparedTalent::new(
+            "entities:entity_observer".into(),
+            serde_json::json!({
                 "day": "20260910",
                 "facet": "work"
             })
             .as_object()
             .unwrap()
             .clone(),
-        };
+        );
 
         let (batches, outcome) = prepare_publication(
             temp.path(),
@@ -1487,16 +1487,16 @@ mod tests {
         })
         .to_string();
 
-        let talent = PreparedTalent {
-            name: "entities:entity_observer".into(),
-            config: serde_json::json!({
+        let talent = PreparedTalent::new(
+            "entities:entity_observer".into(),
+            serde_json::json!({
                 "day": "20260910",
                 "facet": "work"
             })
             .as_object()
             .unwrap()
             .clone(),
-        };
+        );
 
         let (batches, outcome) = prepare_publication(
             temp.path(),

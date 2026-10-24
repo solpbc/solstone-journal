@@ -26,34 +26,58 @@ SCHEMA = "1.12.0"
 UPSTREAM = "microsoft/winget-pkgs"
 ORIGIN = "https://updates.solstone.app/solstone-journal/release/windows"
 DIRECTORY = Path(__file__).resolve().parents[1] / "packaging" / "winget"
+TARGETS = {
+    "x64": ("releases.win.json", "windows-x86_64"),
+    "arm64": ("releases.win-arm64.json", "windows-aarch64"),
+}
+ARM_MINIMUM_OS = "10.0.22000.0"
+MAX_FEED = 1024 * 1024
+MAX_INSTALLER = 3 * 1024**3
+
+
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+HTTP = urllib.request.build_opener(NoRedirect())
 
 
 def request(url):
     return urllib.request.Request(url, headers={"User-Agent": "solstone-journal-release/1.0"})
 
 
-def published_version():
-    with urllib.request.urlopen(request(f"{ORIGIN}/releases.win.json"), timeout=60) as response:
-        feed = json.load(response)
+def published_version(architecture="x64"):
+    feed_name, _ = TARGETS[architecture]
+    with HTTP.open(request(f"{ORIGIN}/{feed_name}"), timeout=60) as response:
+        raw = response.read(MAX_FEED + 1)
+    if len(raw) > MAX_FEED:
+        raise ValueError("Windows feed exceeds the size bound")
+    feed = json.loads(raw)
     versions = {asset["Version"] for asset in feed["Assets"]
                 if asset["PackageId"] == PACK_ID and asset["Type"] == "Full"}
-    if not versions:
-        raise ValueError("Windows journal feed contains no full release")
+    if not versions or any(not re.fullmatch(r"\d+\.\d+\.\d+", value) for value in versions):
+        raise ValueError(f"Windows {architecture} feed has no valid full release")
     return max(versions, key=lambda version: tuple(map(int, version.split("."))))
 
 
-def installer_url(version):
-    return f"{ORIGIN}/solstone-journal-{version}-windows-x86_64-setup.exe"
+def installer_url(version, architecture="x64"):
+    _, target = TARGETS[architecture]
+    return f"{ORIGIN}/solstone-journal-{version}-{target}-setup.exe"
 
 
 def download_digest(url):
     digest = hashlib.sha256()
     size = 0
-    with urllib.request.urlopen(request(url), timeout=300) as response:
+    with HTTP.open(request(url), timeout=300) as response:
         expected_size = response.headers.get("Content-Length")
+        if expected_size is not None and not 0 < int(expected_size) <= MAX_INSTALLER:
+            raise ValueError("installer length exceeds the size bound")
         while block := response.read(1024 * 1024):
             digest.update(block)
             size += len(block)
+            if size > MAX_INSTALLER:
+                raise ValueError("installer exceeds the size bound")
     if not size:
         raise ValueError(f"empty installer: {url}")
     if expected_size is not None and size != int(expected_size):
@@ -86,10 +110,22 @@ def prepare(args):
     if not re.fullmatch(r"\d+\.\d+\.\d+", args.version):
         raise ValueError("version must be a released major.minor.patch")
     datetime.date.fromisoformat(args.release_date)
-    current = published_version()
-    if current != args.version:
-        raise ValueError(f"Windows feed carries {current}, requested {args.version}")
-    digest, size = download_digest(installer_url(current))
+    architectures = ("x64", "arm64") if args.with_arm64 else ("x64",)
+    for architecture in architectures:
+        current = published_version(architecture)
+        if current != args.version:
+            raise ValueError(f"Windows {architecture} feed carries {current}, requested {args.version}")
+    current = args.version
+    installers = []
+    sizes = {}
+    for architecture in architectures:
+        url = installer_url(current, architecture)
+        digest, size = download_digest(url)
+        row = dict(Architecture=architecture, InstallerUrl=url, InstallerSha256=digest)
+        if architecture == "arm64":
+            row["MinimumOSVersion"] = ARM_MINIMUM_OS
+        installers.append(row)
+        sizes[architecture] = size
     common = dict(PackageIdentifier=PACKAGE, PackageVersion=current)
     DIRECTORY.mkdir(parents=True, exist_ok=True)
     write_manifest(".installer", dict(
@@ -102,7 +138,7 @@ def prepare(args):
         Dependencies=dict(PackageDependencies=[dict(PackageIdentifier="Microsoft.EdgeWebView2Runtime")]),
         AppsAndFeaturesEntries=[dict(ProductCode=PACK_ID)],
         InstallationMetadata=dict(DefaultInstallLocation=r"%LocalAppData%\SolstoneJournal"),
-        Installers=[dict(Architecture="x64", InstallerUrl=installer_url(current), InstallerSha256=digest)]
+        Installers=installers
     ), "installer")
     write_manifest(".locale.en-US", dict(
         **common, PackageLocale="en-US", Publisher="sol pbc", PublisherUrl="https://solpbc.org",
@@ -113,7 +149,13 @@ def prepare(args):
         Tags=["journal", "open-source", "solstone"]
     ), "defaultLocale")
     write_manifest("", dict(**common, DefaultLocale="en-US"), "version")
-    print(json.dumps(dict(package=PACKAGE, version=current, installer_sha256=digest, installer_bytes=size)))
+    result = dict(package=PACKAGE, version=current,
+                  installer_sha256=installers[0]["InstallerSha256"], installer_bytes=sizes["x64"])
+    if args.with_arm64:
+        result["installers"] = [dict(architecture=row["Architecture"],
+                                     sha256=row["InstallerSha256"],
+                                     bytes=sizes[row["Architecture"]]) for row in installers]
+    print(json.dumps(result))
 
 
 def check(args):
@@ -122,15 +164,26 @@ def check(args):
     version = manifests[0]["PackageVersion"]
     if any(doc["PackageIdentifier"] != PACKAGE or doc["PackageVersion"] != version for doc in manifests):
         raise ValueError("the three committed manifests disagree on package or version")
-    current = published_version()
-    if version != current:
-        raise ValueError(f"manifest carries {version}; Windows origin carries {current}")
-    installer = manifests[1]["Installers"][0]
-    if installer["InstallerUrl"] != installer_url(version):
-        raise ValueError("manifest does not point at the versioned Windows journal Setup")
-    digest, size = download_digest(installer["InstallerUrl"])
-    if digest != installer["InstallerSha256"].upper():
-        raise ValueError(f"installer digest mismatch: downloaded {digest}")
+    architectures = ("x64", "arm64") if args.with_arm64 else ("x64",)
+    installers = manifests[1]["Installers"]
+    if (len(installers) != len(architectures)
+            or {row["Architecture"] for row in installers} != set(architectures)):
+        raise ValueError("installer architectures differ from the explicit selection; use --with-arm64 for both")
+    checked = {}
+    for installer in installers:
+        architecture = installer["Architecture"]
+        current = published_version(architecture)
+        if version != current:
+            raise ValueError(f"manifest carries {version}; Windows {architecture} origin carries {current}")
+        if installer["InstallerUrl"] != installer_url(version, architecture):
+            raise ValueError(f"manifest does not point at the versioned {architecture} journal Setup")
+        if architecture == "arm64" and installer.get("MinimumOSVersion") != ARM_MINIMUM_OS:
+            raise ValueError("ARM installer must require Windows 11")
+        digest, size = download_digest(installer["InstallerUrl"])
+        if digest != installer["InstallerSha256"].upper():
+            raise ValueError(f"{architecture} installer digest mismatch: downloaded {digest}")
+        checked[architecture] = dict(sha256=digest, bytes=size)
+    digest, size = checked["x64"]["sha256"], checked["x64"]["bytes"]
     path = f"repos/{UPSTREAM}/contents/manifests/s/solpbc/Journal/{version}/{PACKAGE}.installer.yaml"
     merged = github_json(path, allow_missing=True)
     if merged is not None:
@@ -152,6 +205,8 @@ def check(args):
                       installer_sha256=digest, installer_bytes=size,
                       pull_requests=[item["html_url"] for item in prs])
         code = 0 if prs and args.allow_pending else 1
+    if args.with_arm64:
+        result["installers"] = checked
     print(json.dumps(result))
     return code
 
@@ -162,8 +217,10 @@ def main():
     command = commands.add_parser("prepare", help="hash the published Setup and write the three manifests")
     command.add_argument("version")
     command.add_argument("--release-date", required=True)
+    command.add_argument("--with-arm64", action="store_true", help="require same-version ARM64 and x64 installers")
     command = commands.add_parser("check", help="check origin version, complete Setup bytes and upstream winget state")
     command.add_argument("--allow-pending", action="store_true", help="allow an open PR while still reporting PENDING")
+    command.add_argument("--with-arm64", action="store_true", help="require same-version ARM64 and x64 installers")
     args = parser.parse_args()
     try:
         return prepare(args) if args.command == "prepare" else check(args)

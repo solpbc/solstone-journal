@@ -89,6 +89,7 @@ pub struct Runtime {
     pub macos_arm64: Archive,
     pub linux_aarch64: Archive,
     pub windows_x86_64: Archive,
+    pub windows_aarch64: Archive,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -152,6 +153,16 @@ pub const TARGETS: &[TargetSpec] = &[
         dependency_member: Some("onnxruntime/capi/onnxruntime_providers_shared.dll"),
         dependency_name: Some("onnxruntime_providers_shared.dll"),
     },
+    TargetSpec {
+        id: "windows-aarch64",
+        os: "windows",
+        arch: "aarch64",
+        triple: "aarch64-pc-windows-msvc",
+        runtime_member: "onnxruntime/capi/onnxruntime.dll",
+        runtime_name: "onnxruntime.dll",
+        dependency_member: Some("onnxruntime/capi/onnxruntime_providers_shared.dll"),
+        dependency_name: Some("onnxruntime_providers_shared.dll"),
+    },
 ];
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -197,6 +208,7 @@ impl Recipe {
             "linux-aarch64" => Some(&self.runtime.linux_aarch64),
             "macos-arm64" => Some(&self.runtime.macos_arm64),
             "windows-x86_64" => Some(&self.runtime.windows_x86_64),
+            "windows-aarch64" => Some(&self.runtime.windows_aarch64),
             _ => None,
         }
     }
@@ -695,13 +707,13 @@ pub fn declared_files(bundle: &StagedBundle) -> Vec<(String, u32, String)> {
 }
 
 pub fn helper_target_path(root: &Path, target: &str) -> PathBuf {
-    root.join(target)
-        .join("release")
-        .join(if target == "windows-x86_64" {
+    root.join(target).join("release").join(
+        if target_spec(target).is_some_and(|spec| spec.os == "windows") {
             format!("{HELPER_BIN}.exe")
         } else {
             HELPER_BIN.to_owned()
-        })
+        },
+    )
 }
 
 pub fn prepare_for_inventory(
@@ -770,7 +782,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn recipe_has_all_four_immutable_runtime_archive_pins() {
+    fn recipe_has_all_five_immutable_runtime_archive_pins() {
         let recipe =
             Recipe::load(include_bytes!("../../../screen-ocr-helper/recipe.toml")).unwrap();
         verify_oar_revision(
@@ -794,6 +806,10 @@ mod tests {
             (
                 "windows-x86_64",
                 "73e0165d58ece068c2a8a1c477c90b38e5a8adbbd399fdfdfd4bd79cbc28ff8d",
+            ),
+            (
+                "windows-aarch64",
+                "e51d10d2e2e1e5bbf9b126a0cd9853d3e6c4e21424518dd50160b91471be33dc",
             ),
         ];
         for (target, digest) in expected {
@@ -884,6 +900,7 @@ mod tests {
             ("linux_aarch64", "linux-aarch64", "linux-aarch64.whl"),
             ("macos_arm64", "macos-arm64", "macos-arm64.whl"),
             ("windows_x86_64", "windows-x86_64", "windows-x86_64.whl"),
+            ("windows_aarch64", "windows-aarch64", "windows-aarch64.whl"),
         ]
         .into_iter()
         .map(|(table, id, filename)| {
@@ -1007,53 +1024,56 @@ mod tests {
 
     #[test]
     fn fixture_bundle_stages_private_runtime_notices_and_bound_provenance() {
-        let fixture = fixture("windows-x86_64", true, true);
-        let bundle = stage_fixture("windows-x86_64", &fixture).unwrap();
-        let files = declared_files(&bundle);
-        let paths = files
-            .iter()
-            .map(|(path, _, _)| path.as_str())
-            .collect::<Vec<_>>();
-        assert!(paths.contains(&"lib/solstone-native/solstone-screen-ocr-onnxruntime.dll"));
-        assert!(paths.contains(&"lib/solstone-native/onnxruntime_providers_shared.dll"));
-        assert!(
-            !paths
+        for target in ["windows-x86_64", "windows-aarch64"] {
+            let fixture = fixture(target, true, true);
+            let bundle = stage_fixture(target, &fixture).unwrap();
+            let files = declared_files(&bundle);
+            let paths = files
                 .iter()
-                .any(|p| p.starts_with("lib/solstone-screen-ocr/runtime/") && p.ends_with(".dll"))
-        );
-        assert!(paths.contains(&"lib/solstone-screen-ocr/runtime/LICENSE"));
-        assert!(paths.contains(&"lib/solstone-screen-ocr/runtime/ThirdPartyNotices.txt"));
-        assert!(paths.contains(&"lib/solstone-screen-ocr/licenses/rust-NOTICES.txt"));
-        assert!(paths.contains(&"lib/solstone-screen-ocr/provenance/rust-sources.json"));
-        let provenance = bundle
-            .files
-            .iter()
-            .find(|file| file.dest.ends_with("provenance/bundle.json"))
-            .unwrap();
-        let value: serde_json::Value = serde_json::from_slice(&provenance.bytes).unwrap();
-        assert_eq!(value["target"], "windows-x86_64");
-        assert_eq!(
-            value["helper_lock_sha256"],
-            sha256_hex(&fixture.helper_lock)
-        );
-        assert_eq!(value["runtime_archive_sha256"], sha256_hex(&fixture.wheel));
-        assert_eq!(value["runtime_sha256"], sha256_hex(b"fixture ORT runtime"));
-        assert_eq!(
-            value["helper_manifest_sha256"],
-            sha256_hex(&fixture.helper_manifest)
-        );
-        assert_eq!(
-            value["rust_notices_sha256"],
-            sha256_hex(&fixture.rust_notices)
-        );
-        assert_eq!(
-            value["rust_source_index_sha256"],
-            sha256_hex(&fixture.rust_source_index)
-        );
-        assert_eq!(
-            value["runtime_dependency_sha256"],
-            sha256_hex(b"fixture CPU provider dependency")
-        );
+                .map(|(path, _, _)| path.as_str())
+                .collect::<Vec<_>>();
+            assert!(paths.contains(&"lib/solstone-native/solstone-screen-ocr-onnxruntime.dll"));
+            assert!(paths.contains(&"lib/solstone-native/onnxruntime_providers_shared.dll"));
+            assert!(
+                !paths
+                    .iter()
+                    .any(|p| p.starts_with("lib/solstone-screen-ocr/runtime/")
+                        && p.ends_with(".dll"))
+            );
+            assert!(paths.contains(&"lib/solstone-screen-ocr/runtime/LICENSE"));
+            assert!(paths.contains(&"lib/solstone-screen-ocr/runtime/ThirdPartyNotices.txt"));
+            assert!(paths.contains(&"lib/solstone-screen-ocr/licenses/rust-NOTICES.txt"));
+            assert!(paths.contains(&"lib/solstone-screen-ocr/provenance/rust-sources.json"));
+            let provenance = bundle
+                .files
+                .iter()
+                .find(|file| file.dest.ends_with("provenance/bundle.json"))
+                .unwrap();
+            let value: serde_json::Value = serde_json::from_slice(&provenance.bytes).unwrap();
+            assert_eq!(value["target"], target);
+            assert_eq!(
+                value["helper_lock_sha256"],
+                sha256_hex(&fixture.helper_lock)
+            );
+            assert_eq!(value["runtime_archive_sha256"], sha256_hex(&fixture.wheel));
+            assert_eq!(value["runtime_sha256"], sha256_hex(b"fixture ORT runtime"));
+            assert_eq!(
+                value["helper_manifest_sha256"],
+                sha256_hex(&fixture.helper_manifest)
+            );
+            assert_eq!(
+                value["rust_notices_sha256"],
+                sha256_hex(&fixture.rust_notices)
+            );
+            assert_eq!(
+                value["rust_source_index_sha256"],
+                sha256_hex(&fixture.rust_source_index)
+            );
+            assert_eq!(
+                value["runtime_dependency_sha256"],
+                sha256_hex(b"fixture CPU provider dependency")
+            );
+        }
     }
 
     #[test]
@@ -1161,7 +1181,7 @@ mod tests {
     }
 
     #[test]
-    fn four_targets_match_layout_and_constants() {
+    fn five_targets_match_layout_and_constants() {
         let inventory_path = Path::new(env!("CARGO_MANIFEST_DIR"))
             .ancestors()
             .nth(3)
@@ -1174,6 +1194,7 @@ mod tests {
             ("linux-aarch64", "aarch64-unknown-linux-gnu"),
             ("macos-arm64", "aarch64-apple-darwin"),
             ("windows-x86_64", "x86_64-pc-windows-msvc"),
+            ("windows-aarch64", "aarch64-pc-windows-msvc"),
         ];
 
         for (target_id, expected_triple) in targets {
@@ -1208,7 +1229,7 @@ mod tests {
             };
             assert_eq!(dest, layout.helper);
 
-            if target_id == "windows-x86_64" {
+            if spec.os == "windows" {
                 assert!(!dests.contains(layout.helper));
                 assert!(
                     !dests
@@ -1286,48 +1307,53 @@ mod tests {
             artifacts
         };
 
-        // Windows:
-        let win_id = ArtifactId {
-            package: HELPER_PACKAGE.into(),
-            bin: HELPER_BIN.into(),
-            triple: "x86_64-pc-windows-msvc".into(),
-        };
-        let mut missing_helper = mock_artifacts("windows-x86_64");
-        missing_helper.remove(&win_id);
-        let err = crate::select::select_artifacts(&inventory, "windows-x86_64", &missing_helper)
-            .expect_err("helper artifact is required");
-        assert!(err.missing_required.contains(HELPER_BIN));
+        for (target, triple) in [
+            ("windows-x86_64", "x86_64-pc-windows-msvc"),
+            ("windows-aarch64", "aarch64-pc-windows-msvc"),
+        ] {
+            let win_id = ArtifactId {
+                package: HELPER_PACKAGE.into(),
+                bin: HELPER_BIN.into(),
+                triple: triple.into(),
+            };
+            let mut missing_helper = mock_artifacts(target);
+            missing_helper.remove(&win_id);
+            let err = crate::select::select_artifacts(&inventory, target, &missing_helper)
+                .expect_err("helper artifact is required");
+            assert!(err.missing_required.contains(HELPER_BIN));
 
-        let helper_exe = tmp.path().join("solstone-screen-ocr-helper.exe");
-        let mut artifacts = mock_artifacts("windows-x86_64");
-        artifacts.insert(win_id.clone(), helper_exe);
+            let helper_exe = tmp
+                .path()
+                .join(format!("{target}-solstone-screen-ocr-helper.exe"));
+            let mut artifacts = mock_artifacts(target);
+            artifacts.insert(win_id.clone(), helper_exe);
 
-        // prepare_for_inventory refuses when file is absent on disk
-        let prep_err = prepare_for_inventory(
-            repo,
-            &tmp.path().join("cache"),
-            &inventory,
-            "windows-x86_64",
-            &artifacts,
-        )
-        .expect_err("refuses when helper artifact file is absent");
-        assert!(prep_err.contains("screen OCR helper artifact missing"));
+            // prepare_for_inventory refuses when file is absent on disk
+            let prep_err = prepare_for_inventory(
+                repo,
+                &tmp.path().join("cache"),
+                &inventory,
+                target,
+                &artifacts,
+            )
+            .expect_err("refuses when helper artifact file is absent");
+            assert!(prep_err.contains("screen OCR helper artifact missing"));
 
-        // When present, select_artifacts selects at lib/solstone-native/solstone-screen-ocr-helper.exe
-        fs::write(artifacts.get(&win_id).unwrap(), b"helper").unwrap();
-        let sel =
-            crate::select::select_artifacts(&inventory, "windows-x86_64", &artifacts).unwrap();
-        let selected_dest = sel
-            .bins
-            .iter()
-            .find(|b| {
-                b.package == win_id.package && b.bin == win_id.bin && b.triple == win_id.triple
-            })
-            .map(|b| b.dest.as_str());
-        assert_eq!(
-            selected_dest,
-            Some("lib/solstone-native/solstone-screen-ocr-helper.exe")
-        );
+            // When present, select_artifacts selects at lib/solstone-native/solstone-screen-ocr-helper.exe
+            fs::write(artifacts.get(&win_id).unwrap(), b"helper").unwrap();
+            let sel = crate::select::select_artifacts(&inventory, target, &artifacts).unwrap();
+            let selected_dest = sel
+                .bins
+                .iter()
+                .find(|b| {
+                    b.package == win_id.package && b.bin == win_id.bin && b.triple == win_id.triple
+                })
+                .map(|b| b.dest.as_str());
+            assert_eq!(
+                selected_dest,
+                Some("lib/solstone-native/solstone-screen-ocr-helper.exe")
+            );
+        }
 
         // Linux and macOS stay on bin/solstone-screen-ocr-helper:
         for (target, triple) in [

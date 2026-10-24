@@ -45,7 +45,9 @@ pub fn stt_host_policy(os: &str, arch: &str) -> SttHostPolicy {
     let runtime_kind = match resolve_host_platform(os, arch) {
         Ok(Platform::MacosArm64) => Some(SttRuntimeKind::MacosCoreml),
         Ok(Platform::LinuxX64 | Platform::LinuxArm64) => Some(SttRuntimeKind::LinuxCpp),
-        Err(_) if (os, arch) == ("windows", "x86_64") => Some(SttRuntimeKind::WindowsCpp),
+        Err(_) if matches!((os, arch), ("windows", "x86_64" | "aarch64")) => {
+            Some(SttRuntimeKind::WindowsCpp)
+        }
         Err(_) => None,
     };
     SttHostPolicy {

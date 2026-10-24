@@ -4,6 +4,7 @@
 //! Inventory-driven Windows staging from retained admitted input bytes.
 //! Publication uses the existing Windows producer leaf; signing remains later.
 
+use solstone_core_installed_payload::WindowsArchitecture;
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, OpenOptions};
@@ -19,18 +20,18 @@ use crate::inventory::{
 use crate::record::FileRecord;
 use crate::select::ArtifactId;
 use crate::windows_payload::{
-    WINDOWS_PAYLOAD_MANIFEST, WINDOWS_PAYLOAD_SIGNATURE, WINDOWS_PAYLOAD_TARGET,
-    render_windows_payload_manifest,
+    WINDOWS_PAYLOAD_MANIFEST, WINDOWS_PAYLOAD_SIGNATURE,
+    render_windows_payload_manifest_for_architecture,
 };
-use crate::windows_pe_closure::{RuntimeEdge, inspect_runtime_closure};
+use crate::windows_pe_closure::{RuntimeEdge, inspect_runtime_closure_for_arch};
 use crate::windows_publish::{
     PublishedWindowsPayload, WindowsPublishFailure, assemble_windows_payload,
 };
 
 /// A retained input set, keyed by component/output label, never destination.
 /// Only dependency admission can supply its members; inventory maps them to paths.
-#[derive(Default)]
 pub struct AdmittedWindowsNativeInputs {
+    architecture: WindowsArchitecture,
     members: BTreeMap<(WindowsNativeComponent, String), Vec<u8>>,
 }
 
@@ -40,6 +41,11 @@ impl AdmittedWindowsNativeInputs {
         inputs: Vec<super::windows_archives::AdmittedArchiveInput>,
     ) -> Result<Self, String> {
         for input in inputs {
+            match input.architecture {
+                Some(architecture) if architecture == self.architecture => {}
+                None if input.component == WindowsNativeComponent::Ffmpeg => {}
+                _ => return Err("archive architecture differs from the native input set".into()),
+            }
             for (label, bytes) in input.members {
                 self.insert(input.component, &label, bytes)?;
             }
@@ -47,9 +53,19 @@ impl AdmittedWindowsNativeInputs {
         Ok(self)
     }
 
-    pub fn from_controlled(inputs: Vec<AdmittedControlledInput>) -> Result<Self, String> {
-        let mut result = Self::default();
+    pub fn from_controlled(
+        inputs: Vec<AdmittedControlledInput>,
+        architecture: WindowsArchitecture,
+    ) -> Result<Self, String> {
+        let mut result = Self {
+            architecture,
+            members: BTreeMap::new(),
+        };
         for input in inputs {
+            crate::controlled_build::validate_windows_receipt_architecture(
+                input.receipt(),
+                architecture,
+            )?;
             // These labels are disjoint and the input's constructors have already
             // verified the exact dependency-specific source/configuration/outputs.
             let component = match input.receipt().outputs.as_slice() {
@@ -78,6 +94,18 @@ impl AdmittedWindowsNativeInputs {
                 }
                 [output] if output.label == crate::nvattest_windows::NVATTEST_EXE_OUTPUT_LABEL => {
                     WindowsNativeComponent::Nvattest
+                }
+                [output]
+                    if architecture == WindowsArchitecture::Aarch64
+                        && output.label == crate::openmp_windows::OUTPUT_LABEL =>
+                {
+                    WindowsNativeComponent::Openmp
+                }
+                [output]
+                    if architecture == WindowsArchitecture::Aarch64
+                        && output.label == crate::restic_windows::OUTPUT_LABEL =>
+                {
+                    WindowsNativeComponent::Restic
                 }
                 _ => return Err("unsupported controlled Windows input output set".into()),
             };
@@ -149,6 +177,11 @@ pub fn stage_windows_payload(
         detail: e,
     })?;
     assemble_windows_payload(destination, |stage| {
+        if product.evidence().target != native.architecture.rust_triple() {
+            return Err(
+                "native input architecture differs from the Windows producer target".into(),
+            );
+        }
         let source = &product.evidence().source;
         if &capture_source(checkout)? != source {
             return Err("staging checkout differs from fresh Cargo source".into());
@@ -159,7 +192,7 @@ pub fn stage_windows_payload(
             checkout,
             &crate::pinned_stage::catalog_input_cache_dir(checkout),
             &inventory,
-            WINDOWS_PAYLOAD_TARGET,
+            native.architecture.target_id(),
             product.artifacts(),
         )?;
         let plan = collect_plan_with_screen_ocr(
@@ -174,9 +207,15 @@ pub fn stage_windows_payload(
         if &capture_source(checkout)? != source {
             return Err("staging source changed while capturing content".into());
         }
-        let runtime_edges = inspect_plan_runtime_closure(&plan)?;
+        let runtime_edges = inspect_plan_runtime_closure(&plan, native.architecture)?;
         let files = write_plan(stage, &plan)?;
-        let manifest = render_checked_manifest(stage, &plan, &source.commit, &source.lock_sha256)?;
+        let manifest = render_checked_manifest(
+            stage,
+            &plan,
+            &source.commit,
+            &source.lock_sha256,
+            native.architecture,
+        )?;
         write_new(stage, WINDOWS_PAYLOAD_MANIFEST, &manifest, 0o644)?;
         Ok(StagedWindowsPayload {
             files,
@@ -186,12 +225,18 @@ pub fn stage_windows_payload(
     })
 }
 
-fn inspect_plan_runtime_closure(plan: &Plan<'_>) -> Result<Vec<RuntimeEdge>, String> {
-    inspect_runtime_closure(plan.iter().filter_map(|(path, file)| {
-        let folded = path.to_ascii_lowercase();
-        (folded.ends_with(".exe") || folded.ends_with(".dll"))
-            .then_some((path.as_str(), file.bytes.as_ref()))
-    }))
+fn inspect_plan_runtime_closure(
+    plan: &Plan<'_>,
+    architecture: WindowsArchitecture,
+) -> Result<Vec<RuntimeEdge>, String> {
+    inspect_runtime_closure_for_arch(
+        plan.iter().filter_map(|(path, file)| {
+            let folded = path.to_ascii_lowercase();
+            (folded.ends_with(".exe") || folded.ends_with(".dll"))
+                .then_some((path.as_str(), file.bytes.as_ref()))
+        }),
+        architecture,
+    )
 }
 
 fn render_checked_manifest(
@@ -199,8 +244,10 @@ fn render_checked_manifest(
     plan: &Plan<'_>,
     commit: &str,
     lock: &str,
+    architecture: WindowsArchitecture,
 ) -> Result<Vec<u8>, String> {
-    let bytes = render_windows_payload_manifest(root, commit, lock).map_err(|e| e.to_string())?;
+    let bytes = render_windows_payload_manifest_for_architecture(root, commit, lock, architecture)
+        .map_err(|e| e.to_string())?;
     let manifest: crate::windows_payload::WindowsPayloadManifest =
         serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
     if manifest.files.len() != plan.len()
@@ -247,8 +294,11 @@ fn collect_plan_with_screen_ocr<'a>(
     let target = inventory
         .target
         .iter()
-        .find(|target| target.id == WINDOWS_PAYLOAD_TARGET)
+        .find(|target| target.id == native.architecture.target_id())
         .ok_or("missing Windows inventory target")?;
+    if target.windows_architecture()? != native.architecture {
+        return Err("native inputs differ from the selected inventory architecture".into());
+    }
     let mut plan = Plan::new();
     let mut binaries = BTreeSet::new();
     let mut native_members = BTreeSet::new();
@@ -261,7 +311,7 @@ fn collect_plan_with_screen_ocr<'a>(
                 mode,
                 targets,
                 ..
-            } if targets.iter().any(|t| t == WINDOWS_PAYLOAD_TARGET) => {
+            } if targets.iter().any(|t| t == native.architecture.target_id()) => {
                 if evidence_selected || build_evidence.is_empty() {
                     return Err("missing or duplicate fresh Cargo evidence mapping".into());
                 }
@@ -269,7 +319,7 @@ fn collect_plan_with_screen_ocr<'a>(
                 add_file(&mut plan, dest, *mode, Cow::Borrowed(build_evidence))?;
             }
             Entry::ScreenOcr { targets, .. }
-                if targets.iter().any(|t| t == WINDOWS_PAYLOAD_TARGET) =>
+                if targets.iter().any(|t| t == native.architecture.target_id()) =>
             {
                 let bundle = screen_ocr.ok_or("missing prepared ScreenOcr bundle")?;
                 if bundle.target != target.id {
@@ -296,7 +346,7 @@ fn collect_plan_with_screen_ocr<'a>(
                 lane,
                 targets,
                 ..
-            } if targets.iter().any(|t| t == WINDOWS_PAYLOAD_TARGET) => {
+            } if targets.iter().any(|t| t == native.architecture.target_id()) => {
                 if inventory.forbidden_bins().contains(bin) {
                     return Err(format!("forbidden Windows binary: {bin}"));
                 }
@@ -325,7 +375,7 @@ fn collect_plan_with_screen_ocr<'a>(
                 mode,
                 targets,
                 ..
-            } if targets.iter().any(|t| t == WINDOWS_PAYLOAD_TARGET) => {
+            } if targets.iter().any(|t| t == native.architecture.target_id()) => {
                 let key = (*component, member.clone());
                 let bytes = native.members.get(&key).ok_or_else(|| {
                     format!("missing admitted native input: {component:?}/{member}")
@@ -354,7 +404,7 @@ fn collect_plan_with_screen_ocr<'a>(
                 mode,
                 targets,
                 ..
-            } if targets.iter().any(|t| t == WINDOWS_PAYLOAD_TARGET) => {
+            } if targets.iter().any(|t| t == native.architecture.target_id()) => {
                 let bytes = source_file(checkout, source, 16 * 1024 * 1024)?;
                 add_file(&mut plan, dest, *mode, Cow::Owned(bytes))?;
             }
@@ -367,7 +417,7 @@ fn collect_plan_with_screen_ocr<'a>(
                 archive_slot,
                 targets,
                 ..
-            } if targets.iter().any(|t| t == WINDOWS_PAYLOAD_TARGET) => {
+            } if targets.iter().any(|t| t == native.architecture.target_id()) => {
                 if archive_slot.is_some() {
                     return Err("Windows model cannot use a Unix archive slot".into());
                 }
@@ -389,7 +439,7 @@ fn collect_plan_with_screen_ocr<'a>(
                 ignored,
                 targets,
                 ..
-            } if targets.iter().any(|t| t == WINDOWS_PAYLOAD_TARGET) => {
+            } if targets.iter().any(|t| t == native.architecture.target_id()) => {
                 let entry_name = staged
                     .first()
                     .map(|m| m.dest.as_str())
@@ -398,7 +448,7 @@ fn collect_plan_with_screen_ocr<'a>(
                     entry_name,
                     checkout,
                     &crate::pinned_stage::catalog_input_cache_dir(checkout),
-                    WINDOWS_PAYLOAD_TARGET,
+                    native.architecture.target_id(),
                     input,
                 )
                 .map_err(|e| e.to_string())?;
@@ -430,7 +480,7 @@ fn collect_plan_with_screen_ocr<'a>(
                 component,
                 targets,
                 ..
-            } if targets.iter().any(|t| t == WINDOWS_PAYLOAD_TARGET) => {
+            } if targets.iter().any(|t| t == native.architecture.target_id()) => {
                 let comp = component
                     .as_deref()
                     .ok_or_else(|| format!("licence-tree {source}: missing component"))?;
@@ -449,7 +499,7 @@ fn collect_plan_with_screen_ocr<'a>(
             | Entry::OnnxRuntime { targets, .. }
             | Entry::Pdfium { targets, .. }
             | Entry::PinnedNative { targets, .. }
-                if targets.iter().any(|t| t == WINDOWS_PAYLOAD_TARGET) =>
+                if targets.iter().any(|t| t == native.architecture.target_id()) =>
             {
                 return Err("Windows inventory selected a Unix staging entry".into());
             }
@@ -457,18 +507,19 @@ fn collect_plan_with_screen_ocr<'a>(
         }
     }
     let screen_ocr_selected = inventory.entry.iter().any(|entry| {
-        matches!(entry, Entry::ScreenOcr { targets, .. } if targets.iter().any(|t| t == WINDOWS_PAYLOAD_TARGET))
+        matches!(entry, Entry::ScreenOcr { targets, .. } if targets.iter().any(|t| t == native.architecture.target_id()))
     });
     if screen_ocr_selected {
-        let layout = solstone_core_installed_payload::screen_ocr_layout(WINDOWS_PAYLOAD_TARGET)
-            .ok_or("missing screen OCR layout")?;
+        let layout =
+            solstone_core_installed_payload::screen_ocr_layout(native.architecture.target_id())
+                .ok_or("missing screen OCR layout")?;
         let has_helper_bin = inventory.entry.iter().any(|entry| {
             matches!(
                 entry,
                 Entry::Bin { package, dest, targets, .. }
                     if package == crate::screen_ocr::HELPER_PACKAGE
                         && dest == layout.helper
-                        && targets.iter().any(|t| t == WINDOWS_PAYLOAD_TARGET)
+                        && targets.iter().any(|t| t == native.architecture.target_id())
             )
         });
         if !has_helper_bin {
@@ -600,6 +651,7 @@ fn write_plan(root: &Path, plan: &Plan<'_>) -> Result<Vec<FileRecord>, String> {
 mod tests {
     use super::*;
     use crate::inventory::DeliveryClass;
+    use crate::windows_payload::WINDOWS_PAYLOAD_TARGET;
 
     #[test]
     fn build_evidence_uses_inventory_and_retained_bytes_exactly_once() {
@@ -610,14 +662,16 @@ mod tests {
         let mut inventory = load_inventory(&repo.join("core/distribution/inventory.toml")).unwrap();
         inventory
             .entry
-            .retain(|entry| matches!(entry, Entry::WindowsBuildEvidence { .. }));
+            .retain(|entry| matches!(entry, Entry::WindowsBuildEvidence { targets, .. } if targets.iter().any(|target| target == WindowsArchitecture::X86_64.target_id())));
         assert_eq!(inventory.entry.len(), 1);
         let root = tempfile::tempdir().unwrap();
         inventory.payload = "empty.list".into();
         fs::write(root.path().join("empty.list"), b"").unwrap();
         let inventory_path = root.path().join("inventory.toml");
         let products = BTreeMap::new();
-        let native = AdmittedWindowsNativeInputs::default();
+        let native =
+            AdmittedWindowsNativeInputs::from_controlled(vec![], WindowsArchitecture::X86_64)
+                .unwrap();
         let bytes = b"retained fixture bytes\r\n";
         let plan =
             collect_plan(repo, &inventory_path, &inventory, &products, &native, bytes).unwrap();
@@ -654,7 +708,9 @@ mod tests {
         fs::write(root.path().join("empty.list"), b"").unwrap();
         let fixture_inventory = root.path().join("inventory.toml");
         let products = BTreeMap::new();
-        let native = AdmittedWindowsNativeInputs::default();
+        let native =
+            AdmittedWindowsNativeInputs::from_controlled(vec![], WindowsArchitecture::X86_64)
+                .unwrap();
 
         let exact_dests = crate::screen_ocr::exact_staged_dests(WINDOWS_PAYLOAD_TARGET).unwrap();
         assert_eq!(exact_dests.len(), 15);
@@ -910,34 +966,37 @@ mod tests {
         let providers = pe_with_imports(&["VCRUNTIME140.dll", "kernel32.dll"], true);
         let helper = pe_with_imports(&["kernel32.dll"], false);
 
-        let closure = inspect_runtime_closure([
-            (
-                "lib/solstone-native/onnxruntime.dll",
-                onnxruntime.as_slice(),
-            ),
-            ("lib/solstone-native/msvcp140.dll", msvcp140.as_slice()),
-            (
-                "lib/solstone-native/vcruntime140.dll",
-                vcruntime140.as_slice(),
-            ),
-            (
-                "lib/solstone-native/vcruntime140_1.dll",
-                vcruntime140_1.as_slice(),
-            ),
-            ("lib/solstone-native/msvcp140_1.dll", msvcp140_1.as_slice()),
-            (
-                "lib/solstone-native/solstone-screen-ocr-onnxruntime.dll",
-                ocr_ort.as_slice(),
-            ),
-            (
-                "lib/solstone-native/onnxruntime_providers_shared.dll",
-                providers.as_slice(),
-            ),
-            (
-                "lib/solstone-native/solstone-screen-ocr-helper.exe",
-                helper.as_slice(),
-            ),
-        ]);
+        let closure = inspect_runtime_closure_for_arch(
+            [
+                (
+                    "lib/solstone-native/onnxruntime.dll",
+                    onnxruntime.as_slice(),
+                ),
+                ("lib/solstone-native/msvcp140.dll", msvcp140.as_slice()),
+                (
+                    "lib/solstone-native/vcruntime140.dll",
+                    vcruntime140.as_slice(),
+                ),
+                (
+                    "lib/solstone-native/vcruntime140_1.dll",
+                    vcruntime140_1.as_slice(),
+                ),
+                ("lib/solstone-native/msvcp140_1.dll", msvcp140_1.as_slice()),
+                (
+                    "lib/solstone-native/solstone-screen-ocr-onnxruntime.dll",
+                    ocr_ort.as_slice(),
+                ),
+                (
+                    "lib/solstone-native/onnxruntime_providers_shared.dll",
+                    providers.as_slice(),
+                ),
+                (
+                    "lib/solstone-native/solstone-screen-ocr-helper.exe",
+                    helper.as_slice(),
+                ),
+            ],
+            WindowsArchitecture::X86_64,
+        );
         assert!(closure.is_ok());
     }
 
@@ -1007,7 +1066,9 @@ mod tests {
         fs::write(root_path.join("empty.list"), b"").unwrap();
         let inventory_path = root_path.join("inventory.toml");
         let products = BTreeMap::new();
-        let native = AdmittedWindowsNativeInputs::default();
+        let native =
+            AdmittedWindowsNativeInputs::from_controlled(vec![], WindowsArchitecture::X86_64)
+                .unwrap();
 
         let plan = collect_plan(
             root_path,
@@ -1073,8 +1134,8 @@ mod tests {
         let mut inventory = load_inventory(&inventory_path).unwrap();
         inventory.entry.retain(|entry| {
             matches!(entry,
-            Entry::WindowsNative { component: WindowsNativeComponent::Ced, member, .. }
-            if member == "bin/ced.dll")
+            Entry::WindowsNative { component: WindowsNativeComponent::Ced, member, targets, .. }
+            if member == "bin/ced.dll" && targets.iter().any(|target| target == WINDOWS_PAYLOAD_TARGET))
         });
         assert_eq!(inventory.entry.len(), 1);
         let root = tempfile::tempdir().unwrap();
@@ -1082,7 +1143,9 @@ mod tests {
         fs::write(root.path().join("empty.list"), b"").unwrap();
         let inventory_path = root.path().join("inventory.toml");
         let products = BTreeMap::new();
-        let mut native = AdmittedWindowsNativeInputs::default();
+        let mut native =
+            AdmittedWindowsNativeInputs::from_controlled(vec![], WindowsArchitecture::X86_64)
+                .unwrap();
         assert!(
             collect_plan(repo, &inventory_path, &inventory, &products, &native, &[])
                 .err()
@@ -1145,12 +1208,25 @@ mod tests {
         )
         .unwrap();
         write_plan(root.path(), &plan).unwrap();
-        render_checked_manifest(root.path(), &plan, &"a".repeat(40), &"b".repeat(64)).unwrap();
+        render_checked_manifest(
+            root.path(),
+            &plan,
+            &"a".repeat(40),
+            &"b".repeat(64),
+            WindowsArchitecture::X86_64,
+        )
+        .unwrap();
         fs::write(root.path().join("share/original"), b"replaced").unwrap();
         assert!(
-            render_checked_manifest(root.path(), &plan, &"a".repeat(40), &"b".repeat(64))
-                .unwrap_err()
-                .contains("retained staging admission")
+            render_checked_manifest(
+                root.path(),
+                &plan,
+                &"a".repeat(40),
+                &"b".repeat(64),
+                WindowsArchitecture::X86_64
+            )
+            .unwrap_err()
+            .contains("retained staging admission")
         );
     }
 
@@ -1165,9 +1241,10 @@ mod tests {
                 Cow::Owned(crate::pe_dependencies::tests::image()),
             )
             .unwrap();
-            inspect_plan_runtime_closure(&plan).unwrap();
+            inspect_plan_runtime_closure(&plan, WindowsArchitecture::X86_64).unwrap();
             add_file(&mut plan, path, 0o644, Cow::Borrowed(b"not a PE image")).unwrap();
-            let error = inspect_plan_runtime_closure(&plan).unwrap_err();
+            let error =
+                inspect_plan_runtime_closure(&plan, WindowsArchitecture::X86_64).unwrap_err();
             assert!(error.contains(path), "{error}");
         }
     }
@@ -1269,7 +1346,9 @@ mod tests {
         let error = admit_nvattest(repo, paths(), fixture.msvc()).unwrap_err();
         assert!(error.starts_with("source-archive"), "{error}");
         let input = admit_nvattest_with_pins(repo, paths(), &fixture.pins, fixture.msvc()).unwrap();
-        let native = AdmittedWindowsNativeInputs::from_controlled(vec![input]).unwrap();
+        let native =
+            AdmittedWindowsNativeInputs::from_controlled(vec![input], WindowsArchitecture::X86_64)
+                .unwrap();
         (fixture, written, native)
     }
 
@@ -1400,8 +1479,14 @@ mod tests {
                     component: WindowsNativeComponent::Nvattest,
                     member,
                     dest,
+                    targets,
                     ..
-                } => Some((member.as_str(), dest.as_str())),
+                } if targets
+                    .iter()
+                    .any(|target| target == WINDOWS_PAYLOAD_TARGET) =>
+                {
+                    Some((member.as_str(), dest.as_str()))
+                }
                 _ => None,
             })
             .collect();
@@ -1466,12 +1551,15 @@ mod tests {
         let mut inventory = load_inventory(&repo.join("core/distribution/inventory.toml")).unwrap();
         inventory.payload = "empty.list".into();
         inventory.entry.retain(|entry| {
-            matches!(entry, Entry::WindowsNative { component: WindowsNativeComponent::Msvc, member, .. }
-                if member == "msvcp140.dll" || member == "vcruntime140.dll" || member == "vcruntime140_1.dll")
+            matches!(entry, Entry::WindowsNative { component: WindowsNativeComponent::Msvc, member, targets, .. }
+                if targets.iter().any(|target| target == WINDOWS_PAYLOAD_TARGET)
+                    && (member == "msvcp140.dll" || member == "vcruntime140.dll" || member == "vcruntime140_1.dll"))
         });
         assert_eq!(inventory.entry.len(), 6);
         let products = BTreeMap::new();
-        let mut native = AdmittedWindowsNativeInputs::default();
+        let mut native =
+            AdmittedWindowsNativeInputs::from_controlled(vec![], WindowsArchitecture::X86_64)
+                .unwrap();
         native
             .insert(
                 WindowsNativeComponent::Msvc,
@@ -1528,7 +1616,9 @@ mod tests {
         );
 
         // 2. a missing admitted input refuses
-        let mut missing_native = AdmittedWindowsNativeInputs::default();
+        let mut missing_native =
+            AdmittedWindowsNativeInputs::from_controlled(vec![], WindowsArchitecture::X86_64)
+                .unwrap();
         missing_native
             .insert(
                 WindowsNativeComponent::Msvc,
@@ -1556,7 +1646,9 @@ mod tests {
         assert!(err.contains("missing admitted native input"), "{err}");
 
         // 3. an admitted member with no inventory row fails the coverage check
-        let mut extra_native = AdmittedWindowsNativeInputs::default();
+        let mut extra_native =
+            AdmittedWindowsNativeInputs::from_controlled(vec![], WindowsArchitecture::X86_64)
+                .unwrap();
         extra_native
             .insert(
                 WindowsNativeComponent::Msvc,
@@ -1617,7 +1709,9 @@ mod tests {
                 targets: vec!["windows-x86_64".into()],
             },
         ];
-        let mut ced_native = AdmittedWindowsNativeInputs::default();
+        let mut ced_native =
+            AdmittedWindowsNativeInputs::from_controlled(vec![], WindowsArchitecture::X86_64)
+                .unwrap();
         ced_native
             .insert(WindowsNativeComponent::Ced, "bin/ced.dll", b"ced".to_vec())
             .unwrap();
@@ -1662,5 +1756,116 @@ mod tests {
         assert!(refuse_unupdated_windows_predecessor(&record.candidate_release).is_ok());
         assert!(refuse_unupdated_windows_predecessor(&record.predecessor.windows_release).is_err());
         assert!(refuse_unupdated_windows_predecessor("999.0.0").is_err());
+    }
+}
+
+#[cfg(test)]
+mod architecture_tests {
+    use super::*;
+    use crate::produce::windows_archives::AdmittedArchiveInput;
+
+    #[test]
+    fn mixed_inventory_selects_only_the_admitted_architecture() {
+        let repo = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .ancestors()
+            .nth(3)
+            .unwrap();
+        let mut inventory = load_inventory(&repo.join("core/distribution/inventory.toml")).unwrap();
+        inventory
+            .entry
+            .retain(|entry| matches!(entry, Entry::WindowsBuildEvidence { .. }));
+        assert_eq!(inventory.entry.len(), 2);
+        for entry in &mut inventory.entry {
+            if let Entry::WindowsBuildEvidence { dest, targets, .. } = entry
+                && targets
+                    .iter()
+                    .any(|target| target == WindowsArchitecture::Aarch64.target_id())
+            {
+                *dest = "share/provenance/arm-cargo.json".into();
+            }
+        }
+        let root = tempfile::tempdir().unwrap();
+        inventory.payload = "empty.list".into();
+        fs::write(root.path().join("empty.list"), b"").unwrap();
+        let products = BTreeMap::new();
+        for architecture in WindowsArchitecture::ALL {
+            let native =
+                AdmittedWindowsNativeInputs::from_controlled(vec![], architecture).unwrap();
+            let plan = collect_plan(
+                repo,
+                &root.path().join("inventory.toml"),
+                &inventory,
+                &products,
+                &native,
+                b"original evidence",
+            )
+            .unwrap();
+            let expected = match architecture {
+                WindowsArchitecture::X86_64 => "share/provenance/cargo-evidence.json",
+                WindowsArchitecture::Aarch64 => "share/provenance/arm-cargo.json",
+            };
+            assert_eq!(
+                plan.keys().map(String::as_str).collect::<Vec<_>>(),
+                [expected]
+            );
+        }
+    }
+
+    #[test]
+    fn pe_closure_and_manifest_keep_the_selected_architecture() {
+        for architecture in WindowsArchitecture::ALL {
+            let mut image = crate::pe_dependencies::tests::image();
+            let pe = u32::from_le_bytes(image[0x3c..0x40].try_into().unwrap()) as usize;
+            image[pe + 4..pe + 6].copy_from_slice(&architecture.pe_machine().to_le_bytes());
+            let mut plan = Plan::new();
+            add_file(&mut plan, "bin/fixture.dll", 0o644, Cow::Owned(image)).unwrap();
+            inspect_plan_runtime_closure(&plan, architecture).unwrap();
+            let foreign = WindowsArchitecture::ALL
+                .into_iter()
+                .find(|other| *other != architecture)
+                .unwrap();
+            assert!(inspect_plan_runtime_closure(&plan, foreign).is_err());
+            let root = tempfile::tempdir().unwrap();
+            write_plan(root.path(), &plan).unwrap();
+            let bytes = render_checked_manifest(
+                root.path(),
+                &plan,
+                &"a".repeat(40),
+                &"b".repeat(64),
+                architecture,
+            )
+            .unwrap();
+            let manifest: crate::windows_payload::WindowsPayloadManifest =
+                serde_json::from_slice(&bytes).unwrap();
+            assert_eq!(manifest.target, architecture.target_id());
+        }
+    }
+
+    #[test]
+    fn retained_binary_inputs_cannot_cross_native_set_architecture() {
+        for expected in WindowsArchitecture::ALL {
+            let foreign = if expected == WindowsArchitecture::X86_64 {
+                WindowsArchitecture::Aarch64
+            } else {
+                WindowsArchitecture::X86_64
+            };
+            let input = |architecture| AdmittedArchiveInput {
+                architecture: Some(architecture),
+                component: WindowsNativeComponent::Msvc,
+                members: BTreeMap::from([("fixture.dll".into(), vec![1])]),
+            };
+            assert!(
+                AdmittedWindowsNativeInputs::from_controlled(vec![], expected)
+                    .unwrap()
+                    .with_archives(vec![input(expected)])
+                    .is_ok()
+            );
+            assert!(
+                AdmittedWindowsNativeInputs::from_controlled(vec![], expected)
+                    .unwrap()
+                    .with_archives(vec![input(foreign)])
+                    .is_err()
+            );
+        }
     }
 }

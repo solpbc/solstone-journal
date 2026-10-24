@@ -130,7 +130,7 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     fn prepared(path: &std::path::Path) -> PreparedTalent {
-        PreparedTalent { name:"sense".into(), config:json!({"output":"json","output_path":path,"max_output_tokens":512,"prompt":"evidence","json_schema":{"type":"object"},"input_budget":{"clipped":true,"dropped_entries":999}}).as_object().unwrap().clone() }
+        PreparedTalent::new("sense".to_owned(), json!({"output":"json","output_path":path,"max_output_tokens":512,"prompt":"evidence","json_schema":{"type":"object"},"input_budget":{"clipped":true,"dropped_entries":999}}).as_object().unwrap().clone())
     }
 
     #[test]

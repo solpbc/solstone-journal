@@ -16,8 +16,6 @@ import subprocess
 import build_backup
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-APPRAISAL_BUNDLE_ID = "app.solstone.journal.runtime.dev.gpu-appraisal"
-APPRAISAL_EXTENSION_ID = APPRAISAL_BUNDLE_ID
 
 
 def sha256(path: pathlib.Path) -> str:

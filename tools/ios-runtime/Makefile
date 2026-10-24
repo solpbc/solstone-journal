@@ -8,6 +8,7 @@ DEVICE ?=
 DESTINATION ?= generic/platform=iOS
 PROJECT_SPEC ?= project.yml
 FINALIZE_ARGS ?=
+BUILD_NUMBER ?=
 RUST_LIB := $(BUILD_ROOT)/rust/aarch64-apple-ios/debug/libsolstone_ios_runtime.a
 APPRAISAL_LIB := $(BUILD_ROOT)/appraisal-rust/aarch64-apple-ios/debug/libsolstone_ios_appraisal_helper.a
 APPRAISAL_NATIVE_WORK := $(BUILD_ROOT)/appraisal-native-work
@@ -19,9 +20,10 @@ BACKUP_NATIVE_WORK ?= $(BUILD_ROOT)/backup-native-work
 BACKUP_LIB := $(BUILD_ROOT)/backup-native/librestic_bridge.a
 BACKUP_RESOURCES := Resources/BackupRuntime
 APP := $(BUILD_ROOT)/derived/Build/Products/Debug-iphoneos/JournalRuntimeDev.app
+NATIVE_FEATURES := $(if $(AUDIO_MODELS_DIR),audio) $(if $(filter project-owner.yml,$(PROJECT_SPEC)),owner-app)
 .PHONY: build rust appraisal-rust appraisal-native backup-native payload project finalize install run check
 rust:
-	IPHONEOS_DEPLOYMENT_TARGET=26.0 cargo build --locked --manifest-path native/Cargo.toml $(if $(AUDIO_MODELS_DIR),--features audio,) --target aarch64-apple-ios --target-dir $(BUILD_ROOT)/rust
+	IPHONEOS_DEPLOYMENT_TARGET=26.0 cargo build --locked --manifest-path native/Cargo.toml --features '$(NATIVE_FEATURES)' --target aarch64-apple-ios --target-dir $(BUILD_ROOT)/rust
 appraisal-rust:
 	IPHONEOS_DEPLOYMENT_TARGET=26.0 cargo build --locked --manifest-path appraisal-helper/Cargo.toml --target aarch64-apple-ios --target-dir $(BUILD_ROOT)/appraisal-rust
 appraisal-native:
@@ -33,7 +35,7 @@ payload:
 project: payload backup-native
 	xcodegen generate --spec $(PROJECT_SPEC)
 build: rust appraisal-rust appraisal-native project
-	xcodebuild -project JournalRuntimeDev.xcodeproj -scheme JournalRuntimeDev -configuration Debug -destination '$(DESTINATION)' -derivedDataPath $(BUILD_ROOT)/derived -allowProvisioningUpdates RUST_LIB=$(RUST_LIB) APPRAISAL_LIB=$(APPRAISAL_LIB) NVAT_LIB=$(NVAT_LIB) BACKUP_LIB=$(BACKUP_LIB) build
+	xcodebuild -project JournalRuntimeDev.xcodeproj -scheme JournalRuntimeDev -configuration Debug -destination '$(DESTINATION)' -derivedDataPath $(BUILD_ROOT)/derived -allowProvisioningUpdates RUST_LIB=$(RUST_LIB) APPRAISAL_LIB=$(APPRAISAL_LIB) NVAT_LIB=$(NVAT_LIB) BACKUP_LIB=$(BACKUP_LIB) $(if $(BUILD_NUMBER),CURRENT_PROJECT_VERSION=$(BUILD_NUMBER),) build
 	python3 finalize.py $(BUILD_ROOT) --nvattest-lib $(NVAT_LIB) --appraisal-build-record $(APPRAISAL_BUILD_RECORD) --appraisal-resources $(APPRAISAL_RESOURCES) --backup-lib $(BACKUP_LIB) --backup-work $(BACKUP_NATIVE_WORK) $(FINALIZE_ARGS)
 .PHONY: build-owner install-owner
 build-owner:
@@ -53,7 +55,8 @@ check:
 	cargo clippy --locked --manifest-path native/Cargo.toml --all-targets --no-deps -- -D warnings
 	cargo test --locked --manifest-path native/Cargo.toml --features full-tests
 	cargo test --locked --manifest-path ../../core/Cargo.toml -p solstone-core-spp-attest --features test-hooks ios_appraisal::tests
-	cargo test --locked --manifest-path ../../core/Cargo.toml -p solstone-core-spp-attest --features test-hooks ios_service_tools::tests
+	cargo test --locked --manifest-path ../../core/Cargo.toml -p solstone-core-spp-attest --features test-hooks,full-tests ios_service_tools::tests
+	cargo test --locked --manifest-path ../../core/Cargo.toml -p solstone-core-spp-attest --features test-hooks,full-tests,ios-owner-app ios_service_tools::tests
 	cargo fmt --manifest-path appraisal-helper/Cargo.toml -- --check
 	cargo clippy --locked --manifest-path appraisal-helper/Cargo.toml --all-targets --no-deps -- -D warnings
 	cargo test --locked --manifest-path appraisal-helper/Cargo.toml

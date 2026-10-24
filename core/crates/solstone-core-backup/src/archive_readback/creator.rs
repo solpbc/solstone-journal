@@ -113,10 +113,14 @@ impl ArchivePredecessorCustody {
             return Ok(());
         }
         let capture = &self.capture;
+        let configuration = input.operation.configuration();
+        let binding = match (configuration.binding(), configuration.mode()) {
+            (None, Some("byo")) => None,
+            (Some(binding), Some("operated")) => Some(binding),
+            _ => return Err(ReadbackError::UnsupportedBackend),
+        };
         if input.operation.owned_clock().is_none()
-            || input.operation.configuration().binding().is_some()
-            || input.operation.configuration().mode() != Some("byo")
-            || capture.broker_requested
+            || capture.broker_requested != binding.is_some()
             || capture.write_repository_requested
             || capture.read_repository_requested
             || capture.write_repository_id.is_some()
@@ -127,7 +131,14 @@ impl ArchivePredecessorCustody {
         {
             return Err(ReadbackError::UnsupportedBackend);
         }
-        for endpoint in [&capture.write, &capture.read] {
+        let endpoints = match binding {
+            None => vec![&capture.write, &capture.read],
+            Some(binding) => {
+                validate_operated_writer(&capture.write, &capture.read, binding, input)?;
+                vec![&capture.read]
+            }
+        };
+        for endpoint in endpoints {
             if endpoint.destination != input.destination
                 || endpoint.password != input.password
                 || !endpoint.global_options.is_empty()
@@ -263,6 +274,149 @@ impl ArchivePredecessorCustody {
     }
 }
 
+/// Operated storage is written only through the installed rclone serving the
+/// one broker session append-only, at the location the reader reads.
+#[cfg(any(unix, windows))]
+fn validate_operated_writer(
+    write: &ArchiveEndpointCapture,
+    read: &ArchiveEndpointCapture,
+    binding: &crate::HostedBinding,
+    input: &ReadAdmission<'_>,
+) -> Result<(), ReadbackError> {
+    let rclone = operated_writer_program(write, read, binding, &input.password)?;
+    #[cfg(unix)]
+    {
+        let member = solstone_core_installed_payload::resolve_current_member(super::RCLONE_MEMBER)
+            .map_err(|_| ReadbackError::ToolUnavailable)?;
+        if std::path::Path::new(rclone) != member.path() {
+            return Err(ReadbackError::ToolChanged);
+        }
+    }
+    #[cfg(windows)]
+    let _ = rclone;
+    Ok(())
+}
+
+/// The exact operated writer shape; returns the rclone program it names.
+#[cfg(any(unix, windows))]
+fn operated_writer_program<'a>(
+    write: &'a ArchiveEndpointCapture,
+    read: &ArchiveEndpointCapture,
+    binding: &crate::HostedBinding,
+    password: &str,
+) -> Result<&'a str, ReadbackError> {
+    let unsupported = Err(ReadbackError::UnsupportedBackend);
+    let env = |key: &str| write.backend_env.get(key).cloned().flatten();
+    let read_env = |key: &str| read.backend_env.get(key).cloned().flatten();
+    let endpoint = env("RCLONE_CONFIG_SPB_ENDPOINT").unwrap_or_default();
+    if write.password != password
+        || write.destination.backend != "rclone"
+        || !write.destination.credentials.is_empty()
+        || write.destination.repository
+            != format!("rclone:spb:{}/{}", binding.bucket, binding.prefix)
+        || endpoint.trim().is_empty()
+        || read.destination.repository
+            != format!(
+                "s3:{}/{}/{}",
+                endpoint.trim_end_matches('/'),
+                binding.bucket,
+                binding.prefix
+            )
+    {
+        return unsupported;
+    }
+    let fixed = [
+        ("RCLONE_CONFIG_SPB_TYPE", "s3"),
+        ("RCLONE_CONFIG_SPB_PROVIDER", "Cloudflare"),
+        ("RCLONE_CONFIG_SPB_ENV_AUTH", "false"),
+        ("RCLONE_CONFIG_SPB_REGION", "auto"),
+        ("RCLONE_CONFIG_SPB_NO_CHECK_BUCKET", "true"),
+    ];
+    let session = [
+        ("RCLONE_CONFIG_SPB_ACCESS_KEY_ID", "AWS_ACCESS_KEY_ID"),
+        (
+            "RCLONE_CONFIG_SPB_SECRET_ACCESS_KEY",
+            "AWS_SECRET_ACCESS_KEY",
+        ),
+        ("RCLONE_CONFIG_SPB_SESSION_TOKEN", "AWS_SESSION_TOKEN"),
+    ];
+    if write.backend_env.len() != fixed.len() + session.len() + 1
+        || fixed
+            .iter()
+            .any(|(key, value)| env(key).as_deref() != Some(*value))
+        || session.iter().any(|(key, read_key)| {
+            env(key)
+                .is_none_or(|value| value.trim().is_empty() || Some(value) != read_env(read_key))
+        })
+    {
+        return Err(ReadbackError::CredentialsUnavailable);
+    }
+    let [o1, program, o2, args] = write.global_options.as_slice() else {
+        return unsupported;
+    };
+    let no_config = if cfg!(windows) { "NUL" } else { "/dev/null" };
+    let rclone = program
+        .strip_prefix("rclone.program=\"")
+        .and_then(|rest| rest.strip_suffix('"'))
+        .filter(|path| !path.contains('"') && std::path::Path::new(path).is_absolute());
+    match rclone {
+        Some(rclone)
+            if o1 == "-o"
+                && o2 == "-o"
+                && *args
+                    == format!(
+                        "rclone.args=serve restic --stdio --append-only --config {no_config}"
+                    ) =>
+        {
+            Ok(rclone)
+        }
+        _ => unsupported,
+    }
+}
+
+/// The writer's program arguments and environment. BYO writes through the
+/// read's own direct environment; operated writes through its captured
+/// append-only transport, whose program option restic parses as one CSV field.
+#[cfg(any(unix, windows))]
+fn writer_invocation(
+    write: &ArchiveEndpointCapture,
+    read_env: &BTreeMap<OsString, OsString>,
+    argv: Vec<OsString>,
+) -> (Vec<OsString>, BTreeMap<OsString, OsString>) {
+    if write.global_options.is_empty() {
+        return (argv, read_env.clone());
+    }
+    let mut env = BTreeMap::from([
+        (
+            OsString::from("RESTIC_REPOSITORY"),
+            OsString::from(&write.destination.repository),
+        ),
+        (
+            OsString::from("RESTIC_PASSWORD"),
+            OsString::from(&write.password),
+        ),
+    ]);
+    for (key, value) in &write.backend_env {
+        if let Some(value) = value {
+            env.insert(key.into(), value.into());
+        }
+    }
+    let mut full: Vec<OsString> = write
+        .global_options
+        .iter()
+        .map(|option| {
+            // Windows encodes this field after admitting the program itself.
+            if cfg!(unix) && option.starts_with("rclone.program=") {
+                format!("\"{}\"", option.replace('"', "\"\"")).into()
+            } else {
+                option.into()
+            }
+        })
+        .collect();
+    full.extend(argv);
+    (full, env)
+}
+
 impl OwnedReadbackAdmissionError {
     pub fn archive_admission_effects(&self) -> Option<(bool, bool)> {
         match &self.owned {
@@ -270,6 +424,14 @@ impl OwnedReadbackAdmissionError {
             ClosedAdmissionOwner::Admitted(read) => read._execution.predecessor.as_ref(),
         }
         .map(ArchivePredecessorCustody::admission_effects)
+    }
+    /// Whether this archive admission asked the broker for a session.
+    pub fn archive_broker_requested(&self) -> bool {
+        match &self.owned {
+            ClosedAdmissionOwner::Input(input) => input._predecessor.as_ref(),
+            ClosedAdmissionOwner::Admitted(read) => read._execution.predecessor.as_ref(),
+        }
+        .is_some_and(|custody| custody.capture.broker_requested)
     }
 }
 
@@ -528,13 +690,21 @@ impl OwnedArchiveCreator {
             };
             custody.capture.archives[index].effects = effects.clone();
         }
+        let (argv, env) = {
+            let execution = self.read.read.execution.borrow();
+            let custody = execution
+                .predecessor
+                .as_ref()
+                .ok_or(ReadbackError::Unsupported)?;
+            writer_invocation(&custody.capture.write, &self.read.read.env, argv)
+        };
         let cancel = self.prepared_operation().budget().cancellation();
         let executor = Arc::clone(&self.read.read.executor);
         let output = executor.run_cancellable(
             WindowsArchiveRequest {
                 program: std::path::Path::new(&program),
                 argv: &argv,
-                env: &self.read.read.env,
+                env: &env,
                 timeout,
                 cancellation: cancel,
                 retained,
@@ -629,6 +799,21 @@ impl OwnedArchiveCreator {
             .prepared_operation()
             .budget()
             .remaining(self.prepared_operation().clock())?;
+        let (argv, env) = {
+            let execution = self.read.read.execution.borrow();
+            let custody = execution
+                .predecessor
+                .as_ref()
+                .ok_or(ReadbackError::Unsupported)?;
+            if !custody.capture.write.global_options.is_empty() {
+                // Re-admit the operated transport immediately before it can run.
+                solstone_core_installed_payload::resolve_current_member(super::RCLONE_MEMBER)
+                    .map_err(|_| ReadbackError::ToolUnavailable)?
+                    .revalidate()
+                    .map_err(|_| ReadbackError::ToolChanged)?;
+            }
+            writer_invocation(&custody.capture.write, &self.read.read.env, argv)
+        };
         #[cfg(not(target_os = "macos"))]
         let (program, argv) = (self.read.read.member.path().as_os_str().to_owned(), argv);
         #[cfg(target_os = "macos")]
@@ -644,7 +829,7 @@ impl OwnedArchiveCreator {
         let request = Request {
             program,
             argv,
-            env: self.read.read.env.clone(),
+            env,
             timeout: Some(timeout),
             pass_fds: sources
                 .iter()
@@ -760,4 +945,159 @@ fn parse_summary(output: &[u8]) -> Result<String, ReadbackError> {
         }
     }
     summary.ok_or(ReadbackError::SnapshotNodeUnavailable)
+}
+
+#[cfg(all(test, any(unix, windows)))]
+mod operated_writer_tests {
+    use super::*;
+
+    const NO_CONFIG: &str = if cfg!(windows) { "NUL" } else { "/dev/null" };
+    const RCLONE: &str = if cfg!(windows) {
+        "C:\\app\\rclone.exe"
+    } else {
+        "/app/lib/solstone-rclone/rclone"
+    };
+
+    fn binding() -> crate::HostedBinding {
+        crate::HostedBinding {
+            broker_endpoint: "https://broker.invalid".into(),
+            account_id: "account".into(),
+            instance_id: "instance".into(),
+            bucket: "bucket".into(),
+            prefix: "prefix".into(),
+            broker_token: "token".into(),
+        }
+    }
+
+    fn read() -> ArchiveEndpointCapture {
+        let destination = Destination {
+            repository: "s3:https://storage.invalid/bucket/prefix".into(),
+            backend: "s3".into(),
+            credentials: serde_json::from_value(serde_json::json!({
+                "access_key_id": "session-id",
+                "secret_access_key": "session-secret",
+                "session_token": "session-token",
+            }))
+            .unwrap(),
+        };
+        let backend_env = crate::assemble_backend_env(&destination)
+            .unwrap()
+            .into_iter()
+            .map(|(key, value)| (key, value.as_str().map(str::to_owned)))
+            .collect();
+        ArchiveEndpointCapture {
+            destination,
+            password: "daily".into(),
+            backend_env,
+            global_options: vec![],
+        }
+    }
+
+    fn write() -> ArchiveEndpointCapture {
+        ArchiveEndpointCapture {
+            destination: Destination {
+                repository: "rclone:spb:bucket/prefix".into(),
+                backend: "rclone".into(),
+                credentials: Default::default(),
+            },
+            password: "daily".into(),
+            backend_env: [
+                ("RCLONE_CONFIG_SPB_TYPE", "s3"),
+                ("RCLONE_CONFIG_SPB_PROVIDER", "Cloudflare"),
+                ("RCLONE_CONFIG_SPB_ENV_AUTH", "false"),
+                ("RCLONE_CONFIG_SPB_ACCESS_KEY_ID", "session-id"),
+                ("RCLONE_CONFIG_SPB_SECRET_ACCESS_KEY", "session-secret"),
+                ("RCLONE_CONFIG_SPB_SESSION_TOKEN", "session-token"),
+                ("RCLONE_CONFIG_SPB_ENDPOINT", "https://storage.invalid"),
+                ("RCLONE_CONFIG_SPB_REGION", "auto"),
+                ("RCLONE_CONFIG_SPB_NO_CHECK_BUCKET", "true"),
+            ]
+            .into_iter()
+            .map(|(key, value)| (key.to_owned(), Some(value.to_owned())))
+            .collect(),
+            global_options: vec![
+                "-o".into(),
+                format!("rclone.program=\"{RCLONE}\""),
+                "-o".into(),
+                format!("rclone.args=serve restic --stdio --append-only --config {NO_CONFIG}"),
+            ],
+        }
+    }
+
+    fn admitted(write: &ArchiveEndpointCapture) -> Result<&str, ReadbackError> {
+        operated_writer_program(write, &read(), &binding(), "daily")
+    }
+
+    #[test]
+    fn operated_writer_is_the_append_only_transport_for_the_readers_session() {
+        assert_eq!(admitted(&write()), Ok(RCLONE));
+
+        type Tamper = fn(&mut ArchiveEndpointCapture);
+        let refused: [(&str, Tamper); 7] = [
+            ("append-only dropped", |w| {
+                w.global_options[3] =
+                    format!("rclone.args=serve restic --stdio --config {NO_CONFIG}")
+            }),
+            ("relative program", |w| {
+                w.global_options[1] = "rclone.program=\"rclone\"".into()
+            }),
+            ("another prefix", |w| {
+                w.destination.repository = "rclone:spb:bucket/other".into()
+            }),
+            ("another session", |w| {
+                w.backend_env.insert(
+                    "RCLONE_CONFIG_SPB_SESSION_TOKEN".into(),
+                    Some("other".into()),
+                );
+            }),
+            ("ambient credentials", |w| {
+                w.backend_env
+                    .insert("RCLONE_CONFIG_SPB_ENV_AUTH".into(), Some("true".into()));
+            }),
+            ("extra setting", |w| {
+                w.backend_env
+                    .insert("RCLONE_CONFIG_SPB_ACL".into(), Some("public-read".into()));
+            }),
+            ("another password", |w| w.password = "other".into()),
+        ];
+        for (case, tamper) in refused {
+            let mut tampered = write();
+            tamper(&mut tampered);
+            assert!(admitted(&tampered).is_err(), "{case} was admitted");
+        }
+    }
+
+    #[test]
+    fn operated_writer_runs_with_its_own_transport_not_the_readers_credentials() {
+        let read_env = direct_environment(&read().destination, "daily").unwrap();
+        let (argv, env) = writer_invocation(&write(), &read_env, vec!["backup".into()]);
+        let program = if cfg!(unix) {
+            format!("\"rclone.program=\"\"{RCLONE}\"\"\"")
+        } else {
+            format!("rclone.program=\"{RCLONE}\"")
+        };
+        assert_eq!(
+            argv,
+            [
+                "-o".to_owned(),
+                program,
+                "-o".into(),
+                format!("rclone.args=serve restic --stdio --append-only --config {NO_CONFIG}"),
+                "backup".into(),
+            ]
+            .map(OsString::from)
+        );
+        assert_eq!(
+            env.get(std::ffi::OsStr::new("RESTIC_REPOSITORY")),
+            Some(&OsString::from("rclone:spb:bucket/prefix"))
+        );
+        assert!(
+            env.keys()
+                .all(|key| !key.to_string_lossy().starts_with("AWS_"))
+        );
+
+        let (argv, env) = writer_invocation(&read(), &read_env, vec!["backup".into()]);
+        assert_eq!(argv, [OsString::from("backup")]);
+        assert_eq!(env, read_env);
+    }
 }

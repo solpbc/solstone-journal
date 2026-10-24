@@ -8,8 +8,9 @@ use p256::PublicKey;
 #[cfg(test)]
 use p256::SecretKey;
 use p256::ecdh::EphemeralSecret;
+use p256::elliptic_curve::Generate;
 use p256::elliptic_curve::rand_core;
-use p256::elliptic_curve::sec1::ToEncodedPoint;
+use p256::elliptic_curve::sec1::ToSec1Point;
 use ring::aead::{self, Aad, LessSafeKey, Nonce, UnboundKey};
 use ring::rand::{SecureRandom, SystemRandom};
 use sha2::Sha256;
@@ -46,9 +47,10 @@ pub(crate) fn encrypt_web_push(
     let mut salt = [0u8; 16];
     rng.fill(&mut salt).map_err(|_| WebPushError::CryptoError)?;
 
-    let ephemeral_secret = EphemeralSecret::random(&mut OsRngAdapter(&rng));
+    let ephemeral_secret = EphemeralSecret::try_generate_from_rng(&mut OsRngAdapter(&rng))
+        .map_err(|_| WebPushError::CryptoError)?;
     let ephemeral_public = ephemeral_secret.public_key();
-    let as_public = ephemeral_public.to_encoded_point(false);
+    let as_public = ephemeral_public.to_sec1_point(false);
     let as_public_bytes: [u8; 65] = as_public
         .as_bytes()
         .try_into()
@@ -72,28 +74,24 @@ pub(crate) fn encrypt_web_push(
 
 struct OsRngAdapter<'a>(&'a SystemRandom);
 
-impl rand_core::CryptoRng for OsRngAdapter<'_> {}
-impl rand_core::RngCore for OsRngAdapter<'_> {
-    fn next_u32(&mut self) -> u32 {
+impl rand_core::TryCryptoRng for OsRngAdapter<'_> {}
+impl rand_core::TryRng for OsRngAdapter<'_> {
+    type Error = WebPushError;
+
+    fn try_next_u32(&mut self) -> Result<u32, Self::Error> {
         let mut buf = [0u8; 4];
-        self.0.fill(&mut buf).expect("system random");
-        u32::from_le_bytes(buf)
+        self.try_fill_bytes(&mut buf)?;
+        Ok(u32::from_le_bytes(buf))
     }
 
-    fn next_u64(&mut self) -> u64 {
+    fn try_next_u64(&mut self) -> Result<u64, Self::Error> {
         let mut buf = [0u8; 8];
-        self.0.fill(&mut buf).expect("system random");
-        u64::from_le_bytes(buf)
+        self.try_fill_bytes(&mut buf)?;
+        Ok(u64::from_le_bytes(buf))
     }
 
-    fn fill_bytes(&mut self, dest: &mut [u8]) {
-        self.0.fill(dest).expect("system random");
-    }
-
-    fn try_fill_bytes(&mut self, dest: &mut [u8]) -> Result<(), rand_core::Error> {
-        self.0
-            .fill(dest)
-            .map_err(|_| rand_core::Error::from(core::num::NonZeroU32::new(1).unwrap()))
+    fn try_fill_bytes(&mut self, dest: &mut [u8]) -> Result<(), Self::Error> {
+        self.0.fill(dest).map_err(|_| WebPushError::CryptoError)
     }
 }
 
@@ -168,7 +166,7 @@ pub(crate) fn encrypt_web_push_with_params(
     let ephemeral_secret =
         SecretKey::from_slice(ephemeral_private).map_err(|_| WebPushError::InvalidKey)?;
     let ephemeral_public = ephemeral_secret.public_key();
-    let as_public = ephemeral_public.to_encoded_point(false);
+    let as_public = ephemeral_public.to_sec1_point(false);
     let as_public_bytes: [u8; 65] = as_public
         .as_bytes()
         .try_into()
@@ -215,7 +213,7 @@ pub(crate) fn decrypt_web_push_for_test(
     let receiver_secret =
         SecretKey::from_slice(receiver_private_bytes).map_err(|_| WebPushError::InvalidKey)?;
     let receiver_public = receiver_secret.public_key();
-    let ua_public = receiver_public.to_encoded_point(false);
+    let ua_public = receiver_public.to_sec1_point(false);
     let ua_public_bytes: [u8; 65] = ua_public
         .as_bytes()
         .try_into()

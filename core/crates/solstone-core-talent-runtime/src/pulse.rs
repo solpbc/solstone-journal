@@ -746,10 +746,7 @@ mod tests {
         )
         .unwrap();
         let home = HomeContext::new(root.path(), instant);
-        let mut prepared = PreparedTalent {
-            name: "pulse".to_owned(),
-            config: Map::new(),
-        };
+        let mut prepared = PreparedTalent::new("pulse".to_owned(), Map::new());
         assert_eq!(
             pulse_day(&prepared, &home),
             instant.with_timezone(&zone).format("%Y%m%d").to_string()
@@ -793,10 +790,7 @@ mod tests {
             recent_entities: String::new(),
             gaps: String::new(),
         }));
-        let prepared = PreparedTalent {
-            name: "pulse".to_owned(),
-            config: Map::new(),
-        };
+        let prepared = PreparedTalent::new("pulse".to_owned(), Map::new());
         assert_eq!(
             output_override(
                 r#"{"title":"T","one_sentence":"S","full_details":"D","needs_you":["N"]}"#,

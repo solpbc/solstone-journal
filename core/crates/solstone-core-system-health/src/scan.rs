@@ -15,7 +15,7 @@ use solstone_core_format::segment::segment_start_and_end_seconds;
 use solstone_core_journal_io::{SegmentIdentityError, SegmentLayout, StreamLocation};
 use solstone_core_processing_record::{
     MediaKind, TerminalProofOutcome, analysis_row_key, evaluate_terminal_proof,
-    jsonl_has_row_with_key, media_kind, read_processing_record_header, vocab,
+    is_transcribe_output, jsonl_has_row_with_key, media_kind, read_processing_record_header, vocab,
 };
 
 use crate::{
@@ -514,7 +514,7 @@ pub fn is_audio_jsonl(path: &Path) -> bool {
             || name.ends_with("_audio.jsonl")
             || (name.ends_with("_transcript.jsonl")
                 || solstone_core_format::audio_archive::is_audio_archive_transcript_name(name))
-    })
+    }) || (!is_screen_jsonl(path) && is_transcribe_output(path))
 }
 
 fn is_screen_jsonl(path: &Path) -> bool {
@@ -916,6 +916,48 @@ mod tests {
         let now = DateTime::<Utc>::from(std::time::SystemTime::UNIX_EPOCH);
         let (states, _) = detect_data_state(&segment_dir, "field", now).unwrap();
         assert_eq!(states.0.get("image").map(String::as_str), Some("failed"));
+    }
+
+    // Captured from a phone journal: a recording named `note-0.wav`, its
+    // transcript `note-0.jsonl` and the segment's own `events.jsonl`.
+    const NOTE_TRANSCRIPT: &str = concat!(
+        r#"{"raw":"note-0.wav","backend":"parakeet-cpp","model":"tdt-0.6b-v3-q8_0","duration":11.05,"_solstone_processing":{"schema":"solstone.processing.v1","state":"analyzed","reason_code":"ok","handler":"transcribe","input_size":353678,"attempted_at":"2026-10-24T15:46:08Z"}}"#,
+        "\n",
+        r#"{"start":"14:00:00","text":"Maya checked the orchard irrigation pump this morning.","sentence_id":1}"#,
+        "\n",
+    );
+
+    fn note_segment(transcript: &str) -> (TempDir, std::path::PathBuf) {
+        let temporary = TempDir::new().unwrap();
+        let segment_dir = temporary
+            .path()
+            .join("chronicle")
+            .join("20261023")
+            .join("device_audio")
+            .join("140000_12");
+        fs::create_dir_all(&segment_dir).unwrap();
+        fs::write(segment_dir.join("note-0.wav"), vec![0_u8; 353_678]).unwrap();
+        fs::write(segment_dir.join("note-0.jsonl"), transcript).unwrap();
+        fs::write(
+            segment_dir.join("events.jsonl"),
+            "{\"record_type\":\"device_ingest\",\"outcome\":\"accepted\"}\n",
+        )
+        .unwrap();
+        (temporary, segment_dir)
+    }
+
+    #[test]
+    fn a_transcript_named_after_any_recording_completes_its_speech() {
+        let now = DateTime::<Utc>::from(std::time::SystemTime::UNIX_EPOCH);
+        let (_temporary, segment_dir) = note_segment(NOTE_TRANSCRIPT);
+        let (states, _) = detect_data_state(&segment_dir, "device_audio", now).unwrap();
+        assert_eq!(states.0.get("audio").map(String::as_str), Some("analyzed"));
+
+        // A JSONL that transcribe did not write never stands in for the speech.
+        let (_temporary, segment_dir) =
+            note_segment("{\"start\":\"14:00:00\",\"text\":\"not a transcript\"}\n");
+        let (states, _) = detect_data_state(&segment_dir, "device_audio", now).unwrap();
+        assert_eq!(states.0.get("audio").map(String::as_str), Some("pending"));
     }
 
     fn device_ingest_event_line(stream: &str, day: &str, segment: &str) -> String {

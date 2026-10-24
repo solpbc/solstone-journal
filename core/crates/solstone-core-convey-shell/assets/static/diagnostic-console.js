@@ -303,7 +303,9 @@
 
   function renderEntryDetail(entry) {
     const detail = entry.detail || {};
-    if (detail.apiError) {
+    // a logged error keeps its status and reason code for the report; only a
+    // request failure has a request to show in place of the message and stack
+    if (entry.source === 'api' && detail.apiError) {
       return renderApiDetail(detail.apiError);
     }
     return renderJsDetail(detail);

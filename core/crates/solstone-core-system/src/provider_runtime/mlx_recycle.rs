@@ -346,6 +346,33 @@ mod tests {
     }
 
     #[test]
+    fn production_threshold_is_exactly_512_mib_above_ready() {
+        let mut trigger = IdleTrigger::default();
+        let bytes = 512 * 1024 * 1024;
+        assert!(!trigger.observe(
+            0.0,
+            1800.0,
+            1024,
+            FOOTPRINT_GROWTH_BYTES,
+            snapshot(1, bytes, true)
+        ));
+        assert!(!trigger.observe(
+            60.0,
+            1860.0,
+            1024,
+            FOOTPRINT_GROWTH_BYTES,
+            snapshot(1, bytes - 1, true)
+        ));
+        assert!(trigger.observe(
+            60.0,
+            1860.0,
+            1024,
+            FOOTPRINT_GROWTH_BYTES,
+            snapshot(1, bytes, true)
+        ));
+    }
+
+    #[test]
     fn recycle_requires_memory_idle_and_ready_guard_together() {
         let mut trigger = IdleTrigger::default();
         assert!(!trigger.observe(0.0, 2000.0, 1024, 512, snapshot(1, 512, true)));
