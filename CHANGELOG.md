@@ -18,6 +18,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - fixed your journal on a mac sometimes giving up after it stopped unexpectedly. at the end of its wait it showed "a recent heartbeat from another run is present". this happened while the mac was syncing its clock.
 - when a start can't continue because a helper process stopped, the message now says "a helper process stopped before it was ready" instead of "did not answer in time". on a mac or linux, `solstone journal health logs` now shows the helper's own reason.
 - security fix: imported image descriptions and agent search or transcript results could load images from outside your journal. image markup in those excerpts now stays text. thanks @dvanduzer for the report.
+- media offload now works with encrypted backup operated by sol pbc. until now, offload stopped before moving anything into that backup. nothing was removed, and your media stayed on this computer.
 - interrupted daily rebuilds on iphone can now continue from verified completed work, keeping accepted results. work with uncertain outcomes stays held for review.
 - fixed rebuilds stopping when retained activity history still uses an earlier activity name, or when there are no suggested entities.
 - transcription now trims long gaps between detected speech, keeping context around each speech span and restoring transcript times to the original recording. this avoids sending those gaps to the recognizer.

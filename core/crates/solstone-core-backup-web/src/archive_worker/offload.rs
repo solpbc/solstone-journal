@@ -16,8 +16,8 @@ use solstone_core_backup::archive_activity::{
 };
 use solstone_core_backup_runtime::{
     DirectReadFinishOwner, DirectReadFinishState, OwnedAdmittedArchiveHold,
-    OwnedArchiveAdmissionFailure, OwnedDirectReadFinish,
-    admit_prepared_archive_owned_creator_installed,
+    OwnedArchiveAdmissionFailure, OwnedDirectReadFinish, UreqHttpTransport,
+    admit_prepared_archive_owned_creator_installed, resolve_rclone_member,
 };
 use solstone_core_journal_io::media::RootActivityCarrier;
 use solstone_core_offload::run::{
@@ -506,7 +506,20 @@ fn execute(
         #[cfg(all(test, feature = "full-tests", target_os = "linux"))]
         tests::after_preflight(slot);
         phase = "admission";
-        match admit_prepared_archive_owned_creator_installed(prepared, restic_path) {
+        // An operated writer needs the installed rclone; without it admission
+        // refuses before any broker session is issued.
+        let rclone = prepared
+            .configuration()
+            .binding()
+            .and_then(|_| std::env::current_exe().ok())
+            .and_then(|executable| resolve_rclone_member(&executable).ok());
+        match admit_prepared_archive_owned_creator_installed(
+            prepared,
+            restic_path,
+            rclone.as_deref(),
+            env!("CARGO_PKG_VERSION"),
+            &UreqHttpTransport,
+        ) {
             Ok(installed) => Ok((ready, installed)),
             Err(failure) => {
                 if let Some(report) = terminal.report.as_mut() {
