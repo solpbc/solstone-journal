@@ -6639,6 +6639,7 @@ dependencies = [
  "solstone-core-talent-config",
  "solstone-core-transcripts",
  "tempfile",
+ "unicode-normalization",
  "zip",
 ]
 

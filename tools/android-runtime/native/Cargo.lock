@@ -5920,6 +5920,7 @@ dependencies = [
  "solstone-core-talent-cli",
  "solstone-core-talent-config",
  "solstone-core-transcripts",
+ "unicode-normalization",
 ]
 
 [[package]]

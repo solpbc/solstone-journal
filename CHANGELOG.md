@@ -13,6 +13,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- when a moment has no recording, or its recording never says a name that only appeared on screen, that name is no longer marked as heard. it's listed as coming from the screen, and repeats are dropped. names that were said keep their source. thanks @dvanduzer for the report.
 - some recordings stayed "waiting for media processing" in health, and that day's summaries waited with them. they now finish processing.
 - after you save a model or select check again, the thinking page now shows the check's result as soon as your journal has it. before, it showed "thinking status unavailable" until you reloaded the page.
 - when your journal runs on a phone, health's live panels now show what your journal is running. before, they stayed on "waiting for live updates".
