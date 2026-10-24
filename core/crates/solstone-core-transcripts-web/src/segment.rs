@@ -1187,6 +1187,9 @@ mod tests {
             json!([{"at": at, "name": "Friar"}])
         );
         assert!(chunks[1].get("possible_names").is_none());
+        // The file is not a talent output tab: its entries are only shown checked.
+        let value = prepare_segment(root, "20260101", "default", "120000_60", Utc::now()).unwrap();
+        assert!(value["md_files"].get("possible_names").is_none());
 
         // A renamed entity's suggestion is hidden until the talent runs again.
         std::fs::write(

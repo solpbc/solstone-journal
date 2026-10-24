@@ -688,9 +688,10 @@ fn visible_rows(clause: &str) -> String {
 }
 
 /// A query plan returns a possible-name row only when the session's
-/// admission says so. Without one, the function refuses every such row.
-const POSSIBLE_NAME_ROWS_ADMITTED: &str =
-    " AND solstone_possible_name_admitted(chunks.path, chunks.idx, chunks.content)";
+/// admission says so. Without one, the function refuses every such row. The
+/// path test comes first so no other row pays for the call or its content.
+const POSSIBLE_NAME_ROWS_ADMITTED: &str = " AND (chunks.path NOT LIKE '%/talents/possible_names.json' \
+     OR solstone_possible_name_admitted(chunks.path, chunks.idx, chunks.content))";
 const POSSIBLE_NAME_ADMISSION_FUNCTION: &str = "solstone_possible_name_admitted";
 
 /// Decides whether one indexed possible-name row may be returned: the stored

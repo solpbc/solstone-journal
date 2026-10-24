@@ -52,6 +52,8 @@ mod owner_web;
 mod permissions;
 mod permits;
 mod possible_names;
+#[cfg(all(test, feature = "full-tests"))]
+mod possible_names_tests;
 mod proxy_preface;
 mod references;
 mod registry;

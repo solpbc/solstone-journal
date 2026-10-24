@@ -30,7 +30,9 @@ pub fn possible_name_label(name: &str) -> String {
 /// Whether a stored search path is a possible-names sidecar.
 pub fn is_possible_names_path(rel: &str) -> bool {
     let normalized = rel.strip_prefix("chronicle/").unwrap_or(rel);
-    super::resolve_spec(normalized).is_some_and(|spec| spec.family == super::Family::PossibleNames)
+    normalized.ends_with(POSSIBLE_NAMES_RELATIVE_PATH)
+        && super::resolve_spec(normalized)
+            .is_some_and(|spec| spec.family == super::Family::PossibleNames)
 }
 
 /// One chunk per entry, so chunk `idx` is entry `idx`. A sidecar that does not
@@ -160,5 +162,28 @@ mod tests {
                 .chunks
                 .is_empty()
         );
+    }
+
+    #[test]
+    fn talent_inputs_never_read_possible_names() {
+        // Talents and the owner's talent tabs read a segment's outputs by
+        // name within its own talents directory, as production does.
+        let talents = crate::test_support::reserve_temp_path("possible-names-projection");
+        std::fs::create_dir(&talents).unwrap();
+        std::fs::write(
+            talents.join("possible_names.json"),
+            json!({"schema": POSSIBLE_NAMES_SCHEMA, "entries": [{"name": "Friar"}]}).to_string(),
+        )
+        .unwrap();
+        std::fs::write(talents.join("brief.md"), "a brief").unwrap();
+        let projections = super::super::iter_talent_text_projections(&talents, "", None).unwrap();
+        assert_eq!(
+            projections
+                .iter()
+                .map(|projection| projection.stem.as_str())
+                .collect::<Vec<_>>(),
+            ["brief"]
+        );
+        std::fs::remove_dir_all(talents).unwrap();
     }
 }
