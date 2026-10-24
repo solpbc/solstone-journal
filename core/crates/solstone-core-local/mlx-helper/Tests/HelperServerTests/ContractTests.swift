@@ -221,6 +221,23 @@ struct MaintenanceContractTests {
         #expect(failed.generation == 2 && failed.idle)
     }
 
+    @Test func missingFootprintDoesNotHideRequestActivity() async throws {
+        enum Failure: Error { case unavailable }
+        let state = ModelState()
+        await state.ready(StubBackend())
+        let app = makeApplication(options: try Options(arguments: ["--model", "/model"]), state: state,
+                                  footprint: { throw Failure.unavailable })
+        try await app.test(.router) { client in
+            try await client.execute(uri: "/maintenance", method: .get) { response in
+                #expect(response.status == .ok)
+                let root = try #require(JSONSerialization.jsonObject(with: Data(response.body.readableBytesView)) as? [String: Any])
+                #expect(root["footprint_bytes"] == nil)
+                #expect(root["activity_generation"] as? Int == 0)
+                #expect(root["idle"] as? Bool == true)
+            }
+        }
+    }
+
     @Test func maintenanceObservationDoesNotPreventIdle() async throws {
         let state = ModelState()
         let backend = StubBackend()

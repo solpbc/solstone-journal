@@ -20,9 +20,11 @@ Structured output supports `response_format` with `json_object` or
 `json_schema` and `strict: true`. Schema text is compiled in its original field
 order. Compiled grammars are cached by exact schema text, with a new matcher
 for every request, retaining at most eight compiled grammars. `/maintenance`
-reports the helper PID, native memory footprint, slot activity generation and
-idle state without reserving inference or resetting idle tracking. the journal
-uses this observation for [idle runtime maintenance](../../../../docs/PROVIDERS.md#local-and-arbitrary-endpoints).
+reports the helper PID, slot activity generation and idle state without reserving
+inference or resetting idle tracking. the generation counts tokenization and
+completion calls admitted to the slot. native memory footprint is included when
+available, as evidence only. the journal uses the request count for
+[idle runtime maintenance](../../../../docs/PROVIDERS.md#local-and-arbitrary-endpoints).
 the allocator cache defaults to 512 MiB; use
 `--cache-limit-mb` to set another positive limit. Completion length is capped at
 the context space remaining after the prepared prompt; an oversized prompt is

@@ -14,16 +14,15 @@ use crate::queue::{LocalAnalysisPause, TaskQueue};
 use super::model::{ManagedProcess, ProviderRuntimeState, RuntimePhase};
 use super::store::{LocalRuntimeShared, ReadyProcess, ReadyProcessLookup, RuntimeClock};
 
-const FOOTPRINT_GROWTH_BYTES: u64 = 512 * 1024 * 1024;
+const REQUEST_LIMIT: u64 = 2000;
 const IDLE_SECONDS: f64 = 60.0;
-const MIN_READY_SECONDS: f64 = 30.0 * 60.0;
 const DRAIN_SECONDS: f64 = 120.0;
 const SAMPLE_SECONDS: f64 = 5.0;
 
 #[derive(Clone, Copy, Debug, Deserialize)]
 pub(super) struct MaintenanceSnapshot {
     pid: u32,
-    footprint_bytes: u64,
+    footprint_bytes: Option<u64>,
     activity_generation: u64,
     idle: bool,
 }
@@ -40,7 +39,7 @@ pub(super) fn read_snapshot(process: &ReadyProcess) -> Result<MaintenanceSnapsho
     }
     let snapshot: MaintenanceSnapshot =
         serde_json::from_str(&response.body).map_err(|error| error.to_string())?;
-    if snapshot.pid != process.pid || snapshot.footprint_bytes == 0 {
+    if snapshot.pid != process.pid {
         return Err("maintenance observation does not match the owned helper".into());
     }
     Ok(snapshot)
@@ -50,8 +49,9 @@ pub(super) fn capture_ready_baseline(process: &ReadyProcess) -> Option<Maintenan
     match read_snapshot(process) {
         Ok(snapshot) => {
             log::info!(
-                "MLX Ready footprint baseline: pid={} bytes={}",
+                "MLX Ready request baseline: pid={} requests={} footprint_bytes={:?}",
                 process.pid,
+                snapshot.activity_generation,
                 snapshot.footprint_bytes
             );
             Some(snapshot)
@@ -75,12 +75,11 @@ impl IdleTrigger {
     fn observe(
         &mut self,
         now: f64,
-        ready_seconds: f64,
         baseline: u64,
-        growth_bytes: u64,
+        request_limit: u64,
         snapshot: MaintenanceSnapshot,
     ) -> bool {
-        if !snapshot.idle || snapshot.activity_generation == 0 {
+        if !snapshot.idle || snapshot.activity_generation <= baseline {
             self.quiet = None;
             return false;
         }
@@ -95,8 +94,7 @@ impl IdleTrigger {
             return false;
         }
         now - quiet_since >= IDLE_SECONDS
-            && ready_seconds >= MIN_READY_SECONDS
-            && snapshot.footprint_bytes.saturating_sub(baseline) >= growth_bytes
+            && snapshot.activity_generation.saturating_sub(baseline) >= request_limit
     }
 
     fn unchanged(&self, snapshot: MaintenanceSnapshot) -> bool {
@@ -122,31 +120,31 @@ pub(super) struct MlxRecycle {
     queue: TaskQueue,
     clock: Arc<dyn RuntimeClock>,
     memory: Mutex<Memory>,
-    growth_bytes: u64,
+    request_limit: u64,
 }
 
 impl MlxRecycle {
     pub(super) fn new(queue: TaskQueue, clock: Arc<dyn RuntimeClock>) -> Self {
-        let growth_bytes = FOOTPRINT_GROWTH_BYTES;
-        // Qualification can lower only the threshold, never the idle/drain/Ready guards.
+        let request_limit = REQUEST_LIMIT;
+        // Qualification can lower only the threshold, never the idle/drain guards.
         // This environment seam is absent from ordinary production builds.
         #[cfg(feature = "test-hooks")]
-        let growth_bytes = match std::env::var("SOLSTONE_TEST_MLX_RECYCLE_GROWTH_BYTES") {
+        let request_limit = match std::env::var("SOLSTONE_TEST_MLX_RECYCLE_REQUESTS") {
             Ok(value) => value
                 .parse::<u64>()
                 .ok()
-                .filter(|value| *value > 0 && *value <= FOOTPRINT_GROWTH_BYTES)
+                .filter(|value| *value > 0 && *value <= REQUEST_LIMIT)
                 .expect(
-                    "positive test MLX recycle threshold no larger than the production constant",
+                    "positive test MLX recycle request count no larger than the production constant",
                 ),
-            Err(std::env::VarError::NotPresent) => growth_bytes,
+            Err(std::env::VarError::NotPresent) => request_limit,
             Err(error) => panic!("invalid test MLX recycle threshold: {error}"),
         };
         Self {
             queue,
             clock,
             memory: Mutex::new(Memory::default()),
-            growth_bytes,
+            request_limit,
         }
     }
 
@@ -235,7 +233,7 @@ impl MlxRecycle {
             Self::release(&mut memory);
             return None;
         };
-        let Some((ready_at, baseline)) =
+        let Some((_ready_at, baseline)) =
             shared.mlx_ready_baseline(state.generation, &state.desired_fingerprint)
         else {
             Self::release(&mut memory);
@@ -277,15 +275,10 @@ impl MlxRecycle {
                 return None;
             }
         };
-        if snapshot.activity_generation <= baseline.activity_generation {
-            Self::release(&mut memory);
-            return None;
-        }
         if !memory.trigger.observe(
             now,
-            ready_at.elapsed().as_secs_f64(),
-            baseline.footprint_bytes,
-            self.growth_bytes,
+            baseline.activity_generation,
+            self.request_limit,
             snapshot,
         ) {
             if memory.pause.is_some() {
@@ -310,23 +303,19 @@ impl MlxRecycle {
                 return None;
             }
         };
-        if !memory.trigger.unchanged(rechecked)
-            || rechecked
-                .footprint_bytes
-                .saturating_sub(baseline.footprint_bytes)
-                < self.growth_bytes
-        {
+        if !memory.trigger.unchanged(rechecked) {
             Self::release(&mut memory);
             return None;
         }
         memory.replacing = true;
         memory.stop_requested_at = Some(Instant::now());
         log::info!(
-            "MLX maintenance requested: pid={} baseline_bytes={} footprint_bytes={} growth_bytes={}",
+            "MLX maintenance requested: pid={} baseline_requests={} requests={} threshold_requests={} footprint_bytes={:?}",
             process.pid,
-            baseline.footprint_bytes,
-            rechecked.footprint_bytes,
-            self.growth_bytes
+            baseline.activity_generation,
+            rechecked.activity_generation,
+            self.request_limit,
+            rechecked.footprint_bytes
         );
         Some(process.clone())
     }
@@ -336,65 +325,78 @@ impl MlxRecycle {
 mod tests {
     use super::*;
 
-    fn snapshot(generation: u64, growth: u64, idle: bool) -> MaintenanceSnapshot {
+    fn snapshot(requests: u64, idle: bool) -> MaintenanceSnapshot {
         MaintenanceSnapshot {
             pid: 42,
-            footprint_bytes: 1024 + growth,
-            activity_generation: generation,
+            footprint_bytes: None,
+            activity_generation: requests,
             idle,
         }
     }
 
     #[test]
-    fn production_threshold_is_exactly_512_mib_above_ready() {
+    fn production_threshold_is_exactly_2000_calls_since_ready() {
         let mut trigger = IdleTrigger::default();
-        let bytes = 512 * 1024 * 1024;
+        let baseline = 17;
         assert!(!trigger.observe(
             0.0,
-            1800.0,
-            1024,
-            FOOTPRINT_GROWTH_BYTES,
-            snapshot(1, bytes, true)
+            baseline,
+            REQUEST_LIMIT,
+            snapshot(baseline + 1999, true)
         ));
         assert!(!trigger.observe(
             60.0,
-            1860.0,
-            1024,
-            FOOTPRINT_GROWTH_BYTES,
-            snapshot(1, bytes - 1, true)
+            baseline,
+            REQUEST_LIMIT,
+            snapshot(baseline + 1999, true)
+        ));
+        assert!(!trigger.observe(
+            61.0,
+            baseline,
+            REQUEST_LIMIT,
+            snapshot(baseline + 2000, true)
         ));
         assert!(trigger.observe(
-            60.0,
-            1860.0,
-            1024,
-            FOOTPRINT_GROWTH_BYTES,
-            snapshot(1, bytes, true)
+            121.0,
+            baseline,
+            REQUEST_LIMIT,
+            snapshot(baseline + 2000, true)
         ));
     }
 
     #[test]
-    fn recycle_requires_memory_idle_and_ready_guard_together() {
+    fn calls_require_sixty_seconds_of_unchanged_idle_without_a_ready_age_guard() {
         let mut trigger = IdleTrigger::default();
-        assert!(!trigger.observe(0.0, 2000.0, 1024, 512, snapshot(1, 512, true)));
-        assert!(!trigger.observe(59.0, 2059.0, 1024, 512, snapshot(1, 512, true)));
-        assert!(!trigger.observe(60.0, 2060.0, 1024, 512, snapshot(1, 511, true)));
-        assert!(!trigger.observe(60.0, 1799.0, 1024, 512, snapshot(1, 512, true)));
-        assert!(trigger.observe(60.0, 1800.0, 1024, 512, snapshot(1, 512, true)));
-        assert!(!trigger.observe(61.0, 1801.0, 1024, 512, snapshot(2, 512, true)));
-        assert!(!trigger.unchanged(snapshot(1, 512, true)));
-        assert!(!trigger.unchanged(snapshot(2, 512, false)));
-        assert!(trigger.observe(121.0, 1861.0, 1024, 512, snapshot(2, 512, true)));
-        assert!(!trigger.observe(122.0, 1862.0, 1024, 512, snapshot(2, 512, false)));
-        assert!(!trigger.observe(123.0, 1863.0, 1024, 512, snapshot(2, 512, true)));
+        assert!(!trigger.observe(0.0, 0, 2, snapshot(2, true)));
+        assert!(!trigger.observe(59.0, 0, 2, snapshot(2, true)));
+        assert!(trigger.observe(60.0, 0, 2, snapshot(2, true)));
+        assert!(!trigger.observe(61.0, 0, 2, snapshot(3, true)));
+        assert!(!trigger.unchanged(snapshot(2, true)));
+        assert!(!trigger.unchanged(snapshot(3, false)));
+        assert!(trigger.observe(121.0, 0, 2, snapshot(3, true)));
+        assert!(!trigger.observe(122.0, 0, 2, snapshot(3, false)));
+        assert!(!trigger.observe(123.0, 0, 2, snapshot(3, true)));
     }
 
     #[test]
-    fn untouched_helper_and_footprint_below_baseline_never_recycle() {
+    fn calls_at_or_below_the_admission_baseline_never_recycle() {
         let mut trigger = IdleTrigger::default();
         for now in [0.0, 60.0, 2000.0] {
-            assert!(!trigger.observe(now, now, 1024, 512, snapshot(0, 1000, true)));
-            assert!(!trigger.observe(now, now, 1024, 512, snapshot(1, 0, true)));
+            assert!(!trigger.observe(now, 2000, REQUEST_LIMIT, snapshot(0, true)));
+            assert!(!trigger.observe(now, 2000, REQUEST_LIMIT, snapshot(2000, true)));
+            assert!(!trigger.observe(now, 2000, REQUEST_LIMIT, snapshot(2001, true)));
         }
+    }
+
+    #[test]
+    fn footprint_is_evidence_only_even_when_unavailable_or_zero() {
+        let mut trigger = IdleTrigger::default();
+        assert!(!trigger.observe(0.0, 0, REQUEST_LIMIT, snapshot(2000, true)));
+        let mut observed = snapshot(2000, true);
+        observed.footprint_bytes = Some(0);
+        assert!(trigger.observe(60.0, 0, REQUEST_LIMIT, observed));
+        observed.footprint_bytes = Some(u64::MAX);
+        assert!(trigger.observe(60.0, 0, REQUEST_LIMIT, observed));
     }
 }
 
@@ -490,10 +492,10 @@ mod composed_tests {
         );
         shared.record_mlx_admission_for_test(
             &fence,
-            Instant::now() - Duration::from_secs(1801),
+            Instant::now(),
             MaintenanceSnapshot {
                 pid,
-                footprint_bytes: 1024,
+                footprint_bytes: None,
                 activity_generation: 0,
                 idle: true,
             },
@@ -503,8 +505,8 @@ mod composed_tests {
     fn observe(generation: u64) -> MaintenanceSnapshot {
         MaintenanceSnapshot {
             pid: 42,
-            footprint_bytes: 1024 + FOOTPRINT_GROWTH_BYTES,
-            activity_generation: generation,
+            footprint_bytes: None,
+            activity_generation: generation * REQUEST_LIMIT,
             idle: true,
         }
     }
@@ -634,11 +636,11 @@ mod composed_tests {
         let child = admit(&shared, &mut state, 42);
         shared.record_mlx_admission_for_test(
             child.fence.as_ref().unwrap(),
-            Instant::now() - Duration::from_secs(1801),
+            Instant::now(),
             MaintenanceSnapshot {
                 pid: 42,
-                footprint_bytes: 1024,
-                activity_generation: 7,
+                footprint_bytes: None,
+                activity_generation: 7 * REQUEST_LIMIT,
                 idle: true,
             },
         );

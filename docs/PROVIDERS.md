@@ -119,15 +119,16 @@ llama-server, GGUF and projector caches. The saved switch persists across
 restarts; macOS does not download llama-server or switch back to it after
 migration. A runtime regression after migration requires a release rollback.
 
-the supervisor can recycle the MLX process when its native memory footprint has
-grown by at least 512 MiB since Ready admission, its inference slot has been idle
-for 60 seconds, and at least 30 minutes have passed since admission. it pauses
-queued think and describe admission and waits up to 120 seconds for existing
-work to finish. if work remains busy or helper activity changes, maintenance is
-deferred. the same installed model restarts only after the old process exits;
-queued analysis resumes after the successor is admitted Ready. direct operator
-calls bypass that queue and can still be interrupted. a missing Ready footprint
-measurement is logged and disables recycling for that admission.
+the supervisor can recycle the MLX process after 2,000 helper slot calls since
+Ready admission and 60 seconds of unchanged idle activity. tokenization and
+completion calls count; health, properties and maintenance observations do not.
+footprint measurements are evidence only. it pauses queued think and describe
+admission and waits up to 120 seconds for existing work to finish. if work remains
+busy or helper activity changes, maintenance is deferred. the same installed
+model restarts only after the old process exits; queued analysis resumes after
+the successor is admitted Ready. direct operator calls bypass that queue and can
+still be interrupted. a missing Ready activity observation is logged and disables
+recycling for that admission.
 
 A configured endpoint uses:
 

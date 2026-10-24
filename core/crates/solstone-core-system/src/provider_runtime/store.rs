@@ -792,7 +792,7 @@ pub trait ReadyProcessLookup: Send + Sync {
 impl ReadyProcessLookup for LocalRuntimeShared {
     fn accept_ready(&self, fence: &ProviderFence) {
         // Capture before public Ready admission. Subsequent probes restore the
-        // same baseline and timer instead of treating activity as a new Ready.
+        // same admission baseline instead of treating activity as a new Ready.
         let mlx_baseline = if matches!(
             self.launch_request_for(&fence.fingerprint),
             Some(LocalLaunchConfig::Mlx { .. })

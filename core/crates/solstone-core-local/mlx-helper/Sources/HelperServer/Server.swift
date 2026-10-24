@@ -51,7 +51,7 @@ public actor ModelState {
 
 public struct MaintenanceSnapshot: Encodable, Sendable {
     public let pid: Int32
-    public let footprint_bytes: UInt64
+    public let footprint_bytes: UInt64?
     public let activity_generation: UInt64
     public let idle: Bool
 }
@@ -123,7 +123,7 @@ public func makeApplication(
         guard await state.loaded() else { throw HTTPError(.serviceUnavailable) }
         let activity = await slot.activity()
         return try json(MaintenanceSnapshot(
-            pid: getpid(), footprint_bytes: try footprint(),
+            pid: getpid(), footprint_bytes: try? footprint(),
             activity_generation: activity.generation, idle: activity.idle))
     }
     router.get("props") { _, _ -> Response in
