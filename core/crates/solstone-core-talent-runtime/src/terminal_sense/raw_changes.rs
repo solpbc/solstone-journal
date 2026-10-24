@@ -25,6 +25,9 @@ pub(crate) fn prepare(
             }
         }
         let mut tmux = f["content"]["tmux"].clone();
+        // Capture-only fields must not change prefix grouping or model input.
+        // Keep the source records and the lower-level lossless codec untouched.
+        solstone_core_format::content::omit_tmux_capture_fields(&mut tmux);
         if !keep_roster && let Some(obj) = tmux.as_object_mut() {
             obj.shift_remove("windows");
         }

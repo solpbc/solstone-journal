@@ -38,6 +38,26 @@ pub use talent_projections::{
     ConsumedOriginal, TalentTextProjection, iter_talent_text_projections, talent_projection_map,
 };
 
+/// Optional tmux capture metadata, retained on disk but not yet used by talents.
+pub const TMUX_PANE_CAPTURE_FIELDS: [&str; 5] = [
+    "cursor_x",
+    "cursor_y",
+    "cursor_visible",
+    "alternate_on",
+    "pane_in_mode",
+];
+
+/// Remove capture-only metadata from an in-memory tmux talent input view.
+pub fn omit_tmux_capture_fields(tmux: &mut Value) {
+    if let Some(panes) = tmux.get_mut("panes").and_then(Value::as_array_mut) {
+        for pane in panes.iter_mut().filter_map(Value::as_object_mut) {
+            for key in TMUX_PANE_CAPTURE_FIELDS {
+                pane.shift_remove(key);
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Family {
     Markdown,

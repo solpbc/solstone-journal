@@ -432,6 +432,41 @@ mod tests {
         json!({"timestamp":time,"analysis":{"primary":"tmux","visual_description":"test"},"content":{"tmux":{"session":"session","window":{"id":"window","name":"work"},"windows":[{"id":"window","active":true}],"panes":[{"id":"pane","active":true,"content":text}]}}})
     }
     #[test]
+    fn capture_metadata_is_inert_for_old_new_and_mixed_timeline_frames() {
+        let legacy = vec![
+            frame(0.0, "prompt> first"),
+            frame(5.0, "prompt> first more"),
+        ];
+        let (old_visible, old_records) = raw_changes::prepare(&legacy, true).unwrap();
+        assert!(
+            !old_records[0]["prefix_history"]
+                .as_array()
+                .unwrap()
+                .is_empty()
+        );
+        let expected = raw_changes::encode(&old_records, 36000000);
+        let mut extended = legacy.clone();
+        for (index, f) in extended.iter_mut().enumerate() {
+            let p = &mut f["content"]["tmux"]["panes"][0];
+            p["cursor_x"] = json!(index + 2);
+            p["cursor_y"] = json!(index);
+            p["cursor_visible"] = json!(index == 0);
+            p["alternate_on"] = json!(index != 0);
+            p["pane_in_mode"] = json!(index != 0);
+        }
+        for frames in [&extended, &vec![legacy[0].clone(), extended[1].clone()]] {
+            let (visible, records) = raw_changes::prepare(frames, true).unwrap();
+            assert_eq!(visible, old_visible);
+            assert_eq!(raw_changes::encode(&records, 36000000), expected);
+            assert_eq!(raw_changes::restore(&records).unwrap(), old_visible);
+        }
+        extended[1]["content"]["tmux"]["panes"][0]["active"] = json!(false);
+        let (_, meaningful) = raw_changes::prepare(&extended, true).unwrap();
+        assert_ne!(raw_changes::encode(&meaningful, 36000000), expected);
+        assert_eq!(meaningful.len(), 2);
+    }
+
+    #[test]
     fn timeline_restores_recurrence_prefixes_styles_links_and_roster_changes() {
         let a = "hello\r\n❯ question\u{2028}line\n";
         let b = "\x1b[48;5;7m\x1b[7;9mchanged\x1b[0m \x1b]8;;https://example.test/path\x1b\\target\x1b]8;;\x1b\\\n";

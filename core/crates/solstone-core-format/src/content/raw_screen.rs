@@ -213,6 +213,14 @@ fn render_frame(
             if !json_truthy(Some(value)) {
                 continue;
             }
+            let mut view;
+            let value = if category == "tmux" {
+                view = value.clone();
+                super::omit_tmux_capture_fields(&mut view);
+                &view
+            } else {
+                value
+            };
             let formatted = format_category(category, value);
             if !formatted.is_empty() {
                 lines.push(formatted);
@@ -356,7 +364,11 @@ fn parse_window<'a>(window: &'a Map<String, Value>, roster: bool) -> Option<Tmux
 
 fn parse_pane(value: &Value) -> Option<TmuxPane<'_>> {
     let pane = value.as_object()?;
-    if pane.len() != 8 {
+    let capture_fields = super::TMUX_PANE_CAPTURE_FIELDS
+        .iter()
+        .filter(|key| pane.contains_key(**key))
+        .count();
+    if pane.len() != 8 + capture_fields {
         return None;
     }
     Some(TmuxPane {
@@ -858,6 +870,59 @@ mod tests {
                 .content
                 .contains("derived description must not be repeated")
         );
+    }
+
+    #[test]
+    fn capture_metadata_preserves_native_projection_and_unknown_fields_fall_back() {
+        let legacy: Value = serde_json::from_str(include_str!(
+            "../../tests/data/golden/tmux-observer-envelope-main.jsonl"
+        ))
+        .unwrap();
+        let mut extended = legacy.clone();
+        for pane in extended["content"]["tmux"]["panes"].as_array_mut().unwrap() {
+            for (key, value) in [
+                ("cursor_x", json!(12)),
+                ("cursor_y", json!(3)),
+                ("cursor_visible", json!(true)),
+                ("alternate_on", json!(false)),
+                ("pane_in_mode", json!(false)),
+            ] {
+                pane[key] = value;
+            }
+        }
+        let render = |frames: &[Value]| {
+            render_for_screen_talent(
+                "20260903/device/102159_300/tmux_0_screen.jsonl",
+                &frames
+                    .iter()
+                    .map(|v| v.as_object().unwrap().clone())
+                    .collect::<Vec<_>>(),
+            )
+        };
+        let generic_old = super::render(
+            "20260903/device/102159_300/tmux_0_screen.jsonl",
+            &[legacy.as_object().unwrap().clone()],
+        );
+        let generic_new = super::render(
+            "20260903/device/102159_300/tmux_0_screen.jsonl",
+            &[extended.as_object().unwrap().clone()],
+        );
+        assert_eq!(generic_old.chunks[0].content, generic_new.chunks[0].content);
+        let old = render(&[legacy.clone(), legacy.clone()]);
+        let new = render(&[extended.clone(), extended.clone()]);
+        let mixed = render(&[legacy, extended.clone()]);
+        for view in [&new, &mixed] {
+            assert_eq!(view.tmux_chunk_indices, old.tmux_chunk_indices);
+            assert_eq!(view.header, old.header);
+            assert_eq!(
+                view.chunks.iter().map(|c| &c.content).collect::<Vec<_>>(),
+                old.chunks.iter().map(|c| &c.content).collect::<Vec<_>>()
+            );
+        }
+        extended["content"]["tmux"]["panes"][0]["unrecognized"] = json!(true);
+        let unknown = render(&[extended]);
+        assert!(unknown.tmux_chunk_indices.is_empty());
+        assert!(unknown.chunks[0].content.contains("unrecognized"));
     }
 
     #[test]

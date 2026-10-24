@@ -170,3 +170,13 @@ See the [output reference](../core/payload/solstone/talent/journal/references/ca
 Requires a resolved journal (see [environment.md](environment.md)). Vision and
 STT use the active brain and bundled local runtimes; owner cloud keys live in
 `config/journal.json`.
+
+## tmux pane snapshots
+
+The [producer's frame format](https://github.com/solpbc/solstone-tmux/blob/main/docs/FORMAT.md)
+defines `content.tmux.panes`. Alongside screen text and geometry, new frames may
+include `cursor_x`, `cursor_y`, `cursor_visible`, `alternate_on`, and
+`pane_in_mode`. Older frames omit them. These fields remain in stored originals;
+the native screen-talent projection and terminal Sense timeline ignore them.
+The raw frame codec remains lossless. Cursor and mode changes alone do not make
+the producer save another screen.

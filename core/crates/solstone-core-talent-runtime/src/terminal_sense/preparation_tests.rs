@@ -251,3 +251,41 @@ fn ordinary_fitting_trims_the_timeline_from_complete_screens() {
     }
     assert!(refused && whole && from_complete_screens > 1);
 }
+
+#[test]
+fn capture_metadata_preserves_complete_sense_requests_on_native_and_fallback_paths() {
+    for text in [display(), "ordinary shell prompt> text".to_owned()] {
+        let (_root, paths, context, request) = setup(&text);
+        let old = crate::prepare::prepare(
+            request.clone(),
+            &paths,
+            &context,
+            crate::prepare::PrepareMode::Preview,
+        )
+        .unwrap();
+        let path = context
+            .journal
+            .join("chronicle/20261021/device/100000_300/tmux_main_screen.jsonl");
+        let mut raw: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        let pane = &mut raw["content"]["tmux"]["panes"][0];
+        pane["cursor_x"] = json!(7);
+        pane["cursor_y"] = json!(3);
+        pane["cursor_visible"] = json!(false);
+        pane["alternate_on"] = json!(true);
+        pane["pane_in_mode"] = json!(true);
+        fs::write(&path, format!("{raw}\n")).unwrap();
+        let new = crate::prepare::prepare(
+            request,
+            &paths,
+            &context,
+            crate::prepare::PrepareMode::Preview,
+        )
+        .unwrap();
+        assert_eq!(old.terminal_sense.is_some(), new.terminal_sense.is_some());
+        let encode = |p: &PreparedTalent| {
+            solstone_core_generate::encode_one_shot_request(&crate::generate_request(p).unwrap())
+                .unwrap()
+        };
+        assert_eq!(encode(&old), encode(&new));
+    }
+}
