@@ -7,10 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.57 (build 105)] - 2026-10-24
+
 ### Added
 
-- the night background now has gold stars, a brief meteor shower and an aurora.
+- the night sky in the journal app's window now has gold stars, and around the middle of the night, a brief meteor shower and an aurora.
 
+### Changed
+
+- updated the bundled journal to [2.0.57](https://solstone.app/releases#v2.0.57) →
 
 ## [2.0.56 (build 104)] - 2026-10-23
 
