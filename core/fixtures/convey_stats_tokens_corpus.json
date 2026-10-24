@@ -310,6 +310,8 @@
             "response.body.generators.entities:entity_observer.path",
             "response.body.generators.entities:entity_suggest.mtime",
             "response.body.generators.entities:entity_suggest.path",
+            "response.body.generators.entities:possible_names.mtime",
+            "response.body.generators.entities:possible_names.path",
             "response.body.generators.event.mtime",
             "response.body.generators.event.path",
             "response.body.generators.linked_presence.mtime",
@@ -533,6 +535,30 @@
                   "source": "app",
                   "title": "entity suggest",
                   "type": "generate"
+                },
+                "entities:possible_names": {
+                  "app": "entities",
+                  "color": "#00695c",
+                  "description": "per-segment check of registry names the speech may have meant, shown as tentative labels beside the transcript",
+                  "hook": {
+                    "pre": "entities:possible_names",
+                    "post": "entities:possible_names"
+                  },
+                  "load": {
+                    "transcripts": false,
+                    "percepts": false,
+                    "talents": false
+                  },
+                  "max_output_tokens": 256,
+                  "mtime": "<TALENT_MTIME>",
+                  "output": "json",
+                  "path": "<TALENT_PATH>",
+                  "priority": 15,
+                  "schedule": "segment",
+                  "source": "app",
+                  "title": "possible names",
+                  "type": "generate",
+                  "temperature": 0
                 },
                 "linked_presence": {
                   "color": "#6c757d",
@@ -1077,6 +1103,8 @@
             "response.body.generators.entities:entity_observer.path",
             "response.body.generators.entities:entity_suggest.mtime",
             "response.body.generators.entities:entity_suggest.path",
+            "response.body.generators.entities:possible_names.mtime",
+            "response.body.generators.entities:possible_names.path",
             "response.body.generators.event.mtime",
             "response.body.generators.event.path",
             "response.body.generators.linked_presence.mtime",
@@ -1301,6 +1329,30 @@
                   "source": "app",
                   "title": "entity suggest",
                   "type": "generate"
+                },
+                "entities:possible_names": {
+                  "app": "entities",
+                  "color": "#00695c",
+                  "description": "per-segment check of registry names the speech may have meant, shown as tentative labels beside the transcript",
+                  "hook": {
+                    "pre": "entities:possible_names",
+                    "post": "entities:possible_names"
+                  },
+                  "load": {
+                    "transcripts": false,
+                    "percepts": false,
+                    "talents": false
+                  },
+                  "max_output_tokens": 256,
+                  "mtime": "<TALENT_MTIME>",
+                  "output": "json",
+                  "path": "<TALENT_PATH>",
+                  "priority": 15,
+                  "schedule": "segment",
+                  "source": "app",
+                  "title": "possible names",
+                  "type": "generate",
+                  "temperature": 0
                 },
                 "linked_presence": {
                   "color": "#6c757d",
@@ -1946,6 +1998,8 @@
             "response.body.generators.entities:entity_observer.path",
             "response.body.generators.entities:entity_suggest.mtime",
             "response.body.generators.entities:entity_suggest.path",
+            "response.body.generators.entities:possible_names.mtime",
+            "response.body.generators.entities:possible_names.path",
             "response.body.generators.event.mtime",
             "response.body.generators.event.path",
             "response.body.generators.linked_presence.mtime",
@@ -2170,6 +2224,30 @@
                   "source": "app",
                   "title": "entity suggest",
                   "type": "generate"
+                },
+                "entities:possible_names": {
+                  "app": "entities",
+                  "color": "#00695c",
+                  "description": "per-segment check of registry names the speech may have meant, shown as tentative labels beside the transcript",
+                  "hook": {
+                    "pre": "entities:possible_names",
+                    "post": "entities:possible_names"
+                  },
+                  "load": {
+                    "transcripts": false,
+                    "percepts": false,
+                    "talents": false
+                  },
+                  "max_output_tokens": 256,
+                  "mtime": "<TALENT_MTIME>",
+                  "output": "json",
+                  "path": "<TALENT_PATH>",
+                  "priority": 15,
+                  "schedule": "segment",
+                  "source": "app",
+                  "title": "possible names",
+                  "type": "generate",
+                  "temperature": 0
                 },
                 "linked_presence": {
                   "color": "#6c757d",
@@ -2816,6 +2894,8 @@
             "response.body.generators.entities:entity_observer.path",
             "response.body.generators.entities:entity_suggest.mtime",
             "response.body.generators.entities:entity_suggest.path",
+            "response.body.generators.entities:possible_names.mtime",
+            "response.body.generators.entities:possible_names.path",
             "response.body.generators.event.mtime",
             "response.body.generators.event.path",
             "response.body.generators.linked_presence.mtime",
@@ -3039,6 +3119,30 @@
                   "source": "app",
                   "title": "entity suggest",
                   "type": "generate"
+                },
+                "entities:possible_names": {
+                  "app": "entities",
+                  "color": "#00695c",
+                  "description": "per-segment check of registry names the speech may have meant, shown as tentative labels beside the transcript",
+                  "hook": {
+                    "pre": "entities:possible_names",
+                    "post": "entities:possible_names"
+                  },
+                  "load": {
+                    "transcripts": false,
+                    "percepts": false,
+                    "talents": false
+                  },
+                  "max_output_tokens": 256,
+                  "mtime": "<TALENT_MTIME>",
+                  "output": "json",
+                  "path": "<TALENT_PATH>",
+                  "priority": 15,
+                  "schedule": "segment",
+                  "source": "app",
+                  "title": "possible names",
+                  "type": "generate",
+                  "temperature": 0
                 },
                 "linked_presence": {
                   "color": "#6c757d",

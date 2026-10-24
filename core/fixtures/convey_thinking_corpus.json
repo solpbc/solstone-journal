@@ -1496,8 +1496,8 @@
         "why": "local runtime recovery view"
       },
       {
-        "body_bytes": 2209,
-        "body_sha256": "cd5bc84d2cac1fe90c8a67ecd78e36e0b84fb4d5534b96a322d1c4ddfa48efb6",
+        "body_bytes": 2431,
+        "body_sha256": "8335496951a2043f8831e0c0030d9f056025f766f05034cffd888161c88ff085",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
@@ -1583,6 +1583,14 @@
               "key": "entities:detection",
               "source": "app",
               "title": "entity detection"
+            },
+            {
+              "app": "entities",
+              "description": "per-segment check of registry names the speech may have meant, shown as tentative labels beside the transcript",
+              "disabled": false,
+              "key": "entities:possible_names",
+              "source": "app",
+              "title": "possible names"
             }
           ]
         },
@@ -3723,8 +3731,8 @@
         "why": "local runtime recovery view"
       },
       {
-        "body_bytes": 2209,
-        "body_sha256": "cd5bc84d2cac1fe90c8a67ecd78e36e0b84fb4d5534b96a322d1c4ddfa48efb6",
+        "body_bytes": 2431,
+        "body_sha256": "8335496951a2043f8831e0c0030d9f056025f766f05034cffd888161c88ff085",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
@@ -3810,6 +3818,14 @@
               "key": "entities:detection",
               "source": "app",
               "title": "entity detection"
+            },
+            {
+              "app": "entities",
+              "description": "per-segment check of registry names the speech may have meant, shown as tentative labels beside the transcript",
+              "disabled": false,
+              "key": "entities:possible_names",
+              "source": "app",
+              "title": "possible names"
             }
           ]
         },
@@ -5930,8 +5946,8 @@
         "why": "local runtime recovery view"
       },
       {
-        "body_bytes": 2209,
-        "body_sha256": "cd5bc84d2cac1fe90c8a67ecd78e36e0b84fb4d5534b96a322d1c4ddfa48efb6",
+        "body_bytes": 2431,
+        "body_sha256": "8335496951a2043f8831e0c0030d9f056025f766f05034cffd888161c88ff085",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
@@ -6017,6 +6033,14 @@
               "key": "entities:detection",
               "source": "app",
               "title": "entity detection"
+            },
+            {
+              "app": "entities",
+              "description": "per-segment check of registry names the speech may have meant, shown as tentative labels beside the transcript",
+              "disabled": false,
+              "key": "entities:possible_names",
+              "source": "app",
+              "title": "possible names"
             }
           ]
         },
@@ -8131,8 +8155,8 @@
         "why": "local runtime recovery view"
       },
       {
-        "body_bytes": 2209,
-        "body_sha256": "cd5bc84d2cac1fe90c8a67ecd78e36e0b84fb4d5534b96a322d1c4ddfa48efb6",
+        "body_bytes": 2431,
+        "body_sha256": "8335496951a2043f8831e0c0030d9f056025f766f05034cffd888161c88ff085",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
@@ -8218,6 +8242,14 @@
               "key": "entities:detection",
               "source": "app",
               "title": "entity detection"
+            },
+            {
+              "app": "entities",
+              "description": "per-segment check of registry names the speech may have meant, shown as tentative labels beside the transcript",
+              "disabled": false,
+              "key": "entities:possible_names",
+              "source": "app",
+              "title": "possible names"
             }
           ]
         },
@@ -10521,8 +10553,8 @@
         "why": "local runtime recovery view"
       },
       {
-        "body_bytes": 2209,
-        "body_sha256": "cd5bc84d2cac1fe90c8a67ecd78e36e0b84fb4d5534b96a322d1c4ddfa48efb6",
+        "body_bytes": 2431,
+        "body_sha256": "8335496951a2043f8831e0c0030d9f056025f766f05034cffd888161c88ff085",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
@@ -10608,6 +10640,14 @@
               "key": "entities:detection",
               "source": "app",
               "title": "entity detection"
+            },
+            {
+              "app": "entities",
+              "description": "per-segment check of registry names the speech may have meant, shown as tentative labels beside the transcript",
+              "disabled": false,
+              "key": "entities:possible_names",
+              "source": "app",
+              "title": "possible names"
             }
           ]
         },
@@ -14038,8 +14078,8 @@
         "why": "local runtime recovery view"
       },
       {
-        "body_bytes": 2209,
-        "body_sha256": "cd5bc84d2cac1fe90c8a67ecd78e36e0b84fb4d5534b96a322d1c4ddfa48efb6",
+        "body_bytes": 2431,
+        "body_sha256": "8335496951a2043f8831e0c0030d9f056025f766f05034cffd888161c88ff085",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
@@ -14125,6 +14165,14 @@
               "key": "entities:detection",
               "source": "app",
               "title": "entity detection"
+            },
+            {
+              "app": "entities",
+              "description": "per-segment check of registry names the speech may have meant, shown as tentative labels beside the transcript",
+              "disabled": false,
+              "key": "entities:possible_names",
+              "source": "app",
+              "title": "possible names"
             }
           ]
         },
