@@ -1822,7 +1822,8 @@ fn a_summary_hit_links_only_to_its_own_streams_segment() {
     let link = &segments[0];
     assert_eq!(link["time"], "09:00-09:05");
     assert!(link["reference"].is_string());
-    assert_eq!(link.as_object().unwrap().len(), 2);
+    assert!(link["source"].is_string());
+    assert_eq!(link.as_object().unwrap().len(), 3);
 
     let transcript = probe(
         &journal,
@@ -2419,7 +2420,8 @@ fn links_keep_the_replay_digest_stable() {
             for seg in segments {
                 assert!(seg.get("time").is_some());
                 assert!(seg.get("reference").is_some());
-                assert_eq!(seg.as_object().unwrap().len(), 2);
+                assert!(seg.get("source").is_some());
+                assert_eq!(seg.as_object().unwrap().len(), 3);
             }
         }
     }
@@ -6305,6 +6307,132 @@ fn capture_zone_fails_closed_on_malformed_receipts_preserving_transcript_read() 
     assert_eq!(p1_dir["entries"].as_array().unwrap().len(), 100);
     assert!(p1_dir["next_cursor"].is_string());
     assert!(p1_dir.get("capture_zone").is_none());
+}
+
+/// Every string an agent receives for `value`, over both wire forms.
+fn rendered_bytes(value: &Value) -> String {
+    crate::jsonrpc::tool_result(value.clone(), None).to_string()
+}
+
+#[test]
+fn same_time_segments_from_two_macs_carry_distinct_sources_and_no_stream_name() {
+    // Two Macs recording one room. Their streams carry the host names the
+    // dashboard shows in parentheses, which an agent must never read.
+    const STREAMS: [&str; 2] = ["zqboronscarlett", "zqmvecairmic"];
+    const SAID: [&str; 2] = ["firstroomtoken", "secondroomtoken"];
+    let journal = tempfile::Builder::new()
+        .prefix("source-test-")
+        .tempdir_in(crate::test_scratch())
+        .unwrap();
+    setup_facets(journal.path());
+    for (created_at, stream, said) in [(20, STREAMS[0], SAID[0]), (10, STREAMS[1], SAID[1])] {
+        let record = json!({
+            "name": stream, "kind": "observer", "host": null, "platform": "macos",
+            "created_at": created_at, "last_day": null, "last_segment": null, "seq": 1
+        });
+        fs::create_dir_all(journal.path().join("streams")).unwrap();
+        fs::write(
+            journal.path().join(format!("streams/{stream}.json")),
+            record.to_string(),
+        )
+        .unwrap();
+        let segment = journal
+            .path()
+            .join("chronicle/20261023")
+            .join(stream)
+            .join("213000_300");
+        fs::create_dir_all(segment.join("talents")).unwrap();
+        fs::write(
+            segment.join("talents/facets.json"),
+            "[{\"facet\":\"alpha\"}]",
+        )
+        .unwrap();
+        fs::write(segment.join("meeting_transcript.md"), format!("{said}\n")).unwrap();
+    }
+    let act_path = "facets/alpha/activities/20261023.jsonl";
+    let act_line = json!({"id": "act-room", "segments": ["213000_300"]}).to_string();
+    fs::create_dir_all(journal.path().join("facets/alpha/activities")).unwrap();
+    fs::write(journal.path().join(act_path), format!("{act_line}\n")).unwrap();
+    let produced = produce_chunks(Family::Activity, act_path, &act_line);
+    let content = format!("{}\nroomneedle", produced.chunks[0].content);
+    plant_chunk(
+        journal.path(),
+        act_path,
+        "20261023",
+        "",
+        0,
+        &content,
+        "facets",
+        "facet_owned",
+        &[FACET_A],
+    );
+    plant_activity_proof(journal.path(), act_path, 0, false);
+    PermissionStore::open(journal.path())
+        .set_permission(CONNECTION, ReadPermission::default_whole_journal())
+        .unwrap();
+
+    let mut served = Vec::new();
+    let mut read = |reference: &str| {
+        let get =
+            dispatch_output(&journal, "get_transcript", json!({"reference": reference})).value;
+        let text = get["entries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|e| literal_display_text(e.as_str().unwrap()))
+            .collect::<String>();
+        let said = SAID
+            .iter()
+            .find(|said| text.contains(**said))
+            .expect("transcript carries a fixture token");
+        let source = get["source"].as_str().unwrap().to_owned();
+        served.push(get);
+        (*said, source)
+    };
+
+    let list = dispatch_output(&journal, "list_transcripts", json!({"day": "20261023"})).value;
+    let items = list["transcripts"].as_array().unwrap();
+    assert_eq!(items.len(), 2);
+    let mut sources = std::collections::BTreeMap::new();
+    for item in items {
+        assert_eq!(item["time"], items[0]["time"]);
+        let (said, source) = read(item["reference"].as_str().unwrap());
+        assert_eq!(item["source"], source, "a listed source matches its text");
+        sources.insert(said, source);
+    }
+    assert_eq!(
+        sources.values().collect::<BTreeSet<_>>().len(),
+        2,
+        "two devices read as two sources"
+    );
+
+    let search = dispatch_output(&journal, "search", json!({"query": "roomneedle"})).value;
+    let fetch = dispatch_output(
+        &journal,
+        "fetch",
+        json!({"reference": search["results"][0]["reference"]}),
+    )
+    .value;
+    for links in [&search["results"][0]["segments"], &fetch["segments"]] {
+        let links = links.as_array().unwrap();
+        assert_eq!(links.len(), 2);
+        for link in links {
+            let (said, source) = read(link["reference"].as_str().unwrap());
+            assert_eq!(link["source"], source, "a linked source matches its text");
+            assert_eq!(sources[said], source, "one device keeps one source");
+        }
+    }
+
+    for value in served.iter().chain([&list, &search, &fetch]) {
+        assert_no_coordinate_keys(value);
+        let bytes = rendered_bytes(value).to_lowercase();
+        for stream in STREAMS {
+            assert!(
+                !bytes.contains(stream),
+                "{stream} reached an agent: {bytes}"
+            );
+        }
+    }
 }
 
 #[test]
@@ -11179,7 +11307,7 @@ fn fetch_source_links_scoped_by_facet() {
         let obj = s.as_object().unwrap();
         for k in obj.keys() {
             assert!(
-                k == "time" || k == "reference" || k == "capture_zone",
+                k == "time" || k == "reference" || k == "source" || k == "capture_zone",
                 "Unexpected key {k} in segment link"
             );
         }
