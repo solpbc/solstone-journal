@@ -98,6 +98,9 @@ pub(crate) enum ParentLossCoordinatorBootstrapFailure {
     Launch,
     IdentityEstablishment,
     InitialAdmissionHandshake,
+    /// The coordinator exited before it was ready: it refused, or it crashed.
+    /// Its own reason is logged by the supervisor, never shown to the owner.
+    CoordinatorStoppedBeforeReady,
     CoordinatorRetirementUnverified,
 }
 
@@ -115,6 +118,9 @@ impl std::fmt::Display for ParentLossCoordinatorBootstrapFailure {
             Self::InitialAdmissionHandshake => {
                 formatter.write_str("a helper process did not answer in time")
             }
+            Self::CoordinatorStoppedBeforeReady => {
+                formatter.write_str("a helper process stopped before it was ready")
+            }
             Self::CoordinatorRetirementUnverified => {
                 formatter.write_str("a helper process could not be confirmed stopped")
             }
@@ -129,6 +135,7 @@ pub(crate) enum ParentLossCoordinatorBootstrapTestFault {
     Launch,
     IdentityEstablishment,
     InitialAdmissionHandshake,
+    CoordinatorStoppedBeforeReady,
 }
 
 #[cfg(all(unix, any(test, feature = "test-hooks")))]
@@ -480,6 +487,7 @@ async fn bootstrap_parent_loss_coordinator(
         retire_bootstrap_coordinator(&mut authority, coordinator)?;
         return Err(ParentLossCoordinatorBootstrapFailure::IdentityEstablishment);
     }
+    let refusal_channel = authority.take_stdout();
     let Some(mut stdin) = authority.take_stdin() else {
         retire_bootstrap_coordinator(&mut authority, coordinator)?;
         return Err(ParentLossCoordinatorBootstrapFailure::InitialAdmissionHandshake);
@@ -505,8 +513,16 @@ async fn bootstrap_parent_loss_coordinator(
     while Instant::now() < deadline {
         // A coordinator that refused has already exited; do not wait out the
         // retirement allowance for a marker that cannot come.
-        if matches!(authority.poll(), Ok(Some(_))) {
-            break;
+        if let Ok(Some(status)) = authority.poll() {
+            let reason = refusal_channel
+                .and_then(read_coordinator_refusal)
+                .unwrap_or_else(|| "no reason given".to_owned());
+            log::error!(
+                "supervisor: parent-loss coordinator stopped before it was ready \
+                 (exit status {status}): {reason}"
+            );
+            retire_bootstrap_coordinator(&mut authority, coordinator)?;
+            return Err(ParentLossCoordinatorBootstrapFailure::CoordinatorStoppedBeforeReady);
         }
         match ParentLossCoordinator::read_bootstrap_ready(journal) {
             Ok(Some(ready))
@@ -541,6 +557,25 @@ async fn bootstrap_parent_loss_coordinator(
     Err(ParentLossCoordinatorBootstrapFailure::InitialAdmissionHandshake)
 }
 
+/// What a coordinator that stopped before it was ready wrote on its private
+/// refusal channel. Its stderr is not kept, so without this the reason it
+/// refused reaches no log. It has already exited, so everything it wrote is
+/// buffered: the read is non-blocking so a stray inherited write end cannot
+/// stall the start, and bounded so the child cannot grow the supervisor.
+#[cfg(unix)]
+fn read_coordinator_refusal(channel: std::process::ChildStdout) -> Option<String> {
+    use nix::fcntl::{FcntlArg, OFlag, fcntl};
+    use std::io::Read;
+
+    fcntl(&channel, FcntlArg::F_SETFL(OFlag::O_NONBLOCK)).ok()?;
+    let mut bytes = Vec::new();
+    // A short read keeps what it read: `read_to_end` appends before it
+    // returns `WouldBlock`.
+    let _ = channel.take(4096).read_to_end(&mut bytes);
+    let reason = String::from_utf8_lossy(&bytes).trim().to_owned();
+    (!reason.is_empty()).then_some(reason)
+}
+
 #[cfg(unix)]
 fn parent_loss_coordinator_launch_request(
     journal: &Path,
@@ -548,6 +583,24 @@ fn parent_loss_coordinator_launch_request(
     enabled: &[HostedServiceKind],
     supervisor_heartbeat_filename: &str,
 ) -> Result<CommandLaunchRequest, ParentLossCoordinatorBootstrapFailure> {
+    #[cfg(any(test, feature = "test-hooks"))]
+    if parent_loss_coordinator_bootstrap_test_fault()
+        == Some(ParentLossCoordinatorBootstrapTestFault::CoordinatorStoppedBeforeReady)
+    {
+        return Ok(CommandLaunchRequest {
+            program: OsString::from("/bin/sh"),
+            arguments: vec![
+                OsString::from("-c"),
+                OsString::from("cat >/dev/null; echo 'fixture refusal'; exit 75"),
+            ],
+            environment: BTreeMap::new(),
+            current_dir: None,
+            process_group: true,
+            stdin_piped: true,
+            stdout_piped: true,
+            stderr_piped: false,
+        });
+    }
     #[cfg(any(test, feature = "test-hooks"))]
     if parent_loss_coordinator_bootstrap_test_fault().is_some() {
         return Ok(CommandLaunchRequest {
@@ -600,8 +653,12 @@ fn parent_loss_coordinator_launch_request(
         // share the supervisor's containment group: a parent-loss cleanup may
         // retire that group before the coordinator has observed the death.
         process_group: true,
+        // stdin carries the bootstrap capability in; stdout carries a refusal
+        // reason back (`read_coordinator_refusal`). The coordinator points
+        // stdout at /dev/null once it is ready, because this read end closes
+        // when the bootstrap returns.
         stdin_piped: true,
-        stdout_piped: false,
+        stdout_piped: true,
         stderr_piped: false,
     })
 }
@@ -2435,7 +2492,7 @@ mod tests {
     use super::{
         ParentLossCoordinatorBootstrapFailure, ParentLossCoordinatorBootstrapTestFault,
         bootstrap_parent_loss_coordinator, parent_loss_coordinator_bootstrap_test_spawned,
-        set_parent_loss_coordinator_bootstrap_test_fault,
+        read_coordinator_refusal, set_parent_loss_coordinator_bootstrap_test_fault,
     };
     #[cfg(unix)]
     use std::path::{Path, PathBuf};
@@ -2605,6 +2662,11 @@ mod tests {
                     ParentLossCoordinatorBootstrapTestFault::InitialAdmissionHandshake,
                     ParentLossCoordinatorBootstrapFailure::InitialAdmissionHandshake,
                 ),
+                // A child that exits is a stop, not a missed deadline.
+                (
+                    ParentLossCoordinatorBootstrapTestFault::CoordinatorStoppedBeforeReady,
+                    ParentLossCoordinatorBootstrapFailure::CoordinatorStoppedBeforeReady,
+                ),
             ] {
                 let journal = tempfile::TempDir::new().expect("temporary journal");
                 let supervisor = DeclaredParent::capture_current()
@@ -2657,6 +2719,49 @@ mod tests {
                 }
             }
         });
+    }
+
+    /// The refusal reason is read without waiting for EOF: a descendant that
+    /// inherited the write end must not stall the start, and a child that
+    /// wrote nothing yields no reason rather than an empty one.
+    #[cfg(all(test, feature = "full-tests"))]
+    #[cfg(unix)]
+    #[test]
+    fn a_stopped_coordinator_refusal_is_read_without_waiting_for_eof() {
+        use std::process::{Command, Stdio};
+        use std::time::Instant;
+
+        for (script, expected) in [
+            (
+                "echo 'bootstrap failed: contended'; exit 75",
+                Some("bootstrap failed: contended"),
+            ),
+            (
+                "echo 'held open'; (exec sleep 2 &); exit 75",
+                Some("held open"),
+            ),
+            ("exit 75", None),
+        ] {
+            let mut child = Command::new("/bin/sh")
+                .args(["-c", script])
+                .stdin(Stdio::null())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::null())
+                .spawn()
+                .expect("spawn fixture");
+            let channel = child.stdout.take().expect("piped stdout");
+            assert_eq!(child.wait().expect("wait fixture").code(), Some(75));
+            let started = Instant::now();
+            assert_eq!(
+                read_coordinator_refusal(channel).as_deref(),
+                expected,
+                "{script}"
+            );
+            assert!(
+                started.elapsed() < Duration::from_secs(1),
+                "the read waited on a held write end: {script}"
+            );
+        }
     }
 
     #[cfg(unix)]

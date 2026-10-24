@@ -6,7 +6,7 @@
 //! in-process mock without losing the OS relationship under test.
 
 #[cfg(unix)]
-use std::io::Read;
+use std::io::{Read, Write};
 #[cfg(unix)]
 use std::path::PathBuf;
 #[cfg(unix)]
@@ -200,6 +200,8 @@ fn run_parent_loss_coordinator(mut args: impl Iterator<Item = std::ffi::OsString
         Ok(value) => value,
         Err(error) => {
             eprintln!("hosted fixture: coordinator bootstrap failed: {error}");
+            // The supervisor logs this channel; stderr is not kept.
+            let _ = writeln!(std::io::stdout(), "bootstrap failed: {error}");
             return ExitCode::from(75);
         }
     };

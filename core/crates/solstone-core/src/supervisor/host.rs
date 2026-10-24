@@ -265,19 +265,22 @@ fn format_lifecycle_recovery_copy(
 }
 
 /// The one refusal cause the owner can be told more about: the coordinator
-/// did not answer because the previous run's coordinator is still live and
-/// adjudicating, which resolves itself within its retirement deadline. Read
-/// off the ledger, never inferred from the variant alone.
+/// stopped or did not answer because the previous run's coordinator is still
+/// live and adjudicating, which resolves itself within its retirement
+/// deadline. Read off the ledger, never inferred from the variant alone.
 #[cfg(unix)]
 fn last_run_is_still_closing(
     journal: &Path,
     reason: runtime::ParentLossCoordinatorBootstrapFailure,
 ) -> bool {
-    reason == runtime::ParentLossCoordinatorBootstrapFailure::InitialAdmissionHandshake
-        && matches!(
-            read_parent_loss_outcome(journal),
-            Ok(ParentLossReaderOutcome::Active { .. })
-        )
+    matches!(
+        reason,
+        runtime::ParentLossCoordinatorBootstrapFailure::InitialAdmissionHandshake
+            | runtime::ParentLossCoordinatorBootstrapFailure::CoordinatorStoppedBeforeReady
+    ) && matches!(
+        read_parent_loss_outcome(journal),
+        Ok(ParentLossReaderOutcome::Active { .. })
+    )
 }
 
 #[cfg(not(unix))]
@@ -1066,19 +1069,21 @@ mod tests {
     fn no_lifecycle_recovery_copy_hands_the_owner_a_manual_step() {
         use super::runtime::ParentLossCoordinatorBootstrapFailure as Failure;
 
-        const ALL: [Failure; 4] = [
+        const ALL: [Failure; 5] = [
             Failure::Launch,
             Failure::IdentityEstablishment,
             Failure::InitialAdmissionHandshake,
+            Failure::CoordinatorStoppedBeforeReady,
             Failure::CoordinatorRetirementUnverified,
         ];
         // ⛔ Do not collapse this to `_ => {}`. It exists only so that adding a
-        // fifth variant fails to COMPILE until it is added to ALL above, rather
+        // sixth variant fails to COMPILE until it is added to ALL above, rather
         // than shipping an arm whose owner copy nobody ever read.
         match ALL[0] {
             Failure::Launch
             | Failure::IdentityEstablishment
             | Failure::InitialAdmissionHandshake
+            | Failure::CoordinatorStoppedBeforeReady
             | Failure::CoordinatorRetirementUnverified => {}
         }
 
@@ -1162,13 +1167,19 @@ mod tests {
             .persist_coordinator_identity(active.generation, live_coordinator)
             .expect("coordinator identity");
 
-        let copy = super::format_lifecycle_recovery_copy(
-            home.path(),
+        // A successor that finds the live predecessor refuses and exits, so
+        // the stop is the variant this case actually arrives as.
+        for reason in [
             super::runtime::ParentLossCoordinatorBootstrapFailure::InitialAdmissionHandshake,
-        );
-        assert!(
-            copy.contains("the last run is still shutting down. wait a moment, then try again."),
-            "a live coordinator must be named as the last run still closing:\n{copy}"
-        );
+            super::runtime::ParentLossCoordinatorBootstrapFailure::CoordinatorStoppedBeforeReady,
+        ] {
+            let copy = super::format_lifecycle_recovery_copy(home.path(), reason);
+            assert!(
+                copy.contains(
+                    "the last run is still shutting down. wait a moment, then try again."
+                ),
+                "a live coordinator must be named as the last run still closing ({reason:?}):\n{copy}"
+            );
+        }
     }
 }

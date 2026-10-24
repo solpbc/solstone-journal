@@ -1995,6 +1995,38 @@ fn an_abandoned_generation_boots_unattended_after_both_authorities_are_killed() 
     exercise_abandoned_generation_boots_unattended(None);
 }
 
+/// A coordinator that refuses exits at once. The start says it stopped, not
+/// that it missed a deadline, and the supervisor logs the coordinator's own
+/// reason, which is otherwise lost with its stderr. The held lease stands in
+/// for the last run's coordinator still being alive.
+#[test]
+fn a_coordinator_that_refuses_is_reported_as_stopped_with_its_reason_logged() {
+    let journal = TempJournal::new();
+    let ledger = ParentLossLedger::open(&journal.0).expect("open parent-loss ledger");
+    let _last_run = ledger
+        .acquire_coordinator_lease()
+        .expect("take coordinator lease")
+        .expect("lease is free");
+
+    let output = supervisor_command(&journal, None, None)
+        .output()
+        .expect("supervisor runs");
+
+    assert_eq!(output.status.code(), Some(75));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("details: a helper process stopped before it was ready\n"),
+        "the refusal names a stop, not a timeout:\n{stderr}"
+    );
+    assert!(
+        stderr.contains(
+            "parent-loss coordinator stopped before it was ready (exit status 75): \
+             bootstrap failed: another coordinator currently holds the lifecycle lease"
+        ),
+        "the coordinator's own reason reaches the supervisor log:\n{stderr}"
+    );
+}
+
 /// The same incident under a transient `systemd --user` scope, killed through
 /// the control group exactly as an installed unit's stop timeout does. Needs a
 /// user systemd; run explicitly with `--ignored`.
