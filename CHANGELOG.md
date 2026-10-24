@@ -13,6 +13,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- work stories no longer say you did something that was only on your screen. a page you read, an answer from a chat assistant, or work an agent did in your terminal is described as something you read, reviewed or asked your agent to do, and what your agent did is credited to your agent. thanks @dvanduzer for the report.
 - weekly reflections started on saturday now use the previous completed week, so they can finish without including the current day.
 - on-device transcription in the development journal app now accepts up to two minutes of single-track audio. recordings above its processing limits stay held, with the original kept and an explanation in health.
 - when a moment has no recording, or its recording never says a name that only appeared on screen, that name is no longer marked as heard. it's listed as coming from the screen, and repeats are dropped. names that were said keep their source. thanks @dvanduzer for the report.

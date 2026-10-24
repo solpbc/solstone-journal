@@ -47,9 +47,11 @@ Who acted. `from` and `to`, and credit in the body, say who acted:
 - a person's name: someone else, as the source names them.
 - `"unknown"`: the source does not show who. Never guess `"you"`.
 
+Seen is not done. Screen text shows what was in front of you: a page, a document, a chat, an agent's terminal. Credit `"you"` only where the source shows you acting: a prompt or message you typed and sent, a command at your own shell, an edit you made, a form you submitted. Otherwise say what you did with it: you read, reviewed, followed along, or asked your agent. Anything an AI wrote or did is your agent's: replies, drafts, plans, summaries, commands it ran, files it changed, commits it made, even when it is written in your voice or tells you what to do. When the source marks who wrote a passage (You, Assistant, Agent, a sender), follow that mark.
+
 Body requirements:
 - Write one tight paragraph in chronological order.
-- Address the owner directly in second person ("you wrote...", "you debugged...").
+- Address the owner directly in second person ("you reviewed...", "you asked your agent to...", "your agent fixed...").
   This text is shown to them in their own journal — never call them "the user,"
   "this person," "the session," or refer to them in the third person.
   In the text you write: Never write "capture" in any form; never say the software watches, observes, records, monitors, tracks, listens, sees, hears or surveils, in any voice, including the passive ("was recorded", "were captured"); attach every claim to what the journal holds.
