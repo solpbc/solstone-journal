@@ -1585,6 +1585,9 @@ mod owned_creation_qualification {
         let installed = match admit_prepared_archive_owned_creator_installed(
             original,
             &input.expected_restic_path,
+            None,
+            "test",
+            &solstone_core_backup_runtime::UreqHttpTransport,
         ) {
             Ok(installed) => installed,
             Err(failure) => {
@@ -1781,6 +1784,9 @@ mod owned_creation_qualification {
                 let installed = match admit_prepared_archive_owned_creator_installed(
                     original,
                     &input.expected_restic_path,
+                    None,
+                    "test",
+                    &solstone_core_backup_runtime::UreqHttpTransport,
                 ) {
                     Ok(installed) => installed,
                     Err(failure) => {
@@ -2234,6 +2240,9 @@ mod owned_planner_qualification {
         let installed = match admit_prepared_archive_owned_creator_installed(
             original,
             &input.expected_restic_path,
+            None,
+            "test",
+            &solstone_core_backup_runtime::UreqHttpTransport,
         ) {
             Ok(installed) => installed,
             Err(failure) => {
@@ -2435,6 +2444,9 @@ mod owned_planner_qualification {
                     let installed = match admit_prepared_archive_owned_creator_installed(
                         original,
                         &input.expected_restic_path,
+                        None,
+                        "test",
+                        &solstone_core_backup_runtime::UreqHttpTransport,
                     ) {
                         Ok(installed) => installed,
                         Err(failure) => {

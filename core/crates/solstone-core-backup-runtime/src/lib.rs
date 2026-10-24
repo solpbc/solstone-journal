@@ -96,8 +96,8 @@ pub use repo::{
     init_repository, log_key_label_outcome, neutralize_key_labels, remove_key,
 };
 pub use resolve::{
-    ResolvedResticInvocation, ResolvedTools, resolve_operational_tools, resolve_restic_member,
-    resolve_tools,
+    ResolvedResticInvocation, ResolvedTools, resolve_operational_tools, resolve_rclone_member,
+    resolve_restic_member, resolve_tools,
 };
 pub use restore::{RestoreDraft, RestoreOutcome, publish_restore_outcome, restore_journal};
 pub use rotation::{RotationResult, rotate_recovery_key};

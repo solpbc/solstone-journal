@@ -2270,7 +2270,13 @@ fn packaged_owned_archive_creator_entry() {
         };
     let weak_lease = Arc::downgrade(original.activity());
     let original_carrier = Arc::downgrade(original.carrier());
-    let installed = match admit_prepared_archive_owned_creator_installed(original, path) {
+    let installed = match admit_prepared_archive_owned_creator_installed(
+        original,
+        path,
+        None,
+        "test",
+        &solstone_core_backup_runtime::UreqHttpTransport,
+    ) {
         Ok(installed) => installed,
         Err(failure) => panic!("creator admission: {}", failure.error()),
     };
@@ -2443,7 +2449,13 @@ fn packaged_owned_archive_creator_entry() {
             Ok(next) => next,
             Err(failure) => panic!("next preparation: {}", failure.reason()),
         };
-        let next = match admit_prepared_archive_owned_creator_installed(next, path) {
+        let next = match admit_prepared_archive_owned_creator_installed(
+            next,
+            path,
+            None,
+            "test",
+            &solstone_core_backup_runtime::UreqHttpTransport,
+        ) {
             Ok(next) => next,
             Err(failure) => panic!("next creator admission: {}", failure.error()),
         };

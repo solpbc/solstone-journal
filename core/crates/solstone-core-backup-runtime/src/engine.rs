@@ -2190,6 +2190,49 @@ fn capture_byo_archive_pair(
     Ok((write, read))
 }
 
+/// One broker session, bounded by the operation: the writer reaches operated
+/// storage only through the append-only rclone transport, and the reader reads
+/// the same repository directly. Returns the credential expiry to cap by.
+fn capture_operated_archive_pair(
+    operation: &PreparedArchiveOperation<'_>,
+    binding: &HostedBinding,
+    keys: BackupKeys,
+    http: &dyn HttpTransport,
+    version: &str,
+    rclone: Option<&Path>,
+    effects: &mut ArchiveAdmissionEffects,
+) -> Result<(Runtime, Runtime, i64), ArchiveError> {
+    let http = ArchiveAdmissionHttp {
+        inner: http,
+        operation,
+    };
+    effects.broker_requested = true;
+    let credentials = fetch_hosted_credentials(&http, binding, "operated", version);
+    operation.revalidate()?;
+    let credentials = credentials.map_err(|error| ArchiveError::CredentialsUnavailable {
+        reason: error.reason_code,
+    })?;
+    let expiry = chrono::DateTime::parse_from_rfc3339(&credentials.expires_at)
+        .map_err(|_| ArchiveError::InvalidCredentialExpiry)?
+        .timestamp();
+    let rclone = rclone.ok_or(ArchiveError::ToolUnavailable)?;
+    let write = hosted_append_only_session(binding, &credentials, rclone)
+        .map_err(|_| ArchiveError::ToolUnavailable)?;
+    let read = hosted_session(binding, &credentials)
+        .map_err(|_| ArchiveError::ConfigurationUnavailable)?;
+    let runtime = |session: crate::hosted_runtime::HostedResticSession| Runtime {
+        destination: session.destination,
+        password: keys.daily_key.clone(),
+        backend_env: session
+            .backend_env
+            .into_iter()
+            .map(|(key, value)| (key, Some(value)))
+            .collect(),
+        global_options: session.global_options,
+    };
+    Ok((runtime(write), runtime(read), expiry))
+}
+
 /// Consume the original operation without any replaceable lifetime inputs.
 pub fn admit_prepared_archive<'a>(
     mut operation: PreparedArchiveOperation<'a>,
@@ -2209,39 +2252,18 @@ pub fn admit_prepared_archive<'a>(
             .ok_or(ArchiveError::ToolUnavailable)?
             .to_path_buf();
         let (write, read) = if let Some(binding) = config.binding() {
-            let http = ArchiveAdmissionHttp {
-                inner: services.http,
-                operation: &operation,
-            };
-            effects.broker_requested = true;
-            let credentials =
-                fetch_hosted_credentials(&http, binding, "operated", services.version);
-            operation.revalidate()?;
-            let credentials =
-                credentials.map_err(|error| ArchiveError::CredentialsUnavailable {
-                    reason: error.reason_code,
-                })?;
-            let expiry = chrono::DateTime::parse_from_rfc3339(&credentials.expires_at)
-                .map_err(|_| ArchiveError::InvalidCredentialExpiry)?
-                .timestamp();
-            let rclone = services.rclone_path.ok_or(ArchiveError::ToolUnavailable)?;
-            let write = hosted_append_only_session(binding, &credentials, rclone)
-                .map_err(|_| ArchiveError::ToolUnavailable)?;
-            let read = hosted_session(binding, &credentials)
-                .map_err(|_| ArchiveError::ConfigurationUnavailable)?;
+            let (write, read, expiry) = capture_operated_archive_pair(
+                &operation,
+                binding,
+                keys,
+                services.http,
+                services.version,
+                services.rclone_path,
+                &mut effects,
+            )?;
             operation.cap_credential_expiry(expiry);
             operation.budget().remaining(operation.clock())?;
-            let runtime = |session: crate::hosted_runtime::HostedResticSession| Runtime {
-                destination: session.destination,
-                password: keys.daily_key.clone(),
-                backend_env: session
-                    .backend_env
-                    .into_iter()
-                    .map(|(key, value)| (key, Some(value)))
-                    .collect(),
-                global_options: session.global_options,
-            };
-            (runtime(write), runtime(read))
+            (write, read)
         } else {
             capture_byo_archive_pair(config, keys)?
         };
@@ -3304,26 +3326,50 @@ fn creator_admission_failure(
     }
 }
 
+/// Operated journals also pass the installed rclone, the only operated writer
+/// transport, and the broker transport that issues this operation's session.
 pub fn admit_prepared_archive_owned_creator_installed(
-    operation: OwnedPreparedArchiveOperation,
+    mut operation: OwnedPreparedArchiveOperation,
     restic_path: &Path,
+    rclone_path: Option<&Path>,
+    version: &str,
+    http: &UreqHttpTransport,
 ) -> Result<OwnedInstalledArchiveCreator, OwnedArchiveAdmissionFailure> {
+    let mut effects = ArchiveAdmissionEffects::default();
+    let operated = operation.configuration().binding().is_some();
     let captured = (|| {
         operation.revalidate()?;
         let config = operation.configuration();
         if !config.enabled() {
             return Err(ArchiveError::NotConfigured);
         }
-        // Operated writes retain their existing rclone policy; never request a broker here.
-        if config.binding().is_some()
-            || config.mode() != Some("byo")
+        let keys = config.keys()?.ok_or(ArchiveError::NotConfigured)?;
+        if let Some(binding) = config.binding() {
+            if config.mode() != Some("operated") {
+                return Err(ArchiveError::Readback(ReadbackError::UnsupportedBackend));
+            }
+            // No broker session is issued for a writer that has no append-only transport.
+            rclone_path.ok_or(ArchiveError::ToolUnavailable)?;
+            let (write, read, expiry) = capture_operated_archive_pair(
+                operation.as_prepared(),
+                binding,
+                keys,
+                http,
+                version,
+                rclone_path,
+                &mut effects,
+            )?;
+            operation.cap_credential_expiry(expiry);
+            operation.revalidate()?;
+            return Ok((write, read));
+        }
+        if config.mode() != Some("byo")
             || !config
                 .destination()
                 .is_some_and(|destination| matches!(destination.backend.as_str(), "s3" | "b2"))
         {
             return Err(ArchiveError::Readback(ReadbackError::UnsupportedBackend));
         }
-        let keys = config.keys()?.ok_or(ArchiveError::NotConfigured)?;
         capture_byo_archive_pair(config, keys)
     })();
     let (write, read) = match captured {
@@ -3332,7 +3378,7 @@ pub fn admit_prepared_archive_owned_creator_installed(
             return Err(OwnedArchiveAdmissionFailure {
                 inner: Box::new(OwnedArchiveAdmissionFailureInner {
                     error,
-                    effects: ArchiveAdmissionEffects::default(),
+                    effects,
                     owned: ClosedArchiveAdmissionOwner::Prepared(Box::new(
                         operation.into_owned_hold(),
                     )),
@@ -3347,29 +3393,38 @@ pub fn admit_prepared_archive_owned_creator_installed(
         write,
         read,
         ArchiveCaptureFacts {
-            effects: ArchiveAdmissionEffects::default(),
+            effects,
             write_repository_id: None,
             read_repository_id: None,
             repository_id: None,
             archives: Vec::new(),
         },
     );
+    let refused = |readback| {
+        let mut failure = creator_admission_failure(readback);
+        failure.inner.effects.broker_requested = effects.broker_requested;
+        failure
+    };
     #[cfg(unix)]
     let creator = operation
         .bind_archive_creator(capture)
         .admit()
-        .map_err(creator_admission_failure)?;
+        .map_err(refused)?;
     #[cfg(windows)]
     let creator = operation
         .bind_archive_creator(capture)
         .admit(Some(Arc::new(crate::runner::SystemToolRunner)))
-        .map_err(creator_admission_failure)?;
+        .map_err(refused)?;
     Ok(OwnedInstalledArchiveCreator {
         archive: OwnedAdmittedArchive { creator },
         finish: DirectReadFinishOwner {
             carrier,
             clock,
-            broker: DirectBrokerCompletion::CapturedByo,
+            broker: if operated {
+                DirectBrokerCompletion::JoinedOperated
+            } else {
+                DirectBrokerCompletion::CapturedByo
+            },
         },
     })
 }
@@ -5845,6 +5900,30 @@ mod tests {
                 requests.iter().all(|request| request.timeout
                     == Some(Duration::from_secs(ARCHIVE_LS_TIMEOUT_SECONDS)))
             );
+        }
+
+        #[test]
+        fn installed_operated_creator_without_append_only_transport_never_asks_the_broker() {
+            let (journal, root) = fixture();
+            let _http = hosted(journal.path(), "1970-01-01T02:00:00Z");
+            let clock: Arc<dyn Clock + Send + Sync> = Arc::new(FixedClock);
+            let prepared = OwnedPreparedArchiveOperation::prepare(
+                root,
+                ArchiveBudget::new(clock.as_ref()).unwrap(),
+                Arc::clone(&clock),
+            )
+            .unwrap_or_else(|e| panic!("prepare: {}", e.reason()));
+            let Err(failure) = admit_prepared_archive_owned_creator_installed(
+                prepared,
+                Path::new("/fixture/bin/restic"),
+                None,
+                "test",
+                &UreqHttpTransport,
+            ) else {
+                panic!("operated creator admitted without its append-only transport");
+            };
+            assert_eq!(failure.error(), ArchiveError::ToolUnavailable);
+            assert!(!failure.effects().broker_requested);
         }
 
         #[test]
