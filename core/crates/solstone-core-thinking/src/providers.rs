@@ -303,7 +303,6 @@ fn validation_request() -> GenerateRequest {
         attempt_index: 0,
         exclusive_admission: false,
         transport_retries: Some(0),
-        endpoint_binding: None,
     }
 }
 
@@ -4454,7 +4453,6 @@ mod tests {
             attempt_index: 0,
             exclusive_admission: false,
             transport_retries: Some(0),
-            endpoint_binding: None,
         }
     }
 
@@ -5495,7 +5493,6 @@ mod desktop_probe {
             attempt_index: 0,
             exclusive_admission: false,
             transport_retries: Some(0),
-            endpoint_binding: None,
         }
     }
 
@@ -5684,7 +5681,6 @@ mod refresh_dispatch {
                 attempt_index: 0,
                 exclusive_admission: false,
                 transport_retries: Some(0),
-                endpoint_binding: None,
             };
             let reason = match solstone_core_generate_wire::respond(
                 &request,

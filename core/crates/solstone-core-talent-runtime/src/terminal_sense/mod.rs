@@ -51,20 +51,6 @@ pub(crate) fn prepare(prepared: &PreparedTalent, context: &ExecutionContext) -> 
     {
         return None;
     }
-    let config = prepared.journal_config.as_ref()?;
-    let (provider, lane) = solstone_core_generate_wire::resolve_lane(config);
-    let model = solstone_core_generate_wire::overrides::configured_model(config)?;
-    let solstone_core_generate_wire::LaneOutcome::ConfidentialEndpoint(endpoint) = lane else {
-        return None;
-    };
-    if provider != "local"
-        || model != "local/qwen3.5-4b"
-        || endpoint.served_model_id != "Qwen/Qwen3.5-4B"
-        || endpoint.is_bundled
-        || !endpoint.is_confidential
-    {
-        return None;
-    }
     let counts = prepared.config.get("source_counts")?;
     if counts["transcripts"] != 0
         || counts["talents"] != 0
@@ -81,7 +67,7 @@ pub(crate) fn prepare(prepared: &PreparedTalent, context: &ExecutionContext) -> 
     if sources.len() != counts["percepts"].as_u64()? as usize {
         return None;
     }
-    let mut original = crate::native_generate_request(prepared).ok()?;
+    let original = crate::native_generate_request(prepared).ok()?;
     if original.system_instruction.is_some() || original.contents.len() != 2 {
         return None;
     }
@@ -231,9 +217,6 @@ pub(crate) fn prepare(prepared: &PreparedTalent, context: &ExecutionContext) -> 
         &bound,
         &passages,
     )?);
-    let binding = solstone_core_generate_wire::endpoint_configuration_binding(config)?;
-    request.endpoint_binding = Some(binding.clone());
-    original.endpoint_binding = Some(binding);
     Some(Candidate {
         request,
         original,

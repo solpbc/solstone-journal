@@ -45,7 +45,7 @@ fn setup(
         r#"{"title":"Work"}"#,
     )
     .unwrap();
-    fs::write(journal.join("config/journal.json"),json!({"providers":{"active":{"provider":"local","model":"local/qwen3.5-4b"},"local":{"endpoint_url":"https://example.test","served_model_id":"Qwen/Qwen3.5-4B"}},"services":{"confidential":{}}}).to_string()).unwrap();
+    fs::write(journal.join("config/journal.json"),json!({"providers":{"active":{"provider":"test","model":"test-model"}}}).to_string()).unwrap();
     let raw = json!({"timestamp":0.001,"analysis":{"primary":"tmux","visual_description":"A terminal"},"content":{"tmux":{"session":"main","window":{"id":"@0","index":0,"name":"work"},"windows":[{"id":"@0","index":0,"name":"work","active":true}],"panes":[{"id":"%0","index":0,"active":true,"content":screen}]}}});
     fs::write(
         journal.join("chronicle/20261021/device/100000_300/tmux_main_screen.jsonl"),
@@ -109,7 +109,7 @@ fn native_loaded_source_bytes_and_identities_qualify_only_when_they_match() {
     assert!(prepare(&wrong, &context).is_none());
 }
 #[test]
-fn native_preparation_falls_back_for_unsupported_ui_styles_and_profiles() {
+fn native_preparation_falls_back_for_unsupported_ui_styles() {
     for text in [
         display().replace("❯ Is", "❯ \x1b[2mIs"),
         display().replace("❯ Is", "❯ \x1b[9mIs"),
@@ -127,28 +127,30 @@ fn native_preparation_falls_back_for_unsupported_ui_styles_and_profiles() {
         .unwrap();
         assert!(p.terminal_sense.is_none());
     }
+}
+#[test]
+fn every_thinking_backend_prepares_the_same_candidate() {
     let (_root, paths, context, request) = setup(&display());
-    let p = crate::prepare::prepare(
-        request,
-        &paths,
-        &context,
-        crate::prepare::PrepareMode::Preview,
-    )
-    .unwrap();
-    for kind in ["plain", "different_model", "different_provider"] {
-        let mut p = p.clone();
-        let config = p.journal_config.as_mut().unwrap();
-        match kind {
-            "plain" => {
-                config.shift_remove("services");
-            }
-            "different_model" => {
-                config["providers"]["active"]["model"] = json!("local/other");
-            }
-            _ => {
-                config["providers"]["active"]["provider"] = json!("openai");
-            }
-        }
-        assert!(prepare(&p, &context).is_none());
+    let mut candidates = Vec::new();
+    for config in [
+        json!({"providers":{"active":{"provider":"test","model":"test-model"}}}),
+        json!({"providers":{"active":{"provider":"local","model":"local/qwen3.5-4b"}}}),
+        json!({"providers":{"active":{"provider":"local","model":"local/qwen3.5-4b"},"local":{"endpoint_url":"https://example.test","served_model_id":"Qwen/Qwen3.5-4B"}},"services":{"confidential":{}}}),
+        json!({"providers":{"active":{"provider":"local","model":"local/other"},"local":{"endpoint_url":"https://example.test","served_model_id":"other","served_context_window":16384}}}),
+        json!({"providers":{"active":{"provider":"openai","model":"openai-model"}}}),
+        json!({"providers":{"active":{"provider":"anthropic","model":"anthropic-model"}}}),
+        json!({"providers":{"active":{"provider":"google","model":"google-model"}}}),
+    ] {
+        fs::write(context.journal.join("config/journal.json"), config.to_string()).unwrap();
+        let p = crate::prepare::prepare(
+            request.clone(),
+            &paths,
+            &context,
+            crate::prepare::PrepareMode::Preview,
+        )
+        .unwrap();
+        let candidate = p.terminal_sense.expect("terminal input takes the candidate");
+        candidates.push(solstone_core_generate::encode_one_shot_request(&candidate.request).unwrap());
     }
+    assert!(candidates.windows(2).all(|pair| pair[0] == pair[1]));
 }

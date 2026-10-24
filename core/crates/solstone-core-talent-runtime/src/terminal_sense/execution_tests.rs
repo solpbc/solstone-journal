@@ -42,8 +42,7 @@ fn setup() -> (PreparedTalent, Value) {
     ];
     let schema_native = json!({"type":"object","additionalProperties":false,"required":["activity_summary","facets","quotes","entities"],"properties":{"activity_summary":{"type":"string"},"facets":{"type":"array","items":{"type":"object","properties":{"activity":{"type":"string"}}}},"quotes":{"type":"array"},"entities":{"type":"array","items":{"type":"object","properties":{"source":{"type":"string","enum":["voice","speaker_label","transcript","screen","other"]}}}}}});
     let mut prepared=PreparedTalent::new("sense".into(),json!({"max_output_tokens":100,"transcript":"native source","user_instruction":"native task","json_schema":schema_native}).as_object().unwrap().clone());
-    let mut original = crate::native_generate_request(&prepared).unwrap();
-    original.endpoint_binding = Some("fixed binding".into());
+    let original = crate::native_generate_request(&prepared).unwrap();
     let mut request = original.clone();
     request.json_schema = Some(schema(&schema_native, 0, &bound, &rows).unwrap());
     request.contents.insert(
@@ -168,7 +167,7 @@ fn canonical_candidate_uses_existing_writer_without_private_wrapper() {
     assert_eq!(calls.len(), 1);
 }
 #[test]
-fn retries_and_native_fallback_retain_all_usage_and_original_input_with_fixed_binding() {
+fn retries_and_native_fallback_retain_all_usage_and_original_input() {
     let (mut prepared, value) = setup();
     let original = crate::native_generate_request(&prepared).unwrap();
     let mut invalid = value.clone();
@@ -197,9 +196,6 @@ fn retries_and_native_fallback_retain_all_usage_and_original_input_with_fixed_bi
     assert_eq!(usage["output_tokens"], 100);
     assert_eq!(usage["total_tokens"], 1100);
     assert_eq!(calls.len(), 4);
-    for call in &calls {
-        assert_eq!(call.endpoint_binding.as_deref(), Some("fixed binding"));
-    }
     for call in &calls[2..] {
         assert_eq!(call.contents, original.contents);
         assert_eq!(call.json_schema, original.json_schema);
@@ -216,7 +212,6 @@ fn retries_and_native_fallback_retain_all_usage_and_original_input_with_fixed_bi
 fn cancellation_and_security_or_transport_refusals_do_not_fall_back() {
     for code in [
         "attestation_failed",
-        "endpoint_configuration_changed",
         "http_401",
         "connection_error",
     ] {
@@ -273,7 +268,6 @@ fn protected_fitting_refusals_take_one_unchanged_native_fallback() {
         assert_eq!(calls.len(), 2);
         assert_eq!(calls[1].contents, original.contents);
         assert_eq!(calls[1].json_schema, original.json_schema);
-        assert_eq!(calls[1].endpoint_binding, calls[0].endpoint_binding);
     }
 }
 

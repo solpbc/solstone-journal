@@ -52,16 +52,14 @@ impl Usage {
         Some(Box::new(v))
     }
 }
-struct BoundExecutor<'a> {
+/// Counts every candidate and fallback attempt, so usage covers the whole sequence.
+struct TrackingExecutor<'a> {
     inner: &'a dyn GenerateExecutor,
-    binding: Option<String>,
     usage: Mutex<Usage>,
 }
-impl GenerateExecutor for BoundExecutor<'_> {
+impl GenerateExecutor for TrackingExecutor<'_> {
     fn execute(&self, request: &GenerateRequest) -> Result<GenerateResponse, ClientError> {
-        let mut request = request.clone();
-        request.endpoint_binding = self.binding.clone();
-        let result = self.inner.execute(&request);
+        let result = self.inner.execute(request);
         if let Ok(response) = &result {
             self.usage.lock().unwrap().add(response);
         } else {
@@ -79,9 +77,8 @@ pub(crate) fn execute(
     writer: &mut impl Write,
     cancellation: &Cancellation,
 ) -> Result<GeneratedTalentResponse, RuntimeOutcome> {
-    let tracking = BoundExecutor {
+    let tracking = TrackingExecutor {
         inner: generate,
-        binding: candidate.request.endpoint_binding.clone(),
         usage: Mutex::new(Usage::default()),
     };
     let result = run(
@@ -192,8 +189,6 @@ fn run(
         writer,
         json!({"event":"terminal_sense","branch":"native_fallback","cause":cause}),
     );
-    // The wrapper retains the original endpoint precondition across the native
-    // bounded retry sequence. It never refreshes it to follow a changed lane.
     crate::native_generate_response(prepared, context, generate, writer)
 }
 

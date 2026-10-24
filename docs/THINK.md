@@ -87,11 +87,11 @@ per local day; owner-write conflicts do not become successful capped results.
 
 ## Terminal segment Sense
 
-On the native confidential Qwen3.5-4B profile, Sense can encode complete terminal-only segments as a reversible state timeline. Pane text, styles, links, identities, observation times and retained analysis remain reconstructible. Other inputs and unsupported interface layouts keep the ordinary native request.
+Sense encodes complete terminal-only segments as a reversible state timeline. Pane text, styles, links, identities, observation times and retained analysis remain reconstructible. Other inputs and unsupported interface layouts keep the ordinary native request. Eligibility depends only on the segment's inputs, never on the provider, model, endpoint or context window.
 
 For eligible segments, the model chooses complete displayed passages for activity context. Rust copies those passages and the recognized input or menu state into the existing Sense activity fields, then validates the canonical Sense object. Displayed text is framed as what was on screen; it does not establish authorship, approval or execution. Other fields remain generated assessments.
 
-The talent runtime validates the bound Sense object before its existing output writer runs. Think then publishes the usual segment projections through its existing writer. Fitting preserves the complete candidate packet or refuses it. Invalid bindings or protected-input fitting refusals permit one ordinary native fallback sequence on the same bound endpoint configuration. Cancellation, transport, authentication, attestation and configuration-change failures do not trigger that fallback. Attempt events and usage accounting retain the candidate and fallback calls.
+The talent runtime validates the bound Sense object before its existing output writer runs. Think then publishes the usual segment projections through its existing writer. Fitting preserves the complete candidate packet or refuses it. Invalid bindings or protected-input fitting refusals permit one ordinary native fallback sequence. Cancellation, transport, authentication and attestation failures do not trigger that fallback. Attempt events and usage accounting retain the candidate and fallback calls.
 
 ## Architecture
 

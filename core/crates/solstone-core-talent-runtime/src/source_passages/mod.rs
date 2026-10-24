@@ -208,7 +208,6 @@ pub fn nomination_request(unit: &SourceUnit, talent: &str) -> Option<GenerateReq
         attempt_index: 0,
         exclusive_admission: false,
         transport_retries: None,
-        endpoint_binding: None,
     })
 }
 
