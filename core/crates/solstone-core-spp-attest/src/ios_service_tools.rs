@@ -26,8 +26,16 @@ use solstone_core_installed_payload::sha256_hex;
 
 pub const IOS_HELPER_RELATIVE_PATH: &str = "Extensions/Appraisal.appex";
 pub const IOS_HELPER_EXECUTABLE_NAME: &str = "Appraisal";
+// Each signed app admits only its own appraisal extension. The owner app is a
+// separate identity chosen when the native library is built, never at run time.
+#[cfg(not(feature = "ios-owner-app"))]
 pub const IOS_BUNDLE_IDENTIFIER: &str = "app.solstone.journal.runtime.dev.gpu-appraisal";
+#[cfg(not(feature = "ios-owner-app"))]
 pub const IOS_EXTENSION_POINT_HOST: &str = "app.solstone.journal.runtime.dev";
+#[cfg(feature = "ios-owner-app")]
+pub const IOS_BUNDLE_IDENTIFIER: &str = "app.solstone.journal.owner.dev.gpu-appraisal";
+#[cfg(feature = "ios-owner-app")]
+pub const IOS_EXTENSION_POINT_HOST: &str = "app.solstone.journal.owner.dev";
 pub const IOS_EXTENSION_POINT_NAME: &str = "gpu-appraisal";
 const IOS_RIM_DIRECTORY: &str = "RIMs";
 
@@ -1511,13 +1519,25 @@ mod tests {
         .unwrap();
         std::fs::write(rims.join("qualified.xml"), b"rim").unwrap();
 
+        write_appraisal_info(&appraisal, IOS_BUNDLE_IDENTIFIER);
+
+        let (_, members) = scan_bundle_members(temp.path()).unwrap();
+        assert!(members.iter().any(|member| {
+            member.relative_path
+                == format!("{IOS_HELPER_RELATIVE_PATH}/{IOS_RIM_DIRECTORY}/qualified.xml")
+                && member.is_regular_file
+        }));
+        assert!(!members.iter().any(|member| {
+            member.relative_path == format!("{IOS_HELPER_RELATIVE_PATH}/{IOS_RIM_DIRECTORY}")
+        }));
+    }
+
+    #[cfg(feature = "full-tests")]
+    fn write_appraisal_info(appraisal: &Path, identifier: &str) {
         let mut extension_attributes = plist::Dictionary::new();
-        extension_attributes.insert(
-            "EXExtensionPointIdentifier".into(),
-            IOS_BUNDLE_IDENTIFIER.into(),
-        );
+        extension_attributes.insert("EXExtensionPointIdentifier".into(), identifier.into());
         let mut info = plist::Dictionary::new();
-        info.insert("CFBundleIdentifier".into(), IOS_BUNDLE_IDENTIFIER.into());
+        info.insert("CFBundleIdentifier".into(), identifier.into());
         info.insert(
             "CFBundleExecutable".into(),
             IOS_HELPER_EXECUTABLE_NAME.into(),
@@ -1532,15 +1552,35 @@ mod tests {
             &plist::Value::Dictionary(info),
         )
         .unwrap();
+    }
 
-        let (_, members) = scan_bundle_members(temp.path()).unwrap();
-        assert!(members.iter().any(|member| {
-            member.relative_path
-                == format!("{IOS_HELPER_RELATIVE_PATH}/{IOS_RIM_DIRECTORY}/qualified.xml")
-                && member.is_regular_file
-        }));
-        assert!(!members.iter().any(|member| {
-            member.relative_path == format!("{IOS_HELPER_RELATIVE_PATH}/{IOS_RIM_DIRECTORY}")
-        }));
+    #[cfg(feature = "full-tests")]
+    #[test]
+    fn bundle_scanner_refuses_the_other_apps_appraisal_identity() {
+        #[cfg(not(feature = "ios-owner-app"))]
+        let other = "app.solstone.journal.owner.dev.gpu-appraisal";
+        #[cfg(feature = "ios-owner-app")]
+        let other = "app.solstone.journal.runtime.dev.gpu-appraisal";
+        assert_ne!(other, IOS_BUNDLE_IDENTIFIER);
+        assert_eq!(
+            IOS_BUNDLE_IDENTIFIER,
+            format!("{IOS_EXTENSION_POINT_HOST}.{IOS_EXTENSION_POINT_NAME}")
+        );
+
+        let temp = tempfile::tempdir().unwrap();
+        let appraisal = temp.path().join(IOS_HELPER_RELATIVE_PATH);
+        std::fs::create_dir_all(&appraisal).unwrap();
+        std::fs::write(
+            appraisal.join("gpu-appraisal-receipt.json"),
+            serde_json::to_vec(&valid_receipt()).unwrap(),
+        )
+        .unwrap();
+        write_appraisal_info(&appraisal, other);
+
+        let err = scan_bundle_members(temp.path()).unwrap_err();
+        assert!(matches!(err, IosVerifierRefusal::SubstitutedIdentity(_)));
+
+        write_appraisal_info(&appraisal, IOS_BUNDLE_IDENTIFIER);
+        scan_bundle_members(temp.path()).unwrap();
     }
 }
