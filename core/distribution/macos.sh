@@ -288,9 +288,10 @@ run_bounded() {
 	path=$1
 	out=$2
 	limit=$3
+	flag=${4:---version}
 	: >"$out"
 	rm -f "$out.rc"
-	( "$path" --version </dev/null >"$out" 2>&1; printf '%s\n' "$?" >"$out.rc" ) &
+	( "$path" "$flag" </dev/null >"$out" 2>&1; printf '%s\n' "$?" >"$out.rc" ) &
 	probe_pid=$!
 	waited=0
 	while [ ! -f "$out.rc" ]; do
@@ -315,6 +316,16 @@ assert_starts() {
 	path=$1
 	if ! run_bounded "$path" "$WORK/start.out" 20; then
 		refuse "signed, notarized, and did not return within 20s: $path"
+	fi
+	# ⚠ `mlx-helper` treats `--version` as an unknown option and exits 1
+	# without writing anything (measured 2026-10-24, 2.0.57 on macOS 26.5.1);
+	# it answers `--help` with its usage. A silent `--version` gets one
+	# `--help` probe, judged by the same rule below.
+	if [ ! -s "$WORK/start.out" ]; then
+		note "start: $path silent on --version; probing --help"
+		if ! run_bounded "$path" "$WORK/start.out" 20 --help; then
+			refuse "signed, notarized, and did not return within 20s: $path"
+		fi
 	fi
 	# Non-empty output is the positive: a process that the loader refused
 	# produces none at all. ⛔ Do NOT additionally require the output to
@@ -393,6 +404,20 @@ gatekeeper_rung() {
 	[ "$payloads" -eq "$EXPECTED_PAYLOADS" ] \
 		|| refuse "signed inventory declares $EXPECTED_PAYLOADS loaded payload(s), found $payloads"
 
+	# A sealed resource bundle (the MLX helper's Metal library) carries no
+	# Mach-O, so neither census above sees it. Its seal is in the signed
+	# inventory; the bundle itself must verify, be ours, and be notarized.
+	bundles=0
+	while IFS= read -r seal; do
+		bundles=$((bundles + 1))
+		bundle=$TREE/${seal%/Contents/_CodeSignature/CodeResources}
+		/usr/bin/codesign --verify --deep --strict "$bundle" >"$WORK/bundle-verify.out" 2>&1 \
+			|| { cat "$WORK/bundle-verify.out" >&2; refuse "resource bundle does not verify: $bundle"; }
+		assert_signed_by_us "$bundle"
+		assert_notarized "$bundle"
+	done <"$WORK/signed-bundles.sorted"
+	printf 'gatekeeper resource bundles: %s sealed, signed and notarized\n' "$bundles"
+
 	# Half 2 is not "the dylib is signed" — it is "the dylib LOADS". Under the
 	# hardened runtime a binary refuses a library signed by another team, so
 	# the only proof is a run that actually links it.
@@ -436,6 +461,22 @@ gatekeeper_negatives() {
 		refuse "CONTROL FAILED: an ad-hoc binary satisfied the notarized requirement, so half 1 proves nothing"
 	fi
 	printf 'control 1 ok: both notarization instruments refuse an ad-hoc signed binary that codesign --verify accepts\n'
+
+	# Control for the resource-bundle check: one appended byte inside a
+	# sealed bundle must make the same verification refuse it.
+	if [ -s "$WORK/signed-bundles.sorted" ]; then
+		IFS= read -r control_seal <"$WORK/signed-bundles.sorted"
+		control_bundle=$broken/${control_seal%/Contents/_CodeSignature/CodeResources}
+		control_resource=$(/usr/bin/find "$control_bundle/Contents/Resources" -type f -print 2>/dev/null | LC_ALL=C /usr/bin/sort | /usr/bin/sed -n 1p)
+		[ -n "$control_resource" ] \
+			|| refuse "could not find a sealed resource for the resource-bundle control"
+		printf 'x' >>"$control_resource" \
+			|| refuse "could not build the resource-bundle control"
+		if /usr/bin/codesign --verify --deep --strict "$control_bundle" >/dev/null 2>&1; then
+			refuse "CONTROL FAILED: a resource bundle with a modified resource still verified"
+		fi
+		printf 'control 1b ok: a modified resource breaks its bundle seal\n'
+	fi
 
 	# Control for half 2: strip the payload's signature and require the
 	# hardened-runtime helper to refuse to start. This is the exact failure a
@@ -541,6 +582,21 @@ write_relative_macho_members() {
 	LC_ALL=C /usr/bin/sort "$out.raw" >"$out" || return 2
 }
 
+write_relative_bundle_seals() {
+	root=$1
+	out=$2
+	/usr/bin/find "$root" -path '*.bundle/Contents/_CodeSignature/CodeResources' -print >"$out.full" \
+		|| return 2
+	: >"$out.raw"
+	while IFS= read -r path; do
+		case $path in
+		"$root"/*) printf '%s\n' "${path#"$root"/}" >>"$out.raw" ;;
+		*) return 2 ;;
+		esac
+	done <"$out.full"
+	LC_ALL=C /usr/bin/sort "$out.raw" >"$out" || return 2
+}
+
 tree_matches_signed_inventory() {
 	root=$1
 	label=$2
@@ -565,10 +621,27 @@ read_signed_macho_inventory() {
 	[ "$EXPECTED_PAYLOADS" -ge 1 ] \
 		|| refuse "the signed inventory declares no loaded payload to test"
 
-	member_total=$((EXPECTED_EXECUTABLES + EXPECTED_PAYLOADS))
+	# Resource bundles are signed members too, but the receipt does not count
+	# them: the tree's sealed bundles bound them, and the two sets must agree.
+	# An unsealed bundle has no seal to compare, so it is refused outright.
+	/usr/bin/find "$TREE" -type d -name '*.bundle' -print >"$WORK/bundle-dirs" \
+		|| refuse "could not enumerate the extracted bundles"
+	while IFS= read -r bundle_dir; do
+		bundle_seal=$bundle_dir/Contents/_CodeSignature/CodeResources
+		if [ ! -f "$bundle_seal" ] || [ -L "$bundle_seal" ]; then
+			refuse "unsealed bundle in the extracted tree: ${bundle_dir#"$TREE"/}"
+		fi
+	done <"$WORK/bundle-dirs"
+	write_relative_bundle_seals "$TREE" "$WORK/observed-bundles" \
+		|| refuse "could not enumerate the extracted resource-bundle seals"
+	observed_bundles=$(/usr/bin/wc -l <"$WORK/observed-bundles") \
+		|| refuse "could not count the extracted resource-bundle seals"
+	observed_bundles=$((observed_bundles + 0))
+	member_total=$((EXPECTED_EXECUTABLES + EXPECTED_PAYLOADS + observed_bundles))
 	member_executables=0
 	member_payloads=0
 	: >"$WORK/signed-members.raw"
+	: >"$WORK/signed-bundles.raw"
 	i=0
 	while [ "$i" -lt "$member_total" ]; do
 		member_path=$(/usr/bin/plutil -extract "members.$i.path" raw -o - "$signing" 2>/dev/null) \
@@ -593,6 +666,12 @@ read_signed_macho_inventory() {
 		case $member_kind in
 		executable) member_executables=$((member_executables + 1)) ;;
 		payload) member_payloads=$((member_payloads + 1)) ;;
+		resource-bundle)
+			case $member_path in
+			?*.bundle/Contents/_CodeSignature/CodeResources) ;;
+			*) refuse "resource-bundle member is not a bundle seal: $member_path" ;;
+			esac
+			;;
 		*) refuse "unknown signed member kind for $member_path: $member_kind" ;;
 		esac
 		case $member_library_validation in
@@ -608,7 +687,11 @@ read_signed_macho_inventory() {
 		actual_digest=${actual_digest%% *}
 		[ "$actual_digest" = "$member_digest" ] \
 			|| refuse "signed member digest mismatch: $member_path"
-		/usr/bin/codesign -d --entitlements :- "$member_file" \
+		member_code=$member_file
+		if [ "$member_kind" = resource-bundle ]; then
+			member_code=$TREE/${member_path%/Contents/_CodeSignature/CodeResources}
+		fi
+		/usr/bin/codesign -d --entitlements :- "$member_code" \
 			>"$WORK/entitlements.stdout" 2>"$WORK/entitlements.stderr" \
 			|| refuse "could not read signed member entitlements: $member_path"
 		cat "$WORK/entitlements.stdout" "$WORK/entitlements.stderr" \
@@ -626,11 +709,21 @@ read_signed_macho_inventory() {
 		fi
 		[ "$actual_library_validation" = "$member_library_validation" ] \
 			|| refuse "signed member entitlement differs from inventory: $member_path"
-		printf '%s\n' "$member_path" >>"$WORK/signed-members.raw"
+		if [ "$member_kind" = resource-bundle ]; then
+			printf '%s\n' "$member_path" >>"$WORK/signed-bundles.raw"
+		else
+			printf '%s\n' "$member_path" >>"$WORK/signed-members.raw"
+		fi
 		i=$((i + 1))
 	done
-	if /usr/bin/plutil -extract "members.$member_total.path" raw -o - "$signing" >/dev/null 2>&1; then
-		refuse "members contains more entries than executable_count + payload_count"
+	if /usr/bin/plutil -extract "members.$member_total" xml1 -o - "$signing" >/dev/null 2>&1; then
+		refuse "members contains more entries than executable_count + payload_count + the tree's sealed resource bundles"
+	fi
+	LC_ALL=C /usr/bin/sort "$WORK/signed-bundles.raw" >"$WORK/signed-bundles.sorted" \
+		|| refuse "could not sort the signed resource-bundle inventory"
+	if ! /usr/bin/cmp -s "$WORK/signed-bundles.sorted" "$WORK/observed-bundles"; then
+		/usr/bin/diff -u "$WORK/signed-bundles.sorted" "$WORK/observed-bundles" >&2 || true
+		refuse "extracted resource-bundle seals differ from the signed inventory"
 	fi
 	[ "$member_executables" -eq "$EXPECTED_EXECUTABLES" ] \
 		|| refuse "member kinds disagree with executable_count"
@@ -648,8 +741,8 @@ read_signed_macho_inventory() {
 		/usr/bin/diff -u "$WORK/signed-members.sorted" "$WORK/observed-members" >&2 || true
 		refuse "extracted Mach-O membership differs from the signed inventory"
 	fi
-	printf 'signed inventory: %s executable(s), %s payload(s), exact paths and digests\n' \
-		"$EXPECTED_EXECUTABLES" "$EXPECTED_PAYLOADS"
+	printf 'signed inventory: %s executable(s), %s payload(s), %s resource bundle(s), exact paths and digests\n' \
+		"$EXPECTED_EXECUTABLES" "$EXPECTED_PAYLOADS" "$observed_bundles"
 }
 
 assert_membership_negatives() {
