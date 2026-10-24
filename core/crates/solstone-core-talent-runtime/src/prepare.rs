@@ -73,6 +73,7 @@ pub fn prepare(
                     | "_memory_sources"
                     | crate::story::SOURCE_BODY_KEY
                     | crate::story::INPUT_WHOLE_KEY
+                    | crate::product_names::VIEW_KEY
             )
         {
             composed.insert(key, value);
@@ -305,6 +306,7 @@ pub fn prepare(
             Value::String(body),
         );
     }
+    crate::product_names::prepare(&name, &mut composed, &entry_sources);
     Ok(PreparedTalent {
         name,
         config: composed,

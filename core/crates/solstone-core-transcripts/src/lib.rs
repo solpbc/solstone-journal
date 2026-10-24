@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 
 use chrono::{Duration, NaiveDate, NaiveDateTime};
 use serde_json::{Map, Value};
+use sha2::{Digest, Sha256};
 use solstone_core_format::agent_memory::{Coordinate, Origin, SourceKey};
 use solstone_core_format::content::{
     Family, RawPerceptFamily, iter_talent_text_projections, parse_raw_percept_records,
@@ -139,6 +140,11 @@ pub const ENTRY_SOURCE_MAX_BYTES: usize = 64 * 1024;
 /// entry was rendered from.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct EntrySource {
+    /// Original producer bytes, before speaker-name projection.
+    pub path: PathBuf,
+    pub sha256: String,
+    /// Content range in the assembled transcript, excluding its entry heading.
+    pub rendered_range: std::ops::Range<usize>,
     pub stream: Option<String>,
     /// The file's name in its segment directory.
     pub file: String,
@@ -148,6 +154,8 @@ pub struct EntrySource {
     pub unparsed_lines: usize,
     /// Each rendered chunk beside the record it was rendered from.
     pub chunks: Vec<(String, Map<String, Value>)>,
+    /// Chunk starts in the assembled transcript; usize::MAX when trimmed away.
+    pub chunk_offsets: Vec<usize>,
     /// Sentence ids whose speaker the voice gate named in these records.
     pub voice_named: BTreeSet<i64>,
 }
@@ -1010,6 +1018,7 @@ fn raw_content_with_speakers(
             return None;
         }
     };
+    let source_sha256 = format!("{:x}", Sha256::digest(text.as_bytes()));
     let text = match speakers {
         Some(speakers) => name_speakers(&text, speakers),
         None => text,
@@ -1039,6 +1048,9 @@ fn raw_content_with_speakers(
             let produced = produce_raw_percept_chunks_by_shape(family, Some(&rel), &records);
             if text.len() <= ENTRY_SOURCE_MAX_BYTES {
                 source = Some(EntrySource {
+                    path: path.to_owned(),
+                    sha256: source_sha256,
+                    rendered_range: 0..0,
                     stream: segment.record_stream().map(str::to_owned),
                     file: name.to_owned(),
                     chunks: produced
@@ -1046,6 +1058,7 @@ fn raw_content_with_speakers(
                         .iter()
                         .filter_map(|chunk| Some((chunk.content.clone(), chunk.source.clone()?)))
                         .collect(),
+                    chunk_offsets: Vec::new(),
                     records,
                     unparsed_lines,
                     voice_named: speakers
@@ -1065,11 +1078,15 @@ fn raw_content_with_speakers(
         rendered.push_str(&header);
     }
     let mut tmux_chunk_offsets = Vec::new();
+    let mut source_chunk_offsets = Vec::new();
     for (index, chunk) in chunks.into_iter().enumerate() {
         if !rendered.is_empty() {
             rendered.push('\n');
         }
         let chunk_start = rendered.len();
+        if chunk.source.is_some() {
+            source_chunk_offsets.push(chunk_start);
+        }
         rendered.push_str(&chunk.content);
         if tmux_chunk_indices.contains(&index) {
             tmux_chunk_offsets.push(chunk_start);
@@ -1088,6 +1105,9 @@ fn raw_content_with_speakers(
             reset_carry: index == 0,
         })
         .collect();
+    if let Some(source) = &mut source {
+        source.chunk_offsets = source_chunk_offsets;
+    }
     Some(RawContent {
         text: rendered,
         screen_cuts,
@@ -1254,6 +1274,7 @@ fn groups_to_markdown(mut entries: Vec<Entry>) -> ScreenTranscript {
     let mut lines = Vec::new();
     let mut pending_cuts = Vec::new();
     let mut sources = Vec::new();
+    let mut source_ranges = Vec::new();
     for group in groups {
         let first = &group[0];
         lines.push(format!(
@@ -1299,6 +1320,7 @@ fn groups_to_markdown(mut entries: Vec<Entry>) -> ScreenTranscript {
             let trimmed_start = entry.content.len() - entry.content.trim_start().len();
             let content_line = lines.len();
             lines.push(trimmed.into());
+            source_ranges.push((content_line, trimmed.len(), trimmed_start));
             for cut in entry.screen_cuts {
                 if cut.byte_offset < trimmed_start || cut.observation_byte_offset < trimmed_start {
                     continue;
@@ -1326,6 +1348,18 @@ fn groups_to_markdown(mut entries: Vec<Entry>) -> ScreenTranscript {
         byte_offset = byte_offset.saturating_add(line.len()).saturating_add(1);
     }
     let text = lines.join("\n");
+    for (source, (line, len, trimmed_start)) in sources.iter_mut().zip(source_ranges) {
+        if let Some(source) = source {
+            let start = line_offsets[line];
+            source.rendered_range = start..start + len;
+            for at in &mut source.chunk_offsets {
+                *at = at
+                    .checked_sub(trimmed_start)
+                    .and_then(|offset| start.checked_add(offset))
+                    .unwrap_or(usize::MAX);
+            }
+        }
+    }
     let mut cuts = pending_cuts
         .into_iter()
         .filter_map(

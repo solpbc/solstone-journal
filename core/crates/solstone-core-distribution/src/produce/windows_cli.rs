@@ -837,10 +837,22 @@ mod tests {
             .ancestors()
             .nth(3)
             .unwrap();
-        let index = include_bytes!("../../../../distribution/windows-aarch64-rust-sources.json");
-        let notices = include_bytes!("../../../../distribution/windows-aarch64-rust-NOTICES.txt");
-        let lock = include_bytes!("../../../../Cargo.lock");
-        validate_arm_rust_notices(index, notices, lock, repo).unwrap();
+        let notices = b"Fixture Rust license notices";
+        let lock = b"Fixture dependency lock";
+        let index = serde_json::to_vec(&serde_json::json!({
+            "schema": "solstone.rust-notices.v1",
+            "target": "windows-aarch64",
+            "filter_platform": "aarch64-pc-windows-msvc",
+            "shipped_feature_arguments": super::super::shipped_core_feature_args(),
+            "cargo_lock_sha256": crate::digest::sha256_hex(lock),
+            "notices_sha256": crate::digest::sha256_hex(notices),
+            "path_dependency_trees": {
+                "velopack@1.2.0 (path+core/vendor/velopack)":
+                    patched_velopack_tree_sha256(&repo.join("core/vendor/velopack")).unwrap()
+            }
+        }))
+        .unwrap();
+        validate_arm_rust_notices(&index, notices, lock, repo).unwrap();
         for (field, value) in [
             (
                 "schema",
@@ -855,7 +867,7 @@ mod tests {
             ("cargo_lock_sha256", serde_json::json!("0".repeat(64))),
             ("path_dependency_trees", serde_json::json!({})),
         ] {
-            let mut changed: serde_json::Value = serde_json::from_slice(index).unwrap();
+            let mut changed: serde_json::Value = serde_json::from_slice(&index).unwrap();
             changed[field] = value;
             assert!(
                 validate_arm_rust_notices(
@@ -868,8 +880,8 @@ mod tests {
                 "{field}"
             );
         }
-        assert!(validate_arm_rust_notices(index, b"changed", lock, repo).is_err());
-        assert!(validate_arm_rust_notices(index, notices, b"changed", repo).is_err());
+        assert!(validate_arm_rust_notices(&index, b"changed", lock, repo).is_err());
+        assert!(validate_arm_rust_notices(&index, notices, b"changed", repo).is_err());
     }
 
     #[test]

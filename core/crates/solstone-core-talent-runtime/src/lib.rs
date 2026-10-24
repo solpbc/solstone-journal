@@ -30,6 +30,7 @@ pub mod owner_actors;
 mod partial_input;
 pub mod participation;
 pub mod prepare;
+mod product_names;
 mod prompt_context;
 pub mod pulse;
 mod screen_batch;
@@ -1045,6 +1046,9 @@ fn generate_response(
             let request = generate_request(prepared).map_err(|detail| {
                 RuntimeOutcome::StageFailed(stage_error("generate", "runtime", prepared, detail))
             })?;
+            if let Some(event) = product_names::event(&prepared.config) {
+                emit(writer, event);
+            }
             if prepared.name == "pulse" {
                 emit_generate_input(writer, &request);
             }
@@ -1070,6 +1074,27 @@ fn generate_response(
                             validation: response.schema_validation.clone().unwrap_or(Value::Null),
                         });
                     }
+                    let checked = match product_names::verify(prepared, &response.text) {
+                        Ok(checked) => checked,
+                        Err(detail) => {
+                            emit(writer, json!({"event":"product_quote_gap","detail":detail}));
+                            return Err(RuntimeOutcome::StageFailed(stage_error(
+                                "generate",
+                                "product_quote",
+                                prepared,
+                                detail,
+                            )));
+                        }
+                    };
+                    if !checked.bindings.is_empty() {
+                        emit(
+                            writer,
+                            json!({"event":"product_quote_bindings","bindings":checked.bindings}),
+                        );
+                    }
+                    for gap in checked.gaps {
+                        emit(writer, gap);
+                    }
                     let usage = if response.usage.is_null() {
                         None
                     } else {
@@ -1093,7 +1118,7 @@ fn generate_response(
                             .config
                             .insert(story::INPUT_WHOLE_KEY.to_owned(), Value::Bool(true));
                     }
-                    Ok((response.text.clone(), usage, None))
+                    Ok((checked.text, usage, None))
                 }
                 GenerateResponse::Refused(response) => Err(RuntimeOutcome::GenerateRefused {
                     error: stage_error("generate", "runtime", prepared, response.detail.clone()),
@@ -1433,6 +1458,12 @@ pub(crate) fn model_text_parts(config: &Map<String, Value>) -> Vec<String> {
 
 pub(crate) fn generate_contents(prepared: &PreparedTalent) -> Vec<ContentPart> {
     let mut parts = model_text_parts(&prepared.config);
+    if let Some(view) = product_names::model_text(&prepared.config)
+        && prepared.config.get("messages").is_none()
+        && !parts.is_empty()
+    {
+        parts[0] = view.to_owned();
+    }
     if parts.is_empty() {
         return vec![ContentPart::Text {
             text: "No input provided.".to_owned(),

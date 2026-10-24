@@ -345,11 +345,15 @@ pub fn commit(
     let ParsedOutput::Json(mut value) = parsed else {
         return Err(error(prepared, "story output is not JSON"));
     };
+    let product_owner_quotes = crate::product_names::owner_quotes(&prepared.config, &value);
     // Only the runtime says a story's input was partial; never the model.
     let object = value
         .as_object_mut()
         .ok_or_else(|| error(prepared, "story output is not an object"))?;
     object.remove("partial_input");
+    if !product_owner_quotes.is_empty() {
+        object.insert("_product_owner_quotes".into(), json!(product_owner_quotes));
+    }
     if let Some(budget) = prepared.config.get(crate::INPUT_BUDGET_KEY) {
         object.insert(
             "partial_input".into(),
@@ -505,7 +509,18 @@ pub(crate) fn apply_story_cancellable(
                     if row
                         .get("quote")
                         .and_then(Value::as_str)
-                        .is_some_and(|quote| quoted_from(quote, &said))
+                        .is_some_and(|quote| {
+                            quoted_from(quote, &said)
+                                || (value
+                                    .get("_product_owner_quotes")
+                                    .and_then(Value::as_array)
+                                    .is_some_and(|quotes| {
+                                        quotes.iter().any(|q| q.as_str() == Some(quote))
+                                    })
+                                    && heard.as_ref().is_some_and(|lines| {
+                                        crate::product_names::canonical_owner_quote(quote, lines)
+                                    }))
+                        })
                     {
                         row.insert("owner_evidence".into(), Value::String("voice".to_owned()));
                     } else {
@@ -1243,6 +1258,10 @@ mod tests {
             })
             .collect();
         EntrySource {
+            path: std::path::PathBuf::from("capture_audio.jsonl"),
+            sha256: "fixture".to_owned(),
+            rendered_range: 0..0,
+            chunk_offsets: Vec::new(),
             stream: Some(stream.to_owned()),
             file: "audio.jsonl".to_owned(),
             records,

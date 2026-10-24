@@ -13,6 +13,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- the journal's titles, topics, summaries and stories now spell solstone and sol pbc correctly for common speech-to-text mix-ups. transcripts keep what was heard.
 - fixed your journal on a mac or linux getting stuck after it was force-stopped or lost power at the wrong moment. every start after that ended with "a helper process did not answer in time". it now starts normally.
 - fixed your journal on a mac sometimes giving up after it stopped unexpectedly. at the end of its wait it showed "a recent heartbeat from another run is present". this happened while the mac was syncing its clock.
 - when a start can't continue because a helper process stopped, the message now says "a helper process stopped before it was ready" instead of "did not answer in time". on a mac or linux, `solstone journal health logs` now shows the helper's own reason.
