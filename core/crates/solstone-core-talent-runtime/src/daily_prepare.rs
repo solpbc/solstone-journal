@@ -155,7 +155,7 @@ fn attach_daily_location(
             _ => unreachable!(),
         };
 
-        match fit_location_part(hook, &day, &rendered, &ordinary, prepared, state, context) {
+        match fit_location_part(hook, &day, &rendered, &ordinary, prepared, state) {
             Ok(res) => res,
             Err(ref e) if e == "location coverage does not fit the input budget" => {
                 let mut curr_meta_str = prepared
@@ -336,9 +336,7 @@ fn attach_daily_location(
                     curr_meta_str = new_meta_str;
 
                     ordinary = crate::ordinary_text_parts(&prepared.config);
-                    match fit_location_part(
-                        hook, &day, &rendered, &ordinary, prepared, state, context,
-                    ) {
+                    match fit_location_part(hook, &day, &rendered, &ordinary, prepared, state) {
                         Ok(res) => break res,
                         Err(ref e) if e == "location coverage does not fit the input budget" => {
                             continue;
@@ -350,7 +348,7 @@ fn attach_daily_location(
             Err(e) => return Err(failure(prepared, e)),
         }
     } else {
-        fit_location_part(hook, &day, &rendered, &ordinary, prepared, state, context)
+        fit_location_part(hook, &day, &rendered, &ordinary, prepared, state)
             .map_err(|error| failure(prepared, error))?
     };
     let second = daily_location_fingerprint(&context.journal, &day)
@@ -503,44 +501,22 @@ fn fit_location_part(
     ordinary: &[String],
     prepared: &PreparedTalent,
     state: &FrozenState,
-    context: &ExecutionContext,
 ) -> Result<(Option<String>, u32), String> {
-    use solstone_core_local::generate::{
-        compute_input_budget, estimate_tokens, launched_context_window,
-    };
+    use solstone_core_local::generate::{compute_input_budget, estimate_tokens};
     let max_output_tokens = prepared
         .config
         .get("max_output_tokens")
         .and_then(Value::as_u64)
         .and_then(|tokens| u32::try_from(tokens).ok())
         .unwrap_or(0);
+    // Location fills the room left beside the talent's own input at the
+    // journal's smallest window, so every thinking backend gets the same request.
+    let budget = compute_input_budget(
+        max_output_tokens,
+        solstone_core_local::plan::LOCAL_MIN_CONTEXT_TOKENS,
+    );
 
-    let FrozenState::MorningBriefing(_) = state else {
-        let budget =
-            compute_input_budget(max_output_tokens, launched_context_window(&context.journal));
-        let ordinary_tokens = ordinary.iter().fold(0u32, |total, text| {
-            total.saturating_add(estimate_tokens(text))
-        });
-        let room = budget.saturating_sub(ordinary_tokens);
-        let byte_cap = usize::try_from(room)
-            .unwrap_or(usize::MAX)
-            .saturating_mul(3)
-            .min(LOCATION_PART_BYTE_CAP);
-        let label = location_label(hook, day);
-        if room == 0 || byte_cap == 0 {
-            return Ok((None, clip_location_part(&label, rendered, 0).1));
-        }
-        let (part, omitted) = clip_location_part(&label, rendered, byte_cap);
-        debug_assert!(
-            part.as_ref()
-                .is_none_or(|text| estimate_tokens(text) <= room)
-        );
-        return Ok((part, omitted));
-    };
-
-    if hook != "morning_briefing" {
-        let budget =
-            compute_input_budget(max_output_tokens, launched_context_window(&context.journal));
+    if hook != "morning_briefing" || !matches!(state, FrozenState::MorningBriefing(_)) {
         let ordinary_tokens = ordinary.iter().fold(0u32, |total, text| {
             total.saturating_add(estimate_tokens(text))
         });
@@ -561,10 +537,6 @@ fn fit_location_part(
         return Ok((part, omitted));
     }
 
-    let budget = compute_input_budget(
-        max_output_tokens,
-        solstone_core_local::plan::LOCAL_MIN_CONTEXT_TOKENS,
-    );
     let schema_tokens = prepared
         .config
         .get("json_schema")
@@ -1310,10 +1282,6 @@ mod tests {
                 "{}\n",
                 solstone_core_local::plan::LOCAL_MIN_CONTEXT_TOKENS * 4
             ),
-        );
-        assert!(
-            solstone_core_local::generate::launched_context_window(root.path())
-                > solstone_core_local::plan::LOCAL_MIN_CONTEXT_TOKENS
         );
 
         solstone_core_facets::create_facet(root.path(), "work", "Work", "", "", "", None).unwrap();
@@ -2366,25 +2334,51 @@ mod tests {
         let (none, count) = clip_location_part("Label.", "# heading only\n", 10_000);
         assert!(none.is_none());
         assert_eq!(count, 0);
+    }
 
+    #[test]
+    fn location_is_sized_the_same_whatever_the_local_engine_launched() {
         let root = tempfile::tempdir().unwrap();
         location_journal(root.path(), LOCATION_DAY);
-        write_bytes(root.path(), "health/local.ctx", b"300");
         let observations = rendered_observations(root.path());
         assert!(!observations.is_empty());
         let context = ExecutionContext {
             journal: root.path().to_owned(),
         };
-        let talent = prepared(
-            "entities:entity_observer",
-            LOCATION_DAY,
-            json!({"facet":"work","hook":{"pre":"entities:entity_observer","post":"entities:entity_observer"},"skip_reason":"no_input","prompt":"keep me"}),
-        );
-        let packet = freeze(talent, &context).unwrap();
+        let freeze_with = |prompt: &str| {
+            freeze(
+                prepared(
+                    "entities:entity_observer",
+                    LOCATION_DAY,
+                    json!({"facet":"work","hook":{"pre":"entities:entity_observer","post":"entities:entity_observer"},"skip_reason":"no_input","prompt":prompt}),
+                ),
+                &context,
+            )
+            .unwrap()
+        };
+
+        // Whatever window the local engine was launched with, the request is the same.
+        let unlaunched = freeze_with("keep me");
+        for launched in [b"300".as_slice(), b"16384", b"262144"] {
+            write_bytes(root.path(), "health/local.ctx", launched);
+            assert_eq!(freeze_with("keep me"), unlaunched);
+        }
+        let config = unlaunched["prepared"]["config"].as_object().unwrap();
+        assert!(config.get("_daily_location_omitted").is_none());
+        let parts = text_parts(&thaw(&unlaunched).unwrap().0);
+        assert_eq!(parts.len(), 2);
+        assert_eq!(parts[0], "keep me");
+        for observation in &observations {
+            assert!(parts[1].contains(observation.trim_end()));
+        }
+
+        // Input that already fills the floor budget leaves no room for location.
+        let large = "A".repeat(3 * solstone_core_local::plan::LOCAL_MIN_CONTEXT_TOKENS as usize);
+        let packet = freeze_with(&large);
         let config = packet["prepared"]["config"].as_object().unwrap();
         assert_eq!(
             config.get("prompt").and_then(Value::as_str),
-            Some("keep me")
+            Some(large.as_str())
         );
         assert!(config.get("_daily_location_fingerprint").is_some());
         assert!(config.get("_daily_location_text").is_none());
@@ -2395,7 +2389,7 @@ mod tests {
             Some(u64::try_from(observations.len()).unwrap())
         );
         let parts = text_parts(&thaw(&packet).unwrap().0);
-        assert_eq!(parts, vec!["keep me".to_owned()]);
+        assert_eq!(parts, vec![large]);
         for coordinate in ["39.75", "105.2", "105.0"] {
             assert!(!parts[0].contains(coordinate));
         }
@@ -2462,10 +2456,6 @@ mod tests {
     }
     #[test]
     fn a_large_whole_first_observation_that_fits_is_not_discarded() {
-        let root = tempfile::tempdir().unwrap();
-        let context = ExecutionContext {
-            journal: root.path().to_owned(),
-        };
         let talent = prepared("entities:entity_suggest", LOCATION_DAY, json!({}));
         let rendered = format!("# location\n\n- {}\n", "長".repeat(3500));
         let (part, omitted) = fit_location_part(
@@ -2475,7 +2465,6 @@ mod tests {
             &["ordinary".into()],
             &talent,
             &FrozenState::None,
-            &context,
         )
         .expect("fit");
         let part = part.expect("a complete observation fits the 16 KiB and request budgets");
