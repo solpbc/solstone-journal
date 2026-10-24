@@ -1471,13 +1471,6 @@ fn resolve_context_window<T: GenerateTransport>(
     }
 }
 
-/// The window the bundled server was launched with, from the sidecar the launch
-/// writes, else the floor tier every host is launched at or above. It is the
-/// bundled lane's own number and never an owner setting.
-pub fn launched_context_window(journal_path: &std::path::Path) -> u32 {
-    launched_context_sidecar(journal_path).unwrap_or(FLOOR_CONTEXT_TOKENS)
-}
-
 fn launched_context_sidecar(journal_path: &std::path::Path) -> Option<u32> {
     std::fs::read_to_string(journal_path.join("health/local.ctx"))
         .ok()
