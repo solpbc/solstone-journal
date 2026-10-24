@@ -20,9 +20,10 @@ BACKUP_NATIVE_WORK ?= $(BUILD_ROOT)/backup-native-work
 BACKUP_LIB := $(BUILD_ROOT)/backup-native/librestic_bridge.a
 BACKUP_RESOURCES := Resources/BackupRuntime
 APP := $(BUILD_ROOT)/derived/Build/Products/Debug-iphoneos/JournalRuntimeDev.app
+NATIVE_FEATURES := $(if $(AUDIO_MODELS_DIR),audio) $(if $(filter project-owner.yml,$(PROJECT_SPEC)),owner-app)
 .PHONY: build rust appraisal-rust appraisal-native backup-native payload project finalize install run check
 rust:
-	IPHONEOS_DEPLOYMENT_TARGET=26.0 cargo build --locked --manifest-path native/Cargo.toml $(if $(AUDIO_MODELS_DIR),--features audio,) --target aarch64-apple-ios --target-dir $(BUILD_ROOT)/rust
+	IPHONEOS_DEPLOYMENT_TARGET=26.0 cargo build --locked --manifest-path native/Cargo.toml --features '$(NATIVE_FEATURES)' --target aarch64-apple-ios --target-dir $(BUILD_ROOT)/rust
 appraisal-rust:
 	IPHONEOS_DEPLOYMENT_TARGET=26.0 cargo build --locked --manifest-path appraisal-helper/Cargo.toml --target aarch64-apple-ios --target-dir $(BUILD_ROOT)/appraisal-rust
 appraisal-native:
@@ -54,7 +55,8 @@ check:
 	cargo clippy --locked --manifest-path native/Cargo.toml --all-targets --no-deps -- -D warnings
 	cargo test --locked --manifest-path native/Cargo.toml --features full-tests
 	cargo test --locked --manifest-path ../../core/Cargo.toml -p solstone-core-spp-attest --features test-hooks ios_appraisal::tests
-	cargo test --locked --manifest-path ../../core/Cargo.toml -p solstone-core-spp-attest --features test-hooks ios_service_tools::tests
+	cargo test --locked --manifest-path ../../core/Cargo.toml -p solstone-core-spp-attest --features test-hooks,full-tests ios_service_tools::tests
+	cargo test --locked --manifest-path ../../core/Cargo.toml -p solstone-core-spp-attest --features test-hooks,full-tests,ios-owner-app ios_service_tools::tests
 	cargo fmt --manifest-path appraisal-helper/Cargo.toml -- --check
 	cargo clippy --locked --manifest-path appraisal-helper/Cargo.toml --all-targets --no-deps -- -D warnings
 	cargo test --locked --manifest-path appraisal-helper/Cargo.toml

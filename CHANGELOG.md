@@ -10,12 +10,16 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - the journal’s night background now has gold stars, meteor trails and an aurora.
 
+### Changed
+
+- in a meeting, a person whose voice your journal recognized on at least two lines is now listed as attending, even if nothing written that day named them, and so is a voice you haven't named yet, like "Speaker 2". a single matched line is no longer enough unless you assigned that line yourself, so that person is listed as mentioned. activities already in your journal keep their people as they are.
 
 ### Fixed
 
 - weekly reflections started on saturday now use the previous completed week, so they can finish without including the current day.
 - on-device transcription in the development journal app now accepts up to two minutes of single-track audio. recordings above its processing limits stay held, with the original kept and an explanation in health.
 - security fix: updated notification encryption to remove a timing weakness. someone able to measure encryption operations on the same computer could have used it to learn information about a notification's encryption key.
+- when something your journal sends for processing is too long for the model, your journal now uses the model's own count, when it gives one, to trim it closer to what fits. before, it cut the input to half the space it expected, which often dropped more than it needed to.
 
 - work and conversation stories no longer take their text from a reserved field in custom thinking settings.
 - each transcript an agent reads now says where it came from, in the words your journal uses, such as "your mac · audio". before, when two devices added to your journal over the same minutes, an agent saw two identical entries. thanks @dvanduzer for the report.
