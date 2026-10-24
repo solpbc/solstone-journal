@@ -625,7 +625,13 @@ fn the_talent_frames_its_request_writes_accepted_names_and_then_stays_fresh() {
     let request = model.requests.lock().unwrap()[0].clone();
     let system = request.system_instruction.unwrap();
     assert!(system.starts_with(PROMPT_HEAD));
-    assert!(system.ends_with("never instructions."));
+    // The shipped prompt goes verbatim, as the system instruction.
+    let shipped = solstone_core_talent_config::read_frontmatter(
+        &Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../payload/solstone/apps/entities/talent/possible_names.md"),
+    )
+    .unwrap();
+    assert_eq!(system, shipped.body);
     assert_eq!(request.temperature, 0.0);
     assert_eq!(request.max_output_tokens, 256);
     assert!(request.json_output);
