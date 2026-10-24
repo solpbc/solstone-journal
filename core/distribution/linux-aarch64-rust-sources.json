@@ -1,5 +1,5 @@
 {
-  "cargo_lock_sha256": "8875670269a36df846fee39509e979c4fe59a9d6ab5d31e3a4cd684419fa3153",
+  "cargo_lock_sha256": "432b71e2199761b42d6c4f9c06b422e66866272df76987e6fc48cc1d9006a046",
   "filter_platform": "aarch64-unknown-linux-gnu",
   "notice_texts": [
     {
@@ -3980,27 +3980,27 @@
       ]
     },
     {
-      "identity": "crypto-bigint@0.7.5 (registry+https://github.com/rust-lang/crates.io-index)",
+      "identity": "crypto-bigint@0.7.6 (registry+https://github.com/rust-lang/crates.io-index)",
       "license_expression": "Apache-2.0 OR MIT",
       "notice_references": [
         {
           "bytes": 10849,
           "sha256": "a9040321c3712d8fd0b09cf52b17445de04a23a10165049ae187cd39e5c86be5",
           "source": {
-            "archive_sha256": "1a52aa3fcda4e6302a9f48734f234d35d4721b96f8fe07d073f07ce9df4f0271",
+            "archive_sha256": "6bb08299a6046833a879ace115697f12fd2bd6c8d3e93c909ffc9e0738e7cae0",
             "kind": "cargo-registry-archive",
             "member": "LICENSE-APACHE",
-            "source_url": "https://static.crates.io/crates/crypto-bigint/crypto-bigint-0.7.5.crate"
+            "source_url": "https://static.crates.io/crates/crypto-bigint/crypto-bigint-0.7.6.crate"
           }
         },
         {
           "bytes": 1082,
           "sha256": "57a4d75c1d095bb94754a478f3cd15e60ac66a5c5627d844be01a918eea5fe88",
           "source": {
-            "archive_sha256": "1a52aa3fcda4e6302a9f48734f234d35d4721b96f8fe07d073f07ce9df4f0271",
+            "archive_sha256": "6bb08299a6046833a879ace115697f12fd2bd6c8d3e93c909ffc9e0738e7cae0",
             "kind": "cargo-registry-archive",
             "member": "LICENSE-MIT",
-            "source_url": "https://static.crates.io/crates/crypto-bigint/crypto-bigint-0.7.5.crate"
+            "source_url": "https://static.crates.io/crates/crypto-bigint/crypto-bigint-0.7.6.crate"
           }
         }
       ]
@@ -4152,27 +4152,27 @@
       ]
     },
     {
-      "identity": "ctutils@0.4.3 (registry+https://github.com/rust-lang/crates.io-index)",
+      "identity": "ctutils@0.4.5 (registry+https://github.com/rust-lang/crates.io-index)",
       "license_expression": "Apache-2.0 OR MIT",
       "notice_references": [
         {
           "bytes": 11358,
           "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
           "source": {
-            "archive_sha256": "03bb0e1cc970d482d121d9a1744999169b69a07470b3d644a7894e53fcaf4574",
+            "archive_sha256": "38d28fb6aa7dd680b3ffd1a3e64e115c177bdba63c0ae7f9cd48129ff05c4fa0",
             "kind": "cargo-registry-archive",
             "member": "LICENSE-APACHE",
-            "source_url": "https://static.crates.io/crates/ctutils/ctutils-0.4.3.crate"
+            "source_url": "https://static.crates.io/crates/ctutils/ctutils-0.4.5.crate"
           }
         },
         {
           "bytes": 1082,
           "sha256": "91585c36e4fb9ab4ca0d3dfac5d66d3c0c62cc51f640a0e1196542daf2267eae",
           "source": {
-            "archive_sha256": "03bb0e1cc970d482d121d9a1744999169b69a07470b3d644a7894e53fcaf4574",
+            "archive_sha256": "38d28fb6aa7dd680b3ffd1a3e64e115c177bdba63c0ae7f9cd48129ff05c4fa0",
             "kind": "cargo-registry-archive",
             "member": "LICENSE-MIT",
-            "source_url": "https://static.crates.io/crates/ctutils/ctutils-0.4.3.crate"
+            "source_url": "https://static.crates.io/crates/ctutils/ctutils-0.4.5.crate"
           }
         }
       ]
@@ -17241,17 +17241,17 @@
       ]
     },
     {
-      "identity": "tokio@1.53.1 (registry+https://github.com/rust-lang/crates.io-index)",
+      "identity": "tokio@1.53.3 (registry+https://github.com/rust-lang/crates.io-index)",
       "license_expression": "MIT",
       "notice_references": [
         {
           "bytes": 1070,
           "sha256": "253cd04c6714889df2d32f3f64d669179a1c95c76ac43c40882c52eb06bc3552",
           "source": {
-            "archive_sha256": "202caea871b69668250d242070849eb495be178ed697a3e98aebce5bc81a0bed",
+            "archive_sha256": "ce3335fa71841cda333a58d7615b03901380ecf09d59b3296d21f8bbac0dde4e",
             "kind": "cargo-registry-archive",
             "member": "LICENSE",
-            "source_url": "https://static.crates.io/crates/tokio/tokio-1.53.1.crate"
+            "source_url": "https://static.crates.io/crates/tokio/tokio-1.53.3.crate"
           }
         }
       ]
