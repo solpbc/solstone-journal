@@ -64,6 +64,8 @@ pub fn prepare(
         focused_facet,
     )
     .map_err(PrepareFailure::Refusal)?;
+    // Only native source admission below may supply this runtime-owned body.
+    composed.remove(crate::story::SOURCE_BODY_KEY);
     let talent_schema = composed.get("json_schema").cloned();
     for (key, value) in request {
         if !value.is_null()
