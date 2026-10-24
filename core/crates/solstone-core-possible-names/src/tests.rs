@@ -122,12 +122,13 @@ fn standard_entries() -> Vec<SidecarEntry> {
 }
 
 fn facets(names: &[&str]) -> Viewer {
-    Viewer::Facets(
-        names
+    Viewer::Agent {
+        facets: names
             .iter()
             .map(|name| (*name).to_owned())
             .collect::<BTreeSet<_>>(),
-    )
+        entities: true,
+    }
 }
 
 #[test]
@@ -303,4 +304,20 @@ fn indexed_paths_name_their_segment() {
     ] {
         assert_eq!(segment_dir_for_indexed_path(root, rel), None, "{rel}");
     }
+}
+
+#[test]
+fn an_agent_without_the_entities_category_is_shown_none() {
+    let fixture = Fixture::new();
+    fixture.save(standard_entries());
+    assert_eq!(fixture.live(&facets(&["alpha", "beta"])).len(), 3);
+    let without = Viewer::Agent {
+        facets: ["alpha", "beta"].map(str::to_owned).into(),
+        entities: false,
+    };
+    assert!(fixture.live(&without).is_empty());
+    let registry = Registry::new(fixture.path());
+    assert!(!registry.admits("friar", "Friar", &without));
+    assert!(registry.admits("friar", "Friar", &facets(&["alpha"])));
+    assert!(registry.admits("friar", "Friar", &Viewer::Owner));
 }

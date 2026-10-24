@@ -262,9 +262,25 @@ fn check_contract(sidecar: &Sidecar) -> Result<(), String> {
 pub enum Viewer {
     /// The journal's owner.
     Owner,
-    /// An agent connection, with the facet directories it may see. Callers
-    /// resolve these through the connection's own facet scope.
-    Facets(BTreeSet<String>),
+    /// An agent connection. Callers resolve both from the connection's grant.
+    Agent {
+        /// The facet directories its scope reaches.
+        facets: BTreeSet<String>,
+        /// Whether its grant includes the entities category. A possible name
+        /// names an entity, so a connection without it is shown none.
+        entities: bool,
+    },
+}
+
+impl Viewer {
+    /// Whether this viewer may be shown any possible name at all.
+    #[must_use]
+    pub fn may_see_entities(&self) -> bool {
+        match self {
+            Self::Owner => true,
+            Self::Agent { entities, .. } => *entities,
+        }
+    }
 }
 
 /// An entry that may be shown to this viewer now.
@@ -344,7 +360,7 @@ impl Registry {
         }
         let visible = match viewer {
             Viewer::Owner => true,
-            Viewer::Facets(facets) => !entity.facets.is_disjoint(facets),
+            Viewer::Agent { facets, entities } => *entities && !entity.facets.is_disjoint(facets),
         };
         visible && !self.retired(entity_id)
     }
@@ -391,7 +407,8 @@ fn load_attached(journal_root: &Path) -> Result<BTreeMap<String, AttachedEntity>
 /// entries were chosen from (otherwise none is), its statement still holds
 /// `heard` at its span, its entity exists, is not blocked, merged or deleted,
 /// still has `name` as its canonical name and a non-detached facet
-/// relationship, and, for an agent, one of those facets is one it may see.
+/// relationship, and, for an agent, its grant includes the entities category
+/// and one of those facets is one it may see.
 #[must_use]
 pub fn live_entries(journal_root: &Path, segment_dir: &Path, viewer: &Viewer) -> Vec<LiveEntry> {
     live_entries_with(&Registry::new(journal_root), segment_dir, viewer)
@@ -404,6 +421,10 @@ pub fn live_entries_with(
     segment_dir: &Path,
     viewer: &Viewer,
 ) -> Vec<LiveEntry> {
+    // Nothing is read for a viewer that may see no entity.
+    if !viewer.may_see_entities() {
+        return Vec::new();
+    }
     let sidecar = match read(segment_dir) {
         Ok(Some(sidecar)) => sidecar,
         Ok(None) => return Vec::new(),

@@ -4,16 +4,19 @@
 //! Possible names one agent connection may see.
 //!
 //! A connection sees a possible name only while `solstone-core-possible-names`
-//! says it still holds, and only for an entity attached to a facet the
-//! connection may reach (resolved with [`available_facets`], the same
-//! resolution `list_facets` and `list_entities` use). One instance serves one
+//! says it still holds, only when its grant includes the entities category (a
+//! possible name names an entity), and only for an entity attached to a facet
+//! the connection may reach (resolved with [`available_facets`], the same
+//! resolution `list_facets` and `list_entities` use). Without the entities
+//! category it gets no label and no search hit, and refused rows never count
+//! toward a total or a cursor. One instance serves one
 //! response: every entry in it is checked against one view of the registry.
 
 use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
 
-use solstone_core_indexer_query::PossibleNameAdmission;
+use solstone_core_indexer_query::{AdmittedCategory, PossibleNameAdmission};
 use solstone_core_possible_names::{
     LiveEntry, LiveSegments, PossibleNameLabels, Viewer, possible_name_label, sidecar_path,
     transcript_labels,
@@ -47,13 +50,26 @@ impl ConnectionPossibleNames {
             let facets = available_facets(&self.journal_root, &self.snapshot)
                 .map(|facets| facets.into_iter().map(|(_, dir, _)| dir).collect())
                 .unwrap_or_else(|_| BTreeSet::new());
-            LiveSegments::new(&self.journal_root, Viewer::Facets(facets))
+            LiveSegments::new(
+                &self.journal_root,
+                Viewer::Agent {
+                    facets,
+                    entities: self.entities(),
+                },
+            )
         })
+    }
+
+    /// Whether this connection's grant includes the entities category.
+    fn entities(&self) -> bool {
+        self.snapshot
+            .categories
+            .contains(&AdmittedCategory::Entities)
     }
 
     /// Labels a transcript read shows this connection, bound into its version.
     pub(crate) fn labels(&self, segment_dir: &Path) -> Option<PossibleNameLabels> {
-        if !sidecar_path(segment_dir).exists() {
+        if !self.entities() || !sidecar_path(segment_dir).exists() {
             return None;
         }
         transcript_labels(&self.live().entries(segment_dir))
@@ -62,6 +78,9 @@ impl ConnectionPossibleNames {
     /// The entry a stored search row stands for, if this connection may see
     /// it now and its segment is still live.
     pub(crate) fn indexed(&self, rel: &str, idx: i64, content: &str) -> Option<LiveEntry> {
+        if !self.entities() {
+            return None;
+        }
         let released = *self
             .released
             .lock()

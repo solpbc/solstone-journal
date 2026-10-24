@@ -126,11 +126,15 @@ impl Journal {
     }
 
     fn grant(&self, scope: ReadScope) {
+        self.grant_categories(&["transcripts", "entities"], scope);
+    }
+
+    fn grant_categories(&self, categories: &[&str], scope: ReadScope) {
         PermissionStore::open(self.path())
             .set_permission(
                 CONNECTION,
                 ReadPermission {
-                    categories: vec!["transcripts".to_owned(), "entities".to_owned()],
+                    categories: categories.iter().map(|c| (*c).to_owned()).collect(),
                     scope,
                 },
             )
@@ -418,4 +422,84 @@ fn a_deleted_segment_shows_no_possible_name() {
         .probe("list_transcripts", json!({"day": DAY}))
         .unwrap();
     assert_eq!(listed["transcripts"].as_array().unwrap().len(), 1);
+}
+
+#[test]
+fn without_the_entities_category_no_label_hit_count_or_cursor_trace_remains() {
+    let journal = Journal::new();
+    journal.entity("friar", "Friar", "alpha");
+    let keys = (0..12)
+        .map(|index| format!("09{:02}00_300", index * 5))
+        .collect::<Vec<_>>();
+    for (index, key) in keys.iter().enumerate() {
+        journal.segment(key, Some(&format!("brief {index} about Friar")));
+        journal.possible_names(key, &[(4, "Fryer", "friar", "Friar")]);
+    }
+    journal.index();
+
+    // With both categories: labels and hits.
+    journal.grant(whole());
+    let (_, labelled) = journal.first_line();
+    assert_eq!(
+        labelled,
+        line("ask Fryer (possible name: Friar) to call anna")
+    );
+    let everything = journal.search("Friar", 100, None);
+    assert_eq!(everything["results"].as_array().unwrap().len(), 24);
+    assert_eq!(possible_name_hits(&everything).len(), 12);
+    let first_page = journal.search("Friar", 5, None);
+    let minted = first_page["next_cursor"].as_str().unwrap().to_owned();
+    let name_hit = possible_name_hits(&everything)[0]["reference"].clone();
+
+    // The entities category is withdrawn mid-way. Transcripts stay readable,
+    // without labels.
+    journal.grant_categories(&["transcripts"], whole());
+    let (_, plain) = journal.first_line();
+    assert_eq!(plain, line(SPOKEN));
+    assert_eq!(
+        journal.probe("fetch", json!({"reference": name_hit})),
+        Err(McpProbeError::Unavailable)
+    );
+    // A cursor minted under the old grant does not continue under the new one.
+    assert!(
+        journal
+            .probe(
+                "search",
+                json!({"query": "Friar", "limit": 5, "cursor": minted})
+            )
+            .is_err()
+    );
+    // A fresh walk is exactly the briefs, as if no possible name were indexed.
+    let mut cursor: Option<String> = None;
+    let mut sizes = Vec::new();
+    loop {
+        let page = journal.search("Friar", 5, cursor.as_deref());
+        assert!(possible_name_hits(&page).is_empty(), "{page}");
+        assert_eq!(page["coverage"]["live_examination_complete"], json!(true));
+        let results = page["results"].as_array().unwrap();
+        assert!(
+            results
+                .iter()
+                .all(|hit| hit["snippet"].as_str().unwrap().starts_with("brief"))
+        );
+        sizes.push(results.len());
+        match page["next_cursor"].as_str() {
+            Some(next) => cursor = Some(next.to_owned()),
+            None => break,
+        }
+    }
+    assert_eq!(sizes, [5, 5, 2]);
+    let none = journal.search("possible name", 5, None);
+    assert!(none["results"].as_array().unwrap().is_empty());
+    assert_eq!(none["next_cursor"], Value::Null);
+    assert_eq!(none["relaxed"], json!(false));
+
+    // Granted again, both return.
+    journal.grant(whole());
+    assert_eq!(
+        possible_name_hits(&journal.search("Friar", 100, None)).len(),
+        12
+    );
+    let (_, again) = journal.first_line();
+    assert_eq!(again, line("ask Fryer (possible name: Friar) to call anna"));
 }
