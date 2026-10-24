@@ -276,7 +276,10 @@ fn unavailable_description_doors_preserve_the_installed_original() {
         assert!(header.lines().all(|line| !line.starts_with('>')));
         assert!(model.lines().all(|line| line.starts_with('>')));
         assert!(!header.contains(reason));
-        assert!(model.contains(reason));
+        // The model block renders each line of the reason literally.
+        for line in reason.lines() {
+            assert!(model.contains(&solstone_core_format::markdown::literal_text(line)));
+        }
     }
 }
 
