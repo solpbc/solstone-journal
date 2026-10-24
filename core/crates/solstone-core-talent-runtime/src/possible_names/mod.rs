@@ -38,7 +38,7 @@ use std::path::{Path, PathBuf};
 
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
-use solstone_core_format::content::{Family, produce_chunks};
+use solstone_core_format::content::produce_chunks;
 use solstone_core_possible_names::{
     CandidateEntity, Sidecar, SidecarEntry, SidecarSource, load_candidate_entities,
     speech_transcript,
@@ -60,17 +60,6 @@ const HOOK: &str = "entities:possible_names";
 /// The policy generation; the prompt and every [`policy`] constant are
 /// hashed after it.
 const TALENT_VERSION_PREFIX: &str = "possible-names-v1";
-/// Derived files whose indexed words already make a canonical name findable,
-/// with the content family search renders each as: the activity, sense and
-/// topics chunks the evaluated prototype read. `sense.json` is read as search
-/// indexes it, and its rendering includes Sense's entity list.
-const DERIVED_TEXT: [(&str, Family); 4] = [
-    ("talents/activity.md", Family::Markdown),
-    ("talents/sense.md", Family::Markdown),
-    ("talents/sense.json", Family::Sense),
-    ("talents/topics.md", Family::Markdown),
-];
-
 /// What the pre-step found, carried to the prompt and the commit.
 #[derive(Clone, Debug, PartialEq)]
 pub struct PossibleNamesState {
@@ -166,7 +155,7 @@ fn read_facets(segment_dir: &Path) -> Vec<String> {
 /// The segment's derived text as search holds it: each file's index chunks.
 fn read_derived_text(segment_dir: &Path) -> String {
     let origin = solstone_core_journal_io::segment_origin(segment_dir);
-    let text = DERIVED_TEXT
+    let text = policy::DERIVED_TEXT
         .iter()
         .map(|(name, family)| {
             fs::read_to_string(segment_dir.join(name))

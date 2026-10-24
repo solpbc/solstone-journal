@@ -5,6 +5,8 @@
 //! evaluated. Changing one changes [`super::talent_version`], so the next
 //! think of a segment regenerates its possible names.
 
+use solstone_core_format::content::Family;
+
 /// Routes the gate lets through (the evaluated `G2` configuration). A
 /// disabled route still matches and still counts as a competitor; only its
 /// actions are dropped, as evaluated.
@@ -54,6 +56,20 @@ pub(crate) const MAX_ALIASES_SHOWN: usize = 4;
 /// them; they are never offered as possible names.
 pub(crate) const PRODUCT_NAME_KEYS: [&str; 4] = ["sol", "solstone", "solpbc", "soulstone"];
 
+/// Derived files whose indexed words already make a canonical name findable,
+/// with the content family search renders each as: the activity, sense and
+/// topics chunks the evaluated prototype read. `sense.json` is read as search
+/// indexes it, and its rendering includes Sense's entity list.
+pub(crate) const DERIVED_TEXT: [(&str, Family); 4] = [
+    ("talents/activity.md", Family::Markdown),
+    ("talents/sense.md", Family::Markdown),
+    ("talents/sense.json", Family::Sense),
+    ("talents/topics.md", Family::Markdown),
+];
+/// How [`DERIVED_TEXT`] is read: each file's index chunks, as the indexer renders
+/// them (`solstone_core_format::content::produce_chunks`).
+pub(crate) const DERIVED_TEXT_RENDERING: &str = "indexer produce_chunks";
+
 /// Every constant above, in one stable text, for the talent version.
 pub(crate) fn fingerprint() -> String {
     serde_json::json!({
@@ -78,6 +94,13 @@ pub(crate) fn fingerprint() -> String {
         "note_chars": NOTE_CHARS,
         "aliases_shown": MAX_ALIASES_SHOWN,
         "products": PRODUCT_NAME_KEYS,
+        "derived_text": {
+            "files": DERIVED_TEXT
+                .iter()
+                .map(|(file, family)| [(*file).to_owned(), format!("{family:?}")])
+                .collect::<Vec<_>>(),
+            "rendering": DERIVED_TEXT_RENDERING,
+        },
     })
     .to_string()
 }
