@@ -3317,7 +3317,7 @@ fn creator_admission_failure(
         inner: Box::new(OwnedArchiveAdmissionFailureInner {
             error: ArchiveError::Readback(readback.reason()),
             effects: ArchiveAdmissionEffects {
-                broker_requested: false,
+                broker_requested: readback.archive_broker_requested(),
                 write_repository_requested,
                 read_repository_requested,
             },
@@ -3400,21 +3400,16 @@ pub fn admit_prepared_archive_owned_creator_installed(
             archives: Vec::new(),
         },
     );
-    let refused = |readback| {
-        let mut failure = creator_admission_failure(readback);
-        failure.inner.effects.broker_requested = effects.broker_requested;
-        failure
-    };
     #[cfg(unix)]
     let creator = operation
         .bind_archive_creator(capture)
         .admit()
-        .map_err(refused)?;
+        .map_err(creator_admission_failure)?;
     #[cfg(windows)]
     let creator = operation
         .bind_archive_creator(capture)
         .admit(Some(Arc::new(crate::runner::SystemToolRunner)))
-        .map_err(refused)?;
+        .map_err(creator_admission_failure)?;
     Ok(OwnedInstalledArchiveCreator {
         archive: OwnedAdmittedArchive { creator },
         finish: DirectReadFinishOwner {

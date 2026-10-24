@@ -425,6 +425,14 @@ impl OwnedReadbackAdmissionError {
         }
         .map(ArchivePredecessorCustody::admission_effects)
     }
+    /// Whether this archive admission asked the broker for a session.
+    pub fn archive_broker_requested(&self) -> bool {
+        match &self.owned {
+            ClosedAdmissionOwner::Input(input) => input._predecessor.as_ref(),
+            ClosedAdmissionOwner::Admitted(read) => read._execution.predecessor.as_ref(),
+        }
+        .is_some_and(|custody| custody.capture.broker_requested)
+    }
 }
 
 #[must_use]
