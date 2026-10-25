@@ -1496,8 +1496,8 @@
         "why": "local runtime recovery view"
       },
       {
-        "body_bytes": 2431,
-        "body_sha256": "8335496951a2043f8831e0c0030d9f056025f766f05034cffd888161c88ff085",
+        "body_bytes": 2426,
+        "body_sha256": "e4c4075d78fa02570e07150cd6ae94779fb7c89a6a52a1ed6a9d178c0630cb0a",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
@@ -1512,11 +1512,11 @@
             },
             {
               "app": null,
-              "description": "synthesizes all daily agent outputs into a structured morning briefing",
+              "description": "synthesizes all daily results into a structured briefing on one day",
               "disabled": false,
               "key": "morning_briefing",
               "source": "system",
-              "title": "morning briefing"
+              "title": "daily briefing"
             },
             {
               "app": "entities",
@@ -3731,8 +3731,8 @@
         "why": "local runtime recovery view"
       },
       {
-        "body_bytes": 2431,
-        "body_sha256": "8335496951a2043f8831e0c0030d9f056025f766f05034cffd888161c88ff085",
+        "body_bytes": 2426,
+        "body_sha256": "e4c4075d78fa02570e07150cd6ae94779fb7c89a6a52a1ed6a9d178c0630cb0a",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
@@ -3747,11 +3747,11 @@
             },
             {
               "app": null,
-              "description": "synthesizes all daily agent outputs into a structured morning briefing",
+              "description": "synthesizes all daily results into a structured briefing on one day",
               "disabled": false,
               "key": "morning_briefing",
               "source": "system",
-              "title": "morning briefing"
+              "title": "daily briefing"
             },
             {
               "app": "entities",
@@ -5946,8 +5946,8 @@
         "why": "local runtime recovery view"
       },
       {
-        "body_bytes": 2431,
-        "body_sha256": "8335496951a2043f8831e0c0030d9f056025f766f05034cffd888161c88ff085",
+        "body_bytes": 2426,
+        "body_sha256": "e4c4075d78fa02570e07150cd6ae94779fb7c89a6a52a1ed6a9d178c0630cb0a",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
@@ -5962,11 +5962,11 @@
             },
             {
               "app": null,
-              "description": "synthesizes all daily agent outputs into a structured morning briefing",
+              "description": "synthesizes all daily results into a structured briefing on one day",
               "disabled": false,
               "key": "morning_briefing",
               "source": "system",
-              "title": "morning briefing"
+              "title": "daily briefing"
             },
             {
               "app": "entities",
@@ -8155,8 +8155,8 @@
         "why": "local runtime recovery view"
       },
       {
-        "body_bytes": 2431,
-        "body_sha256": "8335496951a2043f8831e0c0030d9f056025f766f05034cffd888161c88ff085",
+        "body_bytes": 2426,
+        "body_sha256": "e4c4075d78fa02570e07150cd6ae94779fb7c89a6a52a1ed6a9d178c0630cb0a",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
@@ -8171,11 +8171,11 @@
             },
             {
               "app": null,
-              "description": "synthesizes all daily agent outputs into a structured morning briefing",
+              "description": "synthesizes all daily results into a structured briefing on one day",
               "disabled": false,
               "key": "morning_briefing",
               "source": "system",
-              "title": "morning briefing"
+              "title": "daily briefing"
             },
             {
               "app": "entities",
@@ -10553,8 +10553,8 @@
         "why": "local runtime recovery view"
       },
       {
-        "body_bytes": 2431,
-        "body_sha256": "8335496951a2043f8831e0c0030d9f056025f766f05034cffd888161c88ff085",
+        "body_bytes": 2426,
+        "body_sha256": "e4c4075d78fa02570e07150cd6ae94779fb7c89a6a52a1ed6a9d178c0630cb0a",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
@@ -10569,11 +10569,11 @@
             },
             {
               "app": null,
-              "description": "synthesizes all daily agent outputs into a structured morning briefing",
+              "description": "synthesizes all daily results into a structured briefing on one day",
               "disabled": false,
               "key": "morning_briefing",
               "source": "system",
-              "title": "morning briefing"
+              "title": "daily briefing"
             },
             {
               "app": "entities",
@@ -14078,8 +14078,8 @@
         "why": "local runtime recovery view"
       },
       {
-        "body_bytes": 2431,
-        "body_sha256": "8335496951a2043f8831e0c0030d9f056025f766f05034cffd888161c88ff085",
+        "body_bytes": 2426,
+        "body_sha256": "e4c4075d78fa02570e07150cd6ae94779fb7c89a6a52a1ed6a9d178c0630cb0a",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
@@ -14094,11 +14094,11 @@
             },
             {
               "app": null,
-              "description": "synthesizes all daily agent outputs into a structured morning briefing",
+              "description": "synthesizes all daily results into a structured briefing on one day",
               "disabled": false,
               "key": "morning_briefing",
               "source": "system",
-              "title": "morning briefing"
+              "title": "daily briefing"
             },
             {
               "app": "entities",
