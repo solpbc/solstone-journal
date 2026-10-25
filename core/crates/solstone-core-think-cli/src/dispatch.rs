@@ -264,13 +264,33 @@ pub(crate) struct DispatchSettings<'a> {
     pub extra: Map<String, Value>,
 }
 
-pub(crate) fn snap_weekly_reflection_start(day_str: &str) -> String {
-    let day = NaiveDate::parse_from_str(day_str, "%Y%m%d").expect("validated day");
-    // The current Saturday is still in progress. Select a strictly completed week.
-    let days_since_saturday = day.weekday().num_days_from_sunday() + 1;
-    let end = day - ChronoDuration::days(i64::from(days_since_saturday));
-    let start = end - ChronoDuration::days(6);
-    start.format("%Y%m%d").to_string()
+/// The first day of the Sunday–Saturday week a weekly reflection covers: the
+/// week ending on the last Saturday on or before the think day, unless that
+/// Saturday has not ended when the run starts, in which case the week before.
+///
+/// The scheduled Sunday run thinks about yesterday, a Saturday that has ended,
+/// so it covers the week that just ended. A run started on a Saturday for that
+/// same Saturday takes the previous week, which the reflection runtime accepts
+/// only once its last day is before today.
+pub(crate) fn snap_weekly_reflection_start(context: &ThinkContext) -> String {
+    let day = NaiveDate::parse_from_str(&context.day, "%Y%m%d").expect("validated day");
+    let now =
+        chrono::DateTime::from_timestamp_millis(context.now_ms).unwrap_or_else(chrono::Utc::now);
+    let today = now
+        .with_timezone(&solstone_core_journal_config::owner_zone(&context.journal))
+        .date_naive();
+    weekly_reflection_start(day, today)
+        .format("%Y%m%d")
+        .to_string()
+}
+
+fn weekly_reflection_start(day: NaiveDate, today: NaiveDate) -> NaiveDate {
+    let days_since_saturday = (day.weekday().num_days_from_sunday() + 1) % 7;
+    let mut end = day - ChronoDuration::days(i64::from(days_since_saturday));
+    if end >= today {
+        end -= ChronoDuration::days(7);
+    }
+    end - ChronoDuration::days(6)
 }
 
 pub(crate) fn dispatch_prepared(
@@ -305,7 +325,7 @@ pub(crate) fn dispatch_prepared(
     request.insert("env".to_owned(), Value::Object(env));
     apply_output_persistence(config, &mut request, force);
     if schedule == "weekly" && config.key == "weekly_reflection" {
-        let week_start = snap_weekly_reflection_start(&context.day);
+        let week_start = snap_weekly_reflection_start(context);
         request.insert("day".to_owned(), Value::String(week_start.clone()));
         request.insert("output".to_owned(), Value::String("md".to_owned()));
         request.insert(

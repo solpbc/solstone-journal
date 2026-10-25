@@ -12,6 +12,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- the weekly reflection that runs early sunday morning covers the week that just ended again. in 2.0.58 it wrote over the reflection for the week before instead, and the week that just ended got none.
 - on the transcripts page, every dot in the timeline's legend now matches what the timeline draws. workouts are clay instead of a second gold, so they no longer look like screen. a stretch still awaiting thinking is now an empty outline, so it no longer looks like a finished screen stretch.
 
 ## [2.0.58] - 2026-10-25

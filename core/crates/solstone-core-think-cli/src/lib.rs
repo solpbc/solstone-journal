@@ -1757,7 +1757,14 @@ mod tests {
     #[test]
     fn weekly_reflection_uses_the_week_start_output_and_prompt_only_for_that_key() {
         let journal = tempdir().unwrap();
-        let (context, recorder) = recorder_context(journal.path(), "20260813", 9);
+        // The run starts the next day, as a scheduled run does.
+        let started = NaiveDate::from_ymd_opt(2026, 8, 14)
+            .unwrap()
+            .and_hms_opt(12, 0, 0)
+            .unwrap()
+            .and_utc()
+            .timestamp_millis();
+        let (context, recorder) = recorder_context(journal.path(), "20260813", started);
         let runtime = dispatch::runtime().unwrap();
         let mut reflection = talent(Map::from_iter([(
             "type".to_owned(),
@@ -1816,54 +1823,101 @@ mod tests {
         assert_eq!(requests[2].prompt, "");
     }
 
+    /// Dispatches `weekly_reflection` for `day` from a run that started at
+    /// `started` (`YYYYMMDD HH:MM`) in the owner's zone, America/Denver, and
+    /// returns the week start the request carries after checking that its
+    /// day, `SOL_DAY` and output path agree.
+    fn dispatched_weekly_reflection_start(day: &str, started: &str) -> String {
+        use chrono::TimeZone;
+        let journal = tempdir().unwrap();
+        let config_path = journal.path().join("config/journal.json");
+        fs::create_dir_all(config_path.parent().unwrap()).unwrap();
+        fs::write(
+            &config_path,
+            r#"{"identity":{"timezone":"America/Denver"},"providers":{"active":{"provider":"openai","model":"test-model"}}}"#,
+        )
+        .unwrap();
+        let started = chrono::NaiveDateTime::parse_from_str(started, "%Y%m%d %H:%M").unwrap();
+        let now_ms = chrono_tz::America::Denver
+            .from_local_datetime(&started)
+            .single()
+            .unwrap()
+            .timestamp_millis();
+        let (context, recorder) = recorder_context(journal.path(), day, now_ms);
+        let runtime = dispatch::runtime().unwrap();
+        let mut reflection = talent(Map::from_iter([(
+            "type".to_owned(),
+            Value::String("generate".to_owned()),
+        )]));
+        reflection.key = "weekly_reflection".to_owned();
+        dispatch::dispatch(
+            &context,
+            &runtime,
+            &reflection,
+            "weekly",
+            None,
+            false,
+            Map::from_iter([("env".to_owned(), Value::Object(Map::new()))]),
+        )
+        .unwrap();
+        let requests = recorder.requests.lock().unwrap();
+        let last = requests.last().unwrap();
+        let start = last.config["day"].as_str().unwrap().to_owned();
+        assert_eq!(last.config["env"]["SOL_DAY"], start);
+        assert_eq!(
+            last.config["output_path"],
+            journal
+                .path()
+                .join("reflections")
+                .join("weekly")
+                .join(format!("{start}.md"))
+                .display()
+                .to_string()
+        );
+        start
+    }
+
     #[test]
     fn weekly_reflection_week_snaps_correctly() {
+        // (think day, run started in the owner's zone, expected week start)
         let cases = [
-            ("20260815", "20260802"), // Saturday -> previous completed Saturday is 20260808
-            ("20260816", "20260809"), // Sunday -> completed Saturday is 20260815, start is 20260809
-            ("20260813", "20260802"), // Thursday -> completed Saturday is 20260808, start is 20260802
-            ("20260930", "20260920"), // Wednesday -> completed Saturday is 20260926, start is 20260920
-            ("20260801", "20260719"), // Saturday across a month boundary
-            ("20260802", "20260726"), // Sunday across a month boundary
-            ("20220101", "20211219"), // Saturday across a year boundary
-            ("20220102", "20211226"), // Sunday across a year boundary
-            ("20240302", "20240218"), // Saturday after leap day
-            ("20240303", "20240225"), // Sunday after leap day
+            ("20260815", "20260815 12:00", "20260802"), // Saturday started that Saturday -> previous completed week
+            ("20260815", "20260816 03:15", "20260809"), // Saturday thought about on Sunday -> the week ending that Saturday
+            ("20260816", "20260817 03:15", "20260809"), // Sunday -> completed Saturday is 20260815, start is 20260809
+            ("20260813", "20260814 03:15", "20260802"), // Thursday -> completed Saturday is 20260808, start is 20260802
+            ("20260813", "20260813 12:00", "20260802"), // Thursday started that Thursday -> unchanged
+            ("20260930", "20261001 03:15", "20260920"), // Wednesday -> completed Saturday is 20260926, start is 20260920
+            ("20260801", "20260801 09:00", "20260719"), // Saturday started that day, across a month boundary
+            ("20260801", "20260802 03:15", "20260726"), // Saturday thought about on Sunday, across a month boundary
+            ("20260802", "20260803 03:15", "20260726"), // Sunday across a month boundary
+            ("20220101", "20220101 09:00", "20211219"), // Saturday started that day, across a year boundary
+            ("20220101", "20220102 03:15", "20211226"), // Saturday thought about on Sunday, across a year boundary
+            ("20220102", "20220103 03:15", "20211226"), // Sunday across a year boundary
+            ("20240302", "20240302 09:00", "20240218"), // Saturday started that day, after leap day
+            ("20240302", "20240303 03:15", "20240225"), // Saturday thought about on Sunday, after leap day
+            ("20240303", "20240304 03:15", "20240225"), // Sunday after leap day
+            ("20261024", "20261024 23:30", "20261011"), // Saturday evening in the owner's zone is already Sunday in UTC
         ];
-        for (day, expected_start) in cases {
-            let journal = tempdir().unwrap();
-            let (context, recorder) = recorder_context(journal.path(), day, 9);
-            let runtime = dispatch::runtime().unwrap();
-            let mut reflection = talent(Map::from_iter([(
-                "type".to_owned(),
-                Value::String("generate".to_owned()),
-            )]));
-            reflection.key = "weekly_reflection".to_owned();
-            dispatch::dispatch(
-                &context,
-                &runtime,
-                &reflection,
-                "weekly",
-                None,
-                false,
-                Map::from_iter([("env".to_owned(), Value::Object(Map::new()))]),
-            )
-            .unwrap();
-            let requests = recorder.requests.lock().unwrap();
-            let last = requests.last().unwrap();
-            assert_eq!(last.config["day"], expected_start);
-            assert_eq!(last.config["env"]["SOL_DAY"], expected_start);
+        for (day, started, expected_start) in cases {
             assert_eq!(
-                last.config["output_path"],
-                journal
-                    .path()
-                    .join("reflections")
-                    .join("weekly")
-                    .join(format!("{expected_start}.md"))
-                    .display()
-                    .to_string()
+                dispatched_weekly_reflection_start(day, started),
+                expected_start,
+                "think day {day}, run started {started}"
             );
         }
+    }
+
+    #[test]
+    fn scheduled_sunday_weekly_reflection_covers_the_week_that_just_ended() {
+        // The schedule runs `think --weekly` with no `--day` early on Sunday,
+        // so the think day is yesterday's Saturday, which has ended.
+        let sunday = NaiveDate::from_ymd_opt(2026, 10, 25).unwrap();
+        let day = day::selected_day(None, false, sunday);
+        assert_eq!(day, "20261024");
+        assert_eq!(
+            dispatched_weekly_reflection_start(&day, "20261025 03:15"),
+            "20261018"
+        );
     }
 
     #[test]
@@ -6275,10 +6329,21 @@ mod tests {
             )],
         );
         let day_dir = day::create_day(journal.path(), "20260813").unwrap();
-        let context =
-            context::ThinkContext::new(journal.path(), "20260813".to_owned(), day_dir.clone(), 1)
-                .expect("think context")
-                .with_talent_roots(talent_root, apps_root);
+        // The run starts the next day, as a scheduled run does.
+        let started = NaiveDate::from_ymd_opt(2026, 8, 14)
+            .unwrap()
+            .and_hms_opt(12, 0, 0)
+            .unwrap()
+            .and_utc()
+            .timestamp_millis();
+        let context = context::ThinkContext::new(
+            journal.path(),
+            "20260813".to_owned(),
+            day_dir.clone(),
+            started,
+        )
+        .expect("think context")
+        .with_talent_roots(talent_root, apps_root);
         let args = args::ThinkArgs {
             dry_run: true,
             weekly: true,

@@ -319,7 +319,7 @@ fn output_status(
         get_output_path(&context.day_dir, name, Some(segment), format, facet, stream)
             .with_file_name("possible_names.json")
     } else if name == "weekly_reflection" {
-        let start = crate::dispatch::snap_weekly_reflection_start(&context.day);
+        let start = crate::dispatch::snap_weekly_reflection_start(context);
         context
             .journal
             .join("reflections")
