@@ -26,6 +26,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - your journal now starts when its folder is reached through a symbolic link, such as a folder under `/var/tmp` on a mac. before, it refused to start and said the saved installation was for a different journal.
 - media offload no longer stops partway when a scheduled backup finishes while it runs. the note your journal keeps about each backup's last run no longer counts as a change to your journal. if something in your journal does change while offload runs, offload now says so and tells you nothing was removed, instead of only saying it didn't finish.
 - `solstone journal setup` now accepts your journal folder when you run it from inside that folder, as in `--journal .`, instead of stopping with `--journal must not be empty`.
+- media offload no longer stops when your backup is clearing out older copies at the same time. both run on the same daily schedule, and offload now waits up to 30 minutes for the cleanup to finish. approving an offload proposal and bringing offloaded media back wait the same way.
 
 ## [2.0.58] - 2026-10-25
 

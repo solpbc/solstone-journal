@@ -443,6 +443,11 @@ impl OwnedOffloadCliRun {
             self.observed.creation.as_ref().is_some_and(|creation| {
                 !creation.source_copies.is_empty() || creation.partial_copy
             });
+        let retry_clears = !staged
+            || self.plan_hold().is_some_and(|plan| {
+                solstone_core_journal_io::media::exclusive_local_activity(plan.carrier().activity())
+                    .unwrap_or(false)
+            });
         self.stdout = format!("offload_status={status} reason={reason}\n");
         if journal_changed {
             self.stdout.push_str("hold_reason=journal_changed\n");
@@ -476,9 +481,10 @@ impl OwnedOffloadCliRun {
                 }
                 // Planning refuses before admission: no media has left or been removed.
                 "preparation_refused" | "planning_refused" => "offload did not start.",
-                // Copies this run staged stay until they are reviewed, so a
-                // plain retry is only offered when it staged none.
-                "plan_held" if journal_changed && !staged => {
+                // Nothing was proposed. On local storage the next run removes
+                // any copies this one staged before it starts, so a plain
+                // retry is safe; elsewhere those copies stay for review.
+                "plan_held" if journal_changed && retry_clears => {
                     "offload stopped because your journal changed while it was running. nothing was removed from this computer. run it again."
                 }
                 "plan_held" if journal_changed => {

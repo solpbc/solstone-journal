@@ -17,6 +17,36 @@ pub use historical::{HistoricalArchiveFile, HistoricalSnapshotFiles};
 /// removed such a snapshot can be the only copy, so backup rotation keeps it.
 pub const OFFLOAD_ARCHIVE_TAG: &str = "spb-offload-archive";
 
+/// How long a repository command waits for another run's exclusive lock,
+/// such as a scheduled backup cleanup, before it gives up.
+pub(crate) const REPOSITORY_RETRY_LOCK: &str = "30m";
+
+/// restic refuses a repository command outright while another run holds the
+/// repository exclusively. A scheduled backup cleanup does, and it starts on
+/// the same daily tick as media offload, so every command here waits for it,
+/// bounded, the way the archive writer always has. While it waits restic
+/// prints a notice on stdout, ahead of the JSON or file bytes these commands
+/// parse, unless it runs quietly.
+#[cfg(any(unix, windows, test))]
+fn waiting_for_repository(mut argv: Vec<std::ffi::OsString>) -> Vec<std::ffi::OsString> {
+    argv.extend([
+        "--retry-lock".into(),
+        REPOSITORY_RETRY_LOCK.into(),
+        "--quiet".into(),
+    ]);
+    argv
+}
+
+/// `version` reads no repository, so it neither waits nor needs quieting.
+#[cfg(any(unix, windows))]
+fn query_argv(argv: Vec<std::ffi::OsString>) -> Vec<std::ffi::OsString> {
+    if argv.first().is_some_and(|command| command == "version") {
+        argv
+    } else {
+        waiting_for_repository(argv)
+    }
+}
+
 use std::fmt;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -1701,7 +1731,7 @@ impl<'a> ReadOperation<'a> {
             .run_child(
                 &Request {
                     program: self.member.path().as_os_str().to_owned(),
-                    argv,
+                    argv: query_argv(argv),
                     env: self.env.clone(),
                     timeout: Some(timeout),
                     pass_fds: vec![],
@@ -1735,6 +1765,7 @@ impl<'a> ReadOperation<'a> {
             .budget()
             .remaining(self.operation.clock())?
             .min(Duration::from_secs(ARCHIVE_LS_TIMEOUT_SECONDS));
+        let argv = query_argv(argv);
         self.execution.borrow_mut().attempt();
         let cancel = self.operation.budget().cancellation();
         let output = self.executor.run_cancellable(
@@ -2161,12 +2192,12 @@ impl<'a> ReadOperation<'a> {
                 let stage_file = target
                     .issue_stage_file()
                     .map_err(|_| ReadbackError::NativeFailure)?;
-                let argv = vec![
+                let argv = waiting_for_repository(vec![
                     "dump".into(),
                     file.snapshot_id.as_str().into(),
                     file.archive_path.as_str().into(),
                     "--no-cache".into(),
-                ];
+                ]);
                 writer = WriterState::Unknown;
                 self.execution.borrow_mut().attempt();
                 let cancel = self.operation.budget().cancellation();
@@ -2292,14 +2323,14 @@ impl<'a> ReadOperation<'a> {
                     .map_err(|_| ReadbackError::NativeFailure)?;
                 let request = Request {
                     program: self.member.path().as_os_str().to_owned(),
-                    argv: vec![
+                    argv: waiting_for_repository(vec![
                         "dump".into(),
                         "--target".into(),
                         transport.target.into_os_string(),
                         file.snapshot_id.as_str().into(),
                         file.archive_path.as_str().into(),
                         "--no-cache".into(),
-                    ],
+                    ]),
                     env: self.env.clone(),
                     timeout: Some(timeout),
                     pass_fds: vec![transport.descriptor],
@@ -2492,6 +2523,30 @@ fn exact_regular_node(bytes: &[u8], file: &ExactArchiveFile) -> Result<(), Readb
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn every_repository_read_waits_out_an_exclusive_lock() {
+        for read in [
+            vec!["cat", "config", "--no-cache"],
+            vec!["ls", "--json", "snapshot", "--no-cache"],
+            vec!["ls", "--json", "snapshot", "/archive/path", "--no-cache"],
+            vec!["dump", "snapshot", "/archive/path", "--no-cache"],
+        ] {
+            let argv =
+                super::waiting_for_repository(read.iter().map(std::ffi::OsString::from).collect());
+            let flag = argv
+                .iter()
+                .position(|argument| argument == "--retry-lock")
+                .unwrap_or_else(|| panic!("{read:?} refuses under another run's lock"));
+            assert_eq!(argv[flag + 1], super::REPOSITORY_RETRY_LOCK, "{read:?}");
+            // The wait notice would otherwise lead the output parsed here.
+            assert!(
+                argv.iter().any(|argument| argument == "--quiet"),
+                "{read:?}"
+            );
+            assert_eq!(argv[..read.len()], read[..], "{read:?}");
+        }
+    }
+
     use super::*;
 
     #[cfg(all(target_os = "linux", target_arch = "x86_64"))]

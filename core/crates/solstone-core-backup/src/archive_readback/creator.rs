@@ -567,7 +567,7 @@ impl OwnedArchiveCreator {
             "--tag".into(),
             super::OFFLOAD_ARCHIVE_TAG.into(),
             "--retry-lock".into(),
-            "30m".into(),
+            super::REPOSITORY_RETRY_LOCK.into(),
         ];
         argv.extend(
             sources
