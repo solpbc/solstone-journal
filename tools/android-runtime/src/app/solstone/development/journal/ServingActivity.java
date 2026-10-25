@@ -175,6 +175,17 @@ public class ServingActivity extends Activity {
         }
         throw new IOException("private Wi-Fi IPv4 unavailable");
     }
+    static void lifecycle(String event) {
+        android.util.Log.i("JournalLifecycle", event + " elapsed_ns=" + SystemClock.elapsedRealtimeNanos()
+            + " pid=" + android.os.Process.myPid());
+    }
+    void requestStop(Messenger target) {
+        if (target == null) return;
+        Message message = Message.obtain(null, 1);
+        Bundle data = new Bundle(); data.putString("op", "owner-stop"); message.setData(data);
+        try { target.send(message); }
+        catch (RemoteException error) { lifecycle("stop_signal_unavailable"); }
+    }
     JSONObject call(JSONObject command) throws Exception {
         return call(worker, command);
     }

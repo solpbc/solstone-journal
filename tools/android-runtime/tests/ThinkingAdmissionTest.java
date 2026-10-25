@@ -29,6 +29,45 @@ public final class ThinkingAdmissionTest {
         require(retirement(object("native", object("ok", true))) == ServingConnection.Retirement.FAILED);
         require(retirement(object("native", object("ok", true, "value", 5))) == ServingConnection.Retirement.FAILED);
         require(retirement(object("native", object("ok", true, "value", object("root_current", true)))) == ServingConnection.Retirement.STOPPED);
+        for (String phase : new String[]{"starting", "running", "stopping", "stopunknown", "stopfailed", "recovering"})
+            require(!ServingConnection.ownerStartAllowed(phase,false,false,true));
+        require(ServingConnection.ownerStartAllowed("stopped",false,false,true));
+        require(ServingConnection.ownerStartAllowed("failed",false,false,true));
+        require(!ServingConnection.ownerStartAllowed("stopped",false,true,true));
+        require(!ServingConnection.ownerStartAllowed("stopped",false,false,false));
+        require(!ServingConnection.ownerStartAllowed("stopped",true,false,true));
+
+        // Hold the real lifecycle queue: ordinary Stop must signal cancellation
+        // before that queue becomes available, without retiring the active owner.
+        JournalExecution early = new JournalExecution();
+        early.admission.opened(early.admission.generation());
+        ThinkingAdmission.Ticket accepted = early.admission.admit();
+        CountDownLatch controlHeld = new CountDownLatch(1), releaseControl = new CountDownLatch(1);
+        CountDownLatch nativeCancelled = new CountDownLatch(1), retired = new CountDownLatch(1);
+        early.work.execute(()->{
+            controlHeld.countDown();
+            try { releaseControl.await(); } catch(InterruptedException error) { throw new AssertionError(error); }
+        });
+        require(controlHeld.await(5,TimeUnit.SECONDS));
+        try {
+            ServingConnection.stop(early.work,()->early.beginStop(()->nativeCancelled.countDown()),()->{
+                early.admission.awaitIdle(); retired.countDown();
+            });
+            require(nativeCancelled.getCount() == 0);
+            require(!accepted.current());
+            require(early.admission.admit() == null);
+            require(retired.getCount() == 1);
+            // Repeating Stop cannot permit a replacement before the same owner drains.
+            ServingConnection.stop(early.work,()->early.beginStop(()->{}),()->early.admission.awaitIdle());
+            releaseControl.countDown();
+            require(!retired.await(100,TimeUnit.MILLISECONDS));
+        } finally {
+            releaseControl.countDown(); accepted.close();
+            early.work.shutdown(); early.thinking.shutdown();
+        }
+        require(retired.await(5,TimeUnit.SECONDS));
+        require(early.work.awaitTermination(5,TimeUnit.SECONDS));
+
         ThinkingAdmission admission = new ThinkingAdmission();
         require(admission.admit() == null);
         long first = admission.generation(); admission.opened(first);

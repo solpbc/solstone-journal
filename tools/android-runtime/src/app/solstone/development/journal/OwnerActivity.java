@@ -198,7 +198,8 @@ public final class OwnerActivity extends ServingActivity {
         });
         layout.addView(web,new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,0,1));
         setContentView(layout);
-        runState=ownerStopped ? "stopped" : "starting";
+        // A saved choice is intent, not evidence that the process owner drained.
+        runState=ownerStopped ? "stopunknown" : "starting";
         renderBar();
         connectivity=(ConnectivityManager)getSystemService(CONNECTIVITY_SERVICE);
         networkCallback=new ConnectivityManager.NetworkCallback() {
@@ -237,18 +238,30 @@ public final class OwnerActivity extends ServingActivity {
                 }
                 stopAction();
                 break;
-            case "stopping": text="stopping your journal…";break;
-            case "stopped": text="you stopped your journal";action("start",()->ownerAction("start"),true);break;
+            case "stopping": text="stopping your journal…\nfinishing current work · keep this app open";break;
+            case "stopunknown":
+                text="checking whether your journal has stopped…";
+                action("check again",()->stopJournal(false),false);break;
+            case "stopped":
+                text="you stopped your journal";
+                if (stopChoiceUnsaved) action("save stop",()->stopJournal(false),true);
+                else action("start",()->ownerAction("start"),true);
+                break;
             case "recovering": text="stopped unexpectedly · starting again…";stopAction();break;
             case "failed":
                 text="your journal couldn't start";
                 if(runtimeUp) stopAction(); else action("start",()->ownerAction("start"),true);
                 break;
-            case "stopfailed": text="couldn't finish stopping · keep this app open";break;
+            case "stopfailed":
+                text="couldn't finish stopping · keep this app open";
+                action("check again",()->stopJournal(false),false);break;
             default: text="starting your journal…";stopAction();
         }
         if (!reason.isEmpty()) text+="\n"+reason;
-        if (stopChoiceUnsaved) text+="\nstop choice couldn't be saved · check it again after reopening";
+        if (stopChoiceUnsaved) text+="\ncouldn't save stop · keep this app open";
+        if ("stopping".equals(runState) || "stopunknown".equals(runState) || "stopfailed".equals(runState))
+            getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        else getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         status.setText(text);
     }
     void refreshStatus() {
@@ -294,7 +307,7 @@ public final class OwnerActivity extends ServingActivity {
     }
     void ownerAction(String action) {
         if ("start".equals(action)) {
-            if (preparing || "running".equals(runState)) return;
+            if (!ServingConnection.ownerStartAllowed(runState,preparing,runtimeUp,!stopChoiceUnsaved)) return;
             try { setOwnerStop(false); } catch(Exception error) { pageError(error.getMessage()); return; }
             runState="starting";reason="";renderBar();
             if (!payloadReady) { prepareAndBind();return; }
@@ -303,17 +316,22 @@ public final class OwnerActivity extends ServingActivity {
         }
     }
     void stopJournal(boolean restart) {
+        lifecycle("owner_stop_requested");
         restarting=restart;
-        setOwnerStop(true);
+        ownerStopped=true;
         readyConnection=0;
-        closePage(); runState="stopping";reason="";renderBar();
+        runState="stopping";reason="";renderBar();
+        status.postOnAnimation(()->lifecycle("owner_stop_pending_frame_callback"));
         final Messenger target=worker; final long generation=connectionGeneration.get();
-        if(target == null) { bindWorker();return; }
-        control.execute(()->{
+        ServingConnection.stop(control,()->requestStop(target),()->{
             if (!currentConnection(generation,target)) return;
             try { show(call(target,MainActivity.obj("op","stop"))); }
-            catch(Exception error) { show(MainActivity.obj("error","journal status unavailable")); }
+            catch(Exception error) { if(currentConnection(generation,target)) show(MainActivity.obj("error","journal status unavailable")); }
         });
+        // Deliver Stop before closing response pipes can enqueue their cancels.
+        closePage();
+        setOwnerStop(true);
+        if(target == null) bindWorker();
     }
     void show(JSONObject row) {
         ui.post(()->{
@@ -328,13 +346,15 @@ public final class OwnerActivity extends ServingActivity {
             else if (value != null && value.has("root_current") && !value.optBoolean("root_current")) {
                 runState="stopfailed";reason="journal storage unavailable";restarting=false;
             } else if (value != null && value.optBoolean("stopping")) {
-                runState="stopping";
+                runState="stopping";reason="";
                 ui.postDelayed(this::refreshStatus,1000);
             } else if (stopped && ownerStopped) {
                 runState="stopped";reason="";
-                if (restarting) { restarting=false;ownerAction("start");return; }
+                lifecycle("owner_stopped_observed");
+                if (restarting && !stopChoiceUnsaved) { restarting=false;ownerAction("start");return; }
             } else if (ownerStopped) {
-                runState="stopping";
+                runState="stopunknown";
+                reason="keep this app open · use check again to confirm";
                 ui.postDelayed(this::refreshStatus,1000);
             } else if ("worker disconnected".equals(row.optString("error"))) {
                 runState="recovering";reason="";

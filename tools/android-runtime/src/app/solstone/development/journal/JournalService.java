@@ -65,6 +65,12 @@ public class JournalService extends Service {
                     respond(reply,id,"{\"ok\":false,\"error\":\"service destroyed\"}",0);
                     return;
                 }
+                if ("owner-stop".equals(op)) {
+                    ServingActivity.lifecycle("stop_received");
+                    execution.beginStop(JournalService.this::cancelNativeWork);
+                    ServingActivity.lifecycle("stop_cancellation_delivered");
+                    return;
+                }
                 if (op.equals("cancel") || op.equals("begin")) { respond(reply,id,Native.run(root,op,count),0); return; }
                 String operation = "";
                 if (op.startsWith("serve:")) {
@@ -99,12 +105,21 @@ public class JournalService extends Service {
                     (isThinking ? thinking : work).execute(()->{
                         long start=SystemClock.elapsedRealtimeNanos();
                         try {
-                            if (isStop) thinkingAdmission.awaitIdle();
+                            if (isStop) {
+                                ServingActivity.lifecycle("stop_retirement_requested");
+                                thinkingAdmission.awaitIdle();
+                            }
                             String result;
                             if (ticket != null && !ticket.current()) {
                                 result="{\"ok\":false,\"error\":\"server stopped\"}";
                             } else {
                                 result=Native.run(root,admittedOp,count);
+                            }
+                            if (isStop) {
+                                JSONObject nativeStop = new JSONObject(result);
+                                JSONObject value = nativeStop.optJSONObject("value");
+                                ServingActivity.lifecycle(nativeStop.optBoolean("ok") && value != null && value.optBoolean("stopped")
+                                    ? "stop_retirement_complete" : "stop_retirement_unconfirmed");
                             }
                             if (isToolStatus) {
                                 JSONObject diagnostic = new JSONObject(result);
@@ -135,6 +150,7 @@ public class JournalService extends Service {
         try {
             JSONObject value = new JSONObject(result).optJSONObject("value");
             if (value != null && value.optBoolean("native_call_active_after_cancel")) {
+                ServingActivity.lifecycle("native_asr_active_after_cancel");
                 final long observedAt = SystemClock.elapsedRealtime();
                 // Persistence must not hold the main Handler or delay retirement.
                 // A full/closed queue loses this optional witness, never Stop.
@@ -146,6 +162,8 @@ public class JournalService extends Service {
         } catch (JSONException ignored) { /* Unknown observation cannot establish overlap. */ }
     }
     void respond(Messenger to,int id,String result,long nanos) {
+        // The early Stop signal deliberately has no reply waiter.
+        if (to == null) return;
         Message m=Message.obtain(null,1); m.arg1=id;
         Bundle b=new Bundle(); b.putString("result",result); b.putLong("nanos",nanos); b.putInt("pid",Process.myPid()); b.putInt("uid",Process.myUid()); b.putInt("threads",Thread.activeCount());
         Debug.MemoryInfo mem=new Debug.MemoryInfo(); Debug.getMemoryInfo(mem); b.putInt("pss_kb",mem.getTotalPss()); b.putLong("java_heap",Runtime.getRuntime().totalMemory()-Runtime.getRuntime().freeMemory());
