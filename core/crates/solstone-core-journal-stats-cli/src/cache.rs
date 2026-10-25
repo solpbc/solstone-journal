@@ -291,7 +291,8 @@ pub fn bounded_input_mtime(day_dir: &Path) -> Result<Option<SystemTime>, Journal
         let matched = name.ends_with("audio.jsonl")
             || name.ends_with("_transcript.jsonl")
             || name.ends_with("_transcript.md")
-            || name.ends_with("screen.jsonl");
+            || name.ends_with("screen.jsonl")
+            || solstone_core_processing_record::is_transcribe_output(&path);
         if matched && path.is_file() {
             update_latest(&mut latest, &path)?;
         }

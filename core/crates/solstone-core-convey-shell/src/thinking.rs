@@ -618,6 +618,7 @@ async fn state(
                 "keys": solstone_core_thinking::providers::keys(&config),
                 "copy": solstone_core_thinking_copy::thinking_copy_payload(),
                 "saved_lane": saved_lane,
+                "host_capabilities": solstone_core_system::owner_host::capabilities(),
                 "local_capability": {
                     "overall": capability.overall,
                     "local_admitted": capability.local_admitted,

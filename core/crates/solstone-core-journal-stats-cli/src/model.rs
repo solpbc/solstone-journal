@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-pub const SCHEMA_VERSION: u32 = 9;
+pub const SCHEMA_VERSION: u32 = 10;
 
 /// Day statistics and the fold degradation marker.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]

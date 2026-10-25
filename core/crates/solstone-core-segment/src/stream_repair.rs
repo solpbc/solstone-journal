@@ -660,7 +660,8 @@ fn classify_segment(
         return classified;
     }
     for (name, path) in sorted_children(segment_dir) {
-        if name.ends_with("_audio.jsonl")
+        if (name.ends_with("_audio.jsonl")
+            || solstone_core_processing_record::is_transcribe_output(&path))
             && name != "imported_audio.jsonl"
             && let Some(header) = read_jsonl_header(&path)
             && let Some(classified) = classify_from_audio_header(&header)
@@ -693,6 +694,15 @@ fn classify_segment(
         && let Some(name) = host_stream_name(host, None)
     {
         return (name, StreamBackfillSignal::AudioHost);
+    }
+    for (_, path) in sorted_children(segment_dir) {
+        if solstone_core_processing_record::is_transcribe_output(&path)
+            && let Some(header) = read_jsonl_header(&path)
+            && let Some(host) = truthy_str(header.get("host"))
+            && let Some(name) = host_stream_name(host, None)
+        {
+            return (name, StreamBackfillSignal::AudioHost);
+        }
     }
 
     if has_tmux_only(segment_dir)
@@ -925,6 +935,7 @@ fn has_tmux_only(segment_dir: &Path) -> bool {
             || name.ends_with(".opus")
             || name == "audio.jsonl"
             || name.ends_with("_audio.jsonl")
+            || solstone_core_processing_record::is_transcribe_output(&entry.path())
         {
             audio = true;
         }
@@ -1425,6 +1436,35 @@ mod backfill_tests {
         assert_eq!(
             report.signal_counts.first(),
             Some(&(StreamBackfillSignal::AudioStream, 2))
+        );
+    }
+
+    #[test]
+    fn arbitrary_transcribe_names_supply_stream_evidence_but_events_do_not() {
+        let temporary = TempDir::new();
+        let root = temporary.path();
+        let path = segment(
+            root,
+            "20261024",
+            "120000_60",
+            &[
+                (
+                    "note-0.jsonl",
+                    "{\"_solstone_processing\":{\"handler\":\"transcribe\"},\"stream\":\"phone.audio\"}\n",
+                ),
+                ("events.jsonl", "{\"stream\":\"unrelated\"}\n"),
+            ],
+        );
+        let result = classify_segment(&path, "20261024", "120000_60", &BTreeMap::new(), "desk");
+        assert_eq!(
+            result,
+            ("phone.audio".into(), StreamBackfillSignal::AudioStream)
+        );
+        fs::write(path.join("note-0.jsonl"), "{\"stream\":\"unrelated\"}\n").unwrap();
+        let result = classify_segment(&path, "20261024", "120000_60", &BTreeMap::new(), "desk");
+        assert_eq!(
+            result,
+            ("desk".into(), StreamBackfillSignal::HostnameFallback)
         );
     }
 

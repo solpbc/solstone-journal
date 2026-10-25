@@ -189,6 +189,15 @@ pub(crate) async fn pair_start(
         Some(Value::Bool(value)) => Some(*value),
         Some(_) => None,
     };
+    if same_machine == Some(true)
+        && !solstone_core_system::owner_host::capabilities().same_computer_pairing
+    {
+        return refusal(
+            "same_computer_pairing_unavailable",
+            "same-computer pairing isn't available where your journal lives",
+            StatusCode::CONFLICT,
+        );
+    }
     let request = MintRequest {
         device_label: device_label.to_owned(),
         role: role.to_owned(),

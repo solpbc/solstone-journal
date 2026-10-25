@@ -944,6 +944,7 @@ fn replay_full_recorded_case(
                 && let Some(map) = value.as_object_mut()
                 && map.remove("local_capability").is_some()
             {
+                remove_host_capabilities(map);
                 sha256(canonical_json(&value).as_bytes())
             } else {
                 sha256(&response.3)
@@ -956,6 +957,7 @@ fn replay_full_recorded_case(
                 && let Some(map) = value.as_object_mut()
                 && map.remove("local_capability").is_some()
             {
+                remove_host_capabilities(map);
                 sha256(canonical_json(&value).as_bytes())
             } else {
                 sha256(
@@ -974,6 +976,7 @@ fn replay_full_recorded_case(
                 && let Some(map) = value.as_object_mut()
             {
                 map.remove("local_capability");
+                remove_host_capabilities(map);
             }
             for (path, kind) in case
                 .get("normalized_fields")
@@ -1062,6 +1065,18 @@ fn replay_full_recorded_case(
         false,
         runtime_status_deviation_path(phase, case).is_some(),
     )
+}
+
+fn remove_host_capabilities(map: &mut serde_json::Map<String, Value>) {
+    let capabilities = map.remove("host_capabilities").expect("native host facts");
+    for field in [
+        "bundled_local_thinking",
+        "desktop_capture",
+        "terminal_speech_setup",
+        "same_computer_pairing",
+    ] {
+        assert!(capabilities[field].is_boolean(), "{field} is a host fact");
+    }
 }
 
 fn superseded_presentation_asset(path: &str) -> Option<&'static [u8]> {

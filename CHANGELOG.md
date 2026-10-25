@@ -18,6 +18,8 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- thinking, health and network now show the options supported by the device running your journal.
+- recordings with custom filenames now appear in counts and daily processing.
 - a screen description of a terminal less often comes back as your journal's own instructions instead of the text that was there.
 - on a calendar event in your journal, the invitee marked as you is now the one whose email is one of the addresses in your identity settings. before, each phone decided, and on a calendar someone shared with you, it could mark that person as you. if your identity has no email addresses, no one on an invite is marked as you. events already in your journal are updated the next time your journal checks them. thanks @dvanduzer for the report.
 - work stories no longer say you did something that was only on your screen. a page you read, an answer from a chat assistant, or work an agent did in your terminal is described as something you read, reviewed or asked your agent to do, and what your agent did is credited to your agent. thanks @dvanduzer for the report.
