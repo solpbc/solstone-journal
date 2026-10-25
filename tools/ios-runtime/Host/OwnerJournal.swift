@@ -33,7 +33,7 @@ import UIKit
     case .unavailable: return "your journal needs attention"
     }
   }
-  var canStart: Bool { !retained && phase != .starting && phase != .stopping }
+  var canStart: Bool { loaded && choiceSaved && !retained && phase != .closed && phase != .starting && phase != .stopping }
 
   private struct Choice: Codable { let stopped: Bool }
   private func saveChoice(_ stopped: Bool) throws {
@@ -70,10 +70,11 @@ import UIKit
       ownerStopped = true
       choiceSaved = false
       phase = .unavailable
-      detail = "couldn't read the start choice. use start when you're ready."
+      detail = "couldn't read the start choice. use stop to save it again."
     }
   }
   func start(explicit: Bool = true) {
+    if explicit && !canStart { return }
     guard !retained, phase != .starting, phase != .stopping else { return }
     if explicit {
       do { try saveChoice(false) }
@@ -125,6 +126,9 @@ import UIKit
     }
   }
   func stop(restart: Bool = false) {
+    phase = .stopping
+    detail = "finishing current work. keep this app open."
+    UIApplication.shared.isIdleTimerDisabled = foreground && retained
     do { try saveChoice(true) }
     catch { ownerStopped = true; choiceSaved = false }
     revision &+= 1
@@ -132,9 +136,6 @@ import UIKit
     journal_ios_processing_request_stop()
     // Stop reaches the journal before waiting behind any lifecycle operation.
     if retained { _ = journal_ios_processing_request_owner_stop() }
-    phase = .stopping
-    detail = ""
-    UIApplication.shared.isIdleTimerDisabled = false
     enqueue { [self] in
       await drain(explicit: true)
       guard ticket == revision else { return }
@@ -150,7 +151,8 @@ import UIKit
     }
   }
   private func drain(explicit: Bool) async {
-    UIApplication.shared.isIdleTimerDisabled = false
+    UIApplication.shared.isIdleTimerDisabled = foreground && retained
+    defer { UIApplication.shared.isIdleTimerDisabled = foreground && retained }
     guard retained else { return }
     do {
       await cancelAndDrain()
@@ -160,6 +162,7 @@ import UIKit
   }
   func scene(_ active: Bool) {
     foreground = active
+    UIApplication.shared.isIdleTimerDisabled = active && retained
     guard loaded else { return }
     if active {
       enqueue { [self] in
