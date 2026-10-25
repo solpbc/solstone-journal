@@ -8,11 +8,13 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- when you chat with an AI assistant like ChatGPT or Claude, the screen description of that chat now nearly always includes the questions you asked, and marks which messages are yours and which are the assistant's. before, your question was often left out and the assistant's answer read like a plain web page.
 - when everything that went into your journal for a stretch came from your terminal, the description of that stretch now quotes the text that was on screen, such as an input line, instead of paraphrasing it. this works with whichever model your journal thinks with.
 - in a meeting, a person whose voice your journal recognized on at least two lines is now listed as attending, even if nothing written that day named them, and so is a voice you haven't named yet, like "Speaker 2". a single matched line is no longer enough unless you assigned that line yourself, so that person is listed as mentioned. activities already in your journal keep their people as they are.
 
 ### Fixed
 
+- a screen description of a terminal less often comes back as your journal's own instructions instead of the text that was there.
 - work stories no longer say you did something that was only on your screen. a page you read, an answer from a chat assistant, or work an agent did in your terminal is described as something you read, reviewed or asked your agent to do, and what your agent did is credited to your agent. thanks @dvanduzer for the report.
 - weekly reflections started on saturday now use the previous completed week, so they can finish without including the current day.
 - on-device transcription in the development journal app now accepts up to two minutes of single-track audio. recordings above its processing limits stay held, with the original kept and an explanation in health.
