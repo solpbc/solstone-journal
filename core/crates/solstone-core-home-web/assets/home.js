@@ -1428,7 +1428,9 @@
       + parts.join('') + '</div>';
   }
 
+  // The welcome page has no pair: a live refresh must not add one to it.
   function renderPair(pulse) {
+    if (lastPulse?.home_state === 'welcome') return;
     replaceHomeSurface('pair', renderPairHtml(pulse), predecessors('pair'));
   }
 

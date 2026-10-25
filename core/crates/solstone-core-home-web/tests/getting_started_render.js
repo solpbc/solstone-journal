@@ -532,6 +532,15 @@ async function runTests() {
   assert.strictEqual(surface.querySelector('[data-home-surface="pair"]'), null, 'no empty cards in the welcome state');
   assert.strictEqual(surface.children.indexOf(welcomeEl), surface.children.indexOf(vitalsEl) + 1, 'welcome line directly under the status');
 
+  // A live refresh on the welcome page adds no connections or week row, even
+  // when the pulse carries a first-week line.
+  apiResolver = (url) => url === '/app/home/api/pulse'
+    ? Promise.resolve({ ...welcomePulse, latest_weekly_reflection: { state: 'first', line: 'your first week comes on monday.' } })
+    : new Promise(() => {});
+  await readVitals();
+  assert.strictEqual(surface.querySelector('[data-home-surface="pair"]'), null, 'a refresh adds no pair to the welcome page');
+  apiResolver = null;
+
   // A live re-render of the status keeps the order.
   renderVitals(welcomePulse);
   assert.strictEqual(
