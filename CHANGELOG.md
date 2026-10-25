@@ -6,6 +6,16 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- when everything that went into your journal for a stretch came from your terminal, the description of that stretch is now written from a compact timeline of what changed on screen, so far less of a long stretch is cut to fit. when an AI assistant's input box is on screen, the description also quotes what you typed there instead of paraphrasing it. this works with whichever model your journal thinks with.
+
+### Fixed
+
+- on the transcripts page, every dot in the timeline's legend now matches what the timeline draws. workouts are clay instead of a second gold, so they no longer look like screen. a stretch still awaiting thinking is now an empty outline, so it no longer looks like a finished screen stretch.
+
+## [2.0.58] - 2026-10-25
+
 ### Added
 
 - when a recording mentions someone or something from your facets that the summaries of that moment leave out, the transcript now adds the name those words might be, right after them, such as "Margarete (possible name: Margarethe)". searching your journal for that name, yourself or through an agent, then finds the recording. a label can come from their name, another name you've given them, or a close spelling. the words in the transcript don't change, and an agent sees these names only if it may see your entities.
@@ -15,41 +25,31 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - when your journal has little to go on for a stretch of work, the work story for that stretch now guesses less. work stories also less often add what a session was for, how it turned out, or an app or file that nothing in your journal names.
 - on mac, local thinking now uses a runtime included with your journal. your existing setup keeps working while the new model files download. the switch waits for background thinking to finish. the journal removes the old files after the new runtime is ready.
 - when you chat with an AI assistant like ChatGPT or Claude, the screen description of that chat now nearly always includes the questions you asked, and marks which messages are yours and which are the assistant's. before, your question was often left out and the assistant's answer read like a plain web page.
-- a calendar event now says which account its calendar belongs to, such as "Home (iCloud)", once the solstone app on your phone adds it, so two calendars with the same name can be told apart. thanks @dvanduzer for the report.
-- when everything that went into your journal for a stretch came from your terminal, the description of that stretch is now written from a compact timeline of what changed on screen, so far less of a long stretch is cut to fit. when an AI assistant's input box is on screen, the description also quotes what you typed there instead of paraphrasing it. this works with whichever model your journal thinks with.
-- the screen record of a long stretch at your terminal is now written in parts with every model and wherever your journal runs, as it already was on linux with the local model. your journal no longer drops the start of that stretch for a model that can't take it all at once, unless the stretch is too long to split.
+- a calendar event now says which account its calendar belongs to, such as "Home (iCloud)", once the solstone app on your phone includes the account, so two calendars with the same name can be told apart. thanks @dvanduzer for the report.
+- when everything that went into your journal for a stretch came from your terminal, the description of that stretch now quotes the text that was on screen, such as an input line, instead of paraphrasing it. this works with whichever model your journal thinks with.
+- the description of a long stretch at your terminal is now written in parts with every model and wherever your journal runs, as it already was on linux with the local model. your journal no longer drops the start of that stretch for a model that can't take it all at once, unless the stretch is too long to split.
 - in a meeting, a person whose voice your journal recognized on at least two lines is now listed as attending, even if nothing written that day named them, and so is a voice you haven't named yet, like "Speaker 2". a single matched line is no longer enough unless you assigned that line yourself, so that person is listed as mentioned. activities already in your journal keep their people as they are.
 - the morning briefing is now the daily briefing. on home, a switch moves between yesterday's daily briefing and today, and it opens on yesterday until something goes into your journal today. anything waiting on you, like originals to review or a voice to confirm, now sits in a list under the status line that appears only when something is waiting, and originals have their own page.
 
 ### Fixed
 
-- in the development journal app on android, updated speech notices no longer block start. existing notices and models are kept.
-
-- thinking, health and network now show the options supported by the device running your journal.
-- recordings with custom filenames now appear in counts and daily processing.
-- in the development journal app on android, stop reaches ongoing work even when another control is waiting. reopening waits for confirmation before showing stopped or offering start. on android and iphone, the app keeps the screen awake while stopping.
+- security fix: updated notification encryption to remove a timing weakness. someone able to measure encryption operations on the same computer could have used it to learn information about a notification's encryption key.
 - a screen description of a terminal less often comes back as your journal's own instructions instead of the text that was there.
 - on a calendar event in your journal, the invitee marked as you is now the one whose email is one of the addresses in your identity settings. before, each phone decided, and on a calendar someone shared with you, it could mark that person as you. if your identity has no email addresses, no one on an invite is marked as you. events already in your journal are updated the next time your journal checks them. thanks @dvanduzer for the report.
-- work stories no longer say you did something that was only on your screen. a page you read, an answer from a chat assistant, or work an agent did in your terminal is described as something you read, reviewed or asked your agent to do, and what your agent did is credited to your agent. thanks @dvanduzer for the report.
+- work stories now less often say you did something that was only on your screen. a page you read, an answer from a chat assistant, or work an agent did in your terminal is more often described as something you read, reviewed or asked your agent to do, and what your agent did is credited to your agent. thanks @dvanduzer for the report.
 - weekly reflections started on saturday now use the previous completed week, so they can finish without including the current day.
-- on-device transcription in the development journal app now accepts up to two minutes of single-track audio. recordings above its processing limits stay held, with the original kept and an explanation in health.
 - searching your journal now lists names that only appeared on your screen, such as an author on a web page, on their own line, apart from who attended and who was mentioned, and agents reading your journal get them as a separate list instead of under mentioned. activities already in your journal keep their people as they are. thanks @dvanduzer for the report.
 - when a moment has no recording, or its recording never says a name that only appeared on screen, that name is no longer marked as heard. it's listed as coming from the screen, and repeats are dropped. names that were said keep their source. thanks @dvanduzer for the report.
-- some recordings stayed "waiting for media processing" in health, and that day's summaries waited with them. they now finish processing.
+- some recordings whose file is named differently than usual stayed "waiting for media processing" in health, and that day's summaries waited with them. they now finish processing and show up in counts.
 - after you save a model or select check again, the thinking page now shows the check's result as soon as your journal has it. before, it showed "thinking status unavailable" until you reloaded the page.
-- when your journal runs on a phone, health's live panels now show what your journal is running. before, they stayed on "waiting for live updates".
-- when your journal runs on a phone, setup and the network page no longer say it's on a computer.
-- security fix: updated notification encryption to remove a timing weakness. someone able to measure encryption operations on the same computer could have used it to learn information about a notification's encryption key.
 - the welcome on a new journal's home page no longer promises tasks or calendar events, which that page doesn't show.
-- when something your journal sends for processing is too long for the model, your journal now uses the model's own count, when it gives one, to trim it closer to what fits. before, it cut the input to half the space it expected, which often dropped more than it needed to.
-- work and conversation stories no longer take their text from a reserved field in custom thinking settings.
+- when you think with your own endpoint and something your journal sends is too long for it, your journal now uses the model's own count, when it gives one, to trim it closer to what fits. before, it cut the input to half the space it expected, which often dropped more than it needed to.
 - each transcript an agent reads now says where it came from, in the words your journal uses, such as "your mac · audio". before, when two devices added to your journal over the same minutes, an agent saw two identical entries. thanks @dvanduzer for the report.
 - when an agent searches your journal through a connection that sees only some of your facets, the result now says that calendar events and anything else outside a facet aren't included. before, a day with only calendar events looked empty to it. thanks @dvanduzer for the report.
 - searching your journal from the command line for a facet or kind of entry that doesn't exist now says so and lists the ones that do. before, a mistyped name came back as no results. thanks @dvanduzer for the report.
 - reading transcripts for a stretch of time from the command line now keeps only the device you name with `--stream`. before, it returned every device. thanks @dvanduzer for the report.
 - the instructions your journal gives a coding agent for reading it no longer show commands that fail or come back empty, such as reading transcripts without a day. thanks @dvanduzer for the report.
 - fixed "show details" in system messages showing only a status, or nothing at all, for some errors. it shows the error's message, context and stack again.
-- on the transcripts page, every dot in the timeline's legend now matches what the timeline draws. workouts are clay instead of a second gold, so they no longer look like screen. a stretch still awaiting thinking is now an empty outline, so it no longer looks like a finished screen stretch.
 
 ## [2.0.57] - 2026-10-24
 
