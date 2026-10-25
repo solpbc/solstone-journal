@@ -323,7 +323,9 @@
         showRepair = true;
         showDisable = true;
       } else if (status === 409 && reasonCode === 'local_network_closed') {
-        bodyCopyKey = 'PAIR_LOCAL_NETWORK_CLOSED_BODY';
+        bodyCopyKey = options.canPairThisComputer?.() === true
+          ? 'PAIR_LOCAL_NETWORK_CLOSED_BODY'
+          : 'PAIR_LOCAL_NETWORK_CLOSED_WITHOUT_LOCAL_BODY';
         showRegen = false;
         showLocalNetwork = true;
         showRepair = true;
@@ -360,7 +362,7 @@
         localNetworkBtn.textContent = copy('LOCAL_NETWORK_OPEN_CTA');
       }
       if (thisComputerBtn) {
-        thisComputerBtn.hidden = !showLocalNetwork;
+        thisComputerBtn.hidden = !showLocalNetwork || options.canPairThisComputer?.() !== true;
         thisComputerBtn.textContent = copy('PAIR_THIS_COMPUTER_CTA');
       }
       if (disableBtn) {
@@ -577,6 +579,7 @@
         close();
         options.onPrivateLinkRepair();
       } else if (action === 'this-computer') {
+        if (options.canPairThisComputer?.() !== true) return;
         if (!ceremony.sameMachine) {
           ceremony.previousDeviceType = ceremony.deviceType;
         }

@@ -555,7 +555,7 @@ function createDeviceEnvironment() {
   class ControlledDate extends Date { static now() { return clock.now; } }
   const state = {
     registeredClients: null, registeredClientsFailed: false, registeredClientsObservedAt: null,
-    clients: new Map(), localHost: 'local', agents: new Map(), imports: new Map(),
+    clients: new Map(), localHost: 'local', hostCapabilities: {desktop_capture: true}, agents: new Map(), imports: new Map(),
     services: new Map([['observe', {}]]), crashed: new Map(), health: {}, connected: true,
     heldWorkCurrent: true, heldWorkSnapshot: null,
     backupView: { tone: 'neutral' },
@@ -734,6 +734,20 @@ test('unknown device knowledge cannot mute a diagnosed fault or fabricate a fail
   await env.load([device('phone')]);
   env.state.agents.set('task', { event: 'start' });
   assert.strictEqual(env.verdict().key, 'HEALTH_GLANCE_CATCHING_UP');
+});
+
+test('phone host does not expect a local desktop source while showing another device', async () => {
+  const env = createDeviceEnvironment();
+  await env.load([device('phone')]);
+  env.state.clients.set('remote', {lastSeen: env.clock.now, mode: 'screencast', audio: {threshold_hits: 7}});
+  env.state.hostCapabilities = {desktop_capture: false};
+  env.observe();
+  assert.strictEqual(env.elements.observeSourceNote.classList.contains('hidden'), true);
+  assert.strictEqual(env.elements.observeContent.classList.contains('hidden'), false);
+  assert.ok(env.elements.audioStatus.textContent.includes('7'));
+  env.state.hostCapabilities = null;
+  env.observe();
+  assert.strictEqual(env.elements.observeSourceNote.classList.contains('hidden'), true);
 });
 
 test('observe uses fresh selected evidence rather than a stale populated map', async () => {
@@ -1469,6 +1483,7 @@ function createSpeechEnvironment(applicable = true) {
     }),
   });
 
+  context.state = {hostCapabilities: {terminal_speech_setup: true}};
   const speechCode = sourceBlock(source, 'const SPEECH_SETUP_COPY =', 'function clearHealthStateError(');
   vm.runInContext(speechCode, context);
 
@@ -1501,6 +1516,16 @@ test('refreshStatusReads records fetch of /app/health/api/speech-setup and does 
   await vm.runInContext('refreshStatusReads()', env.context);
   assert.ok(fetchedUrls.includes('/app/health/api/speech-setup'));
   assert.ok(!fetchedUrls.includes('/app/health/api/state'));
+});
+
+test('phone host hides terminal speech repair without reading a desktop setup path', async () => {
+  const env = createSpeechEnvironment();
+  env.context.state.hostCapabilities = {terminal_speech_setup: false};
+  env.speechSetup.hidden = false;
+  env.context.getJson = async () => { throw new Error('desktop setup must not be requested'); };
+  await vm.runInContext('loadSpeechSetup()', env.context);
+  assert.strictEqual(env.speechSetup.hidden, true);
+  assert.strictEqual(env.loggedErrors.length, 0);
 });
 
 test('speech setup stage change updates in place keeping same node', async () => {

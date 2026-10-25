@@ -155,6 +155,7 @@ solstone-core-body-ingest.workspace = true
 solstone-core-entity.workspace = true
 solstone-core-facets.workspace = true
 solstone-core-format.workspace = true
+solstone-core-processing-record.workspace = true
 solstone-core-installation-identity.workspace = true
 solstone-core-brain.workspace = true
 solstone-core-brain-owner.workspace = true

@@ -294,7 +294,7 @@ fn project_sources(files: BTreeMap<String, PathBuf>) -> Result<SourceProjection,
             continue;
         }
         let normalized = normalized_rel(&rel);
-        let mut resolution = content::classify(&normalized);
+        let mut resolution = content::classify_file(&path, &normalized);
         // Calendar notes are not something the owner did; no daily unit reads them.
         if resolution == ContentResolution::Indexed(Family::Calendar) {
             continue;
@@ -926,6 +926,33 @@ fn template_contract(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn transcribe_header_puts_arbitrarily_named_speech_into_daily_evidence() {
+        let root = root("daily-headered-speech");
+        let rel = "chronicle/20261024/phone.audio/120000_60/note-0.jsonl";
+        let bytes = "{\"_solstone_processing\":{\"handler\":\"transcribe\"}}\n{\"start\":\"12:00:01\",\"text\":\"a source sentence\"}\n";
+        write(&root, rel, bytes);
+        write(
+            &root,
+            "chronicle/20261024/phone.audio/120000_60/events.jsonl",
+            "{\"text\":\"an unrelated event\"}\n",
+        );
+        let projected = capture_day_projection(&root, "20261024").unwrap();
+        assert!(
+            projected
+                .chunks
+                .iter()
+                .any(|chunk| chunk.text.contains("a source sentence"))
+        );
+        assert!(
+            !projected
+                .chunks
+                .iter()
+                .any(|chunk| chunk.text.contains("an unrelated event"))
+        );
+        assert_eq!(fs::read_to_string(root.join(rel)).unwrap(), bytes);
+        fs::remove_dir_all(root).unwrap();
+    }
     fn root(name: &str) -> PathBuf {
         let root = crate::test_support::reserve_temp_path(name);
         fs::create_dir_all(&root).unwrap();

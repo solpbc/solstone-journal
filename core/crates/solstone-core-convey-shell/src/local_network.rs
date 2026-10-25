@@ -299,6 +299,7 @@ async fn status_body(door: &DoorLifecycle, changed: Option<bool>) -> Value {
         "listening_on": listening_on,
         "port": bound.map(|address| address.port()),
         "windows_asks": cfg!(windows),
+        "host_capabilities": solstone_core_system::owner_host::capabilities(),
         "agents_on_network": lan_door_on(door.journal_root()),
         "windows_firewall_blocked": if listening_on == "local_network" {
             crate::windows_firewall::app_blocked().await

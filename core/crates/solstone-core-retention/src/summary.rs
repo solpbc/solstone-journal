@@ -86,7 +86,10 @@ fn segment_bytes(path: &Path, immediate: bool) -> io::Result<(u64, u64, bool)> {
             } else {
                 derived = derived.saturating_add(bytes);
             }
-            has_index |= immediate && (file_name == "audio.jsonl" || file_name == "screen.jsonl");
+            has_index |= immediate
+                && (file_name == "audio.jsonl"
+                    || file_name == "screen.jsonl"
+                    || solstone_core_processing_record::is_transcribe_output(&entry.path()));
         }
     }
     Ok((raw, derived, has_index))
@@ -119,6 +122,30 @@ mod tests {
 
     use super::{compute_storage_summary, human_bytes};
     use tempfile::TempDir;
+
+    #[test]
+    fn headered_speech_counts_after_raw_release_but_unrelated_jsonl_does_not() -> std::io::Result<()>
+    {
+        let temporary = TempDir::new()?;
+        let speech = temporary
+            .path()
+            .join("chronicle/20261024/phone.audio/090000_60");
+        let other = temporary
+            .path()
+            .join("chronicle/20261024/phone.audio/100000_60");
+        fs::create_dir_all(&speech)?;
+        fs::create_dir_all(&other)?;
+        fs::write(
+            speech.join("note-0.jsonl"),
+            "{\"_solstone_processing\":{\"handler\":\"transcribe\"}}\n",
+        )?;
+        fs::write(other.join("note-0.jsonl"), "{\"event\":\"accepted\"}\n")?;
+        let summary = compute_storage_summary(temporary.path())?;
+        assert_eq!(summary.total_segments, 2);
+        assert_eq!(summary.segments_purged, 1);
+        assert_eq!(summary.segments_with_raw, 0);
+        Ok(())
+    }
 
     #[cfg(unix)]
     #[test]

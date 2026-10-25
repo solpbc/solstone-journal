@@ -4717,6 +4717,7 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "solstone-core-body-source",
+ "solstone-core-processing-record",
  "solstone-core-talent-config",
 ]
 
