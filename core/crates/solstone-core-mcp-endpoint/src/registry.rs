@@ -167,7 +167,7 @@ pub(crate) const TOOLS: &[ToolEntry] = &[
         tool_name: crate::jsonrpc::ToolName::ListEntities,
         wire_name: "list_entities",
         title: "list people and projects",
-        description: "List the people, projects and other entities this connection may see. When more remain, pass next_cursor as cursor to continue. To learn who or what one is, call get_entity with its reference.",
+        description: "List the people, projects and other entities this connection may see, each with the facet it belongs to. One that belongs to several facets is listed once for each. When more remain, pass next_cursor as cursor to continue. To learn who or what one is, call get_entity with its reference.",
         input_schema: list_entities_input_schema,
         requires: ENTITIES,
         audit_name: solstone_core_mcp_audit::ToolName::ListEntities,

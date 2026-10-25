@@ -155,6 +155,8 @@ pub(crate) const UNKNOWN_ACTOR: &str = "unknown";
 /// id and every name that means the owner.
 pub(crate) struct JournalOwner {
     pub(crate) id: Option<String>,
+    /// The principal entity's display name.
+    pub(crate) name: Option<String>,
     names: Vec<String>,
 }
 
@@ -184,6 +186,12 @@ impl JournalOwner {
         }
         Ok(Self {
             id: principal.map(|entity| entity.id.clone()),
+            name: principal
+                .and_then(|entity| entity.value.get("name"))
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|name| !name.is_empty())
+                .map(str::to_owned),
             names: folded,
         })
     }

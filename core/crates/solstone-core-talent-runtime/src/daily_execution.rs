@@ -2256,9 +2256,11 @@ mod tests {
         fs::create_dir_all(&journal).unwrap();
         solstone_core_facets::create_facet(&journal, "work", "Work", "", "", "", None).unwrap();
         fs::create_dir_all(journal.join("config")).unwrap();
+        // "Jo" is not yet one of the owner's names, so both plans can still
+        // name Jo as a new person.
         fs::write(
             journal.join("config/journal.json"),
-            r#"{"identity":{"name":"Jordan Rivera","preferred":"Jo","aliases":["Jordy"]}}"#,
+            r#"{"identity":{"name":"Jordan Rivera"}}"#,
         )
         .unwrap();
 
@@ -2359,6 +2361,12 @@ mod tests {
         )
         .unwrap();
         let plan_b = (commit_b.commit)(parsed_b, &thawed_prep_b, &state_b).unwrap();
+        // The owner adds Jo to their names after both plans were prepared.
+        fs::write(
+            journal.join("config/journal.json"),
+            r#"{"identity":{"name":"Jordan Rivera","preferred":"Jo","aliases":["Jordy"]}}"#,
+        )
+        .unwrap();
         let pub_plan_b =
             crate::writers::prepare_daily_publication(plan_b, &thawed_prep_b, &context).unwrap();
         let frozen_plan_b = serde_json::to_value(&pub_plan_b).unwrap();
@@ -2506,7 +2514,7 @@ mod tests {
     }
 
     #[test]
-    fn a_new_preparation_after_that_conflict_creates_the_other_owner_unmarked() {
+    fn a_new_preparation_after_that_conflict_saves_the_other_owner_name_as_no_one() {
         let root = tempfile::tempdir().unwrap();
         let journal = root.path().join("journal");
         let context = ExecutionContext {
@@ -2517,7 +2525,7 @@ mod tests {
         fs::create_dir_all(journal.join("config")).unwrap();
         fs::write(
             journal.join("config/journal.json"),
-            r#"{"identity":{"name":"Jordan Rivera","preferred":"Jo","aliases":["Jordy"]}}"#,
+            r#"{"identity":{"name":"Jordan Rivera"}}"#,
         )
         .unwrap();
 
@@ -2574,6 +2582,12 @@ mod tests {
         )
         .unwrap();
         let plan_orig = (commit_orig.commit)(parsed_orig, &thawed_prep_orig, &state_orig).unwrap();
+        // The owner adds Jo to their names after the plan was prepared.
+        fs::write(
+            journal.join("config/journal.json"),
+            r#"{"identity":{"name":"Jordan Rivera","preferred":"Jo","aliases":["Jordy"]}}"#,
+        )
+        .unwrap();
         let pub_plan_orig =
             crate::writers::prepare_daily_publication(plan_orig, &thawed_prep_orig, &context)
                 .unwrap();
@@ -2643,7 +2657,8 @@ mod tests {
             .unwrap();
         assert_eq!(loaded_rec1.action_plan, Some(frozen_plan.clone()));
 
-        // Separate freeze / thaw / parse / commit / prepare_daily_publication for Jo only
+        // A fresh preparation knows Jo is the owner, and the owner is already
+        // in this facet, so there is no one to review and nothing to save as Jo.
         let prep_new = PreparedTalent::new(
             "entities:entities_review".to_owned(),
             json!({
@@ -2656,60 +2671,12 @@ mod tests {
             .clone(),
         );
         let packet_new = crate::daily_prepare::freeze(prep_new, &context).unwrap();
-        let (thawed_prep_new, thawed_stage_new) = crate::daily_prepare::thaw(&packet_new).unwrap();
-        let (spec_new, state_new) = thawed_stage_new.unwrap();
-        let commit_new = spec_new.commit.unwrap();
-        let parsed_new = (commit_new.parse)(
-            &json!({
-                "promotions": [{
-                    "name": "Jo",
-                    "description": "Owner preferred name.",
-                    "promote": true,
-                    "aliases": []
-                }],
-                "merges": []
-            })
-            .to_string(),
-            &thawed_prep_new,
-            &state_new,
-        )
-        .unwrap();
-        let plan_new = (commit_new.commit)(parsed_new, &thawed_prep_new, &state_new).unwrap();
-        let pub_plan_new =
-            crate::writers::prepare_daily_publication(plan_new, &thawed_prep_new, &context)
-                .unwrap();
-
-        for action in &pub_plan_new.actions {
-            match action {
-                crate::writers::PreparedDailyAction::Identity { change, .. } => {
-                    assert_ne!(change.after.get("is_principal"), Some(&Value::Bool(true)));
-                    solstone_core_entity::publish_identity_change(
-                        &journal,
-                        change,
-                        true,
-                        || Ok(()),
-                        || Ok(()),
-                    )
-                    .unwrap();
-                }
-                crate::writers::PreparedDailyAction::Attachment { change } => {
-                    solstone_core_facets::publish_review_attachment(
-                        &journal,
-                        change,
-                        true,
-                        || Ok(()),
-                        || Ok(()),
-                    )
-                    .unwrap();
-                }
-                _ => {}
-            }
-        }
-
-        let jo = solstone_core_entity::read_entity_identity(&journal, "jo")
-            .unwrap()
-            .unwrap();
-        assert_ne!(jo.value().get("is_principal"), Some(&Value::Bool(true)));
+        let (thawed_prep_new, _) = crate::daily_prepare::thaw(&packet_new).unwrap();
+        assert_eq!(
+            thawed_prep_new.config.get("skip_reason"),
+            Some(&json!("no_candidates"))
+        );
+        assert!(!journal.join("entities/jo/entity.json").exists());
 
         let principals = solstone_core_entity::load_all_journal_entities(&journal)
             .unwrap()

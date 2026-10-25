@@ -5207,6 +5207,20 @@ fn entity_context_and_relationship_error_handling() {
     assert_eq!(listed["entities"].as_array().unwrap().len(), 2);
     let r0 = listed["entities"][0]["reference"].as_str().unwrap();
     let r1 = listed["entities"][1]["reference"].as_str().unwrap();
+    // The same person in two facets: each row names the facet it is from,
+    // as list_facets identifies it.
+    let facets = probe(&journal, "list_facets", json!({})).unwrap();
+    let facet_id = |title: &str| {
+        facets["facets"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|facet| facet["name"] == title)
+            .unwrap()["id"]
+            .clone()
+    };
+    assert_eq!(listed["entities"][0]["facet"], facet_id("Facet 1"));
+    assert_eq!(listed["entities"][1]["facet"], facet_id("Facet 2"));
 
     let g0 = probe(&journal, "get_entity", json!({"reference": r0})).unwrap();
     let g1 = probe(&journal, "get_entity", json!({"reference": r1})).unwrap();

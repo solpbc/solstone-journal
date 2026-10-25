@@ -2223,7 +2223,12 @@ fn list_entities(
             )
             .map_err(|_| DispatchError::Tool(ToolError::ReferenceNotFound))?;
         targets.push(format!("facet:{facet_id}/entity:{}", item.entity_id));
-        entities.push(json!({"name": entity_name(&item.identity), "reference": reference}));
+        // An entity in two facets is listed once for each; the facet tells the rows apart.
+        entities.push(json!({
+            "name": entity_name(&item.identity),
+            "facet": facet_id,
+            "reference": reference,
+        }));
     }
 
     let next_cursor = if has_more {

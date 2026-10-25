@@ -69,7 +69,12 @@ fn dominant_type(type_days: &BTreeMap<String, BTreeSet<String>>) -> Option<(&str
         .then_some((entity_type.as_str(), most))
 }
 
+/// The bucket every name the owner answers to falls into. No entity slug is
+/// empty, so it never collides with another candidate's bucket.
+const OWNER_BUCKET: &str = "";
+
 fn build_review_inputs(journal: &Path, facet: &str, day: &str) -> Result<ReviewInputs, String> {
+    let owner = crate::JournalOwner::load(journal)?;
     let mut buckets: BTreeMap<String, CandidateBucket> = BTreeMap::new();
     let mut names = BTreeSet::new();
     for review_day in review_days(day) {
@@ -95,7 +100,22 @@ fn build_review_inputs(journal: &Path, facet: &str, day: &str) -> Result<ReviewI
             if name.is_empty() || entity_type.is_empty() || slug.is_empty() {
                 continue;
             }
-            let bucket = buckets.entry(slug).or_default();
+            // "Speaker 2" or "Unknown" stands for someone the moment never named.
+            if solstone_core_entity::is_placeholder_query(
+                &solstone_core_entity_matching::normalize_resolution_query(name),
+            ) {
+                continue;
+            }
+            // Every name the owner answers to is one person: the owner. Saving
+            // them separately would list the owner once per name.
+            let is_owner = entity_type == "Person" && owner.actor(name) == crate::NamedActor::Owner;
+            let bucket = buckets
+                .entry(if is_owner {
+                    OWNER_BUCKET.to_owned()
+                } else {
+                    slug
+                })
+                .or_default();
             bucket.0.insert(review_day.clone());
             bucket
                 .1
@@ -105,7 +125,9 @@ fn build_review_inputs(journal: &Path, facet: &str, day: &str) -> Result<ReviewI
             bucket
                 .2
                 .push(serde_json::json!({"day":review_day,"name":name,"description":description}));
-            names.insert(name.to_owned());
+            if !is_owner {
+                names.insert(name.to_owned());
+            }
         }
     }
     let attached = solstone_core_facets::list_scoped_facet_entities(journal, facet, false, false)
@@ -165,12 +187,41 @@ fn build_review_inputs(journal: &Path, facet: &str, day: &str) -> Result<ReviewI
             .map(|context| context["day"].as_str().unwrap_or_default())
             .max()
             .unwrap_or_default();
-        let name = contexts
+        let latest_name = contexts
             .iter()
             .filter(|context| context["day"].as_str() == Some(latest))
             .map(|context| context["name"].as_str().unwrap_or_default())
             .min_by_key(|name| format_name_key(name))
             .unwrap_or_default();
+        // The owner is saved under one name whichever of theirs the days used:
+        // the principal's own, so promotion reaches the principal. Before there
+        // is one, the fullest name the days used becomes it; "you" never does.
+        let name = if slug == OWNER_BUCKET {
+            let fullest = contexts
+                .iter()
+                .map(|context| context["name"].as_str().unwrap_or_default())
+                .filter(|name| {
+                    !matches!(
+                        default_case_fold_str(name.trim()).as_str(),
+                        "you" | "yourself"
+                    )
+                })
+                .max_by_key(|name| {
+                    (
+                        name.split_whitespace().count(),
+                        name.chars().count(),
+                        std::cmp::Reverse(format_name_key(name)),
+                    )
+                });
+            match (owner.name.as_deref(), fullest) {
+                (Some(principal), _) => principal,
+                (None, Some(fullest)) => fullest,
+                (None, None) => continue,
+            }
+        } else {
+            latest_name
+        };
+        let slug = solstone_core_entity_matching::entity_slug(name);
         if solstone_core_entity_matching::find_matching_entity(name, &candidates, 90.0)
             .is_some_and(|matched| matched.tier.is_high_confidence())
         {
@@ -1185,6 +1236,190 @@ mod tests {
     }
 
     #[test]
+    fn placeholder_labels_are_never_review_candidates() {
+        let root = tempfile::tempdir().unwrap();
+        for day in ["20260106", "20260107"] {
+            detect_typed(
+                root.path(),
+                day,
+                &[
+                    ("Speaker 2", "Person"),
+                    ("Unknown", "Person"),
+                    ("Colleague", "Person"),
+                    ("Participant 1", "Project"),
+                    ("Ada", "Person"),
+                ],
+            );
+        }
+        let inputs = build_review_inputs(root.path(), "work", "20260108").unwrap();
+        let names = inputs
+            .eligible
+            .iter()
+            .map(|candidate| candidate["name"].as_str().unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(names, ["Ada"]);
+        assert!(inputs.hints.is_empty());
+    }
+
+    fn owner_journal() -> tempfile::TempDir {
+        let root = tempfile::tempdir().unwrap();
+        solstone_core_facets::create_facet(root.path(), "work", "Work", "", "", "", None).unwrap();
+        fs::create_dir_all(root.path().join("config")).unwrap();
+        fs::write(
+            root.path().join("config/journal.json"),
+            r#"{"identity":{"name":"Jordan Rivera","preferred":"Jo","aliases":["Jordy"]}}"#,
+        )
+        .unwrap();
+        root
+    }
+
+    fn review_and_publish(root: &Path, promotions: Value) {
+        use crate::{ExecutionContext, PreparedTalent};
+        let prepared = PreparedTalent::new(
+            "entities:entities_review".to_owned(),
+            serde_json::json!({
+                "day": "20260108",
+                "facet": "work",
+                "type": "generate",
+                "hook": {"pre": "entities:entities_review", "post": "entities:entities_review"},
+            })
+            .as_object()
+            .unwrap()
+            .clone(),
+        );
+        let context = ExecutionContext {
+            journal: root.to_path_buf(),
+        };
+        let packet = crate::daily_prepare::freeze(prepared, &context).unwrap();
+        let (prepared, _) = crate::daily_prepare::thaw(&packet).unwrap();
+        let output = serde_json::json!({"promotions": promotions, "merges": []}).to_string();
+        for action in prepare_publication(root, &output, "work", "20260108", &prepared).unwrap() {
+            match action {
+                crate::writers::PreparedDailyAction::Identity { change, .. } => {
+                    solstone_core_entity::publish_identity_change(
+                        root,
+                        &change,
+                        true,
+                        || Ok(()),
+                        || Ok(()),
+                    )
+                    .unwrap();
+                }
+                crate::writers::PreparedDailyAction::Attachment { change } => {
+                    solstone_core_facets::publish_review_attachment(
+                        root,
+                        &change,
+                        true,
+                        || Ok(()),
+                        || Ok(()),
+                    )
+                    .unwrap();
+                }
+                _ => {}
+            }
+        }
+    }
+
+    fn work_entity_ids(root: &Path) -> Vec<String> {
+        solstone_core_facets::list_scoped_facet_entities(root, "work", false, false)
+            .unwrap()
+            .into_iter()
+            .map(|entity| entity.entity_id)
+            .collect()
+    }
+
+    #[test]
+    fn every_owner_name_reaches_the_principal_instead_of_a_new_person() {
+        let root = owner_journal();
+        solstone_core_entity::save_entity_identity(
+            root.path(),
+            "jordan_rivera",
+            &serde_json::json!({"id":"jordan_rivera","name":"Jordan Rivera","type":"Person","is_principal":true}),
+            None,
+        )
+        .unwrap();
+        // The owner under two of their names, and someone else under two of theirs.
+        detect_typed(
+            root.path(),
+            "20260106",
+            &[("Jo", "Person"), ("Ada", "Person")],
+        );
+        detect_typed(
+            root.path(),
+            "20260107",
+            &[("Jordy", "Person"), ("Ada Lovelace", "Person")],
+        );
+        let inputs = build_review_inputs(root.path(), "work", "20260108").unwrap();
+        let owner = inputs
+            .eligible
+            .iter()
+            .find(|candidate| candidate["slug"] == "jordan_rivera")
+            .unwrap();
+        assert_eq!(owner["name"], "Jordan Rivera");
+        assert_eq!(owner["day_count"], 2);
+        assert_eq!(
+            inputs.hints,
+            [("Ada".to_owned(), "Ada Lovelace".to_owned())]
+        );
+
+        review_and_publish(
+            root.path(),
+            serde_json::json!([
+                {"name": "Jordan Rivera", "description": "The owner.", "promote": true, "aliases": []},
+                {"name": "Jo", "description": "The owner again.", "promote": true, "aliases": []},
+            ]),
+        );
+        assert_eq!(work_entity_ids(root.path()), ["jordan_rivera"]);
+        for name in ["jo", "jordy"] {
+            assert!(
+                solstone_core_entity::read_entity_identity(root.path(), name)
+                    .unwrap()
+                    .is_none()
+            );
+        }
+        // Attached, the owner is no longer a candidate in this facet.
+        let again = build_review_inputs(root.path(), "work", "20260108").unwrap();
+        assert!(
+            again
+                .eligible
+                .iter()
+                .all(|candidate| candidate["slug"] != "jordan_rivera")
+        );
+    }
+
+    #[test]
+    fn before_there_is_a_principal_the_owner_is_one_candidate_under_their_fullest_name() {
+        let root = owner_journal();
+        detect_typed(
+            root.path(),
+            "20260106",
+            &[("Jo", "Person"), ("you", "Person")],
+        );
+        detect_typed(
+            root.path(),
+            "20260107",
+            &[("Jordan Rivera", "Person"), ("Jo", "Person")],
+        );
+        let inputs = build_review_inputs(root.path(), "work", "20260108").unwrap();
+        let names = inputs
+            .eligible
+            .iter()
+            .map(|candidate| candidate["name"].as_str().unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(names, ["Jordan Rivera"]);
+
+        review_and_publish(
+            root.path(),
+            serde_json::json!([
+                {"name": "Jordan Rivera", "description": "The owner.", "promote": true, "aliases": []},
+            ]),
+        );
+        let owner = crate::JournalOwner::load(root.path()).unwrap();
+        assert_eq!(owner.id.as_deref(), Some("jordan_rivera"));
+        assert_eq!(work_entity_ids(root.path()), ["jordan_rivera"]);
+    }
+
+    #[test]
     fn retained_review_marks_the_configured_owner_including_the_preferred_name() {
         use crate::{ExecutionContext, JournalOwner, NamedActor, PreparedTalent};
         use serde_json::json;
@@ -1286,7 +1521,7 @@ mod tests {
     }
 
     #[test]
-    fn one_publication_marks_one_of_two_owner_names_and_replay_is_exact() {
+    fn two_owner_names_publish_one_principal_and_replay_is_exact() {
         use crate::{ExecutionContext, JournalOwner, NamedActor, PreparedTalent};
         use serde_json::json;
 
@@ -1389,11 +1624,13 @@ mod tests {
         assert_eq!(principals.len(), 1);
         assert_eq!(principals[0].id, "jordan_rivera");
 
-        let jo = solstone_core_entity::read_entity_identity(root.path(), "jo")
-            .unwrap()
-            .unwrap();
-        assert_ne!(jo.value().get("is_principal"), Some(&Value::Bool(true)));
-        assert_eq!(jo.value()["aka"], json!(["Skipper"]));
+        // "Jo" is the owner too, so it was offered as the same candidate and
+        // nothing is saved under it.
+        assert!(
+            solstone_core_entity::read_entity_identity(root.path(), "jo")
+                .unwrap()
+                .is_none()
+        );
         assert_eq!(principals[0].value["aka"], json!(["Captain"]));
 
         let owner = JournalOwner::load(root.path()).unwrap();
@@ -1517,7 +1754,8 @@ mod tests {
         );
         assert_eq!(history_count(root1.path(), "jordan_rivera"), 0);
 
-        // 2. A plan prepared while some other principal exists stays unmarked in its frozen after
+        // 2. A plan prepared while some other principal exists mints no one: the
+        //    configured name is the owner's, and so is the principal.
         let root2 = tempfile::tempdir().unwrap();
         solstone_core_facets::create_facet(root2.path(), "work", "Work", "", "", "", None).unwrap();
         fs::create_dir_all(root2.path().join("config")).unwrap();
@@ -1556,34 +1794,16 @@ mod tests {
 
         let actions2 =
             prepare_publication(root2.path(), &output1, "work", "20260108", &prepared2).unwrap();
-        let identity_change2 = actions2
-            .iter()
-            .find_map(|a| match a {
-                crate::writers::PreparedDailyAction::Identity { change, .. } => {
-                    Some(change.clone())
-                }
-                _ => None,
-            })
-            .unwrap();
-        assert_ne!(
-            identity_change2.after.get("is_principal"),
-            Some(&Value::Bool(true))
+        assert!(
+            !actions2
+                .iter()
+                .any(|a| matches!(a, crate::writers::PreparedDailyAction::Identity { .. }))
         );
-
-        fs::remove_dir_all(root2.path().join("entities/alex_smith")).unwrap();
-
-        solstone_core_entity::publish_identity_change(
-            root2.path(),
-            &identity_change2,
-            true,
-            || Ok(()),
-            || Ok(()),
-        )
-        .unwrap();
-        let ent = solstone_core_entity::read_entity_identity(root2.path(), "jordan_rivera")
-            .unwrap()
-            .unwrap();
-        assert_ne!(ent.value().get("is_principal"), Some(&Value::Bool(true)));
+        assert!(
+            solstone_core_entity::read_entity_identity(root2.path(), "jordan_rivera")
+                .unwrap()
+                .is_none()
+        );
 
         // 3. An already-applied grant, published again, adds no history event and stays principal
         let root3 = tempfile::tempdir().unwrap();

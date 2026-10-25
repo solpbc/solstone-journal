@@ -22,10 +22,16 @@ pub const TYPO_FLOOR: f64 = 93.0;
 pub const ENTITY_REVIEW_POLICY_VERSION: u64 = 1;
 pub const REVIEW_SWEEP_RECEIPT_RELATIVE_PATH: &str = "health/entity-review-sweep.json";
 
-/// Return whether a normalized query is a recognized placeholder.
+/// Return whether a normalized query is a recognized placeholder: a label
+/// for someone the source never named, never a name.
 pub fn is_placeholder_query(normalized_query: &str) -> bool {
     let query = normalized_query.trim();
-    if let Some(rest) = query.strip_prefix("speaker ") {
+    if matches!(
+        query,
+        "unknown" | "unknown speaker" | "speaker" | "participant" | "colleague"
+    ) {
+        true
+    } else if let Some(rest) = query.strip_prefix("speaker ") {
         !rest.is_empty() && rest.chars().all(|c| c.is_ascii_digit())
     } else if let Some(rest) = query.strip_prefix("participant ") {
         !rest.is_empty() && rest.chars().all(|c| c.is_ascii_digit())

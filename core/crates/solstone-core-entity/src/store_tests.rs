@@ -2916,6 +2916,31 @@ fn review_policy_stale_ambiguity_set_aside_and_reopen() {
 }
 
 #[test]
+fn placeholder_queries_are_labels_for_the_unnamed_never_names() {
+    for query in [
+        "unknown",
+        "unknown speaker",
+        "speaker",
+        "participant",
+        "colleague",
+        "speaker 3",
+        "participant 12",
+        "colleague b",
+    ] {
+        assert!(crate::is_placeholder_query(query), "{query}");
+    }
+    for query in [
+        "ada",
+        "unknown pleasures",
+        "speaker one",
+        "colleague ab",
+        "the speaker",
+    ] {
+        assert!(!crate::is_placeholder_query(query), "{query}");
+    }
+}
+
+#[test]
 fn review_policy_placeholder_ambiguity_set_aside() {
     let temporary = TempDir::new();
     save_entity_identity(
