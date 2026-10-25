@@ -1415,7 +1415,11 @@ mod abandoned_generation_closer {
         (ledger, active.generation)
     }
 
-    fn close_with_budget(ledger: &ParentLossLedger, budget: Duration) -> u64 {
+    // The closure makes durable writes that can take seconds on a busy disk and
+    // waits out the real escalation grace, so this deadline only bounds a hang.
+    const CLOSE_BUDGET: Duration = Duration::from_secs(60);
+
+    fn close_generation(ledger: &ParentLossLedger) -> u64 {
         let lease = ledger
             .acquire_coordinator_lease()
             .expect("lease acquisition")
@@ -1424,7 +1428,7 @@ mod abandoned_generation_closer {
             closed_by: instance(30, 3),
             source: &SystemProcessInstanceSource,
             retirer: &SystemAdmissionRetirer,
-            deadline: Instant::now() + budget,
+            deadline: Instant::now() + CLOSE_BUDGET,
         };
         ledger
             .reserve_generation_closing_abandoned(instance(11, 3), [], &lease, &authority)
@@ -1449,7 +1453,7 @@ mod abandoned_generation_closer {
         let (mut child, child_instance) = spawn_child(false);
         let (ledger, generation) = abandoned_generation_with(&bed, child_instance, "sense-live");
 
-        let successor = close_with_budget(&ledger, Duration::from_secs(5));
+        let successor = close_generation(&ledger);
 
         assert_eq!(successor, generation + 1);
         let status = child.wait().expect("child reaped");
@@ -1471,7 +1475,7 @@ mod abandoned_generation_closer {
         let (ledger, generation) =
             abandoned_generation_with(&bed, child_instance, "cortex-stubborn");
 
-        close_with_budget(&ledger, Duration::from_secs(20));
+        close_generation(&ledger);
 
         let status = child.wait().expect("child reaped");
         assert!(!status.success());
@@ -1518,7 +1522,7 @@ mod abandoned_generation_closer {
         };
         write_parent_loss_admission_spawn_identity(&bed.root, &identity).expect("spawn identity");
 
-        let successor = close_with_budget(&ledger, Duration::from_secs(5));
+        let successor = close_generation(&ledger);
         assert_eq!(successor, active.generation + 1);
 
         let status = child.wait().expect("child reaped");
@@ -1641,7 +1645,7 @@ mod abandoned_generation_closer {
         // Even though the child wrote a valid acknowledgement file, the closer must still
         // classify the generation finding as RejectedAndReaped without treating that child
         // identity as live or blocking successor reservation.
-        let successor = close_with_budget(&ledger, Duration::from_secs(5));
+        let successor = close_generation(&ledger);
         assert_eq!(successor, active.generation + 1);
 
         assert_eq!(

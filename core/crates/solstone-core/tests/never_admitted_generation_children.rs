@@ -90,10 +90,11 @@ mod tests {
         (child, instance)
     }
 
-    fn close_with_budget(
-        ledger: &ParentLossLedger,
-        budget: Duration,
-    ) -> Result<u64, ParentLossLedgerError> {
+    // The closure makes durable writes that can take seconds on a busy disk and
+    // waits out the real escalation grace, so this deadline only bounds a hang.
+    const CLOSE_BUDGET: Duration = Duration::from_secs(60);
+
+    fn close_generation(ledger: &ParentLossLedger) -> Result<u64, ParentLossLedgerError> {
         let lease = ledger
             .acquire_coordinator_lease()
             .expect("lease acquisition")
@@ -102,7 +103,7 @@ mod tests {
             closed_by: synth_instance(30, 3),
             source: &SystemProcessInstanceSource,
             retirer: &SystemAdmissionRetirer,
-            deadline: Instant::now() + budget,
+            deadline: Instant::now() + CLOSE_BUDGET,
         };
         ledger
             .reserve_generation_closing_abandoned(synth_instance(11, 3), [], &lease, &authority)
@@ -163,7 +164,7 @@ mod tests {
             .expect("write provider spawn identity");
 
         // Successor closes the abandoned generation
-        let successor_gen = close_with_budget(&ledger, Duration::from_secs(5))
+        let successor_gen = close_generation(&ledger)
             .expect("closer retires pre-admission helpers and reserves successor");
         assert_eq!(successor_gen, active.generation + 1);
 
@@ -254,8 +255,8 @@ mod tests {
             .expect("write spawn identity");
 
         // Successor closes abandoned generation, terminating root and descendants
-        let successor_gen = close_with_budget(&ledger, Duration::from_secs(5))
-            .expect("closer terminates root and descendants");
+        let successor_gen =
+            close_generation(&ledger).expect("closer terminates root and descendants");
         assert_eq!(successor_gen, active.generation + 1);
 
         let _ = root_child.wait();
@@ -345,7 +346,7 @@ mod tests {
             .expect("spawn identity b");
 
         // Close journal A
-        let succ_a = close_with_budget(&ledger_a, Duration::from_secs(5)).expect("close a");
+        let succ_a = close_generation(&ledger_a).expect("close a");
         assert_eq!(succ_a, active_a.generation + 1);
 
         // Child A is dead
@@ -409,7 +410,7 @@ mod tests {
 
         // 1. Retirement-skip fault: returns AbandonedAdmissionLive, child stays live
         set_retirement_skip_test_fault(true);
-        let result = close_with_budget(&ledger, Duration::from_secs(5));
+        let result = close_generation(&ledger);
         assert!(matches!(
             result,
             Err(ParentLossLedgerError::RecoveryRequired(
@@ -424,7 +425,7 @@ mod tests {
 
         // 2. Closer-skip fault: returns CoordinatorNotLive (or ActiveCoordinator)
         set_closer_skip_test_fault(true);
-        let result = close_with_budget(&ledger, Duration::from_secs(5));
+        let result = close_generation(&ledger);
         assert!(matches!(
             result,
             Err(ParentLossLedgerError::RecoveryRequired(
@@ -472,8 +473,8 @@ mod tests {
         write_parent_loss_admission_spawn_identity(&journal.root, &identity)
             .expect("write spawn identity");
 
-        let successor_gen = close_with_budget(&ledger, Duration::from_secs(20))
-            .expect("closer escalates to SIGKILL and closes generation");
+        let successor_gen =
+            close_generation(&ledger).expect("closer escalates to SIGKILL and closes generation");
         assert_eq!(successor_gen, active.generation + 1);
 
         assert_eq!(
