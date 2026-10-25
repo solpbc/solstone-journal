@@ -105,7 +105,13 @@ fn corpus() -> Value {
         "../../../fixtures/convey_thinking_corpus.json"
     ))
     .expect("thinking corpus parses");
-    // Project only retired surfaces onto the frozen reference responses: the
+    // The generators route renders the talent registry, which owns each talent's
+    // title, description and presence. No phase config sets `talent_overrides`;
+    // one that does needs this projection to pass it.
+    let talents = solstone_core_thinking::generators::generators(&Map::new())
+        .expect("talent registry renders");
+    // Talent lists come from the live registry (below). Otherwise project
+    // only retired surfaces onto the frozen reference responses: the
     // built-in cloud model catalog with its picker copy (owners now type the
     // model id). One refusal contract moved on purpose: a state refusal carries
     // its owner words in `error`, the only field the page shows, and the generic
@@ -291,6 +297,31 @@ fn corpus() -> Value {
                 projected = true;
             }
             if project_install_provider_command(&mut case["json"]) {
+                case["body_sha256_basis"] = json!("normalized-json");
+                projected = true;
+            }
+            // Talents come from the live registry, so renaming or adding one
+            // does not drift this reference. Each keeps its recorded fields.
+            if case["method"] == "GET"
+                && case["path"] == "/app/thinking/api/generators"
+                && case["status"] == 200
+            {
+                for schedule in ["segment", "daily"] {
+                    let field_names = |item: &Value| {
+                        item.as_object()
+                            .expect("talent")
+                            .keys()
+                            .cloned()
+                            .collect::<std::collections::BTreeSet<_>>()
+                    };
+                    let recorded = field_names(&case["json"][schedule][0]);
+                    let live = talents[schedule].as_array().expect("schedule talents");
+                    assert!(!live.is_empty(), "{schedule} talents");
+                    for talent in live {
+                        assert_eq!(field_names(talent), recorded, "{schedule} talent fields");
+                    }
+                    case["json"][schedule] = talents[schedule].clone();
+                }
                 case["body_sha256_basis"] = json!("normalized-json");
                 projected = true;
             }
