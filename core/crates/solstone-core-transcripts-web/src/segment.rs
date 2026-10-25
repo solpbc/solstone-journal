@@ -223,16 +223,22 @@ fn prepare_segment(
         } else if solstone_core_format::calendar::names_calendar_file(name)
             && solstone_core_segment::is_calendar_stream(root, stream)
         {
-            // Each calendar note as plain text, at the moment it was recorded.
+            // Each calendar note as plain text, at the moment it was recorded,
+            // with the owner found by their own addresses as search has it.
             match fs::read_to_string(path) {
                 Ok(text) => {
-                    for chunk in produce_chunks(Family::Calendar, name, &text).chunks {
-                        let timestamp = chunk.occurrence_time_ms.map(|value| value.0).unwrap_or(0);
+                    let owner = solstone_core_format::calendar::OwnerAddresses::new(
+                        solstone_core_entity::journal_identity_emails(root).unwrap_or_default(),
+                    );
+                    for note in text.lines().filter_map(|line| {
+                        solstone_core_format::calendar::parse_calendar_note(line).ok()
+                    }) {
+                        let timestamp = note.changed_at_ms();
                         chunks.push(json!({
                             "type": "calendar",
                             "time": local_time(zone, timestamp),
                             "timestamp": timestamp,
-                            "text": chunk.content,
+                            "text": solstone_core_format::calendar::render_calendar_note(&note, &owner),
                         }));
                     }
                 }

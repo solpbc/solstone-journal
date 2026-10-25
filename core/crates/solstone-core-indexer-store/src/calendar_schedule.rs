@@ -308,22 +308,18 @@ pub(crate) fn relink_people(
     journal: &Path,
     identities: &BTreeSet<Identity>,
 ) -> Result<(), StoreError> {
-    // Unreadable settings leave the links as they are; the relist that called
-    // this has already left those files for the next scan.
-    let owner = match owner_addresses(journal) {
-        Ok(owner) => owner,
-        Err(error) => {
+    // Unreadable settings leave a listed event's links as they are: the relist
+    // that called this has left its file for the next scan. An event with
+    // nothing listed any more still loses its links.
+    let owner = owner_addresses(journal)
+        .inspect_err(|error| {
             log::warn!(target: "solstone::indexer", "calendar invites not relinked yet: {error}");
-            return Ok(());
-        }
-    };
-    let mut people = People::new(journal, &owner);
+        })
+        .ok();
+    static NO_OWNER: OwnerAddresses = OwnerAddresses::NONE;
+    let owner_or_none = owner.as_ref().unwrap_or(&NO_OWNER);
+    let mut people = People::new(journal, owner_or_none);
     for identity in identities {
-        let anchor = edge_anchor(identity);
-        conn.prepare_cached("DELETE FROM edges WHERE source=? AND anchor=?")?
-            .execute(params![CALENDAR_NOTE_EDGE_SOURCE, anchor])?;
-        conn.prepare_cached("DELETE FROM calendar_people WHERE event=? AND occurrence=?")?
-            .execute(params![identity.0, identity.1])?;
         let latest: Option<(String, i64, String)> = conn
             .prepare_cached(
                 "SELECT h.path, h.idx, c.day FROM calendar_hits h \
@@ -335,6 +331,14 @@ pub(crate) fn relink_people(
                 Ok((row.get(0)?, row.get(1)?, row.get(2)?))
             })
             .optional()?;
+        if owner.is_none() && latest.is_some() {
+            continue;
+        }
+        let anchor = edge_anchor(identity);
+        conn.prepare_cached("DELETE FROM edges WHERE source=? AND anchor=?")?
+            .execute(params![CALENDAR_NOTE_EDGE_SOURCE, anchor])?;
+        conn.prepare_cached("DELETE FROM calendar_people WHERE event=? AND occurrence=?")?
+            .execute(params![identity.0, identity.1])?;
         let Some((path, idx, day)) = latest else {
             continue;
         };
@@ -349,7 +353,7 @@ pub(crate) fn relink_people(
             continue;
         };
         // Only the title and the owner's answer matter here, not the clock.
-        let Some(event) = scheduled_event(&record, &chrono_tz::UTC, &owner) else {
+        let Some(event) = scheduled_event(&record, &chrono_tz::UTC, owner_or_none) else {
             continue;
         };
         let Ok(note) = serde_json::from_str::<Map<String, Value>>(&record) else {

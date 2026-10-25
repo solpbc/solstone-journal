@@ -429,3 +429,18 @@ fn on_a_shared_calendar_the_owner_is_found_by_address_not_by_the_phones_mark() {
     assert!(!events[0].declined);
     assert_eq!(journal.links(), [link("alex_rivera", "design review")]);
 }
+
+#[test]
+fn a_meeting_gone_from_disk_loses_its_links_even_while_settings_cannot_be_read() {
+    let journal = Journal::new();
+    journal.people();
+    let rel = journal.save("20261019", "094200_300", &meeting(json!({})));
+    assert_eq!(journal.links(), [link("alex_rivera", "design review")]);
+    let settings = journal.path().join("config/journal.json");
+    fs::write(&settings, r#"{"identity":{"timezone":NaN}}"#).unwrap();
+    // The segment leaves disk without the index being told; the next scan finds it gone.
+    let segment = rel.rsplit_once('/').unwrap().0;
+    fs::remove_dir_all(journal.path().join("chronicle").join(segment)).unwrap();
+    crate::scan::scan_journal(journal.path(), true).unwrap();
+    assert!(journal.links().is_empty(), "{:?}", journal.links());
+}
