@@ -78,8 +78,18 @@ members and index rows are dropped, and `Cargo.lock` is substituted. A removed
 package outside the Windows notice closure needs no review. One inside it
 leaves the closure only by name, with `--admit-closure-removal NAME@VERSION`,
 and only while every notice text stays referenced by a surviving package or
-path dependency, so the NOTICES file stays byte-identical. A surviving package that leaves the
-closure still refuses.
+path dependency, so the NOTICES file stays byte-identical, unless a text the
+removal orphans is named with `--admit-notice-text-removal SHA256`: then that
+text, and only that, leaves NOTICES and its index span, and no text is added.
+A surviving package that leaves the closure still refuses.
+
+A removal may ride with a **git pin move**. Each half is proven as if it were
+alone: the moved packages are re-vendored as in the first case, with the
+removed packages' members left out of that member comparison and then dropped,
+and every removal check above still applies. The script does not prove that
+the move caused the removal (the worked case is spl-rust v0.12.0 leaving the
+p256 0.13 family). An existing or new workspace crate's edge to the moved
+package compares as an edge to the same package.
 
 The sixth is a **licence-identical crates.io upgrade**. Each removed version
 must pair with one newer version of the same crate, with lock checksums on
@@ -99,7 +109,7 @@ adds. What it brings into Windows reach is the notice-closure check's to decide.
 It refuses -- loudly, with the reason -- rather than proceed, when:
   * the external package population upgraded a package outside the
     licence-identical crates.io shape above; lost one that is not a checksummed registry package, or lost
-    one alongside an addition, git pin move or promotion; or added one that
+    one alongside an addition or promotion; or added one that
     is not a checksummed registry package, that reaches the Windows notice
     closure without being named for admission, or whose licence expression is
     not wholly permissive. That is a real
@@ -117,9 +127,11 @@ It refuses -- loudly, with the reason -- rather than proceed, when:
     dependency edges to existing, unchanged packages, or a workspace crate was
     added that `core/Cargo.toml` does not declare.
   * a re-vendored package's licence text changed. Outside the named additions
-    above, the notices file is an input here, not an output; a changed licence
-    needs the notices regenerated, which this script deliberately does not do.
-  * a git pin move removed vendored files, or added files outside the moved
+    and named text removals above, the notices file is an input here, not an
+    output; a changed licence needs the notices regenerated, which this script
+    deliberately does not do.
+  * a git pin move removed vendored files (other than the members of registry
+    packages the lock removes alongside it), or added files outside the moved
     package prefix. Additions inside that prefix are the shape of a first-party
     crate growing source; anything else is not a pin move this script will
     attest.
@@ -127,7 +139,7 @@ It refuses -- loudly, with the reason -- rather than proceed, when:
 On success it writes the new archive plus a small report to `--out`, and
 rewrites `core/distribution/windows-rust-sources.json` in place (and
 `core/distribution/windows-rust-NOTICES.txt`, when a named addition brings new
-licence texts). It also
+licence texts or a named text removal takes one out). It also
 embeds the resolved dependency graph it verified into the new archive as
 `resolved-dependency-graph.json`, so the *next* refresh can read it straight
 back out instead of depending on a `cargo metadata` capture kept somewhere
@@ -140,6 +152,7 @@ Usage:
         [--prior-metadata /path/to/old-cargo-metadata.json] \\
         [--admit-closure-addition NAME@VERSION ...] \\
         [--admit-closure-removal NAME@VERSION ...] \\
+        [--admit-notice-text-removal SHA256 ...] \\
         [--out /path/to/output/dir]
 """
 
@@ -662,11 +675,15 @@ def _workspace_existing_deps_only(
     removed_workspace: frozenset[str] = frozenset(),
     added_workspace: frozenset[str] = frozenset(),
     removed_external: frozenset[tuple[str, str, str]] = frozenset(),
+    moved_git: dict[tuple[str, str, str], tuple[str, str, str]] | None = None,
 ) -> bool:
     """Admit edges to unchanged packages, independent of unrelated pin moves.
 
     The complete external delta and Windows notice closure are checked by the
     caller; each moved edge still has to name the same source in both locks.
+    An edge to a git package whose pin moved names the same package before and
+    after (`moved_git`, old identity to new, as `classify_external_delta`
+    proved it), so it is compared as one identity.
     """
     del external_unchanged
     left_rest, right_rest = dict(left), dict(right)
@@ -681,6 +698,7 @@ def _workspace_existing_deps_only(
         _resolve_lock_dependency(token, old_lock["package"])
         for token in left_deps or []
     }
+    old_edges = {(moved_git or {}).get(edge, edge) for edge in old_edges}
     new_edges = {
         _resolve_lock_dependency(token, new_lock["package"])
         for token in right_deps or []
@@ -697,6 +715,8 @@ def _workspace_existing_deps_only(
              (p["name"], p["version"], p.get("source", "")) == identity), None
         )
         if old_row is None and new_row is not None and identity in added:
+            continue
+        if identity in (moved_git or {}).values():
             continue
         if new_row is None and old_row is not None and not identity[2] and identity[0] in removed_workspace:
             continue
@@ -742,17 +762,18 @@ def _added_workspace_crate_edges_resolve(
     old_lock: dict[str, Any],
     new_lock: dict[str, Any],
     added: frozenset[tuple[str, str, str]],
+    moved_git_new: frozenset[tuple[str, str, str]] = frozenset(),
 ) -> bool:
     """A new workspace crate records only its name, version and edges, and
-    every edge names a workspace crate, an unchanged external package, or a
-    package this lock adds."""
+    every edge names a workspace crate, an unchanged external package, a
+    package this lock adds, or the new pin of a moved git package."""
     if set(row) - {"name", "version", "dependencies"}:
         return False
     for token in row.get("dependencies", []):
         new = _resolve_lock_dependency(token, new_lock["package"])
         if new is None:
             return False
-        if not new[2] or new in added:
+        if not new[2] or new in added or new in moved_git_new:
             continue
         old_row = next(
             (p for p in old_lock["package"]
@@ -774,9 +795,11 @@ def workspace_version_or_existing_dependency_edge_delta(
     added: frozenset[tuple[str, str, str]] = frozenset(),
     declared_workspace: frozenset[str] = frozenset(),
     removed: frozenset[tuple[str, str, str]] = frozenset(),
+    moved_git: dict[tuple[str, str, str], tuple[str, str, str]] | None = None,
 ) -> list[str]:
     """Allow workspace versions or edges to existing packages only, plus new
-    workspace crates `core/Cargo.toml` declares.
+    workspace crates `core/Cargo.toml` declares. An edge to a git package
+    whose pin moved counts as an edge to the same package (`moved_git`).
 
     External edge changes require the referenced package to retain its source
     and checksum; workspace edges require unambiguous workspace resolution in
@@ -796,7 +819,8 @@ def workspace_version_or_existing_dependency_edge_delta(
         )
     for name in added_workspace:
         if not _added_workspace_crate_edges_resolve(
-            new_by_name[name], old_lock, new_lock, added
+            new_by_name[name], old_lock, new_lock, added,
+            frozenset((moved_git or {}).values()),
         ):
             raise RefreshError(
                 f"added workspace crate '{name}' records more than its version and "
@@ -828,6 +852,7 @@ def workspace_version_or_existing_dependency_edge_delta(
             removed_workspace,
             frozenset(added_workspace),
             removed,
+            moved_git,
         ):
             raise RefreshError(
                 f"workspace package '{name}' changed beyond its version or "
@@ -990,6 +1015,17 @@ def admit_git_pin_vendor_delta(
     return [name for name in added if name.startswith(moved_prefixes)]
 
 
+def checksum_attestation(data: bytes) -> tuple[Any, Any]:
+    """The parts of a vendored `.cargo-checksum.json` that attest bytes."""
+    try:
+        manifest = json.loads(data)
+    except ValueError as error:
+        raise RefreshError(f"unreadable vendored checksum manifest: {error}") from None
+    if not isinstance(manifest, dict) or not isinstance(manifest.get("files"), dict):
+        raise RefreshError("vendored checksum manifest has no files map")
+    return manifest["files"], manifest.get("package")
+
+
 def build_git_substitutions(
     repo: Path,
     prior_archive_path: Path,
@@ -997,13 +1033,16 @@ def build_git_substitutions(
     old_index: dict[str, Any],
     vendor_dir: Path | None,
     revendored: list[dict[str, Any]],
+    removed_prefixes: tuple[str, ...] = (),
 ) -> dict[str, bytes]:
     """Produce the replacement bytes for a git pin move, and prove the scope.
 
     A fresh `cargo vendor` may change bytes of the moved packages and add files
     under those packages' prefixes. Every other vendored member must stay
     byte-for-byte unchanged. Removals, and additions outside the moved prefixes,
-    still refuse.
+    still refuse, except the `vendor/<name>-<version>/` prefixes of registry
+    packages the lock removes alongside the move: the caller drops those
+    members and proves exactly they went.
     """
     with tempfile.TemporaryDirectory(prefix="windows-rust-notice-vendor-") as scratch:
         if vendor_dir is None:
@@ -1021,6 +1060,11 @@ def build_git_substitutions(
                     prior_vendor[member.name] = sha256_bytes(
                         tar.extractfile(member).read()
                     )
+        if removed_prefixes:
+            prior_vendor = {
+                name: digest for name, digest in prior_vendor.items()
+                if not name.startswith(removed_prefixes)
+            }
         fresh_vendor = {
             "vendor/" + str(path.relative_to(vendor_root)): path
             for path in vendor_root.rglob("*")
@@ -1034,10 +1078,26 @@ def build_git_substitutions(
             set(prior_vendor), set(fresh_vendor), moved_prefixes
         )
 
+        prior_manifests: dict[str, bytes] = {}
+        with tarfile.open(prior_archive_path, "r:gz") as tar:
+            for name in prior_vendor:
+                if (Path(name).name == ".cargo-checksum.json"
+                        and not name.startswith(moved_prefixes)):
+                    prior_manifests[name] = tar.extractfile(name).read()
+
         substitutions: dict[str, bytes] = {}
         for name, digest in prior_vendor.items():
             data = fresh_vendor[name].read_bytes()
             if sha256_bytes(data) != digest:
+                # A licence-identical upgrade writes its checksum manifest with
+                # sorted keys and without cargo vendor's "$comment"; cargo
+                # vendor writes it compactly. Outside the moved packages the
+                # same file digests and package checksum are the same
+                # attestation, so the prior bytes stay.
+                if name in prior_manifests and checksum_attestation(data) == checksum_attestation(
+                    prior_manifests[name]
+                ):
+                    continue
                 substitutions[name] = data
         for name in added_inside:
             substitutions[name] = fresh_vendor[name].read_bytes()
@@ -1696,13 +1756,17 @@ def removed_index_identities(
     removed: list[dict[str, Any]],
     lost: frozenset[str],
     committed_texts: set[str],
+    text_removals: frozenset[str] = frozenset(),
 ) -> set[str]:
     """The committed index rows a registry removal drops, after proving them.
 
     Each removed package must have exactly one row, flagged in the notice
     population exactly when it left the Windows notice closure, and dropping
     the rows must leave every committed notice text referenced by a surviving
-    population row or path dependency -- so the NOTICES file stays as it is.
+    population row or path dependency -- so the NOTICES file stays as it is --
+    except texts named in `text_removals`. A named text must be exactly one the
+    removal orphans: it leaves NOTICES because nothing shipped carries it any
+    more, and naming it is the review that it should go.
     """
     identities = {f"{row['name']}@{row['version']} ({row['source']})" for row in removed}
     for identity in sorted(identities):
@@ -1734,11 +1798,19 @@ def removed_index_identities(
         )
         & committed_texts
     )
-    if orphaned:
+    unnamed = sorted(set(orphaned) - text_removals)
+    if unnamed:
         raise RefreshError(
-            f"a removal leaves notice text(s) {orphaned} referenced by no "
-            "surviving package. The notices file is an input here, not an "
-            "output; regenerating it is out of this script's scope."
+            f"a removal leaves notice text(s) {unnamed} referenced by no "
+            "surviving package. Name each with --admit-notice-text-removal "
+            "after reviewing that nothing shipped still needs it; an unnamed "
+            "orphan refuses."
+        )
+    stale = sorted(text_removals - set(orphaned))
+    if stale:
+        raise RefreshError(
+            f"notice text(s) {stale} named for removal are not orphaned by this "
+            "removal; refusing a review that does not describe it"
         )
     return identities
 
@@ -1772,6 +1844,13 @@ def render_notices(texts: dict[str, bytes]) -> tuple[bytes, list[dict[str, Any]]
     return bytes(rendered), index
 
 
+def parse_text_removals(values: list[str]) -> frozenset[str]:
+    for value in values:
+        if not re.fullmatch(r"[0-9a-f]{64}", value):
+            raise SystemExit(f"--admit-notice-text-removal takes a lowercase SHA-256, not {value!r}")
+    return frozenset(values)
+
+
 def parse_admissions(values: list[str]) -> frozenset[tuple[str, str]]:
     """`NAME@VERSION` operands of `--admit-closure-addition`."""
     admitted = set()
@@ -1795,6 +1874,7 @@ def refresh(
     promotions: frozenset[tuple[str, str]] = frozenset(),
     standard_apache: frozenset[tuple[str, str]] = frozenset(),
     removals: frozenset[tuple[str, str]] = frozenset(),
+    text_removals: frozenset[str] = frozenset(),
 ) -> dict[str, Any]:
     old = load_index(repo)
 
@@ -1855,10 +1935,10 @@ def refresh(
     if upgrades and (moved_git or added_external or removed_external or admissions
                      or promotions or standard_apache or removals):
         raise RefreshError("registry upgrades cannot mix git moves, additions, removals or closure reviews")
-    if removed_external and (moved_git or promotions):
+    if removed_external and promotions:
         raise RefreshError(
-            "the lock removes registry packages and also moves a git pin or "
-            "promotes a package; this script attests a removal only on its own"
+            "the lock removes registry packages and also promotes a package; "
+            "this script attests a removal only on its own or with a git pin move"
         )
     removed_ids = frozenset(
         (p["name"], p["version"], p["source"]) for p in removed_external
@@ -1915,6 +1995,11 @@ def refresh(
         added=added_ids | frozenset((p["name"], p["version"], p["source"]) for _, p in upgrades),
         declared_workspace=declared_workspace_crates(repo),
         removed=removed_ids | frozenset((p["name"], p["version"], p["source"]) for p, _ in upgrades),
+        moved_git={
+            (old_row["name"], old_row["version"], old_row["source"]):
+            (new_row["name"], new_row["version"], new_row["source"])
+            for old_row, new_row in moved_git
+        },
     )
     added_workspace = frozenset(
         change.removeprefix("added:")
@@ -1993,8 +2078,10 @@ def refresh(
             )
         committed_texts[row["sha256"]] = raw
 
+    if text_removals and not removed_external:
+        raise RefreshError("a notice text leaves NOTICES only with the registry removal that orphans it")
     removed_identities = removed_index_identities(
-        old, removed_external, lost, set(committed_texts)
+        old, removed_external, lost, set(committed_texts), text_removals
     )
     upgraded_rows, upgraded_members = upgraded_package_rows(prior_archive_path, old, upgrades)
     if upgrades:
@@ -2027,7 +2114,8 @@ def refresh(
     revendored: list[dict[str, Any]] = []
     if moved_git:
         substitutions |= build_git_substitutions(
-            repo, prior_archive_path, moved_git, old, vendor_dir, revendored
+            repo, prior_archive_path, moved_git, old, vendor_dir, revendored,
+            tuple(f"vendor/{row['name']}-{row['version']}/" for row in removed_external),
         )
     added_rows: list[dict[str, Any]] = []
     added_texts: dict[str, bytes] = {}
@@ -2283,7 +2371,9 @@ def refresh(
             )
         new_index["population"]["windows_notice_package_count"] = count
     new_notices = None
-    if set(added_texts) - set(committed_texts):
+    if set(added_texts) & text_removals:
+        raise RefreshError("a notice text cannot be both removed and added")
+    if set(added_texts) - set(committed_texts) or text_removals:
         # The file is rewritten whole, so first prove the layout this script
         # renders is the one the committed file already has. Otherwise the
         # rewrite would silently reformat every existing text.
@@ -2296,7 +2386,8 @@ def refresh(
                 f"{NOTICES_RELATIVE_PATH} byte for byte; refusing to rewrite it"
             )
         new_notices, new_index["notice_texts"] = render_notices(
-            committed_texts | added_texts
+            {key: text for key, text in committed_texts.items() if key not in text_removals}
+            | added_texts
         )
         new_index["notices_sha256"] = sha256_bytes(new_notices)
     new_index["cargo_lock_sha256"] = lock_hash
@@ -2371,6 +2462,7 @@ def refresh(
         ],
         "removed_vendor_members": len(expected_dropped),
         "added_notice_texts": sorted(set(added_texts) - set(committed_texts)),
+        "removed_notice_texts": sorted(text_removals),
         "windows_notice_package_count": len(selected),
         "external_package_count": len(new_external),
         "external_population_sha256": new_index["population"]["source_sha256"],
@@ -2459,6 +2551,14 @@ def main(argv: list[str] | None = None) -> int:
             "per package. Any in-closure removal not named here refuses."
         ),
     )
+    parser.add_argument(
+        "--admit-notice-text-removal", action="append", default=[], metavar="SHA256",
+        help=(
+            "a NOTICES text that a named registry removal leaves referenced by no "
+            "surviving package, reviewed as no longer needed; repeat once per text. "
+            "Any orphaned text not named here refuses."
+        ),
+    )
     args = parser.parse_args(argv)
 
     repo = args.repo.resolve()
@@ -2480,6 +2580,7 @@ def main(argv: list[str] | None = None) -> int:
             parse_admissions(args.admit_closure_promotion),
             parse_admissions(args.admit_standard_apache_text),
             parse_admissions(args.admit_closure_removal),
+            parse_text_removals(args.admit_notice_text_removal),
         )
     except RefreshError as error:
         print(f"refresh refused: {error}", file=sys.stderr)
