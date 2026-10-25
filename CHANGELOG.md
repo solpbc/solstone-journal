@@ -6,6 +6,10 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- when a recording mentions someone or something from your facets that the summaries of that moment leave out, the transcript now adds the name those words might be, right after them, such as "Margarete (possible name: Margarethe)". searching your journal for that name, yourself or through an agent, then finds the recording. a label can come from their name, another name you've given them, or a close spelling. the words in the transcript don't change, and an agent sees these names only if it may see your entities.
+
 ### Changed
 
 - when your journal has little to go on for a stretch of work, the work story for that stretch now guesses less. work stories also less often add what a session was for, how it turned out, or an app or file that nothing in your journal names.
