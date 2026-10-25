@@ -14,8 +14,8 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use solstone_core_cli::SupervisorOptions;
 use solstone_core_installation_identity::{
-    Generation, IdentityError, journal_token_from_path, load_installation_binding,
-    root_token_from_path,
+    Generation, IdentityError, journal_path_matches_token, journal_token_from_path,
+    load_installation_binding, root_token_from_path,
 };
 use solstone_core_journal_io::legacy_log_alias::cleanup_legacy_log_aliases;
 #[cfg(unix)]
@@ -178,6 +178,8 @@ struct HostedInstallationBinding {
     guard: solstone_core_installation_identity::GuardFields,
     generation: Generation,
     writer_id: WriterId,
+    /// The journal path the supervisor runs with.
+    journal: PathBuf,
 }
 
 /// Owner copy for a start that found this journal already running. Exits
@@ -306,6 +308,7 @@ pub async fn run_hosted(
         Ok(binding) => binding,
         Err(reason) => return SupervisorHostOutcome::Refused { reason },
     };
+    let journal = binding.journal.as_path();
     #[cfg(unix)]
     if let Some(home_val) = std::env::var_os("HOME") {
         let home_path = PathBuf::from(home_val);
@@ -600,12 +603,13 @@ fn load_generation_at(
             "saved binding: {error}"
         )))
     })?;
-    let journal_token = journal_token_from_path(journal).map_err(|error| {
-        SupervisorBootRefusal::InstallationBinding(InstallationBindingRefusal::LoadFailed(format!(
-            "journal token: {error}"
-        )))
-    })?;
-    if binding.journal_token != journal_token {
+    let same_journal =
+        journal_path_matches_token(journal, &binding.journal_token).map_err(|error| {
+            SupervisorBootRefusal::InstallationBinding(InstallationBindingRefusal::LoadFailed(
+                format!("journal token: {error}"),
+            ))
+        })?;
+    if !same_journal {
         return Err(SupervisorBootRefusal::InstallationBinding(
             InstallationBindingRefusal::JournalTokenMismatch,
         ));
@@ -620,6 +624,14 @@ fn load_generation_at(
         guard: solstone_core_installation_identity::GuardFields::from_binding(&binding),
         generation: binding.generation,
         writer_id,
+        // A journal reached by another spelling, such as through a link, is used
+        // from here on by its saved spelling, the one setup wrote into the wrapper
+        // and service, so every later binding check and every child agrees.
+        journal: if journal_token_from_path(journal).ok().as_ref() == Some(&binding.journal_token) {
+            journal.to_path_buf()
+        } else {
+            binding.journal_token.to_path_buf()
+        },
     })
 }
 
@@ -714,6 +726,91 @@ mod tests {
         })
         .unwrap();
         assert!(cleanup.plan().protected_journals.contains(&journal_token));
+    }
+
+    /// Setup saves the journal it resolved on disk; the supervisor is started with
+    /// whatever spelling the caller has. A journal reached through a link is the same
+    /// journal, a journal saved before its folder existed keeps its saved spelling, and
+    /// a different journal is still refused.
+    #[cfg(all(unix, feature = "full-tests"))]
+    #[test]
+    fn journal_reached_through_a_link_loads_its_saved_binding() {
+        use solstone_core_installation_identity::{
+            ArtifactBindingEvidence, LegacyManifestEvidence, OwnerBase, PlatformTag,
+            SetupAdmissionRequest, admit_setup, journal_token_from_path, root_token_from_path,
+        };
+        let directory = tempdir().unwrap();
+        let base = std::fs::canonicalize(directory.path()).unwrap();
+        let root = base.join("program");
+        let real = base.join("real");
+        let journal = real.join("journal");
+        let other = base.join("other-journal");
+        let link = base.join("link");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::create_dir_all(&journal).unwrap();
+        std::fs::create_dir_all(&other).unwrap();
+        std::fs::create_dir_all(base.join("home")).unwrap();
+        std::fs::create_dir_all(base.join("home-later")).unwrap();
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+        let through_link = link.join("journal");
+        let owner = OwnerBase::at_home(base.join("home"), PlatformTag::current()).unwrap();
+        let admit = |owner: &OwnerBase, saved: &std::path::Path| {
+            drop(
+                admit_setup(SetupAdmissionRequest {
+                    owner: owner.clone(),
+                    root_token: root_token_from_path(&root).unwrap(),
+                    journal_token: journal_token_from_path(saved).unwrap(),
+                    journal_is_explicit: true,
+                    accept_prepared_retarget: false,
+                    legacy_manifest: LegacyManifestEvidence::Absent,
+                    artifacts: ArtifactBindingEvidence::Fresh,
+                })
+                .unwrap(),
+            );
+        };
+
+        // Setup resolves `--journal <link>/journal` to the folder it names.
+        admit(&owner, &std::fs::canonicalize(&through_link).unwrap());
+        let loaded = super::load_generation_at(&through_link, &root, &owner)
+            .expect("a journal reached through a link starts");
+        assert_eq!(loaded.journal, journal);
+        assert_eq!(
+            super::load_generation_at(&journal, &root, &owner)
+                .unwrap()
+                .journal,
+            journal
+        );
+        assert!(matches!(
+            super::load_generation_at(&other, &root, &owner),
+            Err(SupervisorBootRefusal::InstallationBinding(
+                InstallationBindingRefusal::JournalTokenMismatch
+            ))
+        ));
+
+        // A binding saved before the journal folder existed keeps the spelling it
+        // was given, link and all, and that spelling still starts.
+        let owner = OwnerBase::at_home(base.join("home-later"), PlatformTag::current()).unwrap();
+        let later = link.join("later");
+        admit(&owner, &later);
+        std::fs::create_dir(real.join("later")).unwrap();
+        assert_eq!(
+            super::load_generation_at(&later, &root, &owner)
+                .unwrap()
+                .journal,
+            later
+        );
+        assert_eq!(
+            super::load_generation_at(&real.join("later"), &root, &owner)
+                .unwrap()
+                .journal,
+            later
+        );
+        assert!(matches!(
+            super::load_generation_at(&other, &root, &owner),
+            Err(SupervisorBootRefusal::InstallationBinding(
+                InstallationBindingRefusal::JournalTokenMismatch
+            ))
+        ));
     }
 
     struct Source {

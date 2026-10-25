@@ -902,6 +902,29 @@ pub fn journal_token_from_path(path: &Path) -> Result<JournalToken, IdentityErro
     }
 }
 
+/// Whether `path` names the journal saved as `token`.
+///
+/// Setup saves the journal folder it resolved on disk, or the spelling it was
+/// given when that folder did not exist yet. The same journal can later be
+/// reached by another spelling, such as through a link. This accepts the saved
+/// spelling itself, or a path that resolves to the same existing folder as the
+/// saved one. A path that cannot be resolved only matches by its spelling.
+pub fn journal_path_matches_token(
+    path: &Path,
+    token: &JournalToken,
+) -> Result<bool, IdentityError> {
+    if journal_token_from_path(path)? == *token {
+        return Ok(true);
+    }
+    match (
+        std::fs::canonicalize(path),
+        std::fs::canonicalize(token.to_path_buf()),
+    ) {
+        (Ok(given), Ok(saved)) => Ok(given == saved),
+        _ => Ok(false),
+    }
+}
+
 /// Serializes the four guard comment lines appended to each managed wrapper.
 pub fn wrapper_guard_lines(fields: &GuardFields) -> String {
     format!(

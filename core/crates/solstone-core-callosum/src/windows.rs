@@ -178,14 +178,19 @@ pub(crate) fn resolve_pipe_namespace(socket_path: &Path) -> io::Result<LiveWindo
                 "Callosum socket has no journal root",
             )
         })?;
-    let socket_token = solstone_core_installation_identity::journal_token_from_path(journal_dir)
-        .map_err(|error| {
-            io::Error::new(
-                io::ErrorKind::PermissionDenied,
-                format!("Callosum journal: {error}"),
-            )
-        })?;
-    if socket_token != binding.journal_token {
+    // The same journal may be reached through a link or junction; it still
+    // has to be the folder the binding saved.
+    let same_journal = solstone_core_installation_identity::journal_path_matches_token(
+        journal_dir,
+        &binding.journal_token,
+    )
+    .map_err(|error| {
+        io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            format!("Callosum journal: {error}"),
+        )
+    })?;
+    if !same_journal {
         return Err(io::Error::new(
             io::ErrorKind::PermissionDenied,
             "Callosum journal does not match the loaded installation binding",
