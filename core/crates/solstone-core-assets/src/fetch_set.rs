@@ -214,7 +214,8 @@ fn nvattest_row(target: &'static str) -> RuntimeFetch {
     }
 }
 
-fn candidates(target: &str) -> Result<Vec<RuntimeFetch>, FetchSetError> {
+/// Every artifact `target` uses, before the ones its package carries are removed.
+pub(crate) fn candidates(target: &str) -> Result<Vec<RuntimeFetch>, FetchSetError> {
     let mut rows = Vec::new();
 
     match target {
@@ -547,6 +548,15 @@ fn candidates(target: &str) -> Result<Vec<RuntimeFetch>, FetchSetError> {
         "windows-x86_64" | "windows-aarch64" => {
             // ced-model
             let a = find_catalog_row("ced-model", "ced-tiny-q8_0.gguf", None);
+            rows.push(RuntimeFetch {
+                unit: a.unit,
+                origin_key: a.origin_key,
+                sha256: a.sha256,
+                size_bytes: a.size_bytes,
+            });
+
+            // parakeet-model: the package carries it.
+            let a = find_catalog_row("parakeet-model", "tdt-0.6b-v3-q8_0.gguf", None);
             rows.push(RuntimeFetch {
                 unit: a.unit,
                 origin_key: a.origin_key,

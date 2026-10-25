@@ -530,14 +530,8 @@ fn fetch_runtime_member(
         return Ok(true);
     }
 
-    let handle = solstone_core_assets::mint_runtime_fetch(query).map_err(|err| {
-        failure(
-            "package",
-            solstone_core_assets::FetchMintError::REASON_CODE,
-            err,
-            65,
-        )
-    })?;
+    let handle = solstone_core_assets::mint_runtime_fetch(query)
+        .map_err(|err| failure("package", err.reason_code(), err, 65))?;
     solstone_core_artifact_download::download_runtime_fetch(&handle, destination, progress).map_err(
         |error| {
             failure(

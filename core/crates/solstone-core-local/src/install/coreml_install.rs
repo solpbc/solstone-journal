@@ -720,13 +720,8 @@ fn fetch_runtime_member(
     destination: &Path,
     on_chunk: &mut impl FnMut(u64, Option<u64>),
 ) -> Result<(), CoremlInstallError> {
-    let handle = solstone_core_assets::mint_runtime_fetch(query).map_err(|err| {
-        CoremlInstallError::new(
-            solstone_core_assets::FetchMintError::REASON_CODE,
-            err.to_string(),
-            65,
-        )
-    })?;
+    let handle = solstone_core_assets::mint_runtime_fetch(query)
+        .map_err(|err| CoremlInstallError::new(err.reason_code(), err.to_string(), 65))?;
     solstone_core_artifact_download::download_runtime_fetch(&handle, destination, on_chunk)
         .map_err(archive_error)?;
     Ok(())
@@ -2350,7 +2345,7 @@ mod tests {
             &mut |_, _| {},
         )
         .unwrap_err();
-        assert_eq!(error.reason_code, "component_packaged");
+        assert_eq!(error.reason_code, "component_not_fetched");
         assert!(!parakeet_coreml_model_root(&parakeet_coreml_cache_dir(&config, &home)).exists());
         assert!(!parakeet_coreml_sentinel_path(&home).exists());
     }

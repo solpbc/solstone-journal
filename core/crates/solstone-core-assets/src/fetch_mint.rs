@@ -7,8 +7,8 @@ use std::fmt;
 
 #[cfg(feature = "runtime-fetch-test")]
 use crate::fetch_set::unit_id;
-use crate::fetch_set::{FetchSetError, runtime_fetch_set};
-use crate::{Artifact, Backend, Platform, catalog};
+use crate::fetch_set::{FetchSetError, RuntimeFetch, candidates, runtime_fetch_set};
+use crate::{Backend, Platform, catalog};
 
 /// An immutable, validated token granting admission to download a runtime artifact.
 ///
@@ -73,19 +73,40 @@ pub struct RuntimeFetchQuery<'a> {
 }
 
 /// Error returned when an artifact is not admitted for runtime fetch.
+///
+/// Either way the build asked for something this platform never downloads, so
+/// retrying will not help; the variant says why.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct FetchMintError;
+pub enum FetchMintError {
+    /// The request names this platform's copy of a component its package carries.
+    Packaged,
+    /// The request names nothing this platform uses: another platform's artifact, a
+    /// component retired here, or no single catalog artifact.
+    NotFetched,
+}
 
 impl FetchMintError {
-    pub const REASON_CODE: &'static str = "component_packaged";
+    #[must_use]
+    pub fn reason_code(self) -> &'static str {
+        match self {
+            Self::Packaged => "component_packaged",
+            Self::NotFetched => "component_not_fetched",
+        }
+    }
 }
 
 impl fmt::Display for FetchMintError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "build defect: this component ships inside the package, and retrying will not help"
-        )
+        match self {
+            Self::Packaged => write!(
+                f,
+                "build defect: this component ships inside the package, and retrying will not help"
+            ),
+            Self::NotFetched => write!(
+                f,
+                "build defect: this build does not download this component, and retrying will not help"
+            ),
+        }
     }
 }
 
@@ -168,7 +189,7 @@ fn compiled_fetch_target() -> Result<&'static str, FetchMintError> {
         all(target_os = "windows", target_arch = "aarch64")
     )))]
     {
-        Err(FetchMintError)
+        Err(FetchMintError::NotFetched)
     }
 }
 
@@ -202,8 +223,8 @@ fn mint_runtime_fetch_impl(
     query: &RuntimeFetchQuery<'_>,
 ) -> Result<RuntimeFetchHandle, FetchMintError> {
     #[allow(unused_mut)]
-    let mut set =
-        runtime_fetch_set(target).map_err(|FetchSetError::UnknownTarget(_)| FetchMintError)?;
+    let mut set = runtime_fetch_set(target)
+        .map_err(|FetchSetError::UnknownTarget(_)| FetchMintError::NotFetched)?;
 
     #[cfg(feature = "runtime-fetch-test")]
     if let Some(excluded) = UNIT_EXCLUSION.with(|cell| cell.get()) {
@@ -219,9 +240,9 @@ fn mint_runtime_fetch_impl(
 
     if let Some(origin_key) = query.origin_key {
         let member = set
-            .into_iter()
+            .iter()
             .find(|item| item.origin_key() == origin_key)
-            .ok_or(FetchMintError)?;
+            .ok_or_else(|| refusal(target, &set, &[origin_key]))?;
         return Ok(RuntimeFetchHandle {
             unit: member.unit(),
             origin_key: member.origin_key(),
@@ -230,7 +251,7 @@ fn mint_runtime_fetch_impl(
         });
     }
 
-    let matching_rows: Vec<&'static Artifact> = catalog()
+    let matching_rows: Vec<&'static str> = catalog()
         .iter()
         .filter(|row| {
             if let Some(u) = query.unit
@@ -260,17 +281,18 @@ fn mint_runtime_fetch_impl(
             }
             true
         })
+        .map(|row| row.origin_key)
         .collect();
 
     if matching_rows.len() != 1 {
-        return Err(FetchMintError);
+        return Err(refusal(target, &set, &matching_rows));
     }
 
-    let row = matching_rows[0];
+    let origin_key = matching_rows[0];
     let member = set
-        .into_iter()
-        .find(|item| item.origin_key() == row.origin_key)
-        .ok_or(FetchMintError)?;
+        .iter()
+        .find(|item| item.origin_key() == origin_key)
+        .ok_or_else(|| refusal(target, &set, &[origin_key]))?;
 
     Ok(RuntimeFetchHandle {
         unit: member.unit(),
@@ -278,6 +300,21 @@ fn mint_runtime_fetch_impl(
         sha256: member.sha256(),
         size_bytes: member.size_bytes(),
     })
+}
+
+/// Why `target` refuses the requested keys: the package carries one of them when
+/// the target uses it but its fetch set leaves it out.
+fn refusal(target: &str, set: &[RuntimeFetch], requested: &[&str]) -> FetchMintError {
+    let used = candidates(target).unwrap_or_default();
+    let packaged = requested.iter().any(|key| {
+        used.iter().any(|item| item.origin_key() == *key)
+            && !set.iter().any(|item| item.origin_key() == *key)
+    });
+    if packaged {
+        FetchMintError::Packaged
+    } else {
+        FetchMintError::NotFetched
+    }
 }
 
 #[cfg(test)]
@@ -294,8 +331,9 @@ mod tests {
                 origin_key: Some(row.origin_key),
                 ..Default::default()
             };
-            assert!(
-                mint_runtime_fetch_impl("macos-arm64", &query).is_err(),
+            assert_eq!(
+                mint_runtime_fetch_impl("macos-arm64", &query),
+                Err(FetchMintError::NotFetched),
                 "{}",
                 row.origin_key
             );
@@ -335,8 +373,85 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "runtime-fetch-test")]
-    use crate::RuntimeFetch;
+    #[test]
+    fn refusal_names_packaged_only_for_this_platforms_packaged_copy() {
+        let key = |unit: &str, filename: &str| {
+            catalog()
+                .iter()
+                .find(|row| row.unit == unit && row.filename == filename)
+                .unwrap_or_else(|| panic!("catalog has {unit}/{filename}"))
+                .origin_key
+        };
+        let by_key = |origin_key| RuntimeFetchQuery {
+            origin_key: Some(origin_key),
+            ..Default::default()
+        };
+        for (target, unit, filename, expected) in [
+            (
+                "macos-arm64",
+                "ced-model",
+                "ced-tiny-q8_0.gguf",
+                FetchMintError::Packaged,
+            ),
+            (
+                "macos-arm64",
+                "restic",
+                "restic_0.19.0_darwin_arm64.bz2",
+                FetchMintError::Packaged,
+            ),
+            (
+                "macos-arm64",
+                "local-model",
+                "Qwen3.5-4B-Q4_K_M.gguf",
+                FetchMintError::NotFetched,
+            ),
+            (
+                "macos-arm64",
+                "llama-server-vulkan",
+                "llama-b11669-bin-macos-arm64.tar.gz",
+                FetchMintError::NotFetched,
+            ),
+            (
+                "windows-x86_64",
+                "parakeet-model",
+                "tdt-0.6b-v3-q8_0.gguf",
+                FetchMintError::Packaged,
+            ),
+            (
+                "linux-x86_64",
+                "ced-engine",
+                "ced-v0.1.0-lib-linux-cpu-x64.tar.gz",
+                FetchMintError::Packaged,
+            ),
+            (
+                "linux-x86_64",
+                "ced-engine",
+                "ced-v0.1.0-lib-linux-cpu-arm64.tar.gz",
+                FetchMintError::NotFetched,
+            ),
+        ] {
+            let refused = mint_runtime_fetch_impl(target, &by_key(key(unit, filename)));
+            assert_eq!(refused, Err(expected), "{target} {unit}/{filename}");
+        }
+        assert_eq!(
+            mint_runtime_fetch_impl("macos-arm64", &by_key("assets/not-in-the-catalog.bin")),
+            Err(FetchMintError::NotFetched)
+        );
+        assert_eq!(
+            mint_runtime_fetch_impl(
+                "macos-arm64",
+                &RuntimeFetchQuery {
+                    unit: Some("restic"),
+                    ..Default::default()
+                }
+            ),
+            Err(FetchMintError::Packaged)
+        );
+        assert_eq!(
+            mint_runtime_fetch_impl("linux", &by_key(key("ced-model", "ced-tiny-q8_0.gguf"))),
+            Err(FetchMintError::NotFetched)
+        );
+    }
 
     #[test]
     fn runtime_mint_parakeet_coreml_refuses_on_linux_x86_64() {
@@ -347,8 +462,8 @@ mod tests {
                 ..Default::default()
             };
             let err = mint_runtime_fetch(&query).expect_err("coreml must refuse on linux x86_64");
-            assert_eq!(err, FetchMintError);
-            assert_eq!(FetchMintError::REASON_CODE, "component_packaged");
+            assert_eq!(err, FetchMintError::NotFetched);
+            assert_eq!(err.reason_code(), "component_not_fetched");
         }
     }
 
@@ -398,9 +513,8 @@ mod tests {
                         origin_key: Some(row.origin_key),
                         ..Default::default()
                     };
-                    assert_eq!(
-                        mint_runtime_fetch_for_target(target, &query),
-                        Err(FetchMintError),
+                    assert!(
+                        mint_runtime_fetch_for_target(target, &query).is_err(),
                         "row {} should refuse on {}",
                         row.origin_key,
                         target
@@ -417,9 +531,8 @@ mod tests {
                             origin_key: Some(&full_key),
                             ..Default::default()
                         };
-                        assert_eq!(
-                            mint_runtime_fetch_for_target(target, &query),
-                            Err(FetchMintError),
+                        assert!(
+                            mint_runtime_fetch_for_target(target, &query).is_err(),
                             "nvattest pin {} should refuse on {}",
                             full_key,
                             target

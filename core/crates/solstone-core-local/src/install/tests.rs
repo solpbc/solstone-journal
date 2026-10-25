@@ -4181,7 +4181,9 @@ mod runtime_fetch_seam_tests {
                 ..Default::default()
             },
             RuntimeFetchQuery {
-                origin_key: Some("assets/ced/tiny/ced-tiny-q8_0.gguf"),
+                origin_key: Some(
+                    "assets/ced-model/b5e9a4aad6438763c8da16079d77563fbed35c65/ced-tiny-q8_0.gguf",
+                ),
                 ..Default::default()
             },
         ];
@@ -4213,81 +4215,87 @@ mod runtime_fetch_seam_tests {
             },
         ];
 
-        with_fake_runtime_fetch(&fake, || {
-            for q in ced_queries.iter().chain(backup_queries.iter()) {
-                let err =
-                    fetch_runtime_member(q, &dest, |_, _| {}, "model_download_failed").unwrap_err();
-                assert_eq!(err.exit_code, 65);
-                assert_eq!(
-                    err.envelope.error.as_ref().unwrap().reason_code,
-                    "component_packaged"
-                );
-            }
+        with_runtime_fetch_target("linux-x86_64", || {
+            with_fake_runtime_fetch(&fake, || {
+                for q in ced_queries.iter().chain(backup_queries.iter()) {
+                    let err = fetch_runtime_member(q, &dest, |_, _| {}, "model_download_failed")
+                        .unwrap_err();
+                    assert_eq!(err.exit_code, 65);
+                    assert_eq!(
+                        err.envelope.error.as_ref().unwrap().reason_code,
+                        "component_packaged"
+                    );
+                }
+            })
         });
         assert_eq!(fake.calls.lock().unwrap().len(), 0);
 
         with_fake_runtime_fetch(&fake, || {
-            without_runtime_fetch_unit("llama-server", || {
-                let query = RuntimeFetchQuery {
-                    unit: Some("llama-server-vulkan"),
-                    ..Default::default()
-                };
-                let err =
-                    fetch_runtime_member(&query, &dest, |_, _| {}, "download_failed").unwrap_err();
-                assert_eq!(err.exit_code, 65);
-                assert_eq!(
-                    err.envelope.error.as_ref().unwrap().reason_code,
-                    "component_packaged"
-                );
+            with_runtime_fetch_target("linux-x86_64", || {
+                without_runtime_fetch_unit("llama-server", || {
+                    let query = RuntimeFetchQuery {
+                        unit: Some("llama-server-vulkan"),
+                        ..Default::default()
+                    };
+                    let err = fetch_runtime_member(&query, &dest, |_, _| {}, "download_failed")
+                        .unwrap_err();
+                    assert_eq!(err.exit_code, 65);
+                    assert_eq!(
+                        err.envelope.error.as_ref().unwrap().reason_code,
+                        "component_packaged"
+                    );
+                });
+
+                without_runtime_fetch_unit("local-model", || {
+                    let model_root = temp("bundled-refusal-model");
+                    let mut status_val = test_status(&model_root);
+                    let err = install_model(
+                        &model_root,
+                        "local/qwen3.5-4b",
+                        &mut status_val,
+                        0,
+                        crate::install::local_model_download_bytes("local/qwen3.5-4b").unwrap(),
+                    )
+                    .unwrap_err();
+                    assert_eq!(err.exit_code, 65);
+                    assert_eq!(
+                        err.envelope.error.as_ref().unwrap().reason_code,
+                        "component_packaged"
+                    );
+                });
+
+                without_runtime_fetch_unit("parakeet-server", || {
+                    let query = RuntimeFetchQuery {
+                        unit: Some("parakeet-server"),
+                        ..Default::default()
+                    };
+                    let err = fetch_runtime_member(&query, &dest, |_, _| {}, "download_failed")
+                        .unwrap_err();
+                    assert_eq!(err.exit_code, 65);
+                    assert_eq!(
+                        err.envelope.error.as_ref().unwrap().reason_code,
+                        "component_packaged"
+                    );
+                });
             });
 
-            without_runtime_fetch_unit("local-model", || {
-                let model_root = temp("bundled-refusal-model");
-                let mut status_val = test_status(&model_root);
-                let err = install_model(
-                    &model_root,
-                    "local/qwen3.5-4b",
-                    &mut status_val,
-                    0,
-                    crate::install::local_model_download_bytes("local/qwen3.5-4b").unwrap(),
-                )
-                .unwrap_err();
-                assert_eq!(err.exit_code, 65);
-                assert_eq!(
-                    err.envelope.error.as_ref().unwrap().reason_code,
-                    "component_packaged"
-                );
-            });
-
-            without_runtime_fetch_unit("parakeet-server", || {
-                let query = RuntimeFetchQuery {
-                    unit: Some("parakeet-server"),
-                    ..Default::default()
-                };
-                let err =
-                    fetch_runtime_member(&query, &dest, |_, _| {}, "download_failed").unwrap_err();
-                assert_eq!(err.exit_code, 65);
-                assert_eq!(
-                    err.envelope.error.as_ref().unwrap().reason_code,
-                    "component_packaged"
-                );
-            });
-
-            without_runtime_fetch_unit("parakeet-coreml", || {
-                let coreml_root = temp("bundled-refusal-coreml");
-                let config = coreml_config(&coreml_root);
-                let coreml_row = catalog()
-                    .iter()
-                    .find(|row| row.unit == "parakeet-coreml")
-                    .expect("parakeet-coreml catalog row");
-                let err = test_hooks::install_coreml_minted_rows(
-                    &coreml_root,
-                    &config,
-                    false,
-                    &[coreml_row],
-                )
-                .unwrap_err();
-                assert_eq!(err.reason_code, "component_packaged");
+            with_runtime_fetch_target("macos-arm64", || {
+                without_runtime_fetch_unit("parakeet-coreml", || {
+                    let coreml_root = temp("bundled-refusal-coreml");
+                    let config = coreml_config(&coreml_root);
+                    let coreml_row = catalog()
+                        .iter()
+                        .find(|row| row.unit == "parakeet-coreml")
+                        .expect("parakeet-coreml catalog row");
+                    let err = test_hooks::install_coreml_minted_rows(
+                        &coreml_root,
+                        &config,
+                        false,
+                        &[coreml_row],
+                    )
+                    .unwrap_err();
+                    assert_eq!(err.reason_code, "component_packaged");
+                });
             });
         });
         assert_eq!(fake.calls.lock().unwrap().len(), 0);
@@ -4363,7 +4371,7 @@ mod runtime_fetch_seam_tests {
                     fetch_runtime_member(&query, &dest, |_, _| {}, "download_failed").unwrap_err();
                 assert_eq!(
                     error.envelope.error.unwrap().reason_code,
-                    "component_packaged"
+                    "component_not_fetched"
                 );
             });
             let calls = fake.calls.lock().unwrap();
@@ -4502,7 +4510,7 @@ mod runtime_fetch_seam_tests {
                 assert_eq!(err.exit_code, 65);
                 assert_eq!(
                     err.envelope.error.as_ref().unwrap().reason_code,
-                    "component_packaged"
+                    "component_not_fetched"
                 );
             });
             assert_eq!(fake.calls.lock().unwrap().len(), 0);
@@ -4522,10 +4530,9 @@ mod runtime_fetch_seam_tests {
                     0,
                     crate::install::local_model_download_bytes("local/qwen3.5-4b").unwrap(),
                 ) {
-                    assert_ne!(
-                        err.envelope.error.as_ref().unwrap().reason_code,
-                        "component_packaged"
-                    );
+                    let reason = &err.envelope.error.as_ref().unwrap().reason_code;
+                    assert_ne!(reason, "component_packaged");
+                    assert_ne!(reason, "component_not_fetched");
                 }
             });
             // The fake fails the first fetch, so install_model stops there after
@@ -4552,22 +4559,24 @@ mod runtime_fetch_seam_tests {
         let fake = Rc::new(MockFake::default());
         let root = temp("model-removal");
 
-        without_runtime_fetch_unit("local-model", || {
-            with_fake_runtime_fetch(&fake, || {
-                let mut status_val = test_status(&root);
-                let err = install_model(
-                    &root,
-                    "local/qwen3.5-4b",
-                    &mut status_val,
-                    0,
-                    crate::install::local_model_download_bytes("local/qwen3.5-4b").unwrap(),
-                )
-                .unwrap_err();
-                assert_eq!(err.exit_code, 65);
-                assert_eq!(
-                    err.envelope.error.as_ref().unwrap().reason_code,
-                    "component_packaged"
-                );
+        with_runtime_fetch_target("linux-x86_64", || {
+            without_runtime_fetch_unit("local-model", || {
+                with_fake_runtime_fetch(&fake, || {
+                    let mut status_val = test_status(&root);
+                    let err = install_model(
+                        &root,
+                        "local/qwen3.5-4b",
+                        &mut status_val,
+                        0,
+                        crate::install::local_model_download_bytes("local/qwen3.5-4b").unwrap(),
+                    )
+                    .unwrap_err();
+                    assert_eq!(err.exit_code, 65);
+                    assert_eq!(
+                        err.envelope.error.as_ref().unwrap().reason_code,
+                        "component_packaged"
+                    );
+                });
             });
         });
         assert_eq!(fake.calls.lock().unwrap().len(), 0);
