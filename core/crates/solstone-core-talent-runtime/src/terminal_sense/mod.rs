@@ -195,7 +195,9 @@ pub(crate) fn prepare(prepared: &PreparedTalent, context: &ExecutionContext) -> 
         {
             return None;
         }
-        text = text.replacen(&old, replacement, 1);
+        // The lossless timeline is checked above; repeats are dropped only after.
+        let replacement = readable_changes::drop_repeated_lines(replacement);
+        text = text.replacen(&old, &replacement, 1);
         all_frames.extend(frames);
     }
     let mut request = original.clone();

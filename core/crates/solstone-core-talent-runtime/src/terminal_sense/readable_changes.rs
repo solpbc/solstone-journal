@@ -126,6 +126,64 @@ pub(crate) fn encode(records: &[Value], base_ms: i64) -> String {
     parts.concat()
 }
 
+/// Drop each displayed line already shown since the latest entry anchor, marking
+/// each run of them as `[N earlier lines]`. Anchors stay complete, so a timeline
+/// trimmed to its newest entries never refers back past what it kept. Text that
+/// does not parse as encoded displays is returned unchanged.
+pub(crate) fn drop_repeated_lines(timeline: &str) -> String {
+    try_drop_repeated_lines(timeline).unwrap_or_else(|| timeline.to_owned())
+}
+
+fn try_drop_repeated_lines(timeline: &str) -> Option<String> {
+    const LABELS: [&str; 3] = ["COMPLETE DISPLAY ", "BEFORE DISPLAY ", "AFTER DISPLAY "];
+    const SIZE: &str = " UTF-8 bytes:\n";
+    const END: &str = "\nEnd displayed text.\n";
+    let mut seen = std::collections::HashSet::new();
+    let mut out = String::with_capacity(timeline.len());
+    let mut rest = timeline;
+    while !rest.is_empty() {
+        let line_end = rest.find('\n').map_or(rest.len(), |i| i + 1);
+        let line = &rest[..line_end];
+        if line.starts_with(ENTRY_HEADER) {
+            seen.clear();
+        }
+        let Some(label) = LABELS
+            .iter()
+            .find(|label| line.starts_with(**label) && line.ends_with(SIZE))
+        else {
+            out.push_str(line);
+            rest = &rest[line_end..];
+            continue;
+        };
+        let size: usize = line[label.len()..line.len() - SIZE.len()].parse().ok()?;
+        let text = rest.get(line_end..line_end + size)?;
+        let after = &rest[line_end + size..];
+        if !after.starts_with(END) {
+            return None;
+        }
+        let mut kept: Vec<String> = Vec::new();
+        let mut run = 0usize;
+        for display_line in text.split('\n') {
+            if !display_line.trim().is_empty() && !seen.insert(display_line) {
+                run += 1;
+                continue;
+            }
+            if run > 0 {
+                kept.push(format!("[{run} earlier lines]"));
+            }
+            run = 0;
+            kept.push(display_line.to_owned());
+        }
+        if run > 0 {
+            kept.push(format!("[{run} earlier lines]"));
+        }
+        let kept = kept.join("\n");
+        out.push_str(&format!("{label}{} UTF-8 bytes:\n{kept}", kept.len()));
+        rest = after;
+    }
+    Some(out)
+}
+
 pub(crate) fn decode(text: &str, base_ms: i64) -> Result<Vec<Value>, &'static str> {
     let raw = text.as_bytes();
     let prefix = INTRO.as_bytes();
@@ -270,4 +328,55 @@ pub(crate) fn decode(text: &str, base_ms: i64) -> Result<Vec<Value>, &'static st
     }
 
     Ok(records)
+}
+
+#[cfg(test)]
+mod drop_repeated_lines_tests {
+    use super::drop_repeated_lines;
+
+    fn display(label: &str, text: &str) -> String {
+        format!(
+            "{label} {} UTF-8 bytes:\n{text}\nEnd displayed text.\n",
+            text.len()
+        )
+    }
+
+    #[test]
+    fn repeats_since_the_latest_anchor_become_one_marker_per_run() {
+        let timeline = [
+            "## 10:00:00\n".to_owned(),
+            "Observation: {}\n".to_owned(),
+            display("COMPLETE DISPLAY", "$ ls\nalpha\nbeta\n\n❯ "),
+            display("BEFORE DISPLAY", "alpha\nbeta"),
+            display("AFTER DISPLAY", "alpha\nbeta\ngamma\n\n"),
+            "End observation.\n".to_owned(),
+            "## 10:01:00\n".to_owned(),
+            display("COMPLETE DISPLAY", "alpha\ngamma"),
+        ]
+        .concat();
+        let expected = [
+            "## 10:00:00\n".to_owned(),
+            "Observation: {}\n".to_owned(),
+            display("COMPLETE DISPLAY", "$ ls\nalpha\nbeta\n\n❯ "),
+            display("BEFORE DISPLAY", "[2 earlier lines]"),
+            display("AFTER DISPLAY", "[2 earlier lines]\ngamma\n\n"),
+            "End observation.\n".to_owned(),
+            // A new anchor starts complete, so trimming to it loses nothing it names.
+            "## 10:01:00\n".to_owned(),
+            display("COMPLETE DISPLAY", "alpha\ngamma"),
+        ]
+        .concat();
+        assert_eq!(drop_repeated_lines(&timeline), expected);
+    }
+
+    #[test]
+    fn text_that_is_not_an_encoded_display_is_left_unchanged() {
+        for timeline in [
+            "no displays here\n".to_owned(),
+            "COMPLETE DISPLAY 999 UTF-8 bytes:\nshort\nEnd displayed text.\n".to_owned(),
+            "COMPLETE DISPLAY 5 UTF-8 bytes:\nabcdeEnd displayed text.\n".to_owned(),
+        ] {
+            assert_eq!(drop_repeated_lines(&timeline), timeline);
+        }
+    }
 }
