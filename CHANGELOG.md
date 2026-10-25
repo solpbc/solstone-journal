@@ -19,6 +19,8 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- in the development journal app on android, updated speech notices no longer block start. existing notices and models are kept.
+
 - thinking, health and network now show the options supported by the device running your journal.
 - recordings with custom filenames now appear in counts and daily processing.
 - in the development journal app on android, stop reaches ongoing work even when another control is waiting. reopening waits for confirmation before showing stopped or offering start. on android and iphone, the app keeps the screen awake while stopping.
