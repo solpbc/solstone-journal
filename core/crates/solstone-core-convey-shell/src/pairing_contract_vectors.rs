@@ -437,6 +437,10 @@ async fn service_change_after_snapshot_lookup_refuses_without_pair_ledger() {
 
 #[tokio::test]
 async fn pair_commit_wins_before_service_mutation_and_returns_captured_access() {
+    // Both waits below are for a signal from the mutation thread, so the ceiling
+    // only bounds a hang. Writing the config after commit takes milliseconds on
+    // an idle host and can take seconds when the disk is busy.
+    const SIGNAL_CEILING: std::time::Duration = std::time::Duration::from_secs(60);
     let root = TempDir::new();
     let mutation_root = root.path().to_path_buf();
     let (completed_tx, completed_rx) = std::sync::mpsc::channel();
@@ -453,7 +457,7 @@ async fn pair_commit_wins_before_service_mutation_and_returns_captured_access() 
                 completed.send(()).expect("mutation completed");
             });
             started_rx
-                .recv_timeout(std::time::Duration::from_secs(2))
+                .recv_timeout(SIGNAL_CEILING)
                 .expect("mutation thread starts");
             assert!(
                 hook_rx
@@ -481,6 +485,6 @@ async fn pair_commit_wins_before_service_mutation_and_returns_captured_access() 
     completed_rx
         .lock()
         .unwrap()
-        .recv_timeout(std::time::Duration::from_secs(2))
+        .recv_timeout(SIGNAL_CEILING)
         .expect("mutation completes after pair commit");
 }
