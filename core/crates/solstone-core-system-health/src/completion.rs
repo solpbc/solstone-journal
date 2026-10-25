@@ -382,4 +382,14 @@ mod tests {
         assert!(segment_thinking_is_current(progress.as_ref(), Some(499)));
         assert!(!segment_thinking_is_current(progress.as_ref(), Some(501)));
     }
+
+    #[test]
+    fn a_later_pass_without_a_model_call_reads_its_input_when_it_records() {
+        let mut lines = thought_at(1_000);
+        lines.push(event("sense.complete", 5_000, r#","density":"idle""#));
+        let progress = progress_after(&refs(&lines));
+        assert_eq!(progress.as_ref().unwrap().sense_input_ms, Some(5_000));
+        assert!(segment_thinking_is_current(progress.as_ref(), Some(3_000)));
+        assert!(!segment_thinking_is_current(progress.as_ref(), Some(5_000)));
+    }
 }

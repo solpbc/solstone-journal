@@ -30,6 +30,7 @@ pub fn read_segment_progress<S: HealthLogSource>(
 ) -> Result<FoldRead<BTreeMap<SegmentIdentity, SegmentProgress>>, HealthError> {
     let scanned = read_day_records(source, day)?;
     let mut latest_sense: BTreeMap<SegmentIdentity, (i64, Option<String>)> = BTreeMap::new();
+    let mut sense_completions: BTreeMap<SegmentIdentity, Vec<i64>> = BTreeMap::new();
     let mut latest_change: BTreeMap<SegmentIdentity, (i64, Option<String>)> = BTreeMap::new();
     let mut records: BTreeMap<SegmentIdentity, BTreeMap<String, Vec<ProgressRecord>>> =
         BTreeMap::new();
@@ -51,6 +52,10 @@ pub fn read_segment_progress<S: HealthLogSource>(
         };
         match &record.event {
             HealthEvent::SenseComplete(_) => {
+                sense_completions
+                    .entry(key.clone())
+                    .or_default()
+                    .push(record.ts);
                 update_latest(&mut latest_sense, key, record.ts, payload.density.clone())
             }
             HealthEvent::SenseChangeDetect(_) => update_latest(
@@ -212,9 +217,18 @@ pub fn read_segment_progress<S: HealthLogSource>(
                 }
             }
             let sensed_at = latest_sense.get(&key).map(|(ts, _)| *ts);
+            // A model pass records one Sense completion after its dispatch. A
+            // later one is a pass without a model call, which reads its input
+            // when it records.
+            let passes_since = |dispatched: i64| {
+                sense_completions
+                    .get(&key)
+                    .map_or(0, |all| all.iter().filter(|ts| **ts >= dispatched).count())
+            };
             let sense_input_ms = match sense_dispatch {
                 None => sensed_at,
                 Some(None) => None,
+                Some(Some(dispatched)) if passes_since(dispatched) > 1 => sensed_at,
                 Some(Some(dispatched)) => sensed_at.map(|sensed| sensed.min(dispatched)),
             };
             let progress = SegmentProgress {
