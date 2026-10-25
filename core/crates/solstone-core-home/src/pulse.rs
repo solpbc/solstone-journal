@@ -11,16 +11,12 @@ use solstone_core_entity::read_journal_principal;
 use solstone_core_facets::{ConnectionsHorizon, read_connections_horizon};
 
 use crate::HomeContext;
-use crate::briefing;
 use crate::connections::build_connections_card;
-use crate::formatting::{
-    format_activity_label, format_duration, format_gap_links, format_heatmap_summary,
-    format_processing_summary, relative_time,
-};
+use crate::formatting::{format_gap_links, format_processing_summary, relative_time};
 use crate::health_glance::build_health_glance;
 use crate::needs_you::{classify_needs_you, classify_owner_voice_needs, needs_dedup_key};
 use crate::readers::{
-    briefing_freshness, briefing_lateness_state, briefing_needs_items, collect_activities,
+    briefing_freshness, briefing_lateness_state, collect_activities,
     collect_top_activities_yesterday, compute_briefing_phase, count_journal_age_days,
     get_capture_health, last_observe_relative_seconds, load_awareness, load_backlog_source,
     load_briefing, load_connections_network, load_flow_md, load_pulse_narrative, load_stats,
@@ -117,8 +113,14 @@ fn build_pulse_context(context: &HomeContext) -> PulseContext {
 
     let briefing = load_briefing(context, &today);
     let briefing_document = briefing.clone().unwrap_or(Value::Null);
+    let mut rendered_sections = render_briefing_sections(&briefing_document);
+    // A briefing whose only content is its needs-attention section is still a
+    // briefing: home no longer shows that section, but a quiet day's briefing
+    // must not read as one that was never written.
+    let briefing_exists = !rendered_sections.is_empty();
+    rendered_sections.remove("needs_attention");
     let briefing_sections = Value::Object(
-        render_briefing_sections(&briefing_document)
+        rendered_sections
             .into_iter()
             .map(|(key, value)| (key, Value::String(value)))
             .collect(),
@@ -127,8 +129,6 @@ fn build_pulse_context(context: &HomeContext) -> PulseContext {
         .get("metadata")
         .cloned()
         .unwrap_or(Value::Null);
-    let briefing_needs = briefing_needs_items(&briefing_document);
-    let briefing_exists = !briefing_sections.as_object().is_none_or(Map::is_empty);
     let briefing_not_yet = if briefing_exists {
         None
     } else {
@@ -188,40 +188,6 @@ fn build_pulse_context(context: &HomeContext) -> PulseContext {
             needs_you_items.push(voice_item);
         }
     }
-    let needs_count = needs_you_items.len();
-    let needs_summary = if needs_count == 0 {
-        String::new()
-    } else {
-        format!(
-            "{needs_count} item{} need{} attention",
-            if needs_count == 1 { "" } else { "s" },
-            if needs_count == 1 { "s" } else { "" },
-        )
-    };
-    let mut briefing_needs_deduped = Vec::new();
-    let mut briefing_needs_shared_count = 0;
-    let mut seen_keys = needs_keys.clone();
-    for item in briefing_needs {
-        let key = needs_dedup_key(&item);
-        if needs_keys.contains(&key) {
-            briefing_needs_shared_count += 1;
-        } else if seen_keys.insert(key) {
-            briefing_needs_deduped.push(item);
-        }
-    }
-    let briefing_needs_badge = (briefing_needs_shared_count > 0).then(|| {
-        format!(
-            "{briefing_needs_shared_count} item{} also in Pulse needs",
-            if briefing_needs_shared_count == 1 {
-                ""
-            } else {
-                "s"
-            }
-        )
-    });
-    let briefing_summary = (briefing_phase == "active")
-        .then(|| briefing::summary(&briefing_sections, briefing_needs_deduped.len() as i64));
-
     let brain = crate::readers::build_brain_snapshot(context);
     let transcription_issue = solstone_core_thinking::read_config(context.journal_root())
         .ok()
@@ -244,21 +210,6 @@ fn build_pulse_context(context: &HomeContext) -> PulseContext {
     let yesterday_processing = summarize_yesterday_processing(context, journal_age_days);
     let horizon = read_connections_horizon(context.journal_root());
     let connections = load_connections_card(context, horizon);
-
-    let narrative_summary = narrative_content.as_ref().map_or_else(String::new, |_| {
-        narrative_updated_at.as_ref().map_or_else(
-            || narrative_header.to_owned(),
-            |updated| format!("{narrative_header}, updated {updated}"),
-        )
-    });
-    let mut today_parts = Vec::new();
-    if !activities.is_empty() {
-        let count = activities.len();
-        today_parts.push(format!(
-            "{count} {}",
-            if count == 1 { "activity" } else { "activities" }
-        ));
-    }
 
     let mut fields = Map::new();
     fields.insert("today".to_owned(), today.into());
@@ -297,25 +248,6 @@ fn build_pulse_context(context: &HomeContext) -> PulseContext {
     fields.insert("briefing_saved_lane".to_owned(), briefing_saved_lane);
     fields.insert("briefing_lateness".to_owned(), briefing_lateness);
     fields.insert("briefing_exists".to_owned(), briefing_exists.into());
-    fields.insert("briefing_summary".to_owned(), briefing_summary.into());
-    fields.insert(
-        "briefing_needs_deduped".to_owned(),
-        Value::Array(
-            briefing_needs_deduped
-                .into_iter()
-                .filter_map(|item| item.get("text").and_then(Value::as_str).map(str::to_owned))
-                .map(Value::String)
-                .collect(),
-        ),
-    );
-    fields.insert(
-        "briefing_needs_shared_count".to_owned(),
-        briefing_needs_shared_count.into(),
-    );
-    fields.insert(
-        "briefing_needs_badge".to_owned(),
-        briefing_needs_badge.into(),
-    );
     fields.insert(
         "latest_weekly_reflection".to_owned(),
         latest_weekly_reflection,
@@ -339,10 +271,7 @@ fn build_pulse_context(context: &HomeContext) -> PulseContext {
             Value::Null
         },
     );
-    fields.insert("narrative_summary".to_owned(), narrative_summary.into());
-    fields.insert("today_summary".to_owned(), today_parts.join(", ").into());
-    fields.insert("needs_summary".to_owned(), needs_summary.into());
-    debug_assert_eq!(fields.len(), 38);
+    debug_assert_eq!(fields.len(), 31);
     PulseContext {
         fields,
         now: context.now_local(),
@@ -380,12 +309,9 @@ pub fn briefing_payload(context: &HomeContext) -> Value {
         "exists": field("briefing_exists"),
         "phase": field("briefing_phase"),
         "saved_lane": field("briefing_saved_lane"),
-        "summary": field("briefing_summary"),
+        "analysis_day": field("briefing_analysis_day"),
         "meta": field("briefing_meta"),
         "sections": field("briefing_sections"),
-        "needs_deduped": field("briefing_needs_deduped"),
-        "needs_shared_count": field("briefing_needs_shared_count"),
-        "needs_badge": field("briefing_needs_badge"),
     })
 }
 
@@ -482,44 +408,12 @@ fn summarize_yesterday_processing(context: &HomeContext, journal_age_days: i64) 
     } else {
         "degraded"
     };
-    if mode == "sparse" {
-        return Some(
-            json!({"title":"Yesterday's processing","mode":"sparse","default_collapsed":false,"first_week_framing":null,"summary_line":format!("{} of audio went into your journal yesterday.", format_duration(transcript_seconds / 60.0)),"details":null,"gap_links":[],"sparse_lines":["there wasn't much else to process."],"status_reasons":reasons}),
-        );
-    }
-    let mut details = Vec::new();
-    if briefing_valid {
-        details.push(Value::String(
-            match briefing.get("generated_label").and_then(Value::as_str) {
-                Some(label) => format!("your morning briefing was prepared at {label}."),
-                None => "your morning briefing was prepared.".to_owned(),
-            },
-        ));
-    }
-    if let Some(summary) = format_heatmap_summary(&stats_data) {
-        details.push(summary.into());
-    }
-    details.extend(
-        activities
-            .iter()
-            .take(2)
-            .map(|activity| Value::String(format_activity_label(activity))),
-    );
-    let failed_run_count = if mode == "degraded" {
-        crate::formatting::count_failed_runs(&pipeline)
-    } else {
-        0
-    };
+    // Home reads only whether a night went wrong and what didn't finish. A
+    // sparse night is not a failure, whatever its reasons say.
     Some(json!({
-        "title": if mode == "degraded" { "⚠ Yesterday's processing" } else { "Yesterday's processing" },
         "mode": mode,
-        "default_collapsed": mode == "healthy" && journal_age_days >= 8,
-        "first_week_framing": if journal_age_days <= 7 { Value::String(FIRST_WEEK_FRAMING.to_owned()) } else { Value::Null },
-        "summary_line": if pipeline_unavailable { "yesterday’s processing status is unavailable.".to_owned() } else { format_processing_summary(mode, briefing_valid) },
-        "details": details,
+        "summary_line": if pipeline_unavailable { "yesterday’s processing status is unavailable.".to_owned() } else { format_processing_summary(mode) },
         "gap_links": if mode == "degraded" { Value::Array(format_gap_links(&pipeline, briefing_valid, &yesterday, overnight_passed)) } else { Value::Array(Vec::new()) },
-        "failed_run_count": failed_run_count,
-        "sparse_lines": Value::Null,
         "status_reasons": reasons,
     }))
 }
@@ -643,7 +537,7 @@ mod tests {
             utc_day(),
         );
         let payload = pulse_payload(&context);
-        assert_eq!(payload.as_object().unwrap().len(), 37);
+        assert_eq!(payload.as_object().unwrap().len(), 30);
         assert_eq!(
             payload
                 .as_object()
@@ -676,19 +570,12 @@ mod tests {
                 "briefing_saved_lane",
                 "briefing_lateness",
                 "briefing_exists",
-                "briefing_summary",
-                "briefing_needs_deduped",
-                "briefing_needs_shared_count",
-                "briefing_needs_badge",
                 "latest_weekly_reflection",
                 "yesterday_processing",
                 "connections",
                 "journal_age_days",
                 "home_state",
                 "welcome_framing",
-                "narrative_summary",
-                "today_summary",
-                "needs_summary",
             ]
             .into_iter()
             .map(str::to_owned)
@@ -821,6 +708,7 @@ mod tests {
         );
         let mut reference = reference_payload("reference-pulse-empty-journal.json");
         reference["pulse"]["narrative_window"] = Value::Null;
+        retire_dropped_fields(&mut reference);
         // Absence of weekly reflections is now the first-week object rather than null.
         let payload = pulse_payload(&context);
         assert_payload_fields(
@@ -847,7 +735,8 @@ mod tests {
                 .unwrap(),
         );
         let payload = pulse_payload(&context);
-        let reference = reference_payload("reference-pulse-seeded-journal.json");
+        let mut reference = reference_payload("reference-pulse-seeded-journal.json");
+        retire_dropped_fields(&mut reference);
         let mut expected_pulse = reference["pulse"].clone();
         expected_pulse["narrative_window"] = Value::Null;
         assert_eq!(
@@ -890,12 +779,6 @@ mod tests {
         {
             sections.remove("reading");
         }
-        if let Some(details) = expected_pulse
-            .pointer_mut("/yesterday_processing/details")
-            .and_then(Value::as_array_mut)
-        {
-            details.retain(|item| item.as_str() != Some("no facet newsletters written."));
-        }
         assert_payload_fields(
             &payload,
             &expected_pulse,
@@ -935,11 +818,9 @@ mod tests {
             "/needs_you_items",
             "/briefing_sections",
             "/pulse_needs",
-            "/briefing_needs_deduped",
-            "/today_summary",
             "/narrative_content",
             "/latest_weekly_reflection",
-            "/yesterday_processing/details",
+            "/yesterday_processing",
         ] {
             let value = payload.pointer(pointer).unwrap();
             assert!(
@@ -949,6 +830,33 @@ mod tests {
                     && value.as_str().is_none_or(|value| !value.is_empty()),
                 "seeded payload field {pointer} must be non-empty"
             );
+        }
+    }
+
+    #[test]
+    fn a_briefing_with_only_needs_attention_is_still_a_briefing() {
+        // Home no longer shows the needs-attention section, but a quiet day's
+        // briefing that holds only that section must not read as missing.
+        for hour in [11, 21] {
+            let (fixture, context) = fixture_context(
+                "convey_home_seeded_journal",
+                Utc.with_ymd_and_hms(2026, 8, 14, hour, 0, 0).unwrap(),
+            );
+            fs::write(
+                fixture
+                    .path()
+                    .join("chronicle/20260813/talents/morning_briefing.json"),
+                r#"{"metadata":{"generated":"2026-08-14T07:12:00"},"yesterday":[],"needs_attention":[{"text":"Confirm the next step"}]}"#,
+            )
+            .unwrap();
+            let payload = pulse_payload(&context);
+            assert_eq!(payload["briefing_exists"], true, "hour {hour}");
+            assert_ne!(payload["briefing_phase"], "missing", "hour {hour}");
+            assert_eq!(payload["briefing_sections"], json!({}), "hour {hour}");
+            assert_eq!(payload["home_state"], "active", "hour {hour}");
+            let briefing = briefing_payload(&context);
+            assert_eq!(briefing["exists"], true, "hour {hour}");
+            assert_eq!(briefing["analysis_day"], "20260813", "hour {hour}");
         }
     }
 
@@ -984,7 +892,7 @@ mod tests {
             );
             assert_eq!(pulse_payload(&context)["briefing_phase"], expected);
         }
-        let late = briefing::lateness_state(
+        let late = crate::briefing::lateness_state(
             Utc.with_ymd_and_hms(2026, 8, 14, 13, 0, 0).unwrap(),
             "pending",
         );
@@ -1055,7 +963,6 @@ mod tests {
             processing["summary_line"],
             "yesterday’s processing status is unavailable."
         );
-        assert_eq!(processing["failed_run_count"], 0);
     }
 
     #[test]
@@ -1087,7 +994,7 @@ mod tests {
         assert_eq!(
             payload.pointer("/yesterday_processing/gap_links"),
             Some(&json!([{
-                "text": "your morning briefing wasn't prepared overnight.",
+                "text": "yesterday wasn't written up.",
                 "href": "/app/thinking/#runs/20260904/morning_briefing",
             }])),
             "the briefing gap points at the local analysis day's run",
@@ -1125,7 +1032,7 @@ mod tests {
         assert_eq!(
             payload.pointer("/yesterday_processing/gap_links"),
             Some(&json!([{
-                "text": "your morning briefing wasn't prepared overnight.",
+                "text": "yesterday wasn't written up.",
                 "href": "/app/thinking/#runs/20260904/morning_briefing",
             }])),
         );
@@ -1184,14 +1091,12 @@ mod tests {
         );
         let processing = summarize_yesterday_processing(&context, 1).unwrap();
         assert_eq!(processing["mode"], "sparse");
-        assert_eq!(processing["title"], "Yesterday's processing");
+        // A sparse night carries its reasons but is not a failure, so it
+        // brings no "what didn't finish" links.
+        assert_eq!(processing["gap_links"], json!([]));
         assert_eq!(
             processing["status_reasons"],
             json!(["pipeline_warning", "briefing_missing"])
-        );
-        assert_eq!(
-            processing["sparse_lines"],
-            json!(["there wasn't much else to process."])
         );
     }
 
@@ -1233,9 +1138,6 @@ mod tests {
                 .iter()
                 .any(|link| link["text"] == "…and 1 more didn't finish.")
         );
-        // The honest total (21) survives even though the anomalies array
-        // format_gap_links groups from is itself capped at 20.
-        assert_eq!(crate::formatting::count_failed_runs(&pipeline), 21);
     }
 
     #[test]
@@ -1286,7 +1188,10 @@ mod tests {
         );
         let processing = summarize_yesterday_processing(&context, 1).unwrap();
         assert_eq!(processing["mode"], "degraded");
-        assert_eq!(processing["title"], "⚠ Yesterday's processing");
+        assert_eq!(
+            processing["summary_line"],
+            "some overnight processing didn't finish."
+        );
     }
 
     #[test]
@@ -1402,14 +1307,6 @@ mod tests {
                 .unwrap()
                 .iter()
                 .any(|activity| activity["facet"] == "muted")
-        );
-        assert!(
-            !payload["yesterday_processing"]["details"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .filter_map(Value::as_str)
-                .any(|detail| detail.contains("Muted"))
         );
         assert!(!payload.to_string().contains("Unlisted"));
     }
@@ -1566,6 +1463,56 @@ mod tests {
             } else {
                 fs::copy(entry.path(), target).unwrap();
             }
+        }
+    }
+
+    /// The references were captured before home dropped the briefing's
+    /// needs-attention projections, its one-line summaries and the parts of
+    /// yesterday's processing only its old card read. Retire those from the
+    /// oracle so every field that survives is still compared.
+    fn retire_dropped_fields(reference: &mut Value) {
+        let pulse = reference["pulse"].as_object_mut().unwrap();
+        for key in [
+            "briefing_summary",
+            "briefing_needs_deduped",
+            "briefing_needs_shared_count",
+            "briefing_needs_badge",
+            "narrative_summary",
+            "today_summary",
+            "needs_summary",
+        ] {
+            pulse.remove(key);
+        }
+        if let Some(sections) = pulse
+            .get_mut("briefing_sections")
+            .and_then(Value::as_object_mut)
+        {
+            sections.remove("needs_attention");
+        }
+        let analysis_day = pulse["briefing_analysis_day"].clone();
+        if let Some(processing) = pulse
+            .get_mut("yesterday_processing")
+            .and_then(Value::as_object_mut)
+        {
+            processing.retain(|key, _| {
+                ["mode", "summary_line", "gap_links", "status_reasons"].contains(&key.as_str())
+            });
+            if processing.get("mode") != Some(&json!("degraded")) {
+                processing.insert("summary_line".to_owned(), json!(""));
+            }
+        }
+        let briefing = reference["briefing"].as_object_mut().unwrap();
+        for key in [
+            "summary",
+            "needs_deduped",
+            "needs_shared_count",
+            "needs_badge",
+        ] {
+            briefing.remove(key);
+        }
+        briefing.insert("analysis_day".to_owned(), analysis_day);
+        if let Some(sections) = briefing.get_mut("sections").and_then(Value::as_object_mut) {
+            sections.remove("needs_attention");
         }
     }
 

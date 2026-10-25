@@ -165,7 +165,8 @@ async function boot(source, lists, responses, labels = null) {
     querySelector(selector) { return selector === '[data-home-root]' ? root : null; }
   };
   window.window = window;
-  window.location = { pathname: '/app/home' };
+  // The originals list mounts on its own page only.
+  window.location = { pathname: '/app/home/originals/' };
   class FixtureDate extends Date { constructor(...args) { super(...(args.length ? args : [2026, 8, 5])); } }
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../../solstone-core-convey-shell/assets/static/date_format.js'), 'utf8'), { window, Date: FixtureDate });
   if (labels) window.JournalFormat.installStreamLabels({ status: 'complete', labels });
@@ -185,7 +186,7 @@ async function boot(source, lists, responses, labels = null) {
   };
   card.replace = async function (appName, replay) {
     root = appName === 'home' ? new Element() : null;
-    window.location.pathname = '/app/' + appName;
+    window.location.pathname = appName === 'home' ? '/app/home/originals/' : '/app/' + appName;
     if (replay) load();
     for (const listener of (listeners['workspace:mounted'] || []).slice()) listener({ detail: { appName } });
     await settle();
@@ -312,12 +313,41 @@ async function reviewTransportCases(source) {
   assert(!oldMissing.controls.some(item => item.dataset.removalAction === 'approve'), 'missing context has no action fallback');
 }
 
+// The first page and the week page carry no originals list: it mounts only on
+// its own page, and nowhere else reads it through this script.
+async function assertStaysOff(source, pathname) {
+  const root = new Element();
+  const calls = [];
+  const listeners = {};
+  const window = {
+    location: { pathname },
+    apiJson(url) { calls.push(url); return new Promise(() => {}); },
+    setTimeout() { return 1; },
+    clearTimeout() {},
+  };
+  window.window = window;
+  const document = {
+    readyState: 'complete',
+    addEventListener(type, listener) { (listeners[type] = listeners[type] || []).push(listener); },
+    removeEventListener() {},
+    createElement() { return new Element(); },
+    querySelector(selector) { return selector === '[data-home-root]' ? root : null; }
+  };
+  vm.runInNewContext(source, { document, Promise, setImmediate, window, Set }, { filename: 'removals.js' });
+  for (const listener of listeners['workspace:mounted'] || []) listener({ detail: { appName: 'home' } });
+  await settle();
+  assert.strictEqual(root.children.length, 0, `nothing mounts on ${pathname}`);
+  assert.deepStrictEqual(calls, [], `nothing is read on ${pathname}`);
+}
+
 async function main() {
   const manifestDir = process.argv[2];
   if (!manifestDir) throw new Error('manifest directory required');
   const source = fs.readFileSync(path.join(manifestDir, 'assets/removals.js'), 'utf8');
   const copy = copyTable(source);
   await reviewTransportCases(source);
+  await assertStaysOff(source, '/app/home/');
+  await assertStaysOff(source, '/app/home/week/20261019');
 
   const stream = '<img src=x onerror=stream>';
   const staged = 'chronicle/<img src=x onerror=staged>';

@@ -160,12 +160,9 @@ pub fn format_activity_label(activity: &Value) -> String {
     )
 }
 
-pub fn format_processing_summary(mode: &str, briefing_valid: bool) -> String {
+pub fn format_processing_summary(mode: &str) -> String {
     if mode == "degraded" {
         return "some overnight processing didn't finish.".to_owned();
-    }
-    if briefing_valid {
-        return "your morning briefing was prepared.".to_owned();
     }
     String::new()
 }
@@ -324,37 +321,9 @@ pub fn format_gap_links(
         links.push(json!({"text":"some overnight work didn't finish.","href":format!("/app/thinking/#runs/{yesterday}")}));
     }
     if !briefing_valid && overnight_passed {
-        links.push(json!({"text":"your morning briefing wasn't prepared overnight.","href":format!("/app/thinking/#runs/{yesterday}/morning_briefing")}));
+        links.push(json!({"text":"yesterday wasn't written up.","href":format!("/app/thinking/#runs/{yesterday}/morning_briefing")}));
     }
     links
-}
-
-/// Total count of talent runs that failed, honest about truncation: the
-/// `anomalies` array `format_gap_links` groups from may itself be a capped
-/// view, with the true total tracked separately in `outstanding_failed`.
-pub fn count_failed_runs(pipeline: &Value) -> i64 {
-    let visible = pipeline
-        .get("anomalies")
-        .and_then(Value::as_array)
-        .map(|rows| {
-            rows.iter()
-                .filter(|row| row.get("kind").and_then(Value::as_str) == Some("talent_failure"))
-                .count() as i64
-        })
-        .unwrap_or(0);
-    if pipeline
-        .pointer("/talents/failed_list_truncated")
-        .and_then(Value::as_bool)
-        == Some(true)
-    {
-        pipeline
-            .pointer("/talents/outstanding_failed")
-            .and_then(Value::as_i64)
-            .filter(|total| *total > visible)
-            .unwrap_or(visible)
-    } else {
-        visible
-    }
 }
 
 /// A talent's internal identifier is occasionally already plural (e.g. the
@@ -365,6 +334,9 @@ pub fn count_failed_runs(pipeline: &Value) -> i64 {
 fn singularize_talent_label(label: &str) -> String {
     match label {
         "documents" => "document".to_owned(),
+        // The briefing's identifier keeps its old name; owners know it as the
+        // daily briefing.
+        "morning briefing" => "daily briefing".to_owned(),
         other => other.to_owned(),
     }
 }

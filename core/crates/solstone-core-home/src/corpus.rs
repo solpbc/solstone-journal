@@ -108,10 +108,7 @@ fn replay_convey_home_corpus() {
     }
     for case in groups["processing_summary"].as_array().unwrap() {
         eq(
-            &formatting::format_processing_summary(
-                case["input"]["mode"].as_str().unwrap(),
-                case["input"]["briefing_valid"].as_bool().unwrap(),
-            ),
+            &formatting::format_processing_summary(case["input"]["mode"].as_str().unwrap()),
             &case["output"],
             "processing_summary",
         );
@@ -142,17 +139,6 @@ fn replay_convey_home_corpus() {
             "briefing needs",
         );
         asserted += 2;
-    }
-    for case in groups["briefing_summary"].as_array().unwrap() {
-        eq(
-            &briefing::summary(
-                &case["input"]["sections"],
-                case["input"]["needs_count"].as_i64().unwrap(),
-            ),
-            &case["output"],
-            "briefing summary",
-        );
-        asserted += 1;
     }
     for case in groups["gap_links"].as_array().unwrap() {
         let mut expected = case["output"].clone();
@@ -288,7 +274,7 @@ fn replay_convey_home_corpus() {
         );
         asserted += 1;
     }
-    assert_eq!(asserted, 1226);
+    assert_eq!(asserted, 1217);
 }
 
 fn rewrite_sol_urls_in_value(value: &mut Value) {

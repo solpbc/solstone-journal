@@ -775,10 +775,7 @@ async fn week_peek_moment_and_caption_resolution() {
         rows[0]["peek_href"],
         "/source?ref=sol%3A%2F%2F20260308%2F100000_300"
     );
-    assert_eq!(
-        rows[0]["peek_caption"],
-        "from the morning briefing on mon 9"
-    );
+    assert_eq!(rows[0]["peek_caption"], "from the daily briefing for sun 8");
 
     // 2. Activity reference selected as moment
     assert_eq!(rows[1]["peek_label"], "open that moment →");
@@ -786,10 +783,7 @@ async fn week_peek_moment_and_caption_resolution() {
         rows[1]["peek_href"],
         "/source?ref=sol%3A%2F%2Ffacets%2Fwork%2Factivities%2F20260309%23act1"
     );
-    assert_eq!(
-        rows[1]["peek_caption"],
-        "from the morning briefing on tue 10"
-    );
+    assert_eq!(rows[1]["peek_caption"], "from the daily briefing for mon 9");
 
     // 3. Fallback when refs is empty -> fallback to source.uri
     assert_eq!(rows[2]["peek_label"], "open it in thinking →");
@@ -799,7 +793,7 @@ async fn week_peek_moment_and_caption_resolution() {
     );
     assert_eq!(
         rows[2]["peek_caption"],
-        "from the morning briefing on wed 11"
+        "from the daily briefing for tue 10"
     );
 }
 

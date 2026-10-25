@@ -875,9 +875,11 @@
   }
 
   function mount() {
+    // The originals list has its own page; the first page shows only a row
+    // that links to it.
     const pathname = window.location.pathname || '';
     const root = document.querySelector('[data-home-root]');
-    if (pathname.startsWith('/app/home/week/') || !root) { detach(); return; }
+    if (!pathname.startsWith('/app/home/originals/') || !root) { detach(); return; }
     if (root === mountedRoot && card) { refresh(); return; }
     detach();
     reviewContext = null;

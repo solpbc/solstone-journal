@@ -890,11 +890,11 @@ pub fn page_model(
                     .as_deref()
                     .and_then(week_day)
                     .unwrap_or(mem_date);
-                let presentation_date = briefing_date + Duration::days(1);
+                // Dated by the day the briefing covers, as home dates it.
                 let peek_caption = format!(
-                    "from the morning briefing on {} {}",
-                    short_weekday(presentation_date),
-                    presentation_date.day()
+                    "from the daily briefing for {} {}",
+                    short_weekday(briefing_date),
+                    briefing_date.day()
                 );
 
                 rows.push(json!({

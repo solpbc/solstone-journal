@@ -15,6 +15,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - when everything that went into your journal for a stretch came from your terminal, the description of that stretch now quotes the text that was on screen, such as an input line, instead of paraphrasing it. this works with whichever model your journal thinks with.
 - the screen record of a long stretch at your terminal is now written in parts with every model and wherever your journal runs, as it already was on linux with the local model. your journal no longer drops the start of that stretch for a model that can't take it all at once, unless the stretch is too long to split.
 - in a meeting, a person whose voice your journal recognized on at least two lines is now listed as attending, even if nothing written that day named them, and so is a voice you haven't named yet, like "Speaker 2". a single matched line is no longer enough unless you assigned that line yourself, so that person is listed as mentioned. activities already in your journal keep their people as they are.
+- the morning briefing is now the daily briefing. on home, a switch moves between yesterday's daily briefing and today, and it opens on yesterday until something goes into your journal today. anything waiting on you, like originals to review or a voice to confirm, now sits in a list under the status line that appears only when something is waiting, and originals have their own page.
 
 ### Fixed
 

@@ -154,6 +154,13 @@ class DOMElement extends DOMNode {
     }
   }
 
+  // Focus and containment, enough for the day switch's focus rules.
+  focus() { this.ownerDocument.activeElement = this; }
+  contains(node) {
+    for (let curr = node; curr; curr = curr.parentNode) if (curr === this) return true;
+    return false;
+  }
+
   closest(selector) {
     let curr = this;
     while (curr && curr instanceof DOMElement) {
@@ -355,11 +362,16 @@ class DOMDocument extends DOMNode {
 
 let source = fs.readFileSync(path.join(manifestDir, 'assets/home.js'), 'utf8');
 source = source.replace(
-  '  window.toggleBriefingCard = toggleBriefingCard;\n',
+  '  window.selectAccountSide = selectAccountSide;\n',
   `  window.__home_test = {
     renderPulse,
-    renderNeedsYou,
+    renderVitals,
     renderNarrative,
+    renderBriefing,
+    selectAccountSide,
+    handleDashboardKeydown,
+    readVitals,
+    getSides: () => ({ paintedSide, selectedSide }),
     readFirstMinutes,
     readAgents,
     handleSpeechRetry,
@@ -387,7 +399,7 @@ source = source.replace(
       if ('speechRetryInFlight' in st) speechRetryInFlight = st.speechRetryInFlight;
     },
   };
-  window.toggleBriefingCard = toggleBriefingCard;\n`,
+  window.selectAccountSide = selectAccountSide;\n`,
 );
 
 const doc = new DOMDocument();
@@ -439,6 +451,7 @@ const win = {
   },
   JournalFormat: {
     day: (d) => d,
+    dayFull: (d) => 'day ' + d,
     time: (t) => t,
     timestamp: (ts) => ts,
   },
@@ -470,8 +483,13 @@ vm.runInNewContext(source, {
 }, { filename: 'home.js' });
 const {
   renderPulse,
-  renderNeedsYou,
+  renderVitals,
   renderNarrative,
+  renderBriefing,
+  selectAccountSide,
+  handleDashboardKeydown,
+  readVitals,
+  getSides,
   readFirstMinutes,
   readAgents,
   handleSpeechRetry,
@@ -489,13 +507,13 @@ setRoot(rootEl);
 
 async function runTests() {
   // 1. STEP 1 BASELINE TEST:
-  // Render welcome state pulse with needs items when getting started is not visible.
-  // Assert that welcome surface is directly under vitals, and welcome needs anchors after welcome.
+  // A welcome-state journal shows the status line, anything waiting as rows
+  // under it, and the welcome line directly after, with no cards.
   const welcomePulse = {
     home_state: 'welcome',
     health_glance: { verdict: 'calm', severity: 'neutral', headline: 'devices quiet' },
     narrative_content: null,
-    needs_you_items: [{ title: 'voice setup', kind: 'speech_setup' }],
+    needs_you_items: [{ text: 'set up your voice', kind: 'route', payload: { href: '/app/speakers/#your-voice' } }],
     today: '20261017',
     now: '2026-10-17T12:00:00Z',
     segment_count: 0,
@@ -507,27 +525,19 @@ async function runTests() {
 
   const vitalsEl = surface.querySelector('[data-home-surface="vitals"]');
   const welcomeEl = surface.querySelector('[data-home-surface="welcome"]');
-  const needsEl = surface.querySelector('[data-home-surface="needs"]');
+  assert(vitalsEl, 'vitals present');
+  assert(welcomeEl, 'welcome line present');
+  assert(vitalsEl.querySelector('[href="/app/speakers/#your-voice"]'), 'the voice prompt is a waiting row');
+  assert.strictEqual(surface.querySelector('[data-home-surface="account"]'), null, 'no account card in the welcome state');
+  assert.strictEqual(surface.querySelector('[data-home-surface="pair"]'), null, 'no empty cards in the welcome state');
+  assert.strictEqual(surface.children.indexOf(welcomeEl), surface.children.indexOf(vitalsEl) + 1, 'welcome line directly under the status');
 
-  assert(vitalsEl, 'vitals card present');
-  assert(welcomeEl, 'welcome card present');
-  assert(needsEl, 'needs card present');
-
-  const vitalsIndex = surface.children.indexOf(vitalsEl);
-  const welcomeIndex = surface.children.indexOf(welcomeEl);
-  const needsIndex = surface.children.indexOf(needsEl);
-
-  assert.strictEqual(welcomeIndex, vitalsIndex + 1, "today's welcome surface is directly under vitals");
-  assert.strictEqual(needsIndex, welcomeIndex + 1, 'welcome needs card anchors after welcome');
-
-  // Live update of needs via renderNeedsYou
-  renderNeedsYou(welcomePulse);
-  const needsAfter = surface.querySelector('[data-home-surface="needs"]');
-  assert(needsAfter, 'needs card still present after renderNeedsYou');
+  // A live re-render of the status keeps the order.
+  renderVitals(welcomePulse);
   assert.strictEqual(
-    surface.children.indexOf(needsAfter),
-    surface.children.indexOf(welcomeEl) + 1,
-    'welcome needs card remains anchored after welcome after live update'
+    surface.children.indexOf(surface.querySelector('[data-home-surface="welcome"]')),
+    surface.children.indexOf(surface.querySelector('[data-home-surface="vitals"]')) + 1,
+    'welcome line stays under the status after a live update'
   );
 
   // 2. DEVICE STATES & PHONE CHECK:
@@ -901,9 +911,9 @@ async function runTests() {
     agentsSettled: true,
   });
   renderPulse(welcomePulse);
-  // All checks done -> card not visible, welcome rendered
+  // All checks done -> card not visible, welcome line still there
   assert(!surface.querySelector('[data-home-surface="getting-started"]'), 'card hides when agent check done and others done');
-  assert(surface.querySelector('[data-home-surface="welcome"]'), 'welcome card restored');
+  assert(surface.querySelector('[data-home-surface="welcome"]'), 'welcome line present');
 
   // Non-empty connections: hidden, check done
   setState({
@@ -1350,8 +1360,11 @@ async function runTests() {
   renderPulse(welcomePulse);
   assert(surface.querySelector('[data-getting-started-next]'), '[data-getting-started-next] present when a step remains');
 
-  // 10. CARD / WELCOME SWAP & RECOVERY:
-  // Card removed and welcome restored under vitals when later read fails
+  // 10. GETTING STARTED BESIDE THE WELCOME LINE:
+  // Getting started comes and goes; the welcome line stays, exactly once.
+  assert(surface.querySelector('[data-home-surface="getting-started"]'), 'card shown before the failed read');
+  assert.strictEqual(surface.querySelectorAll('[data-home-surface="welcome"]').length, 1, 'one welcome line beside getting started');
+  // Card removed and welcome line kept under vitals when a later read fails
   setState({
     firstMinutesPayload: null,
     setupPayload: null,
@@ -1361,12 +1374,13 @@ async function runTests() {
   });
   updateGettingStartedSurface();
   assert(!surface.querySelector('[data-home-surface="getting-started"]'), 'card removed on read failure');
+  assert.strictEqual(surface.querySelectorAll('[data-home-surface="welcome"]').length, 1, 'still one welcome line');
   const restoredWelcome = surface.querySelector('[data-home-surface="welcome"]');
-  assert(restoredWelcome, 'welcome restored on read failure');
+  assert(restoredWelcome, 'welcome line kept on read failure');
   assert.strictEqual(
     surface.children.indexOf(restoredWelcome),
     surface.children.indexOf(surface.querySelector('[data-home-surface="vitals"]')) + 1,
-    'restored welcome is directly under vitals'
+    'the welcome line is directly under vitals'
   );
 
   // Response {} does not throw and does not latch
@@ -1421,24 +1435,94 @@ async function runTests() {
     'card remains directly under vitals after renderNarrative'
   );
 
-  renderNeedsYou(activePulse);
+  renderVitals(activePulse);
   assert.strictEqual(
     surface.children.indexOf(surface.querySelector('[data-home-surface="getting-started"]')),
     surface.children.indexOf(surface.querySelector('[data-home-surface="vitals"]')) + 1,
-    'card remains directly under vitals after renderNeedsYou'
+    'card remains directly under vitals after a status re-render'
   );
 
-  // Live day section defaults: narrative, today, needs have data-section-collapsed="false"
-  const narrEl = surface.querySelector('#pulse-narrative');
-  assert.strictEqual(narrEl?.getAttribute('data-section-collapsed'), 'false', 'narrative section collapsed is false on live day with card shown');
+  // 11b. THE DAY SWITCH:
+  // A day with material opens on today; the panels follow the tab.
+  assert.deepStrictEqual({ ...getSides() }, { paintedSide: 'today', selectedSide: 'today' }, 'a live day opens on today');
+  const tabFor = side => surface.querySelector('#pulse-account-tab-' + side);
+  const panelFor = side => surface.querySelector('#pulse-account-panel-' + side);
+  assert.strictEqual(tabFor('today').getAttribute('aria-selected'), 'true');
+  assert.strictEqual(tabFor('today').getAttribute('aria-controls'), 'pulse-account-panel-today');
+  assert.strictEqual(panelFor('today').getAttribute('role'), 'tabpanel');
+  assert.strictEqual(panelFor('yesterday').hasAttribute('hidden'), true);
+  assert.strictEqual(surface.querySelector('[role="tablist"]') !== null, true, 'the switch is a tab list');
+  // The date beside the switch is the shown side's day.
+  assert.strictEqual(surface.querySelector('[data-account-day-text]').innerHTML.includes('20261017'), true);
 
-  // Also when card is hidden
-  setState({
-    firstMinutesPayload: null,
-  });
+  // A quiet day opens on yesterday, with yesterday's analysis day beside it.
+  const quietPulse = { ...activePulse, segment_count: 0, activities: [], narrative_content: null, briefing_analysis_day: '20261016',
+    briefing_exists: true, briefing_phase: 'morning', briefing_sections: { yesterday: '- a steady day.' }, briefing_meta: { generated: '2026-10-17T07:12:00' } };
+  apiResolver = () => new Promise(() => {});
+  setState({ firstMinutesPayload: null });
+  renderPulse(quietPulse);
+  assert.deepStrictEqual({ ...getSides() }, { paintedSide: 'yesterday', selectedSide: 'yesterday' }, 'a quiet day opens on yesterday');
+  assert.strictEqual(panelFor('today').hasAttribute('hidden'), true);
+  assert.strictEqual(surface.querySelector('[data-account-day-text]').innerHTML.includes('20261016'), true);
+
+  // Today's first material arriving by a live refresh never flips the switch.
+  apiResolver = (url) => url === '/app/home/api/pulse' ? Promise.resolve({ ...activePulse }) : new Promise(() => {});
+  await readVitals();
+  renderNarrative(activePulse);
+  assert.strictEqual(getSides().selectedSide, 'yesterday', 'a refresh does not move the switch');
+
+  // The owner's tap holds through refreshes.
+  selectAccountSide('today', false);
+  assert.strictEqual(panelFor('yesterday').hasAttribute('hidden'), true);
+  assert.strictEqual(panelFor('today').hasAttribute('hidden'), false);
+  renderBriefing({ exists: true, phase: 'active', analysis_day: '20261016', meta: null, sections: { yesterday: '- a steady day.' } });
+  renderNarrative(activePulse);
+  assert.strictEqual(getSides().selectedSide, 'today', "the owner's choice survives refreshes");
+  assert.strictEqual(tabFor('today').getAttribute('aria-selected'), 'true');
+
+  // Arrow keys move the selection and focus with it.
+  handleDashboardKeydown({ key: 'ArrowRight', target: tabFor('today'), preventDefault() {} });
+  assert.strictEqual(getSides().selectedSide, 'yesterday', 'ArrowRight wraps to yesterday');
+  assert.strictEqual(doc.activeElement, tabFor('yesterday'), 'focus follows the selection');
+  handleDashboardKeydown({ key: 'End', target: tabFor('yesterday'), preventDefault() {} });
+  assert.strictEqual(getSides().selectedSide, 'today');
+
+  // Focus inside the side a refresh re-renders comes back to the same link.
+  selectAccountSide('yesterday', false);
+  const runLink = panelFor('yesterday').querySelector('a');
+  assert(runLink, 'the yesterday side links its run');
+  runLink.focus();
+  renderBriefing({ exists: true, phase: 'active', analysis_day: '20261016', meta: null, sections: { yesterday: '- a steady day.' } });
+  assert.strictEqual(doc.activeElement && doc.activeElement.getAttribute('href'), runLink.getAttribute('href'), 'focus returns to the same link');
+  assert.notStrictEqual(doc.activeElement, runLink, 'the link was re-rendered');
+
+  // An account with an empty yesterday section is still an account.
+  renderBriefing({ exists: true, phase: 'active', analysis_day: '20261016', meta: null, sections: {} });
+  assert.strictEqual(panelFor('yesterday').querySelector('.pulse-briefing-status-link'), null, 'never "not written" for an account');
+  assert(panelFor('yesterday').querySelector('.pulse-briefing-placeholder'), 'says the section is empty');
+
+  // A missing account painted on today rides the waiting list until a
+  // briefing read brings it.
+  const missingNight = { ...activePulse, briefing_analysis_day: '20261016', briefing_exists: false, briefing_phase: 'missing',
+    yesterday_processing: { mode: 'degraded', summary_line: "some overnight processing didn't finish.",
+      gap_links: [{ text: "yesterday wasn't written up.", href: '/app/thinking/#runs/20261016/morning_briefing' }], status_reasons: ['briefing_missing'] } };
+  renderPulse(missingNight);
+  const accountRow = () => surface.querySelector('[data-home-surface="vitals"]').querySelector('[href="/app/thinking/#runs/20261016/morning_briefing"]');
+  assert(accountRow(), 'the missing account is a waiting row when the switch opened on today');
+  renderBriefing({ exists: true, phase: 'active', analysis_day: '20261016', meta: null, sections: { yesterday: '- late, but here.' } });
+  assert.strictEqual(accountRow(), null, 'an account that arrives takes its row away');
+
+  // The zone note sits beside the date when the journal's zone differs, and
+  // survives a refresh that re-renders the date.
+  const placed = [];
+  win.JournalClock = { placeNote(anchor, options) { placed.push({ anchor, options }); } };
   renderPulse(activePulse);
-  const narrElHidden = surface.querySelector('#pulse-narrative');
-  assert.strictEqual(narrElHidden?.getAttribute('data-section-collapsed'), 'false', 'narrative section collapsed is false on live day with card hidden');
+  assert(placed.some(entry => entry.anchor.hasAttribute('data-account-day')), 'zone note anchored beside the date');
+  placed.length = 0;
+  renderBriefing({ exists: true, phase: 'active', analysis_day: '20261016', meta: null, sections: {} });
+  selectAccountSide('yesterday', false);
+  assert(placed.some(entry => entry.anchor.hasAttribute('data-account-day')), 'zone note placed again after the date changes');
+  delete win.JournalClock;
 
   // 12. SAY A SENTENCE LAYER (PROOF) TESTS:
   const shownStates = ['waiting', 'no_audio', 'transcribing', 'nothing_heard', 'failed', 'heard'];

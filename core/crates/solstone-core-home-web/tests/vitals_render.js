@@ -11,11 +11,11 @@ if (!manifestDir) throw new Error('manifest directory required');
 
 let source = fs.readFileSync(path.join(manifestDir, 'assets/home.js'), 'utf8');
 source = source.replace(
-  '  window.toggleBriefingCard = toggleBriefingCard;\n',
+  '  window.selectAccountSide = selectAccountSide;\n',
   `  window.__vitals = { renderVitalsHtml, homeHealthGlance, receiveSupervisorStatus, invalidateHeldWork, refreshVitals, refreshNarrative, refreshChangedPulse,
     captureNarrative: () => { renderNarrative = data => { window.__narrative = data.narrative_content; }; },
     seedPulse: data => { lastPulse=data; pulseObservedAt=Date.now(); pulseReadFailed=false; pulseRequest=null; vitalsRequest=null; narrativeRequest=null; } };
-  window.toggleBriefingCard = toggleBriefingCard;\n`,
+  window.selectAccountSide = selectAccountSide;\n`,
 );
 
 let now = 1000;
@@ -87,7 +87,7 @@ const calm = renderVitalsHtml({
 });
 assert(calm.includes('pulse-vitals-dot neutral'), calm);
 assert(calm.includes('pulse-vitals-verdict neutral'), calm);
-assert.strictEqual(calm.includes('pulse-vitals-chip'), false, calm);
+assert.strictEqual(calm.includes('pulse-waiting'), false, calm);
 assert.strictEqual(calm.includes('pulse-vitals-dot green'), false, calm);
 assert.strictEqual(calm.includes('pulse-vitals-verdict green'), false, calm);
 assert.strictEqual(calm.includes('pulse-vitals-dot amber'), false, calm);
@@ -103,7 +103,7 @@ const green = renderVitalsHtml({
 });
 assert(green.includes('pulse-vitals-dot green'), green);
 assert(green.includes('pulse-vitals-verdict green'), green);
-assert.strictEqual(green.includes('pulse-vitals-chip'), false, green);
+assert.strictEqual(green.includes('pulse-waiting'), false, green);
 
 const amber = renderVitalsHtml({
   health_glance: {
@@ -115,7 +115,10 @@ const amber = renderVitalsHtml({
 });
 assert(amber.includes('pulse-vitals-dot amber'), amber);
 assert(amber.includes('pulse-vitals-verdict amber'), amber);
-assert(amber.includes('pulse-vitals-chip amber'), amber);
+// A health issue is a row of what's waiting, under a headline that names the list.
+assert((amber.match(/class="pulse-waiting-row"/g) || []).length === 1, amber);
+assert(amber.includes('aria-labelledby="pulse-status-headline"'), amber);
+assert.strictEqual(amber.includes('pulse-waiting-heading'), false, amber);
 
 const red = renderVitalsHtml({
   health_glance: {
@@ -127,7 +130,7 @@ const red = renderVitalsHtml({
 });
 assert(red.includes('pulse-vitals-dot red'), red);
 assert(red.includes('pulse-vitals-verdict red'), red);
-assert(red.includes('pulse-vitals-chip red'), red);
+assert(red.includes('pulse-waiting-row red'), red);
 
 // Not yet, and that's fine: the note rides any verdict as a calm row, never a
 // chip and never in the count (the day-0 rule).
@@ -146,7 +149,7 @@ assert(noted.includes('<a class="pulse-vitals-item pulse-vitals-cta" href="/app/
 assert(noted.includes('<a class="pulse-vitals-note" href="/app/health/#backlogVerdict">'), noted);
 assert(noted.includes('pulse-vitals-ring'), noted);
 assert(noted.includes('your journal starts catching up once you choose where the thinking happens. →'), noted);
-assert.strictEqual((noted.match(/pulse-vitals-chip/g) || []).length, 1, noted);
+assert.strictEqual((noted.match(/pulse-waiting-row/g) || []).length, 1, noted);
 const calmNoted = renderVitalsHtml({
   health_glance: {
     verdict: 'calm',

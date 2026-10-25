@@ -19,7 +19,7 @@ Your journal is a folder of dated directories on a machine you choose. You can r
 - **connections.** Who spoke with whom, who was in the room, which projects touch which people. A knowledge graph that builds itself.
 - **meetings.** Detected from natural conversation and kept with their source context. No manual entry.
 - **facets.** Group everything by project or context (work, personal, a client name) and see your journal through that lens in every view.
-- **daily and weekly synthesis.** A morning briefing and a weekly reflection, written from your own material. The briefing is grounded on the day's activity records.
+- **daily and weekly synthesis.** A daily briefing from each day's activity records, ready the next morning, and a weekly reflection, written from your own material.
 - **imports.** Audio and images, documents, calendar files, Obsidian vaults, conversation exports from ChatGPT, Claude and Gemini, Plaud devices, Apple Health and Oura body data, and archives from another journal.
 - **full-text search.** From the command line and from your agents: `solstone call journal search`.
 - **your agents, your choice.** Claude Code, Codex, Gemini CLI, or anything that runs a shell reads your journal through its solstone skill. The journal does not chat with you. Your agent does, grounded in your journal.

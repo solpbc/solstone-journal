@@ -9,7 +9,7 @@ const vm = require('vm');
 const cases = JSON.parse(fs.readFileSync(0, 'utf8'));
 const manifest = process.argv[2];
 let source = fs.readFileSync(path.join(manifest, 'assets/home.js'), 'utf8');
-const anchor = '  window.toggleBriefingCard = toggleBriefingCard;\n';
+const anchor = '  window.selectAccountSide = selectAccountSide;\n';
 assert(source.includes(anchor));
 source = source.replace(anchor, `  window.__backup = {observeBackup, renderVitalsHtml, homeHealthGlance, receiveSupervisorStatus,
   fail: value => { pulseReadFailed=value; }, refreshVitals,

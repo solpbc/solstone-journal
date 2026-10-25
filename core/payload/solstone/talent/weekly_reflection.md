@@ -1,7 +1,7 @@
 {
   "type": "generate",
   "title": "Weekly Reflection",
-  "description": "Selects one morning-briefing memory from each day of a finished week.",
+  "description": "selects one memory from each day of a finished week, out of that day's daily briefing",
   "schedule": "weekly",
   "priority": 90,
   "output": "md",

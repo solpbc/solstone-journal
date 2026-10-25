@@ -18,15 +18,172 @@
 }
 
 /* Vital Signs */
+/* One status line on the page ground, and under it, only when something is
+   there, what's waiting on the owner. */
+.pulse-status {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0 0.25rem;
+}
+
 .pulse-vitals {
   display: flex;
   align-items: center;
-  gap: 1.5rem;
-  padding: 1.25rem;
-  background: var(--cream-bright);
+  gap: 1rem;
+  padding: 0.25rem 0;
+  flex-wrap: wrap;
+}
+
+.pulse-waiting-heading {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--ink);
+  margin: 0.25rem 0 0;
+}
+
+.pulse-waiting {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.pulse-waiting-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  padding: 0.45rem 0;
+  border-top: 1px solid var(--hairline);
+  font-size: 0.875rem;
+  color: var(--ink-soft);
+}
+
+/* A hollow ring, so what's waiting reads by shape as well as colour. */
+.pulse-waiting-ring {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 2px solid var(--warn);
+  flex-shrink: 0;
+  position: relative;
+  top: 1px;
+}
+
+.pulse-waiting-row.red .pulse-waiting-ring { border-color: var(--danger); }
+
+.pulse-waiting-row a {
+  color: var(--warn-ink);
+  text-decoration: none;
+}
+
+.pulse-waiting-row.red a { color: var(--danger); }
+.pulse-waiting-row a:hover { text-decoration: underline; }
+.pulse-waiting-row a:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+.pulse-waiting-reason {
+  display: block;
+  font-size: 0.8rem;
+  color: var(--ink-faint);
+}
+
+/* The written account: a day switch over yesterday and today. */
+.pulse-account {
+  padding: 1.25rem 1.5rem;
+  background: var(--paper);
   border-radius: 10px;
   border: 1px solid var(--hairline);
+}
+
+.pulse-account-head {
+  display: flex;
   flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  margin-bottom: 1rem;
+}
+
+.pulse-account-tabs {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--hairline-2);
+  border-radius: 10px;
+  background: var(--cream-bright);
+}
+
+.pulse-account-tab {
+  font: inherit;
+  font-size: 0.9rem;
+  min-height: var(--touch-min, 44px);
+  padding: 0 1rem;
+  border: 0;
+  border-radius: 7px;
+  background: none;
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+
+.pulse-account-tab:hover { color: var(--ink); }
+.pulse-account-tab[aria-selected="true"] {
+  background: var(--orange-wash);
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.pulse-account-tab:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.pulse-account-day {
+  font-size: 0.8rem;
+  color: var(--ink-faint);
+}
+
+.pulse-account-panel[hidden] { display: none; }
+
+.pulse-account-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 1rem;
+  margin-top: 0.5rem;
+  font-size: 0.75rem;
+  color: var(--ink-faint);
+}
+
+.pulse-account [data-account-part="activities"] {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--hairline);
+}
+
+.pulse-briefing-body {
+  font-size: 0.9rem;
+  line-height: 1.6;
+  color: var(--ink);
+  max-width: 65ch;
+}
+
+.pulse-briefing-body p { margin: 0 0 0.4rem; }
+.pulse-briefing-body ul { margin: 0; padding-left: 1.25rem; }
+.pulse-briefing-body li { margin-bottom: 0.3rem; }
+
+/* Connections and your week side by side, connections the wider. */
+.pulse-pair {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1rem;
+  align-items: start;
+}
+
+@media (min-width: 820px) {
+  .pulse-pair--two { grid-template-columns: 3fr 2fr; }
 }
 
 .pulse-vitals-item {
@@ -83,19 +240,6 @@
 .pulse-vitals-verdict.red { color: var(--danger); }
 .pulse-vitals-verdict.neutral { color: var(--ink-soft); }
 
-.pulse-vitals-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
-  font-size: 0.78rem;
-  padding: 0.15rem 0.5rem;
-  border-radius: 999px;
-  border: 1px solid transparent;
-  text-decoration: none;
-}
-.pulse-vitals-chip.red { color: var(--danger); background: var(--danger-wash); border-color: var(--danger-wash); }
-.pulse-vitals-chip.amber { color: var(--warn-ink); background: var(--warn-wash); border-color: var(--warn-wash); }
-
 .pulse-vitals-cta { color: var(--orange-text-aa); text-decoration: none; }
 
 /* Not yet, and that's fine: a full-width calm row, a hollow ring (shape, not
@@ -134,83 +278,8 @@
 }
 
 /* Section collapse/expand */
-.pulse-section-toggle {
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  min-height: var(--touch-min, 44px);
-  transition: background 0.15s ease;
-}
-.pulse-section-toggle::before {
-  content: "▾";
-  font-size: 0.85rem;
-  color: var(--ink-soft);
-  transition: transform 0.15s;
-  width: 0.85rem;
-  flex-shrink: 0;
-  text-align: center;
-  margin-left: -1.25rem;
-  line-height: 1;
-}
-[data-section-collapsed="true"] .pulse-section-toggle::before {
-  transform: rotate(-90deg);
-}
-[data-section-collapsed="true"] > .pulse-section-toggle {
-  padding-block: 0.5rem;
-}
-[data-section-collapsed="false"] > .pulse-section-toggle {
-  border-bottom: 1px solid var(--hairline);
-  padding-bottom: 0.5rem;
-  margin-bottom: 0.35rem;
-}
-.pulse-section-toggle .pulse-section-header {
-  margin-bottom: 0;
-  border-bottom: none;
-  padding-bottom: 0;
-}
-.pulse-briefing-header .pulse-section-header {
-  margin-bottom: 0;
-  border-bottom: none;
-  padding-bottom: 0;
-}
-.pulse-section-summary {
-  font-size: 0.8rem;
-  color: var(--ink-faint);
-  margin-left: auto;
-  max-width: 60%;
-  font-weight: 400;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-[data-section-collapsed="false"] .pulse-section-summary { display: none; }
-[data-section-collapsed="true"] .pulse-section-body { display: none; }
-[data-section-collapsed="true"].pulse-today,
-[data-section-collapsed="true"].pulse-narrative {
-  padding: 1rem 1.25rem;
-}
-.pulse-section-toggle:hover {
-  background: var(--cream-bright);
-  border-radius: 6px;
-}
-.pulse-section-toggle:focus-visible {
-  outline: 2px solid var(--focus);
-  outline-offset: 2px;
-  border-radius: 6px;
-}
-.pulse-section-toggle:active {
-  background: var(--hairline);
-}
 
 /* Narrative */
-.pulse-narrative {
-  padding: 1.25rem;
-  background: var(--paper);
-  border-radius: 10px;
-  border: 1px solid var(--hairline);
-}
-
 .pulse-narrative-content {
   font-size: 0.9rem;
   line-height: 1.6;
@@ -280,13 +349,6 @@
 }
 
 /* Today Section */
-.pulse-today {
-  padding: 1.25rem;
-  background: var(--paper);
-  border-radius: 10px;
-  border: 1px solid var(--hairline);
-}
-
 .pulse-activities-label {
   font-size: 0.75rem;
   color: var(--ink-faint);
@@ -369,81 +431,9 @@
 }
 
 /* Needs You */
-.pulse-needs {
-  padding: 1.25rem;
-  background: var(--paper);
-  border-radius: 10px;
-  border: 1px solid var(--hairline);
-}
-
-.pulse-needs-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.65rem;
-}
-
-.pulse-needs-item {
-  font-size: 0.85rem;
-  color: var(--ink);
-  display: flex;
-  align-items: baseline;
-  gap: 0.5rem;
-  padding: 0.35rem 0.35rem 0.35rem 0;
-}
-
-.pulse-needs-item:not(:last-child) {
-  border-bottom: 1px solid var(--hairline);
-}
 
 /* The circle read as an unchecked checkbox on a row that cannot be checked.
    A plain list is the honest shape. X-22. */
-.pulse-needs-item::before {
-  content: "";
-}
-
-.pulse-needs-item.pulse-needs-attention {
-  color: var(--danger);
-  font-weight: 500;
-  margin-bottom: 0.4rem;
-  padding-bottom: 0.6rem;
-  border-bottom: 1px solid var(--danger-wash);
-}
-
-.pulse-needs-attention::before {
-  content: "⚠";
-  color: var(--danger);
-  width: 0.75rem;
-  text-align: center;
-  margin-left: -1.25rem;
-  flex-shrink: 0;
-}
-
-.pulse-needs-more {
-  font-size: 0.8rem;
-  color: var(--orange-text-aa);
-  margin-top: 0.5rem;
-}
-
-.pulse-needs-more a {
-  color: inherit;
-  text-decoration: none;
-}
-
-.pulse-needs-more a:hover { text-decoration: underline; }
-
-.pulse-needs-item span[style] {
-  vertical-align: baseline;
-}
-
-.pulse-needs-item-disabled {
-  color: var(--ink-soft);
-  cursor: default;
-}
-
-.pulse-needs-reason {
-  color: var(--warn-ink);
-  font-size: 0.78rem;
-}
 
 /* Connections */
 .pulse-connections {
@@ -553,28 +543,6 @@
   padding-top: 0.75rem;
 }
 
-.pulse-briefing-header:focus-visible {
-  outline: 2px solid var(--focus);
-  outline-offset: 2px;
-}
-.pulse-yesterday-header:focus-visible {
-  outline: 2px solid var(--focus);
-  outline-offset: 2px;
-}
-.pulse-briefing-header[role="button"]:hover {
-  background: var(--cream-bright);
-  border-radius: 6px;
-}
-.pulse-yesterday-header:hover {
-  background: var(--cream-bright);
-  border-radius: 6px;
-}
-.pulse-briefing-header[role="button"]:active {
-  background: var(--hairline);
-}
-.pulse-yesterday-header:active {
-  background: var(--hairline);
-}
 .pulse-tell-more {
   display: inline-block;
   margin-top: 0.5rem;
@@ -596,50 +564,6 @@
 }
 
 /* Briefing Card */
-.pulse-briefing-card {
-  padding: 1.25rem;
-  background: var(--paper);
-  border-radius: 10px;
-  border: 1px solid var(--hairline);
-}
-.pulse-briefing-card[data-phase="eod"] { display: none; }
-
-.pulse-briefing-header {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  transition: background 0.15s ease;
-}
-
-.pulse-briefing-header[role="button"] {
-  cursor: pointer;
-  min-height: var(--touch-min, 44px);
-}
-.pulse-briefing-meta {
-  font-size: 0.75rem;
-  color: var(--ink-faint);
-  margin-left: auto;
-}
-.pulse-briefing-badge {
-  font-size: 0.75rem;
-  padding: 0.15rem 0.5rem;
-  background: var(--warn-wash);
-  color: var(--warn-ink);
-  border-radius: 4px;
-}
-.pulse-briefing-summary {
-  font-size: 0.85rem;
-  color: var(--ink-soft);
-  margin-top: 0.5rem;
-}
-.pulse-briefing-card[data-collapsed="false"] .pulse-briefing-header {
-  border-bottom: 1px solid var(--hairline);
-  padding-bottom: 0.5rem;
-  margin-bottom: 0.5rem;
-}
-.pulse-briefing-card[data-collapsed="false"] .pulse-briefing-summary { display: none; }
-.pulse-briefing-card[data-collapsed="true"] .pulse-briefing-body { display: none; }
-.pulse-briefing-card[data-phase="pending"] .pulse-briefing-body { display: none; }
 
 .pulse-briefing-body {
   margin-top: 1rem;
@@ -647,128 +571,6 @@
   flex-direction: column;
   gap: 1rem;
 }
-.pulse-yesterday {
-  padding: 1.25rem;
-  background: var(--paper);
-  border-radius: 10px;
-  border: 1px solid var(--hairline);
-}
-.pulse-yesterday-header {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  cursor: pointer;
-  min-height: var(--touch-min, 44px);
-  transition: background 0.15s ease;
-}
-.pulse-yesterday-summary {
-  font-size: 0.85rem;
-  color: var(--ink-soft);
-  margin-top: 0.5rem;
-}
-.pulse-yesterday[data-collapsed="false"] .pulse-yesterday-header {
-  border-bottom: 1px solid var(--hairline);
-  padding-bottom: 0.5rem;
-  margin-bottom: 0.5rem;
-}
-.pulse-yesterday[data-collapsed="false"] .pulse-yesterday-summary { display: none; }
-.pulse-yesterday[data-collapsed="true"] .pulse-yesterday-body { display: none; }
-.pulse-yesterday-body {
-  margin-top: 1rem;
-  color: var(--ink);
-}
-.pulse-yesterday-body p {
-  margin: 0 0 0.75rem;
-  line-height: 1.6;
-}
-.pulse-yesterday-body p:last-child {
-  margin-bottom: 0;
-}
-.pulse-yesterday-framing {
-  font-size: 0.9rem;
-  color: var(--ink-soft);
-}
-.pulse-yesterday-shelf-label {
-  color: var(--ink-soft);
-  font-size: 0.72rem;
-  font-weight: 600;
-  text-transform: none;
-  letter-spacing: 0.06em;
-  margin-bottom: 0.45rem;
-}
-.pulse-yesterday-shelf-label-spaced {
-  margin-top: 0.85rem;
-}
-.pulse-yesterday-details {
-  margin: 0;
-  padding-left: 1.25rem;
-  color: var(--ink);
-}
-.pulse-yesterday-details li {
-  margin: 0.35rem 0;
-  line-height: 1.55;
-}
-.pulse-yesterday-details a {
-  color: inherit;
-  text-decoration-color: var(--ink-faint);
-  text-underline-offset: 0.18rem;
-}
-.pulse-yesterday-details a:hover {
-  color: var(--ink);
-  text-decoration-color: var(--ink-faint);
-}
-.pulse-briefing-section-toggle {
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: var(--ink-soft);
-  text-transform: none;
-  letter-spacing: 0.04em;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  background: none;
-  border: none;
-  padding: 0;
-}
-.pulse-briefing-section-toggle::before {
-  content: "▾";
-  font-size: 0.75rem;
-  transition: transform 0.15s;
-  width: 0.75rem;
-  flex-shrink: 0;
-  text-align: center;
-  margin-left: -1.25rem;
-}
-.pulse-briefing-section[data-collapsed="true"] .pulse-briefing-section-toggle::before {
-  transform: rotate(-90deg);
-}
-.pulse-briefing-section[data-collapsed="true"] .pulse-briefing-section-body { display: none; }
-.pulse-briefing-section-toggle:hover {
-  color: var(--ink);
-}
-.pulse-briefing-section-toggle:hover::before {
-  color: var(--ink-soft);
-}
-.pulse-briefing-section-toggle:focus-visible {
-  outline: 2px solid var(--focus);
-  outline-offset: 2px;
-  border-radius: 4px;
-}
-.pulse-briefing-section-toggle:active {
-  color: var(--ink);
-}
-
-.pulse-briefing-section-body {
-  font-size: 0.85rem;
-  line-height: 1.6;
-  color: var(--ink);
-  margin-top: 0.4rem;
-  max-width: 65ch;
-}
-.pulse-briefing-section-body p { margin: 0 0 0.4rem; }
-.pulse-briefing-section-body ul { margin: 0; padding-left: 1.25rem; }
-.pulse-briefing-section-body li { margin-bottom: 0.3rem; }
 
 .pulse-briefing-placeholder {
   color: var(--ink-faint);
@@ -797,52 +599,12 @@
 }
 
 .pulse-welcome {
-  padding: 2rem;
-  background: var(--paper);
-  border-radius: 10px;
-  border: 1px solid var(--hairline);
-}
-
-.pulse-welcome h2 {
-  font-family: var(--font-display);
-  font-size: 1.15rem;
-  font-weight: 600;
-  color: var(--ink);
-  margin: 0 0 0.75rem;
-  letter-spacing: -0.01em;
-}
-
-.pulse-welcome p {
-  font-size: 0.9rem;
+  font-size: 0.95rem;
   color: var(--ink-soft);
   line-height: 1.6;
-  margin-bottom: 1rem;
-  max-width: 480px;
-  margin-left: auto;
-  margin-right: auto;
-}
-
-.pulse-welcome a {
-  color: var(--orange-text-aa);
-  text-decoration: none;
-  font-size: 0.85rem;
-  font-weight: 500;
-  margin-top: 0.5rem;
-  display: inline-block;
-}
-
-.pulse-welcome a:hover {
-  text-decoration: underline;
-}
-
-.pulse-welcome a:focus-visible {
-  outline: 2px solid var(--focus);
-  outline-offset: 2px;
-  border-radius: 2px;
-}
-
-.pulse-welcome a:active {
-  color: var(--orange-text-aa);
+  margin: 0;
+  padding: 0 0.25rem;
+  max-width: 70ch;
 }
 
 .pulse-empty-state {
@@ -1007,14 +769,8 @@
 }
 
 /* Shared left padding for indicator gutter */
-.pulse-vitals,
-.pulse-narrative,
 .pulse-reflection,
-.pulse-today,
-.pulse-needs,
 .pulse-connections,
-.pulse-yesterday,
-.pulse-briefing-card,
 .pulse-empty-state,
 .pulse-getting-started {
   padding-left: 2rem;
@@ -1035,14 +791,12 @@
   text-decoration: underline;
 }
 
-.pulse-needs-more a:focus-visible,
 .pulse-empty-state .pulse-empty-message a:focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
   border-radius: 2px;
 }
 
-.pulse-needs-more a:active,
 .pulse-empty-state .pulse-empty-message a:active {
   color: var(--orange-text-aa);
 }
@@ -1064,10 +818,7 @@
   }
 
   .pulse-facet-chip,
-  .pulse-briefing-section-toggle,
-  .pulse-section-toggle,
   .pulse-activity,
-  .pulse-needs-item,
   .pulse-connections-row {
     padding-block: 10px;
   }
@@ -1091,16 +842,19 @@
     min-height: var(--touch-min, 44px);
   }
 
-  .pulse-welcome p {
-    font-size: 0.95rem;
-  }
 }
 
 @media (max-width: 480px) {
-  /* The attention line is a link, and on a phone it is the first thing worth
+  /* What's waiting is a link, and on a phone it is the first thing worth
      tapping on this page. X-08. */
-  .pulse-vitals-chip {
-    min-height: 44px;
+  .pulse-waiting-row a {
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--touch-min, 44px);
+  }
+
+  .pulse-account {
+    padding: 1rem;
   }
 
   .pulse-connections-row {
@@ -1126,13 +880,9 @@
     padding: 0.75rem 0.75rem 5rem;
   }
 
-  .pulse-narrative,
+  .pulse-account,
   .pulse-reflection,
-  .pulse-today,
-  .pulse-needs,
   .pulse-connections,
-  .pulse-yesterday,
-  .pulse-briefing-card,
   .pulse-empty-state {
     padding: 0.75rem;
   }
@@ -1141,27 +891,13 @@
     gap: 0.35rem;
   }
 
-  .pulse-vitals,
-  .pulse-narrative,
   .pulse-reflection,
-  .pulse-today,
-  .pulse-needs,
   .pulse-connections,
-  .pulse-yesterday,
-  .pulse-briefing-card,
   .pulse-empty-state,
   .pulse-getting-started {
     padding-left: 0.75rem;
   }
 
-  .pulse-section-toggle::before,
-  .pulse-needs-item::before,
-  .pulse-briefing-section-toggle::before {
-    margin-left: 0;
-    width: auto;
-  }
-
-  .pulse-needs-item,
   .pulse-activity {
     padding-left: 0.35rem;
   }
