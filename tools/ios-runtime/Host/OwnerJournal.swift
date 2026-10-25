@@ -92,8 +92,7 @@ import UIKit
         _ = try await runner.servingCall(runner.request("open"), "owner.open")
         guard ticket == revision, !ownerStopped, foreground else { return }
         if !servicesPrepared {
-          // The verifier admits only this app's own appraisal extension. Backup
-          // keeps its development-app identity, so it refuses here.
+          // Both services admit only the app identity selected at build time.
           let backup = journal_ios_backup_admit()
           let verifier = journal_ios_verifier_admit()
           let callback = verifier && journal_ios_verifier_register_callback(appraisalTransportCallback)
