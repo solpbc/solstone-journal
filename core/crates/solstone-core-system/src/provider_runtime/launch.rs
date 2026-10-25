@@ -638,7 +638,7 @@ impl TruthObservationSeam for LocalTruthSeam {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 fn observe_truth(
     shared: &LocalRuntimeShared,
     config: &LocalTruthConfig,
