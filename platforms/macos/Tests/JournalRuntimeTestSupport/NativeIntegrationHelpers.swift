@@ -20,9 +20,8 @@ public enum NativeIntegrationHelpers {
 
     /// Run the app's exact native setup argv (the same builder production uses) against the
     /// fixture's journal root, honouring the fixture's isolated home. Setup runs from the home,
-    /// not from inside the journal: native `setup` refuses a `--journal` equal to its working
-    /// directory (it reports "--journal must not be empty"), and the app's own setup runner
-    /// never sets a working directory either.
+    /// not from inside the journal, because the app's own setup runner never sets a working
+    /// directory either.
     public static func runAppSetup(_ fixture: NativeRuntimeFixture) async throws -> NativeCommandResult {
         try await fixture.run(
             JournalSetupCommand.setupArguments(journalURL: fixture.journalRoot, skipService: true),

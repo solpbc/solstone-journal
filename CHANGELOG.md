@@ -22,6 +22,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - when an agent lists your entities, each one now says which facet it's from, so someone in two of your facets no longer looks like two people with the same name.
 - your journal now starts when its folder is reached through a symbolic link, such as a folder under `/var/tmp` on a mac. before, it refused to start and said the saved installation was for a different journal.
 - media offload no longer stops partway when a scheduled backup finishes while it runs. the note your journal keeps about each backup's last run no longer counts as a change to your journal. if something in your journal does change while offload runs, offload now says so and tells you nothing was removed, instead of only saying it didn't finish.
+- `solstone journal setup` now accepts your journal folder when you run it from inside that folder, as in `--journal .`, instead of stopping with `--journal must not be empty`.
 
 ## [2.0.58] - 2026-10-25
 

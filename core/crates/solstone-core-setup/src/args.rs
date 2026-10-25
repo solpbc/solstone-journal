@@ -273,11 +273,10 @@ fn validate_journal(value: &OsStr, cwd: &Path) -> Result<PathBuf, UsageError> {
         return Err(UsageError("--journal must not be empty".into()));
     }
     let path = PathBuf::from(value);
-    let resolved = resolve_path(&path, cwd)
+    // The folder setup runs from is a valid journal, named by `.` or by its
+    // full path; only an empty value is refused above.
+    resolve_path(&path, cwd)
         .map_err(|error| UsageError(format!("--journal could not be resolved: {error}")))?;
-    if resolved == normalize_path(cwd) {
-        return Err(UsageError("--journal must not be empty".into()));
-    }
     Ok(path)
 }
 
@@ -872,5 +871,30 @@ mod tests {
             parse_args_at(&blank, &context.current_dir).unwrap_err().0,
             "--journal must not be empty"
         );
+    }
+
+    #[test]
+    fn journal_may_be_the_folder_setup_runs_from() {
+        let context = fixture("journal-cwd");
+        fs::create_dir_all(&context.current_dir).unwrap();
+        let cwd = context.current_dir.to_string_lossy().into_owned();
+        for value in [cwd.as_str(), ".", "./"] {
+            let parsed = args(&["--journal", value], &context);
+            assert_eq!(
+                resolve_setup(&parsed, &context).journal_path,
+                context.current_dir.canonicalize().unwrap(),
+                "--journal {value}"
+            );
+        }
+        for blank in [
+            vec![OsString::from("--journal"), OsString::from("")],
+            vec![OsString::from("--journal"), OsString::from("  ")],
+            vec![OsString::from("--journal=")],
+        ] {
+            assert_eq!(
+                parse_args_at(&blank, &context.current_dir).unwrap_err().0,
+                "--journal must not be empty"
+            );
+        }
     }
 }
