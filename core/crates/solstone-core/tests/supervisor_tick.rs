@@ -86,8 +86,9 @@ impl TempJournal {
         )
         .expect("fixture journal config");
         let cache = pins::cache_root(&self.0);
-        let (release, _, _, _) = pins::vulkan_pin("aarch64-apple-darwin").unwrap();
-        let runtime = cache.join(format!("bin/aarch64-apple-darwin/{release}"));
+        let key = pins::platform_key();
+        let (release, _, _, _) = pins::vulkan_pin(&key).unwrap();
+        let runtime = cache.join("bin").join(&key).join(release);
         let model = cache.join("models/local__qwen3.5-4b");
         fs::create_dir_all(&runtime).expect("runtime directory");
         fs::create_dir_all(&model).expect("model directory");
@@ -102,7 +103,7 @@ impl TempJournal {
             "local",
             "llama-server-vulkan",
             "test",
-            json!({"pin_identity":pins::vulkan_identity("aarch64-apple-darwin").unwrap()}),
+            json!({"pin_identity":pins::vulkan_identity(&key).unwrap()}),
             manifest::runtime_inventory(&runtime, &[]).unwrap(),
             None,
             None,

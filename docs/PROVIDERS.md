@@ -107,17 +107,13 @@ lives under `health/providers/`. Artifact readiness comes from the installed
 manifests and model generations.
 
 On macOS, signed release packages include `mlx-helper` and its Metal resource
-bundle. The local installer downloads the pinned MLX model from the update
-origin. An existing installation keeps its installed llama-server serving while
-the MLX model downloads and verifies. The journal pauses admission of queued
-think and describe tasks, waits for existing tasks to finish, then stops the old
-runtime and starts MLX. If those tasks remain busy, the switch is deferred.
-Direct operator requests bypass that queue and can be interrupted by the swap. If MLX cannot start before the switch is saved,
-the installed llama-server resumes serving until a later attempt. Once MLX is
-ready and the switch is saved, the journal removes the unused managed
-llama-server, GGUF and projector caches. The saved switch persists across
-restarts; macOS does not download llama-server or switch back to it after
-migration. A runtime regression after migration requires a release rollback.
+bundle. MLX is the bundled backend from startup. The local installer downloads
+the pinned Qwen 3.5 4B MLX model from the update origin. For an existing local
+installation, ordinary installer follow retries acquisition after its backoff.
+Missing or damaged MLX artifacts remain not ready; startup verifies the files
+and waits for HTTP health without running model-quality or speed evaluations.
+The journal does not select or fall back to llama-server on macOS. Old migration
+records and llama-server/GGUF caches do not select a backend and are left alone.
 
 the supervisor can recycle the MLX process after 2,000 helper slot calls since
 Ready admission and 60 seconds of unchanged idle activity. tokenization and

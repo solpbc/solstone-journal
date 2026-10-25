@@ -18,7 +18,7 @@ use solstone_core_brain::bundled_runtime_desired_fingerprint;
 use solstone_core_installed_payload::WindowsArchitecture;
 use solstone_core_local::endpoint::{LocalEndpointResolution, resolve_local_endpoint};
 use solstone_core_local::install::{
-    metal_candidate, mlx_candidate, pins,
+    mlx_candidate, pins,
     readiness::{inspect_local, inspect_local_present, inspect_local_present_with_package},
 };
 use solstone_core_local::nvidia::{
@@ -33,7 +33,6 @@ use crate::process::apply_parent_death_kill;
 use crate::process::{Disposition, LaunchError, SERVICE_SHUTDOWN_TIMEOUT};
 
 use super::local_follow::{LocalFollow, LocalInstallerLauncher};
-use super::macos_mlx::{MacosMlxHandover, MacosRuntimeChoice};
 use super::model::ManagedProcess;
 use super::model::{
     LaunchOutcomeStatus, ProviderFence, ProviderLaunchOutcome, ProviderProbeOutcome,
@@ -104,11 +103,6 @@ pub enum LocalLaunchConfig {
         platform: Platform,
         package_root: Option<PathBuf>,
     },
-    Metal {
-        common: LocalLaunchCommon,
-        binary_path: Option<String>,
-        unified_memory_mib: Option<u64>,
-    },
     Mlx {
         common: LocalLaunchCommon,
         binary_path: Option<String>,
@@ -121,10 +115,9 @@ pub enum LocalLaunchConfig {
 impl LocalLaunchConfig {
     fn common(&self) -> &LocalLaunchCommon {
         match self {
-            Self::Cuda { common, .. }
-            | Self::Vulkan { common, .. }
-            | Self::Metal { common, .. }
-            | Self::Mlx { common, .. } => common,
+            Self::Cuda { common, .. } | Self::Vulkan { common, .. } | Self::Mlx { common, .. } => {
+                common
+            }
         }
     }
 
@@ -134,7 +127,7 @@ impl LocalLaunchConfig {
 
     fn platform(&self) -> Platform {
         match self {
-            Self::Metal { .. } | Self::Mlx { .. } => Platform::Darwin,
+            Self::Mlx { .. } => Platform::Darwin,
             Self::Cuda { .. } => Platform::Linux,
             Self::Vulkan { platform, .. } => *platform,
         }
@@ -229,40 +222,6 @@ impl LocalLaunchConfig {
                 } else {
                     None
                 },
-            },
-            Self::Metal {
-                common,
-                binary_path,
-                unified_memory_mib,
-            } => PlanInput {
-                schema: PLAN_INPUT_SCHEMA.into(),
-                platform: Platform::Darwin,
-                backend_override: Some(PlanBackend::Metal),
-                bind_address: LoopbackAddr::IPV4_LOOPBACK,
-                port,
-                desired_fingerprint_json: common.desired_fingerprint_json.clone(),
-                desired_fingerprint_sha256,
-                model_id: common.model_id.clone(),
-                model_path: common.model_path.clone(),
-                mmproj_path: common.mmproj_path.clone(),
-                cuda_binary_path: None,
-                vulkan_binary_path: None,
-                metal_binary_path: binary_path.clone(),
-                metal_unified_memory_mib: *unified_memory_mib,
-                mlx_binary_path: None,
-                lib_dir: None,
-                inherited_ld_library_path: None,
-                nvidia_probe: None,
-                cuda_embedded_arch_set: Vec::new(),
-                cuda_min_driver_version: None,
-                cuda_artifact_trust: None,
-                cuda_persisted_installed_cuda_target: None,
-                vulkan_devices: None,
-                vulkan_selected_gpu_index: None,
-                vulkan_selected_gpu_name: None,
-                vulkan_selected_vram_mib: None,
-                vram_before_mib: None,
-                vulkan_probe_ok: None,
             },
             Self::Mlx {
                 common,
@@ -508,7 +467,6 @@ pub struct LocalTruthSeam {
     shared: Arc<LocalRuntimeShared>,
     config: LocalTruthConfig,
     follow: Option<Arc<LocalFollow>>,
-    migration: Option<Arc<MacosMlxHandover>>,
     maintenance: Option<super::mlx_recycle::MlxRecycle>,
 }
 
@@ -534,18 +492,10 @@ impl LocalTruthSeam {
     }
 
     pub fn with_config(shared: Arc<LocalRuntimeShared>, config: LocalTruthConfig) -> Self {
-        let migration = (config.platform == LocalHost::Darwin).then(|| {
-            Arc::new(MacosMlxHandover::new(
-                config.journal_path.clone(),
-                Arc::new(super::store::SystemRuntimeClock::default()),
-                None,
-            ))
-        });
         Self {
             shared,
             config,
             follow: None,
-            migration,
             maintenance: None,
         }
     }
@@ -563,21 +513,13 @@ impl LocalTruthSeam {
     /// Admission pauses and reservations use the same queue mutex. Work already
     /// reserved drains before the ordinary coordinator is asked to replace it.
     #[must_use]
-    pub fn with_migration_queue(
+    pub fn with_maintenance_queue(
         mut self,
         queue: crate::queue::TaskQueue,
         clock: Arc<dyn RuntimeClock>,
     ) -> Self {
         if self.config.platform == LocalHost::Darwin {
-            self.maintenance = Some(super::mlx_recycle::MlxRecycle::new(
-                queue.clone(),
-                clock.clone(),
-            ));
-            self.migration = Some(Arc::new(MacosMlxHandover::new(
-                self.config.journal_path.clone(),
-                clock,
-                Some(queue),
-            )));
+            self.maintenance = Some(super::mlx_recycle::MlxRecycle::new(queue, clock));
         }
         self
     }
@@ -592,21 +534,19 @@ impl LocalTruthSeam {
         let active = solstone_core_journal_config::read_journal_config(&self.config.journal_path)
             .ok()
             .and_then(|read| read.config)
-            .is_some_and(|config| super::macos_mlx::bundled_active(&config));
+            .is_some_and(|config| {
+                super::local_follow::local_is_active(&config)
+                    && matches!(
+                        solstone_core_local::endpoint::resolve_local_endpoint(&config),
+                        solstone_core_local::endpoint::LocalEndpointResolution::Bundled
+                    )
+            });
         maintenance.advance(state, processes, &self.shared, active)
     }
 
     pub fn cancel_mlx_maintenance_request(&self) {
         if let Some(maintenance) = &self.maintenance {
             maintenance.cancel_request();
-        }
-    }
-
-    /// Called after ordinary reconciliation, so only its successful Ready
-    /// admission can publish the one-way migration decision.
-    pub fn reconcile_migration(&self, state: &ProviderRuntimeState) {
-        if let Some(migration) = &self.migration {
-            migration.advance(state, &self.shared);
         }
     }
 }
@@ -616,23 +556,11 @@ impl TruthObservationSeam for LocalTruthSeam {
         let shared = Arc::clone(&self.shared);
         let config = self.config.clone();
         let follow = self.follow.clone();
-        let migration = self.migration.clone();
         let fence = fence.clone();
         thread::spawn(move || {
-            let outcome = observe_truth_with_mlx(
-                &shared,
-                &config,
-                follow.as_deref(),
-                |journal_config, predecessor, mlx| {
-                    migration.as_ref().map_or_else(
-                        || macos_choice_without_queue(&config.journal_path, predecessor),
-                        |migration| {
-                            migration.choose(journal_config, predecessor, mlx, follow.as_deref())
-                        },
-                    )
-                },
-                || mlx_candidate::inspect_present_default(&config.journal_path),
-            );
+            let outcome = observe_truth_with_mlx(&shared, &config, follow.as_deref(), || {
+                mlx_candidate::inspect_present_default(&config.journal_path)
+            });
             shared.record_truth_result(&fence, outcome);
         });
     }
@@ -644,35 +572,15 @@ fn observe_truth(
     config: &LocalTruthConfig,
     follow: Option<&LocalFollow>,
 ) -> super::model::ProviderTruthObservation {
-    observe_truth_with_mlx(
-        shared,
-        config,
-        follow,
-        |_, predecessor, _| macos_choice_without_queue(&config.journal_path, predecessor),
-        || mlx_candidate::inspect_present_default(&config.journal_path),
-    )
-}
-
-fn macos_choice_without_queue(
-    journal: &std::path::Path,
-    predecessor: &Value,
-) -> Result<MacosRuntimeChoice, String> {
-    use solstone_core_local::install::macos_mlx_migration::{MigrationState, read};
-    let state = read(journal).map_err(|error| error.to_string())?;
-    Ok(
-        if state != MigrationState::Committed && predecessor["ready"] == true {
-            MacosRuntimeChoice::Metal
-        } else {
-            MacosRuntimeChoice::Mlx
-        },
-    )
+    observe_truth_with_mlx(shared, config, follow, || {
+        mlx_candidate::inspect_present_default(&config.journal_path)
+    })
 }
 
 fn observe_truth_with_mlx(
     shared: &LocalRuntimeShared,
     config: &LocalTruthConfig,
     follow: Option<&LocalFollow>,
-    select_mlx: impl FnOnce(&Map<String, Value>, &Value, &Value) -> Result<MacosRuntimeChoice, String>,
     inspect_mlx: impl FnOnce() -> Value,
 ) -> super::model::ProviderTruthObservation {
     if !config.journal_path.is_dir() {
@@ -947,53 +855,30 @@ fn observe_truth_with_mlx(
             true,
         );
     }
-    let probe = config.nvidia_probe.clone().unwrap_or_else(probe_nvidia_gpu);
-    let readiness = match config.platform {
-        LocalHost::Linux => inspect_local_present(Map::from_iter([
-            (
-                "journal".into(),
-                Value::String(config.journal_path.display().to_string()),
-            ),
-            ("model_id".into(), Value::String(model_id.clone())),
-            (
-                "nvidia_probe".into(),
-                serde_json::to_value(&probe).expect("NvidiaProbe serialization"),
-            ),
-        ])),
-        LocalHost::Darwin => {
-            let input = Map::from_iter([
-                ("journal".into(), json!(config.journal_path)),
-                ("model_id".into(), json!(model_id)),
-                ("backend".into(), json!("metal")),
-            ]);
-            let predecessor = metal_candidate::inspect_present_with(&input, "aarch64-apple-darwin")
-                .unwrap_or_else(|_| json!({"ready":false,"status":"proof-unavailable"}));
-            let mlx = inspect_mlx();
-            match select_mlx(&journal_config, &predecessor, &mlx) {
-                Ok(MacosRuntimeChoice::Mlx) => {
-                    // Before the one-way decision, the migration-specific
-                    // follow path preserves every predecessor generation.
-                    return observe_mlx_readiness(shared, mlx);
-                }
-                Ok(MacosRuntimeChoice::Metal) => predecessor,
-                Err(error) => {
-                    let mut observation = truth(
-                        super::model::RuntimePhase::HostBlocked,
-                        "artifact-proof-failed",
-                        None,
-                        false,
-                        true,
-                    );
-                    observation.detail = Some(json!({"backend":"mlx", "error":error}));
-                    return observation;
-                }
-            }
+    if config.platform == LocalHost::Darwin {
+        let mlx = inspect_mlx();
+        if let Some(follow) = follow {
+            follow.observe(
+                &config.journal_path,
+                config_present.then_some(&journal_config),
+                &mlx,
+            );
         }
-        LocalHost::Windows => unreachable!(),
-    };
-    if config.platform != LocalHost::Darwin
-        && let Some(follow) = follow
-    {
+        return observe_mlx_readiness(shared, mlx);
+    }
+    let probe = config.nvidia_probe.clone().unwrap_or_else(probe_nvidia_gpu);
+    let readiness = inspect_local_present(Map::from_iter([
+        (
+            "journal".into(),
+            Value::String(config.journal_path.display().to_string()),
+        ),
+        ("model_id".into(), Value::String(model_id.clone())),
+        (
+            "nvidia_probe".into(),
+            serde_json::to_value(&probe).expect("NvidiaProbe serialization"),
+        ),
+    ]));
+    if let Some(follow) = follow {
         follow.observe(
             &config.journal_path,
             config_present.then_some(&journal_config),
@@ -1105,11 +990,6 @@ fn observe_truth_with_mlx(
         mmproj_path: projector_path,
     };
     let launch = match (config.platform, backend) {
-        (LocalHost::Darwin, "metal") => LocalLaunchConfig::Metal {
-            common,
-            binary_path,
-            unified_memory_mib: None,
-        },
         (LocalHost::Linux, "cuda") => LocalLaunchConfig::Cuda {
             common,
             binary_path,
@@ -1462,13 +1342,7 @@ fn verify_launch_artifacts(
         ("model_id".into(), Value::String(plan.model_id.clone())),
     ]);
     let readiness = match plan.backend {
-        PlanBackend::Metal => {
-            input.insert("backend".into(), Value::String("metal".into()));
-            match metal_candidate::inspect_with(&input, "aarch64-apple-darwin") {
-                Ok(readiness) => readiness,
-                Err(_) => return false,
-            }
-        }
+        PlanBackend::Metal => return false,
         PlanBackend::Mlx => unreachable!("MLX was verified above"),
         PlanBackend::Cuda | PlanBackend::Vulkan => {
             if let LocalLaunchConfig::Cuda { nvidia_probe, .. } = launch {

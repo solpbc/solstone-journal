@@ -17,10 +17,10 @@ use solstone_core_journal_config_write::{JournalConfigMutation, mutate_journal_c
 use solstone_core_local::endpoint::{LocalEndpointResolution, resolve_local_endpoint};
 #[cfg(not(target_os = "macos"))]
 use solstone_core_local::install::readiness::inspect_local_installed;
+#[cfg(not(target_os = "macos"))]
+use solstone_core_local::install::readiness::{inspect_local, inspect_local_present};
 use solstone_core_local::install::{
     lease::is_held,
-    metal_candidate,
-    readiness::{inspect_local, inspect_local_present},
     status::{is_in_flight, read_status},
 };
 use solstone_core_sense::memory::{MemoryProbe, SystemMemoryProbe};
@@ -61,29 +61,12 @@ pub fn models() -> Value {
 
 pub fn availability(journal: &Path, model: &str) -> Value {
     #[cfg(target_os = "macos")]
-    if let Some(readiness) = migration_mlx_readiness(journal) {
-        return availability_payload(model, readiness);
-    }
-    let mut input = Map::from_iter([
-        (
-            String::from("journal"),
-            Value::String(journal.display().to_string()),
-        ),
-        (String::from("model_id"), Value::String(model.to_owned())),
-    ]);
-    let readiness = if cfg!(target_os = "macos") {
-        input.insert("backend".to_owned(), Value::String("metal".to_owned()));
-        metal_candidate::inspect_present(&input).unwrap_or_else(|_| {
-            json!({
-                "status": "proof-unavailable",
-                "reason_code": "local_probe_failed",
-                "host": {"platform_supported": cfg!(target_arch = "aarch64")},
-                "artifacts": {"binary_installed": false, "model_installed": false},
-            })
-        })
-    } else {
-        inspect_local_present(input)
-    };
+    let readiness = solstone_core_local::install::mlx_candidate::inspect_present_default(journal);
+    #[cfg(not(target_os = "macos"))]
+    let readiness = inspect_local_present(Map::from_iter([
+        ("journal".into(), json!(journal)),
+        ("model_id".into(), json!(model)),
+    ]));
     availability_payload(model, readiness)
 }
 
@@ -92,16 +75,10 @@ pub fn availability(journal: &Path, model: &str) -> Value {
 /// that performs a current host check.
 pub fn provider_status_availability(journal: &Path, model: &str) -> Value {
     #[cfg(target_os = "macos")]
-    let readiness = solstone_core_local::install::macos_mlx_migration::inspect_serving(journal);
+    let readiness = solstone_core_local::install::mlx_candidate::inspect_present_default(journal);
     #[cfg(not(target_os = "macos"))]
     let readiness = inspect_local_installed(journal, model);
     availability_payload(model, readiness)
-}
-
-#[cfg(target_os = "macos")]
-fn migration_mlx_readiness(journal: &Path) -> Option<Value> {
-    let readiness = solstone_core_local::install::macos_mlx_migration::inspect_serving(journal);
-    (readiness["backend"] != "metal").then_some(readiness)
 }
 
 fn availability_payload(model: &str, readiness: Value) -> Value {
@@ -177,10 +154,6 @@ fn availability_payload(model: &str, readiness: Value) -> Value {
 }
 
 pub fn bootstrap_status(journal: &Path, _model: &str) -> Value {
-    #[cfg(target_os = "macos")]
-    if solstone_core_local::install::macos_mlx_migration::read(journal).is_err() {
-        return unavailable_bootstrap_status("local_probe_failed");
-    }
     match solstone_core_local::install::status::read_observed_status(journal, "local") {
         Ok(status) => {
             let held = match is_held(journal, "local") {
@@ -189,7 +162,6 @@ pub fn bootstrap_status(journal: &Path, _model: &str) -> Value {
             };
             if !held
                 && cfg!(target_os = "macos")
-                && !metal_candidate::status_targets_native(&status)
                 && status.target_fingerprint_sha256.as_deref()
                     != Some(
                         solstone_core_local::install::mlx_candidate::artifact_target_json(
@@ -320,7 +292,7 @@ pub enum BootstrapResponse {
 pub fn start_bootstrap(
     journal: &Path,
     config: &Map<String, Value>,
-    model: &str,
+    _model: &str,
 ) -> BootstrapResponse {
     if !matches!(
         resolve_local_endpoint(config),
@@ -329,28 +301,12 @@ pub fn start_bootstrap(
         return BootstrapResponse::ByoEndpointActive;
     }
     #[cfg(target_os = "macos")]
-    if let Some(readiness) = migration_mlx_readiness(journal) {
-        return classify_bootstrap(journal, &readiness);
-    }
-    let mut input = Map::from_iter([
-        (
-            "journal".to_owned(),
-            Value::String(journal.display().to_string()),
-        ),
-        ("model_id".to_owned(), Value::String(model.to_owned())),
-    ]);
-    let readiness = if cfg!(target_os = "macos") {
-        input.insert("backend".to_owned(), Value::String("metal".to_owned()));
-        metal_candidate::inspect(&input).unwrap_or_else(|_| {
-            json!({
-                "ready":false,
-                "status":"proof-unavailable",
-                "reason_code":"readiness_unavailable",
-            })
-        })
-    } else {
-        inspect_local(input)
-    };
+    let readiness = solstone_core_local::install::mlx_candidate::inspect_verified_default(journal);
+    #[cfg(not(target_os = "macos"))]
+    let readiness = inspect_local(Map::from_iter([
+        ("journal".into(), json!(journal)),
+        ("model_id".into(), json!(_model)),
+    ]));
     classify_bootstrap(journal, &readiness)
 }
 
@@ -799,6 +755,54 @@ mod tests {
         let _ = fs::remove_dir_all(journal);
     }
 
+    #[cfg(all(target_os = "macos", feature = "full-tests"))]
+    #[test]
+    fn obsolete_migration_marker_cannot_block_macos_status_or_bootstrap() {
+        let journal = temporary_journal("obsolete-migration-marker");
+        let before = super::availability(&journal, default_model());
+        let before_status = super::provider_status_availability(&journal, default_model());
+        let config = serde_json::Map::new();
+        let before_bootstrap = super::start_bootstrap(&journal, &config, default_model());
+        let (target, hash) = solstone_core_local::install::mlx_candidate::artifact_target_json(
+            &solstone_core_local::install::pins::MLX_QWEN_PINS,
+        );
+        let state = solstone_core_local::install::status::begin(
+            &journal,
+            solstone_core_local::install::fingerprint::canonical(target).unwrap(),
+            hash,
+            None,
+            "downloading",
+            None,
+        )
+        .unwrap();
+        let installed =
+            solstone_core_local::install::status::transition(state, "installed", None, None)
+                .unwrap();
+        solstone_core_local::install::status::write_status(&journal, installed).unwrap();
+        fs::create_dir_all(journal.join("config")).unwrap();
+        fs::write(journal.join("config/macos-mlx-migration.json"), b"not json").unwrap();
+        let after = super::availability(&journal, default_model());
+        let after_status = super::provider_status_availability(&journal, default_model());
+        for key in [
+            "available",
+            "binary_present",
+            "model_present",
+            "reason_code",
+        ] {
+            assert_eq!(after[key], before[key]);
+            assert_eq!(after_status[key], before_status[key]);
+        }
+        assert_eq!(
+            super::bootstrap_status(&journal, default_model())["install_state"],
+            "installed"
+        );
+        assert_eq!(
+            super::start_bootstrap(&journal, &config, default_model()),
+            before_bootstrap
+        );
+        fs::remove_dir_all(journal).unwrap();
+    }
+
     #[test]
     fn corrupt_status_and_unreadable_lease_are_unavailable_even_with_ready_artifacts() {
         let journal = temporary_journal("unreadable-bootstrap");
@@ -1029,21 +1033,11 @@ mod tests {
     #[cfg(all(test, feature = "full-tests"))]
     fn admission_warning_lifecycle_on_bootstrap_status() {
         let journal = temporary_journal("warning-lifecycle");
-        let input = serde_json::from_value(json!({"journal":journal})).unwrap();
-        let inspected = solstone_core_local::install::metal_candidate::inspect_present_with(
-            &input,
-            "aarch64-apple-darwin",
-        )
-        .unwrap();
-        let target = &inspected["target"];
-        let fingerprint = target["target_fingerprint_json"]
-            .as_str()
-            .unwrap()
-            .to_owned();
-        let fingerprint_hash = target["target_fingerprint_sha256"]
-            .as_str()
-            .unwrap()
-            .to_owned();
+        let (target, fingerprint_hash) =
+            solstone_core_local::install::mlx_candidate::artifact_target_json(
+                &solstone_core_local::install::pins::MLX_QWEN_PINS,
+            );
+        let fingerprint = solstone_core_local::install::fingerprint::canonical(target).unwrap();
         let lease = solstone_core_local::install::lease::acquire(&journal, "local")
             .unwrap()
             .unwrap();
@@ -1144,21 +1138,5 @@ mod tests {
             );
             fs::remove_dir_all(journal).unwrap();
         }
-        let journal = temporary_journal("unreadable-metal-readiness");
-        let input =
-            serde_json::from_value(json!({"journal": journal, "metal_unified_memory_mib":null}))
-                .unwrap();
-        let readiness = solstone_core_local::install::metal_candidate::inspect_present_with(
-            &input,
-            "aarch64-apple-darwin",
-        )
-        .unwrap();
-        let availability = super::availability_payload(default_model(), readiness.clone());
-        assert_eq!(availability["reason_code"], "binary_missing");
-        assert_eq!(
-            classify_bootstrap(&journal, &readiness),
-            BootstrapResponse::Start
-        );
-        fs::remove_dir_all(journal).unwrap();
     }
 }

@@ -791,7 +791,6 @@ pub(crate) fn reconcile_providers(state: &mut SupervisorState) {
         &mut state.local.processes,
         &mut local_context,
     );
-    state.local.truth.reconcile_migration(&state.local.state);
     if let Some(managed) = state
         .local
         .truth

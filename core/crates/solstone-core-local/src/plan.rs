@@ -190,7 +190,6 @@ pub fn plan(input: PlanInput) -> PlanOutcome {
         return rejected("unsupported plan input schema");
     }
     match input.platform {
-        Platform::Darwin if input.backend_override == Some(PlanBackend::Metal) => plan_metal(input),
         Platform::Darwin
             if input.backend_override.is_none()
                 || input.backend_override == Some(PlanBackend::Mlx) =>
@@ -411,35 +410,6 @@ fn plan_vulkan(input: PlanInput, reason: &str) -> PlanOutcome {
         tier(device.2),
         Some("Vulkan0"),
         None,
-    )
-}
-
-fn plan_metal(input: PlanInput) -> PlanOutcome {
-    let Some(binary) = input.metal_binary_path.clone() else {
-        return rejected("metal binary path is required");
-    };
-    if input.mmproj_path.is_none() {
-        return rejected("metal mmproj path is required");
-    }
-    let (selected_tier, metal_tier) = metal_tier(input.metal_unified_memory_mib);
-    let reason = if metal_tier.unified_memory_mib.is_some() {
-        "Darwin Metal runtime with supplied unified-memory measurement"
-    } else {
-        "Darwin Metal runtime; unified-memory measurement was not supplied"
-    };
-    llama_plan(
-        input,
-        PlanBackend::Metal,
-        BackendDetails {
-            gpu_index: None,
-            gpu_name: None,
-            gpu_vram_mib: None,
-            reason: reason.into(),
-        },
-        binary,
-        selected_tier,
-        None,
-        Some(metal_tier),
     )
 }
 
@@ -1006,73 +976,10 @@ mod tests {
         assert!(serde_json::from_value::<PlanInput>(value).is_err());
     }
     #[test]
-    fn metal_plan_is_darwin_only_omits_device_and_records_tiering() {
-        let mut capable = input(1);
-        capable.platform = Platform::Darwin;
-        capable.backend_override = Some(PlanBackend::Metal);
-        capable.model_id = "local/qwen3.5-4b".into();
-        capable.metal_binary_path = Some("/metal-bin".into());
-        capable.metal_unified_memory_mib = Some(16_000);
-        let plan = launch(capable);
-        assert_eq!(plan.backend, PlanBackend::Metal);
-        assert_eq!(plan.gpu_vram_mib, None);
-        assert_eq!(plan.context_tokens, Some(32_768));
-        assert_eq!(
-            plan.metal_tier,
-            Some(MetalTierMetadata {
-                source: "supplied_measurement",
-                unified_memory_mib: Some(16_000),
-            })
-        );
-        assert!(!plan.argv.iter().any(|arg| arg == "--device"));
-        assert!(!plan.argv.iter().any(|arg| arg == "/mlx"));
-        assert!(!plan.argv.iter().any(|arg| arg.contains("mlx")));
-        assert_eq!(plan.argv.last(), Some(&"/mm".to_owned()));
-        assert!(plan.visible_devices_env_name.is_none());
-        assert!(plan.extra_env.is_empty());
-
-        let mut floor = input(1);
-        floor.platform = Platform::Darwin;
-        floor.backend_override = Some(PlanBackend::Metal);
-        floor.metal_binary_path = Some("/metal-bin".into());
-        floor.metal_unified_memory_mib = Some(15_999);
-        assert_eq!(launch(floor).context_tokens, Some(16_384));
-
-        let mut absent = input(1);
-        absent.platform = Platform::Darwin;
-        absent.backend_override = Some(PlanBackend::Metal);
-        absent.metal_binary_path = Some("/metal-bin".into());
-        let absent = launch(absent);
-        assert_eq!(absent.context_tokens, Some(16_384));
-        assert_eq!(
-            absent.metal_tier,
-            Some(MetalTierMetadata {
-                source: "no_measurement_floor",
-                unified_memory_mib: None,
-            })
-        );
-
-        let mut linux = input(1);
-        linux.backend_override = Some(PlanBackend::Metal);
-        assert_rejected(linux, "Metal backend override is not valid on Linux");
-
-        let mut unspecified = input(1);
-        unspecified.platform = Platform::Darwin;
-        unspecified.mlx_binary_path = Some("/mlx-helper".into());
-        unspecified.model_id = "local/qwen3.5-4b".into();
-        unspecified.mmproj_path = None;
-        assert_eq!(launch(unspecified).backend, PlanBackend::Mlx);
-    }
-
-    #[test]
-    fn metal_launch_wire_is_unchanged_from_before_mlx() {
+    fn retired_metal_plan_is_rejected_even_with_valid_legacy_inputs() {
         let input: PlanInput =
             serde_json::from_str(include_str!("../tests/fixtures/metal-plan-input.json")).unwrap();
-        let actual = serde_json::to_string(&plan(input)).unwrap() + "\n";
-        assert_eq!(
-            actual,
-            include_str!("../tests/fixtures/metal-plan-output.json")
-        );
+        assert_rejected(input, "backend override is unavailable on macos");
     }
 
     #[test]

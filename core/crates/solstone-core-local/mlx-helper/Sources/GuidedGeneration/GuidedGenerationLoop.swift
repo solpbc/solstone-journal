@@ -48,31 +48,10 @@ public enum GuidedGenerationLoop {
         case sequential
     }
 
-    /// Optional per-run accounting of where a guided generation spends time.
-    ///
-    /// All spans are host wall-clock seconds. `prefillSeconds` runs from the
-    /// start of the run until the prompt's logits are evaluated.
-    /// `sampleWaitSeconds` is time blocked reading a sampled token back from
-    /// the GPU, which includes any forward pass still in flight. `maskSeconds`
-    /// is grammar mask computation plus its upload; `commitSeconds` is
-    /// grammar commit including jump-forward tokenization; `graphSeconds` is
-    /// building forward-pass graphs on the host.
+    /// Aggregate prompt preparation time used in the completion response.
     public final class GuidedGenerationTimings: @unchecked Sendable {
         public var prefillSeconds: Double = 0
-        public var sampleWaitSeconds: Double = 0
-        public var maskSeconds: Double = 0
-        public var commitSeconds: Double = 0
-        public var graphSeconds: Double = 0
-        public var forwardPasses = 0
-        public var sampledTokens = 0
-        public var forcedTokens = 0
-        /// When non-nil, receives each forward group in order: the sampled
-        /// token followed by the forced tokens that were fed with it.
-        public var forwardGroups: [[Int]]?
-
-        public init(recordForwardGroups: Bool = false) {
-            forwardGroups = recordForwardGroups ? [] : nil
-        }
+        public init() {}
     }
 
     /// Runs the guided generation loop, yielding text deltas through `emit`.
@@ -192,8 +171,6 @@ public enum GuidedGenerationLoop {
         /// Feed `tokens` (1-D) through the model; returns the logits after the
         /// last one. Advances the cache and model state by `tokens.size`.
         func feed(_ tokens: MLXArray) -> MLXArray {
-            let graphStart = ContinuousClock.now
-            defer { timings?.graphSeconds += seconds(since: graphStart) }
             let pieces: [MLXArray] =
                 switch forcedTokenFeed {
                 case .batched: [tokens]
@@ -209,7 +186,6 @@ public enum GuidedGenerationLoop {
                 )
                 modelState = result.state
                 last = result.logits
-                timings?.forwardPasses += 1
             }
             return last
         }
@@ -263,8 +239,6 @@ public enum GuidedGenerationLoop {
         /// Compute the grammar's next mask on the CPU and stage its packed
         /// words for the GPU. Runs in the shadow of a forward pass.
         func nextMask() throws -> (MaskResult, MLXArray?) {
-            let maskStart = ContinuousClock.now
-            defer { timings?.maskSeconds += seconds(since: maskStart) }
             let mask = try constraint.computeMask()
             return (mask, packedMask.allowed(mask))
         }
@@ -374,10 +348,7 @@ public enum GuidedGenerationLoop {
                 pipelinedLogits = next
             }
 
-            let waitStart = ContinuousClock.now
             let tokenId = sampled.item(Int.self)
-            timings?.sampleWaitSeconds += seconds(since: waitStart)
-            timings?.sampledTokens += 1
 
             // Track the sampled token for whitespace run detection.
             // Fast-forward tokens are NOT tracked (they are grammar-forced).
@@ -414,9 +385,7 @@ public enum GuidedGenerationLoop {
             processor?.didSample(token: sampled)
 
             // Commit to grammar
-            let commitStart = ContinuousClock.now
             let commitResult = try constraint.commitToken(Int32(tokenId))
-            timings?.commitSeconds += seconds(since: commitStart)
 
             diagnosticSink?.recordSampledToken(tokenId)
             // Yield the sampled token
@@ -480,8 +449,6 @@ public enum GuidedGenerationLoop {
                 tokenCount += 1
             }
             if shouldStopAfterFF { break }
-            timings?.forcedTokens += ffTokens.count
-            timings?.forwardGroups?.append([tokenId] + ffTokens.map(Int.init))
 
             // Feed the model. The sampled token always goes in: without it
             // the cache would skip a token the output contains, and every

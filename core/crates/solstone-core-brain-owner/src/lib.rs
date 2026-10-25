@@ -1547,18 +1547,18 @@ fn bundled_runtime_readiness(
     model_id: &str,
     nvidia_probe: Option<solstone_core_local::NvidiaProbe>,
 ) -> Option<Value> {
-    let journal = journal.display().to_string();
     #[cfg(target_os = "macos")]
     {
         let _ = (nvidia_probe, model_id);
-        Some(
-            solstone_core_local::install::macos_mlx_migration::inspect_serving(Path::new(&journal)),
-        )
+        Some(solstone_core_local::install::mlx_candidate::inspect_present_default(journal))
     }
     #[cfg(not(target_os = "macos"))]
     {
         let mut input = Map::from_iter([
-            ("journal".into(), Value::String(journal)),
+            (
+                "journal".into(),
+                Value::String(journal.display().to_string()),
+            ),
             ("model_id".into(), Value::String(model_id.to_owned())),
         ]);
         if let Some(probe) = nvidia_probe {
@@ -1570,6 +1570,32 @@ fn bundled_runtime_readiness(
 
 #[cfg(test)]
 mod tests {
+    #[cfg(all(target_os = "macos", feature = "full-tests"))]
+    #[test]
+    fn macos_bundled_readiness_ignores_obsolete_migration_state() {
+        let journal = tempfile::tempdir().unwrap();
+        std::fs::create_dir(journal.path().join("config")).unwrap();
+        for marker in [None, Some("not json")] {
+            if let Some(marker) = marker {
+                std::fs::write(
+                    journal.path().join("config/macos-mlx-migration.json"),
+                    marker,
+                )
+                .unwrap();
+            }
+            let readiness =
+                super::bundled_runtime_readiness(journal.path(), "local/qwen3.5-4b", None).unwrap();
+            assert_eq!(readiness["host"]["backend"], "mlx");
+            assert_eq!(
+                readiness["target"]["target_fingerprint_sha256"],
+                solstone_core_local::install::mlx_candidate::artifact_target_json(
+                    &solstone_core_local::install::pins::MLX_QWEN_PINS
+                )
+                .1
+            );
+        }
+    }
+
     use super::*;
     use chrono::TimeZone;
     use std::sync::Mutex;

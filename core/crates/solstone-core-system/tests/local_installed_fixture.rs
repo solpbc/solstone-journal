@@ -6,11 +6,13 @@ use std::path::Path;
 use serde_json::json;
 use solstone_core_local::install::{manifest, pins};
 
+// Generic llama lifecycle fixtures use a native test child and the Vulkan plan.
+// macOS bundled selection is exercised separately with MLX model fixtures.
 pub fn install(journal: &Path, model_marker: &str) {
     let cache = pins::cache_root(journal);
-    let key = "aarch64-apple-darwin";
-    let (release, _, _, _) = pins::vulkan_pin(key).expect("Darwin runtime pin");
-    let runtime = cache.join("bin").join(key).join(release);
+    let key = pins::platform_key();
+    let (release, _, _, _) = pins::vulkan_pin(&key).expect("host runtime pin");
+    let runtime = cache.join("bin").join(&key).join(release);
     let model = cache.join("models/local__qwen3.5-4b");
     std::fs::create_dir_all(&runtime).expect("runtime directory");
     std::fs::create_dir_all(&model).expect("model directory");
@@ -24,7 +26,7 @@ pub fn install(journal: &Path, model_marker: &str) {
         "local",
         "llama-server-vulkan",
         "test",
-        json!({"pin_identity":pins::vulkan_identity(key).unwrap()}),
+        json!({"pin_identity":pins::vulkan_identity(&key).unwrap()}),
         manifest::runtime_inventory(&runtime, &[]).unwrap(),
         None,
         None,

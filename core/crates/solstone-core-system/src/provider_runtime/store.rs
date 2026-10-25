@@ -758,20 +758,6 @@ impl LocalRuntimeShared {
             None
         }
     }
-
-    // Warmup can finish while durable Ready publication fails. This is only
-    // evidence for a pre-commit return, never authority to commit a migration.
-    pub(super) fn warmed_generation_matches(
-        &self,
-        generation: u64,
-        fingerprint: &Option<String>,
-    ) -> bool {
-        self.ready_processes
-            .lock()
-            .expect("local runtime shared lock")
-            .keys()
-            .any(|key| key.generation == generation && &key.fingerprint == fingerprint)
-    }
 }
 
 /// What `FileRuntimeStore` needs from a provider's own in-memory
@@ -1511,36 +1497,6 @@ mod tests {
 
     use super::*;
     use crate::provider_runtime::{InFlight, ManagedProcess, ProviderStopCleanupRequest};
-
-    #[test]
-    fn migration_distinguishes_warmup_from_current_ready_admission() {
-        let shared = LocalRuntimeShared::default();
-        let fence = ProviderFence {
-            incarnation: "fixture".into(),
-            generation: 7,
-            fingerprint: Some("mlx".into()),
-            attempt: 1,
-        };
-        shared.ready_processes.lock().unwrap().insert(
-            FenceKey::from(&fence),
-            ReadyProcess {
-                process_id: "fixture".into(),
-                process_name: "local".into(),
-                pid: 12345,
-                port: 12345,
-            },
-        );
-        shared.stage_launch_credentials(&fence, 12345, b"fixture".to_vec());
-        assert!(shared.warmed_generation_matches(7, &fence.fingerprint));
-        assert!(!shared.admitted_generation_matches(7, &fence.fingerprint));
-        shared.accept_ready(&fence);
-        assert!(shared.admitted_generation_matches(7, &fence.fingerprint));
-        assert!(!shared.admitted_generation_matches(8, &fence.fingerprint));
-        assert!(!shared.admitted_generation_matches(7, &Some("metal".into())));
-        shared.invalidate_ready();
-        assert!(shared.warmed_generation_matches(7, &fence.fingerprint));
-        assert!(!shared.admitted_generation_matches(7, &fence.fingerprint));
-    }
 
     #[test]
     fn coordinator_ready_admission_does_not_require_http_credentials() {

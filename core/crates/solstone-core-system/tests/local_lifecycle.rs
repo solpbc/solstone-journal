@@ -108,7 +108,7 @@ fn lifecycle(
     (lifecycle, journal, generation)
 }
 
-fn installed_metal(journal: &Path, model_marker: &str) -> LocalLaunchConfig {
+fn installed_vulkan(journal: &Path, model_marker: &str) -> LocalLaunchConfig {
     crate::local_installed_fixture::install(journal, model_marker);
     let shared = Arc::new(LocalRuntimeShared::default());
     let mut truth = LocalTruthSeam::with_config(
@@ -116,11 +116,16 @@ fn installed_metal(journal: &Path, model_marker: &str) -> LocalLaunchConfig {
         LocalTruthConfig {
             windows_package: None,
             journal_path: journal.to_path_buf(),
-            platform: LocalHost::Darwin,
-            arch: "aarch64",
-            nvidia_probe: None,
+            platform: LocalHost::Linux,
+            arch: std::env::consts::ARCH,
+            nvidia_probe: Some(solstone_core_local::NvidiaProbe::absent()),
             vulkan: VulkanObservation {
-                devices: vec![],
+                devices: vec![solstone_core_local::VulkanDevice {
+                    index: 0,
+                    name: "fixture GPU".into(),
+                    device_type: Some(2),
+                    vram_mib: 16_000,
+                }],
                 succeeded: true,
             },
         },
@@ -255,7 +260,7 @@ fn each_backend_plan_rejection_maps_to_launch_failed() {
             vram_before_mib: None,
             platform: solstone_core_local::plan::Platform::Linux,
         },
-        LocalLaunchConfig::Metal {
+        LocalLaunchConfig::Mlx {
             common: common(""),
             binary_path: None,
             unified_memory_mib: None,
@@ -299,7 +304,7 @@ fn warmup_reports_ready_exited_and_timeout_without_wall_clock_waits() {
         let (mut lifecycle, journal, _generation) =
             lifecycle(shared.clone(), Duration::from_secs(1));
         let start_fence = fence(u32::try_from(attempt).unwrap());
-        let launch = installed_metal(journal.path(), model_path);
+        let launch = installed_vulkan(journal.path(), model_path);
         let outcome = start(&mut lifecycle, &shared, launch, &start_fence);
         assert_eq!(outcome.status, status);
         assert_eq!(outcome.reason_code, ReasonCode::known(reason));
@@ -321,7 +326,7 @@ fn dispatch_stop_reports_stopped_cleanup_failed_cancelled_and_already_gone() {
     let shared = Arc::new(LocalRuntimeShared::default());
     let (mut seam, journal, _generation) = lifecycle(shared.clone(), Duration::from_secs(1));
     let start_fence = fence(1);
-    let launch = installed_metal(journal.path(), "test-ready");
+    let launch = installed_vulkan(journal.path(), "test-ready");
     let started = start(&mut seam, &shared, launch, &start_fence)
         .managed
         .expect("ready child");
@@ -335,7 +340,7 @@ fn dispatch_stop_reports_stopped_cleanup_failed_cancelled_and_already_gone() {
     let (mut failing, failing_journal, _failing_generation) =
         lifecycle(shared.clone(), Duration::ZERO);
     let failing_start_fence = fence(3);
-    let launch = installed_metal(failing_journal.path(), "test-ready-block-term");
+    let launch = installed_vulkan(failing_journal.path(), "test-ready-block-term");
     let managed = start(&mut failing, &shared, launch, &failing_start_fence)
         .managed
         .expect("ready resistant child");

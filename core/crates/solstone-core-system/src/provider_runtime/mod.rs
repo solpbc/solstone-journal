@@ -8,7 +8,6 @@ mod events;
 mod gate;
 mod launch;
 mod local_follow;
-mod macos_mlx;
 mod mlx_recycle;
 mod model;
 mod parakeet;

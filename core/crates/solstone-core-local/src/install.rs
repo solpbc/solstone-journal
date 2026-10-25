@@ -20,7 +20,6 @@ pub mod coreml_install;
 pub mod fingerprint;
 pub mod fit_report;
 pub mod lease;
-pub mod macos_mlx_migration;
 pub mod manifest;
 pub mod metal_candidate;
 pub mod migration;

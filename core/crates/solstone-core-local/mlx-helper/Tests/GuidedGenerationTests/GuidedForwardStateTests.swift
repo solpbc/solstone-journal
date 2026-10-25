@@ -42,6 +42,7 @@ private let traceStateKey = LMOutput.Key<Int>("test.trace.hash")
 // The state depends on every prior token in order. Losing even a syntactic byte
 // changes subsequent state and logits, despite the grammar keeping JSON valid.
 private final class TraceLanguageModel: Module, LanguageModel {
+    var forwardPasses = 0
     var forwarded: [Int] = []
     var hashes: [Int] = []
     var perTokenLogits: [[Float]] = []
@@ -66,6 +67,7 @@ private final class TraceLanguageModel: Module, LanguageModel {
     func callAsFunction(
         _ input: LMInput.Text, cache: [KVCache]?, state: LMOutput.State?
     ) -> LMOutput {
+        forwardPasses += 1
         var hash = state?[traceStateKey] ?? hashes.last ?? 0
         let positions = input.tokens.size
         let dummy = MLXArray.zeros([1, 1, positions, 1])
@@ -154,7 +156,6 @@ private struct Trace {
     var perTokenLogits: [[Float]] = []
     var emitted: [Int] = []
     var passes = 0
-    var forced = 0
     var count = 0
 }
 
@@ -184,7 +185,6 @@ private func traceRun(
         processor: UnusedTraceProcessor(), tokenizer: tokenizer)
     let box = TokenBox()
     let history = TraceTokenProcessor(box: box)
-    let timings = GuidedGenerationLoop.GuidedGenerationTimings()
     var trace = Trace()
     var output = ""
     // The trace processor records history; an extra processor, if any, runs
@@ -195,15 +195,14 @@ private func traceRun(
         input: LMInput(tokens: MLXArray([Int32(1), 2, 3])), context: context,
         constraint: constraint, maxTokens: 128, vocabSize: 256,
         logitProcessor: composite, logitSampler: sampler,
-        forcedTokenFeed: feed, pipelineDispatch: pipeline, timings: timings
+        forcedTokenFeed: feed, pipelineDispatch: pipeline
     ) { output += $0; return true }
     trace.output = output
     trace.forwarded = model.forwarded
     trace.hashes = model.hashes
     trace.perTokenLogits = model.perTokenLogits
     trace.emitted = box.emitted
-    trace.passes = timings.forwardPasses
-    trace.forced = timings.forcedTokens
+    trace.passes = model.forwardPasses
     return trace
 }
 
@@ -286,7 +285,6 @@ struct GuidedForwardStateTests {
             let sequential = try traceRun(grammar: forcedGrammar, feed: .sequential)
             let batched = try traceRun(grammar: forcedGrammar, feed: .batched)
             let pipelined = try traceRun(grammar: forcedGrammar, feed: .batched, pipeline: true)
-            #expect(sequential.forced > 0)
             #expect(batched.output == sequential.output)
             #expect(batched.forwarded == sequential.forwarded)
             #expect(batched.hashes == sequential.hashes)

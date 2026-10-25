@@ -1945,21 +1945,28 @@ pub(crate) async fn boot_and_tick(
             solstone_core_callosum::LocalInferenceSnapshotOffer::Unavailable
         }
     });
+    #[cfg(any(debug_assertions, feature = "full-tests"))]
     let fixture_truth = std::env::var("SOLSTONE_SUPERVISOR_LOCAL_FIXTURE").as_deref() == Ok("1");
-    // The test fixture selects native Metal without inspecting host GPU hardware.
+    #[cfg(not(any(debug_assertions, feature = "full-tests")))]
+    let fixture_truth = false;
+    // The process fixture uses Vulkan without inspecting host GPU hardware.
     // Truth still records the pinned artifact-derived launch request.
     let truth = if fixture_truth {
         LocalTruthSeam::with_config(
             local_shared.clone(),
             LocalTruthConfig {
                 journal_path: journal.clone(),
-                // The fixture path uses native Metal instead of host NVIDIA hardware.
-                platform: solstone_core_system::provider_runtime::LocalHost::Darwin,
+                platform: solstone_core_system::provider_runtime::LocalHost::Linux,
                 arch: std::env::consts::ARCH,
-                nvidia_probe: None,
+                nvidia_probe: Some(solstone_core_local::NvidiaProbe::absent()),
                 vulkan: solstone_core_system::vulkan_observe::VulkanObservation {
-                    devices: Vec::new(),
-                    succeeded: false,
+                    devices: vec![solstone_core_local::VulkanDevice {
+                        index: 0,
+                        name: "fixture GPU".into(),
+                        device_type: Some(2),
+                        vram_mib: 16_000,
+                    }],
+                    succeeded: true,
                 },
                 windows_package: None,
             },
@@ -1974,7 +1981,7 @@ pub(crate) async fn boot_and_tick(
         let seam = seam.with_installer(Arc::new(launch_windows_local_installer));
         seam
     };
-    let truth = truth.with_migration_queue(queue.clone(), clock.clone());
+    let truth = truth.with_maintenance_queue(queue.clone(), clock.clone());
     let local = LocalProvider {
         coordinator: ProviderRuntimeCoordinator::new(),
         shared: local_shared.clone(),

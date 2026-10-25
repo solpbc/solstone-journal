@@ -52,10 +52,11 @@ impl TempJournal {
 
 fn install_native_local_readiness(root: &std::path::Path, fixture: &str) {
     let cache = pins::cache_root(root);
+    let key = pins::platform_key();
     let (platform_key, release_tag, _, _, binary_name) = pins::LLAMA_SERVER_PINS
         .iter()
-        .find(|pin| pin.0.ends_with("-apple-darwin"))
-        .expect("Darwin llama-server pin");
+        .find(|pin| pin.0 == key)
+        .expect("native llama-server pin");
     let runtime = cache.join("bin").join(platform_key).join(release_tag);
     let model = cache.join("models/local__qwen3.5-4b");
     fs::create_dir_all(&runtime).expect("runtime directory");

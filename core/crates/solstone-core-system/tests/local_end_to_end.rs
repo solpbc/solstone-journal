@@ -83,11 +83,16 @@ fn ac18_real_coordinator_seams_and_store() {
         LocalTruthConfig {
             windows_package: None,
             journal_path: journal.clone(),
-            platform: LocalHost::Darwin,
-            arch: "aarch64",
-            nvidia_probe: None,
+            platform: LocalHost::Linux,
+            arch: std::env::consts::ARCH,
+            nvidia_probe: Some(solstone_core_local::NvidiaProbe::absent()),
             vulkan: VulkanObservation {
-                devices: vec![],
+                devices: vec![solstone_core_local::VulkanDevice {
+                    index: 0,
+                    name: "fixture GPU".into(),
+                    device_type: Some(2),
+                    vram_mib: 16_000,
+                }],
                 succeeded: true,
             },
         },
