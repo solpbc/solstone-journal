@@ -22,7 +22,7 @@
     ],
     "write_method_cases": 272
   },
-  "generator": "scripts/convey_thinking_corpus.py",
+  "generator": "RETIRED -- scripts/convey_thinking_corpus.py was removed with the Python script surface and no replacement recorder exists, so this fixture is HAND-MAINTAINED (see FROZEN.md). The replay takes the talent lists in the generators responses from the live talent registry, so a talent change needs no edit here.",
   "native_deviations": [
     {
       "method": "PUT",

@@ -13,8 +13,9 @@ use axum::{
     http::Request,
 };
 use chrono::{TimeZone, Utc};
-use serde_json::Value;
+use serde_json::{Map, Value};
 use std::fs;
+use std::path::Path;
 use tower::ServiceExt;
 
 const REPLAYED_TOKEN_CASES: [&str; 3] = ["api_usage", "api_index", "api_stats"];
@@ -132,24 +133,13 @@ async fn assert_case(router: axum::Router, case: &Value, phase: &str, root: &tem
         "these days stopped on their own and can't pick back up without you — here's why, and what to try.",
         "some days retry automatically; others need your help. each day shows its current status.",
     );
-    // The briefing was renamed the daily briefing after the corpus was recorded.
-    replace_text(
-        &mut wanted,
-        "synthesizes all daily agent outputs into a structured five-section morning briefing",
-        "synthesizes all daily results into a structured briefing on one day",
-    );
-    replace_text(
-        &mut wanted,
-        "Selects one morning-briefing memory from each day of a finished week.",
-        "selects one memory from each day of a finished week, out of that day's daily briefing",
-    );
-    replace_text(&mut wanted, "morning briefing", "daily briefing");
-    // The schedule talent was retired after the corpus was recorded.
-    if let Some(generators) = wanted
-        .pointer_mut("/generators")
-        .and_then(Value::as_object_mut)
-    {
-        generators.remove("schedule");
+    // Generator metadata is the talent registry's own frontmatter, so it comes
+    // from the live registry: renaming, adding or retiring a talent does not
+    // drift this reference.
+    if wanted.get("generators").is_some_and(Value::is_object) {
+        let live = live_generators(root.path());
+        assert!(!live.is_empty(), "{phase} live generators");
+        wanted["generators"] = Value::Object(live);
     }
     if expected["status"] == 200 && case["name"] == "index" {
         wanted = Value::String(
@@ -452,6 +442,36 @@ fn merged_workspace_retains_stats_and_contains_the_bounded_token_detail() {
             "superseded token structure {removed}"
         );
     }
+}
+
+/// The generators the route lists for `journal`: generate talents from the
+/// installed registry, after the journal's own talent overrides.
+fn live_generators(journal: &Path) -> Map<String, Value> {
+    let package_root = std::env::current_exe()
+        .ok()
+        .and_then(|executable| {
+            executable
+                .parent()
+                .and_then(solstone_core_journal::resolve_installation_root_from_executable_dir)
+        })
+        .expect("installation root");
+    let overrides = solstone_core_talent_config::read_talent_overrides(journal)
+        .ok()
+        .flatten();
+    solstone_core_talent_config::load_talent_configs(
+        &package_root.join("solstone/talent"),
+        &package_root.join("solstone/apps"),
+        overrides.as_ref(),
+        solstone_core_talent_config::TalentFilter {
+            r#type: Some("generate"),
+            schedule: None,
+            include_disabled: false,
+        },
+    )
+    .expect("talent registry loads")
+    .into_iter()
+    .map(|config| (config.key, Value::Object(config.metadata)))
+    .collect()
 }
 
 fn replace(value: &mut Value, path: &str, pattern: &str) {

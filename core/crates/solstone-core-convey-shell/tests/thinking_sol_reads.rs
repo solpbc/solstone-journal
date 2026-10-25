@@ -180,22 +180,50 @@ fn normalize_capture_index(mut body: Value, path: &Path) -> Value {
     body
 }
 
+fn live_talent_frontmatter(key: &str) -> Value {
+    let (talent_root, apps_root) =
+        solstone_core_thinking::generators::discover_package_roots().expect("talent roots");
+    let configs = solstone_core_talent_config::load_talent_configs(
+        &talent_root,
+        &apps_root,
+        None,
+        solstone_core_talent_config::TalentFilter {
+            r#type: None,
+            schedule: None,
+            include_disabled: true,
+        },
+    )
+    .expect("talent registry loads");
+    let config = configs
+        .into_iter()
+        .find(|config| config.key == key)
+        .unwrap_or_else(|| panic!("talent {key} is discovered"));
+    Value::Object(config.metadata)
+}
+
 fn assert_stable_talent_metadata(body: &Value, expected: &Value) {
     assert_eq!(body["uses"], expected["uses"]);
     assert_eq!(body["facets"], expected["facets"]);
     // Talent frontmatter is independently editable shipped content, so this route
     // contract bounds metadata to representative default, system, and app entries.
+    // Their title, description and color come from the live registry, so a talent
+    // rename does not drift the corpus; the route's mapping of every other field
+    // stays pinned.
     let talents = body["talents"].as_object().expect("talents");
-    assert_eq!(
-        talents.get("conversation"),
-        expected["talents"].get("conversation"),
-        "system talent with explicit color and title"
-    );
-    assert_eq!(
-        talents.get("entities:detection"),
-        expected["talents"].get("entities:detection"),
-        "app talent carries source and app"
-    );
+    for (key, what) in [
+        (
+            "conversation",
+            "system talent with explicit color and title",
+        ),
+        ("entities:detection", "app talent carries source and app"),
+    ] {
+        let live = live_talent_frontmatter(key);
+        let mut wanted = expected["talents"][key].clone();
+        for field in ["title", "description", "color"] {
+            wanted[field] = live[field].clone();
+        }
+        assert_eq!(talents.get(key), Some(&wanted), "{what}");
+    }
     assert_eq!(talents["entities:detection"]["source"], "app");
     assert_eq!(talents["entities:detection"]["app"], "entities");
     // The schedule talent was retired after the corpus was recorded.
