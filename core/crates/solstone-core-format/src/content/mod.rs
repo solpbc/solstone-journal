@@ -675,7 +675,10 @@ fn render_calendar(records: &[JsonObject]) -> ProducedChunks {
         .filter_map(
             |record| match crate::calendar::calendar_note_from_record(record.clone()) {
                 Ok(note) => Some(IndexChunk {
-                    content: crate::calendar::render_calendar_note(&note),
+                    content: crate::calendar::render_calendar_note(
+                        &note,
+                        &crate::calendar::OwnerAddresses::default(),
+                    ),
                     occurrence_time_ms: Some(OccurrenceTimeMs(note.changed_at_ms())),
                     source: Some(record.clone()),
                     group_offset_ms: None,
