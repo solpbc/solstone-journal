@@ -94,7 +94,10 @@ impl Bundle {
             plist::Value::from_reader(Cursor::new(&info_bytes)).map_err(|_| Refusal::Bundle)?;
         let dictionary = plist.as_dictionary().ok_or(Refusal::Bundle)?;
         for (key, value) in [
-            ("CFBundleIdentifier", "app.solstone.journal.runtime.dev"),
+            (
+                "CFBundleIdentifier",
+                solstone_core_spp_attest::ios_service_tools::IOS_EXTENSION_POINT_HOST,
+            ),
             ("CFBundleExecutable", "JournalRuntimeDev"),
             ("CFBundlePackageType", "APPL"),
         ] {
