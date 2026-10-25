@@ -112,7 +112,7 @@ fn native_loaded_source_bytes_and_identities_qualify_only_when_they_match() {
     assert!(prepare(&wrong, &context).is_none());
 }
 #[test]
-fn native_preparation_falls_back_for_unsupported_ui_styles() {
+fn unsupported_ui_styles_read_the_timeline_without_an_anchor() {
     for text in [
         display().replace("❯ Is", "❯ \x1b[2mIs"),
         display().replace("❯ Is", "❯ \x1b[9mIs"),
@@ -128,7 +128,22 @@ fn native_preparation_falls_back_for_unsupported_ui_styles() {
             crate::prepare::PrepareMode::Preview,
         )
         .unwrap();
-        assert!(p.terminal_sense.is_none());
+        let native = crate::native_generate_request(&p).unwrap();
+        let candidate = p
+            .terminal_sense
+            .expect("every terminal segment reads the timeline");
+        assert!(!candidate.anchored(), "{text:?}");
+        // Sense's own task and schema, reading the timeline through its guide.
+        assert_eq!(candidate.request.json_schema, native.json_schema);
+        assert_eq!(candidate.request.contents.len(), native.contents.len());
+        assert_eq!(candidate.request.contents[1], native.contents[1]);
+        let guide = candidate.request.system_instruction.as_deref().unwrap();
+        assert!(guide.starts_with(raw_changes::INTRO), "{text:?}");
+        let ContentPart::Text { text: timeline } = &candidate.request.contents[0] else {
+            panic!("timeline part");
+        };
+        assert!(timeline.contains("End observation.\n"));
+        assert!(!timeline.contains(raw_changes::INTRO));
     }
 }
 #[test]

@@ -32,6 +32,13 @@ use ui::Bound;
 pub(crate) struct Candidate {
     pub request: GenerateRequest,
     original: GenerateRequest,
+    /// The owner's input as an agent UI shows it. Every terminal segment reads
+    /// the timeline; only an anchored one also binds its account to that input.
+    anchor: Option<Anchor>,
+}
+
+#[derive(Clone, Debug)]
+struct Anchor {
     bound: Bound,
     passages: Vec<Passage>,
 }
@@ -191,16 +198,36 @@ pub(crate) fn prepare(prepared: &PreparedTalent, context: &ExecutionContext) -> 
         text = text.replacen(&old, replacement, 1);
         all_frames.extend(frames);
     }
-    let bound = ui::choose(&all_frames)?;
-    let passages = passages::prepare(&all_frames, &bound)?;
-    let inputs = prompt_lines::excerpts(&all_frames, 6000);
-    if inputs.is_empty() {
-        return None;
-    }
     let mut request = original.clone();
     // The timeline stays in the ordinary input position, so fitting trims it like any
     // talent's input. Everything the output binding reads is preserved below.
     request.contents[0] = ContentPart::Text { text };
+    let anchor = anchor(&all_frames, &original, &guides, &mut request);
+    if anchor.is_none() {
+        // Sense's own task and schema read the timeline through its guide.
+        request.system_instruction = Some(guides.concat());
+    }
+    Some(Candidate {
+        request,
+        original,
+        anchor,
+    })
+}
+
+/// Bind the request to the owner's latest input when an agent UI shows one:
+/// input cards, quoted passages and a schema that can only cite them.
+fn anchor(
+    frames: &[Value],
+    original: &GenerateRequest,
+    guides: &[String],
+    request: &mut GenerateRequest,
+) -> Option<Anchor> {
+    let bound = ui::choose(frames)?;
+    let passages = passages::prepare(frames, &bound)?;
+    let inputs = prompt_lines::excerpts(frames, 6000);
+    if inputs.is_empty() {
+        return None;
+    }
     let mut cards = String::new();
     for (i, row) in inputs.iter().enumerate() {
         let mut meta = row.as_object()?.clone();
@@ -216,6 +243,12 @@ pub(crate) fn prepare(prepared: &PreparedTalent, context: &ExecutionContext) -> 
             )
         ));
     }
+    let schema = schema(
+        original.json_schema.as_ref()?,
+        inputs.len() - 1,
+        &bound,
+        &passages,
+    )?;
     request.system_instruction = Some(format!(
         "{}\n\nInput availability: zero transcript sources. quotes must be []; screen-derived entities use source screen. Preserve uncertain and reported status.\n\n{}\n\n{}",
         instructions::FOCUS_PREPARE_FOCUS,
@@ -239,18 +272,8 @@ pub(crate) fn prepare(prepared: &PreparedTalent, context: &ExecutionContext) -> 
             text: passages::encode(&passages),
         },
     ]);
-    request.json_schema = Some(schema(
-        original.json_schema.as_ref()?,
-        inputs.len() - 1,
-        &bound,
-        &passages,
-    )?);
-    Some(Candidate {
-        request,
-        original,
-        bound,
-        passages,
-    })
+    request.json_schema = Some(schema);
+    Some(Anchor { bound, passages })
 }
 
 fn valid_frame(frame: &Value) -> bool {
@@ -332,12 +355,38 @@ fn schema(original: &Value, latest: usize, bound: &Bound, rows: &[Passage]) -> O
 }
 
 impl Candidate {
-    fn binding_fingerprint(&self) -> String {
+    pub(super) fn anchored(&self) -> bool {
+        self.anchor.is_some()
+    }
+    fn binding_fingerprint(&self) -> Option<String> {
+        self.anchor.as_ref().map(Anchor::fingerprint)
+    }
+    /// The Sense record a response publishes, checked against what it may cite.
+    fn render(&self, text: &str) -> Result<String, String> {
+        let Some(anchor) = &self.anchor else {
+            let sense: Value = serde_json::from_str(text).map_err(|e| e.to_string())?;
+            jsonschema::validator_for(self.original.json_schema.as_ref().ok_or("no schema")?)
+                .map_err(|e| e.to_string())?
+                .validate(&sense)
+                .map_err(|e| e.to_string())?;
+            return Ok(text.to_owned());
+        };
+        anchor.render(text, &self.request, &self.original)
+    }
+}
+
+impl Anchor {
+    fn fingerprint(&self) -> String {
         digest(&json!({"screen":self.bound.screen_sha,"current":self.bound.current_sha,"passages":self.passages.iter().map(|r|json!([r.id,r.timestamp,r.scope,r.screen_sha,r.raw_sha,r.start,r.end])).collect::<Vec<_>>()} ).to_string())
     }
-    fn render(&self, text: &str) -> Result<String, String> {
+    fn render(
+        &self,
+        text: &str,
+        request: &GenerateRequest,
+        original: &GenerateRequest,
+    ) -> Result<String, String> {
         let wrapper: Value = serde_json::from_str(text).map_err(|e| e.to_string())?;
-        jsonschema::validator_for(self.request.json_schema.as_ref().unwrap())
+        jsonschema::validator_for(request.json_schema.as_ref().unwrap())
             .map_err(|e| e.to_string())?
             .validate(&wrapper)
             .map_err(|e| e.to_string())?;
@@ -356,7 +405,7 @@ impl Candidate {
         for facet in sense["facets"].as_array_mut().ok_or("invalid facets")? {
             facet["activity"] = json!(self.clause(&facet["activity"])?);
         }
-        jsonschema::validator_for(self.original.json_schema.as_ref().unwrap())
+        jsonschema::validator_for(original.json_schema.as_ref().unwrap())
             .map_err(|e| e.to_string())?
             .validate(&sense)
             .map_err(|e| e.to_string())?;

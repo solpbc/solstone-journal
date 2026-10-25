@@ -50,7 +50,7 @@ fn run(
     }
     crate::emit(
         writer,
-        json!({"event":"terminal_sense","branch":"complete_timeline","binding":candidate.binding_fingerprint()}),
+        json!({"event":"terminal_sense","branch":"complete_timeline","anchored":candidate.anchored(),"binding":candidate.binding_fingerprint()}),
     );
     crate::emit_generate_input(writer, &candidate.request);
     let response = crate::execute_bounded_attempts(
@@ -73,10 +73,17 @@ fn run(
         GenerateResponse::Cancelled => return Err(RuntimeOutcome::Cancelled),
         GenerateResponse::Generated(response) => match candidate.render(&response.text) {
             Ok(text) => {
+                // An unanchored account is ordinary Sense output, checked like any.
+                let text = if candidate.anchored() {
+                    text
+                } else {
+                    crate::verified_product_quotes(prepared, &text, writer)?
+                };
                 crate::record_input_budget(prepared, response.input_budget.as_ref());
                 return Ok((text, None, None));
             }
-            Err(_) => "invalid_source_binding",
+            Err(_) if candidate.anchored() => "invalid_source_binding",
+            Err(_) => "invalid_output",
         },
         GenerateResponse::Refused(response) if exceeds_context_window(&response) => {
             "input_exceeds_context_window"

@@ -48,8 +48,10 @@ fn setup() -> (PreparedTalent, Value) {
     prepared.terminal_sense = Some(Candidate {
         request,
         original,
-        bound,
-        passages: rows,
+        anchor: Some(Anchor {
+            bound,
+            passages: rows,
+        }),
     });
     let value = json!({"model_plan":{"anchor_input_id":0,"current_act":"question","earlier_work_state":"not_established","pending_decision":true,"requested_follow_through":null},"sense":{"activity_summary":{"background":["T0"],"current":current},"facets":[],"quotes":[],"entities":[]}});
     (prepared, value)
@@ -111,12 +113,13 @@ fn source_resolution_preserves_two_selections_and_rejects_unissued_or_altered_fi
         let text = candidate.render(&output.to_string()).unwrap();
         let result: Value = serde_json::from_str(&text).unwrap();
         let text = result["activity_summary"].as_str().unwrap();
-        assert!(text.contains(&candidate.passages[0].text));
+        assert!(text.contains(&candidate.anchor.as_ref().unwrap().passages[0].text));
         assert!(result.get("model_plan").is_none());
         assert!(result["activity_summary"].is_string());
         if keys.as_array().unwrap().len() == 2 {
             assert!(
-                text.find(&candidate.passages[0].text) < text.find(&candidate.passages[1].text)
+                text.find(&candidate.anchor.as_ref().unwrap().passages[0].text)
+                    < text.find(&candidate.anchor.as_ref().unwrap().passages[1].text)
             );
         }
     }
@@ -317,4 +320,66 @@ fn completed_attempt_usage_survives_cancellation_before_publication() {
         .unwrap();
     assert_eq!(usage["usage"]["input_tokens"], 100);
     assert_eq!(usage["usage"]["output_tokens"], 10);
+}
+/// A terminal segment with no agent input on screen still reads the timeline,
+/// and Sense's own record publishes as it would from any input.
+fn unanchored() -> PreparedTalent {
+    let (mut prepared, _) = setup();
+    let candidate = prepared.terminal_sense.take().unwrap();
+    let mut request = candidate.original.clone();
+    request.system_instruction = Some("timeline guide".into());
+    prepared.terminal_sense = Some(Candidate {
+        request,
+        original: candidate.original,
+        anchor: None,
+    });
+    prepared
+}
+#[test]
+fn an_unanchored_timeline_publishes_ordinary_sense_output() {
+    let mut prepared = unanchored();
+    let record = json!({"activity_summary":"Ran the test suite in a terminal.","facets":[],"quotes":[],"entities":[]});
+    let (result, calls, events) = run(
+        &mut prepared,
+        vec![generated(&record.to_string(), true, 100, 10)],
+    );
+    let crate::RuntimeOutcome::Finished { output, .. } = result else {
+        panic!("unanchored timeline failed")
+    };
+    let output: Value = serde_json::from_str(&output).unwrap();
+    assert_eq!(output["activity_summary"], record["activity_summary"]);
+    assert_eq!(calls.len(), 1);
+    assert_eq!(
+        calls[0].system_instruction.as_deref(),
+        Some("timeline guide")
+    );
+    assert!(
+        events
+            .iter()
+            .any(|e| e["branch"] == "complete_timeline" && e["anchored"] == false)
+    );
+    assert!(!events.iter().any(|e| e["branch"] == "native_fallback"));
+}
+#[test]
+fn an_invalid_unanchored_record_takes_one_native_fallback() {
+    let mut prepared = unanchored();
+    let record = json!({"activity_summary":"Ran tests.","facets":[],"quotes":[],"entities":[]});
+    let (result, calls, events) = run(
+        &mut prepared,
+        vec![
+            generated("{\"not\":\"sense\"}", true, 100, 10),
+            generated(&record.to_string(), true, 100, 10),
+        ],
+    );
+    assert!(
+        matches!(result, crate::RuntimeOutcome::Finished { .. }),
+        "{result:?}"
+    );
+    assert_eq!(calls.len(), 2);
+    assert_eq!(calls[1].system_instruction, None);
+    assert!(
+        events
+            .iter()
+            .any(|e| e["branch"] == "native_fallback" && e["cause"] == "invalid_output")
+    );
 }

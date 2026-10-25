@@ -1168,7 +1168,7 @@ fn native_generate_response(
 }
 
 /// Keep only product-name quotes the source supports, as every native result does.
-fn verified_product_quotes(
+pub(crate) fn verified_product_quotes(
     prepared: &PreparedTalent,
     text: &str,
     writer: &mut impl Write,

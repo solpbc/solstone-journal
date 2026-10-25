@@ -112,13 +112,15 @@ Generate or writing anything.
 
 ## Terminal segment Sense
 
-Sense encodes complete terminal-only segments as a reversible state timeline. Pane text, styles, links, identities, observation times and retained analysis remain reconstructible. Other inputs and unsupported interface layouts keep the ordinary native request. Eligibility depends only on the segment's inputs, never on the provider, model, endpoint or context window.
+Sense encodes complete terminal-only segments as a reversible state timeline. Pane text, styles, links, identities, observation times and retained analysis remain reconstructible. Segments with other inputs keep the ordinary native request. Eligibility depends only on the segment's inputs, never on the provider, model, endpoint or context window.
 
-For eligible segments, the model chooses complete displayed passages for activity context. Rust copies those passages and the recognized input or menu state into the existing Sense activity fields, then validates the canonical Sense object. Displayed text is framed as what was on screen; it does not establish authorship, approval or execution. Other fields remain generated assessments.
+Every terminal-only segment reads the timeline. Without a recognized agent input field or selection menu on screen, the timeline goes to Sense's own task and schema with its reading guide as the system instruction, and the record publishes like any Sense output.
+
+When the newest frame shows a recognized input field or menu, the request is also anchored to it: the model chooses complete displayed passages for activity context. Rust copies those passages and the recognized input or menu state into the existing Sense activity fields, then validates the canonical Sense object. Displayed text is framed as what was on screen; it does not establish authorship, approval or execution. Other fields remain generated assessments.
 
 The timeline takes the ordinary input position, so fitting trims it like any talent's input, keeping the newest whole entries. Every pane and window roster restarts from complete text at the same observation at least every 60 seconds, and each restart begins an entry, so a trimmed timeline starts on complete screens. The reading guide, the input cards, the passages and the Sense instructions are preserved, so every passage the model may choose stays visible. A trimmed result records its input budget like any other partial input.
 
-The talent runtime validates the bound Sense object before its existing output writer runs. Think then publishes the usual segment projections through its existing writer. An invalid binding, or a context-window refusal because even the preserved part does not fit, permits one ordinary native fallback sequence. Cancellation, transport, authentication and attestation failures do not trigger that fallback. Attempt events and usage accounting retain the candidate and fallback calls.
+The talent runtime validates the Sense object (bound, when anchored) before its existing output writer runs. Think then publishes the usual segment projections through its existing writer. An invalid binding or record, or a context-window refusal because even the preserved part does not fit, permits one ordinary native fallback sequence. Cancellation, transport, authentication and attestation failures do not trigger that fallback. Attempt events and usage accounting retain the candidate and fallback calls.
 
 ## Architecture
 
