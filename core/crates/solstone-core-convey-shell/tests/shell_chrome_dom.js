@@ -699,8 +699,9 @@ testCase('rail composition', () => {
   renderChrome(harness, 'home');
   const rail = harness.document.querySelector('#app-rail');
   assert.strictEqual(rail.children.length, 11);
-  assert.ok(rail.children[0].hasAttribute('data-app-launcher-toggle'));
-  assert.deepStrictEqual(appNames(rail.children.slice(1, 5)), ['home', 'search', 'entities', 'thinking']);
+  assert.deepStrictEqual(appNames(rail.children.slice(0, 4)), ['home', 'search', 'entities', 'thinking']);
+  assert.ok(rail.children[4].hasAttribute('data-app-launcher-toggle'));
+  assert.strictEqual(rail.children[4].querySelector('.app-chrome-label').textContent, 'journal apps');
   assert.ok(rail.children[5].classList.contains('app-rail-spacer'));
   assert.strictEqual(rail.children[6].id, 'status-instrument');
   assert.ok(rail.children[7].classList.contains('app-rail-divider'));

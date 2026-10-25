@@ -127,7 +127,9 @@
     );
   }
 
-  function launcherToggle(currentApp, visibleApps) {
+  // The rail shows its labels and names the toggle after the panel it opens;
+  // the dock's narrower slot keeps "more".
+  function launcherToggle(currentApp, visibleApps, restLabel = 'more') {
     const isCurrent = !visibleApps.some((app) => app.name === currentApp.name);
     const label = isCurrent ? `journal apps, current: ${currentApp.label}` : 'journal apps';
     return (
@@ -135,7 +137,7 @@
       ` data-app-launcher-toggle aria-expanded="false" aria-controls="app-launcher"` +
       ` aria-haspopup="dialog" aria-label="${escapeHtml(label)}">` +
       '<span class="app-chrome-icon" aria-hidden="true">⌘</span>' +
-      `<span class="app-chrome-label" aria-hidden="true">${escapeHtml(isCurrent ? currentApp.label : 'more')}</span>` +
+      `<span class="app-chrome-label" aria-hidden="true">${escapeHtml(isCurrent ? currentApp.label : restLabel)}</span>` +
       '</button>'
     );
   }
@@ -155,8 +157,8 @@
     const management = appsByRank(shell, 'rail_group', 'rail_rank', 'management');
     const railApps = [...primary, ...management];
     rail.innerHTML = [
-      launcherToggle(currentApp, railApps),
       ...primary.map((app) => appLink(app, currentAppName, 'app-rail-link')),
+      launcherToggle(currentApp, railApps, 'journal apps'),
       '<div class="app-rail-spacer" aria-hidden="true"></div>',
       '<div class="app-rail-divider" aria-hidden="true"></div>',
       ...management.map((app) => appLink(app, currentAppName, 'app-rail-link')),

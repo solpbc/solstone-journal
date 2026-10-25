@@ -14,6 +14,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- the side rail names its pages again: on a wide window each icon has its name beside it, and on a narrower one the name sits under it. the button that opens every page now reads "journal apps" and sits after the rail's top group.
 - on a new journal, home no longer adds a "your first week" card a moment after it opens.
 - when your journal thinks with Claude, a stretch where everything came from your terminal and an AI assistant's input box or menu was on screen is described again. in 2.0.58, your journal asked Claude for it in a form Claude doesn't accept, and the stretch was left without a description.
 - on windows, first-time setup no longer stops partway on a computer with a slower disk. setup checks the files that came with your journal, including a large speech model, and it now waits as long as that check keeps moving instead of stopping after a minute. if setup stopped partway for you, this resolves it.
