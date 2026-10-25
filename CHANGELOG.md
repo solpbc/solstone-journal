@@ -12,6 +12,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- on a new journal, home no longer adds a "your first week" card a moment after it opens.
 - when your journal thinks with Claude, a stretch where everything came from your terminal and an AI assistant's input box or menu was on screen is described again. in 2.0.58, your journal asked Claude for it in a form Claude doesn't accept, and the stretch was left without a description.
 - the weekly reflection that runs early sunday morning covers the week that just ended again. in 2.0.58 it wrote over the reflection for the week before instead, and the week that just ended got none.
 - on the transcripts page, every dot in the timeline's legend now matches what the timeline draws. workouts are clay instead of a second gold, so they no longer look like screen. a stretch still awaiting thinking is now an empty outline, so it no longer looks like a finished screen stretch.
