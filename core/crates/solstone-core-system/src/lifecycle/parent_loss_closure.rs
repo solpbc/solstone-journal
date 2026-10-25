@@ -7017,6 +7017,13 @@ mod tests {
                 BootstrapRecoveryReason::AbandonedAdmissionLive
             )
         ));
+        let persisted: LiveRecoveryFile =
+            serde_json::from_slice(&fs::read(&live_path).unwrap()).unwrap();
+        assert_eq!(
+            persisted.escalate_at_unix_ms,
+            now_ms.saturating_sub(1000),
+            "a retry keeps the stored escalation time instead of granting a fresh grace"
+        );
     }
 
     #[cfg(all(test, feature = "full-tests"))]

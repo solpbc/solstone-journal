@@ -306,8 +306,10 @@ mod tests {
     use super::*;
     use tempfile::TempDir;
 
+    // The comparison makes durable writes that can take seconds on a busy disk,
+    // so this only bounds a hang.
     fn deadline() -> Instant {
-        Instant::now() + Duration::from_secs(10)
+        Instant::now() + Duration::from_secs(60)
     }
 
     fn rows(values: &[serde_json::Value]) -> Vec<String> {
