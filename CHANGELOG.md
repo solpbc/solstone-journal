@@ -49,6 +49,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - reading transcripts for a stretch of time from the command line now keeps only the device you name with `--stream`. before, it returned every device. thanks @dvanduzer for the report.
 - the instructions your journal gives a coding agent for reading it no longer show commands that fail or come back empty, such as reading transcripts without a day. thanks @dvanduzer for the report.
 - fixed "show details" in system messages showing only a status, or nothing at all, for some errors. it shows the error's message, context and stack again.
+- on the transcripts page, every dot in the timeline's legend now matches what the timeline draws. workouts are clay instead of a second gold, so they no longer look like screen. a stretch still awaiting thinking is now an empty outline, so it no longer looks like a finished screen stretch.
 
 ## [2.0.57] - 2026-10-24
 
