@@ -1312,14 +1312,10 @@ fn discharge_retained_descendants(
                 {
                     live_file.descendants[i].escalated = true;
                     let target_reap = now_ms + LIVE_REAP_GRACE_MS;
-                    match live_file.descendants[i].reap_deadline_unix_ms {
-                        None => {
+                    if let Some(stored) = live_file.descendants[i].reap_deadline_unix_ms {
+                        if stored > target_reap {
                             live_file.descendants[i].reap_deadline_unix_ms = Some(target_reap);
                         }
-                        Some(stored) if stored > target_reap => {
-                            live_file.descendants[i].reap_deadline_unix_ms = Some(target_reap);
-                        }
-                        _ => {}
                     }
                     persist_live(ledger, generation, live_file)?;
                     need_persist = false;
@@ -1329,6 +1325,14 @@ fn discharge_retained_descendants(
                         )));
                     }
                     let _ = authority.retirer.signal(inst, SignalKind::Kill);
+                    if live_file.descendants[i].reap_deadline_unix_ms.is_none() {
+                        // The first reap grace starts once the escalation is durable and
+                        // the kill has been sent, so a slow write cannot use it up. A
+                        // stored deadline only ever moves earlier.
+                        live_file.descendants[i].reap_deadline_unix_ms =
+                            Some(unix_millis() + LIVE_REAP_GRACE_MS);
+                        persist_live(ledger, generation, live_file)?;
+                    }
 
                     if let Some(reap_ms) = live_file.descendants[i].reap_deadline_unix_ms {
                         let cur_ms = unix_millis();
@@ -1586,16 +1590,11 @@ fn run_live_state_machine(
             && now_ms >= live_file.escalate_at_unix_ms
         {
             let mut need_write = false;
-            match live_file.reap_deadline_unix_ms {
-                None => {
+            if let Some(stored) = live_file.reap_deadline_unix_ms {
+                if stored > now_ms + LIVE_REAP_GRACE_MS {
                     live_file.reap_deadline_unix_ms = Some(now_ms + LIVE_REAP_GRACE_MS);
                     need_write = true;
                 }
-                Some(stored) if stored > now_ms + LIVE_REAP_GRACE_MS => {
-                    live_file.reap_deadline_unix_ms = Some(now_ms + LIVE_REAP_GRACE_MS);
-                    need_write = true;
-                }
-                _ => {}
             }
             if !live_file.escalated {
                 live_file.escalated = true;
@@ -1607,8 +1606,18 @@ fn run_live_state_machine(
             if authority.retirer.owner(live_file.root.pid) == ProcessOwner::Uid(live_file.uid) {
                 let _ = authority.retirer.signal(live_file.root, SignalKind::Kill);
             }
-
-            let reap_ms = live_file.reap_deadline_unix_ms.unwrap();
+            let reap_ms = match live_file.reap_deadline_unix_ms {
+                Some(stored) => stored,
+                None => {
+                    // The first reap grace starts once the escalation is durable and
+                    // any kill has been sent, so a slow write cannot use it up. A
+                    // stored deadline only ever moves earlier.
+                    let reap_ms = unix_millis() + LIVE_REAP_GRACE_MS;
+                    live_file.reap_deadline_unix_ms = Some(reap_ms);
+                    persist_live(ledger, generation, &live_file)?;
+                    reap_ms
+                }
+            };
             let cur_ms = unix_millis();
             if cur_ms < reap_ms {
                 let wait_ms = reap_ms - cur_ms;
@@ -5145,6 +5154,124 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "full-tests")]
+    #[test]
+    fn the_first_reap_grace_starts_after_a_slow_kill_is_sent() {
+        // Stands in for a slow durable write before the kill: the kill reaches
+        // the process only after this delay.
+        struct SlowKill {
+            inner: FakeRetirer,
+            killed_at_ms: Mutex<Option<u64>>,
+        }
+        impl AdmissionRetirer for SlowKill {
+            fn owner(&self, pid: u32) -> ProcessOwner {
+                self.inner.owner(pid)
+            }
+            fn signal(
+                &self,
+                target: ProcessInstance,
+                signal: SignalKind,
+            ) -> Result<(), TerminationError> {
+                if matches!(signal, SignalKind::Kill) {
+                    thread::sleep(Duration::from_millis(100));
+                    *self.killed_at_ms.lock().unwrap() = Some(unix_millis());
+                }
+                self.inner.signal(target, signal)
+            }
+        }
+        for descendant in [false, true] {
+            let directory = TempDir::new().unwrap();
+            let (ledger, active) = open_generation(&directory);
+            let root = instance(8830, 100);
+            let child = instance(8831, 200);
+            let launch_id = "slow-kill";
+            admit(
+                directory.path(),
+                active.generation,
+                launch_id,
+                None,
+                Some(root),
+            );
+            let derived =
+                read_derived_admission_drops(&ledger, active.generation, launch_id).unwrap();
+            let descendants = if descendant {
+                vec![LiveDescendantIdentity {
+                    instance: child,
+                    uid: 501,
+                    ppid: root.pid,
+                    pgid: root.pid,
+                    escalate_at_unix_ms: unix_millis() - 1,
+                    reap_deadline_unix_ms: None,
+                    term_requested: true,
+                    escalated: false,
+                }]
+            } else {
+                Vec::new()
+            };
+            let live = LiveRecoveryFile {
+                sources: Some(derived.sources),
+                schema: PARENT_LOSS_RECOVERY_SCHEMA_V1,
+                kind: RecoveryArtifactKind::Live,
+                generation: active.generation,
+                sealed_phase: ParentLossPhase::Sealed,
+                launch_id: launch_id.to_owned(),
+                service: None,
+                root,
+                uid: 501,
+                parent_launch_id: None,
+                binding_digest: compute_live_binding_digest(root, 501, &descendants).unwrap(),
+                descendants,
+                escalate_at_unix_ms: unix_millis() - 1,
+                reap_deadline_unix_ms: None,
+                term_requested: true,
+                escalated: false,
+            };
+            persist_live(&ledger, active.generation, &live).unwrap();
+            // The process that is retired survives the kill, so the attempt
+            // waits out the whole reap grace and refuses.
+            let stubborn = if descendant { child } else { root };
+            let (source, inner) = fake(&[(stubborn, 501)], &[], &[stubborn.pid]);
+            let retirer = SlowKill {
+                inner,
+                killed_at_ms: Mutex::new(None),
+            };
+            let lease = acquire_lease(&ledger);
+            let error = ledger
+                .reserve_generation_closing_abandoned(
+                    instance(11, 3),
+                    [],
+                    &lease,
+                    &authority(&source, &retirer, AMPLE_BUDGET),
+                )
+                .expect_err("a process that survives the kill refuses this start");
+            assert!(matches!(
+                error,
+                ParentLossLedgerError::RecoveryRequired(
+                    BootstrapRecoveryReason::AbandonedAdmissionLive
+                )
+            ));
+            let killed_at_ms = retirer
+                .killed_at_ms
+                .lock()
+                .unwrap()
+                .expect("the stubborn process was killed");
+            let persisted: LiveRecoveryFile = serde_json::from_slice(
+                &fs::read(ledger.closure_recovery_live_path(active.generation, launch_id)).unwrap(),
+            )
+            .unwrap();
+            let reap_deadline = if descendant {
+                persisted.descendants[0].reap_deadline_unix_ms
+            } else {
+                persisted.reap_deadline_unix_ms
+            }
+            .expect("the reap deadline is stored");
+            assert!(
+                reap_deadline >= killed_at_ms + LIVE_REAP_GRACE_MS,
+                "descendant={descendant}: the reap grace started before the kill was sent"
+            );
+        }
+    }
+
     #[test]
     fn a_descendant_that_loses_observability_or_uid_after_term_cannot_be_discharged_or_killed() {
         struct ChangingRetirer {
@@ -7143,7 +7270,7 @@ mod tests {
             instance(11, 3),
             [],
             &lease,
-            &authority(&source, &retirer, Duration::from_secs(30)),
+            &authority(&source, &retirer, AMPLE_BUDGET),
         );
         let elapsed = start.elapsed();
         assert!(
