@@ -1916,6 +1916,12 @@ pub fn render_windows_component_evidence_for_target(
         )));
     }
 
+    crate::produce::require_same_source_commit(
+        env!("SOLSTONE_DISTRIBUTION_SOURCE_COMMIT"),
+        &verified.manifest().source_commit,
+    )
+    .map_err(|e| EvidenceError::new(e.to_string()))?;
+
     if verified.manifest().target != target {
         return Err(EvidenceError::new(format!(
             "target-mismatch: manifest {}",
