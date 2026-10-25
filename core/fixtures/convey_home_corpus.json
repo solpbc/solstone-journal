@@ -2697,56 +2697,6 @@
         "sections": {}
       }
     ],
-    "briefing_summary": [
-      {
-        "input": {
-          "needs_count": 0,
-          "sections": {}
-        },
-        "output": "morning briefing"
-      },
-      {
-        "input": {
-          "needs_count": 1,
-          "sections": {}
-        },
-        "output": "morning briefing: 1 item needs attention"
-      },
-      {
-        "input": {
-          "needs_count": 2,
-          "sections": {}
-        },
-        "output": "morning briefing: 2 items need attention"
-      },
-      {
-        "input": {
-          "needs_count": 0,
-          "sections": {
-            "yesterday": "- short line"
-          }
-        },
-        "output": "morning briefing: short line"
-      },
-      {
-        "input": {
-          "needs_count": 0,
-          "sections": {
-            "yesterday": "- a line that is definitely longer than fifty eight characters in total"
-          }
-        },
-        "output": "morning briefing: a line that is definitely longer than fifty eight chara..."
-      },
-      {
-        "input": {
-          "needs_count": 0,
-          "sections": {
-            "yesterday": "\n\n  \n- indented"
-          }
-        },
-        "output": "morning briefing: indented"
-      }
-    ],
     "convey_utils": [
       {
         "format_date": [
@@ -3081,7 +3031,7 @@
         "output": [
           {
             "href": "/app/sol/20260513#morning_briefing",
-            "text": "your morning briefing wasn't prepared overnight."
+            "text": "yesterday wasn't written up."
           }
         ]
       },
@@ -3193,7 +3143,7 @@
         "output": [
           {
             "href": "/app/sol/20260513#morning_briefing",
-            "text": "2 morning briefing runs didn't finish."
+            "text": "2 daily briefing runs didn't finish."
           }
         ]
       },
@@ -52416,42 +52366,18 @@
     "processing_summary": [
       {
         "input": {
-          "briefing_valid": false,
           "mode": "degraded"
         },
         "output": "some overnight processing didn't finish."
       },
       {
         "input": {
-          "briefing_valid": true,
-          "mode": "degraded"
-        },
-        "output": "some overnight processing didn't finish."
-      },
-      {
-        "input": {
-          "briefing_valid": true,
-          "mode": "healthy"
-        },
-        "output": "your morning briefing was prepared."
-      },
-      {
-        "input": {
-          "briefing_valid": false,
           "mode": "healthy"
         },
         "output": ""
       },
       {
         "input": {
-          "briefing_valid": true,
-          "mode": "sparse"
-        },
-        "output": "your morning briefing was prepared."
-      },
-      {
-        "input": {
-          "briefing_valid": false,
           "mode": "sparse"
         },
         "output": ""

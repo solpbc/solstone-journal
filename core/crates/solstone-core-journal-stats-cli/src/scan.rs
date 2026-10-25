@@ -105,6 +105,7 @@ fn count_transcripts(day_dir: &Path) -> Result<TranscriptCounts, JournalStatsErr
             name == "audio.jsonl"
                 || has_nonempty_prefix(name, "_audio.jsonl")
                 || has_nonempty_prefix(name, "_transcript.jsonl")
+                || solstone_core_processing_record::is_transcribe_output(path)
         })
         .collect();
 
@@ -300,4 +301,36 @@ fn read_dir(path: &Path) -> Result<Vec<fs::DirEntry>, JournalStatsError> {
         .map_err(|source| JournalStatsError::io(path, source))?
         .collect::<Result<Vec<_>, _>>()
         .map_err(|source| JournalStatsError::io(path, source))
+}
+
+#[cfg(test)]
+mod speech_tests {
+    use super::*;
+
+    #[test]
+    fn transcript_counts_include_transcribe_headers_and_exclude_unrelated_jsonl() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let segment = temp.path().join("phone.audio/120000_60");
+        fs::create_dir_all(&segment).unwrap();
+        let speech = segment.join("note-0.jsonl");
+        fs::write(&speech, "{\"_solstone_processing\":{\"handler\":\"transcribe\"}}\n{\"text\":\"first\",\"start\":\"00:00:00\"}\n{\"text\":\"last\",\"start\":\"00:00:04\"}\n").unwrap();
+        fs::write(segment.join("events.jsonl"), "{\"event\":\"accepted\"}\n").unwrap();
+        let counts = count_transcripts(temp.path()).unwrap();
+        assert_eq!(
+            (counts.sessions, counts.segments, counts.duration),
+            (1, 2, 4.0)
+        );
+        assert!(
+            crate::cache::bounded_input_mtime(temp.path())
+                .unwrap()
+                .is_some()
+        );
+        fs::write(speech, "{\"event\":\"accepted\"}\n").unwrap();
+        assert_eq!(count_transcripts(temp.path()).unwrap().sessions, 0);
+        assert!(
+            crate::cache::bounded_input_mtime(temp.path())
+                .unwrap()
+                .is_none()
+        );
+    }
 }

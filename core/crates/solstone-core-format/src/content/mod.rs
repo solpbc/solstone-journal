@@ -573,6 +573,27 @@ static CONTENT_RESOLVER: Resolver<Family, FamilyPattern> = Resolver::new(INDEX_F
 static UNINDEXED_RESOLVER: Resolver<UnindexedReason, KnownUnindexedPattern> =
     Resolver::new(KNOWN_UNINDEXED_PATTERNS);
 
+/// Resolve a stored source by path, then recognize transcribe's own header.
+/// Header recognition adds only an unindexed raw-percept family; it never
+/// grants an indexed category or overrides a path-owned family.
+pub fn classify_file(path: &std::path::Path, rel: &str) -> ContentResolution {
+    let resolution = classify(rel);
+    if resolution != ContentResolution::Unrecognized {
+        return resolution;
+    }
+    let rel = rel.strip_prefix("chronicle/").unwrap_or(rel);
+    let parts: Vec<_> = rel.split('/').collect();
+    if parts.len() == 4
+        && crate::segment::is_date_key(parts[0])
+        && crate::segment::segment_parse(parts[2]).is_some()
+        && solstone_core_processing_record::is_transcribe_output(path)
+    {
+        ContentResolution::Unindexed(RawPerceptFamily::Audio)
+    } else {
+        resolution
+    }
+}
+
 pub fn classify(rel: &str) -> ContentResolution {
     if let Some(family) = CONTENT_RESOLVER.resolve(rel) {
         return ContentResolution::Indexed(family);

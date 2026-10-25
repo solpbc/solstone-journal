@@ -11,9 +11,9 @@ if (!manifestDir) throw new Error('manifest directory required');
 
 let source = fs.readFileSync(path.join(manifestDir, 'assets/home.js'), 'utf8');
 source = source.replace(
-  '  window.toggleBriefingCard = toggleBriefingCard;\n',
+  '  window.selectAccountSide = selectAccountSide;\n',
   `  window.__home = { connectionRecovery, wireRealtime };
-  window.toggleBriefingCard = toggleBriefingCard;\n`,
+  window.selectAccountSide = selectAccountSide;\n`,
 );
 
 let firstMinutesResponse = null;

@@ -206,7 +206,7 @@ fn removal_card_escapes_journal_values_before_rendering_markup() {
 }
 
 #[test]
-fn needs_you_items_render_informational_without_affordances() {
+fn waiting_list_rows_follow_their_sources() {
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     // without_executor empties PATH for the whole process; hold its lock so node resolves.
     let _env = EXECUTOR_ENV_LOCK.lock().expect("executor environment lock");
@@ -296,7 +296,7 @@ fn reconnect_rereads_what_a_lost_completion_event_would_have_refreshed() {
 }
 
 #[test]
-fn yesterday_processing_splits_failures_from_neutral_summary() {
+fn a_failed_night_is_at_most_two_waiting_rows() {
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     // without_executor empties PATH for the whole process; hold its lock so node resolves.
     let _env = EXECUTOR_ENV_LOCK.lock().expect("executor environment lock");

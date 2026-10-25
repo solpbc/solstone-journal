@@ -417,6 +417,8 @@ async function main() {
   make('localRuntimeRetry');
   make('localActivate');
   make('localRefresh');
+  make('localModelField');
+  make('localSetupIntro');
   make('localSetupLinks');
   const localCard = make('lane-local', {lane: 'local', openView: 'local-setup'});
   localCard.setAttribute('data-open-view', 'local-setup');
@@ -1982,6 +1984,20 @@ async function main() {
   assert.strictEqual(localCantRunNode.hidden, true, '#localCantRun is hidden');
   assert.notStrictEqual(forkHintNode.dataset.forkHint, 'local-ready', 'dataset.forkHint is not local-ready');
   assert.notStrictEqual(laneStatus.textContent, thinking.localLaneBlocked.setup, '#localLaneStatus text is not setup');
+
+  // The journal's host fact is independent of the browser rendering it.
+  thinking.state.hostCapabilities = {bundled_local_thinking: false};
+  thinking.renderMainLanes();
+  thinking.renderLocal();
+  assert.strictEqual(laneLocalNode.hidden, true, 'unsupported host has no selectable local card');
+  assert.strictEqual(localCantRunNode.hidden, true, 'unsupported host has no desktop hardware requirements');
+  for (const id of ['localModelField', 'localRefresh', 'localBootstrap', 'localCancel', 'localRuntimeRetry', 'localActivate']) {
+    assert.strictEqual(nodes.get(id).hidden, true, id + ' is absent on the unsupported host');
+  }
+  assert.strictEqual(nodes.get('localNotice').dataset.localReason, undefined, 'no desktop hardware link in local notice');
+  thinking.state.hostCapabilities = {bundled_local_thinking: true};
+  thinking.renderMainLanes();
+  assert.strictEqual(laneLocalNode.hidden, false, 'desktop hardware refusal remains visible');
 
   // Clear capability and render same binary_missing fixture
   thinking.state.localCapability = null;

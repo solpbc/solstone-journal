@@ -54,6 +54,28 @@ public final class PackagedAudioTest {
         require(Arrays.equals(Files.readAllBytes(models.resolve("model.gguf")),conflict));
         require(binds.get()==2);
     }
+    static void noticeUpgrade(Path root) throws Exception {
+        Path notices=Files.createDirectories(root.resolve("models/notices"));
+        byte[] previous="previous aggregate notice".getBytes("UTF-8"), next="current aggregate notice".getBytes("UTF-8");
+        Path inherited=notices.resolve("NOTICE.md");Files.write(inherited,previous);
+        MessageDigest hash=PackagedAudio.hash();hash.update(next);String digest=PackagedAudio.digest(hash);
+        PackagedAudio.Pin updated=new PackagedAudio.Pin("NOTICE-"+digest+".md",next.length,digest);
+        PackagedPayload.Assets source=new PackagedPayload.Assets() {
+            public String[] list(String path) { return new String[0]; }
+            public InputStream open(String path) { return new ByteArrayInputStream(path.startsWith("audio-models/notices/") ? next : MODEL); }
+        };
+        AtomicInteger ready=new AtomicInteger();
+        for(int i=0;i<2;i++) PackagedAudio.prepare(source,Arrays.asList(pin(MODEL)),Arrays.asList(updated),
+            root.resolve("models").toFile(),root.resolve("staging").toFile(),()->true,ready::incrementAndGet);
+        require(ready.get()==2);
+        require(Arrays.equals(Files.readAllBytes(inherited),previous));
+        require(Arrays.equals(Files.readAllBytes(notices.resolve(updated.name)),next));
+        require(Arrays.equals(Files.readAllBytes(root.resolve("models/model.gguf")),MODEL));
+        PackagedAudio.Pin colliding=new PackagedAudio.Pin("NOTICE.md",next.length,digest);
+        refusal(()->PackagedAudio.prepare(source,Arrays.asList(pin(MODEL)),Arrays.asList(colliding),
+            root.resolve("models").toFile(),root.resolve("staging").toFile(),()->true,ready::incrementAndGet));
+        require(ready.get()==2 && Arrays.equals(Files.readAllBytes(inherited),previous));
+    }
     static void failedCopyAndRetry(Path root) throws Exception {
         PackagedPayload.Assets failing=new PackagedPayload.Assets() {
             public String[] list(String path) { return new String[0]; }
@@ -143,6 +165,7 @@ public final class PackagedAudioTest {
         Path root=Files.createTempDirectory("packaged-audio-");
         try {
             additiveAndRecovery(Files.createDirectory(root.resolve("additive")));
+            noticeUpgrade(Files.createDirectory(root.resolve("notice-upgrade")));
             failedCopyAndRetry(Files.createDirectory(root.resolve("retry")));
             bootstrapAndLinks(Files.createDirectory(root.resolve("boundaries")));
             recreation(Files.createDirectory(root.resolve("recreation")));

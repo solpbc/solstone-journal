@@ -53,36 +53,6 @@ pub fn lateness_state(now: DateTime<Utc>, phase: &str) -> Value {
     json!({"late":late,"late_hours":if late { (i64::from(now.hour()) - 10).max(0) } else { 0 }})
 }
 
-pub fn summary(sections: &Value, needs_count: i64) -> String {
-    if needs_count > 0 {
-        return format!(
-            "morning briefing: {needs_count} {} attention",
-            if needs_count == 1 {
-                "item needs"
-            } else {
-                "items need"
-            }
-        );
-    }
-    if let Some(sections) = sections.as_object() {
-        for content in sections.values().filter_map(Value::as_str) {
-            for line in content.lines() {
-                let line = line.trim().trim_start_matches("- ").trim();
-                if !line.is_empty() {
-                    let line = if line.len() > 58 {
-                        let cut = line.floor_char_boundary(55);
-                        format!("{}...", line[..cut].trim_end())
-                    } else {
-                        line.to_owned()
-                    };
-                    return format!("morning briefing: {line}");
-                }
-            }
-        }
-    }
-    "morning briefing".to_owned()
-}
-
 pub fn render_sections(briefing: &Value) -> Value {
     let mut sections = serde_json::Map::new();
     let yesterday = briefing
@@ -136,31 +106,6 @@ fn value_text(value: &Value) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn summary_leads_with_the_attention_count_when_there_is_one() {
-        let sections = json!({"yesterday": "- shipped"});
-        let with_needs = summary(&sections, 3);
-        assert!(with_needs.contains('3'));
-        assert!(!with_needs.contains("shipped"));
-        assert!(summary(&sections, 0).contains("shipped"));
-    }
-
-    #[test]
-    fn summary_truncates_at_utf8_char_boundary_without_tearing() {
-        let prefix = "a".repeat(54);
-        let raw_line = format!("{prefix}—xy");
-        assert!(raw_line.len() > 58);
-        let sections = json!({"yesterday": format!("- {raw_line}")});
-        let result = summary(&sections, 0);
-        let prefix_part = result
-            .strip_prefix("morning briefing: ")
-            .and_then(|s| s.strip_suffix("..."))
-            .expect("prefix and suffix present");
-        assert!(prefix_part.len() <= 55);
-        assert!(raw_line.starts_with(prefix_part));
-        assert!(!prefix_part.ends_with('—'));
-    }
 
     #[test]
     fn render_sections_omits_retired_sections_even_when_present() {

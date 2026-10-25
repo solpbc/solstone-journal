@@ -1038,6 +1038,7 @@ systemctl --user start solstone-linux</code></div>
   // devices connect straight to it would be false.
   let localNetworkClosed = false;
   let localNetworkWindowsAsks = false;
+  let sameComputerPairing = false;
   const segByo = document.getElementById('link-seg-byo');
   const segHosted = document.getElementById('link-seg-hosted');
   const modeByoBody = document.getElementById('link-mode-byo-body');
@@ -1778,6 +1779,7 @@ systemctl --user start solstone-linux</code></div>
     const wasClosed = localNetworkClosed;
     localNetworkClosed = applies && data.listening_on === 'this_pc';
     localNetworkWindowsAsks = !!data && data.windows_asks === true;
+    sameComputerPairing = data?.host_capabilities?.same_computer_pairing === true;
     applyLocalNetworkToReach();
     if (wasClosed !== localNetworkClosed) refreshStatus();
     if (!applies) return;
@@ -1802,7 +1804,7 @@ systemctl --user start solstone-linux</code></div>
       ].filter(Boolean).join(' ');
     } else if (data.listening_on === 'this_pc') {
       state = copy.LOCAL_NETWORK_THIS_PC;
-      note = [copy.LOCAL_NETWORK_THIS_PC_NOTE, windows ? copy.LOCAL_NETWORK_WINDOWS_ASKS_NOTE : ''].filter(Boolean).join(' ');
+      note = [sameComputerPairing ? copy.LOCAL_NETWORK_THIS_PC_NOTE : copy.LOCAL_NETWORK_OTHER_DEVICES_NOTE, windows ? copy.LOCAL_NETWORK_WINDOWS_ASKS_NOTE : ''].filter(Boolean).join(' ');
     }
     document.getElementById('link-local-network-state').textContent = state;
     const noteEl = document.getElementById('link-local-network-note');
@@ -1887,6 +1889,7 @@ systemctl --user start solstone-linux</code></div>
       onPrivateLinkRepair: startPrivateLinkSetup,
       onLocalNetworkOpen: () => setLocalNetwork(true),
       windowsAsks: () => localNetworkWindowsAsks,
+      canPairThisComputer: () => sameComputerPairing,
       onDeviceRemoved: () => { if (typeof loadClients === 'function') loadClients(); },
       onPrivateLinkDisable: () => {
         if (!confirm(localNetworkClosed ? window.LinkCopy.PRIVATE_LINK_DISABLE_CONFIRM_CLOSED : window.LinkCopy.PRIVATE_LINK_DISABLE_CONFIRM)) return;

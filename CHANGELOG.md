@@ -19,9 +19,15 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - when everything that went into your journal for a stretch came from your terminal, the description of that stretch now quotes the text that was on screen, such as an input line, instead of paraphrasing it. this works with whichever model your journal thinks with.
 - the screen record of a long stretch at your terminal is now written in parts with every model and wherever your journal runs, as it already was on linux with the local model. your journal no longer drops the start of that stretch for a model that can't take it all at once, unless the stretch is too long to split.
 - in a meeting, a person whose voice your journal recognized on at least two lines is now listed as attending, even if nothing written that day named them, and so is a voice you haven't named yet, like "Speaker 2". a single matched line is no longer enough unless you assigned that line yourself, so that person is listed as mentioned. activities already in your journal keep their people as they are.
+- the morning briefing is now the daily briefing. on home, a switch moves between yesterday's daily briefing and today, and it opens on yesterday until something goes into your journal today. anything waiting on you, like originals to review or a voice to confirm, now sits in a list under the status line that appears only when something is waiting, and originals have their own page.
 
 ### Fixed
 
+- in the development journal app on android, updated speech notices no longer block start. existing notices and models are kept.
+
+- thinking, health and network now show the options supported by the device running your journal.
+- recordings with custom filenames now appear in counts and daily processing.
+- in the development journal app on android, stop reaches ongoing work even when another control is waiting. reopening waits for confirmation before showing stopped or offering start. on android and iphone, the app keeps the screen awake while stopping.
 - a screen description of a terminal less often comes back as your journal's own instructions instead of the text that was there.
 - on a calendar event in your journal, the invitee marked as you is now the one whose email is one of the addresses in your identity settings. before, each phone decided, and on a calendar someone shared with you, it could mark that person as you. if your identity has no email addresses, no one on an invite is marked as you. events already in your journal are updated the next time your journal checks them. thanks @dvanduzer for the report.
 - work stories no longer say you did something that was only on your screen. a page you read, an answer from a chat assistant, or work an agent did in your terminal is described as something you read, reviewed or asked your agent to do, and what your agent did is credited to your agent. thanks @dvanduzer for the report.

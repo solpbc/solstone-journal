@@ -358,9 +358,13 @@ fn owner_read_role_classification_table_exhaustiveness() {
             "/api/health/pipeline",
             RouteClassification::Moved(OwnerReadRole::HealthPipeline),
         ),
-        // Home (11 live GET paths in home-web lib.rs:26-42)
+        // Home (12 live GET paths in home-web lib.rs)
         ("/app/home/", RouteClassification::NoQualifyingWork),
         ("/app/home", RouteClassification::NoQualifyingWork),
+        (
+            "/app/home/originals/",
+            RouteClassification::NoQualifyingWork,
+        ),
         ("/app/home/workspace", RouteClassification::NoQualifyingWork),
         (
             "/app/home/static/home.js",
@@ -448,7 +452,7 @@ fn owner_read_role_classification_table_exhaustiveness() {
         ),
     ];
 
-    assert_eq!(table.len(), 99, "Must classify all 99 live GET routes");
+    assert_eq!(table.len(), 100, "Must classify all 100 live GET routes");
 
     let mut distinct_paths = BTreeSet::new();
     for (path, _) in table {
@@ -514,8 +518,8 @@ fn owner_read_role_classification_table_exhaustiveness() {
         .collect();
     assert_eq!(
         no_qualifying.len(),
-        33,
-        "NoQualifyingWork must have exactly 33 routes"
+        34,
+        "NoQualifyingWork must have exactly 34 routes"
     );
 }
 

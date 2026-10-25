@@ -7,7 +7,7 @@ use std::path::Path;
 
 use serde_json::Value;
 
-use super::{ContentResolution, Family, RawPerceptFamily, classify};
+use super::{ContentResolution, Family, RawPerceptFamily, classify_file};
 
 /// Basename of the reserved per-directory written-shape sidecar.
 pub const SHAPE_SIDECAR_BASENAME: &str = "shape.json";
@@ -68,7 +68,7 @@ pub fn resolve_content_shape(content_path: &Path, rel: &str) -> ContentResolutio
         return ContentResolution::Indexed(spec.family);
     }
     match lookup_written_shape(content_path) {
-        WrittenLookup::Absent | WrittenLookup::Omitted => classify(rel),
+        WrittenLookup::Absent | WrittenLookup::Omitted => classify_file(content_path, rel),
         WrittenLookup::Hit(resolution) => resolution,
         WrittenLookup::Unusable => ContentResolution::Unrecognized,
     }
@@ -197,6 +197,38 @@ mod tests {
         assert_eq!(
             resolve_content_shape(&path, BROWSER_REL),
             ContentResolution::Indexed(Family::Browser)
+        );
+    }
+
+    #[test]
+    fn transcribe_header_recognizes_only_segment_speech_without_granting_a_category() {
+        let temporary = TempDir::new("transcribe-header");
+        let rel = "20261024/phone.audio/120000_60/note-0.jsonl";
+        let path = content_path(&temporary.path, rel);
+        assert_eq!(
+            resolve_content_shape(&path, rel),
+            ContentResolution::Unrecognized
+        );
+        write(
+            &path,
+            "{\"_solstone_processing\":{\"handler\":\"transcribe\",\"state\":\"analyzed\"}}\n{\"text\":\"a recorded sentence\"}\n",
+        );
+        assert_eq!(
+            resolve_content_shape(&path, rel),
+            ContentResolution::Unindexed(RawPerceptFamily::Audio)
+        );
+        assert!(super::super::resolve_spec(rel).is_none());
+        assert_eq!(
+            super::super::classify_file(&path, "config/note-0.jsonl"),
+            ContentResolution::Unrecognized
+        );
+        write(
+            &path,
+            "{\"_solstone_processing\":{\"handler\":\"describe\"}}\n",
+        );
+        assert_eq!(
+            resolve_content_shape(&path, rel),
+            ContentResolution::Unrecognized
         );
     }
 

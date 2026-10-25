@@ -162,7 +162,10 @@ pub(crate) fn scan(journal: &Path) -> UnretryableScan {
                     }
                 };
                 if let Some(name) = entry.file_name().to_str() {
-                    if !is_audio_sidecar_name(name) || !entry.path().is_file() {
+                    if !entry.path().is_file()
+                        || !(is_audio_sidecar_name(name)
+                            || solstone_core_processing_record::is_transcribe_output(&entry.path()))
+                    {
                         continue;
                     }
                     match read_audio_sidecar_first_row(&entry.path()) {

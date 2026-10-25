@@ -18,6 +18,7 @@ serde_json.workspace = true
 sha2.workspace = true
 solstone-core-body-source = { path = "../solstone-core-body-source" }
 solstone-core-talent-config.workspace = true
+solstone-core-processing-record.workspace = true
 
 [dev-dependencies]
 chrono-tz.workspace = true

@@ -8,6 +8,7 @@
     access: null,
     savedLane: null,
     localCapability: null,
+    hostCapabilities: null,
     localModels: [],
     localAvailability: null,
     install: null,
@@ -1016,6 +1017,7 @@
         state.access = payload.access || null;
         state.savedLane = payload.saved_lane ?? null;
         state.localCapability = payload.local_capability || null;
+        state.hostCapabilities = payload.host_capabilities || null;
         applyCopy(payload.copy || {});
         renderAll();
       } catch (_err) {}
@@ -1031,6 +1033,7 @@
       state.access = payload.access || null;
       state.savedLane = payload.saved_lane ?? null;
       state.localCapability = payload.local_capability || null;
+        state.hostCapabilities = payload.host_capabilities || null;
       applyCopy(payload.copy || {});
       scheduleAccessUnknownReread();
       revealThinkingApp();
@@ -1115,7 +1118,7 @@
       clearLocalSetupError();
       stopInstallPoll();
       stopRuntimePoll();
-    } else if (state.localModels.length > 0) {
+    } else if (!bundledLocalUnavailable() && state.localModels.length > 0) {
       refreshInstallStatus({autoResume: true}).catch((err) => {
         showLocalSetupFailure(err);
       });
@@ -2688,8 +2691,12 @@
         if (localCapabilityBlocked()) {
           glanceState = 'cant_run';
           savedLaneAttr = null;
-          activeValue = "your journal's computer can't run local thinking";
-          intro = "your journal's computer can't run local thinking. choose another way when you're ready. your journal keeps everything until then.";
+          activeValue = bundledLocalUnavailable()
+            ? "local thinking isn't available where your journal lives"
+            : "your journal's computer can't run local thinking";
+          intro = bundledLocalUnavailable()
+            ? 'choose another thinking option. your journal keeps everything until you do.'
+            : "your journal's computer can't run local thinking. choose another way when you're ready. your journal keeps everything until then.";
         } else {
           glanceState = 'saved';
           savedLaneAttr = 'local';
@@ -3038,6 +3045,10 @@
     setButtonText('confidentialRecheck', confidentialCopy.actions?.recheck || '');
   }
 
+  function bundledLocalUnavailable() {
+    return state.hostCapabilities?.bundled_local_thinking === false;
+  }
+
   function renderMainLanes() {
     const brain = activeBrain();
     const localLane = laneCopy('local');
@@ -3066,11 +3077,11 @@
     }
     // A computer that can't run local thinking gets a plain card saying so,
     // in place of a local option it could never pick.
-    setHidden('localCantRun', !(gpuBlocked && !localActive));
+    setHidden('localCantRun', bundledLocalUnavailable() || !(gpuBlocked && !localActive));
     setCardActive('local', localActive);
     $('localLaneStatus')?.removeAttribute('data-tone');
     if (localCard) {
-      localCard.hidden = gpuBlocked && !localActive;
+      localCard.hidden = bundledLocalUnavailable() || (gpuBlocked && !localActive);
       localCard.classList.toggle('greyed', endpointOverride);
       localCard.setAttribute('aria-disabled', 'false');
     }
@@ -3630,6 +3641,12 @@
   }
 
   function localCopy() {
+    if (bundledLocalUnavailable()) {
+      return {pill: 'unavailable', title: 'local',
+        sub: "bundled local thinking isn't available where your journal lives.",
+        message: '', notice: 'choose another thinking option.',
+        activate: false, bootstrap: false, cancel: false, tone: ''};
+    }
     if (localCapabilityBlocked()) {
       return {
         pill: 'unavailable',
@@ -3854,7 +3871,10 @@
   }
 
   function renderLocal() {
+    const unavailable = bundledLocalUnavailable();
     const local = localCopy();
+    setHidden('localModelField', unavailable);
+    setText('localSetupIntro', unavailable ? '' : 'run a thinking model right in your journal.');
     setPill('localSetupPill', local.pill, local.tone);
     setText('localSetupTitle', local.title);
     setText('localSetupSub', local.sub);
@@ -3868,7 +3888,7 @@
       notice = notice ? `${notice} ${state.install.admission_warning}` : state.install.admission_warning;
     }
     const noticeEl = $('localNotice');
-    if (localCapabilityBlocked()) {
+    if (localCapabilityBlocked() && !unavailable) {
       setLocalReason(noticeEl, notice);
     } else {
       clearLocalReason(noticeEl);
@@ -3888,11 +3908,11 @@
     setButtonState('localRuntimeRetry', local.retryRuntime, !local.retryRuntime);
     setButtonText('localRuntimeRetry', local.retryRuntimeLabel || copy.local_recovery?.retry || '');
     setButtonState('localActivate', local.activate, !local.activate);
-    setButtonState('localRefresh', true, false);
+    setButtonState('localRefresh', !unavailable, false);
     const links = $('localSetupLinks');
     if (links) {
       links.textContent = '';
-      if (local.tone === 'bad' && state.install?.install_state !== 'failed' && local.reason !== 'gpu_probe_failed') {
+      if (!unavailable && local.tone === 'bad' && state.install?.install_state !== 'failed' && local.reason !== 'gpu_probe_failed') {
         const requirements = document.createElement('a');
         requirements.className = 'textlink';
         requirements.href = 'https://support.solstone.app/kb/solstone-memory-and-local-models';
@@ -5536,10 +5556,12 @@
     routeThinkingHash('reload');
     refreshDevicesInvite();
     try {
-      await refreshLocalModels();
-      await refreshInstallStatus({autoResume: true});
-      await refreshLocalRuntime({autoResume: viewFromHash() === 'local-setup'});
-      await refreshLocalAvailability();
+      if (!bundledLocalUnavailable()) {
+        await refreshLocalModels();
+        await refreshInstallStatus({autoResume: true});
+        await refreshLocalRuntime({autoResume: viewFromHash() === 'local-setup'});
+        await refreshLocalAvailability();
+      }
       await Promise.all([refreshProviders(), refreshKeys(), refreshChatGpt()]);
       if (state.chatgpt.status?.signed_in) {
         loadChatGptModels().catch(() => {});

@@ -1154,8 +1154,40 @@ async function runTests() {
     await new Promise((r) => setTimeout(r, 10));
 
     assert.ok(apiCalls2.some((u) => u.includes('/app/home/api/pulse')), 'pulse requested on /app/home');
-    assert.ok(apiCalls2.some((u) => u.includes('/app/home/api/removals')), 'removals requested on /app/home');
-    assert.ok(envHome.doc.querySelector('[data-removals-card]'), 'removals card mounted on /app/home');
+    // The first page reads the originals list's total for its waiting row; the
+    // list itself lives on its own page.
+    assert.ok(apiCalls2.some((u) => u.includes('/app/home/api/removals')), 'originals total read on /app/home');
+    assert.strictEqual(envHome.doc.querySelector('[data-removals-card]'), null, 'no originals card on /app/home');
+
+    // 8c: the originals page mounts the list and reads nothing else home reads.
+    caseCount++;
+    const envOriginals = createEnvironment('/app/home/originals/', false);
+    envOriginals.doc.readyState = 'complete';
+    const originalsRoot = envOriginals.doc.createElement('div');
+    originalsRoot.setAttribute('data-home-root', '');
+    const originalsSurface = envOriginals.doc.createElement('div');
+    originalsSurface.setAttribute('data-pulse-surface', '');
+    originalsRoot.appendChild(originalsSurface);
+    envOriginals.doc.body.appendChild(originalsRoot);
+    const apiCalls3 = [];
+    envOriginals.win.apiJson = (url) => {
+      apiCalls3.push(url);
+      return Promise.resolve({ items: [] });
+    };
+    vm.runInContext(homeJsCode, envOriginals.sandbox, { filename: 'home.js' });
+    vm.runInContext(weekJsCode, envOriginals.sandbox, { filename: 'week.js' });
+    vm.runInContext(removalsJsCode, envOriginals.sandbox, { filename: 'removals.js' });
+    envOriginals.doc.dispatchEvent(
+      new CustomEvent('workspace:mounted', {
+        detail: { appName: 'home', url: '/app/home/originals/' }
+      })
+    );
+    envOriginals.doc.dispatchEvent(new CustomEvent('visibilitychange', {}));
+    await new Promise((r) => setTimeout(r, 10));
+    assert.ok(envOriginals.doc.querySelector('[data-removals-card]'), 'originals card mounted on its page');
+    for (const other of ['/app/home/api/pulse', '/app/home/api/briefing', '/app/home/api/first-minutes', '/app/agents/api/state']) {
+      assert.strictEqual(apiCalls3.filter((u) => u.includes(other)).length, 0, other + ' not read on the originals page');
+    }
   }
 
   function render(model) {

@@ -11,9 +11,9 @@ if (!manifestDir) throw new Error('manifest directory required');
 
 let source = fs.readFileSync(path.join(manifestDir, 'assets/home.js'), 'utf8');
 source = source.replace(
-  '  window.toggleBriefingCard = toggleBriefingCard;\n',
-  `  window.__home = { renderNarrativeHtml, briefingPlaceholderHtml, renderBriefingCardHtml, renderWeeklyReflectionHtml };
-  window.toggleBriefingCard = toggleBriefingCard;\n`,
+  '  window.selectAccountSide = selectAccountSide;\n',
+  `  window.__home = { renderNarrativeHtml, briefingPlaceholderHtml, renderYesterdaySideHtml, renderWeeklyReflectionHtml, writtenAtTime };
+  window.selectAccountSide = selectAccountSide;\n`,
 );
 
 const location = { href: '' };
@@ -32,7 +32,7 @@ window.window = window;
 document.defaultView = window;
 
 vm.runInNewContext(source, { window, document, console }, { filename: 'home.js' });
-const { renderNarrativeHtml, briefingPlaceholderHtml, renderBriefingCardHtml, renderWeeklyReflectionHtml } = window.__home;
+const { renderNarrativeHtml, briefingPlaceholderHtml, renderYesterdaySideHtml, renderWeeklyReflectionHtml, writtenAtTime } = window.__home;
 assert(renderNarrativeHtml, 'renderNarrativeHtml exported');
 assert(briefingPlaceholderHtml, 'briefingPlaceholderHtml exported');
 assert(renderWeeklyReflectionHtml, 'renderWeeklyReflectionHtml exported');
@@ -129,90 +129,89 @@ const awaitingAnalysis = renderNarrativeHtml({ narrative_content: null, segment_
 assert(awaitingAnalysis.includes('analysis will be available after the next processing cycle.'), awaitingAnalysis);
 assert.strictEqual(awaitingAnalysis.includes('/app/health'), false, awaitingAnalysis);
 
-// The placeholder belongs to the morning phase only. Outside it there is no
-// briefing being prepared to talk about.
-assert.strictEqual(briefingPlaceholderHtml({ phase: 'eod', exists: false }, {}), '');
-assert.strictEqual(briefingPlaceholderHtml({ phase: 'active', exists: false }, {}), '');
+// The yesterday side never renders empty: any hour with no account and no
+// not-yet state says it wasn't written up, with the run. X-04.
+for (const phase of ['eod', 'active', 'missing']) {
+  const html = briefingPlaceholderHtml(
+    { phase, exists: false },
+    { briefing_lateness: { late: true, late_hours: 1 }, briefing_analysis_day: '20260906' },
+  );
+  assert(html.includes('/app/thinking/#runs/20260906/morning_briefing'), `${phase}: ${html}`);
+  assert(html.includes('pulse-briefing-status-link'), `${phase}: ${html}`);
+}
 assert.strictEqual(briefingPlaceholderHtml({ phase: 'pending', exists: true }, {}), '');
 
+// Being written: one line, no link. Late: the run linked.
 const pending = briefingPlaceholderHtml({ phase: 'pending', exists: false }, { briefing_lateness: { late: false } });
-assert(pending.includes('your morning briefing is being prepared'), pending);
-
+assert(pending.includes('pulse-briefing-placeholder'), pending);
+assert.strictEqual(pending.includes('<a'), false, pending);
 const late = briefingPlaceholderHtml(
   { phase: 'pending', exists: false },
   { briefing_lateness: { late: true, late_hours: 3 }, today: '20260906', briefing_analysis_day: '20260905' },
 );
-assert(late.includes("your briefing is usually ready by 10 am; it's 3h late."), late);
+assert(late.includes('3h'), late);
 assert(late.includes('/app/thinking/#runs/20260905/morning_briefing'), late);
 assert.strictEqual(/\bI\b|I'm|\bmy\b/.test(late), false, late);
 
-// A briefing that was never prepared says so instead of disappearing. X-04.
-// Before the nightly run's first chance, the card says when, never "late" or
-// "wasn't prepared" (the day-0 rule).
-for (const [phase, text] of [
-  ['awaiting_engine', 'morning briefings start once you choose where the thinking happens.'],
-  ['first_night', 'your first briefing is due by 10 am, after your journal&#39;s first night.'],
-  ['first_night_empty', 'your first briefing is due the morning after something goes into your journal.'],
-]) {
+// Before the nightly run's first chance, the side says when, never "late" or
+// "wasn't written" (the day-0 rule), and a saved lane says which.
+for (const phase of ['awaiting_engine', 'first_night', 'first_night_empty']) {
   const html = briefingPlaceholderHtml({ phase, exists: false }, { briefing_lateness: { late: true, late_hours: 3 } });
-  assert(html.includes(text), `${phase}: ${html}`);
+  assert(html.includes('pulse-briefing-placeholder'), `${phase}: ${html}`);
   assert.strictEqual(html.includes('late'), false, html);
-  const card = renderBriefingCardHtml({ phase, exists: false }, {});
-  assert(card.includes(text), `${phase} card: ${card}`);
-  assert.strictEqual(card.includes('role="button"'), false, card);
+  assert.strictEqual(html.includes('<a'), false, html);
 }
-
-const missing = briefingPlaceholderHtml(
-  { phase: 'missing', exists: false },
-  { briefing_lateness: { late: true, late_hours: 1 }, today: '20260907', briefing_analysis_day: '20260906' },
+assert.notStrictEqual(
+  briefingPlaceholderHtml({ phase: 'awaiting_engine', exists: false, saved_lane: 'local' }, {}),
+  briefingPlaceholderHtml({ phase: 'awaiting_engine', exists: false }, {}),
 );
-assert(missing.includes("your morning briefing wasn't prepared."), missing);
-// The sentence and its link are separate words, not "prepared.see the run".
-// G1-103.
-assert(missing.includes("your morning briefing wasn't prepared. <a"), missing);
-assert(missing.includes('/app/thinking/#runs/20260906/morning_briefing'), missing);
-assert(missing.includes('see the run'), missing);
-assert.strictEqual(/\bI\b|I'm|\bmy\b/.test(missing), false, missing);
-assert.strictEqual(briefingPlaceholderHtml({ phase: 'missing', exists: true }, {}), '');
 
-// A header only announces itself as expandable when there is a body to expand.
-// G1-104.
-const missingCard = renderBriefingCardHtml(
-  { phase: 'missing', exists: false, sections: {}, needs_deduped: [] },
-  { today: '20260906' },
+// An account shows its yesterday section, when it was written and how. It
+// never shows a forecast or the dropped needs-attention section.
+const ready = renderYesterdaySideHtml(
+  {
+    phase: 'eod', exists: true, analysis_day: '20261023',
+    meta: { generated: '2026-10-24T07:12:00' },
+    sections: { yesterday: '- a steady morning.', your_day: 'a planned call.', needs_attention: '- a pipeline gap' },
+  },
+  { briefing_analysis_day: '20261023' },
 );
-assert(missingCard.includes('<div class="pulse-briefing-header">'), missingCard);
-assert.strictEqual(missingCard.includes('aria-expanded'), false, missingCard);
-assert.strictEqual(missingCard.includes('role="button"'), false, missingCard);
-assert.strictEqual(missingCard.includes('pulse-briefing-body'), false, missingCard);
+assert(ready.includes('a steady morning.'), ready);
+assert(ready.includes('pulse-briefing-body'), ready);
+assert(ready.includes('/app/thinking/#runs/20261023/morning_briefing'), ready);
+assert(ready.includes('7:12'), ready);
+assert.strictEqual(ready.includes('a planned call.'), false, ready);
+assert.strictEqual(ready.includes('a pipeline gap'), false, ready);
+assert.strictEqual(ready.includes('pulse-briefing-status-link'), false, ready);
 
-const readyCard = renderBriefingCardHtml(
-  { phase: 'morning', exists: true, sections: { yesterday: 'a steady morning.' }, needs_deduped: [] },
-  { today: '20260906' },
+// An account whose yesterday section is empty is still an account: it says
+// so plainly, with its run, and never "wasn't written up".
+const quiet = renderYesterdaySideHtml(
+  { phase: 'active', exists: true, analysis_day: '20261023', meta: null, sections: {} },
+  { briefing_analysis_day: '20261023' },
 );
-assert(readyCard.includes('role="button"'), readyCard);
-assert(readyCard.includes('aria-expanded'), readyCard);
-assert(readyCard.includes('pulse-briefing-body'), readyCard);
+assert(quiet.includes('pulse-briefing-placeholder'), quiet);
+assert(quiet.includes('pulse-tell-more'), quiet);
+assert.strictEqual(quiet.includes('pulse-briefing-status-link'), false, quiet);
 
-// The briefing shows what happened, never a forecast of the day ahead.
-const forecastCard = renderBriefingCardHtml(
-  { phase: 'morning', exists: true, sections: { your_day: 'a planned call.', yesterday: 'a steady morning.', forward_look: 'next week.' }, needs_deduped: [] },
-  { today: '20260906' },
-);
-assert(forecastCard.includes('a steady morning.'), forecastCard);
-assert.strictEqual(forecastCard.includes('a planned call.'), false, forecastCard);
-assert.strictEqual(forecastCard.includes('next week.'), false, forecastCard);
+// The stamp is the journal's wall time: its hour and minute as written,
+// whatever zone the browser is in.
+assert(writtenAtTime('2026-10-24T07:12:00').includes('7:12'));
+assert(writtenAtTime('2026-10-24T19:05:00').includes('7:05'));
+assert.strictEqual(writtenAtTime(null), '');
+assert.strictEqual(writtenAtTime('not a time'), '');
 
-// The narrative card is named for what it holds, not for the run that wrote it.
-// X-03.
+// The today side's account is named by its tab, not by the run that wrote
+// it. X-03.
 const live = renderNarrativeHtml({
   narrative_content: 'the morning remains steady.',
   narrative_header: 'pulse',
   segment_count: 4,
   today: '20260906',
 });
-assert(live.includes('pulse-section-header'), live);
+assert.strictEqual(live.includes('pulse-section-header'), false, live);
 assert.strictEqual(live.toLowerCase().includes('>pulse<'), false, live);
+assert(live.includes('pulse-tell-more'), live);
 
 
 const scopeBase = { narrative_content: 'current evidence', narrative_source: 'pulse', today: '20260907' };
@@ -233,21 +232,12 @@ window.AppServices = {
     return `<span class="marker">${text}</span>`;
   },
 };
-const itemText = 'Review item with sol://20260901/100000_300 reference';
-const summaryText = 'Morning briefing summary line';
-const needsCard = renderBriefingCardHtml(
-  {
-    phase: 'morning',
-    exists: true,
-    summary: summaryText,
-    sections: {},
-    needs_deduped: [itemText],
-  },
-  { today: '20260906' }
+const itemText = '- Review item with sol://20260901/100000_300 reference';
+const rendered = renderYesterdaySideHtml(
+  { phase: 'morning', exists: true, analysis_day: '20260905', meta: null, sections: { yesterday: itemText } },
+  { briefing_analysis_day: '20260905' },
 );
-assert(markdownCalls.includes(itemText), 'renderMarkdown called with item text');
-assert(!markdownCalls.includes(summaryText), 'renderMarkdown not called with summary');
-assert(needsCard.includes(`<span class="marker">${itemText}</span>`), 'needsCard contains markdown marker');
-assert(needsCard.includes(summaryText), 'needsCard contains escaped summary');
+assert(markdownCalls.includes(itemText), 'renderMarkdown called with the yesterday section');
+assert(rendered.includes(`<span class="marker">${itemText}</span>`), rendered);
 
 console.log('narrative and briefing render contract passed');

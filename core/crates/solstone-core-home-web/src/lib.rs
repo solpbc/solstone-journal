@@ -43,6 +43,7 @@ pub fn routes(journal_root: PathBuf, clock: Clock, is_moment: fn(&str) -> bool) 
     Router::new()
         .route("/app/home/", get(assets::shell))
         .route("/app/home", get(shell_redirect))
+        .route("/app/home/originals/", get(assets::shell))
         .route("/app/home/workspace", get(assets::workspace))
         .route("/app/home/static/home.js", get(assets::home_js))
         .route("/app/home/static/removals.js", get(assets::removals_js))
@@ -300,9 +301,14 @@ mod tests {
 
     #[tokio::test]
     async fn home_routes_match_assets_and_session_gate() {
-        let paths: [(&str, &str, &[u8]); 4] = [
+        let paths: [(&str, &str, &[u8]); 5] = [
             (
                 "/app/home/",
+                "text/html; charset=utf-8",
+                include_bytes!("../../solstone-core-convey-shell/assets/static/shell.html"),
+            ),
+            (
+                "/app/home/originals/",
                 "text/html; charset=utf-8",
                 include_bytes!("../../solstone-core-convey-shell/assets/static/shell.html"),
             ),
@@ -456,7 +462,7 @@ mod tests {
         let router = shell_router(established.path());
         for (path, key, expected) in [
             ("/app/home/api/pulse", "home_state", json!("welcome")),
-            ("/app/home/api/briefing", "needs_shared_count", json!(0)),
+            ("/app/home/api/briefing", "exists", json!(false)),
             ("/app/home/api/first-minutes", "window_open", json!(false)),
         ] {
             let response = get(router.clone(), path).await;
@@ -655,19 +661,12 @@ mod tests {
             "briefing_lateness",
             "briefing_exists",
             "briefing_analysis_day",
-            "briefing_summary",
-            "briefing_needs_deduped",
-            "briefing_needs_shared_count",
-            "briefing_needs_badge",
             "latest_weekly_reflection",
             "yesterday_processing",
             "connections",
             "journal_age_days",
             "home_state",
             "welcome_framing",
-            "narrative_summary",
-            "today_summary",
-            "needs_summary",
         ]
         .into_iter()
         .map(str::to_owned)
@@ -679,12 +678,9 @@ mod tests {
             "exists",
             "phase",
             "saved_lane",
-            "summary",
+            "analysis_day",
             "meta",
             "sections",
-            "needs_deduped",
-            "needs_shared_count",
-            "needs_badge",
         ]
         .into_iter()
         .map(str::to_owned)

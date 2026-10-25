@@ -2748,6 +2748,24 @@ fn unretryable_transcribe_input_reports_warn_without_retry_on_corrupt_input() {
 }
 
 #[test]
+fn unretryable_transcribe_input_reads_arbitrary_speech_names_and_ignores_other_jsonl() {
+    let c = fixture();
+    let segment = c.journal_path.join("chronicle/20260101/120000_60");
+    fs::create_dir_all(&segment).unwrap();
+    fs::write(segment.join("note-0.jsonl"), "{\"_solstone_processing\":{\"handler\":\"transcribe\",\"state\":\"failed\",\"reason_code\":\"corrupt_input\"}}\n").unwrap();
+    fs::write(segment.join("events.jsonl"), "not a transcript\n").unwrap();
+    let row = result("unretryable_transcribe_input", &c);
+    assert_eq!(row.status, Status::Warn);
+    assert!(row.detail.starts_with("1 recordings"));
+    assert!(row.fix.is_none());
+    fs::write(segment.join("note-0.jsonl"), "{\"_solstone_processing\":{\"handler\":\"describe\",\"state\":\"failed\",\"reason_code\":\"corrupt_input\"}}\n").unwrap();
+    assert_eq!(
+        result("unretryable_transcribe_input", &c).status,
+        Status::Ok
+    );
+}
+
+#[test]
 fn unretryable_transcribe_input_formats_direct_and_named_streams_and_truncates() {
     let c = fixture();
     for i in 0..15 {

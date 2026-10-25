@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # Copyright (c) 2026 sol pbc
 """Build the isolated operator harness using SDK tools, no product Gradle tree."""
-import argparse, hashlib, json, os, pathlib, re, shutil, subprocess, time, zipfile
+import argparse, hashlib, json, os, pathlib, re, shutil, subprocess, sys, time, zipfile
 import xml.etree.ElementTree as ET
 from provenance import source_manifest
 from audio_package import audio_package
@@ -21,6 +21,7 @@ def run(argv):
   commands.append({'argv':[str(a) for a in argv],'exit':out.returncode,'elapsed_seconds':time.time()-start,'output':out.stdout.decode(errors='replace')})
   (build/'build-receipts.json').write_text(json.dumps(commands,indent=2))
   if out.returncode: raise RuntimeError(commands[-1])
+run([sys.executable,root/'tests/test_audio_package.py'])
 classes=build/'classes'; dex=build/'dex'; host_classes=build/'host-tests'
 for generated in [classes,dex,host_classes]:
   if generated.exists():shutil.rmtree(generated)

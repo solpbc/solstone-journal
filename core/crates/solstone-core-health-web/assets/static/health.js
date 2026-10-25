@@ -56,6 +56,7 @@
     .then(r => r.json())
     .then(info => {
       state.localHost = info.hostname;
+      state.hostCapabilities = info.host_capabilities || null;
       brainSnapshot = info.brain || brainSnapshot;
       updateObserve();
       renderBrainHealth();
@@ -134,6 +135,7 @@
     pendingRecentErrorsFocus: false,
     pendingLogAnchor: null,
     localHost: null,
+    hostCapabilities: null,
     deepLinkMode: false,
     lastLogFilter: null,        // Last rendered filter state for incremental append
     lastEventTs: null,           // Timestamp of last event from WebSocket
@@ -497,6 +499,11 @@
   let speechAttempt = 0;
 
   async function loadSpeechSetup() {
+    if (state.hostCapabilities?.terminal_speech_setup === false) {
+      speechApplicableLatched = false;
+      hideSpeechSetup();
+      return;
+    }
     const card = document.getElementById('brain');
     if (!card?.isConnected || document.hidden || speechReadPending) return;
     speechReadPending = true;
@@ -2542,7 +2549,7 @@
     const primary = confirmedPrimary || (fallbackEntry ? fallbackEntry[1] : null);
     const tmux = displayedStream ? freshClients.get(displayedStream + '.tmux') : null;
     const confirmedLocal = Boolean(state.localHost && confirmedPrimary && displayedStream === state.localHost);
-    if (!confirmedLocal && displayedStream) {
+    if (!confirmedLocal && displayedStream && state.hostCapabilities?.desktop_capture === true) {
       const label = window.JournalFormat.stream(displayedStream);
       const unknown = label === window.JournalFormat.stream('_default');
       const template = state.localHost

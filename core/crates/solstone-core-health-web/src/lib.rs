@@ -226,7 +226,11 @@ fn errors_today_label(count: usize, ok: bool) -> &'static str {
 }
 async fn info(root: PathBuf) -> Response {
     spawn_blocking_response(OwnerReadRole::HealthInfo, move || {
-        Json(json!({"hostname":host::hostname(),"brain":brain::snapshot(&root)})).into_response()
+        Json(
+            json!({"hostname":host::hostname(),"brain":brain::snapshot(&root),
+            "host_capabilities": solstone_core_system::owner_host::capabilities()}),
+        )
+        .into_response()
     })
     .await
 }

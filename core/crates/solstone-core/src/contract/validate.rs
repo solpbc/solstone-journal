@@ -174,7 +174,12 @@ pub(crate) fn validate_journal_tree(
                 .and_then(|name| name.to_str())
                 .unwrap_or(""),
             bundle,
-        ) else {
+        )
+        .or_else(|| {
+            solstone_core_processing_record::is_transcribe_output(&path)
+                .then(|| bundle.get("schemas")?.get("audio-jsonl")?.get("schema"))
+                .flatten()
+        }) else {
             continue;
         };
         matched += 1;
@@ -321,6 +326,20 @@ mod tests {
             "chronicle/20260811/12/34/screen.jsonl:1"
         );
         assert!(report.issues[0].message.contains("invalid JSON"));
+    }
+
+    #[test]
+    fn tree_walk_validates_headered_speech_with_an_arbitrary_name() {
+        let temp = TempDir::new().unwrap();
+        let segment = temp.path().join("chronicle/20261024/phone.audio/120000_60");
+        fs::create_dir_all(&segment).unwrap();
+        fs::write(segment.join("note-0.jsonl"), "{\"header\":true,\"_solstone_processing\":{\"handler\":\"transcribe\"}}\n{\"bad\":true}\n").unwrap();
+        fs::write(segment.join("events.jsonl"), "not a transcript\n").unwrap();
+        let bundle = json!({"schemas": {"audio-jsonl": {"schema": jsonl_schema()}}});
+        let report = validate_journal_tree(temp.path(), &bundle).unwrap();
+        assert_eq!(report.matched, 1);
+        assert_eq!(report.issues.len(), 1);
+        assert!(report.issues[0].path.ends_with("note-0.jsonl:2"));
     }
 
     #[test]

@@ -19,6 +19,18 @@ public final class ServingConnection {
         FAILED
     }
 
+    // Cancellation must reach the worker even while a lifecycle reply holds
+    // the control queue. Settlement still uses that queue's existing FIFO.
+    public static void stop(java.util.concurrent.Executor control, Runnable cancel, Runnable retire) {
+        cancel.run();
+        control.execute(retire);
+    }
+
+    public static boolean ownerStartAllowed(String phase, boolean preparing, boolean runtimeUp, boolean stopSaved) {
+        return !preparing && !runtimeUp && stopSaved
+            && ("stopped".equals(phase) || "failed".equals(phase));
+    }
+
     public interface Environment {
         long currentGeneration();
         Retirement retirement() throws Exception;

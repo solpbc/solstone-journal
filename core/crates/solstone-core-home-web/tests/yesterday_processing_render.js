@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+// A night that went wrong stays visible as at most two rows of what's waiting:
+// the missing account, unless the yesterday side already says so, and one row
+// for everything else that didn't finish.
+
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
@@ -11,78 +15,88 @@ if (!manifestDir) throw new Error('manifest directory required');
 
 let source = fs.readFileSync(path.join(manifestDir, 'assets/home.js'), 'utf8');
 source = source.replace(
-  '  window.toggleBriefingCard = toggleBriefingCard;\n',
-  `  window.__yesterday = { renderYesterdayProcessingHtml };
-  window.toggleBriefingCard = toggleBriefingCard;\n`,
+  '  window.selectAccountSide = selectAccountSide;\n',
+  `  window.__night = { nightRows,
+    paint: (side, briefing) => { paintedSide = side; briefingData = briefing; } };
+  window.selectAccountSide = selectAccountSide;\n`,
 );
 
-const location = { href: '' };
 const document = {
   readyState: 'loading',
   addEventListener() {},
   querySelector() { return null; },
 };
-const window = {
-  location,
-  document,
-  addEventListener() {},
-};
+const window = { location: { href: '' }, document, addEventListener() {} };
 window.window = window;
 document.defaultView = window;
 
 vm.runInNewContext(source, { window, document, console }, { filename: 'home.js' });
-const { renderYesterdayProcessingHtml } = window.__yesterday;
-assert(renderYesterdayProcessingHtml, 'renderYesterdayProcessingHtml exported');
+const { nightRows, paint } = window.__night;
 
-// Failures and neutral summaries mixed in one degraded day split into two
-// labeled groups, with the failure count surfaced instead of left implicit.
-const degraded = renderYesterdayProcessingHtml({
+const runs = '/app/thinking/#runs/20261023';
+const account = { text: "yesterday wasn't written up.", href: runs + '/morning_briefing' };
+const conversation = { text: "the conversation run didn't finish.", href: runs + '/conversation/u1' };
+const documents = { text: "2 document runs didn't finish.", href: runs + '/documents' };
+const night = (mode, links, reasons = []) => ({
+  briefing_analysis_day: '20261023',
   yesterday_processing: {
-    mode: 'degraded',
-    gap_links: [
-      { text: "the conversation run didn't finish.", href: '/app/thinking/#runs/x' },
-      { text: '2 document runs didn\'t finish.', href: '/app/thinking/#runs/y' },
-    ],
-    details: [
-      'your busiest stretches were 9-10am · 2-3pm · 5-6pm.',
-    ],
-    failed_run_count: 19,
+    mode,
+    summary_line: reasons.includes('pipeline_unavailable')
+      ? 'yesterday’s processing status is unavailable.'
+      : "some overnight processing didn't finish.",
+    gap_links: links,
+    status_reasons: reasons,
   },
 });
-assert(degraded.includes('what didn&#39;t finish · 19 runs') || degraded.includes('what didn\'t finish · 19 runs'), degraded);
-assert(degraded.includes('everything else'), degraded);
-const gapListStart = degraded.indexOf("conversation run");
-const detailsListStart = degraded.indexOf('your busiest stretches');
-assert(gapListStart > -1 && detailsListStart > -1 && gapListStart < detailsListStart, degraded);
+// Rows come from the page's own realm; bring them into this one to compare.
+const hrefs = rows => Array.from(rows, row => row.href);
+const missing = { exists: false, phase: 'missing' };
 
-// Singular count reads "1 run", not "1 runs".
-const singular = renderYesterdayProcessingHtml({
-  yesterday_processing: {
-    mode: 'degraded',
-    gap_links: [{ text: "the conversation run didn't finish.", href: '/app/thinking/#runs/x' }],
-    details: ['your busiest stretches were 9-10am · 2-3pm · 5-6pm.'],
-    failed_run_count: 1,
-  },
-});
-assert(singular.includes('1 run<') || singular.includes('1 run '), singular);
-assert(!singular.includes('1 runs'), singular);
+// One thing didn't finish: that link, as it is.
+paint('today', missing);
+assert.deepStrictEqual(hrefs(nightRows(night('degraded', [conversation], ['pipeline_warning']))), [conversation.href]);
 
-// Only one kind of line present (the common healthy-day case) — no split,
-// no label noise.
-const healthy = renderYesterdayProcessingHtml({
-  yesterday_processing: {
-    mode: 'healthy',
-    gap_links: [],
-    details: ['your morning briefing was prepared.'],
-    failed_run_count: 0,
-  },
-});
-assert.strictEqual(healthy.includes('pulse-yesterday-shelf-label'), false, healthy);
-assert(healthy.includes('your morning briefing was prepared.'), healthy);
-assert(!degraded.includes('newsletter'), degraded);
-assert(!singular.includes('newsletter'), singular);
-assert(!healthy.includes('newsletter'), healthy);
-// The rendered card never speaks as "I".
-assert.strictEqual(/(^|[\s>"])I(\s|&#39;)/.test(degraded + singular + healthy), false, degraded + singular + healthy);
+// Several: one row to the night's runs.
+assert.deepStrictEqual(hrefs(nightRows(night('degraded', [conversation, documents], ['pipeline_warning']))), [runs]);
 
-console.log('yesterday-processing render contract passed');
+// Unknown status: the unavailable row, keyed on the status reason.
+const unknown = nightRows(night('degraded', [], ['pipeline_unavailable']));
+assert.deepStrictEqual(hrefs(unknown), [runs]);
+assert.strictEqual(unknown[0].text, 'yesterday’s processing status is unavailable.');
+
+// Unknown status and a missing account, painted on today: two rows, the
+// account's first.
+assert.deepStrictEqual(
+  hrefs(nightRows(night('degraded', [account], ['pipeline_unavailable', 'briefing_missing']))),
+  [account.href, runs],
+);
+
+// The briefing's own failed run is the same event as the missing account:
+// one row, never both.
+const failedBriefing = { text: "the daily briefing run didn't finish.", href: runs + '/morning_briefing/u9' };
+assert.deepStrictEqual(
+  hrefs(nightRows(night('degraded', [failedBriefing, account], ['pipeline_warning', 'briefing_missing']))),
+  [account.href],
+);
+
+// Painted on yesterday, the yesterday side already says the account is
+// missing: no row for it, and nothing else went wrong.
+paint('yesterday', missing);
+assert.deepStrictEqual(hrefs(nightRows(night('degraded', [account], ['briefing_missing']))), []);
+assert.deepStrictEqual(hrefs(nightRows(night('degraded', [failedBriefing, account], ['pipeline_warning', 'briefing_missing']))), []);
+
+// The welcome state has no switch, so the account row shows.
+paint(null, missing);
+assert.deepStrictEqual(hrefs(nightRows(night('degraded', [account], ['briefing_missing']))), [account.href]);
+
+// An account that has since arrived takes its row away.
+paint('today', { exists: true, phase: 'active' });
+assert.deepStrictEqual(hrefs(nightRows(night('degraded', [account], ['briefing_missing']))), []);
+
+// Healthy and sparse nights add none, whatever a sparse night's reasons say.
+paint('today', missing);
+assert.deepStrictEqual(hrefs(nightRows(night('healthy', []))), []);
+assert.deepStrictEqual(hrefs(nightRows(night('sparse', [], ['pipeline_unavailable', 'briefing_missing']))), []);
+assert.deepStrictEqual(hrefs(nightRows({ briefing_analysis_day: '20261023' })), []);
+
+console.log('failed-night rows contract passed');

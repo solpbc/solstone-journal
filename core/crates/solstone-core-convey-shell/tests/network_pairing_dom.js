@@ -22,7 +22,7 @@ const REQUIRED_COPY_KEYS = [
   'SUCCESS_HEADING_UNNAMED', 'SUCCESS_VERIFY_NOTE_ANYWHERE', 'SUCCESS_REMOVE_LABEL', 'SUCCESS_REMOVED',
   'SUCCESS_REMOVE_FAIL', 'LOCAL_NETWORK_WINDOWS_ASKS_NOTE', 'PAIR_LINK_ADDRESSES_LINE', 'REACH_DEVICE_ADDRESSES_LABEL',
   'REACH_DEVICE_ADDRESS_LOCAL', 'REACH_DEVICE_ADDRESS_VPN',
-  'PAIR_LOCAL_NETWORK_CLOSED_BODY', 'LOCAL_NETWORK_OPEN_CTA', 'LOCAL_NETWORK_FAILED', 'MODE_HOSTED_SETUP_CTA',
+  'PAIR_LOCAL_NETWORK_CLOSED_BODY', 'PAIR_LOCAL_NETWORK_CLOSED_WITHOUT_LOCAL_BODY', 'LOCAL_NETWORK_OPEN_CTA', 'LOCAL_NETWORK_FAILED', 'MODE_HOSTED_SETUP_CTA',
   'PAIR_THIS_COMPUTER_CTA', 'PAIR_THIS_COMPUTER_LINE',
 ];
 
@@ -32,7 +32,7 @@ const MARKUP_COPY_KEYS = REQUIRED_COPY_KEYS.filter((key) => ![
   'SUCCESS_REMOVE_FAIL', 'LOCAL_NETWORK_WINDOWS_ASKS_NOTE',
   'PAIR_START_PAIRED_DEVICE_BODY', 'PRIVATE_LINK_TIMEOUT_BODY', 'PAIR_ERROR_BODY', 'PRIVATE_LINK_NEEDS_REPAIR',
   'REACH_DEVICE_ADDRESS_LOCAL', 'REACH_DEVICE_ADDRESS_VPN',
-  'PAIR_LOCAL_NETWORK_CLOSED_BODY', 'PAIR_THIS_COMPUTER_LINE',
+  'PAIR_LOCAL_NETWORK_CLOSED_BODY', 'PAIR_LOCAL_NETWORK_CLOSED_WITHOUT_LOCAL_BODY', 'PAIR_THIS_COMPUTER_LINE',
 ].includes(key));
 
 function response(body, status = 200) {
@@ -517,6 +517,7 @@ function createEnvironment(manifestDir, options = {}) {
     }),
     onDeviceRemoved: () => removedDevices.push(true),
     windowsAsks: () => options.windowsAsks === true,
+    canPairThisComputer: () => options.canPairThisComputer !== false,
     deviceType: options.deviceType,
     now: () => clock,
   });
@@ -1396,6 +1397,21 @@ async function main() {
     await settle();
     const p = env.nodes.get('link-pairing-unavailable').querySelector('p');
     assert.strictEqual(p.textContent, 'copy-PAIR_LOCAL_NETWORK_CLOSED_BODY copy-LOCAL_NETWORK_WINDOWS_ASKS_NOTE');
+  });
+
+  await testCase('unsupported host keeps other-device recovery and refuses same-computer action', async () => {
+    const env = createEnvironment(manifestDir, {canPairThisComputer: false});
+    env.fetchQueue.push(response({reason_code: 'local_network_closed'}, 409));
+    env.click(env.opener);
+    await settle();
+    const here = env.nodes.get('link-pairing-this-computer');
+    assert.strictEqual(here.hidden, true);
+    assert.strictEqual(env.nodes.get('link-pairing-unavailable').querySelector('p').getAttribute('data-copy'), 'PAIR_LOCAL_NETWORK_CLOSED_WITHOUT_LOCAL_BODY');
+    assert.strictEqual(env.nodes.get('link-pairing-local-network').hidden, false);
+    const before = env.requests.length;
+    env.click(here);
+    await settle();
+    assert.strictEqual(env.requests.length, before);
   });
 
   await testCase('pairing the app on this computer asks for a same-computer link', async () => {

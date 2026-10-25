@@ -271,6 +271,15 @@ fn ac3_replays_all_captured_health_cases_through_the_shell() {
                     if case["name"].as_str() == Some("api_info") && expected["status"] == 200 {
                         assert!(actual["hostname"].is_string());
                         actual["hostname"] = wanted["hostname"].clone();
+                        for capability in [
+                            "bundled_local_thinking",
+                            "desktop_capture",
+                            "terminal_speech_setup",
+                            "same_computer_pairing",
+                        ] {
+                            assert!(actual["host_capabilities"][capability].is_boolean());
+                        }
+                        actual.as_object_mut().unwrap().remove("host_capabilities");
                     }
                     for pattern in case["normalized"]
                         .as_array()

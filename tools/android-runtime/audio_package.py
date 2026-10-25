@@ -35,6 +35,10 @@ def audio_package(repo, model, catalog):
         length = source.stat().st_size
         if expected is not None and digest != expected or size is not None and length != size:
             raise ValueError('speech input differs from consuming runtime pin: ' + name)
+        if group == 'notices':
+            # The additive installer preserves old copies across APK updates.
+            notice = pathlib.PurePath(name)
+            name = notice.stem + '-' + digest + notice.suffix
         manifest[group].append({'name': name, 'bytes': length, 'sha256': digest})
         members.append((source, 'assets/audio-models/' + ('notices/' if group == 'notices' else '') + name))
     return manifest, members

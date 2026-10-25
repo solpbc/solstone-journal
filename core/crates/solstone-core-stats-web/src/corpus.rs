@@ -132,11 +132,18 @@ async fn assert_case(router: axum::Router, case: &Value, phase: &str, root: &tem
         "these days stopped on their own and can't pick back up without you — here's why, and what to try.",
         "some days retry automatically; others need your help. each day shows its current status.",
     );
+    // The briefing was renamed the daily briefing after the corpus was recorded.
     replace_text(
         &mut wanted,
         "synthesizes all daily agent outputs into a structured five-section morning briefing",
-        "synthesizes all daily agent outputs into a structured morning briefing",
+        "synthesizes all daily results into a structured briefing on one day",
     );
+    replace_text(
+        &mut wanted,
+        "Selects one morning-briefing memory from each day of a finished week.",
+        "selects one memory from each day of a finished week, out of that day's daily briefing",
+    );
+    replace_text(&mut wanted, "morning briefing", "daily briefing");
     // The schedule talent was retired after the corpus was recorded.
     if let Some(generators) = wanted
         .pointer_mut("/generators")

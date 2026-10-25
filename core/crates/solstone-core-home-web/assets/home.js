@@ -7,27 +7,13 @@
   const FIRST_MINUTES_URL = '/app/home/api/first-minutes';
   const AGENTS_STATE_URL = '/app/agents/api/state';
   const SETUP_ACTION_URL = '/init/api/action';
-  const SECTION_STATE_KEY = 'pulse-section-state';
-  const SECTION_IDS = ['pulse-narrative', 'pulse-today', 'pulse-needs'];
-  // Collapsed-by-default is right on a day with nothing in it. On a day with
-  // material the two sections that describe the day are the two the owner came
-  // for, so they open and they lead. X-03.
-  const SECTION_DEFAULTS_QUIET = {
-    'pulse-narrative': 'true',
-    'pulse-today': 'true',
-    'pulse-needs': 'false'
-  };
-  const SECTION_DEFAULTS_LIVE = {
-    'pulse-narrative': 'false',
-    'pulse-today': 'false',
-    'pulse-needs': 'false'
-  };
-  const briefingSectionOrder = ['yesterday'];
-  const briefingRenderOrder = ['yesterday', 'needs_attention'];
-  const briefingSectionLabels = {
-    yesterday: 'yesterday',
-    needs_attention: 'needs attention'
-  };
+  const ORIGINALS_URL = '/app/home/api/removals?offset=0';
+  const ORIGINALS_PAGE = '/app/home/originals/';
+  const WAITING_HEADING = 'waiting on you';
+  // The page's sections in the order they stand. A live refresh that brings a
+  // section back inserts it after whichever of these is already there.
+  const SURFACE_ORDER = ['vitals', 'getting-started', 'account', 'pair', 'welcome'];
+  const ACCOUNT_SIDES = ['yesterday', 'today'];
 
   let homeInitialized = false;
   let interactionsWired = false;
@@ -50,7 +36,20 @@
   let pageLoadedAt = Date.now();
   let queuedWorkAuthoritySeen = false;
   let heldWorkExpiry = null;
-  let briefingSections = {};
+  // The yesterday side's account: the pulse's copy at a full paint, then each
+  // briefing read's.
+  let briefingData = null;
+  // Which side of the day switch the last full paint opened on. A live
+  // refresh never re-decides it, so the switch does not move under the owner.
+  // Null in the welcome state, which has no switch.
+  let paintedSide = null;
+  let selectedSide = null;
+  // The originals list's whole-list item total: undefined until read, null
+  // when it couldn't be read. Page state, not pulse data, so every re-render
+  // of the status block keeps it.
+  let originalsTotal;
+  let originalsRequest = null;
+  let isFirstPage = false;
   const ACTIVITY_PREVIEW = 6;
   let todayActivitiesExpanded = false;
 
@@ -167,16 +166,12 @@
     if (data.exists && !isPlainObject(data.sections)) {
       throw malformedHomeResponse(BRIEFING_URL, 'Malformed briefing response');
     }
-    if (data.needs_deduped && !Array.isArray(data.needs_deduped)) {
-      throw malformedHomeResponse(BRIEFING_URL, 'Malformed briefing response');
-    }
   }
 
   function setSurfaceHtml(html) {
     if (!surface) return;
     surface.innerHTML = html;
     keepGettingStartedFirst();
-    renderBriefingSections(briefingSections);
   }
 
   // The first-minutes card leads the page, right under the status line,
@@ -199,8 +194,6 @@
         current.remove();
       }
       keepGettingStartedFirst();
-      renderBriefingSections(briefingSections);
-      restoreSectionState();
       return;
     }
     if (!html) return;
@@ -215,8 +208,6 @@
       surface.insertAdjacentHTML('beforeend', html);
     }
     keepGettingStartedFirst();
-    renderBriefingSections(briefingSections);
-    restoreSectionState();
   }
 
   function renderRefreshError(containerId, error, heading) {
@@ -269,66 +260,35 @@
     return Array.isArray(pulse?.activities) && pulse.activities.length > 0;
   }
 
-  // One list decides both the first paint and where a live refresh reinserts a
-  // card that was not on the page before.
-  function cardOrder(pulse) {
-    return dayHasMaterial(pulse)
-      ? ['vitals', 'getting-started', 'narrative', 'today', 'yesterday', 'briefing', 'reflection', 'needs', 'connections']
-      : ['vitals', 'getting-started', 'yesterday', 'briefing', 'narrative', 'reflection', 'today', 'needs', 'connections'];
-  }
-
-  // The order the page was actually painted with. refreshVitals and
-  // refreshNarrative merge fresh payloads into lastPulse, and a realtime
-  // observed or status event fires them mid-session, so recomputing the order
-  // from the merged pulse would reorder the page under the owner the moment
-  // the day's first segment lands. Only a full render re-decides the order.
-  let paintedCardOrder = null;
-
-  function activeCardOrder() {
-    return paintedCardOrder || cardOrder(lastPulse);
-  }
-
-  // The live order is the only one that leads with the narrative, so the same
-  // frozen list also says which section defaults the page was painted with.
-  function activeDayIsLive() {
-    const orderWithoutGettingStarted = activeCardOrder().filter(function (name) {
-      return name !== 'getting-started';
-    });
-    return orderWithoutGettingStarted[1] === 'narrative';
-  }
-
   function predecessors(name) {
-    const order = activeCardOrder();
-    const index = order.indexOf(name);
-    return index > 0 ? order.slice(0, index) : [];
+    const index = SURFACE_ORDER.indexOf(name);
+    return index > 0 ? SURFACE_ORDER.slice(0, index) : [];
   }
 
+  // A full paint: the first read, a retry, or the journal leaving the welcome
+  // state. Only here is the day switch's opening side decided. It opens on
+  // yesterday until today has material, then on today.
   function renderPulse(data) {
     validatePulse(data);
     lastPulse = data;
     pulseReadFailed = false;
     pulseObservedAt = Date.now();
     observeBackup(data);
-    paintedCardOrder = cardOrder(data);
-    briefingSections = isPlainObject(data.briefing_sections) ? data.briefing_sections : {};
+    briefingData = normalizeBriefingFromPulse(data);
+    const welcome = data.home_state === 'welcome';
+    paintedSide = welcome ? null : (dayHasMaterial(data) ? 'today' : 'yesterday');
+    selectedSide = paintedSide;
     const cards = [renderVitalsHtml(data)];
-    if (data.home_state === 'welcome') {
-      if (isGettingStartedVisible()) {
-        cards.push(renderGettingStartedHtml());
-      } else {
-        cards.push(renderWelcomeHtml());
-      }
-      const needs = welcomeNeedsYouHtml(data);
-      if (needs) cards.push(needs);
+    if (isGettingStartedVisible()) cards.push(renderGettingStartedHtml());
+    if (welcome) {
+      cards.push(renderWelcomeHtml());
       setSurfaceHtml(cards.join(''));
       return;
     }
-    paintedCardOrder.slice(1).forEach(function (name) {
-      cards.push(CARD_RENDERERS[name](data));
-    });
+    cards.push(renderAccountHtml(data));
+    cards.push(renderPairHtml(data));
     setSurfaceHtml(cards.join(''));
-    placeTodayZoneNote();
-    restoreSectionState();
+    placeAccountZoneNote();
     refreshBriefing();
   }
 
@@ -392,18 +352,97 @@
     return { glance: g, notes };
   }
 
+  // A needs-you item becomes a row as it is: a route links where the item
+  // would have sent the owner, and a disabled item shows its reason instead.
+  function needsRow(item) {
+    const text = item && typeof item.text === 'string' ? item.text : '';
+    if (!text) return null;
+    if (item.disabled) {
+      return { text, reason: typeof item.reason === 'string' ? item.reason : '' };
+    }
+    const href = item.kind === 'route' && item.payload ? item.payload.href : null;
+    if (typeof href === 'string' && href.startsWith('/') && !href.startsWith('//')) {
+      return { text, href };
+    }
+    return { text };
+  }
+
+  // A night that went wrong stays on the page as at most two rows. The
+  // missing account gets its own row unless the yesterday side, open since the
+  // paint, already says so; everything else that didn't finish is one row.
+  function nightRows(pulse) {
+    const night = pulse?.yesterday_processing;
+    if (!isPlainObject(night) || night.mode !== 'degraded') return [];
+    const runs = '/app/thinking/#runs/' + encodeURIComponent(pulse.briefing_analysis_day || '');
+    const accountRun = runs + '/morning_briefing';
+    const links = (Array.isArray(night.gap_links) ? night.gap_links : []).filter(isPlainObject);
+    // The missing account and the briefing's own failed run are one event:
+    // say it once, as the account.
+    const isAccount = link => link.href === accountRun || String(link.href || '').startsWith(accountRun + '/');
+    const accountLinks = links.filter(isAccount);
+    const rows = [];
+    const account = accountLinks.find(link => link.href === accountRun) || accountLinks[0];
+    if (account && paintedSide !== 'yesterday' && !briefingData?.exists) {
+      rows.push({ text: account.text, href: account.href });
+    }
+    const rest = links.filter(link => !isAccount(link));
+    const unknown = Array.isArray(night.status_reasons) && night.status_reasons.includes('pipeline_unavailable');
+    if (unknown || rest.length > 1) {
+      rows.push({ text: night.summary_line || '', href: runs });
+    } else if (rest.length === 1) {
+      rows.push({ text: rest[0].text, href: rest[0].href });
+    }
+    return rows;
+  }
+
+  function originalsRow() {
+    if (originalsTotal === undefined || originalsTotal === 0) return null;
+    if (originalsTotal === null) {
+      return { text: "originals · the list couldn't be loaded.", href: ORIGINALS_PAGE };
+    }
+    return { text: 'originals · ' + plural(originalsTotal, 'item', 'items'), href: ORIGINALS_PAGE };
+  }
+
+  function waitingRows(pulse, glance) {
+    const rows = (glance.issues || []).map(issue => ({
+      text: issue.text || '', href: issue.href || '/app/health/', severity: issue.severity || 'amber'
+    }));
+    (Array.isArray(pulse.needs_you_items) ? pulse.needs_you_items : []).forEach(item => {
+      const row = needsRow(item);
+      if (row) rows.push(row);
+    });
+    nightRows(pulse).forEach(row => rows.push(row));
+    const originals = originalsRow();
+    if (originals) rows.push(originals);
+    return rows;
+  }
+
+  function waitingRowHtml(row) {
+    const severity = row.severity === 'red' ? ' red' : '';
+    const ring = '<span class="pulse-waiting-ring" aria-hidden="true"></span>';
+    if (row.href) {
+      return '<li class="pulse-waiting-row' + severity + '">' + ring
+        + '<a href="' + esc(row.href) + '">' + esc(row.text) + '</a></li>';
+    }
+    const reason = row.reason ? '<span class="pulse-waiting-reason">' + esc(row.reason) + '</span>' : '';
+    return '<li class="pulse-waiting-row' + severity + '">' + ring + '<span>' + esc(row.text) + reason + '</span></li>';
+  }
+
+  // One status line, and under it whatever is waiting on the owner, only when
+  // something is. When the health verdict itself is what's waiting, the list's
+  // heading takes the headline's place, so a count never sits above a list
+  // holding a different number of rows.
   function renderVitalsHtml(pulse) {
     const { glance: g, notes } = homeHealthGlance(pulse);
     const severity = g.severity || 'amber'; // 'neutral' is truthy; do not fold it into this fallback
-    let html = '<div class="pulse-vitals" id="pulse-vitals" data-home-surface="vitals" role="status" aria-live="polite">'
+    const rows = waitingRows(pulse, g);
+    const attention = g.verdict === 'attention' && rows.length > 0;
+    let html = '<div class="pulse-status" id="pulse-vitals" data-home-surface="vitals" role="status" aria-live="polite">'
+      + '<div class="pulse-vitals">'
       + '<div class="pulse-vitals-item"><span class="pulse-vitals-dot ' + esc(severity) + '" aria-hidden="true"></span>'
-      + '<span class="pulse-vitals-verdict ' + esc(severity) + '">' + esc(g.headline || '') + '</span></div>';
-    if (g.issues?.length) {
-      (g.issues || []).forEach(function (issue) {
-        html += '<a class="pulse-vitals-chip ' + esc(issue.severity || 'amber') + '" href="' + esc(issue.href || '#') + '">'
-          + esc(issue.text || '') + ' →</a>';
-      });
-    } else if (g.last_observation) {
+      + '<span class="pulse-vitals-verdict ' + esc(severity) + '" id="pulse-status-headline">'
+      + esc(attention ? WAITING_HEADING : (g.headline || '')) + '</span></div>';
+    if (!g.issues?.length && g.last_observation) {
       html += '<div class="pulse-vitals-sep"></div><div class="pulse-vitals-item">last reached your journal ' + esc(g.last_observation) + '</div>';
     }
     // The way to add a device stays beside any count: a journal with no
@@ -423,6 +462,14 @@
       html += '<a class="pulse-vitals-note" href="' + esc(note.href || '/app/health/') + '">'
         + '<span class="pulse-vitals-ring" aria-hidden="true"></span>'
         + '<span>' + esc(note.text) + ' →</span></a>';
+    }
+    html += '</div>';
+    if (rows.length) {
+      if (!attention) {
+        html += '<h2 class="pulse-waiting-heading" id="pulse-waiting-heading">' + WAITING_HEADING + '</h2>';
+      }
+      html += '<ul class="pulse-waiting" aria-labelledby="' + (attention ? 'pulse-status-headline' : 'pulse-waiting-heading') + '">'
+        + rows.map(waitingRowHtml).join('') + '</ul>';
     }
     html += '</div>';
     return html;
@@ -445,10 +492,9 @@
   }
 
   function renderWelcomeHtml() {
-    return '<div class="pulse-welcome" data-home-surface="welcome">'
-      + '<h2>welcome to your journal</h2>'
-      + '<p>this is where your day comes together: what happened, written up, and the people and things it involved. sections appear here as what you share with the solstone app goes into your journal.</p>'
-      + '</div>';
+    return '<p class="pulse-welcome" data-home-surface="welcome">'
+      + 'this is where your day comes together: what happened, written up, and the people and things it involved. sections appear here as what you share with the solstone app goes into your journal.'
+      + '</p>';
   }
 
   function formatDownloadQuantity(done, total) {
@@ -759,31 +805,21 @@
     return html;
   }
 
+  // Getting started comes and goes on its own; the welcome line beside it
+  // stays put.
   function updateGettingStartedSurface() {
-    if (!surface) return;
-    const isVisible = isGettingStartedVisible();
-    const isWelcome = lastPulse && lastPulse.home_state === 'welcome';
-    const currentGettingStarted = surface.querySelector('[data-home-surface="getting-started"]');
-    const currentWelcome = surface.querySelector('[data-home-surface="welcome"]');
-
-    if (isVisible) {
+    if (!surface || !lastPulse) return;
+    const current = surface.querySelector('[data-home-surface="getting-started"]');
+    if (isGettingStartedVisible()) {
       const html = renderGettingStartedHtml();
-      if (currentGettingStarted) {
-        currentGettingStarted.outerHTML = html;
-      } else if (currentWelcome) {
-        currentWelcome.outerHTML = html;
+      if (current) {
+        current.outerHTML = html;
       } else {
         replaceHomeSurface('getting-started', html, predecessors('getting-started'));
       }
       keepGettingStartedFirst();
-    } else {
-      if (currentGettingStarted) {
-        if (isWelcome) {
-          currentGettingStarted.outerHTML = renderWelcomeHtml();
-        } else {
-          currentGettingStarted.remove();
-        }
-      }
+    } else if (current) {
+      current.remove();
     }
   }
 
@@ -928,14 +964,6 @@
     }
   }
 
-  // "pulse" is the name of the run that wrote this, not a thing the owner has
-  // a word for. The card says what it holds. X-03.
-  function narrativeHeading(pulse) {
-    const raw = String(pulse?.narrative_header || '').trim();
-    if (!raw || raw === 'pulse') return 'recent activity';
-    return raw;
-  }
-
   function narrativeScope(pulse) {
     if (pulse.narrative_source !== 'pulse') return '';
     const scope = pulse.narrative_window;
@@ -953,36 +981,31 @@
       + (gaps.length ? '<p>some source material was unavailable:</p><ul>' + gaps.map(gap => '<li>' + esc(gap) + '</li>').join('') + '</ul>' : '') + '</details>';
   }
 
+  // The today side's written account. The tab is its heading, so it carries
+  // none of its own.
   function renderNarrativeHtml(pulse) {
     if (pulse.narrative_content !== null && pulse.narrative_content !== undefined) {
-      const updated = pulse.narrative_updated_at ? '<div class="pulse-narrative-meta">updated at ' + esc(window.JournalFormat.timestamp(pulse.narrative_updated_at)) + '</div>' : '';
-      return '<div class="pulse-narrative" id="pulse-narrative" data-home-surface="narrative" data-section-collapsed="true">'
-        + '<div class="pulse-section-toggle" role="button" tabindex="0" aria-expanded="false">'
-        + '<h2 class="pulse-section-header">' + esc(narrativeHeading(pulse)) + '</h2>'
-        + '<span class="pulse-section-summary">' + esc(pulse.narrative_updated_at ? 'updated ' + window.JournalFormat.timestamp(pulse.narrative_updated_at) : narrativeHeading(pulse)) + '</span>'
-        + '</div>'
-        + '<div class="pulse-section-body">'
+      const updated = pulse.narrative_updated_at
+        ? '<span>updated at ' + esc(window.JournalFormat.timestamp(pulse.narrative_updated_at)) + '</span>'
+        : '';
+      return '<div class="pulse-narrative" id="pulse-narrative">'
         + '<div class="pulse-narrative-content" id="pulse-narrative-content">' + markdown(pulse.narrative_content || '') + '</div>'
+        + '<div class="pulse-account-meta">' + updated
         + '<a class="pulse-tell-more" href="/app/thinking/#runs/' + encodeURIComponent(pulse.today) + '/' + encodeURIComponent(pulse.narrative_source || 'pulse') + '">how this was written →</a>'
-        + narrativeScope(pulse)
-        + updated
         + '</div>'
+        + narrativeScope(pulse)
         + '</div>';
     }
-    if (Number(pulse.segment_count || 0) > 0) {
-      return '<div class="pulse-narrative" id="pulse-narrative" data-home-surface="narrative">'
-        + '<h2 class="pulse-section-header">' + esc(narrativeHeading(pulse)) + '</h2>'
-        + '<div class="pulse-narrative-empty">analysis will be available after the next processing cycle.</div>'
-        + '</div>';
-    }
-    return '<div class="pulse-empty-state" data-home-surface="narrative">'
-      + '<h2 class="pulse-section-header">today\'s flow</h2>'
-      + '<div class="pulse-empty-message">no narrative yet. one will appear after some audio goes into your journal.</div>'
+    const empty = Number(pulse.segment_count || 0) > 0
+      ? 'analysis will be available after the next processing cycle.'
+      : 'no narrative yet. one will appear after some audio goes into your journal.';
+    return '<div class="pulse-narrative" id="pulse-narrative">'
+      + '<div class="pulse-narrative-empty">' + esc(empty) + '</div>'
       + '</div>';
   }
 
   function renderNarrative(pulse) {
-    replaceHomeSurface('narrative', renderNarrativeHtml(pulse), predecessors('narrative'));
+    replaceAccountContent(surface?.querySelector?.('[data-account-part="narrative"]'), renderNarrativeHtml(pulse));
   }
 
   function renderWeeklyReflectionHtml(pulse) {
@@ -1008,10 +1031,6 @@
         + '</div>';
     }
     return '';
-  }
-
-  function renderWeeklyReflection(pulse) {
-    replaceHomeSurface('reflection', renderWeeklyReflectionHtml(pulse), predecessors('reflection'));
   }
 
   function plural(count, one, many) {
@@ -1056,18 +1075,12 @@
   function renderTodayHtml(pulse) {
     const activities = Array.isArray(pulse.activities) ? pulse.activities : [];
     if (!activities.length) {
-      return '<div class="pulse-empty-state" data-home-surface="today">'
-        + '<h2 class="pulse-section-header">today</h2>'
-        + '<div class="pulse-empty-message">no recent activity yet today.</div>'
+      return '<div class="pulse-today" id="pulse-today">'
+        + '<div class="pulse-narrative-empty">no recent activity yet today.</div>'
         + '<a class="pulse-today-link" href="/app/activities/" data-copy-key="home-today-link">all of today\'s activities →</a>'
         + '</div>';
     }
-    let html = '<div class="pulse-today" id="pulse-today" data-home-surface="today" data-section-collapsed="true">'
-      + '<div class="pulse-section-toggle" role="button" tabindex="0" aria-expanded="false">'
-      + '<h2 class="pulse-section-header">today</h2>'
-      + '<span class="pulse-section-summary">' + esc(pulse.today_summary || '') + '</span>'
-      + '</div>'
-      + '<div class="pulse-section-body">';
+    let html = '<div class="pulse-today" id="pulse-today">';
     if (activities.length) {
       // The header counted all of them, the list showed six, and the chips
       // measured a third population. Each number now says what it counts, and
@@ -1125,136 +1138,90 @@
       html += '</div>';
     }
     html += '<a class="pulse-today-link" href="/app/activities/" data-copy-key="home-today-link">all of today\'s activities →</a>';
-    html += '</div></div>';
+    html += '</div>';
     return html;
   }
 
   function renderToday(pulse) {
-    replaceHomeSurface('today', renderTodayHtml(pulse), predecessors('today'));
-    placeTodayZoneNote();
+    replaceAccountContent(surface?.querySelector?.('[data-account-part="activities"]'), renderTodayHtml(pulse));
   }
 
-  // Both the first paint and a re-render of the today card name the
-  // journal's zone on its heading. The empty state carries the surface
-  // marker but not the card's id.
-  function placeTodayZoneNote() {
-    const h2 = document.querySelector('[data-home-surface="today"] .pulse-section-header');
-    if (h2 && window.JournalClock) {
-      window.JournalClock.placeNote(h2, { inside: true });
-    }
+  // Replace part of the account card in place. Focus that was inside it goes
+  // back to the same link, or to the selected tab, rather than to the page.
+  function replaceAccountContent(container, html) {
+    if (!container) return;
+    const active = document.activeElement;
+    const hadFocus = !!active && typeof container.contains === 'function' && container.contains(active);
+    const href = hadFocus && active.tagName === 'A' ? active.getAttribute('href') : null;
+    container.innerHTML = html;
+    if (!hadFocus) return;
+    const same = href
+      ? Array.from(container.querySelectorAll('a')).find(link => link.getAttribute('href') === href)
+      : null;
+    const next = same || document.getElementById('pulse-account-tab-' + selectedSide);
+    next?.focus({ preventScroll: true });
   }
 
-  function renderYesterdayProcessingHtml(pulse) {
-    const yesterday = pulse.yesterday_processing;
-    if (!yesterday) return '';
-    // Overnight trouble still opens itself when a run actually failed. When the
-    // day is live and nothing failed, it stays folded to its one line and the
-    // day leads instead. X-03.
-    const foldForLiveDay = dayHasMaterial(pulse)
-      && Number(yesterday.failed_run_count || 0) === 0;
-    const collapsed = (yesterday.default_collapsed || foldForLiveDay) ? 'true' : 'false';
-    let html = '<section class="pulse-yesterday" id="pulse-yesterday" data-home-surface="yesterday" data-collapsed="' + collapsed + '">'
-      + '<div class="pulse-yesterday-header" role="button" tabindex="0" aria-expanded="' + (collapsed === 'true' ? 'false' : 'true') + '">'
-      + '<h2 class="pulse-section-header">' + esc(yesterday.title || "Yesterday's processing") + '</h2>'
+  // The day the shown side covers: yesterday's side the briefing's analysis
+  // day, today's side today, each from the payload its content came from.
+  function accountDayText(side, pulse) {
+    const day = side === 'yesterday'
+      ? (briefingData?.analysis_day || pulse?.briefing_analysis_day)
+      : pulse?.today;
+    if (!day) return '';
+    return window.JournalFormat ? window.JournalFormat.dayFull(day) : String(day);
+  }
+
+  // The journal clock's zone note sits beside the date, so an owner on a
+  // device in another zone sees it whichever side is shown.
+  function placeAccountZoneNote() {
+    const day = document.querySelector('[data-account-day]');
+    if (day && window.JournalClock) window.JournalClock.placeNote(day, { inside: true });
+  }
+
+  function updateAccountDay() {
+    const text = document.querySelector('[data-account-day-text]');
+    if (text) text.textContent = accountDayText(selectedSide, lastPulse);
+    placeAccountZoneNote();
+  }
+
+  function renderTodaySideHtml(pulse) {
+    return '<div data-account-part="narrative">' + renderNarrativeHtml(pulse) + '</div>'
+      + '<div data-account-part="activities">' + renderTodayHtml(pulse) + '</div>';
+  }
+
+  function renderAccountHtml(pulse) {
+    const tab = side => '<button type="button" role="tab" class="pulse-account-tab"'
+      + ' id="pulse-account-tab-' + side + '" aria-controls="pulse-account-panel-' + side + '"'
+      + ' aria-selected="' + (selectedSide === side) + '" tabindex="' + (selectedSide === side ? '0' : '-1') + '"'
+      + ' data-account-tab="' + side + '">' + side + '</button>';
+    const panel = (side, inner) => '<div class="pulse-account-panel" role="tabpanel"'
+      + ' id="pulse-account-panel-' + side + '" aria-labelledby="pulse-account-tab-' + side + '"'
+      + ' data-account-panel="' + side + '"' + (selectedSide === side ? '' : ' hidden') + '>' + inner + '</div>';
+    return '<section class="pulse-account" id="pulse-account" data-home-surface="account">'
+      + '<div class="pulse-account-head">'
+      + '<div class="pulse-account-tabs" role="tablist" aria-label="which day">' + ACCOUNT_SIDES.map(tab).join('') + '</div>'
+      + '<span class="pulse-account-day" data-account-day><span data-account-day-text>' + esc(accountDayText(selectedSide, pulse)) + '</span></span>'
       + '</div>'
-      + '<div class="pulse-yesterday-summary">' + esc(yesterday.summary_line || '') + '</div>'
-      + '<div class="pulse-yesterday-body">';
-    if (yesterday.first_week_framing) {
-      html += '<p class="pulse-yesterday-framing">' + esc(yesterday.first_week_framing) + '</p>';
-    }
-    if (yesterday.mode === 'sparse') {
-      (yesterday.sparse_lines || []).forEach(function (line) {
-        html += '<p>' + esc(line) + '</p>';
-      });
-    } else {
-      // The briefing card states the missing briefing in its own words and
-      // links the same run. Yesterday's list does not say it a second time.
-      // G1-103.
-      const briefingHref = '/app/thinking/#runs/' + encodeURIComponent(pulse?.briefing_analysis_day || '') + '/morning_briefing';
-      const briefingCardOwnsIt = pulse?.briefing_phase === 'missing' && !pulse?.briefing_exists;
-      const gapLinks = (yesterday.gap_links || []).filter(function (link) {
-        return !(briefingCardOwnsIt && link && link.href === briefingHref);
-      });
-      const details = yesterday.details || [];
-      const gapListHtml = gapLinks.map(function (link) {
-        return '<li><a href="' + esc(link.href || '#') + '">' + esc(link.text || '') + '</a></li>';
-      }).join('');
-      const detailsListHtml = details.map(function (line) {
-        return '<li>' + esc(line) + '</li>';
-      }).join('');
-      if (gapLinks.length && details.length) {
-        // Two different kinds of signal — what broke vs. neutral summary —
-        // read as one undifferentiated list otherwise. Split them.
-        const count = Number(yesterday.failed_run_count || 0);
-        const countLabel = count > 0 ? ' · ' + count + (count === 1 ? ' run' : ' runs') : '';
-        html += '<div class="pulse-yesterday-shelf-label">what didn\'t finish' + countLabel + '</div>'
-          + '<ul class="pulse-yesterday-details">' + gapListHtml + '</ul>'
-          + '<div class="pulse-yesterday-shelf-label pulse-yesterday-shelf-label-spaced">everything else</div>'
-          + '<ul class="pulse-yesterday-details">' + detailsListHtml + '</ul>';
-      } else if (gapLinks.length || details.length) {
-        html += '<ul class="pulse-yesterday-details">' + gapListHtml + detailsListHtml + '</ul>';
-      }
-    }
-    html += '</div></section>';
-    return html;
+      + panel('yesterday', renderYesterdaySideHtml(briefingData, pulse))
+      + panel('today', renderTodaySideHtml(pulse))
+      + '</section>';
   }
 
-  function renderYesterdayProcessing(pulse) {
-    replaceHomeSurface('yesterday', renderYesterdayProcessingHtml(pulse), predecessors('yesterday'));
-  }
-
-  function needsYouItemHtml(item) {
-    const text = item && typeof item.text === 'string' ? item.text : '';
-    if (item && item.disabled) {
-      const reason = typeof item.reason === 'string' && item.reason ? '<span class="pulse-needs-reason">' + esc(item.reason) + '</span>' : '';
-      return '<div class="pulse-needs-item pulse-needs-item-disabled">' + esc(text) + reason + '</div>';
-    }
-    if (item && item.kind === 'route') {
-      const encoded = esc(JSON.stringify(item || {}));
-      return '<div class="pulse-needs-item" role="button" tabindex="0" data-needs-you-item="' + encoded + '">' + esc(text) + '</div>';
-    }
-    return '<div class="pulse-needs-item">' + esc(text) + '</div>';
-  }
-
-  function renderNeedsYouHtml(pulse) {
-    const items = Array.isArray(pulse.needs_you_items) ? pulse.needs_you_items : [];
-    if (!items.length) {
-      // health_glance flags its own issues (device/backlog/pipeline health) up in the
-      // vitals banner, a separate signal from needs_you_items. Say "else" when it has
-      // something flagged so this empty state never reads as a flat contradiction.
-      const emptyMessage = pulse.health_glance && pulse.health_glance.verdict === 'attention'
-        ? 'nothing else needs your attention right now.'
-        : 'nothing needs your attention right now.';
-      return '<div class="pulse-empty-state" data-home-surface="needs">'
-        + '<h2 class="pulse-section-header">needs you</h2>'
-        + '<div class="pulse-empty-message">' + esc(emptyMessage) + '</div>'
-        + '</div>';
-    }
-    return '<div class="pulse-needs" id="pulse-needs" data-home-surface="needs" data-section-collapsed="false">'
-      + '<div class="pulse-section-toggle" role="button" tabindex="0" aria-expanded="true">'
-      + '<h2 class="pulse-section-header">needs you</h2>'
-      + '<span class="pulse-section-summary">' + esc(pulse.needs_summary || '') + '</span>'
-      + '</div>'
-      + '<div class="pulse-section-body"><div class="pulse-needs-list">'
-      + items.map(needsYouItemHtml).join('')
-      + '</div></div></div>';
-  }
-
-  // The welcome window has no needs card of its own, but something that is
-  // owed from the first day, like setting up your voice, still shows there.
-  function welcomeNeedsYouHtml(pulse) {
-    const items = Array.isArray(pulse.needs_you_items) ? pulse.needs_you_items : [];
-    return items.length ? renderNeedsYouHtml(pulse) : '';
-  }
-
-  function renderNeedsYou(pulse) {
-    const html = lastPulse && lastPulse.home_state === 'welcome'
-      ? welcomeNeedsYouHtml(pulse)
-      : renderNeedsYouHtml(pulse);
-    const anchors = lastPulse && lastPulse.home_state === 'welcome'
-      ? (isGettingStartedVisible() ? ['vitals', 'getting-started'] : ['vitals', 'welcome'])
-      : predecessors('needs');
-    replaceHomeSurface('needs', html, anchors);
+  function selectAccountSide(side, moveFocus) {
+    if (ACCOUNT_SIDES.indexOf(side) === -1 || !surface) return;
+    selectedSide = side;
+    surface.querySelectorAll('[data-account-tab]').forEach(tab => {
+      const on = tab.dataset.accountTab === side;
+      tab.setAttribute('aria-selected', String(on));
+      tab.setAttribute('tabindex', on ? '0' : '-1');
+    });
+    surface.querySelectorAll('[data-account-panel]').forEach(panel => {
+      if (panel.dataset.accountPanel === side) panel.removeAttribute('hidden');
+      else panel.setAttribute('hidden', '');
+    });
+    updateAccountDay();
+    if (moveFocus) document.getElementById('pulse-account-tab-' + side)?.focus();
   }
 
   // Every date on this dashboard is one shape, and the shape is the shared
@@ -1353,12 +1320,8 @@
   function renderConnectionsHtml(pulse) {
     const connections = isPlainObject(pulse?.connections) ? pulse.connections : null;
     if (!connections || typeof connections.state !== 'string') return '';
-    if (connections.state === 'empty') {
-      return '<div class="pulse-empty-state" data-home-surface="connections">'
-        + '<h2 class="pulse-section-header">connections</h2>'
-        + '<div class="pulse-empty-message">no connections yet. this is built from the people and things your days involve.</div>'
-        + '</div>';
-    }
+    // Nothing yet is no card at all: sections appear as material arrives.
+    if (connections.state === 'empty') return '';
     if (connections.state === 'unnamed') {
       // Every neighbor the index had was an unnamed voice cluster. Say that,
       // and point at the one place it can be fixed. X-02.
@@ -1457,180 +1420,169 @@
     return html + '</div>';
   }
 
-  function renderConnections(pulse) {
-    replaceHomeSurface('connections', renderConnectionsHtml(pulse), predecessors('connections'));
+  // Connections and your week stand side by side under the account.
+  function renderPairHtml(pulse) {
+    const parts = [renderConnectionsHtml(pulse), renderWeeklyReflectionHtml(pulse)].filter(Boolean);
+    if (!parts.length) return '';
+    return '<div class="pulse-pair' + (parts.length === 2 ? ' pulse-pair--two' : '') + '" data-home-surface="pair">'
+      + parts.join('') + '</div>';
   }
 
-  const CARD_RENDERERS = {
-    vitals: renderVitalsHtml,
-    'getting-started': function () {
-      return isGettingStartedVisible() ? renderGettingStartedHtml() : '';
-    },
-    yesterday: renderYesterdayProcessingHtml,
-    briefing: renderBriefingShellHtml,
-    narrative: renderNarrativeHtml,
-    reflection: renderWeeklyReflectionHtml,
-    today: renderTodayHtml,
-    needs: renderNeedsYouHtml,
-    connections: renderConnectionsHtml
-  };
+  function renderPair(pulse) {
+    replaceHomeSurface('pair', renderPairHtml(pulse), predecessors('pair'));
+  }
 
   function normalizeBriefingFromPulse(pulse) {
+    return normalizeBriefing({
+      exists: pulse.briefing_exists,
+      phase: pulse.briefing_phase,
+      saved_lane: pulse.briefing_saved_lane,
+      analysis_day: pulse.briefing_analysis_day,
+      meta: pulse.briefing_meta,
+      sections: pulse.briefing_sections
+    });
+  }
+
+  function normalizeBriefing(data) {
     return {
-      exists: Boolean(pulse.briefing_exists),
-      phase: pulse.briefing_phase || 'eod',
-      saved_lane: pulse.briefing_saved_lane ?? null,
-      summary: pulse.briefing_summary || '',
-      meta: pulse.briefing_meta || null,
-      sections: isPlainObject(pulse.briefing_sections) ? pulse.briefing_sections : {},
-      needs_deduped: Array.isArray(pulse.briefing_needs_deduped) ? pulse.briefing_needs_deduped : [],
-      needs_shared_count: Number(pulse.briefing_needs_shared_count || 0),
-      needs_badge: pulse.briefing_needs_badge || ''
+      exists: Boolean(data.exists),
+      phase: data.phase || 'eod',
+      saved_lane: data.saved_lane ?? null,
+      analysis_day: typeof data.analysis_day === 'string' ? data.analysis_day : null,
+      meta: isPlainObject(data.meta) ? data.meta : null,
+      sections: isPlainObject(data.sections) ? data.sections : {}
     };
   }
 
-  function renderBriefingShellHtml(pulse) {
-    return renderBriefingCardHtml(normalizeBriefingFromPulse(pulse), pulse);
-  }
-
-  function formatBriefingTime(generated) {
-    if (!generated) return '';
-    const text = String(generated);
-    if (text.indexOf('T') !== -1) {
-      return text.split('T', 2)[1].substring(0, 5);
-    }
-    return text.substring(Math.max(0, text.length - 5));
+  // The briefing's stamp is the journal's own wall time with no offset. Show
+  // its hour and minute as written: parsing it as an instant would shift it
+  // by the browser's zone.
+  function writtenAtTime(generated) {
+    const match = /T(\d{2}):(\d{2})/.exec(String(generated || ''));
+    if (!match || Number(match[1]) > 23 || Number(match[2]) > 59) return '';
+    return new Date(2000, 0, 1, Number(match[1]), Number(match[2]))
+      .toLocaleString(undefined, { hour: 'numeric', minute: '2-digit' });
   }
 
   // Before the nightly run has had its first chance, say when the first
-  // briefing is due rather than calling it late or missing.
+  // account is due rather than calling it late or missing.
   const BRIEFING_NOT_YET = Object.assign(Object.create(null), {
-    awaiting_engine: 'morning briefings start once you choose where the thinking happens.',
-    first_night: "your first briefing is due by 10 am, after your journal's first night.",
-    first_night_empty: 'your first briefing is due the morning after something goes into your journal.'
+    awaiting_engine: 'yesterday shows here once you choose where the thinking happens.',
+    first_night: "your first day shows here by 10 am, after your journal's first night.",
+    first_night_empty: 'yesterday shows here the morning after something goes into your journal.'
   });
 
   const BRIEFING_AWAITING_ENGINE_LANES = Object.assign(Object.create(null), {
-    byo: 'morning briefings start once your own model is set up.',
-    spp: 'morning briefings start once confidential processing is set up.',
-    local: 'morning briefings start once local thinking is set up.'
+    byo: 'yesterday shows here once your own model is set up.',
+    spp: 'yesterday shows here once confidential processing is set up.',
+    local: 'yesterday shows here once local thinking is set up.'
   });
 
+  function briefingRunHref(data, pulseContext) {
+    return '/app/thinking/#runs/' + encodeURIComponent(data?.analysis_day || pulseContext?.briefing_analysis_day || '') + '/morning_briefing';
+  }
+
+  // The yesterday side never renders empty. Silence is the worst failure mode.
   function briefingPlaceholderHtml(data, pulseContext) {
     if (data.exists) return '';
-    // A briefing that was never prepared used to render nothing at all from ten
-    // in the morning onward. Silence is the worst failure mode. X-04.
-    if (data.phase === 'missing') {
-      return '<div class="pulse-briefing-placeholder">'
-        + "your morning briefing wasn't prepared. "
-        + '<a class="pulse-briefing-status-link" href="/app/thinking/#runs/' + esc(pulseContext?.briefing_analysis_day || '') + '/morning_briefing">see the run →</a>'
-        + '</div>';
-    }
+    const run = esc(briefingRunHref(data, pulseContext));
     if (data.phase === 'awaiting_engine') {
       const text = BRIEFING_AWAITING_ENGINE_LANES[data.saved_lane] || BRIEFING_NOT_YET.awaiting_engine;
       return '<div class="pulse-briefing-placeholder">' + esc(text) + '</div>';
     }
     const notYet = BRIEFING_NOT_YET[data.phase];
     if (notYet) return '<div class="pulse-briefing-placeholder">' + esc(notYet) + '</div>';
-    if (data.phase !== 'pending') return '';
-    const lateness = pulseContext?.briefing_lateness || {};
-    if (lateness.late) {
-      return '<div class="pulse-briefing-placeholder">'
-        + "your briefing is usually ready by 10 am; it's " + esc(lateness.late_hours || 0) + 'h late.'
-        + '<a class="pulse-briefing-status-link" href="/app/thinking/#runs/' + esc(pulseContext?.briefing_analysis_day || '') + '/morning_briefing">check status</a>'
-        + '</div>';
+    if (data.phase === 'pending') {
+      const lateness = pulseContext?.briefing_lateness || {};
+      if (lateness.late) {
+        return '<div class="pulse-briefing-placeholder">'
+          + "yesterday is usually written up by 10 am. it's " + esc(lateness.late_hours || 0) + 'h late.'
+          + '<a class="pulse-briefing-status-link" href="' + run + '">check status</a>'
+          + '</div>';
+      }
+      return '<div class="pulse-briefing-placeholder">yesterday is being written up…</div>';
     }
-    return '<div class="pulse-briefing-placeholder">your morning briefing is being prepared…</div>';
-  }
-
-  function renderBriefingCardHtml(data, pulseContext) {
-    if (!data.exists && data.phase !== 'pending' && data.phase !== 'missing' && !BRIEFING_NOT_YET[data.phase]) return '';
-    const existing = document.getElementById('pulse-briefing');
-    const collapsed = data.phase === 'morning' ? 'false' : (existing?.dataset?.collapsed || (data.phase === 'morning' ? 'false' : 'true'));
-    const metaText = data.meta && data.meta.generated ? formatBriefingTime(data.meta.generated) : '';
-    const summary = data.summary ? '<div class="pulse-briefing-summary">' + esc(data.summary) + '</div>' : '';
-    const badge = data.needs_badge ? '<span class="pulse-briefing-badge">' + esc(data.needs_badge) + '</span>' : '';
-    const meta = metaText ? '<span class="pulse-briefing-meta">' + esc(metaText) + '</span>' : '';
-    const body = data.exists
-      ? '<div class="pulse-briefing-body" id="pulse-briefing-body">' + renderBriefingSectionsHtml(data) + '</div>'
-      : '';
-    // A header only announces itself as expandable when there is a body to
-    // expand. In the 'missing' and 'pending' phases the card's one line sits
-    // outside the collapsible body, so the header is a plain heading. G1-104.
-    const headerAttrs = data.exists
-      ? ' role="button" tabindex="0" aria-expanded="' + (collapsed === 'false' ? 'true' : 'false') + '"'
-      : '';
-    return '<div class="pulse-briefing-card" id="pulse-briefing" data-home-surface="briefing" data-phase="' + esc(data.phase) + '" data-collapsed="' + collapsed + '">'
-      + '<div class="pulse-briefing-header"' + headerAttrs + '>'
-      + '<h2 class="pulse-section-header">morning briefing</h2>'
-      + badge
-      + meta
-      + '</div>'
-      + summary
-      + briefingPlaceholderHtml(data, pulseContext)
-      + body
+    // Missing, and any hour with no account that no not-yet state explains.
+    return '<div class="pulse-briefing-placeholder">'
+      + "yesterday wasn't written up. "
+      + '<a class="pulse-briefing-status-link" href="' + run + '">see the run →</a>'
       + '</div>';
   }
 
-  function renderBriefingSectionsHtml(data) {
-    const sections = isPlainObject(data.sections) ? data.sections : {};
-    const needs = Array.isArray(data.needs_deduped) ? data.needs_deduped : [];
-    return briefingRenderOrder.map(function (key) {
-      if (key === 'needs_attention') {
-        if (!needs.length && !data.needs_badge) return '';
-        const needsBody = needs.length
-          ? '<div class="pulse-briefing-section-body" data-section-key="needs_attention"><ul>'
-            + needs.map(function (item) {
-              return '<li>' + markdown(String(item || '')) + '</li>';
-            }).join('')
-            + '</ul></div>'
-          : '';
-        return '<div class="pulse-briefing-section" data-section="needs_attention" data-collapsed="false">'
-          + '<button class="pulse-briefing-section-toggle" aria-expanded="true">needs attention</button>'
-          + needsBody
-          + '</div>';
-      }
-      const raw = sections[key];
-      if (!raw) return '';
-      return '<div class="pulse-briefing-section" data-section="' + esc(key) + '" data-collapsed="false">'
-        + '<button class="pulse-briefing-section-toggle" aria-expanded="true">' + esc(briefingSectionLabels[key]) + '</button>'
-        + '<div class="pulse-briefing-section-body" data-section-key="' + esc(key) + '">' + markdown(raw) + '</div>'
+  function renderYesterdaySideHtml(data, pulseContext) {
+    if (!data) return '';
+    let body;
+    if (data.exists) {
+      const raw = typeof data.sections.yesterday === 'string' ? data.sections.yesterday : '';
+      // An empty section carries no time: "written at" beside "nothing was
+      // written up" would contradict it.
+      const time = raw ? writtenAtTime(data.meta?.generated) : '';
+      body = (raw
+        ? '<div class="pulse-briefing-body" id="pulse-briefing-body">' + markdown(raw) + '</div>'
+        : '<div class="pulse-briefing-placeholder">nothing from yesterday was written up.</div>')
+        + '<div class="pulse-account-meta">'
+        + (time ? '<span>written at ' + esc(time) + '</span>' : '')
+        + '<a class="pulse-tell-more" href="' + esc(briefingRunHref(data, pulseContext)) + '">how this was written →</a>'
         + '</div>';
-    }).join('');
+    } else {
+      body = briefingPlaceholderHtml(data, pulseContext);
+    }
+    return '<div class="pulse-briefing" id="pulse-briefing" data-phase="' + esc(data.phase) + '">' + body + '</div>';
   }
 
-  function renderBriefingSections(sections) {
-    if (!document.querySelector) return;
-    briefingSectionOrder.forEach(function (key) {
-      const raw = sections[key];
-      const el = document.querySelector('[data-section-key="' + key + '"]');
-      if (!el) return;
-      if (!raw) {
-        el.innerHTML = '';
-        return;
-      }
-      el.innerHTML = markdown(raw);
-    });
+  function yesterdayPanel() {
+    return surface?.querySelector?.('#pulse-account-panel-yesterday') || null;
   }
 
+  // A briefing read updates the yesterday side in place and the waiting list
+  // with it: an account that arrives takes its missing-account row away.
   function renderBriefing(data, pulseContext = lastPulse) {
     validateBriefing(data);
-    briefingSections = isPlainObject(data.sections) ? data.sections : {};
-    const html = renderBriefingCardHtml(data, pulseContext);
-    replaceHomeSurface('briefing', html, predecessors('briefing'));
+    briefingData = normalizeBriefing(data);
+    replaceAccountContent(yesterdayPanel(), renderYesterdaySideHtml(briefingData, pulseContext));
+    if (selectedSide === 'yesterday') updateAccountDay();
+    if (lastPulse) renderVitals(lastPulse);
   }
 
   function renderBriefingError(error) {
-    const html = '<div class="pulse-briefing-card" id="pulse-briefing" data-home-surface="briefing" data-phase="error" data-collapsed="false">'
-      + surfaceError(error, "Couldn't refresh briefing")
-      + '</div>';
-    replaceHomeSurface('briefing', html, predecessors('briefing'));
-    const retry = document.querySelector('#pulse-briefing .surface-state-retry');
+    const panel = yesterdayPanel();
+    if (!panel) return;
+    replaceAccountContent(panel, '<div class="pulse-briefing" id="pulse-briefing" data-phase="error">'
+      + surfaceError(error, "couldn't load yesterday.")
+      + '</div>');
+    const retry = panel.querySelector('.surface-state-retry');
     if (retry) {
       retry.addEventListener('click', function () {
         refreshBriefing();
       });
     }
+  }
+
+  // The welcome page has no account to update in place: once the journal
+  // has something to show, the page is painted afresh.
+  function leavesWelcome(data) {
+    return lastPulse?.home_state === 'welcome' && data.home_state !== 'welcome';
+  }
+
+  // The originals list's item total, for the waiting list's originals row.
+  // Read once per mount, and again when the browser restores the page from
+  // its back/forward cache; never polled.
+  function readOriginalsTotal() {
+    if (originalsRequest) return originalsRequest;
+    originalsRequest = apiJson(ORIGINALS_URL)
+      .then(function (data) {
+        const page = isPlainObject(data) && Number.isSafeInteger(data.total_rows) && data.total_rows >= 0
+          && ['list.ready', 'list.empty', 'list.review_too_large'].indexOf(data.state) !== -1;
+        originalsTotal = page ? (data.state === 'list.empty' ? 0 : data.total_rows) : null;
+      })
+      .catch(function () {
+        originalsTotal = null;
+      })
+      .finally(function () {
+        originalsRequest = null;
+        if (lastPulse) renderVitals(lastPulse);
+      });
+    return originalsRequest;
   }
 
   function refreshVitals() {
@@ -1650,13 +1602,12 @@
         if (read < pulseAppliedVersion) return;
         pulseAppliedVersion = read;
         validatePulse(data);
-        if (!lastPulse) { renderPulse(data); return; }
+        if (!lastPulse || leavesWelcome(data)) { renderPulse(data); return; }
         lastPulse = Object.assign({}, lastPulse || {}, data);
         pulseReadFailed = false;
         pulseObservedAt = Date.now();
         observeBackup(data);
-        renderNeedsYou(data);
-        renderConnections(data);
+        renderPair(data);
         renderVitals(data);
         clearPulseRefreshError('pulse-vitals');
       })
@@ -1688,20 +1639,19 @@
         validatePulse(data);
         // A newer vitals read does not paint the narrative. Keep this
         // refresher's own result even when its health evidence was superseded.
-        if (lastPulse) {
+        if (lastPulse && !leavesWelcome(data)) {
           renderNarrative(data);
           clearPulseRefreshError('pulse-narrative');
         }
         if (read < pulseAppliedVersion) return;
         pulseAppliedVersion = read;
-        if (!lastPulse) { renderPulse(data); return; }
+        if (!lastPulse || leavesWelcome(data)) { renderPulse(data); return; }
         lastPulse = Object.assign({}, lastPulse || {}, data);
         pulseReadFailed = false;
         pulseObservedAt = Date.now();
         observeBackup(data);
         renderVitals(data);
-        renderNeedsYou(data);
-        renderConnections(data);
+        renderPair(data);
         clearPulseRefreshError('pulse-vitals');
       })
       .catch(function (error) {
@@ -1737,121 +1687,23 @@
     }
   }
 
-  function dispatchNeedsYouItem(item) {
-    if (!item || typeof item !== 'object') return;
-    if (item.disabled) return;
-    if (item.kind === 'route') {
-      const href = item.payload && item.payload.href;
-      if (typeof href === 'string' && href.startsWith('/') && !href.startsWith('//')) {
-        window.location.href = href;
-      }
-    }
-  }
-
-  function toggleBriefingCard() {
-    const card = document.getElementById('pulse-briefing');
-    if (!card || card.dataset.phase === 'pending' || BRIEFING_NOT_YET[card.dataset.phase]) return;
-    // No body, nothing to toggle: the header is a heading in this phase. G1-104.
-    if (!card.querySelector('.pulse-briefing-body')) return;
-    card.dataset.collapsed = card.dataset.collapsed === 'true' ? 'false' : 'true';
-    const header = card.querySelector('.pulse-briefing-header');
-    if (header) header.setAttribute('aria-expanded', card.dataset.collapsed === 'false' ? 'true' : 'false');
-  }
-
-  function toggleYesterdayCard() {
-    const card = document.getElementById('pulse-yesterday');
-    if (!card) return;
-    card.dataset.collapsed = card.dataset.collapsed === 'true' ? 'false' : 'true';
-    const header = card.querySelector('.pulse-yesterday-header');
-    if (header) header.setAttribute('aria-expanded', card.dataset.collapsed === 'false' ? 'true' : 'false');
-  }
-
-  function toggleBriefingSection(sectionEl) {
-    if (!sectionEl) return;
-    sectionEl.dataset.collapsed = sectionEl.dataset.collapsed === 'true' ? 'false' : 'true';
-    const toggle = sectionEl.querySelector('.pulse-briefing-section-toggle');
-    if (toggle) toggle.setAttribute('aria-expanded', sectionEl.dataset.collapsed === 'false' ? 'true' : 'false');
-  }
-
-  function toggleSection(container) {
-    if (!container || !container.hasAttribute('data-section-collapsed')) return;
-    const collapsed = container.dataset.sectionCollapsed === 'true' ? 'false' : 'true';
-    container.dataset.sectionCollapsed = collapsed;
-    const toggle = container.querySelector('.pulse-section-toggle');
-    if (toggle) toggle.setAttribute('aria-expanded', collapsed === 'false' ? 'true' : 'false');
-    try {
-      const saved = JSON.parse(sessionStorage.getItem(SECTION_STATE_KEY) || '{}');
-      saved[container.id] = collapsed;
-      sessionStorage.setItem(SECTION_STATE_KEY, JSON.stringify(saved));
-    } catch (_err) {
-      // Storage may be unavailable in private contexts; collapse state is non-critical.
-    }
-  }
-
-  function restoreSectionState() {
-    // A stored choice always wins; the defaults only decide what a browser that
-    // has never been told anything shows.
-    const defaults = activeDayIsLive() ? SECTION_DEFAULTS_LIVE : SECTION_DEFAULTS_QUIET;
-    try {
-      const saved = JSON.parse(sessionStorage.getItem(SECTION_STATE_KEY) || '{}');
-      SECTION_IDS.forEach(function (id) {
-        const el = document.getElementById(id);
-        if (!el || !el.hasAttribute('data-section-collapsed')) return;
-        const collapsed = Object.prototype.hasOwnProperty.call(saved, id) ? saved[id] : defaults[id];
-        el.dataset.sectionCollapsed = collapsed;
-        const toggle = el.querySelector('.pulse-section-toggle');
-        if (toggle) toggle.setAttribute('aria-expanded', collapsed === 'false' ? 'true' : 'false');
-      });
-    } catch (_err) {
-      // Storage may be unavailable in private contexts; collapse state is non-critical.
-    }
-  }
-
   function closest(target, selector) {
     return target && typeof target.closest === 'function' ? target.closest(selector) : null;
   }
 
   function handleDashboardClick(event) {
     const target = event.target;
+    const tab = closest(target, '[data-account-tab]');
+    if (tab) {
+      event.preventDefault();
+      selectAccountSide(tab.dataset.accountTab, false);
+      return;
+    }
     const showAll = closest(target, '[data-activities-show-all]');
     if (showAll) {
       event.preventDefault();
       todayActivitiesExpanded = true;
       if (lastPulse) renderToday(lastPulse);
-      return;
-    }
-    const briefingToggle = closest(target, '.pulse-briefing-section-toggle');
-    if (briefingToggle) {
-      event.preventDefault();
-      toggleBriefingSection(briefingToggle.closest('.pulse-briefing-section'));
-      return;
-    }
-    const briefingHeader = closest(target, '.pulse-briefing-header');
-    if (briefingHeader) {
-      event.preventDefault();
-      toggleBriefingCard();
-      return;
-    }
-    const yesterdayHeader = closest(target, '.pulse-yesterday-header');
-    if (yesterdayHeader) {
-      event.preventDefault();
-      toggleYesterdayCard();
-      return;
-    }
-    const sectionToggle = closest(target, '.pulse-section-toggle');
-    if (sectionToggle) {
-      event.preventDefault();
-      toggleSection(sectionToggle.parentElement);
-      return;
-    }
-    const needsYouEl = closest(target, '[data-needs-you-item]');
-    if (needsYouEl) {
-      event.preventDefault();
-      try {
-        dispatchNeedsYouItem(JSON.parse(needsYouEl.dataset.needsYouItem || '{}'));
-      } catch (error) {
-        logError(error, 'home: needs-you parse');
-      }
       return;
     }
     const speechRetry = closest(target, '[data-speech-retry]');
@@ -1868,62 +1720,19 @@
     }
   }
 
+  // The day switch is a tab list: arrow keys, Home and End move the selection.
   function handleDashboardKeydown(event) {
-    if (event.key !== 'Enter' && event.key !== ' ') return;
-    const target = event.target;
-    const showAll = closest(target, '[data-activities-show-all]');
-    if (showAll) {
-      event.preventDefault();
-      todayActivitiesExpanded = true;
-      if (lastPulse) renderToday(lastPulse);
-      return;
-    }
-    const briefingToggle = closest(target, '.pulse-briefing-section-toggle');
-    if (briefingToggle) {
-      event.preventDefault();
-      toggleBriefingSection(briefingToggle.closest('.pulse-briefing-section'));
-      return;
-    }
-    const briefingHeader = closest(target, '.pulse-briefing-header');
-    if (briefingHeader) {
-      event.preventDefault();
-      toggleBriefingCard();
-      return;
-    }
-    const yesterdayHeader = closest(target, '.pulse-yesterday-header');
-    if (yesterdayHeader) {
-      event.preventDefault();
-      toggleYesterdayCard();
-      return;
-    }
-    const sectionToggle = closest(target, '.pulse-section-toggle');
-    if (sectionToggle) {
-      event.preventDefault();
-      toggleSection(sectionToggle.parentElement);
-      return;
-    }
-    const needsYouEl = closest(target, '[data-needs-you-item]');
-    if (needsYouEl) {
-      event.preventDefault();
-      try {
-        dispatchNeedsYouItem(JSON.parse(needsYouEl.dataset.needsYouItem || '{}'));
-      } catch (error) {
-        logError(error, 'home: needs-you parse');
-      }
-      return;
-    }
-    const speechRetry = closest(target, '[data-speech-retry]');
-    if (speechRetry) {
-      event.preventDefault();
-      handleSpeechRetry(speechRetry);
-      return;
-    }
-    const copyCmd = closest(target, '[data-copy-agent-command]');
-    if (copyCmd) {
-      event.preventDefault();
-      handleCopyAgentCommand(copyCmd);
-      return;
-    }
+    const tab = closest(event.target, '[data-account-tab]');
+    if (!tab) return;
+    const index = ACCOUNT_SIDES.indexOf(tab.dataset.accountTab);
+    let next = null;
+    if (event.key === 'ArrowRight' || event.key === 'ArrowDown') next = ACCOUNT_SIDES[(index + 1) % ACCOUNT_SIDES.length];
+    else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') next = ACCOUNT_SIDES[(index + ACCOUNT_SIDES.length - 1) % ACCOUNT_SIDES.length];
+    else if (event.key === 'Home') next = ACCOUNT_SIDES[0];
+    else if (event.key === 'End') next = ACCOUNT_SIDES[ACCOUNT_SIDES.length - 1];
+    if (!next) return;
+    event.preventDefault();
+    selectAccountSide(next, true);
   }
 
   function wireInteractions() {
@@ -2028,23 +1837,34 @@
       }
       return;
     }
+    // The originals page is the originals list alone; it reads nothing else
+    // home reads.
+    if (pathname.startsWith(ORIGINALS_PAGE)) {
+      surface.innerHTML = '';
+      return;
+    }
+    isFirstPage = true;
     wireInteractions();
     wireRealtime();
     loadPulse();
     readFirstMinutes();
     readAgents();
+    readOriginalsTotal();
   }
 
   document.addEventListener('visibilitychange', function () {
-    if (!firstMinutesClosed) {
+    if (isFirstPage && !firstMinutesClosed) {
       readAgents();
     }
   });
 
-  window.toggleBriefingCard = toggleBriefingCard;
-  window.toggleYesterdayCard = toggleYesterdayCard;
-  window.toggleBriefingSection = toggleBriefingSection;
-  window.toggleSection = toggleSection;
+  // Back from the originals page can restore this page from the browser's
+  // cache without mounting it again, so read the total once more.
+  window.addEventListener('pageshow', function (event) {
+    if (isFirstPage && event && event.persisted) readOriginalsTotal();
+  });
+
+  window.selectAccountSide = selectAccountSide;
 
   document.addEventListener('workspace:mounted', function (event) {
     if (event?.detail?.appName !== 'home') return;
