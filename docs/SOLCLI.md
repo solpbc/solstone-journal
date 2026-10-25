@@ -495,12 +495,12 @@ not the codebase. See [APPS.md](APPS.md).
 | App | Source | Commands |
 |-----|--------|----------|
 | `activities` | `core/native-sol/apps/activities/native/authority.toml` | list, get, create, update, mute, unmute |
-| `entities` | `core/native-sol/apps/entities/native/authority.toml` | list, move, detect, attach, update, aka, record-merge-candidate, merge-candidates, accept-merge-candidate, dismiss-merge-candidate, merge, ambiguities, resolve-ambiguity, entity-history, restore-version, network, history, overview, observations, observe, search |
-| `speakers` | `core/native-sol/apps/speakers/native/authority.toml` | list, show, detect-owner, confirm-owner, clusters, suggest |
-| `transcripts` | `core/native-sol/apps/transcripts/native/authority.toml` | list, read, segments |
-| `settings` | `core/native-sol/apps/settings/native/authority.toml` | personal service keys (show/set/delete). Thinking provider selection lives in the Thinking app; local provider install lives at `solstone journal install-provider local`. |
+| `entities` | `core/native-sol/apps/entities/native/authority.toml` | list, move, detect, attach, update, aka, record-merge-candidate, merge-candidates, accept-merge-candidate, dismiss-merge-candidate, merge, ambiguities, resolve-ambiguity, resolve-ambiguity-group, entity-history, restore-version, network, history, overview, observations, observe, search, review, restore-review, sweep-review |
+| `speakers` | `core/native-sol/apps/speakers/native/authority.toml` | status, owner-ready, detect, tag-owner, confirm-owner, reject-owner, rebuild-owner, identify, identify-operation, identify-operations, identify-undo, suggest, discover, presence, sentences, day-segments, attribute-segment, correct, propagate-correction, merge-names, resolve-names, keep-separate-list, dismiss-cluster, dismissals, bootstrap, build-from-tags, seed-from-imports, link-import, backfill, backfill-status, backfill-resume, backfill-last-seen, repair, repair-status, repair-resume, wipe |
+| `transcripts` | `core/native-sol/apps/transcripts/native/authority.toml` | scan, read, segments, speakers, stats |
+| `settings` | `core/native-sol/apps/settings/native/authority.toml` | show, keys (show/set/clear/validate), identity (show/set), processing (show/set), transcribe (show/set-backend), convey status. Thinking provider selection lives in the Thinking app; local provider install lives at `solstone journal install-provider local`. |
 | `awareness` | `core/native-sol/apps/awareness/native/authority.toml` | status, imports, log, log-read |
-| `link` | `core/native-sol/apps/network/native/authority.toml` | authorized-clients, list, observer-pause, pair, private-link (disable/setup/status), set-label, status, unpair |
+| `link` | `core/native-sol/apps/network/native/authority.toml` | authorized-clients, list, local-network (close/open/status), observer-pause, pair, private-link (disable/setup/status), set-label, status, unpair |
 | `journal` | `core/native-sol/think/tools/native/journal/authority.toml` | agents, facet (create/delete/mute/rename/show/unmute/update), facets, import, imports, read, retention (config/list), search, storage-summary |
 
 `solstone call link set-label <cid> [--label <label>] [--clear]` sets or clears the journal owner override label for a paired device. Native `solstone link` publishes the caller device's description on usable bridge startup and reconnect transitions (`set_bound_port`, `carrier_open_succeeded`) without a continuous hostname watcher.
