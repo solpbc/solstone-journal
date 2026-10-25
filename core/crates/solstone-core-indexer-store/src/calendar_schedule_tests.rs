@@ -42,7 +42,8 @@ impl Journal {
         fs::create_dir_all(root.join("config")).unwrap();
         fs::write(
             root.join("config/journal.json"),
-            json!({"identity": {"timezone": "America/Denver"}}).to_string(),
+            json!({"identity": {"timezone": "America/Denver", "email_addresses": ["owner@example.com"]}})
+                .to_string(),
         )
         .unwrap();
         fs::create_dir_all(root.join("streams")).unwrap();
@@ -393,5 +394,38 @@ fn rebuilding_the_edges_keeps_the_people_links() {
     journal.people();
     journal.save("20261019", "094200_300", &meeting(json!({})));
     rebuild_edges(journal.path()).unwrap();
+    assert_eq!(journal.links(), [link("alex_rivera", "design review")]);
+}
+
+#[test]
+fn on_a_shared_calendar_the_owner_is_found_by_address_not_by_the_phones_mark() {
+    let journal = Journal::new();
+    journal.people();
+    // The phone marks the calendar's owner, Alex, as you; the journal's owner
+    // is an unmarked invitee who declined.
+    journal.save(
+        "20261019",
+        "094200_300",
+        &meeting(json!({"organizer": null, "attendees": [
+            attendee(Some("Alex Rivera"), Some("alex@example.com"), "accepted", true),
+            attendee(None, Some("owner@example.com"), "declined", false),
+        ]})),
+    );
+    assert!(scheduled_on_day(journal.path(), "20261027").unwrap()[0].declined);
+    assert!(journal.links().is_empty());
+
+    // Accepted instead: Alex is on the meeting's people, the owner is not.
+    let journal = Journal::new();
+    journal.people();
+    journal.save(
+        "20261019",
+        "094200_300",
+        &meeting(json!({"organizer": null, "attendees": [
+            attendee(Some("Alex Rivera"), Some("alex@example.com"), "accepted", true),
+            attendee(None, Some("owner@example.com"), "accepted", false),
+        ]})),
+    );
+    let events = scheduled_on_day(journal.path(), "20261027").unwrap();
+    assert!(!events[0].declined);
     assert_eq!(journal.links(), [link("alex_rivera", "design review")]);
 }

@@ -24,10 +24,10 @@ use std::path::Path;
 
 use chrono::{NaiveDate, NaiveDateTime, Utc};
 use chrono_tz::Tz;
-use rusqlite::{Connection, params};
+use rusqlite::{Connection, OptionalExtension, params};
 use solstone_core_format::calendar::{
-    CalendarNote, When, import_stamp, listed_days, parse_calendar_note, read_calendar_notes,
-    render_calendar_note, validate_import_calendar_file,
+    CalendarNote, OwnerAddresses, When, import_stamp, listed_days, parse_calendar_note,
+    read_calendar_notes, render_calendar_note, validate_import_calendar_file,
 };
 use solstone_core_format::segment::hour_bucket;
 
@@ -138,12 +138,13 @@ pub(crate) fn index_calendar_file(
         ));
     };
     let file_name = rel.rsplit('/').next().unwrap_or(rel);
+    let owner = owner_addresses(journal)?;
     let (notes, warnings) = read_calendar_notes(text);
     for (line, note) in notes {
         let line = line as i64;
         let rowid = insert_chunk(
             conn,
-            &render_calendar_note(&note),
+            &render_calendar_note(&note, &owner),
             rel,
             day,
             stream,
@@ -497,6 +498,58 @@ pub(crate) fn listing_zone(journal: &Path) -> Result<Tz, StoreError> {
     )?)
 }
 
+/// The owner's own addresses, from `identity.email_addresses` in the journal
+/// settings. None are set when the settings file is absent; only a settings
+/// file that cannot be read is an error.
+pub(crate) fn owner_addresses(journal: &Path) -> Result<OwnerAddresses, StoreError> {
+    solstone_core_entity::journal_identity_emails(journal)
+        .map(OwnerAddresses::new)
+        .map_err(|error| {
+            StoreError::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                error.to_string(),
+            ))
+        })
+}
+
+/// The `index_meta` key holding the owner's addresses calendar text was
+/// written with.
+const OWNER_ADDRESSES_META: &str = "calendar_owner_addresses";
+
+/// Which attendee is "you" in calendar text, and who is left off an event's
+/// people, follows the owner's addresses. When they differ from the ones the
+/// index was written with, or the index predates this mark, every calendar
+/// file is left for this scan to index again, and the mark moves on. An
+/// unreadable settings file leaves everything as it is.
+pub(crate) fn reindex_calendar_if_owner_changed(
+    conn: &Connection,
+    journal: &Path,
+) -> Result<bool, StoreError> {
+    let Ok(owner) = owner_addresses(journal) else {
+        return Ok(false);
+    };
+    let stamp = owner.stamp();
+    let written: Option<String> = conn
+        .query_row(
+            "SELECT value FROM index_meta WHERE key=?",
+            [OWNER_ADDRESSES_META],
+            |row| row.get(0),
+        )
+        .optional()?;
+    if written.as_deref() == Some(stamp.as_str()) {
+        return Ok(false);
+    }
+    conn.execute(
+        "UPDATE files SET mtime=-1 WHERE path IN (SELECT DISTINCT path FROM calendar_notes)",
+        [],
+    )?;
+    conn.execute(
+        "REPLACE INTO index_meta(key, value) VALUES (?, ?)",
+        params![OWNER_ADDRESSES_META, stamp],
+    )?;
+    Ok(true)
+}
+
 /// What a relist leaves for its caller.
 #[derive(Debug, Default)]
 pub(crate) struct Relisted {
@@ -536,6 +589,7 @@ pub(crate) fn relist(
 ) -> Result<Relisted, StoreError> {
     let mut relisted = Relisted::default();
     let mut zone: Option<Result<Tz, String>> = None;
+    let mut owner_read: Option<Result<OwnerAddresses, String>> = None;
     let mut event_covers: BTreeMap<String, EventImports> = BTreeMap::new();
     for (event, occurrence) in identities {
         if !event_covers.contains_key(event) {
@@ -561,6 +615,23 @@ pub(crate) fn relist(
         };
         // The rows the winner should have, worked out before any change.
         let mut wanted: Option<(String, String, CalendarNote, Vec<WantedRow>, bool)> = None;
+        // Who is "you" in the text needs the settings file too: unreadable,
+        // the rows stand and the file waits for the next scan, as for the zone.
+        let owner = match (
+            &winner,
+            &*owner_read
+                .get_or_insert_with(|| owner_addresses(journal).map_err(|error| error.to_string())),
+        ) {
+            (_, Ok(owner)) => owner,
+            (Some((path, ..)), Err(error)) => {
+                relisted.warnings.push(format!(
+                    "calendar event in {path} is listed once the settings file can be read: {error}"
+                ));
+                relisted.reindex.insert(path.clone());
+                continue;
+            }
+            (None, Err(_)) => &OwnerAddresses::NONE,
+        };
         if let Some((path, line, record, stream)) = winner {
             match parse_calendar_note(&record) {
                 Err(reason) => relisted
@@ -662,7 +733,7 @@ pub(crate) fn relist(
         let Some((path, stream, note, rows, continues)) = wanted else {
             continue;
         };
-        let content = render_calendar_note(&note);
+        let content = render_calendar_note(&note, owner);
         for (idx, day, bucket) in rows {
             let rowid = insert_chunk(conn, &content, &path, &day, &stream, idx, &bucket)?;
             record_hit(conn, rowid, &path, idx, "latest", &note, continues)?;

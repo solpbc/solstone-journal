@@ -553,6 +553,15 @@ fn scan_journal_pass(
     let mut report = ScanReport::default();
     let files = discover_indexable_files(journal)?;
 
+    // Calendar text names the owner by their addresses, so new addresses mean
+    // every calendar file is written again in this pass.
+    let tx = conn.transaction_with_behavior(TransactionBehavior::Deferred)?;
+    if crate::calendar::reindex_calendar_if_owner_changed(&tx, journal)? {
+        commit_scanned(tx, checkpoint)?;
+    } else {
+        tx.rollback()?;
+    }
+
     let db_mtimes = load_file_mtimes(&conn)?;
     let missing_memberships = missing_activity_memberships(&conn)?;
     let mut to_index = Vec::new();

@@ -1390,3 +1390,89 @@ fn an_index_made_before_imports_were_listed_gains_their_columns() {
         1
     );
 }
+
+#[test]
+fn you_follows_the_owners_addresses_and_new_addresses_rewrite_every_calendar_row() {
+    let journal = Journal::new(Some("America/Denver"));
+    journal.save("20261019", "094000_300", &[golden(0)]);
+    scan_journal(journal.path(), true).unwrap();
+    let texts = |journal: &Journal| -> Vec<String> {
+        let conn = journal.conn();
+        let mut statement = conn
+            .prepare("SELECT content FROM chunks WHERE agent='calendar' ORDER BY idx")
+            .unwrap();
+        statement
+            .query_map([], |row| row.get(0))
+            .unwrap()
+            .collect::<Result<Vec<String>, _>>()
+            .unwrap()
+    };
+    // The phone marked owner@example.com, but no addresses are set: nobody is you.
+    let before = texts(&journal);
+    assert_eq!(before.len(), 2, "one stored-day row and one listing row");
+    assert!(
+        before.iter().all(|text| !text.contains(", you")),
+        "{before:?}"
+    );
+    // Setting the owner's address rewrites both rows on the next light scan.
+    let settings = journal.path().join("config/journal.json");
+    fs::write(
+        &settings,
+        json!({"identity": {"timezone": "America/Denver", "email_addresses": [" Owner@Example.com "]}})
+            .to_string(),
+    )
+    .unwrap();
+    scan_journal(journal.path(), false).unwrap();
+    let after = texts(&journal);
+    assert_eq!(after.len(), 2);
+    assert!(
+        after
+            .iter()
+            .all(|text| text.contains("owner@example.com, you (tentative)")),
+        "{after:?}"
+    );
+    // An unchanged address leaves every file as it is.
+    assert!(!super::reindex_calendar_if_owner_changed(&journal.conn(), journal.path()).unwrap());
+    assert_eq!(
+        journal.count("SELECT count(*) FROM files WHERE mtime=-1"),
+        0
+    );
+    // An address that is not on the invite: nobody is you again.
+    fs::write(
+        &settings,
+        json!({"identity": {"timezone": "America/Denver", "email_addresses": ["someone@else.example"]}})
+            .to_string(),
+    )
+    .unwrap();
+    scan_journal(journal.path(), false).unwrap();
+    assert!(texts(&journal).iter().all(|text| !text.contains(", you")));
+}
+
+#[test]
+fn a_shared_calendars_marked_owner_is_not_you_and_the_real_owner_is() {
+    let journal = Journal::new(None);
+    fs::write(
+        journal.path().join("config/journal.json"),
+        json!({"identity": {"timezone": "America/Denver", "email_addresses": ["owner@example.com"]}})
+            .to_string(),
+    )
+    .unwrap();
+    // iOS, reading a calendar shared to the phone, marks the calendar's owner.
+    let shared = note(
+        0,
+        json!({"account": "iCloud", "attendees": [
+            {"email": "owner@example.com", "name": null, "status": "unknown", "you": false},
+            {"email": "sharer@example.com", "name": "Enoch Root", "status": "accepted", "you": true},
+        ]}),
+    );
+    journal.save("20261019", "094000_300", &[&shared]);
+    scan_journal(journal.path(), true).unwrap();
+    let listing = journal.listing();
+    assert_eq!(listing.len(), 1);
+    let text = &listing[0].4;
+    assert!(
+        text.contains("Invited: owner@example.com, you (unknown); Enoch Root (accepted)"),
+        "{text}"
+    );
+    assert!(text.contains("Calendar: Work (iCloud)"), "{text}");
+}
