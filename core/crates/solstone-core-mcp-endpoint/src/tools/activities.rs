@@ -300,25 +300,30 @@ pub(crate) fn activity_times_and_duration(
     (start, end, duration)
 }
 
-/// The people who attended an activity. A person only mentioned in it is
-/// listed by `activity_mentioned`, never here.
+/// The people who attended an activity. A person only mentioned in it, or only
+/// on screen, is listed by `activity_mentioned` or `activity_on_screen`.
 pub(crate) fn activity_participants(record: &Map<String, Value>) -> Vec<String> {
-    participation_names(record, true)
+    participation_names(record, |role| role == "attendee")
 }
 
-/// The people an activity mentions without their having attended it.
+/// The names someone said in an activity without attending it.
 pub(crate) fn activity_mentioned(record: &Map<String, Value>) -> Vec<String> {
-    participation_names(record, false)
+    participation_names(record, |role| role != "attendee" && role != "visible")
 }
 
-fn participation_names(record: &Map<String, Value>, attended: bool) -> Vec<String> {
+/// The names an activity only showed on screen: nobody said them.
+pub(crate) fn activity_on_screen(record: &Map<String, Value>) -> Vec<String> {
+    participation_names(record, |role| role == "visible")
+}
+
+fn participation_names(record: &Map<String, Value>, keep: impl Fn(&str) -> bool) -> Vec<String> {
     record
         .get("participation")
         .and_then(Value::as_array)
         .map(|arr| {
             arr.iter()
                 .filter_map(Value::as_object)
-                .filter(|p| (p.get("role").and_then(Value::as_str) == Some("attendee")) == attended)
+                .filter(|p| keep(p.get("role").and_then(Value::as_str).unwrap_or_default()))
                 .filter_map(|p| p.get("name").and_then(Value::as_str))
                 .map(str::trim)
                 .filter(|n| !n.is_empty())
@@ -645,6 +650,7 @@ pub(crate) fn execute_list(
         let (start, end, duration) = activity_times_and_duration(&item.record);
         let participants = activity_participants(&item.record);
         let mentioned = activity_mentioned(&item.record);
+        let on_screen = activity_on_screen(&item.record);
         let entities = activity_entities(&item.record);
         let title = activity_title(&item.record);
 
@@ -657,6 +663,7 @@ pub(crate) fn execute_list(
             "duration": duration,
             "participants": participants,
             "mentioned": mentioned,
+            "on_screen": on_screen,
             "entities": entities,
             "reference": reference,
             "zone": zone_str,

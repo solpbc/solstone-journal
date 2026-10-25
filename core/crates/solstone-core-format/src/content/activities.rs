@@ -44,8 +44,18 @@ pub(super) fn render(rel: Option<&str>, records: &[JsonObject]) -> ProducedChunk
         if let Some(details) = stripped_truthy_display(record, "details") {
             lines.push(format!("- Details: {details}"));
         }
-        if let Some(participation) = participation(record) {
-            lines.push(format!("- Participation: {participation}"));
+        // Who attended, whose names were said, and which names were only on
+        // screen are different claims; a row without a known role keeps the
+        // plain list.
+        for (label, role) in [
+            ("Attendees", Some("attendee")),
+            ("Mentioned", Some("mentioned")),
+            ("On screen", Some("visible")),
+            ("Participation", None),
+        ] {
+            if let Some(names) = participation(record, role) {
+                lines.push(format!("- {label}: {names}"));
+            }
         }
 
         if let Some(Value::Object(story)) = record.get("story") {
@@ -213,13 +223,21 @@ fn activity_type(record: &JsonObject) -> Option<String> {
     stripped_truthy_display(record, "activity").or_else(|| stripped_truthy_display(record, "id"))
 }
 
-fn participation(record: &JsonObject) -> Option<String> {
+fn participation(record: &JsonObject, role: Option<&str>) -> Option<String> {
+    const ROLES: [&str; 3] = ["attendee", "mentioned", "visible"];
     let Value::Array(entries) = record.get("participation")? else {
         return None;
     };
     let names: Vec<String> = entries
         .iter()
         .filter_map(Value::as_object)
+        .filter(|entry| {
+            let held = entry.get("role").and_then(Value::as_str);
+            match role {
+                Some(role) => held == Some(role),
+                None => !held.is_some_and(|held| ROLES.contains(&held)),
+            }
+        })
         .filter_map(|entry| {
             stripped_truthy_display(entry, "name")
                 .or_else(|| stripped_truthy_display(entry, "entity_id"))
@@ -306,6 +324,26 @@ mod tests {
         );
         assert_eq!(legacy(&record).len(), bytes);
         record
+    }
+
+    #[test]
+    fn participation_says_who_attended_who_was_said_and_what_was_only_on_screen() {
+        let record = object(json!({
+            "title": "Lyrics review", "activity": "reading",
+            "participation": [
+                {"name": "Mina", "role": "attendee"},
+                {"name": "Pat", "role": "mentioned"},
+                {"name": "Cifka", "role": "visible"},
+                {"name": "Suda", "role": "visible"},
+                {"name": "Ola"},
+            ],
+        }));
+        let text = rendered(&record);
+        assert!(text.contains("- Attendees: Mina\n"));
+        assert!(text.contains("- Mentioned: Pat\n"));
+        assert!(text.contains("- On screen: Cifka, Suda\n"));
+        assert!(text.contains("- Participation: Ola"));
+        assert!(!text.contains("Participation: Mina"));
     }
 
     #[test]

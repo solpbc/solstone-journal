@@ -17,7 +17,12 @@
 //! 3. One entry per name, type and source: repeats the first two rules
 //!    create, or the model wrote, are dropped.
 //!
-//! Nothing is ever dropped for being unheard; only its source changes.
+//! 4. A `mentioned` name whose source is `screen` was only seen, so its role
+//!    becomes `visible`, unless the input holds no screen at all, or a
+//!    transcript in it says the name by the same lenient check: a name both
+//!    said and shown stays `mentioned`. Attendees are left alone.
+//!
+//! Nothing is ever dropped for being unheard; only its source and role change.
 
 use crate::{JournalOwner, NamedActor, PreparedTalent};
 use serde_json::Value;
@@ -30,7 +35,7 @@ const CLOSE_ENOUGH: f64 = 75.0;
 const MIN_WORD: usize = 3;
 const FILLER: [&str; 6] = ["the", "and", "for", "inc", "llc", "app"];
 
-/// The response with grounded entity sources, or `None` when nothing changed.
+/// The response with grounded entity sources and roles, or `None` when nothing changed.
 pub(crate) fn ground(prepared: &PreparedTalent, journal: &Path, response: &str) -> Option<String> {
     if prepared.name != "sense" {
         return None;
@@ -40,8 +45,8 @@ pub(crate) fn ground(prepared: &PreparedTalent, journal: &Path, response: &str) 
     let counts = prepared.config.get("source_counts")?;
     let transcripts = counts.get("transcripts")?.as_u64()?;
     let percepts = counts.get("percepts").and_then(Value::as_u64).unwrap_or(0);
-    // Evidence and the owner are read only when rule 2 needs them: the owner
-    // means reading every entity. Either one missing changes nothing.
+    // Evidence and the owner are read only when rules 2 and 4 need them: the
+    // owner means reading every entity. Either one missing changes nothing.
     let mut evidence = None;
     let mut owner = None;
     let mut changed = false;
@@ -49,31 +54,53 @@ pub(crate) fn ground(prepared: &PreparedTalent, journal: &Path, response: &str) 
         let Some(row) = entity.as_object_mut() else {
             continue;
         };
+        let name = row
+            .get("name")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_owned();
         if !row
             .get("source")
             .and_then(Value::as_str)
             .is_some_and(|source| HEARD.contains(&source))
         {
+            if seen_only(row)
+                && if transcripts == 0 {
+                    percepts > 0
+                } else {
+                    evidence
+                        .get_or_insert_with(|| Evidence::read(prepared))
+                        .as_ref()
+                        .is_some_and(|evidence| {
+                            !evidence.shown.is_empty() && !evidence.was_heard(&name)
+                        })
+                }
+            {
+                row.insert("role".to_owned(), Value::String("visible".to_owned()));
+                changed = true;
+            }
             continue;
         }
-        let name = row.get("name").and_then(Value::as_str).unwrap_or_default();
         let grounded = if transcripts == 0 {
             Some(if percepts > 0 { "screen" } else { "other" })
         } else {
             evidence
                 .get_or_insert_with(|| Evidence::read(prepared))
                 .as_ref()
-                .filter(|evidence| !evidence.was_heard(name) && evidence.was_shown(name))
+                .filter(|evidence| !evidence.was_heard(&name) && evidence.was_shown(&name))
                 .filter(|_| {
                     owner
                         .get_or_insert_with(|| JournalOwner::load(journal).ok())
                         .as_ref()
-                        .is_some_and(|owner| !names_owner(owner, name))
+                        .is_some_and(|owner| !names_owner(owner, &name))
                 })
                 .map(|_| "screen")
         };
         if let Some(source) = grounded {
             row.insert("source".to_owned(), Value::String(source.to_owned()));
+            if seen_only(row) {
+                row.insert("role".to_owned(), Value::String("visible".to_owned()));
+            }
             changed = true;
         }
     }
@@ -89,6 +116,12 @@ pub(crate) fn ground(prepared: &PreparedTalent, journal: &Path, response: &str) 
     });
     changed |= entities.len() != before;
     changed.then(|| output.to_string())
+}
+
+/// A `mentioned` row from the screen.
+fn seen_only(row: &serde_json::Map<String, Value>) -> bool {
+    let field = |key| row.get(key).and_then(Value::as_str).unwrap_or_default();
+    field("role") == "mentioned" && field("source") == "screen"
 }
 
 /// The owner, or a shortening of one of the owner's names ("Jer", "Jeremie M").
@@ -108,9 +141,57 @@ fn names_owner(owner: &JournalOwner, name: &str) -> bool {
 
 /// What the model read, split into screen inputs and everything else.
 struct Evidence {
-    heard: String,
-    heard_words: BTreeSet<String>,
+    heard: Heard,
     shown: String,
+}
+
+/// Text that was heard, and the lenient test of whether a name was said in it.
+pub(crate) struct Heard {
+    text: String,
+    words: BTreeSet<String>,
+}
+
+impl Heard {
+    pub(crate) fn new(text: &str) -> Self {
+        let heard = words(text);
+        let mut words = heard.iter().cloned().collect::<BTreeSet<_>>();
+        words.extend(heard.windows(2).map(|pair| pair.concat()));
+        Self {
+            text: heard.concat(),
+            words,
+        }
+    }
+
+    /// The check leans toward heard: the whole name, its initials, or any
+    /// significant word spelled close enough, accents folded.
+    pub(crate) fn said(&self, name: &str) -> bool {
+        let name_words = words(name);
+        let significant = name_words
+            .iter()
+            .filter(|word| word.chars().count() >= MIN_WORD && !FILLER.contains(&word.as_str()))
+            .collect::<Vec<_>>();
+        if significant.is_empty() || self.text.contains(&name_words.concat()) {
+            return true;
+        }
+        let initials = name_words
+            .iter()
+            .filter_map(|word| word.chars().next())
+            .collect::<String>();
+        if name_words.len() > 1 && self.words.contains(&initials) {
+            return true;
+        }
+        significant.into_iter().any(|word| {
+            let length = word.chars().count();
+            self.words.contains(word)
+                || self.words.iter().any(|heard| {
+                    // Two lengths this far apart cannot score close enough.
+                    let other = heard.chars().count();
+                    2.0 * length.min(other) as f64 * 100.0 >= CLOSE_ENOUGH * (length + other) as f64
+                        && solstone_core_entity_matching::token_sort_ratio(word, heard)
+                            >= CLOSE_ENOUGH
+                })
+        })
+    }
 }
 
 impl Evidence {
@@ -149,43 +230,14 @@ impl Evidence {
             }
         }
         rest.push_str(&input[at..]);
-        let heard = words(&rest);
-        let mut heard_words = heard.iter().cloned().collect::<BTreeSet<_>>();
-        heard_words.extend(heard.windows(2).map(|pair| pair.concat()));
         Some(Self {
-            heard: heard.concat(),
-            heard_words,
+            heard: Heard::new(&rest),
             shown: shown.concat(),
         })
     }
 
     fn was_heard(&self, name: &str) -> bool {
-        let name_words = words(name);
-        let significant = name_words
-            .iter()
-            .filter(|word| word.chars().count() >= MIN_WORD && !FILLER.contains(&word.as_str()))
-            .collect::<Vec<_>>();
-        if significant.is_empty() || self.heard.contains(&name_words.concat()) {
-            return true;
-        }
-        let initials = name_words
-            .iter()
-            .filter_map(|word| word.chars().next())
-            .collect::<String>();
-        if name_words.len() > 1 && self.heard_words.contains(&initials) {
-            return true;
-        }
-        significant.into_iter().any(|word| {
-            let length = word.chars().count();
-            self.heard_words.contains(word)
-                || self.heard_words.iter().any(|heard| {
-                    // Two lengths this far apart cannot score close enough.
-                    let other = heard.chars().count();
-                    2.0 * length.min(other) as f64 * 100.0 >= CLOSE_ENOUGH * (length + other) as f64
-                        && solstone_core_entity_matching::token_sort_ratio(word, heard)
-                            >= CLOSE_ENOUGH
-                })
-        })
+        self.heard.said(name)
     }
 
     fn was_shown(&self, name: &str) -> bool {
@@ -582,5 +634,134 @@ mod tests {
         assert_eq!(output["entities"][0]["source"], "voice");
         assert_eq!(output["entities"][1]["source"], "screen");
         assert_eq!(output["entities"][2]["source"], "voice");
+    }
+    fn roles(prepared: &PreparedTalent, entities: Vec<Value>) -> Vec<(String, String, String)> {
+        let journal = journal();
+        let response = json!({"density":"active","entities":entities}).to_string();
+        let output = ground(prepared, journal.path(), &response).unwrap_or(response);
+        serde_json::from_str::<Value>(&output).unwrap()["entities"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|e| {
+                (
+                    e["name"].as_str().unwrap().into(),
+                    e["role"].as_str().unwrap().into(),
+                    e["source"].as_str().unwrap().into(),
+                )
+            })
+            .collect()
+    }
+
+    fn with_role(name: &str, role: &str, source: &str) -> Value {
+        json!({"type":"Person","name":name,"role":role,"source":source,"level":"low","context":"came up"})
+    }
+
+    fn triples(rows: &[(&str, &str, &str)]) -> Vec<(String, String, String)> {
+        rows.iter()
+            .map(|(a, b, c)| ((*a).into(), (*b).into(), (*c).into()))
+            .collect()
+    }
+
+    #[test]
+    fn a_name_only_on_screen_is_visible_not_mentioned() {
+        // #404 case 2: paper authors from an on-screen literature search.
+        let terminal = sense(
+            0,
+            1,
+            vec![source("tmux_1_screen.jsonl", &["Cifka and Suda, 2024"])],
+        );
+        assert_eq!(
+            roles(
+                &terminal,
+                vec![
+                    with_role("Cifka", "mentioned", "voice"),
+                    with_role("Suda", "mentioned", "screen"),
+                    with_role("Grace Hopper", "attendee", "speaker_label"),
+                ]
+            ),
+            triples(&[
+                ("Cifka", "visible", "screen"),
+                ("Suda", "visible", "screen"),
+                ("Grace Hopper", "attendee", "speaker_label"),
+            ])
+        );
+    }
+
+    #[test]
+    fn a_name_that_was_said_stays_mentioned_beside_the_screen() {
+        let mixed = sense(
+            1,
+            1,
+            vec![
+                source("audio.jsonl", &["[10:00:01] Speaker 1: Ada sent the draft"]),
+                source(
+                    "desktop_screen.jsonl",
+                    &["Ada Lovelace — draft.pdf", "Cifka et al."],
+                ),
+            ],
+        );
+        assert_eq!(
+            roles(
+                &mixed,
+                vec![
+                    with_role("Ada Lovelace", "mentioned", "voice"),
+                    with_role("Cifka", "mentioned", "transcript"),
+                ]
+            ),
+            triples(&[
+                ("Ada Lovelace", "mentioned", "voice"),
+                ("Cifka", "visible", "screen"),
+            ])
+        );
+    }
+
+    #[test]
+    fn a_screen_name_that_was_said_stays_mentioned() {
+        let mixed = sense(
+            1,
+            1,
+            vec![
+                source("audio.jsonl", &["[10:00:01] Speaker 1: ask Ada about it"]),
+                source("desktop_screen.jsonl", &["Ada", "Suda"]),
+            ],
+        );
+        assert_eq!(
+            roles(
+                &mixed,
+                vec![
+                    with_role("Ada", "mentioned", "screen"),
+                    with_role("Suda", "mentioned", "screen")
+                ]
+            ),
+            triples(&[
+                ("Ada", "mentioned", "screen"),
+                ("Suda", "visible", "screen")
+            ])
+        );
+        // Without screen input nothing is visible, whatever source the model wrote.
+        let neither = sense(0, 0, vec![]);
+        assert_eq!(
+            roles(
+                &neither,
+                vec![
+                    with_role("Ada", "mentioned", "voice"),
+                    with_role("Suda", "mentioned", "screen")
+                ]
+            ),
+            triples(&[
+                ("Ada", "mentioned", "other"),
+                ("Suda", "mentioned", "screen")
+            ])
+        );
+        let audio = sense(
+            1,
+            0,
+            vec![source("audio.jsonl", &["[10:00:01] Speaker 1: hello"])],
+        );
+        assert_eq!(
+            roles(&audio, vec![with_role("Suda", "mentioned", "screen")]),
+            triples(&[("Suda", "mentioned", "screen")])
+        );
     }
 }

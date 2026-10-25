@@ -200,7 +200,7 @@ pub(crate) fn apply_result_cancellable(
     for segment in &segments {
         sentences.extend(transcript_sentences(journal, day, segment, stream));
     }
-    for segment in segments {
+    for &segment in &segments {
         for (speaker, by_owner) in voice_labels(journal, day, segment, stream, &voices) {
             if by_owner {
                 assigned.insert(speaker.clone());
@@ -267,6 +267,44 @@ pub(crate) fn apply_result_cancellable(
             )?;
         if !corroborated {
             entry.insert("role".to_owned(), Value::String("mentioned".to_owned()));
+        }
+    }
+    // A `mentioned` name the activity only showed on screen is `visible`,
+    // decided from what the activity holds, not the model's pick.
+    let spoken = crate::sense_grounding::Heard::new(&sentences.join("\n"));
+    let shown = segments
+        .iter()
+        .any(|segment| has_screen_input(journal, day, segment, stream));
+    let sense_rows = segments
+        .iter()
+        .flat_map(|segment| sense_entity_rows(journal, day, segment, stream))
+        .collect::<Vec<_>>();
+    for entry in &mut resolved {
+        if !shown || entry.get("role").and_then(Value::as_str) != Some("mentioned") {
+            continue;
+        }
+        let name = entry
+            .get("name")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        let voiced = entry
+            .get("entity_id")
+            .and_then(Value::as_str)
+            .is_some_and(|id| attributed.contains(id));
+        // With no speech in the activity nothing was heard, whatever older
+        // Sense called it. With speech, Sense must have seen it and nobody said it.
+        let only_seen = sentences.is_empty()
+            || (!voiced
+                && !spoken.said(name)
+                && !sense_rows
+                    .iter()
+                    .any(|(row, heard)| *heard && same_name(row, name))
+                && sense_rows
+                    .iter()
+                    .any(|(row, heard)| !*heard && same_name(row, name)));
+        if only_seen {
+            entry.insert("role".to_owned(), Value::String("visible".to_owned()));
+            entry.insert("source".to_owned(), Value::String("screen".to_owned()));
         }
     }
     let mut patch = Map::from_iter([(
@@ -360,6 +398,54 @@ fn meeting_detected(
     segment_talent_json(journal, day, segment, stream, "sense.json")
         .and_then(|value| value.get("meeting_detected").and_then(Value::as_bool))
         .unwrap_or(false)
+}
+
+/// Whether a segment holds screen input: a screen or terminal recording.
+fn has_screen_input(
+    journal: &std::path::Path,
+    day: &str,
+    segment: &str,
+    stream: Option<&str>,
+) -> bool {
+    find_segment_dir(journal, day, segment, stream)
+        .and_then(|directory| fs::read_dir(directory).ok())
+        .is_some_and(|entries| {
+            entries
+                .filter_map(Result::ok)
+                .filter_map(|entry| entry.file_name().into_string().ok())
+                .any(|name| name.ends_with("screen.jsonl"))
+        })
+}
+
+/// A segment's Sense entity names, each with whether it was heard. A row is
+/// seen when Sense called it `visible`, or, in Sense written before `visible`
+/// existed, `mentioned` from the screen.
+fn sense_entity_rows(
+    journal: &std::path::Path,
+    day: &str,
+    segment: &str,
+    stream: Option<&str>,
+) -> Vec<(String, bool)> {
+    segment_talent_json(journal, day, segment, stream, "sense.json")
+        .and_then(|sense| sense.get("entities").and_then(Value::as_array).cloned())
+        .into_iter()
+        .flatten()
+        .filter_map(|row| {
+            let name = row.get("name").and_then(Value::as_str)?.trim().to_owned();
+            let role = row.get("role").and_then(Value::as_str).unwrap_or_default();
+            let source = row
+                .get("source")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            let seen = role == "visible" || (role == "mentioned" && source == "screen");
+            (!name.is_empty()).then_some((name, !seen))
+        })
+        .collect()
+}
+
+fn same_name(left: &str, right: &str) -> bool {
+    let fold = |name: &str| crate::fold_name(name);
+    fold(left) == fold(right)
 }
 
 /// The voice of each line in a segment that a voice match or the owner's own
@@ -1153,5 +1239,140 @@ mod tests {
 
         assert_eq!(entry["entity_id"], "tool");
         assert_eq!(entry["role"], "attendee");
+    }
+    fn apply_all(root: &Path, entries: Value) -> Vec<(String, String, String)> {
+        apply_result(
+            root,
+            &json!({"participation":entries}).to_string(),
+            FACET,
+            &solstone_core_facets::observe_facet_write_identity(root, FACET).unwrap(),
+            DAY,
+            &activity(),
+        )
+        .expect("participation applies");
+        let activity_path = root.join(format!("facets/{FACET}/activities/{DAY}.jsonl"));
+        let activity: Value = serde_json::from_str(
+            fs::read_to_string(activity_path)
+                .unwrap()
+                .lines()
+                .next()
+                .unwrap(),
+        )
+        .unwrap();
+        activity["participation"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|e| {
+                (
+                    e["name"].as_str().unwrap().to_owned(),
+                    e["role"].as_str().unwrap().to_owned(),
+                    e["source"].as_str().unwrap().to_owned(),
+                )
+            })
+            .collect()
+    }
+
+    fn write_sense_entities(root: &Path, meeting: bool, entities: Value) {
+        write_json(
+            &root.join(format!("chronicle/{DAY}/{SEGMENT}/talents/sense.json")),
+            json!({"meeting_detected":meeting,"entities":entities}),
+        );
+    }
+
+    fn write_screen(root: &Path) {
+        fs::write(
+            root.join(format!("chronicle/{DAY}/{SEGMENT}/tmux_1_screen.jsonl")),
+            "{}\n",
+        )
+        .unwrap();
+    }
+
+    fn row(name: &str, role: &str, source: &str) -> Value {
+        json!({"name":name,"role":role,"source":source,"confidence":0.7,"context":"","entity_id":null})
+    }
+
+    fn owned(rows: &[(&str, &str, &str)]) -> Vec<(String, String, String)> {
+        rows.iter()
+            .map(|(a, b, c)| ((*a).to_owned(), (*b).to_owned(), (*c).to_owned()))
+            .collect()
+    }
+
+    #[test]
+    fn names_an_activity_only_showed_on_screen_are_visible() {
+        // #404 case 2: authors from an on-screen literature search, listed as mentioned.
+        let root = tempfile::tempdir().unwrap();
+        write_participation_fixture(root.path(), json!({}), json!({}));
+        write_screen(root.path());
+        // Sense written before `visible` existed, a screen name mislabelled as heard.
+        write_sense_entities(
+            root.path(),
+            false,
+            json!([
+                {"name":"Cifka","role":"mentioned","source":"voice"},
+                {"name":"Suda","role":"visible","source":"screen"}
+            ]),
+        );
+        assert_eq!(
+            apply_all(
+                root.path(),
+                json!([
+                    row("Cifka", "mentioned", "voice"),
+                    row("Suda", "mentioned", "screen")
+                ])
+            ),
+            owned(&[
+                ("Cifka", "visible", "screen"),
+                ("Suda", "visible", "screen")
+            ])
+        );
+    }
+
+    #[test]
+    fn a_name_that_was_said_stays_mentioned_beside_a_screen() {
+        let root = tempfile::tempdir().unwrap();
+        write_participation_fixture(root.path(), json!({}), json!({}));
+        write_transcript(root.path(), &["Ada said the draft is ready."]);
+        write_screen(root.path());
+        write_sense_entities(
+            root.path(),
+            false,
+            json!([
+                {"name":"Ada Lovelace","role":"mentioned","source":"voice"},
+                {"name":"Cifka","role":"visible","source":"screen"}
+            ]),
+        );
+        assert_eq!(
+            apply_all(
+                root.path(),
+                json!([
+                    row("Ada Lovelace", "mentioned", "voice"),
+                    row("Cifka", "mentioned", "transcript"),
+                    row("Grace Hopper", "mentioned", "transcript")
+                ])
+            ),
+            owned(&[
+                ("Ada Lovelace", "mentioned", "voice"),
+                ("Cifka", "visible", "screen"),
+                // Neither said nor seen by Sense: the model's call stands.
+                ("Grace Hopper", "mentioned", "transcript"),
+            ])
+        );
+    }
+
+    #[test]
+    fn without_a_screen_nothing_is_visible() {
+        let root = tempfile::tempdir().unwrap();
+        write_participation_fixture(root.path(), json!({}), json!({}));
+        write_transcript(root.path(), &["Ada called about the orchard."]);
+        write_sense_entities(
+            root.path(),
+            false,
+            json!([{"name":"Atlas","role":"mentioned","source":"screen"}]),
+        );
+        assert_eq!(
+            apply_all(root.path(), json!([row("Atlas", "mentioned", "screen")])),
+            owned(&[("Atlas", "mentioned", "screen")])
+        );
     }
 }
