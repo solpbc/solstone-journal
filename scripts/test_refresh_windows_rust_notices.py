@@ -179,6 +179,71 @@ class ExistingDependencyEdges(unittest.TestCase):
         )
 
 
+    def test_workspace_edge_to_the_moved_git_package_is_the_same_package(self):
+        git_old = "git+https://example.invalid/spl?tag=v1#" + "a" * 40
+        git_new = "git+https://example.invalid/spl?tag=v2#" + "b" * 40
+        self.old["package"].append(package("spl-core", source=git_old))
+        self.new["package"].append(package("spl-core", source=git_new))
+        # app also gains an ordinary workspace edge, so its edges are compared
+        # by identity (the shape solstone-core took at spl-rust v0.12.0).
+        self.old["package"][0]["dependencies"] = ["digest", "spl-core"]
+        self.new["package"][0]["dependencies"] = ["indexer", "digest", "spl-core"]
+        self.new["package"][0]["version"] = "2.0.0"
+        moved = {("spl-core", "1.0.0", git_old): ("spl-core", "1.0.0", git_new)}
+        # Without the proven move the edge reads as one to a package that vanished.
+        with self.assertRaisesRegex(refresh.RefreshError, "changed beyond"):
+            refresh.workspace_version_or_existing_dependency_edge_delta(
+                self.old, self.new, external_unchanged=False
+            )
+        self.assertEqual(
+            refresh.workspace_version_or_existing_dependency_edge_delta(
+                self.old, self.new, external_unchanged=False, moved_git=moved
+            ),
+            ["app", "indexer"],
+        )
+        # An existing crate that newly takes an edge to the moved package's new pin.
+        gained = copy.deepcopy(self.new)
+        gained["package"][1]["dependencies"] = ["digest", "spl-core"]
+        self.assertEqual(
+            refresh.workspace_version_or_existing_dependency_edge_delta(
+                self.old, gained, external_unchanged=False, moved_git=moved
+            ),
+            ["app", "indexer"],
+        )
+        with self.assertRaisesRegex(refresh.RefreshError, "changed beyond"):
+            refresh.workspace_version_or_existing_dependency_edge_delta(
+                self.old, gained, external_unchanged=False
+            )
+        # The move maps only its own pair: an edge to some other git package still refuses.
+        other = "git+https://example.invalid/other?tag=v1#" + "c" * 40
+        self.new["package"].append(package("other", source=other))
+        self.new["package"][0]["dependencies"] = ["indexer", "digest", "spl-core", "other"]
+        with self.assertRaisesRegex(refresh.RefreshError, "changed beyond"):
+            refresh.workspace_version_or_existing_dependency_edge_delta(
+                self.old, self.new, external_unchanged=False, moved_git=moved
+            )
+
+    def test_added_workspace_crate_may_depend_on_the_moved_git_package(self):
+        git_old = "git+https://example.invalid/spl?tag=v1#" + "a" * 40
+        git_new = "git+https://example.invalid/spl?tag=v2#" + "b" * 40
+        self.old["package"].append(package("spl-core", source=git_old))
+        self.new["package"].append(package("spl-core", source=git_new))
+        self.new["package"].append(package("linker", dependencies=["spl-core"]))
+        moved = {("spl-core", "1.0.0", git_old): ("spl-core", "1.0.0", git_new)}
+        declared = frozenset({"app", "indexer", "linker"})
+        with self.assertRaisesRegex(refresh.RefreshError, "added workspace crate"):
+            refresh.workspace_version_or_existing_dependency_edge_delta(
+                self.old, self.new, external_unchanged=False, declared_workspace=declared
+            )
+        self.assertEqual(
+            refresh.workspace_version_or_existing_dependency_edge_delta(
+                self.old, self.new, external_unchanged=False,
+                declared_workspace=declared, moved_git=moved,
+            ),
+            ["added:linker", "indexer"],
+        )
+
+
 class ExternalPopulationDigest(unittest.TestCase):
     def test_order_independent(self):
         a = [package("digest", source=SOURCE), package("indexer", version="2.0.0", source=SOURCE)]
@@ -246,6 +311,70 @@ class GitPinVendorDelta(unittest.TestCase):
         fresh = {self.prefix + "src/lib.rs"}
         with self.assertRaisesRegex(refresh.RefreshError, "moved package prefix"):
             refresh.admit_git_pin_vendor_delta(prior, fresh, (self.prefix,))
+
+    def substitutions(self, fresh_digest_manifest, removed_prefixes):
+        """Run build_git_substitutions over a tiny prior archive and vendor tree.
+
+        The prior archive carries the moved git package, a removed registry
+        package and a surviving registry package whose checksum manifest was
+        written in the licence-identical upgrade's sorted-key form.
+        """
+        moved = "vendor/spl-core-0.1.0/"
+        prior = {
+            moved + "src/lib.rs": b"old\n",
+            "vendor/p256-0.13.2/src/lib.rs": b"p256\n",
+            "vendor/digest-1.0.0/src/lib.rs": b"digest\n",
+            "vendor/digest-1.0.0/.cargo-checksum.json": json.dumps(
+                {"files": {"src/lib.rs": "d" * 64}, "package": "c" * 64}, sort_keys=True
+            ).encode(),
+        }
+        fresh = dict(prior)
+        del fresh["vendor/p256-0.13.2/src/lib.rs"]
+        fresh[moved + "src/lib.rs"] = b"new\n"
+        fresh["vendor/digest-1.0.0/.cargo-checksum.json"] = fresh_digest_manifest
+        old_source = "git+https://example.invalid/spl?tag=v1#" + "a" * 40
+        new_source = "git+https://example.invalid/spl?tag=v2#" + "b" * 40
+        moved_git = [(package("spl-core", "0.1.0", old_source), package("spl-core", "0.1.0", new_source))]
+        with tempfile.TemporaryDirectory() as scratch:
+            archive = Path(scratch) / "prior.tar.gz"
+            with tarfile.open(archive, "w:gz") as tar:
+                for name, data in prior.items():
+                    info = tarfile.TarInfo(name)
+                    info.size = len(data)
+                    tar.addfile(info, io.BytesIO(data))
+            vendor = Path(scratch) / "vendor"
+            for name, data in fresh.items():
+                path = vendor / name.removeprefix("vendor/")
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(data)
+            with patch.object(refresh, "verify_vendored_against_checkout"), patch.object(
+                refresh, "git_source_substitutions", return_value={}
+            ):
+                return refresh.build_git_substitutions(
+                    Path(scratch), archive, moved_git, {}, vendor, [], removed_prefixes
+                )
+
+    def compact(self, files_digest):
+        return json.dumps(
+            {"$comment": "cargo vendor", "files": {"src/lib.rs": files_digest}, "package": "c" * 64},
+            separators=(",", ":"),
+        ).encode()
+
+    def test_removed_registry_prefix_is_excluded_and_reformatted_manifest_keeps_prior_bytes(self):
+        removed = ("vendor/p256-0.13.2/",)
+        self.assertEqual(
+            self.substitutions(self.compact("d" * 64), removed),
+            {"vendor/spl-core-0.1.0/src/lib.rs": b"new\n"},
+        )
+        # Without the removal named, the vanished member refuses as before.
+        with self.assertRaisesRegex(refresh.RefreshError, "moved package prefix"):
+            self.substitutions(self.compact("d" * 64), ())
+        # A manifest that attests different bytes is a change outside the move.
+        with self.assertRaisesRegex(refresh.RefreshError, "outside the packages whose pin moved"):
+            self.substitutions(self.compact("e" * 64), removed)
+        with self.assertRaisesRegex(refresh.RefreshError, "no files map"):
+            self.substitutions(b'{"package": null}', removed)
+
 
 class SourceOfferArchive(unittest.TestCase):
     def test_checkout_git_metadata_is_not_archived(self):
@@ -846,6 +975,29 @@ class RegistryRemoval(unittest.TestCase):
             refresh.removed_index_identities(
                 index, [self.removed("padding")], frozenset({self.padding}), {"a" * 64, "b" * 64}
             )
+
+    def test_named_orphaned_notice_text_may_leave_and_only_by_name(self):
+        index = self.index()
+        index["path_dependencies"] = []
+        texts = {"a" * 64, "b" * 64}
+        row = [self.removed("padding")]
+        lost = frozenset({self.padding})
+        self.assertEqual(
+            refresh.removed_index_identities(index, row, lost, texts, frozenset({"b" * 64})),
+            {self.padding},
+        )
+        with self.assertRaisesRegex(refresh.RefreshError, "not orphaned"):
+            refresh.removed_index_identities(
+                index, row, lost, texts, frozenset({"a" * 64, "b" * 64})
+            )
+        index["path_dependencies"] = self.index()["path_dependencies"]
+        with self.assertRaisesRegex(refresh.RefreshError, "not orphaned"):
+            refresh.removed_index_identities(index, row, lost, texts, frozenset({"b" * 64}))
+
+    def test_text_removal_operand_must_be_a_digest(self):
+        self.assertEqual(refresh.parse_text_removals(["b" * 64]), frozenset({"b" * 64}))
+        with self.assertRaises(SystemExit):
+            refresh.parse_text_removals(["B" * 64])
 
     def test_population_flag_must_match_the_recovered_closure(self):
         with self.assertRaisesRegex(refresh.RefreshError, "population flag"):
