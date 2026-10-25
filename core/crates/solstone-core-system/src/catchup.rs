@@ -1489,6 +1489,20 @@ mod tests {
         }
     }
 
+    /// Yesterday in the fixture journal's owner zone: a closed day inside the
+    /// contract re-owe window, where a changed contract must make it owed again.
+    /// A fixed date ages out of that window, and older days keep their result.
+    fn closed_day_inside_reowe_window(journal: &Path) -> String {
+        let today = chrono::NaiveDate::parse_from_str(
+            &crate::daily_coverage::local_day(journal, chrono::Utc::now()),
+            "%Y%m%d",
+        )
+        .unwrap();
+        (today - chrono::Duration::days(1))
+            .format("%Y%m%d")
+            .to_string()
+    }
+
     fn accepted_embedded_daily(bed: &Bed, day: &str) -> (PathBuf, PathBuf, String) {
         use solstone_core_journal_io::{
             AcceptedDailyResult, DailyUnitRecord, DailyUnitStatus, save_daily_unit_record,
@@ -1554,7 +1568,6 @@ mod tests {
 
     #[test]
     fn embedded_daily_outcome_uses_current_declared_payload_instead_of_desktop_roots() {
-        let day = "20261017";
         for case in [
             "current",
             "missing-root",
@@ -1564,6 +1577,8 @@ mod tests {
             "changed-raw",
         ] {
             let bed = Bed::new(&format!("embedded-outcome-{case}"));
+            let day = closed_day_inside_reowe_window(&bed.root);
+            let day = day.as_str();
             let (talent, apps, fingerprint) = accepted_embedded_daily(&bed, day);
             record_daily_catchup_attempt(&bed.root, day, "embedded", 10.0, 2, &fingerprint);
             match case {
@@ -1621,7 +1636,6 @@ mod tests {
 
     #[test]
     fn embedded_startup_recovers_only_proven_inactive_zero_exit_errors() {
-        let day = "20261017";
         for case in [
             "current",
             "missing-root",
@@ -1633,6 +1647,8 @@ mod tests {
             "cancelled",
         ] {
             let bed = Bed::new(&format!("embedded-stale-{case}"));
+            let day = closed_day_inside_reowe_window(&bed.root);
+            let day = day.as_str();
             let (talent, mut apps, fingerprint) = accepted_embedded_daily(&bed, day);
             record_daily_catchup_attempt(&bed.root, day, "embedded", 10.0, 2, &fingerprint);
             // The desktop reader cannot certify this distinct embedded contract.
