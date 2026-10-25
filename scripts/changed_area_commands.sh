@@ -27,16 +27,31 @@ for package in $changed; do
 	done
 done
 
-if [ -z "$packages" ]; then
+# Talent payload and fixture files sit outside core/crates, but the served-byte
+# contracts pin them: convey-shell's convey_route_contracts and thinking_corpus,
+# and solstone-core's core_journal_contracts. A change to them owes those suites.
+data=$( { git diff --no-renames --name-only "$base" -- core/payload core/fixtures tests/fixtures; git ls-files --others --exclude-standard -- core/payload core/fixtures tests/fixtures; } 2>/dev/null)
+consumers=""
+if [ -n "$data" ]; then
+	for package in solstone-core-convey-shell solstone-core; do
+		case " $packages " in
+		*" $package "*) ;;
+		*) consumers="$consumers $package" ;;
+		esac
+	done
+fi
+
+if [ -z "$packages$consumers" ]; then
 	say "Changed-area commands: no workspace package changed against origin/main."
 	exit 0
 fi
 
 say "Changed-area commands for the packages this tree changes against origin/main (make ci ran none of these):"
-say "  cargo clippy --manifest-path core/Cargo.toml$(for p in $packages; do printf ' -p %s' "$p"; done)${features:+ --features $features} --all-targets --locked -- -D warnings"
+[ -n "$consumers" ] && say "  (payload or fixture files changed, so the served-byte contract packages are included:$consumers)"
+[ -n "$packages" ] && say "  cargo clippy --manifest-path core/Cargo.toml$(for p in $packages; do printf ' -p %s' "$p"; done)${features:+ --features $features} --all-targets --locked -- -D warnings"
 case " $packages " in
-*" solstone-core-repository-contracts "*) suites="$packages" ;;
-*) suites="$packages solstone-core-repository-contracts" ;;
+*" solstone-core-repository-contracts "*) suites="$packages$consumers" ;;
+*) suites="$packages$consumers solstone-core-repository-contracts" ;;
 esac
 if [ -n "${HOPPER_LID:-}" ]; then
 	say "  (ci-full is not supported inside this automated build; run the scoped ci-full after landing)"
