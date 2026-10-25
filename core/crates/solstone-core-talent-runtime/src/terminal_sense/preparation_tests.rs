@@ -112,6 +112,24 @@ fn native_loaded_source_bytes_and_identities_qualify_only_when_they_match() {
     assert!(prepare(&wrong, &context).is_none());
 }
 #[test]
+fn the_anchored_schema_is_one_every_structured_output_provider_accepts() {
+    let (_root, paths, context, request) = setup(&display());
+    let p = crate::prepare::prepare(
+        request,
+        &paths,
+        &context,
+        crate::prepare::PrepareMode::Preview,
+    )
+    .unwrap();
+    let candidate = p.terminal_sense.expect("anchored candidate");
+    assert!(candidate.anchored());
+    let schema = candidate.request.json_schema.as_ref().unwrap();
+    assert_eq!(
+        solstone_core_generate_wire::anthropic_schema_violations(schema),
+        Vec::<String>::new()
+    );
+}
+#[test]
 fn unsupported_ui_styles_read_the_timeline_without_an_anchor() {
     for text in [
         display().replace("❯ Is", "❯ \x1b[2mIs"),

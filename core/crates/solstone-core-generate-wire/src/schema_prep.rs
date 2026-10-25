@@ -55,7 +55,51 @@ const ANTHROPIC_UNSUPPORTED: &[&str] = &[
 pub fn prepare_provider_schema(schema: Option<&Value>, provider: &str) -> Option<Value> {
     let mut reduced = schema.cloned()?;
     strip_unsupported(&mut reduced, provider_keywords(provider));
+    if provider == "anthropic" {
+        null_enums_to_any_of(&mut reduced);
+    }
     Some(reduced)
+}
+
+/// Anthropic structured output rejects a null inside an enum ("Enum value None does not
+/// match declared type", measured 2026-10-25), while OpenAI and Google enforce that form.
+/// The same constraint goes to Anthropic as a non-null branch and a null branch.
+fn null_enums_to_any_of(node: &mut Value) {
+    match node {
+        Value::Object(object) => {
+            for child in object.values_mut() {
+                null_enums_to_any_of(child);
+            }
+            let Some(Value::Array(values)) = object.get("enum") else {
+                return;
+            };
+            if !values.contains(&Value::Null) {
+                return;
+            }
+            let mut branch = object.clone();
+            branch.insert(
+                "enum".to_owned(),
+                Value::Array(values.iter().filter(|v| !v.is_null()).cloned().collect()),
+            );
+            match branch.get("type").cloned() {
+                Some(Value::Array(kinds)) => {
+                    let kinds: Vec<Value> = kinds.into_iter().filter(|k| k != "null").collect();
+                    let kinds = match kinds.as_slice() {
+                        [single] => single.clone(),
+                        _ => Value::Array(kinds),
+                    };
+                    branch.insert("type".to_owned(), kinds);
+                }
+                Some(Value::String(kind)) if kind == "null" => {
+                    branch.remove("type");
+                }
+                _ => {}
+            }
+            *node = serde_json::json!({"anyOf": [Value::Object(branch), {"type": "null"}]});
+        }
+        Value::Array(items) => items.iter_mut().for_each(null_enums_to_any_of),
+        _ => {}
+    }
 }
 
 fn provider_keywords(provider: &str) -> &'static [&'static str] {
@@ -117,6 +161,15 @@ fn collect_anthropic_violations(node: &Value, at: &str, violations: &mut Vec<Str
                 "{at}/{key}: not measured accepted by structured output"
             ));
         }
+    }
+    if object
+        .get("enum")
+        .and_then(Value::as_array)
+        .is_some_and(|values| values.contains(&Value::Null))
+    {
+        violations.push(format!(
+            "{at}/enum: a null enum value is rejected; use anyOf with a null branch"
+        ));
     }
     let is_object = match object.get("type") {
         Some(Value::String(kind)) => kind == "object",
@@ -314,6 +367,28 @@ mod tests {
             "outside Anthropic structured output:\n{}",
             violations.join("\n")
         );
+    }
+
+    #[test]
+    fn anthropic_gets_a_null_enum_as_a_null_branch_and_others_keep_it() {
+        let schema = json!({
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["a"],
+            "properties": {"a": {"type": ["string", "null"], "enum": [null, "x"]}},
+        });
+        let reduced = prepare_provider_schema(Some(&schema), "anthropic").unwrap();
+        assert_eq!(
+            reduced["properties"]["a"],
+            json!({"anyOf": [{"type": "string", "enum": ["x"]}, {"type": "null"}]})
+        );
+        assert!(anthropic_schema_violations(&schema).is_empty());
+        for provider in ["openai", "google"] {
+            assert_eq!(
+                prepare_provider_schema(Some(&schema), provider).unwrap(),
+                schema
+            );
+        }
     }
 
     #[test]
