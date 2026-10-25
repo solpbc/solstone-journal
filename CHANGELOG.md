@@ -8,6 +8,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- when your journal has little to go on for a stretch of work, the work story for that stretch now guesses less. work stories also less often add what a session was for, how it turned out, or an app or file that nothing in your journal names.
 - on mac, local thinking now uses a runtime included with your journal. your existing setup keeps working while the new model files download. the switch waits for background thinking to finish. the journal removes the old files after the new runtime is ready.
 - when you chat with an AI assistant like ChatGPT or Claude, the screen description of that chat now nearly always includes the questions you asked, and marks which messages are yours and which are the assistant's. before, your question was often left out and the assistant's answer read like a plain web page.
 - a calendar event now says which account its calendar belongs to, such as "Home (iCloud)", once the solstone app on your phone adds it, so two calendars with the same name can be told apart. thanks @dvanduzer for the report.

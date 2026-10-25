@@ -58,7 +58,8 @@ Body requirements:
 - Credit work to whoever did it: what your agent did, say your agent did.
 - Emphasize concrete progress, investigation, blockers, and outcomes.
 - Prefer the actual work performed over UI description.
-- If evidence is partial, describe the most defensible story and keep the
-  confidence honest.
+- Write only what the source shows. When it shows little, one or two sentences is right.
+- Never fill a gap: do not name an app, file, person or tool the source does not name, and do not say what a session was for or what came of it unless the source shows it.
+- If evidence is partial, keep the confidence honest.
 
 Output a single JSON object with all four required fields: `body`, `topics`, `confidence`, and `relations`.
