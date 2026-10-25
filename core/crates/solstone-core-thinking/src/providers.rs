@@ -302,6 +302,7 @@ fn validation_request() -> GenerateRequest {
         json_schema: None,
         attempt_index: 0,
         exclusive_admission: false,
+        overflow_text: None,
         transport_retries: Some(0),
     }
 }
@@ -4452,6 +4453,7 @@ mod tests {
             json_schema: None,
             attempt_index: 0,
             exclusive_admission: false,
+            overflow_text: None,
             transport_retries: Some(0),
         }
     }
@@ -5492,6 +5494,7 @@ mod desktop_probe {
             json_schema: None,
             attempt_index: 0,
             exclusive_admission: false,
+            overflow_text: None,
             transport_retries: Some(0),
         }
     }
@@ -5680,6 +5683,7 @@ mod refresh_dispatch {
                 json_schema: None,
                 attempt_index: 0,
                 exclusive_admission: false,
+                overflow_text: None,
                 transport_retries: Some(0),
             };
             let reason = match solstone_core_generate_wire::respond(

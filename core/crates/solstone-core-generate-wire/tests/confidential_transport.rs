@@ -32,6 +32,7 @@ fn request(timeout_s: Option<f64>) -> GenerateRequest {
         json_schema: None,
         attempt_index: 0,
         exclusive_admission: false,
+        overflow_text: None,
         transport_retries: None,
     }
 }

@@ -197,6 +197,7 @@ pub fn request(
         json_schema: Some(serde_json::from_str(SCHEMA).expect("selection schema is valid JSON")),
         attempt_index: 0,
         exclusive_admission: false,
+        overflow_text: None,
         transport_retries: None,
     }
 }

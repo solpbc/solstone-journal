@@ -251,7 +251,7 @@ fn shown_text(record: &Map<String, Value>) -> Option<&str> {
 /// The source-word body this run's Story carries: only when preparation
 /// admitted one and the model read the whole request it was made from.
 fn admitted_source_body(prepared: &PreparedTalent) -> Option<&str> {
-    (prepared.config.get(INPUT_WHOLE_KEY) == Some(&Value::Bool(true)))
+    (!prepared.story_input_used && prepared.config.get(INPUT_WHOLE_KEY) == Some(&Value::Bool(true)))
         .then(|| prepared.config.get(SOURCE_BODY_KEY)?.as_str())
         .flatten()
 }
@@ -263,11 +263,19 @@ pub fn output(
     prepared: &PreparedTalent,
     state: &PrePostState,
 ) -> Result<String, StageError> {
-    if admitted_source_body(prepared).is_none() {
+    if admitted_source_body(prepared).is_none() && prepared.story_messages.is_none() {
         return Ok(response.to_owned());
     }
     match parse(response, prepared, state)? {
-        ParsedOutput::Json(value) => Ok(value.to_string()),
+        ParsedOutput::Json(mut value) => {
+            // Source-note provenance is runtime-owned journal metadata, never
+            // another model-facing Story field.
+            value
+                .as_object_mut()
+                .expect("parsed Story object")
+                .remove("_source_notes");
+            Ok(value.to_string())
+        }
         _ => Err(error(prepared, "story output is not JSON")),
     }
 }
@@ -332,8 +340,28 @@ pub fn parse(
     // topics, confidence and relations stay the model's.
     let body = admitted_source_body(prepared).map_or(body, str::to_owned);
     object.insert("body".into(), Value::String(body));
-    object.insert("topics".into(), json!(clean_topics));
+    object.insert("topics".into(), json!(&clean_topics));
     object.insert("confidence".into(), json!(clamped));
+    if let Some(supplement) = prepared.story_messages.as_ref().and_then(|candidate| {
+        candidate.supplement(object["body"].as_str().expect("Story body"), &clean_topics)
+    }) {
+        let mut proposed = object.clone();
+        proposed.insert("body".into(), Value::String(supplement.body));
+        // An owner's schema may impose a smaller bound or a body pattern.
+        // Optional notes cannot bypass the contract served to the model.
+        let valid = prepared.config.get("json_schema").is_none_or(|schema| {
+            jsonschema::validator_for(schema)
+                .is_ok_and(|validator| validator.is_valid(&Value::Object(proposed.clone())))
+        });
+        if valid {
+            *object = proposed;
+            object.insert("_source_notes".into(), supplement.provenance);
+        } else {
+            log::debug!(
+                "story message details omitted: enriched body does not satisfy the Story schema"
+            );
+        }
+    }
     Ok(ParsedOutput::Json(value))
 }
 
@@ -362,6 +390,11 @@ pub fn commit(
                 "dropped_chars": budget.get("dropped_chars").cloned().unwrap_or(Value::Null),
             }),
         );
+    }
+    if prepared.story_input_used
+        && let Some(candidate) = &prepared.story_input
+    {
+        object.insert("_input_projection".into(), candidate.metadata.clone());
     }
     let facet = required(prepared, "facet")?;
     let day = required(prepared, "day")?;
@@ -540,6 +573,18 @@ pub(crate) fn apply_story_cancellable(
     if let Some(partial) = value.get("partial_input").filter(|item| item.is_object()) {
         story["partial_input"] = partial.clone();
     }
+    // Rebuild the whole Story, including optional provenance, on every run.
+    // Suppression therefore cannot leave notes describing an older body, and
+    // the checked activity writer holds owner edits over both fields together.
+    if let Some(notes) = value.get("_source_notes").filter(|item| item.is_object()) {
+        story["source_notes"] = notes.clone();
+    }
+    if let Some(projection) = value
+        .get("_input_projection")
+        .filter(|item| item.is_object())
+    {
+        story["input_projection"] = projection.clone();
+    }
     patch.insert("story".into(), story);
     patch.insert("relations".into(), Value::Array(relations));
     solstone_core_facets::update_activity_record_checked(
@@ -656,6 +701,79 @@ mod tests {
     #[cfg(all(test, feature = "full-tests"))]
     use crate::generate_and_write;
     use std::fs;
+
+    #[test]
+    fn source_note_provenance_is_replaced_with_the_body_and_owner_held_together() {
+        let root = tempfile::tempdir().unwrap();
+        solstone_core_facets::create_facet(root.path(), "work", "Work", "", "", "", None).unwrap();
+        let row = json!({"id":"activity-1","activity":"reading","segments":["090000_300"]});
+        let _ = solstone_core_facets::append_activity_record(
+            root.path(),
+            "work",
+            "20260101",
+            row.as_object().unwrap().clone(),
+        )
+        .unwrap();
+        let destination =
+            solstone_core_facets::observe_facet_write_identity(root.path(), "work").unwrap();
+        let read = || {
+            solstone_core_facets::get_activity_record(root.path(), "work", "20260101", "activity-1")
+                .unwrap()
+                .unwrap()
+        };
+        let enriched = json!({"body":"Overview.\n\nLiteral notes.","topics":["release request"],"confidence":0.5,"relations":[],"_source_notes":{"sources":[{"sha256":"fixture"}]},"_input_projection":{"kind":"processed_segment_results"}});
+        apply_story(
+            root.path(),
+            "work",
+            "work",
+            &destination,
+            "20260101",
+            "activity-1",
+            &enriched,
+        )
+        .unwrap();
+        assert_eq!(read()["story"]["source_notes"], enriched["_source_notes"]);
+        let plain = json!({"body":"New overview.","topics":["release request"],"confidence":0.5,"relations":[]});
+        apply_story(
+            root.path(),
+            "work",
+            "work",
+            &destination,
+            "20260101",
+            "activity-1",
+            &plain,
+        )
+        .unwrap();
+        let replaced = read();
+        assert_eq!(replaced["story"]["body"], plain["body"]);
+        assert!(replaced["story"].get("source_notes").is_none());
+        assert!(replaced["story"].get("input_projection").is_none());
+
+        let held_story = json!({"body":"Owner wording.","source_notes":{"owner_note":true}});
+        solstone_core_facets::update_activity_record(
+            root.path(),
+            "work",
+            "20260101",
+            "activity-1",
+            &Map::from_iter([("story".into(), held_story.clone())]),
+            "owner:test",
+            "hold",
+            "2026-01-01T10:00:00Z",
+        )
+        .unwrap();
+        let error = apply_story(
+            root.path(),
+            "work",
+            "work",
+            &destination,
+            "20260101",
+            "activity-1",
+            &enriched,
+        )
+        .unwrap_err();
+        assert_eq!(error, "activity output is held by owner");
+        assert_eq!(read()["story"], held_story);
+    }
 
     #[test]
     fn spoken_you_rests_on_the_owners_recognized_voice() {

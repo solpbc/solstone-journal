@@ -94,6 +94,7 @@ fn cross_boundary_loopback_400_to_capped_daily_unit_with_detail() {
         json_schema: None,
         attempt_index: 0,
         exclusive_admission: false,
+        overflow_text: None,
         transport_retries: None,
     };
     let config = json!({"providers": {"local": {"served_context_window": 4096}}})

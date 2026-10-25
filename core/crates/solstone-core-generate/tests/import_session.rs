@@ -46,6 +46,7 @@ fn topics_request(text: &str) -> GenerateRequest {
         json_schema: None,
         attempt_index: 0,
         exclusive_admission: false,
+        overflow_text: None,
         transport_retries: None,
     }
 }
@@ -1236,6 +1237,7 @@ fn a_session_child_that_exited_between_calls_is_replaced_before_the_next_call() 
         json_schema: None,
         attempt_index: 0,
         exclusive_admission: false,
+        overflow_text: None,
         transport_retries: None,
     };
 

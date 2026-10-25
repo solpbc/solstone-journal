@@ -59,6 +59,7 @@ pub struct GenerateInput {
     pub default_model_id: String,
     pub platform: Platform,
     pub contents: Value,
+    pub overflow_text: Option<String>,
     pub system_instruction: Option<String>,
     pub temperature: f64,
     pub max_output_tokens: u32,
@@ -85,9 +86,15 @@ pub struct Usage {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct InputBudget {
     pub clipped: bool,
+    #[serde(skip_serializing_if = "is_false")]
+    pub used_overflow_text: bool,
     pub dropped_chars: usize,
     pub dropped_entries: usize,
     pub budget_tokens: u32,
+}
+
+fn is_false(value: &bool) -> bool {
+    !value
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -772,7 +779,7 @@ pub fn prepare_exact_text_request<F>(
     input: &GenerateInput,
     server: &ConnectedServer,
     context: ContextWindow,
-    count: F,
+    mut count: F,
 ) -> Result<PreparedRequest, GenerateError>
 where
     F: FnMut(&Value) -> Result<u32, String>,
@@ -784,7 +791,7 @@ where
         ));
     }
     let messages = build_messages(&input.contents, input.system_instruction.as_deref());
-    let body = build_request_body(
+    let mut body = build_request_body(
         &server.served_model_id,
         messages,
         input.temperature,
@@ -793,13 +800,54 @@ where
         input.json_schema.as_ref(),
         true,
     );
+    let mut input_budget = None;
+    let mut initial_input_tokens = None;
+    if let Some(text) = input.overflow_text.as_deref() {
+        let alternative = replace_first_text(&input.contents, text)?;
+        let raw_tokens = count(&body).map_err(|detail| {
+            failure_error(
+                "local_endpoint_contract_failed",
+                format!("Managed local input-token count failed: {detail}"),
+            )
+        })?;
+        initial_input_tokens = Some(raw_tokens);
+        if !full_reply_fits(raw_tokens, 0, input.max_output_tokens, context.window) {
+            body = build_request_body(
+                &server.served_model_id,
+                build_messages(&alternative, input.system_instruction.as_deref()),
+                input.temperature,
+                input.max_output_tokens,
+                input.json_output,
+                input.json_schema.as_ref(),
+                true,
+            );
+            let tokens = count(&body).map_err(|detail| {
+                failure_error(
+                    "local_endpoint_contract_failed",
+                    format!("Managed local input-token count failed: {detail}"),
+                )
+            })?;
+            if !full_reply_fits(tokens, 0, input.max_output_tokens, context.window) {
+                return Err(failure_error(
+                    "context_budget_exceeded",
+                    "Alternative local request input exceeds the full reply reservation.".into(),
+                ));
+            }
+            initial_input_tokens = Some(tokens);
+            input_budget = Some(overflow_budget(
+                None,
+                input.max_output_tokens,
+                context.window,
+            ));
+        }
+    }
     admit_and_clamp_request_body(
         body,
         AdmissionOptions {
             requested_max_output_tokens: input.max_output_tokens,
             context,
-            input_budget: None,
-            initial_input_tokens: None,
+            input_budget,
+            initial_input_tokens,
             overflow_reason_code: "context_budget_exceeded",
             overflow_detail: "Unmodified local request input exceeds the model context window.",
         },
@@ -826,11 +874,17 @@ where
         ));
     }
     let effective_window = context.window - image_tokens;
-    let (fitted_contents, input_budget) = fit_contents(
+    let fit_window = if input.overflow_text.is_some() {
+        context.window
+    } else {
+        effective_window
+    };
+    let (fitted_contents, input_budget) = fit_contents_with_overflow(
         &input.contents,
+        input.overflow_text.as_deref(),
         input.system_instruction.as_deref(),
         input.max_output_tokens,
-        effective_window,
+        fit_window,
         &mut count,
     )?;
     let messages = build_messages(&fitted_contents, input.system_instruction.as_deref());
@@ -842,6 +896,7 @@ where
         .saturating_sub(SAFETY_MARGIN_TOKENS);
     if context.window < estimated_prompt_tokens + image_tokens + SAFETY_MARGIN_TOKENS
         || room < MIN_COMPLETION_TOKENS
+        || (input.overflow_text.is_some() && room < input.max_output_tokens)
     {
         return Err(failure_error(
             "context_fitted_overflow",
@@ -878,11 +933,29 @@ fn prepare_linux_text_overflow_fallback<T: GenerateTransport>(
     context: ContextWindow,
     transport: &mut T,
 ) -> Result<PreparedRequest, GenerateError> {
+    // Exact admission already selected the alternative. A rough text counter
+    // must not reverse that decision and begin clipping the original instead.
+    let mut selected;
+    let used_overflow_text = input.overflow_text.is_some();
+    let input = if let Some(text) = input.overflow_text.as_deref() {
+        selected = input.clone();
+        selected.contents = replace_first_text(&input.contents, text)?;
+        &selected
+    } else {
+        input
+    };
     let mut effective = context;
     for attempt in 0..=LINUX_TEXT_OVERFLOW_SHRINK_ATTEMPTS {
-        let prepared = prepare_bundled_request(input, server, effective, |text| {
+        let mut prepared = prepare_bundled_request(input, server, effective, |text| {
             count_tokens(transport, &server.base_url, text, None)
         })?;
+        if used_overflow_text {
+            prepared.input_budget = Some(overflow_budget(
+                prepared.input_budget,
+                input.max_output_tokens,
+                effective.window,
+            ));
+        }
         let loud_input_tokens =
             count_input_tokens(transport, &server.base_url, &prepared.body, None).map_err(
                 |detail| {
@@ -894,8 +967,13 @@ fn prepare_linux_text_overflow_fallback<T: GenerateTransport>(
                     )
                 },
             )?;
+        let reply_reserve = if used_overflow_text {
+            input.max_output_tokens.max(MIN_COMPLETION_TOKENS)
+        } else {
+            MIN_COMPLETION_TOKENS
+        };
         let required = SAFETY_MARGIN_TOKENS
-            .checked_add(MIN_COMPLETION_TOKENS)
+            .checked_add(reply_reserve)
             .and_then(|reserve| loud_input_tokens.checked_add(reserve))
             .ok_or_else(|| {
                 failure_error(
@@ -1307,6 +1385,23 @@ pub fn fit_contents<F>(
 where
     F: FnMut(&str) -> u32,
 {
+    fit_contents_at_budget(
+        contents,
+        system_instruction,
+        compute_input_budget(max_output_tokens, window),
+        count,
+    )
+}
+
+fn fit_contents_at_budget<F>(
+    contents: &Value,
+    system_instruction: Option<&str>,
+    budget: u32,
+    count: &mut F,
+) -> Result<(Value, Option<InputBudget>), GenerateError>
+where
+    F: FnMut(&str) -> u32,
+{
     let (block, preserved, rebuild): (&str, Vec<String>, RebuildContents) = match contents {
         Value::String(block) => (
             block,
@@ -1371,7 +1466,6 @@ where
         }
         _ => return Ok((contents.clone(), None)),
     };
-    let budget = compute_input_budget(max_output_tokens, window);
     let preserved_tokens = preserved
         .iter()
         .filter(|text| !text.is_empty())
@@ -1431,11 +1525,136 @@ where
         rebuild(new_block),
         Some(InputBudget {
             clipped: true,
+            used_overflow_text: false,
             dropped_chars,
             dropped_entries,
             budget_tokens: budget,
         }),
     ))
+}
+
+/// Try the original request with its full reply reserve before replacing its
+/// first text part. Fitting and loss counts apply only to the selected text.
+pub fn fit_contents_with_overflow<F>(
+    contents: &Value,
+    overflow_text: Option<&str>,
+    system_instruction: Option<&str>,
+    max_output_tokens: u32,
+    window: u32,
+    count: &mut F,
+) -> Result<(Value, Option<InputBudget>), GenerateError>
+where
+    F: FnMut(&str) -> u32,
+{
+    let Some(text) = overflow_text else {
+        return fit_contents(
+            contents,
+            system_instruction,
+            max_output_tokens,
+            window,
+            count,
+        );
+    };
+    let alternative = replace_first_text(contents, text)?;
+    let image_tokens = ESTIMATED_IMAGE_TOKENS.saturating_mul(count_image_parts(contents));
+    let mut fits_whole = |candidate: &Value| {
+        let messages = build_messages(candidate, system_instruction);
+        full_reply_fits(
+            count(&serialized_message_text(&messages)),
+            image_tokens,
+            max_output_tokens,
+            window,
+        )
+    };
+    if fits_whole(contents) {
+        return Ok((contents.clone(), None));
+    }
+    if fits_whole(&alternative) {
+        return Ok((
+            alternative,
+            Some(overflow_budget(None, max_output_tokens, window)),
+        ));
+    }
+    let available = full_input_budget(max_output_tokens, window.saturating_sub(image_tokens));
+    let mut fit_budget = available;
+    // Entry fitting counts preserved parts separately. Recount their complete
+    // rendering too, including separators and tokenizer boundary effects.
+    for _ in 0..=LINUX_TEXT_OVERFLOW_SHRINK_ATTEMPTS {
+        let (fitted, budget) =
+            fit_contents_at_budget(&alternative, system_instruction, fit_budget, count)?;
+        let tokens = count(&serialized_message_text(&build_messages(
+            &fitted,
+            system_instruction,
+        )));
+        if tokens <= available {
+            return Ok((
+                fitted,
+                Some(overflow_budget(budget, max_output_tokens, window)),
+            ));
+        }
+        let next = fit_budget.saturating_sub(tokens - available);
+        if next == 0 || next >= fit_budget {
+            break;
+        }
+        fit_budget = next;
+    }
+    Err(failure_error(
+        "context_fitted_overflow",
+        "Alternative local request cannot retain the full reply reservation.".into(),
+    ))
+}
+
+fn full_reply_fits(prompt: u32, images: u32, reply: u32, window: u32) -> bool {
+    prompt
+        .checked_add(images)
+        .and_then(|tokens| tokens.checked_add(reply.max(MIN_COMPLETION_TOKENS)))
+        .and_then(|tokens| tokens.checked_add(SAFETY_MARGIN_TOKENS))
+        .is_some_and(|tokens| tokens <= window)
+}
+
+fn full_input_budget(reply: u32, window: u32) -> u32 {
+    window
+        .saturating_sub(reply.max(MIN_COMPLETION_TOKENS))
+        .saturating_sub(SAFETY_MARGIN_TOKENS)
+}
+
+fn overflow_budget(budget: Option<InputBudget>, reply: u32, window: u32) -> InputBudget {
+    let mut budget = budget.unwrap_or(InputBudget {
+        clipped: false,
+        used_overflow_text: false,
+        dropped_chars: 0,
+        dropped_entries: 0,
+        budget_tokens: full_input_budget(reply, window),
+    });
+    budget.used_overflow_text = true;
+    budget
+}
+
+fn replace_first_text(contents: &Value, text: &str) -> Result<Value, GenerateError> {
+    let mut alternative = contents.clone();
+    match &mut alternative {
+        Value::String(value) => *value = text.to_owned(),
+        Value::Array(parts) => match parts.first_mut() {
+            Some(Value::String(value)) => *value = text.to_owned(),
+            Some(Value::Object(part))
+                if !part.contains_key("role")
+                    && part.get("type").and_then(Value::as_str) == Some("text")
+                    && part.get("text").is_some_and(Value::is_string) =>
+            {
+                part.insert("text".to_owned(), json!(text));
+            }
+            _ => return Err(invalid_overflow_text()),
+        },
+        _ => return Err(invalid_overflow_text()),
+    }
+    Ok(alternative)
+}
+
+fn invalid_overflow_text() -> GenerateError {
+    failure_error(
+        "local_endpoint_contract_failed",
+        "overflow_text requires the first content part to be text.".into(),
+    )
 }
 
 fn resolve_context_window<T: GenerateTransport>(
@@ -2090,6 +2309,7 @@ mod tests {
             default_model_id: "default".into(),
             platform: Platform::Linux,
             contents,
+            overflow_text: None,
             system_instruction: None,
             temperature: 0.3,
             max_output_tokens: 512,
@@ -2132,6 +2352,148 @@ mod tests {
             fixture.reason_codes.get("local_endpoint_contract_failed"),
             Some(&"local_endpoint_contract_failed".into())
         );
+    }
+
+    #[test]
+    fn overflow_selection_retains_raw_whole_and_reserves_the_full_reply() {
+        let source = "x".repeat(16_000);
+        let raw = json!([source, "PROTECTED"]);
+        for (window, selected) in [(16_384, true), (32_768, false)] {
+            let (contents, budget) = fit_contents_with_overflow(
+                &raw,
+                Some("compact é"),
+                Some("SYSTEM"),
+                1_280,
+                window,
+                &mut |text: &str| text.chars().count() as u32,
+            )
+            .unwrap();
+            assert_eq!(contents[1], "PROTECTED");
+            if selected {
+                assert_eq!(contents[0], "compact é");
+                let budget = budget.unwrap();
+                assert!(budget.used_overflow_text);
+                assert!(!budget.clipped);
+                assert_eq!((budget.dropped_entries, budget.dropped_chars), (0, 0));
+            } else {
+                assert_eq!(contents, raw);
+                assert!(budget.is_none());
+            }
+        }
+        // Adjacent-entry dedup belongs to fitting; an admitted raw request
+        // must not be rewritten merely because an alternative exists.
+        let raw = json!(["## same\nvalue\n## same\nvalue\n", "PROTECTED"]);
+        let (contents, budget) = fit_contents_with_overflow(
+            &raw,
+            Some("unused"),
+            None,
+            1_280,
+            16_384,
+            &mut |text: &str| text.chars().count() as u32,
+        )
+        .unwrap();
+        assert_eq!(contents, raw);
+        assert!(budget.is_none());
+    }
+
+    #[test]
+    fn overflow_fitting_reports_only_alternative_loss_and_keeps_later_parts() {
+        let alternative = "é".repeat(20_000);
+        let raw = json!(["r".repeat(30_000), "PROTECTED"]);
+        let (contents, budget) = fit_contents_with_overflow(
+            &raw,
+            Some(&alternative),
+            None,
+            1_280,
+            16_384,
+            &mut |text: &str| text.chars().count() as u32,
+        )
+        .unwrap();
+        let budget = budget.unwrap();
+        assert!(budget.used_overflow_text && budget.clipped);
+        assert!(budget.dropped_chars > 0 && budget.dropped_chars < alternative.chars().count());
+        assert_eq!(budget.dropped_entries, 0);
+        assert_eq!(contents[1], "PROTECTED");
+        assert!(contents[0].as_str().unwrap().contains('é'));
+        let old_budget = InputBudget {
+            clipped: true,
+            used_overflow_text: false,
+            dropped_chars: 2,
+            dropped_entries: 1,
+            budget_tokens: 100,
+        };
+        assert!(
+            serde_json::to_value(old_budget)
+                .unwrap()
+                .get("used_overflow_text")
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn overflow_fitting_keeps_full_reply_above_the_old_quarter_reserve() {
+        let mut request = input(json!(["r".repeat(6_000), "PROTECTED"]));
+        request.overflow_text = Some("é".repeat(5_000));
+        request.max_output_tokens = 1_280;
+        let prepared = prepare_bundled_request(
+            &request,
+            &server(),
+            ContextWindow {
+                window: 2_048,
+                slots: 1,
+            },
+            |text| text.chars().count() as u32,
+        )
+        .unwrap();
+        let budget = prepared.input_budget.unwrap();
+        assert!(budget.used_overflow_text && budget.clipped);
+        assert_eq!(prepared.body["max_tokens"], 1_280);
+        assert!(
+            prepared.request_budget.estimated_prompt_tokens + 1_280 + SAFETY_MARGIN_TOKENS <= 2_048
+        );
+        let shown = prepared.body["messages"][0]["content"].as_str().unwrap();
+        assert!(shown.contains('é') && shown.ends_with("\nPROTECTED"));
+        assert!(shown.contains(TRUNCATION_MARKER));
+    }
+
+    #[test]
+    fn exact_overflow_selection_uses_native_counts_before_output_clamping() {
+        let mut input = input(json!(["RAW", "PROTECTED"]));
+        input.system_instruction = Some("SYSTEM".into());
+        input.overflow_text = Some("COMPACT".into());
+        input.max_output_tokens = 1_280;
+        for (window, expected, count_calls) in [
+            (16_384, "COMPACT\nPROTECTED", 2),
+            (32_768, "RAW\nPROTECTED", 1),
+        ] {
+            let mut calls = 0;
+            let prepared = prepare_exact_text_request(
+                &input,
+                &server(),
+                ContextWindow { window, slots: 1 },
+                |body| {
+                    calls += 1;
+                    assert_eq!(body["messages"][0]["content"], "SYSTEM");
+                    assert_eq!(body["max_tokens"], 1_280);
+                    Ok(if body["messages"][1]["content"] == "RAW\nPROTECTED" {
+                        15_000
+                    } else {
+                        100
+                    })
+                },
+            )
+            .unwrap();
+            assert_eq!(calls, count_calls);
+            assert_eq!(prepared.body["messages"][1]["content"], expected);
+            assert_eq!(prepared.body["max_tokens"], 1_280);
+            assert_eq!(
+                prepared
+                    .input_budget
+                    .as_ref()
+                    .is_some_and(|budget| budget.used_overflow_text),
+                window == 16_384
+            );
+        }
     }
 
     #[test]
@@ -2994,6 +3356,49 @@ mod tests {
         );
         assert_eq!(transport.completion_posts, 0);
         assert_eq!(transport.tokenize_posts, 0);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_compact_undercount_shrinks_input_instead_of_the_full_reply() {
+        let mut transport = ScriptedTransport::new([ok_http(json!({
+            "choices": [{"message": {"content": "compact response"}, "finish_reason": "stop"}]
+        }))]);
+        transport.tokenize_divisor = Some(4);
+        transport.input_token_queue = std::collections::VecDeque::from([
+            15_384, // Raw cannot retain 1280 reply tokens.
+            15_384, // Whole compact cannot retain them either.
+            15_000, // Fitted compact fits a minimum reply, but not 1280.
+            14_000, // Shrunk compact now retains the full reply.
+        ]);
+        let root = tempfile::tempdir().expect("journal");
+        let mut request = input(json!([
+            format!("RAW_SENTINEL{}", "r1".repeat(32_000)),
+            "PROTECTED"
+        ]));
+        request.overflow_text = Some(format!("COMPACT_SENTINEL{}", "c1".repeat(32_000)));
+        request.journal_path = root.path().display().to_string();
+        request.max_output_tokens = 1_280;
+        let result = generate_with(request, &mut transport, |_| ConnectOutcome::Ready {
+            server: server(),
+        });
+        let GenerateResult::Success(success) = result else {
+            panic!("{result:?}");
+        };
+        assert_eq!(transport.completion_posts, 1);
+        assert_eq!(transport.count_posts, 4);
+        let budget = success.input_budget.unwrap();
+        assert!(budget.used_overflow_text && budget.clipped);
+        assert!(budget.dropped_chars > 0);
+        assert_eq!(success.request_budget.estimated_prompt_tokens, 14_000);
+        assert_eq!(success.request_budget.clamped_max_tokens, 1_280);
+        let body = &transport.completion_bodies[0];
+        assert_eq!(body["max_tokens"], 1_280);
+        let shown = body["messages"][0]["content"].as_str().unwrap();
+        assert!(shown.contains(TRUNCATION_MARKER));
+        assert!(shown.contains("c1"));
+        assert!(!shown.contains("RAW_SENTINEL"));
+        assert!(shown.ends_with("\nPROTECTED"));
     }
 
     #[cfg(target_os = "linux")]

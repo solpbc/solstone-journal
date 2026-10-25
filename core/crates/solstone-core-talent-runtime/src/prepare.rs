@@ -302,6 +302,13 @@ pub fn prepare(
     }
     crate::product_names::prepare(&name, &mut composed, &entry_sources);
     let mut prepared = PreparedTalent::new(name, composed);
+    if prepared.name == "work" {
+        prepared.entry_sources = std::mem::take(&mut entry_sources);
+        prepared.story_input = crate::story_input::prepare(&context.journal, &prepared.config)
+            .map_err(PrepareFailure::Refusal)?;
+        prepared.story_messages =
+            crate::story_messages::Candidate::prepare(&prepared.entry_sources, &prepared.config);
+    }
     if prepared.name == "sense" {
         // The packaged talent as installed, before any owner override.
         let stock_file = std::fs::read_to_string(paths.talent_root.join("sense.md")).ok();

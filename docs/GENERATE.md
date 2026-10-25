@@ -72,6 +72,15 @@ reads that file. ⛔ **No implementation holds its own copy of any vocabulary.**
   headroom and fit the request to the served context window.
 - **`contents`** — non-empty array of parts. A `text` part carries `text`; an `image` part carries
   `mime_type` and base64 `data`. Unknown part types are refused.
+- **`overflow_text`** — optional replacement for the first text part, supplied
+  by a caller with a smaller source representation. Local admission selects it
+  only when the original input cannot fit with the full requested reply and
+  safety allowance. All other parts and the system instruction stay unchanged.
+  Selection happens before clipping, including on an effective-window refit.
+  `input_budget.used_overflow_text` reports selection independently of
+  `input_budget.clipped`. The alternative may itself need fitting. Cloud API
+  lanes keep the original contents. An absent or null value preserves existing
+  behavior. See [Work inputs](STORY_INPUTS.md) for the first caller.
   🔴 **Owner media travels inline, over the pipe, and is never written to a temp file.** The obvious
   alternative — hand the child a path — is what the speaker-analysis boundary does for bulk audio, and
   it puts an owner's frames at rest outside the journal, outside retention, with a cleanup step that a

@@ -42,6 +42,7 @@ fn bound_rejection_composition_posts_retained_bytes_after_correction() {
             json_schema: None,
             attempt_index: 0,
             exclusive_admission: false,
+            overflow_text: None,
             transport_retries: Some(0),
         };
         let result = solstone_core_generate_wire::respond(
@@ -258,6 +259,7 @@ fn owner_correction_keeps_the_unprocessed_segment() {
                 json_schema: None,
                 attempt_index: 0,
                 exclusive_admission: false,
+                overflow_text: None,
                 transport_retries: Some(0),
             };
             let result = solstone_core_generate_wire::respond(
@@ -288,6 +290,7 @@ fn owner_correction_keeps_the_unprocessed_segment() {
             json_schema: None,
             attempt_index: 0,
             exclusive_admission: false,
+            overflow_text: None,
             transport_retries: Some(0),
         };
         let result = solstone_core_generate_wire::respond(

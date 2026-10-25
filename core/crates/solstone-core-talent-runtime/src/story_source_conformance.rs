@@ -320,6 +320,85 @@ fn request_texts(request: &GenerateRequest) -> Vec<&str> {
         .collect()
 }
 
+fn minimal_source_word_task() -> (
+    Map<String, Value>,
+    Vec<Option<solstone_core_transcripts::EntrySource>>,
+) {
+    let record = json!({"start":"00:00:01","speaker":1,"text":"The request remains pending."})
+        .as_object()
+        .unwrap()
+        .clone();
+    let chunk = "[00:00:01] Speaker 1: The request remains pending.".to_owned();
+    let source = solstone_core_transcripts::EntrySource {
+        path: "/invented/chronicle/20260101/desktop/090000_300/audio.jsonl".into(),
+        sha256: "invented-source-snapshot".into(),
+        rendered_range: 0..chunk.len(),
+        stream: Some("desktop".into()),
+        file: "audio.jsonl".into(),
+        records: vec![record.clone()],
+        unparsed_lines: 0,
+        chunks: vec![(chunk.clone(), record)],
+        chunk_offsets: vec![0],
+        voice_named: Default::default(),
+    };
+    let config =
+        json!({"name":"work","transcript":chunk,"user_instruction":"Summarize this source.",
+        "hook":{"post":"story"},"activity":{"id":"invented-activity"}})
+        .as_object()
+        .unwrap()
+        .clone();
+    (config, vec![Some(source)])
+}
+
+#[test]
+fn protected_activity_context_disqualifies_the_minimal_source_word_task() {
+    let (mut config, sources) = minimal_source_word_task();
+    // Activity identity alone does not revoke the existing measured capability.
+    let source_body = crate::story::source_body("work", &config, &sources).unwrap();
+    assert!(source_body.contains("The request remains pending."));
+    config.insert(
+        "prompt".into(),
+        json!("Additional protected activity context."),
+    );
+    assert!(crate::story::source_body("work", &config, &sources).is_none());
+}
+
+#[test]
+fn processed_source_selection_never_admits_a_raw_source_word_body() {
+    use crate::contract::{ParsedOutput, PrePostState};
+    let (mut config, sources) = minimal_source_word_task();
+    let source_body = crate::story::source_body("work", &config, &sources).unwrap();
+    config.insert(crate::story::SOURCE_BODY_KEY.into(), json!(source_body));
+    let mut prepared = crate::PreparedTalent::new("work".into(), config);
+    let response =
+        json!({"body":"The ordinary model account.","topics":[],"confidence":0.5,"relations":[]})
+            .to_string();
+    crate::record_input_budget(&mut prepared, Some(&json!({"clipped":false})));
+    let ParsedOutput::Json(raw) =
+        crate::story::parse(&response, &prepared, &PrePostState::None).unwrap()
+    else {
+        panic!("JSON Story expected")
+    };
+    assert_eq!(raw["body"], source_body);
+
+    crate::record_input_budget(
+        &mut prepared,
+        Some(&json!({"clipped":false,"used_overflow_text":true})),
+    );
+    assert_eq!(prepared.config[crate::story::INPUT_WHOLE_KEY], true);
+    assert!(prepared.story_input_used);
+    let ParsedOutput::Json(processed) =
+        crate::story::parse(&response, &prepared, &PrePostState::None).unwrap()
+    else {
+        panic!("JSON Story expected")
+    };
+    assert_eq!(processed["body"], "The ordinary model account.");
+    assert_eq!(
+        crate::story::output(&response, &prepared, &PrePostState::None).unwrap(),
+        response
+    );
+}
+
 #[test]
 fn a_request_added_instruction_reaches_the_model_and_keeps_its_body() {
     let instruction = "Write the body as a short account in your own words, without quotations.";

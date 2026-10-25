@@ -470,6 +470,7 @@ mod tests {
             json_schema: None,
             attempt_index: 0,
             exclusive_admission: false,
+            overflow_text: None,
             transport_retries: Some(0),
         }
     }
@@ -489,6 +490,7 @@ mod tests {
             json_schema: None,
             attempt_index: 0,
             exclusive_admission: false,
+            overflow_text: None,
             transport_retries: Some(0),
         }
     }
@@ -1472,6 +1474,7 @@ mod loopback {
             json_schema: None,
             attempt_index: 0,
             exclusive_admission: false,
+            overflow_text: None,
             transport_retries: Some(0),
         }
     }
@@ -1491,6 +1494,7 @@ mod loopback {
             json_schema: None,
             attempt_index: 0,
             exclusive_admission: false,
+            overflow_text: None,
             transport_retries: Some(0),
         }
     }

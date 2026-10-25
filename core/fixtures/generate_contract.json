@@ -486,7 +486,7 @@
     "response": 0
   },
   "fixture": "solstone-generate-contract",
-  "fixture_version": 7,
+  "fixture_version": 8,
   "framing": {
     "one_shot": {
       "id": "optional",
@@ -890,6 +890,7 @@
       "json_output": false,
       "json_schema": null,
       "max_output_tokens": 16384,
+      "overflow_text": null,
       "system_instruction": null,
       "temperature": 0.3,
       "timeout_s": null,
@@ -900,6 +901,7 @@
       "id",
       "context",
       "contents",
+      "overflow_text",
       "system_instruction",
       "temperature",
       "max_output_tokens",

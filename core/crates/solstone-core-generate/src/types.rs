@@ -18,6 +18,9 @@ pub struct GenerateRequest {
     pub id: Option<String>,
     pub context: String,
     pub contents: Vec<ContentPart>,
+    /// Alternative for the first text part, used only by input-fitting lanes
+    /// when the original request cannot retain the declared output reserve.
+    pub overflow_text: Option<String>,
     pub system_instruction: Option<String>,
     pub temperature: f64,
     pub max_output_tokens: u64,

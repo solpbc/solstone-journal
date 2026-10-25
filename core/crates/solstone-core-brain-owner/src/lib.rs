@@ -1163,6 +1163,7 @@ fn generate_component(
         json_schema: None,
         attempt_index: 0,
         exclusive_admission: false,
+        overflow_text: None,
         transport_retries: Some(0),
     };
     let cancellation = Cancellation::from_fn(cancelled);
@@ -3169,6 +3170,7 @@ mod tests {
                 json_schema: None,
                 attempt_index: 0,
                 exclusive_admission: false,
+                overflow_text: None,
                 transport_retries: Some(0),
             };
 
@@ -3394,6 +3396,7 @@ mod tests {
                 json_schema: None,
                 attempt_index: 0,
                 exclusive_admission: false,
+                overflow_text: None,
                 transport_retries: Some(0),
             };
             for file_config in [&a, &b, &a] {

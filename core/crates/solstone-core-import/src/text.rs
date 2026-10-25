@@ -1133,6 +1133,7 @@ fn tile_context(
             .expect("vendored transcript schema is valid JSON"),
         attempt_index: 0,
         exclusive_admission: false,
+        overflow_text: None,
         transport_retries: None,
     };
     match wire.execute(&request) {

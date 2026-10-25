@@ -101,6 +101,7 @@ pub fn encode_one_shot_request(request: &GenerateRequest) -> Result<String, Stri
     if request.contents.is_empty() {
         return Err("contents must be non-empty".to_owned());
     }
+    validate_overflow_text(&request.contents, request.overflow_text.as_deref())?;
     let contents = request
         .contents
         .iter()
@@ -111,7 +112,7 @@ pub fn encode_one_shot_request(request: &GenerateRequest) -> Result<String, Stri
             }
         })
         .collect::<Vec<_>>();
-    serde_json::to_string(&json!({
+    let mut value = json!({
         "schema": schema("request"),
         "id": request.id,
         "context": request.context,
@@ -125,8 +126,11 @@ pub fn encode_one_shot_request(request: &GenerateRequest) -> Result<String, Stri
         "attempt_index": request.attempt_index,
         "exclusive_admission": request.exclusive_admission,
         "transport_retries": request.transport_retries,
-    }))
-    .map_err(|error| error.to_string())
+    });
+    if let Some(text) = &request.overflow_text {
+        value["overflow_text"] = json!(text);
+    }
+    serde_json::to_string(&value).map_err(|error| error.to_string())
 }
 
 pub fn decode_one_shot_request(input: &str) -> Result<GenerateRequest, String> {
@@ -159,10 +163,14 @@ pub fn decode_one_shot_request(input: &str) -> Result<GenerateRequest, String> {
     if contents.is_empty() {
         return Err("contents must be non-empty".to_owned());
     }
+    let overflow_text =
+        optional_string_value(value_or_default(&object, "overflow_text"), "overflow_text")?;
+    validate_overflow_text(&contents, overflow_text.as_deref())?;
     Ok(GenerateRequest {
         id: optional_string(&object, "id")?,
         context: string(&object, "context")?,
         contents,
+        overflow_text,
         system_instruction: optional_string_value(
             value_or_default(&object, "system_instruction"),
             "system_instruction",
@@ -193,6 +201,13 @@ pub fn decode_one_shot_request(input: &str) -> Result<GenerateRequest, String> {
             "transport_retries",
         )?,
     })
+}
+
+fn validate_overflow_text(contents: &[ContentPart], overflow: Option<&str>) -> Result<(), String> {
+    if overflow.is_some() && !matches!(contents.first(), Some(ContentPart::Text { .. })) {
+        return Err("overflow_text requires the first content part to be text".to_owned());
+    }
+    Ok(())
 }
 
 pub fn decode_one_shot_response(input: &str) -> Result<GenerateResponse, String> {
@@ -448,6 +463,7 @@ mod tests {
             json_schema: None,
             attempt_index: 0,
             exclusive_admission: false,
+            overflow_text: None,
             transport_retries: None,
         }
     }
@@ -473,6 +489,37 @@ mod tests {
     }
 
     #[test]
+    fn overflow_text_roundtrips_both_framings_and_preserves_default_wire() {
+        let mut original = request(Some("overflow"));
+        let old_wire = encode_one_shot_request(&original).unwrap();
+        assert!(!old_wire.contains("overflow_text"));
+        let mut explicit_null: Value = serde_json::from_str(&old_wire).unwrap();
+        explicit_null["overflow_text"] = Value::Null;
+        assert_eq!(
+            decode_one_shot_request(&explicit_null.to_string()).unwrap(),
+            original
+        );
+        original.overflow_text = Some("compact é evidence".into());
+        let wire = encode_one_shot_request(&original).unwrap();
+        assert_eq!(decode_one_shot_request(&wire).unwrap(), original);
+        let line = encode_session_request_line(&original).unwrap();
+        assert_eq!(decode_session_request_line(&line).unwrap(), original);
+        for invalid in [json!([]), json!({"text":"bad"}), json!(1), json!(true)] {
+            let mut value: Value = serde_json::from_str(&wire).unwrap();
+            value["overflow_text"] = invalid;
+            assert!(decode_one_shot_request(&value.to_string()).is_err());
+        }
+        original.contents = vec![ContentPart::Image {
+            mime_type: "image/png".into(),
+            data: "data".into(),
+        }];
+        assert!(encode_one_shot_request(&original).is_err());
+        let mut value: Value = serde_json::from_str(&wire).unwrap();
+        value["contents"] = json!([{"type":"image","mime_type":"image/png","data":"data"}]);
+        assert!(decode_one_shot_request(&value.to_string()).is_err());
+    }
+
+    #[test]
     fn request_decoder_applies_fixture_defaults() {
         let request = decode_one_shot_request(
             &json!({
@@ -484,6 +531,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(request.id, None);
+        assert_eq!(request.overflow_text, None);
         assert_eq!(request.system_instruction, None);
         assert_eq!(request.temperature, 0.3);
         assert_eq!(request.max_output_tokens, 16_384);

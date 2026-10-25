@@ -5934,6 +5934,7 @@ dependencies = [
  "solstone-core-talent-config",
  "solstone-core-tokens",
  "solstone-core-transcripts",
+ "unicode-general-category",
  "unicode-normalization",
 ]
 

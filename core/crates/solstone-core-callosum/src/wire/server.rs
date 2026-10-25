@@ -998,6 +998,7 @@ mod windows_native_tests {
                 default_model_id: "local/qwen3.5-4b".into(),
                 platform: Platform::Windows,
                 contents: serde_json::json!("hello"),
+                overflow_text: None,
                 system_instruction: None,
                 temperature: 0.3,
                 max_output_tokens: 32,

@@ -6664,6 +6664,7 @@ dependencies = [
  "solstone-core-tokens",
  "solstone-core-transcripts",
  "tempfile",
+ "unicode-general-category",
  "unicode-normalization",
  "zip",
 ]

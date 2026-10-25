@@ -39,6 +39,8 @@ mod sense_grounding;
 pub mod source_passages;
 pub mod speaker_attribution;
 pub mod story;
+mod story_input;
+mod story_messages;
 #[cfg(test)]
 mod story_source_conformance;
 mod terminal_sense;
@@ -92,6 +94,9 @@ pub struct PreparedTalent {
     pub(crate) entry_sources: Vec<Option<solstone_core_transcripts::EntrySource>>,
     pub(crate) stock_task: Option<StockTask>,
     pub(crate) terminal_sense: Option<terminal_sense::Candidate>,
+    pub(crate) story_input: Option<story_input::Candidate>,
+    pub(crate) story_messages: Option<story_messages::Candidate>,
+    pub(crate) story_input_used: bool,
     /// Set only by a stage's prompt override; a request cannot supply it.
     pub(crate) framed_request: Option<FramedRequest>,
 }
@@ -104,6 +109,9 @@ impl PreparedTalent {
             entry_sources: Vec::new(),
             stock_task: None,
             terminal_sense: None,
+            story_input: None,
+            story_messages: None,
+            story_input_used: false,
             framed_request: None,
         }
     }
@@ -1091,6 +1099,24 @@ fn generate_response(
 /// Keep that fact beside the output so a writer can say its result is partial.
 /// Only the fitter drops input, and it reports every drop.
 pub(crate) fn record_input_budget(prepared: &mut PreparedTalent, budget: Option<&Value>) {
+    prepared.story_input_used = budget
+        .and_then(|budget| budget.get("used_overflow_text"))
+        .and_then(Value::as_bool)
+        == Some(true);
+    if prepared.story_input_used
+        && let Some(candidate) = &prepared.story_input
+    {
+        match &candidate.product_spelling_view {
+            Some(view) => {
+                prepared
+                    .config
+                    .insert(product_names::VIEW_KEY.into(), view.clone());
+            }
+            None => {
+                prepared.config.remove(product_names::VIEW_KEY);
+            }
+        }
+    }
     let clipped = budget.map(|budget| budget.get("clipped").and_then(Value::as_bool));
     if let (Some(budget), Some(Some(true))) = (budget, clipped) {
         prepared
@@ -1110,6 +1136,7 @@ fn native_generate_response(
 ) -> Result<GeneratedTalentResponse, RuntimeOutcome> {
     let _ = prepared.config.remove(INPUT_BUDGET_KEY);
     let _ = prepared.config.remove(story::INPUT_WHOLE_KEY);
+    prepared.story_input_used = false;
     if let Some(event) = product_names::event(&prepared.config) {
         emit(writer, event);
     }
@@ -1157,13 +1184,24 @@ fn native_generate_response(
                             validation: response.schema_validation.clone().unwrap_or(Value::Null),
                         });
                     }
+                    record_input_budget(prepared, response.input_budget.as_ref());
+                    if prepared.story_input_used
+                        && let Some(candidate) = &prepared.story_input
+                    {
+                        emit(
+                            writer,
+                            json!({"event":"story_input","projection":candidate.metadata}),
+                        );
+                        if let Some(event) = product_names::event(&prepared.config) {
+                            emit(writer, event);
+                        }
+                    }
                     let text = verified_product_quotes(prepared, &response.text, writer)?;
                     let usage = if response.usage.is_null() {
                         None
                     } else {
                         Some(Box::new(response.usage.clone()))
                     };
-                    record_input_budget(prepared, response.input_budget.as_ref());
                     Ok((text, usage, None))
                 }
                 GenerateResponse::Refused(response) => Err(RuntimeOutcome::GenerateRefused {
@@ -1632,6 +1670,10 @@ fn native_generate_request(prepared: &PreparedTalent) -> Result<GenerateRequest,
         id: None,
         context: prepared.name.clone(),
         contents,
+        overflow_text: prepared
+            .story_input
+            .as_ref()
+            .map(|candidate| candidate.model_transcript().to_owned()),
         system_instruction,
         temperature: prepared
             .config

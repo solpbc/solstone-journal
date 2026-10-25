@@ -47,6 +47,7 @@ pub fn bundled_input(
         default_model_id: LOCAL_MODEL_ID.to_owned(),
         platform,
         contents: crate::request::local_contents(request),
+        overflow_text: request.overflow_text.clone(),
         system_instruction: request.system_instruction.clone(),
         temperature: request.temperature,
         max_output_tokens: u32::try_from(request.max_output_tokens)
@@ -101,6 +102,7 @@ mod tests {
             json_schema: Some(json!({"type": "object"})),
             attempt_index: 2,
             exclusive_admission: true,
+            overflow_text: None,
             transport_retries: None,
         }
     }
@@ -257,6 +259,7 @@ mod tests {
             json_schema,
             attempt_index: 0,
             exclusive_admission: false,
+            overflow_text: None,
             transport_retries: None,
         }
     }

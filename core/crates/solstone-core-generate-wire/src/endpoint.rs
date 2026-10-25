@@ -17,8 +17,8 @@ use solstone_core_local::admission::{
 };
 use solstone_core_local::{
     ByoEndpoint, HttpResponse, InputBudget, RequestBudget, Usage, build_messages,
-    build_request_body, count_image_parts, fit_contents, parse_response, serialized_message_text,
-    served_window_from_models_response,
+    build_request_body, count_image_parts, fit_contents_with_overflow, parse_response,
+    serialized_message_text, served_window_from_models_response,
 };
 use solstone_core_spp_ratls::AttestationStateStore;
 
@@ -491,8 +491,9 @@ fn prepare_endpoint_request(
 ) -> Result<PreparedEndpointRequest, &'static str> {
     let contents = crate::request::local_contents(request);
     let mut count = solstone_core_tokens::count;
-    let (contents, input_budget) = fit_contents(
+    let (contents, input_budget) = fit_contents_with_overflow(
         &contents,
+        request.overflow_text.as_deref(),
         request.system_instruction.as_deref(),
         max_tokens,
         window,
@@ -1084,6 +1085,107 @@ mod tests {
     ];
 
     #[test]
+    fn endpoint_overflow_selection_reserves_full_reply_at_each_effective_window() {
+        let endpoint = endpoint("http://endpoint.invalid");
+        let mut input = request(None);
+        let raw = " x".repeat(15_000);
+        input.contents = vec![
+            ContentPart::Text { text: raw.clone() },
+            ContentPart::Text {
+                text: "PROTECTED".into(),
+            },
+        ];
+        input.system_instruction = Some("SYSTEM".into());
+        input.overflow_text = Some("COMPACT".into());
+        input.max_output_tokens = 1_280;
+        let original_count =
+            solstone_core_tokens::count(&serialized_message_text(&build_messages(
+                &crate::request::local_contents(&input),
+                input.system_instruction.as_deref(),
+            )));
+        // The source fits with a minimum reply but cannot keep the declared
+        // reply at 16k. This fixture distinguishes selection from clamping.
+        assert!(original_count + MIN_COMPLETION_TOKENS + SAFETY_MARGIN_TOKENS < 16_384);
+        assert!(original_count + 1_280 + SAFETY_MARGIN_TOKENS > 16_384);
+        for (window, selected) in [(16_384, true), (32_768, false)] {
+            let prepared = prepare_endpoint_request(&input, &endpoint, 1_280, window).unwrap();
+            assert_eq!(prepared.body["messages"][0]["content"], "SYSTEM");
+            assert_eq!(
+                prepared.body["messages"][1]["content"],
+                if selected {
+                    "COMPACT\nPROTECTED".to_owned()
+                } else {
+                    format!("{raw}\nPROTECTED")
+                }
+            );
+            assert_eq!(prepared.body["max_tokens"], 1_280);
+            assert_eq!(
+                prepared
+                    .input_budget
+                    .as_ref()
+                    .is_some_and(|budget| budget.used_overflow_text),
+                selected
+            );
+            assert!(
+                !prepared
+                    .input_budget
+                    .as_ref()
+                    .is_some_and(|budget| budget.clipped)
+            );
+        }
+    }
+
+    #[test]
+    fn endpoint_context_refit_reconsiders_overflow_before_clipping() {
+        let runtime = EndpointRuntime::default();
+        let journal = journal_path();
+        let mut input = request(None);
+        let raw = " x".repeat(15_000);
+        input.contents = vec![
+            ContentPart::Text { text: raw.clone() },
+            ContentPart::Text {
+                text: "PROTECTED".into(),
+            },
+        ];
+        input.overflow_text = Some("COMPACT".into());
+        input.max_output_tokens = 1_280;
+        let mut transport = StubTransport {
+            post_script: vec![
+                Ok(bad_request("request exceeds the context window")),
+                Ok(response()),
+            ],
+            ..Default::default()
+        };
+        let config = json!({"providers":{"local":{"served_context_window":32_768}}});
+        let result = endpoint_generate_with(
+            &input,
+            &journal,
+            &endpoint("http://endpoint"),
+            config.as_object().unwrap(),
+            &runtime,
+            &mut transport,
+            Instant::now(),
+        );
+        let EndpointResult::Generated(output) = result else {
+            panic!("{result:?}");
+        };
+        assert_eq!(transport.posts.len(), 2);
+        assert_eq!(
+            transport.posts[0]["messages"][0]["content"],
+            format!("{raw}\nPROTECTED")
+        );
+        assert_eq!(
+            transport.posts[1]["messages"][0]["content"],
+            "COMPACT\nPROTECTED"
+        );
+        let budget = output.input_budget.unwrap();
+        assert!(budget.used_overflow_text);
+        assert!(!budget.clipped);
+        assert_eq!(budget.dropped_chars, 0);
+        let _ = std::fs::remove_dir_all(journal);
+    }
+
+    #[test]
     fn endpoint_fitting_preserves_no_transcript_instructions_without_changing_short_bodies() {
         let endpoint = endpoint("http://endpoint.invalid");
         let mut input = request(None);
@@ -1167,6 +1269,7 @@ mod tests {
             json_schema: None,
             attempt_index: 0,
             exclusive_admission: false,
+            overflow_text: None,
             transport_retries: None,
         }
     }

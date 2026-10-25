@@ -8,6 +8,9 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- work stories use the original material when it fits. when it is too long, they use saved screen descriptions and topics to leave more room for the activity. spoken words and other context stay alongside them.
+- work stories can include short quotes from messages shown on screen. the notes are labelled unverified, with the time they entered your journal kept separate from the message date.
+
 - on mac, local thinking now starts directly in the runtime included with your journal. old records from the switch can no longer block it.
 
 - when everything that went into your journal for a stretch came from your terminal, the description of that stretch is now written from a compact timeline of what changed on screen, so far less of a long stretch is cut to fit.
