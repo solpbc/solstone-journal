@@ -2359,6 +2359,7 @@
       return managedMode() ? 'management' : 'destination';
     }
     if (managedMode()) return 'management';
+    if (state.recovery_key_confirmed === true) return 'destination';
     return 'intro';
   }
 

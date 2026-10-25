@@ -347,7 +347,16 @@ function fixture(document) {
   destinationByo.textContent = 'your own';
   const destinationHosted = add(destination, 'button', { class: 'backup-mode', 'data-mode': 'hosted', role: 'radio', 'aria-checked': 'false' });
   destinationHosted.textContent = 'operated';
-  add(destination, 'div', { 'data-mode-panel': 'byo' });
+  const destinationByoPanel = add(destination, 'div', { 'data-mode-panel': 'byo' });
+  const destinationForm = add(destinationByoPanel, 'form', { 'data-destination-form': '' });
+  destinationForm.elements = {};
+  for (const name of ['repository', 'backend', 'access_key_id', 'secret_access_key', 'account_id', 'account_key']) {
+    destinationForm.elements[name] = add(destinationForm, 'input', { name, 'data-field': name });
+  }
+  destinationForm.elements.backend.value = 's3';
+  const destinationStatus = add(destinationForm, 'p', { 'data-destination-status': '' });
+  const enableBackup = add(destinationForm, 'button', { type: 'button', 'data-action': 'enable-backup' });
+  const saveDestination = add(destinationForm, 'button', { type: 'submit' });
   add(destination, 'div', { 'data-mode-panel': 'hosted', hidden: '' });
 
   const restore = add(panels, 'article', { 'data-backup-panel': 'restore', hidden: '' });
@@ -375,7 +384,7 @@ function fixture(document) {
   add(byo, 'form', { 'data-restore-form': '' });
   const panelCancel = add(restore, 'button', { 'data-action': 'cancel-restore' });
   panelCancel.textContent = 'cancel';
-  return { root, showRestore, generateKey, backupNow, viewKey, rotateKey, retention, saveRetention, offloadProof, lastOffload, lastVerify, runHistory, runSuccessTime, verifyHistory, verifySuccessTime, stallReason, saveOffload, restore, destinationByo, destinationHosted, byoLane, operatedLane, operated, byo, heading, keyControl, key, keyReassurance, outcome, primary, attemptCancel, reopen, panelCancel, banner, cleanupBanner, cleanup, management, managementGrid, lastBackup, teardownOpen, teardownGate, teardownInput, teardownConfirm };
+  return { root, destination, destinationForm, destinationStatus, enableBackup, saveDestination, showRestore, generateKey, backupNow, viewKey, rotateKey, retention, saveRetention, offloadProof, lastOffload, lastVerify, runHistory, runSuccessTime, verifyHistory, verifySuccessTime, stallReason, saveOffload, restore, destinationByo, destinationHosted, byoLane, operatedLane, operated, byo, heading, keyControl, key, keyReassurance, outcome, primary, attemptCancel, reopen, panelCancel, banner, cleanupBanner, cleanup, management, managementGrid, lastBackup, teardownOpen, teardownGate, teardownInput, teardownConfirm };
 }
 
 function createHarness(options = {}) {
@@ -1135,11 +1144,15 @@ for (const scope of ['own', 'global', 'contended']) {
     });
     await ready(harness);
     assert.ok(harness.backupNow.disabled && harness.generateKey.disabled && harness.saveRetention.disabled);
+    assert.ok(harness.enableBackup.disabled && harness.saveDestination.disabled);
     assert.ok(harness.rotateKey.disabled, 'previously ineligible remains disabled');
     assert.ok(!harness.viewKey.disabled && !harness.cleanup.disabled, 'read and recovery actions stay available');
     click(harness.backupNow);
     click(harness.generateKey);
     harness.retention.dispatchEvent(event('submit'));
+    harness.destinationForm.dispatchEvent(event('submit'));
+    harness.enableBackup.disabled = false;
+    click(harness.enableBackup);
     setKey(harness, 'synthetic recovery key');
     assert.ok(harness.primary.disabled, 'ordinary input render cannot reopen a blocked action');
     click(harness.primary);
@@ -1153,6 +1166,7 @@ for (const scope of ['own', 'global', 'contended']) {
     await settle();
     assert.deepStrictEqual(harness.calls.map((call) => call.url), ['/app/backup/api/cleanup/retry']);
     assert.ok(!harness.backupNow.disabled && !harness.generateKey.disabled && !harness.saveRetention.disabled);
+    assert.ok(!harness.enableBackup.disabled && !harness.saveDestination.disabled);
     assert.ok(harness.rotateKey.disabled, 'clearing pending does not enable an otherwise ineligible action');
     click(harness.backupNow);
     await settle();
@@ -1937,6 +1951,59 @@ asyncCase('unsupported host hides media-offload enrollment while keeping backup 
   assert.strictEqual(harness.root.querySelector('[data-offload-unsupported]').hidden,false);
   assert.ok(harness.root.querySelector('[data-retention-form]'));
 });
+
+
+for (const savedDestination of [null, { repository: 's3:https://storage.example/bucket/old', backend: 's3', credentials_set: true }]) {
+  asyncCase('confirmed inactive setup resumes destination with ' + (savedDestination ? 'saved credentials' : 'no destination'), async () => {
+    const harness = createHarness({ statusQueue: [Object.assign(status(), {
+      recovery_key_confirmed: true, destination: savedDestination,
+    })] });
+    await settle();
+    assert.ok(!harness.destination.hidden, 'confirmed setup resumes at its editable destination');
+    assert.ok(!harness.destinationForm.hidden && !harness.enableBackup.disabled);
+    assert.ok(harness.calls.every((call) => !call.request.method || call.request.method === 'GET'), 'complete boot ledger has no mutations');
+  });
+}
+
+for (const payload of [status(), Object.assign(status(), { enabled: true, recovery_key_confirmed: true }), Object.assign(status(), { mode: 'operated', recovery_key_confirmed: true })]) {
+  asyncCase('setup entry preserves ' + (payload.enabled ? 'enabled' : payload.mode === 'operated' ? 'operated' : 'unconfirmed') + ' state', async () => {
+    const harness = createHarness({ statusQueue: [payload] });
+    await settle();
+    const panel = payload.enabled || payload.mode === 'operated' ? harness.management : harness.root.querySelector('[data-backup-panel="intro"]');
+    assert.ok(!panel.hidden);
+    assert.ok(harness.calls.every((call) => !call.request.method || call.request.method === 'GET'));
+  });
+}
+
+for (const reasonCode of ['ready', 'auth_failed']) {
+  asyncCase('resumed destination save remains editable and explicit enable works after ' + reasonCode, async () => {
+    const resumed = Object.assign(status(), { recovery_key_confirmed: true });
+    const harness = createHarness({ statusQueue: [resumed], respond(call) {
+      if (call.url === '/app/backup/destination') return response(Object.assign({}, resumed, { destination_status: { reason_code: reasonCode } }));
+      if (call.url === '/app/backup/enable') return response(Object.assign({}, resumed, { enabled: true }));
+    } });
+    await settle();
+    assert.ok(!harness.destination.hidden);
+    const fields = harness.destinationForm.elements;
+    fields.repository.value = 's3:https://storage.example/bucket/replacement';
+    fields.access_key_id.value = 'replacement-id';
+    fields.secret_access_key.value = 'synthetic-secret';
+    harness.destinationForm.dispatchEvent(event('submit'));
+    await settle();
+    const posts = () => harness.calls.filter((call) => call.request.method === 'POST');
+    assert.deepStrictEqual(posts().map((call) => call.url), ['/app/backup/destination']);
+    assert.deepStrictEqual(JSON.parse(posts()[0].request.body), {
+      repository: fields.repository.value, backend: 's3',
+      credentials: { access_key_id: 'replacement-id', secret_access_key: 'synthetic-secret' },
+    });
+    assert.ok(!harness.destination.hidden && !harness.saveDestination.disabled);
+    if (reasonCode === 'auth_failed') assert.ok(!harness.destinationStatus.hidden && harness.destinationStatus.textContent.length > 0);
+    click(harness.enableBackup);
+    await settle();
+    assert.deepStrictEqual(posts().map((call) => call.url), ['/app/backup/destination', '/app/backup/enable']);
+    assert.ok(!harness.management.hidden);
+  });
+}
 
 async function runAsyncCases() {
   for (const runCase of asyncCases) await runCase();
