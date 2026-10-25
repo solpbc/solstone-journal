@@ -4,6 +4,7 @@ pub mod args;
 pub mod checks;
 pub mod context;
 pub mod output;
+mod progress;
 pub mod registry;
 pub mod vocabulary;
 use context::CheckContext;
@@ -18,9 +19,14 @@ pub fn run(args: &args::DoctorArgs, context: &CheckContext) -> Vec<CheckResult> 
     // Several checks verify the same signed package; hash it once for this run.
     let _shared = solstone_core_distribution::windows_payload::share_verification();
     let _supervisor_sample = checks::service_status::share_for_run();
+    // Setup runs readiness under a bound on silence, not on total time.
+    let _progress = args.readiness.then(progress::start);
     let mut results = registry::entries(battery)
         .iter()
-        .filter_map(|entry| run_entry(entry, context))
+        .filter_map(|entry| {
+            progress::checking(entry.check.name);
+            run_entry(entry, context)
+        })
         .collect::<Vec<_>>();
     apply_conflict_policy(&mut results);
     results

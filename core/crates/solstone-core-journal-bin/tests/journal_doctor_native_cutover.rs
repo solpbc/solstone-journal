@@ -231,6 +231,35 @@ fn doctor_batteries_run_natively_without_pinning_host_verdicts() {
 }
 
 #[test]
+fn readiness_names_each_check_on_stderr_as_it_starts() {
+    let harness = Harness::new();
+    let readiness = harness.run(&["doctor", "--readiness", "--jsonl"]);
+    let stderr = String::from_utf8_lossy(&readiness.stderr);
+    let checked = String::from_utf8_lossy(&readiness.stdout)
+        .lines()
+        .map(|line| serde_json::from_str::<Value>(line).expect("doctor JSONL event"))
+        .filter(|event| event["event"] == "check.completed")
+        .map(|event| event["name"].as_str().expect("check name").to_owned())
+        .collect::<Vec<_>>();
+    assert!(!checked.is_empty());
+    for name in &checked {
+        assert!(
+            stderr.lines().any(|line| line
+                .strip_prefix(solstone_core_setup::steps::DOCTOR_PROGRESS_PREFIX)
+                .is_some_and(|rest| rest.ends_with(&format!(" checking {name}")))),
+            "no progress line for {name}: {stderr}"
+        );
+    }
+
+    let journal = harness.run(&["doctor", "--jsonl"]);
+    assert!(
+        !String::from_utf8_lossy(&journal.stderr)
+            .contains(solstone_core_setup::steps::DOCTOR_PROGRESS_PREFIX),
+        "only the readiness battery reports progress"
+    );
+}
+
+#[test]
 fn doctor_help_and_usage_match_the_owner_facing_grammar_without_python() {
     let harness = Harness::new();
     for args in [["doctor", "--help"].as_slice(), ["doctor", "-h"].as_slice()] {

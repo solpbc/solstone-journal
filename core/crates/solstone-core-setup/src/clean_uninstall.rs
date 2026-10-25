@@ -553,6 +553,7 @@ fn remove_service(
         program: solstone_executable(&context.executable_dir),
         args: vec!["journal".into(), "service".into(), "uninstall".into()],
         timeout_seconds: None,
+        idle_timeout_seconds: None,
         env: Vec::new(),
     });
     match output {

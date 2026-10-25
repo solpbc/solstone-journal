@@ -324,7 +324,7 @@ pub fn render_windows_payload_manifest_for_architecture(
     let files = collect_payload_files(root)?
         .into_iter()
         .map(|(path, member)| {
-            let identity = file_identity(&member.path, &path)?;
+            let identity = file_identity(&member.path, &path, member.bytes)?;
             Ok(WindowsPayloadFile {
                 path,
                 sha256: identity.sha256,
@@ -389,6 +389,40 @@ impl Drop for SharedVerification {
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
         }
+    }
+}
+
+/// Receives a payload member's running byte count while it is hashed: the
+/// member's declared path, the bytes hashed so far and the member's size. The
+/// first report for a member, with nothing hashed, comes before it is opened.
+///
+/// The package's largest members take long enough to read on a slow disk that
+/// a caller holding a deadline needs to tell slow progress from a stall.
+pub type HashProgress = fn(member: &str, hashed: u64, total: u64);
+
+static HASH_PROGRESS: Mutex<Option<HashProgress>> = Mutex::new(None);
+
+/// Scope in which every member digest reports its progress to one receiver.
+/// The previous receiver, if any, is restored when the guard drops.
+pub struct HashProgressScope {
+    previous: Option<HashProgress>,
+}
+
+/// Report member hashing progress to `progress` until the guard drops.
+#[must_use]
+pub fn report_hash_progress(progress: HashProgress) -> HashProgressScope {
+    let previous = HASH_PROGRESS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .replace(progress);
+    HashProgressScope { previous }
+}
+
+impl Drop for HashProgressScope {
+    fn drop(&mut self) {
+        *HASH_PROGRESS
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = self.previous;
     }
 }
 
@@ -503,7 +537,7 @@ fn is_library(path: &str) -> bool {
 
 fn check_member_digest(root: &Path, file: &WindowsPayloadFile) -> Result<(), WindowsPayloadError> {
     let path = contained_path(root, &file.path)?;
-    let identity = file_identity(&path, &file.path)?;
+    let identity = file_identity(&path, &file.path, file.bytes)?;
     if identity.bytes != file.bytes {
         return Err(WindowsPayloadError::new(
             WindowsPayloadRefusal::Bytes,
@@ -806,7 +840,18 @@ fn collect_directory(
     Ok(())
 }
 
-fn file_identity(path: &Path, relative: &str) -> Result<FileIdentity, WindowsPayloadError> {
+fn file_identity(
+    path: &Path,
+    relative: &str,
+    total: u64,
+) -> Result<FileIdentity, WindowsPayloadError> {
+    let progress = *HASH_PROGRESS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    // Reported before the open, which can itself be slow on a large member.
+    if let Some(report) = progress {
+        report(relative, 0, total);
+    }
     let mut file = fs::File::open(path).map_err(|error| {
         WindowsPayloadError::new(
             WindowsPayloadRefusal::Missing,
@@ -843,6 +888,9 @@ fn file_identity(path: &Path, relative: &str) -> Result<FileIdentity, WindowsPay
         hasher.update(&buffer[..read]);
         #[cfg(windows)]
         hasher.update(&buffer[..read]).map_err(hash_error)?;
+        if let Some(report) = progress {
+            report(relative, bytes, total);
+        }
     }
     #[cfg(not(windows))]
     let sha256 = format!("{:x}", hasher.finalize());
@@ -869,6 +917,62 @@ fn is_link_or_reparse(metadata: &fs::Metadata) -> bool {
     #[cfg(not(windows))]
     {
         false
+    }
+}
+
+#[cfg(test)]
+mod hash_progress_tests {
+    use super::*;
+
+    const MEMBER: &str = "lib/hash-progress-test/model.bin";
+    static SEEN: Mutex<Vec<(u64, u64)>> = Mutex::new(Vec::new());
+
+    fn record(member: &str, hashed: u64, total: u64) {
+        // The receiver is process-wide; other tests may hash at the same time.
+        if member == MEMBER {
+            SEEN.lock().unwrap().push((hashed, total));
+        }
+    }
+
+    // One test, because the receiver is process-wide and tests run in parallel.
+    #[test]
+    fn a_member_digest_reports_its_progress_until_the_scope_ends() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("model.bin");
+        let size = 200 * 1024 + 7;
+        fs::write(&path, vec![7_u8; size]).unwrap();
+        let size = size as u64;
+
+        {
+            let _scope = report_hash_progress(record);
+            let identity = file_identity(&path, MEMBER, size).unwrap();
+            assert_eq!(identity.bytes, size);
+        }
+        let seen = std::mem::take(&mut *SEEN.lock().unwrap());
+        assert!(
+            seen.len() >= 2,
+            "a multi-chunk member reports more than once"
+        );
+        assert_eq!(
+            seen.first(),
+            Some(&(0, size)),
+            "a member reports before it is read"
+        );
+        assert!(
+            seen.windows(2).all(|pair| pair[0].0 < pair[1].0),
+            "progress only moves forward: {seen:?}"
+        );
+        assert_eq!(
+            seen.last(),
+            Some(&(size, size)),
+            "the last report is the whole member"
+        );
+
+        file_identity(&path, MEMBER, size).unwrap();
+        assert!(
+            SEEN.lock().unwrap().is_empty(),
+            "nothing reports once the scope has ended"
+        );
     }
 }
 

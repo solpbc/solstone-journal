@@ -8,6 +8,7 @@ use std::fs;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -63,14 +64,24 @@ const CONTINUE_AFTER_FAILURE: [StepName; 3] = [
     StepName::SkillsUser,
     StepName::SkillsJournal,
 ];
-// Windows doctor and its isolated VAD helper each verify the signed package.
-// A SHA-less Broadwell guest took 16.1-19.1 seconds for the helper alone with
-// the 1.38 GB 2.0.27 payload (2026-09-30). Bound the complete readiness check
-// with room for both verified processes and cold Windows process startup.
+// Readiness writes a progress line to stderr as each check starts and while it
+// hashes a large signed member, so setup bounds doctor by how long it goes
+// without output rather than by its total time. Windows doctor reads about
+// 1 GB of signed package, most of it the speech model, and its isolated VAD
+// helper verifies the package again. Fast disks finish in seconds; slow ones
+// have taken longer than a minute while still moving. A SHA-less Broadwell
+// guest took 16.1-19.1 seconds for the helper alone (2026-09-30), so the
+// Windows silence bound keeps room for one verified helper plus cold startup.
 #[cfg(windows)]
-const DOCTOR_TIMEOUT_SECONDS: u64 = 60;
+const DOCTOR_SILENCE_SECONDS: u64 = 60;
 #[cfg(not(windows))]
-const DOCTOR_TIMEOUT_SECONDS: u64 = 30;
+const DOCTOR_SILENCE_SECONDS: u64 = 30;
+/// Readiness that keeps reporting progress is still stopped after this long.
+const DOCTOR_CEILING_SECONDS: u64 = 600;
+/// Starts each line doctor's readiness battery writes to stderr to show it is
+/// still moving. Setup keeps these lines when it stops a silent doctor and
+/// drops them from the details of any other doctor failure.
+pub const DOCTOR_PROGRESS_PREFIX: &str = "doctor progress: ";
 /// Reserved for a setup run whose only failed step was model installation.
 /// The platform installer uses this to give model-specific recovery guidance.
 pub const INSTALL_MODELS_SETUP_FAILURE_EXIT_CODE: i32 = 80;
@@ -80,6 +91,9 @@ pub struct CommandRequest {
     pub program: PathBuf,
     pub args: Vec<String>,
     pub timeout_seconds: Option<u64>,
+    /// Stop the child once it has written nothing to stdout or stderr for this
+    /// long. `timeout_seconds` still bounds the whole run.
+    pub idle_timeout_seconds: Option<u64>,
     /// Added to the child's inherited environment.
     pub env: Vec<(String, String)>,
 }
@@ -146,6 +160,7 @@ impl NativeServiceOps {
                 .chain(args.iter().map(|value| (*value).to_owned()))
                 .collect(),
             timeout_seconds: None,
+            idle_timeout_seconds: None,
             env: Vec::new(),
         })
     }
@@ -265,34 +280,25 @@ impl ProcessCommandRunner {
             .map_err(|error| error.to_string())?;
         // Drain both pipes while the child runs. A progress-writing child can
         // otherwise block on a full pipe before setup's deadline is checked.
-        let mut child_stdout = child.stdout.take().expect("piped stdout");
-        let mut child_stderr = child.stderr.take().expect("piped stderr");
-        let stdout_reader = thread::spawn(move || -> Result<Vec<u8>, String> {
-            let mut bytes = Vec::new();
-            child_stdout
-                .read_to_end(&mut bytes)
-                .map_err(|error| error.to_string())?;
-            Ok(bytes)
-        });
-        let stderr_reader = thread::spawn(move || -> Result<Vec<u8>, String> {
-            let mut bytes = Vec::new();
-            let mut chunk = [0u8; 4096];
-            loop {
-                let count = child_stderr
-                    .read(&mut chunk)
-                    .map_err(|error| error.to_string())?;
-                if count == 0 {
-                    break;
-                }
-                bytes.extend_from_slice(&chunk[..count]);
-                if stream_stderr {
-                    let _ = std::io::stderr().write_all(&chunk[..count]);
-                }
-            }
-            Ok(bytes)
-        });
-        let timed_out = if let Some(timeout_seconds) = request.timeout_seconds {
-            let deadline = Instant::now() + Duration::from_secs(timeout_seconds);
+        // Every read also marks the child as still moving.
+        let started = Instant::now();
+        let last_output = Arc::new(Mutex::new(started));
+        let child_stdout = child.stdout.take().expect("piped stdout");
+        let child_stderr = child.stderr.take().expect("piped stderr");
+        let stdout_reader = {
+            let last_output = Arc::clone(&last_output);
+            thread::spawn(move || drain(child_stdout, &last_output, None))
+        };
+        let stderr_reader = {
+            let last_output = Arc::clone(&last_output);
+            let echo = stream_stderr.then(std::io::stderr);
+            thread::spawn(move || drain(child_stderr, &last_output, echo))
+        };
+        let deadline = request
+            .timeout_seconds
+            .map(|seconds| started + Duration::from_secs(seconds));
+        let silence = request.idle_timeout_seconds.map(Duration::from_secs);
+        let timed_out = if deadline.is_some() || silence.is_some() {
             loop {
                 if child
                     .try_wait()
@@ -301,7 +307,15 @@ impl ProcessCommandRunner {
                 {
                     break false;
                 }
-                if Instant::now() >= deadline {
+                let now = Instant::now();
+                let quiet = now.saturating_duration_since(
+                    *last_output
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner),
+                );
+                if deadline.is_some_and(|deadline| now >= deadline)
+                    || silence.is_some_and(|silence| quiet >= silence)
+                {
                     child.kill().map_err(|error| error.to_string())?;
                     break true;
                 }
@@ -323,6 +337,29 @@ impl ProcessCommandRunner {
             stderr: String::from_utf8_lossy(&stderr).into_owned(),
             timed_out,
         })
+    }
+}
+
+/// Read a child's pipe to its end, noting the time of every read.
+fn drain(
+    mut pipe: impl Read,
+    last_output: &Mutex<Instant>,
+    mut echo: Option<std::io::Stderr>,
+) -> Result<Vec<u8>, String> {
+    let mut bytes = Vec::new();
+    let mut chunk = [0u8; 4096];
+    loop {
+        let count = pipe.read(&mut chunk).map_err(|error| error.to_string())?;
+        if count == 0 {
+            return Ok(bytes);
+        }
+        *last_output
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Instant::now();
+        bytes.extend_from_slice(&chunk[..count]);
+        if let Some(echo) = echo.as_mut() {
+            let _ = echo.write_all(&chunk[..count]);
+        }
     }
 }
 
@@ -1426,7 +1463,8 @@ fn step_doctor(context: &mut SetupContext<'_>) -> Result<StepResult, StepExecuti
             "--port".into(),
             context.args.port.to_string(),
         ],
-        timeout_seconds: Some(DOCTOR_TIMEOUT_SECONDS),
+        timeout_seconds: Some(DOCTOR_CEILING_SECONDS),
+        idle_timeout_seconds: Some(DOCTOR_SILENCE_SECONDS),
         // Doctor runs before the journal step records where the journal lives,
         // so it is told which journal this setup is for rather than reading
         // the old pointer or the default folder.
@@ -1435,23 +1473,40 @@ fn step_doctor(context: &mut SetupContext<'_>) -> Result<StepResult, StepExecuti
             context.journal_path.to_string_lossy().into_owned(),
         )],
     };
-    let output = context
+    let started = Instant::now();
+    let mut output = context
         .runner
         .run(&request)
         .map_err(|error| StepExecutionError::Unhandled { message: error })?;
     let now = (context.now)();
     if output.timed_out {
+        let message = if started.elapsed() >= Duration::from_secs(DOCTOR_CEILING_SECONDS) {
+            format!("doctor timed out after {DOCTOR_CEILING_SECONDS}s")
+        } else {
+            format!("doctor reported no progress for {DOCTOR_SILENCE_SECONDS}s")
+        };
+        // The progress lines name the check, and any file, doctor stopped in.
         return Ok(StepResult::failed(
             StepName::Doctor,
             Vec::new(),
             now,
             StepError {
                 code: ErrorCode::DoctorTimeout,
-                message: format!("doctor timed out after {DOCTOR_TIMEOUT_SECONDS}s"),
-                details: output.stderr,
+                message,
+                details: tail(&output.stderr),
                 exit_code: 1,
             },
         ));
+    }
+    // A failure with a report explains itself; progress lines would bury it.
+    // Without one, they name the check doctor stopped in.
+    if !output.stdout.trim().is_empty() && output.stderr.contains(DOCTOR_PROGRESS_PREFIX) {
+        output.stderr = output
+            .stderr
+            .lines()
+            .filter(|line| !line.starts_with(DOCTOR_PROGRESS_PREFIX))
+            .flat_map(|line| [line, "\n"])
+            .collect();
     }
     if context.jsonl() {
         let mut completed = None;
@@ -1716,6 +1771,7 @@ fn step_install_models(context: &mut SetupContext<'_>) -> Result<StepResult, Ste
                 .args
                 .step_timeout_seconds_supplied()
                 .then_some(context.args.step_timeout_seconds.max(0) as u64),
+            idle_timeout_seconds: None,
             env: Vec::new(),
         })
         .map_err(|message| StepExecutionError::Unhandled { message })?;
@@ -2059,6 +2115,7 @@ fn step_service_with_guard(
             program: solstone_executable(&context.install_bin_dir),
             args,
             timeout_seconds: None,
+            idle_timeout_seconds: None,
             env: Vec::new(),
         })
         .map_err(|message| StepExecutionError::Unhandled { message })?;
@@ -2338,6 +2395,7 @@ fn step_brain(context: &mut SetupContext<'_>) -> Result<StepResult, StepExecutio
                 "bootstrap".into(),
             ],
             timeout_seconds: Some(context.args.step_timeout_seconds.max(0) as u64),
+            idle_timeout_seconds: None,
             env: Vec::new(),
         })
         .map_err(|message| StepExecutionError::Unhandled { message })?;
@@ -2391,6 +2449,7 @@ fn run_skill_step(
             program: context.install_bin_dir.join("solstone"),
             args,
             timeout_seconds: Some(context.args.step_timeout_seconds.max(0) as u64),
+            idle_timeout_seconds: None,
             env: Vec::new(),
         })
         .map_err(|message| StepExecutionError::Unhandled { message })?;
@@ -5090,6 +5149,70 @@ mod tests {
     }
 
     #[test]
+    fn a_silent_doctor_is_stopped_naming_where_it_was() {
+        let (args, resolved, root, home) = fixture("doctor-silent", &["--jsonl"]);
+        let stderr = format!(
+            "{DOCTOR_PROGRESS_PREFIX}0.0s checking disk_space\n\
+             {DOCTOR_PROGRESS_PREFIX}0.1s checking default_stt\n\
+             {DOCTOR_PROGRESS_PREFIX}5.1s verifying lib/model.gguf: 40 of 897 MB\n"
+        );
+        let mut runner = FakeRunner::new(vec![Ok(CommandOutput {
+            exit_code: 1,
+            stdout: String::new(),
+            stderr: stderr.clone(),
+            timed_out: true,
+        })]);
+        let mut prompt = Prompt(false);
+        let result = step_doctor(&mut context(
+            &args,
+            &resolved,
+            &root,
+            &home,
+            &mut runner,
+            &mut prompt,
+            None,
+        ))
+        .unwrap();
+        // Doctor may run past the silence bound while it keeps reporting.
+        let request = &runner.requests[0];
+        assert_eq!(request.idle_timeout_seconds, Some(DOCTOR_SILENCE_SECONDS));
+        assert!(request.timeout_seconds > request.idle_timeout_seconds);
+        let Some(StepErrorPayload::Failure(error)) = &result.error else {
+            panic!("doctor did not fail: {result:?}");
+        };
+        assert_eq!(error.code, ErrorCode::DoctorTimeout);
+        assert_eq!(error.details, stderr);
+    }
+
+    #[test]
+    fn a_failed_doctor_explains_itself_without_its_progress_lines() {
+        let (args, resolved, root, home) = fixture("doctor-blocker", &[]);
+        let report = "{\"checks\":[{\"name\":\"writable\",\"status\":\"fail\"}]}";
+        let mut runner = FakeRunner::new(vec![Ok(CommandOutput {
+            exit_code: 1,
+            stdout: report.into(),
+            stderr: format!("{DOCTOR_PROGRESS_PREFIX}0.0s checking writable\n"),
+            timed_out: false,
+        })]);
+        let mut prompt = Prompt(false);
+        let result = step_doctor(&mut context(
+            &args,
+            &resolved,
+            &root,
+            &home,
+            &mut runner,
+            &mut prompt,
+            None,
+        ))
+        .unwrap();
+        let Some(StepErrorPayload::Failure(error)) = &result.error else {
+            panic!("doctor did not fail: {result:?}");
+        };
+        assert_eq!(error.code, ErrorCode::DoctorFailed);
+        assert_eq!(error.details, report);
+    }
+
+    #[test]
     fn doctor_jsonl_emits_advisory_warning_fields() {
         let (args, resolved, root, home) = fixture("doctor-advisory", &["--jsonl"]);
         let stdout = concat!(
@@ -5542,6 +5665,92 @@ mod tests {
     }
 }
 
+/// Process boundary: setup stops a child that goes quiet, not one that is slow.
+#[cfg(all(test, feature = "full-tests"))]
+mod silence_bound {
+    use std::io::{self, Write};
+    use std::thread;
+    use std::time::{Duration, Instant};
+
+    use super::{CommandOutput, CommandRequest, CommandRunner, ProcessCommandRunner};
+
+    const CHILD_ARG: &str = "--solstone-setup-silence-child";
+
+    fn run_child(
+        test_name: &str,
+        idle_timeout_seconds: u64,
+        timeout_seconds: u64,
+    ) -> (CommandOutput, Duration) {
+        let started = Instant::now();
+        let output = ProcessCommandRunner
+            .run(&CommandRequest {
+                program: std::env::current_exe().expect("test executable"),
+                args: vec![
+                    "--exact".into(),
+                    test_name.into(),
+                    "--".into(),
+                    CHILD_ARG.into(),
+                ],
+                timeout_seconds: Some(timeout_seconds),
+                idle_timeout_seconds: Some(idle_timeout_seconds),
+                env: Vec::new(),
+            })
+            .expect("run child");
+        (output, started.elapsed())
+    }
+
+    fn report_every(interval: Duration, for_how_long: Duration) {
+        let started = Instant::now();
+        while started.elapsed() < for_how_long {
+            let _ = writeln!(io::stderr(), "still working");
+            thread::sleep(interval);
+        }
+    }
+
+    #[test]
+    fn a_child_that_keeps_reporting_finishes_past_the_silence_bound() {
+        const TEST_NAME: &str =
+            "steps::silence_bound::a_child_that_keeps_reporting_finishes_past_the_silence_bound";
+        if std::env::args().any(|arg| arg == CHILD_ARG) {
+            report_every(Duration::from_millis(200), Duration::from_secs(7));
+            std::process::exit(0);
+        }
+        let (output, elapsed) = run_child(TEST_NAME, 3, 30);
+        assert!(!output.timed_out, "stopped after {elapsed:?}");
+        assert_eq!(output.exit_code, 0);
+        assert!(elapsed > Duration::from_secs(6), "{elapsed:?}");
+        assert!(output.stderr.contains("still working"));
+    }
+
+    #[test]
+    fn a_silent_child_stops_at_the_silence_bound() {
+        const TEST_NAME: &str = "steps::silence_bound::a_silent_child_stops_at_the_silence_bound";
+        if std::env::args().any(|arg| arg == CHILD_ARG) {
+            let _ = writeln!(io::stderr(), "about to go quiet");
+            thread::sleep(Duration::from_secs(60));
+            std::process::exit(0);
+        }
+        let (output, elapsed) = run_child(TEST_NAME, 3, 30);
+        assert!(output.timed_out);
+        assert!(elapsed < Duration::from_secs(15), "{elapsed:?}");
+        assert!(output.stderr.contains("about to go quiet"));
+    }
+
+    #[test]
+    fn a_child_that_reports_forever_stops_at_the_ceiling() {
+        const TEST_NAME: &str =
+            "steps::silence_bound::a_child_that_reports_forever_stops_at_the_ceiling";
+        if std::env::args().any(|arg| arg == CHILD_ARG) {
+            report_every(Duration::from_millis(100), Duration::from_secs(60));
+            std::process::exit(0);
+        }
+        let (output, elapsed) = run_child(TEST_NAME, 3, 6);
+        assert!(output.timed_out);
+        assert!(elapsed >= Duration::from_secs(6), "{elapsed:?}");
+        assert!(elapsed < Duration::from_secs(20), "{elapsed:?}");
+    }
+}
+
 /// Process boundary: a held-open stdin is not the routine unit harness.
 #[cfg(all(test, feature = "full-tests"))]
 mod held_stdin {
@@ -5579,6 +5788,7 @@ mod held_stdin {
                         READER_ARG.into(),
                     ],
                     timeout_seconds: Some(15),
+                    idle_timeout_seconds: None,
                     env: Vec::new(),
                 })
                 .expect("spawn reader");
@@ -5639,6 +5849,7 @@ mod held_stdin {
                     WRITER_ARG.into(),
                 ],
                 timeout_seconds: Some(15),
+                idle_timeout_seconds: None,
                 env: Vec::new(),
             })
             .expect("run writer");
