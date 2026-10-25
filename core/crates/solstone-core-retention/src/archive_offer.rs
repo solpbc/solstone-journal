@@ -236,9 +236,34 @@ pub struct ObservedOffloadOffers {
     activity: Arc<ActivityLease>,
     groups: Vec<ObservedOffloadGroup>,
     #[cfg(any(unix, windows))]
-    configuration: solstone_core_journal_config::JournalConfigRead,
-    #[cfg(any(unix, windows))]
-    config_entry: Option<solstone_core_journal_io::media::MediaEntry>,
+    settings: ReviewedSettings,
+}
+
+/// The journal settings an offload decides with: the retention policy and
+/// whether every original is kept. Planning observes exactly these, and
+/// backup and offload settings are pinned by the archive admission itself.
+/// Anything else the journal records in the same file while an offload runs,
+/// such as the record a scheduled backup, prune or verify writes when it
+/// finishes, is not a reason to stop.
+#[cfg(any(unix, windows))]
+#[derive(PartialEq)]
+struct ReviewedSettings {
+    retention: Option<serde_json::Value>,
+    preserve_all: Option<serde_json::Value>,
+}
+
+#[cfg(any(unix, windows))]
+impl ReviewedSettings {
+    fn of(policy: &crate::remove_marked::ReviewedPolicy) -> Self {
+        let config = policy.observation().0.config.as_ref();
+        Self {
+            retention: config.and_then(|config| config.get("retention")).cloned(),
+            preserve_all: config
+                .and_then(|config| config.get("transcribe"))
+                .and_then(|transcribe| transcribe.get("preserve_all"))
+                .cloned(),
+        }
+    }
 }
 
 impl ObservedOffloadOffers {
@@ -549,13 +574,11 @@ pub fn capture_offload_offers(
             check_group(&group)?;
             groups.push(group);
         }
-        let (configuration, config_entry) = policy.observation();
         let observed = ObservedOffloadOffers {
             root,
             activity: Arc::clone(operation.activity()),
             groups,
-            configuration: configuration.clone(),
-            config_entry: config_entry.clone(),
+            settings: ReviewedSettings::of(&policy),
         };
         for commit in &commits {
             commit.revalidate()?;
@@ -573,7 +596,7 @@ fn check_capture(
 ) -> Result<(), OffloadOfferRefusal> {
     if !Arc::ptr_eq(&observed.root, operation.journal_root())
         || !Arc::ptr_eq(&observed.activity, operation.activity())
-        || policy.observation() != (&observed.configuration, &observed.config_entry)
+        || ReviewedSettings::of(policy) != observed.settings
     {
         return Err(OffloadOfferRefusal::Changed);
     }
@@ -714,7 +737,7 @@ fn check_current_metadata(
     today: NaiveDate,
     now: DateTime<Utc>,
 ) -> Result<(), OffloadOfferRefusal> {
-    if policy.observation() != (&observed.configuration, &observed.config_entry) {
+    if ReviewedSettings::of(policy) != observed.settings {
         return Err(OffloadOfferRefusal::Changed);
     }
     policy
@@ -1503,6 +1526,67 @@ mod tests {
                 check_group(&observed.groups()[0]),
                 Err(OffloadOfferRefusal::Changed)
             ));
+        }
+    }
+
+    /// A scheduled backup, prune or verify that finishes while an offload runs
+    /// records its result in the journal's configuration, and other parts of
+    /// the journal record there too. None of that changes what the offload
+    /// decided with, so it carries on; a retention setting that does change
+    /// still stops it.
+    #[test]
+    fn a_finished_backup_run_record_is_not_a_journal_change() {
+        for setting in [false, true] {
+            let (_journal, root) = fixture();
+            let selected = selection(SegmentLayout::Named, &["audio.flac"]);
+            seed(&root, &selected, "audio.flac", "analyzed");
+            let operation = operation(&root);
+            let observed = capture(&operation, std::slice::from_ref(&selected)).unwrap();
+            let journal = root.canonical_path();
+            solstone_core_backup::record_backup_result(
+                journal,
+                "ok",
+                json!(1_791_590_400),
+                json!("c".repeat(64)),
+                serde_json::Value::Null,
+                None,
+                None,
+            )
+            .unwrap();
+            solstone_core_backup::record_prune_result(
+                journal,
+                "ok",
+                json!(1_791_590_401),
+                serde_json::Value::Null,
+            )
+            .unwrap();
+            solstone_core_backup::record_verification_result(
+                journal,
+                "ok",
+                json!(1_791_590_402),
+                serde_json::Value::Null,
+                json!("1/52"),
+            )
+            .unwrap();
+            let path = journal.join("config/journal.json");
+            let mut config: serde_json::Value =
+                serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+            config["daily_inputs"] = json!({"since": "20261009"});
+            if setting {
+                config["retention"] = json!({"raw_media": "days", "raw_media_days": 1});
+            }
+            fs::write(&path, serde_json::to_vec(&config).unwrap()).unwrap();
+            let policy = crate::remove_marked::ReviewedPolicy::capture(&root).unwrap();
+            let (today, now) = time();
+            let captured = check_capture(&observed, &operation, &policy);
+            let verified = check_current_metadata(&observed, &policy, today, now);
+            if setting {
+                assert!(matches!(captured, Err(OffloadOfferRefusal::Changed)));
+                assert!(matches!(verified, Err(OffloadOfferRefusal::Changed)));
+            } else {
+                assert!(captured.is_ok(), "{captured:?}");
+                assert!(verified.is_ok(), "{verified:?}");
+            }
         }
     }
 

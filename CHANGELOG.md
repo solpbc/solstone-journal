@@ -21,6 +21,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - your journal no longer saves a label for someone it couldn't name, like "Speaker 2" or "Unknown", as one of your entities. and when you come up under more than one of the names your journal has for you, like a nickname and your full name, they now all lead to you instead of each being saved as someone new. entities already saved this way stay until you hide or merge them. thanks @dvanduzer for the report.
 - when an agent lists your entities, each one now says which facet it's from, so someone in two of your facets no longer looks like two people with the same name.
 - your journal now starts when its folder is reached through a symbolic link, such as a folder under `/var/tmp` on a mac. before, it refused to start and said the saved installation was for a different journal.
+- media offload no longer stops partway when a scheduled backup finishes while it runs. the note your journal keeps about each backup's last run no longer counts as a change to your journal. if something in your journal does change while offload runs, offload now says so and tells you nothing was removed, instead of only saying it didn't finish.
 
 ## [2.0.58] - 2026-10-25
 

@@ -9,15 +9,15 @@ use std::io;
 use solstone_core_backup_runtime::{ArchiveError, ArchiveRemoteEffects, ArchiveSnapshot};
 use solstone_core_journal_io::media::{Cleanup, MediaDigest, MediaIdentity};
 use solstone_core_retention::archive_offer::{
-    OffloadReconciliationDisposition, OffloadReconciliationGroup,
+    OffloadOfferRefusal, OffloadReconciliationDisposition, OffloadReconciliationGroup,
 };
 use solstone_core_retention::mark_mutation::{BoundMutationOutcome, MutationStatus};
 
 use super::*;
 use crate::measurement::ProposedRelief;
 use crate::run::{
-    OffloadLedgerEffect, OffloadLedgerSync, OffloadLedgerWrite, OffloadPlanning,
-    OffloadPlanningPhase, OwnedOffloadCreation, OwnedOffloadCreationHold,
+    OffloadCreationRefusal, OffloadLedgerEffect, OffloadLedgerSync, OffloadLedgerWrite,
+    OffloadPlanning, OffloadPlanningPhase, OwnedOffloadCreation, OwnedOffloadCreationHold,
     OwnedOffloadCreationOwner, OwnedOffloadPlan, OwnedOffloadPlanOwner,
     SettledOffloadCreationReport,
 };
@@ -366,6 +366,29 @@ impl CliObservedEffects {
     }
 }
 
+/// The run stopped because the journal changed under it, before it proposed
+/// anything: its configuration, media or proposals moved after this run read
+/// them.
+fn changed_before_proposal(plan: &OwnedOffloadPlanHold) -> bool {
+    let offers = plan.creation().and_then(OwnedOffloadCreationHold::offers);
+    plan.settled_creation().is_none()
+        && offers.and_then(|offers| offers.publication()).is_none()
+        && journal_changed(plan.reason(), offers.and_then(|offers| offers.reason()))
+}
+
+fn journal_changed(
+    reason: Option<&OffloadCreationRefusal>,
+    offers: Option<&OffloadOfferRefusal>,
+) -> bool {
+    match reason {
+        Some(OffloadCreationRefusal::Inputs(OffloadOfferRefusal::Changed)) => true,
+        Some(OffloadCreationRefusal::Verification) => {
+            matches!(offers, Some(OffloadOfferRefusal::Changed))
+        }
+        _ => false,
+    }
+}
+
 impl OwnedOffloadCliRun {
     pub(super) fn render(&mut self) {
         let complete = matches!(self.custody, Custody::Finished { .. })
@@ -415,7 +438,15 @@ impl OwnedOffloadCliRun {
             Custody::Finished { .. } => "settled",
             Custody::Unknown { .. } => "consuming_phase_unknown",
         };
+        let journal_changed = self.plan_hold().is_some_and(changed_before_proposal);
+        let staged =
+            self.observed.creation.as_ref().is_some_and(|creation| {
+                !creation.source_copies.is_empty() || creation.partial_copy
+            });
         self.stdout = format!("offload_status={status} reason={reason}\n");
+        if journal_changed {
+            self.stdout.push_str("hold_reason=journal_changed\n");
+        }
         self.observed.render(&mut self.stdout);
         if let Some(runtime) = self.runtime() {
             let state = runtime.state();
@@ -445,6 +476,14 @@ impl OwnedOffloadCliRun {
                 }
                 // Planning refuses before admission: no media has left or been removed.
                 "preparation_refused" | "planning_refused" => "offload did not start.",
+                // Copies this run staged stay until they are reviewed, so a
+                // plain retry is only offered when it staged none.
+                "plan_held" if journal_changed && !staged => {
+                    "offload stopped because your journal changed while it was running. nothing was removed from this computer. run it again."
+                }
+                "plan_held" if journal_changed => {
+                    "offload stopped because your journal changed while it was running. nothing was removed from this computer. keep offload's recovery files and review the recorded effects before retrying."
+                }
                 _ => {
                     "offload did not finish. keep its recovery files and review the recorded effects before retrying."
                 }
@@ -457,6 +496,35 @@ impl OwnedOffloadCliRun {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_a_journal_change_before_proposal_reads_as_changed() {
+        let changed = OffloadCreationRefusal::Inputs(OffloadOfferRefusal::Changed);
+        assert!(journal_changed(Some(&changed), None));
+        assert!(journal_changed(
+            Some(&OffloadCreationRefusal::Verification),
+            Some(&OffloadOfferRefusal::Changed),
+        ));
+        assert!(!journal_changed(
+            Some(&OffloadCreationRefusal::Verification),
+            Some(&OffloadOfferRefusal::Approval),
+        ));
+        assert!(!journal_changed(
+            Some(&OffloadCreationRefusal::Verification),
+            None
+        ));
+        for other in [
+            OffloadCreationRefusal::Ledger,
+            OffloadCreationRefusal::Publication,
+            OffloadCreationRefusal::Inputs(OffloadOfferRefusal::Unproven),
+        ] {
+            assert!(!journal_changed(
+                Some(&other),
+                Some(&OffloadOfferRefusal::Changed)
+            ));
+        }
+        assert!(!journal_changed(None, Some(&OffloadOfferRefusal::Changed)));
+    }
 
     #[test]
     fn planning_output_keeps_initial_projection_and_distinct_phases() {

@@ -601,8 +601,12 @@ mod current {
             directory
                 .revalidate()
                 .map_err(|_| CurrentOffloadRefusalReason::Incomplete)?;
+            // The backup and verification records are checked above on every
+            // capture, not pinned: a scheduled run that finishes while
+            // offload plans writes a newer one, and a healthy newer record is
+            // no reason to stop.
             Ok(Self {
-                prerequisites: ["enabled", "last_backup", "last_verification"]
+                prerequisites: ["enabled"]
                     .into_iter()
                     .filter_map(|key| {
                         backup
@@ -1413,6 +1417,55 @@ mod tests {
             version: "test",
             journal_maintenance: maintenance,
         }
+    }
+
+    /// A scheduled backup or verify that finishes while offload is planning
+    /// writes a newer record. Planning goes on while the backup is still
+    /// healthy, and holds the moment it is not.
+    #[cfg(any(unix, windows))]
+    #[test]
+    fn a_newer_healthy_backup_record_keeps_planning_and_a_failed_one_stops_it() {
+        let now = 1_791_590_400;
+        let journal = tempfile::tempdir().unwrap();
+        configure_offload(journal.path(), now, None);
+        let root = std::sync::Arc::new(JournalRoot::open(journal.path()).unwrap());
+        let planned = current::CurrentPolicyObservation::capture(&root, now).unwrap();
+        record_backup_result(
+            journal.path(),
+            "ok",
+            json!(now + 1),
+            json!("newer"),
+            Value::Null,
+            None,
+            None,
+        )
+        .unwrap();
+        record_verification_result(
+            journal.path(),
+            "ok",
+            json!(now + 2),
+            Value::Null,
+            json!("2/52"),
+        )
+        .unwrap();
+        let later = current::CurrentPolicyObservation::capture(&root, now + 3).unwrap();
+        assert!(later == planned, "a healthy newer record changed the plan");
+        record_backup_result(
+            journal.path(),
+            "error",
+            json!(now + 4),
+            Value::Null,
+            json!("failed"),
+            None,
+            None,
+        )
+        .unwrap();
+        assert!(matches!(
+            current::CurrentPolicyObservation::capture(&root, now + 5),
+            Err(current::CurrentOffloadRefusalReason::Prerequisite {
+                reason: OFFLOAD_STALL_BACKUP_FAILING
+            })
+        ));
     }
 
     #[test]
