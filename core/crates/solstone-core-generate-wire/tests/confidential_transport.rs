@@ -138,6 +138,7 @@ fn complete_request_frames_over_a_real_loopback_channel() {
 
 #[test]
 fn partial_response_stall_times_out() {
+    solstone_core_tokens::count("warm"); // load once, outside the short deadline
     let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
     let port = listener.local_addr().expect("address").port();
     let (release_tx, release_rx) = mpsc::channel::<()>();
@@ -180,6 +181,7 @@ fn partial_response_stall_times_out() {
 
 #[test]
 fn accepted_but_silent_times_out() {
+    solstone_core_tokens::count("warm"); // load once, outside the short deadline
     let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
     let port = listener.local_addr().expect("address").port();
     let (release_tx, release_rx) = mpsc::channel::<()>();
@@ -231,6 +233,7 @@ fn paced_success() -> solstone_core_generate_wire::ConfidentialResult {
 
 #[test]
 fn confidential_background_child() {
+    solstone_core_tokens::count("warm"); // load once, outside the short deadline
     use solstone_core_generate_wire::{
         ConfidentialResult, test_support::confidential_generate_attested_with_readiness,
     };

@@ -166,7 +166,7 @@ fn every_thinking_backend_prepares_the_same_candidate() {
 }
 #[test]
 fn ordinary_fitting_trims_the_timeline_from_complete_screens() {
-    use solstone_core_local::generate::{estimate_tokens, fit_contents};
+    use solstone_core_local::generate::fit_contents;
     let (_root, paths, context, request) = setup(&display());
     let frames: String = (0..60)
         .map(|i| {
@@ -207,7 +207,7 @@ fn ordinary_fitting_trims_the_timeline_from_complete_screens() {
     let max_output_tokens = u32::try_from(request.max_output_tokens).unwrap();
     let (mut refused, mut whole, mut from_complete_screens) = (false, false, 0);
     for window in (1024..=262_144).step_by(512) {
-        let mut count = estimate_tokens;
+        let mut count = solstone_core_tokens::count;
         match fit_contents(&contents, system, max_output_tokens, window, &mut count) {
             Err(error) => {
                 assert_eq!(error.reason_code, "context_preserved_overflow");

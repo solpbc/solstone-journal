@@ -27,6 +27,7 @@ solstone-core-journal-config = { workspace = true }
 solstone-core-journal-config-write = { workspace = true }
 solstone-core-journal-io = { workspace = true }
 solstone-core-local.workspace = true
+solstone-core-tokens.workspace = true
 solstone-core-spp-ratls.workspace = true
 ureq = { workspace = true, features = ["rustls"] }
 

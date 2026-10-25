@@ -1,7 +1,7 @@
 # third-party notices
 
 this file records third-party materials used by solstone, including model
-weights and place names bundled with solstone, place data an owner may download for the map app, the map app's renderer, the
+weights, tokenizer data and place names bundled with solstone, place data an owner may download for the map app, the map app's renderer, the
 restic, rclone, nvattest and CED components bundled in every package, provider artifacts downloaded at runtime into the
 journal provider cache, and test fixtures derived from permissively licensed
 sources.
@@ -191,6 +191,23 @@ IANA zone per line, each zone written as its current IANA name from CLDR's
 
 License notice: Unicode License v3 (Unicode-3.0), Copyright © Unicode, Inc.
 The full copyright and permission notice is in `licenses/Unicode-3.0.txt`.
+
+## token counter (Qwen3.5-4B tokenizer merges)
+
+The journal counts every thinking input in the Qwen3.5-4B tokenizer, so a
+request is sized the same way whatever thinks. Counting uses the tokenizer's
+ranked merges, kept in `core/crates/solstone-core-tokens/assets/qwen3.5-4b-merges.txt.gz`
+(SHA-256 `f4e4edf3d11f42411c988269c90bdc7589314745eec559ae32fcac986c7a6b4f`) and compiled into the journal.
+
+Source: `tokenizer.json` from https://huggingface.co/Qwen/Qwen3.5-4B at revision
+`851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a`.
+
+Changes: only the merges are kept, one per line in rank order, gzip-compressed,
+by `scripts/build_qwen_token_merges.py`.
+
+License notice: Apache License 2.0 (Apache-2.0), Copyright 2026 Alibaba Cloud.
+The full license text is in `licenses/Apache-2.0.txt` and, with the attribution,
+in `share/licenses/models/NOTICE.md`.
 
 ## bundled test fixtures
 

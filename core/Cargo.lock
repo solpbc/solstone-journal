@@ -5080,6 +5080,7 @@ dependencies = [
  "solstone-core-local",
  "solstone-core-spp-attest",
  "solstone-core-spp-ratls",
+ "solstone-core-tokens",
  "tempfile",
  "ureq",
  "x509-parser 0.16.0",
@@ -5667,6 +5668,7 @@ dependencies = [
  "solstone-core-journal-config",
  "solstone-core-journal-config-write",
  "solstone-core-journal-io",
+ "solstone-core-tokens",
  "tar",
  "tempfile",
  "thiserror 2.0.20",
@@ -6637,6 +6639,7 @@ dependencies = [
  "solstone-core-system-health",
  "solstone-core-talent-cli",
  "solstone-core-talent-config",
+ "solstone-core-tokens",
  "solstone-core-transcripts",
  "tempfile",
  "unicode-normalization",
@@ -6736,6 +6739,14 @@ dependencies = [
  "serde",
  "serde_json",
  "solstone-core-assets",
+]
+
+[[package]]
+name = "solstone-core-tokens"
+version = "2.0.57"
+dependencies = [
+ "fancy-regex",
+ "flate2",
 ]
 
 [[package]]

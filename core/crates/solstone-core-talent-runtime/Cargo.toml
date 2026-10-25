@@ -35,6 +35,7 @@ solstone-core-journal.workspace = true
 solstone-core-journal-config.workspace = true
 solstone-core-journal-io.workspace = true
 solstone-core-local.workspace = true
+solstone-core-tokens.workspace = true
 solstone-core-location.workspace = true
 solstone-core-segment.workspace = true
 solstone-core-talent-cli.workspace = true

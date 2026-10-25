@@ -4751,6 +4751,7 @@ dependencies = [
  "solstone-core-journal-io",
  "solstone-core-local",
  "solstone-core-spp-ratls",
+ "solstone-core-tokens",
  "ureq",
 ]
 
@@ -5170,6 +5171,7 @@ dependencies = [
  "solstone-core-journal-config",
  "solstone-core-journal-config-write",
  "solstone-core-journal-io",
+ "solstone-core-tokens",
  "tar",
  "tempfile",
  "thiserror 2.0.21",
@@ -5917,6 +5919,7 @@ dependencies = [
  "solstone-core-system-health",
  "solstone-core-talent-cli",
  "solstone-core-talent-config",
+ "solstone-core-tokens",
  "solstone-core-transcripts",
  "unicode-normalization",
 ]
@@ -5991,6 +5994,14 @@ dependencies = [
  "serde",
  "serde_json",
  "solstone-core-assets",
+]
+
+[[package]]
+name = "solstone-core-tokens"
+version = "2.0.57"
+dependencies = [
+ "fancy-regex",
+ "flate2",
 ]
 
 [[package]]

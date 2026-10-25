@@ -17,8 +17,8 @@ use solstone_core_local::admission::{
 };
 use solstone_core_local::{
     ByoEndpoint, HttpResponse, InputBudget, RequestBudget, Usage, build_messages,
-    build_request_body, count_image_parts, estimate_tokens, fit_contents, parse_response,
-    serialized_message_text, served_window_from_models_response,
+    build_request_body, count_image_parts, fit_contents, parse_response, serialized_message_text,
+    served_window_from_models_response,
 };
 use solstone_core_spp_ratls::AttestationStateStore;
 
@@ -490,7 +490,7 @@ fn prepare_endpoint_request(
     window: u32,
 ) -> Result<PreparedEndpointRequest, &'static str> {
     let contents = crate::request::local_contents(request);
-    let mut count = estimate_tokens;
+    let mut count = solstone_core_tokens::count;
     let (contents, input_budget) = fit_contents(
         &contents,
         request.system_instruction.as_deref(),
@@ -500,7 +500,7 @@ fn prepare_endpoint_request(
     )
     .map_err(|_| "context_budget_exceeded")?;
     let messages = build_messages(&contents, request.system_instruction.as_deref());
-    let estimated_prompt_tokens = estimate_tokens(&serialized_message_text(&messages));
+    let estimated_prompt_tokens = solstone_core_tokens::count(&serialized_message_text(&messages));
     let image_tokens = ESTIMATED_IMAGE_TOKENS.saturating_mul(count_image_parts(&contents));
     let room = window
         .saturating_sub(estimated_prompt_tokens)
@@ -1089,7 +1089,7 @@ mod tests {
         let mut input = request(None);
         input.system_instruction = None;
         input.max_output_tokens = 256;
-        for text in ["EARLY_RULE".to_owned(), "x".repeat(4_605)] {
+        for text in ["EARLY_RULE".to_owned(), " x".repeat(1_535)] {
             input.contents = vec![ContentPart::Text { text: text.clone() }];
             let original = prepare_endpoint_request(&input, &endpoint, 256, 2_048).unwrap();
             input.contents.insert(
@@ -1108,7 +1108,7 @@ mod tests {
                 text: String::new(),
             },
             ContentPart::Text {
-                text: "x".repeat(10_000),
+                text: " x".repeat(1_537),
             },
         ];
         assert!(matches!(
@@ -1694,7 +1694,9 @@ mod tests {
             Instant::now(),
         );
         let first_len = probe.posts[0]["messages"].to_string().len();
-        let reported = first_len * 5 / 12;
+        let messages = probe.posts[0]["messages"].as_array().unwrap();
+        let counted = solstone_core_tokens::count(&serialized_message_text(messages));
+        let reported = counted * 5 / 4;
         let refusal = format!(
             "The input ({reported} tokens) is longer than the model's context length (4096 tokens)."
         );
@@ -1816,7 +1818,7 @@ mod tests {
         let budget = generated.request_budget.expect("budget recorded");
         assert_eq!(budget.window, UNKNOWN_WINDOW_TOKENS);
         assert!(generated.input_budget.expect("input fitted").clipped);
-        let sent = estimate_tokens(&transport.posts[0]["messages"].to_string());
+        let sent = solstone_core_tokens::count(&transport.posts[0]["messages"].to_string());
         assert!(sent < UNKNOWN_WINDOW_TOKENS, "sent {sent} tokens");
         assert_eq!(transport.posts[0]["max_tokens"], 2_048);
         let _ = std::fs::remove_dir_all(journal);

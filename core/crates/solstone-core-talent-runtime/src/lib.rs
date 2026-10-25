@@ -42,6 +42,7 @@ pub mod story;
 mod story_source_conformance;
 mod terminal_sense;
 mod transcript;
+mod usage;
 #[cfg(feature = "test-hooks")]
 #[doc(hidden)]
 pub use terminal_sense::{
@@ -1053,7 +1054,6 @@ fn finish_unavailable(
 
 fn generate_response(
     prepared: &mut PreparedTalent,
-    context: &ExecutionContext,
     generate: &dyn solstone_core_generate::GenerateExecutor,
     writer: &mut impl Write,
     cancellation: &solstone_core_generate::Cancellation,
@@ -1062,16 +1062,9 @@ fn generate_response(
     prepared.config.remove(INPUT_BUDGET_KEY);
     prepared.config.remove(story::INPUT_WHOLE_KEY);
     if let Some(candidate) = prepared.terminal_sense.take() {
-        return terminal_sense::execute(
-            candidate,
-            prepared,
-            context,
-            generate,
-            writer,
-            cancellation,
-        );
+        return terminal_sense::execute(candidate, prepared, generate, writer, cancellation);
     }
-    native_generate_response(prepared, context, generate, writer)
+    native_generate_response(prepared, generate, writer)
 }
 
 /// A request fitted to the served window may have dropped the oldest input.
@@ -1092,7 +1085,6 @@ pub(crate) fn record_input_budget(prepared: &mut PreparedTalent, budget: Option<
 
 fn native_generate_response(
     prepared: &mut PreparedTalent,
-    context: &ExecutionContext,
     generate: &dyn solstone_core_generate::GenerateExecutor,
     writer: &mut impl Write,
 ) -> Result<GeneratedTalentResponse, RuntimeOutcome> {
@@ -1101,12 +1093,21 @@ fn native_generate_response(
     if let Some(event) = product_names::event(&prepared.config) {
         emit(writer, event);
     }
-    match screen_batch::generate_if_needed(prepared, context, generate, Some(writer)) {
+    let tracking = usage::TrackingExecutor::new(generate);
+    match screen_batch::generate_if_needed(prepared, &tracking, Some(writer)) {
         Some(Ok(response)) => {
+            let text = verified_product_quotes(prepared, &response.text, writer)?;
             record_input_budget(prepared, response.input_budget.as_ref());
-            Ok((response.text, None, None))
+            Ok((text, tracking.usage(), None))
         }
-        Some(Err(outcome)) => Err(outcome),
+        Some(Err(mut outcome)) => {
+            if let RuntimeOutcome::StageFailed(error)
+            | RuntimeOutcome::GenerateRefused { error, .. } = &mut outcome
+            {
+                error.usage = tracking.usage();
+            }
+            Err(outcome)
+        }
         None => {
             let request = generate_request(prepared).map_err(|detail| {
                 RuntimeOutcome::StageFailed(stage_error("generate", "runtime", prepared, detail))
@@ -1136,34 +1137,14 @@ fn native_generate_response(
                             validation: response.schema_validation.clone().unwrap_or(Value::Null),
                         });
                     }
-                    let checked = match product_names::verify(prepared, &response.text) {
-                        Ok(checked) => checked,
-                        Err(detail) => {
-                            emit(writer, json!({"event":"product_quote_gap","detail":detail}));
-                            return Err(RuntimeOutcome::StageFailed(stage_error(
-                                "generate",
-                                "product_quote",
-                                prepared,
-                                detail,
-                            )));
-                        }
-                    };
-                    if !checked.bindings.is_empty() {
-                        emit(
-                            writer,
-                            json!({"event":"product_quote_bindings","bindings":checked.bindings}),
-                        );
-                    }
-                    for gap in checked.gaps {
-                        emit(writer, gap);
-                    }
+                    let text = verified_product_quotes(prepared, &response.text, writer)?;
                     let usage = if response.usage.is_null() {
                         None
                     } else {
                         Some(Box::new(response.usage.clone()))
                     };
                     record_input_budget(prepared, response.input_budget.as_ref());
-                    Ok((checked.text, usage, None))
+                    Ok((text, usage, None))
                 }
                 GenerateResponse::Refused(response) => Err(RuntimeOutcome::GenerateRefused {
                     error: stage_error("generate", "runtime", prepared, response.detail.clone()),
@@ -1172,6 +1153,36 @@ fn native_generate_response(
             }
         }
     }
+}
+
+/// Keep only product-name quotes the source supports, as every native result does.
+fn verified_product_quotes(
+    prepared: &PreparedTalent,
+    text: &str,
+    writer: &mut impl Write,
+) -> Result<String, RuntimeOutcome> {
+    let checked = match product_names::verify(prepared, text) {
+        Ok(checked) => checked,
+        Err(detail) => {
+            emit(writer, json!({"event":"product_quote_gap","detail":detail}));
+            return Err(RuntimeOutcome::StageFailed(stage_error(
+                "generate",
+                "product_quote",
+                prepared,
+                detail,
+            )));
+        }
+    };
+    if !checked.bindings.is_empty() {
+        emit(
+            writer,
+            json!({"event":"product_quote_bindings","bindings":checked.bindings}),
+        );
+    }
+    for gap in checked.gaps {
+        emit(writer, gap);
+    }
+    Ok(checked.text)
 }
 
 pub(crate) fn generate_and_write(
@@ -1183,7 +1194,7 @@ pub(crate) fn generate_and_write(
     cancellation: &solstone_core_generate::Cancellation,
 ) -> RuntimeOutcome {
     let (response, usage, degraded) =
-        match generate_response(prepared, context, generate, writer, cancellation) {
+        match generate_response(prepared, generate, writer, cancellation) {
             Ok(response) => {
                 if cancellation.is_cancelled() {
                     return RuntimeOutcome::Cancelled;
@@ -4256,9 +4267,6 @@ mod tests {
     #[test]
     fn screen_length_retry_changes_only_instruction() {
         let root = tempfile::tempdir().unwrap();
-        let context = ExecutionContext {
-            journal: root.path().join("journal"),
-        };
         let mut prepared = PreparedTalent::new(
             "screen".into(),
             json!({
@@ -4290,7 +4298,6 @@ mod tests {
         let mut output = Vec::new();
         let response = generate_response(
             &mut prepared,
-            &context,
             &OneShotClient::at_path(&stub),
             &mut output,
             &solstone_core_generate::Cancellation::never(),
