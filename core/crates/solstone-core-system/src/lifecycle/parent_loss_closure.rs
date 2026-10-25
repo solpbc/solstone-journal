@@ -3252,6 +3252,12 @@ mod tests {
             .expect("lease free")
     }
 
+    /// Budget for a closure whose subject is not its deadline. The work takes
+    /// milliseconds on an idle host but can take seconds when the disk is busy,
+    /// so this only bounds a hang. Tests about the deadline pass a short or
+    /// expired budget of their own.
+    const AMPLE_BUDGET: Duration = Duration::from_secs(60);
+
     fn authority<'a>(
         source: &'a dyn ProcessInstanceSource,
         retirer: &'a dyn AdmissionRetirer,
@@ -3297,7 +3303,7 @@ mod tests {
                 instance(11, 3),
                 [],
                 &lease,
-                &authority(&source, &retirer, Duration::from_secs(2)),
+                &authority(&source, &retirer, AMPLE_BUDGET),
             )
             .expect("an abandoned generation must not brick the journal");
 
@@ -3343,7 +3349,7 @@ mod tests {
                 instance(11, 3),
                 [],
                 &lease,
-                &authority(&source, &retirer, Duration::from_secs(2)),
+                &authority(&source, &retirer, AMPLE_BUDGET),
             )
             .expect_err("a live coordinator must refuse closure");
 
@@ -3379,7 +3385,7 @@ mod tests {
                 instance(11, 3),
                 [],
                 &lease,
-                &authority(&source, &retirer, Duration::from_secs(2)),
+                &authority(&source, &retirer, AMPLE_BUDGET),
             )
             .expect_err("a live supervisor must refuse closure");
 
@@ -3449,7 +3455,7 @@ mod tests {
                 instance(11, 3),
                 [],
                 &lease,
-                &authority(&source, &retirer, Duration::from_secs(2)),
+                &authority(&source, &retirer, AMPLE_BUDGET),
             )
             .expect("closure succeeds");
 
@@ -3483,7 +3489,7 @@ mod tests {
                 instance(11, 3),
                 [],
                 &lease,
-                &authority(&source, &retirer, Duration::from_secs(2)),
+                &authority(&source, &retirer, AMPLE_BUDGET),
             )
             .expect_err("incomplete census must refuse");
 
@@ -3543,7 +3549,7 @@ mod tests {
                 instance(11, 3),
                 [],
                 &lease,
-                &authority(&source, &retirer, Duration::from_secs(2)),
+                &authority(&source, &retirer, AMPLE_BUDGET),
             )
             .expect_err("mine staying unverifiable must refuse");
 
@@ -3565,7 +3571,7 @@ mod tests {
             closed_by: instance(30, 3),
             source: &source,
             retirer: &retirer,
-            deadline: Instant::now() + Duration::from_secs(2),
+            deadline: Instant::now() + AMPLE_BUDGET,
         };
         let abandoned = AbandonedGeneration {
             generation: active.generation,
@@ -3613,7 +3619,7 @@ mod tests {
                 instance(11, 3),
                 [],
                 &lease,
-                &authority(&source, &retirer, Duration::from_secs(2)),
+                &authority(&source, &retirer, AMPLE_BUDGET),
             )
             .expect("closed");
 
@@ -3689,7 +3695,7 @@ mod tests {
                 instance(11, 3),
                 [],
                 &lease,
-                &authority(&source, &retirer, Duration::from_secs(2)),
+                &authority(&source, &retirer, AMPLE_BUDGET),
             )
             .expect("a drop torn by the kill must not brick the journal");
 
@@ -3736,7 +3742,7 @@ mod tests {
                 instance(11, 3),
                 [],
                 &lease,
-                &authority(&source, &retirer, Duration::from_secs(2)),
+                &authority(&source, &retirer, AMPLE_BUDGET),
             )
             .expect("a reservation that died before its record must not brick");
 
@@ -3759,7 +3765,7 @@ mod tests {
                 instance(11, 3),
                 [],
                 &lease,
-                &authority(&source, &retirer, Duration::from_secs(2)),
+                &authority(&source, &retirer, AMPLE_BUDGET),
             )
             .expect("closed");
 
@@ -3788,7 +3794,7 @@ mod tests {
                 instance(12, 4),
                 [],
                 &lease,
-                &authority(&source, &retirer, Duration::from_secs(2)),
+                &authority(&source, &retirer, AMPLE_BUDGET),
             )
             .expect("a corrupt pointer must not brick");
 
@@ -3848,7 +3854,7 @@ mod tests {
                 instance(11, 3),
                 [],
                 &lease,
-                &authority(&source, &retirer, Duration::from_secs(2)),
+                &authority(&source, &retirer, AMPLE_BUDGET),
             )
             .expect("closed");
 
@@ -3869,7 +3875,7 @@ mod tests {
                 instance(11, 3),
                 [],
                 &lease,
-                &authority(&source, &retirer, Duration::from_secs(2)),
+                &authority(&source, &retirer, AMPLE_BUDGET),
             )
             .expect("closed");
 
@@ -3901,7 +3907,7 @@ mod tests {
                 instance(11, 3),
                 [],
                 &lease,
-                &authority(&source, &retirer, Duration::from_secs(2)),
+                &authority(&source, &retirer, AMPLE_BUDGET),
             )
             .expect("closed");
 
@@ -3933,7 +3939,7 @@ mod tests {
                 instance(11, 3),
                 [],
                 &lease,
-                &authority(&source, &retirer, Duration::from_secs(2)),
+                &authority(&source, &retirer, AMPLE_BUDGET),
             )
             .expect("advanced");
 
@@ -4086,7 +4092,7 @@ mod tests {
                 instance(11, 3),
                 [],
                 &lease,
-                &authority(&source, &retirer, Duration::from_secs(2)),
+                &authority(&source, &retirer, AMPLE_BUDGET),
             )
             .expect("closure succeeds rebuilding from drops");
 
@@ -4186,7 +4192,7 @@ mod tests {
                 instance(11, 3),
                 [],
                 &lease,
-                &authority(&source, &retirer, Duration::from_secs(2)),
+                &authority(&source, &retirer, AMPLE_BUDGET),
             )
             .expect("a failed nested launch must not permanently refuse publication");
         assert!(next.generation > active.generation);
@@ -4499,7 +4505,7 @@ mod tests {
                 instance(11, 3),
                 [],
                 &lease,
-                &authority(&source, &retirer, Duration::from_secs(2)),
+                &authority(&source, &retirer, AMPLE_BUDGET),
             )
             .expect("closure succeeds");
 
@@ -4610,7 +4616,7 @@ mod tests {
                 instance(11, 3),
                 [],
                 &lease,
-                &authority(&source, &retirer, Duration::from_secs(2)),
+                &authority(&source, &retirer, AMPLE_BUDGET),
             )
             .expect_err("mismatched batch and live admission must fail closure");
 
@@ -4709,7 +4715,7 @@ mod tests {
                 instance(11, 3),
                 [],
                 &lease,
-                &authority(&source, &retirer, Duration::from_secs(2)),
+                &authority(&source, &retirer, AMPLE_BUDGET),
             )
             .expect_err("alien descendant must refuse closure");
 
@@ -4764,7 +4770,7 @@ mod tests {
                 instance(11, 3),
                 [],
                 &lease,
-                &authority(&source, &retirer, Duration::from_secs(2)),
+                &authority(&source, &retirer, AMPLE_BUDGET),
             )
             .expect_err("provisional fault returns CoordinatorNotLive");
         assert!(matches!(
@@ -4796,7 +4802,7 @@ mod tests {
                 instance(11, 3),
                 [],
                 &lease,
-                &authority(&source, &retirer, Duration::from_secs(2)),
+                &authority(&source, &retirer, AMPLE_BUDGET),
             )
             .expect("second attempt closes");
 
@@ -4885,7 +4891,7 @@ mod tests {
                 instance(11, 3),
                 [],
                 &lease,
-                &authority(&source, &retirer, Duration::from_secs(2)),
+                &authority(&source, &retirer, AMPLE_BUDGET),
             )
             .expect_err("a coherent cache cannot authorize allocation");
         assert!(matches!(
@@ -4901,7 +4907,7 @@ mod tests {
                 instance(11, 3),
                 [],
                 &lease,
-                &authority(&source, &retirer, Duration::from_secs(2)),
+                &authority(&source, &retirer, AMPLE_BUDGET),
             )
             .expect("next start recovers from preserved original evidence");
 
@@ -5122,7 +5128,7 @@ mod tests {
                     instance(11, 3),
                     [],
                     &lease,
-                    &authority(&source, &retirer, Duration::from_secs(2)),
+                    &authority(&source, &retirer, AMPLE_BUDGET),
                 )
                 .unwrap();
             assert_eq!(*retirer.signals.lock().unwrap(), vec![(child.pid, "term")]);
@@ -5262,7 +5268,7 @@ mod tests {
                 instance(11, 3),
                 [],
                 &lease,
-                &authority(&source, &retirer, Duration::from_secs(2)),
+                &authority(&source, &retirer, AMPLE_BUDGET),
             )
             .unwrap();
         let original_ledger = fs::read(ledger.sealed_ledger_path(active.generation)).unwrap();
@@ -5280,7 +5286,7 @@ mod tests {
                 instance(12, 4),
                 [],
                 &lease,
-                &authority(&source, &retirer, Duration::from_secs(2)),
+                &authority(&source, &retirer, AMPLE_BUDGET),
             )
             .unwrap();
         assert_eq!(
@@ -5306,7 +5312,7 @@ mod tests {
             instance(11, 3),
             [],
             &lease,
-            &authority(&source, &retirer, Duration::from_secs(2)),
+            &authority(&source, &retirer, AMPLE_BUDGET),
         );
         PUBLICATION_STOP_FAULT.with(|fault| fault.set(false));
         assert!(matches!(
@@ -5329,7 +5335,7 @@ mod tests {
                 instance(12, 4),
                 [],
                 &lease,
-                &authority(&source, &retirer, Duration::from_secs(2)),
+                &authority(&source, &retirer, AMPLE_BUDGET),
             )
             .unwrap();
         let closure = closure_of(&ledger, active.generation);
@@ -5364,7 +5370,7 @@ mod tests {
                 instance(12, 4),
                 [],
                 &lease,
-                &authority(&source, &retirer, Duration::from_secs(10)),
+                &authority(&source, &retirer, AMPLE_BUDGET),
             )
             .unwrap();
         assert_eq!(
@@ -5423,7 +5429,7 @@ mod tests {
                     instance(12, 4),
                     [],
                     &lease,
-                    &authority(&source, &retirer, Duration::from_secs(10)),
+                    &authority(&source, &retirer, AMPLE_BUDGET),
                 );
                 ASSEMBLY_SEGMENT_LIMIT.with(|n| n.set(0));
                 LEGACY_STOP_AFTER_SEGMENT.with(|n| n.set(0));
@@ -5449,7 +5455,7 @@ mod tests {
                             instance(13, 5),
                             [],
                             &lease,
-                            &authority(&source, &retirer, Duration::from_secs(10))
+                            &authority(&source, &retirer, AMPLE_BUDGET)
                         )
                         .is_err(),
                     "unequal={unequal}, damage={damage}"
@@ -5476,7 +5482,7 @@ mod tests {
             instance(11, 3),
             [],
             lease,
-            &authority(source, retirer, Duration::from_secs(10)),
+            &authority(source, retirer, AMPLE_BUDGET),
         );
         PUBLICATION_STOP_FAULT.with(|fault| fault.set(false));
         assert!(result.is_err());
@@ -5527,7 +5533,7 @@ mod tests {
                         instance(12, 4),
                         [],
                         &lease,
-                        &authority(&source, &retirer, Duration::from_secs(10)),
+                        &authority(&source, &retirer, AMPLE_BUDGET),
                     )
                     .unwrap();
                 assert_eq!(HISTORICAL_DISCOVERIES.with(|count| count.get()), 0);
@@ -5591,7 +5597,7 @@ mod tests {
                         instance(12, 4),
                         [],
                         &lease,
-                        &authority(&source, &retirer, Duration::from_secs(10)),
+                        &authority(&source, &retirer, AMPLE_BUDGET),
                     )
                     .is_err()
             );
@@ -5619,7 +5625,7 @@ mod tests {
             instance(11, 3),
             [],
             lease,
-            &authority(source, retirer, Duration::from_secs(10)),
+            &authority(source, retirer, AMPLE_BUDGET),
         );
         ASSEMBLY_STOP_AFTER_SEGMENT.with(|remaining| remaining.set(0));
         ASSEMBLY_SEGMENT_LIMIT.with(|limit| limit.set(0));
@@ -5649,7 +5655,7 @@ mod tests {
             instance(12, 4),
             [],
             &lease,
-            &authority(&source, &retirer, Duration::from_secs(10)),
+            &authority(&source, &retirer, AMPLE_BUDGET),
         );
         ASSEMBLY_STOP_AFTER_SEGMENT.with(|remaining| remaining.set(0));
         assert!(second.is_err());
@@ -5668,7 +5674,7 @@ mod tests {
                 instance(13, 5),
                 [],
                 &lease,
-                &authority(&source, &retirer, Duration::from_secs(10)),
+                &authority(&source, &retirer, AMPLE_BUDGET),
             )
             .unwrap();
         let closure = closure_of(&ledger, active.generation);
@@ -5719,7 +5725,7 @@ mod tests {
                 instance(12, 4),
                 [],
                 &lease,
-                &authority(&source, &retirer, Duration::from_secs(10)),
+                &authority(&source, &retirer, AMPLE_BUDGET),
             );
             ASSEMBLY_WRITE_FAULT.with(|value| value.set(0));
             assert!(interrupted.is_err());
@@ -5729,7 +5735,7 @@ mod tests {
                     instance(13, 5),
                     [],
                     &lease,
-                    &authority(&source, &retirer, Duration::from_secs(10)),
+                    &authority(&source, &retirer, AMPLE_BUDGET),
                 )
                 .unwrap();
             assert_eq!(
@@ -5791,7 +5797,7 @@ mod tests {
                 instance(12, 4),
                 [],
                 &lease,
-                &authority(&source, &retirer, Duration::from_secs(10)),
+                &authority(&source, &retirer, AMPLE_BUDGET),
             );
             ASSEMBLY_STOP_AFTER_SEGMENT.with(|remaining| remaining.set(0));
             assert!(first.is_err());
@@ -5804,7 +5810,7 @@ mod tests {
                     instance(13, 5),
                     [],
                     &lease,
-                    &authority(&source, &retirer, Duration::from_secs(10)),
+                    &authority(&source, &retirer, AMPLE_BUDGET),
                 )
                 .unwrap();
             assert_eq!(
@@ -5848,7 +5854,7 @@ mod tests {
                 instance(12, 4),
                 [],
                 &lease,
-                &authority(&source, &retirer, Duration::from_secs(10)),
+                &authority(&source, &retirer, AMPLE_BUDGET),
             );
             if damage_spool {
                 assert!(recovered.is_err());
@@ -5861,7 +5867,7 @@ mod tests {
                         instance(13, 5),
                         [],
                         &lease,
-                        &authority(&source, &retirer, Duration::from_secs(10)),
+                        &authority(&source, &retirer, AMPLE_BUDGET),
                     )
                     .unwrap();
             } else {
@@ -5906,7 +5912,7 @@ mod tests {
                 instance(12, 4),
                 [],
                 &lease,
-                &authority(&source, &retirer, Duration::from_secs(10)),
+                &authority(&source, &retirer, AMPLE_BUDGET),
             )
             .unwrap();
         assert_eq!(closure_of(&ledger, active.generation).admissions.len(), 2);
@@ -5943,7 +5949,7 @@ mod tests {
                         instance(11, 3),
                         [],
                         &lease,
-                        &authority(&source, &retirer, Duration::from_secs(10))
+                        &authority(&source, &retirer, AMPLE_BUDGET)
                     )
                     .is_err()
             );
@@ -5980,7 +5986,7 @@ mod tests {
             instance(11, 3),
             [],
             &lease,
-            &authority(&source, &retirer, Duration::from_secs(10)),
+            &authority(&source, &retirer, AMPLE_BUDGET),
         );
         LEGACY_LEDGER_MUTATION_FAULT.with(|fault| fault.set(false));
         assert!(result.is_err());
@@ -6029,7 +6035,7 @@ mod tests {
             instance(12, 4),
             [],
             &lease,
-            &authority(&source, &retirer, Duration::from_secs(10)),
+            &authority(&source, &retirer, AMPLE_BUDGET),
         );
         ASSEMBLY_SEGMENT_LIMIT.with(|limit| limit.set(0));
         ASSEMBLY_STOP_AFTER_SEGMENT.with(|remaining| remaining.set(0));
@@ -6046,7 +6052,7 @@ mod tests {
                 instance(13, 5),
                 [],
                 &lease,
-                &authority(&source, &retirer, Duration::from_secs(10)),
+                &authority(&source, &retirer, AMPLE_BUDGET),
             )
             .unwrap();
         assert_eq!(closure_of(&ledger, active.generation).admissions.len(), 2);
@@ -6086,7 +6092,7 @@ mod tests {
                 instance(12, 4),
                 [],
                 &lease,
-                &authority(&source, &retirer, Duration::from_secs(10)),
+                &authority(&source, &retirer, AMPLE_BUDGET),
             );
             fault.with(|value| value.borrow_mut().take());
             assert!(
@@ -6102,7 +6108,7 @@ mod tests {
                     instance(13, 5),
                     [],
                     &lease,
-                    &authority(&source, &retirer, Duration::from_secs(10)),
+                    &authority(&source, &retirer, AMPLE_BUDGET),
                 )
                 .unwrap();
             let closure = closure_of(&ledger, active.generation);
@@ -6127,7 +6133,7 @@ mod tests {
             instance(11, 3),
             [],
             lease,
-            &authority(source, retirer, Duration::from_secs(10)),
+            &authority(source, retirer, AMPLE_BUDGET),
         );
         AUDIT_STOP_AFTER_BATCH.with(|remaining| remaining.set(0));
         assert!(result.is_err());
@@ -6181,7 +6187,7 @@ mod tests {
                 instance(13, 5),
                 [],
                 &lease,
-                &authority(&source, &retirer, Duration::from_secs(10)),
+                &authority(&source, &retirer, AMPLE_BUDGET),
             )
             .unwrap();
         assert_eq!(HISTORICAL_DISCOVERIES.with(|count| count.get()), 0);
@@ -6239,7 +6245,7 @@ mod tests {
                 instance(12, 4),
                 [],
                 &lease,
-                &authority(&source, &retirer, Duration::from_secs(10)),
+                &authority(&source, &retirer, AMPLE_BUDGET),
             );
             DISCOVERY_STOP_FAULT.with(|fault| fault.set(false));
             assert!(first.is_err());
@@ -6266,7 +6272,7 @@ mod tests {
                     instance(13, 5),
                     [],
                     &lease,
-                    &authority(&source, &retirer, Duration::from_secs(10)),
+                    &authority(&source, &retirer, AMPLE_BUDGET),
                 )
                 .unwrap();
             let sealed: Vec<serde_json::Value> = serde_json::from_slice(
@@ -6342,7 +6348,7 @@ mod tests {
                 instance(12, 4),
                 [],
                 &lease,
-                &authority(&source, &retirer, Duration::from_secs(10)),
+                &authority(&source, &retirer, AMPLE_BUDGET),
             )
             .unwrap();
         assert_eq!(HISTORICAL_DISCOVERIES.with(|count| count.get()), 1);
@@ -6398,7 +6404,7 @@ mod tests {
             instance(11, 3),
             [],
             &lease,
-            &authority(&source, &retirer, Duration::from_secs(2)),
+            &authority(&source, &retirer, AMPLE_BUDGET),
         );
         AUDIT_STOP_AFTER_BATCH.with(|remaining| remaining.set(0));
         assert!(first.is_err());
@@ -6422,7 +6428,7 @@ mod tests {
                 instance(12, 4),
                 [],
                 &lease,
-                &authority(&source, &retirer, Duration::from_secs(2)),
+                &authority(&source, &retirer, AMPLE_BUDGET),
             )
             .unwrap();
         assert_eq!(
@@ -6467,7 +6473,7 @@ mod tests {
             instance(11, 3),
             [],
             &lease,
-            &authority(&source, &retirer, Duration::from_secs(2)),
+            &authority(&source, &retirer, AMPLE_BUDGET),
         );
         AUDIT_STOP_AFTER_BATCH.with(|remaining| remaining.set(0));
         assert!(first.is_err());
@@ -6484,7 +6490,7 @@ mod tests {
             instance(12, 4),
             [],
             &lease,
-            &authority(&source, &retirer, Duration::from_secs(2)),
+            &authority(&source, &retirer, AMPLE_BUDGET),
         );
         assert!(!batch.exists());
         assert!(fs::read_dir(batch.parent().unwrap()).unwrap().flatten().any(|entry|
@@ -6495,7 +6501,7 @@ mod tests {
                     instance(13, 5),
                     [],
                     &lease,
-                    &authority(&source, &retirer, Duration::from_secs(2)),
+                    &authority(&source, &retirer, AMPLE_BUDGET),
                 )
                 .unwrap();
         }
@@ -6530,7 +6536,7 @@ mod tests {
                 instance(11, 3),
                 [],
                 &lease,
-                &authority(&source, &retirer, Duration::from_secs(2)),
+                &authority(&source, &retirer, AMPLE_BUDGET),
             );
             AUDIT_STOP_AFTER_BATCH.with(|remaining| remaining.set(0));
             assert!(first.is_err());
@@ -6550,7 +6556,7 @@ mod tests {
                     instance(12, 4),
                     [],
                     &lease,
-                    &authority(&source, &retirer, Duration::from_secs(2)),
+                    &authority(&source, &retirer, AMPLE_BUDGET),
                 )
                 .unwrap();
             assert_eq!(AUDIT_BATCH_READS.with(|count| count.get()), 0);
@@ -6592,7 +6598,7 @@ mod tests {
             instance(11, 3),
             [],
             &lease,
-            &authority(&source, &retirer, Duration::from_secs(2)),
+            &authority(&source, &retirer, AMPLE_BUDGET),
         );
         AUDIT_STOP_AFTER_BATCH.with(|remaining| remaining.set(0));
         assert!(first.is_err());
@@ -6609,7 +6615,7 @@ mod tests {
                 instance(12, 4),
                 [],
                 &lease,
-                &authority(&source, &retirer, Duration::from_secs(2)),
+                &authority(&source, &retirer, AMPLE_BUDGET),
             )
             .unwrap();
         assert_eq!(AUDIT_BATCH_READS.with(|count| count.get()), 1);
@@ -6649,7 +6655,7 @@ mod tests {
                 instance(11, 3),
                 [],
                 &lease,
-                &authority(&source, &retirer, Duration::from_secs(2)),
+                &authority(&source, &retirer, AMPLE_BUDGET),
             );
             PUBLICATION_STOP_FAULT.with(|fault| fault.set(false));
             assert!(first.is_err());
@@ -6675,7 +6681,7 @@ mod tests {
                     instance(12, 4),
                     [],
                     &lease,
-                    &authority(&source, &retirer, Duration::from_secs(2)),
+                    &authority(&source, &retirer, AMPLE_BUDGET),
                 )
                 .unwrap();
             let sealed: serde_json::Value = serde_json::from_slice(
@@ -6710,7 +6716,7 @@ mod tests {
                     instance(11, 3),
                     [],
                     &lease,
-                    &authority(&source, &retirer, Duration::from_secs(2)),
+                    &authority(&source, &retirer, AMPLE_BUDGET),
                 )
                 .unwrap();
             let published_record = fs::read(ledger.record_path(active.generation)).unwrap();
@@ -6738,7 +6744,7 @@ mod tests {
                     instance(12, 4),
                     [],
                     &lease,
-                    &authority(&source, &retirer, Duration::from_secs(2)),
+                    &authority(&source, &retirer, AMPLE_BUDGET),
                 )
                 .expect("late acknowledgement must not permanently wedge a sealed predecessor");
             let closure = closure_of(&ledger, active.generation);
@@ -6784,7 +6790,7 @@ mod tests {
                 instance(11, 3),
                 [],
                 &lease,
-                &authority(&source, &retirer, Duration::from_secs(2)),
+                &authority(&source, &retirer, AMPLE_BUDGET),
             )
             .unwrap();
         // Simulate death after record publication but before successor-pointer publication.
@@ -6801,7 +6807,7 @@ mod tests {
                 instance(12, 4),
                 [],
                 &lease,
-                &authority(&source, &retirer, Duration::from_secs(2)),
+                &authority(&source, &retirer, AMPLE_BUDGET),
             )
             .unwrap();
         assert_eq!(
@@ -6827,7 +6833,7 @@ mod tests {
                     instance(13, 5),
                     [],
                     &lease,
-                    &authority(&source, &retirer, Duration::from_secs(2))
+                    &authority(&source, &retirer, AMPLE_BUDGET)
                 )
                 .is_err()
         );
@@ -6960,6 +6966,8 @@ mod tests {
                 &authority(&source, &retirer, Duration::from_millis(50)),
             )
             .expect_err("attempt deadline hit");
+        // The clamp reads the clock during the attempt, so it is no later than this.
+        let attempt_ended_ms = unix_millis();
         assert!(matches!(
             error,
             ParentLossLedgerError::RecoveryRequired(BootstrapRecoveryReason::CoordinatorNotLive)
@@ -6968,7 +6976,7 @@ mod tests {
         let persisted: LiveRecoveryFile =
             serde_json::from_slice(&fs::read(&live_path).unwrap()).unwrap();
         assert!(
-            persisted.escalate_at_unix_ms <= now_ms + 12_500 + 500,
+            persisted.escalate_at_unix_ms <= attempt_ended_ms + 12_500,
             "escalate_at clamped down to <= now + 12_500"
         );
 
@@ -6998,7 +7006,7 @@ mod tests {
                 instance(11, 3),
                 [],
                 &lease,
-                &authority(&source, &retirer, Duration::from_secs(2)),
+                &authority(&source, &retirer, AMPLE_BUDGET),
             )
             .expect_err(
                 "past reap deadline with process still live returns AbandonedAdmissionLive",
@@ -7213,7 +7221,7 @@ mod tests {
                 instance(11, 3),
                 [],
                 &lease,
-                &authority(&source, &retirer, Duration::from_secs(2)),
+                &authority(&source, &retirer, AMPLE_BUDGET),
             )
             .expect_err("live descendant must prevent completion");
         assert!(matches!(
@@ -7268,7 +7276,7 @@ mod tests {
                 instance(11, 3),
                 [],
                 &lease,
-                &authority(&source, &retirer, Duration::from_secs(2)),
+                &authority(&source, &retirer, AMPLE_BUDGET),
             )
             .expect("rebuilds different ledger");
         assert_eq!(successor.generation, active.generation + 1);
