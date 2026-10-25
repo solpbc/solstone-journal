@@ -882,6 +882,38 @@ pub struct TaskQueue {
     inner: Arc<QueueInner>,
 }
 
+/// One local-runtime transition's queue admission pause. Dropping it resumes
+/// ordinary policy selection; safety holds and shutdown remain authoritative.
+pub struct LocalAnalysisPause {
+    queue: TaskQueue,
+}
+
+impl LocalAnalysisPause {
+    pub fn is_idle(&self) -> bool {
+        let state = self.queue.inner.state.lock().expect("queue state");
+        !state.shutdown
+            && state.queue_hold.is_none()
+            && !state
+                .running
+                .values()
+                .any(|slot| is_local_analysis_command(&slot.command))
+            && !state
+                .held
+                .values()
+                .any(|entry| is_local_analysis_command(&entry.dispatch.submission.command))
+    }
+}
+
+impl Drop for LocalAnalysisPause {
+    fn drop(&mut self) {
+        {
+            let mut state = self.queue.inner.state.lock().expect("queue state");
+            state.local_analysis_pauses -= 1;
+        }
+        self.queue.resume_processing();
+    }
+}
+
 #[derive(Clone)]
 pub struct CallableTaskContext {
     pub cancelled: Arc<std::sync::atomic::AtomicBool>,
@@ -1023,6 +1055,7 @@ struct HeldEntry {
 struct QueueState {
     ready: bool,
     shutdown: bool,
+    local_analysis_pauses: usize,
     running: BTreeMap<Partition, RunningSlot>,
     held: BTreeMap<Partition, HeldEntry>,
     queue_hold: Option<QueueHoldStatus>,
@@ -1513,6 +1546,7 @@ impl TaskQueue {
                 state: Mutex::new(QueueState {
                     ready: options.ready,
                     shutdown: false,
+                    local_analysis_pauses: 0,
                     running: BTreeMap::new(),
                     held: held_entries,
                     queue_hold,
@@ -1757,6 +1791,19 @@ impl TaskQueue {
         };
         for dispatch in dispatches {
             start_dispatch(Arc::clone(&self.inner), dispatch);
+        }
+    }
+
+    /// Pause new think/describe reservations under the same lock as admission.
+    /// Existing work keeps running and can drain before a local-runtime swap.
+    pub fn pause_local_analysis(&self) -> LocalAnalysisPause {
+        self.inner
+            .state
+            .lock()
+            .expect("queue state")
+            .local_analysis_pauses += 1;
+        LocalAnalysisPause {
+            queue: self.clone(),
         }
     }
 
@@ -3322,7 +3369,7 @@ fn take_ready(state: &mut QueueState, selection: Selection) -> Vec<Dispatch> {
                 || state
                     .background_finished_at
                     .is_some_and(|at| at.elapsed() < spending.confidential_history_rest));
-        let analysis = allowed
+        let analysis = (allowed && state.local_analysis_pauses == 0)
             .then(|| {
                 state
                     .queues
@@ -3352,6 +3399,8 @@ fn take_ready(state: &mut QueueState, selection: Selection) -> Vec<Dispatch> {
                         && !state.held.contains_key(partition)
                         && queue.front().is_some_and(|entry| {
                             !is_analysis_command(&entry.command)
+                                && !(state.local_analysis_pauses != 0
+                                    && is_local_analysis_command(&entry.command))
                                 && !index_daily_conflict(state, &entry.command)
                         }))
                     .then(|| (partition.clone(), 0))
@@ -3399,6 +3448,26 @@ fn take_ready(state: &mut QueueState, selection: Selection) -> Vec<Dispatch> {
         });
     }
     dispatches
+}
+
+fn is_local_analysis_command(command: &[String]) -> bool {
+    if is_analysis_command(command) {
+        return true;
+    }
+    let alias = crate::partition::journal_alias_form(command);
+    let Some(program) = alias
+        .first()
+        .and_then(|value| Path::new(value).file_name())
+        .and_then(|value| value.to_str())
+    else {
+        return false;
+    };
+    program == "solstone-core-describe"
+        || ((program == "solstone" || program.eq_ignore_ascii_case("solstone.exe"))
+            && alias.get(1).is_some_and(|value| value == "journal")
+            && alias.get(2).is_some_and(|value| value == "describe"))
+        || (matches!(program, "journal" | "solstone-core-journal")
+            && alias.get(1).is_some_and(|value| value == "describe"))
 }
 
 fn is_analysis_command(command: &[String]) -> bool {
@@ -6429,6 +6498,127 @@ mod tests {
             priority: None,
             daily_catchup_provenance: None,
         })
+    }
+
+    #[test]
+    fn local_analysis_recognizes_think_and_every_queued_describe_form() {
+        for command in [
+            vec!["journal", "think"],
+            vec!["solstone", "journal", "think"],
+            vec!["journal", "describe"],
+            vec!["/installed/solstone-core-journal", "describe"],
+            vec!["solstone", "journal", "describe"],
+            vec!["/installed/solstone-core-describe"],
+        ] {
+            assert!(is_local_analysis_command(
+                &command.into_iter().map(String::from).collect::<Vec<_>>()
+            ));
+        }
+        assert!(!is_local_analysis_command(&[
+            "journal".into(),
+            "maintenance".into()
+        ]));
+    }
+
+    #[cfg(feature = "full-tests")]
+    #[test]
+    fn local_analysis_pause_drains_reserved_work_and_atomically_excludes_new_work() {
+        let queue = queue(false, 10, VecDeque::new());
+        let enqueue = |state: &mut QueueState, command: &[&str], reference: &str| {
+            enqueue_locked(
+                state,
+                normalize_request(
+                    command_request(command, reference, None),
+                    queue.inner.options.cap_resolver.as_ref(),
+                ),
+            );
+        };
+        {
+            let mut state = ready_state(&queue);
+            enqueue(
+                &mut state,
+                &["journal", "think", "--day", "20260101"],
+                "already-reserved",
+            );
+            let selected = take_ready(
+                &mut state,
+                selection(
+                    chrono::NaiveDate::from_ymd_opt(2026, 1, 11).unwrap(),
+                    local_spending(),
+                ),
+            );
+            assert_eq!(selected.len(), 1);
+            state.ready = false;
+        }
+        let pause = queue.pause_local_analysis();
+        assert!(!pause.is_idle(), "reservation precedes worker launch");
+        {
+            let mut state = ready_state(&queue);
+            enqueue(
+                &mut state,
+                &["journal", "think", "--day", "20260102"],
+                "later-think",
+            );
+            enqueue(
+                &mut state,
+                &["journal", "describe", "segment"],
+                "later-describe",
+            );
+            enqueue(&mut state, &["journal", "maintenance"], "maintenance");
+            let selected = take_ready(
+                &mut state,
+                selection(
+                    chrono::NaiveDate::from_ymd_opt(2026, 1, 11).unwrap(),
+                    local_spending(),
+                ),
+            );
+            assert_eq!(
+                selected
+                    .iter()
+                    .map(|dispatch| dispatch.submission.reference.as_str())
+                    .collect::<Vec<_>>(),
+                ["maintenance"]
+            );
+            state.running.clear();
+            state.ready = false;
+        }
+        assert!(
+            pause.is_idle(),
+            "pending work cannot bypass paused admission"
+        );
+        let another_pause = queue.pause_local_analysis();
+        drop(pause);
+        {
+            let mut state = ready_state(&queue);
+            assert!(
+                take_ready(
+                    &mut state,
+                    selection(
+                        chrono::NaiveDate::from_ymd_opt(2026, 1, 11).unwrap(),
+                        local_spending()
+                    )
+                )
+                .is_empty()
+            );
+            state.ready = false;
+        }
+        drop(another_pause);
+        {
+            let mut state = ready_state(&queue);
+            let selected = take_ready(
+                &mut state,
+                selection(
+                    chrono::NaiveDate::from_ymd_opt(2026, 1, 11).unwrap(),
+                    local_spending(),
+                ),
+            );
+            assert_eq!(selected.len(), 2);
+            state.running.clear();
+            state.ready = false;
+            state.shutdown = true;
+        }
+        let pause = queue.pause_local_analysis();
+        assert!(!pause.is_idle(), "shutdown never admits a replacement");
     }
 
     fn command_request(

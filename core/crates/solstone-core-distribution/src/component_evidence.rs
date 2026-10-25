@@ -415,6 +415,54 @@ fn screen_ocr_member_input(path: &str, final_sha256: &str, inputs: &[InputRef]) 
     })
 }
 
+type Identity = (String, String, Vec<InputRef>);
+
+/// Windows ARM rows whose identity differs from the Intel package: archives
+/// pinned per architecture, the ARM NVIDIA attestation SDK revision, and the
+/// components ARM builds from source. Every other Windows row shares the
+/// Intel identity table, keyed by target where the pin is per target.
+fn windows_aarch64_identity(id: &str) -> Option<Result<Identity, EvidenceError>> {
+    fn archive(pin: &crate::produce::windows_archives::ArchivePin) -> (String, Vec<InputRef>) {
+        let (base, name) = pin.url.rsplit_once('/').unwrap_or((pin.url, pin.url));
+        (
+            base.to_string(),
+            vec![InputRef {
+                name: name.to_string(),
+                sha256: pin.sha256.to_string(),
+            }],
+        )
+    }
+    match id {
+        "rclone" => {
+            let pin = &crate::produce::windows_archives::RCLONE_ARM64;
+            let (src, inputs) = archive(pin);
+            Some(Ok((pin.version.to_string(), src, inputs)))
+        }
+        "msvc-runtime" => {
+            let pin = &crate::produce::windows_archives::MSVC_ARM64;
+            let (src, inputs) = archive(pin);
+            Some(Ok((pin.version.to_string(), src, inputs)))
+        }
+        "nvattest" => {
+            let revision = crate::nvattest_windows_arm64::SDK_REVISION.to_string();
+            Some(Ok((revision.clone(), revision, Vec::new())))
+        }
+        // Built from the upstream release tarball: the row names the release
+        // and that tarball; the receipt binds the revision and the build.
+        "restic" => Some(Ok((
+            crate::restic_windows::VERSION.to_string(),
+            crate::restic_windows::SOURCE_URL.to_string(),
+            Vec::new(),
+        ))),
+        "openmp" => Some(Ok((
+            crate::openmp_windows::VERSION.to_string(),
+            crate::openmp_windows::SOURCE_URL.to_string(),
+            Vec::new(),
+        ))),
+        _ => None,
+    }
+}
+
 fn bundled_identity(
     checkout: &Path,
     target: &str,
@@ -448,7 +496,12 @@ fn bundled_identity(
             }],
         ));
     }
-    if target == "windows-x86_64" {
+    if target == "windows-aarch64"
+        && let Some(identity) = windows_aarch64_identity(id)
+    {
+        return identity;
+    }
+    if target == "windows-x86_64" || target == "windows-aarch64" {
         match id {
             "ced-engine" => {
                 let ver = crate::ced_windows::CED_CPP_COMMIT.to_string();
@@ -595,7 +648,7 @@ fn bundled_identity(
                 // The bundled place names: GeoNames cities500 as downloaded
                 // 2026-10-11 and Natural Earth at commit ca96624; see
                 // core/models/assets/geo/README.md. Change both with the file.
-                let ver = "geonames-20261023-f409664e2033-natural-earth-ca96624".to_string();
+                let ver = "geonames-20261024-e117bbe13961-natural-earth-ca96624".to_string();
                 let src = "core/models/assets/geo/area-tier.bin".to_string();
                 let sha = read_digest_const(
                     &checkout.join("core/crates/solstone-core-location/src/asset.rs"),
@@ -735,7 +788,7 @@ fn bundled_identity(
                 // The bundled place names: GeoNames cities500 as downloaded
                 // 2026-10-11 and Natural Earth at commit ca96624; see
                 // core/models/assets/geo/README.md. Change both with the file.
-                let ver = "geonames-20261023-f409664e2033-natural-earth-ca96624".to_string();
+                let ver = "geonames-20261024-e117bbe13961-natural-earth-ca96624".to_string();
                 let src = "core/models/assets/geo/area-tier.bin".to_string();
                 let sha = read_digest_const(
                     &checkout.join("core/crates/solstone-core-location/src/asset.rs"),
@@ -1823,12 +1876,37 @@ pub fn render_windows_component_evidence(
     requested_version: Option<&str>,
     out_dir: &Path,
 ) -> Result<(), EvidenceError> {
+    render_windows_component_evidence_for_target(
+        payload_root,
+        observed_head,
+        observed_dirty,
+        requested_version,
+        out_dir,
+        solstone_core_installed_payload::WindowsArchitecture::X86_64,
+    )
+}
+
+/// Renders the evidence for one Windows target. The architecture is the
+/// caller's trusted choice: a signed manifest never selects the architecture
+/// it is verified against.
+pub fn render_windows_component_evidence_for_target(
+    payload_root: &Path,
+    observed_head: &str,
+    observed_dirty: bool,
+    requested_version: Option<&str>,
+    out_dir: &Path,
+    architecture: solstone_core_installed_payload::WindowsArchitecture,
+) -> Result<(), EvidenceError> {
     if observed_dirty {
         return Err(EvidenceError::new("windows-evidence-dirty-tree"));
     }
     let verified =
-        solstone_core_installed_payload::windows_payload::verify_windows_payload(payload_root)
-            .map_err(|e| EvidenceError::new(format!("verification-failed: {e}")))?;
+        solstone_core_installed_payload::windows_payload::verify_windows_payload_for_architecture(
+            payload_root,
+            architecture,
+        )
+        .map_err(|e| EvidenceError::new(format!("verification-failed: {e}")))?;
+    let target = architecture.target_id();
 
     if verified.manifest().source_commit != observed_head {
         return Err(EvidenceError::new(format!(
@@ -1838,7 +1916,13 @@ pub fn render_windows_component_evidence(
         )));
     }
 
-    if verified.manifest().target != "windows-x86_64" {
+    crate::produce::require_same_source_commit(
+        env!("SOLSTONE_DISTRIBUTION_SOURCE_COMMIT"),
+        &verified.manifest().source_commit,
+    )
+    .map_err(|e| EvidenceError::new(e.to_string()))?;
+
+    if verified.manifest().target != target {
         return Err(EvidenceError::new(format!(
             "target-mismatch: manifest {}",
             verified.manifest().target
@@ -1858,7 +1942,6 @@ pub fn render_windows_component_evidence(
     }
 
     let version = workspace_ver;
-    let target = "windows-x86_64";
 
     let inv_path = repo_root.join("core/distribution/inventory.toml");
     let inventory = crate::inventory::load_inventory(&inv_path)
@@ -1877,7 +1960,7 @@ pub fn render_windows_component_evidence(
         let dest = &file.path;
 
         let matched = inventory.entry.iter().find_map(|e| {
-            if entry_targets(e).iter().any(|t| t == "windows-x86_64")
+            if entry_targets(e).iter().any(|t| t == target)
                 && entry_dest_matches(e, dest)
                 && e.class() == Some(crate::inventory::DeliveryClass::Component)
             {
@@ -1905,7 +1988,11 @@ pub fn render_windows_component_evidence(
         // The verifier's CA bundle carries no receipt of its own; it is named
         // from its production pin, as `name_receipt_inputs` names it.
         if id == "nvattest" && dest.ends_with(".pem") {
-            let pins = crate::nvattest_windows::production_pins();
+            let pins = if target == "windows-aarch64" {
+                crate::nvattest_windows_arm64::pins()
+            } else {
+                crate::nvattest_windows::production_pins()
+            };
             row_inputs = vec![InputRef {
                 name: "ca-bundle.pem".to_string(),
                 sha256: pins.ca_bundle.sha256.to_string(),
@@ -1921,6 +2008,10 @@ pub fn render_windows_component_evidence(
             "parakeet-server" => Some("share/provenance/parakeet/receipt.json"),
             "rfdetr-engine" => Some("share/provenance/rfdetr/receipt.json"),
             "onnxruntime" => Some("share/provenance/onnx/receipt.json"),
+            // Windows ARM builds these from source under a controlled build;
+            // the Intel package admits restic as a release archive instead.
+            "openmp" if target == "windows-aarch64" => Some("share/provenance/openmp/receipt.json"),
+            "restic" if target == "windows-aarch64" => Some("share/provenance/restic/receipt.json"),
             "nvattest" => {
                 if dest.ends_with(".pem") {
                     None
@@ -1981,7 +2072,7 @@ pub fn render_windows_component_evidence(
                 }
             }
         } else if id == "msvc-runtime" {
-            let (pin_path, pin_sha256) = match_msvc_pin(entry, dest)?;
+            let (pin_path, pin_sha256) = match_msvc_pin(entry, dest, target)?;
             inner_path = Some(pin_path.to_string());
             extracted_sha256 = Some(pin_sha256.to_string());
         }
@@ -2117,6 +2208,7 @@ pub fn render_windows_component_evidence(
 fn match_msvc_pin(
     entry: &crate::inventory::Entry,
     dest: &str,
+    target: &str,
 ) -> Result<(&'static str, &'static str), EvidenceError> {
     let member_str = match entry {
         crate::inventory::Entry::WindowsNative { member, .. } => member.as_str(),
@@ -2124,14 +2216,23 @@ fn match_msvc_pin(
             return Err(EvidenceError::new(format!("undeclared msvc copy: {dest}")));
         }
     };
-    match_msvc_member_pin(member_str, dest)
+    match_msvc_member_pin(member_str, dest, target)
+}
+
+fn msvc_archive_pin(target: &str) -> &'static crate::produce::windows_archives::ArchivePin {
+    if target == "windows-aarch64" {
+        &crate::produce::windows_archives::MSVC_ARM64
+    } else {
+        &crate::produce::windows_archives::MSVC
+    }
 }
 
 fn match_msvc_member_pin(
     member_str: &str,
     dest: &str,
+    target: &str,
 ) -> Result<(&'static str, &'static str), EvidenceError> {
-    let matched_pin = crate::produce::windows_archives::MSVC
+    let matched_pin = msvc_archive_pin(target)
         .members
         .iter()
         .find(|m| m.label == member_str);
@@ -4488,8 +4589,12 @@ mod tests {
 
     #[test]
     fn match_msvc_member_pin_unknown_label_refuses() {
-        let err = match_msvc_member_pin("unknown_msvc.dll", "lib/solstone-native/unknown_msvc.dll")
-            .unwrap_err();
+        let err = match_msvc_member_pin(
+            "unknown_msvc.dll",
+            "lib/solstone-native/unknown_msvc.dll",
+            "windows-x86_64",
+        )
+        .unwrap_err();
         assert_eq!(
             err.message,
             "undeclared msvc copy: lib/solstone-native/unknown_msvc.dll"
@@ -4498,8 +4603,12 @@ mod tests {
 
     #[test]
     fn match_msvc_member_pin_valid_label_resolves() {
-        let (path, sha256) =
-            match_msvc_member_pin("msvcp140.dll", "lib/solstone-native/msvcp140.dll").unwrap();
+        let (path, sha256) = match_msvc_member_pin(
+            "msvcp140.dll",
+            "lib/solstone-native/msvcp140.dll",
+            "windows-x86_64",
+        )
+        .unwrap();
         assert_eq!(
             path,
             "Contents/VC/Redist/MSVC/14.44.35112/x64/Microsoft.VC143.CRT/msvcp140.dll"
@@ -4508,5 +4617,142 @@ mod tests {
             sha256,
             "0f885b509a685d2bbfa652fed26b5fb31d88fbdab0a978c641d1c7b8aa460aa9"
         );
+    }
+
+    #[test]
+    fn match_msvc_member_pin_resolves_the_arm64_redistributable() {
+        let (path, sha256) = match_msvc_member_pin(
+            "msvcp140.dll",
+            "lib/solstone-native/msvcp140.dll",
+            "windows-aarch64",
+        )
+        .unwrap();
+        assert_eq!(
+            path,
+            "Contents/VC/Redist/MSVC/14.44.35112/arm64/Microsoft.VC143.CRT/msvcp140.dll"
+        );
+        assert_eq!(
+            sha256,
+            "045faeab0b5710816ae160ea20dae8495ffc11bb51feca15d22aaf7ff3752cb3"
+        );
+        // The Intel-only CRT companion has no ARM pin.
+        assert!(
+            match_msvc_member_pin(
+                "vcruntime140_1.dll",
+                "lib/solstone-native/vcruntime140_1.dll",
+                "windows-aarch64",
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn every_windows_bundled_component_has_an_identity() {
+        let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
+        let inv =
+            crate::inventory::load_inventory(&repo_root.join("core/distribution/inventory.toml"))
+                .unwrap();
+        for target in ["windows-x86_64", "windows-aarch64"] {
+            let mut ids = std::collections::BTreeSet::new();
+            for entry in &inv.entry {
+                if !entry_targets(entry).iter().any(|t| t == target)
+                    || entry.class() != Some(crate::inventory::DeliveryClass::Component)
+                    || matches!(
+                        entry,
+                        crate::inventory::Entry::PinnedMembers { .. }
+                            | crate::inventory::Entry::PinnedNative { .. }
+                    )
+                {
+                    continue;
+                }
+                let Some(id) = crate::inventory::entry_component_id(entry) else {
+                    continue;
+                };
+                if let Err(err) = bundled_identity(&repo_root, target, id) {
+                    panic!("no identity for {id} on {target}: {}", err.message);
+                }
+                ids.insert(id);
+            }
+            assert_eq!(ids.contains("openmp"), target == "windows-aarch64");
+        }
+    }
+
+    #[test]
+    fn windows_arm_identity_names_arm_pins_and_shares_the_rest() {
+        let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
+        let arm = |id| bundled_identity(&repo_root, "windows-aarch64", id).unwrap();
+        let intel = |id| bundled_identity(&repo_root, "windows-x86_64", id).unwrap();
+
+        let (version, source, inputs) = arm("rclone");
+        assert_eq!(
+            (version.as_str(), source.as_str()),
+            ("1.74.4", "https://downloads.rclone.org/v1.74.4")
+        );
+        assert_eq!(inputs[0].name, "rclone-v1.74.4-windows-arm64.zip");
+        assert_eq!(
+            inputs[0].sha256,
+            crate::produce::windows_archives::RCLONE_ARM64.sha256
+        );
+
+        let (version, _, inputs) = arm("msvc-runtime");
+        assert_eq!(
+            version,
+            crate::produce::windows_archives::MSVC_ARM64.version
+        );
+        assert_eq!(
+            inputs[0].name,
+            "Microsoft.VC.14.44.17.14.CRT.Redist.ARM64.base.vsix"
+        );
+        assert_eq!(
+            inputs[0].sha256,
+            crate::produce::windows_archives::MSVC_ARM64.sha256
+        );
+
+        let (version, source, inputs) = arm("nvattest");
+        assert_eq!(version, crate::nvattest_windows_arm64::SDK_REVISION);
+        assert_eq!(source, crate::nvattest_windows_arm64::SDK_REVISION);
+        assert_ne!(version, intel("nvattest").0);
+        assert!(inputs.is_empty(), "joined to the controlled build receipt");
+
+        // ARM builds restic and OpenMP from source under a controlled build.
+        assert_eq!(
+            arm("restic"),
+            (
+                crate::restic_windows::VERSION.to_string(),
+                crate::restic_windows::SOURCE_URL.to_string(),
+                Vec::new()
+            )
+        );
+        assert_eq!(
+            arm("openmp"),
+            (
+                crate::openmp_windows::VERSION.to_string(),
+                crate::openmp_windows::SOURCE_URL.to_string(),
+                Vec::new()
+            )
+        );
+
+        // Same upstream source on both architectures.
+        for id in [
+            "ced-engine",
+            "llama-server",
+            "vulkan-loader",
+            "parakeet-server",
+            "parakeet-model",
+            "rfdetr-engine",
+            "onnxruntime",
+            "wespeaker-model",
+            "pyannote-model",
+            "area-tier",
+            "firered-vad-model",
+            "rfdetr-model",
+        ] {
+            assert_eq!(arm(id), intel(id), "{id}");
+        }
+        // Pinned per target.
+        let (_, _, arm_pdfium) = arm("pdfium");
+        let (_, _, intel_pdfium) = intel("pdfium");
+        assert_ne!(arm_pdfium, intel_pdfium);
+        assert!(arm_pdfium[0].name.contains("arm64"));
     }
 }

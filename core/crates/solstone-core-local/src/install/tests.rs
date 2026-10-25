@@ -183,11 +183,11 @@ fn candidate_request(root: &PathBuf) -> serde_json::Map<String, Value> {
 }
 
 #[test]
-fn local_backend_defaults_to_metal_on_apple_silicon() {
+fn local_backend_defaults_to_mlx_on_apple_silicon() {
     let request = serde_json::Map::new();
     assert_eq!(
         super::local_backend_for_key(&request, "aarch64-apple-darwin").unwrap(),
-        super::LocalBackend::Metal
+        super::LocalBackend::Mlx
     );
     assert_eq!(
         super::local_backend_for_key(&request, "x86_64-unknown-linux-gnu").unwrap(),
@@ -1156,9 +1156,15 @@ fn fingerprint_transport_resolves_targets_without_writing_status() {
     let local = local.result.unwrap();
     let local_target: Value =
         serde_json::from_str(local["target_fingerprint_json"].as_str().unwrap()).unwrap();
-    assert_eq!(local_target["runtime"], "llama.cpp");
-    assert!(local_target["runtime_pin"].is_object());
-    assert!(local_target["model_pin"].is_object());
+    if cfg!(target_os = "macos") {
+        assert_eq!(local_target["backend"], "mlx");
+        assert_eq!(local_target["model_id"], "local/qwen3.5-4b");
+        assert!(local_target["pins"].is_array());
+    } else {
+        assert_eq!(local_target["runtime"], "llama.cpp");
+        assert!(local_target["runtime_pin"].is_object());
+        assert!(local_target["model_pin"].is_object());
+    }
     assert!(!status::status_path(&root, "local").exists());
 
     let _ = fs::remove_dir_all(root);
@@ -2284,28 +2290,30 @@ fn download_artifact_refuses_userinfo_url_with_distinct_envelope_reason() {
         allowed_hosts: vec!["blocked.test".to_owned()],
         allow_http: true,
     };
-    solstone_core_artifact_download::with_runtime_fetch_loopback(loopback, || {
-        let root = temp("download-userinfo");
-        let destination = root.join("artifact");
-        let query = solstone_core_assets::RuntimeFetchQuery {
-            unit: Some("local-model"),
-            origin_key: Some(
-                "assets/local-model/e87f176479d0855a907a41277aca2f8ee7a09523/Qwen3.5-4B-Q4_K_M.gguf",
-            ),
-            ..Default::default()
-        };
-        let error = fetch_runtime_member(
-            &query,
-            &destination,
-            |_received, _total| {},
-            "download_failed",
-        )
-        .unwrap_err();
-        let error = error.envelope.error.unwrap();
-        assert_eq!(error.reason_code, "download_url_userinfo_refused");
-        assert!(error.message.contains("userinfo"));
-        assert!(!destination.exists());
-        let _ = fs::remove_dir_all(root);
+    solstone_core_assets::with_runtime_fetch_target("linux-x86_64", || {
+        solstone_core_artifact_download::with_runtime_fetch_loopback(loopback, || {
+            let root = temp("download-userinfo");
+            let destination = root.join("artifact");
+            let query = solstone_core_assets::RuntimeFetchQuery {
+                unit: Some("local-model"),
+                origin_key: Some(
+                    "assets/local-model/e87f176479d0855a907a41277aca2f8ee7a09523/Qwen3.5-4B-Q4_K_M.gguf",
+                ),
+                ..Default::default()
+            };
+            let error = fetch_runtime_member(
+                &query,
+                &destination,
+                |_received, _total| {},
+                "download_failed",
+            )
+            .unwrap_err();
+            let error = error.envelope.error.unwrap();
+            assert_eq!(error.reason_code, "download_url_userinfo_refused");
+            assert!(error.message.contains("userinfo"));
+            assert!(!destination.exists());
+            let _ = fs::remove_dir_all(root);
+        })
     });
 }
 
@@ -3944,6 +3952,7 @@ pub fn fetch_set_selectors_request_only_that_targets_local_units() {
         "llama-server-vulkan",
         "llama-server-cuda",
         "local-model",
+        "local-model-mlx",
         "parakeet-server",
         "parakeet-model",
         "parakeet-coreml",
@@ -3960,7 +3969,7 @@ pub fn fetch_set_selectors_request_only_that_targets_local_units() {
         let mut collected = BTreeSet::new();
 
         // llama-server-vulkan: platform + artifact key, backend None. Not windows.
-        if target != "windows-x86_64" {
+        if target.starts_with("linux-") {
             let (platform, key) = match target {
                 "linux-x86_64" => (Platform::LinuxX64, "x86_64-unknown-linux-gnu"),
                 "linux-aarch64" => (Platform::LinuxArm64, "aarch64-unknown-linux-gnu"),
@@ -3994,7 +4003,7 @@ pub fn fetch_set_selectors_request_only_that_targets_local_units() {
         // local-model: every catalog() row with unit == "local-model", on every
         // target. Windows packages the runtime but downloads the model.
         for row in catalog() {
-            if row.unit == "local-model" {
+            if row.unit == "local-model" && target != "macos-arm64" {
                 let art =
                     super::select_artifact("local-model", None, None, None, Some(row.filename))
                         .expect("local-model");
@@ -4035,12 +4044,12 @@ pub fn fetch_set_selectors_request_only_that_targets_local_units() {
             collected.insert(art.origin_key);
         }
 
-        // parakeet-coreml: macos only, every catalog row of that unit
+        // macOS selects its MLX model and the CoreML transcription model.
         if target == "macos-arm64" {
             for row in catalog() {
-                if row.unit == "parakeet-coreml" {
+                if matches!(row.unit, "parakeet-coreml" | "local-model-mlx") {
                     let art = super::select_artifact(
-                        "parakeet-coreml",
+                        row.unit,
                         Some(Platform::MacosArm64),
                         None,
                         None,
@@ -4350,21 +4359,18 @@ mod runtime_fetch_seam_tests {
                     origin_key: Some(vulkan_art.origin_key),
                     ..Default::default()
                 };
-                let _ = fetch_runtime_member(&query, &dest, |_, _| {}, "download_failed");
+                let error =
+                    fetch_runtime_member(&query, &dest, |_, _| {}, "download_failed").unwrap_err();
+                assert_eq!(
+                    error.envelope.error.unwrap().reason_code,
+                    "component_packaged"
+                );
             });
             let calls = fake.calls.lock().unwrap();
-            assert_eq!(calls.len(), 1);
-            let (url, sha, size) = &calls[0];
-            let vulkan_art = resolve("llama-server-vulkan", Some(Platform::MacosArm64), None)
-                .into_iter()
-                .next()
-                .unwrap();
-            assert_eq!(
-                *url,
-                format!("https://updates.solstone.app/{}", vulkan_art.origin_key)
+            assert!(
+                calls.is_empty(),
+                "retired Mac assets must not reach the downloader"
             );
-            assert_eq!(*sha, vulkan_art.sha256);
-            assert_eq!(*size, vulkan_art.size_bytes);
         });
 
         with_runtime_fetch_target("linux-x86_64", || {
@@ -4567,25 +4573,29 @@ mod runtime_fetch_seam_tests {
         assert_eq!(fake.calls.lock().unwrap().len(), 0);
 
         let twin_root = temp("model-twin");
-        with_fake_runtime_fetch(&fake, || {
-            let mut status_val = test_status(&twin_root);
-            let _ = install_model(
-                &twin_root,
-                "local/qwen3.5-4b",
-                &mut status_val,
-                0,
-                crate::install::local_model_download_bytes("local/qwen3.5-4b").unwrap(),
-            );
+        with_runtime_fetch_target("linux-x86_64", || {
+            with_fake_runtime_fetch(&fake, || {
+                let mut status_val = test_status(&twin_root);
+                let _ = install_model(
+                    &twin_root,
+                    "local/qwen3.5-4b",
+                    &mut status_val,
+                    0,
+                    crate::install::local_model_download_bytes("local/qwen3.5-4b").unwrap(),
+                );
 
-            let mmproj_art =
-                select_artifact("local-model", None, None, None, Some("mmproj-F16.gguf")).unwrap();
-            let dest_mmproj = twin_root.join("mmproj-F16.gguf");
-            let query = RuntimeFetchQuery {
-                unit: Some("local-model"),
-                origin_key: Some(mmproj_art.origin_key),
-                ..Default::default()
-            };
-            let _ = fetch_runtime_member(&query, &dest_mmproj, |_, _| {}, "model_download_failed");
+                let mmproj_art =
+                    select_artifact("local-model", None, None, None, Some("mmproj-F16.gguf"))
+                        .unwrap();
+                let dest_mmproj = twin_root.join("mmproj-F16.gguf");
+                let query = RuntimeFetchQuery {
+                    unit: Some("local-model"),
+                    origin_key: Some(mmproj_art.origin_key),
+                    ..Default::default()
+                };
+                let _ =
+                    fetch_runtime_member(&query, &dest_mmproj, |_, _| {}, "model_download_failed");
+            })
         });
         // install_model retries the failing model member before stopping; the
         // direct mmproj fetch is one call.
@@ -4762,6 +4772,8 @@ fn windows_admission_enforces_gpu_verdict_before_local_target() {
     assert_eq!(st_if.install_state, "failed");
     assert_eq!(st_if.error_code.as_deref(), Some("gpu_memory_unknown"));
 
+    #[cfg(target_os = "macos")]
+    let _mlx_helper = super::mlx_candidate::MlxHelperTestGuard::new();
     struct ResetShortCircuit;
     impl Drop for ResetShortCircuit {
         fn drop(&mut self) {

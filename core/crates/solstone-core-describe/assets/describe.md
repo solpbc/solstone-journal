@@ -28,4 +28,5 @@ Tie-break rules:
 - Choose browsing for ordinary web pages, search, news, shopping, or documentation when no social feed or media viewer dominates.
 - Choose calendar for calendar grids, agenda views, event detail/edit forms, availability pickers, booking pages, and scheduling assistants, even when they appear inside a browser or productivity suite.
 - Choose meeting only for an active live call/conference UI; a calendar event for a meeting is calendar, not meeting.
+- Choose messaging for a conversation with an AI assistant or AI coding agent (ChatGPT, Claude, Gemini and similar chat apps), even inside a browser.
 - Choose messaging/email when the dominant surface is an email or chat conversation, even if it discusses scheduling; choose calendar when an invite/event editor, RSVP pane, availability grid, or booking flow is dominant.

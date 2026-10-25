@@ -30,7 +30,7 @@ pub use generate::{
     ContextWindow, ExactTextCount, GenerateError, GenerateFailure, GenerateInput, GenerateResult,
     GenerateSuccess, GenerateTransport, HttpResponse, Inference, InputBudget, PreparedRequest,
     RequestBudget, ServerInference, UreqTransport, Usage, build_messages, build_request_body,
-    count_image_parts, count_input_tokens, estimate_tokens, fit_contents, generate, generate_with,
+    count_image_parts, count_input_tokens, fit_contents, generate, generate_with,
     generate_with_authority, inspect_exact_text_admission, normalize_finish_reason, parse_response,
     prepare_bundled_request, prepare_exact_text_request, prepare_local_schema,
     serialized_message_text,
@@ -38,10 +38,6 @@ pub use generate::{
 pub use install::apple_memory::{
     APPLE_SILICON_TOTAL_MEMORY_MIN_BYTES, AppleTotalMemoryVerdict, apple_physical_memory_bytes,
     apple_total_memory_verdict,
-};
-pub use install::mlx_candidate::read_macos_local_backend_env;
-pub use install::mlx_candidate::{
-    MacosLocalBackend, MacosLocalBackendError, select_macos_local_backend,
 };
 pub use install::{
     DispatchError as InstallDispatchError, InstallEnvelope, InstallVerb, LocalHardwareAdmission,

@@ -6,38 +6,65 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-### Added
-
-- the journal’s night background now has gold stars, meteor trails and an aurora.
-
 ### Changed
 
+- when your journal has little to go on for a stretch of work, the work story for that stretch now guesses less. work stories also less often add what a session was for, how it turned out, or an app or file that nothing in your journal names.
+- on mac, local thinking now uses a runtime included with your journal. your existing setup keeps working while the new model files download. the switch waits for background thinking to finish. the journal removes the old files after the new runtime is ready.
+- when you chat with an AI assistant like ChatGPT or Claude, the screen description of that chat now nearly always includes the questions you asked, and marks which messages are yours and which are the assistant's. before, your question was often left out and the assistant's answer read like a plain web page.
+- a calendar event now says which account its calendar belongs to, such as "Home (iCloud)", once the solstone app on your phone adds it, so two calendars with the same name can be told apart. thanks @dvanduzer for the report.
+- when everything that went into your journal for a stretch came from your terminal, the description of that stretch now quotes the text that was on screen, such as an input line, instead of paraphrasing it. this works with whichever model your journal thinks with.
+- the screen record of a long stretch at your terminal is now written in parts with every model and wherever your journal runs, as it already was on linux with the local model. your journal no longer drops the start of that stretch for a model that can't take it all at once, unless the stretch is too long to split.
 - in a meeting, a person whose voice your journal recognized on at least two lines is now listed as attending, even if nothing written that day named them, and so is a voice you haven't named yet, like "Speaker 2". a single matched line is no longer enough unless you assigned that line yourself, so that person is listed as mentioned. activities already in your journal keep their people as they are.
 
 ### Fixed
 
+- a screen description of a terminal less often comes back as your journal's own instructions instead of the text that was there.
+- on a calendar event in your journal, the invitee marked as you is now the one whose email is one of the addresses in your identity settings. before, each phone decided, and on a calendar someone shared with you, it could mark that person as you. if your identity has no email addresses, no one on an invite is marked as you. events already in your journal are updated the next time your journal checks them. thanks @dvanduzer for the report.
+- work stories no longer say you did something that was only on your screen. a page you read, an answer from a chat assistant, or work an agent did in your terminal is described as something you read, reviewed or asked your agent to do, and what your agent did is credited to your agent. thanks @dvanduzer for the report.
+- weekly reflections started on saturday now use the previous completed week, so they can finish without including the current day.
+- on-device transcription in the development journal app now accepts up to two minutes of single-track audio. recordings above its processing limits stay held, with the original kept and an explanation in health.
+- searching your journal now lists names that only appeared on your screen, such as an author on a web page, on their own line, apart from who attended and who was mentioned, and agents reading your journal get them as a separate list instead of under mentioned. activities already in your journal keep their people as they are. thanks @dvanduzer for the report.
+- when a moment has no recording, or its recording never says a name that only appeared on screen, that name is no longer marked as heard. it's listed as coming from the screen, and repeats are dropped. names that were said keep their source. thanks @dvanduzer for the report.
+- some recordings stayed "waiting for media processing" in health, and that day's summaries waited with them. they now finish processing.
+- after you save a model or select check again, the thinking page now shows the check's result as soon as your journal has it. before, it showed "thinking status unavailable" until you reloaded the page.
+- when your journal runs on a phone, health's live panels now show what your journal is running. before, they stayed on "waiting for live updates".
+- when your journal runs on a phone, setup and the network page no longer say it's on a computer.
 - security fix: updated notification encryption to remove a timing weakness. someone able to measure encryption operations on the same computer could have used it to learn information about a notification's encryption key.
-
+- the welcome on a new journal's home page no longer promises tasks or calendar events, which that page doesn't show.
+- when something your journal sends for processing is too long for the model, your journal now uses the model's own count, when it gives one, to trim it closer to what fits. before, it cut the input to half the space it expected, which often dropped more than it needed to.
 - work and conversation stories no longer take their text from a reserved field in custom thinking settings.
 - each transcript an agent reads now says where it came from, in the words your journal uses, such as "your mac · audio". before, when two devices added to your journal over the same minutes, an agent saw two identical entries. thanks @dvanduzer for the report.
-- the journal's titles, topics, summaries and stories now spell solstone and sol pbc correctly for common speech-to-text mix-ups. transcripts keep what was heard.
+- when an agent searches your journal through a connection that sees only some of your facets, the result now says that calendar events and anything else outside a facet aren't included. before, a day with only calendar events looked empty to it. thanks @dvanduzer for the report.
+- searching your journal from the command line for a facet or kind of entry that doesn't exist now says so and lists the ones that do. before, a mistyped name came back as no results. thanks @dvanduzer for the report.
+- reading transcripts for a stretch of time from the command line now keeps only the device you name with `--stream`. before, it returned every device. thanks @dvanduzer for the report.
+- the instructions your journal gives a coding agent for reading it no longer show commands that fail or come back empty, such as reading transcripts without a day. thanks @dvanduzer for the report.
+- fixed "show details" in system messages showing only a status, or nothing at all, for some errors. it shows the error's message, context and stack again.
+
+## [2.0.57] - 2026-10-24
+
+### Added
+
+- the journal's night background now has gold stars, meteor trails and an aurora.
+
+### Changed
+
+- local transcription on linux, windows and mac skips long gaps with no speech again, keeping a little of the recording around each part with speech. times in your transcripts still match the recording. 2.0.56 transcribed the whole recording.
+
+### Fixed
+
+- security fix: imported image descriptions, and results your agents get from search or transcripts, could load images from outside your journal. image markup in those excerpts now stays text. thanks @dvanduzer for the report.
+- the journal's titles, topics, summaries and stories now spell solstone and sol pbc correctly for common speech-to-text mix-ups. transcripts keep what was said.
 - fixed your journal on a mac or linux getting stuck after it was force-stopped or lost power at the wrong moment. every start after that ended with "a helper process did not answer in time". it now starts normally.
 - fixed your journal on a mac sometimes giving up after it stopped unexpectedly. at the end of its wait it showed "a recent heartbeat from another run is present". this happened while the mac was syncing its clock.
 - when a start can't continue because a helper process stopped, the message now says "a helper process stopped before it was ready" instead of "did not answer in time". on a mac or linux, `solstone journal health logs` now shows the helper's own reason.
-- security fix: imported image descriptions and agent search or transcript results could load images from outside your journal. image markup in those excerpts now stays text. thanks @dvanduzer for the report.
-- media offload now works with encrypted backup operated by sol pbc. until now, offload stopped before moving anything into that backup. nothing was removed, and your media stayed on this computer.
-- interrupted daily rebuilds on iphone can now continue from verified completed work, keeping accepted results. work with uncertain outcomes stays held for review.
-- fixed rebuilds stopping when retained activity history still uses an earlier activity name, or when there are no suggested entities.
-- transcription now trims long gaps between detected speech, keeping context around each speech span and restoring transcript times to the original recording. this avoids sending those gaps to the recognizer.
+- media offload now works with encrypted backup operated by sol pbc. since 2.0.42, offload stopped before moving anything into that backup. nothing was removed, and your media stayed on this computer.
 - checking for updates on linux now allows more time for a slow connection and shows why a check failed.
-- backup requests on windows now report a timeout when the connection times out just before the request deadline.
-- fixed screen descriptions stopping with a blank notification when the on-device model lost its connection mid-request. your journal now retries that request.
+- fixed screen descriptions stopping when the on-device model lost its connection mid-request. your journal now restarts the on-device model if it stopped, and retries that request.
 - on an entity's page, the line "this name looks like an ID" now shows when you open the page from a link or reload it. before, it showed only when you got there from the list.
 - on a phone, the message that shows hiding progress and undo on the entities page no longer sits under the bar at the bottom of the screen.
 - merging possible duplicates now merges one pair at a time, so other changes to your entities can save while a long merge runs. before, those changes could give up partway through a merge of many pairs.
 - an entity's connections no longer list words only ever mentioned in your journal, such as "just" or "think", or names matched on a single word like "the". home already left these out.
 - health's all-clear line no longer says when the solstone app last added to your journal. that time came from any event in your journal, so it could say "just now" before any device was set up.
-- fixed "show details" in system messages showing only a status, or nothing at all, for some errors. it shows the error's message, context and stack again.
 
 ## [2.0.56] - 2026-10-23
 

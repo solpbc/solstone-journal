@@ -37,7 +37,7 @@ models. See [Output and Context Budgets](#output-and-context-budgets).
 
 The Thinking app exposes six owner choices:
 
-- Bundled local, using Solstone's installed llama-server runtime.
+- Bundled local, using MLX on macOS and llama-server on Linux and Windows.
 - An owner-supplied OpenAI-compatible URL, model id, and optional bearer key.
 - OpenAI with an owner-supplied API key and model id.
 - ChatGPT, using the owner's own ChatGPT plan.
@@ -103,8 +103,34 @@ require:
 - stable local error classification.
 
 Bundled local posts to the supervisor-owned loopback server. Its install status
-lives under `health/providers/`, while artifact truth lives in provider manifests
-and the affirmative proof cache. A configured endpoint uses:
+lives under `health/providers/`. Artifact readiness comes from the installed
+manifests and model generations.
+
+On macOS, signed release packages include `mlx-helper` and its Metal resource
+bundle. The local installer downloads the pinned MLX model from the update
+origin. An existing installation keeps its installed llama-server serving while
+the MLX model downloads and verifies. The journal pauses admission of queued
+think and describe tasks, waits for existing tasks to finish, then stops the old
+runtime and starts MLX. If those tasks remain busy, the switch is deferred.
+Direct operator requests bypass that queue and can be interrupted by the swap. If MLX cannot start before the switch is saved,
+the installed llama-server resumes serving until a later attempt. Once MLX is
+ready and the switch is saved, the journal removes the unused managed
+llama-server, GGUF and projector caches. The saved switch persists across
+restarts; macOS does not download llama-server or switch back to it after
+migration. A runtime regression after migration requires a release rollback.
+
+the supervisor can recycle the MLX process after 2,000 helper slot calls since
+Ready admission and 60 seconds of unchanged idle activity. tokenization and
+completion calls count; health, properties and maintenance observations do not.
+footprint measurements are evidence only. it pauses queued think and describe
+admission and waits up to 120 seconds for existing work to finish. if work remains
+busy or helper activity changes, maintenance is deferred. the same installed
+model restarts only after the old process exits; queued analysis resumes after
+the successor is admitted Ready. direct operator calls bypass that queue and can
+still be interrupted. a missing Ready activity observation is logged and disables
+recycling for that admission.
+
+A configured endpoint uses:
 
 - `providers.local.endpoint_url`
 - `providers.local.served_model_id`
@@ -189,8 +215,11 @@ The input is fitted to the window less the reply ceiling, holding back at most
 a quarter of the window for the reply, and the ceiling is clamped to what
 remains after the input. When too little room is left for a reply, the
 request fails as `context_budget_exceeded` instead of being sent. An endpoint
-smaller than the window assumed for it answers with a context refusal; a
-generate call then refits its input against half the window, up to four times.
+smaller than the window assumed for it, or one that counts the input as larger
+than the estimate did, answers with a context refusal. A generate call then
+refits its input, up to four times. When the refusal reports the input's real
+size, the refit can scale the window by how far the estimate missed, so it
+keeps more input than halving would. Otherwise it halves the window.
 
 Bundled local fits against the window its own server was launched with, and
 confidential processing against the service's own 262,144. Neither reads
@@ -264,11 +293,10 @@ readiness.
 
 `solstone-core assets` emits an additive declarative registry of downloadable
 artifacts. The installer pin tables remain the operational source for manifest
-identity and cache layout; the four native Rust fetch call sites (llama-server,
-parakeet-server, parakeet-model, and local-model) now resolve their download
-URLs through this registry. The remaining catalog rows stay declarative until
-their owners adopt the registry.
+identity and cache layout. Native runtime and model installers, including the
+macOS `local-model-mlx` installer, resolve their download URLs through this
+registry.
 
 There are no runtime compatibility shims for the retired shapes.
 
-Development-only macOS inference helper: [mlx-helper](../core/crates/solstone-core-local/mlx-helper/README.md).
+macOS local inference helper: [mlx-helper](../core/crates/solstone-core-local/mlx-helper/README.md).

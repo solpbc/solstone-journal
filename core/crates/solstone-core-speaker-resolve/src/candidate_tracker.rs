@@ -1705,7 +1705,9 @@ fn discover_segment_sources(segment_path: &Path) -> std::io::Result<Vec<String>>
         if path.extension().and_then(|s| s.to_str()) == Some("jsonl")
             && let Some(file_name) = path.file_name().and_then(|s| s.to_str())
             && (file_name == "audio.jsonl"
-                || (file_name.ends_with("_audio.jsonl") && !file_name.starts_with('.')))
+                || (!file_name.starts_with('.')
+                    && (file_name.ends_with("_audio.jsonl")
+                        || solstone_core_processing_record::is_transcribe_output(&path))))
         {
             let stem = &file_name[..file_name.len() - 6];
             let npz_path = segment_path.join(format!("{stem}.npz"));

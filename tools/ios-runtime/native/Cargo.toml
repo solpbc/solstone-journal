@@ -9,6 +9,7 @@ publish = false
 [features]
 audio = ["journal-mobile-serving/audio-native"]
 full-tests = []
+owner-app = ["solstone-core-spp-attest/ios-owner-app"]
 [lib]
 crate-type = ["staticlib", "rlib"]
 [dependencies]

@@ -20,6 +20,7 @@ pub mod coreml_install;
 pub mod fingerprint;
 pub mod fit_report;
 pub mod lease;
+pub mod macos_mlx_migration;
 pub mod manifest;
 pub mod metal_candidate;
 pub mod migration;
@@ -364,6 +365,7 @@ pub fn dispatch(verb: InstallVerb, request: Value) -> Result<InstallEnvelope, Di
         InstallVerb::InspectLocal => match local_backend(&object)? {
             LocalBackend::Existing => readiness::inspect_local(object),
             LocalBackend::Metal => metal_candidate::inspect(&object)?,
+            LocalBackend::Mlx => mlx_candidate::inspect_verified_default(&journal(&object)?),
         },
         InstallVerb::InspectParakeet => readiness::inspect_parakeet(object),
         InstallVerb::ProbeBinary => readiness::probe_binary(&object),
@@ -390,6 +392,21 @@ pub fn dispatch(verb: InstallVerb, request: Value) -> Result<InstallEnvelope, Di
 enum LocalBackend {
     Existing,
     Metal,
+    Mlx,
+}
+
+#[cfg(test)]
+mod macos_default_tests {
+    use super::*;
+
+    #[test]
+    fn macos_target_is_mlx_without_a_selector() {
+        let key = "aarch64-apple-darwin";
+        let backend = local_backend_for_key(&Map::new(), key).unwrap();
+        let target =
+            local_target_for_key(Path::new("unused"), "local/qwen3.5-4b", backend, key).unwrap();
+        assert_eq!(target["backend"], "mlx");
+    }
 }
 
 fn local_backend(object: &Map<String, Value>) -> Result<LocalBackend, DispatchError> {
@@ -401,13 +418,24 @@ fn local_backend_for_key(
     platform_key: &str,
 ) -> Result<LocalBackend, DispatchError> {
     match object.get("backend") {
-        None if platform_key == "aarch64-apple-darwin" => Ok(LocalBackend::Metal),
+        None if platform_key == "aarch64-apple-darwin" => Ok(LocalBackend::Mlx),
         None => Ok(LocalBackend::Existing),
-        Some(Value::String(value)) if value == "metal" => Ok(LocalBackend::Metal),
+        Some(Value::String(value))
+            if value == "metal" && platform_key != "aarch64-apple-darwin" =>
+        {
+            Ok(LocalBackend::Metal)
+        }
+        Some(Value::String(value)) if value == "mlx" && platform_key == "aarch64-apple-darwin" => {
+            Ok(LocalBackend::Mlx)
+        }
         Some(_) => Err(failure(
             "input",
             "unsupported_backend",
-            "backend must be \"metal\" when supplied",
+            if platform_key == "aarch64-apple-darwin" {
+                "the requested local backend is unavailable on this platform"
+            } else {
+                "backend must be \"metal\" when supplied"
+            },
             65,
         )),
     }
@@ -639,6 +667,8 @@ impl Drop for LocalHardwareAdmissionTestGuard {
 /// A thread-scoped acquisition receipt. No production build exposes this seam.
 #[cfg(any(test, feature = "test-hooks"))]
 pub struct AcquisitionTestGuard {
+    #[cfg(target_os = "macos")]
+    _mlx_helper: Option<mlx_candidate::MlxHelperTestGuard>,
     previous: bool,
     previous_counts: (u64, u64, u64),
     thread_bound: std::marker::PhantomData<std::rc::Rc<()>>,
@@ -653,6 +683,8 @@ impl AcquisitionTestGuard {
             TEST_ACQUIRE_MINT_COUNT.with(|count| count.replace(0)),
         );
         Self {
+            #[cfg(target_os = "macos")]
+            _mlx_helper: short_circuit.then(mlx_candidate::MlxHelperTestGuard::new),
             previous: TEST_ACQUIRER_SHORT_CIRCUIT.with(|flag| flag.replace(short_circuit)),
             previous_counts,
             thread_bound: std::marker::PhantomData,
@@ -1132,15 +1164,16 @@ fn local_target_for_key_with_probe(
         ));
     }
 
-    if key == "aarch64-apple-darwin" {
-        match mlx_candidate::read_macos_local_backend_env()
-            .map_err(|e| failure("input", "unsupported_backend", e, 65))?
-        {
-            mlx_candidate::MacosLocalBackend::Mlx => {
-                return Ok(mlx_candidate::artifact_target_json(&pins::MLX_QWEN_PINS).0);
-            }
-            mlx_candidate::MacosLocalBackend::Metal => {}
+    if backend == LocalBackend::Mlx {
+        if key != "aarch64-apple-darwin" {
+            return Err(failure(
+                "platform",
+                "unsupported_platform",
+                "MLX requires macos",
+                65,
+            ));
         }
+        return Ok(mlx_candidate::artifact_target_json(&pins::MLX_QWEN_PINS).0);
     }
     if WindowsArchitecture::from_runtime_key(key).is_some() {
         let pkg = windows_engine::verified_windows_llama_package()
@@ -1156,6 +1189,7 @@ fn local_target_for_key_with_probe(
         return local_target_for_windows_package(&pkg, model_id);
     }
     let (runtime_pin, backend_name, backend_reason) = match backend {
+        LocalBackend::Mlx => unreachable!("MLX target returned above"),
         LocalBackend::Metal => (
             pins::vulkan_identity(key),
             "metal",
@@ -1422,12 +1456,7 @@ pub fn local_thinking_catalog_plan(
     nvidia_probe: Option<crate::NvidiaProbe>,
 ) -> Option<Vec<pins::ThinkingDownloadRow>> {
     let key = pins::platform_key();
-    if key == "aarch64-apple-darwin"
-        && matches!(
-            mlx_candidate::read_macos_local_backend_env(),
-            Ok(mlx_candidate::MacosLocalBackend::Mlx)
-        )
-    {
+    if key == "aarch64-apple-darwin" {
         return Some(
             solstone_core_assets::catalog()
                 .iter()

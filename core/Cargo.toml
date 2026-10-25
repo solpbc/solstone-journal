@@ -29,6 +29,7 @@ members = [
     "crates/solstone-core-operational-logs",
     "crates/solstone-core-support-web",
     "crates/solstone-core-brain",
+    "crates/solstone-core-tokens",
     "crates/solstone-core-brain-owner",
     "crates/solstone-core-installation-identity",
     "crates/solstone-core-installed-payload",
@@ -146,7 +147,7 @@ exclude = ["crates/solstone-core-service-legacy-evidence"]
 resolver = "3"
 
 [workspace.package]
-version = "2.0.56"
+version = "2.0.57"
 edition = "2024"
 rust-version = "1.95"
 license = "AGPL-3.0-only"
@@ -191,6 +192,7 @@ solstone-core-body-ingest = { path = "crates/solstone-core-body-ingest" }
 solstone-core-convey-body = { path = "crates/solstone-core-convey-body" }
 solstone-core-records-web = { path = "crates/solstone-core-records-web" }
 solstone-core-brain = { path = "crates/solstone-core-brain" }
+solstone-core-tokens = { path = "crates/solstone-core-tokens" }
 solstone-core-brain-owner = { path = "crates/solstone-core-brain-owner" }
 solstone-core-installation-identity = { path = "crates/solstone-core-installation-identity" }
 solstone-core-installed-payload = { path = "crates/solstone-core-installed-payload" }
@@ -309,6 +311,7 @@ pdf-extract = "0.12.0"
 pulldown-cmark = { version = "0.13.4", default-features = false }
 rapidfuzz = "0.5.0"
 regex = "1.13.1"
+fancy-regex = "0.19.0"
 # Detached minisign signatures for solstone-distribution `sign`. Release-rail lenses:
 # `minisign` 0.9.1 is MIT; its graph adds ct-codecs, scrypt, pbkdf2, salsa20,
 # rpassword, rtoolbox, and (Windows-only) windows-sys 0.59.0. No crate in that
@@ -453,6 +456,11 @@ debug = "line-tables-only"
 # so an edit rebuilds quickly.
 [profile.dev.package."*"]
 debug = false
+opt-level = 2
+
+# The token counter sizes every model request, and tests size thousands of
+# them; unoptimized it is about fifty times slower. It is small and rarely edited.
+[profile.dev.package.solstone-core-tokens]
 opt-level = 2
 
 [patch.crates-io]

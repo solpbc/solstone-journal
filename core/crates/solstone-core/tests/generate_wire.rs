@@ -87,7 +87,6 @@ mod applicable_credential_targets {
             attempt_index: 0,
             exclusive_admission: false,
             transport_retries: Some(0),
-            endpoint_binding: None,
         }
     }
 

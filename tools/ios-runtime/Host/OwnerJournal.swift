@@ -91,8 +91,8 @@ import UIKit
         _ = try await runner.servingCall(runner.request("open"), "owner.open")
         guard ticket == revision, !ownerStopped, foreground else { return }
         if !servicesPrepared {
-          // A new app identity does not widen the fixed appraisal admission.
-          // Refusal stays visible in the existing service/Thinking routes.
+          // The verifier admits only this app's own appraisal extension. Backup
+          // keeps its development-app identity, so it refuses here.
           let backup = journal_ios_backup_admit()
           let verifier = journal_ios_verifier_admit()
           let callback = verifier && journal_ios_verifier_register_callback(appraisalTransportCallback)
@@ -216,7 +216,7 @@ struct OwnerJournalView: View {
         if owner.phase == .running || owner.phase == .unavailable && !owner.canStart {
           HStack {
             Button("home") { owner.show("/") }
-            Button("health") { owner.show("/health") }
+            Button("health") { owner.show("/app/health/") }
           }
         }
       }.padding(12).background(.bar)

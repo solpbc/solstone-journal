@@ -22,7 +22,7 @@ pub use predicate::{
     TerminalProofOutcome, evaluate_terminal_proof, is_failure_exhausted, record_attempts,
 };
 pub use reentry::{
-    jsonl_has_row_with_key, read_jsonl_header, read_processing_record_header,
-    should_reenter_analysis_output,
+    header_names_transcribe, is_transcribe_output, jsonl_has_row_with_key, read_jsonl_header,
+    read_processing_record_header, should_reenter_analysis_output,
 };
 pub use rows::{LeadingRow, read_leading_rows};

@@ -174,7 +174,7 @@ fn spoken_lines(source: &EntrySource, alone: bool, numbered: bool) -> Option<Vec
         .iter()
         .filter(|record| record.contains_key("start") || record.contains_key("text"))
         .collect::<Vec<_>>();
-    if !source.file.ends_with("audio.jsonl")
+    if !source.is_speech_transcript()
         || stream.starts_with("import.")
         || statements.is_empty()
         || statements.len() != source.chunks.len()
@@ -597,10 +597,12 @@ pub(crate) fn owner_heard(
                 .flatten()
                 .flatten()
                 .any(|entry| {
-                    entry
-                        .file_name()
-                        .to_str()
-                        .is_some_and(|name| name.ends_with("audio.jsonl") || solstone_core_format::audio_archive::is_audio_archive_transcript_name(name))
+                    entry.file_name().to_str().is_some_and(|name| {
+                        name.ends_with("audio.jsonl")
+                            || solstone_core_format::audio_archive::is_audio_archive_transcript_name(
+                                name,
+                            )
+                    }) || solstone_core_transcripts::is_transcribe_output(&entry.path())
                 });
             if !has_audio {
                 continue;

@@ -443,3 +443,40 @@ struct StructuredHTTPTests {
     }
 
 }
+
+private final class WeakCachedGrammar {
+    weak var value: GrammarConstraint?
+    init(_ value: GrammarConstraint) { self.value = value }
+}
+
+@inline(never)
+private func weakCachedGrammars(_ generator: StructuredGenerator) throws -> [Data: WeakCachedGrammar] {
+    let storage = try #require(Mirror(reflecting: generator).children.first { $0.label == "compiled" })
+    let roots = try #require(storage.value as? [Data: GrammarConstraint])
+    return roots.mapValues(WeakCachedGrammar.init)
+}
+
+@Test func grammarCacheEvictsAtEight() throws {
+    try Stream.withNewDefaultStream(device: .cpu) {
+        let generator = StructuredGenerator()
+        let tokenizer = TraceByteTokenizer()
+        let context = ModelContext(
+            configuration: ModelConfiguration(id: "trace-model"), model: TraceLanguageModel(),
+            processor: UnusedTraceProcessor(), tokenizer: tokenizer)
+        var first: WeakCachedGrammar?
+        for i in 0..<9 {
+            let schema = "{\"title\":\"cache-\(i)\",\"type\":\"boolean\"}"
+            _ = try generator.complete(
+                input: LMInput(tokens: MLXArray([Int32(1), 2, 3])), context: context,
+                schema: schema, maxTokens: 128, processor: nil, sampler: NoWhitespaceSampler())
+            if i == 0 {
+                first = try #require(weakCachedGrammars(generator)[Data(schema.utf8)])
+                #expect(first?.value != nil)
+            }
+        }
+        #expect(first?.value == nil)
+        let remaining = try weakCachedGrammars(generator)
+        #expect(remaining.count == 8)
+        #expect(remaining.values.allSatisfy { $0.value != nil })
+    }
+}

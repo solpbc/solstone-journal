@@ -98,6 +98,51 @@ impl ProviderRuntimeCoordinator {
         self.persist(state, store);
     }
 
+    /// Queue-drained MLX maintenance advances the generation while preserving
+    /// the desired candidate. Replacement still uses ordinary exact-owner stop.
+    pub fn request_local_maintenance(
+        &self,
+        state: &mut ProviderRuntimeState,
+        processes: &[ManagedProcess],
+        managed: &ManagedProcess,
+        store: &mut dyn RuntimeStore,
+    ) -> bool {
+        let Some(fence) = managed.fence.as_ref() else {
+            return false;
+        };
+        if state.provider != super::model::ProviderName::Local
+            || state.shutdown_requested
+            || state.latest_phase != RuntimePhase::Ready
+            || !state.has_plan
+            || state.start.is_some()
+            || state.stop_cleanup.is_some()
+            || state.pending_stop_request.is_some()
+            || !state.orphaned_stop_requests.is_empty()
+            || !self.fence_matches(state, fence, state.retry.attempt_count)
+            || !managed.running
+            || !processes.contains(managed)
+            || processes.iter().filter(|process| process.running).count() != 1
+        {
+            return false;
+        }
+        store.revoke_ready();
+        state.generation += 1;
+        reset_retry(state);
+        let reason = super::model::ReasonCode::known("target-changed");
+        defer_target_stop(state, RuntimePhase::Stopped, Some(reason.clone()), false);
+        state.pending_stop_request = Some(make_stop_request(
+            state,
+            managed.clone(),
+            reason.clone(),
+            RuntimePhase::Stopped,
+            Some(reason.clone()),
+            false,
+        ));
+        state.latest_reason_code = Some(reason);
+        self.persist(state, store);
+        true
+    }
+
     pub fn new() -> Self {
         let sequence = NEXT_INCARNATION.fetch_add(1, Ordering::Relaxed);
         let nanos = SystemTime::now()
@@ -1084,6 +1129,95 @@ mod tests {
             status,
             reason_code: ReasonCode::known("probe-not-ready"),
         }
+    }
+
+    #[test]
+    fn maintenance_preserves_candidate_and_waits_for_exact_cleanup() {
+        let coordinator = ProviderRuntimeCoordinator::with_incarnation("test");
+        let mut state = state_for(ProviderName::Local);
+        state.latest_phase = RuntimePhase::Ready;
+        state.retry.attempt_count = 1;
+        state.generation = 4;
+        state.next_truth_at = 1000.0;
+        state.next_probe_at = 1000.0;
+        let mut child = managed("local:42");
+        child.pid = 42;
+        child.fence = Some(coordinator.fence(&state, 1));
+        let mut processes = vec![child.clone()];
+        let mut store = InMemoryRuntimeStore::default();
+        assert!(coordinator.request_local_maintenance(&mut state, &processes, &child, &mut store));
+        assert_eq!(state.generation, 5);
+        assert_eq!(state.desired_fingerprint.as_deref(), Some("desired-a"));
+        assert_eq!(state.pending_stop_request.as_ref().unwrap().managed, child);
+        assert!(!coordinator.request_local_maintenance(&mut state, &processes, &child, &mut store));
+        let workers = RecordingWorkers::default();
+        let mut truth_worker = workers.clone();
+        let mut lifecycle = workers.clone();
+        let mut probe_worker = workers.clone();
+        let mut sink = VecEventSink::default();
+        let mut context = ReconcileContext {
+            truth: &mut truth_worker,
+            lifecycle: &mut lifecycle,
+            probe: &mut probe_worker,
+            store: &mut store,
+            sink: &mut sink,
+            gate: None,
+        };
+        coordinator.reconcile(now(10.0), &mut state, &mut processes, &mut context);
+        assert_eq!(*workers.calls.borrow(), ["stop-dispatch"]);
+        assert!(state.start.is_none());
+        state.stop_cleanup.as_mut().unwrap().result = Some(stop(StopCleanupStatus::CleanupFailed));
+        coordinator.reconcile(now(11.0), &mut state, &mut processes, &mut context);
+        assert_eq!(processes, [child]);
+        assert!(state.start.is_none());
+        coordinator.reconcile(now(50.0), &mut state, &mut processes, &mut context);
+        assert_eq!(*workers.calls.borrow(), ["stop-dispatch", "stop-dispatch"]);
+        state.stop_cleanup.as_mut().unwrap().result = Some(stop(StopCleanupStatus::Stopped));
+        coordinator.reconcile(now(51.0), &mut state, &mut processes, &mut context);
+        assert!(processes.is_empty());
+        assert!(state.start.is_none());
+        coordinator.reconcile(now(52.0), &mut state, &mut processes, &mut context);
+        assert_eq!(
+            *workers.calls.borrow(),
+            ["stop-dispatch", "stop-dispatch", "start-dispatch"]
+        );
+        assert_eq!(state.start.as_ref().unwrap().fence.generation, 5);
+    }
+
+    #[test]
+    fn maintenance_rejects_stale_owners_shutdown_and_other_providers() {
+        let coordinator = ProviderRuntimeCoordinator::with_incarnation("test");
+        let mut base = state_for(ProviderName::Local);
+        base.latest_phase = RuntimePhase::Ready;
+        let mut child = managed("local:42");
+        child.fence = Some(coordinator.fence(&base, 0));
+        let mut store = InMemoryRuntimeStore::default();
+        for variant in 0..5 {
+            let mut state = base.clone();
+            match variant {
+                0 => state.generation += 1,
+                1 => state.shutdown_requested = true,
+                2 => state.provider = ProviderName::Parakeet,
+                3 => state.latest_phase = RuntimePhase::ReadyProofUnavailable,
+                4 => state.has_plan = false,
+                _ => unreachable!(),
+            }
+            assert!(!coordinator.request_local_maintenance(
+                &mut state,
+                &[child.clone()],
+                &child,
+                &mut store
+            ));
+            assert!(state.pending_stop_request.is_none());
+        }
+        assert!(!coordinator.request_local_maintenance(&mut base.clone(), &[], &child, &mut store));
+        assert!(!coordinator.request_local_maintenance(
+            &mut base.clone(),
+            &[child.clone(), child.clone()],
+            &child,
+            &mut store
+        ));
+        assert!(store.published.is_empty());
     }
 
     #[test]

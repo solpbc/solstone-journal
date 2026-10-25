@@ -1471,13 +1471,6 @@ fn resolve_context_window<T: GenerateTransport>(
     }
 }
 
-/// The window the bundled server was launched with, from the sidecar the launch
-/// writes, else the floor tier every host is launched at or above. It is the
-/// bundled lane's own number and never an owner setting.
-pub fn launched_context_window(journal_path: &std::path::Path) -> u32 {
-    launched_context_sidecar(journal_path).unwrap_or(FLOOR_CONTEXT_TOKENS)
-}
-
 fn launched_context_sidecar(journal_path: &std::path::Path) -> Option<u32> {
     std::fs::read_to_string(journal_path.join("health/local.ctx"))
         .ok()
@@ -1508,7 +1501,7 @@ fn count_tokens<T: GenerateTransport>(
                 .map(|tokens| tokens.len())
         })
         .and_then(|tokens| u32::try_from(tokens).ok())
-        .unwrap_or_else(|| estimate_tokens(text))
+        .unwrap_or_else(|| solstone_core_tokens::count(text))
 }
 
 /// Ask the managed provider to count the exact chat-completion body it will
@@ -1539,10 +1532,6 @@ pub fn count_input_tokens<T: GenerateTransport>(
         .and_then(Value::as_u64)
         .and_then(|tokens| u32::try_from(tokens).ok())
         .ok_or_else(|| "missing or invalid input_tokens".into())
-}
-
-pub fn estimate_tokens(text: &str) -> u32 {
-    u32::try_from(text.chars().count().div_ceil(3)).unwrap_or(u32::MAX)
 }
 
 fn request(
@@ -1754,7 +1743,7 @@ pub fn separate_thinking(message: &Map<String, Value>) -> (String, usize) {
 /// Fill in reasoning tokens from the thinking text when the server gave no count.
 pub fn with_thinking_estimate(mut usage: Usage, thinking_chars: usize) -> Usage {
     if usage.reasoning_tokens.is_none() && thinking_chars > 0 {
-        // Same characters-per-token ratio as `estimate_tokens`.
+        // Only the character count survives, so this stays a rough three characters a token.
         let estimate = u64::try_from(thinking_chars.div_ceil(3)).unwrap_or(u64::MAX);
         usage.reasoning_tokens = Some(if usage.output_tokens > 0 {
             estimate.min(usage.output_tokens)
@@ -2901,7 +2890,7 @@ mod tests {
                 self.tokenize_posts += 1;
                 if let Some(divisor) = self.tokenize_divisor.filter(|&d| d >= 1) {
                     let text = body.get("content").and_then(Value::as_str).unwrap_or("");
-                    let token_count = estimate_tokens(text) / divisor;
+                    let token_count = solstone_core_tokens::count(text) / divisor;
                     let tokens = vec![0; token_count as usize];
                     return Ok(HttpResponse {
                         status: 200,
@@ -2944,8 +2933,8 @@ mod tests {
         let root = tempfile::tempdir().expect("journal");
         let huge_transcript = format!(
             "## Entry 1\n{}\n## Entry 2\n{}",
-            "a".repeat(30_000),
-            "b".repeat(30_000)
+            " a".repeat(10_000),
+            " b".repeat(10_000)
         );
         let mut request = input(json!([huge_transcript, "keep this user instruction"]));
         request.journal_path = root.path().display().to_string();
@@ -3083,8 +3072,8 @@ mod tests {
         let root = tempfile::tempdir().expect("journal");
         let huge_transcript = format!(
             "## Entry 1\n{}\n## Entry 2\n{}",
-            "x".repeat(120_000),
-            "y".repeat(120_000)
+            " x".repeat(40_000),
+            " y".repeat(40_000)
         );
         let mut request = input(json!([huge_transcript, "instruction"]));
         request.journal_path = root.path().display().to_string();
@@ -3116,8 +3105,8 @@ mod tests {
         let root = tempfile::tempdir().expect("journal");
         let huge_transcript = format!(
             "## Entry 1\n{}\n## Entry 2\n{}",
-            "x".repeat(120_000),
-            "y".repeat(120_000)
+            " x".repeat(40_000),
+            " y".repeat(40_000)
         );
         let mut request = input(json!([huge_transcript, "instruction"]));
         request.journal_path = root.path().display().to_string();

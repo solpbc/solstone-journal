@@ -15,10 +15,12 @@ use solstone_core_brain::{
 use solstone_core_facets::append_action_log;
 use solstone_core_journal_config_write::{JournalConfigMutation, mutate_journal_config};
 use solstone_core_local::endpoint::{LocalEndpointResolution, resolve_local_endpoint};
+#[cfg(not(target_os = "macos"))]
+use solstone_core_local::install::readiness::inspect_local_installed;
 use solstone_core_local::install::{
     lease::is_held,
     metal_candidate,
-    readiness::{inspect_local, inspect_local_installed, inspect_local_present},
+    readiness::{inspect_local, inspect_local_present},
     status::{is_in_flight, read_status},
 };
 use solstone_core_sense::memory::{MemoryProbe, SystemMemoryProbe};
@@ -43,12 +45,23 @@ pub fn invalid_model(model: &str) -> Value {
 }
 
 pub fn models() -> Value {
-    json!([{"name":DEFAULT_MODEL,"label":"qwen 3.5 4B VLM","min_ram_gb":8,"size_bytes":2_740_937_888_u64}])
+    let (min_ram_gb, size_bytes) = if cfg!(target_os = "macos") {
+        (
+            16,
+            solstone_core_local::install::pins::MLX_QWEN_PINS
+                .iter()
+                .map(|pin| pin.size)
+                .sum::<u64>(),
+        )
+    } else {
+        (8, 2_740_937_888_u64)
+    };
+    json!([{"name":DEFAULT_MODEL,"label":"qwen 3.5 4B VLM","min_ram_gb":min_ram_gb,"size_bytes":size_bytes}])
 }
 
 pub fn availability(journal: &Path, model: &str) -> Value {
     #[cfg(target_os = "macos")]
-    if let Some(readiness) = selected_mlx_readiness(journal) {
+    if let Some(readiness) = migration_mlx_readiness(journal) {
         return availability_payload(model, readiness);
     }
     let mut input = Map::from_iter([
@@ -79,25 +92,16 @@ pub fn availability(journal: &Path, model: &str) -> Value {
 /// that performs a current host check.
 pub fn provider_status_availability(journal: &Path, model: &str) -> Value {
     #[cfg(target_os = "macos")]
-    if let Some(readiness) = selected_mlx_readiness(journal) {
-        return availability_payload(model, readiness);
-    }
-    availability_payload(model, inspect_local_installed(journal, model))
+    let readiness = solstone_core_local::install::macos_mlx_migration::inspect_serving(journal);
+    #[cfg(not(target_os = "macos"))]
+    let readiness = inspect_local_installed(journal, model);
+    availability_payload(model, readiness)
 }
 
 #[cfg(target_os = "macos")]
-fn selected_mlx_readiness(journal: &Path) -> Option<Value> {
-    match solstone_core_local::read_macos_local_backend_env() {
-        Ok(solstone_core_local::MacosLocalBackend::Metal) => None,
-        Ok(solstone_core_local::MacosLocalBackend::Mlx) => {
-            Some(solstone_core_local::install::mlx_candidate::inspect_present_default(journal))
-        }
-        Err(_) => Some(json!({
-            "status":"proof-unavailable",
-            "reason_code":"local_probe_failed",
-            "artifacts":{"binary_installed":false,"model_installed":false},
-        })),
-    }
+fn migration_mlx_readiness(journal: &Path) -> Option<Value> {
+    let readiness = solstone_core_local::install::macos_mlx_migration::inspect_serving(journal);
+    (readiness["backend"] != "metal").then_some(readiness)
 }
 
 fn availability_payload(model: &str, readiness: Value) -> Value {
@@ -114,8 +118,15 @@ fn availability_payload(model: &str, readiness: Value) -> Value {
     let memory = SystemMemoryProbe;
     let total_memory_gb = memory.total_bytes().map(bytes_to_gb);
     let available_memory_gb = memory.available_bytes().map(bytes_to_gb);
-    let min_ram_gb = 8;
-    let download_bytes = 3_413_361_504_u64;
+    let min_ram_gb = if cfg!(target_os = "macos") { 16 } else { 8 };
+    let download_bytes = if cfg!(target_os = "macos") {
+        solstone_core_local::install::pins::MLX_QWEN_PINS
+            .iter()
+            .map(|pin| pin.size)
+            .sum::<u64>()
+    } else {
+        3_413_361_504_u64
+    };
     let (available, reason, reason_code) = if !platform_supported {
         (
             false,
@@ -167,12 +178,8 @@ fn availability_payload(model: &str, readiness: Value) -> Value {
 
 pub fn bootstrap_status(journal: &Path, _model: &str) -> Value {
     #[cfg(target_os = "macos")]
-    match solstone_core_local::read_macos_local_backend_env() {
-        Ok(
-            solstone_core_local::MacosLocalBackend::Metal
-            | solstone_core_local::MacosLocalBackend::Mlx,
-        ) => {}
-        Err(_) => return unavailable_bootstrap_status("local_probe_failed"),
+    if solstone_core_local::install::macos_mlx_migration::read(journal).is_err() {
+        return unavailable_bootstrap_status("local_probe_failed");
     }
     match solstone_core_local::install::status::read_observed_status(journal, "local") {
         Ok(status) => {
@@ -183,6 +190,14 @@ pub fn bootstrap_status(journal: &Path, _model: &str) -> Value {
             if !held
                 && cfg!(target_os = "macos")
                 && !metal_candidate::status_targets_native(&status)
+                && status.target_fingerprint_sha256.as_deref()
+                    != Some(
+                        solstone_core_local::install::mlx_candidate::artifact_target_json(
+                            &solstone_core_local::install::pins::MLX_QWEN_PINS,
+                        )
+                        .1
+                        .as_str(),
+                    )
                 && !(status.install_state == "failed" && status.target_fingerprint_json.is_none())
             {
                 return idle_bootstrap_status();
@@ -314,7 +329,7 @@ pub fn start_bootstrap(
         return BootstrapResponse::ByoEndpointActive;
     }
     #[cfg(target_os = "macos")]
-    if let Some(readiness) = selected_mlx_readiness(journal) {
+    if let Some(readiness) = migration_mlx_readiness(journal) {
         return classify_bootstrap(journal, &readiness);
     }
     let mut input = Map::from_iter([

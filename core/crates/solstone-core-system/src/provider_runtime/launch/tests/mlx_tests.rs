@@ -66,7 +66,7 @@ fn selected_mlx_failure_does_not_reach_installer_and_other_hosts_ignore_selector
         &LocalRuntimeShared::default(),
         &config(root.path(), LocalHost::Darwin),
         Some(&follow),
-        || Ok(mlx_candidate::MacosLocalBackend::Mlx),
+        |_, _, _| Ok(MacosRuntimeChoice::Mlx),
         || json!({"ready":false,"detail":"missing fixture"}),
     );
     assert_eq!(observed.phase, RuntimePhase::ArtifactNotReady);
@@ -77,7 +77,7 @@ fn selected_mlx_failure_does_not_reach_installer_and_other_hosts_ignore_selector
             &LocalRuntimeShared::default(),
             &config(root.path(), platform),
             None,
-            || panic!("non-Darwin host consulted the selector"),
+            |_, _, _| panic!("non-Darwin host consulted the migration policy"),
             || panic!("non-Darwin host inspected MLX"),
         );
     }

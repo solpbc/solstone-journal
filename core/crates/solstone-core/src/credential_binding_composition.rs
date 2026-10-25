@@ -43,7 +43,6 @@ fn bound_rejection_composition_posts_retained_bytes_after_correction() {
             attempt_index: 0,
             exclusive_admission: false,
             transport_retries: Some(0),
-            endpoint_binding: None,
         };
         let result = solstone_core_generate_wire::respond(
             &request,
@@ -260,7 +259,6 @@ fn owner_correction_keeps_the_unprocessed_segment() {
                 attempt_index: 0,
                 exclusive_admission: false,
                 transport_retries: Some(0),
-                endpoint_binding: None,
             };
             let result = solstone_core_generate_wire::respond(
                 &request,
@@ -291,7 +289,6 @@ fn owner_correction_keeps_the_unprocessed_segment() {
             attempt_index: 0,
             exclusive_admission: false,
             transport_retries: Some(0),
-            endpoint_binding: None,
         };
         let result = solstone_core_generate_wire::respond(
             &request,

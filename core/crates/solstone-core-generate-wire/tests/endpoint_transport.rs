@@ -45,7 +45,6 @@ fn request(timeout_s: Option<f64>) -> GenerateRequest {
         attempt_index: 0,
         exclusive_admission: false,
         transport_retries: None,
-        endpoint_binding: None,
     }
 }
 
@@ -184,6 +183,7 @@ fn buffered_cloud_transports_preserve_json_status_and_request_scoped_headers() {
 
 #[test]
 fn accepted_then_closed_is_endpoint_unreachable() {
+    solstone_core_tokens::count("warm"); // load once, outside the short deadline
     let listener = TcpListener::bind("127.0.0.1:0").expect("unreachable listener");
     let address = listener.local_addr().expect("unreachable address");
     let server = thread::spawn(move || {
@@ -211,6 +211,9 @@ fn accepted_then_closed_is_endpoint_unreachable() {
 
 #[test]
 fn accepted_but_silent_is_capacity_exhausted_then_released_response_succeeds() {
+    // The token counter loads once per process; keep that out of the 0.2 s deadline,
+    // or the request can time out before it connects and the silent server waits forever.
+    solstone_core_tokens::count("warm");
     let journal = journal_path();
     let config = served_window_config();
 

@@ -71,6 +71,11 @@ const ALLOWLIST: &[AllowlistRow] = &[
     },
     AllowlistRow {
         path: "core/crates/solstone-core/src/install_provider.rs",
+        marker: "MLX_LOCAL_DOWNLOAD_DISCLOSURE",
+        reason: "macOS model download disclosure copy",
+    },
+    AllowlistRow {
+        path: "core/crates/solstone-core/src/install_provider.rs",
         marker: "WINDOWS_LOCAL_DOWNLOAD_DISCLOSURE",
         reason: "disclosure copy",
     },

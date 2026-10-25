@@ -24,28 +24,31 @@ fn setup(
     ] {
         fs::create_dir_all(path).unwrap();
     }
-    fs::write(
-        talent_root.join("sense.md"),
-        include_str!("../../../../payload/solstone/talent/sense.md"),
-    )
-    .unwrap();
-    fs::write(
-        talent_root.join("sense.schema.json"),
-        include_str!("../../../../payload/solstone/talent/sense.schema.json"),
-    )
-    .unwrap();
-    fs::write(
-        templates_dir.join("segment_preamble.md"),
-        include_str!("../../../../payload/solstone/think/templates/segment_preamble.md"),
-    )
-    .unwrap();
+    let payload = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../payload/solstone");
+    for (from, to) in [
+        ("talent/sense.md", talent_root.join("sense.md")),
+        (
+            "talent/sense.schema.json",
+            talent_root.join("sense.schema.json"),
+        ),
+        (
+            "think/templates/segment_preamble.md",
+            templates_dir.join("segment_preamble.md"),
+        ),
+    ] {
+        fs::copy(payload.join(from), to).unwrap();
+    }
     fs::create_dir_all(journal.join("facets/work")).unwrap();
     fs::write(
         journal.join("facets/work/facet.json"),
         r#"{"title":"Work"}"#,
     )
     .unwrap();
-    fs::write(journal.join("config/journal.json"),json!({"providers":{"active":{"provider":"local","model":"local/qwen3.5-4b"},"local":{"endpoint_url":"https://example.test","served_model_id":"Qwen/Qwen3.5-4B"}},"services":{"confidential":{}}}).to_string()).unwrap();
+    fs::write(
+        journal.join("config/journal.json"),
+        json!({"providers":{"active":{"provider":"test","model":"test-model"}}}).to_string(),
+    )
+    .unwrap();
     let raw = json!({"timestamp":0.001,"analysis":{"primary":"tmux","visual_description":"A terminal"},"content":{"tmux":{"session":"main","window":{"id":"@0","index":0,"name":"work"},"windows":[{"id":"@0","index":0,"name":"work","active":true}],"panes":[{"id":"%0","index":0,"active":true,"content":screen}]}}});
     fs::write(
         journal.join("chronicle/20261021/device/100000_300/tmux_main_screen.jsonl"),
@@ -109,7 +112,7 @@ fn native_loaded_source_bytes_and_identities_qualify_only_when_they_match() {
     assert!(prepare(&wrong, &context).is_none());
 }
 #[test]
-fn native_preparation_falls_back_for_unsupported_ui_styles_and_profiles() {
+fn native_preparation_falls_back_for_unsupported_ui_styles() {
     for text in [
         display().replace("❯ Is", "❯ \x1b[2mIs"),
         display().replace("❯ Is", "❯ \x1b[9mIs"),
@@ -127,7 +130,58 @@ fn native_preparation_falls_back_for_unsupported_ui_styles_and_profiles() {
         .unwrap();
         assert!(p.terminal_sense.is_none());
     }
+}
+#[test]
+fn every_thinking_backend_prepares_the_same_candidate() {
     let (_root, paths, context, request) = setup(&display());
+    let mut candidates = Vec::new();
+    for config in [
+        json!({"providers":{"active":{"provider":"test","model":"test-model"}}}),
+        json!({"providers":{"active":{"provider":"local","model":"local/qwen3.5-4b"}}}),
+        json!({"providers":{"active":{"provider":"local","model":"local/qwen3.5-4b"},"local":{"endpoint_url":"https://example.test","served_model_id":"Qwen/Qwen3.5-4B"}},"services":{"confidential":{}}}),
+        json!({"providers":{"active":{"provider":"local","model":"local/other"},"local":{"endpoint_url":"https://example.test","served_model_id":"other","served_context_window":16384}}}),
+        json!({"providers":{"active":{"provider":"openai","model":"openai-model"}}}),
+        json!({"providers":{"active":{"provider":"anthropic","model":"anthropic-model"}}}),
+        json!({"providers":{"active":{"provider":"google","model":"google-model"}}}),
+    ] {
+        fs::write(
+            context.journal.join("config/journal.json"),
+            config.to_string(),
+        )
+        .unwrap();
+        let p = crate::prepare::prepare(
+            request.clone(),
+            &paths,
+            &context,
+            crate::prepare::PrepareMode::Preview,
+        )
+        .unwrap();
+        let candidate = p
+            .terminal_sense
+            .expect("terminal input takes the candidate");
+        candidates
+            .push(solstone_core_generate::encode_one_shot_request(&candidate.request).unwrap());
+    }
+    assert!(candidates.windows(2).all(|pair| pair[0] == pair[1]));
+}
+#[test]
+fn ordinary_fitting_trims_the_timeline_from_complete_screens() {
+    use solstone_core_local::generate::fit_contents;
+    let (_root, paths, context, request) = setup(&display());
+    let frames: String = (0..60)
+        .map(|i| {
+            let log: String = (0..=i).map(|j| format!("build step {j} finished\n")).collect();
+            let raw = json!({"timestamp":0.001 + 5.0 * f64::from(i),"analysis":{"primary":"tmux","visual_description":"A terminal"},"content":{"tmux":{"session":"main","window":{"id":"@0","index":0,"name":"work"},"windows":[{"id":"@0","index":0,"name":"work","active":true}],"panes":[{"id":"%0","index":0,"active":true,"content":format!("{log}{}", display())}]}}});
+            format!("{raw}\n")
+        })
+        .collect();
+    fs::write(
+        context
+            .journal
+            .join("chronicle/20261021/device/100000_300/tmux_main_screen.jsonl"),
+        frames,
+    )
+    .unwrap();
     let p = crate::prepare::prepare(
         request,
         &paths,
@@ -135,20 +189,166 @@ fn native_preparation_falls_back_for_unsupported_ui_styles_and_profiles() {
         crate::prepare::PrepareMode::Preview,
     )
     .unwrap();
-    for kind in ["plain", "different_model", "different_provider"] {
-        let mut p = p.clone();
-        let config = p.journal_config.as_mut().unwrap();
-        match kind {
-            "plain" => {
-                config.shift_remove("services");
+    let request = p
+        .terminal_sense
+        .expect("terminal input takes the candidate")
+        .request;
+    let contents = Value::Array(
+        request
+            .contents
+            .iter()
+            .map(|part| match part {
+                ContentPart::Text { text } => json!(text),
+                ContentPart::Image { .. } => panic!("terminal Sense sends text"),
+            })
+            .collect(),
+    );
+    let system = request.system_instruction.as_deref();
+    let max_output_tokens = u32::try_from(request.max_output_tokens).unwrap();
+    let (mut refused, mut whole, mut from_complete_screens) = (false, false, 0);
+    for window in (1024..=262_144).step_by(512) {
+        let mut count = solstone_core_tokens::count;
+        match fit_contents(&contents, system, max_output_tokens, window, &mut count) {
+            Err(error) => {
+                assert_eq!(error.reason_code, "context_preserved_overflow");
+                assert!(!whole && from_complete_screens == 0);
+                refused = true;
             }
-            "different_model" => {
-                config["providers"]["active"]["model"] = json!("local/other");
+            Ok((fitted, None)) => {
+                assert_eq!(fitted, contents);
+                whole = true;
+                break;
             }
-            _ => {
-                config["providers"]["active"]["provider"] = json!("openai");
+            Ok((fitted, Some(budget))) => {
+                assert!(budget.clipped);
+                // Only the timeline is trimmed; instructions, cards and passages stay whole.
+                assert_eq!(
+                    fitted.as_array().unwrap()[1..],
+                    contents.as_array().unwrap()[1..]
+                );
+                let kept = fitted[0].as_str().unwrap();
+                let kept = &kept[kept.find("\n\n").unwrap() + 2..];
+                if !kept.starts_with("## ") {
+                    continue;
+                }
+                from_complete_screens += 1;
+                let first = &kept[..kept.find("End observation.\n").unwrap()];
+                let observation = first
+                    .lines()
+                    .find_map(|line| line.strip_prefix("Observation: "))
+                    .unwrap();
+                let observation: Value = serde_json::from_str(observation).unwrap();
+                assert_eq!(observation["roster_update"]["mode"], "full");
+                assert!(observation.get("restart").is_none());
+                let panes = first
+                    .lines()
+                    .filter(|line| line.starts_with("Pane change: "))
+                    .collect::<Vec<_>>();
+                assert!(!panes.is_empty());
+                assert!(panes.iter().all(|line| line.contains(r#""mode":"full""#)));
             }
         }
-        assert!(prepare(&p, &context).is_none());
     }
+    assert!(refused && whole && from_complete_screens > 1);
+}
+
+#[test]
+fn capture_metadata_preserves_complete_sense_requests_on_native_and_fallback_paths() {
+    for text in [display(), "ordinary shell prompt> text".to_owned()] {
+        let (_root, paths, context, request) = setup(&text);
+        let old = crate::prepare::prepare(
+            request.clone(),
+            &paths,
+            &context,
+            crate::prepare::PrepareMode::Preview,
+        )
+        .unwrap();
+        let path = context
+            .journal
+            .join("chronicle/20261021/device/100000_300/tmux_main_screen.jsonl");
+        let mut raw: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        let pane = &mut raw["content"]["tmux"]["panes"][0];
+        pane["cursor_x"] = json!(7);
+        pane["cursor_y"] = json!(3);
+        pane["cursor_visible"] = json!(false);
+        pane["alternate_on"] = json!(true);
+        pane["pane_in_mode"] = json!(true);
+        fs::write(&path, format!("{raw}\n")).unwrap();
+        let new = crate::prepare::prepare(
+            request,
+            &paths,
+            &context,
+            crate::prepare::PrepareMode::Preview,
+        )
+        .unwrap();
+        assert_eq!(old.terminal_sense.is_some(), new.terminal_sense.is_some());
+        let encode = |p: &PreparedTalent| {
+            solstone_core_generate::encode_one_shot_request(&crate::generate_request(p).unwrap())
+                .unwrap()
+        };
+        assert_eq!(encode(&old), encode(&new));
+    }
+}
+
+#[test]
+fn tmux_executable_points_do_not_disable_the_native_timeline() {
+    let (_root, paths, context, request) = setup(&display());
+    let activity = context
+        .journal
+        .join("chronicle/20261021/device/100000_300/100000_desktop_activity.jsonl");
+    fs::write(&activity, format!("{}\n", json!({"v":1,"t":"desktop_activity","kind":"terminal","method":"tmux","ts":1792576800000_i64,"end_ts":1792576800000_i64,"session":"main","window":"work","exe":"bash"}))).unwrap();
+    let prepared = crate::prepare::prepare(
+        request.clone(),
+        &paths,
+        &context,
+        crate::prepare::PrepareMode::Preview,
+    )
+    .unwrap();
+    assert_eq!(prepared.config["source_counts"]["percepts"], 2);
+    assert!(
+        prepared.terminal_sense.is_some(),
+        "executable points must not disable TC"
+    );
+    let encoded = solstone_core_generate::encode_one_shot_request(
+        &crate::generate_request(&prepared).unwrap(),
+    )
+    .unwrap();
+    let activity_source = prepared
+        .entry_sources
+        .iter()
+        .flatten()
+        .find(|s| s.file.ends_with("_desktop_activity.jsonl"))
+        .unwrap();
+    let activity_text = activity_source
+        .chunks
+        .iter()
+        .map(|(chunk, _)| chunk.as_str())
+        .collect::<Vec<_>>()
+        .join("\n\n");
+    assert!(encoded.contains("bash"));
+    let ContentPart::Text {
+        text: candidate_text,
+    } = &prepared.terminal_sense.as_ref().unwrap().request.contents[0]
+    else {
+        panic!("text input")
+    };
+    assert!(candidate_text.contains(activity_text.trim()));
+    let native = solstone_core_generate::encode_one_shot_request(
+        &crate::native_generate_request(&prepared).unwrap(),
+    )
+    .unwrap();
+    assert_ne!(encoded, native);
+    // A non-tmux activity source must retain the conservative native fallback.
+    let text = fs::read_to_string(&activity)
+        .unwrap()
+        .replace("\"tmux\"", "\"other\"");
+    fs::write(&activity, text).unwrap();
+    let other = crate::prepare::prepare(
+        request,
+        &paths,
+        &context,
+        crate::prepare::PrepareMode::Preview,
+    )
+    .unwrap();
+    assert!(other.terminal_sense.is_none());
 }

@@ -98,6 +98,9 @@ pub(crate) fn keys(frame: &Value) -> Result<Vec<(String, String, String)>, &'sta
     Ok(result)
 }
 
+/// Marks a record where every pane and roster restarts from complete text.
+pub(crate) const RESTART_KEY: &str = "restart";
+
 pub(crate) fn encode(
     frames: &[Value],
     anchor_seconds: f64,
@@ -129,6 +132,19 @@ pub(crate) fn encode(
         let mut metadata = frame.clone();
         let frame_keys = keys(frame)?;
         let mut updates = Vec::new();
+        // Anchors recur together: every pane and roster restarts from complete
+        // text, so a reader that starts at a restart needs nothing earlier.
+        let restart = result.is_empty()
+            || frame_keys.iter().any(|key| {
+                visible.contains(key)
+                    && last_anchor
+                        .get(key)
+                        .is_some_and(|at| time - at >= anchor_seconds)
+            });
+        if restart {
+            visible.clear();
+            rosters.clear();
+        }
 
         let tmux = metadata
             .get_mut("content")
@@ -265,11 +281,15 @@ pub(crate) fn encode(
             updates.push(update);
         }
 
-        result.push(json!({
+        let mut record = json!({
             "frame_metadata": metadata,
             "roster_update": roster_update,
             "pane_updates": updates,
-        }));
+        });
+        if restart {
+            record[RESTART_KEY] = Value::Bool(true);
+        }
+        result.push(record);
         visible = frame_keys.into_iter().collect();
     }
 

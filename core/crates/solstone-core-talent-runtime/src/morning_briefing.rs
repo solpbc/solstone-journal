@@ -117,8 +117,8 @@ pub fn apply_prompt_override(
         solstone_core_local::plan::LOCAL_MIN_CONTEXT_TOKENS,
     );
     let schema_tokens = match prepared.config.get("json_schema") {
-        Some(Value::String(s)) => solstone_core_local::generate::estimate_tokens(s),
-        Some(val) => solstone_core_local::generate::estimate_tokens(&val.to_string()),
+        Some(Value::String(s)) => solstone_core_tokens::count(s),
+        Some(val) => solstone_core_tokens::count(&val.to_string()),
         None => 0,
     };
 
@@ -155,7 +155,7 @@ pub fn apply_prompt_override(
 
         let text_tokens: u32 = crate::model_text_parts(&config_clone)
             .iter()
-            .map(|part| solstone_core_local::generate::estimate_tokens(part))
+            .map(|part| solstone_core_tokens::count(part))
             .sum();
         let total_tokens = text_tokens + schema_tokens;
 
@@ -1086,7 +1086,7 @@ mod tests {
         fs::create_dir_all(facet.join("activities")).unwrap();
         fs::write(facet.join("facet.json"), r#"{"title":"Work"}"#).unwrap();
 
-        let huge_story = "A".repeat(50000);
+        let huge_story = " a".repeat(25000);
         let record1 = json!({
             "id": "act_huge",
             "title": "First Huge Activity",
@@ -1132,9 +1132,9 @@ mod tests {
         );
         let total_tokens: u32 = crate::model_text_parts(&prepared.config)
             .iter()
-            .map(|part| solstone_core_local::generate::estimate_tokens(part))
+            .map(|part| solstone_core_tokens::count(part))
             .sum::<u32>()
-            + solstone_core_local::generate::estimate_tokens(&schema_str);
+            + solstone_core_tokens::count(&schema_str);
         assert!(
             total_tokens <= budget,
             "tokens {total_tokens} must fit budget {budget}"
@@ -1150,7 +1150,7 @@ mod tests {
         let context = ExecutionContext {
             journal: root.path().to_owned(),
         };
-        let huge_instruction = "X".repeat(100_000);
+        let huge_instruction = " x".repeat(50_000);
         let mut prepared = PreparedTalent::new(
             "morning_briefing".into(),
             Map::from_iter([
@@ -1224,7 +1224,7 @@ mod tests {
 
     #[test]
     fn test_source_gaps_not_substring_deleted() {
-        let huge_story = "A".repeat(50000);
+        let huge_story = " a".repeat(25000);
         let act = DigestActivity {
             facet: "work".into(),
             day: "20261019".into(),

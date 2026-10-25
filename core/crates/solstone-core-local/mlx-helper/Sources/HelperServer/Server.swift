@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 import Foundation
+import Darwin
 import Hummingbird
 
 public protocol InferenceBackend: Sendable {
@@ -11,6 +12,7 @@ public protocol InferenceBackend: Sendable {
 /// Actor reentrancy alone does not serialize inference across suspension points.
 public actor FIFOSlot {
     private var busy = false
+    private var activityGeneration: UInt64 = 0
     private var waiting: [CheckedContinuation<Void, Never>] = []
 
     private func acquire() async {
@@ -24,8 +26,12 @@ public actor FIFOSlot {
     }
 
     public init() {}
+    public func activity() -> (generation: UInt64, idle: Bool) {
+        (activityGeneration, !busy && waiting.isEmpty)
+    }
     public func run<T: Sendable>(_ work: @Sendable () async throws -> T) async throws -> T {
         await acquire()
+        activityGeneration += 1
         defer { release() }
         try Task.checkCancellation()
         return try await work()
@@ -41,6 +47,28 @@ public actor ModelState {
         guard let backend else { throw HTTPError(.serviceUnavailable, message: "loading model") }
         return backend
     }
+}
+
+public struct MaintenanceSnapshot: Encodable, Sendable {
+    public let pid: Int32
+    public let footprint_bytes: UInt64?
+    public let activity_generation: UInt64
+    public let idle: Bool
+}
+
+/// The same native ledger used by macOS memory pressure accounting.
+public func processFootprint() throws -> UInt64 {
+    var info = task_vm_info_data_t()
+    var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<integer_t>.size)
+    let status = withUnsafeMutablePointer(to: &info) { pointer in
+        pointer.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+            task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), $0, &count)
+        }
+    }
+    guard status == KERN_SUCCESS else {
+        throw HTTPError(.internalServerError, message: "memory observation unavailable")
+    }
+    return info.phys_footprint
 }
 
 private struct Props: Encodable {
@@ -79,6 +107,7 @@ private func decodeBody<T: Decodable>(_ request: Request, as: T.Type) async thro
 
 public func makeApplication(
     options: Options, state: ModelState,
+    footprint: @escaping @Sendable () throws -> UInt64 = processFootprint,
     onRunning: @escaping @Sendable () async -> Void = {}
 ) -> some ApplicationProtocol {
     let router = Router()
@@ -88,6 +117,14 @@ public func makeApplication(
             return Response(status: .ok, body: .init(byteBuffer: .init(string: "{\"status\":\"ok\"}")))
         }
         return Response(status: .serviceUnavailable, body: .init(byteBuffer: .init(string: "loading model")))
+    }
+    // This observation neither takes the inference slot nor counts as activity.
+    router.get("maintenance") { _, _ -> Response in
+        guard await state.loaded() else { throw HTTPError(.serviceUnavailable) }
+        let activity = await slot.activity()
+        return try json(MaintenanceSnapshot(
+            pid: getpid(), footprint_bytes: try? footprint(),
+            activity_generation: activity.generation, idle: activity.idle))
     }
     router.get("props") { _, _ -> Response in
         try json(Props(n_ctx: options.context, default_generation_settings: .init(n_ctx: options.context)))

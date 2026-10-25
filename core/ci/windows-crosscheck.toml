@@ -11,10 +11,12 @@ target = "x86_64-pc-windows-msvc"
 # one member and one library (138/131 -> 139/132).
 # Re-derived on 2026-10-20 with the same metadata join: indexer-todo adds
 # one member and one library (139/132 -> 140/133).
+# Re-derived on 2026-10-24 with the same metadata join: solstone-core-tokens
+# adds one member and one library (140/133 -> 141/134).
 # Re-derived on 2026-10-24 with the same metadata join: possible-names adds
-# one member and one library (140/133 -> 141/134).
-workspace_packages = 141
-library_packages = 134
+# one member and one library (141/134 -> 142/135).
+workspace_packages = 142
+library_packages = 135
 
 [[exclusions]]
 package = "ring"

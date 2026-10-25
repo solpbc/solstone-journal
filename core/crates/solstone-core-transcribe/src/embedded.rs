@@ -9,6 +9,10 @@ use serde_json::Value;
 
 use crate::{TranscribeError, TranscribeFile, backend::parakeet_cpp};
 
+/// Finite decoded/inference envelope shared by dedicated mobile hosts.
+/// Keep one full timeline; splitting recognizer output can lose seam words.
+pub const EMBEDDED_AUDIO_MAX_SAMPLES: usize = 120 * 16_000;
+
 /// The caller's cancellation lifetime and content-free service-I/O observation.
 pub struct EmbeddedControl<'a> {
     pub cancelled: &'a dyn Fn() -> bool,
@@ -516,13 +520,16 @@ mod tests {
     }
 
     #[test]
-    fn duration_budget_retains_original_without_terminal_success() {
+    fn duration_budget_retains_original_and_records_a_specific_hold() {
         let root = tempfile::tempdir().unwrap();
-        let segment = root.path().join("chronicle/20261012/audio/120000_31");
+        let segment = root.path().join("chronicle/20261012/audio/120000_121");
         std::fs::create_dir_all(&segment).unwrap();
         let audio = segment.join("audio.wav");
-        let bytes =
-            solstone_core_observe_audio::audio_to_wav_bytes(&vec![0.0; 31 * 16000], 16000).unwrap();
+        let bytes = solstone_core_observe_audio::audio_to_wav_bytes(
+            &vec![0.0; EMBEDDED_AUDIO_MAX_SAMPLES + 1],
+            16000,
+        )
+        .unwrap();
         std::fs::write(&audio, &bytes).unwrap();
         let asr = CancelDuringAsr(AtomicBool::new(false));
         let result = process_embedded(
@@ -542,7 +549,58 @@ mod tests {
             matches!(result, Err(TranscribeError::ParakeetCppDeferred { reason, .. }) if reason == "embedded-duration-budget")
         );
         assert_eq!(std::fs::read(&audio).unwrap(), bytes);
-        assert!(!audio.with_extension("jsonl").exists());
+        let record = solstone_core_processing_record::read_processing_record_header(
+            &audio.with_extension("jsonl"),
+        )
+        .unwrap();
+        assert_eq!(record["state"], "failed");
+        assert_eq!(record["reason_code"], "embedded-duration-budget");
+        assert!(solstone_core_processing_record::is_failure_exhausted(
+            &record
+        ));
+        assert!(embedded_already_processed(root.path(), &audio, None));
+        assert!(
+            solstone_core_system::work_retry::raw::inspect_output(
+                root.path(),
+                &audio.with_extension("jsonl")
+            )
+            .unwrap()
+            .is_some()
+        );
         assert!(!audio.with_extension("npz").exists());
+    }
+
+    #[test]
+    fn admitted_duration_reaches_vad_without_truncation_or_model_loading() {
+        for samples in [30 * 16_000, 44 * 16_000, EMBEDDED_AUDIO_MAX_SAMPLES] {
+            let root = tempfile::tempdir().unwrap();
+            let segment = root.path().join("chronicle/20261012/audio/120000_120");
+            std::fs::create_dir_all(&segment).unwrap();
+            let audio = segment.join("audio.wav");
+            let bytes = solstone_core_observe_audio::audio_to_wav_bytes(&vec![0.0; samples], 16000)
+                .unwrap();
+            std::fs::write(&audio, &bytes).unwrap();
+            let result = process_embedded(
+                &audio,
+                root.path(),
+                Path::new("missing-models"),
+                &root.path().join("scratch"),
+                &LocalRecognizer,
+                EmbeddedControl {
+                    cancelled: &|| false,
+                    service_io: &|_| {},
+                    owner_original_deleted: &|| {},
+                },
+                None,
+            );
+            // A missing VAD model is the first boundary after full decode.
+            // The recognizer above panics if admission accidentally runs it.
+            assert!(
+                matches!(result, Err(TranscribeError::ModelAsset(_))),
+                "{samples}: {result:?}"
+            );
+            assert_eq!(std::fs::read(&audio).unwrap(), bytes);
+            assert!(!audio.with_extension("jsonl").exists());
+        }
     }
 }

@@ -86,6 +86,7 @@ impl FollowMemory {
 pub(crate) struct LocalFollow {
     launcher: LocalInstallerLauncher,
     memory: Mutex<FollowMemory>,
+    migration_memory: Mutex<(u32, Option<f64>)>,
 }
 
 impl LocalFollow {
@@ -93,6 +94,7 @@ impl LocalFollow {
         Self {
             launcher,
             memory: Mutex::new(FollowMemory::default()),
+            migration_memory: Mutex::new((0, None)),
         }
     }
 
@@ -137,6 +139,47 @@ impl LocalFollow {
                 Err(error) => log::warn!(
                     "local provider artifacts are behind this release's pins; installer did not start: {error}"
                 ),
+            }
+        }
+        decision
+    }
+
+    /// An installed Mac's MLX acquisition must not collect its serving GGUF
+    /// generation. It uses the existing persisted and launch backoff policy.
+    pub(crate) fn observe_migration(
+        &self,
+        journal: &Path,
+        config: &Map<String, Value>,
+        clock: &dyn super::store::RuntimeClock,
+    ) -> FollowDecision {
+        if !local_is_active(config) || !model_installed_before(journal) {
+            return FollowDecision::Hold("never-installed-or-inactive");
+        }
+        let Ok(now_utc) = DateTime::parse_from_rfc3339(&clock.now_utc_rfc3339()) else {
+            return FollowDecision::Hold("clock-unavailable");
+        };
+        let now = clock.monotonic_seconds();
+        let mut memory = self
+            .migration_memory
+            .lock()
+            .expect("local migration follow");
+        let elapsed = memory.1.is_none_or(|last| {
+            let step = memory.0.saturating_sub(1) as usize;
+            now - last
+                >= LAUNCH_BACKOFF_STEPS[step.min(LAUNCH_BACKOFF_STEPS.len() - 1)].as_secs_f64()
+        });
+        let record = status::read_status(journal, "local").ok();
+        let decision = install_follow_tail(
+            record.as_ref(),
+            now_utc.with_timezone(&Utc),
+            elapsed,
+            || lease::is_held(journal, "local"),
+        );
+        if decision == FollowDecision::Launch {
+            memory.0 = memory.0.saturating_add(1);
+            memory.1 = Some(now);
+            if let Err(error) = (self.launcher)(journal) {
+                log::warn!("macOS local model installer did not start: {error}");
             }
         }
         decision

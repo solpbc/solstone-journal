@@ -467,7 +467,12 @@ gatekeeper_negatives() {
 	if [ -s "$WORK/signed-bundles.sorted" ]; then
 		IFS= read -r control_seal <"$WORK/signed-bundles.sorted"
 		control_bundle=$broken/${control_seal%/Contents/_CodeSignature/CodeResources}
-		control_resource=$(/usr/bin/find "$control_bundle/Contents/Resources" -type f -print 2>/dev/null | LC_ALL=C /usr/bin/sort | /usr/bin/sed -n 1p)
+		/usr/bin/find "$control_bundle/Contents/Resources" -type f -print >"$WORK/control-resources" \
+			|| refuse "could not enumerate sealed resources for the resource-bundle control"
+		LC_ALL=C /usr/bin/sort "$WORK/control-resources" >"$WORK/control-resources.sorted" \
+			|| refuse "could not sort sealed resources for the resource-bundle control"
+		IFS= read -r control_resource <"$WORK/control-resources.sorted" \
+			|| refuse "could not read a sealed resource for the resource-bundle control"
 		[ -n "$control_resource" ] \
 			|| refuse "could not find a sealed resource for the resource-bundle control"
 		printf 'x' >>"$control_resource" \
@@ -477,6 +482,23 @@ gatekeeper_negatives() {
 		fi
 		printf 'control 1b ok: a modified resource breaks its bundle seal\n'
 	fi
+
+	# The census must see newly planted bundles, including symlinked ones.
+	bundle_control=$WORK/bundle-census-control
+	mkdir "$bundle_control" || refuse "could not create bundle census control"
+	mkdir "$bundle_control/planted.bundle" || refuse "could not plant unsealed bundle"
+	if write_relative_bundle_seals "$bundle_control" "$WORK/planted-bundles"; then
+		refuse "CONTROL FAILED: an unsealed planted bundle passed the census"
+	fi
+	rmdir "$bundle_control/planted.bundle" || refuse "could not clear planted bundle"
+	mkdir -p "$bundle_control/sealed/Contents/_CodeSignature" \
+		|| refuse "could not create symlink bundle target"
+	printf 'control' >"$bundle_control/sealed/Contents/_CodeSignature/CodeResources"
+	ln -s sealed "$bundle_control/planted.bundle" || refuse "could not plant symlinked bundle"
+	if write_relative_bundle_seals "$bundle_control" "$WORK/symlink-bundles"; then
+		refuse "CONTROL FAILED: a symlinked bundle passed the census"
+	fi
+	printf 'control 1c ok: unsealed and symlinked planted bundles are refused\n'
 
 	# Control for half 2: strip the payload's signature and require the
 	# hardened-runtime helper to refuse to start. This is the exact failure a
@@ -583,18 +605,25 @@ write_relative_macho_members() {
 }
 
 write_relative_bundle_seals() {
-	root=$1
-	out=$2
-	/usr/bin/find "$root" -path '*.bundle/Contents/_CodeSignature/CodeResources' -print >"$out.full" \
+	bundle_root=$1
+	bundle_out=$2
+	/usr/bin/find "$bundle_root" \( -type d -o -type l \) -name '*.bundle' -print >"$bundle_out.full" \
 		|| return 2
-	: >"$out.raw"
-	while IFS= read -r path; do
-		case $path in
-		"$root"/*) printf '%s\n' "${path#"$root"/}" >>"$out.raw" ;;
+	: >"$bundle_out.raw"
+	while IFS= read -r bundle_dir; do
+		bundle_seal=$bundle_dir/Contents/_CodeSignature/CodeResources
+		if [ -L "$bundle_dir" ] || [ -L "$bundle_dir/Contents" ] \
+			|| [ -L "$bundle_dir/Contents/_CodeSignature" ] \
+			|| [ ! -f "$bundle_seal" ] || [ -L "$bundle_seal" ]; then
+			printf 'unsealed or symlinked bundle: %s\n' "$bundle_dir" >&2
+			return 2
+		fi
+		case $bundle_seal in
+		"$bundle_root"/*) printf '%s\n' "${bundle_seal#"$bundle_root"/}" >>"$bundle_out.raw" ;;
 		*) return 2 ;;
 		esac
-	done <"$out.full"
-	LC_ALL=C /usr/bin/sort "$out.raw" >"$out" || return 2
+	done <"$bundle_out.full"
+	LC_ALL=C /usr/bin/sort "$bundle_out.raw" >"$bundle_out" || return 2
 }
 
 tree_matches_signed_inventory() {
@@ -624,14 +653,6 @@ read_signed_macho_inventory() {
 	# Resource bundles are signed members too, but the receipt does not count
 	# them: the tree's sealed bundles bound them, and the two sets must agree.
 	# An unsealed bundle has no seal to compare, so it is refused outright.
-	/usr/bin/find "$TREE" -type d -name '*.bundle' -print >"$WORK/bundle-dirs" \
-		|| refuse "could not enumerate the extracted bundles"
-	while IFS= read -r bundle_dir; do
-		bundle_seal=$bundle_dir/Contents/_CodeSignature/CodeResources
-		if [ ! -f "$bundle_seal" ] || [ -L "$bundle_seal" ]; then
-			refuse "unsealed bundle in the extracted tree: ${bundle_dir#"$TREE"/}"
-		fi
-	done <"$WORK/bundle-dirs"
 	write_relative_bundle_seals "$TREE" "$WORK/observed-bundles" \
 		|| refuse "could not enumerate the extracted resource-bundle seals"
 	observed_bundles=$(/usr/bin/wc -l <"$WORK/observed-bundles") \

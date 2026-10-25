@@ -25,6 +25,7 @@ mod speaker_coordinates;
 
 use percept_absence::PerceptFamily;
 pub use percept_absence::screen_inputs_absent;
+pub use solstone_core_processing_record::is_transcribe_output;
 
 pub use possible_name_labels::{PossibleNameLabels, label_statement, statement_text};
 pub use speaker_coordinates::{next_statement_ordinal, speaker_label_source};
@@ -203,6 +204,34 @@ impl From<SourceCounts> for Value {
 
 pub const MIN_INPUT_CHARS: usize = 50;
 
+/// Whether a segment file is a speech transcript.
+///
+/// Transcribe names a transcript after its recording, so one recorded under
+/// any other name is known by the processing record transcribe wrote at its
+/// head rather than by its name.
+pub fn is_speech_transcript_file(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| {
+            name.ends_with("audio.jsonl")
+                || name.ends_with("_transcript.jsonl")
+                || solstone_core_format::audio_archive::is_audio_archive_transcript_name(name)
+        })
+        || solstone_core_processing_record::is_transcribe_output(path)
+}
+
+impl EntrySource {
+    /// Whether this source is a speech transcript, by name or by the
+    /// processing record transcribe wrote at its head.
+    pub fn is_speech_transcript(&self) -> bool {
+        self.file.ends_with("audio.jsonl")
+            || self
+                .records
+                .first()
+                .is_some_and(solstone_core_processing_record::header_names_transcribe)
+    }
+}
+
 pub fn is_no_input(text: &str, counts: &SourceCounts) -> bool {
     counts.total() == 0 || text.trim().len() < MIN_INPUT_CHARS
 }
@@ -256,11 +285,18 @@ enum PerceptProjection {
 }
 
 #[derive(Debug)]
-pub struct RangeError(String);
+pub enum RangeError {
+    Invalid(String),
+    /// The day has no segment in the stream asked for; the detail names the
+    /// streams it does have.
+    UnknownStream(String),
+}
 
 impl fmt::Display for RangeError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.fmt(formatter)
+        match self {
+            Self::Invalid(detail) | Self::UnknownStream(detail) => detail.fmt(formatter),
+        }
     }
 }
 
@@ -590,6 +626,7 @@ pub fn cluster_range(
     start: &str,
     end: &str,
     sources: &Sources,
+    stream: Option<&str>,
 ) -> Result<String, RangeError> {
     let date = NaiveDate::parse_from_str(day, "%Y%m%d").map_err(range_error)?;
     let start =
@@ -598,16 +635,51 @@ pub fn cluster_range(
     let end =
         NaiveDateTime::parse_from_str(&format!("{}{end}", date.format("%Y%m%d")), "%Y%m%d%H%M%S")
             .map_err(range_error)?;
+    let stream = stream.filter(|stream| !stream.is_empty());
+    let segments = all_segments(root, day);
+    if let Some(stream) = stream
+        && !segments
+            .iter()
+            .any(|segment| segment.stream.matches(stream))
+    {
+        let mut streams = segments
+            .iter()
+            .map(|segment| {
+                segment.stream.directory().map_or(
+                    solstone_core_journal_io::DEFAULT_STREAM.to_owned(),
+                    |name| name.to_string_lossy().into_owned(),
+                )
+            })
+            .collect::<Vec<_>>();
+        streams.sort();
+        streams.dedup();
+        return Err(RangeError::UnknownStream(format!(
+            "{day} has no segments in a stream named {stream}. streams that day: {}",
+            streams.join(", ")
+        )));
+    }
     let mut memory = MemoryContext::default();
-    let entries = load_day(root, day, sources, PerceptProjection::Generic, &mut memory)
+    let mut entries = segments
         .into_iter()
+        .filter(|segment| stream.is_none_or(|stream| segment.stream.matches(stream)))
+        .flat_map(|segment| {
+            process_segment(
+                root,
+                &segment,
+                day,
+                sources,
+                PerceptProjection::Generic,
+                &mut memory,
+            )
+        })
         .filter(|entry| entry.segment_start < end && entry.segment_end > start)
-        .collect();
+        .collect::<Vec<_>>();
+    entries.sort_by_key(|entry| entry.timestamp);
     Ok(disclose_memory_incomplete(groups_to_markdown(entries), &memory).text)
 }
 
 fn range_error(error: impl fmt::Display) -> RangeError {
-    RangeError(error.to_string())
+    RangeError::Invalid(error.to_string())
 }
 
 fn load_day(
@@ -693,13 +765,7 @@ fn process_segment(
         }
         let mut transcript = files
             .iter()
-            .filter(|path| {
-                path.file_name()
-                    .and_then(|name| name.to_str())
-                    .is_some_and(|name| {
-                        name.ends_with("audio.jsonl") || (name.ends_with("_transcript.jsonl") || solstone_core_format::audio_archive::is_audio_archive_transcript_name(name))
-                    })
-            })
+            .filter(|path| is_speech_transcript_file(path))
             .collect::<Vec<_>>();
         transcript.sort();
         transcript.dedup();
@@ -952,14 +1018,15 @@ fn process_segment(
                         stream.as_deref().unwrap_or_default(),
                         segment.key
                     );
-                    let content = produce_chunks(Family::DesktopActivity, &rel, &text)
+                    let produced = produce_chunks(Family::DesktopActivity, &rel, &text);
+                    let content = produced
                         .chunks
-                        .into_iter()
-                        .map(|chunk| chunk.content)
+                        .iter()
+                        .map(|chunk| chunk.content.as_str())
                         .collect::<Vec<_>>()
                         .join("\n\n");
                     if !content.is_empty() {
-                        entries.push(entry(
+                        let mut activity_entry = entry(
                             start,
                             end,
                             segment,
@@ -967,7 +1034,43 @@ fn process_segment(
                             content,
                             stream.clone(),
                             None,
-                        ));
+                        );
+                        // Terminal preparation may preserve this context beside its screen
+                        // timeline only when it can bind it to these same producer bytes.
+                        if projection == PerceptProjection::TerminalSense
+                            && text.len() <= ENTRY_SOURCE_MAX_BYTES
+                        {
+                            let (records, unparsed_lines) = parse_raw_percept_records(&text);
+                            let mut offset = 0;
+                            let chunk_offsets = produced
+                                .chunks
+                                .iter()
+                                .map(|chunk| {
+                                    let at = offset;
+                                    offset += chunk.content.len() + 2;
+                                    at
+                                })
+                                .collect();
+                            activity_entry.source = Some(EntrySource {
+                                path: path.to_owned(),
+                                sha256: format!("{:x}", Sha256::digest(text.as_bytes())),
+                                rendered_range: 0..0,
+                                stream: segment.record_stream().map(str::to_owned),
+                                file: name.to_owned(),
+                                records,
+                                unparsed_lines,
+                                chunks: produced
+                                    .chunks
+                                    .iter()
+                                    .filter_map(|chunk| {
+                                        Some((chunk.content.clone(), chunk.source.clone()?))
+                                    })
+                                    .collect(),
+                                chunk_offsets,
+                                voice_named: BTreeSet::new(),
+                            });
+                        }
+                        entries.push(activity_entry);
                     }
                 }
                 Err(error) => {
@@ -1551,6 +1654,47 @@ mod tests {
 
     fn only(stems: &[&str]) -> TalentSource {
         TalentSource::Only(stems.iter().map(|stem| (*stem).to_owned()).collect())
+    }
+
+    #[test]
+    fn speech_recorded_under_any_name_reaches_segment_material() {
+        // Captured from a phone journal: `note-0.wav` and its transcript.
+        let root = TempDir::new().unwrap();
+        let capture = root
+            .path()
+            .join("chronicle")
+            .join(DAY)
+            .join("device_audio")
+            .join("140000_12");
+        fs::create_dir_all(&capture).unwrap();
+        fs::write(capture.join("note-0.wav"), b"RIFF").unwrap();
+        fs::write(
+            capture.join("note-0.jsonl"),
+            concat!(
+                r#"{"raw":"note-0.wav","backend":"parakeet-cpp","duration":11.05,"_solstone_processing":{"schema":"solstone.processing.v1","state":"analyzed","reason_code":"ok","handler":"transcribe","input_size":353678,"attempted_at":"2026-10-24T15:46:08Z"}}"#,
+                "\n",
+                r#"{"start":"14:00:00","text":"Maya checked the orchard irrigation pump this morning.","sentence_id":1}"#,
+                "\n",
+            ),
+        )
+        .unwrap();
+        // A JSONL transcribe did not write is never read as speech.
+        fs::write(
+            capture.join("events.jsonl"),
+            "{\"start\":\"14:00:01\",\"text\":\"ingest bookkeeping\"}\n",
+        )
+        .unwrap();
+        let everything = sources(true, true, TalentSource::All);
+        let (segment, counts) = cluster_period(
+            root.path(),
+            DAY,
+            "140000_12",
+            &everything,
+            Some("device_audio"),
+        );
+        assert!(segment.contains("orchard irrigation pump"), "{segment}");
+        assert!(!segment.contains("ingest bookkeeping"), "{segment}");
+        assert_eq!(counts.total(), 1);
     }
 
     #[test]
@@ -2236,6 +2380,48 @@ mod tests {
         assert!(field.0.contains("Field stream input"));
         assert!(!field.0.contains("Default stream input"));
         assert_eq!(field.1.transcripts, 1);
+    }
+
+    #[test]
+    fn a_time_range_reads_only_the_stream_asked_for_and_names_the_ones_a_day_has() {
+        let root = TempDir::new().unwrap();
+        let direct_segment = segment(&root);
+        let field_segment = root
+            .path()
+            .join("chronicle")
+            .join(DAY)
+            .join("field")
+            .join(SEGMENT);
+        fs::create_dir_all(&field_segment).unwrap();
+        fs::write(
+            direct_segment.join("capture_audio.jsonl"),
+            r#"{"start":"00:00:00","text":"Default stream input"}"#,
+        )
+        .unwrap();
+        fs::write(
+            field_segment.join("capture_audio.jsonl"),
+            r#"{"start":"00:00:00","text":"Field stream input"}"#,
+        )
+        .unwrap();
+        let sources = sources(true, false, TalentSource::Disabled);
+        let range = |stream| cluster_range(root.path(), DAY, "085900", "091000", &sources, stream);
+
+        let both = range(None).unwrap();
+        assert!(both.contains("Default stream input") && both.contains("Field stream input"));
+        assert_eq!(range(Some("")).unwrap(), both);
+        let field = range(Some("field")).unwrap();
+        assert!(field.contains("Field stream input"), "{field}");
+        assert!(!field.contains("Default stream input"), "{field}");
+
+        let Err(RangeError::UnknownStream(detail)) = range(Some("nosuchstream")) else {
+            panic!("an unknown stream is refused");
+        };
+        assert_eq!(
+            detail,
+            format!(
+                "{DAY} has no segments in a stream named nosuchstream. streams that day: _default, field"
+            )
+        );
     }
 
     #[test]

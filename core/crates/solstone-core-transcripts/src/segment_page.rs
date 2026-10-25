@@ -18,6 +18,7 @@ use solstone_core_format::content::{
     produce_raw_percept_chunks,
 };
 use solstone_core_journal_io::paths::{Segment, segment_origin};
+use solstone_core_processing_record::is_transcribe_output;
 
 use crate::possible_name_labels::label_line;
 use crate::{PossibleNameLabels, VoiceNames, next_statement_ordinal, speaker_label_source};
@@ -193,6 +194,7 @@ pub fn read_segment_transcript_page(
             .file_name()
             .and_then(|name| name.to_str())
             .unwrap_or_default();
+        let speech = is_speech_transcript_name(name) || is_transcribe_output(path);
         let names = labels
             .as_ref()
             .filter(|(source, _)| {
@@ -205,7 +207,7 @@ pub fn read_segment_transcript_page(
             .map(|(_, names)| names);
         let name_labels = possible_names.filter(|labels| {
             labels.file == name
-                && is_speech_transcript_name(name)
+                && speech
                 && !matches!(
                     classify(&format!("{segment_origin}/{name}")),
                     ContentResolution::Indexed(Family::AiChat)
@@ -229,11 +231,12 @@ pub fn read_segment_transcript_page(
             let text = project_line(
                 &segment_origin,
                 name,
+                speech,
                 labelled_line.as_deref().unwrap_or(named),
             );
             if !text.trim().is_empty() {
                 entries.push(SegmentTranscriptEntry {
-                    channel: source_channel(&segment_origin, name),
+                    channel: source_channel(&segment_origin, name, speech),
                     text,
                 });
             }
@@ -282,7 +285,7 @@ fn transcript_files(segment: &Path) -> Result<Vec<PathBuf>, SegmentTranscriptRea
         let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
             continue;
         };
-        if is_transcript_name(name) {
+        if is_transcript_name(name) || is_transcribe_output(&path) {
             let meta = fs::symlink_metadata(&path).map_err(|_| SegmentTranscriptReadError::Io)?;
             if !meta.file_type().is_file() {
                 return Err(SegmentTranscriptReadError::Io);
@@ -439,7 +442,7 @@ fn is_speech_transcript_name(name: &str) -> bool {
 
 /// The source-unit channel for one approved transcript file. Classification is
 /// the same path `project_line` already resolves; this does not open another file.
-fn source_channel(segment_origin: &str, name: &str) -> &'static str {
+fn source_channel(segment_origin: &str, name: &str, speech: bool) -> &'static str {
     let rel = format!("{segment_origin}/{name}");
     let stream = stream_name(segment_origin);
     match classify(&rel) {
@@ -450,7 +453,7 @@ fn source_channel(segment_origin: &str, name: &str) -> &'static str {
             _ => "Imported Text",
         },
         ContentResolution::Unindexed(RawPerceptFamily::Audio) => "Transcript",
-        _ if is_speech_transcript_name(name) => "Transcript",
+        _ if speech => "Transcript",
         _ => match stream {
             Some("import.obsidian") => "Note",
             Some("import.kindle") => "Highlights",
@@ -460,7 +463,7 @@ fn source_channel(segment_origin: &str, name: &str) -> &'static str {
     }
 }
 
-fn project_line(segment_origin: &str, name: &str, line: &str) -> String {
+fn project_line(segment_origin: &str, name: &str, speech: bool, line: &str) -> String {
     let rel = format!("{segment_origin}/{name}");
     match classify(&rel) {
         ContentResolution::Unindexed(RawPerceptFamily::Audio) => {
@@ -498,11 +501,7 @@ fn project_line(segment_origin: &str, name: &str, line: &str) -> String {
                     .map(|chunk| chunk.content)
                     .collect::<Vec<_>>()
                     .join("\n")
-            } else if name == "audio.jsonl"
-                || name.ends_with("_audio.jsonl")
-                || (name.ends_with("_transcript.jsonl")
-                    || solstone_core_format::audio_archive::is_audio_archive_transcript_name(name))
-            {
+            } else if speech {
                 let text = produce_raw_percept_chunks(RawPerceptFamily::Audio, &rel, line)
                     .chunks
                     .into_iter()
@@ -585,6 +584,45 @@ mod tests {
         );
         assert!(first.next.is_some());
         assert!(!first.untimed);
+    }
+
+    #[test]
+    fn transcript_page_reads_speech_recorded_under_any_name() {
+        let root = tempfile::tempdir().unwrap();
+        let segment = root
+            .path()
+            .join("chronicle/20261023/device_audio/140000_12");
+        fs::create_dir_all(&segment).unwrap();
+        fs::write(segment.join("note-0.wav"), b"RIFF").unwrap();
+        fs::write(
+            segment.join("note-0.jsonl"),
+            concat!(
+                r#"{"raw":"note-0.wav","_solstone_processing":{"schema":"solstone.processing.v1","state":"analyzed","handler":"transcribe","input_size":4}}"#,
+                "\n",
+                r#"{"start":"14:00:00","text":"Maya checked the orchard irrigation pump this morning."}"#,
+                "\n",
+            ),
+        )
+        .unwrap();
+        fs::write(
+            segment.join("events.jsonl"),
+            "{\"start\":\"14:00:01\",\"text\":\"ingest bookkeeping\"}\n",
+        )
+        .unwrap();
+        let segment = iter_segments(root.path(), PathOrDay::Day("20261023"))
+            .unwrap()
+            .pop()
+            .unwrap();
+
+        let page = read_segment_transcript_page(&segment, None, None, None).unwrap();
+        assert_eq!(
+            page.entries,
+            vec![super::SegmentTranscriptEntry {
+                text: "[14:00:00] Maya checked the orchard irrigation pump this morning."
+                    .to_owned(),
+                channel: "Transcript",
+            }]
+        );
     }
 
     #[test]

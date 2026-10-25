@@ -1164,7 +1164,6 @@ fn generate_component(
         attempt_index: 0,
         exclusive_admission: false,
         transport_retries: Some(0),
-        endpoint_binding: None,
     };
     let cancellation = Cancellation::from_fn(cancelled);
     let result = probe.execute_generate(&request, journal, config, &cancellation);
@@ -1551,23 +1550,10 @@ fn bundled_runtime_readiness(
     let journal = journal.display().to_string();
     #[cfg(target_os = "macos")]
     {
-        let _ = nvidia_probe;
-        match solstone_core_local::read_macos_local_backend_env().ok()? {
-            solstone_core_local::MacosLocalBackend::Mlx => {
-                return Some(
-                    solstone_core_local::install::mlx_candidate::inspect_present_default(
-                        Path::new(&journal),
-                    ),
-                );
-            }
-            solstone_core_local::MacosLocalBackend::Metal => {}
-        }
-        solstone_core_local::install::metal_candidate::inspect_present(&Map::from_iter([
-            ("journal".into(), Value::String(journal)),
-            ("model_id".into(), Value::String(model_id.to_owned())),
-            ("backend".into(), Value::String("metal".into())),
-        ]))
-        .ok()
+        let _ = (nvidia_probe, model_id);
+        Some(
+            solstone_core_local::install::macos_mlx_migration::inspect_serving(Path::new(&journal)),
+        )
     }
     #[cfg(not(target_os = "macos"))]
     {
@@ -3158,7 +3144,6 @@ mod tests {
                 attempt_index: 0,
                 exclusive_admission: false,
                 transport_retries: Some(0),
-                endpoint_binding: None,
             };
 
             let snapshot = json!({
@@ -3384,7 +3369,6 @@ mod tests {
                 attempt_index: 0,
                 exclusive_admission: false,
                 transport_retries: Some(0),
-                endpoint_binding: None,
             };
             for file_config in [&a, &b, &a] {
                 std::fs::write(&file, serde_json::to_vec(file_config).unwrap()).unwrap();

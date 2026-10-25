@@ -5,18 +5,25 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use solstone_core_generate::GenerateResponse;
 #[cfg(all(test, feature = "full-tests", target_os = "linux"))]
 use solstone_core_generate::OneShotClient;
-use solstone_core_generate_wire::{LaneOutcome, bundled_input, resolve_lane};
-use solstone_core_local::{ExactTextCount, GenerateInput, inspect_exact_text_admission};
+use solstone_core_generate::{ContentPart, GenerateRequest, GenerateResponse};
 
-use crate::{ExecutionContext, PreparedTalent, RuntimeOutcome, generate_request, stage_error};
+use crate::{PreparedTalent, RuntimeOutcome, generate_request, stage_error};
 
 const TMUX_WINDOW_LABEL: &str = "**Tmux window:**";
+/// Each batch fits the journal's smallest window with its whole output share,
+/// so every thinking backend receives the same batches.
 const INPUT_TOKEN_TARGET: u32 = 10_240;
 const TOTAL_OUTPUT_TOKENS: u64 = 4_096;
+const _: () = assert!(
+    INPUT_TOKEN_TARGET as u64 + TOTAL_OUTPUT_TOKENS + 1_024
+        <= solstone_core_local::plan::LOCAL_MIN_CONTEXT_TOKENS as u64
+);
 const MIN_BATCH_OUTPUT_TOKENS: u64 = 768;
+/// A source too long to split without losing bytes takes the ordinary path,
+/// where generic fitting trims it and the result records what it missed.
+const TOO_LONG: &str = "screen_source_unbatchable: too long to split:";
 const MAX_BATCHES: usize = 5;
 const SCREEN_NARRATIVE_MAX_CHARS: usize = 24_000;
 const SCREEN_ENTITY_MAX_ITEMS: usize = 96;
@@ -30,29 +37,41 @@ pub(crate) struct BatchResponse {
 
 pub(crate) fn generate_if_needed(
     prepared: &PreparedTalent,
-    context: &ExecutionContext,
     client: &dyn solstone_core_generate::GenerateExecutor,
     writer: Option<&mut dyn std::io::Write>,
 ) -> Option<Result<BatchResponse, RuntimeOutcome>> {
-    generate_if_needed_with(prepared, context, client, writer, |input| {
-        inspect_exact_text_admission(input).map_err(|error| error.detail)
-    })
+    generate_if_needed_with(prepared, client, writer, request_tokens)
 }
 
-pub(crate) fn generate_if_needed_with<I>(
+/// The request's text in the journal's one token counter; image input is not batched.
+fn request_tokens(request: &GenerateRequest) -> Result<u32, String> {
+    let mut total = request
+        .system_instruction
+        .as_deref()
+        .map_or(0, solstone_core_tokens::count);
+    for part in &request.contents {
+        match part {
+            ContentPart::Text { text } => {
+                total = total.saturating_add(solstone_core_tokens::count(text));
+            }
+            ContentPart::Image { .. } => {
+                return Err("screen_source_unbatchable: request carries non-text input".into());
+            }
+        }
+    }
+    Ok(total)
+}
+
+pub(crate) fn generate_if_needed_with<C>(
     prepared: &PreparedTalent,
-    context: &ExecutionContext,
     client: &dyn solstone_core_generate::GenerateExecutor,
     mut writer: Option<&mut dyn std::io::Write>,
-    mut inspect: I,
+    mut count: C,
 ) -> Option<Result<BatchResponse, RuntimeOutcome>>
 where
-    I: FnMut(&GenerateInput) -> Result<ExactTextCount, String>,
+    C: FnMut(&GenerateRequest) -> Result<u32, String>,
 {
-    if prepared.name != "screen"
-        || !cfg!(target_os = "linux")
-        || !journal_uses_bundled_local(&context.journal)
-    {
+    if prepared.name != "screen" {
         return None;
     }
     let spelling_view = match crate::product_names::screen_batch_view(prepared) {
@@ -83,25 +102,18 @@ where
     let Ok(full_request) = generate_request(prepared) else {
         return None;
     };
-    let full_input = match bundled_input(&full_request, &context.journal) {
-        Ok(input) => input,
-        Err(_) => return None,
+    // Input this counter cannot size takes the ordinary path.
+    let Ok(full_count) = count(&full_request) else {
+        return None;
     };
-    let full_count = match inspect(&full_input) {
-        Ok(count) => count,
-        // The ordinary execution path preserves the typed refusal taxonomy.
-        Err(_) => return None,
-    };
-    if full_count.input_tokens <= INPUT_TOKEN_TARGET {
+    if full_count <= INPUT_TOKEN_TARGET {
         return None;
     }
     let batches = match plan_batches(prepared, &cuts, full_count, |candidate| {
-        let request = generate_request(candidate)?;
-        let input = bundled_input(&request, &context.journal)
-            .map_err(|error| format!("could not build managed request: {error:?}"))?;
-        inspect(&input)
+        count(&generate_request(candidate)?)
     }) {
         Ok(None) => return None,
+        Err(detail) if detail.starts_with(TOO_LONG) => return None,
         Ok(Some(batches)) => batches,
         Err(detail) => {
             return Some(Err(RuntimeOutcome::StageFailed(stage_error(
@@ -204,29 +216,21 @@ where
     )
 }
 
-fn journal_uses_bundled_local(journal: &std::path::Path) -> bool {
-    let Ok(read) = solstone_core_journal_config::read_journal_config(journal) else {
-        return false;
-    };
-    let config = read.config.unwrap_or_default();
-    matches!(resolve_lane(&config).1, LaneOutcome::BundledLocal)
-}
-
 fn plan_batches<F>(
     prepared: &PreparedTalent,
     cuts: &[BatchCut],
-    full_count: ExactTextCount,
-    mut inspect: F,
+    full_count: u32,
+    mut count: F,
 ) -> Result<Option<Vec<PreparedTalent>>, String>
 where
-    F: FnMut(&PreparedTalent) -> Result<ExactTextCount, String>,
+    F: FnMut(&PreparedTalent) -> Result<u32, String>,
 {
     let transcript = prepared
         .config
         .get("transcript")
         .and_then(Value::as_str)
         .ok_or_else(|| "screen_source_unbatchable: transcript is unavailable".to_owned())?;
-    if full_count.input_tokens <= INPUT_TOKEN_TARGET {
+    if full_count <= INPUT_TOKEN_TARGET {
         return Ok(None);
     }
     let (prelude, units) = typed_units(transcript, cuts)?;
@@ -243,26 +247,30 @@ where
         let mut candidate_text = current.clone();
         candidate_text.push_str(unit.text);
         let candidate = with_transcript(prepared, candidate_text.clone(), MIN_BATCH_OUTPUT_TOKENS);
-        if candidate_fits(inspect(&candidate)?, MIN_BATCH_OUTPUT_TOKENS) {
+        if candidate_fits(count(&candidate)?) {
             current = candidate_text;
             current_units += 1;
             carry.apply(unit.text, unit.observation_offset)?;
             continue;
         }
         if current_units == 0 {
-            return Err("screen_source_unbatchable: one tmux observation cannot fit without dropping source bytes".into());
+            return Err(format!(
+                "{TOO_LONG} one tmux observation cannot fit without dropping source bytes"
+            ));
         }
         batch_texts.push(current);
         if batch_texts.len() >= MAX_BATCHES {
             return Err(format!(
-                "screen_source_unbatchable: source requires more than {MAX_BATCHES} batches"
+                "{TOO_LONG} source requires more than {MAX_BATCHES} batches"
             ));
         }
         let mut next = state_before.render()?;
         next.push_str(unit.text);
         let candidate = with_transcript(prepared, next.clone(), MIN_BATCH_OUTPUT_TOKENS);
-        if !candidate_fits(inspect(&candidate)?, MIN_BATCH_OUTPUT_TOKENS) {
-            return Err("screen_source_unbatchable: one tmux observation cannot fit without dropping source bytes".into());
+        if !candidate_fits(count(&candidate)?) {
+            return Err(format!(
+                "{TOO_LONG} one tmux observation cannot fit without dropping source bytes"
+            ));
         }
         current = next;
         current_units = 1;
@@ -281,19 +289,16 @@ where
     for (index, text) in batch_texts.into_iter().enumerate() {
         let output = base_output + u64::from((index as u64) < remainder);
         let batch = with_transcript(prepared, text, output);
-        if !candidate_fits(inspect(&batch)?, output) {
-            return Err(
-                "screen_source_unbatchable: final exact batch budget does not fit".to_owned(),
-            );
+        if !candidate_fits(count(&batch)?) {
+            return Err(format!("{TOO_LONG} final batch budget does not fit"));
         }
         batches.push(batch);
     }
     Ok(Some(batches))
 }
 
-fn candidate_fits(count: ExactTextCount, output_tokens: u64) -> bool {
-    count.input_tokens <= INPUT_TOKEN_TARGET
-        && u32::try_from(output_tokens).is_ok_and(|output| count.completion_room() >= output)
+fn candidate_fits(input_tokens: u32) -> bool {
+    input_tokens <= INPUT_TOKEN_TARGET
 }
 
 fn with_transcript(
@@ -666,16 +671,22 @@ mod tests {
         )
     }
 
-    fn count_for(candidate: &PreparedTalent) -> ExactTextCount {
-        let len = candidate.config["transcript"]
+    fn count_for(candidate: &PreparedTalent) -> u32 {
+        candidate.config["transcript"]
             .as_str()
             .expect("transcript")
-            .len() as u32;
-        ExactTextCount {
-            input_tokens: len,
-            window: 16_384,
-            slots: 1,
-        }
+            .len() as u32
+    }
+
+    fn text_len(request: &GenerateRequest) -> Result<u32, String> {
+        Ok(request
+            .contents
+            .iter()
+            .map(|part| match part {
+                ContentPart::Text { text } => text.len() as u32,
+                ContentPart::Image { .. } => 0,
+            })
+            .sum())
     }
 
     fn unit(time: &str, observation: Value, padding: usize) -> String {
@@ -818,23 +829,30 @@ mod tests {
     }
 
     #[test]
-    fn exact_input_target_is_inclusive() {
-        assert!(candidate_fits(
-            ExactTextCount {
-                input_tokens: INPUT_TOKEN_TARGET,
-                window: 16_384,
-                slots: 1,
-            },
-            TOTAL_OUTPUT_TOKENS,
-        ));
-        assert!(!candidate_fits(
-            ExactTextCount {
-                input_tokens: INPUT_TOKEN_TARGET + 1,
-                window: 16_384,
-                slots: 1,
-            },
-            MIN_BATCH_OUTPUT_TOKENS,
-        ));
+    fn input_target_is_inclusive() {
+        assert!(candidate_fits(INPUT_TOKEN_TARGET));
+        assert!(!candidate_fits(INPUT_TOKEN_TARGET + 1));
+    }
+
+    #[test]
+    fn requests_are_sized_in_the_journal_token_counter() {
+        let request = |contents| GenerateRequest {
+            system_instruction: Some("Describe the screen.".into()),
+            contents,
+            ..generate_request(&prepared("x")).unwrap()
+        };
+        let text = request(vec![ContentPart::Text {
+            text: "#[derive(Debug)]\nfn main() { let x = 42; }\n".into(),
+        }]);
+        assert_eq!(
+            request_tokens(&text),
+            Ok(solstone_core_tokens::count("Describe the screen.") + 18)
+        );
+        let image = request(vec![ContentPart::Image {
+            mime_type: "image/png".into(),
+            data: String::new(),
+        }]);
+        assert!(request_tokens(&image).is_err());
     }
 
     #[test]
@@ -977,13 +995,9 @@ mod tests {
                 .sum::<u64>(),
             TOTAL_OUTPUT_TOKENS
         );
-        assert!(batches.iter().all(|batch| candidate_fits(
-            count_for(batch),
-            batch.config["max_output_tokens"].as_u64().unwrap()
-        )));
+        assert!(batches.iter().all(|batch| candidate_fits(count_for(batch))));
     }
 
-    #[cfg(target_os = "linux")]
     #[test]
     fn spelling_view_batches_keep_their_own_input_and_original_screen_literals() {
         let speech = "é We use Soulstone journal, made by Soul PB C.";
@@ -1053,21 +1067,7 @@ mod tests {
                 },
             )))
         };
-        let outcome = generate_if_needed_with(
-            &original,
-            &ExecutionContext {
-                journal: root.path().into(),
-            },
-            &executor,
-            None,
-            |input: &GenerateInput| {
-                Ok(ExactTextCount {
-                    input_tokens: input.contents.to_string().len() as u32,
-                    window: 16_384,
-                    slots: 1,
-                })
-            },
-        );
+        let outcome = generate_if_needed_with(&original, &executor, None, text_len);
         assert!(matches!(outcome, Some(Ok(_))), "{outcome:?}");
         let requests = captured.into_inner().unwrap();
         assert_eq!(requests.len(), 2);
@@ -1166,6 +1166,28 @@ mod tests {
         }
         let result = plan_for(&transcript);
         assert!(result.unwrap_err().contains("more than 5 batches"));
+
+        // The ordinary path then reads it, trimmed to fit where it must.
+        let mut talent = prepared(&transcript);
+        talent.config.insert(
+            "_screen_batch_cuts".into(),
+            Value::Array(
+                test_cuts(&transcript)
+                    .iter()
+                    .map(|c| {
+                        json!({
+                            "byte_offset":c.byte_offset, "observation_byte_offset":c.observation_byte_offset,
+                            "reset_carry":c.reset_carry,
+                        })
+                    })
+                    .collect(),
+            ),
+        );
+        let executor =
+            |_: &GenerateRequest| -> Result<GenerateResponse, solstone_core_generate::ClientError> {
+                panic!("a source too long to split is not batched")
+            };
+        assert!(generate_if_needed_with(&talent, &executor, None, text_len).is_none());
     }
 
     #[test]
@@ -1224,7 +1246,6 @@ mod tests {
             r#"{"providers":{"active":{"provider":"local","model":"local-model"}},"services":{"confidential":{}}}"#,
         )
         .unwrap();
-        let context = ExecutionContext { journal };
 
         let first = unit(
             "10:00:00",
@@ -1289,18 +1310,10 @@ mod tests {
         let stub = test_support::sequenced_one_shot_stub(root.path(), &responses);
         let client = OneShotClient::at_path(&stub);
 
-        let inspect = |input: &GenerateInput| {
-            let len = input.contents.to_string().len() as u32;
-            Ok(ExactTextCount {
-                input_tokens: len,
-                window: 16_384,
-                slots: 1,
-            })
-        };
+        let inspect = text_len;
 
         let mut writer = Vec::new();
-        let outcome =
-            generate_if_needed_with(&prepared, &context, &client, Some(&mut writer), inspect);
+        let outcome = generate_if_needed_with(&prepared, &client, Some(&mut writer), inspect);
         let Some(Ok(merged)) = outcome else {
             panic!("expected Some(Ok(..)), got {outcome:?}");
         };
@@ -1387,7 +1400,6 @@ mod tests {
             r#"{"providers":{"active":{"provider":"local","model":"local-model"}},"services":{"confidential":{}}}"#,
         )
         .unwrap();
-        let context = ExecutionContext { journal };
 
         let first = unit(
             "10:00:00",
@@ -1443,18 +1455,10 @@ mod tests {
         );
         let client = OneShotClient::at_path(&stub);
 
-        let inspect = |input: &GenerateInput| {
-            let len = input.contents.to_string().len() as u32;
-            Ok(ExactTextCount {
-                input_tokens: len,
-                window: 16_384,
-                slots: 1,
-            })
-        };
+        let inspect = text_len;
 
         let mut writer = Vec::new();
-        let outcome =
-            generate_if_needed_with(&prepared, &context, &client, Some(&mut writer), inspect);
+        let outcome = generate_if_needed_with(&prepared, &client, Some(&mut writer), inspect);
         let Some(Err(RuntimeOutcome::SchemaValidationFailed { talent, validation })) = outcome
         else {
             panic!("expected Some(Err(SchemaValidationFailed)), got {outcome:?}");
@@ -1528,9 +1532,6 @@ mod tests {
             r#"{"providers":{"active":{"provider":"local","model":"local-model"}},"services":{"confidential":{}}}"#,
         )
         .unwrap();
-        let context = ExecutionContext {
-            journal: journal.clone(),
-        };
 
         let first = unit(
             "10:00:00",
@@ -1591,18 +1592,10 @@ mod tests {
             ],
         );
         let client = OneShotClient::at_path(&stub);
-        let inspect = |input: &GenerateInput| {
-            let len = input.contents.to_string().len() as u32;
-            Ok(ExactTextCount {
-                input_tokens: len,
-                window: 16_384,
-                slots: 1,
-            })
-        };
+        let inspect = text_len;
 
         let mut writer = Vec::new();
-        let outcome =
-            generate_if_needed_with(&prepared, &context, &client, Some(&mut writer), inspect);
+        let outcome = generate_if_needed_with(&prepared, &client, Some(&mut writer), inspect);
         let Some(Err(failure)) = outcome else {
             panic!("expected batch generation failure, got {outcome:?}");
         };

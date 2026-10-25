@@ -399,7 +399,7 @@
                 },
                 "unsupported": {
                   "pill": "unavailable",
-                  "reason": "local thinking needs supported hardware on your journal's computer.",
+                  "reason": "local thinking needs supported hardware where your journal lives.",
                   "verdict": "your journal's computer can't run this local model"
                 },
                 "waiting": {
@@ -2636,7 +2636,7 @@
                 },
                 "unsupported": {
                   "pill": "unavailable",
-                  "reason": "local thinking needs supported hardware on your journal's computer.",
+                  "reason": "local thinking needs supported hardware where your journal lives.",
                   "verdict": "your journal's computer can't run this local model"
                 },
                 "waiting": {
@@ -4871,7 +4871,7 @@
                 },
                 "unsupported": {
                   "pill": "unavailable",
-                  "reason": "local thinking needs supported hardware on your journal's computer.",
+                  "reason": "local thinking needs supported hardware where your journal lives.",
                   "verdict": "your journal's computer can't run this local model"
                 },
                 "waiting": {
@@ -7090,7 +7090,7 @@
                 },
                 "unsupported": {
                   "pill": "unavailable",
-                  "reason": "local thinking needs supported hardware on your journal's computer.",
+                  "reason": "local thinking needs supported hardware where your journal lives.",
                   "verdict": "your journal's computer can't run this local model"
                 },
                 "waiting": {
@@ -9486,7 +9486,7 @@
                 },
                 "unsupported": {
                   "pill": "unavailable",
-                  "reason": "local thinking needs supported hardware on your journal's computer.",
+                  "reason": "local thinking needs supported hardware where your journal lives.",
                   "verdict": "your journal's computer can't run this local model"
                 },
                 "waiting": {
@@ -13001,7 +13001,7 @@
                 },
                 "unsupported": {
                   "pill": "unavailable",
-                  "reason": "local thinking needs supported hardware on your journal's computer.",
+                  "reason": "local thinking needs supported hardware where your journal lives.",
                   "verdict": "your journal's computer can't run this local model"
                 },
                 "waiting": {

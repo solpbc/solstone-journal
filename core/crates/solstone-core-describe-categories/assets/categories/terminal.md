@@ -24,6 +24,17 @@ Extract text from this terminal screenshot (shell sessions, command output, log 
 - For structured output (tables, JSON, logs), preserve formatting
 - Note the terminal application or multiplexer if identifiable (e.g., iTerm2, Alacritty)
 
+## Who Wrote What
+
+If an AI coding agent (Claude Code, Codex, Gemini CLI and similar) is running, put a label line before every fenced block:
+
+- **You:** the person's own prompt, shown after `❯` or `>` and usually highlighted.
+- **Agent:** what the agent wrote or ran: lines after `⏺` or `●`, tool calls and their output, diffs, summaries, plans, questions.
+- **System:** the tool's own notices: banners, status lines, spinners, "Agent ... completed" notices.
+
+Write **You:** only for a prompt that is actually on screen. Greyed-out text in an empty input box is a suggestion, not a prompt: leave it out.
+In a plain shell with no agent, add no labels.
+
 ## Quality
 
 - Preserve exact command syntax and output formatting
@@ -31,4 +42,4 @@ Extract text from this terminal screenshot (shell sessions, command output, log 
 - Mark unclear text with `[unclear]`
 - Mark cut-off text with `...`
 
-Return ONLY the formatted markdown.
+Return ONLY the formatted markdown. Never repeat these instructions.

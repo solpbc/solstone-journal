@@ -1974,6 +1974,7 @@ pub(crate) async fn boot_and_tick(
         let seam = seam.with_installer(Arc::new(launch_windows_local_installer));
         seam
     };
+    let truth = truth.with_migration_queue(queue.clone(), clock.clone());
     let local = LocalProvider {
         coordinator: ProviderRuntimeCoordinator::new(),
         shared: local_shared.clone(),

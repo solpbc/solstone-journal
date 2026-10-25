@@ -137,6 +137,32 @@ pub fn journal_identity_names(journal_root: &Path) -> Vec<String> {
     extract_identity_names(config.as_ref())
 }
 
+/// The owner's configured email addresses, trimmed, without blanks. Empty
+/// when the config is absent; an unreadable config is an error, so a caller
+/// can tell "none set" from "could not read".
+pub fn journal_identity_emails(
+    journal_root: &Path,
+) -> Result<Vec<String>, solstone_core_journal_config::ConfigLoadError> {
+    let read = solstone_core_journal_config::read_journal_config(journal_root)?;
+    Ok(read
+        .config
+        .as_ref()
+        .and_then(|config| config.get("identity"))
+        .and_then(Value::as_object)
+        .and_then(|identity| identity.get("email_addresses"))
+        .and_then(Value::as_array)
+        .map(|addresses| {
+            addresses
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::trim)
+                .filter(|address| !address.is_empty())
+                .map(str::to_owned)
+                .collect()
+        })
+        .unwrap_or_default())
+}
+
 pub(crate) fn read_owner_names_for_principal_grant(
     journal_root: &Path,
 ) -> Result<Vec<String>, solstone_core_journal_config::ConfigLoadError> {

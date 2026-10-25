@@ -24,6 +24,7 @@ unsafe_code = "deny"
 
 [features]
 full-tests = []
+ios-owner-app = []
 test-hooks = ["solstone-core-distribution/test-fixture-pin"]
 
 [dev-dependencies]

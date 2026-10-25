@@ -495,36 +495,7 @@ fn candidates(target: &str) -> Result<Vec<RuntimeFetch>, FetchSetError> {
                 size_bytes: a.size_bytes,
             });
 
-            // llama-server-vulkan macos-arm64
-            let a = find_catalog_row(
-                "llama-server-vulkan",
-                "llama-b11669-bin-macos-arm64.tar.gz",
-                Some("aarch64-apple-darwin"),
-            );
-            rows.push(RuntimeFetch {
-                unit: a.unit,
-                origin_key: a.origin_key,
-                sha256: a.sha256,
-                size_bytes: a.size_bytes,
-            });
-
-            // local-model both files
-            let a1 = find_catalog_row("local-model", "Qwen3.5-4B-Q4_K_M.gguf", None);
-            rows.push(RuntimeFetch {
-                unit: a1.unit,
-                origin_key: a1.origin_key,
-                sha256: a1.sha256,
-                size_bytes: a1.size_bytes,
-            });
-            let a2 = find_catalog_row("local-model", "mmproj-F16.gguf", None);
-            rows.push(RuntimeFetch {
-                unit: a2.unit,
-                origin_key: a2.origin_key,
-                sha256: a2.sha256,
-                size_bytes: a2.size_bytes,
-            });
-
-            // Optional MLX model: admitted on macOS, fetched only when selected.
+            // macOS bundles the MLX runtime and downloads only its pinned model.
             for a in catalog().iter().filter(|a| a.unit == "local-model-mlx") {
                 rows.push(RuntimeFetch {
                     unit: a.unit,
@@ -668,9 +639,6 @@ mod tests {
     ];
 
     const ORACLE_MACOS_ARM64: &[&str] = &[
-        "assets/llama-server-vulkan/b11669/llama-b11669-bin-macos-arm64.tar.gz",
-        "assets/local-model/e87f176479d0855a907a41277aca2f8ee7a09523/Qwen3.5-4B-Q4_K_M.gguf",
-        "assets/local-model/e87f176479d0855a907a41277aca2f8ee7a09523/mmproj-F16.gguf",
         "assets/location-accuracy/overture-2026-09-23.1-r2/containment.slpk",
         "assets/location-accuracy/overture-2026-09-23.1-r2/venues.slpk",
         "assets/parakeet-coreml/aed02740059203c4a87495924f685de3722ae9ce/Decoder.mlmodelc/analytics/coremldata.bin",

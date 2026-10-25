@@ -410,6 +410,17 @@ runtime = "none"
 features = ["full-tests"]
 
 [[package_suites]]
+id = "package::solstone-core-tokens"
+package = "solstone-core-tokens"
+set = "component"
+areas = ["cognition"]
+platforms = ["linux", "macos", "windows"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+runtime = "none"
+
+[[package_suites]]
 id = "package::solstone-core-brain-owner"
 package = "solstone-core-brain-owner"
 set = "component"

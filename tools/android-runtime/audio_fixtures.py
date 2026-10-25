@@ -21,7 +21,7 @@ commands = []
 for name, options in [
     ('speech.m4a', ['-i', str(source), '-ar', '44100', '-ac', '2', '-c:a', 'aac', '-b:a', '96k']),
     ('long.wav', ['-stream_loop', '7', '-i', str(source), '-ar', '16000', '-ac', '1', '-c:a', 'pcm_s16le']),
-    ('over-duration.m4a', ['-stream_loop', '-1', '-i', str(source), '-t', '31', '-ar', '44100', '-ac', '2', '-c:a', 'aac', '-b:a', '96k']),
+    ('over-duration.m4a', ['-stream_loop', '-1', '-i', str(source), '-t', '121', '-ar', '44100', '-ac', '2', '-c:a', 'aac', '-b:a', '96k']),
 ]:
     command = [a.ffmpeg, '-nostdin', '-v', 'error', *options, str(a.output / name)]
     subprocess.run(command, check=True, timeout=120)

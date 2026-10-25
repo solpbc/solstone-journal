@@ -191,8 +191,13 @@ pub fn plan(input: PlanInput) -> PlanOutcome {
     }
     match input.platform {
         Platform::Darwin if input.backend_override == Some(PlanBackend::Metal) => plan_metal(input),
-        Platform::Darwin if input.backend_override == Some(PlanBackend::Mlx) => plan_mlx(input),
-        Platform::Darwin => rejected("Metal backend selection is required on Darwin"),
+        Platform::Darwin
+            if input.backend_override.is_none()
+                || input.backend_override == Some(PlanBackend::Mlx) =>
+        {
+            plan_mlx(input)
+        }
+        Platform::Darwin => rejected("backend override is unavailable on macos"),
         Platform::Linux => plan_linux(input),
         Platform::Windows => plan_windows(input),
     }
@@ -1053,7 +1058,10 @@ mod tests {
 
         let mut unspecified = input(1);
         unspecified.platform = Platform::Darwin;
-        assert_rejected(unspecified, "Metal backend selection is required on Darwin");
+        unspecified.mlx_binary_path = Some("/mlx-helper".into());
+        unspecified.model_id = "local/qwen3.5-4b".into();
+        unspecified.mmproj_path = None;
+        assert_eq!(launch(unspecified).backend, PlanBackend::Mlx);
     }
 
     #[test]

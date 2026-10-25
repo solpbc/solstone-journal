@@ -13,7 +13,7 @@ use solstone_core_cli::InstallProviderOptions;
 use solstone_core_journal_config::read_journal_config;
 use solstone_core_local::install::{
     DispatchError, InstallVerb, dispatch, fingerprint, fit_report, install_parakeet_with_lease,
-    lease, local_backend_choice, metal_candidate, mlx_candidate, pins, readiness, status,
+    lease, local_backend_choice, mlx_candidate, pins, readiness, status,
 };
 use solstone_core_local::{
     LocalEndpointResolution, MemorySource, discrete_hardware_gpu_count, is_discrete,
@@ -340,16 +340,10 @@ fn install_local(
             }));
         }
     };
-    let mut payload =
-        if canonical_host_pair(std::env::consts::OS, std::env::consts::ARCH).0 == "darwin" {
-            json!({
-                "journal": journal.display().to_string(),
-                "model_id": "local/qwen3.5-4b",
-                "backend": "metal",
-            })
-        } else {
-            json!({"journal": journal.display().to_string()})
-        };
+    let mut payload = json!({
+        "journal": journal.display().to_string(),
+        "model_id": "local/qwen3.5-4b",
+    });
     payload["owner"] = owner;
     let payload_map = payload.as_object().cloned().unwrap_or_default();
     let result = solstone_core_local::run_local_with_gpu_admission(&payload_map, admission)
@@ -419,12 +413,7 @@ where
     let readiness = readiness_provider(&journal);
     let mut stderr = vec![if os_name.eq_ignore_ascii_case("windows") {
         WINDOWS_LOCAL_DOWNLOAD_DISCLOSURE.to_owned()
-    } else if os_name == "darwin"
-        && matches!(
-            mlx_candidate::read_macos_local_backend_env(),
-            Ok(mlx_candidate::MacosLocalBackend::Mlx)
-        )
-    {
+    } else if os_name == "darwin" {
         MLX_LOCAL_DOWNLOAD_DISCLOSURE.to_owned()
     } else {
         LOCAL_DOWNLOAD_DISCLOSURE.to_owned()
@@ -754,13 +743,10 @@ fn parakeet_target_sha(journal: &Path, os_name: &str, arch: &str) -> Result<Stri
 }
 
 fn local_target_sha(journal: &Path) -> Result<String, String> {
-    let mut payload = json!({
+    let payload = json!({
         "journal": journal.display().to_string(),
         "model_id": "local/qwen3.5-4b",
     });
-    if canonical_host_pair(std::env::consts::OS, std::env::consts::ARCH).0 == "darwin" {
-        payload["backend"] = Value::String("metal".to_owned());
-    }
     let envelope = dispatch(InstallVerb::FingerprintLocal, payload)
         .map_err(|error| dispatch_message("local", error))?;
     envelope
@@ -940,7 +926,7 @@ fn render_value(value: &Value) -> String {
 }
 
 fn readiness_for(journal: &Path, provider_is_local: bool, os_name: &str, arch: &str) -> Value {
-    let mut input = json!({"journal": journal.display().to_string()})
+    let input = json!({"journal": journal.display().to_string()})
         .as_object()
         .expect("journal input is an object")
         .clone();
@@ -948,29 +934,7 @@ fn readiness_for(journal: &Path, provider_is_local: bool, os_name: &str, arch: &
         return readiness::inspect_parakeet(input);
     }
     if os_name == "darwin" && arch == "arm64" {
-        match mlx_candidate::read_macos_local_backend_env() {
-            Ok(mlx_candidate::MacosLocalBackend::Mlx) => {
-                return mlx_candidate::inspect_verified_default(journal);
-            }
-            Ok(mlx_candidate::MacosLocalBackend::Metal) => {}
-            Err(error) => {
-                return json!({"provider":"local", "ready":false, "status":"proof-unavailable", "reason_code":"local_probe_failed", "detail":error.to_string()});
-            }
-        }
-        input.insert("backend".to_owned(), Value::String("metal".to_owned()));
-        return metal_candidate::inspect_with(&input, "aarch64-apple-darwin").unwrap_or_else(
-            |error| {
-                json!({
-                    "provider":"local",
-                    "ready":false,
-                    "status":"proof-unavailable",
-                    "reason_code":error.envelope.error.map_or_else(
-                        || "readiness_unavailable".to_owned(),
-                        |value| value.reason_code,
-                    ),
-                })
-            },
-        );
+        return mlx_candidate::inspect_verified_default(journal);
     }
     readiness::inspect_local(input)
 }
@@ -1838,7 +1802,7 @@ mod tests {
     }
 
     #[test]
-    fn local_darwin_reaches_the_native_metal_installer_instead_of_refusing() {
+    fn local_darwin_reaches_the_native_installer_instead_of_refusing() {
         // Native local must stay installable on Darwin through the same
         // orchestrator seam used by the Linux backends.
         let journal = tempfile::tempdir().unwrap();
@@ -1971,12 +1935,12 @@ mod tests {
 
     #[cfg(all(test, feature = "full-tests"))]
     #[test]
-    fn darwin_local_readiness_uses_metal_and_the_shared_4b_identity() {
+    fn darwin_local_readiness_uses_mlx_and_the_shared_4b_identity() {
         let journal = tempfile::tempdir().unwrap();
 
         let darwin = readiness_for(journal.path(), true, "darwin", "arm64");
         assert_eq!(darwin["host"]["platform_supported"], json!(true));
-        assert_eq!(darwin["host"]["backend"], json!("metal"));
+        assert_eq!(darwin["host"]["backend"], json!("mlx"));
         assert_eq!(darwin["target"]["model_id"], json!("local/qwen3.5-4b"));
         assert_eq!(darwin["artifacts"]["binary_installed"], json!(false));
         assert!(darwin["host"].get("package_available").is_none());
@@ -2037,9 +2001,8 @@ mod tests {
 
     #[cfg(all(test, feature = "full-tests"))]
     #[test]
-    fn darwin_local_arm_discloses_the_shared_llama_cpp_runtime_once() {
-        // Darwin now installs the same native llama.cpp runtime family as the
-        // other local backends, so the owner-facing disclosure must be present.
+    fn darwin_local_arm_discloses_the_bundled_mlx_runtime_once() {
+        // The Mac disclosure describes model downloads and the bundled runtime.
         let journal = tempfile::tempdir().unwrap();
         let executor = |_: &Path, _: solstone_core_local::LocalHardwareAdmission| {
             Ok(json!({"status": {"install_state": "installed"}}))
@@ -2060,7 +2023,7 @@ mod tests {
             darwin
                 .stderr
                 .iter()
-                .filter(|line| line.as_str() == LOCAL_DOWNLOAD_DISCLOSURE)
+                .filter(|line| line.as_str() == MLX_LOCAL_DOWNLOAD_DISCLOSURE)
                 .count(),
             1,
             "{:?}",

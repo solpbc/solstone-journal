@@ -17,7 +17,8 @@
       "type": "string",
       "enum": [
         "attendee",
-        "mentioned"
+        "mentioned",
+        "visible"
       ]
     },
     "source": {

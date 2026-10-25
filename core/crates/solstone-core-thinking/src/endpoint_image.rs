@@ -125,7 +125,6 @@ pub fn image_request(png_standard_base64: &str) -> GenerateRequest {
         attempt_index: 0,
         exclusive_admission: false,
         transport_retries: Some(0),
-        endpoint_binding: None,
     }
 }
 

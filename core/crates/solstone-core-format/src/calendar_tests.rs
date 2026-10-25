@@ -429,7 +429,10 @@ fn an_event_lists_at_most_366_days_and_says_it_continues() {
 
 #[test]
 fn a_note_reads_as_plain_text_with_absent_fields_left_out() {
-    let meeting = render_calendar_note(&parse_calendar_note(golden(0)).unwrap());
+    let meeting = render_calendar_note(
+        &parse_calendar_note(golden(0)).unwrap(),
+        &OwnerAddresses::default(),
+    );
     for expected in [
         "added",
         "design review",
@@ -447,11 +450,17 @@ fn a_note_reads_as_plain_text_with_absent_fields_left_out() {
     ] {
         assert!(meeting.contains(expected), "{expected} in {meeting}");
     }
-    let birthday = render_calendar_note(&parse_calendar_note(golden(3)).unwrap());
+    let birthday = render_calendar_note(
+        &parse_calendar_note(golden(3)).unwrap(),
+        &OwnerAddresses::default(),
+    );
     for expected in ["Kate Bell's Birthday", "2027", "Birthdays", "every year"] {
         assert!(birthday.contains(expected), "{expected} in {birthday}");
     }
-    let removed = render_calendar_note(&parse_calendar_note(golden(4)).unwrap());
+    let removed = render_calendar_note(
+        &parse_calendar_note(golden(4)).unwrap(),
+        &OwnerAddresses::default(),
+    );
     for expected in ["removed", "design review", "Work", "8:05"] {
         assert!(removed.contains(expected), "{expected} in {removed}");
     }
@@ -472,10 +481,16 @@ fn a_note_reads_as_plain_text_with_absent_fields_left_out() {
 fn rendered_text_is_bounded_however_long_the_notes_are() {
     let long = "plan ".repeat(40_000);
     let line = with(golden(0), "notes", json!(long));
-    let text = render_calendar_note(&parse_calendar_note(&line).unwrap());
+    let text = render_calendar_note(
+        &parse_calendar_note(&line).unwrap(),
+        &OwnerAddresses::default(),
+    );
     assert!(text.len() < 16 * 1024, "{}", text.len());
     assert!(text.contains("plan plan"));
-    let short = render_calendar_note(&parse_calendar_note(golden(0)).unwrap());
+    let short = render_calendar_note(
+        &parse_calendar_note(golden(0)).unwrap(),
+        &OwnerAddresses::default(),
+    );
     assert!(short.len() < text.len());
 }
 
@@ -522,16 +537,25 @@ fn rendered_text_stays_inside_a_readable_entry_with_multi_byte_text() {
         line = with(&line, key, json!(wide));
     }
     let line = with(&line, "attendees", json!(attendees));
-    let text = render_calendar_note(&parse_calendar_note(&line).unwrap());
+    let text = render_calendar_note(
+        &parse_calendar_note(&line).unwrap(),
+        &OwnerAddresses::default(),
+    );
     assert!(text.len() <= 64 * 1024, "{} bytes", text.len());
     assert!(text.len() <= MAX_RENDERED_BYTES, "{} bytes", text.len());
     // The attendee case on its own: 50 names and statuses of 300 characters.
     let line = with(golden(0), "attendees", json!(attendees));
-    let text = render_calendar_note(&parse_calendar_note(&line).unwrap());
+    let text = render_calendar_note(
+        &parse_calendar_note(&line).unwrap(),
+        &OwnerAddresses::default(),
+    );
     assert!(text.len() <= MAX_RENDERED_BYTES, "{} bytes", text.len());
     assert!(text.contains("design review"));
     // An ordinary note is untouched by the budget.
-    let short = render_calendar_note(&parse_calendar_note(golden(0)).unwrap());
+    let short = render_calendar_note(
+        &parse_calendar_note(golden(0)).unwrap(),
+        &OwnerAddresses::default(),
+    );
     assert!(short.contains("bring the mocks") && short.len() < 1024);
 }
 
@@ -732,4 +756,81 @@ fn more_than_5000_notes_split_into_consecutive_valid_files() {
     assert_eq!(all.len(), 7_000);
     assert_eq!(all[0].0, "series-00000");
     assert_eq!(all[6_999].0, "series-00116");
+}
+
+/// Golden line 1 as a phone that knows the account sends it (contract
+/// amendment 1).
+const GOLDEN_WITH_ACCOUNT: &str = r#"{"account":"iCloud","all_day":false,"attendees":[{"email":"alex@example.com","name":"Alex Rivera","status":"accepted","you":false},{"email":"owner@example.com","name":null,"status":"tentative","you":true}],"calendar":"Work","change":"added","changed_at":"2026-10-19T09:42:00-06:00","end":"2026-10-27T11:00:00-06:00","event":"6CF25C80-68D2-44D9-B52C-6CAD5BEC8C10","location":"room 4","notes":"bring the mocks","occurrence":null,"organizer":{"email":"alex@example.com","name":"Alex Rivera"},"repeats":null,"start":"2026-10-27T10:00:00-06:00","time_zone":"America/Denver","title":"design review","url":null,"v":1}"#;
+
+fn invited_line(text: &str) -> &str {
+    text.lines()
+        .find(|line| line.starts_with("Invited: "))
+        .expect("an invited line")
+}
+
+#[test]
+fn you_is_the_attendee_with_one_of_the_owners_addresses_never_the_phones_mark() {
+    let note = parse_calendar_note(golden(0)).unwrap();
+    // No addresses: nobody is you, whatever the phone marked.
+    let text = render_calendar_note(&note, &OwnerAddresses::default());
+    assert!(!text.contains("you"), "{text}");
+    // The owner's address, in any case and with stray spaces.
+    let owner = OwnerAddresses::new([" Owner@Example.com "]);
+    let text = render_calendar_note(&note, &owner);
+    assert_eq!(
+        invited_line(&text),
+        "Invited: Alex Rivera (accepted); owner@example.com, you (tentative)"
+    );
+    // A shared calendar: the phone marks the calendar's owner, and the
+    // journal's owner is an unmarked invitee.
+    let shared = with(
+        golden(0),
+        "attendees",
+        json!([
+            {"email": "sharer@example.com", "name": "Enoch Root", "status": "accepted", "you": true},
+            {"email": "owner@example.com", "name": null, "status": "unknown", "you": false},
+        ]),
+    );
+    let text = render_calendar_note(&parse_calendar_note(&shared).unwrap(), &owner);
+    assert_eq!(
+        invited_line(&text),
+        "Invited: Enoch Root (accepted); owner@example.com, you (unknown)"
+    );
+    // A mark with no email is never the owner.
+    let unnamed = with(
+        golden(0),
+        "attendees",
+        json!([{"email": null, "name": "fwiffo tennica", "status": "accepted", "you": true}]),
+    );
+    let text = render_calendar_note(&parse_calendar_note(&unnamed).unwrap(), &owner);
+    assert_eq!(invited_line(&text), "Invited: fwiffo tennica (accepted)");
+}
+
+#[test]
+fn a_calendar_is_shown_with_its_account_when_the_phone_sends_one() {
+    let owner = OwnerAddresses::default();
+    let with_account = parse_calendar_note(GOLDEN_WITH_ACCOUNT).unwrap();
+    assert!(
+        render_calendar_note(&with_account, &owner)
+            .lines()
+            .any(|line| line == "Calendar: Work (iCloud)")
+    );
+    // A phone that predates the account still gives a valid note.
+    let without = render_calendar_note(&parse_calendar_note(golden(0)).unwrap(), &owner);
+    assert!(
+        without.lines().any(|line| line == "Calendar: Work"),
+        "{without}"
+    );
+    // A calendar named after its account says it once; a null account says nothing.
+    for (account, expected) in [
+        (json!("work"), "Calendar: Work"),
+        (json!(null), "Calendar: Work"),
+        (json!("  "), "Calendar: Work"),
+    ] {
+        let line = with(GOLDEN_WITH_ACCOUNT, "account", account);
+        let text = render_calendar_note(&parse_calendar_note(&line).unwrap(), &owner);
+        assert!(text.lines().any(|line| line == expected), "{text}");
+    }
+    let bad = with(GOLDEN_WITH_ACCOUNT, "account", json!(7));
+    assert!(parse_calendar_note(&bad).is_err());
 }

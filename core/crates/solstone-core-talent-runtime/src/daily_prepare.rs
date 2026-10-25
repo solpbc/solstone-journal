@@ -155,7 +155,7 @@ fn attach_daily_location(
             _ => unreachable!(),
         };
 
-        match fit_location_part(hook, &day, &rendered, &ordinary, prepared, state, context) {
+        match fit_location_part(hook, &day, &rendered, &ordinary, prepared, state) {
             Ok(res) => res,
             Err(ref e) if e == "location coverage does not fit the input budget" => {
                 let mut curr_meta_str = prepared
@@ -336,9 +336,7 @@ fn attach_daily_location(
                     curr_meta_str = new_meta_str;
 
                     ordinary = crate::ordinary_text_parts(&prepared.config);
-                    match fit_location_part(
-                        hook, &day, &rendered, &ordinary, prepared, state, context,
-                    ) {
+                    match fit_location_part(hook, &day, &rendered, &ordinary, prepared, state) {
                         Ok(res) => break res,
                         Err(ref e) if e == "location coverage does not fit the input budget" => {
                             continue;
@@ -350,7 +348,7 @@ fn attach_daily_location(
             Err(e) => return Err(failure(prepared, e)),
         }
     } else {
-        fit_location_part(hook, &day, &rendered, &ordinary, prepared, state, context)
+        fit_location_part(hook, &day, &rendered, &ordinary, prepared, state)
             .map_err(|error| failure(prepared, error))?
     };
     let second = daily_location_fingerprint(&context.journal, &day)
@@ -448,7 +446,7 @@ fn attach_daily_location(
         bs.values
             .insert("briefing_metadata".into(), Value::String(new_meta_str));
 
-        use solstone_core_local::generate::{compute_input_budget, estimate_tokens};
+        use solstone_core_local::generate::compute_input_budget;
         let max_output_tokens = prepared
             .config
             .get("max_output_tokens")
@@ -462,11 +460,11 @@ fn attach_daily_location(
         let schema_tokens = prepared
             .config
             .get("json_schema")
-            .map(|s| estimate_tokens(&s.to_string()))
+            .map(|s| solstone_core_tokens::count(&s.to_string()))
             .unwrap_or(0);
         let total_text_tokens: u32 = crate::model_text_parts(&prepared.config)
             .iter()
-            .map(|part| estimate_tokens(part))
+            .map(|part| solstone_core_tokens::count(part))
             .sum();
         if total_text_tokens + schema_tokens > floor_budget {
             return Err(failure(
@@ -503,75 +501,45 @@ fn fit_location_part(
     ordinary: &[String],
     prepared: &PreparedTalent,
     state: &FrozenState,
-    context: &ExecutionContext,
 ) -> Result<(Option<String>, u32), String> {
-    use solstone_core_local::generate::{
-        compute_input_budget, estimate_tokens, launched_context_window,
-    };
+    use solstone_core_local::generate::compute_input_budget;
     let max_output_tokens = prepared
         .config
         .get("max_output_tokens")
         .and_then(Value::as_u64)
         .and_then(|tokens| u32::try_from(tokens).ok())
         .unwrap_or(0);
-
-    let FrozenState::MorningBriefing(_) = state else {
-        let budget =
-            compute_input_budget(max_output_tokens, launched_context_window(&context.journal));
-        let ordinary_tokens = ordinary.iter().fold(0u32, |total, text| {
-            total.saturating_add(estimate_tokens(text))
-        });
-        let room = budget.saturating_sub(ordinary_tokens);
-        let byte_cap = usize::try_from(room)
-            .unwrap_or(usize::MAX)
-            .saturating_mul(3)
-            .min(LOCATION_PART_BYTE_CAP);
-        let label = location_label(hook, day);
-        if room == 0 || byte_cap == 0 {
-            return Ok((None, clip_location_part(&label, rendered, 0).1));
-        }
-        let (part, omitted) = clip_location_part(&label, rendered, byte_cap);
-        debug_assert!(
-            part.as_ref()
-                .is_none_or(|text| estimate_tokens(text) <= room)
-        );
-        return Ok((part, omitted));
-    };
-
-    if hook != "morning_briefing" {
-        let budget =
-            compute_input_budget(max_output_tokens, launched_context_window(&context.journal));
-        let ordinary_tokens = ordinary.iter().fold(0u32, |total, text| {
-            total.saturating_add(estimate_tokens(text))
-        });
-        let room = budget.saturating_sub(ordinary_tokens);
-        let byte_cap = usize::try_from(room)
-            .unwrap_or(usize::MAX)
-            .saturating_mul(3)
-            .min(LOCATION_PART_BYTE_CAP);
-        let label = location_label(hook, day);
-        if room == 0 || byte_cap == 0 {
-            return Ok((None, clip_location_part(&label, rendered, 0).1));
-        }
-        let (part, omitted) = clip_location_part(&label, rendered, byte_cap);
-        debug_assert!(
-            part.as_ref()
-                .is_none_or(|text| estimate_tokens(text) <= room)
-        );
-        return Ok((part, omitted));
-    }
-
+    // Location fills the room left beside the talent's own input at the
+    // journal's smallest window, so every thinking backend gets the same request.
     let budget = compute_input_budget(
         max_output_tokens,
         solstone_core_local::plan::LOCAL_MIN_CONTEXT_TOKENS,
     );
+
+    if hook != "morning_briefing" || !matches!(state, FrozenState::MorningBriefing(_)) {
+        let ordinary_tokens = ordinary.iter().fold(0u32, |total, text| {
+            total.saturating_add(solstone_core_tokens::count(text))
+        });
+        let room = budget.saturating_sub(ordinary_tokens);
+        let label = location_label(hook, day);
+        if room == 0 {
+            return Ok((None, clip_location_part(&label, rendered, 0).1));
+        }
+        let (part, omitted) = clip_location_to_room(&label, rendered, room);
+        debug_assert!(
+            part.as_ref()
+                .is_none_or(|text| solstone_core_tokens::count(text) <= room)
+        );
+        return Ok((part, omitted));
+    }
+
     let schema_tokens = prepared
         .config
         .get("json_schema")
-        .map(|s| estimate_tokens(&s.to_string()))
+        .map(|s| solstone_core_tokens::count(&s.to_string()))
         .unwrap_or(0);
     let ordinary_tokens = ordinary.iter().fold(0u32, |total, text| {
-        total.saturating_add(estimate_tokens(text))
+        total.saturating_add(solstone_core_tokens::count(text))
     });
     let room = budget
         .saturating_sub(ordinary_tokens)
@@ -629,17 +597,18 @@ fn fit_location_part(
     let worst_ordinary_tokens = ordinary.iter().fold(0u32, |sum, part| {
         if part.contains(old_meta_str) {
             let replaced = part.replace(old_meta_str, &worst_meta_str);
-            sum.saturating_add(estimate_tokens(&replaced))
+            sum.saturating_add(solstone_core_tokens::count(&replaced))
         } else {
-            sum.saturating_add(estimate_tokens(part))
+            sum.saturating_add(solstone_core_tokens::count(part))
         }
     });
     let meta_growth = if ordinary.iter().any(|p| p.contains(old_meta_str)) {
         worst_ordinary_tokens.saturating_sub(ordinary_tokens)
     } else {
-        estimate_tokens(&worst_meta_str).saturating_sub(estimate_tokens(old_meta_str))
+        solstone_core_tokens::count(&worst_meta_str)
+            .saturating_sub(solstone_core_tokens::count(old_meta_str))
     };
-    let notice_tokens = estimate_tokens(&worst_notice);
+    let notice_tokens = solstone_core_tokens::count(&worst_notice);
     let needed = notice_tokens + meta_growth;
 
     if room < needed {
@@ -647,16 +616,12 @@ fn fit_location_part(
     }
 
     let observation_room = room.saturating_sub(needed);
-    let byte_cap = usize::try_from(observation_room)
-        .unwrap_or(usize::MAX)
-        .saturating_mul(3)
-        .min(LOCATION_PART_BYTE_CAP);
 
     let label = location_label(hook, day);
-    let (part, omitted) = if byte_cap == 0 {
+    let (part, omitted) = if observation_room == 0 {
         (Some(worst_notice), total)
     } else {
-        let (clipped_part, omitted) = clip_location_part(&label, rendered, byte_cap);
+        let (clipped_part, omitted) = clip_location_to_room(&label, rendered, observation_room);
         if omitted == total {
             (Some(worst_notice), total)
         } else if omitted > 0 {
@@ -677,6 +642,45 @@ fn fit_location_part(
     };
 
     Ok((part, omitted))
+}
+
+/// Keep the longest prefix of whole observation lines that fits `room` tokens
+/// and the part's byte cap.
+fn clip_location_to_room(label: &str, rendered: &str, room: u32) -> (Option<String>, u32) {
+    let (part, omitted) = clip_location_part(label, rendered, LOCATION_PART_BYTE_CAP);
+    let Some(text) = part else {
+        return (None, omitted);
+    };
+    if solstone_core_tokens::count(&text) <= room {
+        return (Some(text), omitted);
+    }
+    // The byte end of each kept observation line, in order.
+    let mut ends = Vec::new();
+    let mut end = 0;
+    for line in text.split_inclusive('\n') {
+        end += line.len();
+        if line.starts_with("- ") {
+            ends.push(end);
+        }
+    }
+    let total = omitted + u32::try_from(ends.len()).unwrap_or(u32::MAX);
+    // The most lines that fit: fits(0) holds and fits(ends.len()) does not.
+    let fits =
+        |lines: usize| lines == 0 || solstone_core_tokens::count(&text[..ends[lines - 1]]) <= room;
+    let (mut low, mut high) = (0, ends.len());
+    while high - low > 1 {
+        let middle = (low + high) / 2;
+        if fits(middle) {
+            low = middle;
+        } else {
+            high = middle;
+        }
+    }
+    if low == 0 {
+        return (None, total);
+    }
+    let kept = u32::try_from(low).unwrap_or(u32::MAX);
+    (Some(text[..ends[low - 1]].to_owned()), total - kept)
 }
 
 /// Keep a prefix of whole observation lines that fits in `max_bytes`.
@@ -1311,14 +1315,10 @@ mod tests {
                 solstone_core_local::plan::LOCAL_MIN_CONTEXT_TOKENS * 4
             ),
         );
-        assert!(
-            solstone_core_local::generate::launched_context_window(root.path())
-                > solstone_core_local::plan::LOCAL_MIN_CONTEXT_TOKENS
-        );
 
         solstone_core_facets::create_facet(root.path(), "work", "Work", "", "", "", None).unwrap();
         let story_body = "S".repeat(1500);
-        let story_tokens = solstone_core_local::generate::estimate_tokens(&story_body);
+        let story_tokens = solstone_core_tokens::count(&story_body);
         let record = json!({
             "id": "act-1",
             "title": "Short Activity",
@@ -1353,8 +1353,8 @@ mod tests {
         let unpadded_packet = freeze(unpadded_talent, &context).unwrap();
         let (thawed_unpadded, _) = thaw(&unpadded_packet).unwrap();
         let unpadded_schema_tokens = match thawed_unpadded.config.get("json_schema") {
-            Some(Value::String(s)) => solstone_core_local::generate::estimate_tokens(s),
-            Some(val) => solstone_core_local::generate::estimate_tokens(&val.to_string()),
+            Some(Value::String(s)) => solstone_core_tokens::count(s),
+            Some(val) => solstone_core_tokens::count(&val.to_string()),
             None => 0,
         };
         let unpadded_text_tokens: u32 = crate::model_text_parts(&thawed_unpadded.config)
@@ -1366,7 +1366,7 @@ mod tests {
                     .and_then(Value::as_str)
                     .is_none_or(|loc| part != loc)
             })
-            .map(|part| solstone_core_local::generate::estimate_tokens(&part))
+            .map(|part| solstone_core_tokens::count(&part))
             .sum();
         let unpadded_tokens = unpadded_text_tokens + unpadded_schema_tokens;
 
@@ -1375,7 +1375,7 @@ mod tests {
             .saturating_sub(unpadded_tokens)
             .saturating_add(story_tokens)
             .saturating_sub(target_leftover);
-        let user_instruction = "A".repeat((pad_tokens as usize) * 3);
+        let user_instruction = " a".repeat(pad_tokens as usize);
 
         let talent = prepared(
             "morning_briefing",
@@ -1392,8 +1392,8 @@ mod tests {
         let (thawed, _) = thaw(&packet).unwrap();
 
         let schema_tokens = match thawed.config.get("json_schema") {
-            Some(Value::String(s)) => solstone_core_local::generate::estimate_tokens(s),
-            Some(val) => solstone_core_local::generate::estimate_tokens(&val.to_string()),
+            Some(Value::String(s)) => solstone_core_tokens::count(s),
+            Some(val) => solstone_core_tokens::count(&val.to_string()),
             None => 0,
         };
         let ordinary_text_tokens: u32 = crate::model_text_parts(&thawed.config)
@@ -1405,7 +1405,7 @@ mod tests {
                     .and_then(Value::as_str)
                     .is_none_or(|loc| part != loc)
             })
-            .map(|part| solstone_core_local::generate::estimate_tokens(&part))
+            .map(|part| solstone_core_tokens::count(&part))
             .sum();
         let ordinary_total = ordinary_text_tokens + schema_tokens;
         assert!(
@@ -1423,14 +1423,14 @@ mod tests {
         let (fitted_16k, _) = clip_location_part(&label, &rendered_doc, 16384);
         let fitted_text_16k = fitted_16k.expect("16384-byte prefix must fit location observations");
         assert!(
-            solstone_core_local::generate::estimate_tokens(&fitted_text_16k) > leftover_floor_room,
-            "estimate_tokens of 16384-byte prefix ({}) must exceed leftover floor room ({leftover_floor_room})",
-            solstone_core_local::generate::estimate_tokens(&fitted_text_16k)
+            solstone_core_tokens::count(&fitted_text_16k) > leftover_floor_room,
+            "token count of 16384-byte prefix ({}) must exceed leftover floor room ({leftover_floor_room})",
+            solstone_core_tokens::count(&fitted_text_16k)
         );
 
         let total_text_tokens: u32 = crate::model_text_parts(&thawed.config)
             .iter()
-            .map(|part| solstone_core_local::generate::estimate_tokens(part))
+            .map(|part| solstone_core_tokens::count(part))
             .sum();
         let total_tokens = total_text_tokens + schema_tokens;
         assert!(
@@ -1579,13 +1579,13 @@ mod tests {
         let unpadded_packet = freeze(unpadded_talent, &context).unwrap();
         let (thawed_unpadded, _) = thaw(&unpadded_packet).unwrap();
         let unpadded_schema_tokens = match thawed_unpadded.config.get("json_schema") {
-            Some(Value::String(s)) => solstone_core_local::generate::estimate_tokens(s),
-            Some(val) => solstone_core_local::generate::estimate_tokens(&val.to_string()),
+            Some(Value::String(s)) => solstone_core_tokens::count(s),
+            Some(val) => solstone_core_tokens::count(&val.to_string()),
             None => 0,
         };
 
         let expected_notice = format!("location entries omitted: {total}.");
-        let notice_tokens = solstone_core_local::generate::estimate_tokens(&expected_notice);
+        let notice_tokens = solstone_core_tokens::count(&expected_notice);
         let orig_meta_str = thawed_unpadded
             .config
             .get("briefing_metadata")
@@ -1646,12 +1646,11 @@ mod tests {
         let prompt_without_story = orig_prompt
             .replace(&story_snippet, "")
             .replace(orig_meta_str, &story_dropped_meta_str);
-        let prompt_without_story_tokens =
-            solstone_core_local::generate::estimate_tokens(&prompt_without_story);
+        let prompt_without_story_tokens = solstone_core_tokens::count(&prompt_without_story);
 
         let replaced_prompt =
             prompt_without_story.replace(&story_dropped_meta_str, &final_meta_str);
-        let meta_growth = solstone_core_local::generate::estimate_tokens(&replaced_prompt)
+        let meta_growth = solstone_core_tokens::count(&replaced_prompt)
             .saturating_sub(prompt_without_story_tokens);
         let needed = notice_tokens + meta_growth;
 
@@ -1665,14 +1664,14 @@ mod tests {
                         .and_then(Value::as_str)
                         .is_none_or(|loc| part != loc)
             })
-            .map(|part| solstone_core_local::generate::estimate_tokens(&part))
+            .map(|part| solstone_core_tokens::count(&part))
             .sum();
         let base_tokens = prompt_without_story_tokens + other_tokens + unpadded_schema_tokens;
 
         let pad_tokens = floor_budget
             .saturating_sub(base_tokens)
             .saturating_sub(needed);
-        let user_instruction = "A".repeat((pad_tokens as usize) * 3);
+        let user_instruction = " a".repeat(pad_tokens as usize);
 
         let talent = prepared(
             "morning_briefing",
@@ -1689,13 +1688,13 @@ mod tests {
         let (thawed, _) = thaw(&packet).unwrap();
 
         let schema_tokens = match thawed.config.get("json_schema") {
-            Some(Value::String(s)) => solstone_core_local::generate::estimate_tokens(s),
-            Some(val) => solstone_core_local::generate::estimate_tokens(&val.to_string()),
+            Some(Value::String(s)) => solstone_core_tokens::count(s),
+            Some(val) => solstone_core_tokens::count(&val.to_string()),
             None => 0,
         };
         let total_text_tokens: u32 = crate::model_text_parts(&thawed.config)
             .iter()
-            .map(|part| solstone_core_local::generate::estimate_tokens(part))
+            .map(|part| solstone_core_tokens::count(part))
             .sum();
         let total_tokens = total_text_tokens + schema_tokens;
         assert!(
@@ -1784,7 +1783,7 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         location_journal(root.path(), LOCATION_DAY);
         solstone_core_facets::create_facet(root.path(), "work", "Work", "", "", "", None).unwrap();
-        let description = "A".repeat(44950);
+        let description = " a".repeat(14960);
         let record = json!({
             "id": "act-1",
             "title": "Activity",
@@ -1822,11 +1821,11 @@ mod tests {
         (stage.prompt_override.unwrap())(&mut probe_talent, &state).unwrap();
         let ordinary_tokens: u32 = crate::model_text_parts(&probe_talent.config)
             .iter()
-            .map(|part| solstone_core_local::generate::estimate_tokens(part))
+            .map(|part| solstone_core_tokens::count(part))
             .sum();
         let schema_tokens = match probe_talent.config.get("json_schema") {
-            Some(Value::String(s)) => solstone_core_local::generate::estimate_tokens(s),
-            Some(val) => solstone_core_local::generate::estimate_tokens(&val.to_string()),
+            Some(Value::String(s)) => solstone_core_tokens::count(s),
+            Some(val) => solstone_core_tokens::count(&val.to_string()),
             None => 0,
         };
         let ordinary_request_tokens = ordinary_tokens + schema_tokens;
@@ -1900,11 +1899,11 @@ mod tests {
 
         let total_text_tokens: u32 = model_parts
             .iter()
-            .map(|part| solstone_core_local::generate::estimate_tokens(part))
+            .map(|part| solstone_core_tokens::count(part))
             .sum();
         let final_schema_tokens = match thawed.config.get("json_schema") {
-            Some(Value::String(s)) => solstone_core_local::generate::estimate_tokens(s),
-            Some(val) => solstone_core_local::generate::estimate_tokens(&val.to_string()),
+            Some(Value::String(s)) => solstone_core_tokens::count(s),
+            Some(val) => solstone_core_tokens::count(&val.to_string()),
             None => 0,
         };
         assert!(
@@ -1930,9 +1929,9 @@ mod tests {
         solstone_core_facets::create_facet(root.path(), "a", "A", "", "", "", None).unwrap();
         solstone_core_facets::create_facet(root.path(), "b", "B", "", "", "", None).unwrap();
 
-        let desc_a = "A".repeat(43194);
-        let story_s = "S".repeat(1500);
-        let story_t = "T".repeat(1500);
+        let desc_a = " a".repeat(14349);
+        let story_s = " s".repeat(493);
+        let story_t = " t".repeat(493);
 
         let record_a = json!({
             "id": "anticipated_meeting_090000_1001",
@@ -1995,11 +1994,11 @@ mod tests {
 
         let unclipped_text_tokens: u32 = crate::model_text_parts(&unclipped_config)
             .iter()
-            .map(|part| solstone_core_local::generate::estimate_tokens(part))
+            .map(|part| solstone_core_tokens::count(part))
             .sum();
         let unclipped_schema_tokens = match unclipped_config.get("json_schema") {
-            Some(Value::String(s)) => solstone_core_local::generate::estimate_tokens(s),
-            Some(val) => solstone_core_local::generate::estimate_tokens(&val.to_string()),
+            Some(Value::String(s)) => solstone_core_tokens::count(s),
+            Some(val) => solstone_core_tokens::count(&val.to_string()),
             None => 0,
         };
         let unclipped_total = unclipped_text_tokens + unclipped_schema_tokens;
@@ -2012,11 +2011,11 @@ mod tests {
 
         let ordinary_tokens: u32 = crate::ordinary_text_parts(&probe_talent.config)
             .iter()
-            .map(|part| solstone_core_local::generate::estimate_tokens(part))
+            .map(|part| solstone_core_tokens::count(part))
             .sum();
         let probe_schema_tokens = match probe_talent.config.get("json_schema") {
-            Some(Value::String(s)) => solstone_core_local::generate::estimate_tokens(s),
-            Some(val) => solstone_core_local::generate::estimate_tokens(&val.to_string()),
+            Some(Value::String(s)) => solstone_core_tokens::count(s),
+            Some(val) => solstone_core_tokens::count(&val.to_string()),
             None => 0,
         };
         let ordinary_total = ordinary_tokens + probe_schema_tokens;
@@ -2178,11 +2177,11 @@ mod tests {
 
         let final_text_tokens: u32 = model_parts
             .iter()
-            .map(|part| solstone_core_local::generate::estimate_tokens(part))
+            .map(|part| solstone_core_tokens::count(part))
             .sum();
         let final_schema_tokens = match thawed.config.get("json_schema") {
-            Some(Value::String(s)) => solstone_core_local::generate::estimate_tokens(s),
-            Some(val) => solstone_core_local::generate::estimate_tokens(&val.to_string()),
+            Some(Value::String(s)) => solstone_core_tokens::count(s),
+            Some(val) => solstone_core_tokens::count(&val.to_string()),
             None => 0,
         };
         assert!(
@@ -2317,11 +2316,11 @@ mod tests {
         );
         let total_text_tokens: u32 = model_parts
             .iter()
-            .map(|part| solstone_core_local::generate::estimate_tokens(part))
+            .map(|part| solstone_core_tokens::count(part))
             .sum();
         let schema_tokens = match thawed.config.get("json_schema") {
-            Some(Value::String(s)) => solstone_core_local::generate::estimate_tokens(s),
-            Some(val) => solstone_core_local::generate::estimate_tokens(&val.to_string()),
+            Some(Value::String(s)) => solstone_core_tokens::count(s),
+            Some(val) => solstone_core_tokens::count(&val.to_string()),
             None => 0,
         };
         assert!(
@@ -2366,25 +2365,51 @@ mod tests {
         let (none, count) = clip_location_part("Label.", "# heading only\n", 10_000);
         assert!(none.is_none());
         assert_eq!(count, 0);
+    }
 
+    #[test]
+    fn location_is_sized_the_same_whatever_the_local_engine_launched() {
         let root = tempfile::tempdir().unwrap();
         location_journal(root.path(), LOCATION_DAY);
-        write_bytes(root.path(), "health/local.ctx", b"300");
         let observations = rendered_observations(root.path());
         assert!(!observations.is_empty());
         let context = ExecutionContext {
             journal: root.path().to_owned(),
         };
-        let talent = prepared(
-            "entities:entity_observer",
-            LOCATION_DAY,
-            json!({"facet":"work","hook":{"pre":"entities:entity_observer","post":"entities:entity_observer"},"skip_reason":"no_input","prompt":"keep me"}),
-        );
-        let packet = freeze(talent, &context).unwrap();
+        let freeze_with = |prompt: &str| {
+            freeze(
+                prepared(
+                    "entities:entity_observer",
+                    LOCATION_DAY,
+                    json!({"facet":"work","hook":{"pre":"entities:entity_observer","post":"entities:entity_observer"},"skip_reason":"no_input","prompt":prompt}),
+                ),
+                &context,
+            )
+            .unwrap()
+        };
+
+        // Whatever window the local engine was launched with, the request is the same.
+        let unlaunched = freeze_with("keep me");
+        for launched in [b"300".as_slice(), b"16384", b"262144"] {
+            write_bytes(root.path(), "health/local.ctx", launched);
+            assert_eq!(freeze_with("keep me"), unlaunched);
+        }
+        let config = unlaunched["prepared"]["config"].as_object().unwrap();
+        assert!(config.get("_daily_location_omitted").is_none());
+        let parts = text_parts(&thaw(&unlaunched).unwrap().0);
+        assert_eq!(parts.len(), 2);
+        assert_eq!(parts[0], "keep me");
+        for observation in &observations {
+            assert!(parts[1].contains(observation.trim_end()));
+        }
+
+        // Input that already fills the floor budget leaves no room for location.
+        let large = " a".repeat(solstone_core_local::plan::LOCAL_MIN_CONTEXT_TOKENS as usize);
+        let packet = freeze_with(&large);
         let config = packet["prepared"]["config"].as_object().unwrap();
         assert_eq!(
             config.get("prompt").and_then(Value::as_str),
-            Some("keep me")
+            Some(large.as_str())
         );
         assert!(config.get("_daily_location_fingerprint").is_some());
         assert!(config.get("_daily_location_text").is_none());
@@ -2395,7 +2420,7 @@ mod tests {
             Some(u64::try_from(observations.len()).unwrap())
         );
         let parts = text_parts(&thaw(&packet).unwrap().0);
-        assert_eq!(parts, vec!["keep me".to_owned()]);
+        assert_eq!(parts, vec![large]);
         for coordinate in ["39.75", "105.2", "105.0"] {
             assert!(!parts[0].contains(coordinate));
         }
@@ -2461,11 +2486,29 @@ mod tests {
         );
     }
     #[test]
+    fn dense_location_lines_are_clipped_to_their_counted_room() {
+        // Every digit is its own token, so these lines run under 3 bytes a token.
+        let rendered: String = std::iter::once("# location\n\n".to_owned())
+            .chain((0..200).map(|i| {
+                format!("- a visit your phone reported at Home: arrived 07:{i:02}, left 18:03.\n")
+            }))
+            .collect();
+        let label = location_label("entities:entity_suggest", LOCATION_DAY);
+        for room in [200, 600, 1_500] {
+            let (part, omitted) = clip_location_to_room(&label, &rendered, room);
+            let part = part.expect("some lines fit");
+            assert!(solstone_core_tokens::count(&part) <= room, "room {room}");
+            let kept = 200 - omitted as usize;
+            let (one_more, _) = clip_location_part(&label, &rendered, part.len() + 80);
+            assert!(
+                solstone_core_tokens::count(&one_more.unwrap()) > room,
+                "room {room} keeps {kept} lines and could keep one more"
+            );
+        }
+    }
+
+    #[test]
     fn a_large_whole_first_observation_that_fits_is_not_discarded() {
-        let root = tempfile::tempdir().unwrap();
-        let context = ExecutionContext {
-            journal: root.path().to_owned(),
-        };
         let talent = prepared("entities:entity_suggest", LOCATION_DAY, json!({}));
         let rendered = format!("# location\n\n- {}\n", "長".repeat(3500));
         let (part, omitted) = fit_location_part(
@@ -2475,7 +2518,6 @@ mod tests {
             &["ordinary".into()],
             &talent,
             &FrozenState::None,
-            &context,
         )
         .expect("fit");
         let part = part.expect("a complete observation fits the 16 KiB and request budgets");

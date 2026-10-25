@@ -207,6 +207,7 @@ pub struct LocalRuntimeShared {
     ready_children: Mutex<BTreeMap<FenceKey, ReadyChild>>,
     children: Mutex<BTreeMap<String, LaunchAuthority>>,
     launch_credentials: Mutex<LaunchCredentials>,
+    ready_admission: Mutex<ReadyAdmission>,
 }
 
 /// A reaped child from the same coherent tuple as the accepted process.
@@ -222,6 +223,17 @@ struct LaunchCredentials {
     accepted: Option<FenceKey>,
     admitted: bool,
     closed: bool,
+}
+
+// Coordinator Ready admission is also meaningful on Unix, where the helper
+// has no staged HTTP credentials. This observes the existing store callbacks;
+// it does not grant inference access or alter the credential contract.
+#[derive(Debug, Default)]
+struct ReadyAdmission {
+    accepted: Option<FenceKey>,
+    admitted: bool,
+    admitted_at: Option<Instant>,
+    mlx_baseline: Option<super::mlx_recycle::MaintenanceSnapshot>,
 }
 
 impl std::fmt::Debug for LaunchCredentials {
@@ -690,6 +702,76 @@ impl LocalRuntimeShared {
         let (port, token) = creds.staged.get(key)?;
         Some((key.generation, *port, token.clone()))
     }
+
+    pub(super) fn admitted_generation_matches(
+        &self,
+        generation: u64,
+        desired_fingerprint: &Option<String>,
+    ) -> bool {
+        let admission = self
+            .ready_admission
+            .lock()
+            .expect("local runtime shared lock");
+        admission.admitted
+            && admission.accepted.as_ref().is_some_and(|key| {
+                key.generation == generation && &key.fingerprint == desired_fingerprint
+            })
+            && !self
+                .launch_credentials
+                .lock()
+                .expect("local runtime shared lock")
+                .closed
+    }
+
+    #[cfg(all(test, feature = "full-tests"))]
+    pub(super) fn record_mlx_admission_for_test(
+        &self,
+        fence: &ProviderFence,
+        admitted_at: Instant,
+        baseline: super::mlx_recycle::MaintenanceSnapshot,
+    ) {
+        *self.ready_admission.lock().unwrap() = ReadyAdmission {
+            accepted: Some(FenceKey::from(fence)),
+            admitted: true,
+            admitted_at: Some(admitted_at),
+            mlx_baseline: Some(baseline),
+        };
+    }
+
+    pub(super) fn mlx_ready_baseline(
+        &self,
+        generation: u64,
+        fingerprint: &Option<String>,
+    ) -> Option<(Instant, super::mlx_recycle::MaintenanceSnapshot)> {
+        let admission = self
+            .ready_admission
+            .lock()
+            .expect("local runtime shared lock");
+        if admission.admitted
+            && admission
+                .accepted
+                .as_ref()
+                .is_some_and(|key| key.generation == generation && &key.fingerprint == fingerprint)
+        {
+            Some((admission.admitted_at?, admission.mlx_baseline?))
+        } else {
+            None
+        }
+    }
+
+    // Warmup can finish while durable Ready publication fails. This is only
+    // evidence for a pre-commit return, never authority to commit a migration.
+    pub(super) fn warmed_generation_matches(
+        &self,
+        generation: u64,
+        fingerprint: &Option<String>,
+    ) -> bool {
+        self.ready_processes
+            .lock()
+            .expect("local runtime shared lock")
+            .keys()
+            .any(|key| key.generation == generation && &key.fingerprint == fingerprint)
+    }
 }
 
 /// What `FileRuntimeStore` needs from a provider's own in-memory
@@ -709,16 +791,52 @@ pub trait ReadyProcessLookup: Send + Sync {
 
 impl ReadyProcessLookup for LocalRuntimeShared {
     fn accept_ready(&self, fence: &ProviderFence) {
+        // Capture before public Ready admission. Subsequent probes restore the
+        // same admission baseline instead of treating activity as a new Ready.
+        let mlx_baseline = if matches!(
+            self.launch_request_for(&fence.fingerprint),
+            Some(LocalLaunchConfig::Mlx { .. })
+        ) {
+            self.ready_process_for_fence(fence)
+                .and_then(|process| super::mlx_recycle::capture_ready_baseline(&process))
+        } else {
+            None
+        };
+        let admitted_at = Some(Instant::now());
         self.accept_launch_credentials(fence);
+        *self
+            .ready_admission
+            .lock()
+            .expect("local runtime shared lock") = ReadyAdmission {
+            accepted: Some(FenceKey::from(fence)),
+            admitted: true,
+            admitted_at,
+            mlx_baseline,
+        };
     }
     fn restore_ready(&self, fence: &ProviderFence) {
         self.restore_launch_credentials(fence);
+        let mut admission = self
+            .ready_admission
+            .lock()
+            .expect("local runtime shared lock");
+        if admission.accepted.as_ref() == Some(&FenceKey::from(fence)) {
+            admission.admitted = true;
+        }
     }
     fn invalidate_ready(&self) {
         self.invalidate_launch_credentials();
+        *self
+            .ready_admission
+            .lock()
+            .expect("local runtime shared lock") = ReadyAdmission::default();
     }
     fn suspend_ready(&self) {
         self.suspend_launch_credentials();
+        self.ready_admission
+            .lock()
+            .expect("local runtime shared lock")
+            .admitted = false;
     }
     fn ready_process_for_fence(&self, fence: &ProviderFence) -> Option<ReadyProcess> {
         self.ready_processes
@@ -1393,6 +1511,67 @@ mod tests {
 
     use super::*;
     use crate::provider_runtime::{InFlight, ManagedProcess, ProviderStopCleanupRequest};
+
+    #[test]
+    fn migration_distinguishes_warmup_from_current_ready_admission() {
+        let shared = LocalRuntimeShared::default();
+        let fence = ProviderFence {
+            incarnation: "fixture".into(),
+            generation: 7,
+            fingerprint: Some("mlx".into()),
+            attempt: 1,
+        };
+        shared.ready_processes.lock().unwrap().insert(
+            FenceKey::from(&fence),
+            ReadyProcess {
+                process_id: "fixture".into(),
+                process_name: "local".into(),
+                pid: 12345,
+                port: 12345,
+            },
+        );
+        shared.stage_launch_credentials(&fence, 12345, b"fixture".to_vec());
+        assert!(shared.warmed_generation_matches(7, &fence.fingerprint));
+        assert!(!shared.admitted_generation_matches(7, &fence.fingerprint));
+        shared.accept_ready(&fence);
+        assert!(shared.admitted_generation_matches(7, &fence.fingerprint));
+        assert!(!shared.admitted_generation_matches(8, &fence.fingerprint));
+        assert!(!shared.admitted_generation_matches(7, &Some("metal".into())));
+        shared.invalidate_ready();
+        assert!(shared.warmed_generation_matches(7, &fence.fingerprint));
+        assert!(!shared.admitted_generation_matches(7, &fence.fingerprint));
+    }
+
+    #[test]
+    fn coordinator_ready_admission_does_not_require_http_credentials() {
+        let shared = LocalRuntimeShared::default();
+        let fence = ProviderFence {
+            incarnation: "unix".into(),
+            generation: 7,
+            fingerprint: Some("mlx".into()),
+            attempt: 1,
+        };
+        assert!(shared.launch_credentials().is_none());
+        assert!(!shared.admitted_generation_matches(7, &fence.fingerprint));
+        shared.accept_ready(&fence);
+        assert!(shared.admitted_generation_matches(7, &fence.fingerprint));
+        assert!(shared.launch_credentials().is_none());
+        shared.suspend_ready();
+        assert!(!shared.admitted_generation_matches(7, &fence.fingerprint));
+        let mut stale = fence.clone();
+        stale.generation += 1;
+        shared.restore_ready(&stale);
+        assert!(!shared.admitted_generation_matches(7, &fence.fingerprint));
+        shared.restore_ready(&fence);
+        assert!(shared.admitted_generation_matches(7, &fence.fingerprint));
+        shared.invalidate_ready();
+        shared.restore_ready(&fence);
+        assert!(!shared.admitted_generation_matches(7, &fence.fingerprint));
+        shared.accept_ready(&fence);
+        shared.close_launch_credentials();
+        assert!(!shared.admitted_generation_matches(7, &fence.fingerprint));
+        assert!(shared.launch_credentials().is_none());
+    }
 
     static NEXT_TEMP: AtomicU64 = AtomicU64::new(0);
 

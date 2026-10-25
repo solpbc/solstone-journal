@@ -17,8 +17,8 @@ use solstone_core_local::admission::{
 };
 use solstone_core_local::{
     ByoEndpoint, HttpResponse, InputBudget, RequestBudget, Usage, build_messages,
-    build_request_body, count_image_parts, estimate_tokens, fit_contents, parse_response,
-    serialized_message_text, served_window_from_models_response,
+    build_request_body, count_image_parts, fit_contents, parse_response, serialized_message_text,
+    served_window_from_models_response,
 };
 use solstone_core_spp_ratls::AttestationStateStore;
 
@@ -52,6 +52,14 @@ static INPUT_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?P<input>\d+)\s+tokens?\s+from\s+the\s+input\s+messages?\s+and\s+\d+\s+tokens?\s+for\s+the\s+completion")
         .expect("valid input regex")
 });
+
+static REFUSED_INPUT_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"the input \((?P<input>\d+)\s+tokens?\) is longer than")
+        .expect("valid refused-input regex")
+});
+/// Share of the calibrated window a refit aims for, so the part of the prompt
+/// that survives a refit can count a little denser than the whole did.
+const CALIBRATED_REFIT_PERCENT: u64 = 95;
 
 type ServedWindowCache = HashMap<(String, String), (Option<u32>, Instant)>;
 
@@ -337,6 +345,7 @@ pub(crate) fn endpoint_generate_internal_with_context<T: EndpointTransport>(
             }
         };
         let mut refits = 0u32;
+        let mut window = served_window;
         loop {
             if context.cancellation.is_cancelled() {
                 return failure("request_cancelled");
@@ -379,12 +388,13 @@ pub(crate) fn endpoint_generate_internal_with_context<T: EndpointTransport>(
                 return failure("context_window_exceeded");
             }
             refits += 1;
-            prepared = match prepare_endpoint_request(
-                request,
-                endpoint,
-                max_tokens,
-                served_window >> refits,
-            ) {
+            window = refit_window(
+                window,
+                served_window,
+                prepared.request_budget.as_ref(),
+                reported_input_tokens(&response.body),
+            );
+            prepared = match prepare_endpoint_request(request, endpoint, max_tokens, window) {
                 Ok(prepared) => prepared,
                 Err(reason_code) => return failure(reason_code),
             };
@@ -480,7 +490,7 @@ fn prepare_endpoint_request(
     window: u32,
 ) -> Result<PreparedEndpointRequest, &'static str> {
     let contents = crate::request::local_contents(request);
-    let mut count = estimate_tokens;
+    let mut count = solstone_core_tokens::count;
     let (contents, input_budget) = fit_contents(
         &contents,
         request.system_instruction.as_deref(),
@@ -490,7 +500,7 @@ fn prepare_endpoint_request(
     )
     .map_err(|_| "context_budget_exceeded")?;
     let messages = build_messages(&contents, request.system_instruction.as_deref());
-    let estimated_prompt_tokens = estimate_tokens(&serialized_message_text(&messages));
+    let estimated_prompt_tokens = solstone_core_tokens::count(&serialized_message_text(&messages));
     let image_tokens = ESTIMATED_IMAGE_TOKENS.saturating_mul(count_image_parts(&contents));
     let room = window
         .saturating_sub(estimated_prompt_tokens)
@@ -575,6 +585,49 @@ fn endpoint_post<T: EndpointTransport>(
 
 pub(crate) fn remaining_timeout(started: Instant, timeout: Duration) -> Option<Duration> {
     timeout.checked_sub(started.elapsed())
+}
+
+/// The input size an endpoint reports when it refuses a prompt for length, in
+/// the endpoint's own tokens.
+fn reported_input_tokens(body_text: &str) -> Option<u32> {
+    let body = body_text.to_ascii_lowercase();
+    [&*INPUT_RE, &*REFUSED_INPUT_RE].iter().find_map(|re| {
+        re.captures(&body)
+            .and_then(|captures| captures.name("input"))
+            .and_then(|capture| capture.as_str().parse::<u32>().ok())
+    })
+}
+
+/// The window the next fit uses after a context refusal. The client counts
+/// tokens by estimate, so a refusal means the estimate ran low. When the
+/// endpoint reports the real input size, scale the served window by how far the
+/// estimate missed, so the refit keeps as much input as will actually fit.
+/// Scaling only ever keeps more than halving would: without a report, or when
+/// the scaled window is not between half the last window and the last window,
+/// halve it as before, and the next refusal calibrates again.
+fn refit_window(
+    previous: u32,
+    served_window: u32,
+    budget: Option<&RequestBudget>,
+    reported_input: Option<u32>,
+) -> u32 {
+    let halved = previous / 2;
+    let Some(budget) = budget else {
+        return halved;
+    };
+    let estimated = u64::from(budget.estimated_prompt_tokens) + u64::from(budget.image_tokens);
+    let Some(actual) = reported_input
+        .map(u64::from)
+        .filter(|actual| *actual > estimated)
+    else {
+        return halved;
+    };
+    let calibrated =
+        u64::from(served_window) * estimated * CALIBRATED_REFIT_PERCENT / (actual * 100);
+    match u32::try_from(calibrated) {
+        Ok(calibrated) if calibrated > halved && calibrated < previous => calibrated,
+        _ => halved,
+    }
 }
 
 pub fn endpoint_overflow_decision(
@@ -1036,7 +1089,7 @@ mod tests {
         let mut input = request(None);
         input.system_instruction = None;
         input.max_output_tokens = 256;
-        for text in ["EARLY_RULE".to_owned(), "x".repeat(4_605)] {
+        for text in ["EARLY_RULE".to_owned(), " x".repeat(1_535)] {
             input.contents = vec![ContentPart::Text { text: text.clone() }];
             let original = prepare_endpoint_request(&input, &endpoint, 256, 2_048).unwrap();
             input.contents.insert(
@@ -1055,7 +1108,7 @@ mod tests {
                 text: String::new(),
             },
             ContentPart::Text {
-                text: "x".repeat(10_000),
+                text: " x".repeat(1_537),
             },
         ];
         assert!(matches!(
@@ -1115,7 +1168,6 @@ mod tests {
             attempt_index: 0,
             exclusive_admission: false,
             transport_retries: None,
-            endpoint_binding: None,
         }
     }
 
@@ -1616,6 +1668,116 @@ mod tests {
         let _ = std::fs::remove_dir_all(journal);
     }
 
+    /// A refusal that reports the real input size refits to what will fit, not to
+    /// half the window: the estimate ran 25% low, so the refit keeps about three
+    /// quarters of the prompt instead of about a third.
+    #[test]
+    fn a_reported_input_size_calibrates_the_refit() {
+        let runtime = EndpointRuntime::default();
+        let journal = journal_path();
+        let mut oversized = request(None);
+        oversized.max_output_tokens = 512;
+        oversized.contents = vec![ContentPart::Text {
+            text: "lorem ipsum dolor sit amet ".repeat(4_000),
+        }];
+        let mut probe = StubTransport {
+            post_script: vec![Ok(response())],
+            ..Default::default()
+        };
+        let _ = endpoint_generate_with(
+            &oversized,
+            &journal,
+            &endpoint("http://endpoint"),
+            &served_window_config(),
+            &runtime,
+            &mut probe,
+            Instant::now(),
+        );
+        let first_len = probe.posts[0]["messages"].to_string().len();
+        let messages = probe.posts[0]["messages"].as_array().unwrap();
+        let counted = solstone_core_tokens::count(&serialized_message_text(messages));
+        let reported = counted * 5 / 4;
+        let refusal = format!(
+            "The input ({reported} tokens) is longer than the model's context length (4096 tokens)."
+        );
+        let mut transport = StubTransport {
+            post_script: vec![Ok(bad_request(&refusal)), Ok(response())],
+            ..Default::default()
+        };
+        assert!(matches!(
+            endpoint_generate_with(
+                &oversized,
+                &journal,
+                &endpoint("http://endpoint"),
+                &served_window_config(),
+                &runtime,
+                &mut transport,
+                Instant::now(),
+            ),
+            EndpointResult::Generated(_)
+        ));
+        assert_eq!(transport.posts.len(), 2);
+        let first = transport.posts[0]["messages"].to_string().len();
+        let second = transport.posts[1]["messages"].to_string().len();
+        assert_eq!(first, first_len);
+        assert!(
+            second < first && second * 10 > first * 6,
+            "calibrated refit keeps what fits: first={first} second={second}"
+        );
+        let _ = std::fs::remove_dir_all(journal);
+    }
+
+    #[test]
+    fn refusals_report_their_input_size_in_both_engine_phrasings() {
+        assert_eq!(
+            reported_input_tokens(
+                "The input (410213 tokens) is longer than the model's context length (262144 tokens)."
+            ),
+            Some(410_213)
+        );
+        assert_eq!(
+            reported_input_tokens(
+                "Requested token count exceeds the model's maximum context length of 262144 tokens. You requested a total of 270000 tokens: 263088 tokens from the input messages and 6912 tokens for the completion."
+            ),
+            Some(263_088)
+        );
+        assert_eq!(
+            reported_input_tokens("request exceeds the context window"),
+            None
+        );
+    }
+
+    #[test]
+    fn the_refit_window_scales_by_the_reported_miss_and_otherwise_halves() {
+        let budget = RequestBudget {
+            window: 262_144,
+            slots: 1,
+            estimated_prompt_tokens: 255_000,
+            image_tokens: 0,
+            clamped_max_tokens: 6_912,
+            requested_max_output_tokens: 6_912,
+        };
+        let calibrated = refit_window(262_144, 262_144, Some(&budget), Some(410_000));
+        assert_eq!(calibrated, 154_888);
+        assert_eq!(refit_window(262_144, 262_144, Some(&budget), None), 131_072);
+        assert_eq!(refit_window(262_144, 262_144, None, Some(410_000)), 131_072);
+        // A report no larger than the estimate gives no calibration to use.
+        assert_eq!(
+            refit_window(262_144, 262_144, Some(&budget), Some(250_000)),
+            131_072
+        );
+        // A scaled window that would not shrink the last one halves instead,
+        // and so does one below half, where the report's fixed overhead dominates.
+        assert_eq!(
+            refit_window(150_000, 262_144, Some(&budget), Some(256_000)),
+            75_000
+        );
+        assert_eq!(
+            refit_window(262_144, 262_144, Some(&budget), Some(600_000)),
+            131_072
+        );
+    }
+
     fn no_window_models() -> Result<HttpResponse, EndpointTransportError> {
         // A models payload carrying no `max_model_len` leaves the window unknown.
         Ok(HttpResponse {
@@ -1656,7 +1818,7 @@ mod tests {
         let budget = generated.request_budget.expect("budget recorded");
         assert_eq!(budget.window, UNKNOWN_WINDOW_TOKENS);
         assert!(generated.input_budget.expect("input fitted").clipped);
-        let sent = estimate_tokens(&transport.posts[0]["messages"].to_string());
+        let sent = solstone_core_tokens::count(&transport.posts[0]["messages"].to_string());
         assert!(sent < UNKNOWN_WINDOW_TOKENS, "sent {sent} tokens");
         assert_eq!(transport.posts[0]["max_tokens"], 2_048);
         let _ = std::fs::remove_dir_all(journal);

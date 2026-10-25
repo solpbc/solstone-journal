@@ -1,0 +1,19 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (c) 2026 sol pbc
+
+[package]
+name = "solstone-core-tokens"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+# Required, not cosmetic: wildcards = "deny" in deny.toml requires every
+# workspace crate to opt out of publication until it has a reviewed package plan.
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+fancy-regex.workspace = true
+flate2.workspace = true

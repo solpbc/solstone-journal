@@ -283,6 +283,30 @@ fn mint_runtime_fetch_impl(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn macos_predecessor_assets_cannot_mint_after_migration_release() {
+        for row in catalog().iter().filter(|row| {
+            row.unit == "local-model"
+                || (row.unit == "llama-server-vulkan" && row.platform == Some(Platform::MacosArm64))
+        }) {
+            let query = RuntimeFetchQuery {
+                unit: Some(row.unit),
+                origin_key: Some(row.origin_key),
+                ..Default::default()
+            };
+            assert!(
+                mint_runtime_fetch_impl("macos-arm64", &query).is_err(),
+                "{}",
+                row.origin_key
+            );
+            if row.unit == "local-model" {
+                for target in ["linux-x86_64", "linux-aarch64", "windows-x86_64"] {
+                    assert!(mint_runtime_fetch_impl(target, &query).is_ok());
+                }
+            }
+        }
+    }
+
     #[cfg(feature = "runtime-fetch-test")]
     #[test]
     fn mlx_model_mints_only_on_macos() {

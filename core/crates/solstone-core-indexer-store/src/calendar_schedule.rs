@@ -22,11 +22,13 @@ use chrono::{NaiveDate, NaiveDateTime};
 use chrono_tz::Tz;
 use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::{Map, Value};
-use solstone_core_format::calendar::{When, parse_calendar_note};
+use solstone_core_format::calendar::{OwnerAddresses, When, parse_calendar_note};
 use solstone_core_indexer::edges::candidates::KnownPeople;
 
 use crate::StoreError;
-use crate::calendar::{Identity, LISTING_IDX_BASE, LISTING_IDX_STRIDE, listing_zone};
+use crate::calendar::{
+    Identity, LISTING_IDX_BASE, LISTING_IDX_STRIDE, listing_zone, owner_addresses,
+};
 use crate::db::{db_path, open_index_reader};
 
 /// The source of the people links calendar notes add. Calendars read off the
@@ -131,12 +133,13 @@ pub fn scheduled_on_day(journal: &Path, day: &str) -> Result<Vec<ScheduledEvent>
         return Ok(Vec::new());
     }
     let zone = listing_zone(journal)?;
+    let owner = owner_addresses(journal)?;
     let mut invited = conn.prepare(
         "SELECT entity_id FROM calendar_people WHERE event=? AND occurrence=? ORDER BY position",
     )?;
     let mut events = Vec::new();
     for ((event_id, occurrence), record) in notes {
-        let Some(mut event) = scheduled_event(&record, &zone) else {
+        let Some(mut event) = scheduled_event(&record, &zone, &owner) else {
             continue;
         };
         let entity_ids = invited
@@ -176,7 +179,7 @@ fn named_now(journal: &Path, entity_id: String) -> Option<InvitedPerson> {
 }
 
 /// An event as its latest note has it, with no one on it yet.
-fn scheduled_event(record: &str, zone: &Tz) -> Option<ScheduledEvent> {
+fn scheduled_event(record: &str, zone: &Tz, owner: &OwnerAddresses) -> Option<ScheduledEvent> {
     let note = parse_calendar_note(record).ok()?;
     let schedule = note.schedule?;
     let wall = |when: When| match when {
@@ -189,7 +192,7 @@ fn scheduled_event(record: &str, zone: &Tz) -> Option<ScheduledEvent> {
         all_day: schedule.all_day,
         start: wall(schedule.start),
         end: schedule.end.and_then(wall),
-        declined: owner_declined(&note.record),
+        declined: owner_declined(&note.record, owner),
         people: Vec::new(),
     })
 }
@@ -212,13 +215,11 @@ fn invitees(record: &Map<String, Value>) -> impl Iterator<Item = &Map<String, Va
         .filter_map(Value::as_object)
 }
 
-fn is_owner(attendee: &Map<String, Value>) -> bool {
-    attendee.get("you").and_then(Value::as_bool) == Some(true)
-}
-
-fn owner_declined(record: &Map<String, Value>) -> bool {
+/// The owner answered no. The owner is the attendee with one of the owner's
+/// addresses, never whoever the phone marked.
+fn owner_declined(record: &Map<String, Value>, owner: &OwnerAddresses) -> bool {
     invitees(record)
-        .filter(|attendee| is_owner(attendee))
+        .filter(|attendee| owner.is_owner(attendee))
         .any(|attendee| {
             text(attendee, "status").is_some_and(|status| status.eq_ignore_ascii_case("declined"))
         })
@@ -229,13 +230,15 @@ fn owner_declined(record: &Map<String, Value>) -> bool {
 /// one, rather than failing the index write that asked.
 struct People<'a> {
     journal: &'a Path,
+    owner: &'a OwnerAddresses,
     loaded: Option<(KnownPeople, Option<String>)>,
 }
 
 impl<'a> People<'a> {
-    fn new(journal: &'a Path) -> Self {
+    fn new(journal: &'a Path, owner: &'a OwnerAddresses) -> Self {
         Self {
             journal,
+            owner,
             loaded: None,
         }
     }
@@ -256,22 +259,14 @@ impl<'a> People<'a> {
         })
     }
 
-    /// The known people on an invite, its organizer included, the owner and
-    /// anyone answering as the owner left out, each once, in invite order.
+    /// The known people on an invite, its organizer included, anyone with
+    /// one of the owner's addresses left out, each once, in invite order.
     fn on_invite(&mut self, record: &Map<String, Value>) -> Vec<String> {
-        let owner_emails = invitees(record)
-            .filter(|attendee| is_owner(attendee))
-            .filter_map(|attendee| text(attendee, "email"))
-            .map(|email| email.to_lowercase())
-            .collect::<BTreeSet<_>>();
         let organizer = record.get("organizer").and_then(Value::as_object);
         let invited = organizer
             .into_iter()
-            .chain(invitees(record).filter(|attendee| !is_owner(attendee)))
-            .filter(|person| {
-                text(person, "email")
-                    .is_none_or(|email| !owner_emails.contains(&email.to_lowercase()))
-            })
+            .chain(invitees(record))
+            .filter(|person| !self.owner.is_owner(person))
             .collect::<Vec<_>>();
         if invited.is_empty() {
             return Vec::new();
@@ -313,13 +308,18 @@ pub(crate) fn relink_people(
     journal: &Path,
     identities: &BTreeSet<Identity>,
 ) -> Result<(), StoreError> {
-    let mut people = People::new(journal);
+    // Unreadable settings leave a listed event's links as they are: the relist
+    // that called this has left its file for the next scan. An event with
+    // nothing listed any more still loses its links.
+    let owner = owner_addresses(journal)
+        .inspect_err(|error| {
+            log::warn!(target: "solstone::indexer", "calendar invites not relinked yet: {error}");
+        })
+        .ok();
+    static NO_OWNER: OwnerAddresses = OwnerAddresses::NONE;
+    let owner_or_none = owner.as_ref().unwrap_or(&NO_OWNER);
+    let mut people = People::new(journal, owner_or_none);
     for identity in identities {
-        let anchor = edge_anchor(identity);
-        conn.prepare_cached("DELETE FROM edges WHERE source=? AND anchor=?")?
-            .execute(params![CALENDAR_NOTE_EDGE_SOURCE, anchor])?;
-        conn.prepare_cached("DELETE FROM calendar_people WHERE event=? AND occurrence=?")?
-            .execute(params![identity.0, identity.1])?;
         let latest: Option<(String, i64, String)> = conn
             .prepare_cached(
                 "SELECT h.path, h.idx, c.day FROM calendar_hits h \
@@ -331,6 +331,14 @@ pub(crate) fn relink_people(
                 Ok((row.get(0)?, row.get(1)?, row.get(2)?))
             })
             .optional()?;
+        if owner.is_none() && latest.is_some() {
+            continue;
+        }
+        let anchor = edge_anchor(identity);
+        conn.prepare_cached("DELETE FROM edges WHERE source=? AND anchor=?")?
+            .execute(params![CALENDAR_NOTE_EDGE_SOURCE, anchor])?;
+        conn.prepare_cached("DELETE FROM calendar_people WHERE event=? AND occurrence=?")?
+            .execute(params![identity.0, identity.1])?;
         let Some((path, idx, day)) = latest else {
             continue;
         };
@@ -345,7 +353,7 @@ pub(crate) fn relink_people(
             continue;
         };
         // Only the title and the owner's answer matter here, not the clock.
-        let Some(event) = scheduled_event(&record, &chrono_tz::UTC) else {
+        let Some(event) = scheduled_event(&record, &chrono_tz::UTC, owner_or_none) else {
             continue;
         };
         let Ok(note) = serde_json::from_str::<Map<String, Value>>(&record) else {

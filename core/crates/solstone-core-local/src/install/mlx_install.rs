@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! Selector-gated installation of the pinned MLX model generation.
+//! Installation of the pinned macOS MLX model generation.
 
 use super::{DispatchError, failure, fetch_install_member, mlx_candidate, pins, status};
 use serde_json::{Value, json};

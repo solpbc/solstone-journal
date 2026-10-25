@@ -525,6 +525,13 @@ fn check_display_fields(record: &Map<String, Value>) -> Result<(), String> {
             return Err(format!("{key} must be a string or null"));
         }
     }
+    // A phone that predates the account sends none.
+    if !matches!(
+        record.get("account"),
+        None | Some(Value::Null | Value::String(_))
+    ) {
+        return Err("account must be a string or null".to_owned());
+    }
     match record.get("organizer") {
         Some(Value::Null) => {}
         Some(Value::Object(organizer)) => check_person(organizer, "organizer")?,
@@ -708,11 +715,56 @@ pub fn listed_days<Tz: TimeZone>(schedule: &Schedule, zone: &Tz) -> Listing {
     }
 }
 
+/// The owner's own email addresses, from their identity in the journal
+/// settings, compared trimmed and ignoring case. An attendee is the owner only
+/// when their email is one of these. A phone's own `you` mark is never read: on
+/// a calendar shared to the phone, it marks the calendar's owner instead.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct OwnerAddresses(BTreeSet<String>);
+
+impl OwnerAddresses {
+    /// No addresses: nobody on an invite is the owner.
+    pub const NONE: Self = Self(BTreeSet::new());
+
+    pub fn new<I, S>(addresses: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        Self(
+            addresses
+                .into_iter()
+                .map(|address| address.as_ref().trim().to_lowercase())
+                .filter(|address| !address.is_empty())
+                .collect(),
+        )
+    }
+
+    /// Whether `email` is one of the owner's addresses.
+    pub fn has(&self, email: &str) -> bool {
+        self.0.contains(&email.trim().to_lowercase())
+    }
+
+    /// Whether this person on an invite is the owner.
+    pub fn is_owner(&self, person: &Map<String, Value>) -> bool {
+        person
+            .get("email")
+            .and_then(Value::as_str)
+            .is_some_and(|email| self.has(email))
+    }
+
+    /// The addresses as one stable text, so a change can be noticed.
+    pub fn stamp(&self) -> String {
+        self.0.iter().cloned().collect::<Vec<_>>().join("\n")
+    }
+}
+
 /// Render a note as plain text the owner can read: what changed, the title,
 /// when it happens, the calendar, the place, who is invited, the notes, how it
 /// repeats and when the change was recorded. Absent fields are left out, and
-/// every field is bounded so the text stays readable as one search entry.
-pub fn render_calendar_note(note: &CalendarNote) -> String {
+/// every field is bounded so the text stays readable as one search entry. The
+/// attendee who is the owner, by `owner`'s addresses, is written as you.
+pub fn render_calendar_note(note: &CalendarNote, owner: &OwnerAddresses) -> String {
     let record = &note.record;
     let mut lines = Vec::new();
     let heading = match note.change {
@@ -731,12 +783,19 @@ pub fn render_calendar_note(note: &CalendarNote) -> String {
         ));
     }
     if let Some(calendar) = text_field(record, "calendar", MAX_FIELD_CHARS) {
-        lines.push(format!("Calendar: {calendar}"));
+        // Two calendars can share a name across accounts; the account tells
+        // them apart. A calendar named after its account says it once.
+        match text_field(record, "account", MAX_FIELD_CHARS) {
+            Some(account) if !account.eq_ignore_ascii_case(&calendar) => {
+                lines.push(format!("Calendar: {calendar} ({account})"));
+            }
+            _ => lines.push(format!("Calendar: {calendar}")),
+        }
     }
     if let Some(location) = text_field(record, "location", MAX_FIELD_CHARS) {
         lines.push(format!("Where: {location}"));
     }
-    if let Some(invited) = describe_attendees(record) {
+    if let Some(invited) = describe_attendees(record, owner) {
         lines.push(format!("Invited: {invited}"));
     }
     if let Some(notes) = text_field(record, "notes", MAX_NOTES_CHARS) {
@@ -778,13 +837,13 @@ fn bounded(value: &str, limit: usize) -> String {
     cut
 }
 
-fn describe_attendees(record: &Map<String, Value>) -> Option<String> {
+fn describe_attendees(record: &Map<String, Value>, owner: &OwnerAddresses) -> Option<String> {
     let attendees = record.get("attendees")?.as_array()?;
     let mut named = Vec::new();
     for attendee in attendees.iter().filter_map(Value::as_object) {
         let who = text_field(attendee, "name", MAX_FIELD_CHARS)
             .or_else(|| text_field(attendee, "email", MAX_FIELD_CHARS));
-        let you = attendee.get("you").and_then(Value::as_bool) == Some(true);
+        let you = owner.is_owner(attendee);
         let who = match (who, you) {
             (Some(who), true) => format!("{who}, you"),
             (Some(who), false) => who,

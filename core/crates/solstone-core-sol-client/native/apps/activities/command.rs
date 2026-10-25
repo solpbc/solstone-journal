@@ -630,9 +630,9 @@ fn validate_participation(value: &Value) -> Result<Vec<Value>, CommandOutput> {
             )));
         }
         let role = object.get("role").and_then(Value::as_str);
-        if !matches!(role, Some("attendee" | "mentioned")) {
+        if !matches!(role, Some("attendee" | "mentioned" | "visible")) {
             return Err(stderr(format!(
-                "Error: participation[{index}] has invalid role '{}' (must be one of ['attendee', 'mentioned'])",
+                "Error: participation[{index}] has invalid role '{}' (must be one of ['attendee', 'mentioned', 'visible'])",
                 object
                     .get("role")
                     .map_or("null".to_string(), json_value_to_python_string)
