@@ -447,7 +447,7 @@
   function renderWelcomeHtml() {
     return '<div class="pulse-welcome" data-home-surface="welcome">'
       + '<h2>welcome to your journal</h2>'
-      + '<p>this is where your day comes together: narrative summaries, calendar events, and tasks. as the solstone app takes in what you share with it, and all of it goes into your journal, sections will appear automatically.</p>'
+      + '<p>this is where your day comes together: what happened, written up, and the people and things it involved. sections appear here as what you share with the solstone app goes into your journal.</p>'
       + '</div>';
   }
 

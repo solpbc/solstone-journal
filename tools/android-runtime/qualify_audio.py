@@ -294,7 +294,7 @@ class AudioQualification(serving.Qualification):
 
     def multipart(self, name, *, segment=None):
         self.sequence += 1
-        length=23 if name=='long.wav' else 31 if name=='over-duration.m4a' else 3
+        length=23 if name=='long.wav' else 121 if name=='over-duration.m4a' else 3
         segment = segment or f'{int(time.time())%24:02}{self.sequence//60:02}{self.sequence%60:02}_{length}'
         raw = self.fixture(name).read_bytes()
         envelope = dict(day=self.day, segment=segment, source='audio',
@@ -311,7 +311,7 @@ class AudioQualification(serving.Qualification):
                        content_type=f'multipart/form-data; boundary={boundary}', protocol_version='3')
         item = dict(fixture=name, day=self.day, requested_segment=segment,
                     input_sha256=hashlib.sha256(raw).hexdigest(), input_bytes=len(raw), command=command,
-                    duration_seconds=(31 if name=='over-duration.m4a' else 3 if name=='silence.wav' else 0 if name=='malformed.wav' else self.speech_duration * (8 if name=='long.wav' else 1)))
+                    duration_seconds=(121 if name=='over-duration.m4a' else 3 if name=='silence.wav' else 0 if name=='malformed.wav' else self.speech_duration * (8 if name=='long.wav' else 1)))
         return command, item
 
     def upload(self, name, **kwargs):
@@ -472,7 +472,7 @@ class AudioQualification(serving.Qualification):
             _, item = self.upload('speech.m4a' if index % 2 == 0 else 'speech.wav')
             self.wait_terminal(item)
             self.sample(f'warm-{index:03}')
-        for name, detail in [('over-duration.m4a','30 seconds'),('over-size.wav','16 MiB')]:
+        for name, detail in [('over-duration.m4a','120 seconds'),('over-size.wav','16 MiB')]:
             _, bounded=self.upload(name)
             self.wait_failure(bounded,detail)
         _, silence = self.upload('silence.wav')

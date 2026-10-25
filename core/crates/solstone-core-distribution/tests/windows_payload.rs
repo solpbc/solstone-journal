@@ -23,7 +23,7 @@ use solstone_core_distribution::windows_payload::{
 };
 use solstone_core_installed_payload::{WindowsArchitecture, compiled_windows_architecture};
 
-const COMMIT: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+const COMMIT: &str = env!("SOLSTONE_DISTRIBUTION_SOURCE_COMMIT");
 const LOCK: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 
 fn fixture() -> tempfile::TempDir {
@@ -102,18 +102,26 @@ fn sign_payload_manifest_for_architecture(
     root: &std::path::Path,
     architecture: WindowsArchitecture,
 ) {
+    sign_payload_manifest_at_commit(root, architecture, COMMIT);
+}
+
+fn sign_payload_manifest_at_commit(
+    root: &std::path::Path,
+    architecture: WindowsArchitecture,
+    commit: &str,
+) {
     let manifest_path = root.join(WINDOWS_PAYLOAD_MANIFEST);
     let sig_path = root.join(WINDOWS_PAYLOAD_SIGNATURE);
     let _ = fs::remove_file(&manifest_path);
     let _ = fs::remove_file(&sig_path);
 
     let manifest =
-        render_windows_payload_manifest_for_architecture(root, COMMIT, LOCK, architecture)
+        render_windows_payload_manifest_for_architecture(root, commit, LOCK, architecture)
             .expect("manifest");
     if architecture == compiled_windows_architecture() {
         assert_eq!(
             manifest,
-            render_windows_payload_manifest(root, COMMIT, LOCK).expect("native manifest"),
+            render_windows_payload_manifest(root, commit, LOCK).expect("native manifest"),
             "the existing API retains the native manifest bytes"
         );
     }
@@ -359,6 +367,31 @@ fn signed_windows_payload_is_complete_and_refuses_mutation() {
 }
 
 #[test]
+fn windows_component_evidence_refuses_a_stale_binary_despite_matching_checkout() {
+    let root = fixture();
+    let out = tempfile::tempdir().unwrap();
+    let other_commit = if COMMIT == "0".repeat(40) {
+        "1".repeat(40)
+    } else {
+        "0".repeat(40)
+    };
+    sign_payload_manifest_at_commit(root.path(), WindowsArchitecture::X86_64, &other_commit);
+    let err = solstone_core_distribution::component_evidence::render_windows_component_evidence(
+        root.path(),
+        &other_commit,
+        false,
+        None,
+        out.path(),
+    )
+    .unwrap_err();
+    assert!(
+        err.message.starts_with("producer-commit-mismatch:"),
+        "{err}"
+    );
+    assert_eq!(fs::read_dir(out.path()).unwrap().count(), 0);
+}
+
+#[test]
 fn windows_component_evidence_error_conditions() {
     let root = fixture();
     let out = tempfile::tempdir().unwrap();
@@ -397,6 +430,24 @@ fn windows_component_evidence_error_conditions() {
     assert!(
         err.message
             .starts_with("windows-evidence-version-mismatch:")
+    );
+
+    // An Intel payload never renders as ARM: the caller's architecture, not the
+    // manifest, selects the verifier.
+    let err =
+        solstone_core_distribution::component_evidence::render_windows_component_evidence_for_target(
+            root.path(),
+            COMMIT,
+            false,
+            None,
+            out.path(),
+            solstone_core_installed_payload::WindowsArchitecture::Aarch64,
+        )
+        .unwrap_err();
+    assert!(
+        err.message.starts_with("verification-failed: target\n"),
+        "{}",
+        err.message
     );
 }
 

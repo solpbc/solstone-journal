@@ -22,7 +22,7 @@ use solstone_core_distribution::publish;
 use solstone_core_distribution::rfdetr_windows_source;
 
 fn usage() -> &'static str {
-    "usage: solstone-distribution <validate|produce|dev-package|check-installed|ffmpeg-bindings|publish|sign|acquire|journal-artifacts|register-v2-origin|fetch-set|windows-component-evidence|windows-native-inputs|ced-windows|ced-windows-arm64|ffmpeg-windows|onnx-windows|onnx-windows-arm64|parakeet-windows|parakeet-windows-arm64|rfdetr-windows|rfdetr-windows-arm64|restic-windows|openmp-windows|llama-windows|llama-windows-arm64|nvattest-windows|nvattest-windows-arm64|cleanroom-plan|cleanroom-serve|cleanroom-generate-serve|help> [ARG]\n\nThe inventory lists files, not an SBOM. Code compiled into an executable is outside it: FFmpeg, the WebView2 loader, Velopack, the Rust crates, and FluidAudio in parakeet-helper."
+    "usage: solstone-distribution <validate|produce|dev-package|check-installed|ffmpeg-bindings|publish|sign|acquire|journal-artifacts|register-v2-origin|fetch-set|windows-component-evidence|windows-native-inputs|ced-windows|ced-windows-arm64|ffmpeg-windows|onnx-windows|onnx-windows-arm64|parakeet-windows|parakeet-windows-arm64|rfdetr-windows|rfdetr-windows-arm64|restic-windows|openmp-windows|llama-windows|llama-windows-arm64|nvattest-windows|nvattest-windows-arm64|cleanroom-plan|cleanroom-serve|cleanroom-generate-serve|help> [ARG]\n\nwindows-component-evidence PAYLOAD OUT [--windows-target windows-x86_64|windows-aarch64] (default windows-x86_64)\n\nThe inventory lists files, not an SBOM. Code compiled into an executable is outside it: FFmpeg, the WebView2 loader, Velopack, the Rust crates, and FluidAudio in parakeet-helper."
 }
 
 fn main() -> ExitCode {
@@ -65,6 +65,27 @@ fn main() -> ExitCode {
                 eprintln!("{}", usage());
                 return ExitCode::from(2);
             };
+            // Intel stays the default; ARM is named explicitly, never read
+            // from the manifest being checked.
+            let architecture = match (args.next().as_deref(), args.next(), args.next()) {
+                (None, _, _) => solstone_core_installed_payload::WindowsArchitecture::X86_64,
+                (Some("--windows-target"), Some(target), None) => {
+                    match solstone_core_installed_payload::WindowsArchitecture::ALL
+                        .into_iter()
+                        .find(|architecture| architecture.target_id() == target)
+                    {
+                        Some(architecture) => architecture,
+                        None => {
+                            eprintln!("unknown --windows-target {target}");
+                            return ExitCode::from(2);
+                        }
+                    }
+                }
+                _ => {
+                    eprintln!("{}", usage());
+                    return ExitCode::from(2);
+                }
+            };
             let dirty = std::process::Command::new("git")
                 .args(["status", "--porcelain"])
                 .output()
@@ -75,12 +96,13 @@ fn main() -> ExitCode {
                 .output()
                 .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
                 .unwrap_or_default();
-            match solstone_core_distribution::component_evidence::render_windows_component_evidence(
+            match solstone_core_distribution::component_evidence::render_windows_component_evidence_for_target(
                 &payload_root,
                 &head,
                 dirty,
                 None,
                 &out_dir,
+                architecture,
             ) {
                 Ok(()) => ExitCode::SUCCESS,
                 Err(error) => {

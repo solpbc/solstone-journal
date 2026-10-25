@@ -105,6 +105,33 @@ pub(crate) fn prepare(prepared: &PreparedTalent, context: &ExecutionContext) -> 
         {
             return None;
         }
+        if source.file.ends_with("_desktop_activity.jsonl")
+            && !source.records.is_empty()
+            && source.records.iter().all(|record| {
+                record.get("v").and_then(Value::as_u64) == Some(1)
+                    && record.get("t").and_then(Value::as_str) == Some("desktop_activity")
+                    && record.get("method").and_then(Value::as_str) == Some("tmux")
+                    && matches!(
+                        record.get("kind").and_then(Value::as_str),
+                        Some("terminal" | "availability")
+                    )
+            })
+        {
+            let start = source.rendered_range.start.checked_add(source_shift)?;
+            let end = source.rendered_range.end.checked_add(source_shift)?;
+            let activity = source
+                .chunks
+                .iter()
+                .map(|(chunk, _)| chunk.as_str())
+                .collect::<Vec<_>>()
+                .join("\n\n");
+            if original_text.get(start..end)? != activity.trim() {
+                return None;
+            }
+            // Keep existing executable/context text verbatim; only screen sources
+            // are replaced by the timeline. No unknown source is skipped.
+            continue;
+        }
         let mut frames: Vec<Value> = source
             .records
             .iter()
@@ -431,6 +458,41 @@ mod tests {
     fn frame(time: f64, text: &str) -> Value {
         json!({"timestamp":time,"analysis":{"primary":"tmux","visual_description":"test"},"content":{"tmux":{"session":"session","window":{"id":"window","name":"work"},"windows":[{"id":"window","active":true}],"panes":[{"id":"pane","active":true,"content":text}]}}})
     }
+    #[test]
+    fn capture_metadata_is_inert_for_old_new_and_mixed_timeline_frames() {
+        let legacy = vec![
+            frame(0.0, "prompt> first"),
+            frame(5.0, "prompt> first more"),
+        ];
+        let (old_visible, old_records) = raw_changes::prepare(&legacy, true).unwrap();
+        assert!(
+            !old_records[0]["prefix_history"]
+                .as_array()
+                .unwrap()
+                .is_empty()
+        );
+        let expected = raw_changes::encode(&old_records, 36000000);
+        let mut extended = legacy.clone();
+        for (index, f) in extended.iter_mut().enumerate() {
+            let p = &mut f["content"]["tmux"]["panes"][0];
+            p["cursor_x"] = json!(index + 2);
+            p["cursor_y"] = json!(index);
+            p["cursor_visible"] = json!(index == 0);
+            p["alternate_on"] = json!(index != 0);
+            p["pane_in_mode"] = json!(index != 0);
+        }
+        for frames in [&extended, &vec![legacy[0].clone(), extended[1].clone()]] {
+            let (visible, records) = raw_changes::prepare(frames, true).unwrap();
+            assert_eq!(visible, old_visible);
+            assert_eq!(raw_changes::encode(&records, 36000000), expected);
+            assert_eq!(raw_changes::restore(&records).unwrap(), old_visible);
+        }
+        extended[1]["content"]["tmux"]["panes"][0]["active"] = json!(false);
+        let (_, meaningful) = raw_changes::prepare(&extended, true).unwrap();
+        assert_ne!(raw_changes::encode(&meaningful, 36000000), expected);
+        assert_eq!(meaningful.len(), 2);
+    }
+
     #[test]
     fn timeline_restores_recurrence_prefixes_styles_links_and_roster_changes() {
         let a = "hello\r\n❯ question\u{2028}line\n";

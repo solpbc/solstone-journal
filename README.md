@@ -53,7 +53,7 @@ The journal app for mac is built from this repository, in [`platforms/macos`](pl
 As of September 2026:
 
 - **2.x is the native line, on the release channel.** On linux, the journal is one self-contained Rust tree with no interpreter and no package manager of its own. It carries both commands, `solstone` and `journal`. On mac, the journal app owns the runtime. The Python line ended at 1.0.22, and the linux `solstone journal setup` migrates a pip, uv or pipx install in place ([INSTALL.md](INSTALL.md#moving-from-a-pip-uv-or-pipx-install-on-linux)).
-- **Platforms:** linux on x86_64 and aarch64 (tarball, `.deb`, `.rpm`), the journal app on Apple Silicon macs running macos 15 or later, and windows 10 (22H2) or 11 on x64 with its own installer ([INSTALL.md](INSTALL.md#install-on-windows)).
+- **Platforms:** linux on x86_64 and aarch64 (tarball, `.deb`, `.rpm`), the journal app on Apple Silicon macs running macos 15 or later, and windows with its own installer: windows 10 (22H2) or 11 on x64, or windows 11 on arm64 ([INSTALL.md](INSTALL.md#install-on-windows)).
 - **Chat is gone.** The 2.x line removes the chat bar, the chat page and `solstone chat`. Chats already in a journal stay on disk and are no longer shown. To ask questions of your journal, use your own agent or the command line.
 - **Releases** publish to `updates.solstone.app`, signed with minisign. The `release` lane is what `install.sh` follows. What changed, in owner terms: [CHANGELOG.md](CHANGELOG.md).
 
@@ -73,7 +73,7 @@ On linux, one command fetches the signed release, verifies it, installs it, and 
 curl -fsSL https://solstone.app/install.sh | sh
 ```
 
-On windows, download the journal installer from [solstone.app/download/journal/windows/latest](https://solstone.app/download/journal/windows/latest) and run it. Then open a new terminal window and run `solstone journal setup`. Details are in [INSTALL.md](INSTALL.md#install-on-windows).
+On windows, download the journal installer from [solstone.app/download/journal/windows/latest](https://solstone.app/download/journal/windows/latest), or [solstone.app/download/journal/windows/arm64/latest](https://solstone.app/download/journal/windows/arm64/latest) on an arm64 PC, and run it. Then open a new terminal window and run `solstone journal setup`. Details are in [INSTALL.md](INSTALL.md#install-on-windows).
 
 Linux release files already on disk, the `.deb` and `.rpm`, prerequisites, and both migration paths are in [INSTALL.md](INSTALL.md). Linux setup confirms the journal directory at `~/journal`, fetches the transcription model, installs the `solstone` skill for Claude Code, Codex and Gemini CLI where they are configured, and starts a background service. Open **http://localhost:5015**. On mac, open the journal app instead. First run sets your identity and lets you choose a provider.
 

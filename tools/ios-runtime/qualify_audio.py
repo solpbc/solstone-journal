@@ -33,7 +33,7 @@ def fixtures(directory):
                           ('fault_audio.wav', ['-ar', '16000', '-ac', '1'])]:
         subprocess.run(['ffmpeg', '-nostdin', '-v', 'error', '-y', '-i', str(aiff),
                         *options, str(directory / name)], check=True)
-    for name, seconds in [('silence_audio.wav', 4), ('overbound_audio.wav', 31)]:
+    for name, seconds in [('silence_audio.wav', 4), ('overbound_audio.wav', 121)]:
         with wave.open(str(directory / name), 'wb') as wav:
             wav.setnchannels(1)
             wav.setsampwidth(2)
@@ -242,14 +242,15 @@ def main():
             events = [json.loads(line) for f in files if f['path'].endswith('/' + segment + '/events.jsonl')
                       for line in f['text'].splitlines() if line.strip()]
             assert any(row.get('record_type') == 'device_ingest' and row.get('outcome') == 'accepted' for row in events), events
-            if name in ('malformed_audio.wav', 'truncated_audio.m4a', 'silence_audio.wav'):
+            if name in ('malformed_audio.wav', 'truncated_audio.m4a', 'silence_audio.wav', 'overbound_audio.wav'):
                 terminal = next(f for f in files if f['path'].endswith(
                     '/' + segment + '/' + Path(name).with_suffix('.jsonl').name))
                 rows = [json.loads(line) for line in terminal['text'].splitlines() if line.strip()]
                 assert len(rows) == 1, rows
                 assert rows[0]['_solstone_processing']['state'] == ('empty' if name == 'silence_audio.wav' else 'failed'), rows
             if name == 'overbound_audio.wav':
-                assert not any(f['path'].endswith('/' + segment + '/overbound_audio.jsonl') for f in files)
+                assert rows[0]['_solstone_processing']['reason_code'] == 'embedded-duration-budget', rows
+                assert not any(f['path'].endswith('/' + segment + '/overbound_audio.npz') for f in files)
         transcripts = []
         for file in files:
             if file['path'].endswith(('/audio.jsonl', '/fault_audio.jsonl')):

@@ -2,7 +2,7 @@
 
 These instructions are for a coding agent and human working together. solstone is a personal memory platform: the solstone app takes in what you share with it, and all of it goes into your journal. Your journal is always private, only yours. It lives on a device you own; see [what material reaches your AI provider](DATA-FLOW.md) for material that leaves it. Open source, made by sol pbc.
 
-**supported platforms:** linux, macos 15 or later on Apple Silicon, and windows 10 (22H2) or 11 on x64. On mac, the journal app is the only supported way to run the journal. On windows, the journal has its own installer.
+**supported platforms:** linux, macos 15 or later on Apple Silicon, and windows 10 (22H2) or 11 on x64, or windows 11 on arm64. On mac, the journal app is the only supported way to run the journal. On windows, the journal has its own installer.
 
 The latest version of these instructions is at https://solstone.app/install.
 
@@ -149,9 +149,9 @@ If you have an older command-line journal installation, install the journal app 
 
 ## Install on windows
 
-windows 10 (22H2) or 11 on an Intel or AMD (x64) computer. No administrator access is needed: the journal installs for you alone, under `%LOCALAPPDATA%\SolstoneJournal`, and it is separate from the solstone app for windows.
+windows 10 (22H2) or 11 on an Intel or AMD (x64) computer, or windows 11 on an arm64 computer such as a Snapdragon X PC. Settings › System › About shows which you have, under System type (x64-based or ARM-based). No administrator access is needed: the journal installs for you alone, under `%LOCALAPPDATA%\SolstoneJournal`, and it is separate from the solstone app for windows.
 
-1. Download the journal installer from [solstone.app/download/journal/windows/latest](https://solstone.app/download/journal/windows/latest) and run it. It is about 1.1 GB, and it is signed by sol pbc.
+1. Download the journal installer and run it: [solstone.app/download/journal/windows/latest](https://solstone.app/download/journal/windows/latest) on x64, or [solstone.app/download/journal/windows/arm64/latest](https://solstone.app/download/journal/windows/arm64/latest) on arm64. It is signed by sol pbc.
 2. Open **journal** from the Start menu and follow its first-run steps. It sets up your journal (`%USERPROFILE%\journal` by default) and starts it in the background. It starts again each time you sign in.
 
 For command-line diagnostics after that, open a new terminal window so it picks up the `solstone` command the installer added. If you need to select an existing journal, use the location guidance below.
@@ -173,11 +173,11 @@ solstone journal health logs --since 1d --service solstone-core-exe -c 200
 
 ### Verify independently on windows
 
-Each release publishes a checksum file beside the installer, at `https://updates.solstone.app/solstone-journal/release/windows/solstone-journal-<version>-windows-x86_64.sha256`. Before you run anything, compare the hash `Get-FileHash` prints with the one in that file:
+Each release publishes a checksum file beside the installer, at `https://updates.solstone.app/solstone-journal/release/windows/solstone-journal-<version>-windows-<arch>.sha256`, where `<arch>` is `x86_64` or `aarch64` (arm64). Before you run anything, compare the hash `Get-FileHash` prints with the one in that file:
 
 ```powershell
-Get-FileHash .\solstone-journal-<version>-windows-x86_64-setup.exe -Algorithm SHA256
-Get-AuthenticodeSignature .\solstone-journal-<version>-windows-x86_64-setup.exe | Format-List Status, SignerCertificate
+Get-FileHash .\solstone-journal-<version>-windows-<arch>-setup.exe -Algorithm SHA256
+Get-AuthenticodeSignature .\solstone-journal-<version>-windows-<arch>-setup.exe | Format-List Status, SignerCertificate
 ```
 
 The status should read `Valid`, and the signer certificate's subject should start with `CN=sol pbc`. Every file in the journal's program folder is listed in a manifest signed with the same release key as the linux and mac releases. Before it uses its bundled tools and models, the journal checks the program folder against that manifest and refuses them if anything does not match.
@@ -208,7 +208,7 @@ Choose a provider in the journal's thinking app. The available paths have differ
 
 - **local built-in, the default.** a capable setup needs **6 GB of GPU memory** on linux or windows, or a **16 GB Apple Silicon mac** (the model is ~3.4 GB on disk, plus the ~1 GB transcription model). The `solstone journal check` command checks first and tells you what will not fit; on linux it also needs a supported hardware GPU (see [set up on linux](#finish-setup-on-linux)).
 
-  On windows, the local built-in model needs a compatible GPU with at least **6 GB of GPU memory**. A new setup leaves thinking unchosen if the GPU has less or its memory cannot be checked. A local install refuses before downloading and shows the reason on the thinking page. You can choose a model you bring yourself or confidential processing. on mac and linux, a local install also stops before downloading when the computer is known to be below the bar or has no usable GPU; if the computer's memory can't be checked, installation still starts and the thinking page keeps a warning for that attempt.
+  On windows, the local built-in model needs a compatible GPU with at least **6 GB of GPU memory**. On arm64 windows computers it hasn't been tested on a GPU. A new setup leaves thinking unchosen if the GPU has less or its memory cannot be checked. A local install refuses before downloading and shows the reason on the thinking page. You can choose a model you bring yourself or confidential processing. on mac and linux, a local install also stops before downloading when the computer is known to be below the bar or has no usable GPU; if the computer's memory can't be checked, installation still starts and the thinking page keeps a warning for that attempt.
 - **a model you bring yourself**, if your machine cannot clear that bar or you would rather not spend its power. Configure Google (Gemini), OpenAI, or Anthropic in your journal's thinking app using **your own developer API key**, created in that provider's developer console, *not* the consumer chat product (gemini.google.com / chatgpt.com / claude.ai). You can also configure it with your own endpoint instead of a cloud provider: a model you run yourself, on this machine or another one you control. You can switch any time in the thinking app.
 
 - **confidential processing**, if you would rather not run a provider yourself. It is off until you turn it on. While it is active, your journal verifies the service before material leaves; if it cannot verify the service, the material stays in your journal. See [what material reaches your AI provider](DATA-FLOW.md) for the full conditions and data flow.

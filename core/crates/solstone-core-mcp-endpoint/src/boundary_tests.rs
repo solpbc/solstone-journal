@@ -9417,6 +9417,7 @@ fn list_activities_fields_and_fetch() {
         Some(&[
             ("Participant Alpha", "attendee"),
             ("Mentioned Beta", "mentioned"),
+            ("Shown Gamma", "visible"),
         ]),
         None,
         None,
@@ -9439,6 +9440,8 @@ fn list_activities_fields_and_fetch() {
     assert_eq!(parts[0], "Participant Alpha");
     // A person only mentioned is not a participant.
     assert_eq!(acts[1]["mentioned"], json!(["Mentioned Beta"]));
+    // A name only on screen was neither said nor attended.
+    assert_eq!(acts[1]["on_screen"], json!(["Shown Gamma"]));
     assert_eq!(ents.len(), 1);
     assert_eq!(ents[0], "Entity One");
     assert_ne!(parts, ents);
