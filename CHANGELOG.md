@@ -8,7 +8,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
-- when everything that went into your journal for a stretch came from your terminal, the description of that stretch is now written from a compact timeline of what changed on screen, so far less of a long stretch is cut to fit. when an AI assistant's input box is on screen, the description also quotes what you typed there instead of paraphrasing it. this works with whichever model your journal thinks with.
+- when everything that went into your journal for a stretch came from your terminal, the description of that stretch is now written from a compact timeline of what changed on screen, so far less of a long stretch is cut to fit.
 
 ### Fixed
 
