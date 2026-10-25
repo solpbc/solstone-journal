@@ -32,6 +32,10 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - when something your journal sends for processing is too long for the model, your journal now uses the model's own count, when it gives one, to trim it closer to what fits. before, it cut the input to half the space it expected, which often dropped more than it needed to.
 - work and conversation stories no longer take their text from a reserved field in custom thinking settings.
 - each transcript an agent reads now says where it came from, in the words your journal uses, such as "your mac · audio". before, when two devices added to your journal over the same minutes, an agent saw two identical entries. thanks @dvanduzer for the report.
+- when an agent searches your journal through a connection that sees only some of your facets, the result now says that calendar events and anything else outside a facet aren't included. before, a day with only calendar events looked empty to it. thanks @dvanduzer for the report.
+- searching your journal from the command line for a facet or kind of entry that doesn't exist now says so and lists the ones that do. before, a mistyped name came back as no results. thanks @dvanduzer for the report.
+- reading transcripts for a stretch of time from the command line now keeps only the device you name with `--stream`. before, it returned every device. thanks @dvanduzer for the report.
+- the instructions your journal gives a coding agent for reading it no longer show commands that fail or come back empty, such as reading transcripts without a day. thanks @dvanduzer for the report.
 - fixed "show details" in system messages showing only a status, or nothing at all, for some errors. it shows the error's message, context and stack again.
 
 ## [2.0.57] - 2026-10-24

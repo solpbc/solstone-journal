@@ -139,6 +139,11 @@ pub(crate) fn search_response_with_index(
     } else {
         filtered.total
     };
+    if total == 0
+        && let Some(detail) = unknown_filter(journal_root, &request)
+    {
+        return invalid_value(&detail);
+    }
     let total_days = days.len();
     let offset = query.offset.unwrap_or(0);
     let page = days.into_iter().skip(offset).take(20).collect::<Vec<_>>();
@@ -468,6 +473,32 @@ fn today_day(journal: &std::path::Path) -> String {
 
 struct Facet {
     title: String,
+}
+
+/// An empty answer to a facet or agent the journal has none of reads as an
+/// empty journal. Only on that empty answer, name the value and the ones that
+/// exist, so a mistyped filter is never reported as "nothing happened".
+fn unknown_filter(journal_root: &std::path::Path, request: &SearchRequest) -> Option<String> {
+    if let Some(facet) = request.facet.as_deref() {
+        let known = facets(journal_root);
+        if !known.contains_key(facet) {
+            let names = known.keys().map(String::as_str).collect::<Vec<_>>();
+            return Some(format!(
+                "there is no facet named {facet}. facets: {}",
+                names.join(", ")
+            ));
+        }
+    }
+    if let Some(agent) = request.agent.as_deref() {
+        let known = solstone_core_indexer_query::agents(journal_root, QueryBoundary::Owner).ok()?;
+        if !known.iter().any(|name| name == agent) {
+            return Some(format!(
+                "there is no agent named {agent}. agents: {}",
+                known.join(", ")
+            ));
+        }
+    }
+    None
 }
 
 fn facets(journal_root: &std::path::Path) -> BTreeMap<String, Facet> {
@@ -1244,6 +1275,57 @@ mod facet_reader_tests {
             std::fs::read_to_string(root.join("facets/broken/facet.json")).unwrap(),
             r#"["not an object"]"#
         );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_filter_the_journal_has_none_of_is_refused_by_name() {
+        let root = std::env::temp_dir().join(format!(
+            "solstone-test-search-unknown-filter-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("facets/work")).unwrap();
+        std::fs::write(root.join("facets/work/facet.json"), r#"{"title":"Work"}"#).unwrap();
+        let talents = root.join("chronicle/20260101/default/100000_60/talents");
+        std::fs::create_dir_all(&talents).unwrap();
+        std::fs::write(talents.join("audio.md"), "audio test content\n").unwrap();
+        solstone_core_indexer_store::scan::scan_journal(&root, true).unwrap();
+        let search = |facet: Option<&str>, agent: Option<&str>| {
+            search_response(
+                root.clone(),
+                SearchQuery {
+                    q: Some("content".to_string()),
+                    facet: facet.map(str::to_owned),
+                    agent: agent.map(str::to_owned),
+                    ..Default::default()
+                },
+            )
+        };
+        async fn detail(response: Response) -> (StatusCode, String) {
+            let status = response.status();
+            let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+                .await
+                .unwrap();
+            let body: Value = serde_json::from_slice(&bytes).unwrap();
+            (status, body.to_string())
+        }
+
+        let (status, body) = detail(search(Some("nosuch"), None)).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+        assert!(
+            body.contains("no facet named nosuch") && body.contains("facets: work"),
+            "{body}"
+        );
+
+        let (status, body) = detail(search(None, Some("meetings"))).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+        assert!(body.contains("no agent named meetings. agents: "), "{body}");
+
+        // A real facet with nothing matching is an ordinary empty answer.
+        let (status, body) = detail(search(Some("work"), None)).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+
         std::fs::remove_dir_all(root).unwrap();
     }
 

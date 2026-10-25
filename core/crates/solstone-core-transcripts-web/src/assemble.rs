@@ -10,7 +10,7 @@ use axum::response::{IntoResponse, Response};
 use serde::Deserialize;
 use serde_json::json;
 use solstone_core_transcripts::{
-    Sources, TalentSource, cluster, cluster_period, cluster_range, cluster_span,
+    RangeError, Sources, TalentSource, cluster, cluster_period, cluster_range, cluster_span,
 };
 
 use crate::day::valid_day;
@@ -57,7 +57,18 @@ pub(crate) async fn api_read(
             };
             let markdown =
                 if let (Some(start), Some(end)) = (query.start.as_deref(), query.end.as_deref()) {
-                    cluster_range(&journal_root, &day, start, end, &sources).map_err(error_response)
+                    cluster_range(
+                        &journal_root,
+                        &day,
+                        start,
+                        end,
+                        &sources,
+                        query.stream.as_deref(),
+                    )
+                    .map_err(|error| match error {
+                        RangeError::UnknownStream(detail) => invalid(&detail),
+                        RangeError::Invalid(_) => error_response(error),
+                    })
                 } else if let Some(segments) = query.segments.as_deref() {
                     let span = segments
                         .split(',')

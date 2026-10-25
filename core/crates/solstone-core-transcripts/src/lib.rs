@@ -283,11 +283,18 @@ enum PerceptProjection {
 }
 
 #[derive(Debug)]
-pub struct RangeError(String);
+pub enum RangeError {
+    Invalid(String),
+    /// The day has no segment in the stream asked for; the detail names the
+    /// streams it does have.
+    UnknownStream(String),
+}
 
 impl fmt::Display for RangeError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.fmt(formatter)
+        match self {
+            Self::Invalid(detail) | Self::UnknownStream(detail) => detail.fmt(formatter),
+        }
     }
 }
 
@@ -617,6 +624,7 @@ pub fn cluster_range(
     start: &str,
     end: &str,
     sources: &Sources,
+    stream: Option<&str>,
 ) -> Result<String, RangeError> {
     let date = NaiveDate::parse_from_str(day, "%Y%m%d").map_err(range_error)?;
     let start =
@@ -625,16 +633,51 @@ pub fn cluster_range(
     let end =
         NaiveDateTime::parse_from_str(&format!("{}{end}", date.format("%Y%m%d")), "%Y%m%d%H%M%S")
             .map_err(range_error)?;
+    let stream = stream.filter(|stream| !stream.is_empty());
+    let segments = all_segments(root, day);
+    if let Some(stream) = stream
+        && !segments
+            .iter()
+            .any(|segment| segment.stream.matches(stream))
+    {
+        let mut streams = segments
+            .iter()
+            .map(|segment| {
+                segment.stream.directory().map_or(
+                    solstone_core_journal_io::DEFAULT_STREAM.to_owned(),
+                    |name| name.to_string_lossy().into_owned(),
+                )
+            })
+            .collect::<Vec<_>>();
+        streams.sort();
+        streams.dedup();
+        return Err(RangeError::UnknownStream(format!(
+            "{day} has no segments in a stream named {stream}. streams that day: {}",
+            streams.join(", ")
+        )));
+    }
     let mut memory = MemoryContext::default();
-    let entries = load_day(root, day, sources, PerceptProjection::Generic, &mut memory)
+    let mut entries = segments
         .into_iter()
+        .filter(|segment| stream.is_none_or(|stream| segment.stream.matches(stream)))
+        .flat_map(|segment| {
+            process_segment(
+                root,
+                &segment,
+                day,
+                sources,
+                PerceptProjection::Generic,
+                &mut memory,
+            )
+        })
         .filter(|entry| entry.segment_start < end && entry.segment_end > start)
-        .collect();
+        .collect::<Vec<_>>();
+    entries.sort_by_key(|entry| entry.timestamp);
     Ok(disclose_memory_incomplete(groups_to_markdown(entries), &memory).text)
 }
 
 fn range_error(error: impl fmt::Display) -> RangeError {
-    RangeError(error.to_string())
+    RangeError::Invalid(error.to_string())
 }
 
 fn load_day(
@@ -2335,6 +2378,48 @@ mod tests {
         assert!(field.0.contains("Field stream input"));
         assert!(!field.0.contains("Default stream input"));
         assert_eq!(field.1.transcripts, 1);
+    }
+
+    #[test]
+    fn a_time_range_reads_only_the_stream_asked_for_and_names_the_ones_a_day_has() {
+        let root = TempDir::new().unwrap();
+        let direct_segment = segment(&root);
+        let field_segment = root
+            .path()
+            .join("chronicle")
+            .join(DAY)
+            .join("field")
+            .join(SEGMENT);
+        fs::create_dir_all(&field_segment).unwrap();
+        fs::write(
+            direct_segment.join("capture_audio.jsonl"),
+            r#"{"start":"00:00:00","text":"Default stream input"}"#,
+        )
+        .unwrap();
+        fs::write(
+            field_segment.join("capture_audio.jsonl"),
+            r#"{"start":"00:00:00","text":"Field stream input"}"#,
+        )
+        .unwrap();
+        let sources = sources(true, false, TalentSource::Disabled);
+        let range = |stream| cluster_range(root.path(), DAY, "085900", "091000", &sources, stream);
+
+        let both = range(None).unwrap();
+        assert!(both.contains("Default stream input") && both.contains("Field stream input"));
+        assert_eq!(range(Some("")).unwrap(), both);
+        let field = range(Some("field")).unwrap();
+        assert!(field.contains("Field stream input"), "{field}");
+        assert!(!field.contains("Default stream input"), "{field}");
+
+        let Err(RangeError::UnknownStream(detail)) = range(Some("nosuchstream")) else {
+            panic!("an unknown stream is refused");
+        };
+        assert_eq!(
+            detail,
+            format!(
+                "{DAY} has no segments in a stream named nosuchstream. streams that day: _default, field"
+            )
+        );
     }
 
     #[test]

@@ -105,6 +105,9 @@ pub fn read(ctx: CommandContext<'_>) -> CommandOutput {
         };
         params.push(QueryParam::single("end", end));
         params.push(QueryParam::single("start", start));
+        if let Some(stream) = stream.as_deref() {
+            params.push(QueryParam::single("stream", stream));
+        }
     } else if let Some(segments) = parsed.value("--segments") {
         params.push(QueryParam::single("segments", segments));
         if let Some(stream) = stream.as_deref() {

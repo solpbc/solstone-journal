@@ -215,6 +215,7 @@ fn a_whole_journal_connection_fetches_both_hits_and_a_facet_connection_sees_neit
         assert_eq!(hit["calendar"]["version"], version);
         assert_eq!(hit["calendar"]["changed_at"], "2026-10-19T09:42:00-06:00");
         assert_eq!(hit["date"], day);
+        assert!(page["coverage"].get("outside_facets").is_none(), "{page}");
         let fetched = run_mcp_probe(
             root,
             CONNECTION,
@@ -242,6 +243,12 @@ fn a_whole_journal_connection_fetches_both_hits_and_a_facet_connection_sees_neit
                 .iter()
                 .all(|result| result.get("calendar").is_none()),
             "{page}"
+        );
+        assert!(
+            page["coverage"]["outside_facets"]
+                .as_str()
+                .is_some_and(|note| note.contains("Calendar events")),
+            "the boundary is named, not left to read as an empty day: {page}"
         );
     }
 }

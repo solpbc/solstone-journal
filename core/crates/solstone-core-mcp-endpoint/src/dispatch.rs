@@ -70,6 +70,8 @@ transcripts one by one.";
 const SEARCH_EMPTY_INCOMPLETE: &str = "No results, but this search did not check the whole \
 index, so it does not show the journal has nothing on this. Tell the owner the search came back \
 empty and may be incomplete.";
+const SEARCH_OUTSIDE_FACETS: &str = "This connection sees only some facets. Calendar events \
+and the rest of the journal that belongs to no facet are not in these results.";
 const LIST_FACETS_EMPTY: &str = "No facets. This connection can see none.";
 const LIST_ENTITIES_EMPTY: &str = "No entities. This connection can see none that match. This is a complete answer, not an error.";
 const LIST_TRANSCRIPTS_EMPTY: &str = "No transcript segments. This connection can see none that \
@@ -1510,6 +1512,12 @@ fn search(
         "degraded": degraded,
         "relaxed": relaxed,
     });
+    // A facet-limited connection never sees what belongs to no facet, such as
+    // calendar events. Saying so keeps that boundary from reading as an empty
+    // day.
+    if !matches!(boundary.scope(), ConnectionScope::WholeJournal) {
+        response_val["coverage"]["outside_facets"] = json!(SEARCH_OUTSIDE_FACETS);
+    }
     if !resolution.cards.is_empty() {
         let card_vals = resolution
             .cards

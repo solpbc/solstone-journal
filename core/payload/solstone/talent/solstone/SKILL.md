@@ -51,7 +51,9 @@ solstone call journal search "<query>" --day-from 20260320 --day-to 20260327
 ```
 
 Dates use `YYYYMMDD` format. Omit `--day` to search all days. Omit `--facet` to
-search all facets.
+search all facets. `solstone call journal facets` lists the facet names
+`--facet` takes. A facet or `-a` agent the journal has none of is refused with
+the names it does have.
 
 ### who — entities
 
@@ -77,15 +79,18 @@ solstone call activities list
 Read what was said during meetings or any recorded time.
 
 ```bash
-solstone call transcripts scan
 solstone call transcripts scan 20260327
-solstone call transcripts read
+solstone call transcripts read 20260327
 solstone call transcripts read 20260327 --start 140000 --length 120
-solstone call transcripts stats
+solstone call transcripts read 20260327 --start 140000 --length 120 --stream <stream>
+solstone call transcripts stats 202603
 ```
 
-`scan` first to see what's available, then `read` with `--start` (HHMMSS,
-24-hour format) and `--length` (minutes) to narrow down.
+`scan` and `read` take the day (`YYYYMMDD`); `stats` takes a month (`YYYYMM`).
+`scan` first to see what's available, then `read` with `--start` (HHMMSS, 24-hour
+format) and `--length` (minutes) to narrow down. With `--start`, `--stream` keeps
+one device's transcripts when two devices added to your journal over the same
+minutes; an unknown stream is refused with the streams that day has.
 
 ### status — system health
 
@@ -108,19 +113,21 @@ For behavior notes beyond CLI help, read the app's
 
 ## Paths
 
-`solstone root` prints the source checkout root for source runs and the installed
-`site-packages` root for packaged runs, useful for locating the active install.
+`solstone root` prints the active payload root: `core/payload/` in a source
+checkout, `share/` in an installed journal, useful for locating the active install.
 
 ## Environment
 
-The `solstone` CLI uses three environment variables that default sensibly:
+The `solstone` CLI reads these environment variables:
 
-- `SOL_DAY` — defaults to today (`YYYYMMDD`)
-- `SOL_FACET` — defaults to all facets
-- `SOL_SEGMENT` — defaults to no segment
+- `SOL_DAY` — the day a command uses when you pass none (`YYYYMMDD`). Unset,
+  `transcripts scan` and `read` refuse to run without a day; `activities list` uses today.
+- `SOL_FACET` — unset, `journal search` covers all facets; `entities list` and
+  `observations` refuse without a facet
+- `SOL_SEGMENT` — unset means no segment
 
-External callers should not need to set these. Use explicit flags (`--day`,
-`--facet`) when narrowing scope is needed.
+External callers should not need to set these. Pass the day and other filters
+as arguments instead.
 
 ## Composing queries
 
@@ -137,10 +144,12 @@ solstone call entities search --limit 5
 solstone call journal search "<name>" --day-from 20260320
 ```
 
-**"What did I miss yesterday?"** — yesterday's events and transcripts:
+**"What did I miss yesterday?"** — yesterday's activities, calendar and
+transcripts:
 
 ```bash
-solstone call journal search "" -d 20260326 -a meetings
+solstone call activities list --day 20260326
+solstone call journal search "" -d 20260326 -a calendar
 solstone call transcripts scan 20260326
 ```
 
