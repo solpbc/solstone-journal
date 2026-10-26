@@ -1019,6 +1019,15 @@ mod tests {
     }
 
     #[test]
+    fn cluster_embeddings_gives_one_label_to_the_same_speaker_across_units() {
+        let result = cluster_embeddings(&[1.0_f32, 0.0, 0.0, 1.0, 1.0, 0.0], 3, 2, None)
+            .expect("same-speaker labels");
+
+        assert_eq!(result.labels[0], result.labels[2]);
+        assert_ne!(result.labels[0], result.labels[1]);
+    }
+
+    #[test]
     fn cluster_embeddings_reports_requested_speaker_count_without_silhouette() {
         // Fixture cannot supply this because selected fixture k values are
         // already in range; this directly pins the n <= k clamp degenerate.

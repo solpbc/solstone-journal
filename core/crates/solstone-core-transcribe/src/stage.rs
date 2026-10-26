@@ -42,9 +42,9 @@ use crate::transcript::{
 };
 use solstone_core_observe_audio::reduce_audio;
 
-const SPEAKER_EVIDENCE_VERSION: &str = "windowed-slots-v1";
-const SPEAKER_ANALYSIS_PRODUCER: &str = "solstone-core-speakers-analyze";
-const OVERLAP_DETECTOR: &str = "pyannote-segmentation-3.0";
+pub(crate) const SPEAKER_EVIDENCE_VERSION: &str = "windowed-slots-v1";
+pub(crate) const SPEAKER_ANALYSIS_PRODUCER: &str = "solstone-core-speakers-analyze";
+pub(crate) const OVERLAP_DETECTOR: &str = "pyannote-segmentation-3.0";
 
 /// Immutable facts captured from the owner-media file before processing starts.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -88,7 +88,7 @@ pub(crate) enum ProcessOutcome {
     Failed,
 }
 
-fn commit_input<'a>(
+pub(crate) fn commit_input<'a>(
     input: &InputObservation,
     claims: &'a OutputClaims,
     raw: &Path,
@@ -142,7 +142,7 @@ pub(crate) fn process_one(
     )
 }
 
-fn finish_context_output(
+pub(crate) fn finish_context_output(
     journal_path: &Path,
     output: &Path,
     attempt: Option<&solstone_core_system::work_retry::Attempt>,
@@ -350,68 +350,58 @@ pub(crate) fn process_one_with(
         timings.add_ms("queue_wait", queue_wait_ms);
     }
     #[cfg(all(feature = "embedded", unix))]
-    let record_embedded_refusal = |error: &TranscribeError, timings: &Timings| {
-        checkpoint()?;
-        let commit = commit_input(&observation, &claim, audio_path, &checkpoint)?;
-        backend_failure(&facts, redo, error, context_attempt.as_ref())?;
-        drop(commit);
-        finish_context_output(
-            journal_path,
-            &facts.path.with_extension("jsonl"),
-            context_attempt.as_ref(),
-            audio_path,
-            &checkpoint,
-        )?;
-        emit_event(
-            audio_path,
-            journal_path,
-            TranscribedOutcome::Deferred,
-            Some(backend_error_reason(error)),
-            None,
-            Some(error),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            timings,
-            None,
-        );
-        Ok::<(), TranscribeError>(())
-    };
-    #[cfg(all(feature = "embedded", unix))]
-    if embedded.is_some() && facts.input_size > 16 * 1024 * 1024 {
-        let error = TranscribeError::ParakeetCppDeferred {
-            reason: solstone_core_processing_record::vocab::REASON_EMBEDDED_INPUT.into(),
-            detail: "embedded audio exceeds 16 MiB input budget; original retained".into(),
+    if let Some(runtime) = embedded {
+        let resolve_backend = || {
+            resolve_default_backend(
+                explicit_backend,
+                local_stt_backend(),
+                read_available_bytes(),
+                platform_floor_bytes(),
+                confidential::confidential_channel_plausible(config),
+                confidential_audio_enabled(config),
+            )
+            .map(|resolution| resolution.backend)
         };
-        record_embedded_refusal(&error, &timings)?;
-        return Err(error);
+        let backend = crate::embedded::select_backend(
+            resolve_backend(),
+            Some(runtime),
+            explicit_backend,
+            config,
+        );
+        let backend = backend.inspect_err(|error| {
+            emit_backend_error(
+                BackendErrorContext {
+                    audio_path,
+                    journal_path,
+                    audio_seconds: 0.0,
+                    reduced_seconds: None,
+                    timings: &timings,
+                    vad: &crate::embedded_units::empty_vad(),
+                },
+                error,
+                None,
+            );
+        })?;
+        return crate::embedded_units::process_embedded_units(crate::embedded_units::EmbeddedJob {
+            audio_path,
+            journal_path,
+            redo,
+            backend,
+            config,
+            attestation_state,
+            embedded: runtime,
+            context_attempt,
+            observation,
+            claim,
+            facts,
+            timings,
+            started,
+            owner_voice_print,
+        });
     }
     let decoded_at = Instant::now();
-    #[cfg(all(feature = "embedded", unix))]
-    let decoded = if embedded.is_some() {
-        solstone_core_observe_audio::decode_f32_mono_bounded(
-            audio_path,
-            crate::embedded::EMBEDDED_AUDIO_MAX_SAMPLES,
-        )
-    } else {
-        decode_f32_mono(audio_path)
-    };
-    #[cfg(not(all(feature = "embedded", unix)))]
     let decoded = decode_f32_mono(audio_path);
     let full_audio = match decoded {
-        Err(AudioError::DecodedSampleLimit { .. }) => {
-            let error = TranscribeError::ParakeetCppDeferred {
-                reason: solstone_core_processing_record::vocab::REASON_EMBEDDED_DURATION.into(),
-                detail: "embedded decoded sample budget exceeds 120 seconds; original retained"
-                    .into(),
-            };
-            #[cfg(all(feature = "embedded", unix))]
-            record_embedded_refusal(&error, &timings)?;
-            return Err(error);
-        }
         Ok(audio) => audio,
         Err(error) => {
             timings.add_ms("decode", elapsed_ms(decoded_at));
@@ -984,7 +974,7 @@ pub(crate) fn process_one_with(
 
 /// The voice-only first pass: the ordinary speaker analysis over the unmasked audio, with
 /// one synthetic statement per scored window, through the same transport as today.
-fn first_pass_analysis(
+pub(crate) fn first_pass_analysis(
     audio_path: &Path,
     audio: &[f32],
     statements: &[Map<String, Value>],
@@ -1019,7 +1009,7 @@ fn first_pass_analysis(
 }
 
 /// VAD over the voice-only masked audio, through the same transport as the first VAD.
-fn masked_audio_vad(
+pub(crate) fn masked_audio_vad(
     audio: &[f32],
     config: &JournalConfigRead,
     #[cfg(all(feature = "embedded", unix))] embedded: Option<&crate::embedded::EmbeddedContext<'_>>,
@@ -1054,7 +1044,7 @@ where
     dispatch()
 }
 
-fn dispatch_confidential_with_cap<T, F>(
+pub(crate) fn dispatch_confidential_with_cap<T, F>(
     samples: usize,
     audio_seconds: f64,
     dispatch: F,
@@ -1076,7 +1066,7 @@ where
     dispatch()
 }
 
-fn transcribe_retained_intervals<F>(
+pub(crate) fn transcribe_retained_intervals<F>(
     audio: &[f32],
     reduction: Option<&solstone_core_observe_audio::AudioReduction>,
     mut dispatch: F,
@@ -1124,7 +1114,7 @@ where
     ))
 }
 
-fn dispatch_backend(
+pub(crate) fn dispatch_backend(
     config: &JournalConfigRead,
     journal_path: &Path,
     backend: &str,
@@ -1186,16 +1176,16 @@ fn uses_parakeet_cpp_for(os: &str, backend: &str) -> bool {
     backend == "parakeet-cpp" || (backend == "parakeet" && matches!(os, "linux" | "windows"))
 }
 
-struct BackendErrorContext<'a> {
-    audio_path: &'a Path,
-    journal_path: &'a Path,
-    audio_seconds: f64,
-    reduced_seconds: Option<f64>,
-    timings: &'a Timings,
-    vad: &'a solstone_core_observe_audio::VadResult,
+pub(crate) struct BackendErrorContext<'a> {
+    pub(crate) audio_path: &'a Path,
+    pub(crate) journal_path: &'a Path,
+    pub(crate) audio_seconds: f64,
+    pub(crate) reduced_seconds: Option<f64>,
+    pub(crate) timings: &'a Timings,
+    pub(crate) vad: &'a solstone_core_observe_audio::VadResult,
 }
 
-fn emit_backend_error(
+pub(crate) fn emit_backend_error(
     context: BackendErrorContext<'_>,
     error: &TranscribeError,
     backend: Option<&str>,
@@ -1269,7 +1259,7 @@ fn statement_from_words(id: i64, words: &[&parakeet_cpp::TranscriptionWord]) -> 
 }
 
 #[allow(clippy::too_many_arguments)]
-fn emit_event(
+pub(crate) fn emit_event(
     audio_path: &Path,
     journal_path: &Path,
     outcome: TranscribedOutcome,
@@ -1318,7 +1308,7 @@ fn elapsed_ms(start: Instant) -> u64 {
 fn queue_wait_ms() -> Option<u64> {
     std::env::var("SOL_QUEUE_WAIT_MS").ok()?.parse().ok()
 }
-fn segment_meta() -> Option<Map<String, Value>> {
+pub(crate) fn segment_meta() -> Option<Map<String, Value>> {
     std::env::var("SEGMENT_META")
         .ok()
         .and_then(|raw| serde_json::from_str::<Value>(&raw).ok())
@@ -1328,13 +1318,13 @@ fn audio_capture_meta() -> Option<Map<String, Value>> {
     let capture = segment_meta()?.remove("audio_capture")?;
     Some(Map::from_iter([("audio_capture".to_owned(), capture)]))
 }
-fn source_from_path(path: &Path) -> Option<String> {
+pub(crate) fn source_from_path(path: &Path) -> Option<String> {
     let stem = path.file_stem()?.to_str()?;
     stem.strip_suffix("_audio")
         .filter(|value| !value.is_empty())
         .map(str::to_owned)
 }
-fn base_time_us_of_day(path: &Path) -> u64 {
+pub(crate) fn base_time_us_of_day(path: &Path) -> u64 {
     let base = segment_from_path(path)
         .and_then(|segment| segment.get(..6).filter(|s| s.is_ascii()).map(str::to_owned))
         .and_then(|time| {
@@ -1393,7 +1383,7 @@ fn journal_relative(journal: &Path, path: &Path) -> String {
         .to_string_lossy()
         .into_owned()
 }
-fn peak_rss_mib() -> u64 {
+pub(crate) fn peak_rss_mib() -> u64 {
     std::fs::read_to_string("/proc/self/status")
         .ok()
         .and_then(|status| {
@@ -1469,7 +1459,7 @@ pub(crate) fn decode_failure(
     write_failed_record(facts, redo, processing, attempt)
 }
 
-fn backend_failure(
+pub(crate) fn backend_failure(
     facts: &InputFacts,
     redo: bool,
     error: &TranscribeError,
@@ -1481,7 +1471,7 @@ fn backend_failure(
     write_failed_record(facts, redo, processing, attempt)
 }
 
-fn write_failed_record(
+pub(crate) fn write_failed_record(
     facts: &InputFacts,
     redo: bool,
     mut processing: Value,
@@ -1511,7 +1501,7 @@ fn write_failed_record(
 /// After a voice-only success is published, delete its original through retention while this
 /// attempt still holds the transcript's claim and segment commit. Whatever happens, the
 /// published words stand; an unfinished deletion stays owed for the daily cleanup.
-fn finish_voice_only_deletion(
+pub(crate) fn finish_voice_only_deletion(
     journal_path: &Path,
     facts: &InputFacts,
     claim: &OutputClaims,
@@ -1541,7 +1531,7 @@ fn finish_voice_only_deletion(
     }
 }
 
-fn merge_record_extra(processing: &mut Value, extra: &Map<String, Value>) {
+pub(crate) fn merge_record_extra(processing: &mut Value, extra: &Map<String, Value>) {
     if let Some(record) = processing.as_object_mut() {
         for (key, value) in extra {
             record.insert(key.clone(), value.clone());
@@ -3713,13 +3703,13 @@ mod tests {
 
     #[cfg(all(feature = "embedded", unix))]
     #[test]
-    fn retry_context_budget_refusal_publishes_and_settles_its_attempt() {
+    fn retry_context_decode_failure_publishes_and_settles_its_attempt() {
         use solstone_core_journal_config::JournalConfigRead;
         use solstone_core_segment::output_attempt::OutputClaims;
         use solstone_core_spp_ratls::AttestationStateStore;
         use solstone_core_system::work_retry::{self, RetryContext, raw};
 
-        let root = tempfile::tempdir().unwrap();
+        let root = tempfile::TempDir::new_in("/var/tmp").unwrap();
         let segment = root
             .path()
             .join("chronicle")
@@ -3788,7 +3778,7 @@ mod tests {
         };
         let attestation_state = AttestationStateStore::new();
 
-        let err = super::process_one_with(
+        let outcome = super::process_one_with(
             &audio,
             root.path(),
             false,
@@ -3798,22 +3788,31 @@ mod tests {
             Some(&embedded),
             Some(&context),
         )
-        .unwrap_err();
+        .unwrap();
+        assert_eq!(outcome, super::ProcessOutcome::Failed);
 
-        assert!(matches!(
-            err,
-            TranscribeError::ParakeetCppDeferred { ref reason, .. } if reason == "embedded-input-budget"
+        let header = read_header(&jsonl);
+        let reason = header["_solstone_processing"]["reason_code"]
+            .as_str()
+            .expect("decode failure records a reason");
+        assert!(
+            reason == vocab::REASON_CORRUPT_INPUT || reason == vocab::REASON_NO_AUDIO_STREAM,
+            "{reason}"
+        );
+        assert_ne!(reason, "embedded-input-budget");
+        assert!(solstone_core_processing_record::is_failure_exhausted(
+            &header["_solstone_processing"]
         ));
+        assert_eq!(std::fs::metadata(&audio).unwrap().len(), 17 * 1024 * 1024);
+        assert!(!audio.with_extension("npz").exists());
 
         let record = work_retry::read(root.path(), &context.unit_id)
             .unwrap()
             .unwrap();
         assert!(record.consumed.contains(&context.attempt.cause));
         assert_eq!(record.attempt, None);
-        assert_eq!(record.reason, "embedded-input-budget");
+        assert_eq!(record.reason, reason);
         assert!(record.held);
-
-        let header = read_header(&jsonl);
         assert_eq!(
             header["_solstone_processing"]["retry_attempt"]["cause"],
             context.attempt.cause

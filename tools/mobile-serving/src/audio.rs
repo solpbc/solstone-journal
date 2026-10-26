@@ -1004,47 +1004,53 @@ mod tests {
     #[cfg(feature = "processing")]
     #[test]
     fn active_host_persists_oversize_refusal_without_repeating_it_on_resume() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = tempfile::TempDir::new_in("/var/tmp").unwrap();
+        let original = vec![0; 16 * 1024 * 1024 + 1];
         let input = setup_fixture_audio(
             temp.path(),
             "20261012",
             "device_audio",
             "120000_1",
             "audio.wav",
-            &vec![0; 16 * 1024 * 1024 + 1],
+            &original,
         );
         let worker = host_worker(temp.path());
 
-        let error = worker
-            .process_host_input(&input, None, &|| false)
-            .unwrap_err();
-        assert!(error.contains("16 MiB"), "{error}");
+        assert!(worker.process_host_input(&input, None, &|| false).unwrap());
         let status = worker.status();
-        assert_eq!(status["state"], "failed");
-        assert_eq!(status["input"], json!(input));
-        assert_eq!(status["recent_failures"].as_array().unwrap().len(), 1);
-        assert_eq!(status["recent_failures"][0]["error"], error);
-        assert_eq!(status["recent_failures"][0]["generation"], 0);
+        assert_eq!(status["state"], "ready");
+        assert!(status["recent_failures"].as_array().unwrap().is_empty());
         let record = solstone_core_processing_record::read_processing_record_header(
             &input.with_extension("jsonl"),
         )
         .unwrap();
-        assert_eq!(record["reason_code"], "embedded-input-budget");
+        let reason = record["reason_code"].as_str().expect("decode reason");
+        assert!(
+            reason == solstone_core_processing_record::vocab::REASON_CORRUPT_INPUT
+                || reason == solstone_core_processing_record::vocab::REASON_NO_AUDIO_STREAM,
+            "{reason}"
+        );
+        assert_ne!(reason, "embedded-input-budget");
         assert!(solstone_core_processing_record::is_failure_exhausted(
             &record
         ));
         assert!(!input.with_extension("npz").exists());
+        assert_eq!(std::fs::read(&input).unwrap(), original);
 
         assert!(!worker.process_host_input(&input, None, &|| false).unwrap());
-        assert_eq!(
-            worker.status()["recent_failures"].as_array().unwrap().len(),
-            1
+        assert!(
+            worker.status()["recent_failures"]
+                .as_array()
+                .unwrap()
+                .is_empty()
         );
         worker.resume();
         assert!(!worker.process_host_input(&input, None, &|| false).unwrap());
-        assert_eq!(
-            worker.status()["recent_failures"].as_array().unwrap().len(),
-            1
+        assert!(
+            worker.status()["recent_failures"]
+                .as_array()
+                .unwrap()
+                .is_empty()
         );
     }
 

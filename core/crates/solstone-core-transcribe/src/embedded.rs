@@ -9,8 +9,7 @@ use serde_json::Value;
 
 use crate::{TranscribeError, TranscribeFile, backend::parakeet_cpp};
 
-/// Finite decoded/inference envelope shared by dedicated mobile hosts.
-/// Keep one full timeline; splitting recognizer output can lose seam words.
+/// Native-call cap, in mono 16 kHz samples, for one recognizer invocation.
 pub const EMBEDDED_AUDIO_MAX_SAMPLES: usize = 120 * 16_000;
 
 /// The caller's cancellation lifetime and content-free service-I/O observation.
@@ -520,8 +519,8 @@ mod tests {
     }
 
     #[test]
-    fn duration_budget_retains_original_and_records_a_specific_hold() {
-        let root = tempfile::tempdir().unwrap();
+    fn unit_past_one_native_call_reaches_vad_without_a_budget_hold() {
+        let root = tempfile::TempDir::new_in("/var/tmp").unwrap();
         let segment = root.path().join("chronicle/20261012/audio/120000_121");
         std::fs::create_dir_all(&segment).unwrap();
         let audio = segment.join("audio.wav");
@@ -531,49 +530,36 @@ mod tests {
         )
         .unwrap();
         std::fs::write(&audio, &bytes).unwrap();
-        let asr = CancelDuringAsr(AtomicBool::new(false));
+        let deleted = std::cell::Cell::new(false);
         let result = process_embedded(
             &audio,
             root.path(),
             Path::new("missing-models"),
             &root.path().join("scratch"),
-            &asr,
+            &LocalRecognizer,
             EmbeddedControl {
-                owner_original_deleted: &|| {},
+                owner_original_deleted: &|| deleted.set(true),
                 cancelled: &|| false,
                 service_io: &|_| {},
             },
             None,
         );
-        assert!(
-            matches!(result, Err(TranscribeError::ParakeetCppDeferred { reason, .. }) if reason == "embedded-duration-budget")
-        );
+        // The first unit reaches VAD. A missing model returns before later pulls
+        // and before the recognizer. There is no recording ceiling.
+        let error = result.expect_err("missing VAD model");
+        assert!(matches!(error, TranscribeError::ModelAsset(_)), "{error:?}");
+        assert!(!error.to_string().contains("embedded-duration-budget"));
+        assert!(!error.to_string().contains("embedded-input-budget"));
         assert_eq!(std::fs::read(&audio).unwrap(), bytes);
-        let record = solstone_core_processing_record::read_processing_record_header(
-            &audio.with_extension("jsonl"),
-        )
-        .unwrap();
-        assert_eq!(record["state"], "failed");
-        assert_eq!(record["reason_code"], "embedded-duration-budget");
-        assert!(solstone_core_processing_record::is_failure_exhausted(
-            &record
-        ));
-        assert!(embedded_already_processed(root.path(), &audio, None));
-        assert!(
-            solstone_core_system::work_retry::raw::inspect_output(
-                root.path(),
-                &audio.with_extension("jsonl")
-            )
-            .unwrap()
-            .is_some()
-        );
+        assert!(!audio.with_extension("jsonl").exists());
         assert!(!audio.with_extension("npz").exists());
+        assert!(!deleted.get());
     }
 
     #[test]
-    fn admitted_duration_reaches_vad_without_truncation_or_model_loading() {
+    fn short_and_cap_length_units_reach_vad_without_loading_a_model() {
         for samples in [30 * 16_000, 44 * 16_000, EMBEDDED_AUDIO_MAX_SAMPLES] {
-            let root = tempfile::tempdir().unwrap();
+            let root = tempfile::TempDir::new_in("/var/tmp").unwrap();
             let segment = root.path().join("chronicle/20261012/audio/120000_120");
             std::fs::create_dir_all(&segment).unwrap();
             let audio = segment.join("audio.wav");
@@ -593,8 +579,8 @@ mod tests {
                 },
                 None,
             );
-            // A missing VAD model is the first boundary after full decode.
-            // The recognizer above panics if admission accidentally runs it.
+            // A missing VAD model is the first boundary on the first unit.
+            // The recognizer above panics if that unit runs it.
             assert!(
                 matches!(result, Err(TranscribeError::ModelAsset(_))),
                 "{samples}: {result:?}"
