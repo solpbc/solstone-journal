@@ -36,7 +36,6 @@ enum ExpectedLeaf {
 /// owner. Drop closes retained handles and never retries cleanup.
 #[must_use = "Retain the actual retirement owner until its facts are handled"]
 pub struct StageRetirement {
-    activity: Arc<ActivityLease>,
     parent: Arc<MediaDirectory>,
     name: OsString,
     directory: MediaIdentity,
@@ -46,6 +45,8 @@ pub struct StageRetirement {
     attempted: bool,
     complete: bool,
     receipt: StageRetirementReceipt,
+    // A retained delete handle may apply its effect when closed.
+    activity: Arc<ActivityLease>,
 }
 
 impl StageRetirement {
