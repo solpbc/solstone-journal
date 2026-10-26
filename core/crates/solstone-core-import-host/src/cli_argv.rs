@@ -81,7 +81,11 @@ pub fn preview_arguments(args: &[String], journal: &Path) -> Result<Option<Vec<S
     preview_arguments_with(args, journal, || require_solstone(journal))
 }
 
-fn preview_arguments_with(
+/// Shape preview arguments with the caller's supervisor preflight.
+///
+/// The embedded entry passes a preflight that succeeds without probing. The
+/// desktop adapter passes [`require_solstone`].
+pub fn preview_arguments_with(
     args: &[String],
     journal: &Path,
     preflight: impl FnOnce() -> Result<(), SupervisorRefusal>,
@@ -127,7 +131,11 @@ pub fn force_day_notice_for_args(
     force_day_notice_with(args, journal, || require_solstone(journal))
 }
 
-fn force_day_notice_with(
+/// Resolve a force-import day notice with the caller's supervisor preflight.
+///
+/// The embedded entry does not probe. The desktop adapter passes
+/// [`require_solstone`].
+pub fn force_day_notice_with(
     args: &[String],
     journal: &Path,
     preflight: impl FnOnce() -> Result<(), SupervisorRefusal>,
@@ -212,6 +220,19 @@ fn force_day_notice_with(
     ))
 }
 
+/// Help and argparse results from the shared importer grammar.
+///
+/// `None` means the arguments are a command. The desktop adapter runs its
+/// supervisor preflight only in that case. Help and grammar errors are the
+/// same [`CliRun`] values [`run_cli`] returns, and this function does not probe.
+pub fn grammar_outcome_before_preflight(args: &[String]) -> Option<CliRun> {
+    match parse_arguments(args) {
+        Ok(ParsedCommand::Help) => Some(success(cli_render::HELP.to_owned())),
+        Ok(_) => None,
+        Err(arguments) => Some(argparse_error(arguments)),
+    }
+}
+
 /// Run the importer grammar with the process environment and local supervisor probe.
 pub fn run_cli(args: &[String], journal_path: &Path) -> CliOutcome {
     let parsed = match parse_arguments(args) {
@@ -252,12 +273,226 @@ fn run_after_parse(
         return rendered(refusal_run(refusal));
     }
 
+    dispatch_parsed(parsed, journal_path, Dispatch::Cli)
+}
+
+pub(crate) enum Dispatch<'a> {
+    Cli,
+    Library {
+        seams: &'a crate::call::ImportSeams,
+        embedded: bool,
+    },
+}
+
+impl Dispatch<'_> {
+    fn embedded(&self) -> bool {
+        matches!(self, Self::Library { embedded: true, .. })
+    }
+
+    fn seams(&self) -> Option<&crate::call::ImportSeams> {
+        match self {
+            Self::Library { seams, .. } => Some(seams),
+            Self::Cli => None,
+        }
+    }
+}
+
+fn embedded_body_refused() -> CliRun {
+    failure(
+        "",
+        "Apple Health import, Oura sync, and Oura connect stay on the desktop importer.\n",
+        1,
+    )
+}
+
+/// A stored Oura sync already carries the handwritten confirm or schedule flag.
+/// An ordinary sync, and every connect, does not.
+fn oura_sync_is_stored(options: &Options) -> bool {
+    options.confirm_body_save || options.scheduled
+}
+
+/// Shape one embedded preview so it cannot save, admit, or publish.
+///
+/// A file import that is not already a dry run keeps today's digest and zone
+/// preview. `--sync SOURCE --save` runs as that source's catalog preview.
+/// A non-dry audio archive runs as `--dry-run`. Connect is left for dispatch,
+/// which does not start Oura authorization on the embedded entry. Parse
+/// failures are the same usage error as execution.
+pub(crate) fn library_preview_arguments(
+    args: &[String],
+    journal: &Path,
+) -> Result<Vec<String>, CliRun> {
+    let parsed = match parse_arguments(args) {
+        Ok(parsed) => parsed,
+        Err(message) => return Err(argparse_error(message)),
+    };
     match parsed {
-        ParsedCommand::Help => unreachable!("help returns before supervisor preflight"),
+        ParsedCommand::Import(options) if !options.dry_run && options.media.is_some() => {
+            preview_arguments_with(args, journal, || Ok(()))
+                .map(|shaped| shaped.unwrap_or_else(|| args.to_vec()))
+        }
+        ParsedCommand::Sync { options, .. } if options.save => Ok(without_flag(args, "--save")),
+        ParsedCommand::AudioArchive(options) if !options.dry_run => {
+            let mut shaped = Vec::with_capacity(args.len() + 1);
+            shaped.push("--dry-run".to_owned());
+            shaped.extend_from_slice(args);
+            Ok(shaped)
+        }
+        _ => Ok(args.to_vec()),
+    }
+}
+
+fn without_flag(args: &[String], flag: &str) -> Vec<String> {
+    args.iter()
+        .filter(|argument| argument.as_str() != flag)
+        .cloned()
+        .collect()
+}
+
+/// Apple Health and Oura, as the parsed command names them.
+///
+/// A directory or zip is not classified as Apple Health here. Discovering
+/// that export reads the source, which is execution. `--source oura` on a
+/// file import is not a sync and is not this enum; resolution refuses it
+/// with the existing sync remedy and does not call a body writer.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BodyAdmission {
+    /// Not `--source apple_health`, `--connect oura`, or `--sync oura`.
+    NotBody,
+    /// Apple Health import, Oura connect, or an Oura sync that does not
+    /// already carry `--confirm-body-save` or `--scheduled`.
+    Held,
+    /// `--sync oura` that already carries `--confirm-body-save` or `--scheduled`.
+    StoredOura,
+}
+
+/// Parsed shape of one importer invocation.
+///
+/// Built by the same grammar as execution. It does not open a journal, probe
+/// the supervisor, read source bytes, or load saved Obsidian or audio settings.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ArgumentClass {
+    /// Backend of `--sync`. `None` for every other command.
+    pub sync_source: Option<String>,
+    /// `--path` when the command names one. Obsidian and audio sync treat
+    /// `None` as the caller's saved source settings.
+    pub explicit_path: Option<PathBuf>,
+    /// Held ordinary Body entry, stored gated Oura, or neither.
+    pub body: BodyAdmission,
+}
+
+/// Classify `args` with the importer grammar.
+///
+/// The class is how a caller decides a saved Obsidian or audio path, and how
+/// it separates a held Body entry from stored gated Oura, without scanning
+/// flags itself. Acceptance matches [`admit_arguments`]. An import with no
+/// media path is rejected with the same requirement execution reports.
+pub fn classify_arguments(args: &[String]) -> Result<ArgumentClass, String> {
+    let parsed = parse_arguments(args)?;
+    if matches!(&parsed, ParsedCommand::Import(options) if options.media.is_none()) {
+        return Err("the following arguments are required: media".to_owned());
+    }
+    Ok(classify_parsed(&parsed))
+}
+
+fn classify_parsed(parsed: &ParsedCommand) -> ArgumentClass {
+    match parsed {
+        ParsedCommand::Sync { backend, options } => ArgumentClass {
+            sync_source: Some(backend.clone()),
+            explicit_path: options.path.clone(),
+            body: if backend == "oura" {
+                if oura_sync_is_stored(options) {
+                    BodyAdmission::StoredOura
+                } else {
+                    BodyAdmission::Held
+                }
+            } else {
+                BodyAdmission::NotBody
+            },
+        },
+        ParsedCommand::Connect { backend } if backend == "oura" => ArgumentClass {
+            sync_source: None,
+            explicit_path: None,
+            body: BodyAdmission::Held,
+        },
+        ParsedCommand::Import(options) if options.source.as_deref() == Some("apple_health") => {
+            ArgumentClass {
+                sync_source: None,
+                explicit_path: None,
+                body: BodyAdmission::Held,
+            }
+        }
+        _ => ArgumentClass {
+            sync_source: None,
+            explicit_path: None,
+            body: BodyAdmission::NotBody,
+        },
+    }
+}
+
+/// Whether `args` is one importer invocation this grammar accepts.
+///
+/// The check parses only. It does not open a journal, probe the supervisor,
+/// or read source bytes. Acceptance is not a preview, not publication, and
+/// not approval of Apple Health or Oura. An import with no media path is
+/// rejected with the same requirement execution reports. Call
+/// [`classify_arguments`] for the sync source, explicit path, and Body class.
+pub fn admit_arguments(args: &[String]) -> Result<(), String> {
+    classify_arguments(args).map(|_| ())
+}
+
+pub(crate) fn run_library(
+    args: &[String],
+    journal_path: &Path,
+    seams: &crate::call::ImportSeams,
+    embedded: bool,
+) -> (CliRun, Option<String>) {
+    let started_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |elapsed| elapsed.as_millis() as u64);
+    let parsed = match parse_arguments(args) {
+        Ok(ParsedCommand::Help) => return (success(cli_render::HELP.to_owned()), None),
+        Ok(parsed) => parsed,
+        Err(arguments) => return (argparse_error(arguments), None),
+    };
+    if !solstone_core_import::work_continues() {
+        return (failure("", "import stopped\n", 1), None);
+    }
+    let (run, import_id) =
+        match dispatch_parsed(parsed, journal_path, Dispatch::Library { seams, embedded }) {
+            CliOutcome::Rendered(run) => (run, None),
+            CliOutcome::Imported { run, import_id } => (run, Some(import_id)),
+            CliOutcome::Registry(_) => {
+                unreachable!("library dispatch executes registry sources")
+            }
+        };
+    if run.exit_code == 0
+        && let Some(import_id) = &import_id
+    {
+        crate::registry::record_finished_import(journal_path, import_id, started_ms);
+    }
+    (run, import_id)
+}
+
+fn dispatch_parsed(
+    parsed: ParsedCommand,
+    journal_path: &Path,
+    dispatch: Dispatch<'_>,
+) -> CliOutcome {
+    match parsed {
+        ParsedCommand::Help => rendered(success(cli_render::HELP.to_owned())),
         ParsedCommand::ListImporters { json } => rendered(success(cli_render::importers(json))),
         ParsedCommand::Backends => rendered(success(cli_render::backends())),
-        ParsedCommand::Connect { backend } => rendered(run_connect(&backend, journal_path)),
+        ParsedCommand::Connect { backend } => {
+            if dispatch.embedded() && backend == "oura" {
+                return rendered(embedded_body_refused());
+            }
+            rendered(run_connect(&backend, journal_path))
+        }
         ParsedCommand::Sync { backend, options } => {
+            if dispatch.embedded() && backend == "oura" && !oura_sync_is_stored(&options) {
+                return rendered(embedded_body_refused());
+            }
             rendered(run_sync(&backend, &options, journal_path))
         }
         ParsedCommand::AudioArchive(options) => rendered(crate::audio_archive::run_audio_archive(
@@ -279,7 +514,7 @@ fn run_after_parse(
             json,
             journal_path,
         )),
-        ParsedCommand::Import(options) => run_import(options, journal_path),
+        ParsedCommand::Import(options) => run_import(options, journal_path, dispatch),
     }
 }
 
@@ -347,7 +582,7 @@ fn run_sync(backend: &str, options: &Options, journal_path: &Path) -> CliRun {
     }
 }
 
-fn run_import(mut options: Options, journal_path: &Path) -> CliOutcome {
+fn run_import(mut options: Options, journal_path: &Path, dispatch: Dispatch<'_>) -> CliOutcome {
     let owner_instant = match owner_instant(&mut options, journal_path) {
         Ok(instant) => instant,
         Err(run) => return rendered(run),
@@ -396,7 +631,13 @@ fn run_import(mut options: Options, journal_path: &Path) -> CliOutcome {
         Err(error) => return rendered(failure("", &format!("{error}\n"), 1)),
     };
     match outcome {
-        ResolutionOutcome::RouteAppleHealth => rendered(run_apple(media, &options, journal_path)),
+        ResolutionOutcome::RouteAppleHealth => {
+            if dispatch.embedded() {
+                rendered(embedded_body_refused())
+            } else {
+                rendered(run_apple(media, &options, journal_path))
+            }
+        }
         ResolutionOutcome::Skipped {
             reason: solstone_core_import::SkipReason::TimestampRequired,
             detected_timestamp: Some(timestamp),
@@ -433,23 +674,67 @@ fn run_import(mut options: Options, journal_path: &Path) -> CliOutcome {
             stream,
         } => {
             let timestamp = with_owner_instant(timestamp, owner_instant);
-            let (run, import_id) = run_text(media, &options, journal_path, &timestamp, &stream);
-            imported(run, &import_id, options.dry_run)
+            match dispatch.seams() {
+                Some(seams) => {
+                    let (run, import_id) = run_text(
+                        media,
+                        &options,
+                        journal_path,
+                        &timestamp,
+                        &stream,
+                        seams.text.as_ref(),
+                    );
+                    seams.text.finish();
+                    imported(run, &import_id, options.dry_run)
+                }
+                None => {
+                    let wire = solstone_core_import::text::SystemWireClient::sibling();
+                    let (run, import_id) =
+                        run_text(media, &options, journal_path, &timestamp, &stream, &wire);
+                    wire.finish();
+                    imported(run, &import_id, options.dry_run)
+                }
+            }
         }
         ResolutionOutcome::Resolved {
             source: ResolvedSource::Registry(source),
             timestamp,
             ..
-        } => CliOutcome::Registry(RegistryDispatch {
-            media: PathBuf::from(media),
-            source,
-            timestamp: timestamp.as_str().to_owned(),
-            dry_run: options.dry_run,
-            json: options.json,
-            force: options.force,
-            owner_timestamp: options.timestamp.clone(),
-            fallback_timestamp: options.fallback_timestamp.clone(),
-        }),
+        } => {
+            let registry_dispatch = RegistryDispatch {
+                media: PathBuf::from(media),
+                source,
+                timestamp: timestamp.as_str().to_owned(),
+                dry_run: options.dry_run,
+                json: options.json,
+                force: options.force,
+                owner_timestamp: options.timestamp.clone(),
+                fallback_timestamp: options.fallback_timestamp.clone(),
+            };
+            match dispatch.seams() {
+                None => CliOutcome::Registry(registry_dispatch),
+                Some(seams) => {
+                    let reindex = seams.reindex.as_ref();
+                    let source_seams = crate::registry::SourceSeams {
+                        pdf: seams.pdf.as_ref(),
+                        model: seams.model.as_ref(),
+                        image: seams.image.as_ref(),
+                        reindex,
+                    };
+                    let (run, import_id) = crate::registry::run_with_seams(
+                        registry_dispatch,
+                        journal_path,
+                        &source_seams,
+                    );
+                    match import_id {
+                        Some(import_id) if !options.dry_run => {
+                            CliOutcome::Imported { run, import_id }
+                        }
+                        _ => CliOutcome::Rendered(run),
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -507,7 +792,18 @@ fn imported(run: CliRun, import_id: &str, dry_run: bool) -> CliOutcome {
 }
 
 /// Current-thread runtime for generic audio import, including the processing wait.
+///
+/// The calling thread must not already have a Tokio runtime. Nesting one
+/// panics inside the runtime constructor, so this returns an error instead.
+/// The embedded entry runs audio on a fresh thread that has no runtime.
+/// Desktop `execute_desktop` uses the caller's thread and has the same rule.
 pub fn audio_import_runtime() -> Result<tokio::runtime::Runtime, String> {
+    if tokio::runtime::Handle::try_current().is_ok() {
+        return Err(
+            "generic audio import builds its runtime on a thread that does not already have one"
+                .to_owned(),
+        );
+    }
     tokio::runtime::Builder::new_current_thread()
         .enable_io()
         .enable_time()
@@ -734,6 +1030,7 @@ fn run_text(
     journal_path: &Path,
     timestamp: &solstone_core_import::Timestamp,
     stream: &str,
+    wire: &dyn solstone_core_import::text::WireClient,
 ) -> (CliRun, String) {
     if options.dry_run {
         let semantic = match solstone_core_import::source_timestamp_for_preview(
@@ -813,7 +1110,7 @@ fn run_text(
     // transcript parser a second format. The clock is the source time, not a
     // shifted bookkeeping id.
     let clock = source_timestamp.clock();
-    let outcome = solstone_core_import::process_transcript(
+    let outcome = solstone_core_import::text::process_transcript_with_wire(
         Path::new(media),
         &day_dir,
         &clock,
@@ -821,6 +1118,7 @@ fn run_text(
         stream,
         options.facet.as_deref(),
         options.setting.as_deref(),
+        wire,
         source_timestamp.source_instant(),
     );
     let input = match &outcome {
@@ -1116,7 +1414,12 @@ fn run_audio_sync(journal_path: &Path, options: &Options) -> CliRun {
         pipeline: &mut pipeline,
     };
     match sync_audio_save(&request, &mut seams) {
-        Ok(outcome) => sync_saved("Audio", outcome.downloaded, &outcome.errors),
+        Ok(outcome) => sync_saved(
+            "Audio",
+            outcome.downloaded,
+            &outcome.errors,
+            outcome.stopped,
+        ),
         Err(error) => failure("", &format!("{error}\n"), 1),
     }
 }
@@ -1158,7 +1461,12 @@ fn run_obsidian_sync(journal_path: &Path, options: &Options) -> CliRun {
         writer: &mut writer,
     };
     match sync_obsidian_save(&request, &mut seams) {
-        Ok(outcome) => sync_saved("Obsidian", outcome.imported, &outcome.errors),
+        Ok(outcome) => sync_saved(
+            "Obsidian",
+            outcome.imported,
+            &outcome.errors,
+            outcome.stopped,
+        ),
         Err(error) => failure("", &format!("{error}\n"), 1),
     }
 }
@@ -1195,14 +1503,30 @@ fn run_plaud_sync(journal_path: &Path, options: &Options) -> CliRun {
         pipeline: &mut pipeline,
     };
     match sync_plaud_save(&request, &mut seams) {
-        Ok(outcome) => sync_saved("Plaud", outcome.downloaded, &outcome.errors),
+        Ok(outcome) => sync_saved(
+            "Plaud",
+            outcome.downloaded,
+            &outcome.errors,
+            outcome.stopped,
+        ),
         Err(error) => failure("", &format!("{error}\n"), 1),
     }
 }
 
 /// A sync that saved: a count on stdout, and each item that failed on stderr, failing the run.
-fn sync_saved(backend: &str, saved: u64, errors: &[String]) -> CliRun {
+///
+/// A stop that skipped a later unit keeps that count and fails the run. The
+/// skipped unit is not an item error.
+fn sync_saved(backend: &str, saved: u64, errors: &[String], stopped: bool) -> CliRun {
     let stdout = cli_render::sync_save_complete(backend, saved, errors.len());
+    if stopped {
+        let mut stderr = String::from("import stopped\n");
+        for error in errors {
+            stderr.push_str(error);
+            stderr.push('\n');
+        }
+        return failure(&stdout, &stderr, 1);
+    }
     if errors.is_empty() {
         return success(stdout);
     }
@@ -2185,7 +2509,7 @@ mod tests {
             )
         );
         fs::write(&config, r#"{"identity":{"timezone":"Asia/Tokyo"}}"#).unwrap();
-        let CliOutcome::Rendered(run) = run_import(options, root.path()) else {
+        let CliOutcome::Rendered(run) = run_import(options, root.path(), Dispatch::Cli) else {
             panic!("refusal");
         };
         assert_eq!(run.exit_code, 1);

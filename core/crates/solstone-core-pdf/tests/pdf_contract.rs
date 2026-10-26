@@ -483,3 +483,62 @@ fn dependency_closure_has_no_network_client() {
         "solstone-core-pdf dependency closure contains network-client crates: {present:?}"
     );
 }
+
+#[cfg(feature = "full-tests")]
+fn packaged_library() -> Option<PathBuf> {
+    let Ok(value) = std::env::var("SOLSTONE_CORE_PDF_LIBRARY") else {
+        return None;
+    };
+    let path = PathBuf::from(value);
+    path.is_file().then_some(path)
+}
+
+#[cfg(feature = "full-tests")]
+fn in_process_extract(
+    library: &Path,
+    source: &Path,
+) -> Result<solstone_core_pdf::InProcessDocument, solstone_core_pdf::InProcessError> {
+    solstone_core_pdf::execute_in_process(
+        library,
+        &solstone_core_pdf::InProcessRequest {
+            command: solstone_core_pdf::InProcessCommand::Extract,
+            source: source.to_path_buf(),
+            password: None,
+            render_pages: BTreeSet::new(),
+            render_dir: None,
+            dpi: 72,
+        },
+        &|| true,
+    )
+}
+
+#[cfg(feature = "full-tests")]
+#[test]
+fn in_process_extract_reads_text_pdf_from_the_explicit_library() {
+    let Some(library) = packaged_library() else {
+        eprintln!("skipping in-process extract: SOLSTONE_CORE_PDF_LIBRARY is not a file");
+        return;
+    };
+    let document = in_process_extract(&library, &corpus_path("text.pdf")).expect("extract");
+    assert_eq!(document.schema, "sol-pdf/1");
+    assert!(document.page_count > 0);
+    assert_eq!(document.pages.len(), document.page_count);
+}
+
+#[cfg(feature = "full-tests")]
+#[test]
+fn overlapping_in_process_extracts_share_the_pdfium_gate() {
+    let Some(library) = packaged_library() else {
+        eprintln!("skipping overlapping extract: SOLSTONE_CORE_PDF_LIBRARY is not a file");
+        return;
+    };
+    let source = corpus_path("text.pdf");
+    let left_library = library.clone();
+    let right_library = library;
+    let left_source = source.clone();
+    let right = std::thread::spawn(move || in_process_extract(&right_library, &source));
+    let left = in_process_extract(&left_library, &left_source);
+    let right = right.join().expect("overlapping extract thread");
+    assert!(left.is_ok(), "{left:?}");
+    assert!(right.is_ok(), "{right:?}");
+}

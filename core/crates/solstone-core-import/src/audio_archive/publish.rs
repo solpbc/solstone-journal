@@ -432,7 +432,20 @@ pub fn publish_audio_archive(
             intent_path.try_exists()?,
             stage.try_exists()?,
         );
+        // Claim and intent, or a saved tile waiting to be recovered, already
+        // won. A stop does not abandon that tile. Anything earlier publishes
+        // nothing new and starts no later tile.
+        let admitted = matches!(
+            action,
+            PublicationAction::PublishStaged | PublicationAction::RecoverSaved
+        );
+        if !admitted && !crate::work_continues() {
+            return Err(AudioArchiveError::Other("import stopped".to_owned()));
+        }
         if action == PublicationAction::KeepSaved {
+            if !crate::work_continues() {
+                return Err(AudioArchiveError::Other("import stopped".to_owned()));
+            }
             refresh_saved_availability(
                 journal,
                 &import_id,
@@ -451,6 +464,9 @@ pub fn publish_audio_archive(
                 fs::create_dir_all(&stage)?;
                 let mut staged = Vec::with_capacity(parts.len());
                 for part in &parts {
+                    if !crate::work_continues() {
+                        return Err(AudioArchiveError::Other("import stopped".to_owned()));
+                    }
                     let member = store.member_for_part(part)?;
                     if store.part_is_rejected(part)? {
                         continue;
@@ -501,6 +517,9 @@ pub fn publish_audio_archive(
                 if parts.is_empty() {
                     fs::remove_dir_all(&stage)?;
                     continue;
+                }
+                if !crate::work_continues() {
+                    return Err(AudioArchiveError::Other("import stopped".to_owned()));
                 }
                 let placement = placement_for(&parts);
                 atomic_replace(

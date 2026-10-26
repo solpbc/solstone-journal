@@ -107,6 +107,8 @@ pub struct AudioSyncOutcome {
     pub downloaded: u64,
     pub errors: Vec<String>,
     pub items: Vec<AudioItemOutcome>,
+    /// A later recording was not started because the attempt was stopping.
+    pub stopped: bool,
 }
 
 /// Named audio sync failure.
@@ -149,6 +151,7 @@ pub fn sync_audio_preview(
         downloaded: 0,
         errors: catalogued.errors,
         items: Vec::new(),
+        stopped: false,
     })
 }
 
@@ -165,7 +168,12 @@ pub fn sync_audio_save(
     )?;
     let mut downloaded = 0;
     let mut items = Vec::new();
+    let mut stopped = false;
     for candidate in catalogued.available {
+        if !crate::work_continues() {
+            stopped = true;
+            break;
+        }
         let result = seams.pipeline.import_one(PipelineImportRequest {
             source: &candidate.source,
             source_kind: "audio",
@@ -229,6 +237,7 @@ pub fn sync_audio_save(
         downloaded,
         errors: catalogued.errors,
         items,
+        stopped,
     })
 }
 

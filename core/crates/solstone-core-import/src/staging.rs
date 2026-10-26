@@ -106,6 +106,36 @@ pub fn stage_source(
         }
         verify_force_containment(request.journal_root, &import_dir)?;
         verify_force_metadata(request, &import_dir)?;
+    }
+
+    // Validate the destination and regular source before replacement effects.
+    // Keep the opened source through replacement rather than reopening its path
+    // after the prior import has been removed.
+    let destination = import_destination(&import_dir, request.destination_name)?;
+    let source = match &source_location {
+        SourceLocation::External { source } => source,
+        SourceLocation::AlreadyInImports { .. } => {
+            unreachable!("already-staged sources return above")
+        }
+    };
+    let source_metadata = fs::metadata(source).map_err(|error| source_error(source, error))?;
+    if !source_metadata.is_file() {
+        return Err(ImportError::SourceNotFile {
+            path: source.clone(),
+        });
+    }
+    let mut reader = File::open(source).map_err(|error| source_error(source, error))?;
+    if !reader
+        .metadata()
+        .map_err(|error| source_error(source, error))?
+        .is_file()
+    {
+        return Err(ImportError::SourceNotFile {
+            path: source.clone(),
+        });
+    }
+
+    if exists {
         let inventory = build_import_inventory(&import_dir)?;
         effects
             .append_force_reimport(&ForceReimportAudit {
@@ -128,20 +158,6 @@ pub fn stage_source(
             .map_err(|error| removal_error(&import_dir, error))?;
     }
 
-    let source = match &source_location {
-        SourceLocation::External { source } => source,
-        SourceLocation::AlreadyInImports { .. } => {
-            unreachable!("already-staged sources return above")
-        }
-    };
-    let source_metadata = fs::metadata(source).map_err(|error| source_error(source, error))?;
-    if !source_metadata.is_file() {
-        return Err(ImportError::SourceNotFile {
-            path: source.clone(),
-        });
-    }
-    let import_dir = import_directory(request.journal_root, request.import_id)?;
-    let destination = import_destination(&import_dir, request.destination_name)?;
     if resolve(source)? == resolve(&destination)? {
         return Ok(StageOutcome {
             path: destination,
@@ -154,7 +170,6 @@ pub fn stage_source(
         return Ok(preview(&destination, source_location, force_audit_recorded));
     }
     ensure_import_private_chain(request.journal_root, request.import_id)?;
-    let mut reader = File::open(source).map_err(|error| source_error(source, error))?;
     write_reader_exclusive(
         &destination,
         &mut reader,

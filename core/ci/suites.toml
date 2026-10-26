@@ -1208,8 +1208,9 @@ areas = ["media"]
 platforms = ["linux", "windows"]
 prerequisites = ["cargo-cache", "pdf-runtime"]
 timeout = "standard"
-default_full = false
+default_full = true
 runtime = "pdf"
+features = ["full-tests"]
 
 [[package_suites]]
 id = "package::solstone-core-possible-names"

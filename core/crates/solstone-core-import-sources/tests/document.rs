@@ -1570,15 +1570,11 @@ struct TestTree {
 
 impl TestTree {
     fn new() -> Self {
-        let root =
-            std::env::temp_dir().join(format!("solstone-document-test-{}", std::process::id()));
-        let unique = root.with_extension(format!(
-            "{}",
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
+        let unique = tempfile::Builder::new()
+            .prefix("solstone-document-test-")
+            .tempdir()
+            .unwrap()
+            .keep();
         fs::create_dir_all(unique.join("journal")).unwrap();
         fs::create_dir_all(unique.join("imports/document-test")).unwrap();
         fs::create_dir_all(unique.join("sources")).unwrap();

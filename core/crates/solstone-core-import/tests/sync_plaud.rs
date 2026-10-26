@@ -909,3 +909,176 @@ fn configure_utc(journal: &std::path::Path) {
     )
     .unwrap();
 }
+
+struct StoppingPipeline {
+    stop: solstone_core_import::WorkStop,
+    calls: RefCell<Vec<String>>,
+}
+
+impl ImportPipeline for StoppingPipeline {
+    fn import_one(
+        &mut self,
+        request: PipelineImportRequest<'_>,
+    ) -> Result<PipelineOutcome, String> {
+        self.calls
+            .borrow_mut()
+            .push(request.source.display().to_string());
+        self.stop.request();
+        Ok(PipelineOutcome::Imported)
+    }
+}
+
+#[test]
+fn stop_after_the_first_download_does_not_start_the_next_one() {
+    let tree = TempDir::new().unwrap();
+    let stop = solstone_core_import::WorkStop::new();
+    let _guard = solstone_core_import::WorkStopGuard::install(&stop);
+    let credential = Credential;
+    let clock = Clock;
+    let mut catalogue = Catalogue {
+        files: vec![
+            file("old", 1_725_000_000_000.0, 60_000.0),
+            file("new", 1_726_000_000_000.0, 60_000.0),
+        ],
+        fail: false,
+    };
+    let matches = Matches(BTreeMap::new());
+    let mut writer = Writer::default();
+    let mut downloader = Downloader::default();
+    let mut pipeline = StoppingPipeline {
+        stop: stop.clone(),
+        calls: RefCell::new(Vec::new()),
+    };
+    let preview = PlaudPreviewSeams {
+        credential: &credential,
+        catalogue: &mut catalogue,
+        manifests: &matches,
+        clock: &clock,
+        state_writer: &mut writer,
+    };
+    let mut seams = PlaudSaveSeams {
+        preview,
+        download: &mut downloader,
+        pipeline: &mut pipeline,
+    };
+    let outcome = sync_plaud_save(
+        &PlaudSyncRequest::<SyncSaveRequest>::new(tree.path().to_path_buf()),
+        &mut seams,
+    )
+    .unwrap();
+    assert_eq!(downloader.downloads, ["new"]);
+    assert_eq!(pipeline.calls.borrow().len(), 1);
+    assert!(outcome.stopped);
+    assert_eq!(outcome.downloaded, 1);
+    assert_eq!(outcome.state.root()["files"]["new"]["status"], "imported");
+    assert_eq!(outcome.state.root()["files"]["old"]["status"], "available");
+    assert_eq!(writer.checkpoints.len(), 2);
+    assert_eq!(
+        writer.checkpoints[0].root()["files"]["new"]["status"],
+        "imported"
+    );
+    assert_eq!(
+        writer.checkpoints[0].root()["files"]["old"]["status"],
+        "available"
+    );
+}
+
+#[cfg(all(test, feature = "full-tests"))]
+struct StoppingDownload {
+    stop: solstone_core_import::WorkStop,
+    downloads: Vec<String>,
+    retained: Option<std::path::PathBuf>,
+}
+
+#[cfg(all(test, feature = "full-tests"))]
+impl PlaudDownload for StoppingDownload {
+    fn temporary_url(&mut self, _: &str, file_id: &str) -> Result<String, PlaudFailureKind> {
+        Ok(format!(
+            "https://example.invalid/{file_id}?signature=secret"
+        ))
+    }
+
+    fn download(&mut self, url: &str, destination: &Path) -> Result<(), PlaudFailureKind> {
+        let file_id = url
+            .strip_prefix("https://example.invalid/")
+            .and_then(|value| value.split('?').next())
+            .unwrap()
+            .to_owned();
+        if let Some(parent) = destination.parent() {
+            std::fs::create_dir_all(parent).unwrap();
+        }
+        std::fs::write(destination, b"retained-original").unwrap();
+        self.retained = Some(destination.to_path_buf());
+        self.downloads.push(file_id);
+        self.stop.request();
+        Ok(())
+    }
+}
+
+#[cfg(all(test, feature = "full-tests"))]
+struct CountingPipeline(Cell<u8>);
+
+#[cfg(all(test, feature = "full-tests"))]
+impl ImportPipeline for CountingPipeline {
+    fn import_one(&mut self, _: PipelineImportRequest<'_>) -> Result<PipelineOutcome, String> {
+        self.0.set(self.0.get() + 1);
+        Ok(PipelineOutcome::Imported)
+    }
+}
+
+#[cfg(all(test, feature = "full-tests"))]
+#[test]
+fn stop_during_the_download_keeps_the_file_and_does_not_start_import() {
+    let tree = TempDir::new().unwrap();
+    let stop = solstone_core_import::WorkStop::new();
+    let _guard = solstone_core_import::WorkStopGuard::install(&stop);
+    let credential = Credential;
+    let clock = Clock;
+    let mut catalogue = Catalogue {
+        files: vec![
+            file("old", 1_725_000_000_000.0, 60_000.0),
+            file("new", 1_726_000_000_000.0, 60_000.0),
+        ],
+        fail: false,
+    };
+    let matches = Matches(BTreeMap::new());
+    let mut writer = Writer::default();
+    let mut downloader = StoppingDownload {
+        stop: stop.clone(),
+        downloads: Vec::new(),
+        retained: None,
+    };
+    let mut pipeline = CountingPipeline(Cell::new(0));
+    let preview = PlaudPreviewSeams {
+        credential: &credential,
+        catalogue: &mut catalogue,
+        manifests: &matches,
+        clock: &clock,
+        state_writer: &mut writer,
+    };
+    let mut seams = PlaudSaveSeams {
+        preview,
+        download: &mut downloader,
+        pipeline: &mut pipeline,
+    };
+    let outcome = sync_plaud_save(
+        &PlaudSyncRequest::<SyncSaveRequest>::new(tree.path().to_path_buf()),
+        &mut seams,
+    )
+    .unwrap();
+    assert_eq!(downloader.downloads, ["new"]);
+    assert_eq!(pipeline.0.get(), 0);
+    assert!(outcome.stopped);
+    assert_eq!(outcome.downloaded, 0);
+    assert!(outcome.errors.is_empty());
+    assert_eq!(outcome.state.root()["files"]["new"]["status"], "available");
+    assert!(
+        outcome.state.root()["files"]["new"]
+            .get("last_error")
+            .is_none()
+    );
+    assert_eq!(outcome.state.root()["files"]["old"]["status"], "available");
+    let retained = downloader.retained.expect("download wrote a file");
+    assert_eq!(std::fs::read(&retained).unwrap(), b"retained-original");
+    assert_eq!(writer.checkpoints.len(), 1);
+}

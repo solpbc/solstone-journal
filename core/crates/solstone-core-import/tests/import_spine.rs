@@ -312,6 +312,124 @@ fn force_orders_audit_before_removal_and_preserves_failures() {
 }
 
 #[test]
+fn force_rejects_invalid_sources_before_audit_or_removal() {
+    for kind in ["directory", "missing"] {
+        let tree = TempTree::new();
+        let journal = tree.path().join("journal");
+        let source = tree.path().join(kind);
+        if kind == "directory" {
+            fs::create_dir_all(&source).unwrap();
+            fs::write(source.join("note.md"), b"new folder content").unwrap();
+        }
+        let metadata = metadata("source-a");
+        write_import_metadata(&journal, "item", &metadata).unwrap();
+        let original = journal.join("imports/item/original.txt");
+        fs::write(&original, b"admitted original").unwrap();
+        let effects = RecordingEffects::new(&journal, FailureStage::None);
+        let request = request(
+            &journal,
+            "item",
+            &source,
+            OsStr::new("replacement.txt"),
+            &metadata,
+            true,
+            false,
+        );
+        let error = stage_source(&request, &effects).unwrap_err();
+        assert!(matches!(
+            (kind, error),
+            ("directory", ImportError::SourceNotFile { .. })
+                | ("missing", ImportError::SourceMissing { .. })
+        ));
+        assert!(
+            effects.events().is_empty(),
+            "{kind}: {:?}",
+            effects.events()
+        );
+        assert_eq!(fs::read(&original).unwrap(), b"admitted original");
+        assert_eq!(read_import_metadata(&journal, "item").unwrap(), metadata);
+    }
+}
+
+#[test]
+fn force_rejects_invalid_destination_before_audit_or_removal() {
+    let tree = TempTree::new();
+    let journal = tree.path().join("journal");
+    let source = tree.path().join("replacement.txt");
+    fs::write(&source, b"replacement").unwrap();
+    let metadata = metadata("source-a");
+    write_import_metadata(&journal, "item", &metadata).unwrap();
+    let original = journal.join("imports/item/original.txt");
+    fs::write(&original, b"admitted original").unwrap();
+    let effects = RecordingEffects::new(&journal, FailureStage::None);
+    let request = request(
+        &journal,
+        "item",
+        &source,
+        OsStr::new("../outside.txt"),
+        &metadata,
+        true,
+        false,
+    );
+    assert!(matches!(
+        stage_source(&request, &effects),
+        Err(ImportError::InvalidDestinationName { .. })
+    ));
+    assert!(effects.events().is_empty());
+    assert_eq!(fs::read(&original).unwrap(), b"admitted original");
+    assert_eq!(read_import_metadata(&journal, "item").unwrap(), metadata);
+    assert!(!journal.join("imports/outside.txt").exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn force_keeps_the_opened_source_when_its_path_changes_during_audit() {
+    struct ReplaceSourceDuringAudit<'a> {
+        effects: RecordingEffects,
+        source: &'a Path,
+    }
+
+    impl ImportForceEffects for ReplaceSourceDuringAudit<'_> {
+        fn append_force_reimport(&self, audit: &ForceReimportAudit) -> Result<(), AuditSinkError> {
+            self.effects.append_force_reimport(audit)?;
+            fs::rename(self.source, self.source.with_extension("retained")).unwrap();
+            fs::write(self.source, b"different path content").unwrap();
+            Ok(())
+        }
+
+        fn remove_import_directory(&self, import_dir: &Path) -> Result<(), RemovalError> {
+            self.effects.remove_import_directory(import_dir)
+        }
+    }
+
+    let tree = TempTree::new();
+    let journal = tree.path().join("journal");
+    let source = tree.path().join("replacement.txt");
+    fs::write(&source, b"opened source content").unwrap();
+    let metadata = metadata("source-a");
+    write_import_metadata(&journal, "item", &metadata).unwrap();
+    fs::write(journal.join("imports/item/original.txt"), b"old").unwrap();
+    let effects = ReplaceSourceDuringAudit {
+        effects: RecordingEffects::new(&journal, FailureStage::None),
+        source: &source,
+    };
+    let request = request(
+        &journal,
+        "item",
+        &source,
+        OsStr::new("replacement.txt"),
+        &metadata,
+        true,
+        false,
+    );
+    let outcome = stage_source(&request, &effects).unwrap();
+    assert_eq!(effects.effects.events(), vec!["audit", "remove"]);
+    assert_eq!(fs::read(outcome.path).unwrap(), b"opened source content");
+    assert_eq!(fs::read(&source).unwrap(), b"different path content");
+    assert_eq!(read_import_metadata(&journal, "item").unwrap(), metadata);
+}
+
+#[test]
 fn non_force_dry_run_creates_nothing_and_a_real_retry_stages() {
     let tree = TempTree::new();
     let journal = tree.path().join("journal");
