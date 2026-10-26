@@ -21,7 +21,9 @@
   .more-card:focus-within .more-pin-button,
   .more-pin-button[aria-pressed="true"] { opacity: 1; }
   .more-pin-button[aria-pressed="true"] { color: var(--orange-ink); }
-  .more-pin-static { color: var(--ink-faint); }
+  /* Home and the rail's bottom views are always in the side rail: a faded pinned pin, never the grey of an unpinned one. */
+  .more-pin-static { color: var(--orange-ink); opacity: 0.45; }
+  .more-pin-button[aria-pressed="false"] { color: var(--ink-faint); }
   .more-pin svg, .more-card-icon svg { width: 22px; height: 22px; }
   .more-empty { margin: 8px 0 0; }
   @media (hover: none) { .more-pin-button { opacity: 1; } }
