@@ -282,9 +282,6 @@ const MORE_STATE_FIELDS = [
     rememberApps(root, shell);
     installFilter(root);
     installPins(root, shell);
-    const input = root.querySelector('#more-filter');
-    const coarse = window.matchMedia('(hover: none) and (pointer: coarse)').matches;
-    if (input && !coarse) input.focus();
     return loadStates(root, timeout).then(() => root);
   }
 

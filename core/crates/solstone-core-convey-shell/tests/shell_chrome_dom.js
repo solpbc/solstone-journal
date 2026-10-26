@@ -831,7 +831,7 @@ asyncCase('more page groups every served view except more', async () => {
   assert.ok(html.includes('placeholder="type to filter views"'));
   assert.ok(html.includes('>filter views</label>'));
   const input = root.querySelector('#more-filter');
-  assert.strictEqual(harness.document.activeElement, input);
+  assert.notStrictEqual(harness.document.activeElement, input);
 
   const groupNames = (group) => root.querySelectorAll('[data-focus="' + group + '"] .more-card')
     .map((card) => card.getAttribute('data-app-name'));
@@ -866,12 +866,6 @@ asyncCase('more page groups every served view except more', async () => {
   assert.strictEqual(curation.getAttribute('title'), 'pin suggestions to the side rail');
 });
 
-asyncCase('more page skips filter focus on a coarse pointer', async () => {
-  const harness = createHarness({ coarse: true, pinned: [] });
-  const root = await paintMore(harness);
-  assert.notStrictEqual(harness.document.activeElement, root.querySelector('#more-filter'));
-});
-
 asyncCase('more page filter uses a generated keyword and escape clears it', async () => {
   const harness = createHarness({ pinned: [] });
   const root = await paintMore(harness);
@@ -883,6 +877,7 @@ asyncCase('more page filter uses a generated keyword and escape clears it', asyn
   });
   assert.ok(keyword, 'a generated map keyword matches only map');
   const input = root.querySelector('#more-filter');
+  input.focus();
   input.value = keyword.toUpperCase();
   input.dispatchEvent(event('input'));
   assert.deepStrictEqual(
