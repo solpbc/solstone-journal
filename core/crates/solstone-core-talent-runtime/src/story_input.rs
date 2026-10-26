@@ -295,7 +295,13 @@ mod tests {
     use tempfile::TempDir;
 
     fn segment(root: &Path, stream: &str, key: &str, marker: &str) -> std::path::PathBuf {
-        let path = root.join("chronicle/20260101").join(stream).join(key);
+        // Build from components, as journal-io does, so the expected
+        // `source_path` matches the product's native separators on Windows.
+        let path = root
+            .join("chronicle")
+            .join("20260101")
+            .join(stream)
+            .join(key);
         fs::create_dir_all(path.join("talents")).unwrap();
         fs::write(
             path.join("screen.jsonl"),
