@@ -112,6 +112,7 @@ pub struct OperationState {
     pub(crate) archive: crate::archive_worker::ArchiveCustody,
     pub(crate) closed: bool,
     pub writes_in_flight: usize,
+    maintenance_in_flight: usize,
     pub(crate) threads: Vec<thread::JoinHandle<()>>,
     pub(crate) settlement_worker: Option<thread::JoinHandle<()>>,
     pub(crate) join_batches: Vec<JoinBatch>,
@@ -132,6 +133,7 @@ impl OperationState {
             archive: Default::default(),
             closed: false,
             writes_in_flight: 0,
+            maintenance_in_flight: 0,
             threads: Vec::new(),
             settlement_worker: None,
             join_batches: Vec::new(),
@@ -651,6 +653,7 @@ pub(crate) fn lock_for_begin(
     #[cfg(windows)]
     crate::archive_worker::observe_retained(&mut guard);
     if guard.closed
+        || guard.writes_in_flight != 0
         || guard.archive.is_busy()
         || observe(&mut guard.current).is_some_and(|slot| !is_terminal(&slot.view.phase))
     {
@@ -892,10 +895,12 @@ where
 pub enum AdmitWrite {
     DuringOperation,
     IdleOnly,
+    Maintenance,
 }
 
 pub struct WriteGuard {
     slot: SharedOperationSlot,
+    maintenance: bool,
 }
 
 impl Drop for WriteGuard {
@@ -905,6 +910,9 @@ impl Drop for WriteGuard {
             Err(e) => e.into_inner(),
         };
         guard.writes_in_flight = guard.writes_in_flight.saturating_sub(1);
+        if self.maintenance {
+            guard.maintenance_in_flight = guard.maintenance_in_flight.saturating_sub(1);
+        }
         drop(guard);
         self.slot.notify_waiters();
     }
@@ -912,7 +920,7 @@ impl Drop for WriteGuard {
 
 pub fn admit_write(slot: &SharedOperationSlot, mode: AdmitWrite) -> Result<WriteGuard, Response> {
     #[cfg(windows)]
-    if mode == AdmitWrite::IdleOnly {
+    if mode != AdmitWrite::DuringOperation {
         use solstone_core_system::process::{
             HelperAdmissionStatus, observe_bounded_helper_admission,
         };
@@ -930,18 +938,28 @@ pub fn admit_write(slot: &SharedOperationSlot, mode: AdmitWrite) -> Result<Write
     if guard.closed {
         return Err(busy_response());
     }
-    if mode == AdmitWrite::IdleOnly {
+    if mode != AdmitWrite::DuringOperation {
         #[cfg(windows)]
         crate::archive_worker::observe_retained(&mut guard);
-        if guard.archive.is_busy()
+        let conflicting_write = match mode {
+            AdmitWrite::IdleOnly => guard.writes_in_flight != 0,
+            AdmitWrite::Maintenance => guard.writes_in_flight != guard.maintenance_in_flight,
+            AdmitWrite::DuringOperation => false,
+        };
+        if conflicting_write
+            || guard.archive.is_busy()
             || observe(&mut guard.current).is_some_and(|slot| !is_terminal(&slot.view.phase))
         {
             return Err(busy_response());
         }
     }
     guard.writes_in_flight = guard.writes_in_flight.saturating_add(1);
+    if mode == AdmitWrite::Maintenance {
+        guard.maintenance_in_flight = guard.maintenance_in_flight.saturating_add(1);
+    }
     Ok(WriteGuard {
         slot: Arc::clone(slot),
+        maintenance: mode == AdmitWrite::Maintenance,
     })
 }
 

@@ -1182,13 +1182,15 @@ impl ForegroundProcessingHost {
 
     /// Install native imports before startup catch-up can dispatch any work.
     /// Native preparation still runs only on its retained callable worker.
-    pub fn open_with_rebuild_recovery_and_imports(
+    #[allow(clippy::too_many_arguments)]
+    pub fn open_with_imports(
         root: Arc<JournalRoot>,
         payload: &Path,
         external: Checkpoint,
         stop: Arc<AtomicBool>,
         backup: BackupWebDeps,
         imports: Arc<ImportSeamFactory>,
+        rebuild_recovery: bool,
         observe_daily: bool,
     ) -> Result<Self, String> {
         let now = ScheduleNow::in_zone(
@@ -1203,7 +1205,7 @@ impl ForegroundProcessingHost {
             external,
             stop,
             backup,
-            true,
+            rebuild_recovery,
             observe_daily,
             Some(imports),
         )
@@ -2350,7 +2352,9 @@ mod tests {
 
     #[test]
     fn the_runtime_publishes_its_status_while_it_runs_and_not_after_stop() {
-        use solstone_core_callosum::{CallosumReceiveEvent, CallosumSocketConnection};
+        use solstone_core_callosum::{
+            CallosumConnectionPhase, CallosumReceiveEvent, CallosumSocketConnection,
+        };
         let _lock = TEST_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         let (temp, payload) = setup_test_journal();
         let socket = temp.path().join("health/callosum.sock");
@@ -2366,6 +2370,40 @@ mod tests {
         let mut observer = runtime.block_on(async {
             let mut observer = CallosumSocketConnection::new(&socket, Map::new());
             observer.start();
+            tokio::time::timeout(Duration::from_secs(20), async {
+                loop {
+                    match observer.next_event().await {
+                        Some(CallosumReceiveEvent::Continuity {
+                            phase: CallosumConnectionPhase::Connected,
+                            ..
+                        }) => {
+                            assert!(
+                                observer.emit(
+                                    "supervisor",
+                                    "subscriber-ready",
+                                    Map::from_iter([(
+                                        "ref".into(),
+                                        json!("foreground-status-observer"),
+                                    )]),
+                                ),
+                                "status observer readiness emission is accepted"
+                            );
+                        }
+                        Some(CallosumReceiveEvent::Envelope { envelope, .. })
+                            if envelope.tract == "supervisor"
+                                && envelope.event == "subscriber-ready"
+                                && envelope.extra.get("ref")
+                                    == Some(&json!("foreground-status-observer")) =>
+                        {
+                            break;
+                        }
+                        None => panic!("status observer closed before readiness"),
+                        _ => {}
+                    }
+                }
+            })
+            .await
+            .expect("status observer readiness within the existing bound");
             observer
         });
         let mut host = ForegroundProcessingHost::open_with_executor(
@@ -2407,7 +2445,17 @@ mod tests {
             .await;
             (supervisor, cortex)
         });
-        let supervisor = supervisor.expect("the runtime publishes its status");
+        let supervisor = supervisor.unwrap_or_else(|| {
+            panic!(
+                "the runtime publishes its status; cortex={cortex:?}; history={:?}; generation={}; stop={}; failed={}; root_binding={:?}; pending_restore={:?}",
+                host.queue().history(),
+                host.generation,
+                host.stop.load(Ordering::SeqCst),
+                host.failed.load(Ordering::SeqCst),
+                host.root.revalidate_canonical_binding(),
+                solstone_core_journal_io::whole_journal_restore::read_whole_journal_restore(temp.path()),
+            )
+        });
         let services = supervisor["services"].as_array().unwrap();
         assert_eq!(
             services.len(),
@@ -4473,7 +4521,16 @@ mod processing_proofs {
                                 && envelope.event == "stopped"
                                 && envelope.extra.get("service") == Some(&json!("backup")) =>
                         {
-                            assert_eq!(envelope.extra["exit_code"], 0);
+                            assert_eq!(
+                                envelope.extra["exit_code"], 0,
+                                "actual scheduled backup terminal: {:?}; history={:?}; generation={}; stop={}; failed={}; root_binding={:?}",
+                                envelope.extra,
+                                host.queue().history(),
+                                host.generation,
+                                host.stop.load(Ordering::SeqCst),
+                                host.failed.load(Ordering::SeqCst),
+                                host.root.revalidate_canonical_binding(),
+                            );
                             terminal.insert(envelope.extra["routine"].as_str().unwrap().to_owned());
                         }
                         _ => {}

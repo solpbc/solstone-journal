@@ -3,7 +3,7 @@
 
 use super::*;
 use crate::hosted_runtime::{decode_hosted_credentials, hosted_credentials_request};
-use crate::ios_callable::repository;
+use solstone_core_backup::ios_repository as repository;
 
 /// Normal broker credential result, retained only in this invocation. No
 /// serialized recovery record can construct it or substitute storage credentials.

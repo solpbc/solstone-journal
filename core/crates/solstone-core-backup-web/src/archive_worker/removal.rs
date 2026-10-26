@@ -19,7 +19,7 @@ use serde::Serialize;
 use serde_json::{Value, json};
 use solstone_core_backup::archive_admission::AdmissionError;
 use solstone_core_backup::archive_readback::{OwnedSettledDirectRead, RefusedDirectRead};
-use solstone_core_backup_runtime::{ClosedToolError, resolve::resolve_restic_member};
+use solstone_core_backup_runtime::ClosedToolError;
 use solstone_core_journal_io::JournalRoot;
 use solstone_core_retention::Outcome;
 use solstone_core_retention::marks::RemovalClass;
@@ -164,10 +164,8 @@ pub fn start(
     today: NaiveDate,
     now: DateTime<Utc>,
 ) -> Result<ApprovalStart, ApprovalStartRefusal> {
-    let root = Arc::new(
-        JournalRoot::open(&deps.journal_root)
-            .map_err(|error| ApprovalStartRefusal::Review(ReviewRefusal::Root(error)))?,
-    );
+    let root: Arc<JournalRoot> = super::retained_archive_root(deps)
+        .map_err(|error| ApprovalStartRefusal::Review(ReviewRefusal::Root(error)))?;
     let checked =
         check_review_context(Arc::clone(&root), &context).map_err(ApprovalStartRefusal::Review)?;
     // An offload mark without its offer has no backup to verify against.
@@ -339,7 +337,7 @@ fn run_pending(slot: &SharedOperationSlot, ticket: &ArchiveTicket) {
             any(target_os = "linux", target_os = "macos", target_os = "windows")
         ))]
         tests::before_resolver();
-        resolve_restic_member(&input.executable)
+        super::resolve_read_invocation(&input.begin.ticket.0.root, &input.executable)
             .map(Some)
             .map_err(UnusedRefusal::Tools)
     }));
@@ -360,7 +358,7 @@ fn run_pending(slot: &SharedOperationSlot, ticket: &ArchiveTicket) {
         return remove_local(slot, begin, checked, today, now);
     };
     let generation = begin.generation();
-    match prepare_read(slot, begin, repository, &restic) {
+    match prepare_read(slot, begin, repository, restic.invocation()) {
         Some(worker) => remove(slot, worker, checked, today, now),
         None => {
             // A parked whole failure keeps the selected context beside it rather

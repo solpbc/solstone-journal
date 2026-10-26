@@ -7,9 +7,9 @@
 mod archive;
 mod build_identity;
 mod bundle;
-pub(crate) mod native;
+use solstone_core_backup::ios_native as native;
 mod outcome;
-pub mod repository;
+use solstone_core_backup::ios_repository as repository;
 mod root;
 mod storage;
 pub mod teardown;
@@ -104,6 +104,7 @@ pub fn admit_ios_backup_at_startup() -> Result<(), &'static str> {
     install().map_err(Refusal::code)
 }
 
+#[derive(Clone)]
 pub struct AdmittedIosBackupAuthority {
     installed: Arc<Installed>,
     root: Arc<JournalRoot>,
@@ -118,6 +119,76 @@ impl std::fmt::Debug for AdmittedIosBackupAuthority {
 }
 
 impl AdmittedIosBackupAuthority {
+    pub(crate) fn archive_read_context(
+        &self,
+        destination: &Destination,
+        password: &str,
+        environment: &BTreeMap<String, Option<String>>,
+    ) -> Result<
+        Arc<solstone_core_backup::archive_readback::ios::IosReadContext>,
+        solstone_core_backup::archive_readback::ReadbackError,
+    > {
+        use solstone_core_backup::archive_readback::{
+            ReadbackError,
+            ios::{IosReadContext, IosReadState},
+        };
+        self.revalidate().map_err(|_| ReadbackError::ToolChanged)?;
+        let state = match repository::parse(
+            &destination.repository,
+            (!environment.is_empty()).then_some(environment),
+        )
+        .map_err(|_| ReadbackError::CredentialsUnavailable)?
+        {
+            repository::Repository::Local(_) => None,
+            repository::Repository::S3 { destination, .. } => Some(Arc::new(
+                self.open_destination_state(&destination.namespace())
+                    .map_err(|_| ReadbackError::ToolChanged)?,
+            )),
+        };
+        let native_state = state
+            .as_ref()
+            .map(|state| {
+                IosReadState::new(
+                    state.path().to_owned(),
+                    state
+                        .as_fd()
+                        .try_clone_to_owned()
+                        .map_err(|_| ReadbackError::ToolChanged)?,
+                )
+            })
+            .transpose()?;
+        let authority = self.clone();
+        let check = Arc::new(move || {
+            authority
+                .revalidate()
+                .map_err(|_| ReadbackError::ToolChanged)?;
+            if let Some(state) = &state {
+                state.revalidate().map_err(|_| ReadbackError::ToolChanged)?;
+            }
+            Ok(())
+        });
+        IosReadContext::new(
+            Arc::clone(&self.root),
+            self.generation(),
+            destination.clone(),
+            password.to_owned(),
+            environment.clone(),
+            native_state,
+            check,
+        )
+        .map(Arc::new)
+    }
+
+    pub(crate) fn revalidate_archive_root(
+        &self,
+        root: &Arc<JournalRoot>,
+    ) -> Result<(), &'static str> {
+        if !Arc::ptr_eq(&self.root, root) {
+            return Err(Refusal::Root.code());
+        }
+        self.revalidate().map_err(Refusal::code)
+    }
+
     fn revalidate(&self) -> Result<(), Refusal> {
         self.installed.revalidate()?;
         self.root

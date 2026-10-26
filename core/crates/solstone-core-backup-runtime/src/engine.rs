@@ -2436,6 +2436,8 @@ struct CapturedArchiveRead {
     destination: Destination,
     password: String,
     credential_expiry: Option<i64>,
+    #[cfg(target_os = "ios")]
+    native: Option<Arc<solstone_core_backup::archive_readback::ios::IosReadContext>>,
 }
 
 fn capture_archive_read(
@@ -2489,6 +2491,66 @@ fn capture_archive_read(
         destination,
         password: keys.daily_key,
         credential_expiry,
+        #[cfg(target_os = "ios")]
+        native: None,
+    })
+}
+
+#[cfg(target_os = "ios")]
+fn capture_linked_archive_read(
+    operation: &OwnedPreparedArchiveOperation,
+    expected_repository_id: Option<&str>,
+    authority: &crate::ios_callable::AdmittedIosBackupAuthority,
+    http: &dyn HttpTransport,
+    version: &str,
+    effects: &mut ArchiveAdmissionEffects,
+) -> Result<CapturedArchiveRead, ArchiveError> {
+    if expected_repository_id.is_some_and(|id| !full_archive_id(id)) {
+        return Err(ArchiveError::RepositoryIdentityInvalid);
+    }
+    operation.revalidate()?;
+    authority
+        .revalidate_archive_root(operation.carrier().journal_root())
+        .map_err(|_| ArchiveError::JournalIdentityChanged)?;
+    let config = operation.configuration();
+    if !config.enabled() {
+        return Err(ArchiveError::NotConfigured);
+    }
+    let keys = config.keys()?.ok_or(ArchiveError::NotConfigured)?;
+    let (read, expiry) = if let Some(binding) = config.binding() {
+        if config.mode() != Some("operated") {
+            return Err(ArchiveError::NotConfigured);
+        }
+        // This maintained native pair derives both legs from the same single
+        // ordinary hosted session. No writer or new grant is requested here.
+        let (_, read, expiry) = capture_linked_operated_pair(
+            operation.as_prepared(),
+            binding,
+            keys,
+            http,
+            version,
+            effects,
+        )?;
+        (read, Some(expiry))
+    } else {
+        if config.mode() != Some("byo") || config.destination().is_none_or(|d| d.backend != "s3") {
+            return Err(ArchiveError::Readback(ReadbackError::UnsupportedBackend));
+        }
+        let (_, read) = capture_byo_archive_pair(config, keys)?;
+        (read, None)
+    };
+    operation.revalidate()?;
+    let context = authority
+        .archive_read_context(&read.destination, &read.password, &read.backend_env)
+        .map_err(ArchiveError::Readback)?;
+    Ok(CapturedArchiveRead {
+        destination: read.destination,
+        password: read.password,
+        credential_expiry: expiry,
+        native: Some(context),
+        // Legacy executable field is unused when the actual native context is
+        // selected; no path is resolved or accepted as callable authority.
+        restic_path: PathBuf::new(),
     })
 }
 
@@ -2634,35 +2696,35 @@ impl<'a> InstalledArchiveRead<'a> {
     }
 }
 
-pub fn admit_prepared_archive_owned_read_installed(
+pub fn admit_prepared_archive_owned_read_installed<'a>(
     operation: OwnedPreparedArchiveOperation,
     expected_repository_id: String,
-    restic_path: &Path,
+    restic: impl Into<crate::runner::ResticInvocation<'a>>,
     version: &str,
     http: &UreqHttpTransport,
 ) -> Result<OwnedInstalledArchiveRead, OwnedArchiveAdmissionFailure> {
     admit_prepared_archive_owned_read_installed_with(
         operation,
         Some(expected_repository_id),
-        restic_path,
+        restic.into(),
         version,
         http,
     )
 }
 
-pub fn admit_prepared_archive_owned_current_read_installed(
+pub fn admit_prepared_archive_owned_current_read_installed<'a>(
     operation: OwnedPreparedArchiveOperation,
-    restic_path: &Path,
+    restic: impl Into<crate::runner::ResticInvocation<'a>>,
     version: &str,
     http: &UreqHttpTransport,
 ) -> Result<OwnedInstalledArchiveRead, OwnedArchiveAdmissionFailure> {
-    admit_prepared_archive_owned_read_installed_with(operation, None, restic_path, version, http)
+    admit_prepared_archive_owned_read_installed_with(operation, None, restic.into(), version, http)
 }
 
 fn admit_prepared_archive_owned_read_installed_with(
     mut operation: OwnedPreparedArchiveOperation,
     expected_repository_id: Option<String>,
-    restic_path: &Path,
+    restic: crate::runner::ResticInvocation<'_>,
     version: &str,
     http: &UreqHttpTransport,
 ) -> Result<OwnedInstalledArchiveRead, OwnedArchiveAdmissionFailure> {
@@ -2670,14 +2732,25 @@ fn admit_prepared_archive_owned_read_installed_with(
     let carrier = Arc::clone(operation.carrier());
     let operated = operation.configuration().binding().is_some();
     let mut effects = ArchiveAdmissionEffects::default();
-    let admission = capture_archive_read(
-        operation.as_prepared(),
-        expected_repository_id.as_deref(),
-        http,
-        Some(restic_path),
-        version,
-        &mut effects,
-    )
+    let admission = match restic {
+        crate::runner::ResticInvocation::Executable(path) => capture_archive_read(
+            operation.as_prepared(),
+            expected_repository_id.as_deref(),
+            http,
+            Some(path),
+            version,
+            &mut effects,
+        ),
+        #[cfg(target_os = "ios")]
+        crate::runner::ResticInvocation::Callable(authority) => capture_linked_archive_read(
+            &operation,
+            expected_repository_id.as_deref(),
+            authority,
+            http,
+            version,
+            &mut effects,
+        ),
+    }
     .and_then(|captured| {
         if let Some(expiry) = captured.credential_expiry {
             operation.cap_credential_expiry(expiry);
@@ -2699,6 +2772,8 @@ fn admit_prepared_archive_owned_read_installed_with(
             });
         }
     };
+    #[cfg(target_os = "ios")]
+    let native = captured.native;
     let input = match expected_repository_id {
         Some(id) => operation.bind_read(
             captured.destination,
@@ -2711,6 +2786,11 @@ fn admit_prepared_archive_owned_read_installed_with(
             captured.password,
             captured.restic_path,
         ),
+    };
+    #[cfg(target_os = "ios")]
+    let input = match native {
+        Some(context) => input.with_ios_context(context),
+        None => input,
     };
     effects.read_repository_requested = true;
     #[cfg(unix)]
@@ -3330,6 +3410,8 @@ impl OwnedInstalledArchiveCreator {
 #[must_use = "Consume the same creator into read handoff or closed custody"]
 pub struct OwnedAdmittedArchive {
     creator: OwnedArchiveCreator,
+    #[cfg(target_os = "ios")]
+    linked_authority: Option<crate::ios_callable::AdmittedIosBackupAuthority>,
 }
 impl OwnedAdmittedArchive {
     pub fn prepared_operation(&self) -> &PreparedArchiveOperation<'static> {
@@ -3371,6 +3453,12 @@ impl OwnedAdmittedArchive {
         &mut self,
         sources: &[ArchiveSource<'_>],
     ) -> Result<ArchiveSnapshot, ArchiveFailure> {
+        #[cfg(target_os = "ios")]
+        if let Some(authority) = self.linked_authority.clone() {
+            // One stable logical directory in the snapshot; source basenames,
+            // identities and bytes still come from the retained staging owner.
+            return self.archive_retained_sources(&authority, "archive", sources);
+        }
         self.creator
             .archive_owned(sources)
             .map(|snapshot| ArchiveSnapshot {
@@ -3445,10 +3533,21 @@ pub fn admit_prepared_archive_owned_creator_installed<'a>(
     http: &UreqHttpTransport,
 ) -> Result<OwnedInstalledArchiveCreator, OwnedArchiveAdmissionFailure> {
     let invocation = restic.into();
+    #[cfg(target_os = "ios")]
+    let linked_authority = match invocation {
+        crate::runner::ResticInvocation::Callable(authority) => Some(authority.clone()),
+        crate::runner::ResticInvocation::Executable(_) => None,
+    };
     let mut effects = ArchiveAdmissionEffects::default();
     let operated = operation.configuration().binding().is_some();
     let captured = (|| {
         operation.revalidate()?;
+        #[cfg(target_os = "ios")]
+        if let Some(authority) = &linked_authority {
+            authority
+                .revalidate_archive_root(operation.carrier().journal_root())
+                .map_err(|_| ArchiveError::JournalIdentityChanged)?;
+        }
         let config = operation.configuration();
         if !config.enabled() {
             return Err(ArchiveError::NotConfigured);
@@ -3552,6 +3651,28 @@ pub fn admit_prepared_archive_owned_creator_installed<'a>(
     };
     let clock = Arc::clone(operation.owned_clock());
     let carrier = Arc::clone(operation.carrier());
+    #[cfg(target_os = "ios")]
+    let linked_read_context = match linked_authority.as_ref() {
+        Some(authority) => match authority.archive_read_context(
+            &read.destination,
+            &read.password,
+            &read.backend_env,
+        ) {
+            Ok(context) => Some(context),
+            Err(reason) => {
+                return Err(OwnedArchiveAdmissionFailure {
+                    inner: Box::new(OwnedArchiveAdmissionFailureInner {
+                        error: ArchiveError::Readback(reason),
+                        effects,
+                        owned: ClosedArchiveAdmissionOwner::Prepared(Box::new(
+                            operation.into_owned_hold(),
+                        )),
+                    }),
+                });
+            }
+        },
+        None => None,
+    };
     let capture = capture_archive_predecessor(
         restic_owned,
         write,
@@ -3572,18 +3693,24 @@ pub fn admit_prepared_archive_owned_creator_installed<'a>(
     }
     #[cfg(not(target_os = "ios"))]
     let _ = linked;
+    let admission = operation.bind_archive_creator(capture);
+    #[cfg(target_os = "ios")]
+    let admission = match linked_read_context {
+        Some(context) => admission.with_ios_context(context),
+        None => admission,
+    };
     #[cfg(unix)]
-    let creator = operation
-        .bind_archive_creator(capture)
-        .admit()
-        .map_err(creator_admission_failure)?;
+    let creator = admission.admit().map_err(creator_admission_failure)?;
     #[cfg(windows)]
-    let creator = operation
-        .bind_archive_creator(capture)
+    let creator = admission
         .admit(Some(Arc::new(crate::runner::SystemToolRunner)))
         .map_err(creator_admission_failure)?;
     Ok(OwnedInstalledArchiveCreator {
-        archive: OwnedAdmittedArchive { creator },
+        archive: OwnedAdmittedArchive {
+            creator,
+            #[cfg(target_os = "ios")]
+            linked_authority,
+        },
         finish: DirectReadFinishOwner {
             carrier,
             clock,

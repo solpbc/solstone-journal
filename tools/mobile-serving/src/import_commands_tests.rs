@@ -52,14 +52,23 @@ fn open_import_fixture(
     root: &Path,
     imports: Arc<ImportSeamFactory>,
 ) -> Result<ForegroundProcessingHost, String> {
+    open_import_fixture_with_rebuild(root, imports, false)
+}
+
+fn open_import_fixture_with_rebuild(
+    root: &Path,
+    imports: Arc<ImportSeamFactory>,
+    rebuild_recovery: bool,
+) -> Result<ForegroundProcessingHost, String> {
     let bound = Arc::new(JournalRoot::open(root).map_err(|error| error.to_string())?);
-    let host = ForegroundProcessingHost::open_with_rebuild_recovery_and_imports(
+    let host = ForegroundProcessingHost::open_with_imports(
         bound,
         &root.join("payload"),
         Arc::new(|| false),
         Arc::new(AtomicBool::new(false)),
         BackupWebDeps::new(root.to_path_buf()),
         imports,
+        rebuild_recovery,
         false,
     )?;
     host.stop_discovery_for_test();
@@ -172,35 +181,38 @@ fn startup_import_finished(host: &ForegroundProcessingHost) -> String {
 #[test]
 fn due_import_at_constructor_start_writes_real_notes_without_start_workers() {
     let _serial = TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
-    let (root, source) = due_import_fixture();
-    let host = open_import_fixture(
-        root.path(),
-        Arc::new(|request| {
-            let seams =
-                request.seams_with_pdf(Box::new(solstone_core_import_sources::NullPdfWorker));
-            Ok(PreparedImport::new(request.arguments().to_vec(), seams))
-        }),
-    )
-    .unwrap();
-    let terminal = startup_import_finished(&host);
-    host.shutdown().unwrap();
-    let scheduler = fs::read_to_string(root.path().join("health/scheduler.json")).unwrap();
-    assert_eq!(
-        terminal, "ok",
-        "actual startup scheduler state: {scheduler}"
-    );
-    assert!(contains(
-        &root.path().join("chronicle"),
-        "fc3 constructor catch-up native import sentinel"
-    ));
-    let state: serde_json::Value =
-        serde_json::from_slice(&fs::read(root.path().join("imports/obsidian.json")).unwrap())
-            .unwrap();
-    assert_eq!(state["files"]["startup.md"]["status"], "imported");
-    assert_eq!(
-        fs::read_to_string(source.path().join("startup.md")).unwrap(),
-        "fc3 constructor catch-up native import sentinel\n"
-    );
+    for rebuild_recovery in [false, true] {
+        let (root, source) = due_import_fixture();
+        let host = open_import_fixture_with_rebuild(
+            root.path(),
+            Arc::new(|request| {
+                let seams =
+                    request.seams_with_pdf(Box::new(solstone_core_import_sources::NullPdfWorker));
+                Ok(PreparedImport::new(request.arguments().to_vec(), seams))
+            }),
+            rebuild_recovery,
+        )
+        .unwrap();
+        let terminal = startup_import_finished(&host);
+        host.shutdown().unwrap();
+        let scheduler = fs::read_to_string(root.path().join("health/scheduler.json")).unwrap();
+        assert_eq!(
+            terminal, "ok",
+            "actual startup scheduler state: {scheduler}"
+        );
+        assert!(contains(
+            &root.path().join("chronicle"),
+            "fc3 constructor catch-up native import sentinel"
+        ));
+        let state: serde_json::Value =
+            serde_json::from_slice(&fs::read(root.path().join("imports/obsidian.json")).unwrap())
+                .unwrap();
+        assert_eq!(state["files"]["startup.md"]["status"], "imported");
+        assert_eq!(
+            fs::read_to_string(source.path().join("startup.md")).unwrap(),
+            "fc3 constructor catch-up native import sentinel\n"
+        );
+    }
 }
 
 #[test]
@@ -215,7 +227,9 @@ fn constructor_error_and_stop_join_due_import_then_reopen_for_real_work() {
                 .take();
         }
     }
-    for stop_after_start in [false, true] {
+    for (rebuild_recovery, stop_after_start) in
+        [(false, false), (false, true), (true, false), (true, true)]
+    {
         let _reset = ResetStartupHook;
         let (root, source) = due_import_fixture();
         let bound = Arc::new(JournalRoot::open(root.path()).unwrap());
@@ -261,13 +275,14 @@ fn constructor_error_and_stop_join_due_import_then_reopen_for_real_work() {
         let backup = BackupWebDeps::new(root.path().to_path_buf());
         let (settled_send, settled) = mpsc::channel();
         let constructor = std::thread::spawn(move || {
-            let result = ForegroundProcessingHost::open_with_rebuild_recovery_and_imports(
+            let result = ForegroundProcessingHost::open_with_imports(
                 bound,
                 &payload,
                 Arc::new(|| false),
                 constructor_stop,
                 backup,
                 factory,
+                rebuild_recovery,
                 false,
             );
             let result = match result {
@@ -352,6 +367,82 @@ fn constructor_error_and_stop_join_due_import_then_reopen_for_real_work() {
         assert_eq!(
             fs::read_to_string(source.path().join("startup.md")).unwrap(),
             "fc3 constructor catch-up native import sentinel\n"
+        );
+    }
+}
+
+#[test]
+fn preinstalled_imports_preserve_the_existing_rebuild_recovery_choice() {
+    use solstone_core_system::{work_intent, work_inventory};
+    let _serial = TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+    for rebuild_recovery in [false, true] {
+        let root = fixture_directory();
+        let day = "20260104";
+        fs::create_dir_all(root.path().join("chronicle").join(day)).unwrap();
+        let bound = Arc::new(JournalRoot::open(root.path()).unwrap());
+        let intent = work_intent::register(root.path(), day, true).unwrap();
+        let lease = work_intent::begin_rebuild(
+            root.path(),
+            day,
+            &intent.id,
+            &bound.identity().observation_id(),
+        )
+        .unwrap();
+        work_intent::update_rebuild(root.path(), day, &intent.id, &|| Ok(()), |progress| {
+            progress.segments = Some(work_intent::SegmentSeal {
+                generation: 1,
+                raw_fingerprint: "retained fixture inputs".into(),
+                receipts_digest: "retained fixture receipts".into(),
+            });
+            Ok(())
+        })
+        .unwrap();
+        drop(lease);
+        let retained = work_intent::read(root.path()).unwrap()[day].clone();
+        assert!(work_intent::can_resume(root.path(), day, &retained).unwrap());
+        // No thinking provider is configured. Discovery must distinguish the
+        // caller's recovery choice before the existing spend refusal applies.
+        let host = ForegroundProcessingHost::open_with_imports(
+            bound,
+            &root.path().join("payload"),
+            Arc::new(|| false),
+            Arc::new(AtomicBool::new(false)),
+            BackupWebDeps::new(root.path().to_path_buf()),
+            Arc::new(|_| panic!("no importer work was requested")),
+            rebuild_recovery,
+            false,
+        )
+        .unwrap();
+        host.discovery.lock().unwrap().as_ref().unwrap().request();
+        let deadline = Instant::now() + Duration::from_secs(10);
+        let reason = loop {
+            if let Some(report) = work_inventory::read(root.path()).unwrap()
+                && let Some(hold) = report.holds.iter().find(|hold| hold.day == day)
+            {
+                break hold.reason.clone();
+            }
+            assert!(
+                Instant::now() < deadline,
+                "recovery choice was not inspected"
+            );
+            std::thread::sleep(Duration::from_millis(5));
+        };
+        host.shutdown().unwrap();
+        assert_eq!(
+            reason,
+            if rebuild_recovery {
+                "thinking_unavailable"
+            } else {
+                "interrupted_from_scratch"
+            },
+            "the native caller's existing recovery mode controls discovery"
+        );
+        assert_eq!(work_intent::read(root.path()).unwrap()[day], retained);
+        assert_eq!(
+            fs::read_dir(root.path().join("chronicle").join(day))
+                .unwrap()
+                .count(),
+            0
         );
     }
 }
