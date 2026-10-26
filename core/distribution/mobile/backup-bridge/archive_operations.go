@@ -582,8 +582,8 @@ func admitArchiveTarget(fd int) (*os.File, int32) {
 }
 
 func archiveBytes(ptr *C.char, length C.uint32_t, limit uint32) ([]byte, int32) {
-	if length > limit || (length > 0 && ptr == nil) {
-		if length > limit {
+	if uint32(length) > limit || (length > 0 && ptr == nil) {
+		if uint32(length) > limit {
 			return nil, StatusCapExceeded
 		}
 		return nil, StatusInvalidArgument
