@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"maps"
 	"math"
 
 	"github.com/restic/restic/internal/backend"
@@ -134,6 +135,33 @@ func retentionPruneOptions() (repository.PruneOptions, error) {
 }
 
 var errRetentionKeepEmpty = errors.New("retention would remove every snapshot in a group")
+var errRetentionChanged = errors.New("repository changed during retention planning")
+
+type retentionInventory map[restic.FileType]map[restic.ID]int64
+
+func captureRetentionInventory(ctx context.Context, repo *repository.Repository) (retentionInventory, error) {
+	all := retentionInventory{}
+	for _, kind := range []restic.FileType{restic.SnapshotFile, restic.IndexFile, restic.PackFile} {
+		files := map[restic.ID]int64{}
+		if err := repo.List(ctx, kind, func(id restic.ID, size int64) error {
+			files[id] = size
+			return nil
+		}); err != nil {
+			return nil, err
+		}
+		all[kind] = files
+	}
+	return all, nil
+}
+
+func (before retentionInventory) matches(after retentionInventory) bool {
+	for kind, files := range before {
+		if !maps.Equal(files, after[kind]) {
+			return false
+		}
+	}
+	return true
+}
 
 func loadRetentionSnapshots(ctx context.Context, repo *repository.Repository) (data.Snapshots, error) {
 	var snapshots data.Snapshots
@@ -201,6 +229,9 @@ func retentionAbort(wrote bool, err error) (bridgeResult, error) {
 	if !wrote && cancelled {
 		return bridgeResult{status: StatusCancelled, diagnostic: DiagCancelled}, err
 	}
+	if !wrote {
+		return refusalResult(err, DiagIoFailed), err
+	}
 	return bridgeResult{status: StatusFailed, diagnostic: DiagIoFailed}, err
 }
 
@@ -265,6 +296,10 @@ func executeRetention(ctx context.Context, req bridgeRequest, markWrite func()) 
 	}
 	defer unlock()
 
+	before, err := captureRetentionInventory(lockCtx, repo)
+	if err != nil {
+		return retentionAbort(false, err)
+	}
 	snapshots, err := loadRetentionSnapshots(lockCtx, repo)
 	if err != nil {
 		return retentionAbort(false, err)
@@ -276,8 +311,33 @@ func executeRetention(ctx context.Context, req bridgeRequest, markWrite func()) 
 	if err != nil {
 		return retentionAbort(false, err)
 	}
+	// Validate the complete prune plan under the same exclusive lock before
+	// deleting snapshots. In particular, an index/resource refusal must leave
+	// the original snapshot set intact. The plan excludes precisely the selected
+	// removals while those snapshots are still present.
+	if err := repo.LoadIndex(lockCtx, &progress.NoopPrinter{}); err != nil {
+		return retentionAbort(false, err)
+	}
+	ignore := restic.NewIDSet()
+	for _, id := range remove {
+		ignore.Insert(id)
+	}
+	plan, err := repository.PlanPrune(lockCtx, pruneOptions, repo, retentionUsedBlobs(ignore), &progress.NoopPrinter{})
+	if err != nil {
+		return retentionAbort(false, err)
+	}
 	if result, err, stop := retentionGate("retention-before-mutation", lockCtx, false); stop {
 		return result, err
+	}
+	after, err := captureRetentionInventory(lockCtx, repo)
+	if err != nil {
+		return retentionAbort(false, err)
+	}
+	if !before.matches(after) {
+		return retentionAbort(false, errRetentionChanged)
+	}
+	if err := lockCtx.Err(); err != nil {
+		return retentionAbort(false, err)
 	}
 
 	// Scope starts only after the policy, key, and lock have been accepted.
@@ -298,17 +358,6 @@ func executeRetention(ctx context.Context, req bridgeRequest, markWrite func()) 
 		}
 	}
 
-	if err := repo.LoadIndex(lockCtx, &progress.NoopPrinter{}); err != nil {
-		return retentionAbort(wrote, err)
-	}
-	ignore := restic.NewIDSet()
-	for _, id := range remove {
-		ignore.Insert(id)
-	}
-	plan, err := repository.PlanPrune(lockCtx, pruneOptions, repo, retentionUsedBlobs(ignore), &progress.NoopPrinter{})
-	if err != nil {
-		return retentionAbort(wrote, err)
-	}
 	if result, err, stop := retentionGate("retention-during-prune", lockCtx, wrote); stop {
 		return result, err
 	}

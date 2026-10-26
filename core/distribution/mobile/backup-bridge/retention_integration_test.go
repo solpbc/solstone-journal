@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -25,6 +26,67 @@ type retainedSnapshot struct {
 	files map[string][]byte
 }
 
+func TestIntegrationRetentionIndexCapRefusesBeforeMutation(t *testing.T) {
+	repo, source, password, _ := retentionRepository(t, false)
+	for i := 0; i < 3; i++ {
+		replaceSource(t, source, map[string][]byte{"extra.txt": []byte(fmt.Sprintf("extra-%d", i))})
+		result, err := executeSnapshot(context.Background(), bridgeRequest{
+			operation: OpSnapshot, password: []byte(password), repoPath: repo, sourcePath: source,
+		}, func() {})
+		if err != nil || result.status != StatusOk {
+			t.Fatalf("extra snapshot: %+v %v", result, err)
+		}
+	}
+	indexes, err := os.ReadDir(filepath.Join(repo, "index"))
+	if err != nil || len(indexes) != maxIndexListCount+1 {
+		t.Fatalf("cap fixture: indexes=%d error=%v", len(indexes), err)
+	}
+	beforeIDs, beforePacks := snapshotIDSet(t, repo, password), packNames(t, repo)
+	wrote := false
+	result, err := executeRetention(context.Background(), bridgeRequest{
+		operation: OpRetention, password: []byte(password), repoPath: repo,
+		retentionPolicy: &retentionPolicy{hourly: 1, tags: []data.TagList{{archiveKeepTag}, {offloadKeepTag}}},
+	}, func() { wrote = true })
+	if !errors.Is(err, errResourceLimit) || result.status != StatusCapExceeded || result.diagnostic != DiagCapExceeded || wrote {
+		t.Fatalf("cap changed repository: result=%+v error=%v wrote=%v", result, err, wrote)
+	}
+	if !sameIDSet(snapshotIDSet(t, repo, password), beforeIDs) || !sameNameSet(packNames(t, repo), beforePacks) {
+		t.Fatal("index cap changed snapshots or packs")
+	}
+}
+
+func TestIntegrationRetentionPostPlanIndexDriftRefusesBeforeMutation(t *testing.T) {
+	repo, _, password, _ := retentionRepository(t, false)
+	beforeIDs, beforePacks := snapshotIDSet(t, repo, password), packNames(t, repo)
+	indexes, err := os.ReadDir(filepath.Join(repo, "index"))
+	if err != nil || len(indexes) == 0 {
+		t.Fatalf("index fixture: %v", err)
+	}
+	wrote := false
+	testGate = func(stage string, _ context.Context) error {
+		if stage == "retention-before-mutation" {
+			body, err := os.ReadFile(filepath.Join(repo, "index", indexes[0].Name()))
+			if err != nil {
+				return err
+			}
+			return os.WriteFile(filepath.Join(repo, "index", "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"), body, 0600)
+		}
+		return nil
+	}
+	t.Cleanup(func() { testGate = nil })
+	result, err := executeRetention(context.Background(), bridgeRequest{
+		operation: OpRetention, password: []byte(password), repoPath: repo,
+		retentionPolicy: &retentionPolicy{hourly: 1, tags: []data.TagList{{archiveKeepTag}, {offloadKeepTag}}},
+	}, func() { wrote = true })
+	testGate = nil
+	if !errors.Is(err, errRetentionChanged) || result.status != StatusFailed || wrote {
+		t.Fatalf("post-plan drift changed repository: result=%+v error=%v wrote=%v", result, err, wrote)
+	}
+	if !sameIDSet(snapshotIDSet(t, repo, password), beforeIDs) || !sameNameSet(packNames(t, repo), beforePacks) {
+		t.Fatal("post-plan index drift deleted snapshots or packs")
+	}
+}
+
 func TestIntegrationRetentionSelectionPruneAndRestore(t *testing.T) {
 	repo, source, password, made := retentionRepository(t, true)
 	ids := snapshotIDSet(t, repo, password)
@@ -37,7 +99,7 @@ func TestIntegrationRetentionSelectionPruneAndRestore(t *testing.T) {
 	}
 
 	wrong := executeRetentionNow(t, repo, "wrong-password", 1, 0, 0, 0)
-	if wrong.status != StatusFailed || wrong.diagnostic != DiagAuthFailed {
+	if wrong.result.status != StatusFailed || wrong.result.diagnostic != DiagAuthFailed {
 		t.Fatalf("wrong key: %+v", wrong)
 	}
 	if !sameIDSet(snapshotIDSet(t, repo, password), ids) || !sameNameSet(packNames(t, repo), before) {

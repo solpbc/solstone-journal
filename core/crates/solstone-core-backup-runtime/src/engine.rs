@@ -528,7 +528,7 @@ fn runtime(
             } else {
                 hosted_session(&binding, &credentials).map_err(|_| "failed")?
             };
-            Ok(Some(Runtime {
+            let runtime = Runtime {
                 destination: session.destination,
                 password: resolve_keys(journal)?,
                 backend_env: session
@@ -537,7 +537,16 @@ fn runtime(
                     .map(|(key, value)| (key, Some(value)))
                     .collect(),
                 global_options: session.global_options,
-            }))
+            };
+            // Only the operated maintenance credential response supplies this
+            // writable session. A BYO destination's append-only intent stays intact.
+            #[cfg(target_os = "ios")]
+            let runtime = if scope == "maintenance" && !append_only {
+                without_ios_append_only(runtime)
+            } else {
+                runtime
+            };
+            Ok(Some(runtime))
         }
         Err(error) => Err(error.reason_code.to_owned()),
     }
@@ -1426,11 +1435,7 @@ pub fn run_prune(journal: &Path, services: &BackupServices<'_>) -> PruneResult {
                 error_reason: None,
             };
         }
-        Ok(Some(runtime)) => {
-            #[cfg(target_os = "ios")]
-            let runtime = without_ios_append_only(runtime);
-            runtime
-        }
+        Ok(Some(runtime)) => runtime,
         Err(reason) => {
             let result = PruneResult {
                 status: "error".into(),
