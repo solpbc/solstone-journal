@@ -1725,6 +1725,7 @@ dependencies = [
  "http",
  "http-body",
  "pin-project-lite",
+ "tokio",
 ]
 
 [[package]]
@@ -2221,6 +2222,7 @@ dependencies = [
  "solstone-core-facets",
  "solstone-core-generate",
  "solstone-core-generate-wire",
+ "solstone-core-import",
  "solstone-core-indexer-store",
  "solstone-core-journal-config",
  "solstone-core-journal-config-write",

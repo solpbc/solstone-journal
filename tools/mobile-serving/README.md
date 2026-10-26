@@ -14,6 +14,9 @@ payload contracts and template directories before starting. Setup may withhold t
 existing mark, lock and finalize flow. `status()` reports the live address.
 `request_owner(method, path, body)` dispatches a request admitted by the app's
 private IPC; never forward network headers or public IPC into this method.
+you can save a file through that same private admission and its response pipe.
+the file's bytes stay out of the small control message, and network headers stay
+out of that dispatch.
 `index()` runs the production scanner. Drop or `shutdown()` stops the door.
 
 The library opens no unauthenticated loopback listener. Network callers use the

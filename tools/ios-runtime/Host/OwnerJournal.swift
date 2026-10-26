@@ -124,6 +124,8 @@ import UIKit
         guard ticket == revision, !ownerStopped, foreground else { return }
         route = "/init"
         page = UUID()
+        // Sweep only here, before this start admits the owner page.
+        reclaimOwnerBridge()
         phase = .running
         detail = "keep this app open and this device plugged in."
         UIApplication.shared.isIdleTimerDisabled = true
@@ -214,7 +216,16 @@ import UIKit
   }
   func show(_ path: String) { route = path; page = UUID() }
   func pageFailed() { detail = "couldn't open this page. open home or health to try again." }
-  func uploadUnavailable() { detail = "file import from this page isn't available in this build. use a paired device to add media." }
+  func uploadUnavailable() { detail = "this file couldn't be sent. choose it again, and check the result before retrying." }
+
+  private func reclaimOwnerBridge() {
+    let cache = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+    cache.path.withCString { cachePath in
+      "[]".withCString { live in
+        if let result = journal_ios_owner_reclaim(cachePath, live) { journal_runtime_free(result) }
+      }
+    }
+  }
 }
 
 struct OwnerJournalView: View {

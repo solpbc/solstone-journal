@@ -32,7 +32,7 @@ processing = [
 axum = { version = "0.8.9", default-features = false }
 serde_json = "1"
 log = "0.4"
-http-body-util = "0.1"
+http-body-util = { version = "0.1", features = ["channel"] }
 solstone-core-backup-web = { path = "../../core/crates/solstone-core-backup-web" }
 solstone-core-backup-runtime = { path = "../../core/crates/solstone-core-backup-runtime" }
 solstone-core-backup = { path = "../../core/crates/solstone-core-backup" }
@@ -40,6 +40,7 @@ solstone-core-maintenance = { path = "../../core/crates/solstone-core-maintenanc
 solstone-core-spl = { path = "../../core/crates/solstone-core-spl" }
 solstone-core-mcp-endpoint = { path = "../../core/crates/solstone-core-mcp-endpoint" }
 solstone-core-convey-shell = { path = "../../core/crates/solstone-core-convey-shell" }
+solstone-core-import = { path = "../../core/crates/solstone-core-import" }
 solstone-core-indexer-store = { path = "../../core/crates/solstone-core-indexer-store" }
 solstone-core-journal-io = { path = "../../core/crates/solstone-core-journal-io" }
 solstone-core-journal-config-write = { path = "../../core/crates/solstone-core-journal-config-write" }

@@ -30,7 +30,8 @@ mod brain;
 #[cfg(unix)]
 mod owner_response;
 #[cfg(unix)]
-pub use owner_response::OwnerResponseHead;
+pub use owner_response::{OwnerResponseHead, next_owner_request_id};
+pub mod owner_bridge;
 
 #[cfg(feature = "audio")]
 pub(crate) mod audio;
@@ -584,6 +585,40 @@ impl MobileServing {
         )
     }
 
+    /// Stream a request body from `body` (the read end of a nonblocking pipe).
+    /// Returns when the upload is admitted, not when the file has been written.
+    /// `body` and `sink` are closed by this runtime on every path.
+    #[cfg(unix)]
+    pub fn open_owner_upload(
+        &self,
+        id: u64,
+        method: &str,
+        uri: &str,
+        headers: &[(String, String)],
+        body: std::fs::File,
+        sink: std::fs::File,
+    ) -> Result<std::sync::mpsc::Receiver<Result<OwnerResponseHead, String>>, String> {
+        self.root
+            .revalidate_canonical_binding()
+            .map_err(|error| error.to_string())?;
+        self.owner_responses.open_upload(
+            self.runtime.handle(),
+            Arc::clone(&self.handle),
+            Arc::clone(&self.root),
+            self.stop.services.subscribe(),
+            id,
+            method,
+            uri,
+            headers,
+            body,
+            sink,
+        )
+    }
+
+    pub fn canonical_journal_path(&self) -> &std::path::Path {
+        self.root.canonical_path()
+    }
+
     #[cfg(unix)]
     pub fn cancel_owner_response(&self, id: u64) {
         self.owner_responses.cancel(id);
@@ -884,6 +919,272 @@ mod tests {
         );
         drop(readers);
     }
+
+    #[cfg(target_os = "linux")]
+    fn os_pipe() -> (std::fs::File, std::fs::File) {
+        use std::os::fd::FromRawFd;
+        let mut descriptors = [-1; 2];
+        unsafe extern "C" {
+            fn pipe(fds: *mut i32) -> i32;
+            fn fcntl(fd: i32, cmd: i32, arg: i32) -> i32;
+        }
+        assert_eq!(unsafe { pipe(descriptors.as_mut_ptr()) }, 0);
+        let flags = unsafe { fcntl(descriptors[0], 3, 0) };
+        assert_eq!(unsafe { fcntl(descriptors[0], 4, flags | 0o4000) }, 0);
+        (
+            unsafe { std::fs::File::from_raw_fd(descriptors[0]) },
+            unsafe { std::fs::File::from_raw_fd(descriptors[1]) },
+        )
+    }
+
+    #[cfg(target_os = "linux")]
+    fn multipart(client_item_id: &str, filename: &str, bytes: &[u8]) -> Vec<u8> {
+        let mut body = Vec::new();
+        body.extend(b"--bound\r\nContent-Disposition: form-data; name=\"client_item_id\"\r\n\r\n");
+        body.extend(client_item_id.as_bytes());
+        body.extend(b"\r\n--bound\r\nContent-Disposition: form-data; name=\"file\"; filename=\"");
+        body.extend(filename.as_bytes());
+        body.extend(b"\"\r\nContent-Type: application/octet-stream\r\n\r\n");
+        body.extend(bytes);
+        body.extend(b"\r\n--bound--\r\n");
+        body
+    }
+
+    #[cfg(target_os = "linux")]
+    fn write_all_blocking(mut sink: std::fs::File, bytes: &[u8]) {
+        use std::io::Write;
+        sink.write_all(bytes).unwrap();
+    }
+
+    #[cfg(target_os = "linux")]
+    fn upload(
+        server: &MobileServing,
+        id: u64,
+        client_item_id: &str,
+        bytes: &[u8],
+    ) -> (OwnerResponseHead, Vec<u8>) {
+        use std::io::Read;
+        let (body_read, body_write) = os_pipe();
+        let (response_read, response_write) = std::os::unix::net::UnixStream::pair().unwrap();
+        response_read
+            .set_read_timeout(Some(Duration::from_secs(30)))
+            .unwrap();
+        response_write.set_nonblocking(true).unwrap();
+        let descriptor: std::os::fd::OwnedFd = response_write.into();
+        let response_write = std::fs::File::from(descriptor);
+        let receiver = server
+            .open_owner_upload(
+                id,
+                "POST",
+                "/app/import/api/save",
+                &[(
+                    "content-type".into(),
+                    "multipart/form-data; boundary=bound".into(),
+                )],
+                body_read,
+                response_write,
+            )
+            .unwrap();
+        let payload = multipart(client_item_id, "notes.bin", bytes);
+        let writer = std::thread::spawn(move || write_all_blocking(body_write, &payload));
+        let head = receiver
+            .recv_timeout(Duration::from_secs(30))
+            .unwrap()
+            .unwrap();
+        let mut response = Vec::new();
+        let mut reader = response_read;
+        reader.read_to_end(&mut response).unwrap();
+        writer.join().unwrap();
+        (head, response)
+    }
+
+    #[cfg(target_os = "linux")]
+    fn admit_journal(server: &MobileServing) {
+        let (head, bytes) = owner_bytes(server, 1, "GET", "/init/mark", "application/json", "");
+        assert_eq!(head.status, 200, "{}", String::from_utf8_lossy(&bytes));
+        let mark: Value = serde_json::from_slice(&bytes).unwrap();
+        let body = json!({"proposal_id": mark["proposal_id"]}).to_string();
+        let (head, bytes) = owner_bytes(
+            server,
+            2,
+            "POST",
+            "/init/mark/lock",
+            "application/json",
+            &body,
+        );
+        assert_eq!(head.status, 200, "{}", String::from_utf8_lossy(&bytes));
+        let (head, bytes) = owner_bytes(
+            server,
+            3,
+            "POST",
+            "/init/finalize",
+            "application/json",
+            "{}",
+        );
+        assert_eq!(head.status, 200, "{}", String::from_utf8_lossy(&bytes));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn owner_upload_streams_exact_bytes_into_the_existing_save() {
+        use std::io::Write;
+        let (server, directory) = fixture();
+        admit_journal(&server);
+        let mut first = vec![0u8; 300 * 1024];
+        first[0] = 0;
+        first[1] = 0xff;
+        first[4096] = 0;
+        let last = first.len() - 1;
+        first[last] = 0xff;
+        let mut second = first.clone();
+        second[2] = 0x7f;
+        let (head, bytes) = upload(&server, 21, "item-nul", &first);
+        assert_eq!(head.status, 200, "{}", String::from_utf8_lossy(&bytes));
+        let saved: Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(saved["client_item_id"], "item-nul");
+        let path = saved["path"].as_str().unwrap();
+        let timestamp = saved["timestamp"].as_str().unwrap();
+        assert!(!path.is_empty());
+        assert!(!timestamp.is_empty());
+        assert_eq!(std::fs::read(path).unwrap(), first);
+        let metadata: Value = serde_json::from_str(
+            &std::fs::read_to_string(
+                directory
+                    .path()
+                    .join("imports")
+                    .join(timestamp)
+                    .join("import.json"),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        let hashed = solstone_core_import::hash_source(std::path::Path::new(path)).unwrap();
+        assert_eq!(metadata["source_hash"], hashed.as_str());
+        assert_eq!(metadata["file_size"], first.len() as u64);
+        let (other_head, other_bytes) = upload(&server, 22, "item-other", &second);
+        assert_eq!(
+            other_head.status,
+            200,
+            "{}",
+            String::from_utf8_lossy(&other_bytes)
+        );
+        let other: Value = serde_json::from_slice(&other_bytes).unwrap();
+        assert_ne!(other["path"].as_str().unwrap(), path);
+        let other_hash = solstone_core_import::hash_source(std::path::Path::new(
+            other["path"].as_str().unwrap(),
+        ))
+        .unwrap();
+        assert_ne!(other_hash.as_str(), hashed.as_str());
+        let identity = json!({
+            "path": path,
+            "timestamp": saved["source_timestamp"],
+            "import_id": timestamp,
+            "setting": "",
+        });
+        let (meta, _) = owner_bytes(
+            &server,
+            23,
+            "POST",
+            "/app/import/api/meta",
+            "application/json",
+            &json!({"path": path, "setting": "", "import_id": timestamp}).to_string(),
+        );
+        assert_eq!(meta.status, 200);
+        let (preview, preview_bytes) = owner_bytes(
+            &server,
+            24,
+            "POST",
+            "/app/import/api/preview",
+            "application/json",
+            &identity.to_string(),
+        );
+        assert!(preview.status >= 200);
+        assert!(!preview_bytes.is_empty());
+        let (start, start_bytes) = owner_bytes(
+            &server,
+            25,
+            "POST",
+            "/app/import/api/start",
+            "application/json",
+            &identity.to_string(),
+        );
+        assert!(start.status >= 200);
+        assert!(!start_bytes.is_empty());
+        let (list, list_bytes) = owner_bytes(
+            &server,
+            26,
+            "GET",
+            "/app/import/api/list?page=1&per_page=50",
+            "application/json",
+            "",
+        );
+        assert_eq!(list.status, 200);
+        let listed = String::from_utf8(list_bytes).unwrap();
+        assert!(listed.contains(timestamp));
+        let mut truncated = multipart("item-cut", "cut.bin", &first);
+        truncated.truncate(80);
+        let (body_read, body_write) = os_pipe();
+        let (response_read, response_write) = std::os::unix::net::UnixStream::pair().unwrap();
+        response_write.set_nonblocking(true).unwrap();
+        let descriptor: std::os::fd::OwnedFd = response_write.into();
+        let receiver = server
+            .open_owner_upload(
+                27,
+                "POST",
+                "/app/import/api/save",
+                &[(
+                    "content-type".into(),
+                    "multipart/form-data; boundary=bound".into(),
+                )],
+                body_read,
+                std::fs::File::from(descriptor),
+            )
+            .unwrap();
+        write_all_blocking(body_write, &truncated);
+        let cut = receiver
+            .recv_timeout(Duration::from_secs(30))
+            .unwrap()
+            .unwrap();
+        assert_ne!(cut.status, 200);
+        drop(response_read);
+        let imports = directory.path().join("imports");
+        for entry in std::fs::read_dir(&imports).unwrap() {
+            let entry = entry.unwrap();
+            let metadata = entry.path().join("import.json");
+            if let Ok(text) = std::fs::read_to_string(metadata) {
+                assert!(!text.contains("item-cut"));
+            }
+        }
+        assert!(
+            !imports.join(".save-tmp").exists()
+                || std::fs::read_dir(imports.join(".save-tmp"))
+                    .map(|reader| reader.count() == 0)
+                    .unwrap_or(true)
+        );
+        let (body_read, body_write) = os_pipe();
+        let (_response_read, response_write) = std::os::unix::net::UnixStream::pair().unwrap();
+        response_write.set_nonblocking(true).unwrap();
+        let descriptor: std::os::fd::OwnedFd = response_write.into();
+        let receiver = server
+            .open_owner_upload(
+                28,
+                "POST",
+                "/app/import/api/save",
+                &[(
+                    "content-type".into(),
+                    "multipart/form-data; boundary=bound".into(),
+                )],
+                body_read,
+                std::fs::File::from(descriptor),
+            )
+            .unwrap();
+        server.cancel_owner_response(28);
+        drop(body_write);
+        assert!(receiver.recv_timeout(Duration::from_secs(2)).is_err());
+        let _ = Write::flush(&mut std::io::stdout());
+        server.shutdown_for_retirement().unwrap();
+    }
+
     fn fixture() -> (MobileServing, tempfile::TempDir) {
         let directory = tempfile::tempdir().unwrap();
         let probe = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
