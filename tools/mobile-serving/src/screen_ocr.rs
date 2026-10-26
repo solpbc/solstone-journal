@@ -88,6 +88,10 @@ impl OcrWorkerFactory for ScreenOcrFactory {
         Ok(Some(Box::new(ScreenOcrWorker {
             models,
             engine: None,
+            pool: rayon::ThreadPoolBuilder::new()
+                .num_threads(1)
+                .build()
+                .map_err(|_| OcrFailure::Unavailable)?,
             detail: Rc::clone(&self.detail),
         })))
     }
@@ -106,6 +110,7 @@ struct AdmittedModels {
 struct ScreenOcrWorker {
     models: AdmittedModels,
     engine: Option<OAROCR>,
+    pool: rayon::ThreadPool,
     detail: Rc<Cell<&'static str>>,
 }
 
@@ -134,8 +139,9 @@ impl OcrWorker for ScreenOcrWorker {
             .decode()
             .map_err(|_| self.engine_unavailable())?
             .to_rgb8();
-        let predicted = engine
-            .predict(vec![image])
+        let predicted = self
+            .pool
+            .install(|| engine.predict(vec![image]))
             .map_err(|_| self.engine_unavailable())?;
         let Some(result) = predicted.first() else {
             return Err(self.engine_unavailable());

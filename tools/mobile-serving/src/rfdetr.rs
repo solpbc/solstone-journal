@@ -24,11 +24,15 @@ use sha2::{Digest, Sha256};
 const MODEL_SIZE: u64 = 63_439_488;
 #[cfg(feature = "rfdetr-native")]
 const MODEL_SHA256: &str = "d798cc448faa53209b88fc905c91beb1dd104634b95f6948cc4877540a8fd3ee";
+#[cfg(any(test, feature = "rfdetr-native"))]
 const THRESHOLD: f32 = 0.25;
+#[cfg(any(test, feature = "rfdetr-native"))]
 const TOP_K: u32 = 300;
+#[cfg(any(test, feature = "rfdetr-native"))]
 const THREADS: u32 = 4;
 
 /// Desktop and mobile detection use one threshold, thread count, and top-k.
+#[cfg(any(test, feature = "rfdetr-native"))]
 pub(crate) fn detection_call() -> (f32, u32, u32) {
     (THRESHOLD, THREADS, TOP_K)
 }
@@ -57,7 +61,7 @@ impl RfdetrDetector {
         #[cfg(not(feature = "rfdetr-native"))]
         {
             let _ = (&self.context, &self.journal, png, journal);
-            return Err("rfdetr native library is not linked".to_owned());
+            Err("rfdetr native library is not linked".to_owned())
         }
         #[cfg(feature = "rfdetr-native")]
         {

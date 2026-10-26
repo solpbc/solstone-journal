@@ -29,6 +29,7 @@ processing = [
     "dep:solstone-core-speakers",
     "dep:oar-ocr",
     "dep:image",
+    "dep:rayon",
 ]
 rfdetr-native = ["dep:solstone-core-local"]
 screen-ocr-native = []
@@ -72,6 +73,7 @@ solstone-core-speaker-resolve = { path = "../../core/crates/solstone-core-speake
 solstone-core-speakers = { path = "../../core/crates/solstone-core-speakers", optional = true }
 oar-ocr = { path = "../../core/vendor/oar-ocr", optional = true, default-features = false, features = ["simd"] }
 image = { version = "0.25.6", optional = true, default-features = false, features = ["png"] }
+rayon = { version = "1", optional = true }
 ort = { version = "=2.0.0-rc.12", default-features = false, features = ["api-24", "std"] }
 
 # iOS links the pinned static runtime into its app executable.

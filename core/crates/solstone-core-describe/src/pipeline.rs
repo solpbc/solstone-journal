@@ -3,13 +3,12 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::fs::{self, File, OpenOptions};
-use std::io::Write;
+use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use serde_json::{Map, Value, json};
 use solstone_core_generate::{GenerateResponse, RefusalReason, SessionCompletion};
-use solstone_core_journal_io::{AtomicWriteOptions, install_file};
 use solstone_core_processing_record::{
     read_processing_record_header, record_attempts, should_reenter_analysis_output, vocab,
 };
@@ -94,13 +93,12 @@ struct Promotion<'a> {
     carry_forward_observer: Option<&'a str>,
     existing: Option<&'a merge::ExistingDescribeArtifact>,
     attempt: Option<&'a solstone_core_system::work_retry::Attempt>,
+    checkpoint: &'a dyn Fn() -> bool,
+    ocr: Option<&'a screen_ocr::PreparedPublication>,
 }
 
 struct OcrPublication<'a> {
-    journal: &'a Path,
     segment: &'a Path,
-    claims: &'a OutputClaims,
-    input: &'a InputObservation,
     binding: Option<&'a screen_ocr::SourceBinding>,
     decoded: &'a crate::DescribeResult,
     plan: Option<&'a merge::IncrementalMergePlan>,
@@ -317,8 +315,9 @@ fn run_prepared(
         .map_err(|error| RunError::Internal(error.to_string()))?;
     let segment = output.parent().unwrap_or_else(|| Path::new(""));
     let recipe_id = ocr_factory.recipe_id();
-    let input = match InputObservation::capture(&claims, options.video) {
+    let input = match InputObservation::capture_checked(&claims, options.video, checkpoint) {
         Ok(input) => input,
+        Err(_) if checkpoint() => return Err(RunError::Cancelled),
         Err(error) => {
             if let Ok(identity) = claims.segment_identity(segment) {
                 let identity = identity.observation_id();
@@ -341,15 +340,14 @@ fn run_prepared(
     if let Some(binding) = &source_binding {
         let path = screen_ocr::sidecar_path(segment, &binding.source_id);
         let sidecar = screen_ocr::load_sidecar(&path);
-        let invalid = options.redo
-            || match &sidecar {
-                Some(sidecar) => {
-                    sidecar.segment_identity != binding.segment_identity
-                        || sidecar.source_sha256 != binding.source_sha256
-                        || sidecar.recipe_id != recipe_id
-                }
-                None => fs::symlink_metadata(&path).is_ok(),
-            };
+        let invalid = match &sidecar {
+            Some(sidecar) => {
+                sidecar.segment_identity != binding.segment_identity
+                    || sidecar.source_sha256 != binding.source_sha256
+                    || sidecar.recipe_id != recipe_id
+            }
+            None => fs::symlink_metadata(&path).is_ok(),
+        };
         if invalid {
             let _ = screen_ocr::invalidate_source_state(
                 options.journal,
@@ -458,13 +456,11 @@ fn run_prepared(
         if checkpoint() {
             return Err(RunError::Cancelled);
         }
-        publish_ocr_best_effort::<(), RunError>(
+        let mut staged_ocr = None;
+        prepare_ocr_best_effort::<(), RunError>(
             Ok(()),
             OcrPublication {
-                journal: options.journal,
                 segment,
-                claims: &claims,
-                input: &input,
                 binding: source_binding.as_ref(),
                 decoded: &decoded,
                 plan: plan.as_ref(),
@@ -475,6 +471,7 @@ fn run_prepared(
                 worker_factory: ocr_factory,
             },
             checkpoint,
+            &mut staged_ocr,
         )??;
         let (state, reason) = if decoded.decode_failed {
             (vocab::STATE_FAILED, vocab::REASON_CORRUPT_INPUT)
@@ -484,6 +481,8 @@ fn run_prepared(
         if checkpoint() {
             return Err(RunError::Cancelled);
         }
+        let prepared_ocr =
+            prepare_ocr_publication(options.journal, segment, staged_ocr.as_ref(), checkpoint)?;
         promote(Promotion {
             claims: &claims,
             input: &input,
@@ -499,6 +498,8 @@ fn run_prepared(
             carry_forward_observer: carry_forward_observer.as_deref(),
             existing: existing_artifact.as_ref(),
             attempt,
+            checkpoint,
+            ocr: prepared_ocr.as_ref(),
         })?;
         send_described(&options, &output, start);
         return Ok(());
@@ -777,10 +778,26 @@ fn run_prepared(
     if checkpoint() {
         return Err(RunError::Cancelled);
     }
-    let categorization = if streamed {
-        if let (Some(binding), Some(sidecar)) =
-            (source_binding.as_ref(), streaming_sidecar.as_mut())
-        {
+    let mut staged_ocr = None;
+    let categorization = if video_source && plan.is_some() {
+        // Retry analyses can be reused without retaining their PNGs. Reopen the
+        // exact input and run the OCR-only pass one frame at a time instead of
+        // interpreting metadata-only PNGs as changed or corrupt cached text.
+        staged_ocr = prepare_video_ocr(
+            options.video,
+            options.config,
+            &decoded,
+            plan.as_ref(),
+            &categorized,
+            &options.category_overrides,
+            source_binding.as_ref(),
+            &recipe_id,
+            ocr_factory,
+            checkpoint,
+        )?;
+        categorization
+    } else if streamed {
+        if let Some(sidecar) = streaming_sidecar.as_mut() {
             let analyses = ocr_analyses(plan.as_ref(), &categorized);
             sidecar.admission_policy_id =
                 screen_ocr::admission_policy_id(&analyses, &options.category_overrides);
@@ -788,34 +805,14 @@ fn run_prepared(
                 screen_ocr::decode_coverage(decoded.decode_failed, decoded.qualified_frames.len());
             screen_ocr::set_frame_categories(sidecar, &analyses, &options.category_overrides);
             streaming_ocr.finish(sidecar, ocr_factory);
-            let path = screen_ocr::sidecar_path(segment, &binding.source_id);
-            if let Err(error) = screen_ocr::publish_sidecar(
-                options.journal,
-                segment,
-                &path,
-                sidecar,
-                &input,
-                &claims,
-                checkpoint,
-            ) {
-                if screen_ocr::is_describe_cancel(&error) {
-                    return Err(RunError::Cancelled);
-                }
-                log::warn!(
-                    "screen OCR record publication failed: {:?}; screen processing continues",
-                    error.kind()
-                );
-            }
         }
+        staged_ocr = streaming_sidecar;
         categorization
     } else {
-        publish_ocr_best_effort(
+        prepare_ocr_best_effort(
             categorization,
             OcrPublication {
-                journal: options.journal,
                 segment,
-                claims: &claims,
-                input: &input,
                 binding: source_binding.as_ref(),
                 decoded: &decoded,
                 plan: plan.as_ref(),
@@ -826,37 +823,16 @@ fn run_prepared(
                 worker_factory: ocr_factory,
             },
             checkpoint,
+            &mut staged_ocr,
         )?
     };
+    let staged_ocr = std::cell::RefCell::new(staged_ocr);
     let publish_ocr_diagnostics = |diagnostic_rows: &[Value]| -> Result<(), RunError> {
         if checkpoint() {
             return Err(RunError::Cancelled);
         }
-        if let Some(binding) = source_binding.as_ref() {
-            match screen_ocr::publish_extraction_diagnostic(
-                options.journal,
-                segment,
-                &screen_ocr::sidecar_path(segment, &binding.source_id),
-                &binding.source_id,
-                &binding.segment_identity,
-                &recipe_id,
-                &binding.source_sha256,
-                diagnostic_rows,
-                &input,
-                &claims,
-                checkpoint,
-            ) {
-                Ok(()) => {}
-                Err(error) if screen_ocr::is_describe_cancel(&error) => {
-                    return Err(RunError::Cancelled);
-                }
-                Err(error) => {
-                    log::warn!(
-                        "screen OCR grounding diagnostic could not be saved: {:?}",
-                        error.kind()
-                    );
-                }
-            }
+        if let Some(sidecar) = staged_ocr.borrow_mut().as_mut() {
+            screen_ocr::update_frame_diagnostics(sidecar, diagnostic_rows);
         }
         Ok(())
     };
@@ -886,6 +862,8 @@ fn run_prepared(
             carry_forward_observer: carry_forward_observer.as_deref(),
             existing: existing_artifact.as_ref(),
             attempt,
+            checkpoint,
+            ocr: None,
         })?;
         return Err(RunError::Internal(
             "all describe frame requests failed".to_owned(),
@@ -1179,6 +1157,9 @@ fn run_prepared(
     if checkpoint() {
         return Err(RunError::Cancelled);
     }
+    let staged_ocr = staged_ocr.into_inner();
+    let prepared_ocr =
+        prepare_ocr_publication(options.journal, segment, staged_ocr.as_ref(), checkpoint)?;
     promote(Promotion {
         claims: &claims,
         input: &input,
@@ -1194,6 +1175,8 @@ fn run_prepared(
         carry_forward_observer: carry_forward_observer.as_deref(),
         existing: existing_artifact.as_ref(),
         attempt,
+        checkpoint,
+        ocr: prepared_ocr.as_ref(),
     })?;
     send_described(&options, &output, start);
     Ok(())
@@ -1394,11 +1377,11 @@ fn release_held_frames(
         }
         let mut cleared = false;
         if !categorized[row_index].png.is_empty() {
-            categorized[row_index].png.clear();
+            categorized[row_index].png = Vec::new();
             cleared = true;
         }
         if !decoded.qualified_frames[index].png.is_empty() {
-            decoded.qualified_frames[index].png.clear();
+            decoded.qualified_frames[index].png = Vec::new();
             cleared = true;
         }
         if cleared {
@@ -1675,16 +1658,109 @@ fn blocked(
     RunError::Blocked(code.map(str::to_owned))
 }
 
-fn publish_ocr_best_effort<T, E>(
+fn prepare_ocr_publication(
+    journal: &Path,
+    segment: &Path,
+    sidecar: Option<&screen_ocr::PrivateSidecar>,
+    checkpoint: &dyn Fn() -> bool,
+) -> Result<Option<screen_ocr::PreparedPublication>, RunError> {
+    if checkpoint() {
+        return Err(RunError::Cancelled);
+    }
+    let Some(sidecar) = sidecar else {
+        return Ok(None);
+    };
+    match screen_ocr::PreparedPublication::prepare(journal, segment, sidecar, checkpoint) {
+        Ok(publication) => Ok(Some(publication)),
+        Err(_) if checkpoint() => Err(RunError::Cancelled),
+        Err(error) if error.to_string() == "describe cancelled" => Err(RunError::Cancelled),
+        Err(error) => Err(RunError::Internal(format!(
+            "screen OCR withdrawal could not be prepared: {error}"
+        ))),
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn prepare_video_ocr(
+    video: &Path,
+    config: WinnowConfig,
+    decoded: &crate::DescribeResult,
+    plan: Option<&merge::IncrementalMergePlan>,
+    categorized: &[CategorizedRow],
+    overrides: &BTreeMap<String, CategoryOverride>,
+    binding: Option<&screen_ocr::SourceBinding>,
+    recipe_id: &str,
+    factory: &mut dyn OcrWorkerFactory,
+    checkpoint: &dyn Fn() -> bool,
+) -> Result<Option<screen_ocr::PrivateSidecar>, RunError> {
+    let Some(binding) = binding else {
+        return Ok(None);
+    };
+    let analyses = ocr_analyses(plan, categorized);
+    let ignored = screen_ocr::ignored_frame_ids(&analyses, overrides);
+    let mut sidecar = screen_ocr::expected_sidecar(
+        binding.source_id.clone(),
+        binding.segment_identity.clone(),
+        binding.source_sha256.clone(),
+        recipe_id.to_owned(),
+        screen_ocr::admission_policy_id(&analyses, overrides),
+        screen_ocr::decode_coverage(decoded.decode_failed, decoded.qualified_frames.len()),
+        &decoded.qualified_frames,
+    );
+    sidecar.source_name = binding.source_name.clone();
+    screen_ocr::set_frame_categories(&mut sidecar, &analyses, overrides);
+    let cached = video.parent().and_then(|segment| {
+        screen_ocr::load_sidecar(&screen_ocr::sidecar_path(segment, &binding.source_id))
+    });
+    if let Some(cached) = cached.as_ref()
+        && screen_ocr::cache_matches_metadata(cached, &sidecar, &ignored)
+    {
+        return Ok(Some(cached.clone()));
+    }
+    let mut pull = crate::decode::FramePull::open(video, config, true)
+        .map_err(|_| RunError::Internal("could not reopen video for OCR retry".into()))?;
+    let mut ocr = screen_ocr::StreamingOcr::new();
+    loop {
+        match pull.next(checkpoint) {
+            PullNext::Frame(frame) => {
+                let index = ocr.fed();
+                if decoded.qualified_frames.get(index).is_none_or(|expected| {
+                    expected.frame_id != frame.frame_id || expected.timestamp != frame.timestamp
+                }) {
+                    return Err(RunError::Internal("OCR retry frame binding changed".into()));
+                }
+                ocr.feed(
+                    &mut sidecar,
+                    index,
+                    &frame.png,
+                    ignored.contains(&frame.frame_id),
+                    factory,
+                );
+            }
+            PullNext::Cancelled => return Err(RunError::Cancelled),
+            PullNext::Done => break,
+        }
+    }
+    if ocr.fed() != decoded.qualified_frames.len() {
+        return Err(RunError::Internal(
+            "OCR retry did not reach the last qualified frame".into(),
+        ));
+    }
+    ocr.finish(&mut sidecar, factory);
+    if let Some(cached) = cached.as_ref() {
+        screen_ocr::retain_valid_cached_frames(&mut sidecar, cached);
+    }
+    Ok(Some(sidecar))
+}
+
+fn prepare_ocr_best_effort<T, E>(
     outcome: Result<T, E>,
     publication: OcrPublication<'_>,
     checkpoint: &dyn Fn() -> bool,
+    staged: &mut Option<screen_ocr::PrivateSidecar>,
 ) -> Result<Result<T, E>, RunError> {
     let OcrPublication {
-        journal,
         segment,
-        claims,
-        input,
         binding,
         decoded,
         plan,
@@ -1719,19 +1795,6 @@ fn publish_ocr_best_effort<T, E>(
     let mut sidecar = if cache_hit {
         cached.expect("cache match has a sidecar")
     } else {
-        if let Err(error) = screen_ocr::invalidate_source_state(
-            journal,
-            segment,
-            &path,
-            &binding.source_id,
-            &binding.segment_identity,
-            recipe_id,
-            claims,
-            checkpoint,
-        ) && screen_ocr::is_describe_cancel(&error)
-        {
-            return Err(RunError::Cancelled);
-        }
         expected
     };
     let cancel = std::cell::Cell::new(false);
@@ -1756,22 +1819,8 @@ fn publish_ocr_best_effort<T, E>(
                 cancel.set(true);
                 return Err(());
             }
-            match screen_ocr::publish_sidecar(
-                journal, segment, &path, sidecar, input, claims, checkpoint,
-            ) {
-                Ok(()) => Ok(()),
-                Err(error) if screen_ocr::is_describe_cancel(&error) => {
-                    cancel.set(true);
-                    Err(())
-                }
-                Err(error) => {
-                    log::warn!(
-                        "screen OCR record publication failed: {:?}; screen processing continues",
-                        error.kind()
-                    );
-                    Ok(())
-                }
-            }
+            *staged = Some(sidecar.clone());
+            Ok(())
         },
     );
     if cancel.get() {
@@ -2318,28 +2367,31 @@ fn stamp_processing(
 
 fn stamp_failed(
     record: &mut Value,
-    input: &Path,
+    input: &InputObservation,
     attempt: Option<&solstone_core_system::work_retry::Attempt>,
 ) -> Result<(), RunError> {
-    match attempt {
-        Some(attempt) => {
-            solstone_core_system::work_retry::raw::stamp_failed_input_from(record, input, attempt)
-        }
-        None => solstone_core_system::work_retry::raw::stamp_failed_input(record, input),
+    stamp_processing(record, attempt)?;
+    if record.get("state").and_then(Value::as_str) == Some(vocab::STATE_FAILED) {
+        // The final checked commit revalidates these exact admitted bytes.
+        // Do not perform another uncancellable whole-input hash for bookkeeping.
+        record["input_sha256"] = json!(
+            input
+                .input_sha256()
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect::<String>()
+        );
     }
-    .map_err(RunError::Internal)
+    Ok(())
 }
 
 fn promote(promotion: Promotion<'_>) -> Result<(), RunError> {
-    let parent = promotion
-        .output
-        .parent()
-        .ok_or_else(|| RunError::Internal("output has no parent".to_owned()))?;
-    let final_path = parent.join(format!(".describe-final-{}.jsonl.tmp", std::process::id()));
-    let result = (|| {
-        if let Some(existing) = retained_reading(&promotion)? {
-            return keep_existing_reading(&promotion, existing, &final_path);
-        }
+    check_promotion(&promotion)?;
+    if let Some(existing) = retained_reading(&promotion)? {
+        return keep_existing_reading(&promotion, existing);
+    }
+    let prepared = crate::publication::StagedFile::prepare(promotion.output, promotion.checkpoint, |final_file| {
+        (|| -> Result<(), RunError> {
         let mut header = Map::new();
         header.insert(
             "raw".to_owned(),
@@ -2388,33 +2440,87 @@ fn promote(promotion: Promotion<'_>) -> Result<(), RunError> {
         stamp_processing(&mut record, promotion.attempt)?;
         if promotion.state == vocab::STATE_FAILED {
             record["attempts"] = json!(promotion.previous_attempts + 1);
-            stamp_failed(&mut record, promotion.video, promotion.attempt)?;
+            stamp_failed(&mut record, promotion.input, promotion.attempt)?;
         }
         header.insert("_solstone_processing".to_owned(), record);
-        let mut final_file =
-            File::create(&final_path).map_err(|error| RunError::Internal(error.to_string()))?;
         writeln!(final_file, "{}", Value::Object(header))
             .map_err(|error| RunError::Internal(error.to_string()))?;
         let mut row_file =
             File::open(promotion.rows).map_err(|error| RunError::Internal(error.to_string()))?;
-        std::io::copy(&mut row_file, &mut final_file)
-            .map_err(|error| RunError::Internal(error.to_string()))?;
-        drop(final_file);
-        install_promoted(&promotion, &final_path)
-    })();
-    if result.is_err() {
-        let _ = fs::remove_file(&final_path);
-    }
-    result
+        let mut buffer = [0u8; 64 * 1024];
+        loop {
+            check_promotion(&promotion)?;
+            let count = row_file
+                .read(&mut buffer)
+                .map_err(|error| RunError::Internal(error.to_string()))?;
+            if count == 0 {
+                break;
+            }
+            final_file
+                .write_all(&buffer[..count])
+                .map_err(|error| RunError::Internal(error.to_string()))?;
+        }
+        Ok(())
+        })().map_err(|error| match error {
+            RunError::Cancelled => std::io::Error::other("describe cancelled"),
+            RunError::Internal(detail) => std::io::Error::other(detail),
+            RunError::Blocked(detail) => std::io::Error::other(format!("describe blocked: {detail:?}")),
+        })
+    }).map_err(|error| promotion_error(&promotion, error))?;
+    install_promoted(&promotion, &prepared, true)
 }
 
-fn install_promoted(promotion: &Promotion<'_>, final_path: &Path) -> Result<(), RunError> {
+fn promotion_error(promotion: &Promotion<'_>, error: std::io::Error) -> RunError {
+    if error.to_string() == "describe cancelled" || (promotion.checkpoint)() {
+        RunError::Cancelled
+    } else {
+        RunError::Internal(error.to_string())
+    }
+}
+
+fn install_promoted(
+    promotion: &Promotion<'_>,
+    prepared: &crate::publication::StagedFile,
+    publish_ocr: bool,
+) -> Result<(), RunError> {
+    prepared
+        .validate_stage()
+        .map_err(|error| promotion_error(promotion, error))?;
+    check_promotion(promotion)?;
     let _commit = promotion
         .input
-        .commit(promotion.claims)
+        .commit_checked(promotion.claims, promotion.checkpoint)
+        .map_err(|error| {
+            if (promotion.checkpoint)() {
+                RunError::Cancelled
+            } else {
+                RunError::Internal(error.to_string())
+            }
+        })?;
+    check_promotion(promotion)?;
+    if let Some(ocr) = promotion.ocr {
+        ocr.validate_authority()
+            .map_err(|error| promotion_error(promotion, error))?;
+    }
+    check_promotion(promotion)?;
+    prepared
+        .install()
         .map_err(|error| RunError::Internal(error.to_string()))?;
-    install_file(final_path, promotion.output, AtomicWriteOptions::default())
-        .map_err(|error| RunError::Internal(error.to_string()))
+    if publish_ocr
+        && let Some(ocr) = promotion.ocr
+        && let Err(error) = ocr.install(&_commit)
+    {
+        log::warn!("screen OCR publication failed: {:?}", error.kind());
+    }
+    Ok(())
+}
+
+fn check_promotion(promotion: &Promotion<'_>) -> Result<(), RunError> {
+    if (promotion.checkpoint)() {
+        Err(RunError::Cancelled)
+    } else {
+        Ok(())
+    }
 }
 
 /// Return the prior reading a retry must keep: one with more analyzed frames
@@ -2438,13 +2544,18 @@ fn retained_reading<'a>(
     if kept == 0 {
         return Ok(None);
     }
-    let fresh = fs::read_to_string(promotion.rows)
-        .map_err(|error| RunError::Internal(error.to_string()))?;
-    let fresh = fresh
-        .lines()
-        .filter_map(|line| serde_json::from_str::<Value>(line).ok())
-        .filter(merge::is_analyzed)
-        .count();
+    let file = File::open(promotion.rows).map_err(|error| RunError::Internal(error.to_string()))?;
+    let mut fresh = 0;
+    for line in BufReader::new(file).lines() {
+        check_promotion(promotion)?;
+        let line = line.map_err(|error| RunError::Internal(error.to_string()))?;
+        if serde_json::from_str::<Value>(&line)
+            .ok()
+            .is_some_and(|row| merge::is_analyzed(&row))
+        {
+            fresh += 1;
+        }
+    }
     Ok((kept > fresh).then_some(existing))
 }
 
@@ -2453,25 +2564,27 @@ fn retained_reading<'a>(
 fn keep_existing_reading(
     promotion: &Promotion<'_>,
     existing: &merge::ExistingDescribeArtifact,
-    final_path: &Path,
 ) -> Result<(), RunError> {
     let mut header = existing.header.clone();
     let mut record = existing.record.clone();
     record["attempted_at"] =
         json!(chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true));
     record["attempts"] = json!(promotion.previous_attempts + 1);
-    stamp_failed(&mut record, promotion.video, promotion.attempt)?;
+    stamp_failed(&mut record, promotion.input, promotion.attempt)?;
     header["_solstone_processing"] = record;
-    let mut final_file =
-        File::create(final_path).map_err(|error| RunError::Internal(error.to_string()))?;
-    writeln!(final_file, "{header}").map_err(|error| RunError::Internal(error.to_string()))?;
-    for row in existing.rows.iter().flatten() {
-        final_file
-            .write_all(row.raw_line.as_bytes())
-            .map_err(|error| RunError::Internal(error.to_string()))?;
-    }
-    drop(final_file);
-    install_promoted(promotion, final_path)
+    let prepared = crate::publication::StagedFile::prepare(
+        promotion.output,
+        promotion.checkpoint,
+        |final_file| {
+            writeln!(final_file, "{header}")?;
+            for row in existing.rows.iter().flatten() {
+                final_file.write_all(row.raw_line.as_bytes())?;
+            }
+            Ok(())
+        },
+    )
+    .map_err(|error| promotion_error(promotion, error))?;
+    install_promoted(promotion, &prepared, false)
 }
 
 #[cfg(all(test, not(feature = "full-tests")))]
