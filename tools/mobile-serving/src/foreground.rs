@@ -376,7 +376,8 @@ mod scheduled_commands;
 #[path = "import_commands.rs"]
 mod import_commands;
 pub use import_commands::{
-    ImportContext, ImportKeepalive, ImportRequest, ImportSeamFactory, PreparedImport,
+    ImportContext, ImportKeepalive, ImportPreparation, ImportRequest, ImportSeamFactory,
+    PreparedImport,
 };
 type ImportFactorySlot = Arc<Mutex<Option<Arc<ImportSeamFactory>>>>;
 
@@ -1893,6 +1894,22 @@ impl ForegroundProcessingHost {
             .map_err(|error| error.to_string())?;
         *slot = Some(factory);
         Ok(())
+    }
+    /// Capture this owner's preparation lifetime before snapshot or metadata effects.
+    /// Bind final importer arguments on the retained worker after those inputs exist.
+    pub fn import_preparation(
+        &self,
+        stop: solstone_core_import::WorkStop,
+        priority: WorkPriority,
+    ) -> Result<ImportPreparation, String> {
+        import_commands::preparation(
+            Arc::clone(&self.root),
+            &self.generator,
+            &self.imports,
+            Arc::clone(&self.cancelled),
+            stop,
+            priority,
+        )
     }
     /// Capture the owner import authority before handing it to a retained worker.
     /// Call prepare, preview and run on that worker; preparation may block.
@@ -4149,6 +4166,203 @@ mod processing_proofs {
     }
 
     #[test]
+    fn scheduled_backup_dispatch_retains_publication_until_the_real_bus_echoes() {
+        use solstone_core_callosum::{
+            CallosumConnectionPhase, CallosumReceiveEvent, CallosumSocketConnection,
+            CallosumSocketServer,
+        };
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let (temp, payload) = journal_fixture();
+        write_schedules(temp.path(), quiet_entries());
+        // This runtime has no worker threads. Outside block_on the real bus
+        // cannot accept or publish the new terminal, even if its kernel socket
+        // has accepted the producer's write.
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let socket = temp.path().join("health/callosum.sock");
+        let bus = runtime
+            .block_on(CallosumSocketServer::bind(&socket))
+            .unwrap();
+        let (mut observer, host) = runtime.block_on(async {
+            let mut observer = CallosumSocketConnection::new(&socket, Map::new());
+            observer.start();
+            tokio::time::timeout(Duration::from_secs(5), async {
+                loop {
+                    match observer.next_event().await {
+                        Some(CallosumReceiveEvent::Continuity {
+                            phase: CallosumConnectionPhase::Connected,
+                            ..
+                        }) => {
+                            observer.emit(
+                                "supervisor",
+                                "status",
+                                Map::from_iter([("backup_echo_observer".into(), json!(true))]),
+                            );
+                        }
+                        Some(CallosumReceiveEvent::Envelope { envelope, .. })
+                            if envelope.extra.get("backup_echo_observer") == Some(&json!(true)) =>
+                        {
+                            break;
+                        }
+                        _ => {}
+                    }
+                }
+            })
+            .await
+            .unwrap();
+            let journal = temp.path().to_path_buf();
+            let payload = payload.clone();
+            let host = tokio::task::spawn_blocking(move || {
+                open_host(
+                    &journal,
+                    &payload,
+                    Utc.with_ymd_and_hms(2030, 1, 1, 12, 0, 0).unwrap(),
+                )
+            })
+            .await
+            .unwrap();
+            (observer, host)
+        });
+        let (done_send, done) = std::sync::mpsc::channel();
+        let (settled_send, settled) = tokio::sync::oneshot::channel();
+        let worker = std::thread::spawn(move || {
+            let result =
+                host.execute_worker_command(&owned(&["maintenance", "run", "backup:verify"]));
+            done_send.send(result).unwrap();
+            settled_send.send(result).unwrap();
+            host
+        });
+        let before_bus_progress = done.recv_timeout(Duration::from_millis(100));
+        let (terminal, completed) = runtime.block_on(async {
+            let terminal = async {
+                tokio::time::timeout(Duration::from_secs(10), async {
+                    loop {
+                        if let Some(CallosumReceiveEvent::Envelope { envelope, .. }) =
+                            observer.next_event().await
+                            && envelope.tract == "supervisor"
+                            && envelope.event == "stopped"
+                            && envelope.extra.get("service") == Some(&json!("backup"))
+                            && envelope.extra.get("routine") == Some(&json!("backup:verify"))
+                        {
+                            return envelope;
+                        }
+                    }
+                })
+                .await
+            };
+            tokio::join!(terminal, settled)
+        });
+        // Settle all native ownership even when the pre-fix control fails.
+        let host = worker.join().unwrap();
+        host.shutdown().unwrap();
+        runtime.block_on(async {
+            observer.stop().await;
+            bus.stop().await;
+        });
+        assert!(
+            matches!(
+                before_bus_progress,
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout)
+            ),
+            "dispatcher returned before the real bus could publish: {before_bus_progress:?}; terminal={terminal:?}"
+        );
+        assert_eq!(completed.unwrap(), 0);
+        let terminal = terminal.expect("same10s terminal receipt bound");
+        assert_eq!(terminal.extra["exit_code"], 0);
+        assert_eq!(terminal.extra["ref"], "scheduled-backup:verify");
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn scheduled_backup_broker_failure_is_explicit_and_stop_joins_the_publisher() {
+        use std::io::{BufRead, BufReader, Write};
+        use std::os::unix::net::UnixListener;
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let (temp, payload) = journal_fixture();
+        write_schedules(temp.path(), quiet_entries());
+        let socket = temp.path().join("health/callosum.sock");
+        fs::create_dir_all(socket.parent().unwrap()).unwrap();
+        let endpoint = solstone_core_callosum::endpoint_path(&socket).unwrap();
+        let listener = UnixListener::bind(endpoint.as_ref()).unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let stopped = Arc::new(AtomicBool::new(false));
+        let peer_stop = Arc::clone(&stopped);
+        let (reached_send, reached) = std::sync::mpsc::channel();
+        let (release_send, release) = std::sync::mpsc::channel();
+        let peer = std::thread::spawn(move || {
+            while !peer_stop.load(Ordering::Acquire) {
+                let (stream, _) = match listener.accept() {
+                    Ok(peer) => peer,
+                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                        std::thread::sleep(Duration::from_millis(1));
+                        continue;
+                    }
+                    Err(error) => panic!("controlled broker accept: {error}"),
+                };
+                stream
+                    .set_read_timeout(Some(Duration::from_millis(100)))
+                    .unwrap();
+                let mut reader = BufReader::new(stream);
+                let mut line = String::new();
+                if reader.read_line(&mut line).unwrap_or(0) == 0 {
+                    continue;
+                }
+                let fields: serde_json::Value = serde_json::from_str(&line).unwrap();
+                if fields["service"] == "backup" && fields["event"] == "stopped" {
+                    reached_send.send(fields).unwrap();
+                    // Keep a live transport while withholding publication/echo.
+                    let _ = release.recv_timeout(Duration::from_secs(5));
+                    break;
+                }
+                let _ = reader.get_mut().write_all(line.as_bytes());
+            }
+        });
+        let now = Utc.with_ymd_and_hms(2030, 1, 1, 12, 0, 0).unwrap();
+        let mut entries = quiet_entries();
+        entries.get_mut(&schedule_name("backup:verify")).unwrap()["enabled"] = json!(true);
+        write_schedules(temp.path(), entries);
+        let host = Arc::new(open_host(temp.path(), &payload, now));
+        let published_frame = reached.recv_timeout(Duration::from_secs(5));
+        host.request_stop();
+        let stopping = Arc::clone(&host);
+        let (joined_send, joined) = std::sync::mpsc::channel();
+        let retirement = std::thread::spawn(move || {
+            joined_send.send(stopping.shutdown()).unwrap();
+        });
+        let stop_result = joined.recv_timeout(Duration::from_secs(3));
+        let _ = release_send.send(());
+        stopped.store(true, Ordering::Release);
+        peer.join().unwrap();
+        retirement.join().unwrap();
+        let frame = published_frame.expect("actual dispatcher reached withheld publication");
+        assert_eq!(frame["routine"], "backup:verify");
+        assert_eq!(
+            frame["exit_code"], 0,
+            "native unconfigured skip disposition remains authoritative"
+        );
+        stop_result
+            .expect("Stop joins within the existing2s publication budget")
+            .unwrap();
+        // Publication failure is distinct from the already-settled native work.
+        let deps = BackupWebDeps::new(temp.path().to_path_buf());
+        let checkpoint: Arc<dyn Fn() -> Result<(), String> + Send + Sync> = Arc::new(|| Ok(()));
+        let outcome = crate::backup::settle_embedded_backup(
+            &host.root,
+            solstone_core_maintenance::EmbeddedBackupRoutine::Verify,
+            &deps,
+            "failed-publication-control",
+            &checkpoint,
+        );
+        assert_eq!(crate::backup::outcome_exit(&outcome), 0);
+        assert!(
+            crate::backup::report_scheduled_terminal(&host.root, &outcome).is_err(),
+            "a closed broker cannot report confirmed publication"
+        );
+    }
+
+    #[test]
     fn scheduled_backup_terminals_reach_bus_and_general_requests_keep_existing_owners() {
         use solstone_core_callosum::{
             CallosumConnectionPhase, CallosumReceiveEvent, CallosumSocketConnection,
@@ -4223,7 +4437,13 @@ mod processing_proofs {
                 }
             })
             .await
-            .unwrap();
+            .unwrap_or_else(|error| panic!(
+                "scheduled backup terminal wait: {error}; observed={terminal:?}; history={:?}; scheduler={:?}; bus_clients={}; saturated={}; evictions={}; malformed={}; root={}",
+                host.queue().history(),
+                fs::read_to_string(temp.path().join("health/scheduler.json")),
+                bus.client_count(), bus.broadcast_saturation_drops(), bus.stalled_client_evictions(), bus.malformed_frame_drops(),
+                temp.path().display(),
+            ));
             terminal
         });
         assert_eq!(

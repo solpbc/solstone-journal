@@ -303,6 +303,174 @@ async fn recovery_drains_lost_client_native_preview_and_reuses_routes_for_real_m
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn source_recurrence_controls_legacy_aliases_and_preserves_modified_custom_commands() {
+    use chrono::TimeZone;
+    use solstone_core_system::request::ScheduledRequest;
+    use solstone_core_system::schedule::{ScheduleEngine, ScheduleNow, ScheduleSubmissionSink};
+    #[derive(Default)]
+    struct Sink(Mutex<Vec<ScheduledRequest>>);
+    impl ScheduleSubmissionSink for Sink {
+        fn submit(&self, request: ScheduledRequest) -> bool {
+            self.0.lock().unwrap().push(request);
+            true
+        }
+    }
+    let fixture = fixture("http://127.0.0.1:1");
+    let path = fixture.path().join("config/schedules.json");
+    let custom =
+        json!({"cmd":["solstone","journal","heartbeat"],"every":"daily","extra":"owner custom"});
+    let original = json!({
+        "daily_time":"00:15", "weekly_time":"03:15",
+        "sync:plaud":{"cmd":["solstone","journal","importer","--sync","plaud","--save","--dry-run"],"every":"hourly","max_runtime":"10m","extra":"kept"},
+        "owner:source:plaud":{"cmd":["journal","importer","--sync","plaud","--save"],"every":"weekly","enabled":true},
+        "sync:obsidian":custom,
+        "owner:source:obsidian":{"cmd":["journal","importer","--sync","obsidian","--save","--path","/retained/owner/vault"],"every":"hourly"},
+        "custom":custom
+    });
+    std::fs::write(&path, original.to_string()).unwrap();
+    let before = std::fs::read(&path).unwrap();
+    let root = Arc::new(JournalRoot::open(fixture.path()).unwrap());
+    let (stop, stopped) = watch::channel(false);
+    let (router, worker) = routes_and_worker(root, Some(payload()), stopped);
+    let worker = tokio::spawn(worker);
+    let plaud = "/api/journal/recurrences/source/plaud";
+    let (status, observed) = routed_request(&router, "GET", plaud, json!({})).await;
+    assert_eq!(status, StatusCode::OK, "{observed}");
+    assert_eq!(
+        observed["enabled"], true,
+        "legacy missing-enabled is active"
+    );
+    assert_eq!(observed["entries"].as_array().unwrap().len(), 2);
+    let (_, audio) = routed_request(
+        &router,
+        "GET",
+        "/api/journal/recurrences/source/audio",
+        json!({}),
+    )
+    .await;
+    assert_eq!(audio["enabled"], false);
+    assert_eq!(audio["entries"], json!([]));
+    assert_eq!(
+        std::fs::read(&path).unwrap(),
+        before,
+        "status never synthesizes a source recurrence"
+    );
+    let (status, changed) =
+        routed_request(&router, "PUT", plaud, json!({"every":"1m","enabled":true})).await;
+    assert_eq!(status, StatusCode::OK, "{changed}");
+    assert_eq!(
+        changed["entries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|e| e["active"] == true)
+            .count(),
+        1
+    );
+    let saved: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    assert_eq!(saved["sync:plaud"]["cmd"], original["sync:plaud"]["cmd"]);
+    assert_eq!(saved["sync:plaud"]["max_runtime"], "10m");
+    assert_eq!(saved["sync:plaud"]["extra"], "kept");
+    assert_eq!(saved["owner:source:plaud"]["enabled"], false);
+    assert_eq!(saved["custom"], custom);
+    let now = chrono::Utc.with_ymd_and_hms(2030, 1, 1, 12, 0, 0).unwrap();
+    let (mut engine, _) = ScheduleEngine::init(
+        &path,
+        fixture.path().join("health/scheduler.json"),
+        ScheduleNow::in_zone(now, chrono_tz::UTC),
+    )
+    .unwrap();
+    let sink = Sink::default();
+    engine
+        .check(
+            ScheduleNow::in_zone(now + chrono::Duration::minutes(1), chrono_tz::UTC),
+            &sink,
+        )
+        .unwrap();
+    let emitted = {
+        let requests = sink.0.lock().unwrap();
+        requests
+            .iter()
+            .filter(|r| {
+                r.scheduler_name
+                    .as_deref()
+                    .is_some_and(|n| n == "sync:plaud" || n == "owner:source:plaud")
+            })
+            .count()
+    };
+    assert_eq!(
+        emitted, 1,
+        "the actual scheduler submits only one owned source recurrence"
+    );
+    let obsidian = "/api/journal/recurrences/source/obsidian";
+    let (_, observed) = routed_request(&router, "GET", obsidian, json!({})).await;
+    assert_eq!(observed["enabled"], true);
+    assert_eq!(observed["blocked_names"], json!(["sync:obsidian"]));
+    let (status, disabled) = routed_request(
+        &router,
+        "PUT",
+        obsidian,
+        json!({"every":"daily","enabled":false}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{disabled}");
+    assert_eq!(disabled["enabled"], false);
+    assert_eq!(
+        routed_request(&router, "DELETE", obsidian, json!({}))
+            .await
+            .0,
+        StatusCode::OK
+    );
+    let (status, removed) = routed_request(&router, "DELETE", plaud, json!({})).await;
+    assert_eq!(status, StatusCode::OK, "{removed}");
+    assert_eq!(removed["enabled"], false);
+    let mut saved: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    assert!(saved.get("sync:plaud").is_none() && saved.get("owner:source:plaud").is_none());
+    assert!(saved.get("owner:source:obsidian").is_none());
+    assert_eq!(saved["sync:obsidian"], custom);
+    assert_eq!(saved["custom"], custom);
+    assert_eq!(saved["daily_time"], "00:15");
+    assert_eq!(saved["weekly_time"], "03:15");
+    saved["sync:plaud"] = custom.clone();
+    saved["owner:source:plaud"] = custom.clone();
+    std::fs::write(&path, saved.to_string()).unwrap();
+    let custom_bytes = std::fs::read(&path).unwrap();
+    assert_eq!(
+        routed_request(
+            &router,
+            "PUT",
+            plaud,
+            json!({"every":"hourly","enabled":true})
+        )
+        .await
+        .0,
+        StatusCode::CONFLICT
+    );
+    assert_eq!(
+        routed_request(&router, "DELETE", plaud, json!({})).await.0,
+        StatusCode::OK
+    );
+    assert_eq!(
+        routed_request(
+            &router,
+            "GET",
+            "/api/journal/recurrences/source/oura",
+            json!({})
+        )
+        .await
+        .0,
+        StatusCode::BAD_REQUEST
+    );
+    assert_eq!(
+        std::fs::read(&path).unwrap(),
+        custom_bytes,
+        "custom reserved-name commands are preserved"
+    );
+    stop.send_replace(true);
+    worker.await.unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn ordinary_preview_routes_run_all_three_maintained_talents_and_return_source_refs() {
     let model = Arc::new(Model::default());
     let (endpoint, server) = model_server(Arc::clone(&model)).await;

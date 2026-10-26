@@ -46,6 +46,69 @@ pub struct ImportKeepalive {
     _lease: Arc<TargetUse>,
 }
 
+/// The original owner's lifetime before final importer arguments exist.
+/// Retain this value or its keepalive through snapshot and metadata retirement.
+/// Binding arguments does not admit a native import attempt.
+pub struct ImportPreparation {
+    root: Arc<JournalRoot>,
+    generator: Arc<dyn GenerateExecutor + Send + Sync>,
+    factory: Arc<ImportSeamFactory>,
+    stop: WorkStop,
+    lease: Arc<TargetUse>,
+}
+
+impl ImportPreparation {
+    pub fn checkpoint(&self) -> Result<(), String> {
+        if self.stop.is_requested() {
+            Err("import stopped".into())
+        } else {
+            Ok(())
+        }
+    }
+
+    pub fn stop(&self) -> &WorkStop {
+        &self.stop
+    }
+
+    pub fn keepalive(&self) -> ImportKeepalive {
+        ImportKeepalive {
+            _lease: Arc::clone(&self.lease),
+        }
+    }
+
+    /// Fix the final argv under the same authority after native inputs exist.
+    pub fn bind(self, args: Vec<String>) -> Result<ImportRequest, String> {
+        let class = classify(&args)?;
+        self.bind_classified(args, class)
+    }
+
+    fn bind_classified(
+        self,
+        args: Vec<String>,
+        class: ArgumentClass,
+    ) -> Result<ImportRequest, String> {
+        self.checkpoint()?;
+        let Self {
+            root,
+            generator,
+            factory,
+            stop,
+            lease,
+        } = self;
+        Ok(ImportRequest {
+            context: ImportContext {
+                root,
+                args,
+                class,
+                generator,
+                stop,
+            },
+            factory,
+            lease,
+        })
+    }
+}
+
 impl ImportRequest {
     /// Capture before moving the request to its retained worker. Drop after
     /// that worker and the request's outer metadata work have both retired.
@@ -250,10 +313,27 @@ pub(super) fn request(
     original: WorkStop,
     priority: WorkPriority,
 ) -> Result<ImportRequest, String> {
-    let class = call::classify_arguments(&args)?;
+    let class = classify(&args)?;
+    preparation(root, generator, imports, host_cancelled, original, priority)?
+        .bind_classified(args, class)
+}
+
+fn classify(args: &[String]) -> Result<ArgumentClass, String> {
+    let class = call::classify_arguments(args)?;
     if class.body == BodyAdmission::Held {
         return Err("this import is unavailable".into());
     }
+    Ok(class)
+}
+
+pub(super) fn preparation(
+    root: Arc<JournalRoot>,
+    generator: &HostGenerator,
+    imports: &ImportFactorySlot,
+    host_cancelled: Checkpoint,
+    original: WorkStop,
+    priority: WorkPriority,
+) -> Result<ImportPreparation, String> {
     if original.is_requested() || host_cancelled() {
         return Err("import stopped".into());
     }
@@ -283,14 +363,10 @@ pub(super) fn request(
         let stop = stop.clone();
         Arc::new(move || stop.is_requested())
     };
-    Ok(ImportRequest {
-        context: ImportContext {
-            root,
-            args,
-            class,
-            generator: generator.executor(cancelled, priority),
-            stop,
-        },
+    Ok(ImportPreparation {
+        root,
+        generator: generator.executor(cancelled, priority),
+        stop,
         factory,
         lease,
     })

@@ -44,6 +44,8 @@ struct PackageRequest {
 
 #[path = "execution_schedules.rs"]
 mod schedules;
+#[path = "execution_sources.rs"]
+mod sources;
 
 enum Operation {
     Share {
@@ -61,6 +63,7 @@ enum Operation {
         max_runtime: Option<String>,
     },
     RemoveRecurrence(String),
+    Source(sources::SourceOperation),
 }
 
 struct Job {
