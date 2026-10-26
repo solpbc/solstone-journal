@@ -236,6 +236,8 @@ func executeS3Operation(h *callHandle, req *bridgeRequest, wrote *bool) (result 
 		var changed bool
 		result, changed = executeTeardown(withTeardownScope(h.ctx), h, req, admitted)
 		*wrote = *wrote || changed
+	case OpRetention:
+		result, _ = executeRetention(h.ctx, *req, markWrite)
 	default:
 		result = bridgeResult{status: StatusInvalidArgument, diagnostic: DiagInvalidArgument}
 	}

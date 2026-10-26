@@ -42,7 +42,7 @@ func matchesBorrowedDirectory(kind string, file *os.File, expected *borrowedDire
 
 func normalDirectoryOperation(operation int32) bool {
 	switch operation {
-	case OpInit, OpOpen, OpAddRecoveryKey, OpSnapshot, OpListSnapshots, OpCheck, OpListRecoveryKeys:
+	case OpInit, OpOpen, OpAddRecoveryKey, OpSnapshot, OpListSnapshots, OpCheck, OpListRecoveryKeys, OpRetention:
 		return true
 	default:
 		return false

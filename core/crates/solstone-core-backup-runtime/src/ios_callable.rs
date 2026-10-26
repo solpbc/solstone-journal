@@ -6,7 +6,6 @@
 
 mod build_identity;
 mod bundle;
-mod command;
 pub(crate) mod native;
 mod outcome;
 pub mod repository;
@@ -30,6 +29,7 @@ use solstone_core_journal_io::JournalRoot;
 use zeroize::Zeroizing;
 
 use crate::engine::ClosedToolError;
+use crate::ios_linked_command::command;
 use crate::repo::RepoError;
 use crate::runner::{PassedHandle, ResticResult, RunnerError, guard_argv};
 
@@ -329,6 +329,17 @@ fn policy(
     authority: &AdmittedIosBackupAuthority,
     operation: &command::Operation,
 ) -> Result<Vec<u8>, RunnerError> {
+    if let command::Operation::Retention {
+        hourly,
+        daily,
+        weekly,
+        monthly,
+    } = operation
+    {
+        return Ok(command::retention_policy_blob(
+            *hourly, *daily, *weekly, *monthly,
+        ));
+    }
     let command::Operation::Snapshot {
         source,
         exclusions,
@@ -537,7 +548,10 @@ pub(crate) fn run(
     cancellation: Option<&ArchiveCancellation>,
     restore_target: Option<&RestoreTarget>,
 ) -> Result<ResticResult, RunnerError> {
-    if max_repack_size.is_some() || !pass_fds.is_empty() || stdin.is_some() {
+    if !pass_fds.is_empty() || stdin.is_some() {
+        return Err(refused("ios_backup_unsupported_process_input"));
+    }
+    if max_repack_size.is_some_and(|size| size != "1G") {
         return Err(refused("ios_backup_unsupported_process_input"));
     }
     let repository = validate_call(
@@ -550,6 +564,14 @@ pub(crate) fn run(
         cancellation,
     )?;
     let command = command::decode(args).map_err(|_| refused("ios_backup_unsupported_command"))?;
+    if command::accept_repack(
+        matches!(command.operation, command::Operation::Retention { .. }),
+        max_repack_size,
+    )
+    .is_err()
+    {
+        return Err(refused("ios_backup_unsupported_process_input"));
+    }
     if let command::Operation::Restore {
         snapshot,
         selector,
@@ -585,6 +607,7 @@ pub(crate) fn run(
         command::Operation::Snapshot { .. } => 4,
         command::Operation::ListSnapshots => 5,
         command::Operation::Restore { .. } => unreachable!("restore dispatched above"),
+        command::Operation::Retention { .. } => 12,
         command::Operation::Check(mode) => {
             // The native check modes: structure 1, all data 2, one data group 3.
             match mode {

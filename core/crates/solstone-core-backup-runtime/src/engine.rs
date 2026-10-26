@@ -1412,6 +1412,12 @@ pub fn run_backup(journal: &Path, services: &BackupServices<'_>) -> BackupResult
     }
 }
 
+#[cfg(target_os = "ios")]
+fn without_ios_append_only(mut runtime: Runtime) -> Runtime {
+    runtime.backend_env.remove("SOLSTONE_APPEND_ONLY");
+    runtime
+}
+
 pub fn run_prune(journal: &Path, services: &BackupServices<'_>) -> PruneResult {
     let runtime = match runtime(journal, services, "maintenance", false) {
         Ok(None) => {
@@ -1420,7 +1426,11 @@ pub fn run_prune(journal: &Path, services: &BackupServices<'_>) -> PruneResult {
                 error_reason: None,
             };
         }
-        Ok(Some(runtime)) => runtime,
+        Ok(Some(runtime)) => {
+            #[cfg(target_os = "ios")]
+            let runtime = without_ios_append_only(runtime);
+            runtime
+        }
         Err(reason) => {
             let result = PruneResult {
                 status: "error".into(),

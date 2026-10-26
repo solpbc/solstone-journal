@@ -63,4 +63,21 @@ func TestS3RequestShapeRejectsBeforeForeignCopy(t *testing.T) {
 			t.Fatal("unused workspace field accepted")
 		}
 	}
+	retentionValid := s3ShapeFor(OpCheck)
+	if validateS3Shape(1, OpRetention, retentionValid) != StatusOk {
+		t.Fatal("OpRetention check-like shape refused")
+	}
+	badSource := retentionValid
+	badSource[10] = requestField{1, true}
+	if validateS3Shape(1, OpRetention, badSource) != StatusInvalidArgument {
+		t.Fatal("OpRetention source field accepted")
+	}
+	badWorkspace := retentionValid
+	badWorkspace[13] = requestField{1, true}
+	if validateS3Shape(1, OpRetention, badWorkspace) != StatusInvalidArgument {
+		t.Fatal("OpRetention workspace field accepted")
+	}
+	if validateS3Shape(1, 13, retentionValid) != StatusInvalidArgument || validateS3Shape(1, 20, retentionValid) != StatusInvalidArgument {
+		t.Fatal("unassigned opcodes 13 or 20 accepted")
+	}
 }

@@ -263,16 +263,6 @@ pub fn run_embedded_backup(
     http: &dyn HttpTransport,
     executable: &Path,
 ) -> CliRun {
-    // iOS has no forget/prune worker. Refuse before tool resolution, unlock,
-    // key neutralization, or the prune record.
-    #[cfg(target_os = "ios")]
-    if matches!(routine, EmbeddedBackupRoutine::Prune) {
-        return CliRun {
-            stdout: "backup prune: error reason=refused detail=prune is not available\n".to_owned(),
-            stderr: String::new(),
-            exit_code: 1,
-        };
-    }
     let id = match routine {
         EmbeddedBackupRoutine::Run => "backup:run",
         EmbeddedBackupRoutine::Verify => "backup:verify",
@@ -2570,7 +2560,7 @@ mod resolution_tests {
 
     #[cfg(target_os = "ios")]
     #[test]
-    fn ios_prune_refuses_before_tool_resolution() {
+    fn ios_prune_reaches_callable_without_a_process() {
         struct RefuseRunner;
         impl ToolRunner for RefuseRunner {
             fn run(&self, _: &ToolRequest<'_>) -> io::Result<ToolOutput> {
@@ -2583,15 +2573,25 @@ mod resolution_tests {
                 panic!("ios prune must not call http");
             }
         }
-        let journal = tempfile::tempdir().expect("journal");
+        let journal = byo_journal();
+        let root =
+            solstone_core_journal_io::JournalRoot::open(journal.path()).expect("journal root");
+        let path = root.canonical_path().to_owned();
+        let runner = solstone_core_backup_runtime::ios_callable::IosRootToolRunner::new(
+            std::sync::Arc::new(root),
+            std::sync::Arc::new(RefuseRunner),
+        )
+        .expect("root runner");
         let run = run_embedded_backup(
-            journal.path(),
+            &path,
             EmbeddedBackupRoutine::Prune,
-            &RefuseRunner,
+            &runner,
             &RefuseHttp,
             Path::new("unused"),
         );
-        assert_ne!(run.exit_code, 0);
+        assert_eq!(run.exit_code, 1);
         assert!(run.stderr.is_empty());
+        assert!(run.stdout.contains("ios_backup_startup_admission_missing"));
+        assert!(!run.stdout.contains("prune is not available"));
     }
 }
