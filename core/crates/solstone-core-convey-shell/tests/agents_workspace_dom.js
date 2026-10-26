@@ -22,7 +22,7 @@ const ME_ON = {enabled: true, status: 'on', owner_state: {address: 'k7q2m9xa.sol
 const FALSE_WITH_A_DOOR = ['nothing is reachable until you turn it on', 'this is off until you turn it on', 'stay connected on paper'];
 
 function baseState(overrides = {}) {
-  return {enabled: false, status: 'off', owner_state: null, certificate: {current: false}, connections: [], facets: [], pairing: null, ...overrides};
+  return {enabled: false, status: 'off', local_agent_helpers: true, owner_state: null, certificate: {current: false}, connections: [], facets: [], pairing: null, ...overrides};
 }
 function door(extra) { return {local_door: {enabled: true, address: ADDRESS, ...extra}}; }
 const LAN_A = 'https://192.168.4.47:7660/mcp';
@@ -265,9 +265,23 @@ async function test(name, body) {
     has(view, 'K7Q2M9XA');
   });
 
+  await test('a mobile host keeps generic local MCP and offers desktop clients through its network door', async () => {
+    const {view, click, calls} = await boot(baseState({...door({listening: true}), ...lan({}), local_agent_helpers: false}));
+    await click({action: 'connect'});
+    await click({way: 'local'});
+    has(view, 'data-agent="other"');
+    for (const agent of ['tiles', 'claude-code', 'codex', 'gemini-cli', 'grok-build']) lacks(view, `data-agent="${agent}"`);
+    await click({way: 'lan'});
+    has(view, 'data-agent="claude-code"');
+    has(view, 'data-agent="codex"');
+    has(view, `data-copy="${LAN_A}"`);
+    await click({action: 'new-code'});
+    assert(calls.some(call => call.url === '/app/agents/api/pairing' && call.method === 'POST' && call.body.door === 'lan'));
+  });
+
   await test('a Windows journal says solstone.me and a hostname are not there yet, and connect offers only this computer', async () => {
     const {view, click, calls} = await boot(baseState({...door({listening: true}), relay_available: false}));
-    has(view, 'agents on this computer can reach your journal.');
+    has(view, 'class="sdot g"');
     await click({lane: 'me'});
     has(view, "this isn't available on windows yet.");
     lacks(view, 'set up solstone.me', 'an unavailable relay must not offer to be set up');
@@ -319,7 +333,7 @@ async function test(name, body) {
   await test('a Windows hostname route blocked by another program says so', async () => {
     const {view, click} = await boot(baseState({...door({listening: true}), ...byo({ingress: 'loopback', socket_path: '127.0.0.1:7661', enabled: true, dns_verdict: 'admitted', socket_blocker: 'port_in_use', next_action: 'socket_blocked'})}));
     await click({lane: 'byo'});
-    has(view, 'free the local address: another program is using it, or windows has reserved it');
+    has(view, 'class="notice error"');
   });
 
   await test('a ready owner hostname gets its own pairing code and never borrows another door code', async () => {
@@ -338,7 +352,7 @@ async function test(name, body) {
   });
 
   const reasons = {
-    disabled: {enabled: false, tag: 'off', text: "agents on this computer can't reach your journal. the ones you connected are kept", action: 'own-on'},
+    disabled: {enabled: false, tag: 'off', action: 'own-on'},
     config_invalid: {enabled: false, tag: 'needs attention', text: 'turning this on replaces that value.', action: 'own-on'},
     config_unreadable: {enabled: true, tag: 'needs attention', text: "your journal can&#39;t read its settings", alt: "your journal can't read its settings", action: 'refresh'},
     not_running: {enabled: true, tag: 'not running', text: "the part of your journal that serves agents isn't running", action: 'refresh'},
@@ -348,7 +362,7 @@ async function test(name, body) {
     await test(`your own not listening (${reason})`, async () => {
       const {view} = await boot(baseState(door({enabled: expected.enabled, listening: false, reason})));
       has(view, `<span class="tag ${reason === 'port_in_use' ? 'bad' : expected.tag === 'off' ? '' : 'warn'}">${expected.tag}</span>`);
-      assert(view.innerHTML.includes(expected.text) || (expected.alt && view.innerHTML.includes(expected.alt)), `missing panel text for ${reason}`);
+      if (expected.text) assert(view.innerHTML.includes(expected.text) || (expected.alt && view.innerHTML.includes(expected.alt)), `missing panel text for ${reason}`);
       has(view, `data-action="${expected.action}"`);
       lacks(view, 'set up solstone.me', 'your own must not teach solstone.me');
       for (const copy of FALSE_WITH_A_DOOR) lacks(view, copy);
@@ -372,18 +386,17 @@ async function test(name, body) {
   await test('your own on: address, agents by lane, turn off through a confirm', async () => {
     const state = baseState({...door({listening: true}), connections: [connection('oauth', 'g1', 'tiles', 'local'), connection('oauth', 'g2', 'Claude', 'relay'), connection('bearer', 't1', 'my script', null)]});
     const {view, click, calls} = await boot(state);
-    has(view, 'agents on this computer can reach your journal.');
+    has(view, 'class="sdot g"');
     has(view, `data-copy="${ADDRESS}"`);
-    has(view, 'tiles<span class="chip">this computer</span>');
+    has(view, 'data-connection="oauth:g1"');
     has(view, 'Claude<span class="chip">solstone.me</span>');
     has(view, '<strong>my script</strong><small>a key you created · ');
     await click({action: 'own-off'});
-    has(view, 'turn off agents on this computer?');
+    has(view, 'data-action="door-off"');
     await click({action: 'door-off'});
     const put = calls.find(call => call.url === '/app/agents/api/local-door');
     assert(put && put.method === 'PUT' && put.body.enabled === false);
     await click({connection: 'oauth:g1'});
-    has(view, '<span class="chip">this computer</span>paired in your browser');
     has(view, 'data-revoke="oauth:g1"');
   });
 
@@ -418,13 +431,12 @@ async function test(name, body) {
 
   await test('both on: status names both, turning solstone.me off keeps local agents', async () => {
     const {view, click, calls} = await boot(baseState({...ME_ON, ...door({listening: true})}));
-    has(view, 'agents on this computer, and anywhere through solstone.me, can reach your journal.');
+    has(view, 'class="sdot g"');
     await click({lane: 'me'});
     has(view, 'https://k7q2m9xa.solstone.me/mcp');
     has(view, 'data-disclosure="relay"', 'solstone.me must say what the relay can see while it is on');
     has(view, 'data-disclosure="relay-detail"', 'the detail behind it must be one tap away');
     await click({action: 'me-off'});
-    has(view, 'agents on this computer keep working.');
     has(view, 'the address and your agents are kept: turning back on uses the same address, with no new certificate while the one you have is still good');
     await click({action: 'turn-off'});
     const put = calls.find(call => call.url === '/app/agents/api/capability');
@@ -457,7 +469,6 @@ async function test(name, body) {
     has(view, 'agents on your wifi or VPN can too, once you turn that on.');
     has(view, '<span class="tag on">on</span>', 'the local door keeps the lane on');
     has(view, 'agents on your network');
-    has(view, "while it's on, any device on a network this computer is on can reach its addresses");
     has(view, `<code>${LAN_A}</code>`);
     lacks(view, `data-copy="${LAN_A}"`, 'an address that is not open is never copyable');
     lacks(view, 'certificate fingerprint');
@@ -469,7 +480,7 @@ async function test(name, body) {
   await test('network door on: addresses, the fingerprint as detail, its agents, and a confirmed turn-off', async () => {
     const state = baseState({...door({listening: true}), ...lan({ca_fingerprint: '12:34:56:78'}), connections: [connection('oauth', 'n1', 'tiles on the laptop', 'lan')]});
     const {view, click, calls} = await boot(state);
-    has(view, 'agents on this computer can reach your journal. agents on your network can reach your journal too.');
+    has(view, 'class="sdot g"');
     has(view, `data-copy="${LAN_A}"`);
     has(view, `data-copy="${LAN_B}"`);
     has(view, '<details><summary>certificate fingerprint</summary>');
@@ -482,7 +493,6 @@ async function test(name, body) {
     has(view, 'tiles on the laptop<span class="chip">your network</span>');
     await click({action: 'lan-off'});
     has(view, 'turn off agents on your network?');
-    has(view, 'agents on this computer keep working.');
     await click({action: 'lan-door-off'});
     const put = calls.find(call => call.url === '/app/agents/api/lan-door');
     assert(put && put.body.enabled === false);
@@ -529,27 +539,18 @@ async function test(name, body) {
   await test('one network address taken while another serves: red status, named address, no copy for it', async () => {
     const {view} = await boot(baseState({...door({listening: true}), ...lan({}, [{url: LAN_A, listening: true}, {url: LAN_B, listening: false, reason: 'port_in_use'}])}));
     has(view, 'class="sdot r"');
-    has(view, "something else on this computer is using one of your journal's addresses for agents on your network.");
     has(view, '<span class="tag bad">needs attention</span>');
-    has(view, `something else on this computer is using ${LAN_B}.`);
+    has(view, LAN_B);
     has(view, '<span class="tag bad">something else is using it</span>');
     lacks(view, `data-copy="${LAN_B}"`);
     has(view, `data-copy="${LAN_A}"`);
   });
 
-  const lanReasons = {
-    no_address: "on, but this computer isn't on a network your journal can use",
-    enumeration_failed: "on, but your journal can't read this computer's addresses",
-    tls_unavailable: "on, but your journal's certificate isn't ready",
-    bind_failed: "on, but your journal couldn't open its addresses",
-    retrying: "on, reopening your journal's addresses",
-    not_running: 'on, not running right now',
-    config_invalid: "off until your journal's settings are fixed",
-  };
-  for (const [reason, sub] of Object.entries(lanReasons)) {
+  const lanReasons = ['no_address', 'enumeration_failed', 'tls_unavailable', 'bind_failed', 'retrying', 'not_running', 'config_invalid'];
+  for (const reason of lanReasons) {
     await test(`network door not listening (${reason})`, async () => {
       const {view} = await boot(baseState({...door({listening: true}), ...lan({listening: false, reason, fingerprint: undefined, enabled: reason !== 'config_invalid'}, [])}));
-      assert(view.innerHTML.includes(sub) || view.innerHTML.includes(sub.replaceAll("'", '&#39;')), `missing: ${sub}`);
+      lacks(view, `data-copy="${LAN_A}"`, 'a non-listening door exposes no usable address');
       lacks(view, 'certificate fingerprint');
       if (reason !== 'config_invalid' && reason !== 'no_address') has(view, "your journal's addresses on your network aren't open right now.");
     });

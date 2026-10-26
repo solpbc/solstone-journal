@@ -19,6 +19,8 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- journals running on a phone now start their local agent connections and close them when you stop the journal. the agents page already offered these connections, but they did not start on phones.
+
 - the side rail names its pages again: on a wide window each icon has its name beside it, and on a narrower one the name sits under it.
 - on a new journal, home no longer adds a "your first week" card a moment after it opens.
 - when your journal thinks with Claude, a stretch where everything came from your terminal is described again. in 2.0.58, when an AI assistant's input box or menu was on screen, your journal asked Claude for it in a form Claude doesn't accept, and the stretch was left without a description.

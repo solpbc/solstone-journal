@@ -330,7 +330,9 @@ pub(crate) fn persist_tls_state_bytes(
 }
 
 pub(crate) const BYO_DIRECTORY: &str = "byo";
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 pub(crate) const BYO_INGRESS_SOCKET: &str = "ingress.sock";
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 pub(crate) const BYO_CUTOVER_SOCKET: &str = "cutover.sock";
 pub(crate) const BYO_ACCOUNTS_DIR: &str = "accounts";
 pub(crate) const BYO_CERTS_DIR: &str = "certs";
@@ -503,8 +505,10 @@ pub(crate) fn delete_byo_relay_known_host(dir: &TlsStateDirectory) -> io::Result
     Ok(())
 }
 
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 pub(crate) use crate::byo_door::ByoSocketBlocker;
 
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 pub(crate) fn bind_byo_socket(
     byo_dir: &ByoDirectory,
     socket_name: &str,
@@ -599,6 +603,7 @@ pub(crate) fn bind_byo_socket(
     Ok((listener, bound_inode))
 }
 
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 pub(crate) fn unlink_byo_socket_if_inode_matches(
     byo_dir: &ByoDirectory,
     socket_name: &str,
@@ -612,6 +617,7 @@ pub(crate) fn unlink_byo_socket_if_inode_matches(
     }
 }
 
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 pub(crate) fn reclaim_stale_byo_socket_if_inactive(
     byo_dir: &ByoDirectory,
     socket_name: &str,

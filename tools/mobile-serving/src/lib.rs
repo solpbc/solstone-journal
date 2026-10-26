@@ -308,6 +308,30 @@ impl MobileServing {
                 }
             }
         });
+        let direct_root = root.canonical_path().to_path_buf();
+        let mut direct_stop = stop.clone();
+        let direct_task = runtime.spawn(async move {
+            loop {
+                if *direct_stop.borrow() {
+                    break;
+                }
+                let result = solstone_core_mcp_endpoint::run_embedded_direct_doors(
+                    direct_root.clone(),
+                    direct_stop.clone(),
+                )
+                .await;
+                if *direct_stop.borrow() {
+                    break;
+                }
+                if let Err(error) = result {
+                    log::warn!("embedded direct agent service stopped: {}", error.class());
+                }
+                tokio::select! {
+                    _ = tokio::time::sleep(Duration::from_secs(1)) => {},
+                    _ = direct_stop.changed() => break,
+                }
+            }
+        });
         let relay_root = root.canonical_path().to_path_buf();
         let relay_task = runtime.spawn(async move {
             loop {
@@ -348,7 +372,7 @@ impl MobileServing {
             interface_address: address,
             services: Mutex::new(Some(AppServices {
                 shutdown,
-                tasks: vec![brain_task, relay_task, mcp_task],
+                tasks: vec![brain_task, relay_task, mcp_task, direct_task],
                 backup: backup_task,
             })),
             shutdown_complete: std::sync::atomic::AtomicBool::new(false),

@@ -127,22 +127,7 @@ pub async fn run_local_door_async(
         ))
     });
 
-    let lan_oauth = Arc::new(OAuthRuntime::new_lan_door(&journal_root));
-    let lan_root = journal_root.clone();
-    let lan_shutdown = shutdown_receive.clone();
-    let lan_task = tokio::spawn(async move {
-        let _ = crate::lan_door::run_lan_door_async(lan_root, lan_oauth, lan_shutdown).await;
-    });
-
-    let byo_root = journal_root.clone();
-    let byo_shutdown = shutdown_receive.clone();
-    let byo_task = tokio::spawn(async move {
-        let _ = crate::byo_door::run_byo_door_async(byo_root, byo_shutdown).await;
-    });
-
-    let result = run_local_door_loop(&journal_root, run, shutdown_receive).await;
-    let _ = lan_task.await;
-    let _ = byo_task.await;
+    let result = run_direct_doors(journal_root.clone(), run, shutdown_receive).await;
     let service_stopped = result.is_ok();
     signal_task.abort();
     let _ = signal_task.await;
@@ -150,6 +135,93 @@ pub async fn run_local_door_async(
         parent_task.abort();
         let _ = parent_task.await;
     }
+    if let Some(parent) = hosted_parent {
+        // A host signal can precede the supervisor's retirement request.
+        let mut reason = parent_loss_receive.try_recv().ok();
+        if reason.is_none() {
+            reason = parent.await_parent_loss_or_retire_expected_request().await;
+        }
+        if reason.is_some() {
+            parent
+                .finish_parent_loss(HostedServiceShutdownEvidence {
+                    listener_stopped: service_stopped,
+                    service_runner_stopped: service_stopped,
+                    operational_artifacts_cleaned: true,
+                })
+                .map_err(|_| McpServiceError::ParentLoss)?;
+        }
+    }
+    result
+}
+
+/// Run the maintained direct agent doors under the embedding app's lifetime.
+/// No process-wide signal handlers are installed. Closing the channel or sending
+/// true retires every listener and its connections before this call returns.
+pub async fn run_embedded_direct_doors(
+    journal_root: PathBuf,
+    shutdown: watch::Receiver<bool>,
+) -> Result<(), McpServiceError> {
+    run_direct_doors(journal_root, LocalDoorRun::production(), shutdown).await
+}
+
+async fn run_direct_doors(
+    journal_root: PathBuf,
+    run: LocalDoorRun,
+    mut shutdown: watch::Receiver<bool>,
+) -> Result<(), McpServiceError> {
+    if *shutdown.borrow() || shutdown.has_changed().is_err() {
+        return Ok(());
+    }
+    let (stop, stopped) = watch::channel(false);
+    let lan_oauth = Arc::new(OAuthRuntime::new_lan_door(&journal_root));
+    let lan_root = journal_root.clone();
+    let lan_shutdown = stopped.clone();
+    let mut lan_task = tokio::spawn(async move {
+        crate::lan_door::run_lan_door_async(lan_root, lan_oauth, lan_shutdown).await
+    });
+
+    let byo_root = journal_root.clone();
+    let byo_shutdown = stopped.clone();
+    let mut byo_task =
+        tokio::spawn(
+            async move { crate::byo_door::run_byo_door_async(byo_root, byo_shutdown).await },
+        );
+    let local = run_local_door_loop(&journal_root, run, stopped);
+    tokio::pin!(local);
+    let mut lan_done = None;
+    let mut byo_done = None;
+    let result = tokio::select! {
+        result = &mut local => result,
+        result = &mut lan_task => {
+            lan_done = Some(result);
+            stop.send_replace(true);
+            local.await
+        }
+        result = &mut byo_task => {
+            byo_done = Some(result);
+            stop.send_replace(true);
+            local.await
+        }
+        _ = async {
+            while !*shutdown.borrow_and_update() {
+                if shutdown.changed().await.is_err() {
+                    break;
+                }
+            }
+        } => {
+            stop.send_replace(true);
+            local.await
+        }
+    };
+    stop.send_replace(true);
+    let lan_result = match lan_done {
+        Some(result) => result,
+        None => lan_task.await,
+    };
+    let byo_result = match byo_done {
+        Some(result) => result,
+        None => byo_task.await,
+    };
     write_local_door_state(&journal_root, false, Some("not_running"));
     crate::lan_door::write_lan_door_state(&journal_root, false, Some("not_running"), None, None);
     crate::byo_door::write_byo_door_state(
@@ -174,22 +246,8 @@ pub async fn run_local_door_async(
             observed_at: chrono::Utc::now(),
         },
     );
-    if let Some(parent) = hosted_parent {
-        // As spl and cortex do: a host signal can arrive before the
-        // supervisor's retirement request, so wait for either briefly.
-        let mut reason = parent_loss_receive.try_recv().ok();
-        if reason.is_none() {
-            reason = parent.await_parent_loss_or_retire_expected_request().await;
-        }
-        if reason.is_some() {
-            parent
-                .finish_parent_loss(HostedServiceShutdownEvidence {
-                    listener_stopped: service_stopped,
-                    service_runner_stopped: service_stopped,
-                    operational_artifacts_cleaned: true,
-                })
-                .map_err(|_| McpServiceError::ParentLoss)?;
-        }
+    if !matches!(lan_result, Ok(Ok(()))) || !matches!(byo_result, Ok(Ok(()))) {
+        return Err(McpServiceError::Listener);
     }
     result
 }
@@ -698,6 +756,56 @@ mod full_tests {
     }
 
     #[tokio::test]
+    async fn embedded_direct_doors_respect_an_already_closed_lifetime() {
+        let temp = TempDir::new_in(crate::test_scratch()).unwrap();
+        let (stop, stopped) = watch::channel(true);
+        run_embedded_direct_doors(temp.path().to_path_buf(), stopped)
+            .await
+            .unwrap();
+        assert_eq!(fs::read_dir(temp.path()).unwrap().count(), 0);
+
+        drop(stop);
+        let (stop, stopped) = watch::channel(false);
+        drop(stop);
+        run_embedded_direct_doors(temp.path().to_path_buf(), stopped)
+            .await
+            .unwrap();
+        assert_eq!(fs::read_dir(temp.path()).unwrap().count(), 0);
+    }
+
+    #[tokio::test]
+    async fn embedded_direct_door_failure_drains_its_sibling_listeners() {
+        let temp = TempDir::new_in(crate::test_scratch()).unwrap();
+        fs::create_dir_all(temp.path().join("mcp-endpoint")).unwrap();
+        let blocker = temp.path().join("mcp-endpoint/byo");
+        fs::write(&blocker, b"preserve this conflicting owner file").unwrap();
+        let port = get_free_port().await;
+        let run = LocalDoorRun {
+            port,
+            origin: format!("http://127.0.0.1:{port}"),
+            ..LocalDoorRun::production()
+        };
+        let (_stop, stopped) = watch::channel(false);
+        let result = tokio::time::timeout(
+            Duration::from_secs(5),
+            run_direct_doors(temp.path().to_path_buf(), run, stopped),
+        )
+        .await
+        .expect("a failed child must stop the whole direct service");
+        assert_eq!(result, Err(McpServiceError::Listener));
+        assert!(!read_local_door_state(temp.path()).unwrap().listening);
+        assert!(
+            TcpStream::connect((Ipv4Addr::LOCALHOST, port))
+                .await
+                .is_err()
+        );
+        assert_eq!(
+            fs::read(&blocker).unwrap(),
+            b"preserve this conflicting owner file"
+        );
+    }
+
+    #[tokio::test]
     async fn local_door_end_to_end_plain_flow() {
         let temp = TempDir::new_in(crate::test_scratch()).unwrap();
         let journal_root = temp.path().to_path_buf();
@@ -719,9 +827,7 @@ mod full_tests {
 
         let (shutdown_send, shutdown_receive) = watch::channel(false);
         let root_clone = journal_root.clone();
-        let server_task = tokio::spawn(async move {
-            let _ = run_local_door_loop(&root_clone, run, shutdown_receive).await;
-        });
+        let server_task = tokio::spawn(run_direct_doors(root_clone, run, shutdown_receive));
 
         // Wait for door to start listening
         for _ in 0..50 {
@@ -995,8 +1101,15 @@ mod full_tests {
         assert_eq!(pr_localhost["resource"], format!("{origin}/mcp"));
 
         // Cleanup
-        let _ = shutdown_send.send(true);
-        let _ = server_task.await;
+        drop(shutdown_send);
+        tokio::time::timeout(Duration::from_secs(5), server_task)
+            .await
+            .expect("closed embedding lifetime drains every direct door")
+            .expect("direct door owner joins")
+            .expect("direct doors stop cleanly");
+        assert!(!read_local_door_state(&journal_root).unwrap().listening);
+        assert!(!crate::read_lan_door_state(&journal_root).unwrap().listening);
+        assert!(TcpStream::connect(&addr).await.is_err());
     }
 
     #[tokio::test]
