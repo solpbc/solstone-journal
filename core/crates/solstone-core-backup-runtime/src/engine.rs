@@ -3330,6 +3330,8 @@ impl OwnedInstalledArchiveCreator {
 #[must_use = "Consume the same creator into read handoff or closed custody"]
 pub struct OwnedAdmittedArchive {
     creator: OwnedArchiveCreator,
+    #[cfg(target_os = "ios")]
+    linked_authority: Option<crate::ios_callable::AdmittedIosBackupAuthority>,
 }
 impl OwnedAdmittedArchive {
     pub fn prepared_operation(&self) -> &PreparedArchiveOperation<'static> {
@@ -3371,6 +3373,12 @@ impl OwnedAdmittedArchive {
         &mut self,
         sources: &[ArchiveSource<'_>],
     ) -> Result<ArchiveSnapshot, ArchiveFailure> {
+        #[cfg(target_os = "ios")]
+        if let Some(authority) = self.linked_authority.clone() {
+            // One stable logical directory in the snapshot; source basenames,
+            // identities and bytes still come from the retained staging owner.
+            return self.archive_retained_sources(&authority, "archive", sources);
+        }
         self.creator
             .archive_owned(sources)
             .map(|snapshot| ArchiveSnapshot {
@@ -3445,10 +3453,21 @@ pub fn admit_prepared_archive_owned_creator_installed<'a>(
     http: &UreqHttpTransport,
 ) -> Result<OwnedInstalledArchiveCreator, OwnedArchiveAdmissionFailure> {
     let invocation = restic.into();
+    #[cfg(target_os = "ios")]
+    let linked_authority = match invocation {
+        crate::runner::ResticInvocation::Callable(authority) => Some(authority.clone()),
+        crate::runner::ResticInvocation::Executable(_) => None,
+    };
     let mut effects = ArchiveAdmissionEffects::default();
     let operated = operation.configuration().binding().is_some();
     let captured = (|| {
         operation.revalidate()?;
+        #[cfg(target_os = "ios")]
+        if let Some(authority) = &linked_authority {
+            authority
+                .revalidate_archive_root(operation.carrier().journal_root())
+                .map_err(|_| ArchiveError::JournalIdentityChanged)?;
+        }
         let config = operation.configuration();
         if !config.enabled() {
             return Err(ArchiveError::NotConfigured);
@@ -3583,7 +3602,11 @@ pub fn admit_prepared_archive_owned_creator_installed<'a>(
         .admit(Some(Arc::new(crate::runner::SystemToolRunner)))
         .map_err(creator_admission_failure)?;
     Ok(OwnedInstalledArchiveCreator {
-        archive: OwnedAdmittedArchive { creator },
+        archive: OwnedAdmittedArchive {
+            creator,
+            #[cfg(target_os = "ios")]
+            linked_authority,
+        },
         finish: DirectReadFinishOwner {
             carrier,
             clock,

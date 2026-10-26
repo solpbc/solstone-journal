@@ -114,7 +114,38 @@ fn begin_owned_locked(
     root: Arc<JournalRoot>,
     clock: OwnedClock,
 ) -> Result<OwnedArchiveBegin, ArchiveBeginRefusal> {
-    let cancellation = ArchiveCancellation::new_child(&state.cancellation);
+    begin_owned_locked_for_task(state, kind, root, clock, None)
+}
+
+/// Watch one queue task from this operation's child, without cancelling the service.
+pub(crate) fn begin_owned_for_task(
+    slot: &SharedOperationSlot,
+    kind: &str,
+    root: Arc<JournalRoot>,
+    clock: OwnedClock,
+    task: Arc<dyn Fn() -> Result<(), String> + Send + Sync>,
+) -> Result<OwnedArchiveBegin, ArchiveBeginRefusal> {
+    task().map_err(|_| {
+        ArchiveBeginRefusal::Admission(
+            solstone_core_backup::archive_admission::AdmissionError::Cancelled,
+        )
+    })?;
+    let mut state = operation::lock_for_begin(slot).map_err(|()| ArchiveBeginRefusal::Busy)?;
+    begin_owned_locked_for_task(&mut state, kind, root, clock, Some(task))
+}
+
+fn begin_owned_locked_for_task(
+    state: &mut operation::OperationState,
+    kind: &str,
+    root: Arc<JournalRoot>,
+    clock: OwnedClock,
+    task: Option<Arc<dyn Fn() -> Result<(), String> + Send + Sync>>,
+) -> Result<OwnedArchiveBegin, ArchiveBeginRefusal> {
+    let child = ArchiveCancellation::new_child(&state.cancellation);
+    let cancellation = match task {
+        Some(task) => child.with_task(task),
+        None => child,
+    };
     let budget = ArchiveBudget::new_cancellable(clock.as_ref(), cancellation.clone())
         .map_err(ArchiveBeginRefusal::Admission)?;
     let generation = operation::install_slot(

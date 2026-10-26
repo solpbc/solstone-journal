@@ -104,6 +104,7 @@ pub fn admit_ios_backup_at_startup() -> Result<(), &'static str> {
     install().map_err(Refusal::code)
 }
 
+#[derive(Clone)]
 pub struct AdmittedIosBackupAuthority {
     installed: Arc<Installed>,
     root: Arc<JournalRoot>,
@@ -118,6 +119,16 @@ impl std::fmt::Debug for AdmittedIosBackupAuthority {
 }
 
 impl AdmittedIosBackupAuthority {
+    pub(crate) fn revalidate_archive_root(
+        &self,
+        root: &Arc<JournalRoot>,
+    ) -> Result<(), &'static str> {
+        if !Arc::ptr_eq(&self.root, root) {
+            return Err(Refusal::Root.code());
+        }
+        self.revalidate().map_err(Refusal::code)
+    }
+
     fn revalidate(&self) -> Result<(), Refusal> {
         self.installed.revalidate()?;
         self.root

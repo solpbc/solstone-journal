@@ -651,6 +651,7 @@ pub(crate) fn lock_for_begin(
     #[cfg(windows)]
     crate::archive_worker::observe_retained(&mut guard);
     if guard.closed
+        || guard.writes_in_flight != 0
         || guard.archive.is_busy()
         || observe(&mut guard.current).is_some_and(|slot| !is_terminal(&slot.view.phase))
     {
@@ -933,7 +934,8 @@ pub fn admit_write(slot: &SharedOperationSlot, mode: AdmitWrite) -> Result<Write
     if mode == AdmitWrite::IdleOnly {
         #[cfg(windows)]
         crate::archive_worker::observe_retained(&mut guard);
-        if guard.archive.is_busy()
+        if guard.writes_in_flight != 0
+            || guard.archive.is_busy()
             || observe(&mut guard.current).is_some_and(|slot| !is_terminal(&slot.view.phase))
         {
             return Err(busy_response());

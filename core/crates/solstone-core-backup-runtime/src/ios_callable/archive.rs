@@ -522,7 +522,7 @@ fn prepare(
     let creator = archive.linked_creator();
     let session = open_session(creator).map_err(not_attempted)?;
     authority
-        .revalidate()
+        .revalidate_archive_root(archive.journal_root())
         .map_err(|_| not_attempted(ArchiveError::ConfigurationChanged))?;
     let (timeout, cancellation) = fresh_timeout(creator).map_err(not_attempted)?;
     let state = destination_state(authority, &session).map_err(not_attempted)?;
