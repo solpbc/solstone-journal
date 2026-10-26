@@ -369,6 +369,100 @@ fn owner_request_holds_admitted_use_and_same_owner_previews_and_runs_after_resum
     host.shutdown().unwrap();
 }
 
+#[test]
+fn opaque_keepalive_retains_outer_preview_work_after_worker_local_resources_retire() {
+    use solstone_core_convey_shell::recovery_drain::{
+        register_recovery_hooks, relinquish_admitted_work, resume_after_whole_journal_restore,
+    };
+    fn outer_handle<T: Clone + Send + Sync>() {}
+    outer_handle::<ImportKeepalive>();
+    let _serial = TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+    let (root, host) = fixture();
+    let source = tempfile::tempdir().unwrap();
+    fs::write(
+        source.path().join("preview.md"),
+        "retained preview source\n",
+    )
+    .unwrap();
+    let released = Arc::new(AtomicBool::new(false));
+    let resource_state = Arc::clone(&released);
+    host.enable_imports(Arc::new(move |request| {
+        let seams = request.seams_with_pdf(Box::new(solstone_core_import_sources::NullPdfWorker));
+        let guard = NativeGuard {
+            owner: std::thread::current().id(),
+            released: Arc::clone(&resource_state),
+        };
+        Ok(PreparedImport::new(request.arguments().to_vec(), seams)
+            .with_resources((std::rc::Rc::new(()), guard)))
+    }))
+    .unwrap();
+    let args = owned(&[
+        "--sync",
+        "obsidian",
+        "--save",
+        "--path",
+        source.path().to_str().unwrap(),
+    ]);
+    let request = host
+        .import_request(args.clone(), WorkStop::new(), Default::default())
+        .unwrap();
+    let outer = request.keepalive();
+    let final_metadata_owner = outer.clone();
+    let preview = std::thread::spawn(move || {
+        let prepared = request.prepare().unwrap();
+        let result = prepared.preview();
+        drop(prepared);
+        result
+    })
+    .join()
+    .unwrap();
+    assert_eq!(preview.exit_code, 0, "{}", preview.stderr);
+    assert!(
+        released.load(Ordering::Acquire),
+        "non-Send resources retired on the preparation worker"
+    );
+    assert!(!root.path().join("chronicle").exists());
+    let (pause_send, paused) = mpsc::channel();
+    let hooks = register_recovery_hooks(
+        "fc3-import-outer-preview-proof",
+        Arc::clone(&host.root),
+        move |_| {
+            pause_send.send(()).unwrap();
+            Ok(())
+        },
+        |_| Ok(()),
+    );
+    let target = root.path().to_path_buf();
+    let (drain_send, drained) = mpsc::channel();
+    let drain = std::thread::spawn(move || {
+        drain_send.send(relinquish_admitted_work(&target)).unwrap();
+    });
+    paused.recv_timeout(Duration::from_secs(5)).unwrap();
+    assert!(drained.recv_timeout(Duration::from_millis(50)).is_err());
+    drop(outer);
+    assert!(
+        drained.recv_timeout(Duration::from_millis(50)).is_err(),
+        "outer metadata ownership outlives the already-joined native preview"
+    );
+    assert!(
+        host.import_request(args.clone(), WorkStop::new(), Default::default())
+            .is_err()
+    );
+    drop(final_metadata_owner);
+    drained
+        .recv_timeout(Duration::from_secs(5))
+        .unwrap()
+        .unwrap();
+    drain.join().unwrap();
+    resume_after_whole_journal_restore(root.path());
+    drop(
+        host.import_request(args, WorkStop::new(), Default::default())
+            .unwrap(),
+    );
+    drop(hooks);
+    host.shutdown().unwrap();
+}
+
 enum Interrupt {
     OriginalRequest,
     Deadline,

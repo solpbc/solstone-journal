@@ -36,10 +36,25 @@ type StopCheckpoint = Arc<dyn Fn() -> Result<(), String> + Send + Sync>;
 pub struct ImportRequest {
     context: ImportContext,
     factory: Arc<ImportSeamFactory>,
-    lease: TargetUse,
+    lease: Arc<TargetUse>,
+}
+
+/// Retain an admitted request through outer metadata settlement. This handle
+/// carries no execution inputs or native resources and cannot admit new work.
+#[derive(Clone)]
+pub struct ImportKeepalive {
+    _lease: Arc<TargetUse>,
 }
 
 impl ImportRequest {
+    /// Capture before moving the request to its retained worker. Drop after
+    /// that worker and the request's outer metadata work have both retired.
+    pub fn keepalive(&self) -> ImportKeepalive {
+        ImportKeepalive {
+            _lease: Arc::clone(&self.lease),
+        }
+    }
+
     /// Run native preparation on the retained worker. The request already owns
     /// its target use, including time spent waiting in that worker's queue.
     pub fn prepare(self) -> Result<PreparedImport, String> {
@@ -125,6 +140,12 @@ impl ImportContext {
 ///     let _ = &mut prepared.seams;
 /// }
 /// ```
+///
+/// ```compile_fail
+/// use journal_mobile_serving::foreground::PreparedImport;
+/// fn require_send<T: Send>() {}
+/// require_send::<PreparedImport>();
+/// ```
 pub struct PreparedImport {
     args: Vec<String>,
     seams: ImportSeams,
@@ -136,7 +157,7 @@ struct BoundImport {
     root: Arc<JournalRoot>,
     stop: WorkStop,
     class: ArgumentClass,
-    _lease: TargetUse,
+    _lease: Arc<TargetUse>,
 }
 
 // Fields retire in declaration order on every exit, including start failure.
@@ -236,8 +257,10 @@ pub(super) fn request(
     if original.is_requested() || host_cancelled() {
         return Err("import stopped".into());
     }
-    let lease = begin_target_use_bound(Arc::clone(&root))
-        .map_err(|_| "your journal is unavailable".to_owned())?;
+    let lease = Arc::new(
+        begin_target_use_bound(Arc::clone(&root))
+            .map_err(|_| "your journal is unavailable".to_owned())?,
+    );
     let factory = imports
         .lock()
         .map_err(|_| "importer unavailable")?

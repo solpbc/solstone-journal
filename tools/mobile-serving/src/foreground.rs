@@ -140,7 +140,9 @@ mod scheduled_commands;
 
 #[path = "import_commands.rs"]
 mod import_commands;
-pub use import_commands::{ImportContext, ImportRequest, ImportSeamFactory, PreparedImport};
+pub use import_commands::{
+    ImportContext, ImportKeepalive, ImportRequest, ImportSeamFactory, PreparedImport,
+};
 type ImportFactorySlot = Arc<Mutex<Option<Arc<ImportSeamFactory>>>>;
 
 const MAINTENANCE_ROUTINE_IDS: &[&str] = &[
