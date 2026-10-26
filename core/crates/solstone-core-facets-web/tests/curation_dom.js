@@ -392,6 +392,7 @@ asyncTest('a journal whose only open suggestions are entity merges has nothing t
 asyncTest('suggestions count matches view total on seeded journal', async () => {
   const state = JSON.parse(fs.readFileSync(statePath, 'utf8'));
   const summary = JSON.parse(fs.readFileSync(summaryPath, 'utf8'));
+  assert.ok(summary.to_review > 0, 'the seeded journal must have suggestions to review');
   const root = await renderWorkspace(state);
   const totalText = root.querySelector('[data-review-total]')?.textContent || '';
   const match = totalText.match(/^(\d+)/);

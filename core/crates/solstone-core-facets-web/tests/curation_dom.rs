@@ -307,10 +307,16 @@ fn curation_dom_contract() {
             )
             .await
             .expect("state response");
-        assert_eq!(state_res.status(), axum::http::StatusCode::OK);
+        let state_status = state_res.status();
         let state_bytes = to_bytes(state_res.into_body(), usize::MAX)
             .await
             .expect("state bytes");
+        assert_eq!(
+            state_status,
+            axum::http::StatusCode::OK,
+            "{}",
+            String::from_utf8_lossy(&state_bytes)
+        );
 
         let summary_res = app
             .oneshot(
