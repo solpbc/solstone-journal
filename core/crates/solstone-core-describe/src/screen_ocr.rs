@@ -3721,7 +3721,8 @@ mod tests {
         }
     }
 
-    #[cfg(all(unix, feature = "full-tests"))]
+    #[cfg(unix)]
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn preparation_write_failure_keeps_the_reserved_policy_withdrawal() {
         const CHILD: &str = "DESCRIBE_PREPARATION_WRITE_LIMIT_CHILD";
