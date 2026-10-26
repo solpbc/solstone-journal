@@ -604,7 +604,7 @@ fn publish_attempt(
 ) -> Result<Timestamp, FolderAdmitError> {
     let imports = journal.join("imports");
     solstone_core_journal_io::create_directory_with_mode(&imports, DIRECTORY_MODE)
-        .map_err(|error| FolderAdmitError::Publication(error.to_string()))?;
+        .map_err(|error| classify_text(&error.to_string()))?;
     let from_name = PathBuf::from("folder-attempts").join(
         attempt_dir
             .file_name()
@@ -619,7 +619,13 @@ fn publish_attempt(
         ) {
             Ok(()) => return Ok(candidate),
             Err(error) if error.kind() == io::ErrorKind::AlreadyExists => continue,
-            Err(error) => return Err(FolderAdmitError::Publication(error.to_string())),
+            Err(error) => {
+                let text = error.to_string();
+                if text.contains('/') || text.contains('\\') {
+                    return Err(classify_io(error));
+                }
+                return Err(FolderAdmitError::Publication(text));
+            }
         }
     }
     Err(FolderAdmitError::Publication(
@@ -1238,5 +1244,28 @@ mod tests {
                 .to_string(),
             "That entry is outside the selected folder."
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlink_imports_directory_is_path_free_and_unpublished() {
+        let journal = tempfile::tempdir().unwrap();
+        let target = tempfile::tempdir().unwrap();
+        let prior = target.path().join("prior.txt");
+        fs::write(&prior, b"keep").unwrap();
+        std::os::unix::fs::symlink(target.path(), journal.path().join("imports")).unwrap();
+        let source = tempfile::tempdir().unwrap();
+        fs::write(source.path().join("a.md"), b"aaaaaaaa").unwrap();
+        let error =
+            admit_folder(journal.path(), source.path(), "linked-imports", &stamp()).unwrap_err();
+        let shown = error.to_string();
+        assert_eq!(shown, "The folder could not be read.");
+        assert!(!shown.contains(journal.path().to_str().unwrap()));
+        assert_eq!(fs::read(&prior).unwrap(), b"keep");
+        for entry in fs::read_dir(target.path()).unwrap() {
+            let name = entry.unwrap().file_name();
+            let name = name.to_string_lossy();
+            assert!(validate_timestamp(&name).is_err());
+        }
     }
 }
