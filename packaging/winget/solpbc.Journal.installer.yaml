@@ -1,7 +1,7 @@
 # yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.1.12.0.schema.json
 
 PackageIdentifier: solpbc.Journal
-PackageVersion: 2.0.58
+PackageVersion: 2.0.59
 MinimumOSVersion: 10.0.19045.0
 Scope: user
 InstallerType: exe
@@ -15,7 +15,7 @@ InstallerSwitches:
   Log: --log "<LOGPATH>"
 UpgradeBehavior: install
 ProductCode: SolstoneJournal
-ReleaseDate: '2026-10-25'
+ReleaseDate: '2026-10-26'
 Dependencies:
   PackageDependencies:
   - PackageIdentifier: Microsoft.EdgeWebView2Runtime
@@ -25,11 +25,7 @@ InstallationMetadata:
   DefaultInstallLocation: '%LocalAppData%\SolstoneJournal'
 Installers:
 - Architecture: x64
-  InstallerUrl: https://updates.solstone.app/solstone-journal/release/windows/solstone-journal-2.0.58-windows-x86_64-setup.exe
-  InstallerSha256: 79B661F453A1ED5F9F59C88DFB50044994F67D1F8E869EE01FD98273E3019EC4
-- Architecture: arm64
-  InstallerUrl: https://updates.solstone.app/solstone-journal/release/windows/solstone-journal-2.0.58-windows-aarch64-setup.exe
-  InstallerSha256: E57D4479AA34B085DA00B0FF253970F92DF3AF8810630394044170A30129D236
-  MinimumOSVersion: 10.0.22000.0
+  InstallerUrl: https://updates.solstone.app/solstone-journal/release/windows/solstone-journal-2.0.59-windows-x86_64-setup.exe
+  InstallerSha256: E567C065C64494729BDEA18761A63E240FF0486B30917F9A4B89270FED7E6D5F
 ManifestType: installer
 ManifestVersion: 1.12.0
