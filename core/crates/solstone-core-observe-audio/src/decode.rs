@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use std::collections::VecDeque;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use ffmpeg_next as ffmpeg;
 
@@ -445,6 +446,407 @@ fn ffmpeg_error(path: &Path, error: ffmpeg::Error) -> AudioError {
     }
 }
 
+/// Samples already decoded and not yet returned, plus whether that stream has ended.
+struct PcmCursor {
+    pending: VecDeque<f32>,
+    ended: bool,
+}
+
+fn mix_ready(states: &[(usize, bool)]) -> usize {
+    let open = states.iter().filter(|(_, ended)| !ended);
+    if let Some(shortest) = open.map(|(len, _)| *len).min() {
+        shortest
+    } else {
+        states.iter().map(|(len, _)| *len).max().unwrap_or(0)
+    }
+}
+
+#[cfg(test)]
+fn cursor_states(cursors: &[PcmCursor]) -> Vec<(usize, bool)> {
+    cursors
+        .iter()
+        .map(|cursor| (cursor.pending.len(), cursor.ended))
+        .collect()
+}
+
+fn mix_emit(cursors: &mut [PcmCursor], count: usize, divisor: f32, out: &mut Vec<f32>) {
+    for _ in 0..count {
+        let mut sum = 0.0;
+        for cursor in cursors.iter_mut() {
+            if let Some(sample) = cursor.pending.pop_front() {
+                sum += sample;
+            }
+        }
+        out.push(sum / divisor);
+    }
+}
+
+/// Mix constructed slices with the same sum, stream-count divisor, and longest-length
+/// padding as [`mix_m4a_streams`], feeding `feed` new samples per stream at a time.
+#[cfg(test)]
+fn mix_m4a_incremental(streams: &[Vec<f32>], feed: usize) -> Vec<f32> {
+    let mut sources = streams
+        .iter()
+        .map(|stream| stream.as_slice())
+        .collect::<Vec<_>>();
+    let mut cursors = streams
+        .iter()
+        .map(|_| PcmCursor {
+            pending: VecDeque::new(),
+            ended: false,
+        })
+        .collect::<Vec<_>>();
+    let divisor = streams.len() as f32;
+    let mut mixed = Vec::new();
+    loop {
+        let ready = mix_ready(&cursor_states(&cursors));
+        if ready == 0 {
+            let mut progressed = false;
+            for (cursor, source) in cursors.iter_mut().zip(sources.iter_mut()) {
+                if cursor.ended {
+                    continue;
+                }
+                let take = feed.max(1).min(source.len());
+                cursor.pending.extend(source.iter().take(take).copied());
+                *source = &source[take..];
+                if source.is_empty() {
+                    cursor.ended = true;
+                }
+                progressed = true;
+            }
+            if !progressed || mix_ready(&cursor_states(&cursors)) == 0 {
+                break;
+            }
+            continue;
+        }
+        mix_emit(&mut cursors, ready, divisor, &mut mixed);
+    }
+    mixed
+}
+
+struct NonM4aDecoder {
+    input: ffmpeg::format::context::Input,
+    stream_index: usize,
+    decoder: ffmpeg::decoder::Audio,
+    resampler: Option<ffmpeg::software::resampling::Context>,
+    cursor: PcmCursor,
+    packets_done: bool,
+}
+
+struct M4aStream {
+    input: ffmpeg::format::context::Input,
+    stream_index: usize,
+    decoder: ffmpeg::decoder::Audio,
+    resampler: Option<ffmpeg::software::resampling::Context>,
+    cursor: PcmCursor,
+}
+
+enum DecoderKind {
+    NonM4a(NonM4aDecoder),
+    /// `None` until the first pull has dropped streams that produced no samples.
+    M4a {
+        streams: Vec<M4aStream>,
+        probed: bool,
+    },
+}
+
+/// Pull decoded mono f32 at [`SAMPLE_RATE`] in bounded pieces.
+///
+/// Concatenating every [`UnitDecoder::pull`] equals [`decode_f32_mono`]. Desktop
+/// decode does not use this type. M4A mixes with [`mix_m4a_streams`]'s formula
+/// without retaining every stream's PCM. Opus stays on the ogg and matroska demuxers.
+pub struct UnitDecoder {
+    path: PathBuf,
+    kind: DecoderKind,
+}
+
+impl UnitDecoder {
+    /// Open one local file. An empty file is [`AudioError::EmptyInput`].
+    pub fn open(path: &Path) -> Result<Self, AudioError> {
+        let metadata = fs::metadata(path).map_err(|source| AudioError::Io {
+            path: path.to_path_buf(),
+            source,
+        })?;
+        if metadata.len() == 0 {
+            return Err(AudioError::EmptyInput {
+                path: path.to_path_buf(),
+            });
+        }
+        ffmpeg::init().map_err(|error| ffmpeg_error(path, error))?;
+        let kind = if path
+            .extension()
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("m4a"))
+        {
+            DecoderKind::M4a {
+                streams: open_m4a_streams(path)?,
+                probed: false,
+            }
+        } else {
+            DecoderKind::NonM4a(open_non_m4a(path)?)
+        };
+        Ok(Self {
+            path: path.to_path_buf(),
+            kind,
+        })
+    }
+
+    /// At most `count` new samples. `None` once flushed output is exhausted.
+    /// A shorter `Some` is the final piece. `count == 0` yields an empty piece.
+    pub fn pull(&mut self, count: usize) -> Result<Option<Vec<f32>>, AudioError> {
+        if count == 0 {
+            return Ok(Some(Vec::new()));
+        }
+        match &mut self.kind {
+            DecoderKind::NonM4a(decoder) => pull_non_m4a(decoder, &self.path, count),
+            DecoderKind::M4a { streams, probed } => pull_m4a(streams, probed, &self.path, count),
+        }
+    }
+}
+
+fn open_non_m4a(path: &Path) -> Result<NonM4aDecoder, AudioError> {
+    let input = open_input(path).map_err(|error| corrupt_input(path, error))?;
+    let stream_index = first_audio_stream_index(&input, path)?;
+    let parameters = input
+        .stream(stream_index)
+        .expect("stream index came from this input")
+        .parameters();
+    let context = ffmpeg::codec::context::Context::from_parameters(parameters)
+        .map_err(|error| corrupt_input(path, error))?;
+    let decoder = context
+        .decoder()
+        .audio()
+        .map_err(|error| corrupt_input(path, error))?;
+    Ok(NonM4aDecoder {
+        input,
+        stream_index,
+        decoder,
+        resampler: None,
+        cursor: PcmCursor {
+            pending: VecDeque::new(),
+            ended: false,
+        },
+        packets_done: false,
+    })
+}
+
+fn open_m4a_streams(path: &Path) -> Result<Vec<M4aStream>, AudioError> {
+    let input = open_input(path).map_err(|error| corrupt_input(path, error))?;
+    let stream_indices = input
+        .streams()
+        .filter(|stream| stream.parameters().medium() == ffmpeg::media::Type::Audio)
+        .map(|stream| stream.index())
+        .collect::<Vec<_>>();
+    drop(input);
+    if stream_indices.is_empty() {
+        return Err(AudioError::NoAudioStream {
+            path: path.to_path_buf(),
+        });
+    }
+    let mut streams = Vec::with_capacity(stream_indices.len());
+    for stream_index in stream_indices {
+        let input = open_input(path).map_err(|error| corrupt_input(path, error))?;
+        let parameters = input
+            .stream(stream_index)
+            .expect("stream index came from this input")
+            .parameters();
+        let context = ffmpeg::codec::context::Context::from_parameters(parameters)
+            .map_err(|error| corrupt_input(path, error))?;
+        let decoder = context
+            .decoder()
+            .audio()
+            .map_err(|error| corrupt_input(path, error))?;
+        streams.push(M4aStream {
+            input,
+            stream_index,
+            decoder,
+            resampler: None,
+            cursor: PcmCursor {
+                pending: VecDeque::new(),
+                ended: false,
+            },
+        });
+    }
+    Ok(streams)
+}
+
+fn pull_non_m4a(
+    decoder: &mut NonM4aDecoder,
+    path: &Path,
+    count: usize,
+) -> Result<Option<Vec<f32>>, AudioError> {
+    while decoder.cursor.pending.len() < count && !decoder.cursor.ended {
+        if decoder.packets_done {
+            break;
+        }
+        let mut packet = ffmpeg::Packet::empty();
+        match packet.read(&mut decoder.input) {
+            Ok(()) => {
+                if packet.stream() == decoder.stream_index {
+                    decoder
+                        .decoder
+                        .send_packet(&packet)
+                        .map_err(|error| corrupt_input(path, error))?;
+                    let mut chunk = Vec::new();
+                    drain_non_m4a_decoder(
+                        &mut decoder.decoder,
+                        &mut decoder.resampler,
+                        &mut chunk,
+                        path,
+                        usize::MAX,
+                    )?;
+                    decoder.cursor.pending.extend(chunk);
+                }
+            }
+            Err(ffmpeg::Error::Eof) => {
+                decoder.packets_done = true;
+                decoder
+                    .decoder
+                    .send_eof()
+                    .map_err(|error| corrupt_input(path, error))?;
+                let mut chunk = Vec::new();
+                drain_non_m4a_decoder(
+                    &mut decoder.decoder,
+                    &mut decoder.resampler,
+                    &mut chunk,
+                    path,
+                    usize::MAX,
+                )?;
+                decoder.cursor.pending.extend(chunk);
+                if let Some(resampler) = decoder.resampler.as_mut() {
+                    let mut flushed = Vec::new();
+                    flush_non_m4a_resampler(resampler, &mut flushed, path, usize::MAX)?;
+                    decoder.cursor.pending.extend(flushed);
+                }
+                decoder.cursor.ended = true;
+            }
+            Err(error) => return Err(corrupt_input(path, error)),
+        }
+    }
+    take_pending(&mut decoder.cursor, count)
+}
+
+fn pull_m4a(
+    streams: &mut Vec<M4aStream>,
+    probed: &mut bool,
+    path: &Path,
+    count: usize,
+) -> Result<Option<Vec<f32>>, AudioError> {
+    if !*probed {
+        let mut keep = Vec::new();
+        for mut stream in streams.drain(..) {
+            fill_m4a(&mut stream, path, 1)?;
+            if !stream.cursor.pending.is_empty() {
+                keep.push(stream);
+            }
+        }
+        *streams = keep;
+        *probed = true;
+    }
+    if streams.is_empty() {
+        return Ok(None);
+    }
+    if streams.len() == 1 {
+        fill_m4a(&mut streams[0], path, count)?;
+        return take_pending(&mut streams[0].cursor, count);
+    }
+    let divisor = streams.len() as f32;
+    let mut mixed = Vec::new();
+    while mixed.len() < count {
+        let ready = mix_ready(&m4a_states(streams));
+        if ready == 0 {
+            let mut open = false;
+            for stream in streams.iter_mut() {
+                if stream.cursor.ended {
+                    continue;
+                }
+                open = true;
+                let target = stream.cursor.pending.len().saturating_add(1);
+                fill_m4a(stream, path, target)?;
+            }
+            if !open || mix_ready(&m4a_states(streams)) == 0 {
+                break;
+            }
+            continue;
+        }
+        let emit = ready.min(count - mixed.len());
+        let mut view = streams
+            .iter_mut()
+            .map(|stream| PcmCursor {
+                pending: std::mem::take(&mut stream.cursor.pending),
+                ended: stream.cursor.ended,
+            })
+            .collect::<Vec<_>>();
+        mix_emit(&mut view, emit, divisor, &mut mixed);
+        for (stream, cursor) in streams.iter_mut().zip(view) {
+            stream.cursor.pending = cursor.pending;
+        }
+    }
+    if mixed.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(mixed))
+    }
+}
+
+fn m4a_states(streams: &[M4aStream]) -> Vec<(usize, bool)> {
+    streams
+        .iter()
+        .map(|stream| (stream.cursor.pending.len(), stream.cursor.ended))
+        .collect()
+}
+
+fn fill_m4a(stream: &mut M4aStream, path: &Path, min_pending: usize) -> Result<(), AudioError> {
+    while stream.cursor.pending.len() < min_pending && !stream.cursor.ended {
+        let mut packet = ffmpeg::Packet::empty();
+        match packet.read(&mut stream.input) {
+            Ok(()) => {
+                if packet.stream() == stream.stream_index {
+                    let packet = m4a_payload_packet(&packet);
+                    stream
+                        .decoder
+                        .send_packet(&packet)
+                        .map_err(|error| corrupt_input(path, error))?;
+                    let mut chunk = Vec::new();
+                    drain_m4a_decoder(
+                        &mut stream.decoder,
+                        &mut stream.resampler,
+                        &mut chunk,
+                        path,
+                        usize::MAX,
+                    )?;
+                    stream.cursor.pending.extend(chunk);
+                }
+            }
+            Err(ffmpeg::Error::Eof) => {
+                stream
+                    .decoder
+                    .send_eof()
+                    .map_err(|error| corrupt_input(path, error))?;
+                let mut chunk = Vec::new();
+                drain_m4a_decoder(
+                    &mut stream.decoder,
+                    &mut stream.resampler,
+                    &mut chunk,
+                    path,
+                    usize::MAX,
+                )?;
+                stream.cursor.pending.extend(chunk);
+                stream.cursor.ended = true;
+            }
+            Err(error) => return Err(corrupt_input(path, error)),
+        }
+    }
+    Ok(())
+}
+
+fn take_pending(cursor: &mut PcmCursor, count: usize) -> Result<Option<Vec<f32>>, AudioError> {
+    if cursor.pending.is_empty() {
+        return Ok(None);
+    }
+    let take = count.min(cursor.pending.len());
+    Ok(Some(cursor.pending.drain(..take).collect()))
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::Path;
@@ -544,5 +946,21 @@ mod tests {
         let ff_err_perm = ffmpeg_error(dummy, permanent_ff);
         assert!(!ff_err_perm.is_transient_decode());
         assert_eq!(ff_err_perm.ffmpeg_errno(), None);
+    }
+
+    #[test]
+    fn incremental_m4a_mix_matches_whole_stream_mix() {
+        let streams = vec![
+            vec![1.0, 2.0, 3.0, 4.0],
+            vec![1.0, 1.0],
+            vec![0.5, 0.5, 0.5, 0.5, 0.5],
+        ];
+        let expected = super::mix_m4a_streams(streams.clone());
+        assert_eq!(super::mix_m4a_incremental(&streams, 1), expected);
+        assert_eq!(super::mix_m4a_incremental(&streams, 3), expected);
+        assert_eq!(
+            super::mix_m4a_incremental(&streams, streams.iter().map(Vec::len).max().unwrap()),
+            expected
+        );
     }
 }

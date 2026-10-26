@@ -26,9 +26,6 @@ pub const REASON_NO_TRANSCRIPT: &str = "no_transcript";
 pub const REASON_CORRUPT_INPUT: &str = "corrupt_input";
 pub const REASON_NO_AUDIO_STREAM: &str = "no_audio_stream";
 pub const REASON_DECODE_TRANSIENT: &str = "decode_transient";
-/// The original remains available, but exceeds the embedded execution envelope.
-pub const REASON_EMBEDDED_DURATION: &str = "embedded-duration-budget";
-pub const REASON_EMBEDDED_INPUT: &str = "embedded-input-budget";
 // Parity: solstone/observe/processing_record.py:41.
 pub const REASON_ANALYSIS_FAILED: &str = "analysis_failed";
 

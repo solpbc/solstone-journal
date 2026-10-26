@@ -147,6 +147,14 @@ impl Unit {
 }
 
 pub fn file_fingerprint(path: &Path) -> Result<String, String> {
+    file_fingerprint_checked(path, &|| Ok(()))
+}
+
+/// Hash a regular file, polling `checkpoint` before each 64 KiB read.
+pub fn file_fingerprint_checked(
+    path: &Path,
+    checkpoint: &dyn Fn() -> Result<(), String>,
+) -> Result<String, String> {
     use std::io::Read;
     let mut file = std::fs::File::open(path).map_err(|e| e.to_string())?;
     let before = file.metadata().map_err(|e| e.to_string())?;
@@ -156,6 +164,7 @@ pub fn file_fingerprint(path: &Path) -> Result<String, String> {
     let mut hash = Sha256::new();
     let mut bytes = [0_u8; 65536];
     loop {
+        checkpoint()?;
         let count = file.read(&mut bytes).map_err(|e| e.to_string())?;
         if count == 0 {
             break;

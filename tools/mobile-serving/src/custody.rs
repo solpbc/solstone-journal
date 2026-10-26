@@ -8,6 +8,8 @@ use std::{
     path::Path,
 };
 
+pub(crate) const CUSTODY_CANCELLED: &str = "custody verification cancelled";
+
 /// Publication before receipt persistence is not a completed network input.
 /// Match the accepted custody receipt before giving these bytes to a processor.
 #[cfg(feature = "audio")]
@@ -15,11 +17,61 @@ pub(crate) fn accepted_input(root: &Path, input: &Path) -> Result<bool, String> 
     Ok(AcceptedInput::capture(root, input, &|| false)?.is_some())
 }
 
+enum ReceiptFiles {
+    Absent,
+    Present(Vec<(u64, String)>),
+}
+
+fn accepted_receipt_files(root: &Path, input: &Path) -> Result<ReceiptFiles, String> {
+    let segment = input.parent().ok_or("input segment missing")?;
+    let relative = segment
+        .strip_prefix(root.join("chronicle"))
+        .map_err(|e| e.to_string())?;
+    let parts = relative
+        .iter()
+        .map(|p| p.to_string_lossy())
+        .collect::<Vec<_>>();
+    if parts.len() != 3 {
+        return Ok(ReceiptFiles::Absent);
+    }
+    let report =
+        solstone_core_callosum::read_device_ingest_events(segment).map_err(|e| e.to_string())?;
+    if report.unparseable != 0 {
+        return Err(format!("unreadable custody receipt: {}", segment.display()));
+    }
+    let name = input
+        .file_name()
+        .ok_or("input filename missing")?
+        .to_string_lossy();
+    let files = report
+        .records
+        .iter()
+        .filter(|r| {
+            r.outcome == "accepted"
+                && r.day == parts[0]
+                && r.stream == parts[1]
+                && r.segment == parts[2]
+        })
+        .flat_map(|r| &r.files)
+        .filter(|f| f.written == name)
+        .map(|f| (f.size, f.sha256.clone()))
+        .collect::<Vec<_>>();
+    if files.is_empty() {
+        Ok(ReceiptFiles::Absent)
+    } else {
+        Ok(ReceiptFiles::Present(files))
+    }
+}
+
 /// Retain the admitted inode and compare cheap file facts between work units.
 /// Exact bytes are checked once here and again by the processor at publication.
 pub(crate) struct AcceptedInput {
     _file: File,
     stamp: FileStamp,
+    /// Host speech checkpoints compare this to the accepted receipt. The
+    /// processing-only build has no host checkpoint and does not retain it.
+    #[cfg(feature = "audio")]
+    digest: String,
 }
 
 #[derive(PartialEq, Eq)]
@@ -51,6 +103,18 @@ fn stamp(metadata: &Metadata) -> Result<FileStamp, String> {
 }
 
 impl AcceptedInput {
+    /// The retained admission size and digest still match an accepted receipt.
+    /// This does not read or hash the recording.
+    #[cfg(feature = "audio")]
+    pub(crate) fn receipt_matches(&self, root: &Path, input: &Path) -> Result<bool, String> {
+        let ReceiptFiles::Present(files) = accepted_receipt_files(root, input)? else {
+            return Ok(false);
+        };
+        Ok(files
+            .iter()
+            .any(|(size, digest)| *size == self.stamp.size && digest == &self.digest))
+    }
+
     pub(crate) fn still_current(&self, input: &Path) -> bool {
         if !fs::symlink_metadata(input)
             .ok()
@@ -83,41 +147,9 @@ impl AcceptedInput {
         input: &Path,
         cancelled: &dyn Fn() -> bool,
     ) -> Result<Option<Self>, String> {
-        let segment = input.parent().ok_or("input segment missing")?;
-        let relative = segment
-            .strip_prefix(root.join("chronicle"))
-            .map_err(|e| e.to_string())?;
-        let parts = relative
-            .iter()
-            .map(|p| p.to_string_lossy())
-            .collect::<Vec<_>>();
-        if parts.len() != 3 {
+        let ReceiptFiles::Present(files) = accepted_receipt_files(root, input)? else {
             return Ok(None);
-        }
-        let report = solstone_core_callosum::read_device_ingest_events(segment)
-            .map_err(|e| e.to_string())?;
-        if report.unparseable != 0 {
-            return Err(format!("unreadable custody receipt: {}", segment.display()));
-        }
-        let name = input
-            .file_name()
-            .ok_or("input filename missing")?
-            .to_string_lossy();
-        let files = report
-            .records
-            .iter()
-            .filter(|r| {
-                r.outcome == "accepted"
-                    && r.day == parts[0]
-                    && r.stream == parts[1]
-                    && r.segment == parts[2]
-            })
-            .flat_map(|r| &r.files)
-            .filter(|f| f.written == name)
-            .collect::<Vec<_>>();
-        if files.is_empty() {
-            return Ok(None);
-        }
+        };
         let named = fs::symlink_metadata(input).map_err(|e| e.to_string())?;
         if !named.file_type().is_file() {
             return Err("input is not a regular file".into());
@@ -149,7 +181,7 @@ impl AcceptedInput {
         let mut bytes = [0u8; 65536];
         loop {
             if cancelled() {
-                return Err("custody verification cancelled".into());
+                return Err(CUSTODY_CANCELLED.into());
             }
             let n = file.read(&mut bytes).map_err(|e| e.to_string())?;
             if n == 0 {
@@ -157,17 +189,19 @@ impl AcceptedInput {
             }
             hash.update(&bytes[..n]);
         }
-        let hash = format!("{:x}", hash.finalize());
+        let digest = format!("{:x}", hash.finalize());
         let accepted = Self {
             _file: file,
             stamp: admitted,
+            #[cfg(feature = "audio")]
+            digest: digest.clone(),
         };
         if cancelled() || !accepted.still_current(input) {
             return Err("input changed during custody verification".into());
         }
         Ok(files
             .iter()
-            .any(|f| f.size == size && f.sha256 == hash)
+            .any(|file| file.0 == size && file.1 == digest)
             .then_some(accepted))
     }
 }

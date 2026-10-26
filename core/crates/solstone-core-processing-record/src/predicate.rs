@@ -56,10 +56,7 @@ pub fn is_failure_exhausted(record: &Value) -> bool {
         .is_some_and(|code| {
             matches!(
                 code,
-                vocab::REASON_CORRUPT_INPUT
-                    | vocab::REASON_NO_AUDIO_STREAM
-                    | vocab::REASON_EMBEDDED_DURATION
-                    | vocab::REASON_EMBEDDED_INPUT
+                vocab::REASON_CORRUPT_INPUT | vocab::REASON_NO_AUDIO_STREAM
             )
         })
     {
@@ -147,19 +144,45 @@ mod tests {
     }
 
     #[test]
-    fn embedded_resource_holds_do_not_prove_originals_can_be_removed() {
-        for reason in [
-            vocab::REASON_EMBEDDED_DURATION,
-            vocab::REASON_EMBEDDED_INPUT,
-        ] {
-            let record = serde_json::json!({"schema":vocab::SCHEMA,
-                "handler":vocab::HANDLER_TRANSCRIBE,"state":"failed",
-                "reason_code":reason,"input_size":42,"attempts":1});
-            assert!(is_failure_exhausted(&record));
+    fn corrupt_and_no_audio_exhaust_immediately_and_other_failures_wait() {
+        for reason in [vocab::REASON_CORRUPT_INPUT, vocab::REASON_NO_AUDIO_STREAM] {
+            let record = json!({
+                "schema": vocab::SCHEMA,
+                "handler": vocab::HANDLER_TRANSCRIBE,
+                "state": "failed",
+                "reason_code": reason,
+                "input_size": 42,
+                "attempts": 1
+            });
+            assert!(is_failure_exhausted(&record), "{reason}");
             assert_eq!(
                 evaluate_terminal_proof(Some(&record), vocab::HANDLER_TRANSCRIBE, 42),
                 TerminalProofOutcome::Refused
             );
+        }
+        for reason in [
+            "embedded-duration-budget",
+            "embedded-input-budget",
+            "analysis_failed",
+        ] {
+            let waiting = json!({
+                "schema": vocab::SCHEMA,
+                "handler": vocab::HANDLER_TRANSCRIBE,
+                "state": "failed",
+                "reason_code": reason,
+                "input_size": 42,
+                "attempts": 1
+            });
+            assert!(!is_failure_exhausted(&waiting), "{reason}");
+            let bound = json!({
+                "schema": vocab::SCHEMA,
+                "handler": vocab::HANDLER_TRANSCRIBE,
+                "state": "failed",
+                "reason_code": reason,
+                "input_size": 42,
+                "attempts": vocab::FAILED_ATTEMPT_BOUND
+            });
+            assert!(is_failure_exhausted(&bound), "{reason}");
         }
     }
 

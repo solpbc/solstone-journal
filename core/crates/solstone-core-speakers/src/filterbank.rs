@@ -92,6 +92,60 @@ fn num_snipped_frames(samples: usize) -> usize {
     }
 }
 
+/// Snipped Kaldi frame count for a 16 kHz waveform. Zero when shorter than one window.
+pub fn snipped_frame_count(samples: usize) -> usize {
+    num_snipped_frames(samples)
+}
+
+/// One Kaldi window setup for a whole statement.
+///
+/// The Povey window and mel bank are built once. Each call frames exactly 400
+/// samples and returns that frame's 80 log-mel bins before mean subtraction.
+pub struct KaldiFrames {
+    window: [f32; WESPEAKER_FRAME_LENGTH_SAMPLES],
+    bank: MelBank,
+}
+
+impl Default for KaldiFrames {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl KaldiFrames {
+    pub fn new() -> Self {
+        Self {
+            window: povey_window(),
+            bank: MelBank::production(),
+        }
+    }
+
+    pub fn log_energies(
+        &self,
+        frame: &[f32],
+    ) -> Result<[f32; WESPEAKER_MEL_BINS], SpeakerFeatureError> {
+        if frame.len() != WESPEAKER_FRAME_LENGTH_SAMPLES {
+            return Err(SpeakerFeatureError::ShapeMismatch {
+                frames: 1,
+                bins: WESPEAKER_MEL_BINS,
+                len: frame.len(),
+            });
+        }
+        if let Some((index, _sample)) = frame
+            .iter()
+            .enumerate()
+            .find(|(_index, sample)| !sample.is_finite())
+        {
+            return Err(SpeakerFeatureError::NonFiniteAudioSample { index });
+        }
+        let mut padded = padded_samples(frame, &self.window);
+        let power = power_spectrum_512(&mut padded);
+        let mut output = [0.0; WESPEAKER_MEL_BINS];
+        self.bank.compute_log_energies(&power, &mut output);
+        Ok(output)
+    }
+}
+
 fn povey_window() -> [f32; WESPEAKER_FRAME_LENGTH_SAMPLES] {
     let mut window = [0.0; WESPEAKER_FRAME_LENGTH_SAMPLES];
     let scale = 2.0_f64 * std::f64::consts::PI / (WESPEAKER_FRAME_LENGTH_SAMPLES as f64 - 1.0);
@@ -106,10 +160,20 @@ fn padded_frame(
     frame: usize,
     window: &[f32; WESPEAKER_FRAME_LENGTH_SAMPLES],
 ) -> [f32; WESPEAKER_FFT_SIZE] {
-    let mut padded = [0.0; WESPEAKER_FFT_SIZE];
     let start = frame * WESPEAKER_FRAME_SHIFT_SAMPLES;
+    padded_samples(
+        &audio[start..start + WESPEAKER_FRAME_LENGTH_SAMPLES],
+        window,
+    )
+}
+
+fn padded_samples(
+    frame: &[f32],
+    window: &[f32; WESPEAKER_FRAME_LENGTH_SAMPLES],
+) -> [f32; WESPEAKER_FFT_SIZE] {
+    let mut padded = [0.0; WESPEAKER_FFT_SIZE];
     for index in 0..WESPEAKER_FRAME_LENGTH_SAMPLES {
-        padded[index] = audio[start + index] * AUDIO_SCALE;
+        padded[index] = frame[index] * AUDIO_SCALE;
     }
     remove_dc_offset(&mut padded[..WESPEAKER_FRAME_LENGTH_SAMPLES]);
     preemphasize(&mut padded[..WESPEAKER_FRAME_LENGTH_SAMPLES]);
@@ -377,5 +441,49 @@ mod tests {
 
         let result = matrix_comparison_error("filterbank_cmn", cmn.data(), &expected, TOLERANCE);
         assert!(result.is_some());
+    }
+
+    #[test]
+    fn streamed_frames_match_the_batch_matrix() {
+        let mut audio =
+            vec![0.0_f32; WESPEAKER_FRAME_LENGTH_SAMPLES + WESPEAKER_FRAME_SHIFT_SAMPLES * 7];
+        for (index, sample) in audio.iter_mut().enumerate() {
+            *sample = ((index * 17) % 100) as f32 / 200.0 - 0.2;
+        }
+        let batch = compute_kaldi_filterbank(&audio, WESPEAKER_SAMPLE_RATE_HZ).expect("batch");
+        let frames = KaldiFrames::new();
+        let count = snipped_frame_count(audio.len());
+        assert_eq!(count, batch.frames());
+        let mut streamed = [0.0_f64; WESPEAKER_MEL_BINS];
+        for frame in 0..count {
+            let start = frame * WESPEAKER_FRAME_SHIFT_SAMPLES;
+            let energies = frames
+                .log_energies(&audio[start..start + WESPEAKER_FRAME_LENGTH_SAMPLES])
+                .expect("frame");
+            assert_eq!(energies.as_slice(), batch.row(frame).expect("row"));
+            for (bin, value) in energies.iter().enumerate() {
+                streamed[bin] += f64::from(*value);
+            }
+        }
+        let mut second = [0.0_f64; WESPEAKER_MEL_BINS];
+        for frame in 0..batch.frames() {
+            for (bin, value) in batch.row(frame).expect("row").iter().enumerate() {
+                second[bin] += f64::from(*value);
+            }
+        }
+        assert_eq!(streamed, second);
+
+        let short = frames.log_energies(&[0.0; 10]);
+        assert!(matches!(
+            short,
+            Err(SpeakerFeatureError::ShapeMismatch { len: 10, .. })
+        ));
+        let mut non_finite = vec![0.0; WESPEAKER_FRAME_LENGTH_SAMPLES];
+        non_finite[3] = f32::NAN;
+        let rejected = frames.log_energies(&non_finite);
+        assert!(matches!(
+            rejected,
+            Err(SpeakerFeatureError::NonFiniteAudioSample { index: 3 })
+        ));
     }
 }

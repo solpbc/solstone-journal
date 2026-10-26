@@ -121,6 +121,17 @@ timeout = "standard"
 default_full = true
 
 [[legs]]
+id = "embedded-speech"
+make_target = "check-rust-embedded-speech"
+set = "component"
+areas = ["audio"]
+packages = ["solstone-core-transcribe"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache", "onnx-runtime"]
+timeout = "slow"
+default_full = true
+
+[[legs]]
 id = "doctests"
 make_target = "check-rust-doc"
 set = "component"
@@ -1508,8 +1519,9 @@ areas = ["audio"]
 platforms = ["linux", "macos", "windows"]
 prerequisites = ["cargo-cache"]
 timeout = "standard"
-default_full = false
+default_full = true
 runtime = "none"
+features = ["full-tests"]
 
 [[package_suites]]
 id = "package::solstone-core-speakers-analyze"

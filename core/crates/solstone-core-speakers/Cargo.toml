@@ -6,9 +6,13 @@ rust-version.workspace = true
 license.workspace = true
 publish = false
 
+[features]
+full-tests = []
+
 [dependencies]
 hdbscan.workspace = true
 serde_json.workspace = true
+tempfile = "3.24.0"
 
 [lints]
 workspace = true
