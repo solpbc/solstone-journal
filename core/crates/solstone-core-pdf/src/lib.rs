@@ -11,6 +11,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 #[cfg(windows)]
 use std::sync::OnceLock;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use image::{ImageBuffer, Rgb};
 use libloading::Library;
@@ -117,10 +118,17 @@ fn pdfium_gate() -> &'static Mutex<()> {
     &GATE
 }
 
+fn pdfium_gate_waiters() -> &'static AtomicUsize {
+    static WAITERS: AtomicUsize = AtomicUsize::new(0);
+    &WAITERS
+}
+
 fn with_pdfium_serialization<T>(body: impl FnOnce() -> T) -> T {
+    pdfium_gate_waiters().fetch_add(1, Ordering::AcqRel);
     let _guard = pdfium_gate()
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
+    pdfium_gate_waiters().fetch_sub(1, Ordering::AcqRel);
     body()
 }
 
@@ -572,7 +580,7 @@ fn run(arguments: Arguments) -> Result<SuccessPayload, ContractError> {
         let result = extract_document(
             &pdfium,
             &arguments,
-            &|_| true,
+            &|| true,
             &mut PayloadAccount::unlimited(),
         );
         pdfium.destroy();
@@ -647,7 +655,7 @@ fn utf16_buffer_cells(count: i32) -> Result<usize, ()> {
 fn extract_document(
     pdfium: &Pdfium,
     arguments: &Arguments,
-    admit_page: &dyn Fn(usize) -> bool,
+    admit: &dyn Fn() -> bool,
     account: &mut PayloadAccount,
 ) -> Result<SuccessPayload, ExtractFailure> {
     let path = CString::new(arguments.pdf_path.to_string_lossy().as_bytes()).map_err(|_| {
@@ -685,7 +693,7 @@ fn extract_document(
     let mut warnings = Vec::new();
     let mut pages = Vec::with_capacity(page_count);
     for index in 0..page_count {
-        if !admit_page(index) {
+        if !admit() {
             return Err(ExtractFailure::Cancelled);
         }
         let page = extract_page(
@@ -719,17 +727,24 @@ fn extract_document(
             .render_dir
             .as_ref()
             .expect("validated render directory");
-        fs::create_dir_all(directory).map_err(|error| {
-            ExtractFailure::Contract(ContractError::render_io(error.to_string()))
-        })?;
+        let dpi = arguments.render.dpi;
         render_selected_pages(
-            pdfium,
-            document_guard.document,
             &mut pages,
             &arguments.render,
+            admit,
             &mut warnings,
-        )
-        .map_err(ExtractFailure::Contract)?;
+            |index, page, output| {
+                render_page_png(
+                    pdfium,
+                    document_guard.document,
+                    index,
+                    page.width_pt,
+                    page.height_pt,
+                    dpi,
+                    output,
+                )
+            },
+        )?;
         let dir = directory.display().to_string();
         reserve_text(account, &dir)?;
         Some(RenderPayload {
@@ -933,36 +948,41 @@ fn image_area_fraction(pdfium: &Pdfium, page: FpdfPage, width_pt: f64, height_pt
 }
 
 fn render_selected_pages(
-    pdfium: &Pdfium,
-    document: FpdfDocument,
     pages: &mut [PageEntry],
     request: &RenderRequest,
+    admit: &dyn Fn() -> bool,
     warnings: &mut Vec<String>,
-) -> Result<(), ContractError> {
+    mut render_one: impl FnMut(usize, &PageEntry, &Path) -> Result<(), RenderFailure>,
+) -> Result<(), ExtractFailure> {
+    // After text extraction. A cancellation that won before this installation
+    // creates nothing. One that wins during a page lets that page finish and
+    // starts no later page.
+    if !admit() {
+        return Err(ExtractFailure::Cancelled);
+    }
     let selected = selected_pages(pages, request);
     let directory = request
         .render_dir
         .as_ref()
         .expect("validated render directory");
+    fs::create_dir_all(directory)
+        .map_err(|error| ExtractFailure::Contract(ContractError::render_io(error.to_string())))?;
     for page_number in selected {
+        if !admit() {
+            return Err(ExtractFailure::Cancelled);
+        }
         let page = &mut pages[page_number - 1];
         if page.error.is_some() {
             continue;
         }
         let rendered = format!("page-{page_number:04}.png");
         let output = directory.join(&rendered);
-        match render_page_png(
-            pdfium,
-            document,
-            page_number - 1,
-            page.width_pt,
-            page.height_pt,
-            request.dpi,
-            &output,
-        ) {
+        match render_one(page_number - 1, page, &output) {
             Ok(()) => page.rendered = Some(rendered),
             Err(RenderFailure::Io(error)) => {
-                return Err(ContractError::render_io(error.to_string()));
+                return Err(ExtractFailure::Contract(ContractError::render_io(
+                    error.to_string(),
+                )));
             }
             Err(RenderFailure::Pdfium(error)) => {
                 let message = format!("page {page_number}: page render failed: {error}");
@@ -1449,15 +1469,21 @@ pub enum InProcessError {
 /// typed payload is counted as it is built against [`RESPONSE_BYTE_BOUND`].
 ///
 /// PDFium init, every PDFium call, and destroy share one process-wide lock
-/// with the subprocess helper. A call that is already inside PDFium stays
-/// owned until that call returns. This function cannot kill a wedged native
-/// frame or isolate a crash inside the calling process.
+/// with the subprocess helper. `admit` is read again after that lock is
+/// acquired and before any library load, init, or document open. It is read
+/// before each text page and before each rendered page is installed. A call
+/// that is already inside PDFium stays owned until it returns, and a false
+/// `admit` then starts no later page or render. This function cannot kill a
+/// wedged native frame or isolate a crash inside the calling process.
 pub fn execute_in_process(
     library: &Path,
     request: &InProcessRequest,
-    admit_page: &dyn Fn(usize) -> bool,
+    admit: &dyn Fn() -> bool,
 ) -> Result<InProcessDocument, InProcessError> {
     with_pdfium_serialization(|| {
+        if !admit() {
+            return Err(InProcessError::Cancelled);
+        }
         let pdfium = Pdfium::load_at(library).map_err(InProcessError::Library)?;
         pdfium.initialize();
         let arguments = match in_process_arguments(request) {
@@ -1468,7 +1494,7 @@ pub fn execute_in_process(
             }
         };
         let mut account = PayloadAccount::bounded();
-        let result = extract_document(&pdfium, &arguments, admit_page, &mut account);
+        let result = extract_document(&pdfium, &arguments, admit, &mut account);
         pdfium.destroy();
         match result {
             Ok(payload) => Ok(in_process_document(payload)),
@@ -1584,8 +1610,14 @@ mod tests {
         assert!(open.reserve(super::RESPONSE_BYTE_BOUND + 1).is_ok());
     }
 
+    fn pdfium_gate_test_hold() -> std::sync::MutexGuard<'static, ()> {
+        static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
     #[test]
     fn pdfium_init_calls_and_destroy_share_one_gate() {
+        let _hold = pdfium_gate_test_hold();
         let (entered_tx, entered_rx) = std::sync::mpsc::channel();
         let (release_tx, release_rx) = std::sync::mpsc::channel::<()>();
         let worker = std::thread::spawn(move || {
@@ -1621,6 +1653,161 @@ mod tests {
     }
 
     use super::*;
+
+    fn two_render_pages() -> Vec<PageEntry> {
+        vec![
+            PageEntry {
+                index: 1,
+                chars: 1,
+                width_pt: 72.0,
+                height_pt: 72.0,
+                image_area_fraction: 0.0,
+                rendered: None,
+                error: None,
+                text: None,
+            },
+            PageEntry {
+                index: 2,
+                chars: 1,
+                width_pt: 72.0,
+                height_pt: 72.0,
+                image_area_fraction: 0.0,
+                rendered: None,
+                error: None,
+                text: None,
+            },
+        ]
+    }
+
+    fn render_request(dir: &Path) -> RenderRequest {
+        RenderRequest {
+            requested: true,
+            render_dir: Some(dir.to_path_buf()),
+            dpi: 72,
+            below_chars: None,
+            above_image_fraction: None,
+            pages: BTreeSet::from([1, 2]),
+        }
+    }
+
+    #[test]
+    fn cancelled_while_queued_does_not_enter_pdfium() {
+        let _hold = pdfium_gate_test_hold();
+        let (entered_tx, entered_rx) = std::sync::mpsc::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel::<()>();
+        let holder = std::thread::spawn(move || {
+            with_pdfium_serialization(|| {
+                entered_tx.send(()).unwrap();
+                release_rx.recv().unwrap();
+            });
+        });
+        entered_rx.recv().unwrap();
+        assert!(pdfium_gate().try_lock().is_err());
+        let admit = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
+        let admit_worker = std::sync::Arc::clone(&admit);
+        let (done_tx, done_rx) = std::sync::mpsc::channel();
+        let worker = std::thread::spawn(move || {
+            let result = execute_in_process(
+                Path::new("missing-pdfium"),
+                &InProcessRequest {
+                    command: InProcessCommand::Extract,
+                    source: PathBuf::from("missing.pdf"),
+                    password: None,
+                    render_pages: BTreeSet::new(),
+                    render_dir: None,
+                    dpi: 72,
+                },
+                &|| admit_worker.load(std::sync::atomic::Ordering::Acquire),
+            );
+            done_tx.send(result).unwrap();
+        });
+        while pdfium_gate_waiters().load(std::sync::atomic::Ordering::Acquire) == 0 {
+            assert!(
+                !worker.is_finished(),
+                "worker left the gate before it was observable as queued"
+            );
+            std::hint::spin_loop();
+        }
+        admit.store(false, std::sync::atomic::Ordering::Release);
+        assert_eq!(
+            done_rx.try_recv().unwrap_err(),
+            std::sync::mpsc::TryRecvError::Empty
+        );
+        release_tx.send(()).unwrap();
+        holder.join().unwrap();
+        let result = done_rx.recv().unwrap();
+        worker.join().unwrap();
+        assert!(matches!(result, Err(InProcessError::Cancelled)));
+    }
+
+    #[test]
+    fn cancelled_after_text_before_render_installs_nothing() {
+        let dir = std::env::temp_dir().join("solstone-pdf-render-before");
+        let _ = fs::remove_dir_all(&dir);
+        let mut pages = two_render_pages();
+        let mut warnings = Vec::new();
+        let mut calls = 0;
+        let result = render_selected_pages(
+            &mut pages,
+            &render_request(&dir),
+            &|| false,
+            &mut warnings,
+            |_, _, _| {
+                calls += 1;
+                Ok(())
+            },
+        );
+        assert!(matches!(result, Err(ExtractFailure::Cancelled)));
+        assert_eq!(calls, 0);
+        assert!(pages.iter().all(|page| page.rendered.is_none()));
+        assert!(!dir.exists());
+    }
+
+    #[test]
+    fn cancelled_during_render_finishes_that_page_and_skips_the_next() {
+        let dir = std::env::temp_dir().join("solstone-pdf-render-during");
+        let _ = fs::remove_dir_all(&dir);
+        let allow = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
+        let allow_render = std::sync::Arc::clone(&allow);
+        let (entered_tx, entered_rx) = std::sync::mpsc::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel::<()>();
+        let request = render_request(&dir);
+        let worker = std::thread::spawn(move || {
+            let mut pages = two_render_pages();
+            let mut warnings = Vec::new();
+            let mut calls = 0;
+            let result = render_selected_pages(
+                &mut pages,
+                &request,
+                &|| allow_render.load(std::sync::atomic::Ordering::Acquire),
+                &mut warnings,
+                |index, _, _| {
+                    calls += 1;
+                    if index == 0 {
+                        entered_tx.send(()).unwrap();
+                        release_rx.recv().unwrap();
+                    }
+                    Ok(())
+                },
+            );
+            (result, calls, pages)
+        });
+        entered_rx.recv().unwrap();
+        allow.store(false, std::sync::atomic::Ordering::Release);
+        let (done_tx, done_rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || done_tx.send(worker.join().unwrap()).unwrap());
+        assert!(matches!(
+            done_rx.try_recv(),
+            Err(std::sync::mpsc::TryRecvError::Empty)
+        ));
+        release_tx.send(()).unwrap();
+        let (result, calls, pages) = done_rx.recv().unwrap();
+        assert!(matches!(result, Err(ExtractFailure::Cancelled)));
+        assert_eq!(calls, 1);
+        assert!(pages[0].rendered.is_some());
+        assert!(pages[1].rendered.is_none());
+        let _ = fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn file_hashing_fits_a_one_mib_stack() {

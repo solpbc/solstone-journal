@@ -508,7 +508,7 @@ fn in_process_extract(
             render_dir: None,
             dpi: 72,
         },
-        &|_| true,
+        &|| true,
     )
 }
 

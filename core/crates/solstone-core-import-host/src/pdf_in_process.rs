@@ -48,7 +48,7 @@ impl solstone_core_import_sources::document::PdfWorker for InProcessPdfWorker {
             return Err(WorkerFailure::Cancelled);
         }
         let mapped = mapped_request(request);
-        let result = execute_in_process(&self.library, &mapped, &|_| {
+        let result = execute_in_process(&self.library, &mapped, &|| {
             solstone_core_import::work_continues()
         });
         if !solstone_core_import::work_continues() {
