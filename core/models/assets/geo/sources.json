@@ -1,28 +1,28 @@
 {
   "input_bytes": {
     "admin1CodesASCII.txt": 151571,
-    "cities500.zip": 13903637,
+    "cities500.zip": 13907081,
     "countryInfo.txt": 31690,
     "ne_10m_admin_0_countries.geojson": 13287234,
     "ne_10m_admin_1_states_provinces.geojson": 40726851
   },
   "inputs": {
     "admin1CodesASCII.txt": "2e4867f5397acb056ea26377601b57af37cb4c81399770225018e9e439e91ad3",
-    "cities500.zip": "3eb4471fba711c2e94efd3d01c30c1aa091b5434ae9b50d6a171bc2482e7fae7",
+    "cities500.zip": "54764f97df5aff90af774210ee4be97e5febb23e102549c20dd41928f2c35066",
     "countryInfo.txt": "c55f638cfaafb4fe45a9aa15120a0f1f78e8a34a8e1847d7b9320cf740fbc9ab",
     "ne_10m_admin_0_countries.geojson": "239eec57ac17f100a11e2536cffc56752c318b50ae765b0918ff7aab4ce8f255",
     "ne_10m_admin_1_states_provinces.geojson": "22d0e3ad85eb3e27f17cabf8ba2d50e554fbc27a87796ff891d958185da62fb5"
   },
-  "sha256": "e117bbe13961838d3aab40dfd1463f2b4750305cb8064b0f246f5ab61726008c",
+  "sha256": "47208568024e0937b7fd130d82c7557b761a1920bbbb2d0489fe2f4645d0f1ae",
   "stats": {
-    "admin1": 3777,
+    "admin1": 3784,
     "admin1_features": 4596,
     "admin1_points": 381579,
-    "bytes": 7791675,
+    "bytes": 7792912,
     "countries": 252,
     "country_features": 258,
     "country_points": 117368,
-    "towns": 225883
+    "towns": 225930
   },
-  "version": "geonames-20261024-e117bbe13961-natural-earth-ca96624"
+  "version": "geonames-20261026-47208568024e-natural-earth-ca96624"
 }

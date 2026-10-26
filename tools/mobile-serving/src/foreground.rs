@@ -138,6 +138,11 @@ const UNCOMPLETED_HOLD_EXIT: i32 = 4;
 #[path = "scheduled_commands.rs"]
 mod scheduled_commands;
 
+#[path = "import_commands.rs"]
+mod import_commands;
+pub use import_commands::{ImportContext, ImportRequest, ImportSeamFactory, PreparedImport};
+type ImportFactorySlot = Arc<Mutex<Option<Arc<ImportSeamFactory>>>>;
+
 const MAINTENANCE_ROUTINE_IDS: &[&str] = &[
     "speakers:discover-voices",
     "speakers:candidate-pair-suggestions",
@@ -660,6 +665,9 @@ pub(super) fn admit_command(journal: &Path, raw: &[String]) -> bool {
     let [command, rest @ ..] = args.as_slice() else {
         return false;
     };
+    if command == "importer" {
+        return import_commands::admit(rest);
+    }
     if command == "think" {
         if !think_admitted(rest) {
             return false;
@@ -808,6 +816,7 @@ struct HostedCommand {
     running: RunningUses,
     failed: Arc<AtomicBool>,
     backup: BackupWebDeps,
+    imports: ImportFactorySlot,
     #[cfg(feature = "audio")]
     audio_state: Arc<Mutex<Option<AudioConfig>>>,
 }
@@ -830,6 +839,7 @@ pub struct ForegroundProcessingHost {
     cancelled: Checkpoint,
     failed: Arc<AtomicBool>,
     generator: HostGenerator,
+    imports: ImportFactorySlot,
     #[cfg(test)]
     worker: CallableQueueWorker,
     #[cfg(feature = "audio")]
@@ -1103,6 +1113,7 @@ impl ForegroundProcessingHost {
             #[cfg(feature = "audio")]
             let audio_state = Arc::new(Mutex::new(None));
             let running = RunningUses::default();
+            let imports = Arc::new(Mutex::new(None));
             let hosted = Arc::new(HostedCommand {
                 rebuild_recovery,
                 journal: journal.clone(),
@@ -1116,6 +1127,7 @@ impl ForegroundProcessingHost {
                 running: running.clone(),
                 failed: Arc::clone(&failed),
                 backup,
+                imports: Arc::clone(&imports),
                 #[cfg(feature = "audio")]
                 audio_state: Arc::clone(&audio_state),
             });
@@ -1204,6 +1216,7 @@ impl ForegroundProcessingHost {
                 cancelled,
                 failed,
                 generator,
+                imports,
                 #[cfg(test)]
                 worker,
                 #[cfg(feature = "audio")]
@@ -1238,8 +1251,14 @@ impl ForegroundProcessingHost {
         if !admit_command(&hosted.journal, raw) {
             return UNCOMPLETED_HOLD_EXIT;
         }
+        let command = strip_launcher(raw);
+        if let [name, args @ ..] = command.as_slice()
+            && name == "importer"
+        {
+            return import_commands::execute(hosted, args, &control, Arc::clone(&checkpoint));
+        }
         let Some(args) = admit_argv(raw) else {
-            return scheduled_commands::run(hosted, &strip_launcher(raw), &checkpoint);
+            return scheduled_commands::run(hosted, &command, &checkpoint);
         };
         let today = Utc::now()
             .with_timezone(&solstone_core_journal_config::owner_zone(&hosted.journal))
@@ -1585,6 +1604,40 @@ impl ForegroundProcessingHost {
             &HostScheduleSink {
                 queue: self.queue.clone(),
             },
+        )
+    }
+    /// Install this owner's native import preparation without changing Generate policy.
+    /// Preparation and native resources remain owned until the callable task joins.
+    pub fn enable_imports(&self, factory: Arc<ImportSeamFactory>) -> Result<(), String> {
+        let mut slot = self
+            .imports
+            .lock()
+            .map_err(|_| "importer unavailable".to_owned())?;
+        if (self.cancelled)() {
+            return Err("thinking cancelled".into());
+        }
+        self.root
+            .revalidate_canonical_binding()
+            .map_err(|error| error.to_string())?;
+        *slot = Some(factory);
+        Ok(())
+    }
+    /// Capture the owner import authority before handing it to a retained worker.
+    /// Call prepare, preview and run on that worker; preparation may block.
+    pub fn import_request(
+        &self,
+        args: Vec<String>,
+        stop: solstone_core_import::WorkStop,
+        priority: WorkPriority,
+    ) -> Result<ImportRequest, String> {
+        import_commands::request(
+            Arc::clone(&self.root),
+            &self.generator,
+            &self.imports,
+            Arc::clone(&self.cancelled),
+            args,
+            stop,
+            priority,
         )
     }
     pub fn queue(&self) -> &TaskQueue {
