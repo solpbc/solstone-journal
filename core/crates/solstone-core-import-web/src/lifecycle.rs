@@ -6,6 +6,7 @@ use std::{
     collections::BTreeMap,
     io::Write,
     path::{Path, PathBuf},
+    sync::Arc,
     thread,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
@@ -1292,6 +1293,10 @@ pub(crate) async fn run_start(
     plan: crate::preview::PreviewPlan<'_>,
     seams: StartSeams,
 ) -> Response {
+    let embedded = match &plan {
+        crate::preview::PreviewPlan::Embedded(slot) => Some(Arc::clone(slot)),
+        _ => None,
+    };
     let resolved_id = resolve_import_id(root, &data);
     let guard = if let Some(id) = resolved_id.as_deref() {
         Some(crate::start_lock::acquire(root, id).await)
@@ -1300,6 +1305,11 @@ pub(crate) async fn run_start(
     };
 
     let force = data.get("force").and_then(Value::as_bool).unwrap_or(false);
+    if let Some(id) = resolved_id.as_deref()
+        && embedded.as_ref().is_some_and(|slot| slot.retains(id))
+    {
+        return replay_body(root, id);
+    }
     if !force && let Some(id) = resolved_id.as_deref() {
         let projection = solstone_core_import::project_import_result(root, id);
         let should_replay = match projection.status {
@@ -1318,41 +1328,39 @@ pub(crate) async fn run_start(
             _ => false,
         };
         if should_replay {
-            let effective_task_id = projection
-                .task_id
-                .as_deref()
-                .filter(|id| !id.is_empty())
-                .unwrap_or(id);
-            let mut body = if let Some(attempt) = &projection.attempt {
-                inprocess_start_response(
-                    effective_task_id,
-                    id,
-                    attempt.generation,
-                    &attempt.attempt_id,
-                )
-            } else {
-                queued_start_response(effective_task_id, id)
-            };
-            body["replay"] = json!(true);
-            return json_response(StatusCode::OK, body);
+            return replay_body(root, id);
         }
     }
 
-    let validated = match crate::preview::validate_start(root, data, plan).await {
-        Ok(data) => data,
-        Err(err) => {
-            return crate::preview::preview_error_response(
-                ImportReasonCode::ImportPreviewRequired.status(),
-                ImportReasonCode::ImportPreviewRequired.as_wire(),
-                &err,
-            );
+    let (validated, pending_preview) = match &embedded {
+        Some(slot) => {
+            match crate::preview::prepare_embedded_start(root, data, Arc::clone(slot)).await {
+                Ok(prepared) => prepared,
+                Err(err) => {
+                    return crate::preview::preview_error_response(
+                        ImportReasonCode::ImportPreviewRequired.status(),
+                        ImportReasonCode::ImportPreviewRequired.as_wire(),
+                        &err,
+                    );
+                }
+            }
         }
+        None => match crate::preview::validate_start(root, data, plan).await {
+            Ok(data) => (data, None),
+            Err(err) => {
+                return crate::preview::preview_error_response(
+                    ImportReasonCode::ImportPreviewRequired.status(),
+                    ImportReasonCode::ImportPreviewRequired.as_wire(),
+                    &err,
+                );
+            }
+        },
     };
 
-    let watch = if seams.send.is_none() {
-        TaskWatch::subscribe(root).await
-    } else {
+    let watch = if embedded.is_some() || seams.send.is_some() {
         None
+    } else {
+        TaskWatch::subscribe(root).await
     };
 
     let root_path = root.to_path_buf();
@@ -1400,7 +1408,11 @@ pub(crate) async fn run_start(
                     settle_on_exit(w, root.to_path_buf(), task_id, timestamp);
                 }
             },
-            hook,
+            Some(StartDispatch {
+                task_id_hook: hook,
+                embedded,
+                pending_preview,
+            }),
         )
     })
     .await
@@ -1408,6 +1420,15 @@ pub(crate) async fn run_start(
 }
 
 pub(crate) async fn start(State(state): State<AppState>, Json(data): Json<Value>) -> Response {
+    if let Some(slot) = state.route.clone() {
+        return run_start(
+            &state.root,
+            data,
+            crate::preview::PreviewPlan::Embedded(slot),
+            StartSeams::production(),
+        )
+        .await;
+    }
     let program = match crate::preview::planner() {
         Ok(program) => program,
         Err(err) => {
@@ -1530,6 +1551,166 @@ fn exit_event(
     }
 }
 
+fn replay_body(root: &Path, id: &str) -> Response {
+    let projection = solstone_core_import::project_import_result(root, id);
+    let effective_task_id = projection
+        .task_id
+        .as_deref()
+        .filter(|task_id| !task_id.is_empty())
+        .unwrap_or(id);
+    let mut body = if let Some(attempt) = &projection.attempt {
+        inprocess_start_response(
+            effective_task_id,
+            id,
+            attempt.generation,
+            &attempt.attempt_id,
+        )
+    } else {
+        queued_start_response(effective_task_id, id)
+    };
+    body["replay"] = json!(true);
+    json_response(StatusCode::OK, body)
+}
+
+struct StartDispatch {
+    task_id_hook: Option<std::sync::Arc<TaskIdHook>>,
+    embedded: Option<Arc<crate::ImportRouteSlot>>,
+    pending_preview: Option<crate::preview::PendingPreview>,
+}
+
+/// Owner-date effect planned before any rename or metadata write.
+struct OwnerDatePlan {
+    relocate: bool,
+    /// File-path write, recorded before `owner_timestamp` is added.
+    relocated: Option<ImportMetadata>,
+    owner_write: bool,
+    record_id: String,
+    command_path: String,
+    metadata: ImportMetadata,
+}
+
+fn plan_owner_date(
+    root: &Path,
+    data: &Value,
+    path: &str,
+    timestamp: &str,
+    original_timestamp: &str,
+    mut metadata: ImportMetadata,
+) -> Result<OwnerDatePlan, Box<Response>> {
+    let file_path = Path::new(path);
+    let is_local_path = !file_path.starts_with(root.join("imports"));
+    let mut command_path = path.to_owned();
+    let owner_choice = owner_timestamp_choice(data, &metadata);
+    let mut record_id = original_timestamp.to_owned();
+    let relocate = owner_choice.is_some()
+        && original_timestamp != timestamp
+        && !root
+            .join("imports")
+            .join(timestamp)
+            .try_exists()
+            .unwrap_or(true);
+    let mut relocated = None;
+    if relocate {
+        if let Err(error) = contained_import_file(root, timestamp, "import.json") {
+            return Err(Box::new(metadata_failed(error.to_string())));
+        }
+        let filename = file_path
+            .file_name()
+            .and_then(|value| value.to_str())
+            .unwrap_or_default();
+        if !is_local_path {
+            command_path = match contained_import_file(root, timestamp, filename) {
+                Ok(planned) => planned.display().to_string(),
+                Err(error) => return Err(Box::new(metadata_failed(error.to_string()))),
+            };
+        }
+        metadata.insert("file_path".to_owned(), json!(command_path));
+        metadata.insert("source_timestamp".to_owned(), json!(timestamp));
+        record_id = timestamp.to_owned();
+        metadata.insert("import_id".to_owned(), json!(record_id.as_str()));
+        metadata.insert("user_timestamp".to_owned(), json!(record_id.as_str()));
+        relocated = Some(metadata.clone());
+    }
+    let owner_write = owner_choice.is_some();
+    if let Some(owner) = owner_choice {
+        metadata.insert("owner_timestamp".to_owned(), json!(owner));
+        metadata.insert("source_timestamp".to_owned(), json!(timestamp));
+    }
+    if let Some(relative) = data.get("_preview_source").and_then(Value::as_str) {
+        command_path = match contained_import_file(root, &record_id, relative) {
+            Ok(planned) => planned.display().to_string(),
+            Err(error) => return Err(Box::new(metadata_failed(error.to_string()))),
+        };
+    }
+    Ok(OwnerDatePlan {
+        relocate,
+        relocated,
+        owner_write,
+        record_id,
+        command_path,
+        metadata,
+    })
+}
+
+fn apply_owner_date<W>(
+    root: &Path,
+    plan: &OwnerDatePlan,
+    original_timestamp: &str,
+    timestamp: &str,
+    write: &mut W,
+) -> Result<(), Box<Response>>
+where
+    W: FnMut(&Path, &str, &ImportMetadata) -> Result<PathBuf, ImportError>,
+{
+    if plan.relocate {
+        if let Err(error) = relocate_import(root, original_timestamp, timestamp) {
+            return Err(Box::new(relocation_error(
+                error,
+                original_timestamp,
+                timestamp,
+            )));
+        }
+        let relocated = plan
+            .relocated
+            .as_ref()
+            .expect("a relocation records the file-path metadata");
+        if let Err(error) = write(root, &plan.record_id, relocated) {
+            return Err(Box::new(metadata_failed(format!(
+                "Failed to update file path in metadata: {error}"
+            ))));
+        }
+    }
+    if plan.owner_write
+        && let Err(error) = write(root, &plan.record_id, &plan.metadata)
+    {
+        return Err(Box::new(metadata_failed(error.to_string())));
+    }
+    Ok(())
+}
+
+/// A preview token names a record already on disk. No token means there is nothing to verify.
+fn unverified_preview(
+    root: &Path,
+    data: &Value,
+    command_path: &str,
+    timestamp: &str,
+    force: bool,
+    metadata: &ImportMetadata,
+) -> Option<Response> {
+    let token = data.get("preview_token").and_then(Value::as_str)?;
+    solstone_core_import::snapshot::verify_preview(
+        root,
+        Path::new(command_path),
+        token,
+        timestamp,
+        force,
+        metadata.get("setting").and_then(Value::as_str),
+        source_hint(metadata).as_deref(),
+    )
+    .err()
+    .map(|error| invalid_state(&error, None))
+}
+
 fn start_with<S, W, P, F>(
     root: &Path,
     data: &Value,
@@ -1537,7 +1718,7 @@ fn start_with<S, W, P, F>(
     mut write: W,
     mut produce: P,
     mut follow: F,
-    task_id_hook: Option<std::sync::Arc<TaskIdHook>>,
+    dispatch: Option<StartDispatch>,
 ) -> Response
 where
     S: FnMut(&Path, &str, &[String]) -> Result<(), BusError>,
@@ -1560,9 +1741,6 @@ where
         return missing("missing params");
     };
     let force = data.get("force").and_then(Value::as_bool).unwrap_or(false);
-    let imports = root.join("imports");
-    let file_path = Path::new(path);
-    let is_local_path = !file_path.starts_with(&imports);
     let original_timestamp = match resolve_import_id(root, data) {
         Some(id) => id,
         None => return missing("missing params"),
@@ -1572,7 +1750,7 @@ where
             "Import metadata not found for {original_timestamp}"
         ));
     }
-    let mut metadata = match read_import_metadata(root, &original_timestamp) {
+    let metadata = match read_import_metadata(root, &original_timestamp) {
         Ok(metadata) => metadata,
         Err(_) => {
             return import_not_found(&format!(
@@ -1602,97 +1780,146 @@ where
         }
         _ => {}
     }
-    let mut command_path = path.to_owned();
-    let owner_choice = owner_timestamp_choice(data, &metadata);
-    let mut record_id = original_timestamp.as_str();
-    if owner_choice.is_some()
-        && original_timestamp != timestamp
-        && !imports.join(timestamp).try_exists().unwrap_or(true)
+    let (task_id_hook, embedded, pending_preview) = match dispatch {
+        Some(dispatch) => (
+            dispatch.task_id_hook,
+            dispatch.embedded,
+            dispatch.pending_preview,
+        ),
+        None => (None, None, None),
+    };
+    let mut plan = match plan_owner_date(root, data, path, timestamp, &original_timestamp, metadata)
     {
-        if let Err(error) = contained_import_file(root, timestamp, "import.json") {
-            return metadata_failed(error.to_string());
+        Ok(plan) => plan,
+        Err(response) => return *response,
+    };
+    if let Some(slot) = embedded {
+        let mut command_metadata = plan.metadata.clone();
+        if let Some(pending) = pending_preview.as_ref() {
+            command_metadata.insert("preview".to_owned(), pending.record.clone());
         }
-        let new_directory = match relocate_import(root, &original_timestamp, timestamp) {
-            Ok(path) => path,
-            Err(error) => return relocation_error(error, &original_timestamp, timestamp),
+        let cmd = command(&plan.command_path, timestamp, &command_metadata, force);
+        // Admit the planned command before relocating or writing the owner date.
+        let captured = match slot.capture(cmd, crate::embedded_route::source_time(timestamp)) {
+            Ok(captured) => captured,
+            Err(error) => {
+                return crate::preview::preview_error_response(
+                    ImportReasonCode::ImportPreviewRequired.status(),
+                    ImportReasonCode::ImportPreviewRequired.as_wire(),
+                    &crate::preview::PreviewError::PlanFailed(error),
+                );
+            }
         };
-        let filename = file_path
-            .file_name()
-            .and_then(|value| value.to_str())
-            .unwrap_or_default();
-        if !is_local_path {
-            command_path = new_directory.join(filename).display().to_string();
+        // Commit a deferred preview on the original id before any date write.
+        if let Some(pending) = pending_preview {
+            let record = pending.record.clone();
+            if let Err(error) = crate::preview::commit_pending_preview(root, pending) {
+                drop(captured);
+                return crate::preview::preview_error_response(
+                    ImportReasonCode::ImportPreviewRequired.status(),
+                    ImportReasonCode::ImportPreviewRequired.as_wire(),
+                    &error,
+                );
+            }
+            plan.metadata.insert("preview".to_owned(), record.clone());
+            if let Some(relocated) = plan.relocated.as_mut() {
+                relocated.insert("preview".to_owned(), record);
+            }
         }
-        metadata.insert("file_path".to_owned(), json!(command_path));
-        metadata.insert("source_timestamp".to_owned(), json!(timestamp));
-        record_id = timestamp;
-        metadata.insert("import_id".to_owned(), json!(record_id));
-        metadata.insert("user_timestamp".to_owned(), json!(record_id));
-        if let Err(error) = write(root, record_id, &metadata) {
-            return metadata_failed(format!("Failed to update file path in metadata: {error}"));
+        if let Err(response) =
+            apply_owner_date(root, &plan, &original_timestamp, timestamp, &mut write)
+        {
+            drop(captured);
+            return *response;
         }
-    }
-    if let Some(owner) = owner_choice {
-        metadata.insert("owner_timestamp".to_owned(), json!(owner));
-        metadata.insert("source_timestamp".to_owned(), json!(timestamp));
-        if let Err(error) = write(root, record_id, &metadata) {
-            return metadata_failed(error.to_string());
-        }
-    }
-    if let Some(relative) = data.get("_preview_source").and_then(Value::as_str) {
-        command_path = match contained_import_file(root, record_id, relative) {
-            Ok(path) => path.display().to_string(),
-            Err(error) => return metadata_failed(error.to_string()),
-        };
-    }
-    if let Some(token) = data.get("preview_token").and_then(Value::as_str)
-        && let Err(error) = solstone_core_import::snapshot::verify_preview(
+        if let Some(response) = unverified_preview(
             root,
-            Path::new(&command_path),
-            token,
+            data,
+            &plan.command_path,
             timestamp,
             force,
-            metadata.get("setting").and_then(Value::as_str),
-            source_hint(&metadata).as_deref(),
+            &plan.metadata,
+        ) {
+            drop(captured);
+            return response;
+        }
+        let task_id = now_ms().to_string();
+        let settle_id = plan.record_id.clone();
+        let slot_for_done = Arc::clone(&slot);
+        slot.remember(&plan.record_id);
+        if let Err(error) = slot.run_retained(captured, move |_result| {
+            slot_for_done.forget(&settle_id);
+        }) {
+            slot.forget(&plan.record_id);
+            return crate::preview::preview_error_response(
+                ImportReasonCode::ImportPreviewRequired.status(),
+                ImportReasonCode::ImportPreviewRequired.as_wire(),
+                &crate::preview::PreviewError::PlanFailed(error),
+            );
+        }
+        return json_response(
+            StatusCode::OK,
+            queued_start_response(&task_id, &plan.record_id),
+        );
+    }
+    if let Err(response) = apply_owner_date(root, &plan, &original_timestamp, timestamp, &mut write)
+    {
+        return *response;
+    }
+    // A deferred preview exists only in memory. Verify it after it is written.
+    if pending_preview.is_none()
+        && let Some(response) = unverified_preview(
+            root,
+            data,
+            &plan.command_path,
+            timestamp,
+            force,
+            &plan.metadata,
         )
     {
-        return invalid_state(&error, None);
+        return response;
     }
-    let inprocess_source = detect_inprocess_source(&metadata, &command_path);
+    let inprocess_source = detect_inprocess_source(&plan.metadata, &plan.command_path);
     let task_id = now_ms().to_string();
     if let Some(source) = inprocess_source {
         let started_at_ms = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_millis() as u64;
-        let source_hint_str = source_hint(&metadata);
+        let source_hint_str = source_hint(&plan.metadata);
         let facts = match solstone_core_import::admit_running_attempt(
             root,
-            record_id,
+            &plan.record_id,
             started_at_ms,
             source_hint_str.as_deref(),
         ) {
-            Ok(f) => f,
+            Ok(facts) => facts,
             Err(error) => {
                 return metadata_failed(format!("Failed to record running attempt: {error}"));
             }
         };
         produce(
             root.to_path_buf(),
-            PathBuf::from(&command_path),
-            record_id.to_owned(),
+            PathBuf::from(&plan.command_path),
+            plan.record_id.clone(),
             source,
             force,
             facts.generation,
         );
         return json_response(
             StatusCode::OK,
-            inprocess_start_response(&task_id, record_id, facts.generation, &facts.attempt_id),
+            inprocess_start_response(
+                &task_id,
+                &plan.record_id,
+                facts.generation,
+                &facts.attempt_id,
+            ),
         );
     }
 
-    let cmd = command(&command_path, timestamp, &metadata, force);
-    let previous_task_id = metadata
+    let cmd = command(&plan.command_path, timestamp, &plan.metadata, force);
+    let previous_task_id = plan
+        .metadata
         .get("task_id")
         .and_then(Value::as_str)
         .filter(|id| !id.is_empty())
@@ -1701,7 +1928,7 @@ where
     let hook_ref = task_id_hook.as_deref();
     if let Err(error) = exchange_task_id(
         root,
-        record_id,
+        &plan.record_id,
         &TaskIdOp::Record {
             new_id: task_id.clone(),
         },
@@ -1713,7 +1940,7 @@ where
     if send(root, &task_id, &cmd).is_err() {
         let _ = exchange_task_id(
             root,
-            record_id,
+            &plan.record_id,
             &TaskIdOp::Restore {
                 recorded_id: task_id,
                 previous: previous_task_id,
@@ -1723,14 +1950,15 @@ where
         return queue_error();
     }
 
-    metadata.insert("task_id".to_owned(), json!(task_id));
-    metadata.insert(
-        "source_hint".to_owned(),
-        source_hint(&metadata).map_or(Value::Null, Value::String),
-    );
-    let _ = write(root, record_id, &metadata);
-    follow(&task_id, record_id);
-    json_response(StatusCode::OK, queued_start_response(&task_id, record_id))
+    plan.metadata.insert("task_id".to_owned(), json!(task_id));
+    let hinted = source_hint(&plan.metadata).map_or(Value::Null, Value::String);
+    plan.metadata.insert("source_hint".to_owned(), hinted);
+    let _ = write(root, &plan.record_id, &plan.metadata);
+    follow(&task_id, &plan.record_id);
+    json_response(
+        StatusCode::OK,
+        queued_start_response(&task_id, &plan.record_id),
+    )
 }
 
 pub(crate) fn detect_inprocess_source(
