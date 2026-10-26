@@ -9,6 +9,7 @@ import json
 from pathlib import Path
 import subprocess
 import sys
+import tarfile
 import tempfile
 import threading
 import unittest
@@ -19,6 +20,97 @@ import mobile_native_build as mobile
 
 
 class BuildControls(unittest.TestCase):
+    def test_default_sources_can_supply_patches_before_their_engine_build(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            archive = root / "input.tar.gz"
+            payload = b"pinned source\n"
+            with tarfile.open(archive, "w:gz") as bundle:
+                member = tarfile.TarInfo("upstream/file.txt")
+                member.size = len(payload)
+                bundle.addfile(member, io.BytesIO(payload))
+            digest = mobile.sha256(archive)
+            args = argparse.Namespace(work_dir=root / "build", cache_dir=root / "cache",
+                                      jobs=1, platform="android", components=["parakeet"], full_run=False)
+            build = mobile.Build(args)
+            build.pins["parakeet"] = dict(url="https://invalid.example/source", sha256=digest, revision="fixture")
+            archive.rename(build.cache / f"parakeet-{digest}.tar.gz")
+            source = build.source("parakeet")
+            self.assertEqual((source / "file.txt").read_bytes(), payload)
+            # A second consumer shares this build's verified source, without
+            # extraction over a tree that its first consumer has started using.
+            (source / "consumer-state").write_text("retained")
+            self.assertEqual(build.source("parakeet"), source)
+            self.assertEqual((source / "consumer-state").read_text(), "retained")
+            with self.assertRaisesRegex(ValueError, "populated"):
+                build.source("parakeet", source)
+
+    def test_media_engines_receive_the_same_complete_patch_union(self):
+        with tempfile.TemporaryDirectory() as directory:
+            build, sources = self.media_fixture(Path(directory))
+            with contextlib.redirect_stdout(io.StringIO()):
+                for component in mobile.MEDIA_GGML_COMPONENTS:
+                    build.ggml(component, sources[component])
+            binding = build.summary["inputs"]["media-shared-ggml"]
+            self.assertEqual(binding["schema"], mobile.MEDIA_GGML_SCHEMA)
+            self.assertEqual(set(binding["sources"]), {"ggml", "parakeet", "rfdetr"})
+            # The duplicated common patch appears once; both distinct engine
+            # requirements survive in each resulting tree and receipt.
+            self.assertEqual(len(binding["patches"]), 3)
+            self.assertEqual({p["source_component"] for p in binding["patches"]}, {"parakeet", "rfdetr"})
+            for component in mobile.MEDIA_GGML_COMPONENTS:
+                self.assertEqual(build.summary["inputs"][component + "-patched-ggml"]["tree_sha256"], binding["tree_sha256"])
+                ggml = sources[component] / "third_party/ggml"
+                for file in ("common.c", "metal.metal", "cpu.c"):
+                    self.assertEqual((ggml / file).read_text(), "fixed\n")
+
+    def test_conflicting_media_patch_cannot_publish_a_closure_binding(self):
+        with tempfile.TemporaryDirectory() as directory:
+            build, sources = self.media_fixture(Path(directory))
+            patch = sources["rfdetr"] / "third_party/ggml-patches/0002-profile.patch"
+            patch.write_text(self.patch("cpu.c", "absent", "fixed"))
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                with self.assertRaises(subprocess.CalledProcessError):
+                    build.ggml("parakeet", sources["parakeet"])
+            self.assertNotIn("media-shared-ggml", build.summary["inputs"])
+            self.assertNotIn("parakeet-patched-ggml", build.summary["inputs"])
+
+    def test_missing_media_patch_family_is_refused(self):
+        with tempfile.TemporaryDirectory() as directory:
+            _, sources = self.media_fixture(Path(directory))
+            for patch in (sources["rfdetr"] / "third_party/ggml-patches").glob("*.patch"):
+                patch.unlink()
+            with self.assertRaisesRegex(ValueError, "patch series missing"):
+                mobile.media_ggml_patches(sources)
+
+    @staticmethod
+    def patch(file, before="base", after="fixed"):
+        return f"diff --git a/{file} b/{file}\n--- a/{file}\n+++ b/{file}\n@@ -1 +1 @@\n-{before}\n+{after}\n"
+
+    def media_fixture(self, root):
+        args = argparse.Namespace(work_dir=root / "build", cache_dir=root / "cache",
+                                  jobs=1, platform="android", components=["parakeet", "rfdetr"], full_run=False)
+        build = mobile.Build(args)
+        sources = {component: build.sources / component for component in mobile.MEDIA_GGML_COMPONENTS}
+        for component, source in sources.items():
+            folder = source / "third_party/ggml-patches"
+            folder.mkdir(parents=True)
+            (folder / "0001-common.patch").write_text(self.patch("common.c"))
+            file = "metal.metal" if component == "parakeet" else "cpu.c"
+            (folder / "0002-profile.patch").write_text(self.patch(file))
+        build.source_roots.update(sources)
+        base = root / "base-ggml"
+        base.mkdir()
+        for file in ("common.c", "metal.metal", "cpu.c"):
+            (base / file).write_text("base\n")
+        archive = root / "ggml.tar.gz"
+        with tarfile.open(archive, "w:gz") as bundle:
+            bundle.add(base, arcname="upstream")
+        digest = mobile.sha256(archive)
+        build.pins["ggml"] = dict(url="https://invalid.example/ggml", sha256=digest, revision="fixture")
+        archive.rename(build.cache / f"ggml-{digest}.tar.gz")
+        return build, sources
+
     def test_cargo_binary_selection_excludes_host_build_scripts_and_launchers(self):
         with tempfile.TemporaryDirectory() as directory:
             target = Path(directory)
