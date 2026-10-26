@@ -49,8 +49,9 @@ final class OwnerFolderServiceEndpoint {
         if ("owner-folder-page".equals(op)) {
             final String root = data.getString("root");
             final long generation = data.getLong("admission_generation", -1);
+            final long allocated = Native.allocateFolderPage();
             submit(target,id,() -> {
-                long page = Native.issueFolderPage(root,generation);
+                long page = Native.bindFolderPage(root,generation,allocated);
                 return new JSONObject().put("ok",page != 0)
                     .put("value",new JSONObject().put("page_authority",page)).toString();
             });

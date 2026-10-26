@@ -7,6 +7,8 @@
 
 extern void journal_free(char *);
 extern unsigned long long journal_owner_folder_page_issue(const char *, unsigned long long);
+extern unsigned long long journal_owner_folder_page_allocate(void);
+extern unsigned long long journal_owner_folder_page_bind(const char *, unsigned long long, unsigned long long);
 extern void journal_owner_folder_page_retire(unsigned long long);
 extern bool journal_owner_folder_copy_continues(void);
 extern unsigned long long journal_owner_folder_page_current(void);
@@ -79,6 +81,23 @@ JNIEXPORT void JNICALL Java_app_solstone_development_journal_Native_retireFolder
         JNIEnv *e, jclass ignored, jlong page) {
     (void)e; (void)ignored;
     journal_owner_folder_page_retire((unsigned long long)page);
+}
+
+JNIEXPORT jlong JNICALL Java_app_solstone_development_journal_Native_allocateFolderPage(
+        JNIEnv *e, jclass ignored) {
+    (void)e; (void)ignored;
+    return (jlong)journal_owner_folder_page_allocate();
+}
+
+JNIEXPORT jlong JNICALL Java_app_solstone_development_journal_Native_bindFolderPage(
+        JNIEnv *e, jclass ignored, jstring root, jlong generation, jlong page) {
+    (void)ignored;
+    if (!root) return 0;
+    const char *path = (*e)->GetStringUTFChars(e,root,NULL);
+    if (!path) return 0;
+    unsigned long long bound = journal_owner_folder_page_bind(path,(unsigned long long)generation,(unsigned long long)page);
+    (*e)->ReleaseStringUTFChars(e,root,path);
+    return (jlong)bound;
 }
 
 JNIEXPORT jboolean JNICALL Java_app_solstone_development_journal_Native_folderCopyContinues(

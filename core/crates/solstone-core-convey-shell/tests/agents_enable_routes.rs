@@ -556,6 +556,7 @@ async fn enable_refuses_when_identity_missing_or_corrupt_or_fault() {
                 status_body["operation"].is_null()
                     || status_body["operation"]["portal_url"].is_null()
             );
+            assert_eq!(status_body["operation"]["phase"], "error");
             assert_eq!(poll.calls.load(Ordering::Relaxed), 0);
             let _ = fs::remove_dir_all(fault_root);
         }

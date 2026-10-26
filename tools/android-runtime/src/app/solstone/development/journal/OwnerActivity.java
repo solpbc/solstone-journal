@@ -45,6 +45,7 @@ public final class OwnerActivity extends ServingActivity {
     final OwnerUploadBoard uploadBoard = new OwnerUploadBoard();
     final OwnerFolderPicker folderPicker = new OwnerFolderPicker();
     volatile int folderGeneration;
+    volatile FolderOperation folderOperation;
     boolean diagnosticCommands() { return false; }
     boolean bindWhileStopped() { return true; }
     void stoppedConnectionReady() {
@@ -311,7 +312,13 @@ public final class OwnerActivity extends ServingActivity {
         } catch(Exception error) { pageError("couldn't open your browser"); }
     }
     void retireDocument() {
-        folderPicker.retire();
+        FolderOperation folder;
+        synchronized (folderPicker) {
+            folder = folderOperation;
+            folderOperation = null;
+            folderPicker.retire();
+        }
+        if (folder != null) retireFolderPage(folder);
         uploadBoard.retire();
         folderGeneration++;
         for(OwnerTransport.Cancellation cancellation:fetches.values()) cancellation.cancel();
@@ -577,12 +584,37 @@ public final class OwnerActivity extends ServingActivity {
             if (taken.reply == null) return "{\"error\":\"journal response unavailable; check the result before trying again\"}";
             return taken.reply;
         }
-        @JavascriptInterface public void chooseFolder(String token) {
-            if (folderPicker.present(token, pageToken, folderGeneration) == null) return;
-            ui.post(()->{
-                if (!folderPicker.claimStart(pageToken, folderGeneration)) return;
-                startFolderPicker();
-            });
+        @JavascriptInterface public void chooseFolder(String token,String id,String encoded) {
+            try {
+                JSONObject fields = new JSONObject(encoded);
+                String source = fields.getString("source"), reference = fields.getString("client_item_id");
+                if (!("obsidian".equals(source) || "gemini".equals(source) || "document".equals(source))
+                        || id == null || id.length() > 128 || reference.isEmpty() || reference.length() > 128) return;
+                OwnerTransport selected = transport;
+                final FolderOperation operation;
+                synchronized (folderPicker) {
+                    if (token == null || !token.equals(pageToken)) return;
+                    if (selected == null || !selected.current() || folderOperation != null
+                            || folderPicker.present(token,pageToken,folderGeneration) == null) {
+                        refuseFolder(token,id);return;
+                    }
+                    operation = new FolderOperation(token,folderGeneration,id,source,reference,selected);
+                    folderOperation = operation;
+                }
+                try { requests.execute(() -> prepareFolderPicker(operation)); }
+                catch (RejectedExecutionException busy) { finishFolder(operation,MainActivity.obj("state","refused","error",ownerMessage(busy))); }
+            } catch (JSONException malformed) { /* No authority or operation was accepted. */ }
+        }
+        @JavascriptInterface public void cancelFolder(String token,String id) {
+            FolderOperation operation;
+            synchronized (folderPicker) {
+                operation=folderOperation;
+                if (operation == null || !operation.token.equals(token) || !operation.id.equals(id)) return;
+                operation.cancelled=true;
+                folderPicker.retire();
+                folderOperation=null;
+            }
+            retireFolderPage(operation);
         }
     }
     protected void onActivityResult(int request,int result,Intent data) {
@@ -604,96 +636,142 @@ public final class OwnerActivity extends ServingActivity {
         }
         if (request == 42) {
             final Uri tree=data == null ? null : data.getData();
+            FolderOperation operation=folderOperation;
             boolean ok=result == RESULT_OK && tree != null;
-            OwnerFolderPicker.Authority origin=folderPicker.acceptResult(ok, pageToken, folderGeneration);
-            if (origin == null || tree == null) return;
-            final int generation=origin.generation;
-            final String token=origin.token;
-            try { uploads.execute(()->copyFolder(tree,generation,token)); }
-            catch(RejectedExecutionException busy) { notice("journal controls busy; check health before retrying"); }
+            OwnerFolderPicker.Authority origin=folderPicker.acceptResult(ok,pageToken,folderGeneration);
+            if (operation == null) return;
+            if (origin == null || tree == null) {
+                finishFolder(operation,MainActivity.obj("state","cancelled"));
+                return;
+            }
+            folderEvent(operation,"__journalFolderSelected",MainActivity.obj("selected",true));
+            try { requests.execute(() -> saveSelectedFolder(operation,tree)); }
+            catch(RejectedExecutionException busy) { finishFolder(operation,MainActivity.obj("state","refused","error",ownerMessage(busy))); }
         }
     }
+
     void finishChooser(Uri[] value) {
         ValueCallback<Uri[]> callback=pendingChooser;
         pendingChooser=null;
         if (callback != null) callback.onReceiveValue(value);
     }
-    void startFolderPicker() {
-        try { startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE),42); }
-        catch(ActivityNotFoundException error) {
-            folderPicker.acceptResult(false, pageToken, folderGeneration);
-            notice("this file couldn't be read. choose it again.");
+    void startFolderPicker(FolderOperation operation) {
+        try {
+            startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)
+                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION),42);
+        } catch(ActivityNotFoundException error) {
+            folderPicker.acceptResult(false,pageToken,folderGeneration);
+            finishFolder(operation,MainActivity.obj("state","refused","error","this file couldn't be read. choose it again."));
         }
     }
     void notice(String message) {
         ui.post(()->{ if (web != null && !destroyed) web.evaluateJavascript("alert("+JSONObject.quote(message)+")",null); });
     }
-    void copyFolder(Uri tree,int generation,String token) {
-        File cache=getCacheDir();
-        OwnerBridgeFiles.Claim claim=null;
-        try {
-            if (!OwnerFolderPicker.same(token, generation, pageToken, folderGeneration)) return;
-            claim=OwnerBridgeFiles.allocate(cache);
-            File dest=OwnerBridgeFiles.directory(cache,claim.id);
-            if (!OwnerFolderPicker.same(token, generation, pageToken, folderGeneration) || copyChildren(tree,DocumentsContract.getTreeDocumentId(tree),dest,generation,token)) {
-                OwnerBridgeFiles.release(cache,claim);
-                claim=null;
-                return;
-            }
-            OwnerBridgeFiles.commit(cache,claim);
-            final OwnerBridgeFiles.Claim owned=claim;
-            claim=null;
-            final String path=dest.getAbsolutePath();
-            ui.post(()->{
-                if (web == null || !OwnerFolderPicker.same(token, generation, pageToken, folderGeneration)) { OwnerBridgeFiles.release(cache,owned); return; }
-                web.evaluateJavascript("(function(){var input=document.getElementById('guidedPathInput');if(!input)return;input.value="+JSONObject.quote(path)+";input.dispatchEvent(new Event('input',{bubbles:true}));})()",null);
-                OwnerBridgeFiles.disarm(cache,owned);
-            });
-        } catch(Exception error) {
-            if (claim != null) OwnerBridgeFiles.release(cache,claim);
-            String message=error.getMessage() == null ? "" : error.getMessage();
-            notice(message.contains("No space") || message.contains("ENOSPC")
-                ? "your journal couldn't store this file. free some space and try again."
-                : "this file couldn't be read. choose it again.");
+    final class FolderOperation {
+        final String token,id,source,reference;
+        final int generation;
+        final OwnerTransport transport;
+        volatile long page;
+        volatile boolean cancelled;
+        FolderOperation(String token,int generation,String id,String source,String reference,OwnerTransport transport) {
+            this.token=token;this.generation=generation;this.id=id;this.source=source;this.reference=reference;this.transport=transport;
+        }
+        boolean current() {
+            return !cancelled && folderOperation == this && transport.current()
+                && OwnerFolderPicker.same(token,generation,pageToken,folderGeneration);
         }
     }
-    boolean copyChildren(Uri tree,String documentId,File dest,int generation,String token) throws IOException {
-        Uri children=DocumentsContract.buildChildDocumentsUriUsingTree(tree,documentId);
-        Cursor cursor=getContentResolver().query(children,new String[]{
-            DocumentsContract.Document.COLUMN_DOCUMENT_ID,
-            DocumentsContract.Document.COLUMN_DISPLAY_NAME,
-            DocumentsContract.Document.COLUMN_MIME_TYPE},null,null,null);
-        if (cursor == null) throw new IOException("couldn't be read");
-        try {
-            while (cursor.moveToNext()) {
-                if (!OwnerFolderPicker.same(token, generation, pageToken, folderGeneration)) return true;
-                String name=cursor.getString(1);
-                if (name == null || name.length() == 0 || name.indexOf('/') >= 0 || ".".equals(name) || "..".equals(name)) continue;
-                File child=new File(dest,name);
-                String childId=cursor.getString(0);
-                if (DocumentsContract.Document.MIME_TYPE_DIR.equals(cursor.getString(2))) {
-                    if (!child.isDirectory() && !child.mkdirs()) throw new IOException("couldn't be read");
-                    if (copyChildren(tree,childId,child,generation,token)) return true;
-                } else {
-                    InputStream input=getContentResolver().openInputStream(DocumentsContract.buildDocumentUriUsingTree(tree,childId));
-                    if (input == null) throw new IOException("couldn't be read");
-                    try { copyStream(input,child); } finally { input.close(); }
-                }
-            }
-        } finally { cursor.close(); }
-        return false;
+    void refuseFolder(String token,String id) {
+        ui.post(() -> {
+            if (web == null || !token.equals(pageToken)) return;
+            JSONObject result=MainActivity.obj("state","refused","error","journal controls busy; check health before retrying");
+            web.evaluateJavascript("window.__journalFolderReply&&window.__journalFolderReply("+JSONObject.quote(token)+","+JSONObject.quote(id)+","+result+")",null);
+        });
     }
-    void copyStream(InputStream input,File dest) throws IOException {
-        byte[] buffer=new byte[64*1024];
-        OutputStream output=new FileOutputStream(dest);
+    JSONObject folderCall(FolderOperation operation,Bundle fields) throws Exception {
+        int id=sequence.incrementAndGet();
+        CompletableFuture<JSONObject> result=new CompletableFuture<>();
+        pending.put(id,result);
+        Message message=Message.obtain(null,1);message.arg1=id;message.replyTo=replies;message.setData(fields);
         try {
-            int count;
-            while ((count=input.read(buffer)) != -1) output.write(buffer,0,count);
-        } catch(IOException error) {
-            String message=error.getMessage() == null ? "" : error.getMessage();
-            if (message.contains("ENOSPC") || message.contains("No space")) throw new IOException("No space");
-            throw error;
-        } finally { output.close(); }
+            operation.transport.worker.send(message);
+            // Provider work has no whole-operation timeout. Native owns Stop,
+            // resource retirement and cleanup even when this client disappears.
+            return result.get().getJSONObject("native");
+        } finally { pending.remove(id); }
+    }
+    void retireFolderPage(FolderOperation operation) {
+        if (operation.page == 0) return;
+        Bundle fields=new Bundle();fields.putString("op","owner-folder-page-retire");
+        fields.putLong("page_authority",operation.page);
+        Message message=Message.obtain(null,1);message.setData(fields);
+        try { operation.transport.worker.send(message); } catch(RemoteException ignored) {}
+    }
+    void prepareFolderPicker(FolderOperation operation) {
+        try {
+            if (!operation.current()) return;
+            Bundle fields=new Bundle();fields.putString("op","owner-folder-page");fields.putString("root",root);
+            fields.putLong("admission_generation",operation.transport.nativeGeneration);
+            JSONObject result=folderCall(operation,fields);
+            operation.page=result.optJSONObject("value") == null ? 0 : result.getJSONObject("value").optLong("page_authority");
+            if (!operation.current()) { retireFolderPage(operation);return; }
+            if (!result.optBoolean("ok") || operation.page == 0) {
+                retireFolderPicker(operation);finishFolder(operation,MainActivity.obj("state","refused","error","journal controls unavailable"));return;
+            }
+            ui.post(() -> {
+                synchronized (folderPicker) {
+                    if (!operation.current() || !folderPicker.claimStart(pageToken,folderGeneration)) {
+                        retireFolderPage(operation);return;
+                    }
+                    startFolderPicker(operation);
+                }
+            });
+        } catch(Exception unavailable) {
+            retireFolderPicker(operation);finishFolder(operation,MainActivity.obj("state","refused","error",ownerMessage(unavailable)));
+        }
+    }
+    void saveSelectedFolder(FolderOperation operation,Uri tree) {
+        try {
+            if (!operation.current()) { retireFolderPage(operation);return; }
+            String name="selected folder";
+            Uri document=DocumentsContract.buildDocumentUriUsingTree(tree,DocumentsContract.getTreeDocumentId(tree));
+            try(Cursor cursor=getContentResolver().query(document,new String[]{DocumentsContract.Document.COLUMN_DISPLAY_NAME},null,null,null)) {
+                if (cursor != null && cursor.moveToFirst() && cursor.getString(0) != null) name=cursor.getString(0);
+            }
+            if (!operation.current()) { retireFolderPage(operation);return; }
+            JSONObject request=MainActivity.obj("source",operation.source,"client_item_id",operation.reference,"folder_name",name,
+                "page_authority",operation.page,"admission_generation",operation.transport.nativeGeneration);
+            Bundle fields=new Bundle();fields.putString("op","owner-folder-copy");fields.putParcelable("tree",tree);
+            fields.putLong("page_authority",operation.page);fields.putByteArray("request",request.toString().getBytes(StandardCharsets.UTF_8));
+            JSONObject result=folderCall(operation,fields);
+            result.put("folder_name",name);
+            finishFolder(operation,result);
+        } catch(Exception unavailable) {
+            finishFolder(operation,MainActivity.obj("state","outcome_unknown","error",ownerMessage(unavailable)));
+        }
+    }
+    void folderEvent(FolderOperation operation,String callback,JSONObject value) {
+        ui.post(() -> {
+            if (web == null || !operation.current()) return;
+            web.evaluateJavascript("window."+callback+"&&window."+callback+"("+JSONObject.quote(operation.token)+","+JSONObject.quote(operation.id)+","+value+")",null);
+        });
+    }
+    void retireFolderPicker(FolderOperation operation) {
+        synchronized (folderPicker) {
+            if (folderOperation == operation) folderPicker.retire();
+        }
+    }
+    void finishFolder(FolderOperation operation,JSONObject result) {
+        retireFolderPicker(operation);
+        retireFolderPage(operation);
+        ui.post(() -> {
+            if (web != null && operation.current()) {
+                web.evaluateJavascript("window.__journalFolderReply&&window.__journalFolderReply("+JSONObject.quote(operation.token)+","+JSONObject.quote(operation.id)+","+result+")",null);
+            }
+            synchronized (folderPicker) {
+                if (folderOperation == operation) folderOperation=null;
+            }
+        });
     }
     static String ownerMessage(Exception error) {
         String message=error.getMessage() == null ? "" : error.getMessage();

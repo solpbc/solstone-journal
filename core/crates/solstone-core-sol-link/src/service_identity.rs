@@ -20,6 +20,14 @@ use solstone_core_journal_io::{
 
 use crate::ca::{CaError, LocalCa, generate_ca, jid_from_spki, load_ca};
 
+#[cfg(any(unix, windows))]
+mod bound;
+#[cfg(any(unix, windows))]
+pub use bound::{
+    IdentityNativePublication, IdentityPreparation, IdentityPreparationRefusal,
+    IdentityPublication, prepare_service_identity_at_root_checked,
+};
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ServiceIdentity {
     pub instance_id: String,

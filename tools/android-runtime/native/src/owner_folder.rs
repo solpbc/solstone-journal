@@ -13,7 +13,29 @@ use std::sync::Arc;
 // This is the attached owner document's authority, never a recovery fence.
 // Issuance is called only by the private service after its current host opens.
 static PAGE: AtomicU64 = AtomicU64::new(1);
-static PAGE_HOST: AtomicU64 = AtomicU64::new(0);
+// Active host generations are even, including the first generation zero.
+const UNBOUND_HOST: u64 = u64::MAX;
+static PAGE_HOST: AtomicU64 = AtomicU64::new(UNBOUND_HOST);
+static PAGE_BINDING: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// Allocate in service-message order before queued root validation. A late
+/// validation can bind only this nonce and cannot replace a newer document.
+#[unsafe(no_mangle)]
+pub extern "C" fn journal_owner_folder_page_allocate() -> u64 {
+    let Ok(_binding) = PAGE_BINDING.lock() else {
+        return 0;
+    };
+    let Some(next) = PAGE
+        .load(Ordering::SeqCst)
+        .checked_add(2)
+        .map(|next| next & !1)
+    else {
+        return 0;
+    };
+    PAGE.store(next, Ordering::SeqCst);
+    PAGE_HOST.store(UNBOUND_HOST, Ordering::SeqCst);
+    next
+}
 
 /// # Safety
 /// `root` is the live UTF-8 root of the document being attached by the service.
@@ -22,7 +44,19 @@ pub unsafe extern "C" fn journal_owner_folder_page_issue(
     root: *const c_char,
     generation: u64,
 ) -> u64 {
-    if root.is_null() {
+    let page = journal_owner_folder_page_allocate();
+    unsafe { journal_owner_folder_page_bind(root, generation, page) }
+}
+
+/// # Safety
+/// `root` has the same buffer contract as `journal_owner_folder_page_issue`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn journal_owner_folder_page_bind(
+    root: *const c_char,
+    generation: u64,
+    page: u64,
+) -> u64 {
+    if root.is_null() || page == 0 || page & 1 != 0 {
         return 0;
     }
     let Ok(root) = (unsafe { CStr::from_ptr(root) }).to_str() else {
@@ -43,24 +77,29 @@ pub unsafe extern "C" fn journal_owner_folder_page_issue(
     {
         return 0;
     }
-    let issued = PAGE
-        .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |old| {
-            old.checked_add(2).map(|next| next & !1)
-        })
-        .ok()
-        .and_then(|old| old.checked_add(2))
-        .map(|next| next & !1)
-        .unwrap_or(0);
-    if issued != 0 {
-        PAGE_HOST.store(generation, Ordering::SeqCst);
+    let Ok(_binding) = PAGE_BINDING.lock() else {
+        return 0;
+    };
+    if PAGE.load(Ordering::SeqCst) != page
+        || THINKING_GENERATION.load(Ordering::SeqCst) != generation
+    {
+        return 0;
     }
-    issued
+    PAGE_HOST.store(generation, Ordering::SeqCst);
+    page
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn journal_owner_folder_page_retire(page: u64) {
-    if page != 0 {
-        let _ = PAGE.compare_exchange(page, page | 1, Ordering::SeqCst, Ordering::SeqCst);
+    let Ok(_binding) = PAGE_BINDING.lock() else {
+        return;
+    };
+    if page != 0
+        && PAGE
+            .compare_exchange(page, page | 1, Ordering::SeqCst, Ordering::SeqCst)
+            .is_ok()
+    {
+        PAGE_HOST.store(UNBOUND_HOST, Ordering::SeqCst);
     }
 }
 
@@ -131,13 +170,12 @@ unsafe fn copy_folder(
         .as_str()
         .filter(|id| !id.is_empty())
         .ok_or(())?;
-    let timestamp = validate_timestamp(request["timestamp"].as_str().ok_or(())?).map_err(|_| ())?;
     let display = request["folder_name"].as_str().ok_or(())?;
     let page = request["page_authority"]
         .as_u64()
         .filter(|page| *page != 0 && *page & 1 == 0)
         .ok_or(())?;
-    let preparation = {
+    let (preparation, timestamp) = {
         let serving = SERVING.lock().map_err(|_| ())?;
         let owner = serving.as_ref().ok_or(())?;
         let handle = owner.handle().map_err(|_| ())?;
@@ -150,6 +188,20 @@ unsafe fn copy_folder(
             return Err(());
         }
         let host = owner.host.as_ref().ok_or(())?;
+        let generated;
+        let raw_timestamp = match request.get("timestamp") {
+            Some(value) => value.as_str().ok_or(())?,
+            None => {
+                owner.root.revalidate_canonical_binding().map_err(|_| ())?;
+                let zone = solstone_core_journal_config::owner_zone(owner.root.canonical_path());
+                generated = chrono::Utc::now()
+                    .with_timezone(&zone)
+                    .format("%Y%m%d_%H%M%S")
+                    .to_string();
+                &generated
+            }
+        };
+        let timestamp = validate_timestamp(raw_timestamp).map_err(|_| ())?;
         let stop =
             WorkStop::linked_with_checkpoint(Arc::new(AtomicBool::new(false)), None, move || {
                 PAGE.load(Ordering::SeqCst) != page
@@ -162,7 +214,10 @@ unsafe fn copy_folder(
                 .parse()
                 .map_err(|_| ())?,
         };
-        host.import_preparation(stop, priority).map_err(|_| ())?
+        (
+            host.import_preparation(stop, priority).map_err(|_| ())?,
+            timestamp,
+        )
     };
     // SERVING is released before all provider, staging, metadata and cleanup I/O.
     // No native import attempt is admitted by this copy/register operation.

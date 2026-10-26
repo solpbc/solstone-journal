@@ -8,7 +8,7 @@ const source = fs.readFileSync(require('node:path').join(__dirname, '../assets/o
 async function main() {
   const calls = [], cancellations = [];
   let nextCall;
-  const context = {Request, Response, Headers, URL, TextEncoder, Uint8Array, DOMException, atob,
+  const context = {Request, Response, Headers, URL, TextEncoder, Uint8Array, DOMException, atob, crypto: require("node:crypto").webcrypto,
     setTimeout, clearTimeout, location: {href: 'https://journal.invalid/init', origin: 'https://journal.invalid'},
     JournalOwner: {
       fetch(encoded) { const request = JSON.parse(encoded); calls.push(request); nextCall?.(request); },
@@ -18,6 +18,26 @@ async function main() {
   };
   context.window = context;
   vm.runInNewContext(source, context);
+  const folderCalls=[];
+  context.JournalOwner.chooseFolder=(token,id,encoded) => folderCalls.push({token,id,fields:JSON.parse(encoded)});
+  context.JournalOwner.cancelFolder=(token,id) => cancellations.push({token,id,folder:true});
+  let selections=0;
+  const folder=context.JournalOwnerFolders.choose('obsidian','reference',() => { selections += 1; });
+  const folderCall=folderCalls[0];
+  assert.equal(folderCall.token,'current-page');
+  assert.equal(folderCall.fields.client_item_id,'reference');
+  context.__journalFolderSelected('old-page',folderCall.id);
+  assert.equal(selections,0);
+  context.__journalFolderSelected('current-page',folderCall.id);
+  assert.equal(selections,1);
+  assert.equal((await context.JournalOwnerFolders.choose('obsidian','duplicate')).state,'refused');
+  context.__journalFolderReply('old-page',folderCall.id,{state:'saved'});
+  context.__journalFolderReply('current-page',folderCall.id,{state:'cancelled'});
+  assert.equal((await folder).state,'cancelled');
+  const abandoned=context.JournalOwnerFolders.choose('obsidian','abandoned');
+  context.JournalOwnerFolders.cancel();
+  assert.equal((await abandoned).state,'cancelled');
+  assert.equal(cancellations.pop().folder,true);
   const request = (url, options) => {
     const submitted = new Promise(resolve => { nextCall = resolve; });
     const response = context.fetch(url, options);

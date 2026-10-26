@@ -45,6 +45,23 @@ async fn native_folder_registration_is_visible_through_maintained_owner_read_rou
     .unwrap();
     assert_eq!(summary["timestamp"], folder.import_id.as_str());
     assert_eq!(summary["client_item_id"], "native-row");
+    let recovered = get(
+        journal.path(),
+        "/app/import/api/list?client_item_id=native-row",
+    )
+    .await;
+    assert_eq!(recovered["total"], 1);
+    assert_eq!(
+        recovered["imports"][0]["timestamp"],
+        folder.import_id.as_str()
+    );
+    assert_eq!(recovered["imports"][0]["client_item_id"], "native-row");
+    let unrelated = get(
+        journal.path(),
+        "/app/import/api/list?client_item_id=another-selection",
+    )
+    .await;
+    assert_eq!(unrelated["total"], 0);
     let detail = get(
         journal.path(),
         &format!("/app/import/api/{}", folder.import_id.as_str()),

@@ -352,6 +352,9 @@ pub(crate) async fn list(
         .get("source")
         .filter(|value| !value.is_empty())
         .map(String::as_str);
+    let client_item = query
+        .get("client_item_id")
+        .filter(|value| !value.is_empty());
     let imports_dir = state.root.join("imports");
     let Ok(entries) = fs::read_dir(&imports_dir) else {
         return json_response(
@@ -384,7 +387,18 @@ pub(crate) async fn list(
         if let Some(name) = source_type.as_ref().filter(|name| !name.is_empty()) {
             source_options.insert(name.clone());
         }
-        if filter.is_none_or(|wanted| source_type.as_deref() == Some(wanted)) {
+        if filter.is_none_or(|wanted| source_type.as_deref() == Some(wanted))
+            && client_item.is_none_or(|wanted| {
+                let Ok(metadata) = object_from_file(&entry.path().join("import.json")) else {
+                    return false;
+                };
+                if metadata.get("client_item_id").and_then(Value::as_str) != Some(wanted) {
+                    return false;
+                }
+                info.values.insert("client_item_id".into(), json!(wanted));
+                true
+            })
+        {
             rows.push(info);
         }
     }

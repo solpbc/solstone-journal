@@ -924,6 +924,7 @@ pub fn write_bytes_exclusive_detailed(
         options.mode,
         Some(contents),
         path,
+        &|| Ok(()),
     )
 }
 
@@ -956,6 +957,7 @@ pub fn write_reader_exclusive_detailed(
         options.mode,
         None,
         path,
+        &|| Ok(()),
     )
 }
 
@@ -967,6 +969,19 @@ pub fn write_bytes_exclusive_bound_detailed(
     name: &OsStr,
     contents: &[u8],
     mode: u32,
+) -> Result<ExclusivePublication, DetailedAtomicError> {
+    write_bytes_exclusive_bound_detailed_checked(directory, name, contents, mode, &|| Ok(()))
+}
+
+/// Create-only publication with caller admission before staging and immediately
+/// before the native no-replace publication. Post-publication facts stay native.
+#[cfg(unix)]
+pub fn write_bytes_exclusive_bound_detailed_checked(
+    directory: &impl AsFd,
+    name: &OsStr,
+    contents: &[u8],
+    mode: u32,
+    publish_checkpoint: &dyn Fn() -> Result<(), String>,
 ) -> Result<ExclusivePublication, DetailedAtomicError> {
     let path = Path::new(name);
     if mode > 0o777 {
@@ -993,6 +1008,7 @@ pub fn write_bytes_exclusive_bound_detailed(
         Some(mode),
         Some(contents),
         path,
+        publish_checkpoint,
     )
 }
 
@@ -1005,6 +1021,18 @@ pub fn write_bytes_exclusive_bound_detailed(
     name: &OsStr,
     contents: &[u8],
     mode: u32,
+) -> Result<ExclusivePublication, DetailedAtomicError> {
+    write_bytes_exclusive_bound_detailed_checked(directory, name, contents, mode, &|| Ok(()))
+}
+
+/// Caller-checked Windows create-only publication, including each native retry.
+#[cfg(windows)]
+pub fn write_bytes_exclusive_bound_detailed_checked(
+    directory: &crate::windows_sync_dir::WindowsFlatDirectory,
+    name: &OsStr,
+    contents: &[u8],
+    mode: u32,
+    publish_checkpoint: &dyn Fn() -> Result<(), String>,
 ) -> Result<ExclusivePublication, DetailedAtomicError> {
     let mut parts = Path::new(name).components();
     if !matches!((parts.next(), parts.next()),
@@ -1024,7 +1052,7 @@ pub fn write_bytes_exclusive_bound_detailed(
         name,
         contents,
         AtomicWriteOptions { mode: Some(mode) },
-        &|| Ok(()),
+        publish_checkpoint,
     )
 }
 
@@ -1094,7 +1122,15 @@ fn publish_exclusive_into_bound_directory_detailed(
     mode: Option<u32>,
     expected_bytes: Option<&[u8]>,
     error_path: &Path,
+    publish_checkpoint: &dyn Fn() -> Result<(), String>,
 ) -> Result<ExclusivePublication, DetailedAtomicError> {
+    publish_checkpoint().map_err(|detail| {
+        detailed_error(
+            error_path,
+            "authorize create-only staging",
+            io::Error::new(io::ErrorKind::Interrupted, detail),
+        )
+    })?;
     match fstatat(directory, name, AtFlags::AT_SYMLINK_NOFOLLOW) {
         Ok(_) => {
             return Err(detailed_error(
@@ -1204,6 +1240,15 @@ fn publish_exclusive_into_bound_directory_detailed(
         }
     }
     drop(stage_file);
+    publish_checkpoint().map_err(|detail| {
+        cleanup_stage_error(
+            directory,
+            error_path,
+            stage_name.clone(),
+            "authorize create-only publication",
+            io::Error::new(io::ErrorKind::Interrupted, detail),
+        )
+    })?;
     checkpoint(BoundPublicationPrimitive::ExclusivePublish).map_err(|source| {
         cleanup_stage_error(
             directory,
@@ -3353,6 +3398,111 @@ mod generic_writers {
         fs::read_dir(parent)
             .unwrap()
             .any(|entry| is_publication_candidate_name(&entry.unwrap().file_name()))
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn checked_create_only_refuses_before_staging_and_at_final_publication() {
+        let temporary = TempDir::new();
+        let directory = crate::JournalRoot::open(temporary.path()).unwrap();
+        for before_stage in [true, false] {
+            let error = write_bytes_exclusive_bound_detailed_checked(
+                &directory,
+                OsStr::new("private.pem"),
+                b"synthetic-private-material",
+                0o600,
+                &|| {
+                    if before_stage || candidate_present(temporary.path()) {
+                        Err("cancelled".to_owned())
+                    } else {
+                        Ok(())
+                    }
+                },
+            )
+            .unwrap_err();
+            assert_eq!(error.source.kind(), io::ErrorKind::Interrupted);
+            assert!(!temporary.path().join("private.pem").exists());
+            assert!(!candidate_present(temporary.path()));
+        }
+        let published = write_bytes_exclusive_bound_detailed_checked(
+            &directory,
+            OsStr::new("private.pem"),
+            b"synthetic-private-material",
+            0o600,
+            &|| Ok(()),
+        )
+        .unwrap();
+        assert!(published.is_fully_confirmed());
+        assert_eq!(
+            fs::read(temporary.path().join("private.pem")).unwrap(),
+            b"synthetic-private-material"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn checked_create_only_never_overwrites_a_late_destination() {
+        let temporary = TempDir::new();
+        let directory = crate::JournalRoot::open(temporary.path()).unwrap();
+        let target = temporary.path().join("cert.pem");
+        let late = target.clone();
+        let (result, fired) = run_with_bound_publication_barrier(
+            BoundPublicationPrimitive::ExclusivePublish,
+            1,
+            move || fs::write(late, b"late-inherited-material").unwrap(),
+            || {
+                write_bytes_exclusive_bound_detailed_checked(
+                    &directory,
+                    OsStr::new("cert.pem"),
+                    b"withheld",
+                    0o644,
+                    &|| Ok(()),
+                )
+            },
+        );
+        assert!(fired);
+        assert_eq!(
+            result.unwrap_err().source.kind(),
+            io::ErrorKind::AlreadyExists
+        );
+        assert_eq!(fs::read(target).unwrap(), b"late-inherited-material");
+        assert!(!candidate_present(temporary.path()));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn checked_create_only_preserves_publication_after_a_late_cancel() {
+        let temporary = TempDir::new();
+        let directory = crate::JournalRoot::open(temporary.path()).unwrap();
+        let active = std::rc::Rc::new(std::cell::Cell::new(true));
+        let cancelled = active.clone();
+        let (result, fired) = run_with_bound_publication_barrier(
+            BoundPublicationPrimitive::ExclusivePublish,
+            1,
+            move || cancelled.set(false),
+            || {
+                write_bytes_exclusive_bound_detailed_checked(
+                    &directory,
+                    OsStr::new("state.json"),
+                    b"admitted",
+                    0o600,
+                    &|| {
+                        if active.get() {
+                            Ok(())
+                        } else {
+                            Err("cancelled".to_owned())
+                        }
+                    },
+                )
+            },
+        );
+        assert!(fired);
+        assert!(!active.get());
+        assert!(result.unwrap().is_fully_confirmed());
+        assert_eq!(
+            fs::read(temporary.path().join("state.json")).unwrap(),
+            b"admitted"
+        );
     }
 
     #[test]

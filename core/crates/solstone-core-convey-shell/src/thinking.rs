@@ -18,12 +18,11 @@ use axum::routing::{get, post};
 use serde_json::{Map, Value, json};
 use solstone_core_callosum::{CallosumEnvelope, CallosumOneShotSender};
 use solstone_core_convey_http::envelope::error_envelope;
-use solstone_core_handoff_nonce::mint_nonce;
 use solstone_core_sol_link::ca::{jid_from_spki, load_ca};
 use solstone_core_thinking::confidential::{
-    HandoffCode, HandoffResult, OperationHandle, OperationRegistry, Phase, SERVICE_SPP,
-    disable_confidential, handoff_error, handoff_result, provision_confidential_handoff,
-    provision_error_handoff, record_confidential_attempt,
+    HandoffCode, HandoffResult, OperationRegistry, Phase, SERVICE_SPP, disable_confidential,
+    handoff_error, handoff_result, provision_confidential_handoff, provision_error_handoff,
+    record_confidential_attempt,
 };
 use solstone_core_thinking::providers::{ManagedKeyValidator, UnavailableValidator};
 
@@ -960,14 +959,13 @@ async fn confidential_enable(
 ) -> Response {
     let handoffs =
         ServiceHandoffs::for_request(handoffs.map(|Extension(owner)| owner), admitted_root);
-    let journal = JournalRoot(handoffs.root().canonical_path().to_owned());
     if let Some(refusal) =
         not_offered_refusal(solstone_core_thinking::confidential::offered_on_this_platform())
     {
         return refusal;
     }
-    let config = match solstone_core_thinking::read_config(&journal.0) {
-        Ok(config) => config,
+    let config = match handoffs.config() {
+        Ok(config) => config.config.unwrap_or_default(),
         Err(_) => return confidential_enable_failed(),
     };
     if confidential_configured(&config) {
@@ -989,109 +987,87 @@ async fn confidential_enable(
             None,
         ),
     };
-    // A journal that has never paired a device or turned on another service has no identity
-    // yet; make it here, as the other turn-ons do, before signing the consent request.
-    if solstone_core_sol_link::service_identity::load_or_create_service_identity(&journal.0)
-        .is_err()
-    {
-        return confidential_enable_failed();
-    }
-    let committed = match solstone_core_sol_link::committed::load_committed_identity(&journal.0) {
-        Ok(committed) => committed,
-        Err(_) => return confidential_enable_failed(),
-    };
-    let nonce = match mint_nonce() {
-        Ok(nonce) => nonce,
-        Err(_) => return confidential_enable_failed(),
-    };
-    let wall_unix_seconds = match std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
-    {
-        Ok(duration) => duration.as_secs() as i64,
-        Err(_) => return confidential_enable_failed(),
-    };
-    let assertion = match solstone_core_sol_link::home_reach::sign_service_enable_assertion(
-        &committed,
-        "spp",
-        &nonce,
-        wall_unix_seconds,
-    ) {
-        Ok(assertion) => assertion,
-        Err(_) => return confidential_enable_failed(),
-    };
-    let portal_url = solstone_core_sol_link::home_reach::service_enable_portal_url(
-        &portal_base_url,
-        SERVICE_SPP,
-        &nonce,
-        committed.instance_id(),
-        &assertion.compact,
-        &assertion.ca_pubkey_pem,
-    );
-    let (handle, operation) =
-        match operations.start_operation(SERVICE_SPP, "enable", Some(portal_url)) {
-            Ok(value) => value,
-            Err(_) => return service_busy(),
-        };
-    let attempt_root = handoffs.root();
-    let attempt_generation =
-        solstone_core_journal_io::whole_journal_restore::whole_journal_restore_generation(
-            attempt_root.canonical_path(),
-        );
-    if let Some(hook) = before_attempt {
-        tokio::task::spawn_blocking(move || hook()).await.ok();
-    }
-    if !operations.is_open(SERVICE_SPP, handle) {
-        let live_op = operations.operation(SERVICE_SPP);
-        return json_response_with_status(
-            StatusCode::ACCEPTED,
-            json!({"success":true,"service":SERVICE_SPP,"operation":remap_operation(live_op)}),
-        );
-    }
-    let attempt = record_confidential_attempt(&attempt_root, &nonce, &|| {
-        if !operations.is_open(SERVICE_SPP, handle)
-            || solstone_core_journal_io::whole_journal_restore::whole_journal_restore_blocks(
-                attempt_root.canonical_path(),
-            )
-            || solstone_core_journal_io::whole_journal_restore::whole_journal_restore_generation(
-                attempt_root.canonical_path(),
-            ) != attempt_generation
-        {
-            Err("confidential turn-on interrupted".to_owned())
-        } else {
-            Ok(())
-        }
-    });
-    if let Err(error) = attempt {
-        let _ = operations.finish(SERVICE_SPP, handle, handoff_error("write_failed", None));
-        return match error {
-            solstone_core_journal_config_write::BoundConfigRefusal::Lock(_) => {
-                thinking_config_busy_response()
+    let (ready, result) = tokio::sync::oneshot::channel();
+    let polling_operations = Arc::clone(&operations);
+    let reply_operations = Arc::clone(&operations);
+    let start = handoffs
+        .start(SERVICE_SPP, "enable", operations, move |run| async move {
+            let Ok(prepared) = run
+                .prepare_consent(portal_base_url.clone(), SERVICE_SPP)
+                .await
+            else {
+                return handoff_error("local_error", None);
+            };
+            if let Some(hook) = before_attempt
+                && run.blocking(move || hook()).await.is_err()
+            {
+                return interrupted();
             }
+            if run.cancelled() {
+                return interrupted();
+            }
+            let effect = Arc::clone(&run);
+            let nonce = prepared.nonce.clone();
+            let attempt = run
+                .blocking(move || {
+                    record_confidential_attempt(&effect.root(), &nonce, &|| {
+                        if effect.cancelled() {
+                            Err("confidential turn-on interrupted".to_owned())
+                        } else {
+                            Ok(())
+                        }
+                    })
+                })
+                .await;
+            match attempt {
+                Ok(Ok(publication)) if crate::service_handoffs::config_confirmed(&publication) => {}
+                Ok(Err(solstone_core_journal_config_write::BoundConfigRefusal::Lock(_))) => {
+                    let _ = ready.send(Err(true));
+                    return handoff_error("write_failed", None);
+                }
+                _ => return handoff_error("write_failed", None),
+            }
+            let Some(operation) = run.publish_portal(prepared.portal_url) else {
+                return interrupted();
+            };
+            let _ = ready.send(Ok(operation));
+            run_confidential_handoff(
+                run,
+                polling_operations,
+                portal_base_url,
+                prepared.nonce,
+                poll,
+                now,
+                sleep,
+            )
+            .await
+        })
+        .await;
+    let handle = match start {
+        Err(crate::service_handoffs::StartRefused::Busy) => return service_busy(),
+        Err(crate::service_handoffs::StartRefused::Stopped) => return confidential_enable_failed(),
+        Ok(handle) => handle,
+    };
+    let prepared = result.await;
+    if !matches!(&prepared, Ok(Ok(_))) {
+        reply_operations
+            .wait_until_closed(SERVICE_SPP, handle)
+            .await;
+    }
+    match prepared {
+        Ok(Ok(operation)) => json_response_with_status(
+            StatusCode::ACCEPTED,
+            json!({"success":true,"service":SERVICE_SPP,"operation":remap_operation(operation)}),
+        ),
+        Ok(Err(true)) => thinking_config_busy_response(),
+        _ => match reply_operations.operation_for_handle(SERVICE_SPP, handle) {
+            Some(operation) if operation["phase"] == "revoked" => json_response_with_status(
+                StatusCode::ACCEPTED,
+                json!({"success":true,"service":SERVICE_SPP,"operation":remap_operation(operation)}),
+            ),
             _ => confidential_enable_failed(),
-        };
+        },
     }
-    let attempt_publication = attempt.expect("refusal returned above");
-    if !crate::service_handoffs::config_confirmed(&attempt_publication) {
-        log::warn!(
-            "confidential consent attempt was published with uncertainty: {attempt_publication:?}"
-        );
-        operations.finish(SERVICE_SPP, handle, handoff_error("local_error", None));
-        return confidential_enable_failed();
-    }
-    spawn_confidential_handoff(
-        handoffs,
-        operations,
-        handle,
-        portal_base_url,
-        nonce,
-        poll,
-        now,
-        sleep,
-    )
-    .await;
-    json_response_with_status(
-        StatusCode::ACCEPTED,
-        json!({"success":true,"service":SERVICE_SPP,"operation":remap_operation(operation)}),
-    )
 }
 
 async fn confidential_disable(
@@ -1183,11 +1159,12 @@ async fn handoff_sleep(
     }
 }
 
+#[cfg(test)]
 #[allow(clippy::too_many_arguments)]
 async fn spawn_confidential_handoff(
     handoffs: Arc<ServiceHandoffs>,
     operations: Arc<OperationRegistry>,
-    handle: OperationHandle,
+    handle: solstone_core_thinking::confidential::OperationHandle,
     portal_base_url: String,
     nonce: String,
     poll: Arc<dyn ConfidentialPoll>,
@@ -1200,104 +1177,118 @@ async fn spawn_confidential_handoff(
             operations.clone(),
             handle,
             move |run| async move {
-                if !operations.mark_waiting(SERVICE_SPP, handle) {
-                    return interrupted();
-                }
-                let mut deadline = now() + Duration::from_secs(15 * 60);
-                let mut first_subscription = true;
-                loop {
-                    if run.cancelled() {
-                        return interrupted();
-                    }
-                    let poll = poll.clone();
-                    let base_url = portal_base_url.clone();
-                    let poll_nonce = nonce.clone();
-                    let polled = run
-                        .blocking(move || poll.poll(&base_url, &poll_nonce))
-                        .await;
-                    if run.cancelled() {
-                        return interrupted();
-                    }
-                    match polled {
-                        Ok(PollOutcome::Continue) if now() < deadline => {
-                            if !handoff_sleep(&run, Duration::from_secs(1), &sleep).await {
-                                return interrupted();
-                            }
-                        }
-                        Ok(PollOutcome::Continue) => return handoff_error("consent_timeout", None),
-                        Ok(PollOutcome::Failed { token, detail }) => {
-                            return handoff_error(&token, detail);
-                        }
-                        Ok(PollOutcome::EarlyAccess) => {
-                            return HandoffResult {
-                                phase: Phase::EarlyAccess,
-                                guidance: None,
-                                retryable: false,
-                                subscribe_url: None,
-                            };
-                        }
-                        Ok(PollOutcome::NeedsSubscription { subscribe_url }) => {
-                            if first_subscription {
-                                deadline = now() + Duration::from_secs(60 * 60);
-                                first_subscription = false;
-                            }
-                            if now() >= deadline {
-                                return handoff_error("consent_timeout", None);
-                            }
-                            if !operations.note_subscribing(SERVICE_SPP, handle, subscribe_url) {
-                                return interrupted();
-                            }
-                            if !handoff_sleep(&run, Duration::from_secs(5), &sleep).await {
-                                return interrupted();
-                            }
-                        }
-                        Ok(PollOutcome::JournalLimit { subscribe_url }) => {
-                            return HandoffResult {
-                                phase: Phase::JournalLimit,
-                                guidance: None,
-                                retryable: false,
-                                subscribe_url: Some(subscribe_url),
-                            };
-                        }
-                        Ok(PollOutcome::Success(payload)) => {
-                            let effect = Arc::clone(&run);
-                            let nonce = nonce.clone();
-                            let result = run
-                                .blocking(move || {
-                                    provision_confidential_handoff(
-                                        &effect.root(),
-                                        &payload,
-                                        &nonce,
-                                        || !effect.cancelled(),
-                                    )
-                                })
-                                .await;
-                            return match result {
-                                Ok(Ok(publication))
-                                    if crate::service_handoffs::config_confirmed(&publication) =>
-                                {
-                                    HandoffResult {
-                                        phase: Phase::Enabled,
-                                        guidance: Some(NOT_VERIFIED_GUIDANCE.to_owned()),
-                                        retryable: false,
-                                        subscribe_url: None,
-                                    }
-                                }
-                                _ if run.cancelled() => interrupted(),
-                                Ok(Err(error)) => provision_error_handoff(&error),
-                                Ok(Ok(publication)) => {
-                                    log::warn!("confidential configuration was published with uncertainty: {publication:?}");
-                                    handoff_error("local_error", None)
-                                },
-                                Err(_) => interrupted(),
-                            };
-                        }
-                        Err(_) => return interrupted(),
-                    }
-                }
+                run_confidential_handoff(run, operations, portal_base_url, nonce, poll, now, sleep)
+                    .await
             },
         )
         .await;
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn run_confidential_handoff(
+    run: Arc<HandoffRun>,
+    operations: Arc<OperationRegistry>,
+    portal_base_url: String,
+    nonce: String,
+    poll: Arc<dyn ConfidentialPoll>,
+    now: Arc<dyn Fn() -> Instant + Send + Sync>,
+    sleep: Option<Arc<dyn Fn(Duration) + Send + Sync>>,
+) -> HandoffResult {
+    let handle = run.operation();
+    if !operations.mark_waiting(SERVICE_SPP, handle) {
+        return interrupted();
+    }
+    let mut deadline = now() + Duration::from_secs(15 * 60);
+    let mut first_subscription = true;
+    loop {
+        if run.cancelled() {
+            return interrupted();
+        }
+        let poll = poll.clone();
+        let base_url = portal_base_url.clone();
+        let poll_nonce = nonce.clone();
+        let polled = run
+            .blocking(move || poll.poll(&base_url, &poll_nonce))
+            .await;
+        if run.cancelled() {
+            return interrupted();
+        }
+        match polled {
+            Ok(PollOutcome::Continue) if now() < deadline => {
+                if !handoff_sleep(&run, Duration::from_secs(1), &sleep).await {
+                    return interrupted();
+                }
+            }
+            Ok(PollOutcome::Continue) => return handoff_error("consent_timeout", None),
+            Ok(PollOutcome::Failed { token, detail }) => {
+                return handoff_error(&token, detail);
+            }
+            Ok(PollOutcome::EarlyAccess) => {
+                return HandoffResult {
+                    phase: Phase::EarlyAccess,
+                    guidance: None,
+                    retryable: false,
+                    subscribe_url: None,
+                };
+            }
+            Ok(PollOutcome::NeedsSubscription { subscribe_url }) => {
+                if first_subscription {
+                    deadline = now() + Duration::from_secs(60 * 60);
+                    first_subscription = false;
+                }
+                if now() >= deadline {
+                    return handoff_error("consent_timeout", None);
+                }
+                if !operations.note_subscribing(SERVICE_SPP, handle, subscribe_url) {
+                    return interrupted();
+                }
+                if !handoff_sleep(&run, Duration::from_secs(5), &sleep).await {
+                    return interrupted();
+                }
+            }
+            Ok(PollOutcome::JournalLimit { subscribe_url }) => {
+                return HandoffResult {
+                    phase: Phase::JournalLimit,
+                    guidance: None,
+                    retryable: false,
+                    subscribe_url: Some(subscribe_url),
+                };
+            }
+            Ok(PollOutcome::Success(payload)) => {
+                let effect = Arc::clone(&run);
+                let nonce = nonce.clone();
+                let result = run
+                    .blocking(move || {
+                        provision_confidential_handoff(&effect.root(), &payload, &nonce, || {
+                            !effect.cancelled()
+                        })
+                    })
+                    .await;
+                return match result {
+                    Ok(Ok(publication))
+                        if crate::service_handoffs::config_confirmed(&publication) =>
+                    {
+                        HandoffResult {
+                            phase: Phase::Enabled,
+                            guidance: Some(NOT_VERIFIED_GUIDANCE.to_owned()),
+                            retryable: false,
+                            subscribe_url: None,
+                        }
+                    }
+                    _ if run.cancelled() => interrupted(),
+                    Ok(Err(error)) => provision_error_handoff(&error),
+                    Ok(Ok(publication)) => {
+                        log::warn!(
+                            "confidential configuration was published with uncertainty: {publication:?}"
+                        );
+                        handoff_error("local_error", None)
+                    }
+                    Err(_) => interrupted(),
+                };
+            }
+            Err(_) => return interrupted(),
+        }
+    }
 }
 
 fn remap_operation(mut operation: Value) -> Value {

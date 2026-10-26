@@ -67,11 +67,16 @@ struct Fixture {
     root: PathBuf,
     cache: PathBuf,
     page: u64,
+    generation: u64,
     host: Weak<ForegroundProcessingHost>,
 }
 
 impl Fixture {
     fn new() -> Self {
+        Self::with_generation(2)
+    }
+
+    fn with_generation(generation: u64) -> Self {
         let directory =
             std::env::temp_dir().join(format!("fc2-native-folder-{}", std::process::id()));
         fs::create_dir(&directory).unwrap();
@@ -87,7 +92,7 @@ impl Fixture {
             unreachable!()
         };
         drop(probe);
-        THINKING_GENERATION.store(2, Ordering::SeqCst);
+        THINKING_GENERATION.store(generation, Ordering::SeqCst);
         let server = journal_mobile_serving::MobileServing::start_with_payload(
             root.clone(),
             address,
@@ -100,7 +105,7 @@ impl Fixture {
             ForegroundProcessingHost::open_with_imports(
                 Arc::clone(&binding),
                 &payload,
-                Arc::new(|| THINKING_GENERATION.load(Ordering::SeqCst) != 2),
+                Arc::new(move || THINKING_GENERATION.load(Ordering::SeqCst) != generation),
                 Arc::clone(&processing),
                 server.backup_dependencies(),
                 journal_mobile_serving::import_route::packaged_import_factory(PathBuf::from(
@@ -128,7 +133,7 @@ impl Fixture {
             host: Some(host),
         });
         let root_c = CString::new(root.to_str().unwrap()).unwrap();
-        let page = unsafe { journal_owner_folder_page_issue(root_c.as_ptr(), 2) };
+        let page = unsafe { journal_owner_folder_page_issue(root_c.as_ptr(), generation) };
         assert_ne!(page, 0);
         assert!(!journal_owner_folder_copy_continues());
         Self {
@@ -136,6 +141,7 @@ impl Fixture {
             root,
             cache,
             page,
+            generation,
             host: weak,
         }
     }
@@ -143,7 +149,7 @@ impl Fixture {
     fn request(&self) -> Value {
         json!({"source":"obsidian","client_item_id":"native-folder-owner",
             "timestamp":"20261014_090000","folder_name":"picked notes",
-            "page_authority":self.page,"admission_generation":2})
+            "page_authority":self.page,"admission_generation":self.generation})
     }
 
     fn stop(&self) {
@@ -276,6 +282,65 @@ fn owner_json(method: &str, path: &str, body: Value) -> Value {
         .unwrap();
     assert_eq!(response.status, 200, "{path}: {}", response.body);
     serde_json::from_str(&response.body).unwrap()
+}
+
+#[test]
+fn unbound_page_at_active_generation_zero_refuses_before_provider_admission() {
+    if isolated("unbound_page_at_active_generation_zero_refuses_before_provider_admission") {
+        return;
+    }
+    let fixture = Fixture::with_generation(0);
+    let page = journal_owner_folder_page_allocate();
+    let mut request = fixture.request();
+    request["page_authority"] = json!(page);
+    assert_eq!(copy(&fixture.cache, &request, None)["state"], "refused");
+    let wrong_root = CString::new(fixture.directory.join("missing").to_str().unwrap()).unwrap();
+    assert_eq!(
+        unsafe { journal_owner_folder_page_bind(wrong_root.as_ptr(), 0, page) },
+        0
+    );
+    assert_eq!(copy(&fixture.cache, &request, None)["state"], "refused");
+    let root = CString::new(fixture.root.to_str().unwrap()).unwrap();
+    assert_eq!(
+        unsafe { journal_owner_folder_page_bind(root.as_ptr(), 0, page) },
+        page
+    );
+    assert_eq!(copy(&fixture.cache, &request, None)["state"], "saved");
+    no_temporary_copy(&fixture.cache);
+    fixture.stop();
+    fixture.stopped();
+}
+
+#[test]
+fn delayed_page_binding_cannot_replace_the_newer_owner_document() {
+    if isolated("delayed_page_binding_cannot_replace_the_newer_owner_document") {
+        return;
+    }
+    let fixture = Fixture::new();
+    let root = CString::new(fixture.root.to_str().unwrap()).unwrap();
+    let old = journal_owner_folder_page_allocate();
+    let current = journal_owner_folder_page_allocate();
+    assert_ne!(old, current);
+    assert_eq!(
+        unsafe { journal_owner_folder_page_bind(root.as_ptr(), 2, current) },
+        current
+    );
+    assert_eq!(
+        unsafe { journal_owner_folder_page_bind(root.as_ptr(), 2, old) },
+        0
+    );
+    journal_owner_folder_page_retire(old);
+    let mut request = fixture.request();
+    request["page_authority"] = json!(old);
+    assert_eq!(copy(&fixture.cache, &request, None)["state"], "refused");
+    request["page_authority"] = json!(current);
+    request.as_object_mut().unwrap().remove("timestamp");
+    let result = copy(&fixture.cache, &request, None);
+    assert_eq!(result["state"], "saved", "{result}");
+    validate_timestamp(result["import_id"].as_str().unwrap()).unwrap();
+    no_temporary_copy(&fixture.cache);
+    fixture.stop();
+    fixture.stopped();
 }
 
 #[test]

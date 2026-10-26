@@ -11,6 +11,8 @@ public final class Native {
     static native void cancelOwner(long id);
     static native byte[] copyOwnerFolder(String cache,byte[] request,OwnerFolderServiceCopy copier);
     static native long issueFolderPage(String root,long admissionGeneration);
+    static native long allocateFolderPage();
+    static native long bindFolderPage(String root,long admissionGeneration,long page);
     static native void retireFolderPage(long page);
     static native boolean folderCopyContinues();
     static native long folderPageCurrent();
