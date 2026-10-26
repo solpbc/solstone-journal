@@ -235,6 +235,9 @@ pub fn sync_plaud_save(
     let mut errors = Vec::new();
     let mut used_fallback_timestamps = HashSet::new();
     for file in catalogued.available {
+        if !crate::work_continues() {
+            break;
+        }
         let result = import_file(
             &file,
             token,

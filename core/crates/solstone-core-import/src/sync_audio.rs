@@ -166,6 +166,9 @@ pub fn sync_audio_save(
     let mut downloaded = 0;
     let mut items = Vec::new();
     for candidate in catalogued.available {
+        if !crate::work_continues() {
+            break;
+        }
         let result = seams.pipeline.import_one(PipelineImportRequest {
             source: &candidate.source,
             source_kind: "audio",

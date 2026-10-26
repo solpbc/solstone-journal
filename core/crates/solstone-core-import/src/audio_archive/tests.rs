@@ -3374,3 +3374,343 @@ fn archive_progress_precedes_chronicle_and_only_counts_durable_saves() {
         );
     }
 }
+
+#[cfg(feature = "full-tests")]
+struct StopAfterWrite {
+    bytes: HashMap<String, Vec<u8>>,
+    /// Request stop after this 1-based materialize call. Zero never requests it.
+    stop_on_call: usize,
+    calls: std::cell::Cell<usize>,
+    stop: crate::WorkStop,
+}
+
+#[cfg(feature = "full-tests")]
+impl AudioArchiveMaterializer for StopAfterWrite {
+    fn materialize(
+        &self,
+        member: &AudioArchiveRecordMember,
+        part: &AudioArchiveRecordPart,
+        target: &std::path::Path,
+    ) -> Result<(), AudioArchiveError> {
+        self.bytes.materialize(member, part, target)?;
+        let call = self.calls.get() + 1;
+        self.calls.set(call);
+        if self.stop_on_call == call {
+            self.stop.request();
+        }
+        Ok(())
+    }
+}
+
+#[cfg(feature = "full-tests")]
+fn publish_with_materializer(
+    journal: &std::path::Path,
+    id: Option<&str>,
+    members: Vec<AudioArchiveMemberInput>,
+    materializer: &dyn AudioArchiveMaterializer,
+    fault: Option<ArchiveFault>,
+) -> Result<AudioArchivePublishResult, AudioArchiveError> {
+    publish_audio_archive(
+        journal,
+        AudioArchivePublishOptions {
+            import_id: id,
+            members,
+            materializer,
+            owner_zone: NY,
+            settings: default_settings(),
+            source_timestamp: None,
+        },
+        Some(AudioArchivePublishSeams {
+            fault,
+            emit_observed: None,
+            heartbeat_spawner: Some(|_, _| Ok(std::thread::spawn(|| {}))),
+            progress: None,
+        }),
+    )
+}
+
+#[cfg(feature = "full-tests")]
+fn claim_rows(journal: &std::path::Path) -> i64 {
+    let path = claim_db_path(journal);
+    if !path.is_file() {
+        return 0;
+    }
+    use rusqlite::OptionalExtension;
+    let connection = rusqlite::Connection::open(path).unwrap();
+    let present: Option<i64> = connection
+        .query_row(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='audio_archive_claim'",
+            [],
+            |row| row.get(0),
+        )
+        .optional()
+        .unwrap();
+    if present.is_none() {
+        return 0;
+    }
+    connection
+        .query_row("SELECT count(*) FROM audio_archive_claim", [], |row| {
+            row.get(0)
+        })
+        .unwrap()
+}
+
+#[cfg(feature = "full-tests")]
+fn files_under(root: &std::path::Path) -> Vec<std::path::PathBuf> {
+    let mut found = Vec::new();
+    if !root.exists() {
+        return found;
+    }
+    let mut pending = vec![root.to_path_buf()];
+    while let Some(directory) = pending.pop() {
+        for entry in fs::read_dir(&directory).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                pending.push(path);
+            } else {
+                found.push(path);
+            }
+        }
+    }
+    found.sort();
+    found
+}
+
+#[cfg(feature = "full-tests")]
+fn two_tile_members() -> (Vec<AudioArchiveMemberInput>, HashMap<String, Vec<u8>>) {
+    let (first, first_bytes) = storage_member(1, "2026-01-14T21:00:00Z", 5_000);
+    let (second, second_bytes) = storage_member(2, "2026-01-14T21:10:00Z", 5_000);
+    let bytes = HashMap::from([
+        (first.sha256.clone(), first_bytes),
+        (second.sha256.clone(), second_bytes),
+    ]);
+    (vec![first, second], bytes)
+}
+
+#[cfg(feature = "full-tests")]
+fn part_geometry(record: &AudioArchiveRecord) -> Vec<(String, i64, i64, i64)> {
+    record
+        .parts
+        .iter()
+        .map(|part| {
+            (
+                part.stored_name.clone(),
+                part.offset_ms,
+                part.origin_ms,
+                part.length_ms,
+            )
+        })
+        .collect()
+}
+
+#[cfg(feature = "full-tests")]
+#[test]
+fn stop_during_the_only_part_publishes_nothing() {
+    let temp = TempDir::new().unwrap();
+    let journal = temp.path();
+    let (member, bytes) = storage_member(11, "2026-01-14T21:00:00Z", 5_000);
+    let materials = HashMap::from([(member.sha256.clone(), bytes.clone())]);
+    let stop = crate::WorkStop::new();
+    let _guard = crate::WorkStopGuard::install(&stop);
+    let materializer = StopAfterWrite {
+        bytes: materials,
+        stop_on_call: 1,
+        calls: std::cell::Cell::new(0),
+        stop: stop.clone(),
+    };
+    let error = publish_with_materializer(journal, None, vec![member], &materializer, None)
+        .expect_err("a stop during staging publishes nothing");
+    assert_eq!(error.to_string(), "import stopped");
+    assert_eq!(materializer.calls.get(), 1);
+    assert_eq!(claim_rows(journal), 0);
+    assert!(files_under(&journal.join("chronicle")).is_empty());
+    let staged: Vec<_> = files_under(&journal.join("imports"))
+        .into_iter()
+        .filter(|path| path.components().any(|part| part.as_os_str() == "staged"))
+        .collect();
+    assert_eq!(staged.len(), 1);
+    assert_eq!(fs::read(&staged[0]).unwrap(), bytes);
+    assert!(files_under(&journal.join("imports")).iter().all(|path| {
+        !path
+            .file_name()
+            .is_some_and(|name| name.to_string_lossy().ends_with(".intent.json"))
+    }));
+}
+
+#[cfg(feature = "full-tests")]
+#[test]
+fn stop_before_publication_does_not_materialize() {
+    let temp = TempDir::new().unwrap();
+    let journal = temp.path();
+    let (members, bytes) = two_tile_members();
+    let stop = crate::WorkStop::new();
+    stop.request();
+    let _guard = crate::WorkStopGuard::install(&stop);
+    let materializer = StopAfterWrite {
+        bytes,
+        stop_on_call: 0,
+        calls: std::cell::Cell::new(0),
+        stop: stop.clone(),
+    };
+    let error = publish_with_materializer(journal, None, members, &materializer, None)
+        .expect_err("a stop before the first tile publishes nothing");
+    assert_eq!(error.to_string(), "import stopped");
+    assert_eq!(materializer.calls.get(), 0);
+    assert_eq!(claim_rows(journal), 0);
+    assert!(files_under(&journal.join("chronicle")).is_empty());
+    assert!(
+        files_under(&journal.join("imports"))
+            .iter()
+            .all(|path| !path.components().any(|part| part.as_os_str() == "staged"))
+    );
+}
+
+#[cfg(feature = "full-tests")]
+#[test]
+fn stop_during_the_second_tile_keeps_the_first_and_does_not_claim_the_second() {
+    let temp = TempDir::new().unwrap();
+    let journal = temp.path();
+    let (members, bytes) = two_tile_members();
+    let stop = crate::WorkStop::new();
+    let _guard = crate::WorkStopGuard::install(&stop);
+    let materializer = StopAfterWrite {
+        bytes: bytes.clone(),
+        stop_on_call: 2,
+        calls: std::cell::Cell::new(0),
+        stop: stop.clone(),
+    };
+    let error = publish_with_materializer(journal, None, members, &materializer, None)
+        .expect_err("the second tile stops before its claim");
+    assert_eq!(error.to_string(), "import stopped");
+    assert_eq!(materializer.calls.get(), 2);
+    assert_eq!(claim_rows(journal), 1);
+    let id = storage_run(journal);
+    let record = read_audio_archive(journal, &id).unwrap().unwrap();
+    let saved: Vec<_> = record
+        .parts
+        .iter()
+        .filter(|part| part.outcome == PartOutcome::Saved)
+        .collect();
+    let waiting: Vec<_> = record
+        .parts
+        .iter()
+        .filter(|part| part.outcome == PartOutcome::Planned)
+        .collect();
+    assert_eq!(saved.len(), 1);
+    assert_eq!(waiting.len(), 1);
+    let chronicle = files_under(&journal.join("chronicle"));
+    let raws: Vec<_> = chronicle
+        .iter()
+        .filter(|path| {
+            path.file_name()
+                .is_some_and(|name| name == saved[0].stored_name.as_str())
+        })
+        .collect();
+    assert_eq!(raws.len(), 1);
+    assert_eq!(fs::read(raws[0]).unwrap(), bytes[&saved[0].member_sha256]);
+    assert!(chronicle.iter().all(|path| {
+        path.file_name()
+            .is_some_and(|name| name != waiting[0].stored_name.as_str())
+    }));
+}
+
+#[cfg(feature = "full-tests")]
+#[test]
+fn a_won_tile_finishes_after_stop_and_the_next_tile_does_not_start() {
+    let temp = TempDir::new().unwrap();
+    let journal = temp.path();
+    let (members, bytes) = two_tile_members();
+    let interrupted = publish_with_materializer(
+        journal,
+        None,
+        members.clone(),
+        &bytes,
+        Some(ArchiveFault::AfterClaimAndIntent),
+    );
+    assert!(matches!(
+        interrupted,
+        Err(AudioArchiveError::Fault(ArchiveFault::AfterClaimAndIntent))
+    ));
+    assert_eq!(claim_rows(journal), 1);
+    assert!(files_under(&journal.join("chronicle")).is_empty());
+    let id = storage_run(journal);
+    let before = read_audio_archive(journal, &id).unwrap().unwrap();
+    let geometry = part_geometry(&before);
+    let won = before
+        .parts
+        .iter()
+        .find(|part| part.outcome == PartOutcome::Staged)
+        .expect("the claimed tile is staged");
+    let waiting = before
+        .parts
+        .iter()
+        .find(|part| part.outcome == PartOutcome::Planned)
+        .expect("the later tile has not started");
+    let won_name = won.stored_name.clone();
+    let won_hash = won.member_sha256.clone();
+    let waiting_name = waiting.stored_name.clone();
+    let intents_before = files_under(&journal.join("imports"))
+        .into_iter()
+        .filter(|path| {
+            path.file_name()
+                .is_some_and(|name| name.to_string_lossy().ends_with(".intent.json"))
+        })
+        .count();
+
+    let stop = crate::WorkStop::new();
+    stop.request();
+    let _guard = crate::WorkStopGuard::install(&stop);
+    let materializer = StopAfterWrite {
+        bytes: bytes.clone(),
+        stop_on_call: 0,
+        calls: std::cell::Cell::new(0),
+        stop: stop.clone(),
+    };
+    let error = publish_with_materializer(journal, Some(&id), members, &materializer, None)
+        .expect_err("stop retains the won tile and refuses the next");
+    assert_eq!(error.to_string(), "import stopped");
+    assert_eq!(materializer.calls.get(), 0);
+    assert_eq!(claim_rows(journal), 1);
+    let after = read_audio_archive(journal, &id).unwrap().unwrap();
+    assert_eq!(part_geometry(&after), geometry);
+    assert_eq!(
+        after
+            .parts
+            .iter()
+            .find(|part| part.stored_name == won_name)
+            .unwrap()
+            .outcome,
+        PartOutcome::Saved
+    );
+    assert_eq!(
+        after
+            .parts
+            .iter()
+            .find(|part| part.stored_name == waiting_name)
+            .unwrap()
+            .outcome,
+        PartOutcome::Planned
+    );
+    let chronicle = files_under(&journal.join("chronicle"));
+    let raws: Vec<_> = chronicle
+        .iter()
+        .filter(|path| {
+            path.file_name()
+                .is_some_and(|name| name == won_name.as_str())
+        })
+        .collect();
+    assert_eq!(raws.len(), 1);
+    assert_eq!(fs::read(raws[0]).unwrap(), bytes[&won_hash]);
+    assert!(chronicle.iter().all(|path| {
+        path.file_name()
+            .is_some_and(|name| name != waiting_name.as_str())
+    }));
+    let intents_after = files_under(&journal.join("imports"))
+        .into_iter()
+        .filter(|path| {
+            path.file_name()
+                .is_some_and(|name| name.to_string_lossy().ends_with(".intent.json"))
+        })
+        .count();
+    assert_eq!(intents_after, intents_before);
+}

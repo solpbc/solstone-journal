@@ -15,7 +15,9 @@ use std::time::Duration;
 use solstone_core_generate::OneShotClient;
 use solstone_core_import::text::SystemWireClient as TextWire;
 use solstone_core_import_host::call::{ImportSeams, execute_desktop};
-use solstone_core_import_host::cli_argv::{force_day_notice_with, preview_arguments_with};
+use solstone_core_import_host::cli_argv::{
+    force_day_notice_with, grammar_outcome_before_preflight, preview_arguments_with,
+};
 use solstone_core_import_host::registry::IndexScan;
 use solstone_core_import_sources::document::{
     self, DocumentModelClient, PdfWorker, SystemDocumentModelClient, SystemPdfWorker,
@@ -26,10 +28,18 @@ use solstone_core_segment::{SUPERVISOR_MESSAGE, SupervisorRefusal, require_solst
 const PDF_WORKER_TIMEOUT: Duration = Duration::from_secs(90);
 
 pub fn run(arguments: &[String], journal: &Path) -> (String, String, i32) {
-    let help = arguments
-        .iter()
-        .any(|argument| argument == "-h" || argument == "--help");
-    if !help && let Err(refusal) = require_solstone(journal) {
+    run_with(arguments, journal, || require_solstone(journal))
+}
+
+fn run_with(
+    arguments: &[String],
+    journal: &Path,
+    preflight: impl FnOnce() -> Result<(), SupervisorRefusal>,
+) -> (String, String, i32) {
+    if let Some(outcome) = grammar_outcome_before_preflight(arguments) {
+        return (outcome.stdout, outcome.stderr, outcome.exit_code);
+    }
+    if let Err(refusal) = preflight() {
         return refusal_output(refusal);
     }
     let notice = match force_day_notice_with(arguments, journal, || Ok(())) {
@@ -203,5 +213,46 @@ fn desktop_model() -> DesktopModel {
     match OneShotClient::sibling() {
         Ok(client) => DesktopModel::Ready(SystemDocumentModelClient::new(client)),
         Err(error) => DesktopModel::Missing(error.to_string()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn grammar_runs_before_the_supervisor_preflight() {
+        let journal = Path::new(".");
+        let mut probed = false;
+        let unknown = run_with(&["--nonsense".to_owned()], journal, || {
+            probed = true;
+            Ok(())
+        });
+        assert!(!probed);
+        assert_eq!(unknown.2, 2);
+        assert!(unknown.1.contains("unrecognized arguments: --nonsense"));
+        assert!(unknown.1.contains("usage: solstone journal importer"));
+
+        let help = run(&["-h".to_owned()], journal);
+        assert_eq!(help.2, 0);
+        assert_eq!(help.0, solstone_core_import::cli_render::HELP);
+        assert!(help.1.is_empty());
+
+        let direct = run(&["--nonsense".to_owned()], journal);
+        assert_eq!(direct.2, 2);
+        assert!(direct.1.contains("unrecognized arguments: --nonsense"));
+        assert!(direct.0.is_empty());
+
+        let spawned = run_with(&["file".to_owned()], journal, || {
+            Err(SupervisorRefusal::SpawnedUnavailable)
+        });
+        assert_eq!(spawned, (String::new(), String::new(), 75));
+
+        let unavailable = run_with(&["file".to_owned()], journal, || {
+            Err(SupervisorRefusal::Unavailable)
+        });
+        assert_eq!(unavailable.0, "");
+        assert_eq!(unavailable.1, format!("{SUPERVISOR_MESSAGE}\n"));
+        assert_eq!(unavailable.2, 1);
     }
 }

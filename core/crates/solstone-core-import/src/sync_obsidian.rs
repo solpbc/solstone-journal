@@ -127,6 +127,9 @@ pub fn sync_obsidian_save(
     let mut imported = 0;
     let mut errors = Vec::new();
     for note in catalogued.pending {
+        if !crate::work_continues() {
+            break;
+        }
         let result = seams.writer.import_note(&catalogued.vault, &note);
         let entry = catalogued
             .state

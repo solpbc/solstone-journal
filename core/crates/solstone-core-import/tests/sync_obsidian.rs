@@ -6,10 +6,11 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use serde_json::Value;
-use solstone_core_import::contract::SyncPreviewRequest;
+use solstone_core_import::contract::{SyncPreviewRequest, SyncSaveRequest};
 use solstone_core_import::sync_obsidian::{
-    ObsidianHomeCandidates, ObsidianNote, ObsidianPreviewSeams, ObsidianScanner, ObsidianSyncError,
-    ObsidianSyncRequest, sync_obsidian_preview,
+    ObsidianHomeCandidates, ObsidianNote, ObsidianPreviewSeams, ObsidianSaveSeams, ObsidianScanner,
+    ObsidianSyncError, ObsidianSyncRequest, ObsidianWriter, sync_obsidian_preview,
+    sync_obsidian_save,
 };
 use solstone_core_import::sync_plaud::SyncClock;
 use solstone_core_import::{BackendName, SyncState, write_sync_state};
@@ -191,4 +192,60 @@ fn note(relative_path: &str) -> ObsidianNote {
         modified_at: 1_725_000_000.5,
         content_hash: "hash".to_owned(),
     }
+}
+
+struct StoppingWriter {
+    stop: solstone_core_import::WorkStop,
+    calls: RefCell<Vec<String>>,
+}
+
+impl ObsidianWriter for StoppingWriter {
+    fn import_note(&mut self, _: &Path, note: &ObsidianNote) -> Result<u64, String> {
+        self.calls.borrow_mut().push(note.relative_path.clone());
+        self.stop.request();
+        Ok(1)
+    }
+}
+
+#[test]
+fn stop_after_the_first_note_keeps_that_import_and_skips_the_next() {
+    let tree = TempDir::new().unwrap();
+    let vault = PathBuf::from("vault");
+    let candidates = Candidates(Vec::new());
+    let scanner = Scanner {
+        directories: [vault.clone()].into_iter().collect(),
+        notes: vec![note("one.md"), note("two.md")],
+        scanned: RefCell::new(Vec::new()),
+    };
+    let clock = Clock;
+    let stop = solstone_core_import::WorkStop::new();
+    let _guard = solstone_core_import::WorkStopGuard::install(&stop);
+    let mut writer = StoppingWriter {
+        stop: stop.clone(),
+        calls: RefCell::new(Vec::new()),
+    };
+    let mut seams = ObsidianSaveSeams {
+        preview: ObsidianPreviewSeams {
+            candidates: &candidates,
+            scanner: &scanner,
+            clock: &clock,
+        },
+        writer: &mut writer,
+    };
+    let outcome = sync_obsidian_save(
+        &ObsidianSyncRequest::<SyncSaveRequest>::new(tree.path().to_path_buf(), Some(vault), false),
+        &mut seams,
+    )
+    .unwrap();
+    assert_eq!(writer.calls.borrow().as_slice(), ["one.md"]);
+    assert_eq!(outcome.imported, 1);
+    assert!(outcome.errors.is_empty());
+    assert_eq!(
+        outcome.state.root()["files"]["one.md"]["status"],
+        "imported"
+    );
+    assert_eq!(
+        outcome.state.root()["files"]["two.md"]["status"],
+        "available"
+    );
 }

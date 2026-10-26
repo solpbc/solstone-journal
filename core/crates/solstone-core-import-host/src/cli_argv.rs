@@ -220,6 +220,19 @@ pub fn force_day_notice_with(
     ))
 }
 
+/// Help and argparse results from the shared importer grammar.
+///
+/// `None` means the arguments are a command. The desktop adapter runs its
+/// supervisor preflight only in that case. Help and grammar errors are the
+/// same [`CliRun`] values [`run_cli`] returns, and this function does not probe.
+pub fn grammar_outcome_before_preflight(args: &[String]) -> Option<CliRun> {
+    match parse_arguments(args) {
+        Ok(ParsedCommand::Help) => Some(success(cli_render::HELP.to_owned())),
+        Ok(_) => None,
+        Err(arguments) => Some(argparse_error(arguments)),
+    }
+}
+
 /// Run the importer grammar with the process environment and local supervisor probe.
 pub fn run_cli(args: &[String], journal_path: &Path) -> CliOutcome {
     let parsed = match parse_arguments(args) {

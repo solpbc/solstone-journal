@@ -909,3 +909,75 @@ fn configure_utc(journal: &std::path::Path) {
     )
     .unwrap();
 }
+
+struct StoppingPipeline {
+    stop: solstone_core_import::WorkStop,
+    calls: RefCell<Vec<String>>,
+}
+
+impl ImportPipeline for StoppingPipeline {
+    fn import_one(
+        &mut self,
+        request: PipelineImportRequest<'_>,
+    ) -> Result<PipelineOutcome, String> {
+        self.calls
+            .borrow_mut()
+            .push(request.source.display().to_string());
+        self.stop.request();
+        Ok(PipelineOutcome::Imported)
+    }
+}
+
+#[test]
+fn stop_after_the_first_download_does_not_start_the_next_one() {
+    let tree = TempDir::new().unwrap();
+    let stop = solstone_core_import::WorkStop::new();
+    let _guard = solstone_core_import::WorkStopGuard::install(&stop);
+    let credential = Credential;
+    let clock = Clock;
+    let mut catalogue = Catalogue {
+        files: vec![
+            file("old", 1_725_000_000_000.0, 60_000.0),
+            file("new", 1_726_000_000_000.0, 60_000.0),
+        ],
+        fail: false,
+    };
+    let matches = Matches(BTreeMap::new());
+    let mut writer = Writer::default();
+    let mut downloader = Downloader::default();
+    let mut pipeline = StoppingPipeline {
+        stop: stop.clone(),
+        calls: RefCell::new(Vec::new()),
+    };
+    let preview = PlaudPreviewSeams {
+        credential: &credential,
+        catalogue: &mut catalogue,
+        manifests: &matches,
+        clock: &clock,
+        state_writer: &mut writer,
+    };
+    let mut seams = PlaudSaveSeams {
+        preview,
+        download: &mut downloader,
+        pipeline: &mut pipeline,
+    };
+    let outcome = sync_plaud_save(
+        &PlaudSyncRequest::<SyncSaveRequest>::new(tree.path().to_path_buf()),
+        &mut seams,
+    )
+    .unwrap();
+    assert_eq!(downloader.downloads, ["new"]);
+    assert_eq!(pipeline.calls.borrow().len(), 1);
+    assert_eq!(outcome.downloaded, 1);
+    assert_eq!(outcome.state.root()["files"]["new"]["status"], "imported");
+    assert_eq!(outcome.state.root()["files"]["old"]["status"], "available");
+    assert_eq!(writer.checkpoints.len(), 2);
+    assert_eq!(
+        writer.checkpoints[0].root()["files"]["new"]["status"],
+        "imported"
+    );
+    assert_eq!(
+        writer.checkpoints[0].root()["files"]["old"]["status"],
+        "available"
+    );
+}
