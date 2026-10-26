@@ -3773,6 +3773,147 @@ mod processing_proofs {
     }
 
     #[test]
+    fn scheduled_backup_terminals_reach_bus_and_general_requests_keep_existing_owners() {
+        use solstone_core_callosum::{
+            CallosumConnectionPhase, CallosumReceiveEvent, CallosumSocketConnection,
+            CallosumSocketServer,
+        };
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let (temp, payload) = journal_fixture();
+        let mut entries = quiet_entries();
+        for id in ["backup:run", "backup:verify", "backup:prune"] {
+            entries.get_mut(&schedule_name(id)).unwrap()["enabled"] = json!(true);
+        }
+        write_schedules(temp.path(), entries);
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
+            .enable_all()
+            .build()
+            .unwrap();
+        let socket = temp.path().join("health/callosum.sock");
+        let bus = runtime
+            .block_on(CallosumSocketServer::bind(&socket))
+            .unwrap();
+        let mut observer = runtime.block_on(async {
+            let mut observer = CallosumSocketConnection::new(&socket, Map::new());
+            observer.start();
+            tokio::time::timeout(Duration::from_secs(5), async {
+                loop {
+                    match observer.next_event().await {
+                        Some(CallosumReceiveEvent::Continuity {
+                            phase: CallosumConnectionPhase::Connected,
+                            ..
+                        }) => {
+                            observer.emit(
+                                "supervisor",
+                                "status",
+                                Map::from_iter([("scheduled_backup_observer".into(), json!(true))]),
+                            );
+                        }
+                        Some(CallosumReceiveEvent::Envelope { envelope, .. })
+                            if envelope.extra.get("scheduled_backup_observer")
+                                == Some(&json!(true)) =>
+                        {
+                            break;
+                        }
+                        _ => {}
+                    }
+                }
+            })
+            .await
+            .unwrap();
+            observer
+        });
+        // Backup is intentionally unconfigured: these are real native skip
+        // terminals, testing dispatch/publication separately from FC4's
+        // eligible repository and target-native leaf proofs.
+        let now = Utc.with_ymd_and_hms(2030, 1, 1, 12, 0, 0).unwrap();
+        let mut host = open_host(temp.path(), &payload, now);
+        let terminal = runtime.block_on(async {
+            let mut terminal = BTreeSet::new();
+            tokio::time::timeout(Duration::from_secs(10), async {
+                while terminal.len() < 3 {
+                    match observer.next_event().await {
+                        Some(CallosumReceiveEvent::Envelope { envelope, .. })
+                            if envelope.tract == "supervisor"
+                                && envelope.event == "stopped"
+                                && envelope.extra.get("service") == Some(&json!("backup")) =>
+                        {
+                            assert_eq!(envelope.extra["exit_code"], 0);
+                            terminal.insert(envelope.extra["routine"].as_str().unwrap().to_owned());
+                        }
+                        _ => {}
+                    }
+                }
+            })
+            .await
+            .unwrap();
+            terminal
+        });
+        assert_eq!(
+            terminal,
+            BTreeSet::from([
+                "backup:run".into(),
+                "backup:verify".into(),
+                "backup:prune".into()
+            ])
+        );
+        wait_until(|| {
+            ["backup:run", "backup:verify", "backup:prune"]
+                .iter()
+                .all(|id| {
+                    scheduler_field(temp.path(), &schedule_name(id), "last_status").as_deref()
+                        == Some("success")
+                })
+        });
+        host.stop_discovery_for_test();
+        host.start_workers().unwrap(); // Reflected subscription witness.
+        for (reference, command) in [
+            (
+                "manual-backup-existing-owner",
+                canonical_journal_command(["maintenance", "run", "backup:run"]),
+            ),
+            (
+                "manual-brain-existing-owner",
+                canonical_journal_command(["brain", "refresh"]),
+            ),
+            (
+                "manual-general-control",
+                canonical_journal_command(["heartbeat"]),
+            ),
+        ] {
+            assert!(observer.emit(
+                "supervisor",
+                "request",
+                Map::from_iter([
+                    ("cmd".into(), json!(command)),
+                    ("ref".into(), json!(reference)),
+                ])
+            ));
+        }
+        wait_until(|| {
+            host.queue()
+                .history()
+                .iter()
+                .any(|row| row.reference == "manual-general-control" && row.exit_status == "ok")
+        });
+        assert!(
+            !host.queue().history().iter().any(|row| {
+                matches!(
+                    row.reference.as_str(),
+                    "manual-backup-existing-owner" | "manual-brain-existing-owner"
+                )
+            }),
+            "general subscriber must not duplicate existing service owners"
+        );
+        assert_eq!(heartbeat_events(temp.path(), "pass.outcome"), 1);
+        host.shutdown().unwrap();
+        assert!(host.request_handle.lock().unwrap().is_none());
+        runtime.block_on(observer.stop());
+        runtime.block_on(bus.stop());
+    }
+
+    #[test]
     fn backup_and_speaker_discovery_record_full_names() {
         let _lock = TEST_LOCK
             .lock()

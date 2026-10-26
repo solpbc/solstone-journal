@@ -470,5 +470,6 @@ fn backup(
         checkpoint,
     );
     crate::backup::log_backup_outcome(&outcome);
+    crate::backup::report_scheduled_terminal(&hosted.root, &outcome);
     crate::backup::outcome_exit(&outcome)
 }
