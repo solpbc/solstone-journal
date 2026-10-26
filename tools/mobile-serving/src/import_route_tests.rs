@@ -307,3 +307,7 @@ fn a_panicked_import_worker_keeps_retirement_failure_sticky_and_the_runtime_owne
     std::mem::forget(server);
     std::mem::forget(host);
 }
+
+#[cfg(target_os = "linux")]
+#[path = "import_route_owner_tests.rs"]
+mod owner_effects;
