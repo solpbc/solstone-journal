@@ -48,8 +48,10 @@ class BuildControls(unittest.TestCase):
     def test_media_engines_receive_the_same_complete_patch_union(self):
         with tempfile.TemporaryDirectory() as directory:
             build, sources = self.media_fixture(Path(directory))
+            sources["sound-ced"] = build.sources / "sound-ced"
+            sources["sound-ced"].mkdir()
             with contextlib.redirect_stdout(io.StringIO()):
-                for component in mobile.MEDIA_GGML_COMPONENTS:
+                for component in (*mobile.MEDIA_GGML_COMPONENTS, "sound-ced"):
                     build.ggml(component, sources[component])
             binding = build.summary["inputs"]["media-shared-ggml"]
             self.assertEqual(binding["schema"], mobile.MEDIA_GGML_SCHEMA)
@@ -58,7 +60,7 @@ class BuildControls(unittest.TestCase):
             # requirements survive in each resulting tree and receipt.
             self.assertEqual(len(binding["patches"]), 3)
             self.assertEqual({p["source_component"] for p in binding["patches"]}, {"parakeet", "rfdetr"})
-            for component in mobile.MEDIA_GGML_COMPONENTS:
+            for component in (*mobile.MEDIA_GGML_COMPONENTS, "sound-ced"):
                 self.assertEqual(build.summary["inputs"][component + "-patched-ggml"]["tree_sha256"], binding["tree_sha256"])
                 ggml = sources[component] / "third_party/ggml"
                 for file in ("common.c", "metal.metal", "cpu.c"):
