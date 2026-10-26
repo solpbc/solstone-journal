@@ -20,6 +20,11 @@ use minisign::{PublicKey, PublicKeyBox, SignatureBox};
 pub const PRODUCT_PIN: &str =
     include_str!("../../../../packaging/keys/solstone-journal-release.pub");
 
+/// The platform release key, which signs the Linux release catalogue. It is
+/// compiled in on every build; no environment or feature replaces it.
+pub const PLATFORM_PIN: &str =
+    include_str!("../../../../packaging/keys/solstone-platform-release.pub");
+
 #[cfg(feature = "test-fixture-pin")]
 const PIN_OVERRIDE_ENV: &str = "SOLSTONE_JOURNAL_MINISIGN_PIN";
 #[cfg(feature = "test-fixture-pin")]
@@ -183,6 +188,36 @@ pub fn verify_pinned_signature_reader<R: std::io::Read + std::io::Seek>(
     let signature_box = parse_and_validate_prehashed_box(signature_path, signature_bytes)?;
     let pin = resolve_pin()?;
     minisign::verify(&pin, &signature_box, reader, true, false, false).map_err(|error| {
+        PinnedSignatureError::new(
+            PinnedSignatureRefusal::SignaturePinMismatch,
+            format!("{}: {error}", signature_path.display()),
+        )
+    })
+}
+
+/// The compiled platform release key.
+pub fn platform_pin() -> Result<PublicKey, PinnedSignatureError> {
+    parse_pin(PLATFORM_PIN)
+}
+
+/// Verify bytes against `key`, refusing a legacy signature or one without a
+/// trusted comment.
+pub fn verify_prehashed_signature_with(
+    key: &PublicKey,
+    signed_bytes: &[u8],
+    signature_path: &Path,
+    signature_bytes: &[u8],
+) -> Result<(), PinnedSignatureError> {
+    let signature_box = parse_and_validate_prehashed_box(signature_path, signature_bytes)?;
+    minisign::verify(
+        key,
+        &signature_box,
+        Cursor::new(signed_bytes),
+        true,
+        false,
+        false,
+    )
+    .map_err(|error| {
         PinnedSignatureError::new(
             PinnedSignatureRefusal::SignaturePinMismatch,
             format!("{}: {error}", signature_path.display()),

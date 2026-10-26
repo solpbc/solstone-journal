@@ -46,10 +46,9 @@ pub async fn status(journal_root: PathBuf) -> Response {
                 }
             };
             let etc_dir = std::path::Path::new("/etc");
-            let fetch = solstone_core_update::RealInstallerFetch;
-            let runner = solstone_core_update::RealInstallerRunner;
+            let catalogue = solstone_core_update::RealPlatformCatalogue;
             let probe = solstone_core_update::RealPackageProbe;
-            linux_version_status(&runner, &fetch, &probe, exe, &data_dir, etc_dir)
+            linux_version_status(&catalogue, &probe, exe, &data_dir, etc_dir)
         })
         .await
         .unwrap_or_else(|_| {
@@ -79,14 +78,13 @@ pub async fn status(journal_root: PathBuf) -> Response {
 
 #[cfg(target_os = "linux")]
 fn linux_version_status(
-    runner: &dyn solstone_core_update::InstallerRunner,
-    fetch: &dyn solstone_core_update::InstallerFetch,
+    catalogue: &dyn solstone_core_update::PlatformCatalogue,
     probe: &dyn solstone_core_update::PackageProbe,
     executable: &std::path::Path,
     data: &std::path::Path,
     etc: &std::path::Path,
 ) -> solstone_core_update::UpdateReport {
-    solstone_core_update::check(runner, fetch, probe, executable, data, etc, true, None)
+    solstone_core_update::check(catalogue, probe, executable, data, etc, true, None)
 }
 
 #[cfg(all(test, feature = "full-tests", target_os = "linux"))]
@@ -98,6 +96,22 @@ mod update_tests {
     impl InstallerFetch for Fetch {
         fn fetch(&self, _: InstallerSource) -> std::io::Result<PathBuf> {
             Ok(self.0.clone())
+        }
+    }
+    struct Catalogue(bool);
+    impl PlatformCatalogue for Catalogue {
+        fn listing(&self, _: &str, _: Option<&str>) -> Result<CatalogueListing, CatalogueRefusal> {
+            if self.0 {
+                Ok(CatalogueListing {
+                    platform_version: "2.0.49-r2".to_owned(),
+                    journal_version: "2.0.49".to_owned(),
+                })
+            } else {
+                Err(CatalogueRefusal {
+                    code: "signature-invalid",
+                    message: "the release catalogue failed its signature check.".to_owned(),
+                })
+            }
         }
     }
     struct Probe;
@@ -134,25 +148,13 @@ mod update_tests {
         std::fs::write(data.join("install.conf"), format!("[solstone]\nschema_version=1\norigin=https://updates.solstone.app\nplatform_version=2.0.48-r1\nlane=release\nroute=tree\nphase=complete\nprefix={}\n[component:journal]\nroute=tree\nstatus=installed\n", prefix.display())).unwrap();
         let etc = dir.path().join("etc");
         let executable = prefix.join("current/bin/solstone");
-        let installer = dir.path().join("installer.sh");
-        let fetch = Fetch(installer.clone());
+        let fetch = Fetch(dir.path().join("installer.sh"));
         let args = parse_args(&[std::ffi::OsString::from("--check")]).unwrap();
         for good in [true, false] {
-            let script = if good {
-                "printf '%s\n' '{\"platform_version\":\"2.0.49-r2\",\"lane\":\"release\",\"components\":{\"journal\":{\"version\":\"2.0.49\"}}}'\n"
-            } else {
-                "exit 7\n"
-            };
-            std::fs::write(&installer, script).unwrap();
-            let status = linux_version_status(
-                &RealInstallerRunner,
-                &fetch,
-                &Probe,
-                &executable,
-                &data,
-                &etc,
-            );
+            let catalogue = Catalogue(good);
+            let status = linux_version_status(&catalogue, &Probe, &executable, &data, &etc);
             let cli = perform(
+                &catalogue,
                 &RealInstallerRunner,
                 &fetch,
                 &Probe,

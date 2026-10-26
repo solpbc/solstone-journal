@@ -175,7 +175,9 @@ fn resolve_redirect(
     Ok(resolved)
 }
 
-pub fn download_installer(initial_url: &str, expected_host: &str) -> std::io::Result<PathBuf> {
+/// Follow at most [`MAX_REDIRECT_HOPS`] https redirects confined to
+/// `expected_host`, and return the body of the final 200 response.
+fn open_confined(initial_url: &str, expected_host: &str) -> std::io::Result<ureq::Body> {
     let mut current = parse_absolute_url(initial_url)?;
     if !current.host.eq_ignore_ascii_case(expected_host) {
         return Err(std::io::Error::new(
@@ -234,8 +236,11 @@ pub fn download_installer(initial_url: &str, expected_host: &str) -> std::io::Re
 
         break resp;
     };
+    Ok(response.into_body())
+}
 
-    let mut body = response.into_body().into_reader();
+pub fn download_installer(initial_url: &str, expected_host: &str) -> std::io::Result<PathBuf> {
+    let mut body = open_confined(initial_url, expected_host)?.into_reader();
     let mut file = tempfile::Builder::new()
         .prefix("solstone-installer-")
         .suffix(".sh")
@@ -259,4 +264,24 @@ pub fn download_installer(initial_url: &str, expected_host: &str) -> std::io::Re
     file.as_file().sync_all()?;
     let (_file, path) = file.keep().map_err(std::io::Error::other)?;
     Ok(path)
+}
+
+/// Download a small document whole, refusing a body over `max_bytes`.
+pub fn download_bytes(
+    initial_url: &str,
+    expected_host: &str,
+    max_bytes: u64,
+) -> std::io::Result<Vec<u8>> {
+    let mut bytes = Vec::new();
+    open_confined(initial_url, expected_host)?
+        .into_reader()
+        .take(max_bytes + 1)
+        .read_to_end(&mut bytes)?;
+    if bytes.len() as u64 > max_bytes {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("response exceeds {max_bytes} bytes"),
+        ));
+    }
+    Ok(bytes)
 }

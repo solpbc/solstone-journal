@@ -104,6 +104,7 @@ fn run_with_stdin_provider(
             let exe = env::current_exe().unwrap_or_else(|_| PathBuf::from("solstone"));
             let data_dir = solstone_core_update::owner_data_dir();
             let etc_dir = Path::new("/etc");
+            let catalogue = solstone_core_update::RealPlatformCatalogue;
             let fetch = solstone_core_update::RealInstallerFetch;
             let runner = solstone_core_update::RealInstallerRunner;
             let probe = solstone_core_update::RealPackageProbe;
@@ -113,6 +114,7 @@ fn run_with_stdin_provider(
                 &exe,
                 data_dir.as_deref(),
                 etc_dir,
+                &catalogue,
                 &fetch,
                 &runner,
                 &probe,
@@ -353,6 +355,7 @@ pub(crate) fn run_with_update_seams(
     executable: &Path,
     data_dir: Option<&Path>,
     etc_dir: &Path,
+    catalogue: &dyn solstone_core_update::PlatformCatalogue,
     fetch: &dyn solstone_core_update::InstallerFetch,
     runner: &dyn solstone_core_update::InstallerRunner,
     probe: &dyn solstone_core_update::PackageProbe,
@@ -373,6 +376,7 @@ pub(crate) fn run_with_update_seams(
 
     let result = if let Some(data_dir) = data_dir {
         solstone_core_update::perform(
+            catalogue,
             runner,
             fetch,
             probe,
@@ -2026,6 +2030,21 @@ mod tests {
         }
     }
 
+    struct MockUpdateCatalogue;
+    impl solstone_core_update::PlatformCatalogue for MockUpdateCatalogue {
+        fn listing(
+            &self,
+            _lane: &str,
+            _version: Option<&str>,
+        ) -> Result<solstone_core_update::CatalogueListing, solstone_core_update::CatalogueRefusal>
+        {
+            Ok(solstone_core_update::CatalogueListing {
+                platform_version: "2.0.49-r1".to_owned(),
+                journal_version: "2.0.49".to_owned(),
+            })
+        }
+    }
+
     struct MockUpdatePackageProbe(bool);
     impl solstone_core_update::PackageProbe for MockUpdatePackageProbe {
         fn payload_matches(&self, _executable: &Path, _version: &str) -> bool {
@@ -2073,14 +2092,9 @@ mod tests {
         let exe = prefix.join("current/bin/solstone");
         let probe = MockUpdatePackageProbe(false);
 
-        let list_json = r#"{"status":"success","root_code":"list","platform_version":"2.0.49-r1","lane":"release","components":{"journal":{"version":"2.0.49"}}}"#;
+        let catalogue = MockUpdateCatalogue;
         let runner = MockUpdateRunner {
-            responses: std::sync::Mutex::new(vec![solstone_core_update::InstallerOutput {
-                success: true,
-                exit_code: Some(0),
-                stdout: list_json.as_bytes().to_vec(),
-                stderr: Vec::new(),
-            }]),
+            responses: std::sync::Mutex::new(vec![]),
             recorded_args: std::sync::Mutex::new(Vec::new()),
         };
         let fetch = MockUpdateFetch {
@@ -2094,6 +2108,7 @@ mod tests {
             &exe,
             Some(&data),
             &etc,
+            &catalogue,
             &fetch,
             &runner,
             &probe,
@@ -2108,10 +2123,8 @@ mod tests {
         );
         assert_eq!(fs::read_to_string(&receipt_path).unwrap(), ini);
         assert!(!data.join("update-hold").exists());
-        let recorded = runner.recorded_args.lock().unwrap();
-        assert_eq!(recorded.len(), 1);
-        assert!(recorded[0].contains(&OsString::from("--list")));
-        assert!(!recorded[0].contains(&OsString::from("--upgrade")));
+        assert!(runner.recorded_args.lock().unwrap().is_empty());
+        assert!(!*fetch.fetch_called.lock().unwrap());
     }
 
     #[cfg(unix)]
@@ -2151,23 +2164,15 @@ mod tests {
         let exe = prefix.join("current/bin/solstone");
         let probe = MockUpdatePackageProbe(false);
 
-        let list_json = r#"{"status":"success","root_code":"list","platform_version":"2.0.49-r1","lane":"release","components":{"journal":{"version":"2.0.49"}}}"#;
+        let catalogue = MockUpdateCatalogue;
         let rejection_json = r#"{"status":"refusal","root_code":"unknown-argument","message":"unrecognized option --confirm-package-command"}"#;
         let runner = MockUpdateRunner {
-            responses: std::sync::Mutex::new(vec![
-                solstone_core_update::InstallerOutput {
-                    success: true,
-                    exit_code: Some(0),
-                    stdout: list_json.as_bytes().to_vec(),
-                    stderr: Vec::new(),
-                },
-                solstone_core_update::InstallerOutput {
-                    success: false,
-                    exit_code: Some(1),
-                    stdout: rejection_json.as_bytes().to_vec(),
-                    stderr: Vec::new(),
-                },
-            ]),
+            responses: std::sync::Mutex::new(vec![solstone_core_update::InstallerOutput {
+                success: false,
+                exit_code: Some(1),
+                stdout: rejection_json.as_bytes().to_vec(),
+                stderr: Vec::new(),
+            }]),
             recorded_args: std::sync::Mutex::new(Vec::new()),
         };
         let fetch = MockUpdateFetch {
@@ -2175,8 +2180,17 @@ mod tests {
             fetch_called: std::sync::Mutex::new(false),
         };
 
-        let out =
-            run_with_update_seams(&[], true, &exe, Some(&data), &etc, &fetch, &runner, &probe);
+        let out = run_with_update_seams(
+            &[],
+            true,
+            &exe,
+            Some(&data),
+            &etc,
+            &catalogue,
+            &fetch,
+            &runner,
+            &probe,
+        );
 
         assert_ne!(out.exit, 0);
         assert!(
@@ -2196,13 +2210,23 @@ mod tests {
             responses: std::sync::Mutex::new(Vec::new()),
             recorded_args: std::sync::Mutex::new(Vec::new()),
         };
+        let catalogue = MockUpdateCatalogue;
         let fetch = MockUpdateFetch {
             script_path: temp.path().join("install.sh"),
             fetch_called: std::sync::Mutex::new(false),
         };
 
-        let out =
-            run_with_update_seams(&[], false, &exe, Some(&data), &etc, &fetch, &runner, &probe);
+        let out = run_with_update_seams(
+            &[],
+            false,
+            &exe,
+            Some(&data),
+            &etc,
+            &catalogue,
+            &fetch,
+            &runner,
+            &probe,
+        );
 
         assert_eq!(out.exit, 1);
         assert!(out.stdout.contains("non-linux"));
@@ -2221,6 +2245,7 @@ mod tests {
             responses: std::sync::Mutex::new(Vec::new()),
             recorded_args: std::sync::Mutex::new(Vec::new()),
         };
+        let catalogue = MockUpdateCatalogue;
         let fetch = MockUpdateFetch {
             script_path: temp.path().join("install.sh"),
             fetch_called: std::sync::Mutex::new(false),
@@ -2232,6 +2257,7 @@ mod tests {
             &exe,
             Some(&data),
             &etc,
+            &catalogue,
             &fetch,
             &runner,
             &probe,
@@ -2249,6 +2275,7 @@ mod tests {
             responses: std::sync::Mutex::new(vec![]),
             recorded_args: std::sync::Mutex::new(vec![]),
         };
+        let catalogue = MockUpdateCatalogue;
         let fetch = MockUpdateFetch {
             script_path: PathBuf::from("unused"),
             fetch_called: std::sync::Mutex::new(false),
@@ -2260,6 +2287,7 @@ mod tests {
             Path::new("/usr/bin/solstone"),
             None,
             Path::new("/etc"),
+            &catalogue,
             &fetch,
             &runner,
             &MockUpdatePackageProbe(true),

@@ -10,6 +10,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - security fix: updated a library used by journals on phones to address a memory-safety flaw.
 - security fix: image markup in older memories could load outside images when an agent read them through the command-line tools. those results now keep image and link markup as text. thanks @dvanduzer. Related to #401.
+- security fix on linux: your journal now checks for updates using only release information signed by sol pbc.
 
 - you can choose a file on the import screen in the android and ios owner apps and save it.
 - the backup page now updates after a backup finishes, so you no longer have to leave and reopen it to see the result.

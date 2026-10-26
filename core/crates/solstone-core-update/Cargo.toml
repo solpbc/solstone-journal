@@ -16,6 +16,7 @@ unsafe_code = "deny"
 full-tests = []
 
 [dependencies]
+minisign.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 ureq = { workspace = true, features = ["rustls"] }

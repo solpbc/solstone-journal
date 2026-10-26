@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+pub mod catalogue;
 pub mod command;
 pub mod delegate;
 pub mod downgrade;
@@ -13,11 +14,11 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
+pub use catalogue::{CatalogueListing, CatalogueRefusal, PlatformCatalogue, RealPlatformCatalogue};
 pub use command::{CommandMode, CommandParseError, UpdateArgs, parse_args, render_help};
 pub use delegate::{
     InstallerOutput, InstallerRunner, PlatformInvocation, RealInstallerRunner, StdinMode,
-    build_check_argv, build_list_argv, build_native_mutation_argv,
-    build_platform_mutation_invocations,
+    build_native_mutation_argv, build_platform_mutation_invocations,
 };
 pub use downgrade::{
     ReleaseMetadata, RollbackRefusal, check_target_admissibility, compare_semver_3part,
@@ -178,10 +179,8 @@ impl UpdateReport {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 pub fn check(
-    runner: &dyn InstallerRunner,
-    fetch: &dyn InstallerFetch,
+    catalogue: &dyn PlatformCatalogue,
     probe: &dyn PackageProbe,
     executable: &Path,
     data_dir: &Path,
@@ -190,8 +189,7 @@ pub fn check(
     lane_override: Option<&str>,
 ) -> UpdateReport {
     check_selected(
-        runner,
-        fetch,
+        catalogue,
         probe,
         executable,
         data_dir,
@@ -223,8 +221,7 @@ fn acquire(
 
 #[allow(clippy::too_many_arguments)]
 fn check_selected(
-    runner: &dyn InstallerRunner,
-    fetch: &dyn InstallerFetch,
+    catalogue: &dyn PlatformCatalogue,
     probe: &dyn PackageProbe,
     executable: &Path,
     data_dir: &Path,
@@ -262,147 +259,18 @@ fn check_selected(
 
     let lane = lane_override.unwrap_or(&pos.lane);
 
-    // Fetch platform installer for catalogue metadata check
-    let script_path = match acquire(fetch, InstallerSource::Platform) {
-        Ok(p) => p,
-        Err(_) => {
+    // The signed catalogue is verified in-process; checking runs nothing.
+    let listing = match catalogue.listing(lane, version) {
+        Ok(listing) => listing,
+        Err(refusal) => {
             return UpdateReport {
-                availability: Availability::Unknown,
-                current: Some(pos.current_journal_version),
-                platform_version: pos.current_platform_version,
-                latest: None,
-                latest_platform_version: None,
-                lane: Some(lane.to_owned()),
-                route: Some(pos.route_kind.as_str().to_owned()),
-                hold,
-                target: None,
-                code: Some("fetch-failed".to_owned()),
-                message: Some("could not fetch installer.".to_owned()),
-                components: None,
+                code: Some(refusal.code.to_owned()),
+                message: Some(refusal.message),
+                ..base_report(&pos, hold, lane)
             };
         }
     };
-
-    let check_args = match build_list_argv(&script_path.path, lane, version) {
-        Ok(args) => args,
-        Err(_) => {
-            return UpdateReport {
-                availability: Availability::Unknown,
-                current: Some(pos.current_journal_version),
-                platform_version: pos.current_platform_version,
-                latest: None,
-                latest_platform_version: None,
-                lane: Some(lane.to_owned()),
-                route: Some(pos.route_kind.as_str().to_owned()),
-                hold,
-                target: None,
-                code: Some("argv-failed".to_owned()),
-                message: Some("invalid installer arguments.".to_owned()),
-                components: None,
-            };
-        }
-    };
-
-    let check_output = match runner.run(Path::new("/bin/sh"), &check_args, StdinMode::Closed) {
-        Ok(out) => out,
-        Err(error) => {
-            let timed_out = error.kind() == std::io::ErrorKind::TimedOut;
-            return UpdateReport {
-                availability: Availability::Unknown,
-                current: Some(pos.current_journal_version),
-                platform_version: pos.current_platform_version,
-                latest: None,
-                latest_platform_version: None,
-                lane: Some(lane.to_owned()),
-                route: Some(pos.route_kind.as_str().to_owned()),
-                hold,
-                target: None,
-                code: Some(
-                    if timed_out {
-                        "list-timeout"
-                    } else {
-                        "runner-failed"
-                    }
-                    .to_owned(),
-                ),
-                message: Some(if timed_out {
-                    "catalogue check timed out. check your connection and try again.".to_owned()
-                } else {
-                    format!(
-                        "could not run installer: {}",
-                        bounded_diagnostic(&error.to_string())
-                    )
-                }),
-                components: None,
-            };
-        }
-    };
-
-    if !check_output.success {
-        let (code, message) = catalogue_failure(&check_output);
-        return UpdateReport {
-            availability: Availability::Unknown,
-            current: Some(pos.current_journal_version),
-            platform_version: pos.current_platform_version,
-            latest: None,
-            latest_platform_version: None,
-            lane: Some(lane.to_owned()),
-            route: Some(pos.route_kind.as_str().to_owned()),
-            hold,
-            target: None,
-            code: Some(code),
-            message: Some(message),
-            components: None,
-        };
-    }
-
-    let parsed: serde_json::Value = match serde_json::from_slice(&check_output.stdout) {
-        Ok(v) => v,
-        Err(_) => {
-            return UpdateReport {
-                availability: Availability::Unknown,
-                current: Some(pos.current_journal_version),
-                platform_version: pos.current_platform_version,
-                latest: None,
-                latest_platform_version: None,
-                lane: Some(lane.to_owned()),
-                route: Some(pos.route_kind.as_str().to_owned()),
-                hold,
-                target: None,
-                code: Some("schema-invalid".to_owned()),
-                message: Some("catalogue output was not valid json.".to_owned()),
-                components: None,
-            };
-        }
-    };
-
-    let cat_plat_ver = parsed["platform_version"].as_str().map(|s| s.to_owned());
-    let cat_journal_ver = parsed["components"]["journal"]["version"]
-        .as_str()
-        .or_else(|| parsed["components"]["cli"]["version"].as_str())
-        .map(|s| s.to_owned());
-
-    let (latest_journal, latest_platform) = match (cat_journal_ver, cat_plat_ver) {
-        (Some(j), Some(p)) => (j, p),
-        _ => {
-            return UpdateReport {
-                availability: Availability::Unknown,
-                current: Some(pos.current_journal_version),
-                platform_version: pos.current_platform_version,
-                latest: None,
-                latest_platform_version: None,
-                lane: Some(lane.to_owned()),
-                route: Some(pos.route_kind.as_str().to_owned()),
-                hold,
-                target: None,
-                code: Some("catalogue-incomplete".to_owned()),
-                message: Some(
-                    "catalogue output is missing platform or journal versions.".to_owned(),
-                ),
-                components: None,
-            };
-        }
-    };
+    let (latest_journal, latest_platform) = (listing.journal_version, listing.platform_version);
 
     if compare_platform_versions(&latest_platform, &latest_platform).is_none()
         || compare_semver_3part(&latest_journal, &latest_journal).is_none()
@@ -491,52 +359,6 @@ fn check_selected(
     }
 }
 
-fn bounded_diagnostic(text: &str) -> String {
-    let mut result = String::new();
-    for character in text.chars() {
-        let character = if character.is_control() {
-            ' '
-        } else {
-            character
-        };
-        if result.len() + character.len_utf8() > 512 {
-            break;
-        }
-        result.push(character);
-    }
-    result.trim().to_owned()
-}
-
-fn catalogue_failure(output: &InstallerOutput) -> (String, String) {
-    let value = serde_json::from_slice::<serde_json::Value>(&output.stdout)
-        .unwrap_or(serde_json::Value::Null);
-    let code = value["root_code"]
-        .as_str()
-        .filter(|code| {
-            !code.is_empty()
-                && code.len() <= 64
-                && code
-                    .bytes()
-                    .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
-        })
-        .unwrap_or("list-failed")
-        .to_owned();
-    let detail = value["message"]
-        .as_str()
-        .map(bounded_diagnostic)
-        .filter(|message| !message.is_empty())
-        .unwrap_or_else(|| bounded_diagnostic(&String::from_utf8_lossy(&output.stderr)));
-    let message = if detail.is_empty() {
-        match output.exit_code {
-            Some(code) => format!("catalogue check failed (installer exit {code})."),
-            None => "catalogue check failed (installer terminated by a signal).".to_owned(),
-        }
-    } else {
-        format!("catalogue check failed: {detail}")
-    };
-    (code, message)
-}
-
 fn base_report(pos: &PositiveOwnership, hold: HoldState, lane: &str) -> UpdateReport {
     UpdateReport {
         availability: Availability::Unknown,
@@ -571,6 +393,7 @@ fn component_reports(value: &serde_json::Value) -> Vec<ComponentReport> {
 
 #[allow(clippy::too_many_arguments, clippy::result_large_err)]
 pub fn perform(
+    catalogue: &dyn PlatformCatalogue,
     runner: &dyn InstallerRunner,
     fetch: &dyn InstallerFetch,
     probe: &dyn PackageProbe,
@@ -629,8 +452,7 @@ pub fn perform(
         }
         CommandMode::Check => {
             report = check(
-                runner,
-                fetch,
+                catalogue,
                 probe,
                 executable,
                 data_dir,
@@ -702,8 +524,7 @@ pub fn perform(
         }
     } else {
         report = check_selected(
-            runner,
-            fetch,
+            catalogue,
             probe,
             executable,
             data_dir,
@@ -946,6 +767,45 @@ mod tests {
         }
     }
 
+    struct Catalogue {
+        answer: Result<CatalogueListing, CatalogueRefusal>,
+        asked: Mutex<Vec<(String, Option<String>)>>,
+    }
+
+    impl PlatformCatalogue for Catalogue {
+        fn listing(
+            &self,
+            lane: &str,
+            version: Option<&str>,
+        ) -> Result<CatalogueListing, CatalogueRefusal> {
+            self.asked
+                .lock()
+                .unwrap()
+                .push((lane.to_owned(), version.map(str::to_owned)));
+            self.answer.clone()
+        }
+    }
+
+    fn listing(platform: &str, journal: &str) -> Catalogue {
+        Catalogue {
+            answer: Ok(CatalogueListing {
+                platform_version: platform.to_owned(),
+                journal_version: journal.to_owned(),
+            }),
+            asked: Mutex::new(Vec::new()),
+        }
+    }
+
+    fn refusing(code: &'static str) -> Catalogue {
+        Catalogue {
+            answer: Err(CatalogueRefusal {
+                code,
+                message: format!("{code}."),
+            }),
+            asked: Mutex::new(Vec::new()),
+        }
+    }
+
     struct MockPackageProbe(bool);
     impl PackageProbe for MockPackageProbe {
         fn journal_version(&self, _executable: &Path) -> Option<String> {
@@ -1008,13 +868,9 @@ mod tests {
                 } else {
                     fs::remove_file(&ini).unwrap();
                 }
-                let list = serde_json::json!({"lane":"release","platform_version":"2.0.49-r1","components":{"journal":{"version":"2.0.49"}}});
+                let catalogue = listing("2.0.49-r1", "2.0.49");
                 let runner = ScriptedRunner {
-                    responses: Mutex::new(vec![
-                        response(true, list.clone()),
-                        response(true, list),
-                        response(true, serde_json::json!({})),
-                    ]),
+                    responses: Mutex::new(vec![response(true, serde_json::json!({}))]),
                     recorded_args: Mutex::new(vec![]),
                 };
                 let fetch = ScriptedFetch {
@@ -1023,8 +879,7 @@ mod tests {
                 };
                 let exe = prefix.join("current/bin/solstone");
                 let report = check(
-                    &runner,
-                    &fetch,
+                    &catalogue,
                     &MockPackageProbe(false),
                     &exe,
                     &data,
@@ -1039,6 +894,7 @@ mod tests {
                 );
                 let args = parse_args(&[OsString::from("--yes")]).unwrap();
                 perform(
+                    &catalogue,
                     &runner,
                     &fetch,
                     &MockPackageProbe(false),
@@ -1050,7 +906,7 @@ mod tests {
                 )
                 .unwrap();
                 let calls = runner.recorded_args.lock().unwrap();
-                assert_eq!(calls.len(), 3);
+                assert_eq!(calls.len(), 1);
                 let mutation = calls.last().unwrap();
                 assert_eq!(
                     mutation.contains(&OsString::from("--no-start")),
@@ -1084,22 +940,9 @@ mod tests {
         let exe = prefix.join("current/bin/solstone");
         let probe = MockPackageProbe(false);
 
-        let list_json = r#"{"status":"success","root_code":"list","platform_version":"2.0.49-r1","lane":"release","components":{"journal":{"version":"2.0.49"}}}"#;
-        let runner = ScriptedRunner {
-            responses: Mutex::new(vec![InstallerOutput {
-                success: true,
-                exit_code: Some(0),
-                stdout: list_json.as_bytes().to_vec(),
-                stderr: Vec::new(),
-            }]),
-            recorded_args: Mutex::new(Vec::new()),
-        };
-        let fetch = ScriptedFetch {
-            script_path: temp.path().join("install.sh"),
-            fetch_called: Mutex::new(false),
-        };
+        let catalogue = listing("2.0.49-r1", "2.0.49");
 
-        let rep = check(&runner, &fetch, &probe, &exe, &data, &etc, true, None);
+        let rep = check(&catalogue, &probe, &exe, &data, &etc, true, None);
         assert_eq!(rep.availability, Availability::Available);
         assert_eq!(rep.latest.as_deref(), Some("2.0.49"));
         assert_eq!(rep.latest_platform_version.as_deref(), Some("2.0.49-r1"));
@@ -1123,22 +966,9 @@ mod tests {
         let exe = prefix.join("current/bin/solstone");
         let probe = MockPackageProbe(false);
 
-        let list_json = r#"{"status":"success","root_code":"list","platform_version":"2.0.48-r2","lane":"release","components":{"journal":{"version":"2.0.48"}}}"#;
-        let runner = ScriptedRunner {
-            responses: Mutex::new(vec![InstallerOutput {
-                success: true,
-                exit_code: Some(0),
-                stdout: list_json.as_bytes().to_vec(),
-                stderr: Vec::new(),
-            }]),
-            recorded_args: Mutex::new(Vec::new()),
-        };
-        let fetch = ScriptedFetch {
-            script_path: temp.path().join("install.sh"),
-            fetch_called: Mutex::new(false),
-        };
+        let catalogue = listing("2.0.48-r2", "2.0.48");
 
-        let rep = check(&runner, &fetch, &probe, &exe, &data, &etc, true, None);
+        let rep = check(&catalogue, &probe, &exe, &data, &etc, true, None);
         assert_eq!(rep.availability, Availability::Available);
         assert_eq!(rep.latest.as_deref(), Some("2.0.48"));
         assert_eq!(rep.latest_platform_version.as_deref(), Some("2.0.48-r2"));
@@ -1162,22 +992,9 @@ mod tests {
         let exe = prefix.join("current/bin/solstone");
         let probe = MockPackageProbe(false);
 
-        let list_json = r#"{"status":"success","root_code":"list","platform_version":"2.0.48-r1","lane":"release","components":{"journal":{"version":"2.0.48"}}}"#;
-        let runner = ScriptedRunner {
-            responses: Mutex::new(vec![InstallerOutput {
-                success: true,
-                exit_code: Some(0),
-                stdout: list_json.as_bytes().to_vec(),
-                stderr: Vec::new(),
-            }]),
-            recorded_args: Mutex::new(Vec::new()),
-        };
-        let fetch = ScriptedFetch {
-            script_path: temp.path().join("install.sh"),
-            fetch_called: Mutex::new(false),
-        };
+        let catalogue = listing("2.0.48-r1", "2.0.48");
 
-        let rep = check(&runner, &fetch, &probe, &exe, &data, &etc, true, None);
+        let rep = check(&catalogue, &probe, &exe, &data, &etc, true, None);
         assert_eq!(rep.availability, Availability::NotAvailable);
     }
 
@@ -1199,22 +1016,9 @@ mod tests {
         let exe = prefix.join("current/bin/solstone");
         let probe = MockPackageProbe(false);
 
-        let list_json = r#"{"status":"success","root_code":"list","platform_version":"2.0.47-r1","lane":"release","components":{"journal":{"version":"2.0.47"}}}"#;
-        let runner = ScriptedRunner {
-            responses: Mutex::new(vec![InstallerOutput {
-                success: true,
-                exit_code: Some(0),
-                stdout: list_json.as_bytes().to_vec(),
-                stderr: Vec::new(),
-            }]),
-            recorded_args: Mutex::new(Vec::new()),
-        };
-        let fetch = ScriptedFetch {
-            script_path: temp.path().join("install.sh"),
-            fetch_called: Mutex::new(false),
-        };
+        let catalogue = listing("2.0.47-r1", "2.0.47");
 
-        let rep = check(&runner, &fetch, &probe, &exe, &data, &etc, true, None);
+        let rep = check(&catalogue, &probe, &exe, &data, &etc, true, None);
         assert_eq!(rep.availability, Availability::NotAvailable);
     }
 
@@ -1236,22 +1040,9 @@ mod tests {
         let probe = MockPackageProbe(false);
 
         // Platform revision updated, but journal version is identical (2.0.48)
-        let list_json = r#"{"status":"success","root_code":"list","platform_version":"2.0.48-r2","lane":"release","components":{"journal":{"version":"2.0.48"}}}"#;
-        let runner = ScriptedRunner {
-            responses: Mutex::new(vec![InstallerOutput {
-                success: true,
-                exit_code: Some(0),
-                stdout: list_json.as_bytes().to_vec(),
-                stderr: Vec::new(),
-            }]),
-            recorded_args: Mutex::new(Vec::new()),
-        };
-        let fetch = ScriptedFetch {
-            script_path: temp.path().join("install.sh"),
-            fetch_called: Mutex::new(false),
-        };
+        let catalogue = listing("2.0.48-r2", "2.0.48");
 
-        let rep = check(&runner, &fetch, &probe, &exe, &data, &etc, true, None);
+        let rep = check(&catalogue, &probe, &exe, &data, &etc, true, None);
         assert_eq!(rep.availability, Availability::NotAvailable);
     }
 
@@ -1275,28 +1066,15 @@ mod tests {
         let exe = prefix.join("current/bin/solstone");
         let probe = MockPackageProbe(false);
 
-        let list_json = r#"{"status":"success","root_code":"list","platform_version":"2.0.49-r1","lane":"release","components":{"journal":{"version":"2.0.49"}}}"#;
-        let runner = ScriptedRunner {
-            responses: Mutex::new(vec![InstallerOutput {
-                success: true,
-                exit_code: Some(0),
-                stdout: list_json.as_bytes().to_vec(),
-                stderr: Vec::new(),
-            }]),
-            recorded_args: Mutex::new(Vec::new()),
-        };
-        let fetch = ScriptedFetch {
-            script_path: temp.path().join("install.sh"),
-            fetch_called: Mutex::new(false),
-        };
+        let catalogue = listing("2.0.49-r1", "2.0.49");
 
-        let rep = check(&runner, &fetch, &probe, &exe, &data, &etc, true, None);
+        let rep = check(&catalogue, &probe, &exe, &data, &etc, true, None);
         assert_eq!(rep.hold, HoldState::Held);
         assert_eq!(rep.availability, Availability::Available);
     }
 
     #[test]
-    fn check_returns_unknown_on_manifest_signature_failure_or_non_zero_exit() {
+    fn check_returns_unknown_when_the_catalogue_is_refused() {
         let temp = tempfile::tempdir().unwrap();
         let prefix = temp.path().join("local");
         make_tree(&prefix, "2.0.48");
@@ -1313,22 +1091,11 @@ mod tests {
         let exe = prefix.join("current/bin/solstone");
         let probe = MockPackageProbe(false);
 
-        let runner = ScriptedRunner {
-            responses: Mutex::new(vec![InstallerOutput {
-                success: false,
-                exit_code: Some(1),
-                stdout: b"signature verification failed".to_vec(),
-                stderr: Vec::new(),
-            }]),
-            recorded_args: Mutex::new(Vec::new()),
-        };
-        let fetch = ScriptedFetch {
-            script_path: temp.path().join("install.sh"),
-            fetch_called: Mutex::new(false),
-        };
-
-        let rep = check(&runner, &fetch, &probe, &exe, &data, &etc, true, None);
+        let catalogue = refusing("signature-invalid");
+        let rep = check(&catalogue, &probe, &exe, &data, &etc, true, None);
         assert_eq!(rep.availability, Availability::Unknown);
+        assert_eq!(rep.code.as_deref(), Some("signature-invalid"));
+        assert_eq!(rep.current.as_deref(), Some("2.0.48"));
     }
 
     #[test]
@@ -1342,58 +1109,10 @@ mod tests {
         let exe = PathBuf::from("/usr/bin/solstone");
         let probe = MockPackageProbe(false);
 
-        let runner = ScriptedRunner {
-            responses: Mutex::new(Vec::new()),
-            recorded_args: Mutex::new(Vec::new()),
-        };
-        let fetch = ScriptedFetch {
-            script_path: temp.path().join("install.sh"),
-            fetch_called: Mutex::new(false),
-        };
-
-        let rep = check(&runner, &fetch, &probe, &exe, &data, &etc, true, None);
+        let catalogue = listing("2.0.49-r1", "2.0.49");
+        let rep = check(&catalogue, &probe, &exe, &data, &etc, true, None);
         assert_eq!(rep.availability, Availability::Unknown);
-    }
-
-    #[test]
-    fn check_executes_no_mutations_and_runner_sees_only_list_flag() {
-        let temp = tempfile::tempdir().unwrap();
-        let prefix = temp.path().join("local");
-        make_tree(&prefix, "2.0.48");
-
-        let data = temp.path().join("data");
-        fs::create_dir_all(&data).unwrap();
-        let ini = format!(
-            "[solstone]\nschema_version=1\norigin=https://updates.solstone.app\nroute=tree\nphase=complete\nprefix={}\nlane=release\nplatform_version=2.0.48-r1\n\n[component:journal]\nrole=journal\nroute=tree\nstatus=installed\nno_start=0\n",
-            prefix.display()
-        );
-        fs::write(data.join("install.conf"), ini).unwrap();
-        let etc = temp.path().join("etc");
-
-        let exe = prefix.join("current/bin/solstone");
-        let probe = MockPackageProbe(false);
-
-        let list_json = r#"{"status":"success","root_code":"list","platform_version":"2.0.49-r1","lane":"release","components":{"journal":{"version":"2.0.49"}}}"#;
-        let runner = ScriptedRunner {
-            responses: Mutex::new(vec![InstallerOutput {
-                success: true,
-                exit_code: Some(0),
-                stdout: list_json.as_bytes().to_vec(),
-                stderr: Vec::new(),
-            }]),
-            recorded_args: Mutex::new(Vec::new()),
-        };
-        let fetch = ScriptedFetch {
-            script_path: temp.path().join("install.sh"),
-            fetch_called: Mutex::new(false),
-        };
-
-        let _ = check(&runner, &fetch, &probe, &exe, &data, &etc, true, None);
-
-        let recorded = runner.recorded_args.lock().unwrap();
-        assert_eq!(recorded.len(), 1);
-        assert!(recorded[0].contains(&OsString::from("--list")));
-        assert!(!recorded[0].contains(&OsString::from("--upgrade")));
+        assert!(catalogue.asked.lock().unwrap().is_empty());
     }
 
     #[test]
@@ -1416,6 +1135,7 @@ mod tests {
         let exe = prefix.join("current/bin/solstone");
         let probe = MockPackageProbe(false);
 
+        let catalogue = listing("2.0.49-r1", "2.0.49");
         let runner = ScriptedRunner {
             responses: Mutex::new(Vec::new()),
             recorded_args: Mutex::new(Vec::new()),
@@ -1433,12 +1153,15 @@ mod tests {
             yes: false,
         };
 
-        let res = perform(&runner, &fetch, &probe, &exe, &data, &etc, true, &args);
+        let res = perform(
+            &catalogue, &runner, &fetch, &probe, &exe, &data, &etc, true, &args,
+        );
         let (err_rep, exit) = res.unwrap_err();
         assert_eq!(exit, 1);
         assert_eq!(err_rep.code.as_deref(), Some("held"));
         assert!(!*fetch.fetch_called.lock().unwrap());
         assert_eq!(runner.recorded_args.lock().unwrap().len(), 0);
+        assert!(catalogue.asked.lock().unwrap().is_empty());
     }
 
     #[test]
@@ -1459,14 +1182,9 @@ mod tests {
         let exe = prefix.join("current/bin/solstone");
         let probe = MockPackageProbe(false);
 
-        let list_json = r#"{"status":"success","root_code":"list","platform_version":"2.0.48-r1","lane":"release","components":{"journal":{"version":"2.0.48"}}}"#;
+        let catalogue = listing("2.0.48-r1", "2.0.48");
         let runner = ScriptedRunner {
-            responses: Mutex::new(vec![InstallerOutput {
-                success: true,
-                exit_code: Some(0),
-                stdout: list_json.as_bytes().to_vec(),
-                stderr: Vec::new(),
-            }]),
+            responses: Mutex::new(vec![]),
             recorded_args: Mutex::new(Vec::new()),
         };
         let fetch = ScriptedFetch {
@@ -1482,15 +1200,15 @@ mod tests {
             yes: false,
         };
 
-        let res = perform(&runner, &fetch, &probe, &exe, &data, &etc, true, &args);
+        let res = perform(
+            &catalogue, &runner, &fetch, &probe, &exe, &data, &etc, true, &args,
+        );
         let rep = res.expect("successful plain perform when up to date");
         assert_eq!(rep.availability, Availability::NotAvailable);
         assert_eq!(rep.message.as_deref(), Some("your journal is up to date."));
 
-        // Runner was only called once for check, no mutating invocation
-        let recorded = runner.recorded_args.lock().unwrap();
-        assert_eq!(recorded.len(), 1);
-        assert!(recorded[0].contains(&OsString::from("--list")));
+        assert!(runner.recorded_args.lock().unwrap().is_empty());
+        assert!(!*fetch.fetch_called.lock().unwrap());
     }
 
     #[test]
@@ -1509,6 +1227,7 @@ mod tests {
         let exe = PathBuf::from("/usr/bin/solstone");
         let probe = MockPackageProbe(true);
 
+        let catalogue = listing("2.0.49-r1", "2.0.49");
         let runner = ScriptedRunner {
             responses: Mutex::new(Vec::new()),
             recorded_args: Mutex::new(Vec::new()),
@@ -1526,7 +1245,9 @@ mod tests {
             yes: false,
         };
 
-        let res = perform(&runner, &fetch, &probe, &exe, &data, &etc, true, &args);
+        let res = perform(
+            &catalogue, &runner, &fetch, &probe, &exe, &data, &etc, true, &args,
+        );
         let (err_rep, exit) = res.unwrap_err();
         assert_eq!(exit, 1);
         assert_eq!(err_rep.code.as_deref(), Some("downgrade-route-unsupported"));
@@ -1565,23 +1286,15 @@ mod tests {
         let exe = prefix.join("current/bin/solstone");
         let probe = MockPackageProbe(false);
 
-        let list_json = r#"{"status":"success","root_code":"list","platform_version":"2.0.47-r1","lane":"release","components":{"journal":{"version":"2.0.47"}}}"#;
+        let catalogue = listing("2.0.47-r1", "2.0.47");
         let mutation_json = r#"{"status":"success","root_code":"upgrade","components":[{"role":"journal","status":"installed","route":"tree","phase":"complete","target_version":"2.0.47"}]}"#;
         let runner = ScriptedRunner {
-            responses: Mutex::new(vec![
-                InstallerOutput {
-                    success: true,
-                    exit_code: Some(0),
-                    stdout: list_json.as_bytes().to_vec(),
-                    stderr: Vec::new(),
-                },
-                InstallerOutput {
-                    success: true,
-                    exit_code: Some(0),
-                    stdout: mutation_json.as_bytes().to_vec(),
-                    stderr: Vec::new(),
-                },
-            ]),
+            responses: Mutex::new(vec![InstallerOutput {
+                success: true,
+                exit_code: Some(0),
+                stdout: mutation_json.as_bytes().to_vec(),
+                stderr: Vec::new(),
+            }]),
             recorded_args: Mutex::new(Vec::new()),
         };
         let fetch = ScriptedFetch {
@@ -1597,19 +1310,21 @@ mod tests {
             yes: true,
         };
 
-        let res = perform(&runner, &fetch, &probe, &exe, &data, &etc, true, &args);
+        let res = perform(
+            &catalogue, &runner, &fetch, &probe, &exe, &data, &etc, true, &args,
+        );
         let rep = res.expect("rollback succeeded");
         assert_eq!(rep.current.as_deref(), Some("2.0.47"));
         assert_eq!(rep.platform_version.as_deref(), Some("2.0.47-r1"));
 
+        assert_eq!(
+            *catalogue.asked.lock().unwrap(),
+            [("release".to_owned(), Some("2.0.47-r1".to_owned()))]
+        );
         let recorded = runner.recorded_args.lock().unwrap();
-        assert_eq!(recorded.len(), 2);
-        // First was list with --version 2.0.47-r1
-        assert!(recorded[0].contains(&OsString::from("--list")));
+        assert_eq!(recorded.len(), 1);
+        assert!(recorded[0].contains(&OsString::from("--upgrade")));
         assert!(recorded[0].contains(&OsString::from("2.0.47-r1")));
-        // Second was mutation with --version 2.0.47-r1
-        assert!(recorded[1].contains(&OsString::from("--upgrade")));
-        assert!(recorded[1].contains(&OsString::from("2.0.47-r1")));
     }
 
     #[test]
@@ -1642,14 +1357,9 @@ mod tests {
         let probe = MockPackageProbe(false);
 
         // Catalogue latest in lane is 2.0.48-r2 (not 2.0.47)
-        let list_json = r#"{"status":"success","root_code":"list","platform_version":"2.0.48-r2","lane":"release","components":{"journal":{"version":"2.0.48"}}}"#;
+        let catalogue = listing("2.0.48-r2", "2.0.48");
         let runner = ScriptedRunner {
-            responses: Mutex::new(vec![InstallerOutput {
-                success: true,
-                exit_code: Some(0),
-                stdout: list_json.as_bytes().to_vec(),
-                stderr: Vec::new(),
-            }]),
+            responses: Mutex::new(vec![]),
             recorded_args: Mutex::new(Vec::new()),
         };
         let fetch = ScriptedFetch {
@@ -1665,7 +1375,9 @@ mod tests {
             yes: true,
         };
 
-        let res = perform(&runner, &fetch, &probe, &exe, &data, &etc, true, &args);
+        let res = perform(
+            &catalogue, &runner, &fetch, &probe, &exe, &data, &etc, true, &args,
+        );
         let (err_rep, exit) = res.unwrap_err();
         assert_eq!(exit, 1);
         assert_eq!(err_rep.code.as_deref(), Some("platform-revision-unknown"));
@@ -1683,27 +1395,11 @@ mod tests {
         (dir, prefix, data, etc)
     }
     #[test]
-    fn catalogue_refusal_and_timeout_reach_the_public_report() {
-        struct TimedOut;
-        impl InstallerRunner for TimedOut {
-            fn run(
-                &self,
-                _: &Path,
-                _: &[OsString],
-                _: StdinMode,
-            ) -> std::io::Result<InstallerOutput> {
-                Err(std::io::ErrorKind::TimedOut.into())
-            }
-        }
-        let (dir, prefix, data, etc) = fixture();
-        let fetch = ScriptedFetch {
-            script_path: dir.path().join("installer.sh"),
-            fetch_called: Mutex::new(false),
-        };
+    fn a_refused_catalogue_reaches_the_public_report() {
+        let (_dir, prefix, data, etc) = fixture();
         let exe = prefix.join("current/bin/solstone");
         let report = check(
-            &TimedOut,
-            &fetch,
+            &refusing("fetch-failed"),
             &MockPackageProbe(false),
             &exe,
             &data,
@@ -1712,33 +1408,9 @@ mod tests {
             None,
         );
         assert_eq!(report.availability, Availability::Unknown);
-        assert_eq!(report.code.as_deref(), Some("list-timeout"));
-        assert!(report.message.unwrap().len() <= 512);
-
-        // Fields captured from the real installer's --list --json refusal.
-        let refusal = serde_json::json!({"root_code":"lane-invalid","message":"Invalid release lane: invalid"});
-        let runner = ScriptedRunner {
-            responses: Mutex::new(vec![response(false, refusal.clone())]),
-            recorded_args: Mutex::new(vec![]),
-        };
-        let report = check(
-            &runner,
-            &fetch,
-            &MockPackageProbe(false),
-            &exe,
-            &data,
-            &etc,
-            true,
-            None,
-        );
-        assert_eq!(report.availability, Availability::Unknown);
-        assert_eq!(report.code.as_deref(), refusal["root_code"].as_str());
-        assert!(
-            report
-                .message
-                .unwrap()
-                .contains(refusal["message"].as_str().unwrap())
-        );
+        assert_eq!(report.code.as_deref(), Some("fetch-failed"));
+        assert_eq!(report.message.as_deref(), Some("fetch-failed."));
+        assert_eq!(report.lane.as_deref(), Some("release"));
     }
     fn response(success: bool, value: serde_json::Value) -> InstallerOutput {
         InstallerOutput {
@@ -1751,17 +1423,12 @@ mod tests {
     #[test]
     fn explicit_version_and_lane_reach_both_verified_check_and_mutation() {
         let (dir, prefix, data, etc) = fixture();
+        let catalogue = listing("2.0.49-r3", "2.0.49");
         let runner = ScriptedRunner {
-            responses: Mutex::new(vec![
-                response(
-                    true,
-                    serde_json::json!({"lane":"staging","platform_version":"2.0.49-r3","components":{"journal":{"version":"2.0.49"}}}),
-                ),
-                response(
-                    true,
-                    serde_json::json!({"components":{"journal":{"role":"journal","status":"succeeded","route":"tree","phase":"complete"}}}),
-                ),
-            ]),
+            responses: Mutex::new(vec![response(
+                true,
+                serde_json::json!({"components":{"journal":{"role":"journal","status":"succeeded","route":"tree","phase":"complete"}}}),
+            )]),
             recorded_args: Mutex::new(vec![]),
         };
         let fetch = ScriptedFetch {
@@ -1773,6 +1440,7 @@ mod tests {
         )
         .unwrap();
         let report = perform(
+            &catalogue,
             &runner,
             &fetch,
             &MockPackageProbe(false),
@@ -1785,8 +1453,12 @@ mod tests {
         .unwrap();
         assert_eq!(report.lane.as_deref(), Some("staging"));
         assert_eq!(report.platform_version.as_deref(), Some("2.0.49-r3"));
+        assert_eq!(
+            *catalogue.asked.lock().unwrap(),
+            [("staging".to_owned(), Some("2.0.49-r3".to_owned()))]
+        );
         let calls = runner.recorded_args.lock().unwrap();
-        assert_eq!(calls.len(), 2);
+        assert_eq!(calls.len(), 1);
         for call in calls.iter() {
             assert!(
                 call.windows(2)
@@ -1807,12 +1479,9 @@ mod tests {
             "[component:desktop]\nroute=tree\nstatus=installed\nno_start=1\nversion=2.0.48\n",
         );
         fs::write(&receipt, contents).unwrap();
+        let catalogue = listing("2.0.49-r1", "2.0.49");
         let runner = ScriptedRunner {
             responses: Mutex::new(vec![
-                response(
-                    true,
-                    serde_json::json!({"lane":"release","platform_version":"2.0.49-r1","components":{"journal":{"version":"2.0.49"}}}),
-                ),
                 response(
                     true,
                     serde_json::json!({"components":{"journal":{"role":"journal","status":"succeeded","route":"tree","phase":"complete"}}}),
@@ -1830,6 +1499,7 @@ mod tests {
         };
         let args = parse_args(&[OsString::from("--yes")]).unwrap();
         let (report, code) = perform(
+            &catalogue,
             &runner,
             &fetch,
             &MockPackageProbe(false),
@@ -1859,7 +1529,7 @@ mod tests {
                 .iter()
                 .any(|c| c.role == "tmux" && c.status == "unattempted")
         );
-        assert_eq!(runner.recorded_args.lock().unwrap().len(), 3);
+        assert_eq!(runner.recorded_args.lock().unwrap().len(), 2);
     }
 
     #[test]
@@ -1868,7 +1538,6 @@ mod tests {
         let script = dir.path().join("installer.sh");
         let marker = dir.path().join("actual-argv");
         fs::write(&script, format!(r#"case "$1" in
---list) printf '%s\n' '{{"platform_version":"2.0.49-r3","lane":"staging","components":{{"journal":{{"version":"2.0.49"}}}}}}';;
 --upgrade) printf '%s\n' "$@" > '{}'; printf '%s\n' '{{"components":{{"journal":{{"role":"journal","status":"succeeded","route":"tree","phase":"complete"}}}}}}';;
 *) exit 19;;
 esac
@@ -1882,6 +1551,7 @@ esac
         )
         .unwrap();
         let result = perform(
+            &listing("2.0.49-r3", "2.0.49"),
             &RealInstallerRunner,
             &fetch,
             &MockPackageProbe(false),
@@ -1896,36 +1566,6 @@ esac
         let actual = fs::read_to_string(marker).unwrap();
         assert!(actual.contains("--lane\nstaging\n") && actual.contains("--version\n2.0.49-r3\n"));
         assert!(actual.contains("--confirm-package-command\n") && actual.contains("--no-path\n"));
-    }
-}
-
-#[cfg(test)]
-mod diagnostic_tests {
-    use super::*;
-
-    #[test]
-    fn failure_details_are_bounded_and_control_free() {
-        let output = InstallerOutput {
-            success: false,
-            exit_code: Some(17),
-            stdout: serde_json::to_vec(
-                &serde_json::json!({"root_code":"x".repeat(65),"message":"é\n\u{1b}".repeat(500)}),
-            )
-            .unwrap(),
-            stderr: vec![],
-        };
-        let (code, message) = catalogue_failure(&output);
-        assert_eq!(code, "list-failed");
-        assert!(message.len() <= "catalogue check failed: ".len() + 512);
-        assert!(!message.chars().any(char::is_control));
-        let mut output = output;
-        output.stdout = b"not JSON".to_vec();
-        output.stderr = b"connection refused\n".repeat(500);
-        let (_, message) = catalogue_failure(&output);
-        assert!(message.contains("connection refused"));
-        assert!(message.len() <= "catalogue check failed: ".len() + 512);
-        output.stderr.clear();
-        assert!(catalogue_failure(&output).1.contains("17"));
     }
 }
 

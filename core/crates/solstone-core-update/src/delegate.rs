@@ -1,12 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use std::ffi::{OsStr, OsString};
+use std::ffi::OsString;
 use std::io::{Read, Write};
 use std::path::Path;
 use std::process::{Command, Stdio};
 use std::thread;
-use std::time::{Duration, Instant};
 
 use crate::ownership::{RecordedComponent, ServicePolicy};
 
@@ -42,18 +41,10 @@ impl InstallerRunner for RealInstallerRunner {
         args: &[OsString],
         stdin: StdinMode,
     ) -> std::io::Result<InstallerOutput> {
-        // Catalogue checks have a deadline. Approved installations remain in
-        // the foreground until their owner exits; timing out a privileged
-        // package manager could return while it is still changing the system.
-        let limit = if args.iter().any(|a| a == OsStr::new("--list")) {
-            // latest, catalogue and signature each allow three 120-second
-            // stalled attempts plus retry delays. Leave room for that normal
-            // retry path; redirects and a trickling server remain bounded.
-            Some(Duration::from_secs(20 * 60))
-        } else {
-            None
-        };
-        run_installer(program, args, stdin, limit)
+        // An installation stays in the foreground until its owner exits;
+        // timing out a privileged package manager could return while it is
+        // still changing the system.
+        run_installer(program, args, stdin)
     }
 }
 
@@ -77,33 +68,10 @@ fn drain_output(mut input: impl Read, echo: bool) -> std::io::Result<Vec<u8>> {
     Ok(captured)
 }
 
-// Keep terminal job control intact for consent, and terminate only descendants
-// of the child we started if its deadline expires.
-#[cfg(target_os = "linux")]
-fn terminate_descendants(pid: u32) {
-    // Stop each parent before killing its descendants so a failed child cannot
-    // release the shell to run the next command while teardown is in progress.
-    let _ = Command::new("/bin/kill")
-        .args(["-STOP", "--", &pid.to_string()])
-        .status();
-    let children =
-        std::fs::read_to_string(format!("/proc/{pid}/task/{pid}/children")).unwrap_or_default();
-    for child in children
-        .split_whitespace()
-        .filter_map(|v| v.parse::<u32>().ok())
-    {
-        terminate_descendants(child);
-        let _ = Command::new("/bin/kill")
-            .args(["-KILL", "--", &child.to_string()])
-            .status();
-    }
-}
-
 fn run_installer(
     program: &Path,
     args: &[OsString],
     stdin: StdinMode,
-    timeout: Option<Duration>,
 ) -> std::io::Result<InstallerOutput> {
     let mut cmd = Command::new(program);
     cmd.args(args)
@@ -120,33 +88,15 @@ fn run_installer(
     // Prompts and the exact package command must reach the terminal before the
     // installer waits for approval. Structured stdout remains captured.
     let error_thread = thread::spawn(move || drain_output(stderr, true));
-    let started = Instant::now();
-    let (status, timed_out) = loop {
-        if let Some(status) = child.try_wait()? {
-            break (status, false);
-        }
-        if timeout.is_some_and(|limit| started.elapsed() >= limit) {
-            #[cfg(target_os = "linux")]
-            terminate_descendants(child.id());
-            child.kill()?;
-            break (child.wait()?, true);
-        }
-        thread::sleep(Duration::from_millis(20));
-    };
+    let status = child.wait()?;
     let stdout = output_thread
         .join()
         .map_err(|_| std::io::Error::other("installer output reader failed"))??;
     let stderr = error_thread
         .join()
         .map_err(|_| std::io::Error::other("installer diagnostic reader failed"))??;
-    if timed_out {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::TimedOut,
-            "installer catalogue deadline exceeded",
-        ));
-    }
     Ok(InstallerOutput {
-        success: status.success() && !timed_out,
+        success: status.success(),
         exit_code: status.code(),
         stdout,
         stderr,
@@ -168,39 +118,6 @@ pub fn validate_safe_arg(arg: &str) -> Result<(), String> {
         return Err(format!("argument contains shell metacharacters: {arg:?}"));
     }
     Ok(())
-}
-
-pub fn build_list_argv(
-    script: &Path,
-    lane: &str,
-    version: Option<&str>,
-) -> Result<Vec<OsString>, String> {
-    validate_safe_arg(lane)?;
-    if let Some(v) = version {
-        validate_safe_arg(v)?;
-    }
-    let script_str = script
-        .to_str()
-        .ok_or_else(|| "script path is not valid utf-8".to_owned())?;
-    validate_safe_arg(script_str)?;
-
-    let mut args = vec![
-        OsString::from(script),
-        OsString::from("--list"),
-        OsString::from("--json"),
-        OsString::from("--lane"),
-        OsString::from(lane),
-    ];
-    if let Some(v) = version {
-        args.push(OsString::from("--version"));
-        args.push(OsString::from(v));
-    }
-    args.push(OsString::from("--non-interactive"));
-    Ok(args)
-}
-
-pub fn build_check_argv(script: &Path, lane: &str) -> Result<Vec<OsString>, String> {
-    build_list_argv(script, lane, None)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -587,59 +504,23 @@ mod tests {
 mod process_tests {
     use super::*;
     #[test]
-    fn catalogue_can_finish_after_the_old_process_deadline() {
-        let dir = tempfile::tempdir().unwrap();
-        let script = dir.path().join("installer.sh");
-        std::fs::write(
-            &script,
-            "sleep 31\nprintf '{\"platform_version\":\"2.0.48-r1\"}\\n'\n",
-        )
-        .unwrap();
-        let args = build_list_argv(&script, "release", None).unwrap();
-        let output = RealInstallerRunner
-            .run(Path::new("/bin/sh"), &args, StdinMode::Closed)
-            .unwrap();
-        assert!(output.success, "{output:?}");
-        assert!(serde_json::from_slice::<serde_json::Value>(&output.stdout).is_ok());
-    }
-    #[test]
     fn real_shell_receives_installer_flags_and_captures_one_json_result() {
         let dir = tempfile::tempdir().unwrap();
         let script = dir.path().join("installer.sh");
         std::fs::write(
             &script,
-            r#"case "$1" in --list) printf '{"platform_version":"2.0.48-r1"}\n';; *) exit 17;; esac
+            r#"case "$1" in --upgrade) printf '{"root_code":"upgraded"}\n';; *) exit 17;; esac
 "#,
         )
         .unwrap();
-        let args = build_list_argv(&script, "release", None).unwrap();
+        let args = vec![script.into_os_string(), OsString::from("--upgrade")];
         let output = RealInstallerRunner
             .run(Path::new("/bin/sh"), &args, StdinMode::Closed)
             .unwrap();
         assert!(output.success, "{output:?}");
         assert_eq!(
-            serde_json::from_slice::<serde_json::Value>(&output.stdout).unwrap()["platform_version"],
-            "2.0.48-r1"
+            serde_json::from_slice::<serde_json::Value>(&output.stdout).unwrap()["root_code"],
+            "upgraded"
         );
-    }
-    #[test]
-    fn timeout_reaps_child_and_stops_its_descendant_before_returning() {
-        let dir = tempfile::tempdir().unwrap();
-        let script = dir.path().join("installer.sh");
-        let marker = dir.path().join("late-write");
-        std::fs::write(&script, format!("sleep 1; touch '{}'\n", marker.display())).unwrap();
-        let args = vec![script.into_os_string()];
-        let started = Instant::now();
-        let error = run_installer(
-            Path::new("/bin/sh"),
-            &args,
-            StdinMode::Closed,
-            Some(Duration::from_millis(50)),
-        )
-        .unwrap_err();
-        assert_eq!(error.kind(), std::io::ErrorKind::TimedOut);
-        assert!(started.elapsed() < Duration::from_millis(800));
-        std::thread::sleep(Duration::from_millis(1100));
-        assert!(!marker.exists());
     }
 }
