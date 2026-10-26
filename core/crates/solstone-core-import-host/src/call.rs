@@ -25,7 +25,10 @@
 //! approval and is not given a new connect, card, or schedule entry.
 //!
 //! [`crate::cli_argv::admit_arguments`] parses the same grammar and touches
-//! no journal, supervisor, or source bytes. [`WorkStop::linked`] observes a
+//! no journal, supervisor, or source bytes. [`classify_arguments`] returns
+//! that parse: the sync backend, `--path` when present, and whether the
+//! command is a held Body entry or a stored Oura sync. It does not load saved
+//! Obsidian or audio settings. [`WorkStop::linked`] observes a
 //! parent cancellation flag and a deadline at each check. There is no timer
 //! thread. [`ImportHandle::join`] still blocks until native work returns.
 //!
@@ -46,7 +49,7 @@ use solstone_core_import::{WorkStop, WorkStopGuard};
 
 use crate::cli_argv::{library_preview_arguments, run_library};
 
-pub use crate::cli_argv::admit_arguments;
+pub use crate::cli_argv::{ArgumentClass, BodyAdmission, admit_arguments, classify_arguments};
 
 /// Seams an embedded or desktop caller supplies for one attempt.
 ///
@@ -369,6 +372,78 @@ mod tests {
             .is_ok()
         );
         assert!(!missing.exists());
+    }
+
+    #[test]
+    fn classify_arguments_names_sync_path_and_body_without_reading_a_source() {
+        let directory = tempfile::tempdir().unwrap();
+        let missing = directory.path().join("export.zip");
+        let missing_arg = missing.display().to_string();
+
+        let obsidian = classify_arguments(&["--sync".to_owned(), "obsidian".to_owned()]).unwrap();
+        assert_eq!(obsidian.sync_source.as_deref(), Some("obsidian"));
+        assert_eq!(obsidian.explicit_path, None);
+        assert_eq!(obsidian.body, BodyAdmission::NotBody);
+
+        let audio = classify_arguments(&[
+            "--sync".to_owned(),
+            "audio".to_owned(),
+            "--path".to_owned(),
+            "/clips".to_owned(),
+        ])
+        .unwrap();
+        assert_eq!(audio.sync_source.as_deref(), Some("audio"));
+        assert_eq!(audio.explicit_path.as_deref(), Some(Path::new("/clips")));
+        assert_eq!(audio.body, BodyAdmission::NotBody);
+
+        let ordinary = classify_arguments(&["--sync".to_owned(), "oura".to_owned()]).unwrap();
+        assert_eq!(ordinary.sync_source.as_deref(), Some("oura"));
+        assert_eq!(ordinary.body, BodyAdmission::Held);
+
+        let saved =
+            classify_arguments(&["--sync".to_owned(), "oura".to_owned(), "--save".to_owned()])
+                .unwrap();
+        assert_eq!(saved.body, BodyAdmission::Held);
+
+        let confirmed = classify_arguments(&[
+            "--sync".to_owned(),
+            "oura".to_owned(),
+            "--confirm-body-save".to_owned(),
+        ])
+        .unwrap();
+        assert_eq!(confirmed.body, BodyAdmission::StoredOura);
+
+        let scheduled = classify_arguments(&[
+            "--sync".to_owned(),
+            "oura".to_owned(),
+            "--scheduled".to_owned(),
+        ])
+        .unwrap();
+        assert_eq!(scheduled.body, BodyAdmission::StoredOura);
+
+        let connect = classify_arguments(&["--connect".to_owned(), "oura".to_owned()]).unwrap();
+        assert_eq!(connect.sync_source, None);
+        assert_eq!(connect.body, BodyAdmission::Held);
+
+        let apple = classify_arguments(&[
+            "--source".to_owned(),
+            "apple_health".to_owned(),
+            missing_arg,
+        ])
+        .unwrap();
+        assert_eq!(apple.sync_source, None);
+        assert_eq!(apple.explicit_path, None);
+        assert_eq!(apple.body, BodyAdmission::Held);
+        assert!(!missing.exists());
+
+        let document = classify_arguments(&[
+            "--source".to_owned(),
+            "document".to_owned(),
+            "notes.pdf".to_owned(),
+        ])
+        .unwrap();
+        assert_eq!(document.body, BodyAdmission::NotBody);
+        assert!(classify_arguments(&["--nope".to_owned()]).is_err());
     }
 
     #[test]

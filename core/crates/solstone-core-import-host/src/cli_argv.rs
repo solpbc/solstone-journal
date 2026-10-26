@@ -336,19 +336,96 @@ fn without_flag(args: &[String], flag: &str) -> Vec<String> {
         .collect()
 }
 
+/// Apple Health and Oura, as the parsed command names them.
+///
+/// A directory or zip is not classified as Apple Health here. Discovering
+/// that export reads the source, which is execution. `--source oura` on a
+/// file import is not a sync and is not this enum; resolution refuses it
+/// with the existing sync remedy and does not call a body writer.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BodyAdmission {
+    /// Not `--source apple_health`, `--connect oura`, or `--sync oura`.
+    NotBody,
+    /// Apple Health import, Oura connect, or an Oura sync that does not
+    /// already carry `--confirm-body-save` or `--scheduled`.
+    Held,
+    /// `--sync oura` that already carries `--confirm-body-save` or `--scheduled`.
+    StoredOura,
+}
+
+/// Parsed shape of one importer invocation.
+///
+/// Built by the same grammar as execution. It does not open a journal, probe
+/// the supervisor, read source bytes, or load saved Obsidian or audio settings.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ArgumentClass {
+    /// Backend of `--sync`. `None` for every other command.
+    pub sync_source: Option<String>,
+    /// `--path` when the command names one. Obsidian and audio sync treat
+    /// `None` as the caller's saved source settings.
+    pub explicit_path: Option<PathBuf>,
+    /// Held ordinary Body entry, stored gated Oura, or neither.
+    pub body: BodyAdmission,
+}
+
+/// Classify `args` with the importer grammar.
+///
+/// The class is how a caller decides a saved Obsidian or audio path, and how
+/// it separates a held Body entry from stored gated Oura, without scanning
+/// flags itself. Acceptance matches [`admit_arguments`]. An import with no
+/// media path is rejected with the same requirement execution reports.
+pub fn classify_arguments(args: &[String]) -> Result<ArgumentClass, String> {
+    let parsed = parse_arguments(args)?;
+    if matches!(&parsed, ParsedCommand::Import(options) if options.media.is_none()) {
+        return Err("the following arguments are required: media".to_owned());
+    }
+    Ok(classify_parsed(&parsed))
+}
+
+fn classify_parsed(parsed: &ParsedCommand) -> ArgumentClass {
+    match parsed {
+        ParsedCommand::Sync { backend, options } => ArgumentClass {
+            sync_source: Some(backend.clone()),
+            explicit_path: options.path.clone(),
+            body: if backend == "oura" {
+                if oura_sync_is_stored(options) {
+                    BodyAdmission::StoredOura
+                } else {
+                    BodyAdmission::Held
+                }
+            } else {
+                BodyAdmission::NotBody
+            },
+        },
+        ParsedCommand::Connect { backend } if backend == "oura" => ArgumentClass {
+            sync_source: None,
+            explicit_path: None,
+            body: BodyAdmission::Held,
+        },
+        ParsedCommand::Import(options) if options.source.as_deref() == Some("apple_health") => {
+            ArgumentClass {
+                sync_source: None,
+                explicit_path: None,
+                body: BodyAdmission::Held,
+            }
+        }
+        _ => ArgumentClass {
+            sync_source: None,
+            explicit_path: None,
+            body: BodyAdmission::NotBody,
+        },
+    }
+}
+
 /// Whether `args` is one importer invocation this grammar accepts.
 ///
 /// The check parses only. It does not open a journal, probe the supervisor,
 /// or read source bytes. Acceptance is not a preview, not publication, and
 /// not approval of Apple Health or Oura. An import with no media path is
-/// rejected with the same requirement execution reports.
+/// rejected with the same requirement execution reports. Call
+/// [`classify_arguments`] for the sync source, explicit path, and Body class.
 pub fn admit_arguments(args: &[String]) -> Result<(), String> {
-    match parse_arguments(args)? {
-        ParsedCommand::Import(options) if options.media.is_none() => {
-            Err("the following arguments are required: media".to_owned())
-        }
-        _ => Ok(()),
-    }
+    classify_arguments(args).map(|_| ())
 }
 
 pub(crate) fn run_library(

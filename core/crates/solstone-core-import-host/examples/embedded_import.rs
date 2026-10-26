@@ -24,10 +24,12 @@
 //! A native frame that is still running after cancel stays owned until it
 //! returns. This call cannot kill that frame.
 //!
-//! Apple Health import and Oura connect stay on the desktop importer. An
-//! ordinary Oura sync does too. A stored Oura sync that already carries
-//! `--confirm-body-save` or `--scheduled` keeps the existing handwritten
-//! approval. `connect_oura` is not available here.
+//! Call `classify_arguments` before preview. Its sync backend and `--path`
+//! say whether Obsidian or audio omitted a path; this example does not read
+//! saved source settings. A held Body entry stays on the desktop importer.
+//! A stored Oura sync that already carries `--confirm-body-save` or
+//! `--scheduled` keeps the existing handwritten approval. `connect_oura` is
+//! not available here.
 //!
 //! This example calls `cancel` immediately after `start` so the sequence is
 //! visible. Delete that call to let the attempt finish.
@@ -39,7 +41,9 @@ use std::path::PathBuf;
 use solstone_core_generate::Cancellation;
 use solstone_core_generate_wire::{EndpointRuntime, respond};
 use solstone_core_import::WorkStop;
-use solstone_core_import_host::call::{ImportSeams, preview, start};
+use solstone_core_import_host::call::{
+    BodyAdmission, ImportSeams, classify_arguments, preview, start,
+};
 use solstone_core_import_host::pdf_in_process::InProcessPdfWorker;
 use solstone_core_import_host::registry::IndexScan;
 
@@ -58,6 +62,16 @@ fn main() {
         import_args.push("--help".to_owned());
     }
     let journal = PathBuf::from(journal);
+    let class = classify_arguments(&import_args).unwrap_or_else(|error| {
+        eprintln!("{error}");
+        std::process::exit(2);
+    });
+    if class.body == BodyAdmission::Held {
+        eprintln!("Apple Health import, Oura sync, and Oura connect stay on the desktop importer.");
+        std::process::exit(1);
+    }
+    // `class.sync_source` and `class.explicit_path` are the saved-settings
+    // decision. This example does not load a journal config path.
     let stop = WorkStop::new();
     let seams = embedded_seams(&journal, PathBuf::from(library), stop.clone());
     let previewed = preview(&import_args, &journal, &seams);
