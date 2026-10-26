@@ -19,6 +19,7 @@ import build_backup
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts"))
 import package_mobile_pdfium
+import package_mobile_media
 
 
 def sha256(path: pathlib.Path) -> str:
@@ -270,6 +271,12 @@ def main() -> int:
         / "derived/Build/Intermediates.noindex/JournalRuntimeDev.build/Debug-iphoneos"
     )
     app = products / "JournalRuntimeDev.app"
+    media_manifest = None
+    payload_source = ROOT / "tools/ios-runtime/Resources/JournalPayload"
+    if args.bundle_identifier == "app.solstone.journal.owner.dev" or (payload_source / "media-models.json").exists():
+        media_manifest = package_mobile_media.verify_payload(ROOT, payload_source)
+        for bundle in [app, app / "Extensions/JournalWorker.appex"]:
+            package_mobile_media.verify_directory(bundle / "JournalPayload", media_manifest)
     backup_record, backup_archive = build_backup.validate_output(args.backup_work.resolve())
     if build_backup.read_regular(args.backup_lib, 256 * 1024 * 1024) != backup_archive:
         raise ValueError("linked backup archive differs from its measured recipe")
@@ -421,9 +428,17 @@ def main() -> int:
         raise ValueError("codesigning changed a receipt-bound appraisal member")
     for bundle in [app, app / "Extensions/JournalWorker.appex"]:
         build_backup.confirm_resource(bundle / "BackupRuntime", backup_record)
+        if media_manifest:
+            package_mobile_media.verify_directory(bundle / "JournalPayload", media_manifest)
     subprocess.run(["codesign", "--verify", "--deep", "--strict", str(app)], check=True)
     if sha256(pdfium_framework / "PDFium") != signed_pdfium_sha256:
         raise ValueError("containing app signing changed the PDFium framework")
+    if media_manifest:
+        (args.build_root / "media-package-receipt.json").write_text(json.dumps({
+            "schema": "solstone.mobile-media-package.v1",
+            "manifest": media_manifest,
+            "bundles": ["JournalRuntimeDev.app/JournalPayload", "JournalRuntimeDev.app/Extensions/JournalWorker.appex/JournalPayload"],
+        }, indent=2) + "\n")
     (args.build_root / "pdfium-package-receipt.json").write_text(json.dumps({
         "schema": "solstone.mobile-pdfium-package.v1",
         "staging_receipt_sha256": sha256(args.pdfium_dir / "receipt.json"),

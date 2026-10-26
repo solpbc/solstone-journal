@@ -8,9 +8,11 @@ from provenance import source_manifest
 from audio_package import audio_package
 sys.path.insert(0,str(pathlib.Path(__file__).resolve().parents[2]/'scripts'))
 import package_mobile_pdfium
-p=argparse.ArgumentParser(); p.add_argument('--root',required=True); p.add_argument('--sdk',required=True); p.add_argument('--java',required=True); p.add_argument('--application-id', default='app.solstone.development.journal'); p.add_argument('--debug-keystore',required=True,type=pathlib.Path); p.add_argument('--owner-app',action='store_true'); p.add_argument('--version-code',type=int,default=1); p.add_argument('--audio-model',type=pathlib.Path); p.add_argument('--asset-catalog',type=pathlib.Path); args=p.parse_args()
+import package_mobile_media
+p=argparse.ArgumentParser(); p.add_argument('--root',required=True); p.add_argument('--sdk',required=True); p.add_argument('--java',required=True); p.add_argument('--application-id', default='app.solstone.development.journal'); p.add_argument('--debug-keystore',required=True,type=pathlib.Path); p.add_argument('--owner-app',action='store_true'); p.add_argument('--version-code',type=int,default=1); p.add_argument('--audio-model',type=pathlib.Path); p.add_argument('--asset-catalog',type=pathlib.Path); p.add_argument('--screen-ocr-models',type=pathlib.Path,default=os.environ.get('SCREEN_OCR_MODELS_DIR')); p.add_argument('--detector-model',type=pathlib.Path,default=os.environ.get('RFDETR_MODEL')); args=p.parse_args()
 if args.version_code < 1: p.error('positive version code required')
 if args.owner_app and (not args.audio_model or not args.asset_catalog): p.error('owner builds require the pinned speech model and current native asset catalog')
+if args.owner_app and not args.screen_ocr_models: p.error('owner builds require the pinned screen OCR model directory')
 if not re.fullmatch(r'[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+', args.application_id): p.error('invalid application id')
 key=args.debug_keystore.resolve(strict=True)
 if not key.is_file(): p.error('regular retained debug keystore required')
@@ -18,6 +20,7 @@ root=pathlib.Path(args.root).resolve(); sdk=pathlib.Path(args.sdk); java=pathlib
 (build/'source-manifest.json').write_text(json.dumps(source_manifest(root.parents[1]),indent=2)+'\n')
 tools=sdk/'build-tools/35.0.0'; jar=sdk/'platforms/android-36/android.jar'; commands=[]
 audio_manifest,audio_members=audio_package(root.parents[1],args.audio_model,args.asset_catalog) if args.owner_app else (None,[])
+media_manifest,media_members=package_mobile_media.media_package(root.parents[1],args.detector_model or root.parents[1]/'core/models/assets/rfdetr/rfdetr-nano-f16.gguf',args.screen_ocr_models) if args.owner_app else (None,[])
 pdfium=root/'build/pdfium'
 pdfium_members=package_mobile_pdfium.android_members(pdfium,root)
 def run(argv):
@@ -27,6 +30,7 @@ def run(argv):
   if out.returncode: raise RuntimeError(commands[-1])
 run([sys.executable,root/'tests/test_audio_package.py'])
 run([sys.executable,root.parents[1]/'scripts/test_mobile_pdfium.py'])
+run([sys.executable,root.parents[1]/'scripts/test_mobile_media.py'])
 classes=build/'classes'; dex=build/'dex'; host_classes=build/'host-tests'
 for generated in [classes,dex,host_classes]:
   if generated.exists():shutil.rmtree(generated)
@@ -80,6 +84,9 @@ with zipfile.ZipFile(unsigned,'a',compression=zipfile.ZIP_DEFLATED) as z:
   if audio_manifest:
     z.writestr('assets/audio-models/manifest.json',json.dumps(audio_manifest,sort_keys=True))
     for source,name in audio_members: z.write(source,name)
+  if media_manifest:
+    z.writestr('assets/journal-payload/media-models.json',json.dumps(media_manifest,sort_keys=True))
+    for source,name in media_members: z.write(source,'assets/journal-payload/'+name)
   for native in sorted((root/'lib').rglob('*.so')): z.write(native,str(native.relative_to(root)))
   for source,name in pdfium_members: z.write(source,name)
   for asset in sorted((root/'assets').rglob('*')):
@@ -87,7 +94,9 @@ with zipfile.ZipFile(unsigned,'a',compression=zipfile.ZIP_DEFLATED) as z:
   payload=root.parents[1]/'core/payload'
   for asset in sorted((payload/'solstone').rglob('*')):
     if asset.is_file(): z.write(asset,'assets/journal-payload/'+str(asset.relative_to(payload)))
-with zipfile.ZipFile(unsigned) as z: package_mobile_pdfium.verify_android_archive(pdfium,z)
+with zipfile.ZipFile(unsigned) as z:
+  package_mobile_pdfium.verify_android_archive(pdfium,z)
+  if media_manifest: package_mobile_media.verify_archive(z,media_manifest,'assets/journal-payload/')
 aligned=build/'aligned.apk'; run([tools/'zipalign','-P','16','-f','4',unsigned,aligned])
 signed=build/'journal-process-runtime.apk'
 run([tools/'apksigner','sign','--ks',key,'--ks-pass','pass:android','--key-pass','pass:android','--ks-key-alias','androiddebugkey','--out',signed,aligned])
@@ -98,9 +107,10 @@ run([tools/'zipalign','-c','-P','16','-v','4',signed])
 members=[]
 with zipfile.ZipFile(signed) as z:
   package_mobile_pdfium.verify_android_archive(pdfium,z)
+  if media_manifest: package_mobile_media.verify_archive(z,media_manifest,'assets/journal-payload/')
   for i in z.infolist():
     with z.open(i) as source: member_digest=hashlib.file_digest(source,'sha256').hexdigest()
     members.append({'name':i.filename,'bytes':i.file_size,'compressed_bytes':i.compress_size,'sha256':member_digest})
 with signed.open('rb') as stream: apk_digest=hashlib.file_digest(stream,'sha256').hexdigest()
-(build/'artifact-manifest.json').write_text(json.dumps({'application_id':args.application_id,'owner_app':args.owner_app,'version_code':args.version_code,'signer_sha256':signers[0],'apk':str(signed),'apk_sha256':apk_digest,'pdfium_receipt_sha256':hashlib.sha256((pdfium/'receipt.json').read_bytes()).hexdigest(),'members':members},indent=2))
+(build/'artifact-manifest.json').write_text(json.dumps({'application_id':args.application_id,'owner_app':args.owner_app,'version_code':args.version_code,'signer_sha256':signers[0],'apk':str(signed),'apk_sha256':apk_digest,'pdfium_receipt_sha256':hashlib.sha256((pdfium/'receipt.json').read_bytes()).hexdigest(),'media_models':media_manifest,'members':members},indent=2))
 print(json.dumps({'application_id':args.application_id,'signer_sha256':signers[0],'apk':str(signed),'apk_sha256':apk_digest,'commands':len(commands)}))

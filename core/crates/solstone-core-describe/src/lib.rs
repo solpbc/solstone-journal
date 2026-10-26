@@ -13,6 +13,7 @@ mod hash;
 mod merge;
 mod notify;
 pub mod pipeline;
+mod publication;
 pub mod request;
 pub(crate) mod screen_ocr;
 pub mod selection;

@@ -23,6 +23,8 @@ pub(crate) const PINNED_MODELS_DETAIL: &str = "pinned PP-OCRv6 models were not a
 
 const ENGINE_FAILED_DETAIL: &str = "screen-ocr engine failed after the pinned models were admitted";
 
+const MODEL_SUBDIR: &str = "lib/solstone-screen-ocr/models";
+
 const RECIPE_ID: &str = "mobile-screen-ocr";
 
 const DETECTOR_NAME: &str = "detector.onnx";
@@ -88,6 +90,10 @@ impl OcrWorkerFactory for ScreenOcrFactory {
         Ok(Some(Box::new(ScreenOcrWorker {
             models,
             engine: None,
+            pool: rayon::ThreadPoolBuilder::new()
+                .num_threads(1)
+                .build()
+                .map_err(|_| OcrFailure::Unavailable)?,
             detail: Rc::clone(&self.detail),
         })))
     }
@@ -106,6 +112,7 @@ struct AdmittedModels {
 struct ScreenOcrWorker {
     models: AdmittedModels,
     engine: Option<OAROCR>,
+    pool: rayon::ThreadPool,
     detail: Rc<Cell<&'static str>>,
 }
 
@@ -134,8 +141,9 @@ impl OcrWorker for ScreenOcrWorker {
             .decode()
             .map_err(|_| self.engine_unavailable())?
             .to_rgb8();
-        let predicted = engine
-            .predict(vec![image])
+        let predicted = self
+            .pool
+            .install(|| engine.predict(vec![image]))
             .map_err(|_| self.engine_unavailable())?;
         let Some(result) = predicted.first() else {
             return Err(self.engine_unavailable());
@@ -167,7 +175,7 @@ impl OcrWorker for ScreenOcrWorker {
 fn model_directory(payload: &Path) -> PathBuf {
     match std::env::var_os("SOLSTONE_SCREEN_OCR_MODELS") {
         Some(path) => PathBuf::from(path),
-        None => payload.join("lib/solstone-screen-ocr/models"),
+        None => payload.join(MODEL_SUBDIR),
     }
 }
 

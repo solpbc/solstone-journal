@@ -12,7 +12,6 @@ use std::env;
 #[cfg(feature = "rfdetr-native")]
 use std::fs;
 use std::path::Path;
-#[cfg(feature = "rfdetr-native")]
 use std::path::PathBuf;
 use std::sync::Mutex;
 
@@ -24,11 +23,16 @@ use sha2::{Digest, Sha256};
 const MODEL_SIZE: u64 = 63_439_488;
 #[cfg(feature = "rfdetr-native")]
 const MODEL_SHA256: &str = "d798cc448faa53209b88fc905c91beb1dd104634b95f6948cc4877540a8fd3ee";
+const PACKAGED_MODEL: &str = "lib/solstone-rfdetr/models/rfdetr-nano-f16.gguf";
+#[cfg(any(test, feature = "rfdetr-native"))]
 const THRESHOLD: f32 = 0.25;
+#[cfg(any(test, feature = "rfdetr-native"))]
 const TOP_K: u32 = 300;
+#[cfg(any(test, feature = "rfdetr-native"))]
 const THREADS: u32 = 4;
 
 /// Desktop and mobile detection use one threshold, thread count, and top-k.
+#[cfg(any(test, feature = "rfdetr-native"))]
 pub(crate) fn detection_call() -> (f32, u32, u32) {
     (THRESHOLD, THREADS, TOP_K)
 }
@@ -36,6 +40,7 @@ pub(crate) fn detection_call() -> (f32, u32, u32) {
 /// Shared depict `Detector` and describe screen hook. One native context per job.
 pub struct RfdetrDetector {
     journal: std::path::PathBuf,
+    packaged_model: Option<PathBuf>,
     context: Mutex<Option<Loaded>>,
 }
 
@@ -48,16 +53,38 @@ impl RfdetrDetector {
     pub fn new(journal: &Path) -> Self {
         Self {
             journal: journal.to_path_buf(),
+            packaged_model: None,
             context: Mutex::new(None),
         }
+    }
+
+    pub(crate) fn from_payload(journal: &Path, payload: &Path) -> Self {
+        let mut detector = Self::new(journal);
+        let packaged = payload.join(PACKAGED_MODEL);
+        let absent = |path: &Path| matches!(std::fs::symlink_metadata(path), Err(error) if error.kind() == std::io::ErrorKind::NotFound);
+        if !absent(&payload.join("media-models.json")) || !absent(&packaged) {
+            detector.packaged_model = Some(packaged);
+        }
+        detector
+    }
+
+    #[cfg(any(feature = "rfdetr-native", all(test, feature = "full-tests")))]
+    fn selected_model(&self, fallback: impl FnOnce() -> PathBuf) -> PathBuf {
+        self.packaged_model.clone().unwrap_or_else(fallback)
     }
 
     /// Raw detector JSON with `image` and `detections`. Never `Ok` of an absent run.
     pub fn detect_value(&self, png: &[u8], journal: &Path) -> Result<Value, String> {
         #[cfg(not(feature = "rfdetr-native"))]
         {
-            let _ = (&self.context, &self.journal, png, journal);
-            return Err("rfdetr native library is not linked".to_owned());
+            let _ = (
+                &self.context,
+                &self.journal,
+                &self.packaged_model,
+                png,
+                journal,
+            );
+            Err("rfdetr native library is not linked".to_owned())
         }
         #[cfg(feature = "rfdetr-native")]
         {
@@ -67,7 +94,7 @@ impl RfdetrDetector {
                 .lock()
                 .map_err(|_| "rfdetr context lock poisoned".to_owned())?;
             if guard.is_none() {
-                let path = model_path(journal);
+                let path = self.selected_model(|| model_path(journal));
                 admit_model(&path)?;
                 let c_path = std::ffi::CString::new(path.to_string_lossy().as_bytes())
                     .map_err(|_| "rfdetr model path is not a C string".to_owned())?;
@@ -230,5 +257,43 @@ mod tests {
         assert_eq!(threshold, 0.25);
         assert_eq!(threads, 4);
         assert_eq!(top_k, 300);
+    }
+
+    #[cfg(all(test, feature = "full-tests"))]
+    #[test]
+    fn unpackaged_lookup_and_declared_bundle_selection_remain_distinct() {
+        let temp = tempfile::tempdir().unwrap();
+        let journal = temp.path().join("journal");
+        let payload = temp.path().join("payload");
+        std::fs::create_dir(&payload).unwrap();
+        let override_path = temp.path().join("external.gguf");
+        let unpackaged = super::RfdetrDetector::from_payload(&journal, &payload);
+        assert_eq!(
+            unpackaged.selected_model(|| override_path.clone()),
+            override_path
+        );
+        let installed = journal.join("installed-model.gguf");
+        assert_eq!(unpackaged.selected_model(|| installed.clone()), installed);
+
+        std::fs::write(payload.join("media-models.json"), b"{}").unwrap();
+        let missing = super::RfdetrDetector::from_payload(&journal, &payload);
+        let bundled = payload.join(super::PACKAGED_MODEL);
+        assert_eq!(
+            missing.selected_model(|| panic!("declared bundle must not fall back")),
+            bundled
+        );
+        std::fs::create_dir_all(bundled.parent().unwrap()).unwrap();
+        std::fs::write(&bundled, b"corrupt model").unwrap();
+        let corrupt = super::RfdetrDetector::from_payload(&journal, &payload);
+        assert_eq!(
+            corrupt.selected_model(|| panic!("corrupt bundle must not fall back")),
+            bundled
+        );
+        std::fs::remove_file(payload.join("media-models.json")).unwrap();
+        let present = super::RfdetrDetector::from_payload(&journal, &payload);
+        assert_eq!(
+            present.selected_model(|| panic!("present bundle must not fall back")),
+            bundled
+        );
     }
 }

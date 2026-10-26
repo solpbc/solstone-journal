@@ -58,7 +58,7 @@ pub fn persist_owner_stop(root: &JournalRoot) -> Result<(), String> {
 }
 
 static HOST_ACTIVE: AtomicBool = AtomicBool::new(false);
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 static TEST_LOCK: Mutex<()> = Mutex::new(());
 #[cfg(all(test, feature = "full-tests"))]
 static DESCRIBE_CANCEL_AT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
@@ -147,7 +147,7 @@ struct HostWireClient<'a> {
 }
 impl WireClient for HostWireClient<'_> {
     fn execute(&self, request: &GenerateRequest) -> Result<GenerateResponse, ClientError> {
-        if (self.checkpoint)() {
+        if (self.checkpoint)() || !media_work_permitted(self.generator, self.priority) {
             return Ok(GenerateResponse::Cancelled);
         }
         if let Some(executor) = self.generator.injected.as_ref() {
@@ -167,7 +167,15 @@ impl WireClient for HostWireClient<'_> {
         .map_err(ClientError::Decode)
     }
 }
+
+fn media_work_permitted(generator: &HostGenerator, priority: WorkPriority) -> bool {
+    solstone_core_system::work_policy::WorkPolicy::read(generator.root.canonical_path())
+        .is_ok_and(|policy| policy.permits(priority.band))
+}
+
+#[cfg(test)]
 struct NoDetector;
+#[cfg(test)]
 impl solstone_core_depict::Detector for NoDetector {
     fn detect(&self, _: &[u8]) -> Result<Option<Value>, String> {
         Ok(None)
@@ -238,7 +246,10 @@ impl DescribeSession for InProcessDescribeSession<'_> {
                 SessionReceiveError::TimedOut
             });
         };
-        if self.closed.load(Ordering::Acquire) || (self.checkpoint)() {
+        if self.closed.load(Ordering::Acquire)
+            || (self.checkpoint)()
+            || !media_work_permitted(self.generator, self.priority)
+        {
             return Ok(SessionCompletion::Response(GenerateResponse::Cancelled));
         }
         let executed = if let Some(executor) = self.generator.injected.as_ref() {
@@ -321,6 +332,7 @@ fn map_depict(
 
 fn depict_job(
     journal: &Path,
+    payload: &Path,
     input: &Path,
     wire: &HostWireClient<'_>,
     checkpoint: &dyn Fn() -> bool,
@@ -341,7 +353,7 @@ fn depict_job(
             attempt,
         ));
     }
-    let detector = crate::rfdetr::RfdetrDetector::new(journal);
+    let detector = crate::rfdetr::RfdetrDetector::from_payload(journal, payload);
     map_depict(solstone_core_depict::run_with_clients_and_checkpoint(
         input, false, wire, &detector, checkpoint, attempt,
     ))
@@ -840,6 +852,15 @@ impl SenseExecutor for HostSenseExecutor {
         attempt: Option<&solstone_core_system::work_retry::Attempt>,
         stop: &AtomicBool,
     ) -> SenseJobResult {
+        let interrupted = || (self.cancelled)() || stop.load(Ordering::Acquire);
+        let accepted = if matches!(handler, "depict" | "describe") {
+            match crate::custody::AcceptedInput::capture(&self.journal, input, &interrupted) {
+                Ok(Some(accepted)) => Some(accepted),
+                _ => return SenseJobResult::Hold,
+            }
+        } else {
+            None
+        };
         let checkpoint = || {
             #[cfg(all(test, feature = "full-tests"))]
             if handler == "describe" {
@@ -857,10 +878,10 @@ impl SenseExecutor for HostSenseExecutor {
                     return true;
                 }
             }
-            (self.cancelled)()
-                || stop.load(Ordering::Acquire)
-                || ((handler == "depict" || handler == "describe")
-                    && !crate::custody::accepted_input(&self.journal, input).unwrap_or(false))
+            interrupted()
+                || accepted
+                    .as_ref()
+                    .is_some_and(|accepted| !accepted.still_current(input))
         };
         if checkpoint() || !solstone_core_system::processing::processing_allowed(&self.journal) {
             return SenseJobResult::Hold;
@@ -889,7 +910,7 @@ impl SenseExecutor for HostSenseExecutor {
                 WorkBand::Completing
             };
         }
-        if handler == "depict"
+        if matches!(handler, "depict" | "describe")
             && !solstone_core_system::work_policy::WorkPolicy::read(&self.journal)
                 .is_ok_and(|policy| policy.permits(priority.band))
         {
@@ -898,6 +919,7 @@ impl SenseExecutor for HostSenseExecutor {
         let result = match handler {
             "depict" => depict_job(
                 &self.journal,
+                &self.payload,
                 input,
                 &HostWireClient {
                     generator: &self.generator,
@@ -964,7 +986,7 @@ impl HostSenseExecutor {
             priority,
         };
         let mut ocr = crate::screen_ocr::ScreenOcrFactory::new(&self.payload);
-        let detector = crate::rfdetr::RfdetrDetector::new(&self.journal);
+        let detector = crate::rfdetr::RfdetrDetector::from_payload(&self.journal, &self.payload);
         match solstone_core_describe::pipeline::run_with_clients(
             solstone_core_describe::pipeline::DescribeOptions {
                 video: input,
@@ -2959,7 +2981,13 @@ mod tests {
         )
     }
 
-    fn reset_describe_probes() -> std::sync::MutexGuard<'static, ()> {
+    fn reset_describe_probes() -> (
+        std::sync::MutexGuard<'static, ()>,
+        std::sync::MutexGuard<'static, ()>,
+    ) {
+        let host = TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner());
         let guard = super::DESCRIBE_TEST_LOCK
             .lock()
             .unwrap_or_else(|poison| poison.into_inner());
@@ -2971,7 +2999,7 @@ mod tests {
         *super::TEST_DEPICT_DETECTION
             .lock()
             .unwrap_or_else(|poison| poison.into_inner()) = None;
-        guard
+        (guard, host)
     }
 
     fn jsonl_rows(path: &Path) -> Vec<Value> {
@@ -3006,11 +3034,12 @@ mod tests {
     }
 
     fn assert_no_index_hint(journal: &Path) {
-        let todo = journal.join("indexer/todo");
-        if todo.is_dir() {
-            let hints = fs::read_dir(&todo).unwrap().count();
-            assert_eq!(hints, 0, "describe must not enqueue a success screen text");
-        }
+        let status = solstone_core_indexer_store::todo::inspect(journal).unwrap();
+        assert!(
+            status.keys.is_empty(),
+            "describe must not enqueue a success screen text: {:?}",
+            status.keys
+        );
     }
 
     fn ocr_sidecar(segment: &Path) -> Value {
@@ -3113,6 +3142,93 @@ mod tests {
                 }
             })
         )
+    }
+
+    #[test]
+    fn describe_history_requires_permission_and_import_is_admitted() {
+        let _probes = reset_describe_probes();
+        let (temp, payload) = setup_test_journal();
+        let config_path = temp.path().join("config/journal.json");
+        let mut config: Value = serde_json::from_slice(&fs::read(&config_path).unwrap()).unwrap();
+        config["processing"]["history_confirmed"] = json!(false);
+        fs::write(&config_path, config.to_string()).unwrap();
+        let policy = solstone_core_system::work_policy::WorkPolicy::read(temp.path()).unwrap();
+        assert_eq!(
+            policy.lane,
+            solstone_core_system::work_policy::ThinkingLane::OwnKeys
+        );
+        let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let count = Arc::clone(&calls);
+        let host = open_executor(
+            temp.path(),
+            &payload,
+            Arc::new(move |request: &GenerateRequest| {
+                count.fetch_add(1, Ordering::SeqCst);
+                StubGenerateExecutor.execute(request)
+            }),
+        );
+        let segment = segment_dir(temp.path(), "history-policy");
+        let video = admit_copy(&segment, &probe_mp4());
+        assert_eq!(run_handler(&host, "describe", &video), SenseJobResult::Hold);
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+        assert!(!video.with_extension("jsonl").exists());
+
+        let mut executor = host.executor();
+        Arc::get_mut(&mut executor).unwrap().admitted_priority = Some(WorkPriority {
+            band: WorkBand::Import,
+            source_time: 0,
+        });
+        assert_eq!(
+            executor.execute(
+                "describe",
+                &video,
+                &context_for(&video),
+                None,
+                &AtomicBool::new(false)
+            ),
+            SenseJobResult::Finished(0)
+        );
+        assert!(calls.load(Ordering::SeqCst) > 0);
+
+        let confirmed_segment = segment_dir(temp.path(), "history-confirmed");
+        let confirmed = admit_copy(&confirmed_segment, &probe_mp4());
+        config["processing"]["history_confirmed"] = json!(true);
+        fs::write(&config_path, config.to_string()).unwrap();
+        assert_eq!(
+            run_handler(&host, "describe", &confirmed),
+            SenseJobResult::Finished(0)
+        );
+    }
+
+    #[test]
+    fn describe_rechecks_spending_permission_before_each_request() {
+        let _probes = reset_describe_probes();
+        let (temp, payload) = setup_test_journal();
+        let config_path = temp.path().join("config/journal.json");
+        let path = config_path.clone();
+        let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let count = Arc::clone(&calls);
+        let host = open_executor(
+            temp.path(),
+            &payload,
+            Arc::new(move |request: &GenerateRequest| {
+                count.fetch_add(1, Ordering::SeqCst);
+                let mut config: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+                config["processing"]["history_confirmed"] = json!(false);
+                fs::write(&path, config.to_string()).unwrap();
+                StubGenerateExecutor.execute(request)
+            }),
+        );
+        let segment = segment_dir(temp.path(), "revoke-history");
+        let video = admit_copy(&segment, &corpus("mixed_vp8_screen.webm"));
+        assert_ne!(
+            run_handler(&host, "describe", &video),
+            SenseJobResult::Finished(0)
+        );
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        assert!(!video.with_extension("jsonl").exists());
+        assert_no_screen_text(&segment);
+        assert_no_index_hint(temp.path());
     }
 
     #[test]
@@ -3264,6 +3380,7 @@ mod tests {
         assert_no_screen_text(&segment);
         assert_no_index_hint(temp.path());
 
+        drop(host);
         super::DESCRIBE_CANCEL_AT.store(0, Ordering::SeqCst);
         super::DESCRIBE_POLLS.store(0, Ordering::SeqCst);
         let between = segment_dir(temp.path(), "between-units");
@@ -3272,6 +3389,10 @@ mod tests {
         assert_eq!(
             run_handler(&host, "describe", &second),
             SenseJobResult::Hold
+        );
+        assert!(
+            super::DESCRIBE_CANCEL_AT.load(Ordering::SeqCst) > 0,
+            "the second case must enter Generate before cancellation"
         );
         assert!(!second.with_extension("jsonl").exists());
         assert_no_index_hint(temp.path());
@@ -3314,12 +3435,9 @@ mod tests {
     #[test]
     fn depict_still_records_detection_error_without_the_native_library() {
         let _probes = reset_describe_probes();
-        let _lock = TEST_LOCK
-            .lock()
-            .unwrap_or_else(|poison| poison.into_inner());
         let (temp, payload) = setup_test_journal();
         let host = open_stub(temp.path(), &payload);
-        let segment = segment_dir(temp.path(), "still");
+        let segment = segment_dir(temp.path(), "120001_1");
         let image = segment.join("depict.png");
         write_image(&image);
         assert_eq!(
@@ -3343,9 +3461,6 @@ mod tests {
     #[test]
     fn depict_records_detections_only_when_the_adapter_returns_some() {
         let _probes = reset_describe_probes();
-        let _lock = TEST_LOCK
-            .lock()
-            .unwrap_or_else(|poison| poison.into_inner());
         let (temp, payload) = setup_test_journal();
         *super::TEST_DEPICT_DETECTION
             .lock()
@@ -3354,7 +3469,7 @@ mod tests {
             "detections": [{"class_id": 85, "score": 0.8}]
         }));
         let host = open_stub(temp.path(), &payload);
-        let segment = segment_dir(temp.path(), "detected");
+        let segment = segment_dir(temp.path(), "120002_1");
         let image = segment.join("depict.png");
         write_image(&image);
         assert_eq!(

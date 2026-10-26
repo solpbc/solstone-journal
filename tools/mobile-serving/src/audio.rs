@@ -119,7 +119,7 @@ struct HostAudioConfig {
 }
 
 impl AudioWorker {
-    #[cfg(test)]
+    #[cfg(all(test, feature = "full-tests"))]
     pub fn start(
         root: PathBuf,
         models: PathBuf,
