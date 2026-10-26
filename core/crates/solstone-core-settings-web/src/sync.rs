@@ -24,13 +24,8 @@ pub async fn get(journal_root: PathBuf) -> Response {
         .expect("session gate handled corrupt config")
         .config
         .unwrap_or_default();
-    let configured_token = config
-        .get("env")
-        .and_then(Value::as_object)
-        .and_then(|values| values.get("PLAUD_ACCESS_TOKEN"))
-        .is_some_and(truthy);
     json_response(json!({
-        "plaud": status(schedules.get("sync:plaud"), configured_token || std::env::var_os("PLAUD_ACCESS_TOKEN").is_some_and(|value| !value.is_empty())),
+        "plaud": status(schedules.get("sync:plaud"), source_sync_plaud_available(&config)),
         "obsidian": status(schedules.get("sync:obsidian"), true),
     }))
 }
@@ -41,12 +36,10 @@ fn status(entry: Option<&Value>, available: bool) -> Value {
 }
 
 pub async fn update(journal_root: PathBuf, body: Bytes) -> Response {
-    let JsonBody::Value(Value::Object(request)) = json_body(body) else {
-        return missing_request_body();
+    let changes = match parse_sync_update(body) {
+        Ok(changes) => changes,
+        Err(error) => return *error,
     };
-    if request.is_empty() {
-        return missing_request_body();
-    }
     let path = journal_root.join("config/schedules.json");
     let _lock = match hold_lock(&path, LockOptions::default()) {
         Ok(lock) => lock,
@@ -58,27 +51,20 @@ pub async fn update(journal_root: PathBuf, body: Bytes) -> Response {
         _ => return settings_operation_failed(),
     };
     let mut changed_fields = serde_json::Map::new();
-    for (service, entry_name) in [("plaud", "sync:plaud"), ("obsidian", "sync:obsidian")] {
-        if let Some(value) = request.get(service) {
-            let Some(value) = value.as_object() else {
-                return invalid_config_value(format!("{service} must be an object"));
-            };
-            if let Some(enabled) = value.get("enabled") {
-                let Some(enabled) = enabled.as_bool() else {
-                    return invalid_config_value(format!("{service}.enabled must be a boolean"));
-                };
-                let old_entry = schedules.get(entry_name).and_then(Value::as_object);
-                let old_enabled = old_entry
-                    .and_then(|entry| entry.get("enabled"))
-                    .and_then(Value::as_bool)
-                    .unwrap_or(old_entry.is_some());
-                if enabled != old_enabled {
-                    let entry = schedules.entry(entry_name.to_owned()).or_insert_with(|| json!({"cmd":["solstone","journal","importer","--sync",service,"--save"],"every":"hourly"}));
-                    let target = entry.as_object_mut().expect("created object");
-                    target.insert("enabled".to_owned(), Value::Bool(enabled));
-                    changed_fields.insert(format!("{service}.enabled"), Value::Bool(enabled));
-                }
-            }
+    for (service, enabled) in changes {
+        let entry_name = format!("sync:{service}");
+        let old_entry = schedules.get(&entry_name).and_then(Value::as_object);
+        let old_enabled = old_entry
+            .and_then(|entry| entry.get("enabled"))
+            .and_then(Value::as_bool)
+            .unwrap_or(old_entry.is_some());
+        if enabled != old_enabled {
+            let entry = schedules.entry(entry_name).or_insert_with(|| json!({"cmd":["solstone","journal","importer","--sync",service,"--save"],"every":"hourly"}));
+            entry
+                .as_object_mut()
+                .expect("created object")
+                .insert("enabled".into(), Value::Bool(enabled));
+            changed_fields.insert(format!("{service}.enabled"), Value::Bool(enabled));
         }
     }
     if !changed_fields.is_empty()
@@ -109,4 +95,62 @@ pub async fn update(journal_root: PathBuf, body: Bytes) -> Response {
         return settings_operation_failed();
     }
     get(journal_root).await
+}
+
+pub fn source_sync_plaud_available(config: &serde_json::Map<String, Value>) -> bool {
+    config
+        .get("env")
+        .and_then(Value::as_object)
+        .and_then(|values| values.get("PLAUD_ACCESS_TOKEN"))
+        .is_some_and(truthy)
+        || std::env::var_os("PLAUD_ACCESS_TOKEN").is_some_and(|value| !value.is_empty())
+}
+
+pub fn parse_sync_update(body: Bytes) -> Result<Vec<(&'static str, bool)>, Box<Response>> {
+    let JsonBody::Value(Value::Object(request)) = json_body(body) else {
+        return Err(Box::new(missing_request_body()));
+    };
+    if request.is_empty() {
+        return Err(Box::new(missing_request_body()));
+    }
+    let mut changes = Vec::new();
+    for service in ["plaud", "obsidian"] {
+        if let Some(value) = request.get(service) {
+            let Some(value) = value.as_object() else {
+                return Err(Box::new(invalid_config_value(format!(
+                    "{service} must be an object"
+                ))));
+            };
+            if let Some(enabled) = value.get("enabled") {
+                let Some(enabled) = enabled.as_bool() else {
+                    return Err(Box::new(invalid_config_value(format!(
+                        "{service}.enabled must be a boolean"
+                    ))));
+                };
+                changes.push((service, enabled));
+            }
+        }
+    }
+    Ok(changes)
+}
+
+pub(crate) async fn get_routed(
+    root: PathBuf,
+    delegate: Option<axum::Extension<crate::SourceSyncDelegate>>,
+) -> Response {
+    match delegate {
+        Some(axum::Extension(delegate)) => delegate.get().await,
+        None => get(root).await,
+    }
+}
+
+pub(crate) async fn update_routed(
+    root: PathBuf,
+    delegate: Option<axum::Extension<crate::SourceSyncDelegate>>,
+    body: Bytes,
+) -> Response {
+    match delegate {
+        Some(axum::Extension(delegate)) => delegate.update(body).await,
+        None => update(root, body).await,
+    }
 }

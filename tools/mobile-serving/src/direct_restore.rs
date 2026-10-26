@@ -198,14 +198,18 @@ fn stopped(stop: &watch::Receiver<bool>) -> bool {
 }
 
 pub(crate) async fn run(control: Arc<ServiceControl>, permanent: watch::Receiver<bool>) {
+    let retained_root = Arc::clone(&control.root);
     run_with(
         control,
         permanent,
         "embedded direct agent service stopped",
-        |root, stop| async move {
-            solstone_core_mcp_endpoint::run_embedded_direct_doors(root, stop)
-                .await
-                .map_err(|error| error.class().to_owned())
+        move |_path, stop| {
+            let root = Arc::clone(&retained_root);
+            async move {
+                solstone_core_mcp_endpoint::run_embedded_direct_doors(root, stop)
+                    .await
+                    .map_err(|error| error.class().to_owned())
+            }
         },
     )
     .await;

@@ -64,6 +64,7 @@ enum Operation {
     },
     RemoveRecurrence(String),
     Source(sources::SourceOperation),
+    SettingsSync(Option<Vec<(&'static str, bool)>>),
 }
 
 struct Job {
@@ -94,13 +95,20 @@ pub fn routes_and_worker(
     root: Arc<JournalRoot>,
     payload: Option<PathBuf>,
     mut stop: watch::Receiver<bool>,
-) -> (Router, impl Future<Output = ()> + Send + 'static) {
+) -> (
+    Router,
+    impl Future<Output = ()> + Send + 'static,
+    solstone_core_settings_web::SourceSyncDelegate,
+) {
     let (sender, mut receiver) = mpsc::channel::<Job>(1);
     let ingress = OwnerIngress {
         sender,
         root: Arc::downgrade(&root),
         stop: stop.clone(),
     };
+    let settings_sync = solstone_core_settings_web::SourceSyncDelegate::new(Arc::new(
+        SettingsSync(ingress.clone()),
+    ));
     let schedule_routes = schedules::routes(ingress.clone());
     let routes = Router::new()
         .route("/api/journal/share", get(discover))
@@ -166,7 +174,26 @@ pub fn routes_and_worker(
             drop(lease);
         }
     };
-    (routes, worker)
+    (routes, worker, settings_sync)
+}
+
+struct SettingsSync(OwnerIngress);
+impl solstone_core_settings_web::SourceSyncAuthority for SettingsSync {
+    fn get(&self) -> solstone_core_settings_web::SourceSyncResponse {
+        let ingress = self.0.clone();
+        Box::pin(async move { submit_operation(ingress, Operation::SettingsSync(None)).await })
+    }
+    fn update(&self, body: axum::body::Bytes) -> solstone_core_settings_web::SourceSyncResponse {
+        let ingress = self.0.clone();
+        Box::pin(async move {
+            match solstone_core_settings_web::parse_sync_update(body) {
+                Ok(changes) => {
+                    submit_operation(ingress, Operation::SettingsSync(Some(changes))).await
+                }
+                Err(error) => *error,
+            }
+        })
+    }
 }
 
 async fn discover() -> Json<Value> {

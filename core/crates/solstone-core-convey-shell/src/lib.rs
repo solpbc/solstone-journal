@@ -372,6 +372,7 @@ pub struct EmbeddedConveyStop {
 /// receives signals only; the constructor retains the actual serving owner.
 #[cfg(feature = "host")]
 pub struct EmbeddedStartup {
+    pub settings_sync: Option<solstone_core_settings_web::SourceSyncDelegate>,
     pub cancelled: Arc<dyn Fn() -> bool + Send + Sync>,
     pub stop_ready: Arc<
         dyn Fn(EmbeddedConveyStop, solstone_core_backup_web::BackupRouteLifetime) + Send + Sync,
@@ -626,6 +627,13 @@ async fn bind_embedded_router(
     let admission = EmbeddedAdmission {
         stopped: renewal_stop.clone(),
         cancelled,
+    };
+    let app = match startup
+        .as_ref()
+        .and_then(|startup| startup.settings_sync.clone())
+    {
+        Some(delegate) => app.layer(Extension(delegate)),
+        None => app,
     };
     let router = app
         .layer(Extension(cache.clone()))

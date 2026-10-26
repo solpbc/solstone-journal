@@ -249,13 +249,17 @@ impl MobileServing {
         let owner_routes =
             solstone_core_mcp_endpoint::owner_routes(root.canonical_path().to_path_buf());
         #[cfg(feature = "processing")]
-        let (execution_routes, execution_worker) =
+        let (execution_routes, execution_worker, settings_sync) =
             execution::routes_and_worker(Arc::clone(&root), payload_root.clone(), stop.clone());
         #[cfg(feature = "processing")]
         let owner_routes = owner_routes.merge(execution_routes);
         let handle = runtime
             .block_on(async {
                 let startup = solstone_core_convey_shell::EmbeddedStartup {
+                    #[cfg(feature = "processing")]
+                    settings_sync: Some(settings_sync),
+                    #[cfg(not(feature = "processing"))]
+                    settings_sync: None,
                     cancelled: Arc::clone(&cancelled),
                     stop_ready: Arc::new(move |convey, backup| {
                         let signal = MobileServingStop {

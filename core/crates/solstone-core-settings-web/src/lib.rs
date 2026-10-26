@@ -28,6 +28,9 @@ mod retention_executor;
 mod state;
 mod storage;
 mod sync;
+mod sync_authority;
+pub use sync::{parse_sync_update, source_sync_plaud_available};
+pub use sync_authority::{SourceSyncAuthority, SourceSyncDelegate, SourceSyncResponse};
 mod transcribe;
 mod vision;
 
@@ -180,8 +183,16 @@ pub fn routes_with_lock_options(journal_root: PathBuf, config_lock_options: Lock
         )
         .route(
             "/app/settings/api/sync",
-            get(move || sync::get(sync_get_root.clone()))
-                .put(move |body| sync::update(sync_put_root.clone(), body)),
+            get(
+                move |delegate: Option<axum::Extension<SourceSyncDelegate>>| {
+                    sync::get_routed(sync_get_root.clone(), delegate)
+                },
+            )
+            .put(
+                move |delegate: Option<axum::Extension<SourceSyncDelegate>>, body| {
+                    sync::update_routed(sync_put_root.clone(), delegate, body)
+                },
+            ),
         )
         .route("/app/settings/api/icons", get(icons::search))
 }
