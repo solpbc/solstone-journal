@@ -81,6 +81,7 @@ struct Workers {
     handles: Vec<JoinHandle<()>>,
     pending: usize,
     closed: bool,
+    failed: bool,
 }
 
 /// Retains the installed route, its stop, and the threads that run it.
@@ -89,6 +90,7 @@ pub struct ImportRouteSlot {
     stop: WorkStop,
     closed: AtomicBool,
     workers: Mutex<Workers>,
+    retirement: Mutex<()>,
     workers_changed: Condvar,
     /// Import ids whose retained run has been accepted and has not finished.
     retained: Mutex<Vec<String>>,
@@ -110,8 +112,10 @@ impl ImportRouteSlot {
                 handles: Vec::new(),
                 pending: 0,
                 closed: false,
+                failed: false,
             }),
             workers_changed: Condvar::new(),
+            retirement: Mutex::new(()),
             retained: Mutex::new(Vec::new()),
             pause_before_spawn: AtomicBool::new(false),
             registration_waiting: AtomicBool::new(false),
@@ -327,14 +331,27 @@ impl ImportRouteSlot {
         Ok(())
     }
 
-    /// Close admission, request stop, and join retained threads.
+    /// Close admission and signal cancellation without waiting for a worker.
+    /// Host Stop signals every owner before it starts any checked drain.
+    /// Temporary recovery must use its retained target checkpoint instead.
+    pub fn request_stop(&self) {
+        self.closed.store(true, Ordering::Release);
+        self.stop.request();
+    }
+
+    /// Close admission, request stop, and check every retained thread's retirement.
     ///
     /// Does not return while a retain is between its pending increment and
     /// handle push, or while a retained callback is still running. No route in
     /// this crate calls this. A recovery hold must not either.
-    pub fn retire(&self) {
-        self.closed.store(true, Ordering::Release);
-        self.stop.request();
+    pub fn retire(&self) -> Result<(), String> {
+        self.request_stop();
+        // A join batch lives outside `workers` while it drains. A second
+        // caller must not mistake that temporarily empty vector for retirement.
+        let _retirement = self
+            .retirement
+            .lock()
+            .map_err(|_| "import worker retirement failed".to_owned())?;
         let mut workers = self.lock_workers();
         workers.closed = true;
         self.workers_changed.notify_all();
@@ -351,10 +368,17 @@ impl ImportRouteSlot {
             }
             let batch = std::mem::take(&mut workers.handles);
             drop(workers);
+            let mut failed = false;
             for handle in batch {
-                let _ = handle.join();
+                failed |= handle.join().is_err();
             }
             workers = self.lock_workers();
+            workers.failed |= failed;
+        }
+        if workers.failed {
+            Err("import worker retirement failed".to_owned())
+        } else {
+            Ok(())
         }
     }
 
@@ -397,7 +421,7 @@ impl ImportRouteSlot {
         };
         let run = {
             let mut workers = self.lock_workers();
-            reap_finished(&mut workers.handles);
+            reap_finished(&mut workers);
             let run = !workers.closed && !self.closed.load(Ordering::Acquire);
             workers.handles.push(handle);
             workers.pending -= 1;
@@ -437,13 +461,13 @@ fn importer_arguments(args: Vec<String>) -> Result<Vec<String>, String> {
 }
 
 /// Join handles whose threads have already returned. A live handle stays.
-fn reap_finished(workers: &mut Vec<JoinHandle<()>>) {
-    let pending = std::mem::take(workers);
+fn reap_finished(workers: &mut Workers) {
+    let pending = std::mem::take(&mut workers.handles);
     for handle in pending {
         if handle.is_finished() {
-            let _ = handle.join();
+            workers.failed |= handle.join().is_err();
         } else {
-            workers.push(handle);
+            workers.handles.push(handle);
         }
     }
 }
@@ -885,7 +909,7 @@ mod tests {
         assert_eq!(recorded[0].request.priority.source_time, source_time(ID));
         assert!(!recorded[0].request.stop.is_requested());
         drop(recorded);
-        slot.retire();
+        slot.retire().expect("checked import retirement");
     }
 
     #[tokio::test]
@@ -909,7 +933,7 @@ mod tests {
         let response = preview::preview(State(state), Json(data)).await;
         let body = body_of(response).await;
         assert_eq!(body["detail"], stderr);
-        slot.retire();
+        slot.retire().expect("checked import retirement");
     }
 
     #[tokio::test]
@@ -944,7 +968,7 @@ mod tests {
         assert_eq!(fake.runs.load(Ordering::Acquire), 1);
         assert!(!kept.lock().expect("kept")[0].stop.is_requested());
         release(&fake);
-        slot.retire();
+        slot.retire().expect("checked import retirement");
     }
 
     #[tokio::test]
@@ -999,7 +1023,7 @@ mod tests {
         );
         assert!(run_args.windows(2).any(|pair| pair[0] == "--preview-token"));
         drop(captures);
-        slot.retire();
+        slot.retire().expect("checked import retirement");
     }
 
     #[tokio::test]
@@ -1025,7 +1049,7 @@ mod tests {
                 .get("preview")
                 .is_none()
         );
-        slot.retire();
+        slot.retire().expect("checked import retirement");
     }
 
     #[test]
@@ -1067,7 +1091,7 @@ mod tests {
         );
         after.retain(|name| !name.starts_with("preview-"));
         assert_eq!(after, before);
-        slot.retire();
+        slot.retire().expect("checked import retirement");
     }
 
     const CHOSEN: &str = "20261012_120000";
@@ -1110,7 +1134,7 @@ mod tests {
         assert!(metadata.get("preview").is_some());
         assert!(metadata.get("attempt").is_none());
         assert_eq!(fake.runs.load(Ordering::Acquire), 0);
-        slot.retire();
+        slot.retire().expect("checked import retirement");
     }
 
     #[tokio::test]
@@ -1139,7 +1163,7 @@ mod tests {
         assert!(metadata.get("owner_timestamp").is_none());
         assert!(metadata.get("attempt").is_none());
         assert_eq!(fake.runs.load(Ordering::Acquire), 0);
-        slot.retire();
+        slot.retire().expect("checked import retirement");
     }
 
     #[test]
@@ -1191,7 +1215,7 @@ mod tests {
         drop(captures);
         let response = started.join().expect("start thread");
         assert_eq!(response.status(), StatusCode::OK);
-        slot.retire();
+        slot.retire().expect("checked import retirement");
     }
 
     #[tokio::test]
@@ -1255,7 +1279,7 @@ mod tests {
         assert_eq!(facts.state, AttemptState::Running);
         assert_eq!(facts.attempt_id, newer.attempt_id);
         assert_eq!(kept.lock().expect("kept").len(), 2);
-        slot.retire();
+        slot.retire().expect("checked import retirement");
     }
 
     #[test]
@@ -1313,6 +1337,170 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "full-tests")]
+    #[test]
+    fn worker_panic_is_a_sticky_checked_retirement_failure() {
+        let slot = ImportRouteSlot::new();
+        slot.retain(|_| panic!("synthetic import worker panic"))
+            .expect("worker accepted");
+        assert_eq!(
+            slot.retire(),
+            Err("import worker retirement failed".to_owned())
+        );
+        assert_eq!(
+            slot.retire(),
+            Err("import worker retirement failed".to_owned())
+        );
+    }
+
+    #[cfg(feature = "full-tests")]
+    #[test]
+    fn reaping_a_panicked_worker_does_not_erase_its_retirement_failure() {
+        let slot = ImportRouteSlot::new();
+        slot.retain(|_| panic!("synthetic reaped import panic"))
+            .expect("worker accepted");
+        wait_until_finished(&slot);
+        slot.retain(|_| {}).expect("next worker accepted");
+        assert_eq!(
+            slot.retire(),
+            Err("import worker retirement failed".to_owned())
+        );
+    }
+
+    #[cfg(feature = "full-tests")]
+    #[test]
+    fn request_stop_signals_before_joining_a_blocked_worker() {
+        let slot = Arc::new(ImportRouteSlot::new());
+        let (started, entered) = mpsc::channel();
+        let (release, waiting) = mpsc::channel();
+        slot.retain(move |_| {
+            started.send(()).expect("worker entered");
+            waiting
+                .recv_timeout(std::time::Duration::from_secs(10))
+                .expect("worker released");
+        })
+        .expect("worker accepted");
+        entered
+            .recv_timeout(std::time::Duration::from_secs(10))
+            .expect("worker entered");
+        let (signalled, observed) = mpsc::channel();
+        let signal_slot = Arc::clone(&slot);
+        let signal = std::thread::spawn(move || {
+            signal_slot.request_stop();
+            signalled.send(()).expect("signal observed");
+        });
+        let delivered = observed.recv_timeout(std::time::Duration::from_secs(2));
+        let stopped = slot.stop.is_requested();
+        let live = worker_counts(&slot).0;
+        release.send(()).expect("release worker");
+        signal.join().expect("stop caller returned");
+        assert!(delivered.is_ok(), "Stop must not join the blocked worker");
+        assert!(stopped);
+        assert_eq!(live, 1);
+        assert!(slot.retain(|_| {}).is_err());
+        slot.retire().expect("worker retired after release");
+    }
+
+    #[cfg(feature = "full-tests")]
+    #[test]
+    fn retirement_joins_the_remaining_worker_after_a_prior_worker_panics() {
+        let slot = Arc::new(ImportRouteSlot::new());
+        let (panic_go, panic_wait) = mpsc::channel();
+        slot.retain(move |_| {
+            panic_wait
+                .recv_timeout(std::time::Duration::from_secs(10))
+                .expect("panic released");
+            panic!("synthetic first worker panic");
+        })
+        .expect("first worker accepted");
+        let (entered, waiting) = mpsc::channel();
+        let (release, blocked) = mpsc::channel();
+        let drained = Arc::new(AtomicBool::new(false));
+        let worker_drained = Arc::clone(&drained);
+        slot.retain(move |_| {
+            entered.send(()).expect("second entered");
+            blocked
+                .recv_timeout(std::time::Duration::from_secs(10))
+                .expect("second released");
+            worker_drained.store(true, Ordering::Release);
+        })
+        .expect("second worker accepted");
+        waiting
+            .recv_timeout(std::time::Duration::from_secs(10))
+            .expect("second entered");
+        panic_go.send(()).expect("first may panic");
+        let (finished, observed) = mpsc::channel();
+        let retire_slot = Arc::clone(&slot);
+        let retire = std::thread::spawn(move || {
+            finished
+                .send(retire_slot.retire())
+                .expect("retirement result");
+        });
+        let premature = observed.recv_timeout(std::time::Duration::from_millis(50));
+        release.send(()).expect("release second");
+        let result = observed
+            .recv_timeout(std::time::Duration::from_secs(10))
+            .expect("all workers retired");
+        retire.join().expect("retire caller returned");
+        assert!(
+            premature.is_err(),
+            "a failed join must not skip a remaining live worker"
+        );
+        assert!(drained.load(Ordering::Acquire));
+        assert_eq!(result, Err("import worker retirement failed".to_owned()));
+    }
+
+    #[cfg(feature = "full-tests")]
+    #[test]
+    fn overlapping_retirements_both_wait_and_observe_the_worker_failure() {
+        let slot = Arc::new(ImportRouteSlot::new());
+        let (entered, waiting) = mpsc::channel();
+        let (release, blocked) = mpsc::channel();
+        slot.retain(move |_| {
+            entered.send(()).expect("worker entered");
+            blocked
+                .recv_timeout(std::time::Duration::from_secs(10))
+                .expect("worker released");
+            panic!("synthetic overlapped retirement panic");
+        })
+        .expect("worker accepted");
+        waiting
+            .recv_timeout(std::time::Duration::from_secs(10))
+            .expect("worker entered");
+        let (finished, observed) = mpsc::channel();
+        let first_slot = Arc::clone(&slot);
+        let first_done = finished.clone();
+        let first = std::thread::spawn(move || {
+            first_done.send(first_slot.retire()).expect("first result");
+        });
+        spin_until(|| slot.workers.lock().expect("workers").handles.is_empty());
+        let (second_entered, second_waiting) = mpsc::channel();
+        let second_slot = Arc::clone(&slot);
+        let second = std::thread::spawn(move || {
+            second_entered.send(()).expect("second entered");
+            finished.send(second_slot.retire()).expect("second result");
+        });
+        second_waiting
+            .recv_timeout(std::time::Duration::from_secs(10))
+            .expect("second entered");
+        let premature = observed.recv_timeout(std::time::Duration::from_millis(100));
+        release.send(()).expect("release worker");
+        first.join().expect("first retirement returned");
+        second.join().expect("second retirement returned");
+        assert!(
+            premature.is_err(),
+            "neither caller may acknowledge a batch another caller is still joining"
+        );
+        for _ in 0..2 {
+            assert_eq!(
+                observed
+                    .recv_timeout(std::time::Duration::from_secs(10))
+                    .expect("checked result"),
+                Err("import worker retirement failed".to_owned())
+            );
+        }
+    }
+
     #[tokio::test]
     async fn sequential_previews_do_not_keep_finished_handles() {
         let (root, data, _) = fixture();
@@ -1328,7 +1516,7 @@ mod tests {
         let second = preview::preview(State(state), Json(data)).await;
         assert_eq!(second.status(), StatusCode::OK);
         assert_eq!(slot.workers.lock().expect("workers").handles.len(), 1);
-        slot.retire();
+        slot.retire().expect("checked import retirement");
     }
 
     #[tokio::test]
@@ -1362,7 +1550,7 @@ mod tests {
         assert_eq!(running, 1);
         assert_eq!(slot.workers.lock().expect("workers").handles.len(), before);
         release(&fake);
-        slot.retire();
+        slot.retire().expect("checked import retirement");
     }
 
     fn preview_names(root: &std::path::Path) -> Vec<String> {
@@ -1437,7 +1625,7 @@ mod tests {
                 .iter()
                 .any(|arg| arg == snapshot)
         );
-        slot.retire();
+        slot.retire().expect("checked import retirement");
     }
 
     #[tokio::test]
@@ -1472,7 +1660,7 @@ mod tests {
         assert_eq!(preview_names(root.path()), before);
         let saved = read_import_metadata(root.path(), ID).expect("metadata");
         assert_eq!(saved["preview"]["relative"].as_str(), relative.to_str());
-        slot.retire();
+        slot.retire().expect("checked import retirement");
     }
 
     #[tokio::test]
@@ -1505,7 +1693,7 @@ mod tests {
                 .join(directory)
                 .is_dir()
         );
-        slot.retire();
+        slot.retire().expect("checked import retirement");
     }
 
     #[tokio::test]
@@ -1528,7 +1716,7 @@ mod tests {
                 .get("attempt")
                 .is_none()
         );
-        slot.retire();
+        slot.retire().expect("checked import retirement");
     }
 
     #[test]
@@ -1571,7 +1759,7 @@ mod tests {
         assert!(metadata.get("attempt").is_none());
         assert!(metadata.get("owner_timestamp").is_none());
         assert!(root.path().join("imports").join(ID).is_dir());
-        slot.retire();
+        slot.retire().expect("checked import retirement");
     }
 
     #[test]
@@ -1616,7 +1804,7 @@ mod tests {
             .expect("later capture");
         let run = slot.preview_held(&captured).expect("later preview");
         assert_eq!(run.exit_code, 0);
-        slot.retire();
+        slot.retire().expect("checked import retirement");
     }
 
     #[test]
@@ -1660,7 +1848,7 @@ mod tests {
         let retired_flag = Arc::clone(&retired);
         let slot_for_retire = Arc::clone(&slot);
         let retire_thread = std::thread::spawn(move || {
-            slot_for_retire.retire();
+            slot_for_retire.retire().expect("checked import retirement");
             retired_flag.store(true, Ordering::Release);
         });
         let release_guard = FlagRelease(Arc::clone(&release));
@@ -1678,7 +1866,7 @@ mod tests {
         };
         let response = runtime.block_on(preview::preview(State(state), Json(data)));
         assert_eq!(response.status(), StatusCode::OK);
-        slot.retire();
+        slot.retire().expect("checked import retirement");
     }
 
     #[test]
@@ -1708,7 +1896,7 @@ mod tests {
         let finished_for_retire = Arc::clone(&finished);
         let slot_for_retire = Arc::clone(&slot);
         let retire_thread = std::thread::spawn(move || {
-            slot_for_retire.retire();
+            slot_for_retire.retire().expect("checked import retirement");
             assert!(finished_for_retire.load(Ordering::Acquire));
             retired_flag.store(true, Ordering::Release);
         });
@@ -1756,7 +1944,7 @@ mod tests {
         let on_done_for_retire = Arc::clone(&on_done);
         let slot_for_retire = Arc::clone(&slot);
         let retire_thread = std::thread::spawn(move || {
-            slot_for_retire.retire();
+            slot_for_retire.retire().expect("checked import retirement");
             assert!(on_done_for_retire.load(Ordering::Acquire));
             retired_flag.store(true, Ordering::Release);
         });
@@ -1814,7 +2002,7 @@ mod tests {
         let copied = contained_import_file(root.path(), CHOSEN, relative).expect("snapshot");
         assert_eq!(std::fs::read(&copied).expect("snapshot bytes"), b"a note");
         release(&fake);
-        slot.retire();
+        slot.retire().expect("checked import retirement");
     }
 
     struct ClearSnapshotPauses(Arc<ImportRouteSlot>);
@@ -1873,7 +2061,7 @@ mod tests {
         let retired_flag = Arc::clone(&retired);
         let slot_for_retire = Arc::clone(&slot);
         let retire_thread = std::thread::spawn(move || {
-            slot_for_retire.retire();
+            slot_for_retire.retire().expect("checked import retirement");
             retired_flag.store(true, Ordering::Release);
         });
         retire_thread.join().expect("retire");
@@ -1940,7 +2128,7 @@ mod tests {
         let retired_flag = Arc::clone(&retired);
         let slot_for_retire = Arc::clone(&slot);
         let retire_thread = std::thread::spawn(move || {
-            slot_for_retire.retire();
+            slot_for_retire.retire().expect("checked import retirement");
             retired_flag.store(true, Ordering::Release);
         });
         let second = tokio::spawn(async { true });
@@ -2025,7 +2213,7 @@ mod tests {
         let retired_flag = Arc::clone(&retired);
         let slot_for_retire = Arc::clone(&slot);
         let retire_thread = std::thread::spawn(move || {
-            slot_for_retire.retire();
+            slot_for_retire.retire().expect("checked import retirement");
             retired_flag.store(true, Ordering::Release);
         });
         for _ in 0..SPIN_CAP {

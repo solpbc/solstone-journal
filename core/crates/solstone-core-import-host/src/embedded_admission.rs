@@ -296,7 +296,7 @@ async fn embedded_ics_start_admits_once_and_pre_admission_is_refused() {
             .windows(2)
             .any(|pair| pair[0] == "--preview-token" && pair[1] == token)
     );
-    slot.retire();
+    slot.retire().expect("checked import retirement");
 
     let other = tempfile::tempdir().unwrap();
     let (_, source) = stage(other.path());
