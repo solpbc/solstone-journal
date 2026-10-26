@@ -5,9 +5,8 @@
 //!
 //! The owner's forwarder delivers raw TLS to an ingress the journal binds
 //! only while the hostname is admitted: a socket in the journal's endpoint
-//! directory on Unix, and a loopback TCP port on Windows, where OpenSSH
-//! forwards to an address rather than a socket. Everything behind the ingress
-//! is the same on both.
+//! directory on desktop Unix, and a loopback TCP port on Windows and mobile.
+//! Forwarders deliver the same TLS stream on every platform.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -41,7 +40,7 @@ pub enum ByoSocketBlocker {
     RegularFile,
     InodeReplaced,
     PathTooLong,
-    /// Windows: another program already listens on the ingress port.
+    /// Another program already listens on the TCP ingress port.
     PortInUse,
 }
 
@@ -95,7 +94,7 @@ pub(crate) fn ingress_address(journal_root: &Path) -> String {
 }
 
 /// The Unix ingress: a socket under the owner-only `byo/` directory.
-#[cfg(unix)]
+#[cfg(all(unix, not(any(target_os = "ios", target_os = "android"))))]
 mod ingress {
     use super::*;
     use tokio::net::UnixListener;
@@ -137,12 +136,17 @@ mod ingress {
     }
 }
 
-/// The Windows ingress: a loopback TCP port. It is bound like the other
+/// The TCP ingress for Windows and mobile app containers. It is bound like the other
 /// doors' listeners, without `SO_REUSEADDR`, so no other program can take the
 /// port over while the journal holds it, and it closes when the accept task
 /// that owns it ends.
-#[cfg(windows)]
-mod ingress {
+#[cfg(any(
+    windows,
+    target_os = "ios",
+    target_os = "android",
+    all(test, feature = "full-tests")
+))]
+mod tcp_ingress {
     use super::*;
     use solstone_core_journal_config::MCP_BYO_INGRESS_PORT;
     use std::net::{IpAddr, Ipv4Addr};
@@ -173,6 +177,33 @@ mod ingress {
     }
 
     pub(super) fn release(_byo_dir: &unix::ByoDirectory, _bound: Bound) {}
+}
+
+#[cfg(any(windows, target_os = "ios", target_os = "android"))]
+use tcp_ingress as ingress;
+
+#[cfg(all(test, feature = "full-tests"))]
+#[cfg(unix)]
+mod tcp_ingress_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn long_private_root_uses_exclusive_tcp_ingress_and_releases_it() {
+        let temp = tempfile::tempdir_in(crate::test_scratch()).unwrap();
+        let directory = temp.path().join("j".repeat(120));
+        std::fs::create_dir_all(&directory).unwrap();
+        let root = JournalRoot::open(&directory).unwrap();
+        let byo = unix::open_byo_directory(&root).unwrap();
+        let address = tcp_ingress::address(&directory);
+        let (listener, bound) = tcp_ingress::bind(&byo, &directory).unwrap();
+        assert_eq!(listener.local_addr().unwrap().to_string(), address);
+        assert!(tcp_ingress::bind(&byo, &directory).is_err());
+        drop(listener);
+        tcp_ingress::release(&byo, bound);
+        let (listener, bound) = tcp_ingress::bind(&byo, &directory).unwrap();
+        drop(listener);
+        tcp_ingress::release(&byo, bound);
+    }
 }
 
 pub(super) struct ByoBoundResources {
@@ -350,7 +381,6 @@ impl ByoServiceRuntime {
             // start another MCP request after CAA drift withdrew the ingress.
             // Local admission must be withdrawn before waiting on the relay.
             let _ = self.service_shutdown_tx.send(true);
-            res.ingress_task.abort();
             if let Some(a) = res.acme_task.take() {
                 a.abort();
                 let _ = a.await;
@@ -599,8 +629,10 @@ impl ByoServiceRuntime {
             let mut ingress_shut = self.service_shutdown_rx.clone();
 
             let ingress_task = tokio::spawn(async move {
+                let mut connections = tokio::task::JoinSet::new();
                 loop {
                     tokio::select! {
+                        _ = connections.join_next(), if !connections.is_empty() => {}
                         _ = ingress_shut.changed() => break,
                         accepted = ingress_listener.accept() => {
                             let (stream, _) = match accepted {
@@ -621,7 +653,7 @@ impl ByoServiceRuntime {
                             let conn_hostname = Arc::clone(&ingress_host_arc);
                             let conn_shutdown = ingress_shut.clone();
 
-                            tokio::spawn(async move {
+                            connections.spawn(async move {
                                 let _permit = permit;
                                 let acceptor = TlsAcceptor::from(conn_tls_config);
                                 let tls_stream = match tokio::time::timeout(Duration::from_secs(5), acceptor.accept(stream)).await {
@@ -642,6 +674,8 @@ impl ByoServiceRuntime {
                         }
                     }
                 }
+                drop(ingress_listener);
+                connections.shutdown().await;
             });
 
             self.bound_resources = Some(ByoBoundResources {
@@ -850,7 +884,7 @@ async fn tick_byo_admission(
     }
 }
 
-#[cfg(unix)]
+#[cfg(all(unix, not(any(target_os = "ios", target_os = "android"))))]
 fn handle_cutover_stream(stream: &std::os::unix::net::UnixStream) -> bool {
     let _ = stream.set_nonblocking(false);
     let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(2)));
@@ -863,15 +897,15 @@ fn handle_cutover_stream(stream: &std::os::unix::net::UnixStream) -> bool {
     }
 }
 
-#[cfg(unix)]
+#[cfg(all(unix, not(any(target_os = "ios", target_os = "android"))))]
 fn reply_cutover_ok(stream: &std::os::unix::net::UnixStream) {
     let _ = nix::unistd::write(stream, b"ok\n");
 }
 
-#[cfg(unix)]
+#[cfg(all(unix, not(any(target_os = "ios", target_os = "android"))))]
 type CutoverAccept = std::io::Result<(tokio::net::UnixStream, tokio::net::unix::SocketAddr)>;
 
-#[cfg(unix)]
+#[cfg(all(unix, not(any(target_os = "ios", target_os = "android"))))]
 async fn apply_cutover(
     accepted: CutoverAccept,
     journal_root: &Path,
@@ -888,11 +922,11 @@ async fn apply_cutover(
     }
 }
 
-/// Windows has no cutover endpoint, so nothing is ever accepted here.
-#[cfg(windows)]
+/// TCP ingress hosts apply changes on the existing configuration tick.
+#[cfg(any(windows, target_os = "ios", target_os = "android"))]
 enum CutoverAccept {}
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "ios", target_os = "android"))]
 async fn apply_cutover(
     accepted: CutoverAccept,
     _journal_root: &Path,
@@ -905,10 +939,9 @@ async fn apply_cutover(
 
 /// Run the owner-hostname door until shutdown.
 ///
-/// On Unix an owner change is applied at once through the cutover socket. On
-/// Windows there is no cutover endpoint: the door applies every change on its
-/// next half-second tick, and the agents page waits for the state the door
-/// writes after applying it.
+/// Desktop Unix applies owner changes through the cutover socket. TCP ingress
+/// hosts apply changes on the next half-second tick; the agents page waits for
+/// the state written after each change is applied.
 pub async fn run_byo_door_async(
     journal_root: PathBuf,
     mut shutdown: watch::Receiver<bool>,
@@ -917,7 +950,7 @@ pub async fn run_byo_door_async(
     let byo_dir = unix::open_byo_directory(&root).map_err(|_| ())?;
     let ingress_address = ingress_address(&journal_root);
 
-    #[cfg(unix)]
+    #[cfg(all(unix, not(any(target_os = "ios", target_os = "android"))))]
     let (cutover_listener, cutover_inode) = {
         let cutover_path = journal_root
             .join("mcp-endpoint")
@@ -937,9 +970,9 @@ pub async fn run_byo_door_async(
     let mut poll_interval = tokio::time::interval(Duration::from_millis(500));
 
     loop {
-        #[cfg(unix)]
+        #[cfg(all(unix, not(any(target_os = "ios", target_os = "android"))))]
         let cutover = cutover_listener.accept();
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "ios", target_os = "android"))]
         let cutover = std::future::pending::<CutoverAccept>();
 
         #[cfg(all(test, feature = "test-hooks"))]
@@ -977,7 +1010,7 @@ pub async fn run_byo_door_async(
     if let Some(mut rt) = runtime.take() {
         rt.stop(&byo_dir).await;
     }
-    #[cfg(unix)]
+    #[cfg(all(unix, not(any(target_os = "ios", target_os = "android"))))]
     unix::unlink_byo_socket_if_inode_matches(&byo_dir, unix::BYO_CUTOVER_SOCKET, cutover_inode);
     write_byo_door_state(&journal_root, &disabled_state(None, false, 0));
     Ok(())
@@ -1189,8 +1222,7 @@ mod tests {
 }
 
 #[cfg(all(test, feature = "full-tests"))]
-// The owner-hostname door runs on Unix only.
-#[cfg(unix)]
+#[cfg(all(unix, not(any(target_os = "ios", target_os = "android"))))]
 mod full_tests {
     use std::fs;
     use std::os::unix::fs::PermissionsExt;
@@ -1200,7 +1232,7 @@ mod full_tests {
     use chrono::Utc;
     use solstone_core_journal_io::journal_root::JournalRoot;
     use tempfile::TempDir;
-    use tokio::io::AsyncWriteExt;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::sync::watch;
 
     use super::*;
@@ -1505,6 +1537,29 @@ mod full_tests {
 
         let _ = shutdown_send.send(true);
         let _ = handle.await;
+
+        // Stop also owns a peer that connects but never completes TLS.
+        let mut runtime =
+            ByoServiceRuntime::new(&journal_path, &byo_dir, "mcp.example.com".to_string(), 1)
+                .unwrap();
+        runtime
+            .tick_service_admission(&journal_path, &byo_dir, &ingress_address(&journal_path))
+            .await;
+        let mut pending = tokio::net::UnixStream::connect(&socket_path).await.unwrap();
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while runtime.permits.available_permits() == DEFAULT_BYO_CONNECTION_PERMITS {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        runtime.stop(&byo_dir).await;
+        assert_eq!(
+            runtime.permits.available_permits(),
+            DEFAULT_BYO_CONNECTION_PERMITS
+        );
+        let mut byte = [0];
+        assert_eq!(pending.read(&mut byte).await.unwrap(), 0);
     }
 
     #[tokio::test]

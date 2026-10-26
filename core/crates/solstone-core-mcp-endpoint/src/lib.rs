@@ -94,8 +94,8 @@ pub use bridge_session::{McpBridgeSession, McpPublicStream};
 pub use dispatch::{McpProbeError, run_mcp_probe};
 pub use lan_door::{LanDoorRun, LanDoorState, read_lan_door_state, write_lan_door_state};
 pub use local_door::{
-    LocalDoorRun, LocalDoorState, read_local_door_state, run_local_door_async,
-    run_local_door_with_hosted_parent, write_local_door_state,
+    LocalDoorRun, LocalDoorState, read_local_door_state, run_embedded_direct_doors,
+    run_local_door_async, run_local_door_with_hosted_parent, write_local_door_state,
 };
 #[cfg(feature = "test-hooks")]
 #[doc(hidden)]

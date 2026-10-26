@@ -24,6 +24,13 @@ request admission and before scanning; domain writers retain their existing
 publication semantics. A changed address requires stopping and starting the
 runtime with the new interface address.
 
+The app also starts the maintained agent connections from the agents page:
+loopback, local network and your own domain. They use the existing OAuth and
+permission checks independently of solstone.me. Stopping the app-owned runtime
+closes their listeners and connections. On mobile, the own-domain forwarder
+uses the existing TLS loopback ingress, so it does not depend on a Unix socket
+under a long app-container path.
+
 Build this standalone development library with:
 
 ```sh

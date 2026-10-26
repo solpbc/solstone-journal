@@ -806,6 +806,7 @@ pub(crate) fn state_value_with_iface(
         "status": status,
         "local_door": local_door,
         "lan_door": lan_door,
+        "local_agent_helpers": !cfg!(any(target_os = "ios", target_os = "android")),
         "relay_available": true,
         "owner_state": owner_state,
         "certificate": certificate,
@@ -822,9 +823,14 @@ pub(crate) fn state_value_with_iface(
         "facets": facets,
         "pairing": pairing.map(pairing_json),
     });
-    // What the forwarder reaches: a socket in the journal's folder on Unix,
-    // a loopback address on Windows.
-    byo_json["ingress"] = json!(if cfg!(windows) { "loopback" } else { "socket" });
+    // App containers and Windows use the maintained TLS loopback ingress.
+    byo_json["ingress"] = json!(
+        if cfg!(any(windows, target_os = "ios", target_os = "android")) {
+            "loopback"
+        } else {
+            "socket"
+        }
+    );
     response["byo"] = byo_json;
     if status == "needs_subscription" {
         response["subscribe_url"] = json!(format!("{}/services/solstone-me", portal_origin()));
@@ -1532,13 +1538,13 @@ pub(crate) async fn byo_outside_check(Extension(journal): Extension<Arc<PathBuf>
     Json(json!({"code": code})).into_response()
 }
 
-/// Apply an owner-hostname change on Windows and wait for the door to confirm
-/// it. There is no cutover endpoint on Windows: the door re-reads the setting
+/// Apply an owner-hostname change on a TCP ingress host and wait for the door
+/// to confirm it. Without a cutover socket, the door re-reads the setting
 /// every half second and writes its state only after it has applied it, so a
 /// withdrawn ingress is closed before that state can say so. If the door does
 /// not confirm in time, the change still stands; the page may report the
 /// ingress off only when nothing answers on it.
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "ios", target_os = "android"))]
 pub(crate) async fn perform_byo_cutover(journal: Arc<PathBuf>) -> Response {
     let requested_at = Utc::now();
     let expected = match read_journal_config(&journal)
@@ -1617,7 +1623,7 @@ pub(crate) async fn perform_byo_cutover(journal: Arc<PathBuf>) -> Response {
     state(Extension(journal)).await
 }
 
-#[cfg(unix)]
+#[cfg(all(unix, not(any(target_os = "ios", target_os = "android"))))]
 async fn perform_byo_cutover(journal: Arc<PathBuf>) -> Response {
     let journal_clone = Arc::clone(&journal);
     let cutover_result = tokio::task::spawn_blocking(move || {
@@ -3810,7 +3816,11 @@ mod tests {
         assert!(limits.contains(&"owner_dns_control_required"));
         assert_eq!(
             val["byo"]["ingress"],
-            if cfg!(windows) { "loopback" } else { "socket" }
+            if cfg!(any(windows, target_os = "ios", target_os = "android")) {
+                "loopback"
+            } else {
+                "socket"
+            }
         );
         assert_eq!(
             val["byo"]["socket_path"],
