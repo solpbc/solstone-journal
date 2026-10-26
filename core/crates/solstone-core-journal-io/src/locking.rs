@@ -3202,7 +3202,8 @@ mod tests {
     }
 }
 
-#[cfg(all(test, unix, feature = "full-tests"))]
+#[cfg(unix)]
+#[cfg(all(test, feature = "full-tests"))]
 #[path = "locking_ordinary_bound_tests.rs"]
 mod ordinary_bound_parent_lock_tests;
 
