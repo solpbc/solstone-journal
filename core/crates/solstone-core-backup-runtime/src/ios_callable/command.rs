@@ -11,14 +11,14 @@ const MAX_SELECTION_BYTES: usize = 8 * 1024 * 1024;
 const MAX_RETRY_MILLIS: u64 = 48 * 60 * 60 * 1000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum CheckRead {
+pub(crate) enum CheckRead {
     Structure,
     All,
     Group { group: u32, groups: u32 },
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub(super) enum Operation {
+pub(crate) enum Operation {
     Init,
     Open,
     ListSnapshots,
@@ -34,16 +34,22 @@ pub(super) enum Operation {
         selector: String,
         target: PathBuf,
     },
+    Retention {
+        hourly: u64,
+        daily: u64,
+        weekly: u64,
+        monthly: u64,
+    },
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub(super) struct Command {
+pub(crate) struct Command {
     pub operation: Operation,
     pub retry_lock_millis: u64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) struct UnsupportedCommand;
+pub(crate) struct UnsupportedCommand;
 
 fn absolute_path(value: &str) -> Result<PathBuf, UnsupportedCommand> {
     let path = Path::new(value);
@@ -105,7 +111,7 @@ fn group(value: &str) -> Result<CheckRead, UnsupportedCommand> {
 
 /// Convert exactly the producer's rooted glob prefix. No environment expansion
 /// occurs in the linked bridge. Only exclude-file lines escape dollars twice.
-pub(super) fn relative_exclusion(
+pub(crate) fn relative_exclusion(
     source: &Path,
     pattern: &str,
     from_file: bool,
@@ -133,18 +139,78 @@ pub(super) fn relative_exclusion(
     Ok(relative.to_owned())
 }
 
-pub(super) fn decode(args: &[String]) -> Result<Command, UnsupportedCommand> {
+#[derive(Default)]
+struct RetentionDraft {
+    hourly: Option<u64>,
+    daily: Option<u64>,
+    weekly: Option<u64>,
+    monthly: Option<u64>,
+    archive: bool,
+    offload: bool,
+    grouped: bool,
+    prune: bool,
+}
+
+fn canonical_count(value: &str) -> Result<u64, UnsupportedCommand> {
+    if value == "0" {
+        return Ok(0);
+    }
+    if value.is_empty()
+        || value.as_bytes().first() == Some(&b'0')
+        || value.as_bytes().first() == Some(&b'+')
+        || value.as_bytes().first() == Some(&b'-')
+        || !value.bytes().all(|byte| byte.is_ascii_digit())
+    {
+        return Err(UnsupportedCommand);
+    }
+    let parsed = value.parse::<u64>().map_err(|_| UnsupportedCommand)?;
+    if parsed > i64::MAX as u64 {
+        return Err(UnsupportedCommand);
+    }
+    Ok(parsed)
+}
+
+pub(crate) fn accept_repack(
+    retention: bool,
+    max_repack_size: Option<&str>,
+) -> Result<(), UnsupportedCommand> {
+    match (retention, max_repack_size) {
+        (true, Some("1G")) => Ok(()),
+        (false, None) => Ok(()),
+        _ => Err(UnsupportedCommand),
+    }
+}
+
+pub(crate) fn retention_policy_blob(hourly: u64, daily: u64, weekly: u64, monthly: u64) -> Vec<u8> {
+    let archive = crate::engine::ARCHIVE_TAG.as_bytes();
+    let offload = solstone_core_backup::archive_readback::OFFLOAD_ARCHIVE_TAG.as_bytes();
+    let mut blob = Vec::with_capacity(79);
+    blob.extend_from_slice(b"RTN1");
+    for count in [hourly, daily, weekly, monthly] {
+        blob.extend_from_slice(&count.to_le_bytes());
+    }
+    blob.extend_from_slice(&2u32.to_le_bytes());
+    for tag in [archive, offload] {
+        let len = u16::try_from(tag.len()).expect("keep tag length");
+        blob.extend_from_slice(&len.to_le_bytes());
+        blob.extend_from_slice(tag);
+    }
+    blob
+}
+
+pub(crate) fn decode(args: &[String]) -> Result<Command, UnsupportedCommand> {
     let mut args = args.iter().map(String::as_str);
+    let mut retention = None;
     let mut operation = match args.next() {
-        Some("init") => Operation::Init,
-        Some("cat") if args.next() == Some("config") => Operation::Open,
-        Some("snapshots") => Operation::ListSnapshots,
-        Some("backup") => Operation::Snapshot {
+        Some("init") => Some(Operation::Init),
+        Some("cat") if args.next() == Some("config") => Some(Operation::Open),
+        Some("snapshots") => Some(Operation::ListSnapshots),
+        Some("backup") => Some(Operation::Snapshot {
             source: absolute_path(args.next().ok_or(UnsupportedCommand)?)?,
             exclusions: Vec::new(),
             exclude_file: None,
-        },
-        Some("check") => Operation::Check(CheckRead::Structure),
+        }),
+        Some("check") => Some(Operation::Check(CheckRead::Structure)),
         Some("restore") => {
             let (snapshot, selector) = args
                 .next()
@@ -172,11 +238,15 @@ pub(super) fn decode(args: &[String]) -> Result<Command, UnsupportedCommand> {
                 return Err(UnsupportedCommand);
             }
             let target = absolute_path(args.next().ok_or(UnsupportedCommand)?)?;
-            Operation::Restore {
+            Some(Operation::Restore {
                 snapshot: snapshot.to_owned(),
                 selector: selector.to_owned(),
                 target,
-            }
+            })
+        }
+        Some("forget") => {
+            retention = Some(RetentionDraft::default());
+            None
         }
         _ => return Err(UnsupportedCommand),
     };
@@ -184,14 +254,54 @@ pub(super) fn decode(args: &[String]) -> Result<Command, UnsupportedCommand> {
     let mut check_selection = false;
     let mut selection_bytes = 0usize;
     while let Some(flag) = args.next() {
+        if let Some(draft) = retention.as_mut() {
+            match flag {
+                "--retry-lock" if retry.is_none() => {
+                    retry = Some(retry_millis(args.next().ok_or(UnsupportedCommand)?)?);
+                }
+                "--keep-hourly" if draft.hourly.is_none() => {
+                    draft.hourly = Some(canonical_count(args.next().ok_or(UnsupportedCommand)?)?);
+                }
+                "--keep-daily" if draft.daily.is_none() => {
+                    draft.daily = Some(canonical_count(args.next().ok_or(UnsupportedCommand)?)?);
+                }
+                "--keep-weekly" if draft.weekly.is_none() => {
+                    draft.weekly = Some(canonical_count(args.next().ok_or(UnsupportedCommand)?)?);
+                }
+                "--keep-monthly" if draft.monthly.is_none() => {
+                    draft.monthly = Some(canonical_count(args.next().ok_or(UnsupportedCommand)?)?);
+                }
+                "--keep-tag" => match args.next() {
+                    Some(tag) if tag == crate::engine::ARCHIVE_TAG && !draft.archive => {
+                        draft.archive = true;
+                    }
+                    Some(tag)
+                        if tag == solstone_core_backup::archive_readback::OFFLOAD_ARCHIVE_TAG
+                            && !draft.offload =>
+                    {
+                        draft.offload = true;
+                    }
+                    _ => return Err(UnsupportedCommand),
+                },
+                "--group-by" if !draft.grouped => {
+                    if args.next() != Some("tags") {
+                        return Err(UnsupportedCommand);
+                    }
+                    draft.grouped = true;
+                }
+                "--prune" if !draft.prune => draft.prune = true,
+                _ => return Err(UnsupportedCommand),
+            }
+            continue;
+        }
         match flag {
             "--retry-lock" if retry.is_none() => {
                 retry = Some(retry_millis(args.next().ok_or(UnsupportedCommand)?)?);
             }
             "--exclude" => {
-                let Operation::Snapshot {
+                let Some(Operation::Snapshot {
                     source, exclusions, ..
-                } = &mut operation
+                }) = operation.as_mut()
                 else {
                     return Err(UnsupportedCommand);
                 };
@@ -206,7 +316,7 @@ pub(super) fn decode(args: &[String]) -> Result<Command, UnsupportedCommand> {
                 exclusions.push(pattern);
             }
             "--exclude-file" => {
-                let Operation::Snapshot { exclude_file, .. } = &mut operation else {
+                let Some(Operation::Snapshot { exclude_file, .. }) = operation.as_mut() else {
                     return Err(UnsupportedCommand);
                 };
                 if exclude_file.is_some() {
@@ -215,14 +325,14 @@ pub(super) fn decode(args: &[String]) -> Result<Command, UnsupportedCommand> {
                 *exclude_file = Some(absolute_path(args.next().ok_or(UnsupportedCommand)?)?);
             }
             "--read-data" if !check_selection => {
-                let Operation::Check(mode) = &mut operation else {
+                let Some(Operation::Check(mode)) = operation.as_mut() else {
                     return Err(UnsupportedCommand);
                 };
                 *mode = CheckRead::All;
                 check_selection = true;
             }
             "--read-data-subset" if !check_selection => {
-                let Operation::Check(mode) = &mut operation else {
+                let Some(Operation::Check(mode)) = operation.as_mut() else {
                     return Err(UnsupportedCommand);
                 };
                 *mode = group(args.next().ok_or(UnsupportedCommand)?)?;
@@ -231,6 +341,23 @@ pub(super) fn decode(args: &[String]) -> Result<Command, UnsupportedCommand> {
             _ => return Err(UnsupportedCommand),
         }
     }
+    if let Some(draft) = retention {
+        let (Some(hourly), Some(daily), Some(weekly), Some(monthly)) =
+            (draft.hourly, draft.daily, draft.weekly, draft.monthly)
+        else {
+            return Err(UnsupportedCommand);
+        };
+        if !draft.archive || !draft.offload || !draft.grouped || !draft.prune {
+            return Err(UnsupportedCommand);
+        }
+        operation = Some(Operation::Retention {
+            hourly,
+            daily,
+            weekly,
+            monthly,
+        });
+    }
+    let operation = operation.ok_or(UnsupportedCommand)?;
     if retry.is_some()
         && matches!(
             operation,
@@ -374,5 +501,208 @@ mod tests {
                 exclude_file: Some(PathBuf::from("/private/tmp/excludes"))
             }
         );
+    }
+
+    fn forget(parts: &[&str]) -> Result<Command, UnsupportedCommand> {
+        let mut args = vec![
+            "forget",
+            "--keep-hourly",
+            "1",
+            "--keep-daily",
+            "1",
+            "--keep-weekly",
+            "1",
+            "--keep-monthly",
+            "1",
+            "--keep-tag",
+            crate::engine::ARCHIVE_TAG,
+            "--keep-tag",
+            solstone_core_backup::archive_readback::OFFLOAD_ARCHIVE_TAG,
+            "--group-by",
+            "tags",
+            "--prune",
+        ];
+        args.extend_from_slice(parts);
+        command(&args)
+    }
+
+    #[test]
+    fn forget_keeps_zero_counts_tags_grouping_and_retry() {
+        let kept = command(&[
+            "forget",
+            "--prune",
+            "--group-by",
+            "tags",
+            "--keep-tag",
+            solstone_core_backup::archive_readback::OFFLOAD_ARCHIVE_TAG,
+            "--keep-monthly",
+            "0",
+            "--keep-tag",
+            crate::engine::ARCHIVE_TAG,
+            "--retry-lock",
+            "30m",
+            "--keep-weekly",
+            "0",
+            "--keep-daily",
+            "0",
+            "--keep-hourly",
+            "0",
+        ])
+        .unwrap();
+        assert_eq!(kept.retry_lock_millis, 1_800_000);
+        assert_eq!(
+            kept.operation,
+            Operation::Retention {
+                hourly: 0,
+                daily: 0,
+                weekly: 0,
+                monthly: 0,
+            }
+        );
+        let blob = retention_policy_blob(0, 7, 4, 12);
+        assert_eq!(blob.len(), 79);
+        assert_eq!(&blob[..4], b"RTN1");
+        assert_eq!(u64::from_le_bytes(blob[4..12].try_into().unwrap()), 0);
+        assert_eq!(u64::from_le_bytes(blob[12..20].try_into().unwrap()), 7);
+        assert_eq!(u64::from_le_bytes(blob[20..28].try_into().unwrap()), 4);
+        assert_eq!(u64::from_le_bytes(blob[28..36].try_into().unwrap()), 12);
+        assert_eq!(u32::from_le_bytes(blob[36..40].try_into().unwrap()), 2);
+        let archive = crate::engine::ARCHIVE_TAG.as_bytes();
+        let offload = solstone_core_backup::archive_readback::OFFLOAD_ARCHIVE_TAG.as_bytes();
+        assert_eq!(
+            u16::from_le_bytes(blob[40..42].try_into().unwrap()) as usize,
+            archive.len()
+        );
+        assert_eq!(&blob[42..42 + archive.len()], archive);
+        let offset = 42 + archive.len();
+        assert_eq!(
+            u16::from_le_bytes(blob[offset..offset + 2].try_into().unwrap()) as usize,
+            offload.len()
+        );
+        assert_eq!(&blob[offset + 2..], offload);
+        let max = i64::MAX.to_string();
+        let counted = command(&[
+            "forget",
+            "--keep-hourly",
+            max.as_str(),
+            "--keep-daily",
+            "7",
+            "--keep-weekly",
+            "4",
+            "--keep-monthly",
+            "12",
+            "--keep-tag",
+            crate::engine::ARCHIVE_TAG,
+            "--keep-tag",
+            solstone_core_backup::archive_readback::OFFLOAD_ARCHIVE_TAG,
+            "--group-by",
+            "tags",
+            "--prune",
+        ])
+        .unwrap();
+        assert_eq!(
+            counted.operation,
+            Operation::Retention {
+                hourly: i64::MAX as u64,
+                daily: 7,
+                weekly: 4,
+                monthly: 12,
+            }
+        );
+        let overflow = (i64::MAX as u64 + 1).to_string();
+        for extra in [
+            vec!["--keep-tag", crate::engine::ARCHIVE_TAG],
+            vec!["--keep-tag", "other"],
+            vec!["--keep-last", "1"],
+            vec!["--keep-within", "1d"],
+            vec!["--keep-yearly", "1"],
+            vec!["--dry-run"],
+            vec!["--unsafe-allow-remove-all"],
+            vec!["--retry-lock", "30m", "--retry-lock", "1m"],
+        ] {
+            assert!(forget(&extra).is_err(), "accepted {extra:?}");
+        }
+        for count in ["00", "01", "+1", "-1", overflow.as_str()] {
+            assert!(
+                command(&[
+                    "forget",
+                    "--keep-hourly",
+                    count,
+                    "--keep-daily",
+                    "0",
+                    "--keep-weekly",
+                    "0",
+                    "--keep-monthly",
+                    "0",
+                    "--keep-tag",
+                    crate::engine::ARCHIVE_TAG,
+                    "--keep-tag",
+                    solstone_core_backup::archive_readback::OFFLOAD_ARCHIVE_TAG,
+                    "--group-by",
+                    "tags",
+                    "--prune",
+                ])
+                .is_err(),
+                "accepted count {count}"
+            );
+        }
+        for group in ["host,paths", "tag", "host"] {
+            assert!(
+                command(&[
+                    "forget",
+                    "--keep-hourly",
+                    "1",
+                    "--keep-daily",
+                    "1",
+                    "--keep-weekly",
+                    "1",
+                    "--keep-monthly",
+                    "1",
+                    "--keep-tag",
+                    crate::engine::ARCHIVE_TAG,
+                    "--keep-tag",
+                    solstone_core_backup::archive_readback::OFFLOAD_ARCHIVE_TAG,
+                    "--group-by",
+                    group,
+                    "--prune",
+                ])
+                .is_err(),
+                "accepted grouping {group}"
+            );
+        }
+        assert!(command(&["forget", "--prune"]).is_err());
+        assert!(command(&["forget", "--keep-hourly", "1", "--prune"]).is_err());
+        assert!(
+            command(&[
+                "forget",
+                "--keep-hourly",
+                "1",
+                "--keep-daily",
+                "1",
+                "--keep-weekly",
+                "1",
+                "--keep-monthly",
+                "1",
+                "--keep-tag",
+                crate::engine::ARCHIVE_TAG,
+                "--keep-tag",
+                solstone_core_backup::archive_readback::OFFLOAD_ARCHIVE_TAG,
+                "--group-by",
+                "tags",
+            ])
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn repack_bound_accepts_only_one_gigabyte_on_retention() {
+        assert!(accept_repack(true, Some("1G")).is_ok());
+        assert!(accept_repack(false, None).is_ok());
+        assert!(accept_repack(true, None).is_err());
+        for size in ["1g", "1GB", "2G", "", "1073741824"] {
+            assert!(accept_repack(true, Some(size)).is_err(), "{size}");
+            assert!(accept_repack(false, Some(size)).is_err(), "{size}");
+        }
+        assert!(accept_repack(false, Some("1G")).is_err());
     }
 }

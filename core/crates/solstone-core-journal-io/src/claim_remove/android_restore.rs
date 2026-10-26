@@ -9,7 +9,8 @@ use std::sync::Arc;
 use super::*;
 use crate::JournalRoot;
 use crate::whole_journal_restore::{
-    WholeJournalRestore, restore_target_quiescent, whole_journal_restore_matches,
+    WholeJournalRestore, restore_target_quiescent, retirement_claim_name,
+    whole_journal_restore_matches,
 };
 
 pub(super) struct Authority {
@@ -69,7 +70,7 @@ pub(crate) fn claim_and_remove_android_restore_observed_bounded(
             source: io::Error::other(error),
         })?;
     if prior.entry.name.as_os_str() != original
-        || !claim.as_str().starts_with("!solstone-claim-00000000-")
+        || claim.as_str() != retirement_claim_name(record.attempt)
         || !whole_journal_restore_matches(root.canonical_path(), &record)
     {
         return Err(ClaimRemovalError::Io {
@@ -95,5 +96,41 @@ pub(crate) fn claim_and_remove_android_restore_observed_bounded(
         claim,
         maximum,
         &RenamePolicy::AndroidRestore(authority),
+    )
+}
+
+/// Restore one exact retained obligation claim before adopting the retry.
+pub(crate) fn restore_android_restore_claim(
+    root: &Arc<JournalRoot>,
+    directory: &FlatDirectory,
+    prior: &FileObservation,
+    maximum: usize,
+) -> io::Result<()> {
+    let record: WholeJournalRestore =
+        serde_json::from_slice(&prior.bytes).map_err(io::Error::other)?;
+    if prior.entry.name != OsStr::new(&retirement_claim_name(record.attempt))
+        || !whole_journal_restore_matches(root.canonical_path(), &record)
+    {
+        return Err(io::Error::other("retained restore claim changed"));
+    }
+    let authority = Authority {
+        root: Arc::clone(root),
+    };
+    authority.revalidate(directory)?;
+    match read_observed_file_unchecked_bounded(directory, &prior.entry.name, maximum)
+        .map_err(io::Error::other)?
+    {
+        Some(current) if same_observation(&current, prior) => {}
+        _ => {
+            return Err(io::Error::other(
+                "retained restore claim changed before retry",
+            ));
+        }
+    }
+    authority.revalidate(directory)?;
+    android_native::rename_no_replace(
+        directory,
+        &prior.entry.name,
+        OsStr::new("whole-journal-restore.json"),
     )
 }

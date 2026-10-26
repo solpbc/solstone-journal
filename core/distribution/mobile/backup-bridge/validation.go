@@ -14,7 +14,7 @@ type requestShape struct {
 
 func validLocalOperation(op int32) bool {
 	switch op {
-	case OpInit, OpOpen, OpAddRecoveryKey, OpSnapshot, OpListSnapshots, OpRestore, OpCheck, OpListRecoveryKeys, OpRemoveRecoveryKey:
+	case OpInit, OpOpen, OpAddRecoveryKey, OpSnapshot, OpListSnapshots, OpRestore, OpCheck, OpListRecoveryKeys, OpRemoveRecoveryKey, OpRetention:
 		return true
 	default:
 		return false
@@ -51,6 +51,9 @@ func validateShape(request requestShape) int32 {
 		return StatusInvalidArgument
 	}
 	if request.operation == OpRestore && (request.fields[4].length == 0 || request.fields[5].length != idHexLen) {
+		return StatusInvalidArgument
+	}
+	if request.operation == OpRetention && (request.fields[1].length != 0 || request.fields[3].length != 0 || request.fields[4].length != 0 || request.fields[5].length != 0) {
 		return StatusInvalidArgument
 	}
 	return StatusOk

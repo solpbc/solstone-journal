@@ -31,7 +31,9 @@ pub use android_teardown::claim_and_remove_android_teardown_observed_bounded;
 #[cfg(target_os = "android")]
 mod android_restore;
 #[cfg(target_os = "android")]
-pub(crate) use android_restore::claim_and_remove_android_restore_observed_bounded;
+pub(crate) use android_restore::{
+    claim_and_remove_android_restore_observed_bounded, restore_android_restore_claim,
+};
 
 enum RenamePolicy {
     Platform,

@@ -407,8 +407,21 @@ func isTeardownScope(ctx context.Context) bool {
 	return ok && v
 }
 
+type retentionScopeKey struct{}
+
+func withRetentionScope(ctx context.Context) context.Context {
+	return context.WithValue(ctx, retentionScopeKey{}, true)
+}
+
+func isRetentionScope(ctx context.Context) bool {
+	v, ok := ctx.Value(retentionScopeKey{}).(bool)
+	return ok && v
+}
+
 // This primitive is not an owned-lock capability. The future operation layer
-// must gate it with durable current-attempt IDs; non-teardown non-lock deletion never enters, and config and key never enter.
+// must gate it with durable current-attempt IDs. Non-lock deletion enters only
+// under teardown scope or retention scope, and only for snapshot, pack, and
+// index. Config and key never enter.
 func (be *s3Backend) Remove(ctx context.Context, handle backend.Handle) error {
 	owned, done, err := be.enter(ctx)
 	if err != nil {
@@ -420,7 +433,7 @@ func (be *s3Backend) Remove(ctx context.Context, handle backend.Handle) error {
 		return err
 	}
 	if handle.Type != backend.LockFile {
-		if !isTeardownScope(ctx) || (handle.Type != backend.SnapshotFile && handle.Type != backend.PackFile && handle.Type != backend.IndexFile) {
+		if (!isTeardownScope(ctx) && !isRetentionScope(ctx)) || (handle.Type != backend.SnapshotFile && handle.Type != backend.PackFile && handle.Type != backend.IndexFile) {
 			return errS3Denied
 		}
 	}

@@ -55,7 +55,7 @@ pub enum WholeJournalRestoreReadiness {
     Unavailable,
 }
 
-/// Source identity bound to the local obligation.
+/// Repository identity bound to the obligation. Credentials and endpoints are not stored.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "lowercase", deny_unknown_fields)]
 pub enum WholeJournalRestoreSource {
@@ -200,13 +200,14 @@ pub fn adopt_whole_journal_restore(
     journal: &Path,
     expected: &WholeJournalRestore,
 ) -> Result<WholeJournalRestore, WholeJournalRestoreWriteError> {
-    let root = open_root(journal)?;
+    let root = Arc::new(open_root(journal)?);
     require_same_binding(&root, expected)?;
     let health = prepare_health_dir(&root, false)?;
     let expected_bytes = canonical_bytes(expected)?;
     with_obligation_lock(&root, &health, || {
         root.revalidate_canonical_binding().map_err(root_error)?;
         require_same_binding(&root, expected)?;
+        restore_retained_record_name(&root, &health, &expected_bytes)?;
         match marker_bytes(root.canonical_path()) {
             Marker::Bytes(bytes) if bytes == expected_bytes => {}
             Marker::Absent => {
@@ -264,6 +265,7 @@ pub fn clear_whole_journal_restore(
     let removed = with_obligation_lock(&root, &health, || {
         root.revalidate_canonical_binding().map_err(root_error)?;
         require_same_binding(&root, expected)?;
+        restore_retained_record_name(&root, &health, &expected_bytes)?;
         retire_matching_file(&root, &health, &expected_bytes)
     })?;
     if removed {
@@ -477,9 +479,7 @@ enum Marker {
 fn marker_bytes(journal: &Path) -> Marker {
     use std::ffi::OsStr;
 
-    use crate::flat_directory::{
-        list_flat_directory, open_flat_directory_bound, read_observed_file_bounded,
-    };
+    use crate::flat_directory::{open_flat_directory_bound, read_observed_file_bounded};
 
     if let Some(marker) = parent_marker(journal) {
         return marker;
@@ -499,20 +499,35 @@ fn marker_bytes(journal: &Path) -> Marker {
         OsStr::new(OBLIGATION_NAME),
         MAX_OBLIGATION_BYTES as usize,
     );
-    // A failed claimed removal can retain the obligation under its claim name.
-    // An absent original is not ready while that local recovery state remains.
-    let retired = if matches!(result, Ok(None)) {
-        match list_flat_directory(&health, 4096) {
-            Ok(Some(entries)) => entries.iter().any(|entry| {
-                entry
-                    .name
-                    .to_str()
-                    .is_some_and(|name| name.starts_with("!solstone-claim-00000000-"))
-            }),
+    let result = match result {
+        Ok(None) => match retirement_claims(&health) {
+            Ok(claims) if claims.is_empty() => Ok(None),
+            Ok(claims) if claims.len() == 1 => {
+                match read_observed_file_bounded(
+                    &health,
+                    claims[0].as_os_str(),
+                    MAX_OBLIGATION_BYTES as usize,
+                ) {
+                    Ok(Some(observed)) => {
+                        let valid = interpret(&root, &observed.bytes)
+                            .ok()
+                            .is_some_and(|record| {
+                                retirement_claim_name(record.attempt) == claims[0].as_str()
+                                    && canonical_bytes(&record).ok().as_deref()
+                                        == Some(observed.bytes.as_slice())
+                            });
+                        if valid {
+                            Ok(Some(observed))
+                        } else {
+                            return Marker::Unavailable;
+                        }
+                    }
+                    _ => return Marker::Unavailable,
+                }
+            }
             _ => return Marker::Unavailable,
-        }
-    } else {
-        false
+        },
+        other => other,
     };
     if root.revalidate_canonical_binding().is_err()
         || !matches!(
@@ -524,8 +539,7 @@ fn marker_bytes(journal: &Path) -> Marker {
     }
     match result {
         Ok(Some(observed)) => Marker::Bytes(observed.bytes),
-        Ok(None) if !retired => Marker::Absent,
-        Ok(None) => Marker::Unavailable,
+        Ok(None) => Marker::Absent,
         Err(_) => Marker::Unavailable,
     }
 }
@@ -629,6 +643,131 @@ fn bound_record(
         snapshot_id: snapshot_id.to_owned(),
         subtree: subtree.to_owned(),
     })
+}
+
+pub(crate) fn retirement_claim_name(attempt: u64) -> String {
+    format!("!solstone-claim-00000000-{attempt:016x}")
+}
+
+#[cfg(unix)]
+fn retirement_claims(
+    health: &FlatDirectory,
+) -> Result<Vec<crate::name_admission::ClaimName>, WholeJournalRestoreWriteError> {
+    let entries = crate::flat_directory::list_flat_directory(health, 4096)
+        .map_err(|error| WholeJournalRestoreWriteError::Io(error.to_string()))?
+        .ok_or(WholeJournalRestoreWriteError::Invalid(
+            "health listing is incomplete",
+        ))?;
+    entries
+        .into_iter()
+        .filter_map(|entry| {
+            entry
+                .name
+                .as_encoded_bytes()
+                .starts_with(b"!solstone-claim-00000000-")
+                .then(|| {
+                    let name =
+                        entry
+                            .name
+                            .to_str()
+                            .ok_or(WholeJournalRestoreWriteError::Invalid(
+                                "retirement claim name is malformed",
+                            ))?;
+                    crate::name_admission::ClaimName::parse(name).map_err(|_| {
+                        WholeJournalRestoreWriteError::Invalid("retirement claim name is malformed")
+                    })
+                })
+        })
+        .collect()
+}
+
+#[cfg(unix)]
+fn restore_retained_record_name(
+    root: &Arc<JournalRoot>,
+    health: &FlatDirectory,
+    expected: &[u8],
+) -> Result<(), WholeJournalRestoreWriteError> {
+    use crate::flat_directory::read_observed_file_bounded;
+    use std::ffi::OsStr;
+    revalidate_health(root, health)?;
+    let claims = retirement_claims(health)?;
+    let original = read_observed_file_bounded(
+        health,
+        OsStr::new(OBLIGATION_NAME),
+        MAX_OBLIGATION_BYTES as usize,
+    )
+    .map_err(|error| WholeJournalRestoreWriteError::Io(error.to_string()))?;
+    if let Some(original) = original {
+        return if original.bytes == expected && claims.is_empty() {
+            Ok(())
+        } else {
+            Err(WholeJournalRestoreWriteError::Invalid(
+                "obligation or retirement claim changed",
+            ))
+        };
+    }
+    let record: WholeJournalRestore = serde_json::from_slice(expected)
+        .map_err(|_| WholeJournalRestoreWriteError::Invalid("retirement record is malformed"))?;
+    let name = retirement_claim_name(record.attempt);
+    if claims.len() != 1 || claims[0].as_str() != name {
+        return Err(WholeJournalRestoreWriteError::Invalid(
+            "retirement claim is ambiguous",
+        ));
+    }
+    let observed =
+        read_observed_file_bounded(health, claims[0].as_os_str(), MAX_OBLIGATION_BYTES as usize)
+            .map_err(|error| WholeJournalRestoreWriteError::Io(error.to_string()))?
+            .ok_or(WholeJournalRestoreWriteError::Invalid(
+                "retirement claim disappeared",
+            ))?;
+    if observed.bytes != expected {
+        return Err(WholeJournalRestoreWriteError::Invalid(
+            "retirement claim changed",
+        ));
+    }
+    revalidate_health(root, health)?;
+    // No replacement is permitted. A race retains the competing entry and keeps recovery paused.
+    #[cfg(not(target_os = "android"))]
+    crate::claim_remove::rename_no_replace(
+        health,
+        claims[0].as_os_str(),
+        OsStr::new(OBLIGATION_NAME),
+    )
+    .map_err(|error| WholeJournalRestoreWriteError::Io(error.to_string()))?;
+    #[cfg(target_os = "android")]
+    crate::claim_remove::restore_android_restore_claim(
+        root,
+        health,
+        &observed,
+        MAX_OBLIGATION_BYTES as usize,
+    )
+    .map_err(|error| WholeJournalRestoreWriteError::Io(error.to_string()))?;
+    crate::entry::sync_dir_bound(health)
+        .map_err(|error| WholeJournalRestoreWriteError::Io(error.to_string()))?;
+    revalidate_health(root, health)?;
+    match read_observed_file_bounded(
+        health,
+        OsStr::new(OBLIGATION_NAME),
+        MAX_OBLIGATION_BYTES as usize,
+    ) {
+        Ok(Some(current)) if current.bytes == expected && retirement_claims(health)?.is_empty() => {
+            Ok(())
+        }
+        _ => Err(WholeJournalRestoreWriteError::Invalid(
+            "retirement claim restoration is uncertain",
+        )),
+    }
+}
+
+#[cfg(not(unix))]
+fn restore_retained_record_name(
+    _root: &Arc<JournalRoot>,
+    _health: &HealthDirectory,
+    _expected: &[u8],
+) -> Result<(), WholeJournalRestoreWriteError> {
+    Err(WholeJournalRestoreWriteError::Invalid(
+        "bound restore obligation writes are unavailable",
+    ))
 }
 
 #[cfg(unix)]
@@ -841,7 +980,9 @@ fn retire_matching_file(
     }
     // The reserved pid-zero namespace distinguishes these recovery claims from
     // other application removals. A retained claim blocks cold-start readiness.
-    let claim = ClaimName::parse(&format!("!solstone-claim-00000000-{:016x}", next_attempt()))
+    let record: WholeJournalRestore = serde_json::from_slice(expected)
+        .map_err(|_| WholeJournalRestoreWriteError::Invalid("retirement record is malformed"))?;
+    let claim = ClaimName::parse(&retirement_claim_name(record.attempt))
         .map_err(|_| WholeJournalRestoreWriteError::Invalid("retirement claim is invalid"))?;
     revalidate_health(root, health)?;
     #[cfg(not(target_os = "android"))]
@@ -1410,5 +1551,48 @@ mod tests {
             WholeJournalRestoreAdmission::Paused
         );
         assert!(begin_target_use(primary.path()).is_err());
+        assert!(matches!(
+            read_whole_journal_restore(primary.path()),
+            WholeJournalRestoreReadiness::Pending(_)
+        ));
+        let renewed = adopt_whole_journal_restore(primary.path(), &record).unwrap();
+        assert_ne!(renewed.attempt, record.attempt);
+        assert!(clear_whole_journal_restore(primary.path(), &record).is_err());
+        clear_whole_journal_restore(primary.path(), &renewed).unwrap();
+        assert_eq!(
+            whole_journal_restore_admission(primary.path()),
+            WholeJournalRestoreAdmission::Open
+        );
+    }
+
+    #[test]
+    fn ambiguous_and_non_utf8_retirement_claims_keep_recovery_paused() {
+        use std::os::unix::ffi::OsStringExt;
+        let primary = journal();
+        let record =
+            publish_whole_journal_restore(primary.path(), &source(), SNAPSHOT, "/journal").unwrap();
+        let health = primary.path().join("health");
+        let claim = health.join(retirement_claim_name(record.attempt));
+        fs::rename(primary.path().join(WHOLE_JOURNAL_RESTORE_FILE), &claim).unwrap();
+        let extra = health.join(retirement_claim_name(record.attempt.wrapping_add(1)));
+        fs::write(&extra, canonical_bytes(&record).unwrap()).unwrap();
+        assert!(matches!(
+            read_whole_journal_restore(primary.path()),
+            WholeJournalRestoreReadiness::Unavailable
+        ));
+        assert!(adopt_whole_journal_restore(primary.path(), &record).is_err());
+        fs::remove_file(extra).unwrap();
+        let malformed = health.join(std::ffi::OsString::from_vec(
+            b"!solstone-claim-00000000-\xff".to_vec(),
+        ));
+        fs::write(&malformed, b"unreadable claim").unwrap();
+        assert!(matches!(
+            read_whole_journal_restore(primary.path()),
+            WholeJournalRestoreReadiness::Unavailable
+        ));
+        assert!(begin_target_use(primary.path()).is_err());
+        assert!(adopt_whole_journal_restore(primary.path(), &record).is_err());
+        assert!(claim.exists());
+        assert!(malformed.exists());
     }
 }

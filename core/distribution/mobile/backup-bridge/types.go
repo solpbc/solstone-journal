@@ -45,6 +45,7 @@ const (
 	OpArchiveSources int32 = 20
 	OpListNodes      int32 = 21
 	OpReadFile       int32 = 22
+	OpRetention      int32 = 12
 )
 
 // Closed set of stable diagnostic tokens. Raw upstream strings containing passwords
@@ -87,6 +88,7 @@ type bridgeRequest struct {
 	maintenanceRotation bool
 	rotationCustody     bool
 	snapshotSelection   *snapshotSelection
+	retentionPolicy     *retentionPolicy
 	executionOptions    *operationOptions
 	// pathFiles pin caller-authorized directories for the complete asynchronous
 	// operation.

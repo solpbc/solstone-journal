@@ -516,7 +516,7 @@ fn snapshot_directories<'a>(
             workspace.path,
             workspace.descriptor.as_raw_fd(),
         )),
-        (1 | 2 | 3 | 5 | 7 | 9, None, None) => Ok(("", -1, "", -1)),
+        (1 | 2 | 3 | 5 | 7 | 9 | 12, None, None) => Ok(("", -1, "", -1)),
         _ => Err(INVALID_ARGUMENT),
     }
 }
