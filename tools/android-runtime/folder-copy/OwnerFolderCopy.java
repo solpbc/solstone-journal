@@ -13,6 +13,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.BooleanSupplier;
 
 /** Copies a picked folder without taking a page path or an Android permission. */
 final class OwnerFolderCopy {
@@ -49,8 +50,17 @@ final class OwnerFolderCopy {
         final int requestedGeneration;
         private String liveToken;
         private int liveGeneration;
+        private final BooleanSupplier continues;
 
         LiveAuthority(String requestedToken, int requestedGeneration, String liveToken, int liveGeneration) {
+            this(requestedToken, requestedGeneration, liveToken, liveGeneration, new BooleanSupplier() {
+                public boolean getAsBoolean() { return true; }
+            });
+        }
+
+        LiveAuthority(String requestedToken, int requestedGeneration, String liveToken, int liveGeneration,
+                BooleanSupplier continues) {
+            this.continues = continues;
             this.requestedToken = requestedToken;
             this.requestedGeneration = requestedGeneration;
             this.liveToken = liveToken;
@@ -63,7 +73,7 @@ final class OwnerFolderCopy {
         }
 
         synchronized boolean matches() {
-            return requestedToken != null && requestedToken.equals(liveToken) && requestedGeneration == liveGeneration;
+            return continues.getAsBoolean() && requestedToken != null && requestedToken.equals(liveToken) && requestedGeneration == liveGeneration;
         }
     }
 
@@ -73,13 +83,14 @@ final class OwnerFolderCopy {
 
         InputStream open(String relative) throws IOException;
 
+        /** Byte size, or -1 when the provider does not publish it. */
         long size(String relative) throws IOException;
 
-        boolean directory(String relative);
+        boolean directory(String relative) throws IOException;
 
-        boolean symlink(String relative);
+        boolean symlink(String relative) throws IOException;
 
-        Long modifiedMillis(String relative);
+        Long modifiedMillis(String relative) throws IOException;
     }
 
     private static final class Budget {
@@ -258,21 +269,19 @@ final class OwnerFolderCopy {
                 created.add(outputFile);
                 try (OutputStream output = exclusive) {
                     long copied = 0;
-                    while (copied < expected) {
+                    while (true) {
                         ensureCurrent(authority, cancel);
-                        int asked = (int) Math.min(buffer.length, expected - copied);
-                        int read = stream.read(buffer, 0, asked);
+                        int read = stream.read(buffer, 0, buffer.length);
                         ensureCurrent(authority, cancel);
-                        if (read < 0) {
-                            throw new Stop(TRUNCATED);
-                        }
+                        if (read < 0) { break; }
+                        if (read == 0) { throw new Stop(DENIED); }
+                        if (expected >= 0 && copied + read > expected) { throw new Stop(TRUNCATED); }
                         output.write(buffer, 0, read);
                         copied += read;
                     }
-                    ensureCurrent(authority, cancel);
-                    int extra = stream.read(buffer, 0, 1);
-                    ensureCurrent(authority, cancel);
-                    if (extra > 0 || source.size(relative) != expected
+                    long finalSize = source.size(relative);
+                    if ((expected >= 0 && copied != expected)
+                            || (finalSize >= 0 && copied != finalSize)
                             || !modified.equals(source.modifiedMillis(relative))) {
                         throw new Stop(TRUNCATED);
                     }
@@ -289,7 +298,7 @@ final class OwnerFolderCopy {
     }
 
     private static void createDirectory(
-            FolderSource source, String relative, File destination, List<File> created) {
+            FolderSource source, String relative, File destination, List<File> created) throws IOException {
         File dir = new File(destination, relative);
         if (!safeDirectoryChain(dir)) { throw new Stop(DENIED); }
         boolean createdDir = false;

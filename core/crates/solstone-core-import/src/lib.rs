@@ -74,7 +74,7 @@ pub use events::{
 pub use folder_admit::{
     AdmittedFolder, FOLDER_COPY_AGGREGATE_BUFFER_BYTES, FOLDER_COPY_BUFFER_BYTES,
     FOLDER_COPY_MAX_DESCRIPTORS, FolderAdmitError, ReimportPolicy, ReimportSource, admit_folder,
-    folder_preview_current, reimport_policy, release_abandoned_folder_attempt,
+    admit_folder_bound, folder_preview_current, reimport_policy, release_abandoned_folder_attempt,
     release_folder_attempt, reserve_buffer,
 };
 pub use force_notice::{flush_force_notice, flush_force_notice_then, force_day_notice};

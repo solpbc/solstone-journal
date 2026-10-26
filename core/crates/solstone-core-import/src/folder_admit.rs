@@ -12,7 +12,7 @@ use std::fs::{File, OpenOptions};
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{LazyLock, Mutex};
+use std::sync::{Arc, LazyLock, Mutex};
 use std::time::{Duration as LockDuration, SystemTime};
 
 use chrono::{Duration, NaiveDateTime};
@@ -170,6 +170,30 @@ pub fn admit_folder(
     )
 }
 
+/// Admit a provider copy under the caller's already retained journal root.
+///
+/// Native callers hold their original recovery target use around this call and
+/// metadata registration. Do not reopen the journal pathname as new authority.
+pub fn admit_folder_bound(
+    root: &Arc<solstone_core_journal_io::JournalRoot>,
+    source: &Path,
+    attempt_id: &str,
+    source_timestamp: &Timestamp,
+) -> Result<AdmittedFolder, FolderAdmitError> {
+    root.revalidate_canonical_binding()
+        .map_err(|_| FolderAdmitError::Denied)?;
+    let cancel = AtomicBool::new(false);
+    admit_folder_using(
+        root.canonical_path(),
+        source,
+        attempt_id,
+        source_timestamp,
+        CopyLimits::production(),
+        &cancel,
+        Some(root),
+    )
+}
+
 pub(crate) fn admit_folder_bounded(
     journal: &Path,
     source: &Path,
@@ -177,6 +201,26 @@ pub(crate) fn admit_folder_bounded(
     source_timestamp: &Timestamp,
     limits: CopyLimits,
     cancel: &AtomicBool,
+) -> Result<AdmittedFolder, FolderAdmitError> {
+    admit_folder_using(
+        journal,
+        source,
+        attempt_id,
+        source_timestamp,
+        limits,
+        cancel,
+        None,
+    )
+}
+
+fn admit_folder_using(
+    journal: &Path,
+    source: &Path,
+    attempt_id: &str,
+    source_timestamp: &Timestamp,
+    limits: CopyLimits,
+    cancel: &AtomicBool,
+    bound: Option<&Arc<solstone_core_journal_io::JournalRoot>>,
 ) -> Result<AdmittedFolder, FolderAdmitError> {
     if !one_component(attempt_id) {
         return Err(FolderAdmitError::BadAttemptId);
@@ -187,7 +231,19 @@ pub(crate) fn admit_folder_bounded(
     if imports.starts_with(&resolved_source) {
         return Err(FolderAdmitError::InsideImports);
     }
-    let ownership = folder_ownership(journal, true)?;
+    #[cfg(unix)]
+    let ownership = match bound {
+        Some(root) => folder_ownership_bound(Arc::clone(root), true)?,
+        None => folder_ownership(journal, true)?,
+    };
+    #[cfg(not(unix))]
+    let ownership = {
+        if let Some(root) = bound {
+            root.revalidate_canonical_binding()
+                .map_err(|_| FolderAdmitError::Denied)?;
+        }
+        folder_ownership(journal, true)?
+    };
     #[cfg(not(unix))]
     let _ownership = ownership;
     let live = LiveAttempt::enter(journal, attempt_id);
@@ -226,13 +282,18 @@ pub(crate) fn admit_folder_bounded(
         let imports =
             solstone_core_journal_io::FlatDirectory::open(&ownership.root, Path::new("imports"))
                 .map_err(|_| FolderAdmitError::Denied)?;
-        solstone_core_journal_io::create_or_open_flat_directory_bound(
-            &imports,
-            OsStr::new("folder-attempts"),
-            DIRECTORY_MODE,
-            attempts_root.parent().ok_or(FolderAdmitError::Denied)?,
+        if imports.identity() != ownership.imports_identity {
+            return Err(FolderAdmitError::Denied);
+        }
+        Arc::new(
+            solstone_core_journal_io::create_or_open_flat_directory_bound(
+                &imports,
+                OsStr::new("folder-attempts"),
+                DIRECTORY_MODE,
+                attempts_root.parent().ok_or(FolderAdmitError::Denied)?,
+            )
+            .map_err(|_| FolderAdmitError::Denied)?,
         )
-        .map_err(|_| FolderAdmitError::Denied)?
     };
     let claim = claim_path(journal, attempt_id)?;
     let token = mint_claim_token()?;
@@ -249,6 +310,15 @@ pub(crate) fn admit_folder_bounded(
     let mut cleanup = AttemptCleanup {
         attempt_dir: None,
         claim: Some(claim.clone()),
+        #[cfg(unix)]
+        attempts: Arc::clone(&attempts),
+        #[cfg(unix)]
+        attempt_identity: None,
+        #[cfg(unix)]
+        claim_entry: attempts
+            .observe(claim.file_name().ok_or(FolderAdmitError::Denied)?)
+            .map_err(classify_flat)?
+            .ok_or(FolderAdmitError::Denied)?,
     };
     claim_file
         .write_all(token.as_bytes())
@@ -268,6 +338,7 @@ pub(crate) fn admit_folder_bounded(
             .create_child(OsStr::new(attempt_id), DIRECTORY_MODE)
             .map_err(classify_flat)?;
         cleanup.attempt_dir = Some(attempt_dir.clone());
+        cleanup.attempt_identity = Some(attempt.identity());
         solstone_core_journal_io::write_bytes_exclusive_bound(
             &attempt,
             OsStr::new("attempt.json"),
@@ -275,18 +346,52 @@ pub(crate) fn admit_folder_bounded(
             0o600,
         )
         .map_err(|error| classify_text(&error.to_string()))?;
-        drop(attempts);
     }
     let tree = attempt_dir.join("tree");
     let budget = DescriptorBudget {
-        // The retained journal root and kernel lock remain live throughout copying.
-        live: Cell::new(if cfg!(unix) { 2 } else { 1 }),
+        // The retained root, kernel lock and original attempt parent stay live.
+        live: Cell::new(if cfg!(unix) { 3 } else { 1 }),
         limit: limits.max_descriptors,
     };
     let mut counts = CopyCounts { files: 0, bytes: 0 };
+    checkpoint(cancel)?;
+    #[cfg(unix)]
+    let destination = {
+        let attempt = attempts
+            .descend_normal(Path::new(attempt_id))
+            .map_err(classify_flat)?;
+        if Some(attempt.identity()) != cleanup.attempt_identity {
+            return Err(FolderAdmitError::Denied);
+        }
+        attempt
+            .create_child(OsStr::new("tree"), DIRECTORY_MODE)
+            .map_err(classify_flat)?
+    };
+    #[cfg(unix)]
+    copy_directory(
+        source,
+        &destination,
+        &budget,
+        &mut buffer,
+        cancel,
+        &mut counts,
+    )?;
+    #[cfg(not(unix))]
     copy_directory(source, &tree, &budget, &mut buffer, cancel, &mut counts)?;
+    #[cfg(unix)]
+    let tree_identity = destination.identity();
+    #[cfg(unix)]
+    drop(destination);
     drop(buffer);
     checkpoint(cancel)?;
+    #[cfg(unix)]
+    verify_attempt_binding(
+        &ownership,
+        &attempts,
+        attempt_id,
+        cleanup.attempt_identity,
+        tree_identity,
+    )?;
     let legacy_hash = hash_source(&tree)
         .map_err(|_| FolderAdmitError::Denied)?
         .into_inner();
@@ -302,6 +407,14 @@ pub(crate) fn admit_folder_bounded(
     // Custody and the no-replace rename are one admitted handoff. Stop before
     // entering it; a later Stop does not undo a handoff that already committed.
     checkpoint(cancel)?;
+    #[cfg(unix)]
+    verify_attempt_binding(
+        &ownership,
+        &attempts,
+        attempt_id,
+        cleanup.attempt_identity,
+        tree_identity,
+    )?;
     #[cfg(not(unix))]
     solstone_core_journal_io::write_bytes_exclusive(
         attempt_dir.join("folder-custody.json"),
@@ -315,11 +428,12 @@ pub(crate) fn admit_folder_bounded(
             .root
             .revalidate_canonical_binding()
             .map_err(|_| FolderAdmitError::Denied)?;
-        let attempt = solstone_core_journal_io::FlatDirectory::open_normal_relative(
-            &ownership.root,
-            &PathBuf::from("imports/folder-attempts").join(attempt_id),
-        )
-        .map_err(|_| FolderAdmitError::Denied)?;
+        let attempt = attempts
+            .descend_normal(Path::new(attempt_id))
+            .map_err(|_| FolderAdmitError::Denied)?;
+        if Some(attempt.identity()) != cleanup.attempt_identity {
+            return Err(FolderAdmitError::Denied);
+        }
         solstone_core_journal_io::write_bytes_exclusive_bound(
             &attempt,
             OsStr::new("folder-custody.json"),
@@ -333,8 +447,18 @@ pub(crate) fn admit_folder_bounded(
     #[cfg(not(unix))]
     let import_id = publish_attempt(journal, &attempt_dir, source_timestamp)?;
     #[cfg(unix)]
-    let import_id = publish_attempt_bound(&ownership.root, attempt_id, source_timestamp)?;
+    let import_id = publish_attempt_bound(&ownership, &attempts, attempt_id, source_timestamp)?;
+    #[cfg(not(unix))]
     remove_regular_file(&claim);
+    #[cfg(unix)]
+    {
+        if attempts
+            .remove_observed_entry(&cleanup.claim_entry)
+            .is_err()
+        {
+            log::warn!("could not retire a published folder claim");
+        }
+    }
     Ok(AdmittedFolder {
         import_id,
         legacy_hash,
@@ -372,20 +496,31 @@ fn checked_staging_root(journal: &Path) -> Result<PathBuf, FolderAdmitError> {
 
 #[cfg(unix)]
 struct FolderOwnership {
-    root: solstone_core_journal_io::JournalRoot,
+    root: Arc<solstone_core_journal_io::JournalRoot>,
+    imports_identity: solstone_core_journal_io::ObjectIdentity,
     _lock: solstone_core_journal_io::BoundParentLock,
 }
 
 #[cfg(unix)]
 fn folder_ownership(journal: &Path, create: bool) -> Result<FolderOwnership, FolderAdmitError> {
+    checked_staging_root(journal)?;
+    let root = solstone_core_journal_io::JournalRoot::open(journal)
+        .map_err(|_| FolderAdmitError::Denied)?;
+    folder_ownership_bound(Arc::new(root), create)
+}
+
+#[cfg(unix)]
+fn folder_ownership_bound(
+    root: Arc<solstone_core_journal_io::JournalRoot>,
+    create: bool,
+) -> Result<FolderOwnership, FolderAdmitError> {
     use solstone_core_journal_io::{
-        FlatDirectory, JournalRoot, acquire_existing_parent_lock_bound_checked,
+        FlatDirectory, acquire_existing_parent_lock_bound_checked,
         create_or_open_flat_directory_bound,
     };
-    checked_staging_root(journal)?;
-    let root = JournalRoot::open(journal).map_err(|_| FolderAdmitError::Denied)?;
     root.revalidate_canonical_binding()
         .map_err(|_| FolderAdmitError::Denied)?;
+    checked_staging_root(root.canonical_path())?;
     let imports = if create {
         create_or_open_flat_directory_bound(
             &root,
@@ -408,7 +543,11 @@ fn folder_ownership(journal: &Path, create: bool) -> Result<FolderOwnership, Fol
         },
     )
     .map_err(|_| FolderAdmitError::ReleaseRefused)?;
-    Ok(FolderOwnership { root, _lock: lock })
+    Ok(FolderOwnership {
+        root,
+        imports_identity: imports.identity(),
+        _lock: lock,
+    })
 }
 
 /// Serialize this adapter's copying and cleanup with the existing kernel lock.
@@ -541,8 +680,15 @@ impl Drop for DescriptorTicket<'_> {
 struct AttemptCleanup {
     attempt_dir: Option<PathBuf>,
     claim: Option<PathBuf>,
+    #[cfg(unix)]
+    attempts: Arc<solstone_core_journal_io::FlatDirectory>,
+    #[cfg(unix)]
+    attempt_identity: Option<solstone_core_journal_io::ObjectIdentity>,
+    #[cfg(unix)]
+    claim_entry: solstone_core_journal_io::FlatDirectoryEntry,
 }
 
+#[cfg(not(unix))]
 impl Drop for AttemptCleanup {
     fn drop(&mut self) {
         let attempt_dir = self.attempt_dir.take();
@@ -561,6 +707,48 @@ impl Drop for AttemptCleanup {
         }
         if let Some(claim) = claim {
             remove_regular_file(&claim);
+        }
+    }
+}
+
+#[cfg(unix)]
+impl Drop for AttemptCleanup {
+    fn drop(&mut self) {
+        if self.attempt_dir.is_none() && self.claim.is_none() {
+            return;
+        }
+        let cleanup = || -> Result<(), FolderAdmitError> {
+            let attempts = &self.attempts;
+            if let Some(path) = &self.attempt_dir {
+                let name = path.file_name().ok_or(FolderAdmitError::Denied)?;
+                let attempt = attempts
+                    .descend_normal(Path::new(name))
+                    .map_err(classify_flat)?;
+                let identity = self.attempt_identity.ok_or(FolderAdmitError::Denied)?;
+                if attempt.identity() != identity {
+                    return Err(FolderAdmitError::Denied);
+                }
+                if attempt
+                    .observe(OsStr::new("folder-custody.json"))
+                    .map_err(classify_flat)?
+                    .is_some()
+                {
+                    return Ok(());
+                }
+                drop(attempt);
+                attempts
+                    .remove_tree_if_identity(name, identity)
+                    .map_err(classify_flat)?;
+            }
+            if self.claim.is_some() {
+                attempts
+                    .remove_observed_entry(&self.claim_entry)
+                    .map_err(classify_flat)?;
+            }
+            Ok(())
+        };
+        if cleanup().is_err() {
+            log::warn!("could not retire an owned folder attempt");
         }
     }
 }
@@ -624,7 +812,7 @@ fn hex_encode(bytes: &[u8]) -> String {
 #[cfg(unix)]
 fn copy_directory(
     source: &Path,
-    destination: &Path,
+    destination_root: &solstone_core_journal_io::FlatDirectory,
     budget: &DescriptorBudget,
     buffer: &mut [u8],
     cancel: &AtomicBool,
@@ -638,52 +826,35 @@ fn copy_directory(
     }
     let _source_ticket = budget.take()?;
     let source_root = JournalRoot::open_no_follow(source).map_err(denied)?;
-    let parent = destination.parent().ok_or(FolderAdmitError::Denied)?;
-    let parent_root = JournalRoot::open_no_follow(parent).map_err(denied)?;
-    let parent_directory = FlatDirectory::from_root(&parent_root).map_err(classify_flat)?;
-    let created = parent_directory
-        .create_child(
-            destination.file_name().ok_or(FolderAdmitError::Denied)?,
-            DIRECTORY_MODE,
-        )
-        .map_err(classify_flat)?;
-    // Root acquisition temporarily retains three descriptors. Release these
-    // two parent handles before opening it, retaining the created identity.
-    drop(parent_directory);
-    drop(parent_root);
     let _destination_ticket = budget.take()?;
-    let destination_root = JournalRoot::open_no_follow(destination).map_err(denied)?;
-    if destination_root.identity() != created.identity() {
-        return Err(FolderAdmitError::Denied);
-    }
-    drop(created);
-    // Directory handles are reopened from retained roots and dropped before
-    // descending. Directory depth does not retain one descriptor per ancestor.
+    // Reopen descendants from these retained roots. The attempt parent stays
+    // retained for cleanup, so close the source parent before opening output.
     let mut work: Vec<(PathBuf, Option<FlatDirectoryEntry>, bool)> =
         vec![(PathBuf::new(), None, false)];
     while let Some((relative, expected, finish_directory)) = work.pop() {
         checkpoint(cancel)?;
-        let _source_parent = budget.take()?;
-        let source_directory =
-            FlatDirectory::open_normal_relative(&source_root, &relative).map_err(classify_flat)?;
-        if let Some(expected) = &expected
-            && !source_directory.matches_entry(expected)
-        {
-            return Err(FolderAdmitError::Truncated);
-        }
-        let _destination_parent = budget.take()?;
-        let destination_directory =
-            FlatDirectory::open_normal_relative(&destination_root, &relative)
-                .map_err(classify_flat)?;
-        if finish_directory {
-            let modified =
-                require_modified(source_directory.metadata().map_err(classify_io)?.modified())?;
-            destination_directory
-                .set_modified(modified)
-                .map_err(classify_io)?;
-            continue;
-        }
         let entries = {
+            let _source_parent = budget.take()?;
+            let source_directory = FlatDirectory::open_normal_relative(&source_root, &relative)
+                .map_err(classify_flat)?;
+            if expected
+                .as_ref()
+                .is_some_and(|entry| !source_directory.matches_entry(entry))
+            {
+                return Err(FolderAdmitError::Truncated);
+            }
+            if finish_directory {
+                let modified =
+                    require_modified(source_directory.metadata().map_err(classify_io)?.modified())?;
+                let _destination_parent = budget.take()?;
+                let destination_directory = destination_root
+                    .descend_normal(&relative)
+                    .map_err(classify_flat)?;
+                destination_directory
+                    .set_modified(modified)
+                    .map_err(classify_io)?;
+                continue;
+            }
             let _listing = budget.take()?;
             list_flat_directory(&source_directory, usize::MAX)
                 .map_err(denied)?
@@ -695,6 +866,10 @@ fn copy_directory(
             let name = entry_name(&entry.name)?;
             match entry.kind {
                 JournalEntryKind::Directory => {
+                    let _destination_parent = budget.take()?;
+                    let destination_directory = destination_root
+                        .descend_normal(&relative)
+                        .map_err(classify_flat)?;
                     destination_directory
                         .create_child(&entry.name, DIRECTORY_MODE)
                         .map_err(classify_flat)?;
@@ -702,49 +877,63 @@ fn copy_directory(
                 }
                 JournalEntryKind::RegularFile => {
                     let _input_ticket = budget.take()?;
-                    let mut input = source_directory
-                        .open_regular_file(&entry)
-                        .map_err(classify_flat)?;
+                    let mut input = {
+                        let _source_parent = budget.take()?;
+                        let source_directory =
+                            FlatDirectory::open_normal_relative(&source_root, &relative)
+                                .map_err(classify_flat)?;
+                        source_directory
+                            .open_regular_file(&entry)
+                            .map_err(classify_flat)?
+                    };
                     let modified =
                         require_modified(input.metadata().map_err(classify_io)?.modified())?;
-                    let _output_ticket = budget.take()?;
-                    let mut output = destination_directory
-                        .create_file(&entry.name, 0o600)
-                        .map_err(classify_flat)?;
-                    let mut copied = 0_u64;
-                    loop {
-                        checkpoint(cancel)?;
-                        let read = input.read(buffer).map_err(classify_io)?;
-                        checkpoint(cancel)?;
-                        if read == 0 {
-                            break;
+                    {
+                        let _destination_parent = budget.take()?;
+                        let destination_directory = destination_root
+                            .descend_normal(&relative)
+                            .map_err(classify_flat)?;
+                        let _output_ticket = budget.take()?;
+                        let mut output = destination_directory
+                            .create_file(&entry.name, 0o600)
+                            .map_err(classify_flat)?;
+                        let mut copied = 0_u64;
+                        loop {
+                            checkpoint(cancel)?;
+                            let read = input.read(buffer).map_err(classify_io)?;
+                            checkpoint(cancel)?;
+                            if read == 0 {
+                                break;
+                            }
+                            output.write_all(&buffer[..read]).map_err(classify_io)?;
+                            copied += u64::try_from(read).map_err(|_| FolderAdmitError::Denied)?;
+                            if copied > entry.size {
+                                return Err(FolderAdmitError::Truncated);
+                            }
                         }
-                        output.write_all(&buffer[..read]).map_err(classify_io)?;
-                        copied += u64::try_from(read).map_err(|_| FolderAdmitError::Denied)?;
-                        if copied > entry.size {
+                        if copied != entry.size {
                             return Err(FolderAdmitError::Truncated);
                         }
+                        output
+                            .set_times(FileTimes::new().set_modified(modified))
+                            .map_err(classify_io)?;
+                        counts.files += 1;
+                        counts.bytes += copied;
                     }
-                    if copied != entry.size {
-                        return Err(FolderAdmitError::Truncated);
-                    }
+                    let _source_parent = budget.take()?;
+                    let source_directory =
+                        FlatDirectory::open_normal_relative(&source_root, &relative)
+                            .map_err(classify_flat)?;
                     source_directory
                         .verify_regular_file(&input, &entry)
                         .map_err(|_| FolderAdmitError::Truncated)?;
-                    output
-                        .set_times(FileTimes::new().set_modified(modified))
-                        .map_err(classify_io)?;
-                    counts.files += 1;
-                    counts.bytes += copied;
                 }
                 _ => return Err(FolderAdmitError::SpecialEntry),
             }
         }
     }
     source_root.revalidate_canonical_binding().map_err(denied)?;
-    destination_root
-        .revalidate_canonical_binding()
-        .map_err(denied)?;
+    destination_root.revalidate().map_err(classify_flat)?;
     Ok(())
 }
 
@@ -918,19 +1107,28 @@ fn classify_text(text: &str) -> FolderAdmitError {
 
 #[cfg(unix)]
 fn publish_attempt_bound(
-    root: &solstone_core_journal_io::JournalRoot,
+    ownership: &FolderOwnership,
+    attempts: &solstone_core_journal_io::FlatDirectory,
     attempt_id: &str,
     source_timestamp: &Timestamp,
 ) -> Result<Timestamp, FolderAdmitError> {
     use solstone_core_journal_io::FlatDirectory;
-    let imports =
-        FlatDirectory::open(root, Path::new("imports")).map_err(|_| FolderAdmitError::Denied)?;
-    let attempts = FlatDirectory::open(root, Path::new("imports/folder-attempts"))
+    let imports = FlatDirectory::open(&ownership.root, Path::new("imports"))
         .map_err(|_| FolderAdmitError::Denied)?;
+    if imports.identity() != ownership.imports_identity {
+        return Err(FolderAdmitError::Denied);
+    }
+    let current_attempts = imports
+        .descend_normal(Path::new("folder-attempts"))
+        .map_err(classify_flat)?;
+    if current_attempts.identity() != attempts.identity() {
+        return Err(FolderAdmitError::Denied);
+    }
+    drop(current_attempts);
     for offset in 0..IMPORT_ID_PROBE_LIMIT {
         let candidate = shift_timestamp(source_timestamp, offset)?;
         match solstone_core_journal_io::media::publish_directory_noreplace_bound(
-            &attempts,
+            attempts,
             OsStr::new(attempt_id),
             &imports,
             OsStr::new(candidate.as_str()),
@@ -943,6 +1141,47 @@ fn publish_attempt_bound(
     Err(FolderAdmitError::Publication(
         "no free import id".to_owned(),
     ))
+}
+
+#[cfg(unix)]
+fn verify_attempt_binding(
+    ownership: &FolderOwnership,
+    attempts: &solstone_core_journal_io::FlatDirectory,
+    attempt_id: &str,
+    attempt_identity: Option<solstone_core_journal_io::ObjectIdentity>,
+    tree_identity: solstone_core_journal_io::ObjectIdentity,
+) -> Result<(), FolderAdmitError> {
+    use solstone_core_journal_io::FlatDirectory;
+    ownership
+        .root
+        .revalidate_canonical_binding()
+        .map_err(|_| FolderAdmitError::Denied)?;
+    let imports =
+        FlatDirectory::open(&ownership.root, Path::new("imports")).map_err(classify_flat)?;
+    if imports.identity() != ownership.imports_identity {
+        return Err(FolderAdmitError::Denied);
+    }
+    let current = imports
+        .descend_normal(Path::new("folder-attempts"))
+        .map_err(classify_flat)?;
+    if current.identity() != attempts.identity() {
+        return Err(FolderAdmitError::Denied);
+    }
+    drop(current);
+    drop(imports);
+    let attempt = attempts
+        .descend_normal(Path::new(attempt_id))
+        .map_err(classify_flat)?;
+    if Some(attempt.identity()) != attempt_identity {
+        return Err(FolderAdmitError::Denied);
+    }
+    let tree = attempt
+        .descend_normal(Path::new("tree"))
+        .map_err(classify_flat)?;
+    if tree.identity() != tree_identity {
+        return Err(FolderAdmitError::Denied);
+    }
+    Ok(())
 }
 
 #[cfg(not(unix))]
@@ -1619,6 +1858,196 @@ mod tests {
             .collect::<Vec<_>>();
         names.sort();
         assert_eq!(names, vec![std::ffi::OsString::from("prior.txt")]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn bound_admission_refuses_a_replaced_root_before_staging() {
+        let parent = tempfile::tempdir().unwrap();
+        let journal = parent.path().join("journal");
+        fs::create_dir(&journal).unwrap();
+        let root = Arc::new(solstone_core_journal_io::JournalRoot::open(&journal).unwrap());
+        fs::rename(&journal, parent.path().join("original")).unwrap();
+        fs::create_dir(&journal).unwrap();
+        fs::write(journal.join("sibling.txt"), b"replacement stays").unwrap();
+        let source = tempfile::tempdir().unwrap();
+        write_oracle(source.path());
+        let error =
+            admit_folder_bound(&root, source.path(), "provider-copy", &stamp()).unwrap_err();
+        assert!(matches!(error, FolderAdmitError::Denied));
+        assert!(!journal.join("imports").exists());
+        assert!(!parent.path().join("original/imports").exists());
+        assert_eq!(
+            fs::read(journal.join("sibling.txt")).unwrap(),
+            b"replacement stays"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn bound_admission_uses_the_original_root_and_keeps_the_copied_bytes() {
+        let journal = tempfile::tempdir().unwrap();
+        let source = tempfile::tempdir().unwrap();
+        write_oracle(source.path());
+        let root = Arc::new(solstone_core_journal_io::JournalRoot::open(journal.path()).unwrap());
+        let admitted = admit_folder_bound(&root, source.path(), "provider-copy", &stamp()).unwrap();
+        let tree = journal
+            .path()
+            .join("imports")
+            .join(admitted.import_id.as_str())
+            .join("tree");
+        assert_eq!(hash_source(&tree).unwrap().as_str(), admitted.legacy_hash);
+        assert_eq!(snapshot::fingerprint(&tree).unwrap(), admitted.snapshot);
+        assert!(tree.is_dir());
+        assert!(source.path().is_dir());
+        root.revalidate_canonical_binding().unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn mid_copy_replacement_keeps_the_replacement_and_cleans_the_original_attempt() {
+        for replace_root in [true, false] {
+            let parent = tempfile::tempdir().unwrap();
+            let journal = parent.path().join("journal");
+            fs::create_dir(&journal).unwrap();
+            let root = Arc::new(solstone_core_journal_io::JournalRoot::open(&journal).unwrap());
+            let source = tempfile::tempdir().unwrap();
+            write_oracle(source.path());
+            let swapped = Arc::new(AtomicBool::new(false));
+            let moved = Arc::clone(&swapped);
+            let checked_journal = journal.clone();
+            let parked = if replace_root {
+                parent.path().join("original")
+            } else {
+                journal.join("imports/original-attempts")
+            };
+            let parked_copy = parked.clone();
+            let stop = crate::WorkStop::linked_with_checkpoint(
+                Arc::new(AtomicBool::new(false)),
+                None,
+                move || {
+                    if moved.load(Ordering::Acquire) {
+                        return true;
+                    }
+                    if !checked_journal
+                        .join("imports/folder-attempts/provider-copy/attempt.json")
+                        .is_file()
+                    {
+                        return false;
+                    }
+                    let displaced = if replace_root {
+                        checked_journal.clone()
+                    } else {
+                        checked_journal.join("imports/folder-attempts")
+                    };
+                    fs::rename(displaced, &parked_copy).unwrap();
+                    let replacement = checked_journal.join("imports/folder-attempts/provider-copy");
+                    fs::create_dir_all(&replacement).unwrap();
+                    fs::write(replacement.join("sentinel.txt"), b"replacement stays").unwrap();
+                    fs::write(replacement.with_extension("claim"), b"replacement claim").unwrap();
+                    moved.store(true, Ordering::Release);
+                    false // Let the next unit reach its bound destination, then stop.
+                },
+            );
+            let _installed = crate::WorkStopGuard::install(&stop);
+            assert!(admit_folder_bound(&root, source.path(), "provider-copy", &stamp()).is_err());
+            assert!(swapped.load(Ordering::Acquire));
+            let replacement = journal.join("imports/folder-attempts/provider-copy");
+            assert_eq!(
+                fs::read(replacement.join("sentinel.txt")).unwrap(),
+                b"replacement stays"
+            );
+            assert_eq!(
+                fs::read(replacement.with_extension("claim")).unwrap(),
+                b"replacement claim"
+            );
+            assert!(!replacement.join("tree").exists());
+            let original_attempts = if replace_root {
+                parked.join("imports/folder-attempts")
+            } else {
+                parked
+            };
+            assert!(!original_attempts.join("provider-copy").exists());
+            assert!(!original_attempts.join("provider-copy.claim").exists());
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_displaced_attempt_parent_cannot_supply_hashes_for_the_original_copy() {
+        let journal = tempfile::tempdir().unwrap();
+        let source = tempfile::tempdir().unwrap();
+        write_oracle(source.path());
+        let root = Arc::new(solstone_core_journal_io::JournalRoot::open(journal.path()).unwrap());
+        let checked_journal = journal.path().to_path_buf();
+        let moved = Arc::new(AtomicBool::new(false));
+        let swapped = Arc::clone(&moved);
+        let stop = crate::WorkStop::linked_with_checkpoint(
+            Arc::new(AtomicBool::new(false)),
+            None,
+            move || {
+                let attempts = checked_journal.join("imports/folder-attempts");
+                if !swapped.load(Ordering::Acquire)
+                    && attempts.join("provider-copy/attempt.json").exists()
+                {
+                    fs::rename(&attempts, checked_journal.join("imports/original-attempts"))
+                        .unwrap();
+                    fs::create_dir_all(attempts.join("provider-copy/tree")).unwrap();
+                    fs::write(
+                        attempts.join("provider-copy/tree/replacement.md"),
+                        b"foreign replacement bytes",
+                    )
+                    .unwrap();
+                    fs::write(attempts.join("provider-copy.claim"), b"replacement claim").unwrap();
+                    swapped.store(true, Ordering::Release);
+                }
+                false // Namespace replacement must be safe without a Stop signal.
+            },
+        );
+        let _installed = crate::WorkStopGuard::install(&stop);
+        let result = admit_folder_bound(&root, source.path(), "provider-copy", &stamp());
+        assert!(moved.load(Ordering::Acquire));
+        assert!(
+            result.is_err(),
+            "displaced source must not be published with unrelated hashes: {result:?}"
+        );
+        assert!(
+            !journal
+                .path()
+                .join("imports")
+                .join(stamp().as_str())
+                .exists()
+        );
+        assert!(
+            !journal
+                .path()
+                .join("imports/original-attempts/provider-copy")
+                .exists()
+        );
+        assert!(
+            !journal
+                .path()
+                .join("imports/original-attempts/provider-copy.claim")
+                .exists()
+        );
+        assert_eq!(
+            fs::read(
+                journal
+                    .path()
+                    .join("imports/folder-attempts/provider-copy/tree/replacement.md")
+            )
+            .unwrap(),
+            b"foreign replacement bytes"
+        );
+        assert_eq!(
+            fs::read(
+                journal
+                    .path()
+                    .join("imports/folder-attempts/provider-copy.claim")
+            )
+            .unwrap(),
+            b"replacement claim"
+        );
     }
 
     #[test]

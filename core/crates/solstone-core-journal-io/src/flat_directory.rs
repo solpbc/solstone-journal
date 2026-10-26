@@ -259,6 +259,129 @@ impl FlatDirectory {
         Ok(current)
     }
 
+    /// Descend from this retained directory without reopening its diagnostic path.
+    pub fn descend_normal(&self, relative: &Path) -> Result<Self, FlatDirectoryError> {
+        self.revalidate()?;
+        let mut current = Self {
+            directory: nix::unistd::dup(self).map_err(|error| {
+                errno_error("retain flat directory", self.diagnostic_path.clone(), error)
+            })?,
+            identity: self.identity,
+            diagnostic_path: self.diagnostic_path.clone(),
+        };
+        if relative.as_os_str().is_empty() {
+            return Ok(current);
+        }
+        for raw in relative.as_os_str().as_bytes().split(|byte| *byte == b'/') {
+            let name = OsStr::from_bytes(raw);
+            validate_normal_name(name)?;
+            let diagnostic_path = current.diagnostic_entry(name);
+            let (directory, identity) =
+                open_verified_child_directory(&current, name, &diagnostic_path)?.ok_or_else(
+                    || FlatDirectoryError::EnumerationChanged {
+                        path: diagnostic_path.clone(),
+                    },
+                )?;
+            current = Self {
+                directory,
+                identity,
+                diagnostic_path,
+            };
+        }
+        Ok(current)
+    }
+
+    /// Observe a direct entry without following it or reopening this directory.
+    pub fn observe(&self, name: &OsStr) -> Result<Option<FlatDirectoryEntry>, FlatDirectoryError> {
+        validate_normal_name(name)?;
+        self.revalidate()?;
+        stat_entry(self, name)
+    }
+
+    /// Remove a direct entry only while its kind and object identity still match.
+    /// Callers own exclusion against writers to this private namespace.
+    pub fn remove_observed_entry(
+        &self,
+        entry: &FlatDirectoryEntry,
+    ) -> Result<(), FlatDirectoryError> {
+        use nix::unistd::{UnlinkatFlags, unlinkat};
+        let Some(current) = self.observe(&entry.name)? else {
+            return Ok(());
+        };
+        if current.kind != entry.kind
+            || current.device != entry.device
+            || current.inode != entry.inode
+        {
+            return Err(FlatDirectoryError::IdentityChanged {
+                path: self.diagnostic_entry(&entry.name),
+            });
+        }
+        let flags = if current.kind == JournalEntryKind::Directory {
+            UnlinkatFlags::RemoveDir
+        } else {
+            UnlinkatFlags::NoRemoveDir
+        };
+        unlinkat(self, entry.name.as_os_str(), flags).map_err(|error| {
+            errno_error(
+                "remove owned flat entry",
+                self.diagnostic_entry(&entry.name),
+                error,
+            )
+        })
+    }
+
+    /// Remove an exclusively owned tree through retained directory descriptors.
+    /// A replacement of the direct tree name is preserved. Descents do not
+    /// follow links; depth does not retain one descriptor per ancestor.
+    pub fn remove_tree_if_identity(
+        &self,
+        name: &OsStr,
+        identity: ObjectIdentity,
+    ) -> Result<(), FlatDirectoryError> {
+        let Some(entry) = self.observe(name)? else {
+            return Ok(());
+        };
+        let tree = self.descend_normal(Path::new(name))?;
+        if tree.identity() != identity || !tree.matches_entry(&entry) {
+            return Err(FlatDirectoryError::IdentityChanged {
+                path: self.diagnostic_entry(name),
+            });
+        }
+        let mut work = vec![(PathBuf::new(), entry.clone(), false)];
+        while let Some((relative, expected, finish)) = work.pop() {
+            let directory = tree.descend_normal(&relative)?;
+            if !directory.matches_entry(&expected) {
+                return Err(FlatDirectoryError::IdentityChanged {
+                    path: directory.diagnostic_path.clone(),
+                });
+            }
+            if finish {
+                drop(directory);
+                if relative.as_os_str().is_empty() {
+                    self.remove_observed_entry(&entry)?;
+                } else {
+                    let parent = tree.descend_normal(relative.parent().unwrap_or(Path::new("")))?;
+                    parent.remove_observed_entry(&expected)?;
+                }
+                continue;
+            }
+            let entries = list_flat_directory(&directory, usize::MAX)?.ok_or_else(|| {
+                FlatDirectoryError::EnumerationChanged {
+                    path: directory.diagnostic_path.clone(),
+                }
+            })?;
+            work.push((relative.clone(), expected, true));
+            for child in entries {
+                if child.kind == JournalEntryKind::Directory {
+                    work.push((relative.join(&child.name), child, false));
+                } else {
+                    directory.remove_observed_entry(&child)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// Read metadata through this directory descriptor.
     pub fn metadata(&self) -> io::Result<std::fs::Metadata> {
         File::from(nix::unistd::dup(self)?).metadata()
@@ -882,6 +1005,71 @@ mod tests {
         let root = JournalRoot::open(temporary.path()).unwrap();
         let flat = FlatDirectory::open(&root, Path::new("flat")).unwrap();
         (temporary, root, flat)
+    }
+
+    #[cfg(feature = "full-tests")]
+    #[test]
+    fn owned_tree_cleanup_uses_the_retained_parent_after_its_name_is_replaced() {
+        let (temporary, _, flat) = root_and_flat();
+        let tree = flat.create_child(OsStr::new("copy"), 0o700).unwrap();
+        let identity = tree.identity();
+        tree.create_child(OsStr::new("nested"), 0o700)
+            .unwrap()
+            .create_file(OsStr::new("note.md"), 0o600)
+            .unwrap();
+        drop(tree);
+        fs::rename(
+            temporary.path().join("flat"),
+            temporary.path().join("original"),
+        )
+        .unwrap();
+        fs::create_dir_all(temporary.path().join("flat/copy/nested")).unwrap();
+        fs::write(
+            temporary.path().join("flat/copy/nested/note.md"),
+            b"replacement stays",
+        )
+        .unwrap();
+        flat.remove_tree_if_identity(OsStr::new("copy"), identity)
+            .unwrap();
+        assert!(!temporary.path().join("original/copy").exists());
+        assert_eq!(
+            fs::read(temporary.path().join("flat/copy/nested/note.md")).unwrap(),
+            b"replacement stays"
+        );
+    }
+
+    #[cfg(feature = "full-tests")]
+    #[test]
+    fn owned_entry_removal_preserves_replacements_of_both_tree_and_claim_names() {
+        let (temporary, _, flat) = root_and_flat();
+        let tree = flat.create_child(OsStr::new("copy"), 0o700).unwrap();
+        let identity = tree.identity();
+        drop(tree);
+        drop(flat.create_file(OsStr::new("copy.claim"), 0o600).unwrap());
+        let claim = flat.observe(OsStr::new("copy.claim")).unwrap().unwrap();
+        let directory = temporary.path().join("flat");
+        fs::rename(directory.join("copy"), directory.join("original-copy")).unwrap();
+        fs::rename(
+            directory.join("copy.claim"),
+            directory.join("original.claim"),
+        )
+        .unwrap();
+        fs::create_dir(directory.join("copy")).unwrap();
+        fs::write(directory.join("copy/sentinel.md"), b"replacement tree").unwrap();
+        fs::write(directory.join("copy.claim"), b"replacement claim").unwrap();
+        assert!(
+            flat.remove_tree_if_identity(OsStr::new("copy"), identity)
+                .is_err()
+        );
+        assert!(flat.remove_observed_entry(&claim).is_err());
+        assert_eq!(
+            fs::read(directory.join("copy/sentinel.md")).unwrap(),
+            b"replacement tree"
+        );
+        assert_eq!(
+            fs::read(directory.join("copy.claim")).unwrap(),
+            b"replacement claim"
+        );
     }
 
     #[test]
