@@ -18,6 +18,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - journals running on a phone now start their local agent connections and close them when you stop the journal. the agents page already offered these connections, but they did not start on phones.
 - after you answer a calendar invitation on your iphone, your journal still marks you on it, and still knows when you declined, as long as your journal holds a copy of that invitation with one of your email addresses on it, from any of your phones. events already in your journal are updated the next time your journal checks them. thanks @dvanduzer for the report.
 - an activity no longer ends holding a stretch from another part of your life. before, the stretch right after an activity could be added to it even when your journal filed that stretch elsewhere, and the activity's story mixed the two. for example, a phone recording of an airport announcement pulled in the video call you recorded right after it.
+- when a video call is on your screen with no sound, the people on the call now show as "appeared on screen". before, they could show as "heard them speak in this meeting".
 
 ## [2.0.59] - 2026-10-26
 

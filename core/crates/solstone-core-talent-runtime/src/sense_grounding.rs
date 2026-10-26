@@ -8,6 +8,8 @@
 //!
 //! 1. With no transcript in its input, nothing was heard: `voice` and
 //!    `transcript` become `screen`, or `other` without screen input either.
+//!    A `speaker_label` with screen input becomes `screen` too: a participant
+//!    label with nothing heard is a name on a call's screen.
 //! 2. With a transcript, a heard name that nothing else the model read says,
 //!    but a screen input shows, becomes `screen`. The check leans toward heard:
 //!    any significant word spelled close enough, accents folded, or the name's
@@ -59,6 +61,13 @@ pub(crate) fn ground(prepared: &PreparedTalent, journal: &Path, response: &str) 
             .and_then(Value::as_str)
             .unwrap_or_default()
             .to_owned();
+        if transcripts == 0
+            && percepts > 0
+            && row.get("source").and_then(Value::as_str) == Some("speaker_label")
+        {
+            row.insert("source".to_owned(), Value::String("screen".to_owned()));
+            changed = true;
+        }
         if !row
             .get("source")
             .and_then(Value::as_str)
@@ -377,13 +386,44 @@ mod tests {
             pairs(&[
                 ("Ada Lovelace", "screen"),
                 ("LyricWhiz", "screen"),
-                ("Grace Hopper", "speaker_label")
+                ("Grace Hopper", "screen")
             ])
         );
         let nothing = sense(0, 0, Vec::new());
         assert_eq!(
-            grounded(&nothing, vec![entity("Ada Lovelace", "Person", "voice")]),
-            pairs(&[("Ada Lovelace", "other")])
+            grounded(
+                &nothing,
+                vec![
+                    entity("Ada Lovelace", "Person", "voice"),
+                    entity("Grace Hopper", "Person", "speaker_label"),
+                ]
+            ),
+            pairs(&[("Ada Lovelace", "other"), ("Grace Hopper", "speaker_label")])
+        );
+    }
+
+    #[test]
+    fn a_call_on_screen_with_nothing_heard_keeps_its_attendees_seen() {
+        // A phone screen recording of a video call, with no audio: the names
+        // on the call's tiles are attendees, read from the screen.
+        let call = sense(0, 1, vec![source("screen.jsonl", &["Aaron Daniel jc"])]);
+        let journal = journal();
+        let response = json!({"entities":[
+            {"type":"Person","name":"Aaron","role":"attendee","source":"speaker_label","level":"high","context":"on a tile"}
+        ]})
+        .to_string();
+        let output = ground(&call, journal.path(), &response).expect("grounded");
+        let row = &serde_json::from_str::<Value>(&output).unwrap()["entities"][0];
+        assert_eq!(
+            (row["role"].as_str(), row["source"].as_str()),
+            (Some("attendee"), Some("screen"))
+        );
+
+        // With a transcript, a speaker label may be the transcript's own.
+        let heard = sense(1, 1, vec![(None, "Aaron: hi all")]);
+        assert_eq!(
+            grounded(&heard, vec![entity("Aaron", "Person", "speaker_label")]),
+            pairs(&[("Aaron", "speaker_label")])
         );
     }
 
@@ -683,7 +723,7 @@ mod tests {
             triples(&[
                 ("Cifka", "visible", "screen"),
                 ("Suda", "visible", "screen"),
-                ("Grace Hopper", "attendee", "speaker_label"),
+                ("Grace Hopper", "attendee", "screen"),
             ])
         );
     }
