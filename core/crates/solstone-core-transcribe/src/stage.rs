@@ -122,6 +122,7 @@ pub(crate) fn commit_input<'a>(
 thread_local! {
     static BEFORE_PROCESSING_COMMIT: std::cell::RefCell<Option<Box<dyn FnOnce()>>> = const { std::cell::RefCell::new(None) };
     static PROCESSING_TEST_VAD: std::cell::RefCell<Option<solstone_core_observe_audio::VadResult>> = const { std::cell::RefCell::new(None) };
+    static INPUT_CAPTURE_REACHED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
 /// Take the one-shot full-tests VAD stand-in, leaving the cell empty.
@@ -134,6 +135,18 @@ pub(crate) fn take_processing_test_vad() -> Option<solstone_core_observe_audio::
 #[cfg(all(test, feature = "full-tests"))]
 pub(crate) fn set_before_processing_commit(hook: Option<Box<dyn FnOnce()>>) {
     BEFORE_PROCESSING_COMMIT.with(|cell| *cell.borrow_mut() = hook);
+}
+
+/// Clear the witness that input capture was entered after held classification.
+#[cfg(all(test, feature = "full-tests"))]
+pub(crate) fn reset_input_capture_reached() {
+    INPUT_CAPTURE_REACHED.with(|reached| reached.set(false));
+}
+
+/// Whether this attempt entered input capture after held classification.
+#[cfg(all(test, feature = "full-tests"))]
+pub(crate) fn input_capture_reached() -> bool {
+    INPUT_CAPTURE_REACHED.with(|reached| reached.get())
 }
 
 /// Run the currently implemented native transcription path for one segment audio file.
@@ -353,14 +366,15 @@ pub(crate) fn process_one_with(
             path: audio_path.to_path_buf(),
             detail,
         };
-        match solstone_core_system::work_retry::raw::classify_held_attempt(
+        match solstone_core_system::work_retry::raw::classify_held_attempt_checked(
             journal_path,
             &output,
             audio_path,
             solstone_core_processing_record::vocab::HANDLER_TRANSCRIBE,
             context,
+            &|| checkpoint().map_err(|error: TranscribeError| error.to_string()),
         )
-        .map_err(&claim_error)?
+        .map_err(|detail| checkpoint().err().unwrap_or_else(|| claim_error(detail)))?
         {
             solstone_core_system::work_retry::raw::HeldAttempt::Accepted => {
                 let unit = solstone_core_system::work_retry::raw::unit_for_output(
@@ -435,6 +449,8 @@ pub(crate) fn process_one_with(
         None
     };
     let automatic_retry = automatic_retry_replaces_output(&output);
+    #[cfg(all(test, feature = "full-tests"))]
+    INPUT_CAPTURE_REACHED.with(|reached| reached.set(true));
     let observation =
         InputObservation::capture_checked(&claim, audio_path, &|| checkpoint().is_err()).map_err(
             |error| {
@@ -4176,5 +4192,92 @@ mod tests {
             .unwrap();
         assert!(!record.held);
         assert!(record.attempt.is_none());
+    }
+
+    #[cfg(all(feature = "embedded", unix, feature = "full-tests"))]
+    #[test]
+    fn stop_during_held_fingerprint_preserves_the_recording() {
+        use std::cell::Cell;
+
+        use solstone_core_system::work_retry::{self, RetryContext, raw};
+
+        let root = tempfile::tempdir().unwrap();
+        let segment = root
+            .path()
+            .join("chronicle")
+            .join("20260101")
+            .join("desktop")
+            .join("120000_303");
+        fs::create_dir_all(&segment).unwrap();
+        let audio = segment.join("clip.wav");
+        // One byte past a 64 KiB fingerprint chunk, so the second poll is mid-scan.
+        let original = vec![0x5A_u8; 65_537];
+        fs::write(&audio, &original).unwrap();
+        let (jsonl, npz) = super::transcript_paths(&audio);
+        let raw_name = audio.file_name().unwrap().to_str().unwrap();
+        let header = json!({
+            "raw": raw_name,
+            "_solstone_processing": {
+                "schema": vocab::SCHEMA,
+                "state": "failed",
+                "handler": "transcribe",
+                "reason_code": "analysis_failed",
+                "attempts": 3,
+            }
+        });
+        let header_bytes = format!("{header}\n");
+        fs::write(&jsonl, &header_bytes).unwrap();
+        let evidence = raw::inspect_output(root.path(), &jsonl).unwrap().unwrap();
+        raw::observe(root.path(), &evidence).unwrap();
+        work_retry::request(root.path(), &evidence.unit).unwrap();
+        let id = evidence.unit.id().unwrap();
+        let attempt = work_retry::read(root.path(), &id)
+            .unwrap()
+            .unwrap()
+            .permission(&evidence.input, &[])
+            .unwrap();
+        let context = RetryContext {
+            unit_id: id,
+            attempt,
+        };
+        consume_then_drop(root.path(), &jsonl, &context);
+        let polls = Cell::new(0_usize);
+        // Entry poll, three polls to finish the first fingerprint, one poll that
+        // reads the second scan's first chunk, then Stop before the remainder.
+        let cancel = || {
+            let seen = polls.get();
+            polls.set(seen + 1);
+            seen >= 5
+        };
+        let asr = PanicAsr;
+        super::reset_input_capture_reached();
+        let (embedded, config, attestation) = panicking_embedded(root.path(), &asr, &cancel);
+        let error = super::process_one_with(
+            &audio,
+            root.path(),
+            false,
+            None,
+            &config,
+            &attestation,
+            Some(&embedded),
+            Some(&context),
+        )
+        .unwrap_err();
+        assert!(matches!(error, TranscribeError::Cancelled), "{error}");
+        // The seventh poll is the cancellation result mapped back to Stop.
+        assert_eq!(
+            polls.get(),
+            7,
+            "stop landed after one chunk of the second scan"
+        );
+        assert!(!super::input_capture_reached());
+        assert_eq!(fs::read(&audio).unwrap(), original);
+        assert_eq!(fs::read(&jsonl).unwrap(), header_bytes.as_bytes());
+        assert!(!npz.exists());
+        let record = work_retry::read(root.path(), &context.unit_id)
+            .unwrap()
+            .unwrap();
+        assert!(record.held);
+        assert_eq!(record.attempt.as_ref(), Some(&context.attempt));
     }
 }

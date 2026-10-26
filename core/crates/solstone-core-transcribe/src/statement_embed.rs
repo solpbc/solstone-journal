@@ -81,13 +81,56 @@ pub(crate) fn embed_statement(
             },
         ));
     }
+    let (draft, mean) =
+        spill_statement_features(audio_path, spool, span_start, span_end, measured, cancel)?;
+    let model = crate::model_assets::verify_digest(
+        "wespeaker-resnet34-256.onnx",
+        models.join("wespeaker-resnet34-256.onnx"),
+    )
+    .map_err(|error| {
+        TranscribeError::SpeakerAnalysis(SpeakerAnalyzeError::new(
+            audio_path,
+            "model",
+            error.to_string(),
+            None,
+        ))
+    })?;
+    let providers = default_speaker_execution_providers(PlatformDescriptor::current());
+    let mut embedder = WespeakerEmbedder::open(&model, &providers)
+        .map_err(|error| onnx_error(audio_path, error))?;
+    let mut reader =
+        CenteredFeatures::open(&draft.path, frames).map_err(|error| io_error(audio_path, error))?;
+    let embedding = embedder
+        .embed_polled(frames, WESPEAKER_MEL_BINS, cancel, |start, end, dest| {
+            reader.read_centered(start, end, &mean, dest)
+        })
+        .map_err(|error| onnx_error(audio_path, error))?;
+    drop(reader);
+    drop(draft);
+    let duration = measured.samples as f64 / f64::from(SAMPLE_RATE);
+    Ok((duration, embedding.values().to_vec()))
+}
+
+/// Spill raw filterbank frames and the maintained per-bin f32 mean.
+///
+/// Each bin sums frames in order as f32, then divides by the frame count as
+/// f32. An f64 sum would center a different input for the same model.
+fn spill_statement_features(
+    audio_path: &Path,
+    spool: &mut DraftSpool,
+    span_start: usize,
+    span_end: usize,
+    measured: &StatementAudioMeasure,
+    cancel: &dyn Fn() -> bool,
+) -> Result<(FeatureDraft, [f32; WESPEAKER_MEL_BINS]), TranscribeError> {
+    let frames = snipped_frame_count(measured.samples);
     let feature_path = spool.directory().join("statement-features.f32le");
     let mut features =
         create_private(&feature_path).map_err(|error| io_error(audio_path, error))?;
     let draft = FeatureDraft {
         path: feature_path.clone(),
     };
-    let mut sums = [0.0_f64; WESPEAKER_MEL_BINS];
+    let mut sums = [0.0_f32; WESPEAKER_MEL_BINS];
     let kaldi = KaldiFrames::new();
     let mut frame = 0_usize;
     while frame < frames {
@@ -124,7 +167,7 @@ pub(crate) fn embed_statement(
                 .log_energies(&pcm[at..at + WESPEAKER_FRAME_LENGTH_SAMPLES])
                 .map_err(|error| feature_error(audio_path, error))?;
             for (bin, value) in energies.iter().enumerate() {
-                sums[bin] += f64::from(*value);
+                sums[bin] += *value;
             }
             raw.extend_from_slice(&energies);
         }
@@ -170,33 +213,8 @@ pub(crate) fn embed_statement(
     if cancel() {
         return Err(TranscribeError::Cancelled);
     }
-    let model = crate::model_assets::verify_digest(
-        "wespeaker-resnet34-256.onnx",
-        models.join("wespeaker-resnet34-256.onnx"),
-    )
-    .map_err(|error| {
-        TranscribeError::SpeakerAnalysis(SpeakerAnalyzeError::new(
-            audio_path,
-            "model",
-            error.to_string(),
-            None,
-        ))
-    })?;
-    let providers = default_speaker_execution_providers(PlatformDescriptor::current());
-    let mut embedder = WespeakerEmbedder::open(&model, &providers)
-        .map_err(|error| onnx_error(audio_path, error))?;
-    let mean = sums.map(|sum| (sum / frames as f64) as f32);
-    let mut reader =
-        CenteredFeatures::open(&draft.path, frames).map_err(|error| io_error(audio_path, error))?;
-    let embedding = embedder
-        .embed_polled(frames, WESPEAKER_MEL_BINS, cancel, |start, end, dest| {
-            reader.read_centered(start, end, &mean, dest)
-        })
-        .map_err(|error| onnx_error(audio_path, error))?;
-    drop(reader);
-    drop(draft);
-    let duration = measured.samples as f64 / f64::from(SAMPLE_RATE);
-    Ok((duration, embedding.values().to_vec()))
+    let mean = sums.map(|sum| sum / frames as f32);
+    Ok((draft, mean))
 }
 
 struct FeatureDraft {
@@ -404,5 +422,73 @@ mod tests {
         assert!(statement_max_read() <= STATEMENT_PCM_CHUNK);
         assert!(statement_visited() >= measured.samples);
         assert!(!spool.directory().join("statement-features.f32le").exists());
+    }
+
+    /// 129.7 s at 16 kHz: 12,968 filterbank frames, long enough for f32/f64 drift.
+    const DRIFT_TONE_SAMPLES: usize = 2_075_200;
+
+    #[test]
+    fn statement_centered_input_matches_maintained_cmn() {
+        let audio = tone(DRIFT_TONE_SAMPLES);
+        let scratch = tempfile::tempdir().expect("scratch");
+        let mut spool = DraftSpool::open(scratch.path()).expect("spool");
+        spool.store_unit_pcm(0, &audio, None).expect("pcm");
+        let measured = spool
+            .measure_statement_audio(0, audio.len(), &|| false)
+            .expect("measure");
+        assert!(!measured.reduced);
+        assert_eq!(measured.samples, audio.len());
+        reset_statement_reads();
+        let (draft, mean) = spill_statement_features(
+            Path::new("statement.wav"),
+            &mut spool,
+            0,
+            audio.len(),
+            &measured,
+            &|| false,
+        )
+        .expect("features");
+        let frames = snipped_frame_count(measured.samples);
+        assert_eq!(frames, 12_968);
+        let raw = std::fs::read(&draft.path).expect("raw features");
+        assert_eq!(raw.len(), frames * WESPEAKER_MEL_BINS * 4);
+        let mut maintained_sums = [0.0_f32; WESPEAKER_MEL_BINS];
+        let mut wide_sums = [0.0_f64; WESPEAKER_MEL_BINS];
+        for bin in 0..WESPEAKER_MEL_BINS {
+            for frame in 0..frames {
+                let offset = (frame * WESPEAKER_MEL_BINS + bin) * 4;
+                let value = f32::from_le_bytes(raw[offset..offset + 4].try_into().expect("f32"));
+                maintained_sums[bin] += value;
+                wide_sums[bin] += f64::from(value);
+            }
+        }
+        let maintained_mean = maintained_sums.map(|sum| sum / frames as f32);
+        let wide_mean = wide_sums.map(|sum| (sum / frames as f64) as f32);
+        assert_eq!(mean, maintained_mean);
+        assert_ne!(
+            mean, wide_mean,
+            "tone must be long enough for sequential f32 CMN to drift from f64"
+        );
+        let maintained = solstone_core_speakers::compute_wespeaker_filterbank_cmn(
+            &audio,
+            solstone_core_speakers::WESPEAKER_SAMPLE_RATE_HZ,
+        )
+        .expect("maintained cmn");
+        assert_eq!(maintained.frames(), frames);
+        assert_eq!(maintained.bins(), WESPEAKER_MEL_BINS);
+        let mut centered = vec![0.0_f32; frames * WESPEAKER_MEL_BINS];
+        let mut reader = CenteredFeatures::open(&draft.path, frames).expect("centered reader");
+        reader
+            .read_centered(0, frames, &mean, &mut centered)
+            .expect("centered window");
+        assert_eq!(centered, maintained.data());
+        let path = draft.path.clone();
+        drop(reader);
+        drop(draft);
+        assert!(!path.exists());
+        assert_eq!(statement_whole_reads(), 0);
+        assert!(statement_max_read() > 0);
+        assert!(statement_max_read() <= STATEMENT_PCM_CHUNK);
+        assert!(statement_visited() >= measured.samples);
     }
 }

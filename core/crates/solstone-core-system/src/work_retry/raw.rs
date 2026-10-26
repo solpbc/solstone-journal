@@ -99,6 +99,14 @@ fn bounded_header(output: &Path) -> Result<Option<Value>, String> {
 }
 
 pub fn inspect_output(journal: &Path, output: &Path) -> Result<Option<Evidence>, String> {
+    inspect_output_checked(journal, output, &|| Ok(()))
+}
+
+pub fn inspect_output_checked(
+    journal: &Path,
+    output: &Path,
+    checkpoint: &dyn Fn() -> Result<(), String>,
+) -> Result<Option<Evidence>, String> {
     let Some(header) = bounded_header(output)? else {
         return Ok(None);
     };
@@ -135,7 +143,7 @@ pub fn inspect_output(journal: &Path, output: &Path) -> Result<Option<Evidence>,
     if input_path.with_extension("jsonl") != output {
         return Err("native failure source does not match its output".into());
     }
-    let input = super::file_fingerprint(&input_path)?;
+    let input = super::file_fingerprint_checked(&input_path, checkpoint)?;
     let baseline = match record.get("input_sha256") {
         None => input.clone(),
         Some(Value::String(value))
@@ -413,6 +421,18 @@ pub fn classify_held_attempt(
     handler: &str,
     context: &RetryContext,
 ) -> Result<HeldAttempt, String> {
+    classify_held_attempt_checked(journal, output, input, handler, context, &|| Ok(()))
+}
+
+/// Same adjudication, polling `checkpoint` before each fingerprint chunk.
+pub fn classify_held_attempt_checked(
+    journal: &Path,
+    output: &Path,
+    input: &Path,
+    handler: &str,
+    context: &RetryContext,
+    checkpoint: &dyn Fn() -> Result<(), String>,
+) -> Result<HeldAttempt, String> {
     let unit = unit_for_output(journal, output, handler)?;
     if unit.id()? != context.unit_id {
         return Ok(HeldAttempt::Decline);
@@ -435,7 +455,7 @@ pub fn classify_held_attempt(
     {
         return Ok(HeldAttempt::Decline);
     }
-    let fingerprint = super::file_fingerprint(input)?;
+    let fingerprint = super::file_fingerprint_checked(input, checkpoint)?;
     if fingerprint != context.attempt.input || fingerprint != record.input {
         return Ok(HeldAttempt::Decline);
     }
@@ -463,7 +483,7 @@ pub fn classify_held_attempt(
     if record.permission(&fingerprint, DECLARED_FIXES).is_some() {
         return Ok(HeldAttempt::Decline);
     }
-    let Some(evidence) = inspect_output(journal, output)? else {
+    let Some(evidence) = inspect_output_checked(journal, output, checkpoint)? else {
         return Ok(HeldAttempt::Decline);
     };
     if evidence.unit != unit
