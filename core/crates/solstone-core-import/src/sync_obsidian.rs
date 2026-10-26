@@ -268,6 +268,11 @@ fn select_vault<M>(
     {
         return Some(path);
     }
+    // An owner-selected source must be resolved from that connection. HOME
+    // discovery could silently attach the previous vault to a replacement.
+    if crate::sync_state::public_connection(state).is_some() {
+        return None;
+    }
     candidates
         .candidates()
         .iter()
@@ -312,6 +317,54 @@ mod tests {
         fn notes(&self, _vault: &Path) -> Result<Vec<ObsidianNote>, String> {
             Ok(vec![self.note.clone()])
         }
+    }
+
+    #[test]
+    fn replacement_without_a_new_path_does_not_scan_the_previous_vault() {
+        let journal = tempfile::tempdir().unwrap();
+        let mut state = SyncState::empty(BackendName::Obsidian);
+        state
+            .root_mut()
+            .insert("source_path".to_owned(), Value::from("/previous-vault"));
+        begin_folder(&mut state, "Previous", false, None).unwrap();
+        replace_folder(&mut state, "Replacement", false, None).unwrap();
+        write_sync_state(journal.path(), &state).unwrap();
+        let request = ObsidianSyncRequest::<SyncPreviewRequest>::new(
+            journal.path().to_path_buf(),
+            None,
+            false,
+        );
+        let scanner = OneNote {
+            note: ObsidianNote {
+                relative_path: "old.md".to_owned(),
+                filename: "old.md".to_owned(),
+                title: "old".to_owned(),
+                modified_at: 1.0,
+                content_hash: "previous-source-note".to_owned(),
+            },
+        };
+        struct ExistingVault(Vec<PathBuf>);
+        impl ObsidianHomeCandidates for ExistingVault {
+            fn candidates(&self) -> &[PathBuf] {
+                &self.0
+            }
+        }
+        let old_home = ExistingVault(vec![PathBuf::from("/previous-vault")]);
+        let mut seams = ObsidianPreviewSeams {
+            candidates: &old_home,
+            scanner: &scanner,
+            clock: &FixedClock,
+        };
+        assert_eq!(
+            sync_obsidian_preview(&request, &mut seams),
+            Err(ObsidianSyncError::NoVault)
+        );
+        let SyncStateRead::Loaded(stored) = read_sync_state(journal.path(), BackendName::Obsidian)
+        else {
+            panic!("the replacement state remains readable");
+        };
+        assert!(stored.root().get("source_path").is_none());
+        assert!(stored.root()["files"].as_object().unwrap().is_empty());
     }
 
     #[test]

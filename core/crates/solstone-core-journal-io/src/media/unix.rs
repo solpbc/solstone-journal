@@ -434,28 +434,60 @@ pub fn publish_directory_noreplace(
 ) -> io::Result<()> {
     publish_name(from_name)?;
     publish_name(to_name)?;
-    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "ios"))]
+    let directory = nix::fcntl::open(parent, DIRECTORY, Mode::empty())?;
+    rename_directory_noreplace(&directory, from_name, &directory, to_name)
+}
+
+/// Move one direct name between retained parents using native create-only rename.
+pub fn publish_directory_noreplace_bound(
+    from_parent: &impl AsFd,
+    from_name: &OsStr,
+    to_parent: &impl AsFd,
+    to_name: &OsStr,
+) -> io::Result<()> {
+    for name in [from_name, to_name] {
+        publish_name(name)?;
+        if Path::new(name).components().count() != 1 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "publish name must be one component",
+            ));
+        }
+    }
+    rename_directory_noreplace(from_parent, from_name, to_parent, to_name)
+}
+
+fn rename_directory_noreplace(
+    from_parent: &impl AsFd,
+    from_name: &OsStr,
+    to_parent: &impl AsFd,
+    to_name: &OsStr,
+) -> io::Result<()> {
+    #[cfg(any(
+        target_os = "linux",
+        target_os = "android",
+        target_os = "macos",
+        target_os = "ios"
+    ))]
     {
         use std::os::fd::AsRawFd;
-
         let from = CString::new(from_name.as_bytes()).map_err(|_| {
             io::Error::new(io::ErrorKind::InvalidInput, "publish name contains NUL")
         })?;
         let to = CString::new(to_name.as_bytes()).map_err(|_| {
             io::Error::new(io::ErrorKind::InvalidInput, "publish name contains NUL")
         })?;
-        let directory = nix::fcntl::open(parent, DIRECTORY, Mode::empty())?;
-        // SAFETY: the directory descriptor and both NUL-terminated names live
-        // for this synchronous create-only rename. No fallback.
+        // SAFETY: retained directory descriptors and NUL-terminated names live
+        // through this synchronous native create-only rename. No fallback.
         #[allow(unsafe_code)]
         let result = unsafe {
-            #[cfg(target_os = "linux")]
+            #[cfg(any(target_os = "linux", target_os = "android"))]
             {
                 libc::syscall(
                     libc::SYS_renameat2,
-                    directory.as_raw_fd(),
+                    from_parent.as_fd().as_raw_fd(),
                     from.as_ptr(),
-                    directory.as_raw_fd(),
+                    to_parent.as_fd().as_raw_fd(),
                     to.as_ptr(),
                     libc::RENAME_NOREPLACE,
                 ) as i32
@@ -463,9 +495,9 @@ pub fn publish_directory_noreplace(
             #[cfg(any(target_os = "macos", target_os = "ios"))]
             {
                 libc::renameatx_np(
-                    directory.as_raw_fd(),
+                    from_parent.as_fd().as_raw_fd(),
                     from.as_ptr(),
-                    directory.as_raw_fd(),
+                    to_parent.as_fd().as_raw_fd(),
                     to.as_ptr(),
                     libc::RENAME_EXCL,
                 )
@@ -476,9 +508,14 @@ pub fn publish_directory_noreplace(
         }
         Ok(())
     }
-    #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "ios")))]
+    #[cfg(not(any(
+        target_os = "linux",
+        target_os = "android",
+        target_os = "macos",
+        target_os = "ios"
+    )))]
     {
-        let _ = (parent, from_name, to_name);
+        let _ = (from_parent, from_name, to_parent, to_name);
         Err(io::Error::new(
             io::ErrorKind::Unsupported,
             "native no-replace publication unavailable",

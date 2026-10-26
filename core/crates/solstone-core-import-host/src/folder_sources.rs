@@ -18,9 +18,11 @@ use solstone_core_import::sync_plaud::{
     PlaudStateWriter, PlaudSyncRequest, SyncClock, sync_plaud_preview,
 };
 use solstone_core_import::{
-    BackendName, SyncState, SyncStateRead, admit_folder, begin_folder, hash_source,
-    read_sync_state, reauthorize, replace_folder, validate_timestamp, write_sync_state,
+    BackendName, SyncState, SyncStateRead, begin_folder, hash_source, read_sync_state, reauthorize,
+    replace_folder, write_sync_state,
 };
+#[cfg(unix)]
+use solstone_core_import::{admit_folder, validate_timestamp};
 use solstone_core_import_sources::document::{self, DocumentPreviewRequest};
 use solstone_core_import_sources::gemini;
 use solstone_core_import_sources::obsidian;
@@ -181,6 +183,7 @@ fn obsidian_sync_observes_a_change_without_duplicating_keys() {
 }
 
 #[test]
+#[cfg(unix)]
 fn obsidian_force_reads_the_new_note_and_leaves_the_admitted_bytes() {
     let journal = tempfile::tempdir().unwrap();
     let vault = tempfile::tempdir().unwrap();

@@ -100,6 +100,97 @@ pub struct FlatDirectory {
 }
 
 impl FlatDirectory {
+    /// Retain the root itself for direct-entry operations without a synthetic child.
+    pub fn from_root(root: &JournalRoot) -> Result<Self, FlatDirectoryError> {
+        root.revalidate().map_err(|error| {
+            map_root_revalidation_error(error, root.canonical_path().to_path_buf())
+        })?;
+        let directory = nix::unistd::dup(root).map_err(|error| {
+            errno_error(
+                "duplicate flat root",
+                root.canonical_path().to_path_buf(),
+                error,
+            )
+        })?;
+        Ok(Self {
+            directory,
+            identity: root.identity(),
+            diagnostic_path: root.canonical_path().to_path_buf(),
+        })
+    }
+
+    /// Open only the regular file observed in this directory, without buffering its bytes.
+    /// The caller must invoke `verify_regular_file` after its bounded read.
+    pub fn open_regular_file(
+        &self,
+        expected: &FlatDirectoryEntry,
+    ) -> Result<File, FlatDirectoryError> {
+        validate_normal_name(&expected.name)?;
+        self.revalidate()?;
+        flat_directory_test_hook(FlatDirectoryTestPrimitive::BeforeObservedFileOpen);
+        let path = self.diagnostic_entry(&expected.name);
+        let fd = openat(self, expected.name.as_os_str(), FILE_FLAGS, Mode::empty())
+            .map_err(|error| errno_error("open streaming observed file", path.clone(), error))?;
+        let file = File::from(fd);
+        self.verify_regular_file(&file, expected)?;
+        Ok(file)
+    }
+
+    /// Check the opened object and its direct name against the same metadata observation.
+    pub fn verify_regular_file(
+        &self,
+        file: &File,
+        expected: &FlatDirectoryEntry,
+    ) -> Result<(), FlatDirectoryError> {
+        validate_normal_name(&expected.name)?;
+        self.revalidate()?;
+        let path = self.diagnostic_entry(&expected.name);
+        let stat = fstat(file)
+            .map_err(|error| errno_error("stat streaming observed file", path.clone(), error))?;
+        let current = entry_from_stat(expected.name.clone(), &stat, &path)?;
+        if expected.kind != JournalEntryKind::RegularFile
+            || !same_entry_metadata(expected, &current)
+            || stat_entry(self, &expected.name)?.as_ref() != Some(expected)
+        {
+            return Err(FlatDirectoryError::IdentityChanged { path });
+        }
+        Ok(())
+    }
+
+    /// Exclusively create one regular file relative to this retained directory.
+    pub fn create_file(&self, name: &OsStr, mode: u32) -> Result<File, FlatDirectoryError> {
+        validate_normal_name(name)?;
+        self.revalidate()?;
+        let flags =
+            OFlag::O_WRONLY | OFlag::O_CREAT | OFlag::O_EXCL | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC;
+        openat(
+            self,
+            name,
+            flags,
+            Mode::from_bits_truncate((mode & 0o777) as _),
+        )
+        .map(File::from)
+        .map_err(|error| errno_error("create flat file", self.diagnostic_entry(name), error))
+    }
+
+    /// Exclusively create one direct directory; an occupied name is refused.
+    pub fn create_child(&self, name: &OsStr, mode: u32) -> Result<Self, FlatDirectoryError> {
+        validate_normal_name(name)?;
+        self.revalidate()?;
+        nix::sys::stat::mkdirat(self, name, Mode::from_bits_truncate((mode & 0o777) as _))
+            .map_err(|error| {
+                errno_error("create flat child", self.diagnostic_entry(name), error)
+            })?;
+        let path = self.diagnostic_entry(name);
+        let (directory, identity) = open_verified_child_directory(self, name, &path)?
+            .ok_or_else(|| FlatDirectoryError::EnumerationChanged { path: path.clone() })?;
+        Ok(Self {
+            directory,
+            identity,
+            diagnostic_path: path,
+        })
+    }
+
     /// Descend from `root` through a nonempty portable relative directory path.
     ///
     /// Every component is checked and opened relative to an already verified
@@ -137,6 +228,46 @@ impl FlatDirectory {
             directory,
             diagnostic_path,
         })
+    }
+
+    /// Open native normal components, preserving names that are not portable to Windows.
+    /// Each component remains relative and no-follow; empty paths retain the root.
+    pub fn open_normal_relative(
+        root: &JournalRoot,
+        relative: &Path,
+    ) -> Result<Self, FlatDirectoryError> {
+        if relative.as_os_str().is_empty() {
+            return Self::from_root(root);
+        }
+        let mut current = Self::from_root(root)?;
+        for raw in relative.as_os_str().as_bytes().split(|byte| *byte == b'/') {
+            let name = OsStr::from_bytes(raw);
+            validate_normal_name(name)?;
+            let diagnostic_path = current.diagnostic_entry(name);
+            let (directory, identity) =
+                open_verified_child_directory(&current, name, &diagnostic_path)?.ok_or_else(
+                    || FlatDirectoryError::EnumerationChanged {
+                        path: diagnostic_path.clone(),
+                    },
+                )?;
+            current = Self {
+                directory,
+                identity,
+                diagnostic_path,
+            };
+        }
+        Ok(current)
+    }
+
+    /// Read metadata through this directory descriptor.
+    pub fn metadata(&self) -> io::Result<std::fs::Metadata> {
+        File::from(nix::unistd::dup(self)?).metadata()
+    }
+
+    /// Apply a copied modification time to this directory descriptor.
+    pub fn set_modified(&self, modified: std::time::SystemTime) -> io::Result<()> {
+        File::from(nix::unistd::dup(self)?)
+            .set_times(std::fs::FileTimes::new().set_modified(modified))
     }
 
     /// Return the identity frozen when this flat directory was acquired.
@@ -513,6 +644,20 @@ pub(crate) fn stat_entry(
     }
 }
 
+fn validate_normal_name(name: &OsStr) -> Result<(), FlatDirectoryError> {
+    let bytes = name.as_bytes();
+    if bytes.is_empty()
+        || matches!(bytes, b"." | b"..")
+        || bytes.iter().any(|b| matches!(b, b'/' | b'\\' | 0))
+    {
+        return Err(FlatDirectoryError::InvalidRelativePath {
+            path: PathBuf::from(name),
+            reason: "name must be one normal component",
+        });
+    }
+    Ok(())
+}
+
 fn portable_relative_components(relative: &Path) -> Result<Vec<&OsStr>, FlatDirectoryError> {
     let bytes = relative.as_os_str().as_bytes();
     if bytes.is_empty() || bytes.starts_with(b"/") {
@@ -737,6 +882,77 @@ mod tests {
         let root = JournalRoot::open(temporary.path()).unwrap();
         let flat = FlatDirectory::open(&root, Path::new("flat")).unwrap();
         (temporary, root, flat)
+    }
+
+    #[test]
+    fn no_follow_root_refuses_a_link_with_trailing_directory_syntax() {
+        let (temporary, _, _) = root_and_flat();
+        let link = temporary.path().join("link");
+        symlink("flat", &link).unwrap();
+        for suffix in ["", "/", "/."] {
+            let spelling = PathBuf::from(format!("{}{suffix}", link.display()));
+            assert!(
+                JournalRoot::open_no_follow(&spelling).is_err(),
+                "{spelling:?}"
+            );
+        }
+        assert!(JournalRoot::open_no_follow(&temporary.path().join("flat/")).is_ok());
+    }
+
+    #[test]
+    fn streaming_open_refuses_a_listed_file_replaced_by_a_link() {
+        let (temporary, _root, flat) = root_and_flat();
+        let source = temporary.path().join("flat/note.md");
+        fs::write(&source, b"selected").unwrap();
+        let outside = temporary.path().join("outside");
+        fs::write(&outside, b"must not read").unwrap();
+        let entry = list_flat_directory(&flat, 2).unwrap().unwrap().remove(0);
+        let (result, fired) = run_with_flat_directory_hook(
+            FlatDirectoryTestPrimitive::BeforeObservedFileOpen,
+            move || {
+                fs::remove_file(&source).unwrap();
+                symlink(&outside, &source).unwrap();
+            },
+            || flat.open_regular_file(&entry),
+        );
+        assert!(fired);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn streaming_file_recheck_refuses_growth_and_retains_native_names() {
+        let (temporary, root, flat) = root_and_flat();
+        fs::write(temporary.path().join("flat/note:one.md"), b"selected").unwrap();
+        let entry = list_flat_directory(&flat, 2).unwrap().unwrap().remove(0);
+        let mut input = flat.open_regular_file(&entry).unwrap();
+        let mut bytes = [0; 8];
+        input.read_exact(&mut bytes).unwrap();
+        assert_eq!(&bytes, b"selected");
+        fs::write(temporary.path().join("flat/note:one.md"), b"changed bytes").unwrap();
+        assert!(flat.verify_regular_file(&input, &entry).is_err());
+        let child = flat.create_child(OsStr::new("dir:one"), 0o700).unwrap();
+        assert!(flat.create_child(OsStr::new("dir:one"), 0o700).is_err());
+        assert_eq!(
+            FlatDirectory::open_normal_relative(&root, Path::new("flat/dir:one"))
+                .unwrap()
+                .identity(),
+            child.identity()
+        );
+    }
+
+    #[test]
+    fn output_stays_in_the_retained_parent_when_its_path_is_replaced() {
+        let (temporary, root, flat) = root_and_flat();
+        let displaced = temporary.path().join("displaced");
+        let outside = temporary.path().join("outside");
+        fs::create_dir(&outside).unwrap();
+        fs::rename(temporary.path().join("flat"), &displaced).unwrap();
+        symlink(&outside, temporary.path().join("flat")).unwrap();
+        flat.create_file(OsStr::new("owned"), 0o600).unwrap();
+        assert!(displaced.join("owned").is_file());
+        assert!(!outside.join("owned").exists());
+        assert!(FlatDirectory::open_normal_relative(&root, Path::new("flat")).is_err());
+        assert!(JournalRoot::open_no_follow(&temporary.path().join("flat")).is_err());
     }
 
     #[test]

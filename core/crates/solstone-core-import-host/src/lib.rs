@@ -13,5 +13,6 @@ pub mod import_publication;
 pub mod pdf_in_process;
 pub mod registry;
 
-#[cfg(test)]
+// Real host workers consult HOME and native source execution.
+#[cfg(all(test, feature = "full-tests"))]
 mod folder_sources;

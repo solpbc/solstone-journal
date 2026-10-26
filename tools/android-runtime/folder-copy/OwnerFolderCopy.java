@@ -6,7 +6,6 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.StandardOpenOption;
@@ -146,6 +145,9 @@ final class OwnerFolderCopy {
         if (cancel != null && cancel.get()) {
             return new Result(true, CANCELLED);
         }
+        if (!safeDirectoryChain(destination)) {
+            return new Result(true, DENIED);
+        }
         boolean createdRoot = !destination.exists();
         if (!destination.mkdirs() && !destination.isDirectory()) {
             return new Result(true, DENIED);
@@ -227,6 +229,13 @@ final class OwnerFolderCopy {
                 }
                 copyTree(authority, source, child, destination, buffer, budget, cancel, seen, created);
             }
+            if (!relative.isEmpty()) {
+                Long modified = source.modifiedMillis(relative);
+                File copiedDirectory = new File(destination, relative);
+                if (created.contains(copiedDirectory) && modified != null && !copiedDirectory.setLastModified(modified)) {
+                    throw new Stop(DENIED);
+                }
+            }
             return;
         }
         ensureCurrent(authority, cancel);
@@ -235,64 +244,43 @@ final class OwnerFolderCopy {
             throw new Stop(NO_MTIME);
         }
         long expected = source.size(relative);
-        budget.acquire();
-        InputStream input;
-        try {
-            input = source.open(relative);
-        } catch (IOException exception) {
-            budget.release();
-            throw exception;
-        }
-        budget.acquire();
         File outputFile = new File(destination, relative);
-        File parent = outputFile.getParentFile();
-        if (parent != null && !parent.isDirectory()) {
-            noteMissing(destination, parent, created);
-            if (!parent.mkdirs()) {
-                input.close();
-                budget.release();
-                budget.release();
-                throw new Stop(DENIED);
-            }
-        }
-        if (Files.exists(outputFile.toPath(), LinkOption.NOFOLLOW_LINKS)) {
-            input.close();
-            budget.release();
-            budget.release();
+        if (!safeDirectoryChain(outputFile.getParentFile())) {
             throw new Stop(DENIED);
         }
-        OutputStream exclusive;
-        try {
-            exclusive = Files.newOutputStream(
-                    outputFile.toPath(), StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE);
-        } catch (FileAlreadyExistsException occupied) {
-            input.close();
-            budget.release();
-            budget.release();
-            throw new Stop(DENIED);
-        }
-        created.add(outputFile);
-        try (InputStream stream = input; OutputStream output = exclusive) {
-            long copied = 0;
-            while (copied < expected) {
-                ensureCurrent(authority, cancel);
-                int asked = (int) Math.min(buffer.length, expected - copied);
-                int read = stream.read(buffer, 0, asked);
-                if (read < 0) {
-                    throw new Stop(TRUNCATED);
+        budget.acquire();
+        try (InputStream stream = source.open(relative)) {
+            ensureCurrent(authority, cancel);
+            budget.acquire();
+            try {
+                OutputStream exclusive = Files.newOutputStream(
+                        outputFile.toPath(), StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE);
+                created.add(outputFile);
+                try (OutputStream output = exclusive) {
+                    long copied = 0;
+                    while (copied < expected) {
+                        ensureCurrent(authority, cancel);
+                        int asked = (int) Math.min(buffer.length, expected - copied);
+                        int read = stream.read(buffer, 0, asked);
+                        ensureCurrent(authority, cancel);
+                        if (read < 0) {
+                            throw new Stop(TRUNCATED);
+                        }
+                        output.write(buffer, 0, read);
+                        copied += read;
+                    }
+                    ensureCurrent(authority, cancel);
+                    int extra = stream.read(buffer, 0, 1);
+                    ensureCurrent(authority, cancel);
+                    if (extra > 0 || source.size(relative) != expected
+                            || !modified.equals(source.modifiedMillis(relative))) {
+                        throw new Stop(TRUNCATED);
+                    }
                 }
-                output.write(buffer, 0, read);
-                copied += read;
-            }
-            if (copied != expected) {
-                throw new Stop(TRUNCATED);
-            }
-            int extra = stream.read(buffer, 0, 1);
-            if (extra > 0) {
-                throw new Stop(TRUNCATED);
+            } finally {
+                budget.release();
             }
         } finally {
-            budget.release();
             budget.release();
         }
         if (!outputFile.setLastModified(modified)) {
@@ -303,6 +291,7 @@ final class OwnerFolderCopy {
     private static void createDirectory(
             FolderSource source, String relative, File destination, List<File> created) {
         File dir = new File(destination, relative);
+        if (!safeDirectoryChain(dir)) { throw new Stop(DENIED); }
         boolean createdDir = false;
         if (Files.exists(dir.toPath(), LinkOption.NOFOLLOW_LINKS)) {
             if (Files.isSymbolicLink(dir.toPath()) || !dir.isDirectory()) {
@@ -332,6 +321,16 @@ final class OwnerFolderCopy {
         if (!authority.matches()) {
             throw new AuthorityChanged();
         }
+    }
+
+    private static boolean safeDirectoryChain(File directory) {
+        for (File cursor = directory; cursor != null; cursor = cursor.getParentFile()) {
+            if (Files.isSymbolicLink(cursor.toPath())) { return false; }
+            if (Files.exists(cursor.toPath(), LinkOption.NOFOLLOW_LINKS) && !cursor.isDirectory()) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static boolean oneComponent(String name) {

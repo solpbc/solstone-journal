@@ -95,6 +95,9 @@ enum OwnerFolderCopy {
         if cancel.value {
             return CopyResult(authorityMatches: true, ownerMessage: cancelled)
         }
+        guard safeDirectoryChain(destination) else {
+            return CopyResult(authorityMatches: true, ownerMessage: denied)
+        }
         let createdRoot = !FileManager.default.fileExists(atPath: destination.path)
         let budget = DescriptorBudget(limit: maxDescriptors)
         let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: bufferBytes)
@@ -242,6 +245,14 @@ enum OwnerFolderCopy {
                     created: &created
                 )
             }
+            if !relative.isEmpty,
+               created.contains(where: { $0.standardizedFileURL.path == destination.appendingPathComponent(relative).standardizedFileURL.path }),
+               let modified = source.modifiedMillis(relative) {
+                try FileManager.default.setAttributes(
+                    [.modificationDate: Date(timeIntervalSince1970: Double(modified) / 1000)],
+                    ofItemAtPath: destination.appendingPathComponent(relative).path
+                )
+            }
             return
         }
         if cancel.value { throw CopyStop(cancelled) }
@@ -256,14 +267,17 @@ enum OwnerFolderCopy {
             budget.release()
             throw error
         }
-        try budget.acquire()
         defer {
-            budget.release()
-            budget.release()
             input.close()
+            budget.release()
         }
+        if cancel.value { throw CopyStop(cancelled) }
+        if !authority.matches { throw AuthorityStop() }
+        try budget.acquire()
+        defer { budget.release() }
         let outputURL = destination.appendingPathComponent(relative)
         let parent = outputURL.deletingLastPathComponent()
+        guard safeDirectoryChain(parent) else { throw CopyStop(denied) }
         noteMissing(root: destination, path: parent, created: &created)
         try FileManager.default.createDirectory(
             at: parent,
@@ -282,14 +296,23 @@ enum OwnerFolderCopy {
             if !authority.matches { throw AuthorityStop() }
             let asked = Int(min(UInt64(bufferBytes), expected - copied))
             let read = input.read(buffer, maxLength: asked)
+            if cancel.value { throw CopyStop(cancelled) }
+            if !authority.matches { throw AuthorityStop() }
             if read < 0 { throw CopyStop(denied) }
             if read == 0 { throw CopyStop(truncated) }
             try handle.write(contentsOf: Data(bytes: buffer, count: read))
             copied += UInt64(read)
         }
         if copied != expected { throw CopyStop(truncated) }
+        if cancel.value { throw CopyStop(cancelled) }
+        if !authority.matches { throw AuthorityStop() }
         let extra = input.read(buffer, maxLength: 1)
-        if extra > 0 { throw CopyStop(truncated) }
+        if cancel.value { throw CopyStop(cancelled) }
+        if !authority.matches { throw AuthorityStop() }
+        let finalSize = try source.size(relative)
+        if extra > 0 || finalSize != expected || source.modifiedMillis(relative) != modified {
+            throw CopyStop(truncated)
+        }
         if extra < 0 { throw CopyStop(denied) }
         try FileManager.default.setAttributes(
             [.modificationDate: Date(timeIntervalSince1970: Double(modified) / 1000)],
@@ -304,7 +327,7 @@ enum OwnerFolderCopy {
         created: inout [URL]
     ) throws {
         let dir = destination.appendingPathComponent(relative, isDirectory: true)
-        if isSymbolicLink(dir) { throw CopyStop(denied) }
+        guard safeDirectoryChain(dir) else { throw CopyStop(denied) }
         var isDir: ObjCBool = false
         let exists = FileManager.default.fileExists(atPath: dir.path, isDirectory: &isDir)
         if exists && !isDir.boolValue { throw CopyStop(denied) }
@@ -320,6 +343,25 @@ enum OwnerFolderCopy {
                 [.modificationDate: Date(timeIntervalSince1970: Double(modified) / 1000)],
                 ofItemAtPath: dir.path
             )
+        }
+    }
+
+    // Keep literal canonical staging paths: Foundation standardization can
+    // substitute /var for /private/var after the destination starts to exist.
+    private static func safeDirectoryChain(_ url: URL) -> Bool {
+        var cursor = url.path
+        guard cursor.hasPrefix("/") else { return false }
+        while true {
+            var status = stat()
+            if lstat(cursor, &status) == 0 {
+                if (status.st_mode & S_IFMT) != S_IFDIR { return false }
+            } else if errno != ENOENT {
+                return false
+            }
+            let parent = (cursor as NSString).deletingLastPathComponent
+            if parent == cursor { return true }
+            if parent.isEmpty { return false }
+            cursor = parent
         }
     }
 
@@ -353,7 +395,15 @@ enum OwnerFolderCopy {
 
     private static func deleteCreated(_ created: [URL]) {
         for url in created.reversed() {
-            try? FileManager.default.removeItem(at: url)
+            // A directory created by this copy may now contain another writer's
+            // entry. rmdir refuses a nonempty directory; never recurse into it.
+            var status = stat()
+            guard lstat(url.path, &status) == 0 else { continue }
+            if (status.st_mode & S_IFMT) == S_IFDIR {
+                _ = Darwin.rmdir(url.path)
+            } else {
+                _ = Darwin.unlink(url.path)
+            }
         }
     }
 }

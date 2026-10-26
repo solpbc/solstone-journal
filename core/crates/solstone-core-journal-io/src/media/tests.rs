@@ -100,6 +100,56 @@ fn publish_directory_noreplace_leaves_an_empty_directory() {
     );
 }
 
+#[cfg(unix)]
+#[test]
+fn directory_publication_uses_retained_parents_and_preserves_an_occupied_target() {
+    use crate::FlatDirectory;
+    let temporary = tempfile::tempdir().unwrap();
+    std::fs::create_dir(temporary.path().join("attempts")).unwrap();
+    std::fs::create_dir(temporary.path().join("imports")).unwrap();
+    std::fs::create_dir(temporary.path().join("outside")).unwrap();
+    std::fs::create_dir(temporary.path().join("attempts/owned")).unwrap();
+    std::fs::write(temporary.path().join("attempts/owned/note"), b"selected").unwrap();
+    std::fs::create_dir(temporary.path().join("imports/taken")).unwrap();
+    let root = JournalRoot::open(temporary.path()).unwrap();
+    let attempts = FlatDirectory::open(&root, Path::new("attempts")).unwrap();
+    let imports = FlatDirectory::open(&root, Path::new("imports")).unwrap();
+    assert_eq!(
+        publish_directory_noreplace_bound(
+            &attempts,
+            OsStr::new("owned"),
+            &imports,
+            OsStr::new("taken")
+        )
+        .unwrap_err()
+        .kind(),
+        io::ErrorKind::AlreadyExists
+    );
+    assert!(
+        publish_directory_noreplace_bound(
+            &attempts,
+            OsStr::new("../owned"),
+            &imports,
+            OsStr::new("free")
+        )
+        .is_err()
+    );
+    std::fs::rename(
+        temporary.path().join("imports"),
+        temporary.path().join("displaced"),
+    )
+    .unwrap();
+    std::os::unix::fs::symlink("outside", temporary.path().join("imports")).unwrap();
+    publish_directory_noreplace_bound(&attempts, OsStr::new("owned"), &imports, OsStr::new("free"))
+        .unwrap();
+    assert_eq!(
+        std::fs::read(temporary.path().join("displaced/free/note")).unwrap(),
+        b"selected"
+    );
+    assert!(temporary.path().join("displaced/taken").is_dir());
+    assert!(!temporary.path().join("outside/free").exists());
+}
+
 #[cfg(all(test, feature = "full-tests"))]
 mod observations {
     use super::*;

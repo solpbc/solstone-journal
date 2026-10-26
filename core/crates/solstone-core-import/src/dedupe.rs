@@ -514,14 +514,22 @@ fn collect_directory_files(
     parts: Vec<OsString>,
     files: &mut Vec<DirectoryFile>,
 ) -> Result<(), ImportError> {
-    for entry in fs::read_dir(directory).map_err(|error| source_error(directory, error))? {
-        let entry = entry.map_err(|error| source_error(directory, error))?;
-        let path = entry.path();
+    // DirEntry itself retains the listing descriptor on Unix. Keep only its
+    // facts before descending so depth does not retain an open listing per level.
+    let entries = fs::read_dir(directory)
+        .map_err(|error| source_error(directory, error))?
+        .map(|entry| {
+            let entry = entry.map_err(|error| source_error(directory, error))?;
+            let path = entry.path();
+            let file_type = entry
+                .file_type()
+                .map_err(|error| source_error(&path, error))?;
+            Ok((path, entry.file_name(), file_type))
+        })
+        .collect::<Result<Vec<_>, ImportError>>()?;
+    for (path, name, file_type) in entries {
         let mut child_parts = parts.clone();
-        child_parts.push(entry.file_name());
-        let file_type = entry
-            .file_type()
-            .map_err(|error| source_error(&path, error))?;
+        child_parts.push(name);
         if file_type.is_dir() {
             collect_directory_files(&path, child_parts, files)?;
             continue;

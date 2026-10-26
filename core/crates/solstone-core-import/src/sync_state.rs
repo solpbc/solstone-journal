@@ -438,6 +438,9 @@ pub fn replace_folder(
         .root
         .insert("files".to_owned(), Value::Object(Map::new()));
     store_grant(state, folder_name, remembered, material);
+    // The previous selection belongs to the parked catalogue. The replacement
+    // must be resolved from its new grant before a source-less sync can run.
+    state.root.remove("source_path");
     Ok(identity)
 }
 
