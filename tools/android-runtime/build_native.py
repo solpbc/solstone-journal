@@ -4,9 +4,12 @@
 """Build the selected Journal library and JNI shim on the Android build host."""
 import argparse,hashlib,json,os,pathlib,shutil,subprocess,sys,time
 from provenance import source_manifest
+sys.path.insert(0,str(pathlib.Path(__file__).resolve().parents[2]/'scripts'))
+import package_mobile_pdfium
 parser=argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--clippy',action='store_true')
 parser.add_argument('--release',action='store_true')
+parser.add_argument('--native-cache-dir',type=pathlib.Path,default=pathlib.Path('/var/tmp/journal-mobile-cache'))
 args=parser.parse_args()
 root=pathlib.Path(__file__).resolve().parent
 repo=root.parents[1]
@@ -36,6 +39,10 @@ def run(name,argv):
 profile_args=['--release'] if args.release else []
 run('cargo-build',['cargo','build','--locked','--offline','--manifest-path',root/'native/Cargo.toml','--target','aarch64-linux-android',*profile_args])
 lib=root/'lib/arm64-v8a';lib.mkdir(parents=True,exist_ok=True)
+pdfium=root/'build/pdfium'
+package_mobile_pdfium.stage('android',args.native_cache_dir,pdfium)
+shutil.copy2(pdfium/'libpdfium.so',lib/'libpdfium.so')
+package_mobile_pdfium.android_members(pdfium,root)
 onnx=pathlib.Path(env['JOURNAL_ONNX_LIBRARY'])
 shutil.copy2(onnx,lib/'libonnxruntime.so')
 (out/'audio-native-inputs.json').write_text(json.dumps({str(p):hashlib.sha256(p.read_bytes()).hexdigest() for p in [onnx,*cxx_inputs,pathlib.Path(env['SOLSTONE_FFMPEG_SOURCE_ARCHIVE']),*sorted(pathlib.Path(env['PARAKEET_LIB_DIR']).rglob('*.a'))]},indent=2)+'\n')
