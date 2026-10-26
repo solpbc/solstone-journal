@@ -34,7 +34,8 @@ use crate::foreground::{
 mod sources;
 #[cfg(all(unix, feature = "in-process-pdf"))]
 pub use sources::{
-    ConfiguredSources, SavedFolderProvider, SavedFolderRequest, SourceCopyError,
+    ConfiguredSources, FolderConnectionChange, SavedFolderProvider, SavedFolderRequest,
+    SourceConnectionError, SourceConnectionGuard, SourceCopyError,
     packaged_import_factory_with_sources,
 };
 
