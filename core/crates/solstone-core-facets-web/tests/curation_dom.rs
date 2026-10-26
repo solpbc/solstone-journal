@@ -85,7 +85,7 @@ fn curation_dom_contract() {
     // 3. entities/review-candidates.jsonl
     let entities_dir = journal_path.join("entities");
     fs::create_dir_all(&entities_dir).expect("entities dir");
-    let entity_merge_rows = vec![
+    let entity_merge_rows = [
         json!({
             "facet": "work",
             "source": "Jordan Vancey",
@@ -173,7 +173,7 @@ fn curation_dom_contract() {
         row.to_string()
     };
 
-    let ambiguity_rows = vec![
+    let ambiguity_rows = [
         make_ambiguity(
             "jordan",
             &[
@@ -211,24 +211,22 @@ fn curation_dom_contract() {
     // 5. speakers/review-candidates.jsonl
     let speakers_dir = journal_path.join("speakers");
     fs::create_dir_all(&speakers_dir).expect("speakers dir");
-    let speaker_rows = vec![
-        json!({
-            "source_id": "spk_jordan_v",
-            "source_label": "Jordan V",
-            "target_id": "spk_jordan_vance",
-            "target_label": "Jordan Vance",
-            "status": "open",
-            "similarity": 0.86,
-            "readiness": "ready",
-            "evidence": {
-                "basis": "speaker-name-variant",
-                "summary": "Jordan V and Jordan Vance have matching speaker voiceprints.",
-                "detection_count": 1,
-                "readiness": "ready"
-            }
-        })
-        .to_string(),
-    ];
+    let speaker_rows = [json!({
+        "source_id": "spk_jordan_v",
+        "source_label": "Jordan V",
+        "target_id": "spk_jordan_vance",
+        "target_label": "Jordan Vance",
+        "status": "open",
+        "similarity": 0.86,
+        "readiness": "ready",
+        "evidence": {
+            "basis": "speaker-name-variant",
+            "summary": "Jordan V and Jordan Vance have matching speaker voiceprints.",
+            "detection_count": 1,
+            "readiness": "ready"
+        }
+    })
+    .to_string()];
     fs::write(
         speakers_dir.join("review-candidates.jsonl"),
         speaker_rows.join("\n") + "\n",
@@ -236,7 +234,7 @@ fn curation_dom_contract() {
     .expect("speaker review candidates");
 
     // 6. speakers/candidate-pair-review-candidates.jsonl
-    let pair_rows = vec![
+    let pair_rows = [
         json!({
             "key": "[\"anchor_a\",\"anchor_b\"]",
             "anchor_a": "anchor_a",
