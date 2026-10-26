@@ -6806,6 +6806,7 @@ dependencies = [
  "solstone-core-assets",
  "solstone-core-brain",
  "solstone-core-callosum",
+ "solstone-core-ced-analyze",
  "solstone-core-distribution",
  "solstone-core-format",
  "solstone-core-installation-identity",

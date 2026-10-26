@@ -46,7 +46,7 @@ const REQUEST_SCHEMA: &str = "solstone-ced-request-v1";
 const RESPONSE_SCHEMA: &str = "solstone-ced-response-v1";
 /// ced.cpp's own top-k cutoff; sound tagging always wants every label the
 /// engine reports so `SCORE_FLOOR` (applied here) is the only filter.
-const TOP_K: i32 = 0;
+pub const TOP_K: i32 = 0;
 
 /// Tag PCM audio using the locally installed ced.cpp model.
 ///
@@ -252,16 +252,32 @@ fn write_audio_sidecar(path: &Path, audio: &[f32]) -> std::io::Result<()> {
     fs::write(path, bytes)
 }
 
-fn windows_from_response(response: &Value, expected_len: usize) -> Option<Value> {
+/// Windows kept from one ced response.
+///
+/// `ok: false` windows are omitted. An empty [`SoundTagWindows::Accepted`]
+/// means every window failed. [`SoundTagWindows::Rejected`] means the schema,
+/// the window count, or an `ok` field was unusable.
+#[derive(Debug, PartialEq)]
+pub enum SoundTagWindows {
+    Accepted(Vec<Value>),
+    Rejected,
+}
+
+/// Split one classify response the way desktop tagging does.
+///
+/// Schema, count, and missing-`ok` failures are logged and rejected. A window
+/// with `ok: false` is skipped. When every window failed, this logs once and
+/// returns an empty accepted list.
+pub fn read_sound_tag_windows(response: &Value, expected_len: usize) -> SoundTagWindows {
     if response.get("schema").and_then(Value::as_str) != Some(RESPONSE_SCHEMA) {
         log::warn!("sound tagging returned an unexpected response schema");
-        return None;
+        return SoundTagWindows::Rejected;
     }
     let windows = match response.get("windows").and_then(Value::as_array) {
         Some(windows) if windows.len() == expected_len => windows,
         _ => {
             log::warn!("sound tagging returned an unexpected window count");
-            return None;
+            return SoundTagWindows::Rejected;
         }
     };
 
@@ -280,20 +296,26 @@ fn windows_from_response(response: &Value, expected_len: usize) -> Option<Value>
             }
             None => {
                 log::warn!("sound tagging returned a window missing an ok field");
-                return None;
+                return SoundTagWindows::Rejected;
             }
         }
     }
 
-    if per_window.is_empty() {
-        if let Some(detail) = first_failure {
-            log::warn!("sound tagging failed for all windows: {detail}");
-        }
-        return None;
+    if per_window.is_empty()
+        && let Some(detail) = first_failure
+    {
+        log::warn!("sound tagging failed for all windows: {detail}");
     }
+    SoundTagWindows::Accepted(per_window)
+}
 
+/// Max score at or above [`SCORE_FLOOR`] for each label, then the published object.
+///
+/// `windows` are the accepted (`ok: true`) window objects. A lower score does
+/// not replace a higher one. The object is the desktop sound-tag record.
+pub fn fold_sound_tag_windows(windows: &[Value]) -> Value {
     let mut aggregated: BTreeMap<String, f64> = BTreeMap::new();
-    for window in &per_window {
+    for window in windows {
         let Some(tags) = window.get("tags").and_then(Value::as_object) else {
             continue;
         };
@@ -316,15 +338,23 @@ fn windows_from_response(response: &Value, expected_len: usize) -> Option<Value>
         tags_map.insert(label, json!(score));
     }
 
-    Some(json!({
+    json!({
         "engine": ENGINE,
         "model": MODEL,
         "threshold": SCORE_FLOOR,
         "window_s": WINDOW_S,
         "agg": AGG,
-        "windows": per_window.len(),
+        "windows": windows.len(),
         "tags": Value::Object(tags_map),
-    }))
+    })
+}
+
+fn windows_from_response(response: &Value, expected_len: usize) -> Option<Value> {
+    match read_sound_tag_windows(response, expected_len) {
+        SoundTagWindows::Rejected => None,
+        SoundTagWindows::Accepted(windows) if windows.is_empty() => None,
+        SoundTagWindows::Accepted(windows) => Some(fold_sound_tag_windows(&windows)),
+    }
 }
 
 pub fn window_spans(sample_count: usize) -> Vec<(usize, usize)> {
@@ -343,4 +373,35 @@ pub fn window_spans(sample_count: usize) -> Vec<(usize, usize)> {
         spans.push((sample_count.saturating_sub(window_samples), sample_count));
     }
     spans
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn max_fold_keeps_the_higher_score_at_the_floor() {
+        let response = json!({
+            "schema": RESPONSE_SCHEMA,
+            "windows": [
+                {"ok": true, "tags": {"Speech": SCORE_FLOOR, "Music": SCORE_FLOOR - 0.01}},
+                {"ok": true, "tags": {"Speech": 0.42, "Dog": SCORE_FLOOR}},
+                {"ok": false, "detail": "skip"},
+                {"ok": true, "tags": {"Speech": 0.2, "Dog": 0.8}}
+            ]
+        });
+        let from_response = windows_from_response(&response, 4).expect("accepted windows");
+        let SoundTagWindows::Accepted(accepted) = read_sound_tag_windows(&response, 4) else {
+            panic!("response rejected");
+        };
+        let folded = fold_sound_tag_windows(&accepted);
+        assert_eq!(from_response, folded);
+        assert_eq!(folded["windows"], 3);
+        assert_eq!(folded["agg"], AGG);
+        assert_eq!(folded["threshold"], SCORE_FLOOR);
+        assert_eq!(folded["tags"]["Speech"].as_f64(), Some(0.42));
+        assert_eq!(folded["tags"]["Dog"].as_f64(), Some(0.8));
+        assert!(folded["tags"].get("Music").is_none());
+        assert!(folded["tags"].get("Speech").is_some());
+    }
 }

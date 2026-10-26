@@ -4335,6 +4335,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "solstone-core-ced-analyze"
+version = "2.0.58"
+dependencies = [
+ "serde_json",
+ "solstone-core-ced-sys",
+ "solstone-core-local",
+]
+
+[[package]]
+name = "solstone-core-ced-sys"
+version = "2.0.58"
+dependencies = [
+ "libloading 0.8.9",
+ "solstone-core-win-dll-load",
+]
+
+[[package]]
 name = "solstone-core-chatgpt-auth"
 version = "2.0.58"
 dependencies = [
@@ -6032,6 +6049,7 @@ dependencies = [
  "solstone-core-assets",
  "solstone-core-brain",
  "solstone-core-callosum",
+ "solstone-core-ced-analyze",
  "solstone-core-format",
  "solstone-core-journal-config",
  "solstone-core-journal-io",

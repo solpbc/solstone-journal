@@ -9,11 +9,16 @@
 //! this loop.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use serde_json::{Map, Value, json};
+use solstone_core_assets::canonical_host_pair;
 use solstone_core_journal_config::JournalConfigRead;
+use solstone_core_local::install::capability_status::CapabilityStatus;
+use solstone_core_local::install::ced_readiness::{
+    CedVerdict, evaluate_ced_readiness_with_probe, fresh_model_check,
+};
 use solstone_core_observe_audio::{
     AudioError, AudioReduction, DEFAULT_LOUD_RMS_THRESHOLD, DEFAULT_LOUD_WINDOW_SECONDS,
     MIN_NONSPEECH_SEGMENT_SECONDS, SAMPLE_RATE, UnitDecoder, VadResult,
@@ -23,6 +28,7 @@ use solstone_core_processing_record::{
     TerminalProofOutcome, evaluate_terminal_proof, read_processing_record_header, vocab,
 };
 use solstone_core_segment::output_attempt::{InputObservation, OutputClaims};
+use solstone_core_sound_tags::{SoundTagWindows, fold_sound_tag_windows, read_sound_tag_windows};
 use solstone_core_speaker_resolve::owner_centroid::OwnerVoicePrint;
 use solstone_core_speakers::diarization::{
     DiarizationError, SentenceTiming, SpeakerInterval, assign_sentences,
@@ -78,6 +84,7 @@ pub(crate) struct EmbeddedJob<'a> {
     pub(crate) timings: Timings,
     pub(crate) started: Instant,
     pub(crate) owner_voice_print: Option<OwnerVoicePrint>,
+    pub(crate) sound_tags: SoundTagRun,
 }
 
 /// Half-open unit windows on the original timeline.
@@ -720,6 +727,8 @@ fn each_prepared_unit(
     let mut pending: Option<PendingTail> = None;
     let mut summary = WalkSummary::empty();
     let mut filter = FilterAccum::new();
+    let mut deferred_seam: Option<(usize, Vec<f32>)> = None;
+    let tagging = matches!(kind, WalkKind::Admit | WalkKind::Count(_));
     loop {
         job.embedded.checkpoint().map_err(WalkStop::Bare)?;
         let pulled = decoder
@@ -735,6 +744,10 @@ fn each_prepared_unit(
                     },
                 ));
             }
+            if let Some((start, samples)) = deferred_seam.take() {
+                let end = start + samples.len();
+                tag_unit(job, &samples, start, &[(start, end)])?;
+            }
             if let Some(tail) = pending.take() {
                 let start = tail.pub_start;
                 let end = tail.audio_end;
@@ -747,6 +760,8 @@ fn each_prepared_unit(
             // The successor owns the held-back pre-pad. Drop this unit's copy of it.
             note_commit(record_commits, tail.pub_start, tail.held_end);
         }
+        // The successor's masked buffer emits the seam. Drop the saved copy.
+        deferred_seam = None;
         let seam_len = seam.len();
         let mut unit = std::mem::take(&mut seam);
         let new_len = new_samples.len();
@@ -769,6 +784,15 @@ fn each_prepared_unit(
         let mut prepared = prepare_unit(job, held, unit, origin)?;
         prepared.committed_start = pub_cursor;
         prepared.committed_end = held_end;
+        if tagging {
+            let plan = plan_tag_windows(origin, audio_end, held_end, full);
+            tag_unit(job, &prepared.masked, origin, &plan.spans)?;
+            if let Some((start, end)) = plan.deferred_seam {
+                let width = end - start;
+                let from = prepared.masked.len() - width;
+                deferred_seam = Some((start, prepared.masked[from..].to_vec()));
+            }
+        }
         let committed_speech =
             clip_speech(&prepared.vad.speech_segments, origin, pub_cursor, held_end);
         summary.add_noisy(&noisy_for(
@@ -1402,6 +1426,7 @@ fn publish_empty(
         facts,
         timings,
         started,
+        sound_tags,
         ..
     } = job;
     let vad = draft.summary.vad();
@@ -1409,20 +1434,20 @@ fn publish_empty(
     let checkpoint = || embedded.checkpoint();
     checkpoint()?;
     let commit = commit_input(&observation, &claim, audio_path, &checkpoint)?;
-    let sound_tag_status = sound_tag_not_run();
+    let (sound_tags, sound_tag_status) = sound_tags.publication();
     let terminal = match kind {
         EmptyKind::NoSpeech => vad_no_speech(
             &facts,
             redo,
-            None,
-            Some(&sound_tag_status),
+            sound_tags.as_ref(),
+            sound_tag_status.as_ref(),
             context_attempt.as_ref(),
         )?,
         EmptyKind::NoTranscript => stt_zero_statements(
             &facts,
             redo,
-            None,
-            Some(&sound_tag_status),
+            sound_tags.as_ref(),
+            sound_tag_status.as_ref(),
             context_attempt.as_ref(),
         )?,
     };
@@ -1477,8 +1502,10 @@ fn publish_transcript(
         facts,
         mut timings,
         started,
+        sound_tags,
         ..
     } = job;
+    let (sound_tags, sound_tag_status) = sound_tags.publication();
     let vad = draft.summary.vad();
     let audio_seconds = draft.summary.audio_seconds();
     let model = draft.model.expect("speech with words has a model");
@@ -1501,7 +1528,6 @@ fn publish_transcript(
     }
     let write_at = Instant::now();
     let checkpoint = || embedded.checkpoint();
-    let sound_tag_status = sound_tag_not_run();
     checkpoint()?;
     let commit = commit_input(&observation, &claim, audio_path, &checkpoint)?;
     write_full_transcript(FullTranscriptWrite {
@@ -1521,8 +1547,8 @@ fn publish_transcript(
         overlap_detector: Some(crate::stage::OVERLAP_DETECTOR),
         speaker_evidence_version: crate::stage::SPEAKER_EVIDENCE_VERSION,
         processing: &processing,
-        sound_tags: None,
-        sound_tag_status: Some(&sound_tag_status),
+        sound_tags: sound_tags.as_ref(),
+        sound_tag_status: sound_tag_status.as_ref(),
         speaker_analysis_producer: Some(crate::stage::SPEAKER_ANALYSIS_PRODUCER),
         redo,
     })?;
@@ -1720,11 +1746,304 @@ fn matching_row<'a>(
         .find(|row| row.start_s == start && row.end_s == end)
 }
 
-fn sound_tag_not_run() -> solstone_core_local::install::capability_status::CapabilityStatus {
-    solstone_core_local::install::capability_status::CapabilityStatus::UnloadableOrUnrunnable {
-        capability: solstone_core_local::install::ced_readiness::CED_CAPABILITY.to_owned(),
-        detail: "Sound tagging stays on the separate ced helper. This speech path does not start that helper and does not load a second ggml archive.".to_owned(),
+const TAG_WINDOW_SAMPLES: usize =
+    solstone_core_sound_tags::WINDOW_S * solstone_core_sound_tags::CLASSIFY_SAMPLE_RATE as usize;
+const TAG_MIN_TAIL_SAMPLES: usize =
+    solstone_core_sound_tags::MIN_TAIL_S * solstone_core_sound_tags::CLASSIFY_SAMPLE_RATE as usize;
+
+/// Global ced windows for one embedded unit.
+///
+/// Grid spans are `[kS, (k+1)S)` with `O <= kS` and `(k+1)S <= stable_limit`.
+/// A full unit defers `[E - S, E)` so the successor, or the empty pull when the
+/// recording ended on that unit, emits it once. A final partial unit adds the
+/// desktop tail `[N - S, N)` when the remainder is at least one second.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct TagUnitPlan {
+    spans: Vec<(usize, usize)>,
+    deferred_seam: Option<(usize, usize)>,
+}
+
+fn plan_tag_windows(
+    origin: usize,
+    audio_end: usize,
+    stable_limit: usize,
+    full: bool,
+) -> TagUnitPlan {
+    let mut spans = Vec::new();
+    if TAG_WINDOW_SAMPLES > 0 && origin < audio_end {
+        let mut k = origin / TAG_WINDOW_SAMPLES;
+        if k * TAG_WINDOW_SAMPLES < origin {
+            k += 1;
+        }
+        loop {
+            let start = k.saturating_mul(TAG_WINDOW_SAMPLES);
+            let Some(end) = start.checked_add(TAG_WINDOW_SAMPLES) else {
+                break;
+            };
+            if start < origin || end > stable_limit || end > audio_end {
+                break;
+            }
+            spans.push((start, end));
+            k += 1;
+        }
     }
+    if !full
+        && audio_end >= TAG_WINDOW_SAMPLES
+        && audio_end % TAG_WINDOW_SAMPLES >= TAG_MIN_TAIL_SAMPLES
+    {
+        spans.push((audio_end - TAG_WINDOW_SAMPLES, audio_end));
+    }
+    // `then_some` evaluates its argument immediately, so the subtraction stays
+    // inside the guard. A recording under one window has `audio_end < S`.
+    let deferred_seam = if full && audio_end >= TAG_WINDOW_SAMPLES {
+        Some((audio_end - TAG_WINDOW_SAMPLES, audio_end))
+    } else {
+        None
+    };
+    TagUnitPlan {
+        spans,
+        deferred_seam,
+    }
+}
+
+struct UnitClassifyView<'a> {
+    samples: &'a [f32],
+    windows: Vec<(usize, usize)>,
+}
+
+fn unit_classify_view<'a>(
+    masked: &'a [f32],
+    origin: usize,
+    spans: &[(usize, usize)],
+) -> UnitClassifyView<'a> {
+    UnitClassifyView {
+        samples: masked,
+        windows: spans
+            .iter()
+            .map(|(start, end)| (start - origin, end - origin))
+            .collect(),
+    }
+}
+
+enum TagPhase {
+    Pending,
+    Ready,
+    Finished {
+        tags: Option<Value>,
+        status: Option<CapabilityStatus>,
+    },
+}
+
+enum SoundTagFailure {
+    Prepare(String),
+    Run(String),
+}
+
+/// In-process sound tags for one recording. The first walk fills it; publication reads it.
+pub(crate) struct SoundTagRun {
+    phase: TagPhase,
+    accepted: Vec<Value>,
+    library: PathBuf,
+    model: PathBuf,
+}
+
+impl SoundTagRun {
+    pub(crate) fn new() -> Self {
+        Self {
+            phase: TagPhase::Pending,
+            accepted: Vec::new(),
+            library: PathBuf::new(),
+            model: PathBuf::new(),
+        }
+    }
+
+    fn accepting(&self) -> bool {
+        matches!(self.phase, TagPhase::Pending | TagPhase::Ready)
+    }
+
+    fn apply_verdict(&mut self, os: &str, arch: &str, verdict: CedVerdict) {
+        match verdict {
+            CedVerdict::Unsupported { os, arch } => {
+                log::warn!("sound tagger disabled: ced assets unsupported on {os}/{arch}");
+                self.finish(None, None);
+            }
+            CedVerdict::Degraded(status) => {
+                if let Some(detail) = status.detail() {
+                    log::warn!("{detail}");
+                }
+                self.finish(None, Some(status));
+            }
+            CedVerdict::Ready { library, .. } => match fresh_model_check(os, arch) {
+                Ok(model) => {
+                    self.library = library;
+                    self.model = model;
+                    self.phase = TagPhase::Ready;
+                }
+                Err(status) => {
+                    if let Some(detail) = status.detail() {
+                        log::warn!("{detail}");
+                    }
+                    self.finish(None, Some(status));
+                }
+            },
+        }
+    }
+
+    fn absorb(&mut self, step: Result<SoundTagWindows, SoundTagFailure>) {
+        match step {
+            Err(SoundTagFailure::Prepare(error)) => {
+                log::warn!("sound tagging could not prepare audio: {error}");
+                self.finish(None, None);
+            }
+            Err(SoundTagFailure::Run(error)) => {
+                log::warn!("sound tagging failed: {error}");
+                self.finish(None, None);
+            }
+            Ok(SoundTagWindows::Rejected) => self.finish(None, None),
+            Ok(SoundTagWindows::Accepted(windows)) => self.accepted.extend(windows),
+        }
+    }
+
+    fn finish(&mut self, tags: Option<Value>, status: Option<CapabilityStatus>) {
+        self.accepted.clear();
+        self.phase = TagPhase::Finished { tags, status };
+    }
+
+    fn publication(self) -> (Option<Value>, Option<CapabilityStatus>) {
+        match self.phase {
+            TagPhase::Finished { tags, status } => (tags, status),
+            TagPhase::Pending => (None, None),
+            TagPhase::Ready => {
+                if self.accepted.is_empty() {
+                    (None, None)
+                } else {
+                    (Some(fold_sound_tag_windows(&self.accepted)), None)
+                }
+            }
+        }
+    }
+}
+
+fn probe_ced_in_process(library: &Path, model: &Path) -> Result<(), String> {
+    let request = json!({
+        "schema": solstone_core_ced_analyze::PROBE_REQUEST_SCHEMA,
+        "models": {
+            "ced_library_path": library,
+            "ced_model_path": model,
+        },
+    });
+    let text = serde_json::to_string(&request).map_err(|error| error.to_string())?;
+    match solstone_core_ced_analyze::run_probe_request(&text) {
+        Ok(response) if response.get("ok") == Some(&Value::Bool(true)) => Ok(()),
+        Ok(response) => Err(format!(
+            "ced probe helper returned an unexpected response: {response}"
+        )),
+        Err(error) => Err(error.detail()),
+    }
+}
+
+fn ensure_sound_tag_ready(job: &mut EmbeddedJob<'_>) -> Result<(), WalkStop> {
+    if !matches!(job.sound_tags.phase, TagPhase::Pending) {
+        return Ok(());
+    }
+    job.embedded.checkpoint().map_err(WalkStop::Bare)?;
+    #[cfg(test)]
+    if ced_stub_on() {
+        CED_PROBES.with(|cell| cell.set(cell.get() + 1));
+        job.embedded.checkpoint().map_err(WalkStop::Bare)?;
+        job.sound_tags.phase = TagPhase::Ready;
+        return Ok(());
+    }
+    let (os, arch) = canonical_host_pair(std::env::consts::OS, std::env::consts::ARCH);
+    let verdict =
+        evaluate_ced_readiness_with_probe(job.journal_path, os, arch, probe_ced_in_process);
+    job.embedded.checkpoint().map_err(WalkStop::Bare)?;
+    job.sound_tags.apply_verdict(os, arch, verdict);
+    Ok(())
+}
+
+fn tag_unit(
+    job: &mut EmbeddedJob<'_>,
+    masked: &[f32],
+    origin: usize,
+    spans: &[(usize, usize)],
+) -> Result<(), WalkStop> {
+    if spans.is_empty() || !job.sound_tags.accepting() {
+        return Ok(());
+    }
+    ensure_sound_tag_ready(job)?;
+    if !job.sound_tags.accepting() {
+        return Ok(());
+    }
+    job.embedded.checkpoint().map_err(WalkStop::Bare)?;
+    let step = classify_sound_tag_unit(job, masked, origin, spans);
+    job.embedded.checkpoint().map_err(WalkStop::Bare)?;
+    job.sound_tags.absorb(step);
+    Ok(())
+}
+
+fn classify_sound_tag_unit(
+    job: &EmbeddedJob<'_>,
+    masked: &[f32],
+    origin: usize,
+    spans: &[(usize, usize)],
+) -> Result<SoundTagWindows, SoundTagFailure> {
+    let view = unit_classify_view(masked, origin, spans);
+    #[cfg(test)]
+    if ced_stub_on() {
+        CED_CLASSIFIES.with(|cell| cell.set(cell.get() + 1));
+        CED_SEEN.with(|cell| {
+            cell.borrow_mut()
+                .push((view.samples.len(), view.windows.clone()))
+        });
+        let response = json!({
+            "schema": solstone_core_ced_analyze::RESPONSE_SCHEMA,
+            "windows": view
+                .windows
+                .iter()
+                .map(|_| json!({"ok": true, "tags": {"Tick": 0.2}}))
+                .collect::<Vec<_>>(),
+        });
+        return Ok(read_sound_tag_windows(&response, view.windows.len()));
+    }
+    let temporary = tempfile::Builder::new()
+        .prefix(solstone_core_sound_tags::CED_ANALYZE_TEMP_PREFIX)
+        .tempdir_in(job.embedded.scratch)
+        .map_err(|error| SoundTagFailure::Prepare(error.to_string()))?;
+    let audio_path = temporary.path().join("audio.f32le");
+    write_f32le(&audio_path, view.samples)
+        .map_err(|error| SoundTagFailure::Prepare(error.to_string()))?;
+    let request = json!({
+        "schema": solstone_core_ced_analyze::REQUEST_SCHEMA,
+        "models": {
+            "ced_library_path": &job.sound_tags.library,
+            "ced_model_path": &job.sound_tags.model,
+        },
+        "audio_f32le_path": &audio_path,
+        "sample_rate_hz": solstone_core_sound_tags::CLASSIFY_SAMPLE_RATE,
+        "top_k": solstone_core_sound_tags::TOP_K,
+        "windows": view
+            .windows
+            .iter()
+            .map(|(start, end)| json!({"start_sample": start, "end_sample": end}))
+            .collect::<Vec<_>>(),
+    });
+    let text =
+        serde_json::to_string(&request).map_err(|error| SoundTagFailure::Run(error.to_string()))?;
+    let result = solstone_core_ced_analyze::run_classify_request(&text)
+        .map_err(|error| SoundTagFailure::Run(error.to_string()));
+    if let Err(error) = temporary.close() {
+        log::warn!("sound tagging could not prepare audio: {error}");
+    }
+    Ok(read_sound_tag_windows(&result?, view.windows.len()))
+}
+
+fn write_f32le(path: &Path, samples: &[f32]) -> std::io::Result<()> {
+    let mut bytes = Vec::with_capacity(samples.len() * std::mem::size_of::<f32>());
+    for sample in samples {
+        bytes.extend_from_slice(&sample.to_le_bytes());
+    }
+    std::fs::write(path, bytes)
 }
 
 fn elapsed_ms(start: Instant) -> u64 {
@@ -1767,6 +2086,68 @@ impl VadReplayGuard {
 impl Drop for VadReplayGuard {
     fn drop(&mut self) {
         EMBEDDED_VAD_REPLAY.with(|cell| *cell.borrow_mut() = None);
+    }
+}
+
+#[cfg(test)]
+thread_local! {
+    static CED_STUB_ON: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    static CED_PROBES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    static CED_CLASSIFIES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    static CED_SEEN: std::cell::RefCell<Vec<(usize, Vec<(usize, usize)>)>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+#[cfg(test)]
+fn ced_stub_on() -> bool {
+    CED_STUB_ON.with(|cell| cell.get())
+}
+
+#[cfg(test)]
+fn install_ced_stub() {
+    CED_STUB_ON.with(|cell| cell.set(true));
+    CED_PROBES.with(|cell| cell.set(0));
+    CED_CLASSIFIES.with(|cell| cell.set(0));
+    CED_SEEN.with(|cell| cell.borrow_mut().clear());
+}
+
+#[cfg(test)]
+fn clear_ced_stub() {
+    CED_STUB_ON.with(|cell| cell.set(false));
+    CED_PROBES.with(|cell| cell.set(0));
+    CED_CLASSIFIES.with(|cell| cell.set(0));
+    CED_SEEN.with(|cell| cell.borrow_mut().clear());
+}
+
+#[cfg(all(test, feature = "full-tests"))]
+fn ced_stub_counts() -> (usize, usize) {
+    (
+        CED_PROBES.with(|cell| cell.get()),
+        CED_CLASSIFIES.with(|cell| cell.get()),
+    )
+}
+
+#[cfg(all(test, feature = "full-tests"))]
+fn ced_stub_seen() -> Vec<(usize, Vec<(usize, usize)>)> {
+    CED_SEEN.with(|cell| cell.borrow().clone())
+}
+
+/// Installs the non-spawning ced probe and classify stand-in for one test.
+#[cfg(test)]
+pub(crate) struct EmbeddedCedStubGuard;
+
+#[cfg(test)]
+impl EmbeddedCedStubGuard {
+    pub(crate) fn install() -> Self {
+        install_ced_stub();
+        Self
+    }
+}
+
+#[cfg(test)]
+impl Drop for EmbeddedCedStubGuard {
+    fn drop(&mut self) {
+        clear_ced_stub();
     }
 }
 
@@ -1832,6 +2213,131 @@ mod tests {
             }
             assert_eq!(committed, n);
         }
+    }
+
+    #[test]
+    fn tag_grid_aligns_and_skips_audio_under_ten_seconds() {
+        assert_eq!(crate::owner_voice::PAD_BEFORE_SAMPLES, 8_000);
+        for samples in [0_usize, 1, 16_000, 159_999] {
+            let plan = plan_tag_windows(0, samples, samples, false);
+            assert!(plan.spans.is_empty(), "{samples}");
+            assert!(plan.deferred_seam.is_none(), "{samples}");
+            assert!(solstone_core_sound_tags::window_spans(samples).is_empty());
+        }
+        for samples in [160_000_usize, 176_000, 320_000, 1_809_999] {
+            let plan = plan_tag_windows(0, samples, samples, false);
+            assert!(plan.deferred_seam.is_none(), "{samples}");
+            assert_eq!(
+                plan.spans,
+                solstone_core_sound_tags::window_spans(samples),
+                "{samples}"
+            );
+        }
+    }
+
+    #[test]
+    fn full_unit_defers_the_seam_and_the_successor_emits_it_once() {
+        let step = 1_760_000;
+        let window = 160_000;
+        let first = plan_tag_windows(0, step, step - 8_000, true);
+        let expected = (0..10)
+            .map(|k| (k * window, (k + 1) * window))
+            .collect::<Vec<_>>();
+        assert_eq!(first.spans, expected);
+        assert_eq!(first.deferred_seam, Some((1_600_000, step)));
+        assert!(!first.spans.contains(&(1_600_000, step)));
+
+        let origin = step - window;
+        let audio_end = step + step;
+        let successor = plan_tag_windows(origin, audio_end, audio_end - 8_000, true);
+        let seam = (1_600_000, step);
+        assert_eq!(
+            successor.spans.iter().filter(|span| **span == seam).count(),
+            1
+        );
+        assert_eq!(successor.spans[0], seam);
+    }
+
+    #[test]
+    fn exact_step_end_emits_the_deferred_seam_once_and_no_tail() {
+        let n = 1_760_000;
+        let first = plan_tag_windows(0, n, n - 8_000, true);
+        let seam = first.deferred_seam.expect("full unit defers the seam");
+        assert_eq!(seam, (1_600_000, n));
+        let mut emitted = first.spans;
+        emitted.push(seam);
+        assert_eq!(emitted, solstone_core_sound_tags::window_spans(n));
+        assert_eq!(emitted.iter().filter(|span| **span == seam).count(), 1);
+        assert_eq!(n % 160_000, 0);
+        assert_eq!(emitted.last().copied(), Some(seam));
+    }
+
+    #[test]
+    fn final_partial_unit_emits_the_tail_once() {
+        let step = 1_760_000;
+        let n = 1_810_000;
+        let first = plan_tag_windows(0, step, step - 8_000, true);
+        assert_eq!(first.deferred_seam, Some((1_600_000, step)));
+        let origin = step - 160_000;
+        let partial = plan_tag_windows(origin, n, n, false);
+        assert!(partial.deferred_seam.is_none());
+        let seam = (1_600_000, 1_760_000);
+        let tail = (1_650_000, n);
+        assert_ne!(seam, tail);
+        assert_eq!(
+            partial.spans.iter().filter(|span| **span == seam).count(),
+            1
+        );
+        assert_eq!(
+            partial.spans.iter().filter(|span| **span == tail).count(),
+            1
+        );
+        let mut emitted = first.spans;
+        emitted.extend(partial.spans);
+        assert_eq!(emitted, solstone_core_sound_tags::window_spans(n));
+    }
+
+    #[test]
+    fn stub_classify_sees_unit_local_slices_only() {
+        let recording = 1_810_000;
+        let step = 1_760_000;
+        let window = 160_000;
+        let first_mask = vec![0.5_f32; step];
+        let first = plan_tag_windows(0, step, step - 8_000, true);
+        let view = unit_classify_view(&first_mask, 0, &first.spans);
+        assert_eq!(view.samples.len(), step);
+        assert_ne!(view.samples.len(), recording);
+        assert!(
+            view.windows
+                .iter()
+                .all(|(start, end)| *start < *end && *end <= view.samples.len())
+        );
+        assert_eq!(view.windows.len(), 10);
+        assert!(view.windows.iter().all(|(_, end)| *end <= 1_600_000));
+
+        let (start, end) = first.deferred_seam.expect("seam");
+        let saved = &first_mask[first_mask.len() - (end - start)..];
+        let seam_view = unit_classify_view(saved, start, &[(start, end)]);
+        assert_eq!(seam_view.samples.len(), window);
+        assert_eq!(seam_view.windows, vec![(0, window)]);
+        assert_ne!(seam_view.samples.len(), recording);
+
+        let origin = step - window;
+        let unit_len = recording - origin;
+        let mut mask = vec![0.25_f32; unit_len];
+        mask[..16_000].fill(0.0);
+        let partial = plan_tag_windows(origin, recording, recording, false);
+        let view = unit_classify_view(&mask, origin, &partial.spans);
+        assert_eq!(view.samples.len(), 210_000);
+        assert_ne!(view.samples.len(), recording);
+        assert!(view.samples[..16_000].iter().all(|sample| *sample == 0.0));
+        assert!(
+            view.windows
+                .iter()
+                .all(|(start, end)| *start < *end && *end <= view.samples.len())
+        );
+        assert!(view.windows.contains(&(0, window)));
+        assert!(view.windows.contains(&(50_000, 210_000)));
     }
 
     #[test]
@@ -2015,6 +2521,14 @@ mod tests {
     struct ClearEmbeddedHooks;
 
     #[cfg(all(unix, feature = "embedded", feature = "full-tests"))]
+    impl ClearEmbeddedHooks {
+        fn arm() -> Self {
+            install_ced_stub();
+            Self
+        }
+    }
+
+    #[cfg(all(unix, feature = "embedded", feature = "full-tests"))]
     impl Drop for ClearEmbeddedHooks {
         fn drop(&mut self) {
             set_embedded_vad_sticky(None);
@@ -2023,6 +2537,7 @@ mod tests {
             crate::speakers::set_embedded_first_pass_keep(None);
             crate::backend::confidential::set_confidential_send_hook(false);
             let _ = take_embedded_unit_commits();
+            clear_ced_stub();
         }
     }
 
@@ -2110,7 +2625,7 @@ mod tests {
     #[cfg(all(unix, feature = "embedded", feature = "full-tests"))]
     #[test]
     fn long_wav_units_cover_the_file_without_a_budget_hold() {
-        let _hooks = ClearEmbeddedHooks;
+        let _hooks = ClearEmbeddedHooks::arm();
         let _ = take_embedded_unit_commits();
         set_embedded_vad_sticky(Some(speech_vad));
         crate::speakers::set_embedded_unit_speaker_empty(true);
@@ -2185,7 +2700,7 @@ mod tests {
     #[cfg(all(unix, feature = "embedded", feature = "full-tests"))]
     #[test]
     fn cancel_and_failure_leave_the_original_and_do_not_delete_it() {
-        let _hooks = ClearEmbeddedHooks;
+        let _hooks = ClearEmbeddedHooks::arm();
         let root = tempfile::TempDir::new_in("/var/tmp").unwrap();
         let (audio, bytes) = write_pcm_wav(root.path(), "120000_121", 16_000);
         set_embedded_vad_sticky(Some(speech_vad));
@@ -2620,7 +3135,7 @@ mod tests {
     #[cfg(all(unix, feature = "embedded", feature = "full-tests"))]
     #[test]
     fn recording_min_speech_keeps_split_speech_and_drops_the_short_total() {
-        let _hooks = ClearEmbeddedHooks;
+        let _hooks = ClearEmbeddedHooks::arm();
         crate::speakers::set_embedded_unit_speaker_empty(true);
         let root = tempfile::TempDir::new_in("/var/tmp").unwrap();
         let asr = LengthAsr(std::cell::RefCell::new(Vec::new()));
@@ -2691,7 +3206,7 @@ mod tests {
     #[test]
     fn owner_voice_pre_pad_is_delivered_once_with_the_recording_filter() {
         use sha2::Digest;
-        let _hooks = ClearEmbeddedHooks;
+        let _hooks = ClearEmbeddedHooks::arm();
         crate::speakers::set_embedded_unit_speaker_empty(true);
         crate::speakers::set_embedded_first_pass_keep(Some(keep_owner_window));
         set_embedded_vad_sticky(Some(speech_vad));
@@ -2770,7 +3285,7 @@ mod tests {
     #[cfg(all(unix, feature = "embedded", feature = "full-tests"))]
     #[test]
     fn later_unit_failure_leaves_the_original_and_a_later_retry_completes() {
-        let _hooks = ClearEmbeddedHooks;
+        let _hooks = ClearEmbeddedHooks::arm();
         crate::speakers::set_embedded_unit_speaker_empty(true);
         set_embedded_vad_sticky(Some(speech_vad));
         let root = tempfile::TempDir::new_in("/var/tmp").unwrap();
@@ -2866,7 +3381,7 @@ mod tests {
     #[cfg(all(unix, feature = "embedded", feature = "full-tests"))]
     #[test]
     fn confidential_multi_window_budget_is_the_sum_of_the_production_walks() {
-        let _hooks = ClearEmbeddedHooks;
+        let _hooks = ClearEmbeddedHooks::arm();
         crate::speakers::set_embedded_unit_speaker_empty(true);
         crate::backend::confidential::set_confidential_send_hook(true);
         let root = tempfile::TempDir::new_in("/var/tmp").unwrap();
@@ -2921,7 +3436,7 @@ mod tests {
     #[cfg(all(unix, feature = "embedded", feature = "full-tests"))]
     #[test]
     fn speaker_evidence_keeps_single_overlap_and_identity_across_units() {
-        let _hooks = ClearEmbeddedHooks;
+        let _hooks = ClearEmbeddedHooks::arm();
         set_embedded_vad_sticky(Some(speech_vad));
         let root = tempfile::TempDir::new_in("/var/tmp").unwrap();
 
@@ -2947,7 +3462,6 @@ mod tests {
         assert_eq!(header["speaker_evidence"], "single");
         assert!((header["speaker_evidence_multi_fraction"].as_f64().unwrap() - 0.025).abs() < 1e-9);
         assert_eq!(header["overlap_fraction"].as_f64().unwrap(), 0.0);
-        assert_sound_tag_not_run(&header);
         let npz = solstone_core_speaker_id::embeddings::load_embeddings_file(
             &single.with_extension("npz"),
         )
@@ -3044,22 +3558,17 @@ mod tests {
     }
 
     #[cfg(all(unix, feature = "embedded", feature = "full-tests"))]
-    fn assert_sound_tag_not_run(header: &Value) {
+    fn assert_sound_tags_omitted(header: &Value, body: &str) {
         assert!(header.get("sound_tags").is_none());
-        let status = &header["sound_tag_status"];
-        assert_eq!(status["status"], "unloadable_or_unrunnable");
-        assert_eq!(status["capability"], "ced");
-        assert!(
-            status["detail"]
-                .as_str()
-                .is_some_and(|detail| !detail.is_empty())
-        );
+        assert!(header.get("sound_tag_status").is_none());
+        assert!(!body.contains("Sound tagging stays on the separate ced helper"));
+        assert!(!body.contains("does not start that helper"));
     }
 
     #[cfg(all(unix, feature = "embedded", feature = "full-tests"))]
     #[test]
-    fn no_speech_records_that_sound_tagging_did_not_run() {
-        let _hooks = ClearEmbeddedHooks;
+    fn no_speech_omits_sound_tags_under_ten_seconds() {
+        let _hooks = ClearEmbeddedHooks::arm();
         set_embedded_vad_sticky(Some(|samples| timed_vad(samples, Vec::new())));
         let root = tempfile::TempDir::new_in("/var/tmp").unwrap();
         let (audio, _) = write_pcm_wav(root.path(), "120000_260", 16_000);
@@ -3067,18 +3576,18 @@ mod tests {
         let file = run_file(&audio, root.path(), &asr, &|| false).unwrap();
         assert_eq!(file.outcome, crate::TranscribeOutcome::Preserved);
         assert!(asr.0.borrow().is_empty());
-        let header =
-            solstone_core_processing_record::read_jsonl_header(&audio.with_extension("jsonl"))
-                .unwrap();
-        assert_sound_tag_not_run(&header);
+        let jsonl = audio.with_extension("jsonl");
+        let body = std::fs::read_to_string(&jsonl).unwrap();
+        let header = solstone_core_processing_record::read_jsonl_header(&jsonl).unwrap();
+        assert_sound_tags_omitted(&header, &body);
         assert_eq!(header["_solstone_processing"]["state"], "empty");
         assert_eq!(header["_solstone_processing"]["reason_code"], "no_speech");
     }
 
     #[cfg(all(unix, feature = "embedded", feature = "full-tests"))]
     #[test]
-    fn empty_recognizer_records_that_sound_tagging_did_not_run() {
-        let _hooks = ClearEmbeddedHooks;
+    fn empty_recognizer_omits_sound_tags_under_ten_seconds() {
+        let _hooks = ClearEmbeddedHooks::arm();
         set_embedded_vad_sticky(Some(speech_vad));
         let root = tempfile::TempDir::new_in("/var/tmp").unwrap();
         let (audio, _) = write_pcm_wav(root.path(), "120000_261", 16_000);
@@ -3089,10 +3598,10 @@ mod tests {
         let file = run_file(&audio, root.path(), &asr, &|| false).unwrap();
         assert_eq!(file.outcome, crate::TranscribeOutcome::Preserved);
         assert_eq!(asr.seen.borrow().len(), 1);
-        let header =
-            solstone_core_processing_record::read_jsonl_header(&audio.with_extension("jsonl"))
-                .unwrap();
-        assert_sound_tag_not_run(&header);
+        let jsonl = audio.with_extension("jsonl");
+        let body = std::fs::read_to_string(&jsonl).unwrap();
+        let header = solstone_core_processing_record::read_jsonl_header(&jsonl).unwrap();
+        assert_sound_tags_omitted(&header, &body);
         assert_eq!(header["_solstone_processing"]["state"], "empty");
         assert_eq!(
             header["_solstone_processing"]["reason_code"],
@@ -3102,8 +3611,125 @@ mod tests {
 
     #[cfg(all(unix, feature = "embedded", feature = "full-tests"))]
     #[test]
+    fn process_embedded_runs_the_in_process_adapter() {
+        let _hooks = ClearEmbeddedHooks::arm();
+        set_embedded_vad_sticky(Some(speech_vad));
+        crate::speakers::set_embedded_unit_speaker_empty(true);
+        let root = tempfile::TempDir::new_in("/var/tmp").unwrap();
+        let (audio, _) = write_pcm_wav(root.path(), "120000_270", 1_760_000);
+        let asr = LengthAsr(std::cell::RefCell::new(Vec::new()));
+        let file = run_file(&audio, root.path(), &asr, &|| false).unwrap();
+        assert_eq!(file.outcome, crate::TranscribeOutcome::Transcribed);
+        assert_eq!(asr.0.borrow().len(), 1);
+        assert_eq!(ced_stub_counts(), (1, 2));
+        let seen = ced_stub_seen();
+        assert_eq!(seen.len(), 2);
+        assert_eq!(seen[0].0, 1_760_000);
+        assert_eq!(seen[0].1.len(), 10);
+        assert!(
+            seen[0]
+                .1
+                .iter()
+                .all(|(start, end)| *start < *end && *end <= 1_600_000)
+        );
+        assert_eq!(seen[0].1[0], (0, 160_000));
+        assert_eq!(*seen[0].1.last().unwrap(), (1_440_000, 1_600_000));
+        assert_eq!(seen[1], (160_000, vec![(0, 160_000)]));
+        let jsonl = audio.with_extension("jsonl");
+        let body = std::fs::read_to_string(&jsonl).unwrap();
+        let header = solstone_core_processing_record::read_jsonl_header(&jsonl).unwrap();
+        let spans = solstone_core_sound_tags::window_spans(1_760_000);
+        assert_eq!(spans.len(), 11);
+        assert_eq!(header["sound_tags"]["windows"], json!(spans.len()));
+        assert!(header.get("sound_tag_status").is_none());
+        assert!(!body.contains("Sound tagging stays on the separate ced helper"));
+        assert!(!body.contains("does not start that helper"));
+    }
+
+    #[cfg(all(unix, feature = "embedded", feature = "full-tests"))]
+    #[test]
+    fn in_process_probe_does_not_spawn() {
+        let missing = std::path::PathBuf::from("/var/tmp/solstone-ced-probe-missing-library.so");
+        assert!(!missing.is_file());
+        let request = serde_json::to_string(&json!({
+            "schema": solstone_core_ced_analyze::PROBE_REQUEST_SCHEMA,
+            "models": {
+                "ced_library_path": &missing,
+                "ced_model_path": &missing,
+            },
+        }))
+        .unwrap();
+        let error = solstone_core_ced_analyze::run_probe_request(&request).unwrap_err();
+        assert!(matches!(
+            error,
+            solstone_core_ced_analyze::AnalyzeError::LibraryUnreadable { .. }
+        ));
+        assert_eq!(error.reason(), "library-unreadable");
+        let probe_detail = error.detail();
+        assert!(!probe_detail.contains("could not be loaded"));
+
+        let ran = std::cell::Cell::new(false);
+        let (os, arch) = canonical_host_pair(std::env::consts::OS, std::env::consts::ARCH);
+        let verdict = evaluate_ced_readiness_with_probe(
+            Path::new("/var/tmp/unused-journal"),
+            os,
+            arch,
+            |_library, _model| {
+                ran.set(true);
+                probe_ced_in_process(&missing, &missing)
+            },
+        );
+        match verdict {
+            CedVerdict::Degraded(status) => {
+                let detail = status.detail().expect("degraded status has a detail");
+                assert!(!detail.is_empty());
+                assert!(!detail.contains("Sound tagging stays on the separate ced helper"));
+                assert!(!detail.contains("does not start that helper"));
+                if ran.get() {
+                    assert!(matches!(
+                        status,
+                        CapabilityStatus::UnloadableOrUnrunnable { .. }
+                    ));
+                    assert_eq!(detail, probe_detail);
+                }
+            }
+            other => panic!("expected a real degraded status, got {other:?}"),
+        }
+    }
+
+    #[cfg(all(unix, feature = "embedded", feature = "full-tests"))]
+    #[test]
+    fn run_classify_request_on_a_missing_library_returns_no_spawn() {
+        let root = tempfile::TempDir::new_in("/var/tmp").unwrap();
+        let audio = root.path().join("audio.f32le");
+        std::fs::write(&audio, 0.0_f32.to_le_bytes()).unwrap();
+        let library = root.path().join("missing-ced.so");
+        assert!(!library.exists());
+        let request = serde_json::to_string(&json!({
+            "schema": solstone_core_ced_analyze::REQUEST_SCHEMA,
+            "models": {
+                "ced_library_path": &library,
+                "ced_model_path": root.path().join("missing-model.gguf"),
+            },
+            "audio_f32le_path": &audio,
+            "sample_rate_hz": solstone_core_sound_tags::CLASSIFY_SAMPLE_RATE,
+            "top_k": solstone_core_sound_tags::TOP_K,
+            "windows": [{"start_sample": 0, "end_sample": 1}],
+        }))
+        .unwrap();
+        let error = solstone_core_ced_analyze::run_classify_request(&request).unwrap_err();
+        assert!(matches!(
+            error,
+            solstone_core_ced_analyze::AnalyzeError::LibraryUnreadable { .. }
+        ));
+        assert_eq!(error.reason(), "library-unreadable");
+        assert!(!error.detail().contains("could not be loaded"));
+    }
+
+    #[cfg(all(unix, feature = "embedded", feature = "full-tests"))]
+    #[test]
     fn cancel_inside_clustering_publishes_nothing() {
-        let _hooks = ClearEmbeddedHooks;
+        let _hooks = ClearEmbeddedHooks::arm();
         set_embedded_vad_sticky(Some(speech_vad));
         let root = tempfile::TempDir::new_in("/var/tmp").unwrap();
         push_helper(
@@ -3162,7 +3788,7 @@ mod tests {
     #[cfg(all(unix, feature = "embedded", feature = "full-tests"))]
     #[test]
     fn cancel_before_cluster_publishes_nothing() {
-        let _hooks = ClearEmbeddedHooks;
+        let _hooks = ClearEmbeddedHooks::arm();
         set_embedded_vad_sticky(Some(speech_vad));
         let root = tempfile::TempDir::new_in("/var/tmp").unwrap();
         push_helper(

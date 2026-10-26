@@ -520,6 +520,7 @@ mod tests {
 
     #[test]
     fn unit_past_one_native_call_reaches_vad_without_a_budget_hold() {
+        let _ced = crate::embedded_units::EmbeddedCedStubGuard::install();
         let root = tempfile::TempDir::new_in("/var/tmp").unwrap();
         let segment = root.path().join("chronicle/20261012/audio/120000_121");
         std::fs::create_dir_all(&segment).unwrap();
@@ -558,6 +559,7 @@ mod tests {
 
     #[test]
     fn short_and_cap_length_units_reach_vad_without_loading_a_model() {
+        let _ced = crate::embedded_units::EmbeddedCedStubGuard::install();
         for samples in [30 * 16_000, 44 * 16_000, EMBEDDED_AUDIO_MAX_SAMPLES] {
             let root = tempfile::TempDir::new_in("/var/tmp").unwrap();
             let segment = root.path().join("chronicle/20261012/audio/120000_120");

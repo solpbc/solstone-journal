@@ -403,6 +403,7 @@ pub(crate) fn process_one_with(
             timings,
             started,
             owner_voice_print,
+            sound_tags: crate::embedded_units::SoundTagRun::new(),
         });
     }
     let decoded_at = Instant::now();
