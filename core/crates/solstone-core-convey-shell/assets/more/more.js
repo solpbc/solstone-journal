@@ -10,7 +10,10 @@ const MORE_STATE_FIELDS = [
   {"view":"entities","url":"/app/entities/api/journal/summary","path":["folder_counts","all"]},
   {"view":"import","url":"/app/import/api/list","path":["total"]},
   {"view":"network","url":"/app/network/api/clients","path":["clients"]},
-  {"view":"thinking","url":"/app/thinking/api/state","path":["providers","active_lane","lane"]}
+  {"view":"thinking","url":"/app/thinking/api/state","path":["providers","active_lane","lane"]},
+  {"view":"curation","url":"/app/curation/api/summary","path":["to_review"]},
+  {"view":"agents","url":"/app/agents/api/state","path":["connections"]},
+  {"view":"backup","url":"/app/backup/status","path":["success"]}
 ];
 
 (function () {
@@ -76,6 +79,27 @@ const MORE_STATE_FIELDS = [
     if (view === 'thinking') {
       const lane = leaf(body, ['providers', 'active_lane', 'lane']);
       if (lane === undefined || lane === 'none') return { text: 'not set up yet', action: true };
+      return null;
+    }
+    if (view === 'curation') {
+      const count = body.to_review;
+      if (typeof count !== 'number' || !Number.isFinite(count) || count < 0) return null;
+      if (count > 0) return { text: count + ' to review', action: true };
+      if (count === 0) return { text: 'nothing to review', action: false };
+      return null;
+    }
+    if (view === 'agents') {
+      if (!Array.isArray(body.connections)) return null;
+      const count = body.connections.length;
+      if (count > 0) return { text: count + ' connected', action: false };
+      if (count === 0) return { text: 'none yet', action: false };
+      return null;
+    }
+    if (view === 'backup') {
+      if (body.success !== true) return null;
+      if (!window.BackupStatus || typeof window.BackupStatus.initialPanel !== 'function') return null;
+      const panel = window.BackupStatus.initialPanel(body);
+      if (panel === 'intro') return { text: 'not set up yet', action: true };
       return null;
     }
     return null;

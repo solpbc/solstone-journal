@@ -2005,6 +2005,30 @@ for (const reasonCode of ['ready', 'auth_failed']) {
   });
 }
 
+asyncCase('initial panel decisions match between view and BackupStatus helper', async () => {
+  const panelCases = [
+    [status(), 'intro'],
+    [Object.assign(status(), { recovery_key_confirmed: true, enabled: false, mode: 'byo', operation: null, cleanup_admission: null }), 'destination'],
+    [Object.assign(status(), { enabled: true, operation: null }), 'management'],
+    [Object.assign(status(), { mode: 'operated', enabled: false, operation: null, recovery_key_confirmed: false }), 'management'],
+    [Object.assign(status(restoreOperation('restoring')), { enabled: true }), 'management'],
+    [Object.assign(status(restoreOperation('restoring')), { enabled: false, mode: 'byo' }), 'destination'],
+    [Object.assign(status(), { cleanup_admission: 'pending', enabled: false, mode: 'byo', operation: null }), 'destination'],
+    [Object.assign(status(), { cleanup_admission: 'contended', enabled: false, mode: 'byo', operation: null }), 'destination'],
+    [Object.assign(status(restoreOperation('cleanup_pending')), { enabled: false, mode: 'byo' }), 'destination'],
+    [Object.assign(status(restoreOperation('done')), { enabled: false, mode: 'byo', cleanup_admission: null, recovery_key_confirmed: false }), 'intro'],
+  ];
+
+  for (const [payload, expectedPanel] of panelCases) {
+    const harness = createHarness({ statusQueue: [payload] });
+    await settle();
+    const visiblePanels = harness.root.querySelectorAll('[data-backup-panel]').filter((panel) => !panel.hidden);
+    assert.strictEqual(visiblePanels.length, 1, `expected exactly one visible panel for ${expectedPanel}`);
+    assert.strictEqual(visiblePanels[0].getAttribute('data-backup-panel'), expectedPanel);
+    assert.strictEqual(harness.window.BackupStatus.initialPanel(payload), expectedPanel);
+  }
+});
+
 async function runAsyncCases() {
   for (const runCase of asyncCases) await runCase();
   console.log('DOM CASES: ' + cases + ' passed');

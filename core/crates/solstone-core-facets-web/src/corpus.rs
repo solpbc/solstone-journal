@@ -549,6 +549,7 @@ async fn ac5_ac6_ac11_shell_gate_and_fallback_contracts() {
         "/app/curation/",
         "/app/curation/workspace",
         "/app/curation/api/state",
+        "/app/curation/api/summary",
     ] {
         for phase in ["unestablished", "corrupt", "established_empty"] {
             let root = phase_root(phase);
