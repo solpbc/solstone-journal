@@ -458,7 +458,7 @@ pub(crate) fn run_library(
     if !solstone_core_import::work_continues() {
         return (failure("", "import stopped\n", 1), None);
     }
-    let (mut run, import_id) =
+    let (run, import_id) =
         match dispatch_parsed(parsed, journal_path, Dispatch::Library { seams, embedded }) {
             CliOutcome::Rendered(run) => (run, None),
             CliOutcome::Imported { run, import_id } => (run, Some(import_id)),
@@ -466,11 +466,6 @@ pub(crate) fn run_library(
                 unreachable!("library dispatch executes registry sources")
             }
         };
-    // A dispatch that returns success after Stop was requested would report
-    // exit 0. Keep its stdout, including a sync count, and fail the attempt.
-    if run.exit_code == 0 && !solstone_core_import::work_continues() {
-        run = failure(&run.stdout, "import stopped\n", 1);
-    }
     if run.exit_code == 0
         && let Some(import_id) = &import_id
     {

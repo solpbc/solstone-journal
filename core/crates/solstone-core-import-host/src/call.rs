@@ -428,6 +428,72 @@ mod tests {
         assert!(vault.path().join("b.md").is_file());
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
+    #[test]
+    fn a_completed_list_stays_successful_when_stop_is_visible_after_it() {
+        let journal = tempfile::tempdir().unwrap();
+        let seen = AtomicUsize::new(0);
+        // One check before dispatch. A later read must not rewrite the list.
+        let stop =
+            WorkStop::linked_with_checkpoint(Arc::new(AtomicBool::new(false)), None, move || {
+                seen.fetch_add(1, Ordering::AcqRel) >= 1
+            });
+        let seams = idle_seams(journal.path());
+        let handle = start(
+            vec!["--list-importers".to_owned()],
+            journal.path().to_path_buf(),
+            seams,
+            stop,
+        )
+        .unwrap();
+        let (run, id) = handle.join();
+        assert_eq!(run.exit_code, 0, "{}", run.stderr);
+        assert!(run.stderr.is_empty(), "{}", run.stderr);
+        assert!(run.stdout.contains("document"), "{}", run.stdout);
+        assert!(id.is_none());
+    }
+
+    #[cfg(all(test, feature = "full-tests"))]
+    #[test]
+    fn the_last_saved_sync_item_stays_successful_when_nothing_follows() {
+        let journal = tempfile::tempdir().unwrap();
+        let vault = tempfile::tempdir().unwrap();
+        std::fs::write(vault.path().join("only.md"), "").unwrap();
+        let seen = AtomicUsize::new(0);
+        // Before dispatch, then before the only note. Nothing follows it, so
+        // a read after that success must not fail the saved item.
+        let stop =
+            WorkStop::linked_with_checkpoint(Arc::new(AtomicBool::new(false)), None, move || {
+                seen.fetch_add(1, Ordering::AcqRel) >= 2
+            });
+        let seams = idle_seams(journal.path());
+        let handle = start(
+            vec![
+                "--sync".to_owned(),
+                "obsidian".to_owned(),
+                "--save".to_owned(),
+                "--path".to_owned(),
+                vault.path().display().to_string(),
+            ],
+            journal.path().to_path_buf(),
+            seams,
+            stop,
+        )
+        .unwrap();
+        let (run, id) = handle.join();
+        assert_eq!(run.exit_code, 0, "{}", run.stderr);
+        assert!(run.stderr.is_empty(), "{}", run.stderr);
+        assert!(run.stdout.contains("saved=1"), "{}", run.stdout);
+        assert!(run.stdout.contains("errors=0"), "{}", run.stdout);
+        assert!(id.is_none());
+        let state: serde_json::Value = serde_json::from_slice(
+            &std::fs::read(journal.path().join("imports").join("obsidian.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(state["files"]["only.md"]["status"], "imported");
+        assert!(vault.path().join("only.md").is_file());
+    }
+
     #[test]
     fn preview_of_sync_save_and_audio_archive_does_not_publish() {
         let journal = tempfile::tempdir().unwrap();
