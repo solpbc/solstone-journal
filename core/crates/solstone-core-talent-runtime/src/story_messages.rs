@@ -743,9 +743,13 @@ mod tests {
         )]));
         let raw = json!({"body":"A compact narrative.","topics":["kilo request"],"confidence":0.7,
             "relations":[{"from":"you","to":"tool","kind":"uses","note":"","quote":"example"}]});
-        let schema: Value = serde_json::from_str(include_str!(
-            "../../../payload/solstone/talent/story.schema.json"
-        ))
+        let schema: Value = serde_json::from_str(
+            &std::fs::read_to_string(
+                std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("../../payload/solstone/talent/story.schema.json"),
+            )
+            .unwrap(),
+        )
         .unwrap();
         let validator = jsonschema::validator_for(&schema).unwrap();
         prepared.config.insert("json_schema".into(), schema.clone());
