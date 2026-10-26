@@ -651,10 +651,11 @@ fn native_claim_and_sync_uncertainty_preserve_owners_and_exact_failures() {
             let activity =
                 solstone_core_journal_io::activity::ActivityLease::try_acquire(Arc::clone(&f.root))
                     .unwrap();
-            let recovered = recover_interrupted_removals(&activity);
+            let recovered = recover_interrupted_removals(&activity).expect("local recovery");
             assert!(recovered.is_empty());
-            crate::restore_intent::recover_abandoned_restores(&activity);
-            solstone_core_journal_io::media::retire_orphan_root_carriers(&activity);
+            crate::restore_intent::recover_abandoned_restores(&activity).expect("local recovery");
+            solstone_core_journal_io::media::retire_orphan_root_carriers(&activity)
+                .expect("retire");
             assert_eq!(fs::read(&raw).unwrap(), b"newer");
             assert!(!f.path(stage_path).exists());
             assert!(load_at_root(&f.root).unwrap().marks.contains_key(&mark.id));

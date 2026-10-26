@@ -56,7 +56,7 @@ func validateS3Shape(version uint32, operation int32, fields [14]requestField) i
 }
 
 func validateS3ShapeForRoot(version uint32, operation int32, fields [14]requestField, rooted bool) int32 {
-	if version != 1 || operation < OpInit || operation > OpRemoveRecoveryKey {
+	if version != 1 || operation < OpInit || (operation > OpRemoveRecoveryKey && operation != OpRetention) {
 		return StatusInvalidArgument
 	}
 	caps := [14]uint32{maxHTTPURLBytes, 64, 63, 512, 256, 1024, 16384, maxPasswordLen, maxPasswordLen, maxPathLen, maxPathLen, maxPathLen, idHexLen, maxPathLen}
@@ -363,7 +363,10 @@ func restic_bridge_s3_operation_directories_v1_start(request *C.restic_s3_reques
 	if request == nil || !normalDirectoryOperation(int32(request.operation)) {
 		return C.int32_t(StatusInvalidArgument)
 	}
-	if request.operation != C.int32_t(OpSnapshot) && (sourceFD != -1 || workspaceFD != -1 || request.source_path_len != 0 || request.workspace_path_len != 0 || policyLen != 0) {
+	if request.operation != C.int32_t(OpSnapshot) && request.operation != C.int32_t(OpRetention) && (sourceFD != -1 || workspaceFD != -1 || request.source_path_len != 0 || request.workspace_path_len != 0 || policyLen != 0) {
+		return C.int32_t(StatusInvalidArgument)
+	}
+	if request.operation == C.int32_t(OpRetention) && (sourceFD != -1 || workspaceFD != -1 || request.source_path_len != 0 || request.workspace_path_len != 0) {
 		return C.int32_t(StatusInvalidArgument)
 	}
 	state, status := readBorrowedDirectoryIdentity(int(stateFD))
@@ -395,8 +398,17 @@ func startS3OperationWithDirectories(request *C.restic_s3_request, options *C.re
 		return C.int32_t(status)
 	}
 	var selection *snapshotSelection
+	var retention *retentionPolicy
 	if request.operation == C.int32_t(OpSnapshot) {
 		selection, status = parseCSnapshotSelection(policy, policyLen)
+		if status != StatusOk {
+			return C.int32_t(status)
+		}
+	} else if request.operation == C.int32_t(OpRetention) {
+		if request.recovery_password_len != 0 || request.source_path_len != 0 || request.restore_path_len != 0 || request.snapshot_id_len != 0 {
+			return C.int32_t(StatusInvalidArgument)
+		}
+		retention, status = parseCRetentionPolicy(policy, policyLen)
 		if status != StatusOk {
 			return C.int32_t(status)
 		}
@@ -421,6 +433,7 @@ func startS3OperationWithDirectories(request *C.restic_s3_request, options *C.re
 	}
 	req.executionOptions = ownedOptions
 	req.snapshotSelection = selection
+	req.retentionPolicy = retention
 	if ownedOptions.appendOnly {
 		req.remote.cfg.appendOnly = true
 	}

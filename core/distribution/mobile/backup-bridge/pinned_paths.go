@@ -445,6 +445,10 @@ func closeRequestPaths(req *bridgeRequest) (cleanupErr error) {
 		_ = req.sourceRoot.Close()
 		req.sourceRoot = nil
 	}
+	if req.archiveTarget != nil {
+		cleanupErr = errors.Join(cleanupErr, req.archiveTarget.Close())
+		req.archiveTarget = nil
+	}
 	if req.restoreRoot != nil {
 		var err error
 		if req.rootedRestore != nil {

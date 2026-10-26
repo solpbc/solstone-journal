@@ -43,7 +43,7 @@ func parseOperationOptions(operation int32, version, mode uint32, retryMillis ui
 		if retryMillis != 0 {
 			return nil, StatusInvalidArgument
 		}
-	case OpAddRecoveryKey, OpSnapshot, OpListSnapshots, OpCheck, OpRemoveRecoveryKey:
+	case OpAddRecoveryKey, OpSnapshot, OpListSnapshots, OpCheck, OpRemoveRecoveryKey, OpRetention:
 	default:
 		return nil, StatusInvalidArgument
 	}

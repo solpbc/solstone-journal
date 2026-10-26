@@ -624,11 +624,11 @@ func TestRootedRestoreSnapshotCannotReplaceTheTargetObligation(t *testing.T) {
 	nestedObligation := []byte("nested-obligation")
 	targetObligation := []byte("target-obligation")
 	writes := map[string][]byte{
-		filepath.Join(source, "owner.txt"):                                      owner,
-		filepath.Join(source, "health", "whole-journal-restore.json"):           snapshotObligation,
-		filepath.Join(source, "nested", "health", "whole-journal-restore.json"): nestedObligation,
-		filepath.Join(target, "health", "whole-journal-restore.json"):           targetObligation,
-		filepath.Join(target, "sentinel"):                                       []byte("unrelated"),
+		filepath.Join(source, "owner.txt"):                                           owner,
+		filepath.Join(source, "health", "whole-journal-restore.json"):                snapshotObligation,
+		filepath.Join(source, "nested", "health", "whole-journal-restore.json"):      nestedObligation,
+		filepath.Join(target, "health", "whole-journal-restore.json"):                targetObligation,
+		filepath.Join(target, "sentinel"):                                            []byte("unrelated"),
 		filepath.Join(source, "health", "!solstone-claim-00000000-0000000000000123"): []byte("foreign claim"),
 		filepath.Join(target, "health", "!solstone-claim-00000000-0000000000000456"): []byte("retained local claim"),
 	}

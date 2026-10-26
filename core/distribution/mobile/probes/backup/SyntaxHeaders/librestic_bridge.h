@@ -31,3 +31,6 @@ int32_t restic_bridge_wait(uint64_t,restic_result*);
 int32_t restic_bridge_cancel(uint64_t);
 int32_t restic_bridge_free(uint64_t);
 int32_t restic_bridge_start_with_workspace(restic_request*,char*,uint32_t,uint64_t*);
+int32_t restic_bridge_archive_sources_v1_start(uint32_t,const char*,uint32_t,const char*,uint32_t,const char*,uint32_t,int,const char*,uint32_t,uint64_t*);
+int32_t restic_bridge_list_nodes_v1_start(uint32_t,const char*,uint32_t,const char*,uint32_t,const char*,uint32_t,uint64_t*);
+int32_t restic_bridge_download_exact_v1_start(uint32_t,const char*,uint32_t,const char*,uint32_t,const char*,uint32_t,const char*,uint32_t,int,uint64_t,uint64_t*);

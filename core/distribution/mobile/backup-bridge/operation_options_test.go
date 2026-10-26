@@ -12,15 +12,15 @@ import (
 )
 
 func TestOperationOptionsRejectIncompatibleAuthority(t *testing.T) {
-	for _, operation := range []int32{OpInit, OpOpen, OpAddRecoveryKey, OpSnapshot, OpListSnapshots, OpCheck, OpRestore, OpS3Inspect, OpListRecoveryKeys, OpRemoveRecoveryKey, -1, 99} {
+	for _, operation := range []int32{OpInit, OpOpen, OpAddRecoveryKey, OpSnapshot, OpListSnapshots, OpCheck, OpRestore, OpS3Inspect, OpListRecoveryKeys, OpRemoveRecoveryKey, OpRetention, -1, 99} {
 		for _, mode := range []uint32{checkReadNone, checkReadStructure, checkReadAll, checkReadGroup, 4, ^uint32(0)} {
 			for _, pair := range [][2]uint32{{0, 0}, {1, 1}, {1, 52}, {52, 52}, {256, 256}, {0, 1}, {1, 0}, {53, 52}, {1, 257}} {
 				for _, retry := range []uint64{0, 1, maxRetryLockMillis, maxRetryLockMillis + 1, ^uint64(0)} {
 					name := fmt.Sprintf("op%d/mode%d/group%dof%d/retry%d", operation, mode, pair[0], pair[1], retry)
 					t.Run(name, func(t *testing.T) {
 						got, status := parseOperationOptions(operation, 1, mode, retry, pair[0], pair[1], 0, 0)
-						validOperation := operation == OpInit || operation == OpOpen || operation == OpAddRecoveryKey || operation == OpSnapshot || operation == OpListSnapshots || operation == OpCheck || operation == OpS3Inspect || operation == OpListRecoveryKeys || operation == OpRemoveRecoveryKey
-						validRetry := retry <= maxRetryLockMillis && (retry == 0 || operation == OpAddRecoveryKey || operation == OpSnapshot || operation == OpListSnapshots || operation == OpCheck || operation == OpRemoveRecoveryKey)
+						validOperation := operation == OpInit || operation == OpOpen || operation == OpAddRecoveryKey || operation == OpSnapshot || operation == OpListSnapshots || operation == OpCheck || operation == OpS3Inspect || operation == OpListRecoveryKeys || operation == OpRemoveRecoveryKey || operation == OpRetention
+						validRetry := retry <= maxRetryLockMillis && (retry == 0 || operation == OpAddRecoveryKey || operation == OpSnapshot || operation == OpListSnapshots || operation == OpCheck || operation == OpRemoveRecoveryKey || operation == OpRetention)
 						validMode := mode == checkReadNone && pair == [2]uint32{0, 0}
 						if operation == OpCheck {
 							validMode = ((mode == checkReadStructure || mode == checkReadAll) && pair == [2]uint32{0, 0}) || (mode == checkReadGroup && pair[0] > 0 && pair[0] <= pair[1] && pair[1] <= 256)

@@ -29,6 +29,8 @@ pub struct ArchivePredecessorCapture {
     pub read_repository_id: Option<String>,
     pub repository_id: Option<String>,
     pub archives: Vec<ArchiveWriterObservation>,
+    #[cfg(target_os = "ios")]
+    pub linked: bool,
 }
 
 pub struct ArchiveWriterObservation {
@@ -72,9 +74,14 @@ enum WriterProgress {
     NoWriter,
     Submitted,
     Accepted,
-    // Read only by the Linux x86_64 and macOS settlement below.
+    // Read by desktop settlement and by mobile same-owner settlement.
     #[cfg_attr(
-        not(any(all(target_os = "linux", target_arch = "x86_64"), target_os = "macos")),
+        not(any(
+            all(target_os = "linux", target_arch = "x86_64"),
+            target_os = "macos",
+            target_os = "android",
+            target_os = "ios"
+        )),
         allow(dead_code)
     )]
     Refused(ReadbackError),
@@ -84,6 +91,10 @@ pub(super) struct ArchivePredecessorCustody {
     capture: ArchivePredecessorCapture,
     state: CreatorState,
     pending: u64,
+    #[cfg(any(target_os = "android", target_os = "ios"))]
+    bound: Option<super::OwnerObservation>,
+    #[cfg(any(target_os = "android", target_os = "ios"))]
+    finished: Option<super::OwnerObservation>,
 }
 impl ArchivePredecessorCustody {
     pub(super) fn unknown(capture: ArchivePredecessorCapture) -> Self {
@@ -91,6 +102,10 @@ impl ArchivePredecessorCustody {
             capture,
             state: CreatorState::Unknown,
             pending: 0,
+            #[cfg(any(target_os = "android", target_os = "ios"))]
+            bound: None,
+            #[cfg(any(target_os = "android", target_os = "ios"))]
+            finished: None,
         }
     }
     fn requested(capture: ArchivePredecessorCapture) -> Self {
@@ -98,6 +113,10 @@ impl ArchivePredecessorCustody {
             capture,
             state: CreatorState::Admission,
             pending: 0,
+            #[cfg(any(target_os = "android", target_os = "ios"))]
+            bound: None,
+            #[cfg(any(target_os = "android", target_os = "ios"))]
+            finished: None,
         }
     }
     pub(super) fn creator_executor(&self) -> bool {
@@ -125,9 +144,33 @@ impl ArchivePredecessorCustody {
             || capture.read_repository_requested
             || capture.write_repository_id.is_some()
             || capture.read_repository_id.is_some()
-            || capture.repository_id.is_some()
+            || {
+                #[cfg(target_os = "ios")]
+                {
+                    if capture.linked {
+                        !matches!(
+                            (&capture.repository_id, &input.repository),
+                            (Some(id), RepositoryBinding::Expected(expected))
+                                if id == expected && full_hex_identity(id)
+                        )
+                    } else {
+                        capture.repository_id.is_some()
+                    }
+                }
+                #[cfg(not(target_os = "ios"))]
+                {
+                    capture.repository_id.is_some()
+                }
+            }
             || !capture.archives.is_empty()
-            || capture.restic_path != input.expected_restic_path
+            || {
+                #[cfg(target_os = "ios")]
+                let path_changed =
+                    !capture.linked && capture.restic_path != input.expected_restic_path;
+                #[cfg(not(target_os = "ios"))]
+                let path_changed = capture.restic_path != input.expected_restic_path;
+                path_changed
+            }
         {
             return Err(ReadbackError::UnsupportedBackend);
         }
@@ -205,21 +248,51 @@ impl ArchivePredecessorCustody {
             self.capture.repository_id = Some(id.to_owned());
         }
     }
-    // Direct readback qualifies only on Linux x86_64 and macOS.
+    // Direct readback qualifies on the desktop pins and on mobile same-owner settlement.
     #[cfg_attr(
-        not(any(all(target_os = "linux", target_arch = "x86_64"), target_os = "macos")),
+        not(any(
+            all(target_os = "linux", target_arch = "x86_64"),
+            target_os = "macos",
+            target_os = "android",
+            target_os = "ios"
+        )),
         allow(dead_code)
     )]
     pub(super) fn qualify_settlement(&self) -> Result<(), ReadbackError> {
         match self.state {
-            CreatorState::Direct(WriterProgress::NoWriter | WriterProgress::Accepted)
-                if self.pending == 0 =>
-            {
-                Ok(())
-            }
-            CreatorState::Direct(WriterProgress::Refused(reason)) => Err(reason),
-            _ => Err(ReadbackError::ToolFailed),
+            CreatorState::Direct(WriterProgress::Refused(reason)) => return Err(reason),
+            CreatorState::Direct(WriterProgress::NoWriter) if self.pending == 0 => {}
+            CreatorState::Direct(WriterProgress::Accepted) if self.pending == 0 => {}
+            _ => return Err(ReadbackError::ToolFailed),
         }
+        #[cfg(any(target_os = "android", target_os = "ios"))]
+        {
+            let kind = match self.state {
+                CreatorState::Direct(WriterProgress::NoWriter) => super::seal::SettlementKind::Idle,
+                CreatorState::Direct(WriterProgress::Accepted) => {
+                    super::seal::SettlementKind::Accepted
+                }
+                _ => super::seal::SettlementKind::Other,
+            };
+            if !super::seal::mobile_settlement_confirms(
+                kind,
+                self.pending,
+                self.bound.as_ref(),
+                self.finished.as_ref(),
+            ) {
+                return Err(ReadbackError::ToolFailed);
+            }
+        }
+        Ok(())
+    }
+    #[cfg(any(target_os = "android", target_os = "ios"))]
+    fn note_bound(&mut self, observation: super::OwnerObservation) {
+        self.bound = Some(observation);
+        self.finished = None;
+    }
+    #[cfg(any(target_os = "android", target_os = "ios"))]
+    fn note_finished(&mut self, observation: super::OwnerObservation) {
+        self.finished = Some(observation);
     }
     fn refuse(&mut self, reason: ReadbackError) {
         if !matches!(self.state, CreatorState::Direct(WriterProgress::Refused(_))) {
@@ -236,7 +309,18 @@ impl ArchivePredecessorCustody {
         }
         Ok(())
     }
-    #[cfg(unix)]
+    #[cfg(target_os = "ios")]
+    fn accept_linked(&mut self) {
+        if self.pending == 0 {
+            self.refuse(ReadbackError::ToolFailed);
+            return;
+        }
+        self.pending -= 1;
+        if !matches!(self.state, CreatorState::Direct(WriterProgress::Refused(_))) {
+            self.state = CreatorState::Direct(WriterProgress::Accepted);
+        }
+    }
+    #[cfg(all(unix, not(target_os = "ios")))]
     fn accept(&mut self, child: CompletedChild) {
         if !child.successful() || self.pending == 0 {
             self.refuse(ReadbackError::ToolFailed);
@@ -283,18 +367,36 @@ fn validate_operated_writer(
     binding: &crate::HostedBinding,
     input: &ReadAdmission<'_>,
 ) -> Result<(), ReadbackError> {
-    let rclone = operated_writer_program(write, read, binding, &input.password)?;
-    #[cfg(unix)]
+    #[cfg(target_os = "ios")]
     {
-        let member = solstone_core_installed_payload::resolve_current_member(super::RCLONE_MEMBER)
-            .map_err(|_| ReadbackError::ToolUnavailable)?;
-        if std::path::Path::new(rclone) != member.path() {
-            return Err(ReadbackError::ToolChanged);
+        let _ = binding;
+        if write.destination.backend != "s3"
+            || write.destination != read.destination
+            || !write.global_options.is_empty()
+            || !read.global_options.is_empty()
+            || write.password != input.password
+            || read.password != input.password
+        {
+            return Err(ReadbackError::UnsupportedBackend);
         }
+        return Ok(());
     }
-    #[cfg(windows)]
-    let _ = rclone;
-    Ok(())
+    #[cfg(not(target_os = "ios"))]
+    {
+        let rclone = operated_writer_program(write, read, binding, &input.password)?;
+        #[cfg(unix)]
+        {
+            let member =
+                solstone_core_installed_payload::resolve_current_member(super::RCLONE_MEMBER)
+                    .map_err(|_| ReadbackError::ToolUnavailable)?;
+            if std::path::Path::new(rclone) != member.path() {
+                return Err(ReadbackError::ToolChanged);
+            }
+        }
+        #[cfg(windows)]
+        let _ = rclone;
+        Ok(())
+    }
 }
 
 /// The exact operated writer shape; returns the rclone program it names.
@@ -445,6 +547,32 @@ impl OwnedPreparedArchiveOperation {
         capture: ArchivePredecessorCapture,
     ) -> OwnedArchiveCreatorAdmission {
         let (operation, clock) = self.into_parts();
+        #[cfg(target_os = "ios")]
+        let mut input = if capture.linked {
+            match capture.repository_id.clone() {
+                Some(id) => ReadAdmission::bind(
+                    operation,
+                    capture.read.destination.clone(),
+                    capture.read.password.clone(),
+                    id,
+                    capture.restic_path.clone(),
+                ),
+                None => ReadAdmission::capture_current(
+                    operation,
+                    capture.read.destination.clone(),
+                    capture.read.password.clone(),
+                    capture.restic_path.clone(),
+                ),
+            }
+        } else {
+            ReadAdmission::capture_current(
+                operation,
+                capture.read.destination.clone(),
+                capture.read.password.clone(),
+                capture.restic_path.clone(),
+            )
+        };
+        #[cfg(not(target_os = "ios"))]
         let mut input = ReadAdmission::capture_current(
             operation,
             capture.read.destination.clone(),
@@ -556,6 +684,174 @@ impl OwnedArchiveCreator {
         // Failed predecessor history moves intact; only settlement qualifies it.
         Ok(self.read)
     }
+    #[cfg(any(target_os = "android", target_os = "ios"))]
+    fn owner_observation(
+        &self,
+        sources: &[ArchiveSource<'_>],
+        call_handle: u64,
+        owner_generation: u64,
+        drain_ok: bool,
+        target_identity: &str,
+    ) -> Result<super::OwnerObservation, ReadbackError> {
+        self.revalidate_local()?;
+        let clock = self
+            .prepared_operation()
+            .owned_clock()
+            .ok_or(ReadbackError::Unsupported)?;
+        let budget = self.prepared_operation().budget();
+        let cancelled = budget
+            .cancellation()
+            .is_some_and(crate::archive_admission::ArchiveCancellation::is_cancelled);
+        let mut sources_identity = String::new();
+        for source in sources {
+            let name = source
+                .name()
+                .to_str()
+                .ok_or(ReadbackError::InvalidSelection)?;
+            let digest = source.digest();
+            sources_identity.push_str(name);
+            sources_identity.push('\n');
+            sources_identity.push_str(&digest.size.to_string());
+            sources_identity.push('\n');
+            sources_identity.push_str(&digest.sha256);
+            sources_identity.push('\n');
+        }
+        Ok(super::OwnerObservation {
+            activity: std::sync::Arc::as_ptr(self.activity()) as usize as u64,
+            admission: self as *const Self as usize as u64,
+            clock: std::sync::Arc::as_ptr(clock).cast::<()>() as usize,
+            deadline: budget.deadline(),
+            journal: std::sync::Arc::as_ptr(self.journal_root()) as usize as u64,
+            repository: self.repository_id().to_owned(),
+            sources: sources_identity,
+            target: {
+                let mut target = self.repository_id().to_owned();
+                if !target_identity.is_empty() {
+                    target.push('\n');
+                    target.push_str(target_identity);
+                }
+                target
+            },
+            call_handle,
+            owner_generation,
+            drain_ok,
+            cancelled,
+        })
+    }
+
+    /// Repository, password, and backend environment captured for a linked call.
+    /// The path is not the authority for a linked archive.
+    #[cfg(target_os = "ios")]
+    pub fn linked_session(
+        &self,
+    ) -> Result<(Destination, String, BTreeMap<String, Option<String>>), ReadbackError> {
+        let execution = self.read.read.execution.borrow();
+        let custody = execution
+            .predecessor
+            .as_ref()
+            .ok_or(ReadbackError::Unsupported)?;
+        if !custody.capture.linked {
+            return Err(ReadbackError::Unsupported);
+        }
+        let read = &custody.capture.read;
+        Ok((
+            read.destination.clone(),
+            read.password.clone(),
+            read.backend_env.clone(),
+        ))
+    }
+
+    /// Record the admitted owner before a linked effect. The handle is the
+    /// native call that is about to drain. A later finish must observe it again.
+    #[cfg(target_os = "ios")]
+    pub fn begin_linked_effect(
+        &mut self,
+        sources: &[ArchiveSource<'_>],
+        call_handle: u64,
+        owner_generation: u64,
+        target_identity: &str,
+    ) -> Result<(), ReadbackError> {
+        let bound = self.owner_observation(
+            sources,
+            call_handle,
+            owner_generation,
+            false,
+            target_identity,
+        )?;
+        let mut execution = self.read.read.execution.borrow_mut();
+        let custody = execution
+            .predecessor
+            .as_mut()
+            .ok_or(ReadbackError::Unsupported)?;
+        custody.submit()?;
+        custody.note_bound(bound);
+        Ok(())
+    }
+
+    /// Settle a linked effect only when the finishing drain is the same owner.
+    #[cfg(target_os = "ios")]
+    pub fn finish_linked_effect(
+        &mut self,
+        sources: &[ArchiveSource<'_>],
+        snapshot_id: &str,
+        call_handle: u64,
+        owner_generation: u64,
+        drain_ok: bool,
+        target_identity: &str,
+    ) -> Result<DirectArchiveSnapshot, ReadbackError> {
+        if !full_hex_identity(snapshot_id) {
+            return Err(ReadbackError::SnapshotNodeUnavailable);
+        }
+        let finished = self.owner_observation(
+            sources,
+            call_handle,
+            owner_generation,
+            drain_ok,
+            target_identity,
+        )?;
+        let repository_id = self.repository_id().to_owned();
+        let mut execution = self.read.read.execution.borrow_mut();
+        let custody = execution
+            .predecessor
+            .as_mut()
+            .ok_or(ReadbackError::Unsupported)?;
+        let same = custody
+            .bound
+            .as_ref()
+            .is_some_and(|bound| super::seal::same_owner(bound, &finished));
+        custody.note_finished(finished);
+        if !same {
+            custody.refuse(ReadbackError::ToolFailed);
+            return Err(ReadbackError::ToolFailed);
+        }
+        custody.accept_linked();
+        let accepted = matches!(
+            custody.state,
+            CreatorState::Direct(WriterProgress::Accepted)
+        );
+        drop(custody);
+        if !accepted {
+            return Err(ReadbackError::ToolFailed);
+        }
+        execution.note_linked_qualification(true);
+        Ok(DirectArchiveSnapshot {
+            repository_id,
+            snapshot_id: snapshot_id.to_owned(),
+        })
+    }
+
+    #[cfg(target_os = "ios")]
+    pub fn archive_owned(
+        &mut self,
+        sources: &[ArchiveSource<'_>],
+    ) -> Result<DirectArchiveSnapshot, DirectArchiveFailure> {
+        let _ = sources;
+        Err(DirectArchiveFailure {
+            reason: ReadbackError::Unsupported,
+            effects: DirectArchiveEffects::NotAttempted,
+        })
+    }
+    #[cfg(not(target_os = "ios"))]
     pub fn archive_owned(
         &mut self,
         sources: &[ArchiveSource<'_>],
@@ -753,7 +1049,7 @@ impl OwnedArchiveCreator {
         self.revalidate_local()?;
         result
     }
-    #[cfg(unix)]
+    #[cfg(all(unix, not(target_os = "ios")))]
     fn archive_inner(
         &mut self,
         sources: &[ArchiveSource<'_>],
@@ -795,6 +1091,8 @@ impl OwnedArchiveCreator {
         self.read.read.check_repository()?;
         self.read.read.check_repository()?;
         self.revalidate_sources(sources)?;
+        #[cfg(target_os = "android")]
+        let bound = self.owner_observation(sources, 0, 0, false, "")?;
         let timeout = self
             .prepared_operation()
             .budget()
@@ -815,13 +1113,13 @@ impl OwnedArchiveCreator {
             writer_invocation(&custody.capture.write, &self.read.read.env, argv)
         };
         #[cfg(not(target_os = "macos"))]
-        let (program, argv) = (self.read.read.member.path().as_os_str().to_owned(), argv);
+        let (program, argv) = (self.read.read.tool.program()?.as_os_str().to_owned(), argv);
         #[cfg(target_os = "macos")]
         let (program, argv) = {
             revalidate_core(&core)?;
             let mut wrapped = vec![
                 crate::owned_creator::ENTRY.into(),
-                self.read.read.member.path().as_os_str().to_owned(),
+                self.read.read.tool.program()?.as_os_str().to_owned(),
             ];
             wrapped.extend(argv);
             (core.path().as_os_str().to_owned(), wrapped)
@@ -843,6 +1141,8 @@ impl OwnedArchiveCreator {
                 .as_mut()
                 .ok_or(ReadbackError::Unsupported)?;
             custody.submit()?;
+            #[cfg(target_os = "android")]
+            custody.note_bound(bound);
             // This conservative call boundary records attempted effects even if spawn fails.
             *effects = DirectArchiveEffects::Attempted {
                 returncode: None,
@@ -880,9 +1180,34 @@ impl OwnedArchiveCreator {
         self.read.read.check_repository()?;
         self.revalidate_sources(sources)?;
         if !child.successful() {
+            #[cfg(target_os = "android")]
+            {
+                let finished = self.owner_observation(sources, 0, 0, false, "")?;
+                if let Some(custody) = self.read.read.execution.borrow_mut().predecessor.as_mut() {
+                    custody.note_finished(finished);
+                }
+            }
             return Err(ReadbackError::ToolFailed);
         }
         let snapshot_id = snapshot.ok_or(ReadbackError::SnapshotNodeUnavailable)?;
+        #[cfg(target_os = "android")]
+        {
+            let finished = self.owner_observation(sources, 0, 0, true, "")?;
+            let mut execution = self.read.read.execution.borrow_mut();
+            let custody = execution
+                .predecessor
+                .as_mut()
+                .ok_or(ReadbackError::Unsupported)?;
+            let same = match custody.bound.as_ref() {
+                Some(bound) => super::seal::same_owner(bound, &finished),
+                None => false,
+            };
+            custody.note_finished(finished);
+            if !same {
+                custody.refuse(ReadbackError::ToolFailed);
+                return Err(ReadbackError::ToolFailed);
+            }
+        }
         if let Some(custody) = self.read.read.execution.borrow_mut().predecessor.as_mut() {
             custody.accept(child);
         }

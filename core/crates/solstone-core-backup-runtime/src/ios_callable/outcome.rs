@@ -10,8 +10,8 @@ use std::io;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use super::command::Operation;
 use super::native::{Completed, ResultFields};
+use crate::ios_linked_command::command::Operation;
 use crate::runner::{ResticResult, RunnerError};
 
 const MAX_METADATA: usize = 4 * 1024 * 1024;
@@ -40,6 +40,18 @@ pub(super) fn identifier(value: &str) -> bool {
         && value
             .bytes()
             .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+}
+
+pub(super) fn repository_config_id(bytes: &[u8]) -> Result<String, ()> {
+    let envelope: RepositoryEnvelope = serde_json::from_slice(bytes).map_err(|_| ())?;
+    if envelope.schema != "solstone.backup-metadata.v1"
+        || envelope.kind != "repository-config"
+        || !identifier(&envelope.repository.id)
+        || !matches!(envelope.repository.version, 1 | 2)
+    {
+        return Err(());
+    }
+    Ok(envelope.repository.id)
 }
 
 fn optional_id(bytes: &[u8]) -> Result<Option<&str>, RunnerError> {
@@ -294,7 +306,9 @@ fn successful(
                 "bytes_skipped": state.AllBytesSkipped,
             })))
         }
-        Some(Operation::Init | Operation::Check(_)) | None => Ok(None),
+        Some(Operation::Init | Operation::Check(_) | Operation::Retention { .. }) | None => {
+            Ok(None)
+        }
     }
 }
 

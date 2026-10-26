@@ -200,7 +200,7 @@ pub fn adopt_whole_journal_restore(
     journal: &Path,
     expected: &WholeJournalRestore,
 ) -> Result<WholeJournalRestore, WholeJournalRestoreWriteError> {
-    let root = open_root(journal)?;
+    let root = Arc::new(open_root(journal)?);
     require_same_binding(&root, expected)?;
     let health = prepare_health_dir(&root, false)?;
     let expected_bytes = canonical_bytes(expected)?;
@@ -249,7 +249,7 @@ pub fn clear_whole_journal_restore(
     journal: &Path,
     expected: &WholeJournalRestore,
 ) -> Result<(), WholeJournalRestoreWriteError> {
-    let root = open_root(journal)?;
+    let root = Arc::new(open_root(journal)?);
     require_same_binding(&root, expected)?;
     match marker_bytes(root.canonical_path()) {
         Marker::Absent => return Ok(()),
@@ -489,6 +489,16 @@ pub fn wait_for_target_use_to_end(journal: &Path) {
     }
 }
 
+#[cfg(any(target_os = "android", test))]
+pub(crate) fn restore_target_quiescent(journal: &Path) -> bool {
+    target_held_for_restore(journal)
+        && lock_map(&target_flights().0)
+            .get(&hold_key(journal))
+            .copied()
+            .unwrap_or(0)
+            == 0
+}
+
 fn interpret(root: &JournalRoot, bytes: &[u8]) -> Result<WholeJournalRestore, &'static str> {
     let record: WholeJournalRestore =
         serde_json::from_slice(bytes).map_err(|_| "obligation is malformed")?;
@@ -687,7 +697,7 @@ fn bound_record(
     })
 }
 
-fn retirement_claim_name(attempt: u64) -> String {
+pub(crate) fn retirement_claim_name(attempt: u64) -> String {
     format!("!solstone-claim-00000000-{attempt:016x}")
 }
 
@@ -725,7 +735,7 @@ fn retirement_claims(
 
 #[cfg(unix)]
 fn restore_retained_record_name(
-    root: &JournalRoot,
+    root: &Arc<JournalRoot>,
     health: &FlatDirectory,
     expected: &[u8],
 ) -> Result<(), WholeJournalRestoreWriteError> {
@@ -769,10 +779,19 @@ fn restore_retained_record_name(
     }
     revalidate_health(root, health)?;
     // No replacement is permitted. A race retains the competing entry and keeps recovery paused.
+    #[cfg(not(target_os = "android"))]
     crate::claim_remove::rename_no_replace(
         health,
         claims[0].as_os_str(),
         OsStr::new(OBLIGATION_NAME),
+    )
+    .map_err(|error| WholeJournalRestoreWriteError::Io(error.to_string()))?;
+    #[cfg(target_os = "android")]
+    crate::claim_remove::restore_android_restore_claim(
+        root,
+        health,
+        &observed,
+        MAX_OBLIGATION_BYTES as usize,
     )
     .map_err(|error| WholeJournalRestoreWriteError::Io(error.to_string()))?;
     crate::entry::sync_dir_bound(health)
@@ -794,7 +813,7 @@ fn restore_retained_record_name(
 
 #[cfg(not(unix))]
 fn restore_retained_record_name(
-    _root: &JournalRoot,
+    _root: &Arc<JournalRoot>,
     _health: &HealthDirectory,
     _expected: &[u8],
 ) -> Result<(), WholeJournalRestoreWriteError> {
@@ -985,10 +1004,11 @@ fn read_regular(path: &Path) -> io::Result<Vec<u8>> {
 
 #[cfg(unix)]
 fn retire_matching_file(
-    root: &JournalRoot,
+    root: &Arc<JournalRoot>,
     health: &HealthDirectory,
     expected: &[u8],
 ) -> Result<bool, WholeJournalRestoreWriteError> {
+    #[cfg(not(target_os = "android"))]
     use crate::claim_remove::claim_and_remove_observed_bounded;
     use crate::errors::ClaimRemovalOutcome;
     use crate::flat_directory::read_observed_file_bounded;
@@ -1017,9 +1037,19 @@ fn retire_matching_file(
     let claim = ClaimName::parse(&retirement_claim_name(record.attempt))
         .map_err(|_| WholeJournalRestoreWriteError::Invalid("retirement claim is invalid"))?;
     revalidate_health(root, health)?;
+    #[cfg(not(target_os = "android"))]
     let outcome = claim_and_remove_observed_bounded(
         health,
         OsStr::new(OBLIGATION_NAME),
+        &observed,
+        &claim,
+        MAX_OBLIGATION_BYTES as usize,
+    )
+    .map_err(|error| WholeJournalRestoreWriteError::Io(error.to_string()))?;
+    #[cfg(target_os = "android")]
+    let outcome = crate::claim_remove::claim_and_remove_android_restore_observed_bounded(
+        root,
+        health,
         &observed,
         &claim,
         MAX_OBLIGATION_BYTES as usize,
@@ -1036,7 +1066,7 @@ fn retire_matching_file(
 
 #[cfg(not(unix))]
 fn retire_matching_file(
-    _root: &JournalRoot,
+    _root: &Arc<JournalRoot>,
     _health: &HealthDirectory,
     _expected: &[u8],
 ) -> Result<bool, WholeJournalRestoreWriteError> {
@@ -1332,6 +1362,21 @@ mod tests {
         let thread = std::thread::spawn(move || wait_for_target_use_to_end(&waiting));
         drop(guard);
         thread.join().expect("wait returns after the use drops");
+    }
+
+    #[test]
+    fn native_retirement_requires_a_held_target_and_completed_uses() {
+        let journal = journal();
+        let root = Arc::new(JournalRoot::open(journal.path()).unwrap());
+        assert!(!restore_target_quiescent(journal.path()));
+        let admitted = begin_target_use_bound(root).expect("ordinary accepted use");
+        hold_target_for_restore(journal.path());
+        assert!(!restore_target_quiescent(journal.path()));
+        assert!(begin_target_use(journal.path()).is_err());
+        drop(admitted);
+        assert!(restore_target_quiescent(journal.path()));
+        release_target_for_restore(journal.path());
+        assert!(!restore_target_quiescent(journal.path()));
     }
 
     #[test]

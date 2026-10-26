@@ -40,6 +40,12 @@ const (
 	OpCheck             int32 = 7
 	OpListRecoveryKeys  int32 = 9
 	OpRemoveRecoveryKey int32 = 10
+	// Closed archive effects. Whole-journal snapshot and restore stay 4 and 6.
+	// Teardown stays 11. 12 is not an archive effect.
+	OpArchiveSources int32 = 20
+	OpListNodes      int32 = 21
+	OpReadFile       int32 = 22
+	OpRetention      int32 = 12
 )
 
 // Closed set of stable diagnostic tokens. Raw upstream strings containing passwords
@@ -63,6 +69,8 @@ const (
 	DiagInternal                 = "INTERNAL_ERROR"
 	DiagCommittedUncertain       = "COMMITTED_UNCERTAIN"
 	DiagWorkspaceCleanupRequired = "WORKSPACE_CLEANUP_REQUIRED"
+	DiagIncompleteDiscovery      = "INCOMPLETE_DISCOVERY"
+	DiagSnapshotNodeUnavailable  = "SNAPSHOT_NODE_UNAVAILABLE"
 )
 
 // Internal Go representation of caller request parameters.
@@ -80,6 +88,7 @@ type bridgeRequest struct {
 	maintenanceRotation bool
 	rotationCustody     bool
 	snapshotSelection   *snapshotSelection
+	retentionPolicy     *retentionPolicy
 	executionOptions    *operationOptions
 	// pathFiles pin caller-authorized directories for the complete asynchronous
 	// operation.
@@ -103,6 +112,10 @@ type bridgeRequest struct {
 	teardownIDs          []string
 	teardownAdmission    *s3TeardownAdmission
 	rootedRestore        *rootedRestore
+	archiveNames         []string
+	archiveNodePath      string
+	archiveTarget        *os.File
+	archiveSizeBound     uint64
 }
 
 // Internal Go representation of call results.

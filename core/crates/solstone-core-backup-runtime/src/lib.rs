@@ -30,6 +30,8 @@ pub mod engine;
 pub mod hosted_runtime;
 #[cfg(target_os = "ios")]
 pub mod ios_callable;
+#[cfg(any(target_os = "ios", test))]
+mod ios_linked_command;
 pub mod repo;
 pub mod resolve;
 pub mod restore;

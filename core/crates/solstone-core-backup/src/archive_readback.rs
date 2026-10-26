@@ -4,12 +4,16 @@
 //! Exact archive bytes in an owned target. These values never authorize release.
 
 mod creator;
+mod nodes;
+mod seal;
 use creator::ArchivePredecessorCustody;
 pub use creator::{
     ArchiveEndpointCapture, ArchivePredecessorCapture, ArchiveWriterObservation,
     ArchiveWriterSourceObservation, DirectArchiveEffects, DirectArchiveFailure,
     DirectArchiveSnapshot, OwnedArchiveCreator, OwnedArchiveCreatorAdmission,
 };
+pub use nodes::{ArchiveNodeRecord, parse_bounded_nodes};
+pub use seal::{OwnerObservation, same_owner};
 mod historical;
 pub use historical::{HistoricalArchiveFile, HistoricalSnapshotFiles};
 
@@ -48,7 +52,7 @@ fn query_argv(argv: Vec<std::ffi::OsString>) -> Vec<std::ffi::OsString> {
 }
 
 use std::fmt;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 #[cfg(any(unix, windows))]
 use std::time::Duration;
@@ -117,6 +121,56 @@ pub(crate) const RESTIC_MEMBER: &str = "lib/solstone-restic/restic";
 #[cfg(unix)]
 pub(crate) const RCLONE_MEMBER: &str = "lib/solstone-rclone/rclone";
 pub const SUPPORTED_RESTIC_VERSION: &str = "0.19.0";
+
+#[cfg(unix)]
+enum AdmittedTool {
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    Installed(CurrentInstalledMember),
+    #[cfg(target_os = "android")]
+    Service {
+        path: PathBuf,
+        device: u64,
+        inode: u64,
+    },
+    #[cfg(target_os = "ios")]
+    Linked,
+}
+
+#[cfg(unix)]
+impl AdmittedTool {
+    fn program(&self) -> Result<&Path, ReadbackError> {
+        match self {
+            #[cfg(not(any(target_os = "android", target_os = "ios")))]
+            Self::Installed(member) => Ok(member.path()),
+            #[cfg(target_os = "android")]
+            Self::Service { path, .. } => Ok(path),
+            #[cfg(target_os = "ios")]
+            Self::Linked => Err(ReadbackError::Unsupported),
+        }
+    }
+
+    fn revalidate(&self) -> Result<(), ReadbackError> {
+        match self {
+            #[cfg(not(any(target_os = "android", target_os = "ios")))]
+            Self::Installed(member) => member.revalidate().map_err(|_| ReadbackError::ToolChanged),
+            #[cfg(target_os = "android")]
+            Self::Service {
+                path,
+                device,
+                inode,
+            } => {
+                use std::os::unix::fs::MetadataExt;
+                let meta = std::fs::metadata(path).map_err(|_| ReadbackError::ToolChanged)?;
+                if meta.dev() != *device || meta.ino() != *inode {
+                    return Err(ReadbackError::ToolChanged);
+                }
+                Ok(())
+            }
+            #[cfg(target_os = "ios")]
+            Self::Linked => Ok(()),
+        }
+    }
+}
 #[cfg(any(unix, windows))]
 const MAX_QUERY_BYTES: usize = 1024 * 1024;
 
@@ -203,6 +257,7 @@ pub enum ReadbackError {
     RepositoryIdentityChanged,
     InvalidRepositoryIdentity,
     SnapshotNodeUnavailable,
+    IncompleteDiscovery,
     ToolFailed,
     NativeFailure,
     TargetRootChanged,
@@ -232,6 +287,7 @@ impl fmt::Display for ReadbackError {
                 Self::RepositoryIdentityChanged => "the backup no longer matches",
                 Self::InvalidRepositoryIdentity => "the backup could not be identified",
                 Self::SnapshotNodeUnavailable => "the archived file could not be confirmed",
+                Self::IncompleteDiscovery => "the archive walk did not account for every node",
                 Self::ToolFailed => "the archive read command failed",
                 Self::NativeFailure => "the archived file could not be prepared",
                 Self::TargetRootChanged => "the file could not be prepared in your journal",
@@ -301,6 +357,8 @@ impl DirectExecution {
     #[cfg(any(
         all(target_os = "linux", target_arch = "x86_64"),
         target_os = "macos",
+        target_os = "android",
+        target_os = "ios",
         windows
     ))]
     fn qualify_read_state(&self) -> Result<(), ReadbackError> {
@@ -320,6 +378,8 @@ impl DirectExecution {
     #[cfg(any(
         all(target_os = "linux", target_arch = "x86_64"),
         target_os = "macos",
+        target_os = "android",
+        target_os = "ios",
         windows
     ))]
     fn quiescent(&self) -> bool {
@@ -332,6 +392,8 @@ impl DirectExecution {
     #[cfg(any(
         all(target_os = "linux", target_arch = "x86_64"),
         target_os = "macos",
+        target_os = "android",
+        target_os = "ios",
         windows
     ))]
     fn helpers_quiescent(&self) -> bool {
@@ -380,6 +442,20 @@ impl DirectExecution {
         // Only genuine owned completion reaches this compact record. The large
         // output is released after its caller has parsed/checked the result.
         drop(child);
+    }
+    /// Version and config counters move only after a confirmed linked drain.
+    /// A failed or still-pending drain leaves both at zero.
+    #[cfg(target_os = "ios")]
+    fn note_linked_qualification(&mut self, drain_ok: bool) {
+        if !drain_ok {
+            return;
+        }
+        for index in [
+            DirectInvocation::Version as usize,
+            DirectInvocation::Config as usize,
+        ] {
+            self.completed[index] = self.completed[index].saturating_add(1);
+        }
     }
     #[cfg(windows)]
     fn accept_windows(&mut self, kind: DirectInvocation, successful: bool) {
@@ -493,7 +569,7 @@ pub struct OwnedDirectReadHold {
     operation: OwnedPreparedArchiveHold,
     _root: Arc<JournalRoot>,
     #[cfg(unix)]
-    _member: CurrentInstalledMember,
+    _tool: AdmittedTool,
     #[cfg(windows)]
     _restic_path: PathBuf,
     #[cfg(windows)]
@@ -566,10 +642,21 @@ impl OwnedDirectReadHold {
     fn qualify_release(&self) -> Result<(), ReadbackError> {
         #[cfg(any(all(target_os = "linux", target_arch = "x86_64"), target_os = "macos"))]
         {
-            pinned_member(&self._member)?;
-            revalidate_member(&self._member)?;
+            pinned_member(&self._tool)?;
+            self._tool.revalidate()?;
             if !self._execution.quiescent() {
                 return Err(ReadbackError::ToolFailed);
+            }
+            Ok(())
+        }
+        #[cfg(any(target_os = "android", target_os = "ios"))]
+        {
+            self._tool.revalidate()?;
+            if !self._execution.quiescent() {
+                return Err(ReadbackError::ToolFailed);
+            }
+            if let Some(predecessor) = &self._execution.predecessor {
+                predecessor.qualify_settlement()?;
             }
             Ok(())
         }
@@ -583,6 +670,8 @@ impl OwnedDirectReadHold {
         #[cfg(not(any(
             all(target_os = "linux", target_arch = "x86_64"),
             target_os = "macos",
+            target_os = "android",
+            target_os = "ios",
             windows
         )))]
         {
@@ -796,7 +885,7 @@ pub struct ReadOperation<'a> {
     #[cfg(all(unix, feature = "full-tests"))]
     source_observations: std::cell::Cell<(usize, usize)>,
     #[cfg(unix)]
-    member: CurrentInstalledMember,
+    tool: AdmittedTool,
     #[cfg(windows)]
     restic_path: PathBuf,
     #[cfg(windows)]
@@ -992,7 +1081,7 @@ impl OwnedSettledDirectRead {
         #[cfg(unix)]
         {
             self.read.operation.revalidate()?;
-            revalidate_member(&self.read._member)
+            self.read._tool.revalidate()
         }
         #[cfg(windows)]
         {
@@ -1041,7 +1130,7 @@ fn close_owned_read(
         #[cfg(all(unix, feature = "full-tests"))]
             source_observations: _,
         #[cfg(unix)]
-        member,
+        tool,
         #[cfg(windows)]
         restic_path,
         #[cfg(windows)]
@@ -1055,7 +1144,7 @@ fn close_owned_read(
         operation: close_owned_prepared(operation, clock),
         _root: root,
         #[cfg(unix)]
-        _member: member,
+        _tool: tool,
         #[cfg(windows)]
         _restic_path: restic_path,
         #[cfg(windows)]
@@ -1323,7 +1412,7 @@ impl<'a> ReadOperation<'a> {
             #[cfg(all(unix, feature = "full-tests"))]
                 source_observations: _,
             #[cfg(unix)]
-            member,
+            tool,
             #[cfg(windows)]
             restic_path,
             #[cfg(windows)]
@@ -1341,7 +1430,7 @@ impl<'a> ReadOperation<'a> {
             operation,
             _root: root,
             #[cfg(unix)]
-            _member: member,
+            _tool: tool,
             #[cfg(windows)]
             _restic_path: restic_path,
             #[cfg(windows)]
@@ -1359,7 +1448,16 @@ impl<'a> ReadOperation<'a> {
         }
         #[cfg(any(all(target_os = "linux", target_arch = "x86_64"), target_os = "macos"))]
         {
-            pinned_member(&self.member)?;
+            pinned_member(&self.tool)?;
+            let execution = self.execution.borrow();
+            if let Some(predecessor) = &execution.predecessor {
+                predecessor.qualify_settlement()?;
+            }
+            execution.qualify_read_state()
+        }
+        #[cfg(any(target_os = "android", target_os = "ios"))]
+        {
+            self.tool.revalidate()?;
             let execution = self.execution.borrow();
             if let Some(predecessor) = &execution.predecessor {
                 predecessor.qualify_settlement()?;
@@ -1377,6 +1475,8 @@ impl<'a> ReadOperation<'a> {
         #[cfg(not(any(
             all(target_os = "linux", target_arch = "x86_64"),
             target_os = "macos",
+            target_os = "android",
+            target_os = "ios",
             windows
         )))]
         {
@@ -1517,17 +1617,10 @@ impl<'a> ReadOperation<'a> {
                 predecessor.validate_input(&input)?;
             }
             let env = direct_environment(&input.destination, &input.password)?;
-            let member = solstone_core_installed_payload::resolve_current_member(RESTIC_MEMBER)
-                .map_err(|_| ReadbackError::ToolUnavailable)?;
-            if member.path() != input.expected_restic_path {
-                return Err(ReadbackError::ToolChanged);
-            }
-            if let Some(predecessor) = &input.predecessor {
-                predecessor.validate_member(&member)?;
-            }
-            Ok((env, member))
+            let tool = admit_tool(&input)?;
+            Ok((env, tool))
         })();
-        let (env, member) = match admission {
+        let (env, tool) = match admission {
             Ok(admitted) => admitted,
             Err(reason) => {
                 return Err(ReadbackAdmissionError {
@@ -1541,7 +1634,7 @@ impl<'a> ReadOperation<'a> {
             operation: input.operation,
             #[cfg(feature = "full-tests")]
             source_observations: std::cell::Cell::new((0, 0)),
-            member,
+            tool,
             env,
             repository: input.repository,
             execution: std::cell::RefCell::new(DirectExecution {
@@ -1550,19 +1643,37 @@ impl<'a> ReadOperation<'a> {
             }),
         };
         let qualification = (|| {
-            let version_child = admitted.query(vec!["version".into()])?;
-            let version = std::str::from_utf8(&version_child.output().stdout)
-                .map_err(|_| ReadbackError::UnsupportedToolVersion)?;
-            let mut fields = version.split_whitespace();
-            if fields.next() != Some("restic") || fields.next() != Some(SUPPORTED_RESTIC_VERSION) {
-                return Err(ReadbackError::UnsupportedToolVersion);
+            #[cfg(target_os = "ios")]
+            {
+                let id = match &admitted.repository {
+                    RepositoryBinding::Expected(id) if full_hex_identity(id) => id.clone(),
+                    _ => return Err(ReadbackError::InvalidRepositoryIdentity),
+                };
+                if let Some(predecessor) = admitted.execution.borrow_mut().predecessor.as_mut() {
+                    predecessor.mark_read_config();
+                    predecessor.confirm_read_config(&id);
+                }
+                admitted.repository = RepositoryBinding::Confirmed(id);
+                return Ok(());
             }
-            admitted
-                .execution
-                .borrow_mut()
-                .accept(DirectInvocation::Version, version_child);
-            admitted.confirm_repository()?;
-            Ok(())
+            #[cfg(not(target_os = "ios"))]
+            {
+                let version_child = admitted.query(vec!["version".into()])?;
+                let version = std::str::from_utf8(&version_child.output().stdout)
+                    .map_err(|_| ReadbackError::UnsupportedToolVersion)?;
+                let mut fields = version.split_whitespace();
+                if fields.next() != Some("restic")
+                    || fields.next() != Some(SUPPORTED_RESTIC_VERSION)
+                {
+                    return Err(ReadbackError::UnsupportedToolVersion);
+                }
+                admitted
+                    .execution
+                    .borrow_mut()
+                    .accept(DirectInvocation::Version, version_child);
+                admitted.confirm_repository()?;
+                Ok(())
+            }
         })();
         match qualification {
             Ok(()) => Ok(admitted),
@@ -1653,7 +1764,7 @@ impl<'a> ReadOperation<'a> {
     #[cfg(unix)]
     fn revalidate_local(&self) -> Result<(), ReadbackError> {
         self.operation.revalidate()?;
-        revalidate_member(&self.member)
+        self.tool.revalidate()
     }
 
     #[cfg(windows)]
@@ -1730,7 +1841,7 @@ impl<'a> ReadOperation<'a> {
         let output = self
             .run_child(
                 &Request {
-                    program: self.member.path().as_os_str().to_owned(),
+                    program: self.tool.program()?.as_os_str().to_owned(),
                     argv: query_argv(argv),
                     env: self.env.clone(),
                     timeout: Some(timeout),
@@ -1858,21 +1969,31 @@ impl<'a> ReadOperation<'a> {
 
     #[cfg(unix)]
     fn check_repository(&self) -> Result<(), ReadbackError> {
-        let result = self.query(vec!["cat".into(), "config".into(), "--no-cache".into()])?;
-        let parsed: Value = serde_json::from_slice(&result.output().stdout)
-            .map_err(|_| ReadbackError::InvalidRepositoryIdentity)?;
-        let id = parsed
-            .get("id")
-            .and_then(Value::as_str)
-            .filter(|id| full_hex_identity(id))
-            .ok_or(ReadbackError::InvalidRepositoryIdentity)?;
-        if id != self.repository_id() {
-            return Err(ReadbackError::RepositoryIdentityChanged);
+        #[cfg(target_os = "ios")]
+        {
+            return match &self.repository {
+                RepositoryBinding::Confirmed(id) if full_hex_identity(id) => Ok(()),
+                _ => Err(ReadbackError::InvalidRepositoryIdentity),
+            };
         }
-        self.execution
-            .borrow_mut()
-            .accept(DirectInvocation::Config, result);
-        Ok(())
+        #[cfg(not(target_os = "ios"))]
+        {
+            let result = self.query(vec!["cat".into(), "config".into(), "--no-cache".into()])?;
+            let parsed: Value = serde_json::from_slice(&result.output().stdout)
+                .map_err(|_| ReadbackError::InvalidRepositoryIdentity)?;
+            let id = parsed
+                .get("id")
+                .and_then(Value::as_str)
+                .filter(|id| full_hex_identity(id))
+                .ok_or(ReadbackError::InvalidRepositoryIdentity)?;
+            if id != self.repository_id() {
+                return Err(ReadbackError::RepositoryIdentityChanged);
+            }
+            self.execution
+                .borrow_mut()
+                .accept(DirectInvocation::Config, result);
+            Ok(())
+        }
     }
 
     #[cfg(windows)]
@@ -2322,7 +2443,7 @@ impl<'a> ReadOperation<'a> {
                     .helper_transport()
                     .map_err(|_| ReadbackError::NativeFailure)?;
                 let request = Request {
-                    program: self.member.path().as_os_str().to_owned(),
+                    program: self.tool.program()?.as_os_str().to_owned(),
                     argv: waiting_for_repository(vec![
                         "dump".into(),
                         "--target".into(),
@@ -2341,15 +2462,13 @@ impl<'a> ReadOperation<'a> {
                     Err((reason, settled)) => {
                         // A cancelled or refused run that was reaped, or never
                         // spawned, leaves no writer either.
-                        if settled && self.member.revalidate().is_ok() {
+                        if settled && self.tool.revalidate().is_ok() {
                             writer = WriterState::QualifiedCompletion;
                         }
                         return Err(reason);
                     }
                 };
-                self.member
-                    .revalidate()
-                    .map_err(|_| ReadbackError::ToolChanged)?;
+                self.tool.revalidate()?;
                 // Qualification is restricted to this admitted direct restic
                 // profile; killpg alone does not prove descendant cessation.
                 // The runner returns only after reaping the root, so this holds
@@ -2406,12 +2525,40 @@ impl<'a> ReadOperation<'a> {
 }
 
 #[cfg(unix)]
-fn revalidate_member(member: &CurrentInstalledMember) -> Result<(), ReadbackError> {
-    member.revalidate().map_err(|_| ReadbackError::ToolChanged)
+fn admit_tool(input: &ReadAdmission<'_>) -> Result<AdmittedTool, ReadbackError> {
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    {
+        let member = solstone_core_installed_payload::resolve_current_member(RESTIC_MEMBER)
+            .map_err(|_| ReadbackError::ToolUnavailable)?;
+        if member.path() != input.expected_restic_path {
+            return Err(ReadbackError::ToolChanged);
+        }
+        if let Some(predecessor) = &input.predecessor {
+            predecessor.validate_member(&member)?;
+        }
+        Ok(AdmittedTool::Installed(member))
+    }
+    #[cfg(target_os = "android")]
+    {
+        use std::os::unix::fs::MetadataExt;
+        let path = input.expected_restic_path.clone();
+        let meta = std::fs::metadata(&path).map_err(|_| ReadbackError::ToolUnavailable)?;
+        Ok(AdmittedTool::Service {
+            path,
+            device: meta.dev(),
+            inode: meta.ino(),
+        })
+    }
+    #[cfg(target_os = "ios")]
+    {
+        let _ = input;
+        Ok(AdmittedTool::Linked)
+    }
 }
 
 #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
-fn pinned_member(member: &CurrentInstalledMember) -> Result<(), ReadbackError> {
+fn pinned_member(tool: &AdmittedTool) -> Result<(), ReadbackError> {
+    let AdmittedTool::Installed(member) = tool;
     if member.bytes() != 30_924_962
         || member.sha256() != "ae7fe58ab3511f830fd31d157158620b209522ff1332b119199d2e938d72338c"
     {
@@ -2424,8 +2571,8 @@ fn pinned_member(member: &CurrentInstalledMember) -> Result<(), ReadbackError> {
 /// pin there: the member is the signed package's own manifest record, revalidated
 /// around every use, and it reported the supported version at admission.
 #[cfg(target_os = "macos")]
-fn pinned_member(member: &CurrentInstalledMember) -> Result<(), ReadbackError> {
-    revalidate_member(member)
+fn pinned_member(tool: &AdmittedTool) -> Result<(), ReadbackError> {
+    tool.revalidate()
 }
 
 #[cfg(any(unix, windows, test))]

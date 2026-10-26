@@ -241,9 +241,14 @@ pub fn run_cli_restore(
         }
     };
     // A removal or restore interrupted by a crash would refuse this admission.
-    if let Ok(activity) = ActivityLease::try_acquire(Arc::clone(&root)) {
-        recover_interrupted_removals(&activity);
-        recover_abandoned_restores(&activity);
+    if let Ok(activity) = ActivityLease::try_acquire(Arc::clone(&root))
+        && let Err(error) = recover_interrupted_removals(&activity)
+            .and_then(|_| recover_abandoned_restores(&activity).map(|_| ()))
+    {
+        return not_started(
+            Some(root),
+            with_detail(base("refused", "restore_held", day), error.to_string()),
+        );
     }
     let preparation_refused =
         |failure: OwnedArchivePreparationFailure, custody: Option<ArchivePreparationCustody>| {

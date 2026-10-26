@@ -839,12 +839,27 @@ pub(crate) fn prepare_read_in(
         );
         return None;
     }
-    let (ticket, root, budget, clock) = begin.into_parts();
     // A removal or restore interrupted by a crash would refuse this admission.
-    if let Ok(activity) = ActivityLease::try_acquire(Arc::clone(&root)) {
-        recover_interrupted_removals(&activity);
-        recover_abandoned_restores(&activity);
+    // An unqualified phone container refuses before any archive work.
+    if let Ok(activity) = ActivityLease::try_acquire(Arc::clone(&begin.ticket.0.root))
+        && let Err(_error) = recover_interrupted_removals(&activity)
+            .and_then(|_| recover_abandoned_restores(&activity).map(|_| ()))
+    {
+        let mut terminal = Terminal::error("failed");
+        terminal.report = Some(json!({
+            "preparation": {"state": "refused", "reason": "recovery_unavailable"}
+        }));
+        let ticket = ArchiveTicket(Arc::clone(&begin.ticket.0));
+        return_owned(
+            slot,
+            ticket,
+            None,
+            ArchivePayload::BeginHeld(Box::new(begin)),
+            terminal,
+        );
+        return None;
     }
+    let (ticket, root, budget, clock) = begin.into_parts();
     let (input, custody) = match OwnedArchivePreparationInput::capture(root, budget, clock) {
         Ok(pair) => pair,
         Err(failure) => {

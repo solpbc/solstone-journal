@@ -287,12 +287,12 @@ pub(super) fn entry_from_file(name: &OsStr, file: &File) -> io::Result<MediaEntr
 
 #[cfg(not(target_os = "macos"))]
 pub(super) fn archive_path(directory: &Directory, name: &OsStr) -> io::Result<PathBuf> {
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "android"))]
     {
         use std::os::fd::AsRawFd;
         Ok(PathBuf::from(format!("/proc/self/fd/{}", directory.as_fd().as_raw_fd())).join(name))
     }
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(not(any(target_os = "linux", target_os = "android")))]
     {
         Ok(directory.path().join(name))
     }
@@ -376,15 +376,22 @@ pub(super) fn claim(
     let from = CString::new(source_name.as_bytes()).map_err(|_| invalid("invalid claim name"))?;
     let to = CString::new(name.as_bytes()).map_err(|_| invalid("invalid claim name"))?;
     step(MediaPrimitive::NativeClaimCut)?;
-    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "ios"))]
+    #[cfg(any(
+        target_os = "linux",
+        target_os = "android",
+        target_os = "macos",
+        target_os = "ios"
+    ))]
     {
         use std::os::fd::AsRawFd;
 
         // SAFETY: both retained directory descriptors and NUL-terminated names
         // remain live for the synchronous create-only rename. No fallback.
+        // Android uses the same renameat2 flag as Linux. The teardown lease's
+        // rename stays in claim_remove and is not this claim.
         #[allow(unsafe_code)]
         let result = unsafe {
-            #[cfg(target_os = "linux")]
+            #[cfg(any(target_os = "linux", target_os = "android"))]
             {
                 libc::syscall(
                     libc::SYS_renameat2,
@@ -412,7 +419,12 @@ pub(super) fn claim(
         step(MediaPrimitive::ClaimAppliedError)?;
         Ok(())
     }
-    #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "ios")))]
+    #[cfg(not(any(
+        target_os = "linux",
+        target_os = "android",
+        target_os = "macos",
+        target_os = "ios"
+    )))]
     {
         let _ = (source, destination, from, to);
         Err(io::Error::new(
@@ -467,7 +479,12 @@ pub(super) fn remove_leaf(parent: &Directory, name: &OsStr, _file: &File) -> io:
     unlinkat(parent, name, UnlinkatFlags::NoRemoveDir).map_err(Into::into)
 }
 
-#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[cfg(any(
+    target_os = "linux",
+    target_os = "android",
+    target_os = "macos",
+    target_os = "ios"
+))]
 pub(super) fn open_removal_directory(
     parent: &Directory,
     name: &OsStr,
