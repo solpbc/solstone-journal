@@ -44,6 +44,11 @@ const MAX_STDERR_BYTES: usize = 8 * 1024;
 const STARTUP_TIMEOUT: Duration = Duration::from_secs(30);
 const INFERENCE_TIMEOUT: Duration = Duration::from_secs(120);
 const PROTOCOL_VERSION: u16 = 1;
+/// The published screen text leaves out a recognition below this score, and
+/// any line of a single character. On phone screens those are icons read as
+/// letters or CJK glyphs (signal bars, a battery) and misreads of real text;
+/// real words score far above it. The private sidecar keeps every occurrence.
+const PUBLISHED_MIN_CONFIDENCE: f32 = 0.5;
 const PINNED_HELPER_RECIPE: &[u8] = include_bytes!("../../../screen-ocr-helper/recipe.toml");
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -2235,10 +2240,19 @@ pub(crate) fn fold(sidecars: &[PrivateSidecar]) -> Vec<FoldedLine> {
             ordered_occurrences.sort_by_key(|(index, occurrence)| (occurrence.line_order, *index));
             let mut redact_following = false;
             for (occurrence_index, occurrence) in ordered_occurrences {
-                for (subline_order, text) in
-                    safe_lines_with_state(&occurrence.text, &mut redact_following)
-                        .into_iter()
-                        .enumerate()
+                // Every line still passes the redaction state, which a dropped
+                // label must advance for the secret that follows it.
+                let lines = safe_lines_with_state(&occurrence.text, &mut redact_following);
+                if occurrence
+                    .confidence
+                    .is_some_and(|confidence| confidence < PUBLISHED_MIN_CONFIDENCE)
+                {
+                    continue;
+                }
+                for (subline_order, text) in lines
+                    .into_iter()
+                    .enumerate()
+                    .filter(|(_, text)| text.trim().chars().count() > 1)
                 {
                     candidates.push((
                         frame.segment_offset_ms,
@@ -2944,6 +2958,44 @@ mod tests {
                 segment_offset_ms: 0,
                 text: "[REDACTED]".to_owned(),
             }]
+        );
+    }
+
+    #[test]
+    fn published_text_leaves_out_low_scores_and_lone_glyphs_but_still_masks() {
+        let occurrence = |line_order, text: &str, confidence| RawOccurrence {
+            line_order,
+            text: text.to_owned(),
+            confidence,
+            geometry: Vec::new(),
+            recurrence: 1,
+        };
+        let mut source = sidecar("source", 1, 0, "unused");
+        source.frames[0].occurrences = vec![
+            // A phone status bar read as glyphs, and a misread.
+            occurrence(1, "山", Some(0.93)),
+            occurrence(2, "口", Some(0.31)),
+            occurrence(3, "oyocI", Some(0.45)),
+            // A low-scoring password label still hides the secret after it.
+            occurrence(4, "Password:", Some(0.2)),
+            occurrence(5, "swordfish", Some(0.99)),
+            occurrence(6, "Boarding Group 3", Some(0.98)),
+            occurrence(7, "English 日本語", Some(0.97)),
+            occurrence(8, "K", Some(0.87)),
+            occurrence(9, "no score", None),
+        ];
+        let texts = fold(&[source])
+            .into_iter()
+            .map(|line| line.text)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            texts,
+            [
+                "[REDACTED]",
+                "Boarding Group 3",
+                "English 日本語",
+                "no score"
+            ]
         );
     }
 
