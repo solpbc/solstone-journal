@@ -14,6 +14,9 @@ pub use solstone_core_journal_config::processing::*;
 
 /// An unreadable policy cannot authorize background analysis.
 pub fn processing_allowed(journal: &Path) -> bool {
+    if solstone_core_journal_io::whole_journal_restore::whole_journal_restore_blocks(journal) {
+        return false;
+    }
     match policy_at(journal, Utc::now()) {
         Ok((settings, gate)) => !settings.deferred || gate.open,
         Err(error) => {
@@ -85,5 +88,41 @@ mod tests {
         std::fs::write(root.path().join("config/journal.json"), "{").unwrap();
         assert!(!processing_allowed(root.path()));
         assert!(is_deferred(root.path()).is_err());
+    }
+
+    #[test]
+    fn pending_restore_holds_processing_and_clearing_it_restores_the_policy() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::create_dir(root.path().join("config")).unwrap();
+        std::fs::write(
+            root.path().join("config/journal.json"),
+            serde_json::json!({
+                "identity": {"timezone": "UTC"},
+                "processing": {"mode": "normal"}
+            })
+            .to_string(),
+        )
+        .unwrap();
+        let before = processing_allowed(root.path());
+        let source =
+            solstone_core_journal_io::whole_journal_restore::WholeJournalRestoreSource::Byo {
+                repository: "repo".into(),
+                backend: "s3".into(),
+            };
+        let record =
+            solstone_core_journal_io::whole_journal_restore::publish_whole_journal_restore(
+                root.path(),
+                &source,
+                "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+                "/journal",
+            )
+            .expect("obligation");
+        assert!(!processing_allowed(root.path()));
+        solstone_core_journal_io::whole_journal_restore::clear_whole_journal_restore(
+            root.path(),
+            &record,
+        )
+        .expect("clear");
+        assert_eq!(processing_allowed(root.path()), before);
     }
 }

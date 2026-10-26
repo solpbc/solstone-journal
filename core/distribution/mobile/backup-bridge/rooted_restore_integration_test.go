@@ -535,3 +535,144 @@ func TestRootedRestoreMetadataOnlyDriftAndNonCancellationPartialFailure(t *testi
 		t.Fatal("replacement root received restore writes", err)
 	}
 }
+
+func TestRootedRestorePartialWriteKeepsTheTargetObligation(t *testing.T) {
+	base, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo := filepath.Join(base, "repo")
+	source := filepath.Join(base, "journal")
+	target := filepath.Join(base, "target")
+	for _, path := range []string{repo, source, filepath.Join(source, "nested"), target, filepath.Join(target, "health")} {
+		if err := os.MkdirAll(path, 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	owner := []byte("original record")
+	if err := os.WriteFile(filepath.Join(source, "owner.txt"), owner, 0640); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(source, "nested", "marker.txt"), []byte("later file"), 0640); err != nil {
+		t.Fatal(err)
+	}
+	obligation := []byte("target-obligation")
+	obligationPath := filepath.Join(target, "health", "whole-journal-restore.json")
+	if err := os.WriteFile(obligationPath, obligation, 0640); err != nil {
+		t.Fatal(err)
+	}
+	password := []byte("rooted-daily-synthetic")
+	if r, err := executeInit(context.Background(), bridgeRequest{operation: OpInit, repoPath: repo, password: password}, func() {}); err != nil || r.status != StatusOk {
+		t.Fatal("init", err, r.status)
+	}
+	snap, err := executeSnapshot(context.Background(), bridgeRequest{operation: OpSnapshot, repoPath: repo, sourcePath: source, password: password}, func() {})
+	if err != nil || snap.status != StatusOk {
+		t.Fatal("snapshot", err, snap.status)
+	}
+	if err := os.Rename(source, source+"-retained"); err != nil {
+		t.Fatal(err)
+	}
+	var stopped bool
+	testGate = func(stage string, _ context.Context) error {
+		if stage != "rooted-restore-before-write" {
+			return nil
+		}
+		for _, name := range []string{"owner.txt", filepath.Join("nested", "marker.txt")} {
+			if _, err := os.Stat(filepath.Join(target, name)); err == nil {
+				stopped = true
+				return errors.New("stop after a restored file")
+			}
+		}
+		return nil
+	}
+	t.Cleanup(func() { testGate = nil })
+	f := &rootedTestFixture{repo: repo}
+	id, h := rootedTestStart(t, f, rootedTestRequest(t, f, target, snap.snapshotID, password))
+	actual, mutated, _ := rootedTestWait(t, id, h)
+	testGate = nil
+	if !stopped || !mutated || actual.status == StatusOk {
+		t.Fatal("partial restore did not stop after a real write", stopped, mutated, actual.status)
+	}
+	if value, err := os.ReadFile(obligationPath); err != nil || string(value) != string(obligation) {
+		t.Fatal("target obligation changed", err, value)
+	}
+	if value, err := os.ReadFile(filepath.Join(source+"-retained", "owner.txt")); err != nil || string(value) != string(owner) {
+		t.Fatal("source snapshot bytes changed", err)
+	}
+}
+
+func TestRootedRestoreSnapshotCannotReplaceTheTargetObligation(t *testing.T) {
+	base, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo := filepath.Join(base, "repo")
+	source := filepath.Join(base, "journal")
+	target := filepath.Join(base, "target")
+	for _, path := range []string{
+		repo,
+		filepath.Join(source, "health"),
+		filepath.Join(source, "nested", "health"),
+		filepath.Join(target, "health"),
+	} {
+		if err := os.MkdirAll(path, 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	owner := []byte("original record")
+	snapshotObligation := []byte("snapshot-obligation")
+	nestedObligation := []byte("nested-obligation")
+	targetObligation := []byte("target-obligation")
+	writes := map[string][]byte{
+		filepath.Join(source, "owner.txt"):                                      owner,
+		filepath.Join(source, "health", "whole-journal-restore.json"):           snapshotObligation,
+		filepath.Join(source, "nested", "health", "whole-journal-restore.json"): nestedObligation,
+		filepath.Join(target, "health", "whole-journal-restore.json"):           targetObligation,
+		filepath.Join(target, "sentinel"):                                       []byte("unrelated"),
+		filepath.Join(source, "health", "!solstone-claim-00000000-0000000000000123"): []byte("foreign claim"),
+		filepath.Join(target, "health", "!solstone-claim-00000000-0000000000000456"): []byte("retained local claim"),
+	}
+	for path, body := range writes {
+		if err := os.WriteFile(path, body, 0640); err != nil {
+			t.Fatal(err)
+		}
+	}
+	password := []byte("rooted-daily-synthetic")
+	if r, err := executeInit(context.Background(), bridgeRequest{operation: OpInit, repoPath: repo, password: password}, func() {}); err != nil || r.status != StatusOk {
+		t.Fatal("init", err, r.status)
+	}
+	snap, err := executeSnapshot(context.Background(), bridgeRequest{operation: OpSnapshot, repoPath: repo, sourcePath: source, password: password}, func() {})
+	if err != nil || snap.status != StatusOk {
+		t.Fatal("snapshot", err, snap.status)
+	}
+	if err := os.Rename(source, source+"-retained"); err != nil {
+		t.Fatal(err)
+	}
+	f := &rootedTestFixture{repo: repo}
+	id, h := rootedTestStart(t, f, rootedTestRequest(t, f, target, snap.snapshotID, password))
+	actual, mutated, _ := rootedTestWait(t, id, h)
+	if actual.status != StatusOk || !mutated {
+		t.Fatal("rooted restore", actual.status, actual.diagnostic, mutated)
+	}
+	if value, err := os.ReadFile(filepath.Join(target, "health", "whole-journal-restore.json")); err != nil || string(value) != string(targetObligation) {
+		t.Fatal("snapshot replaced the target obligation", err, value)
+	}
+	if value, err := os.ReadFile(filepath.Join(target, "nested", "health", "whole-journal-restore.json")); err != nil || string(value) != string(nestedObligation) {
+		t.Fatal("nested obligation path was not restored", err, value)
+	}
+	if _, err := os.Lstat(filepath.Join(target, "health", "!solstone-claim-00000000-0000000000000123")); !os.IsNotExist(err) {
+		t.Fatal("snapshot imported a foreign local recovery claim", err)
+	}
+	if value, err := os.ReadFile(filepath.Join(target, "health", "!solstone-claim-00000000-0000000000000456")); err != nil || string(value) != "retained local claim" {
+		t.Fatal("snapshot changed a local recovery claim", err, value)
+	}
+	if value, err := os.ReadFile(filepath.Join(target, "owner.txt")); err != nil || string(value) != string(owner) {
+		t.Fatal("owner bytes were not restored", err, value)
+	}
+	if value, err := os.ReadFile(filepath.Join(target, "sentinel")); err != nil || string(value) != "unrelated" {
+		t.Fatal("unrelated target data changed", err, value)
+	}
+	if value, err := os.ReadFile(filepath.Join(source+"-retained", "health", "whole-journal-restore.json")); err != nil || string(value) != string(snapshotObligation) {
+		t.Fatal("source snapshot obligation changed", err, value)
+	}
+}

@@ -108,6 +108,32 @@ fn journal_snapshot(entry: &Map<String, Value>) -> Result<JournalSnapshot, Catal
     })
 }
 
+/// The one non-archive snapshot with this id. A duplicate id fails closed.
+pub(crate) fn snapshot_with_id(
+    catalog: Option<&Value>,
+    snapshot_id: &str,
+) -> Result<JournalSnapshot, CatalogError> {
+    let entries = catalog
+        .and_then(Value::as_array)
+        .ok_or(CatalogError::Invalid)?;
+    let mut found = None;
+    for entry in entries {
+        let object = entry.as_object().ok_or(CatalogError::Invalid)?;
+        if is_archive(object)? {
+            continue;
+        }
+        let snapshot = journal_snapshot(object)?;
+        if snapshot.id != snapshot_id {
+            continue;
+        }
+        if found.is_some() {
+            return Err(CatalogError::Invalid);
+        }
+        found = Some(snapshot);
+    }
+    found.ok_or(CatalogError::NotFound)
+}
+
 fn is_full_lower_hex_id(id: &str) -> bool {
     id.len() == 64
         && id

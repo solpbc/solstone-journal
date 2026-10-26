@@ -24,6 +24,7 @@ import (
 )
 
 const rootedRestoreLock = "backup-activity.lock"
+const wholeJournalRestoreFile = "health/whole-journal-restore.json"
 
 type rootedTargetIdentity struct{ device, inode uint64 }
 
@@ -389,7 +390,11 @@ func executeRootedRestore(ctx context.Context, req *bridgeRequest, setWrote func
 	defer finish()
 	res := restorer.NewRestorer(repo, &selected, restorer.Options{Progress: prog, ExistingRoot: true})
 	res.SelectFilter = func(item string, _ bool) (bool, bool) {
-		if item == "/"+rootedRestoreLock || item == rootedRestoreLock {
+		if item == "/"+rootedRestoreLock || item == rootedRestoreLock ||
+			item == "/"+wholeJournalRestoreFile || item == wholeJournalRestoreFile {
+			return false, false
+		}
+		if strings.HasPrefix(strings.TrimPrefix(item, "/"), "health/!solstone-claim-00000000-") {
 			return false, false
 		}
 		return true, true

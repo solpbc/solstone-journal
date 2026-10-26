@@ -88,7 +88,9 @@ pub fn is_due(
             last < weekly_mark(now.local, day, config.weekly_time.as_deref())
         }
         every => minute_interval(every).is_some_and(|minutes| {
-            last <= now.local - ChronoDuration::minutes(minutes.max(5) as i64)
+            now.local
+                .checked_sub_signed(ChronoDuration::minutes(minutes.max(5) as i64))
+                .is_some_and(|threshold| last <= threshold)
         }),
     }
 }
@@ -138,7 +140,9 @@ pub(crate) fn compute_next_run(
                 .and_then(|entry| entry.get("last_run"))
                 .and_then(Value::as_f64)
                 .and_then(|last| local_from_epoch(last, now.zone))
-                .map(|last| last + ChronoDuration::minutes(minutes.max(5) as i64))
+                .and_then(|last| {
+                    last.checked_add_signed(ChronoDuration::minutes(minutes.max(5) as i64))
+                })
                 .unwrap_or(now.local),
             None => now.local,
         },

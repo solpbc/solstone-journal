@@ -8,6 +8,8 @@ use solstone_core_backup_runtime::{
     runner::{ToolOutput, ToolRequest, ToolRunner},
 };
 use solstone_core_backup_web::BackupWebDeps;
+#[cfg(feature = "processing")]
+use solstone_core_callosum::CallosumOneShotSender;
 use solstone_core_callosum::{
     CallosumConnectionPhase, CallosumEnvelope, CallosumReceiveEvent, CallosumSocketConnection,
 };
@@ -203,6 +205,17 @@ pub(crate) fn settle_embedded_backup(
             exit_code: 1,
         });
     }
+    let _restore_use = match solstone_core_journal_io::whole_journal_restore::begin_target_use(
+        root.canonical_path(),
+    ) {
+        Ok(guard) => guard,
+        Err(_) => {
+            return BackupRequestOutcome::AdmissionRefused {
+                reference: reference.to_owned(),
+                routine,
+            };
+        }
+    };
     let permit = match deps.lifetime().admit_maintenance() {
         Ok(permit) => permit,
         Err(_) => {
@@ -334,6 +347,10 @@ fn request_reference(envelope: &CallosumEnvelope, marker: u64, sequence: u64) ->
 /// Report a finished request. The bus accept bit is not the disposition.
 fn report_terminal(connection: &CallosumSocketConnection, outcome: &BackupRequestOutcome) {
     log_backup_outcome(outcome);
+    let _accepted = connection.emit("supervisor", "stopped", terminal_fields(outcome));
+}
+
+fn terminal_fields(outcome: &BackupRequestOutcome) -> Map<String, serde_json::Value> {
     let (reference, routine, exit_code) = match outcome {
         BackupRequestOutcome::Settled(settlement) => (
             settlement.reference.as_str(),
@@ -345,16 +362,36 @@ fn report_terminal(connection: &CallosumSocketConnection, outcome: &BackupReques
             (reference.as_str(), *routine, 1)
         }
     };
-    let _accepted = connection.emit(
-        "supervisor",
-        "stopped",
-        Map::from_iter([
-            ("service".into(), json!("backup")),
-            ("ref".into(), json!(reference)),
-            ("routine".into(), json!(routine_label(routine))),
-            ("exit_code".into(), json!(exit_code)),
-        ]),
-    );
+    Map::from_iter([
+        ("service".into(), json!("backup")),
+        ("ref".into(), json!(reference)),
+        ("routine".into(), json!(routine_label(routine))),
+        ("exit_code".into(), json!(exit_code)),
+    ])
+}
+
+#[cfg(feature = "processing")]
+pub(crate) fn report_scheduled_terminal(root: &JournalRoot, outcome: &BackupRequestOutcome) {
+    if root.revalidate_canonical_binding().is_err() {
+        log::warn!("embedded backup terminal report refused a changed root");
+        return;
+    }
+    let mut fields = terminal_fields(outcome);
+    fields.insert("tract".into(), json!("supervisor"));
+    fields.insert("event".into(), json!("stopped"));
+    match serde_json::to_string(&fields) {
+        Ok(line) => {
+            if let Err(error) = CallosumOneShotSender::new(
+                root.canonical_path().join("health/callosum.sock"),
+                std::time::Duration::from_secs(2),
+            )
+            .send_line(&format!("{line}\n"))
+            {
+                log::warn!("embedded backup terminal report failed: {error}");
+            }
+        }
+        Err(error) => log::warn!("embedded backup terminal report encoding failed: {error}"),
+    }
 }
 
 async fn run_with_executor(

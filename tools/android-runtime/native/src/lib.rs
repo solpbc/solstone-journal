@@ -186,6 +186,8 @@ fn serving(root: &Path, command: &str) -> Result<Value, String> {
         let cancelled = || thinking_cancelled(&THINKING_GENERATION, generation, &binding);
         let cancellation = solstone_core_generate::Cancellation::from_fn(&cancelled);
         let root = binding.canonical_path();
+        let _restore_use = jio::whole_journal_restore::begin_target_use_bound(std::sync::Arc::clone(&binding))
+            .map_err(|_| jio::whole_journal_restore::WHOLE_JOURNAL_RESTORE_NOT_READY.to_owned())?;
         let raw = command["payload"]
             .as_str()
             .ok_or("thinking request required")?;
@@ -517,7 +519,7 @@ fn serving(root: &Path, command: &str) -> Result<Value, String> {
                 .host
                 .as_ref()
                 .ok_or("foreground processing stopped")?;
-            host.resume_audio();
+            host.resume_audio()?;
             Ok(json!({"resumed": true}))
         }
         "owner" => {
@@ -537,6 +539,7 @@ fn serving(root: &Path, command: &str) -> Result<Value, String> {
 }
 
 fn seed_mixed(root: &Path, turn: usize) -> Result<(), Box<dyn std::error::Error>> {
+    let _restore_use = refuse_pending_restore(root)?;
     // Synthetic fixture generation belongs only to this development harness.
     // Production activity writes continue through the facets authority.
     let directory = root.join("facets/work/activities");
@@ -564,6 +567,7 @@ fn seed_mixed(root: &Path, turn: usize) -> Result<(), Box<dyn std::error::Error>
 }
 
 fn publication_race(root: &Path) -> Result<Value, Box<dyn std::error::Error>> {
+    let _restore_use = refuse_pending_restore(root)?;
     use std::sync::{Arc, Barrier};
     let dir = root.join(format!("publication-race-{}", std::process::id()));
     fs::create_dir(&dir)?;
@@ -635,6 +639,7 @@ fn publication_race(root: &Path) -> Result<Value, Box<dyn std::error::Error>> {
 }
 
 fn publication_faults(root: &Path) -> Result<Value, Box<dyn std::error::Error>> {
+    let _restore_use = refuse_pending_restore(root)?;
     let authority = jio::JournalRoot::open(root)?;
     let mut checked = Vec::new();
     for (i, primitive) in [
@@ -688,7 +693,16 @@ fn publication_faults(root: &Path) -> Result<Value, Box<dyn std::error::Error>> 
     Ok(json!({"passed":true,"checked":checked}))
 }
 
+fn refuse_pending_restore(
+    root: &Path,
+) -> Result<jio::whole_journal_restore::TargetUse, Box<dyn std::error::Error>> {
+    jio::whole_journal_restore::begin_target_use(root).map_err(|_| -> Box<dyn std::error::Error> {
+        jio::whole_journal_restore::WHOLE_JOURNAL_RESTORE_NOT_READY.into()
+    })
+}
+
 fn work(root: &Path, scan: bool) -> Result<Value, Box<dyn std::error::Error>> {
+    let _restore_use = refuse_pending_restore(root)?;
     let begin = Instant::now();
     let authority = jio::JournalRoot::open(root)?;
     authority.revalidate_canonical_binding()?;
@@ -838,6 +852,7 @@ fn run(root: &Path, op: &str, count: usize) -> Result<Value, Box<dyn std::error:
         "publication-race" => publication_race(root),
         "publication-faults" => publication_faults(root),
         "publication" => {
+            let _restore_use = refuse_pending_restore(root)?;
             let authority = jio::JournalRoot::open(root)?;
             let name = format!("exclusive-{}-{count}.txt", std::process::id());
             let result = jio::write_bytes_exclusive_bound_detailed(

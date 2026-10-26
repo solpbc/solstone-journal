@@ -80,6 +80,24 @@ pub fn read_enabled_schedule_entry(
     Ok((loaded.config.entries.remove(name), loaded.diagnostics))
 }
 
+/// Validate one proposed entry with the same rules used by runtime loading.
+/// Disabled proposals are checked as enabled so invalid dormant work is refused.
+pub fn validate_schedule_entry(value: &Value) -> Result<ScheduleEntry, Vec<ConfigDiagnostic>> {
+    let mut candidate = value.clone();
+    if let Some(entry) = candidate.as_object_mut() {
+        entry.insert("enabled".into(), Value::Bool(true));
+    }
+    let mut loaded = validate(Map::from_iter([("proposed".into(), candidate)]));
+    if !loaded.diagnostics.is_empty() {
+        return Err(loaded.diagnostics);
+    }
+    loaded
+        .config
+        .entries
+        .remove("proposed")
+        .ok_or_else(|| vec![diagnostic("invalid schedule entry")])
+}
+
 /// Add the built-in schedule entries that are absent from the configuration,
 /// creating the configuration first when it does not exist. Existing entries,
 /// including disabled or edited built-ins, are left untouched. Returns the
@@ -397,12 +415,21 @@ pub(crate) fn minute_interval(every: &str) -> Option<u64> {
     every
         .strip_suffix('m')
         .filter(|digits| !digits.is_empty() && digits.bytes().all(|byte| byte.is_ascii_digit()))
-        .and_then(|digits| digits.parse().ok())
+        .and_then(|digits| digits.parse::<u64>().ok())
+        .filter(|minutes| {
+            i64::try_from(*minutes)
+                .ok()
+                .and_then(chrono::Duration::try_minutes)
+                .is_some()
+        })
 }
 
 pub(crate) fn parse_duration(value: &Value) -> Option<Duration> {
     if let Some(seconds) = value.as_u64().filter(|seconds| *seconds > 0) {
-        return Some(Duration::from_secs(seconds));
+        let duration = Duration::from_secs(seconds);
+        return std::time::Instant::now()
+            .checked_add(duration)
+            .map(|_| duration);
     }
     let raw = value.as_str()?;
     if !raw.is_ascii() {
@@ -419,7 +446,10 @@ pub(crate) fn parse_duration(value: &Value) -> Option<Duration> {
         "h" => 3_600,
         _ => return None,
     };
-    amount.checked_mul(multiplier).map(Duration::from_secs)
+    amount
+        .checked_mul(multiplier)
+        .map(Duration::from_secs)
+        .filter(|duration| std::time::Instant::now().checked_add(*duration).is_some())
 }
 
 fn default_entries() -> [(&'static str, Value); 7] {

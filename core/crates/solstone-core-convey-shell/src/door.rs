@@ -455,6 +455,11 @@ pub(super) async fn open_after_finalize(
     if !is_finalize || !response.status().is_success() {
         return response;
     }
+    if solstone_core_journal_io::whole_journal_restore::whole_journal_restore_blocks(
+        door.journal_root(),
+    ) {
+        return response;
+    }
     if door.ensure_started().await {
         if let Some(address) = door.bound_addr() {
             eprintln!("convey: paired-device door listening on {address}");

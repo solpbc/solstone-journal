@@ -57,6 +57,21 @@ pub trait SetupHost: Send + Sync {
     /// Ask for a fresh thinking check after setup changes the active lane, so
     /// home and Thinking read the new choice instead of the record from before it.
     fn refresh_brain(&self, _journal_root: &Path) {}
+
+    /// Continue the recorded whole-journal restore. The host must use the
+    /// obligation's snapshot and subtree, and must drain admitted work first.
+    fn recover_whole_journal(&self, _journal_root: &Path, _body: &[u8]) -> Result<(), String> {
+        Err("recovery retry is not available in this host".into())
+    }
+
+    /// Stop admitted owners without closing the local recovery journey.
+    fn stop_for_recovery(&self, _journal_root: &Path) -> Result<(), String> {
+        Err("recovery stop is not available in this host".into())
+    }
+
+    fn recovery_in_progress(&self, _journal_root: &Path) -> Option<bool> {
+        None
+    }
 }
 
 pub struct NoopSetupHost;
@@ -113,6 +128,7 @@ impl SetupHost for NoopSetupHost {
 pub struct LinkHttpState {
     pub journal_root: PathBuf,
     pub host: Arc<dyn SetupHost>,
+    pub target_use: solstone_core_journal_io::whole_journal_restore::TargetUseOwner,
 }
 
 #[derive(Serialize)]
@@ -232,6 +248,9 @@ pub fn init_router_with_host(journal_root: impl AsRef<Path>, host: Arc<dyn Setup
     let state = LinkHttpState {
         journal_root: journal_root.as_ref().to_path_buf(),
         host,
+        target_use: solstone_core_journal_io::whole_journal_restore::TargetUseOwner::new(
+            journal_root.as_ref(),
+        ),
     };
     Router::new()
         .route("/init/api/state", get(init_state))
@@ -242,7 +261,46 @@ pub fn init_router_with_host(journal_root: impl AsRef<Path>, host: Arc<dyn Setup
         .route("/init/mark/lock", post(init_mark_lock))
         .route("/init/api/action", post(init_action))
         .route("/init/finalize", post(init_finalize))
+        .route("/init/api/recovery", get(recovery_status))
+        .route("/init/api/recovery/retry", post(recovery_retry))
+        .route("/init/api/recovery/stop", post(recovery_stop))
+        .route_layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            retain_setup_target,
+        ))
         .with_state(state)
+}
+
+async fn retain_setup_target(
+    State(state): State<LinkHttpState>,
+    request: axum::http::Request<axum::body::Body>,
+    next: axum::middleware::Next,
+) -> Response {
+    let path = request.uri().path();
+    if (path == "/init/api/recovery" || path.starts_with("/init/api/recovery/"))
+        && state.target_use.revalidate().is_ok()
+    {
+        return next.run(request).await;
+    }
+    match state.target_use.begin() {
+        Ok(target_use) => {
+            solstone_core_convey_http::request::run_admitted(target_use, request, next).await
+        }
+        Err(_)
+            if state.target_use.revalidate().is_ok()
+                && request.method() == axum::http::Method::GET
+                && matches!(path, "/init" | "/init/api/state") =>
+        {
+            next.run(request).await
+        }
+        Err(_) => error_envelope(
+            "restore_pending",
+            solstone_core_journal_io::whole_journal_restore::WHOLE_JOURNAL_RESTORE_NOT_READY,
+            "setup target use was refused",
+            StatusCode::CONFLICT,
+        )
+        .into_response(),
+    }
 }
 
 /// Build the complete link HTTP surface. The caller remains responsible for serving it.
@@ -251,6 +309,9 @@ pub fn router(journal_root: impl AsRef<Path>) -> Router {
     let state = LinkHttpState {
         journal_root: journal_root.to_path_buf(),
         host: Arc::new(NoopSetupHost),
+        target_use: solstone_core_journal_io::whole_journal_restore::TargetUseOwner::new(
+            journal_root,
+        ),
     };
     init_router(journal_root)
         .merge(
@@ -339,6 +400,9 @@ async fn init_state(
 ) -> Response {
     if !is_local(&basis) {
         return init_local_only();
+    }
+    if let Some(response) = recovery_projection(&state.journal_root, state.host.as_ref()) {
+        return response;
     }
     let config = match load_mutation_base(&state.journal_root) {
         Ok(base) => base.config,
@@ -526,7 +590,7 @@ async fn build_setup_state(
     };
     let catalog_facts = state.host.catalog_facts();
 
-    let completed = setup_is_complete(config);
+    let completed = setup_is_complete(config) && !recovery_paused(&state.journal_root);
     let mut remaining_required_steps = Vec::new();
     if !completed {
         if !mark_is_locked {
@@ -675,6 +739,17 @@ async fn init(
     if !is_local(&basis) {
         return init_local_only();
     }
+    if recovery_paused(&state.journal_root) {
+        return Html(
+            injected_init_html()
+                .replace("<body>", "<body data-recovery=\"pending\">")
+                .replace(
+                    "<section id=\"setup-recovery\" hidden",
+                    "<section id=\"setup-recovery\"",
+                ),
+        )
+        .into_response();
+    }
     let config = match load_mutation_base(&state.journal_root) {
         Ok(base) => base.config,
         Err(_) => return corrupt_config(),
@@ -695,6 +770,9 @@ async fn init_mark(
 ) -> Response {
     if !is_local(&basis) {
         return init_local_only();
+    }
+    if let Some(response) = refuse_recovery_mutation(&state.journal_root) {
+        return response;
     }
     match establish::ensure_mark_snapshot(&state.journal_root) {
         Ok(snapshot) => Json(MarkResponse {
@@ -718,6 +796,9 @@ async fn init_mark_regenerate(
 ) -> Response {
     if !is_local(&basis) {
         return init_local_only();
+    }
+    if let Some(response) = refuse_recovery_mutation(&state.journal_root) {
+        return response;
     }
     match establish::regenerate_proposal(&state.journal_root) {
         Ok(candidate) => match jid_from_spki(candidate.spki_der()) {
@@ -756,6 +837,9 @@ async fn init_mark_lock(
 ) -> Response {
     if !is_local(&basis) {
         return init_local_only();
+    }
+    if let Some(response) = refuse_recovery_mutation(&state.journal_root) {
+        return response;
     }
     let req: MarkLockRequest = match serde_json::from_slice(&body) {
         Ok(req) => req,
@@ -963,6 +1047,9 @@ async fn init_action(
 ) -> Response {
     if !is_local(&basis) {
         return init_local_only();
+    }
+    if let Some(response) = refuse_recovery_mutation(&state.journal_root) {
+        return response;
     }
     let req: SetupActionRequest = match serde_json::from_slice(&body) {
         Ok(req) => req,
@@ -1357,6 +1444,9 @@ async fn init_finalize(
     if !is_local(&basis) {
         return init_local_only();
     }
+    if let Some(response) = refuse_recovery_mutation(&state.journal_root) {
+        return response;
+    }
     match establish::load_committed(&state.journal_root) {
         Ok(Some(_)) => {}
         Ok(None) => {
@@ -1541,6 +1631,202 @@ async fn init_finalize(
         warnings: [],
     })
     .into_response()
+}
+
+const RECOVERY_STATUS_DETAIL: &str = "this journal is still being restored and isn't ready to use.";
+const RECOVERY_RETRY_DETAIL: &str = "retry continues the same backup restore.";
+const RECOVERY_FINALIZE_DETAIL: &str =
+    "this journal is still being restored and isn't ready to finish setup.";
+
+fn recovery_paused(journal: &Path) -> bool {
+    solstone_core_journal_io::whole_journal_restore::whole_journal_restore_blocks(journal)
+}
+
+fn recovery_projection(journal: &Path, host: &dyn SetupHost) -> Option<Response> {
+    use solstone_core_journal_io::whole_journal_restore::WholeJournalRestoreReadiness;
+    match solstone_core_journal_io::whole_journal_restore::read_whole_journal_restore(journal) {
+        WholeJournalRestoreReadiness::Absent if !recovery_paused(journal) => None,
+        WholeJournalRestoreReadiness::Absent => Some(recovery_state_response(
+            "waiting",
+            None,
+            host.recovery_in_progress(journal),
+        )),
+        WholeJournalRestoreReadiness::Pending(record) => Some(recovery_state_response(
+            "pending",
+            Some(&record),
+            host.recovery_in_progress(journal),
+        )),
+        WholeJournalRestoreReadiness::Unavailable => Some(recovery_state_response(
+            "unavailable",
+            None,
+            host.recovery_in_progress(journal),
+        )),
+    }
+}
+
+fn recovery_state_response(
+    state: &'static str,
+    record: Option<&solstone_core_journal_io::whole_journal_restore::WholeJournalRestore>,
+    active: Option<bool>,
+) -> Response {
+    Json(json!({
+        "schema": "solstone.setup-state.v1",
+        "journal_ready": false,
+        "done": false,
+        "recovery": state,
+        "detail": RECOVERY_STATUS_DETAIL,
+        "in_progress": active,
+        "source": record.map(|record| &record.source),
+        "snapshot_id": record.map(|record| &record.snapshot_id),
+        "subtree": record.map(|record| &record.subtree),
+    }))
+    .into_response()
+}
+
+fn refuse_recovery_mutation(journal: &Path) -> Option<Response> {
+    recovery_paused(journal).then(|| {
+        error_envelope(
+            "restore_pending",
+            RECOVERY_FINALIZE_DETAIL,
+            "whole-journal restore is pending",
+            StatusCode::CONFLICT,
+        )
+        .into_response()
+    })
+}
+
+fn init_not_found(basis: &AccessBasis) -> Response {
+    error_envelope(
+        "not_found",
+        "not found",
+        format!("{basis:?}"),
+        StatusCode::NOT_FOUND,
+    )
+    .into_response()
+}
+
+fn recovery_open_or_local(basis: &AccessBasis, journal: &Path) -> Option<Response> {
+    if !is_local(basis) {
+        return Some(init_local_only());
+    }
+    if !recovery_paused(journal) {
+        return Some(init_not_found(basis));
+    }
+    None
+}
+
+async fn recovery_status(
+    Extension(basis): Extension<AccessBasis>,
+    State(state): State<LinkHttpState>,
+) -> Response {
+    if let Some(response) = recovery_open_or_local(&basis, &state.journal_root) {
+        return response;
+    }
+    use solstone_core_journal_io::whole_journal_restore::WholeJournalRestoreReadiness;
+    match solstone_core_journal_io::whole_journal_restore::read_whole_journal_restore(
+        &state.journal_root,
+    ) {
+        WholeJournalRestoreReadiness::Pending(record) => Json(json!({
+            "recovery": "pending",
+            "detail": RECOVERY_STATUS_DETAIL,
+            "retry_detail": RECOVERY_RETRY_DETAIL,
+            "in_progress": state.host.recovery_in_progress(&state.journal_root),
+            "snapshot_id": record.snapshot_id,
+            "subtree": record.subtree,
+            "source": record.source,
+        }))
+        .into_response(),
+        WholeJournalRestoreReadiness::Unavailable => Json(json!({
+            "recovery": "unavailable",
+            "detail": RECOVERY_STATUS_DETAIL,
+            "in_progress": state.host.recovery_in_progress(&state.journal_root),
+        }))
+        .into_response(),
+        WholeJournalRestoreReadiness::Absent => recovery_state_response(
+            "waiting",
+            None,
+            state.host.recovery_in_progress(&state.journal_root),
+        ),
+    }
+}
+
+async fn recovery_retry(
+    Extension(basis): Extension<AccessBasis>,
+    State(state): State<LinkHttpState>,
+    body: Bytes,
+) -> Response {
+    if let Some(response) = recovery_open_or_local(&basis, &state.journal_root) {
+        return response;
+    }
+    use solstone_core_journal_io::whole_journal_restore::WholeJournalRestoreReadiness;
+    if !matches!(
+        solstone_core_journal_io::whole_journal_restore::read_whole_journal_restore(
+            &state.journal_root
+        ),
+        WholeJournalRestoreReadiness::Pending(_)
+    ) {
+        return error_envelope(
+            "restore_pending",
+            RECOVERY_STATUS_DETAIL,
+            "whole-journal restore record is unavailable",
+            StatusCode::CONFLICT,
+        )
+        .into_response();
+    }
+    let journal = state.journal_root.clone();
+    let host = state.host.clone();
+    let retry =
+        tokio::task::spawn_blocking(move || host.recover_whole_journal(&journal, &body)).await;
+    match retry {
+        Ok(Ok(())) => Json(json!({
+            "accepted": true,
+            "detail": RECOVERY_RETRY_DETAIL,
+        }))
+        .into_response(),
+        Ok(Err(error)) => error_envelope(
+            "restore_failed",
+            "the restore didn't complete",
+            error,
+            StatusCode::CONFLICT,
+        )
+        .into_response(),
+        Err(error) => error_envelope(
+            "restore_failed",
+            "the restore didn't complete",
+            error.to_string(),
+            StatusCode::INTERNAL_SERVER_ERROR,
+        )
+        .into_response(),
+    }
+}
+
+async fn recovery_stop(
+    Extension(basis): Extension<AccessBasis>,
+    State(state): State<LinkHttpState>,
+) -> Response {
+    if let Some(response) = recovery_open_or_local(&basis, &state.journal_root) {
+        return response;
+    }
+    let journal = state.journal_root.clone();
+    let host = state.host.clone();
+    let stop = tokio::task::spawn_blocking(move || host.stop_for_recovery(&journal)).await;
+    match stop {
+        Ok(Ok(())) => Json(json!({"stopped": true})).into_response(),
+        Ok(Err(error)) => error_envelope(
+            "restore_stop_failed",
+            RECOVERY_STATUS_DETAIL,
+            error,
+            StatusCode::CONFLICT,
+        )
+        .into_response(),
+        Err(error) => error_envelope(
+            "restore_stop_failed",
+            RECOVERY_STATUS_DETAIL,
+            error.to_string(),
+            StatusCode::INTERNAL_SERVER_ERROR,
+        )
+        .into_response(),
+    }
 }
 
 fn is_local(basis: &AccessBasis) -> bool {
@@ -1833,5 +2119,348 @@ mod local_capability_tests {
         let win_unknown = local_capability(&build_check_report(&win_inputs));
         assert_eq!(win_unknown.overall, "unknown");
         assert!(!win_unknown.local_admitted);
+    }
+}
+
+#[cfg(test)]
+mod recovery_route_tests {
+    use std::path::Path;
+    use std::sync::{Arc, Mutex};
+
+    use axum::Extension;
+    use axum::body::{Body, to_bytes};
+    use axum::http::{Method, Request, StatusCode};
+    use serde_json::{Value, json};
+    use solstone_core_convey_http::identity::{AccessBasis, Carrier};
+    use solstone_core_journal_io::whole_journal_restore::{
+        WholeJournalRestoreReadiness, WholeJournalRestoreSource, publish_whole_journal_restore,
+        read_whole_journal_restore,
+    };
+    use tower::ServiceExt;
+
+    use super::{
+        NoopSetupHost, SetupDownloads, SetupHost, SetupProgressError, SetupRetryError,
+        init_router_with_host,
+    };
+
+    const SNAPSHOT: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
+    struct RecordingHost {
+        events: Mutex<Vec<&'static str>>,
+        body: Mutex<Vec<u8>>,
+    }
+
+    impl SetupHost for RecordingHost {
+        fn start_local(&self, journal: &Path) -> Result<(), String> {
+            NoopSetupHost.start_local(journal)
+        }
+
+        fn cancel_local(&self, journal: &Path, attempt_id: &str) -> Result<(), String> {
+            NoopSetupHost.cancel_local(journal, attempt_id)
+        }
+
+        fn retry_speech(&self, journal: &Path) -> Result<(), SetupRetryError> {
+            NoopSetupHost.retry_speech(journal)
+        }
+
+        fn project_downloads(&self, journal: &Path) -> Result<SetupDownloads, SetupProgressError> {
+            NoopSetupHost.project_downloads(journal)
+        }
+
+        fn thinking_download_bytes(&self, journal: &Path) -> Option<u64> {
+            NoopSetupHost.thinking_download_bytes(journal)
+        }
+
+        fn catalog_facts(&self) -> super::SetupCatalogFacts {
+            NoopSetupHost.catalog_facts()
+        }
+
+        fn recover_whole_journal(&self, _: &Path, body: &[u8]) -> Result<(), String> {
+            self.events.lock().expect("events").push("retry");
+            *self.body.lock().expect("body") = body.to_vec();
+            Ok(())
+        }
+
+        fn stop_for_recovery(&self, _: &Path) -> Result<(), String> {
+            self.events.lock().expect("events").push("stop");
+            Ok(())
+        }
+    }
+
+    fn publish(journal: &Path) {
+        publish_whole_journal_restore(
+            journal,
+            &WholeJournalRestoreSource::Byo {
+                repository: "repo".into(),
+                backend: "s3".into(),
+            },
+            SNAPSHOT,
+            "/journal",
+        )
+        .expect("obligation");
+    }
+
+    fn config_bytes(journal: &Path) -> Option<Vec<u8>> {
+        std::fs::read(journal.join("config/journal.json")).ok()
+    }
+
+    async fn call(
+        journal: &Path,
+        host: Arc<dyn SetupHost>,
+        basis: AccessBasis,
+        method: Method,
+        uri: &str,
+        body: Option<Value>,
+    ) -> (StatusCode, Value, Option<String>) {
+        let (body, content_type) = if let Some(body) = body {
+            (Body::from(body.to_string()), Some("application/json"))
+        } else {
+            (Body::empty(), None)
+        };
+        let mut builder = Request::builder().method(method).uri(uri);
+        if let Some(content_type) = content_type {
+            builder = builder.header("content-type", content_type);
+        }
+        let response = init_router_with_host(journal, host)
+            .layer(Extension(basis))
+            .oneshot(builder.body(body).unwrap())
+            .await
+            .unwrap();
+        let status = response.status();
+        let content_type = response
+            .headers()
+            .get("content-type")
+            .and_then(|value| value.to_str().ok())
+            .map(str::to_owned);
+        let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let json = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
+        (status, json, content_type)
+    }
+
+    #[tokio::test]
+    async fn pending_restore_keeps_local_recovery_and_does_not_materialize_config() {
+        let journal = tempfile::tempdir().expect("journal");
+        publish(journal.path());
+        let host = Arc::new(RecordingHost {
+            events: Mutex::new(vec![]),
+            body: Mutex::new(vec![]),
+        });
+        let peer = AccessBasis::PairingPeer {
+            carrier: Carrier::Direct,
+        };
+
+        let (status, body, _) = call(
+            journal.path(),
+            host.clone(),
+            peer,
+            Method::GET,
+            "/init/api/recovery",
+            None,
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        assert_eq!(body["reason_code"], "init_local_only");
+        assert!(config_bytes(journal.path()).is_none());
+
+        let (status, _body, content_type) = call(
+            journal.path(),
+            host.clone(),
+            AccessBasis::Localhost,
+            Method::GET,
+            "/init",
+            None,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(content_type.unwrap().starts_with("text/html"));
+        assert!(config_bytes(journal.path()).is_none());
+
+        let (status, body, _) = call(
+            journal.path(),
+            host.clone(),
+            AccessBasis::Localhost,
+            Method::GET,
+            "/init/api/state",
+            None,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["journal_ready"], false);
+        assert_eq!(body["done"], false);
+        assert_eq!(body["recovery"], "pending");
+        assert!(config_bytes(journal.path()).is_none());
+
+        let (status, body, _) = call(
+            journal.path(),
+            host.clone(),
+            AccessBasis::Localhost,
+            Method::GET,
+            "/init/api/recovery",
+            None,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["recovery"], "pending");
+        assert_eq!(body["snapshot_id"], SNAPSHOT);
+        assert_eq!(body["subtree"], "/journal");
+        assert_eq!(body["source"]["kind"], "byo");
+        assert_eq!(body["source"]["repository"], "repo");
+
+        let (status, body, _) = call(
+            journal.path(),
+            host.clone(),
+            AccessBasis::Localhost,
+            Method::POST,
+            "/init/finalize",
+            Some(json!({})),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CONFLICT);
+        assert_eq!(body["reason_code"], "restore_pending");
+        assert!(config_bytes(journal.path()).is_none());
+
+        let (status, body, _) = call(
+            journal.path(),
+            host.clone(),
+            AccessBasis::Localhost,
+            Method::POST,
+            "/init/api/action",
+            Some(json!({"action":"save_thinking","choice":"later"})),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CONFLICT);
+        assert_eq!(body["reason_code"], "restore_pending");
+        assert!(config_bytes(journal.path()).is_none());
+
+        let (status, body, _) = call(
+            journal.path(),
+            host.clone(),
+            AccessBasis::Localhost,
+            Method::POST,
+            "/init/api/recovery/retry",
+            Some(json!({"snapshot_id": SNAPSHOT})),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["accepted"], true);
+        assert_eq!(host.events.lock().unwrap().as_slice(), ["retry"]);
+        assert!(
+            host.body
+                .lock()
+                .unwrap()
+                .windows(SNAPSHOT.len())
+                .any(|window| window == SNAPSHOT.as_bytes())
+        );
+        assert!(matches!(
+            read_whole_journal_restore(journal.path()),
+            WholeJournalRestoreReadiness::Pending(_)
+        ));
+
+        let (status, body, _) = call(
+            journal.path(),
+            host.clone(),
+            AccessBasis::Localhost,
+            Method::POST,
+            "/init/api/recovery/stop",
+            None,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["stopped"], true);
+        assert_eq!(host.events.lock().unwrap().as_slice(), ["retry", "stop"]);
+        assert!(matches!(
+            read_whole_journal_restore(journal.path()),
+            WholeJournalRestoreReadiness::Pending(_)
+        ));
+    }
+
+    #[tokio::test]
+    async fn corrupt_config_stays_corrupt_and_open_recovery_is_not_found() {
+        let journal = tempfile::tempdir().expect("journal");
+        let host = Arc::new(NoopSetupHost);
+        let (status, body, _) = call(
+            journal.path(),
+            host.clone(),
+            AccessBasis::Localhost,
+            Method::GET,
+            "/init/api/recovery",
+            None,
+        )
+        .await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+        assert_eq!(body["reason_code"], "not_found");
+
+        std::fs::create_dir_all(journal.path().join("config")).unwrap();
+        std::fs::write(journal.path().join("config/journal.json"), b"{").unwrap();
+        publish(journal.path());
+        std::fs::write(
+            journal.path().join("health/whole-journal-restore.json"),
+            b"{",
+        )
+        .unwrap();
+        let (status, body, _) = call(
+            journal.path(),
+            host.clone(),
+            AccessBasis::Localhost,
+            Method::GET,
+            "/init/api/state",
+            None,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["recovery"], "unavailable");
+        assert_eq!(body["journal_ready"], false);
+        assert_eq!(
+            std::fs::read(journal.path().join("config/journal.json")).unwrap(),
+            b"{"
+        );
+        assert_eq!(
+            std::fs::read(journal.path().join("health/whole-journal-restore.json")).unwrap(),
+            b"{"
+        );
+
+        let (status, body, _) = call(
+            journal.path(),
+            host,
+            AccessBasis::Localhost,
+            Method::POST,
+            "/init/api/recovery/retry",
+            Some(json!({})),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CONFLICT);
+        assert_eq!(body["reason_code"], "restore_pending");
+        assert_eq!(
+            std::fs::read(journal.path().join("config/journal.json")).unwrap(),
+            b"{"
+        );
+        assert_eq!(
+            std::fs::read(journal.path().join("health/whole-journal-restore.json")).unwrap(),
+            b"{"
+        );
+    }
+
+    #[tokio::test]
+    async fn an_in_process_restore_hold_is_not_ready_before_its_record_exists() {
+        use solstone_core_journal_io::whole_journal_restore::{
+            hold_target_for_restore, release_target_for_restore,
+        };
+        let journal = tempfile::tempdir().unwrap();
+        hold_target_for_restore(journal.path());
+        let (status, body, _) = call(
+            journal.path(),
+            Arc::new(NoopSetupHost),
+            AccessBasis::Localhost,
+            Method::GET,
+            "/init/api/state",
+            None,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["journal_ready"], false);
+        assert_eq!(body["done"], false);
+        assert_eq!(body["recovery"], "waiting");
+        assert!(config_bytes(journal.path()).is_none());
+        release_target_for_restore(journal.path());
     }
 }

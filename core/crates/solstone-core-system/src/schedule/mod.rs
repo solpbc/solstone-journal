@@ -24,7 +24,7 @@ pub use config::{
     add_missing_schedule_entries, configured_weekly_day_name, initialize_schedule_config,
     mutate_schedule_entries, prepare_daily_time, publish_daily_time, publish_daily_time_checked,
     read_enabled_schedule_entry, register_default_entries, remove_schedule_entry,
-    set_schedule_metadata,
+    set_schedule_metadata, validate_schedule_entry,
 };
 pub use due::{daily_mark, hour_mark, is_due, weekly_mark};
 pub use engine::{CatchUpReport, CheckReport, ScheduleEngine};

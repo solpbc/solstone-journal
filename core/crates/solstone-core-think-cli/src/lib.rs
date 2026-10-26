@@ -335,23 +335,7 @@ where
 
         let today = clock();
         if parsed.updated {
-            let offenders = args::updated_offenders(&parsed);
-            if !offenders.is_empty() {
-                return Err(CliError::Usage {
-                    message: format!("{UPDATED_INCOMPATIBLE}{}", offenders.join(", ")),
-                });
-            }
-            let days =
-                day::updated(journal, today).map_err(|message| CliError::InvalidDay { message })?;
-            return Ok(CliRun {
-                stdout: days
-                    .join("\n")
-                    .chars()
-                    .chain((!days.is_empty()).then_some('\n'))
-                    .collect(),
-                stderr: String::new(),
-                exit_code: 0,
-            });
+            return updated_run(journal, today, &parsed);
         }
 
         if parsed.sense_batch {
@@ -457,6 +441,62 @@ fn format_cli_run(result: Result<CliRun, CliError>) -> CliRun {
     }
 }
 
+/// Select the same owner day as the native command before constructing a
+/// hosted context. Parsing here never creates a day or changes journal state.
+pub fn hosted_command_day(raw_args: &[String], today: NaiveDate) -> Result<String, String> {
+    let selected = match args::parse(raw_args)? {
+        args::ParseOutcome::Help => today.format("%Y%m%d").to_string(),
+        args::ParseOutcome::Args(parsed) => day::selected_day(
+            parsed.day.as_deref(),
+            parsed.cadence || parsed.settle,
+            today,
+        ),
+    };
+    // Native create_day checks this before constructing its context. Hosted
+    // callers must use the same journal coordinate contract without creating it.
+    if !solstone_core_journal_io::is_day_key(&selected) {
+        return Err("day must be YYYYMMDD".to_owned());
+    }
+    Ok(selected)
+}
+
+/// Return native inspection output without submitting a background talent job.
+/// All flags still pass through the same command parser and compatibility rules.
+pub fn hosted_inspection(journal: &Path, raw_args: &[String]) -> Option<CliRun> {
+    match args::parse(raw_args).ok()? {
+        args::ParseOutcome::Help => Some(CliRun {
+            stdout: THINK_USAGE.to_owned(),
+            stderr: String::new(),
+            exit_code: 0,
+        }),
+        args::ParseOutcome::Args(parsed) if parsed.updated => {
+            let today = chrono::Utc::now()
+                .with_timezone(&solstone_core_journal_config::owner_zone(journal))
+                .date_naive();
+            Some(format_cli_run(updated_run(journal, today, &parsed)))
+        }
+        _ => None,
+    }
+}
+fn updated_run(
+    journal: &Path,
+    today: NaiveDate,
+    parsed: &args::ThinkArgs,
+) -> Result<CliRun, CliError> {
+    let offenders = args::updated_offenders(parsed);
+    if !offenders.is_empty() {
+        return Err(CliError::Usage {
+            message: format!("{UPDATED_INCOMPATIBLE}{}", offenders.join(", ")),
+        });
+    }
+    let days = day::updated(journal, today).map_err(|message| CliError::InvalidDay { message })?;
+    Ok(CliRun {
+        stdout: days.join("\n") + if days.is_empty() { "" } else { "\n" },
+        stderr: String::new(),
+        exit_code: 0,
+    })
+}
+
 pub fn run_hosted_command(
     context: &ThinkContext,
     raw_args: &[String],
@@ -473,6 +513,67 @@ pub fn run_hosted_command(
             }
             args::ParseOutcome::Args(parsed) => parsed,
         };
+        if parsed.updated {
+            context
+                .checkpoint()
+                .map_err(|message| CliError::InvalidDay { message })?;
+            let today = chrono::Utc::now()
+                .with_timezone(&solstone_core_journal_config::owner_zone(&context.journal))
+                .date_naive();
+            return updated_run(&context.journal, today, &parsed);
+        }
+
+        if parsed.sense_batch {
+            context
+                .checkpoint()
+                .map_err(|message| CliError::InvalidDay { message })?;
+            let offenders = args::sense_batch_offenders(&parsed);
+            if !offenders.is_empty() {
+                return Err(CliError::Usage {
+                    message: format!("{}{}", args::SENSE_BATCH_INCOMPATIBLE, offenders.join(", ")),
+                });
+            }
+            let Some(day) = &parsed.day else {
+                return Err(CliError::Usage {
+                    message: "--sense-batch requires --day".into(),
+                });
+            };
+            let executor = context
+                .sense_executor
+                .clone()
+                .ok_or_else(|| CliError::InvalidDay {
+                    message: "hosted Sense executor is unavailable".into(),
+                })?;
+            let request = solstone_core_sense::batch::BatchRequest {
+                day: day.clone(),
+                jobs: parsed.jobs,
+                reprocess: None,
+                segment: None,
+                stream: parsed.stream.clone(),
+                dry_run: false,
+                verbose: parsed.verbose,
+                debug: parsed.debug,
+            };
+            solstone_core_sense::batch::run_batch_with_executor(
+                &context.journal,
+                &request,
+                sense_child_environment,
+                (!parsed.no_timeout).then_some(std::time::Duration::from_secs(1800)),
+                executor,
+                solstone_core_sense::dispatch::BatchMarkerPolicy::EnclosedWholeDay,
+            )
+            .map_err(|error| CliError::InvalidDay {
+                message: error.to_string(),
+            })?;
+            context
+                .checkpoint()
+                .map_err(|message| CliError::InvalidDay { message })?;
+            return Ok(CliRun {
+                stdout: String::new(),
+                stderr: String::new(),
+                exit_code: 0,
+            });
+        }
         let (uses_local, endpoint) =
             solstone_core_journal_config::read_journal_config(&context.journal)
                 .ok()

@@ -1873,6 +1873,14 @@ async fn restore_success_records_snapshots_then_restore() {
                 "/health/supervisor.process_instance".into(),
                 "--exclude".into(),
                 "/health/callosum.pipe-*".into(),
+                #[cfg(not(target_os = "ios"))]
+                "--exclude".into(),
+                #[cfg(not(target_os = "ios"))]
+                "/health/whole-journal-restore.json".into(),
+                #[cfg(not(target_os = "ios"))]
+                "--exclude".into(),
+                #[cfg(not(target_os = "ios"))]
+                "/health/!solstone-claim-00000000-*".into(),
                 #[cfg(target_os = "linux")]
                 "--exclude".into(),
                 #[cfg(target_os = "linux")]
@@ -6121,6 +6129,14 @@ async fn hosted_poll_restore_failure_matches_local_handoff_contract() {
                     "/health/supervisor.process_instance".into(),
                     "--exclude".into(),
                     "/health/callosum.pipe-*".into(),
+                    #[cfg(not(target_os = "ios"))]
+                    "--exclude".into(),
+                    #[cfg(not(target_os = "ios"))]
+                    "/health/whole-journal-restore.json".into(),
+                    #[cfg(not(target_os = "ios"))]
+                    "--exclude".into(),
+                    #[cfg(not(target_os = "ios"))]
+                    "/health/!solstone-claim-00000000-*".into(),
                     #[cfg(target_os = "linux")]
                     "--exclude".into(),
                     #[cfg(target_os = "linux")]

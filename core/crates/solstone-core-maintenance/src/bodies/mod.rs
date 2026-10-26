@@ -3,5 +3,5 @@
 
 pub(crate) mod backup;
 pub mod health;
-pub(crate) mod retention;
+pub mod retention;
 pub(crate) mod speakers;

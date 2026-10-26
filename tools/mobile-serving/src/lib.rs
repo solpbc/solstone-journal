@@ -27,6 +27,7 @@ use tokio::{
 
 mod backup;
 mod brain;
+mod direct_restore;
 #[cfg(unix)]
 mod owner_response;
 #[cfg(unix)]
@@ -39,6 +40,8 @@ pub(crate) mod audio;
 mod custody;
 #[cfg(feature = "processing")]
 mod daily_queue_observation;
+#[cfg(feature = "processing")]
+pub mod execution;
 #[cfg(feature = "processing")]
 pub mod foreground;
 
@@ -61,6 +64,7 @@ pub struct MobileServing {
     stop: MobileServingStop,
     shutdown_complete: std::sync::atomic::AtomicBool,
     shutdown_failed: std::sync::atomic::AtomicBool,
+    recovery_hooks: solstone_core_convey_shell::recovery_drain::RecoveryHooks,
     service_failures: Mutex<Vec<tokio::task::JoinError>>,
     #[cfg(unix)]
     owner_responses: owner_response::OwnerResponses,
@@ -212,11 +216,13 @@ impl MobileServing {
         let root = Arc::new(JournalRoot::open(&root).map_err(|e| e.to_string())?);
         root.revalidate_canonical_binding()
             .map_err(|e| e.to_string())?;
-        solstone_core_journal_config_write::persist_direct_door_port(
+        // A pending restore must stay reachable without materializing config.
+        if !solstone_core_journal_io::whole_journal_restore::whole_journal_restore_blocks(
             root.canonical_path(),
-            address.port(),
-        )
-        .map_err(|e| e.to_string())?;
+        ) {
+            direct_restore::persist_bound_port(&root, address.port(), &|| Ok(()))
+                .map_err(|e| e.to_string())?;
+        }
         let runtime = tokio::runtime::Builder::new_multi_thread()
             .worker_threads(2)
             .enable_all()
@@ -229,7 +235,7 @@ impl MobileServing {
                 root.canonical_path().join("health/callosum.sock"),
             ))
             .map_err(|e| e.to_string())?;
-        let (shutdown, mut stop) = watch::channel(false);
+        let (shutdown, stop) = watch::channel(false);
         let early_shutdown = shutdown.clone();
         let cancelled = startup
             .as_ref()
@@ -240,6 +246,13 @@ impl MobileServing {
             .map(|startup| Arc::clone(&startup.stop_ready))
             .unwrap_or_else(|| Arc::new(|_| {}));
         let early_cancelled = Arc::clone(&cancelled);
+        let owner_routes =
+            solstone_core_mcp_endpoint::owner_routes(root.canonical_path().to_path_buf());
+        #[cfg(feature = "processing")]
+        let (execution_routes, execution_worker) =
+            execution::routes_and_worker(Arc::clone(&root), payload_root.clone(), stop.clone());
+        #[cfg(feature = "processing")]
+        let owner_routes = owner_routes.merge(execution_routes);
         let handle = runtime
             .block_on(async {
                 let startup = solstone_core_convey_shell::EmbeddedStartup {
@@ -261,7 +274,7 @@ impl MobileServing {
                     Arc::clone(&root),
                     address,
                     payload_root,
-                    solstone_core_mcp_endpoint::owner_routes(root.canonical_path().to_path_buf()),
+                    owner_routes,
                     startup,
                 );
                 #[cfg(not(target_os = "ios"))]
@@ -269,12 +282,14 @@ impl MobileServing {
                     root.canonical_path().to_path_buf(),
                     address,
                     payload_root,
-                    solstone_core_mcp_endpoint::owner_routes(root.canonical_path().to_path_buf()),
+                    owner_routes,
                     startup,
                 );
                 binding.await
             })
             .map_err(|e| e.to_string())?;
+        #[cfg(feature = "processing")]
+        let execution_task = runtime.spawn(execution_worker);
         let (ready, registered) = oneshot::channel();
         let brain_task = runtime.spawn(brain::run(Arc::clone(&root), stop.clone(), ready));
         let (backup_ready, subscribed) = oneshot::channel();
@@ -284,78 +299,37 @@ impl MobileServing {
             stop.clone(),
             backup_ready,
         ));
-        let mcp_root = root.canonical_path().to_path_buf();
-        let mut mcp_stop = stop.clone();
-        let mcp_task = runtime.spawn(async move {
-            loop {
-                if *mcp_stop.borrow() {
-                    break;
+        let direct_control = direct_restore::ServiceControl::new(Arc::clone(&root));
+        let mcp_control = direct_restore::ServiceControl::new(Arc::clone(&root));
+        let relay_control = direct_restore::ServiceControl::new(Arc::clone(&root));
+        let pause_controls = [
+            Arc::clone(&direct_control),
+            Arc::clone(&mcp_control),
+            Arc::clone(&relay_control),
+        ];
+        let resume_controls = pause_controls.clone();
+        let resume_stop = stop.clone();
+        let recovery_hooks = solstone_core_convey_shell::recovery_drain::register_recovery_hooks(
+            "mobile-serving",
+            Arc::clone(&root),
+            move |journal| {
+                for control in &pause_controls {
+                    control.pause_and_wait(journal)?;
                 }
-                let result = solstone_core_mcp_endpoint::run_embedded_service(
-                    mcp_root.clone(),
-                    mcp_stop.clone(),
+                Ok(())
+            },
+            move |journal| {
+                direct_restore::resume_services(
+                    &resume_controls,
+                    journal,
+                    address.port(),
+                    &resume_stop,
                 )
-                .await;
-                if *mcp_stop.borrow() {
-                    break;
-                }
-                if let Err(error) = result {
-                    log::warn!("embedded agent service stopped: {}", error.class());
-                }
-                tokio::select! {
-                    _ = tokio::time::sleep(Duration::from_secs(1)) => {},
-                    _ = mcp_stop.changed() => break,
-                }
-            }
-        });
-        let direct_root = root.canonical_path().to_path_buf();
-        let mut direct_stop = stop.clone();
-        let direct_task = runtime.spawn(async move {
-            loop {
-                if *direct_stop.borrow() {
-                    break;
-                }
-                let result = solstone_core_mcp_endpoint::run_embedded_direct_doors(
-                    direct_root.clone(),
-                    direct_stop.clone(),
-                )
-                .await;
-                if *direct_stop.borrow() {
-                    break;
-                }
-                if let Err(error) = result {
-                    log::warn!("embedded direct agent service stopped: {}", error.class());
-                }
-                tokio::select! {
-                    _ = tokio::time::sleep(Duration::from_secs(1)) => {},
-                    _ = direct_stop.changed() => break,
-                }
-            }
-        });
-        let relay_root = root.canonical_path().to_path_buf();
-        let relay_task = runtime.spawn(async move {
-            loop {
-                if *stop.borrow() {
-                    break;
-                }
-                let result = solstone_core_spl::run_embedded_service(
-                    relay_root.clone(),
-                    solstone_core_spl::Verbosity::Quiet,
-                    stop.clone(),
-                )
-                .await;
-                if *stop.borrow() {
-                    break;
-                }
-                if let Err(error) = result {
-                    log::warn!("embedded relay service stopped: {}", error.class());
-                }
-                tokio::select! {
-                    _ = tokio::time::sleep(Duration::from_secs(1)) => {},
-                    _ = stop.changed() => break,
-                }
-            }
-        });
+            },
+        );
+        let direct_task = runtime.spawn(direct_restore::run(direct_control, stop.clone()));
+        let mcp_task = runtime.spawn(direct_restore::run_mcp(mcp_control, stop.clone()));
+        let relay_task = runtime.spawn(direct_restore::run_relay(relay_control, stop.clone()));
         let stop_handle = MobileServingStop {
             convey: handle.stop_handle(),
             services: shutdown.clone(),
@@ -372,11 +346,19 @@ impl MobileServing {
             interface_address: address,
             services: Mutex::new(Some(AppServices {
                 shutdown,
-                tasks: vec![brain_task, relay_task, mcp_task, direct_task],
+                tasks: vec![
+                    brain_task,
+                    relay_task,
+                    mcp_task,
+                    direct_task,
+                    #[cfg(feature = "processing")]
+                    execution_task,
+                ],
                 backup: backup_task,
             })),
             shutdown_complete: std::sync::atomic::AtomicBool::new(false),
             shutdown_failed: std::sync::atomic::AtomicBool::new(false),
+            recovery_hooks,
             service_failures: Mutex::new(Vec::new()),
             #[cfg(unix)]
             owner_responses: owner_response::OwnerResponses::default(),
@@ -493,6 +475,14 @@ impl MobileServing {
         if self.stop.is_stopping() || cancelled() {
             return Err("server stop pending".into());
         }
+        if solstone_core_journal_io::whole_journal_restore::whole_journal_restore_blocks(
+            self.root.canonical_path(),
+        ) {
+            return Err(
+                solstone_core_journal_io::whole_journal_restore::WHOLE_JOURNAL_RESTORE_NOT_READY
+                    .into(),
+            );
+        }
         self.root
             .revalidate_canonical_binding()
             .map_err(|e| e.to_string())?;
@@ -517,6 +507,14 @@ impl MobileServing {
 
     #[cfg(feature = "audio")]
     pub fn resume_audio(&self) -> Result<(), String> {
+        if solstone_core_journal_io::whole_journal_restore::whole_journal_restore_blocks(
+            self.root.canonical_path(),
+        ) {
+            return Err(
+                solstone_core_journal_io::whole_journal_restore::WHOLE_JOURNAL_RESTORE_NOT_READY
+                    .into(),
+            );
+        }
         self.audio.as_ref().ok_or("audio worker disabled")?.resume();
         Ok(())
     }
@@ -593,6 +591,13 @@ impl MobileServing {
         self.root
             .revalidate_canonical_binding()
             .map_err(|e| e.to_string())?;
+        let _restore_use = solstone_core_journal_io::whole_journal_restore::begin_target_use_bound(
+            Arc::clone(&self.root),
+        )
+        .map_err(|_| {
+            solstone_core_journal_io::whole_journal_restore::WHOLE_JOURNAL_RESTORE_NOT_READY
+                .to_owned()
+        })?;
         let report =
             solstone_core_indexer_store::scan::scan_journal(self.root.canonical_path(), false)
                 .map_err(|e| e.to_string())?;
@@ -627,6 +632,9 @@ impl MobileServing {
         if self.shutdown_complete.load(Ordering::Acquire) {
             return Ok(());
         }
+        solstone_core_journal_io::whole_journal_restore::hold_target_for_restore(
+            self.root.canonical_path(),
+        );
         let lifetime = self.handle.backup_dependencies().lifetime();
         lifetime.request_stop();
         #[cfg(all(test, feature = "full-tests"))]
@@ -684,7 +692,14 @@ impl MobileServing {
                 }
             }
         }
+        solstone_core_journal_io::whole_journal_restore::wait_for_target_use_to_end(
+            self.root.canonical_path(),
+        );
         self.runtime.block_on(self.bus.stop());
+        self.recovery_hooks.clear();
+        solstone_core_journal_io::whole_journal_restore::release_target_for_restore(
+            self.root.canonical_path(),
+        );
         self.shutdown_complete.store(true, Ordering::Release);
         drop(service_owner);
         Ok(())
@@ -1039,6 +1054,84 @@ mod tests {
         release_work.send(()).unwrap();
         runtime.block_on(worker).unwrap();
         assert_eq!(retirement.wait(Duration::from_secs(5)), Outcome::Stopped);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn pending_restore_serves_recovery_without_indexing_and_clearing_it_indexes() {
+        let directory = tempfile::tempdir().unwrap();
+        let record =
+            solstone_core_journal_io::whole_journal_restore::publish_whole_journal_restore(
+                directory.path(),
+                &solstone_core_journal_io::whole_journal_restore::WholeJournalRestoreSource::Byo {
+                    repository: "repo".into(),
+                    backend: "s3".into(),
+                },
+                "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+                "/journal",
+            )
+            .unwrap();
+        let probe = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let std::net::SocketAddr::V4(address) = probe.local_addr().unwrap() else {
+            unreachable!()
+        };
+        drop(probe);
+        let server = MobileServing::start_with_payload(
+            directory.path().to_path_buf(),
+            address,
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../core/payload"),
+        )
+        .unwrap();
+        let config = directory.path().join("config/journal.json");
+        assert!(!config.exists());
+        let db = solstone_core_indexer_store::db::db_path(directory.path());
+        assert!(!db.is_file());
+        let (head, bytes) = owner_bytes(
+            &server,
+            1,
+            "GET",
+            "/init/api/recovery",
+            "application/json",
+            "",
+        );
+        assert_eq!(head.status, 200);
+        let recovery: Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(recovery["recovery"], "pending");
+        assert_eq!(recovery["snapshot_id"], record.snapshot_id);
+        let (head, bytes) = owner_bytes(
+            &server,
+            2,
+            "GET",
+            "/static/Comfortaa-Variable.woff2",
+            "application/json",
+            "",
+        );
+        assert_eq!(head.status, 200);
+        assert!(!bytes.is_empty());
+        let (head, bytes) = owner_bytes(
+            &server,
+            3,
+            "POST",
+            "/init/finalize",
+            "application/json",
+            "{}",
+        );
+        assert_eq!(head.status, 409, "{}", String::from_utf8_lossy(&bytes));
+        assert!(!config.exists());
+        assert_eq!(
+            server.index().unwrap_err(),
+            solstone_core_journal_io::whole_journal_restore::WHOLE_JOURNAL_RESTORE_NOT_READY
+        );
+        assert!(!db.is_file());
+        solstone_core_journal_io::whole_journal_restore::clear_whole_journal_restore(
+            directory.path(),
+            &record,
+        )
+        .unwrap();
+        let indexed = server.index().unwrap();
+        assert_eq!(indexed["failed"], 0);
+        assert!(db.is_file());
+        server.shutdown_for_retirement().unwrap();
     }
 
     #[test]

@@ -3050,6 +3050,13 @@ mod tests {
             "--exclude".into(),
             "/health/callosum.pipe-*".into(),
         ];
+        #[cfg(not(target_os = "ios"))]
+        restore_argv.extend([
+            "--exclude".into(),
+            "/health/whole-journal-restore.json".into(),
+            "--exclude".into(),
+            "/health/!solstone-claim-00000000-*".into(),
+        ]);
         #[cfg(target_os = "linux")]
         restore_argv.extend(["--exclude".into(), "backup-activity.lock".into()]);
         restore_argv.push("--json".into());

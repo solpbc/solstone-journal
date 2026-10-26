@@ -2267,6 +2267,65 @@ async function runTests(manifestDir) {
     await settle();
     assert.ok(env.nextPending('/init/api/state'));
   }
+  // An incomplete restore never invokes setup mutations, even with a completed config.
+  {
+    const env = createPageEnvironment(markup, scriptCode);
+    env.boot(); await settle();
+    const pending = {recovery: 'pending', done: false, journal_ready: false, in_progress: false,
+      source: {kind: 'byo', backend: 's3', repository: 's3:synthetic/retained'}, snapshot_id: 'a'.repeat(64), subtree: '/journal'};
+    env.nextPending('/init/api/state').resolve(pending); await settle();
+    assert.strictEqual(env.doc.getElementById('setup-mark').hidden, true);
+    assert.strictEqual(env.doc.getElementById('setup-thinking').hidden, true);
+    assert.strictEqual(env.doc.getElementById('setup-recovery').hidden, false);
+    assert.strictEqual(env.doc.getElementById('recovery-form').hidden, false);
+    assert.strictEqual(env.allRequests.some(r => r.url === '/init/api/action'), false);
+    env.doc.getElementById('recovery-key').value = 'synthetic recovery key';
+    env.doc.getElementById('recovery-access').value = 'synthetic access';
+    env.doc.getElementById('recovery-secret').value = 'synthetic secret';
+    env.doc.getElementById('recovery-continue').click(); await settle();
+    const retry = env.nextPending('/init/api/recovery/retry');
+    assert.ok(retry);
+    const body = JSON.parse(retry.opts.body);
+    assert.strictEqual(body.snapshot_id, pending.snapshot_id);
+    assert.strictEqual(body.subtree, pending.subtree);
+    assert.strictEqual(body.repository, pending.source.repository);
+    assert.strictEqual(body.credentials.secret_access_key, 'synthetic secret');
+    assert.strictEqual(env.doc.getElementById('recovery-key').value, '');
+    assert.strictEqual(env.doc.getElementById('recovery-secret').value, '');
+    env.doc.getElementById('recovery-continue').click(); await settle();
+    assert.strictEqual(env.allRequests.filter(r => r.url === '/init/api/recovery/retry').length, 1);
+    env.advanceTime(1000); await settle();
+    env.nextPending('/init/api/state').resolve({...pending, in_progress: true}); await settle();
+    assert.strictEqual(env.doc.getElementById('recovery-form').hidden, true);
+    assert.strictEqual(env.doc.getElementById('recovery-stop').hidden, false);
+    assert.strictEqual(env.window.location.href, '/init');
+    env.doc.getElementById('recovery-stop').click(); await settle();
+    const stop = env.nextPending('/init/api/recovery/stop'); assert.ok(stop);
+    stop.resolve({stopped: true}); await settle();
+    env.nextPending('/init/api/state').resolve({...pending, in_progress: true}); await settle();
+    assert.strictEqual(env.doc.getElementById('recovery-form').hidden, true, 'a Stop response does not invent readiness');
+    retry.reject({serverMessage: 'the restore did not complete'}); await settle();
+    const refresh = env.nextPending('/init/api/state');
+    assert.ok(refresh); refresh.resolve(pending); await settle();
+    assert.strictEqual(env.doc.getElementById('recovery-form').hidden, false);
+    assert.strictEqual(env.window.location.href, '/init');
+    env.advanceTime(1000); await settle();
+    env.nextPending('/init/api/state').resolve({...defaultState(), done: true, redirect: '/app/home'}); await settle();
+    assert.strictEqual(env.window.location.href, '/app/home');
+  }
+  // Unknown records and unknown operation state offer a read, never a speculative restore.
+  for (const recovery of ['unavailable', 'waiting', 'pending']) {
+    const env = createPageEnvironment(markup, scriptCode);
+    env.boot(); await settle();
+    env.nextPending('/init/api/state').resolve({recovery, done: false, journal_ready: false, in_progress: null}); await settle();
+    assert.strictEqual(env.doc.getElementById('recovery-form').hidden, true);
+    assert.strictEqual(env.doc.getElementById('recovery-stop').hidden, true);
+    assert.strictEqual(env.doc.getElementById('recovery-check').hidden, false);
+    assert.strictEqual(env.allRequests.some(r => r.url === '/init/api/action'), false);
+    env.doc.getElementById('recovery-check').click(); await settle();
+    assert.ok(env.nextPending('/init/api/state'));
+    assert.strictEqual(env.allRequests.some(r => r.url === '/init/api/recovery/retry'), false);
+  }
   console.log(`DOM ASSERTIONS: ${passedCases}/${executedCases} passed`);
 }
 

@@ -4,12 +4,14 @@
 //! Persist the journal-local paired-device door port.
 
 use std::path::Path;
+use std::sync::Arc;
 
 use serde_json::{Map, Value, json};
-use solstone_core_journal_io::LockOptions;
+use solstone_core_journal_io::{JournalRoot, LockOptions};
 
 use crate::{
-    ConfigMutationError, JournalConfigMutation, JournalConfigTransaction, mutate_journal_config,
+    BoundConfigRefusal, BoundConfigTransaction, ConfigMutationError, JournalConfigMutation,
+    JournalConfigTransaction, mutate_journal_config, mutate_journal_config_at_root_checked,
 };
 
 /// Write `pairing.direct_port` when it differs from `port`.
@@ -18,12 +20,27 @@ pub fn persist_direct_door_port(
     port: u16,
 ) -> Result<JournalConfigTransaction<()>, ConfigMutationError> {
     mutate_journal_config(journal, LockOptions::default(), |config| {
-        let pairing = object_at(config, "pairing");
-        let next = json!(port);
-        let changed = pairing.get("direct_port") != Some(&next);
-        pairing.insert("direct_port".to_owned(), next);
-        JournalConfigMutation { changed, value: () }
+        set_port(config, port)
     })
+}
+
+/// Persist the port through the retained root and the normal config owner.
+pub fn persist_direct_door_port_at_root_checked(
+    root: &Arc<JournalRoot>,
+    port: u16,
+    checkpoint: &dyn Fn() -> Result<(), String>,
+) -> Result<BoundConfigTransaction<()>, BoundConfigRefusal> {
+    mutate_journal_config_at_root_checked(root, LockOptions::default(), checkpoint, |config| {
+        set_port(config, port)
+    })
+}
+
+fn set_port(config: &mut Map<String, Value>, port: u16) -> JournalConfigMutation<()> {
+    let pairing = object_at(config, "pairing");
+    let next = json!(port);
+    let changed = pairing.get("direct_port") != Some(&next);
+    pairing.insert("direct_port".to_owned(), next);
+    JournalConfigMutation { changed, value: () }
 }
 
 fn object_at<'a>(parent: &'a mut Map<String, Value>, key: &str) -> &'a mut Map<String, Value> {

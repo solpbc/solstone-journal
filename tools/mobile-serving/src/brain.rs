@@ -278,6 +278,12 @@ async fn run_with_executor(
                 // release that lease.
                 worker = Some(tokio::task::spawn_blocking(move || {
                     let _lease = lease;
+                    let _restore_use = match solstone_core_journal_io::whole_journal_restore::begin_target_use(
+                        root.canonical_path(),
+                    ) {
+                        Ok(guard) => guard,
+                        Err(_) => return 0,
+                    };
                     let cancelled = || {
                         *stop_for_worker.borrow()
                             || root.revalidate_canonical_binding().is_err()

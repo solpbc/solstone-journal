@@ -62,18 +62,15 @@ pub struct SyncSummary {
 }
 
 /// Routines this host never schedules. Offload is unavailable wherever its
-/// installed producer is, so its body can only refuse there. The voice-only
-/// original cleanup does not run on a phone, where only the transcriber's
-/// immediate deletion applies. Sync does not add these entries and removes one
+/// installed producer is, so its body can only refuse there.
+/// Sync does not add these entries and removes one
 /// already present, so the scheduler never records a daily failure for work
 /// that does not run.
 pub fn host_unscheduled() -> &'static [&'static str] {
-    const PHONE: bool = cfg!(any(target_os = "ios", target_os = "android"));
-    match (solstone_core_offload::cli_run::PRODUCER_SUPPORTED, PHONE) {
-        (true, false) => &[],
-        (false, false) => &["backup:offload"],
-        (true, true) => &["retention:owner-voice-originals"],
-        (false, true) => &["backup:offload", "retention:owner-voice-originals"],
+    if solstone_core_offload::cli_run::PRODUCER_SUPPORTED {
+        &[]
+    } else {
+        &["backup:offload"]
     }
 }
 

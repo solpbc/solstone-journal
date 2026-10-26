@@ -141,6 +141,7 @@ mod paired_device;
 mod pinned;
 #[cfg(feature = "host")]
 mod pinned_write;
+pub mod recovery_drain;
 pub mod registry;
 mod relay_access;
 mod relay_admission;
@@ -1237,6 +1238,7 @@ fn router_with_roots(
     ));
     let backup_deps = backup_deps
         .unwrap_or_else(|| solstone_core_backup_web::BackupWebDeps::new(journal_root.clone()));
+    let setup_host = Arc::new(setup_host::ConveySetupHost::new(backup_deps.clone()));
     let mut routes = Router::new()
         .route("/", get(root))
         .route("/favicon.ico", get(favicon))
@@ -1578,7 +1580,7 @@ fn router_with_roots(
         })
         .merge(solstone_core_sol_link::http::init_router_with_host(
             journal_root.clone(),
-            Arc::new(setup_host::ConveySetupHost),
+            setup_host,
         ))
         .merge(solstone_core_facets_web::routes(
             journal_root.clone(),

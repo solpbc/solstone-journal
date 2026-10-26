@@ -2207,6 +2207,7 @@ dependencies = [
  "journal-mobile-audio",
  "log",
  "ort",
+ "serde",
  "serde_json",
  "sha2 0.10.9",
  "solstone-core-backup",
@@ -2225,6 +2226,7 @@ dependencies = [
  "solstone-core-journal-config",
  "solstone-core-journal-config-write",
  "solstone-core-journal-io",
+ "solstone-core-linked-share",
  "solstone-core-maintenance",
  "solstone-core-mcp-endpoint",
  "solstone-core-sense",
@@ -2232,6 +2234,7 @@ dependencies = [
  "solstone-core-speakers",
  "solstone-core-spl",
  "solstone-core-system",
+ "solstone-core-talent-runtime",
  "solstone-core-think-cli",
  "solstone-core-transcribe",
  "tokio",
@@ -5155,6 +5158,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "solstone-core-linked-share"
+version = "2.0.58"
+dependencies = [
+ "log",
+ "serde",
+ "serde_json",
+ "solstone-core-entity",
+ "solstone-core-facets",
+ "solstone-core-format",
+ "solstone-core-generate",
+ "solstone-core-journal-config",
+ "solstone-core-processing-record",
+ "solstone-core-system-health",
+ "solstone-core-talent-runtime",
+ "solstone-core-transcripts",
+]
+
+[[package]]
 name = "solstone-core-local"
 version = "2.0.58"
 dependencies = [
@@ -5474,6 +5495,7 @@ version = "2.0.58"
 dependencies = [
  "chrono",
  "getrandom 0.3.4",
+ "log",
  "serde",
  "serde_json",
  "sha2 0.10.9",

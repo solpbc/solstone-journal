@@ -305,6 +305,14 @@ fn wifi_address() -> Result<std::net::Ipv4Addr, String> {
     let ip = address.ok_or("no private en0 IPv4 address")?;
     Ok(ip)
 }
+fn hold_ready_journal(
+    root: &std::sync::Arc<solstone_core_journal_io::JournalRoot>,
+) -> Result<solstone_core_journal_io::whole_journal_restore::TargetUse, String> {
+    solstone_core_journal_io::whole_journal_restore::begin_target_use_bound(std::sync::Arc::clone(root)).map_err(|_| {
+        solstone_core_journal_io::whole_journal_restore::WHOLE_JOURNAL_RESTORE_NOT_READY.to_owned()
+    })
+}
+
 fn run(v: Value) -> Result<Value, String> {
     let op = v["op"].as_str().ok_or("missing operation")?;
     if op == "serve-suspend" {
@@ -361,6 +369,32 @@ fn run(v: Value) -> Result<Value, String> {
         *STOP_ROOT.lock().unwrap_or_else(|p| p.into_inner()) = Some(Arc::clone(root));
     }
     let p = root.canonical_path();
+    let _restore_use = if matches!(
+        op,
+        "audio-enable"
+            | "audio-resume"
+            | "serve-generate"
+            | "serve-talent"
+            | "serve-index"
+            | "serve-inventory"
+            | "audio-inventory"
+            | "seed"
+            | "index"
+            | "query"
+            | "inventory"
+            | "create"
+            | "recover"
+            | "mixed"
+            | "active"
+            | "control"
+            | "crash-write"
+            | "commit-disconnect"
+            | "binding-control"
+    ) {
+        Some(hold_ready_journal(root)?)
+    } else {
+        None
+    };
     match op {
         "serve-start" => {
             let generation = generation.unwrap();
@@ -514,7 +548,7 @@ fn run(v: Value) -> Result<Value, String> {
                 host.cancel_audio();
             } else {
                 admit_processing(&v, &PROCESSING_GENERATION)?;
-                host.resume_audio();
+                host.resume_audio()?;
             }
             Ok(serving.status())
         }
