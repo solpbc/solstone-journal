@@ -667,11 +667,6 @@ const SCANNED_MODULE_SOURCES: &[(&str, &str, &str)] = &[
     ),
     (
         "spl",
-        "service_token_renewal",
-        include_str!("../../../solstone-core-spl/src/service_token_renewal.rs"),
-    ),
-    (
-        "spl",
         "service_transition",
         include_str!("../../../solstone-core-spl/src/service_transition.rs"),
     ),
