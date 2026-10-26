@@ -18,12 +18,12 @@ use solstone_core_journal_io::media::{ArchiveSource, MediaIdentity, OwnedMediaTa
 use zeroize::Zeroizing;
 
 use super::AdmittedIosBackupAuthority;
-use super::native::{self, Call};
-use super::repository::{self, Repository};
 use super::storage::Directory;
 use crate::engine::{
     ArchiveError, ArchiveFailure, ArchiveRemoteEffects, ArchiveSnapshot, OwnedAdmittedArchive,
 };
+use solstone_core_backup::ios_native::{self as native, Call};
+use solstone_core_backup::ios_repository::{self as repository, Repository};
 
 const MAX_NAMES: usize = 4096;
 const MAX_NAME_PAYLOAD: usize = 1024 * 1024;
@@ -522,7 +522,7 @@ fn prepare(
     let creator = archive.linked_creator();
     let session = open_session(creator).map_err(not_attempted)?;
     authority
-        .revalidate()
+        .revalidate_archive_root(archive.journal_root())
         .map_err(|_| not_attempted(ArchiveError::ConfigurationChanged))?;
     let (timeout, cancellation) = fresh_timeout(creator).map_err(not_attempted)?;
     let state = destination_state(authority, &session).map_err(not_attempted)?;

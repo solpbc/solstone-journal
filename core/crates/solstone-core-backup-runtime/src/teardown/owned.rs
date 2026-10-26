@@ -322,7 +322,7 @@ impl TeardownOperation {
                 }
             });
             let status = unsafe {
-                crate::ios_callable::native::restic_bridge_http_exchange(
+                solstone_core_backup::ios_native::restic_bridge_http_exchange(
                     method_c.as_ptr(),
                     method_c.as_bytes().len() as u32,
                     url_c.as_ptr(),

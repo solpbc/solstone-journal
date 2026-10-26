@@ -2368,7 +2368,17 @@ mod tests {
             .await;
             (supervisor, cortex)
         });
-        let supervisor = supervisor.expect("the runtime publishes its status");
+        let supervisor = supervisor.unwrap_or_else(|| {
+            panic!(
+                "the runtime publishes its status; cortex={cortex:?}; history={:?}; generation={}; stop={}; failed={}; root_binding={:?}; pending_restore={:?}",
+                host.queue().history(),
+                host.generation,
+                host.stop.load(Ordering::SeqCst),
+                host.failed.load(Ordering::SeqCst),
+                host.root.revalidate_canonical_binding(),
+                solstone_core_journal_io::whole_journal_restore::read_whole_journal_restore(temp.path()),
+            )
+        });
         let services = supervisor["services"].as_array().unwrap();
         assert_eq!(
             services.len(),
@@ -4429,7 +4439,16 @@ mod processing_proofs {
                                 && envelope.event == "stopped"
                                 && envelope.extra.get("service") == Some(&json!("backup")) =>
                         {
-                            assert_eq!(envelope.extra["exit_code"], 0);
+                            assert_eq!(
+                                envelope.extra["exit_code"], 0,
+                                "actual scheduled backup terminal: {:?}; history={:?}; generation={}; stop={}; failed={}; root_binding={:?}",
+                                envelope.extra,
+                                host.queue().history(),
+                                host.generation,
+                                host.stop.load(Ordering::SeqCst),
+                                host.failed.load(Ordering::SeqCst),
+                                host.root.revalidate_canonical_binding(),
+                            );
                             terminal.insert(envelope.extra["routine"].as_str().unwrap().to_owned());
                         }
                         _ => {}

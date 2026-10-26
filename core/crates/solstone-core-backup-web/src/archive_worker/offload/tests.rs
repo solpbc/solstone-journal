@@ -20,6 +20,7 @@ use solstone_core_retention::{
     archive_proof::{AcceptedProcessingObservation, ArchiveFileProof, OffloadOffer, OffloadProof},
     marks::{Mark, MarkId, MarkState, Proposal, Register, RemovalClass},
 };
+use std::path::Path;
 use std::{
     cell::{Cell, RefCell},
     fs,
