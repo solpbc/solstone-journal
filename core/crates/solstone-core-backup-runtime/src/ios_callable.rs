@@ -4,6 +4,7 @@
 //! Explicit iOS linked backup authority. Only normal app startup installs build
 //! and private-container authority; every invocation separately captures a root.
 
+mod archive;
 mod build_identity;
 mod bundle;
 mod command;
@@ -122,6 +123,17 @@ impl AdmittedIosBackupAuthority {
         self.root
             .revalidate_canonical_binding()
             .map_err(|_| Refusal::Root)
+    }
+
+    /// The installed private-storage authority for this process. A replacement
+    /// install is a different generation and cannot finish an earlier call.
+    fn generation(&self) -> u64 {
+        Arc::as_ptr(&self.installed) as u64
+    }
+
+    fn open_destination_state(&self, namespace: &str) -> Result<storage::Directory, Refusal> {
+        self.revalidate()?;
+        self.installed.storage.create_state(namespace)
     }
 }
 
@@ -505,6 +517,69 @@ fn execute(
 }
 
 // The bridge's diagnostic is a bounded code, never a credential or path.
+/// Open the admitted repository and return its config id. This is qualification
+/// only: it does not archive, list, or download.
+pub(crate) fn open_repository_id(
+    authority: &AdmittedIosBackupAuthority,
+    repository: &str,
+    password: &str,
+    env: Option<&BTreeMap<String, Option<String>>>,
+    timeout: Option<Duration>,
+    cancellation: Option<&ArchiveCancellation>,
+) -> Result<String, crate::engine::ArchiveError> {
+    if cancellation.is_some_and(ArchiveCancellation::is_cancelled) {
+        return Err(crate::engine::ArchiveError::Cancelled);
+    }
+    let parsed = repository::parse(repository, env)
+        .map_err(|_| crate::engine::ArchiveError::ConfigurationUnavailable)?;
+    authority
+        .revalidate()
+        .map_err(|_| crate::engine::ArchiveError::ConfigurationChanged)?;
+    let options = native::Options {
+        version: 1,
+        check_read_mode: 0,
+        retry_lock_ms: 0,
+        group: 0,
+        groups: 0,
+        reserved1: 0,
+        reserved2: 0,
+    };
+    let completed = execute(
+        authority,
+        2,
+        false,
+        parsed,
+        password,
+        "",
+        &[],
+        &options,
+        timeout,
+        cancellation,
+        true,
+    )
+    .map_err(|_| crate::engine::ArchiveError::ToolFailed { reason: "failed" })?;
+    if completed.cancellation_requested || completed.fields.status == 3 {
+        return Err(crate::engine::ArchiveError::Cancelled);
+    }
+    if completed.deadline_requested {
+        return Err(crate::engine::ArchiveError::DeadlineExceeded);
+    }
+    if completed.monitor_failed || completed.fields.status != 0 {
+        return Err(crate::engine::ArchiveError::ToolFailed { reason: "failed" });
+    }
+    authority
+        .revalidate()
+        .map_err(|_| crate::engine::ArchiveError::ConfigurationChanged)?;
+    let bytes = completed
+        .metadata
+        .as_ref()
+        .ok()
+        .and_then(Option::as_deref)
+        .ok_or(crate::engine::ArchiveError::RepositoryIdentityInvalid)?;
+    outcome::repository_config_id(bytes)
+        .map_err(|_| crate::engine::ArchiveError::RepositoryIdentityInvalid)
+}
+
 fn log_failure(operation: i32, completed: &native::Completed) {
     if completed.fields.status == 0 {
         return;

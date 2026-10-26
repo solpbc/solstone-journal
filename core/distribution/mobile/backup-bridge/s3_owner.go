@@ -476,7 +476,7 @@ func completeS3StateJSON(raw []byte) error {
 
 func validOwnerOperation(operation int32) bool {
 	switch operation {
-	case OpInit, OpOpen, OpAddRecoveryKey, OpSnapshot, OpListSnapshots, OpRestore, OpCheck, OpListRecoveryKeys, OpRemoveRecoveryKey, OpTeardown:
+	case OpInit, OpOpen, OpAddRecoveryKey, OpSnapshot, OpListSnapshots, OpRestore, OpCheck, OpListRecoveryKeys, OpRemoveRecoveryKey, OpTeardown, OpArchiveSources, OpListNodes, OpReadFile:
 		return true
 	default:
 		return false
@@ -979,7 +979,7 @@ func (owner *s3Owner) noteAttemptFailed() {
 // limited to content-addressed data, index or snapshot objects and owned locks.
 func adoptsUncertainty(operation int32) bool {
 	switch operation {
-	case OpOpen, OpSnapshot, OpListSnapshots, OpRestore, OpCheck:
+	case OpOpen, OpSnapshot, OpListSnapshots, OpRestore, OpCheck, OpArchiveSources:
 		return true
 	default:
 		return false

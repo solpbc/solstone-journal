@@ -156,7 +156,13 @@ impl BackupServices<'_> {
         self.restic.ok_or_else(|| "restic_unavailable".to_owned())
     }
 
-    /// Archive/offload paths retain executable-only admission.
+    /// Linked and admitted archive selection. Offload and ordinary backup stay
+    /// on `restic_path`, which remains executable-only.
+    pub fn archive_invocation(&self) -> Result<crate::runner::ResticInvocation<'_>, String> {
+        self.restic_invocation()
+    }
+
+    /// Offload and ordinary backup stay executable-only.
     pub fn restic_path(&self) -> Result<&Path, String> {
         self.restic_invocation()?
             .executable_path()
@@ -2233,6 +2239,78 @@ fn capture_operated_archive_pair(
     Ok((runtime(write), runtime(read), expiry))
 }
 
+/// Operated iOS archive reaches storage through the linked create-only session.
+/// Both legs are the same hosted session. An rclone path is not required.
+#[cfg(target_os = "ios")]
+fn capture_linked_operated_pair(
+    operation: &PreparedArchiveOperation<'_>,
+    binding: &HostedBinding,
+    keys: BackupKeys,
+    http: &dyn HttpTransport,
+    version: &str,
+    effects: &mut ArchiveAdmissionEffects,
+) -> Result<(Runtime, Runtime, i64), ArchiveError> {
+    let http = ArchiveAdmissionHttp {
+        inner: http,
+        operation,
+    };
+    effects.broker_requested = true;
+    let credentials = fetch_hosted_credentials(&http, binding, "operated", version);
+    operation.revalidate()?;
+    let credentials = credentials.map_err(|error| ArchiveError::CredentialsUnavailable {
+        reason: error.reason_code,
+    })?;
+    let expiry = chrono::DateTime::parse_from_rfc3339(&credentials.expires_at)
+        .map_err(|_| ArchiveError::InvalidCredentialExpiry)?
+        .timestamp();
+    let write = hosted_session(binding, &credentials)
+        .map_err(|_| ArchiveError::ConfigurationUnavailable)?;
+    let read = hosted_session(binding, &credentials)
+        .map_err(|_| ArchiveError::ConfigurationUnavailable)?;
+    let runtime = |session: crate::hosted_runtime::HostedResticSession| Runtime {
+        destination: session.destination,
+        password: keys.daily_key.clone(),
+        backend_env: session
+            .backend_env
+            .into_iter()
+            .map(|(key, value)| (key, Some(value)))
+            .collect(),
+        global_options: session.global_options,
+    };
+    Ok((runtime(write), runtime(read), expiry))
+}
+
+#[cfg(target_os = "ios")]
+fn discover_linked_repository_id(
+    authority: &crate::ios_callable::AdmittedIosBackupAuthority,
+    runtime: &Runtime,
+    operation: &OwnedPreparedArchiveOperation,
+) -> Result<String, ArchiveError> {
+    if operation
+        .budget()
+        .cancellation()
+        .is_some_and(ArchiveCancellation::is_cancelled)
+    {
+        return Err(ArchiveError::Cancelled);
+    }
+    let timeout = operation
+        .budget()
+        .remaining(operation.owned_clock().as_ref())?;
+    let env = if runtime.backend_env.is_empty() {
+        None
+    } else {
+        Some(&runtime.backend_env)
+    };
+    crate::ios_callable::open_repository_id(
+        authority,
+        &runtime.destination.repository,
+        &runtime.password,
+        env,
+        Some(timeout),
+        operation.budget().cancellation(),
+    )
+}
+
 /// Consume the original operation without any replaceable lifetime inputs.
 pub fn admit_prepared_archive<'a>(
     mut operation: PreparedArchiveOperation<'a>,
@@ -3132,6 +3210,8 @@ fn capture_archive_predecessor(
         read_repository_id: facts.read_repository_id,
         repository_id: facts.repository_id,
         archives: facts.archives,
+        #[cfg(target_os = "ios")]
+        linked: false,
     }
 }
 
@@ -3252,6 +3332,18 @@ impl OwnedAdmittedArchive {
     pub fn repository_id(&self) -> &str {
         self.creator.repository_id()
     }
+    #[cfg(target_os = "ios")]
+    pub(crate) fn linked_creator(
+        &self,
+    ) -> &solstone_core_backup::archive_readback::OwnedArchiveCreator {
+        &self.creator
+    }
+    #[cfg(target_os = "ios")]
+    pub(crate) fn linked_creator_mut(
+        &mut self,
+    ) -> &mut solstone_core_backup::archive_readback::OwnedArchiveCreator {
+        &mut self.creator
+    }
     pub fn current_time(&self) -> Result<i64, ArchiveError> {
         self.creator.current_time().map_err(ArchiveError::Readback)
     }
@@ -3328,13 +3420,16 @@ fn creator_admission_failure(
 
 /// Operated journals also pass the installed rclone, the only operated writer
 /// transport, and the broker transport that issues this operation's session.
-pub fn admit_prepared_archive_owned_creator_installed(
+/// A linked iOS authority is admitted without an rclone executable. Existing
+/// executable paths stay executable-only.
+pub fn admit_prepared_archive_owned_creator_installed<'a>(
     mut operation: OwnedPreparedArchiveOperation,
-    restic_path: &Path,
+    restic: impl Into<crate::runner::ResticInvocation<'a>>,
     rclone_path: Option<&Path>,
     version: &str,
     http: &UreqHttpTransport,
 ) -> Result<OwnedInstalledArchiveCreator, OwnedArchiveAdmissionFailure> {
+    let invocation = restic.into();
     let mut effects = ArchiveAdmissionEffects::default();
     let operated = operation.configuration().binding().is_some();
     let captured = (|| {
@@ -3344,9 +3439,48 @@ pub fn admit_prepared_archive_owned_creator_installed(
             return Err(ArchiveError::NotConfigured);
         }
         let keys = config.keys()?.ok_or(ArchiveError::NotConfigured)?;
+        #[cfg(not(target_os = "ios"))]
+        let restic_owned = invocation
+            .executable_path()
+            .ok_or(ArchiveError::ToolUnavailable)?
+            .to_path_buf();
+        #[cfg(target_os = "ios")]
+        let (restic_owned, linked) = match invocation {
+            crate::runner::ResticInvocation::Executable(path) => (path.to_path_buf(), None),
+            crate::runner::ResticInvocation::Callable(authority) => {
+                (PathBuf::new(), Some(authority))
+            }
+        };
+        #[cfg(target_os = "android")]
+        {
+            let admitted = crate::resolve::android_archive_restic()
+                .map_err(|_| ArchiveError::ToolUnavailable)?;
+            if restic_owned != admitted {
+                return Err(ArchiveError::Readback(ReadbackError::ToolChanged));
+            }
+        }
         if let Some(binding) = config.binding() {
             if config.mode() != Some("operated") {
                 return Err(ArchiveError::Readback(ReadbackError::UnsupportedBackend));
+            }
+            #[cfg(target_os = "ios")]
+            if let Some(authority) = linked {
+                if rclone_path.is_some() {
+                    return Err(ArchiveError::Readback(ReadbackError::UnsupportedBackend));
+                }
+                let (write, read, expiry) = capture_linked_operated_pair(
+                    operation.as_prepared(),
+                    binding,
+                    keys,
+                    http,
+                    version,
+                    &mut effects,
+                )?;
+                operation.cap_credential_expiry(expiry);
+                operation.revalidate()?;
+                let repository_id = discover_linked_repository_id(authority, &read, &operation)?;
+                operation.revalidate()?;
+                return Ok((restic_owned, write, read, Some(repository_id), true));
             }
             // No broker session is issued for a writer that has no append-only transport.
             rclone_path.ok_or(ArchiveError::ToolUnavailable)?;
@@ -3361,7 +3495,7 @@ pub fn admit_prepared_archive_owned_creator_installed(
             )?;
             operation.cap_credential_expiry(expiry);
             operation.revalidate()?;
-            return Ok((write, read));
+            return Ok((restic_owned, write, read, None, false));
         }
         if config.mode() != Some("byo")
             || !config
@@ -3370,10 +3504,25 @@ pub fn admit_prepared_archive_owned_creator_installed(
         {
             return Err(ArchiveError::Readback(ReadbackError::UnsupportedBackend));
         }
-        capture_byo_archive_pair(config, keys)
+        #[cfg(target_os = "ios")]
+        if let Some(authority) = linked {
+            if rclone_path.is_some()
+                || config
+                    .destination()
+                    .is_none_or(|destination| destination.backend != "s3")
+            {
+                return Err(ArchiveError::Readback(ReadbackError::UnsupportedBackend));
+            }
+            let (write, read) = capture_byo_archive_pair(config, keys)?;
+            let repository_id = discover_linked_repository_id(authority, &read, &operation)?;
+            operation.revalidate()?;
+            return Ok((restic_owned, write, read, Some(repository_id), true));
+        }
+        let (write, read) = capture_byo_archive_pair(config, keys)?;
+        Ok((restic_owned, write, read, None, false))
     })();
-    let (write, read) = match captured {
-        Ok(pair) => pair,
+    let (restic_owned, write, read, repository_id, linked) = match captured {
+        Ok(admitted) => admitted,
         Err(error) => {
             return Err(OwnedArchiveAdmissionFailure {
                 inner: Box::new(OwnedArchiveAdmissionFailureInner {
@@ -3389,17 +3538,25 @@ pub fn admit_prepared_archive_owned_creator_installed(
     let clock = Arc::clone(operation.owned_clock());
     let carrier = Arc::clone(operation.carrier());
     let capture = capture_archive_predecessor(
-        restic_path.to_path_buf(),
+        restic_owned,
         write,
         read,
         ArchiveCaptureFacts {
             effects,
             write_repository_id: None,
             read_repository_id: None,
-            repository_id: None,
+            repository_id,
             archives: Vec::new(),
         },
     );
+    #[cfg(target_os = "ios")]
+    let mut capture = capture;
+    #[cfg(target_os = "ios")]
+    {
+        capture.linked = linked;
+    }
+    #[cfg(not(target_os = "ios"))]
+    let _ = linked;
     #[cfg(unix)]
     let creator = operation
         .bind_archive_creator(capture)

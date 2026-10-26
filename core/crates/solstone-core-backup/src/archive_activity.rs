@@ -112,7 +112,14 @@ impl ArchiveActivity {
         }
         // Reservations an ended owner left behind would otherwise hold every
         // later operation. The fresh census below still decides admission.
-        retire_orphan_root_carriers(&lease);
+        // Desktop observation failure still reports nothing retired. An
+        // unqualified phone container refuses preparation.
+        if let Err(error) = retire_orphan_root_carriers(&lease) {
+            failure.error = error;
+            return Err(ActivityPreparationFailure {
+                inner: Box::new(failure),
+            });
+        }
         let census = match observe_obligations(&root) {
             Ok(census) => census,
             Err(error) => {

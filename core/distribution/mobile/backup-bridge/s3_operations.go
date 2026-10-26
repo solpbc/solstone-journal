@@ -224,6 +224,12 @@ func executeS3Operation(h *callHandle, req *bridgeRequest, wrote *bool) (result 
 		result, _ = executeListRecoveryKeys(h.ctx, *req)
 	case OpRemoveRecoveryKey:
 		result, _ = executeRemoveRecoveryKey(h.ctx, *req, markWrite)
+	case OpArchiveSources:
+		result, _ = executeArchiveSources(h.ctx, *req, markWrite)
+	case OpListNodes:
+		result, _ = executeListNodes(h.ctx, *req)
+	case OpReadFile:
+		result, _ = executeReadFile(h.ctx, *req, markWrite)
 	case OpTeardown:
 		var admitted []restic.ID
 		for _, value := range req.teardownIDs {
@@ -329,7 +335,11 @@ func closeS3RequestPaths(req *bridgeRequest) (resultErr error) {
 		for _, file := range req.pathFiles {
 			resultErr = errors.Join(resultErr, closeRootedPrivateDirectory(file))
 		}
+		if req.archiveTarget != nil {
+			resultErr = errors.Join(resultErr, req.archiveTarget.Close())
+		}
 		req.metadataRoot, req.repoRoot, req.sourceRoot, req.restoreRoot = nil, nil, nil, nil
+		req.archiveTarget = nil
 		req.metadataFile, req.pathFiles = nil, nil
 		req.pathsPinned = false
 	}()

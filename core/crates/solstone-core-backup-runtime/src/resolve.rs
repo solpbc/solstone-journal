@@ -175,6 +175,13 @@ fn resolve_android_tools(
     })
 }
 
+/// Admitted Android archive program. This is the service-tool library, not the
+/// desktop installed member and not an architecture byte pin.
+#[cfg(target_os = "android")]
+pub(crate) fn android_archive_restic() -> Result<PathBuf, ClosedToolError> {
+    resolve_android_restic_member(&LiveAndroidAuthority)
+}
+
 #[cfg(not(windows))]
 fn resolve_android_restic_member(
     authority: &dyn AndroidAuthority,

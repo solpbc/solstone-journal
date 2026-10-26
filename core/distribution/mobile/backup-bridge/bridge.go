@@ -460,6 +460,12 @@ func runWorker(h *callHandle, req bridgeRequest) {
 		result, _ = executeListRecoveryKeys(h.ctx, req)
 	case OpRemoveRecoveryKey:
 		result, _ = executeRemoveRecoveryKey(h.ctx, req, markWrite)
+	case OpArchiveSources:
+		result, _ = executeArchiveSources(h.ctx, req, markWrite)
+	case OpListNodes:
+		result, _ = executeListNodes(h.ctx, req)
+	case OpReadFile:
+		result, _ = executeReadFile(h.ctx, req, markWrite)
 	default:
 		result = bridgeResult{status: StatusInvalidArgument, diagnostic: DiagInvalidArgument}
 	}

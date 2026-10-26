@@ -91,7 +91,7 @@ fn delete(fixture: &Interrupted) -> crate::Outcome {
 
 fn recover(fixture: &Interrupted) -> Vec<AbandonedRestore> {
     let activity = ActivityLease::try_acquire(Arc::clone(&fixture.root)).unwrap();
-    recover_abandoned_restores(&activity)
+    recover_abandoned_restores(&activity).expect("local recovery")
 }
 
 #[test]
@@ -278,7 +278,9 @@ fn any_other_stage_without_intent_is_held_untouched() {
         let root = Arc::new(JournalRoot::open(temp.path()).unwrap());
         let activity = ActivityLease::try_acquire(Arc::clone(&root)).unwrap();
         assert!(
-            recover_abandoned_restores(&activity).is_empty(),
+            recover_abandoned_restores(&activity)
+                .expect("local recovery")
+                .is_empty(),
             "{relative}"
         );
         drop(activity);
@@ -300,7 +302,12 @@ fn empty_stage_without_intent_in_a_restore_location_is_removed() {
     );
     let root = Arc::new(JournalRoot::open(temp.path()).unwrap());
     let activity = ActivityLease::try_acquire(Arc::clone(&root)).unwrap();
-    assert_eq!(recover_abandoned_restores(&activity).len(), 2);
+    assert_eq!(
+        recover_abandoned_restores(&activity)
+            .expect("local recovery")
+            .len(),
+        2
+    );
     assert!(!day.exists() && !stream.exists());
     // Inside a segment is not where restores stage; it stays held.
     assert!(segment.is_dir());
@@ -317,13 +324,22 @@ fn empty_metadata_stage_after_intent_removal_is_recovered() {
     );
     let root = Arc::new(JournalRoot::open(temp.path()).unwrap());
     let activity = ActivityLease::try_acquire(Arc::clone(&root)).unwrap();
-    assert_eq!(recover_abandoned_restores(&activity).len(), 1);
+    assert_eq!(
+        recover_abandoned_restores(&activity)
+            .expect("local recovery")
+            .len(),
+        1
+    );
     assert!(!empty.exists());
     assert_eq!(
         fs::read(retained.join(solstone_core_journal_io::media::REMOVAL_ORIGINAL_LEAF)).unwrap(),
         RESTORED
     );
-    assert!(recover_abandoned_restores(&activity).is_empty());
+    assert!(
+        recover_abandoned_restores(&activity)
+            .expect("local recovery")
+            .is_empty()
+    );
 }
 
 #[test]
@@ -336,7 +352,7 @@ fn readback_stage_without_intent_at_the_root_is_recovered() {
     );
     let root = Arc::new(JournalRoot::open(temp.path()).unwrap());
     let activity = ActivityLease::try_acquire(Arc::clone(&root)).unwrap();
-    let recovered = recover_abandoned_restores(&activity);
+    let recovered = recover_abandoned_restores(&activity).expect("local recovery");
     assert_eq!(recovered.len(), 1);
     assert_eq!(recovered[0].outcome, Ok(AbandonedRestoreRelease::Undone));
     assert!(!readback.exists());
@@ -353,7 +369,7 @@ fn offload_copy_stage_without_intent_at_the_root_is_recovered() {
     );
     let root = Arc::new(JournalRoot::open(temp.path()).unwrap());
     let activity = ActivityLease::try_acquire(Arc::clone(&root)).unwrap();
-    let recovered = recover_abandoned_restores(&activity);
+    let recovered = recover_abandoned_restores(&activity).expect("local recovery");
     assert_eq!(recovered.len(), 1);
     assert_eq!(recovered[0].outcome, Ok(AbandonedRestoreRelease::Undone));
     assert!(!copy.exists());
