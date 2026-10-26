@@ -180,7 +180,7 @@ fn normalize_capture_index(mut body: Value, path: &Path) -> Value {
     body
 }
 
-fn live_talent_frontmatter(key: &str) -> Value {
+fn live_talent_metadata(key: &str) -> Value {
     let (talent_root, apps_root) =
         solstone_core_thinking::generators::discover_package_roots().expect("talent roots");
     let configs = solstone_core_talent_config::load_talent_configs(
@@ -217,7 +217,7 @@ fn assert_stable_talent_metadata(body: &Value, expected: &Value) {
         ),
         ("entities:detection", "app talent carries source and app"),
     ] {
-        let live = live_talent_frontmatter(key);
+        let live = live_talent_metadata(key);
         let mut wanted = expected["talents"][key].clone();
         for field in ["title", "description", "color"] {
             wanted[field] = live[field].clone();
