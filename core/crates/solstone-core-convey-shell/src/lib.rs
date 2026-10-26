@@ -701,8 +701,11 @@ async fn bind_embedded_router(
     }
     let _ = door.ensure_started().await;
     let local_network_task = tokio::spawn(local_network::watch(door.clone()));
-    let (link_health_task, service_token_renewal_task) =
-        start_relay_health_tasks(service_root.clone(), cache, Some(renewal_stop.clone()));
+    let (link_health_task, service_token_renewal_task) = start_relay_health_tasks(
+        service_root.clone(),
+        cache,
+        Some((Arc::clone(&binding), renewal_stop.clone())),
+    );
     let producer_root = Arc::clone(&binding);
     let producer_active: Arc<dyn Fn() -> bool + Send + Sync> = Arc::new(move || {
         !*admission.stopped.borrow()
@@ -802,7 +805,10 @@ async fn embedded_root_gate(
 fn start_relay_health_tasks(
     journal_root: PathBuf,
     cache: link_health_cache::RelayHealthCacheStore,
-    shutdown: Option<tokio::sync::watch::Receiver<bool>>,
+    embedded: Option<(
+        Arc<solstone_core_journal_io::JournalRoot>,
+        tokio::sync::watch::Receiver<bool>,
+    )>,
 ) -> (tokio::task::JoinHandle<()>, tokio::task::JoinHandle<()>) {
     let link_health_task = tokio::spawn(link_health_cache::subscribe_relay_health(
         journal_root.clone(),
@@ -822,11 +828,10 @@ fn start_relay_health_tasks(
             link_health_cache::service_token_health_from_cache(cache.as_ref(), now_ms)
         }),
     );
-    let service_token_renewal_task = match shutdown {
-        Some(shutdown) => tokio::spawn(solstone_core_spl::run_embedded_service_token_renewal(
-            renewal_config,
-            shutdown,
-        )),
+    let service_token_renewal_task = match embedded {
+        Some((root, shutdown)) => tokio::spawn(
+            solstone_core_spl::run_embedded_service_token_renewal(root, renewal_config, shutdown),
+        ),
         None => solstone_core_spl::spawn_service_token_renewal(renewal_config),
     };
     (link_health_task, service_token_renewal_task)

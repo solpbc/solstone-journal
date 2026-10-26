@@ -1735,6 +1735,7 @@ async fn embedded_renewal_shutdown_joins_active_work_without_publishing() {
     let entered = Mutex::new(Some(entered));
     let (release, blocked) = std::sync::mpsc::sync_channel(0);
     let blocked = Mutex::new(blocked);
+    let root = Arc::new(solstone_core_journal_io::JournalRoot::open(&journal).unwrap());
     let mut config = RenewalConfig::production(journal, Arc::new(ServiceTokenHealth::default));
     config.tick = Duration::from_millis(1);
     config.clock.now_unix = Arc::new(|| 1_000_000);
@@ -1753,7 +1754,7 @@ async fn embedded_renewal_shutdown_joins_active_work_without_publishing() {
             .unwrap();
     });
     let (stop, receiver) = tokio::sync::watch::channel(false);
-    let task = tokio::spawn(run_embedded_service_token_renewal(config, receiver));
+    let task = tokio::spawn(run_embedded_service_token_renewal(root, config, receiver));
     timeout(Duration::from_secs(5), waiting)
         .await
         .unwrap()
@@ -2269,3 +2270,484 @@ async fn service_token_renewal_unhealthy_jwks_skips_enrollment() -> Result<(), S
 
 #[path = "spl_relay_lifecycle/access_contract.rs"]
 mod access_contract;
+
+mod embedded_restore {
+    use super::*;
+    use solstone_core_journal_io::JournalRoot;
+    use solstone_core_journal_io::whole_journal_restore::{
+        WholeJournalRestore, WholeJournalRestoreSource, clear_whole_journal_restore,
+        hold_target_for_restore, publish_whole_journal_restore, release_target_for_restore,
+        wait_for_target_use_to_end,
+    };
+    use solstone_core_spl::service_token_renewal::{JwksSet, run_embedded_service_token_renewal};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    struct Fixture {
+        journal: std::path::PathBuf,
+        root: Arc<JournalRoot>,
+        config: RenewalConfig,
+        old: String,
+        new: String,
+        _cleanup: TempJournalCleanup,
+    }
+
+    impl Fixture {
+        fn new() -> Self {
+            let (journal, cleanup) = temp_harness_journal("spl-restore-renewal");
+            write_test_journal_config(&journal, "spl", Some("https://relay.invalid"));
+            let identity = load_or_create_service_identity(&journal).unwrap();
+            let old = make_unsigned_jwt(
+                Some("test-key"),
+                &identity.instance_id,
+                1,
+                100,
+                "session.listen",
+            );
+            let new = make_unsigned_jwt(
+                Some("test-key"),
+                &identity.instance_id,
+                1_000_000,
+                2_000_000,
+                "session.listen",
+            );
+            save_service_token(&journal, &old).unwrap();
+            let root = Arc::new(JournalRoot::open(&journal).unwrap());
+            let mut config =
+                RenewalConfig::production(journal.clone(), Arc::new(ServiceTokenHealth::default));
+            config.tick = Duration::from_millis(20);
+            config.clock.now_unix = Arc::new(|| 1_000_000);
+            config.clock.now_mono = Arc::new(|| Duration::ZERO);
+            config.jitter = Arc::new(|d| d);
+            config.enroll = Arc::new({
+                let new = new.clone();
+                move |_, _, _, _| Ok(new.clone())
+            });
+            config.jwks_fetch = Arc::new(|_| JwksSet::Healthy {
+                kids: vec!["test-key".into()],
+            });
+            Self {
+                journal,
+                root,
+                config,
+                old,
+                new,
+                _cleanup: cleanup,
+            }
+        }
+
+        fn bytes(&self) -> Vec<u8> {
+            std::fs::read(self.journal.join("link/tokens/account.json")).unwrap()
+        }
+
+        fn spawn(
+            &self,
+        ) -> (
+            tokio::sync::watch::Sender<bool>,
+            tokio::task::JoinHandle<()>,
+        ) {
+            let (stop, receiver) = tokio::sync::watch::channel(false);
+            let task = tokio::spawn(run_embedded_service_token_renewal(
+                Arc::clone(&self.root),
+                self.config.clone(),
+                receiver,
+            ));
+            (stop, task)
+        }
+    }
+
+    fn publish(journal: &std::path::Path) -> WholeJournalRestore {
+        publish_whole_journal_restore(
+            journal,
+            &WholeJournalRestoreSource::Byo {
+                repository: "synthetic".into(),
+                backend: "local".into(),
+            },
+            &"a".repeat(64),
+            "/",
+        )
+        .unwrap()
+    }
+
+    async fn token_is(f: &Fixture, expected: &str) {
+        timeout(Duration::from_secs(5), async {
+            loop {
+                let bytes = f.bytes();
+                let value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+                if value["service_token"].as_str() == Some(expected) {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(1)).await;
+            }
+        })
+        .await
+        .expect("expected renewal token was not published");
+    }
+
+    async fn stop(stop: tokio::sync::watch::Sender<bool>, task: tokio::task::JoinHandle<()>) {
+        stop.send(true).unwrap();
+        timeout(Duration::from_secs(5), task)
+            .await
+            .unwrap()
+            .unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn pending_markers_block_external_work_and_valid_clear_resumes() {
+        for malformed in [false, true] {
+            let mut f = Fixture::new();
+            let pending = if malformed {
+                std::fs::create_dir_all(f.journal.join("health")).unwrap();
+                std::fs::write(f.journal.join("health/whole-journal-restore.json"), b"{").unwrap();
+                None
+            } else {
+                Some(publish(&f.journal))
+            };
+            // A young token plus refused health would fetch JWKS before enrollment.
+            let identity = load_or_create_service_identity(&f.journal).unwrap();
+            let young = make_unsigned_jwt(
+                Some("retired-key"),
+                &identity.instance_id,
+                1_000_000,
+                2_000_000,
+                "session.listen",
+            );
+            save_service_token(&f.journal, &young).unwrap();
+            f.config.health_read = Arc::new(|| ServiceTokenHealth {
+                event_at_ms: Some(1),
+                reason: Some("service_token_rejected".into()),
+                now_ms: 1,
+                ..ServiceTokenHealth::default()
+            });
+            let enrolls = Arc::new(AtomicUsize::new(0));
+            let jwks = Arc::new(AtomicUsize::new(0));
+            f.config.enroll = Arc::new({
+                let n = enrolls.clone();
+                let new = f.new.clone();
+                move |_, _, _, _| {
+                    n.fetch_add(1, Ordering::SeqCst);
+                    Ok(new.clone())
+                }
+            });
+            f.config.jwks_fetch = Arc::new({
+                let n = jwks.clone();
+                move |_| {
+                    n.fetch_add(1, Ordering::SeqCst);
+                    JwksSet::Healthy {
+                        kids: vec!["test-key".into()],
+                    }
+                }
+            });
+            let before = f.bytes();
+            let (shutdown, task) = f.spawn();
+            tokio::time::sleep(f.config.tick * 4).await;
+            let blocked = (
+                enrolls.load(Ordering::SeqCst),
+                jwks.load(Ordering::SeqCst),
+                f.bytes(),
+                task.is_finished(),
+            );
+            if blocked.0 != 0 || blocked.1 != 0 {
+                stop(shutdown, task).await;
+                panic!(
+                    "pending restore performed external work: enrollments={}, JWKS={}",
+                    blocked.0, blocked.1
+                );
+            }
+            if let Some(pending) = pending {
+                // The same unknown-key trigger must work after ordinary retirement.
+                clear_whole_journal_restore(&f.journal, &pending).unwrap();
+                token_is(&f, &f.new).await;
+            }
+            stop(shutdown, task).await;
+            assert_eq!(
+                (blocked.0, blocked.1),
+                (0, 0),
+                "pending restore performed external work"
+            );
+            assert_eq!(blocked.2, before);
+            assert!(!blocked.3, "transient recovery stopped the worker");
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn admitted_http_and_validation_are_drained_for_restore_and_stop() {
+        for validation in [false, true] {
+            for stopping in [false, true] {
+                let mut f = Fixture::new();
+                let listener = TokioTcpListener::bind("127.0.0.1:0").await.unwrap();
+                let relay = format!("http://{}", listener.local_addr().unwrap());
+                write_test_journal_config(&f.journal, "spl", Some(&relay));
+                let (entered, waiting) = oneshot::channel();
+                let (release, released) = oneshot::channel();
+                let new = f.new.clone();
+                let (validation_entered, validation_waiting) = oneshot::channel();
+                let validation_entered = Mutex::new(Some(validation_entered));
+                let (validation_release, validation_blocked) = std::sync::mpsc::sync_channel(0);
+                let validation_blocked = Mutex::new(validation_blocked);
+                let jwks_calls = Arc::new(AtomicUsize::new(0));
+                f.config.jwks_fetch = Arc::new({
+                    let calls = Arc::clone(&jwks_calls);
+                    move |_| {
+                        calls.fetch_add(1, Ordering::SeqCst);
+                        if validation
+                            && let Some(entered) = validation_entered.lock().unwrap().take()
+                        {
+                            let _ = entered.send(());
+                            validation_blocked
+                                .lock()
+                                .unwrap()
+                                .recv_timeout(Duration::from_secs(5))
+                                .unwrap();
+                        }
+                        JwksSet::Healthy {
+                            kids: vec!["test-key".into()],
+                        }
+                    }
+                });
+                let server = tokio::spawn(async move {
+                    let mut entered = Some(entered);
+                    let mut released = Some(released);
+                    for request in 0..if stopping { 1 } else { 2 } {
+                        let (mut stream, _) = listener.accept().await.unwrap();
+                        let (_, body) = read_http_request(&mut stream).await.unwrap();
+                        let value: serde_json::Value = serde_json::from_str(&body).unwrap();
+                        assert_eq!(value["mode"], "renew");
+                        if request == 0 {
+                            entered.take().unwrap().send(()).unwrap();
+                            if !validation {
+                                released.take().unwrap().await.unwrap();
+                            }
+                        }
+                        let body = serde_json::json!({"service_token": new}).to_string();
+                        stream.write_all(format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).as_bytes()).await.unwrap();
+                    }
+                });
+                // Refuse ambient relay overrides before dispatching synthetic HTTP.
+                f.config.enroll = Arc::new(move |url, id, pem, mode| {
+                    assert_eq!(
+                        url, relay,
+                        "test enrollment must stay on its loopback endpoint"
+                    );
+                    enroll_home(url, id, pem, "", mode)
+                });
+                let before = f.bytes();
+                let (shutdown, task) = f.spawn();
+                timeout(Duration::from_secs(5), waiting)
+                    .await
+                    .unwrap()
+                    .unwrap();
+                if validation {
+                    timeout(Duration::from_secs(5), validation_waiting)
+                        .await
+                        .unwrap()
+                        .unwrap();
+                }
+                hold_target_for_restore(&f.journal);
+                let pending = if stopping {
+                    shutdown.send(true).unwrap();
+                    None
+                } else {
+                    Some(publish(&f.journal))
+                };
+                let journal = f.journal.clone();
+                let (drain_started, drain_waiting) = oneshot::channel();
+                let mut drain = tokio::task::spawn_blocking(move || {
+                    drain_started.send(()).unwrap();
+                    wait_for_target_use_to_end(&journal);
+                });
+                drain_waiting.await.unwrap();
+                let premature = timeout(Duration::from_millis(50), &mut drain).await.is_ok();
+                let detached = task.is_finished();
+                if validation {
+                    validation_release.send(()).unwrap();
+                } else {
+                    release.send(()).unwrap();
+                }
+                if !premature {
+                    timeout(Duration::from_secs(5), drain)
+                        .await
+                        .unwrap()
+                        .unwrap();
+                }
+                assert_eq!(
+                    f.bytes(),
+                    before,
+                    "pre-admission cancellation published a token"
+                );
+                assert_eq!(
+                    jwks_calls.load(Ordering::SeqCst),
+                    usize::from(validation),
+                    "cancelled enrollment started validation"
+                );
+                if let Some(pending) = pending {
+                    clear_whole_journal_restore(&f.journal, &pending).unwrap();
+                    release_target_for_restore(&f.journal);
+                    // The endpoint remains live while the same worker resumes.
+                    token_is(&f, &f.new).await;
+                    stop(shutdown, task).await;
+                } else {
+                    timeout(Duration::from_secs(5), task)
+                        .await
+                        .unwrap()
+                        .unwrap();
+                    release_target_for_restore(&f.journal);
+                }
+                timeout(Duration::from_secs(5), server)
+                    .await
+                    .unwrap()
+                    .unwrap();
+                assert!(!premature, "target drain passed active renewal work");
+                assert!(!detached, "worker detached before admitted work joined");
+            }
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn completed_restore_resets_floor_and_backoff_between_ticks() {
+        for rejected in [false, true] {
+            let mut f = Fixture::new();
+            f.config.tick = Duration::from_millis(150);
+            let attempts = Arc::new(AtomicUsize::new(0));
+            let (tick, mut ticks) = mpsc::unbounded_channel();
+            f.config.clock.now_mono = Arc::new(move || {
+                let _ = tick.send(());
+                Duration::ZERO
+            });
+            f.config.enroll = Arc::new({
+                let n = attempts.clone();
+                let new = f.new.clone();
+                move |_, _, _, _| {
+                    let attempt = n.fetch_add(1, Ordering::SeqCst);
+                    if rejected && attempt == 0 {
+                        Err(EnrollError::Rejected {
+                            status: 409,
+                            reason: None,
+                        })
+                    } else {
+                        Ok(new.clone())
+                    }
+                }
+            });
+            let (shutdown, task) = f.spawn();
+            timeout(Duration::from_secs(5), ticks.recv())
+                .await
+                .unwrap()
+                .unwrap();
+            timeout(Duration::from_secs(5), async {
+                while attempts.load(Ordering::SeqCst) == 0 {
+                    tokio::task::yield_now().await;
+                }
+            })
+            .await
+            .unwrap();
+            if !rejected {
+                token_is(&f, &f.new).await;
+            }
+            // An expired token alone must retain the ordinary floor/backoff.
+            save_service_token(&f.journal, &f.old).unwrap();
+            timeout(Duration::from_secs(5), ticks.recv())
+                .await
+                .unwrap()
+                .unwrap();
+            let journal = f.journal.clone();
+            tokio::task::spawn_blocking(move || wait_for_target_use_to_end(&journal))
+                .await
+                .unwrap();
+            assert_eq!(
+                attempts.load(Ordering::SeqCst),
+                1,
+                "ordinary renewal delay was lost"
+            );
+            hold_target_for_restore(&f.journal);
+            let pending = publish(&f.journal);
+            save_service_token(&f.journal, &f.old).unwrap();
+            clear_whole_journal_restore(&f.journal, &pending).unwrap();
+            release_target_for_restore(&f.journal);
+            assert!(
+                ticks.try_recv().is_err(),
+                "restore did not occur between ticks"
+            );
+            token_is(&f, &f.new).await;
+            stop(shutdown, task).await;
+            assert_eq!(attempts.load(Ordering::SeqCst), 2);
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn retained_root_controls_path_and_refuses_identical_successor() {
+        let mut f = Fixture::new();
+        let other = Fixture::new();
+        let other_before = other.bytes();
+        f.config.journal_root = other.journal.clone();
+        let (shutdown, task) = f.spawn();
+        token_is(&f, &f.new).await;
+        stop(shutdown, task).await;
+        assert_eq!(
+            other.bytes(),
+            other_before,
+            "config path redirected the bound worker"
+        );
+
+        let mut f = Fixture::new();
+        let entered = Arc::new(Notify::new());
+        let (release, blocked) = std::sync::mpsc::sync_channel(0);
+        let blocked = Mutex::new(blocked);
+        f.config.enroll = Arc::new({
+            let entered = entered.clone();
+            let new = f.new.clone();
+            move |_, _, _, _| {
+                entered.notify_one();
+                blocked
+                    .lock()
+                    .unwrap()
+                    .recv_timeout(Duration::from_secs(5))
+                    .unwrap();
+                Ok(new.clone())
+            }
+        });
+        let before = f.bytes();
+        let (shutdown, task) = f.spawn();
+        timeout(Duration::from_secs(5), entered.notified())
+            .await
+            .unwrap();
+        let saved = f.journal.with_extension("original");
+        std::fs::rename(&f.journal, &saved).unwrap();
+        let original_cleanup = TempJournalCleanup(saved.clone());
+        // Copy identical service files, preventing token/posture/relay supersession from masking a root-binding defect.
+        for part in ["config", "link/ca", "link/tokens"] {
+            std::fs::create_dir_all(f.journal.join(part)).unwrap();
+        }
+        for part in [
+            "config/journal.json",
+            "link/state.json",
+            "link/ca/cert.pem",
+            "link/ca/private.pem",
+            "link/tokens/account.json",
+        ] {
+            std::fs::copy(saved.join(part), f.journal.join(part)).unwrap();
+        }
+        release.send(()).unwrap();
+        tokio::time::sleep(f.config.tick * 4).await;
+        stop(shutdown, task).await;
+        assert_eq!(f.bytes(), before);
+        let calls = Arc::new(AtomicUsize::new(0));
+        f.config.enroll = Arc::new({
+            let n = calls.clone();
+            let new = f.new.clone();
+            move |_, _, _, _| {
+                n.fetch_add(1, Ordering::SeqCst);
+                Ok(new.clone())
+            }
+        });
+        let (shutdown, task) = f.spawn();
+        tokio::time::sleep(f.config.tick * 4).await;
+        stop(shutdown, task).await;
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            0,
+            "substituted root was adopted"
+        );
+        assert_eq!(f.bytes(), before);
+        drop(original_cleanup);
+    }
+}

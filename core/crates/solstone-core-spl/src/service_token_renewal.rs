@@ -10,6 +10,10 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use solstone_core_journal_config::read_journal_config;
+use solstone_core_journal_io::JournalRoot;
+use solstone_core_journal_io::whole_journal_restore::{
+    begin_target_use_bound, whole_journal_restore_blocks, whole_journal_restore_generation,
+};
 use solstone_core_sol_link::ca::jid_from_spki;
 use solstone_core_sol_link::service_identity::{ServiceIdentityError, load_service_identity_ca};
 
@@ -471,6 +475,9 @@ fn evaluate_once_unless_cancelled(
     let relay_base = relay_url(&config.journal_root);
     let pem = ca.public_key_spki_pem();
     let enroll_res = (config.enroll)(&relay_base, &identity.instance_id, &pem, EnrollMode::Renew);
+    if cancelled() {
+        return record_attempt(state, config, now_mono, trigger, Outcome::Superseded);
+    }
 
     let outcome = match enroll_res {
         Err(EnrollError::Rejected {
@@ -515,6 +522,11 @@ fn evaluate_once_unless_cancelled(
                         return Outcome::Superseded;
                     }
                     if relay_url(&config.journal_root) != relay_base {
+                        return Outcome::Superseded;
+                    }
+                    // This check admits publication. A later pause drains this
+                    // already-admitted atomic save before restore can write.
+                    if cancelled() {
                         return Outcome::Superseded;
                     }
                     match save_service_token_unlocked(&config.journal_root, &new_token) {
@@ -640,13 +652,16 @@ pub fn spawn_service_token_renewal(config: RenewalConfig) -> tokio::task::JoinHa
     })
 }
 
-/// App-owned renewal lifecycle. Shutdown waits for an active blocking appraisal
-/// to finish and prevents its token from being committed after cancellation.
+/// App-owned renewal lifecycle. Recovery drains admitted work; shutdown joins
+/// active HTTP and publication. The original root remains bound across retries.
 pub async fn run_embedded_service_token_renewal(
-    config: RenewalConfig,
+    root: Arc<JournalRoot>,
+    mut config: RenewalConfig,
     mut shutdown: tokio::sync::watch::Receiver<bool>,
 ) {
+    config.journal_root = root.canonical_path().to_owned();
     let mut state = RenewalState::default();
+    let mut observed_generation = None;
     loop {
         if *shutdown.borrow() || shutdown.has_changed().is_err() {
             return;
@@ -655,13 +670,44 @@ pub async fn run_embedded_service_token_renewal(
             _ = tokio::time::sleep(config.tick) => {},
             _ = shutdown.changed() => return,
         }
+        // Admission performs filesystem checks off the runtime thread. Keep
+        // its guard outside the evaluation so even a panic joins before drain.
+        let admission_root = Arc::clone(&root);
+        let (admission, generation) = match tokio::task::spawn_blocking(move || {
+            let admission = begin_target_use_bound(Arc::clone(&admission_root))?;
+            let generation = whole_journal_restore_generation(admission_root.canonical_path());
+            Ok::<_, solstone_core_journal_io::whole_journal_restore::TargetUseRefused>((
+                admission, generation,
+            ))
+        })
+        .await
+        {
+            Ok(Ok(admitted)) => admitted,
+            Ok(Err(_)) => continue,
+            Err(_) => {
+                log::warn!("private-link service token renewal admission did not complete");
+                continue;
+            }
+        };
+        if observed_generation != Some(generation) {
+            state = RenewalState::default();
+            observed_generation = Some(generation);
+        }
         let config_clone = config.clone();
         let state_clone = state.clone();
         let stop = shutdown.clone();
+        let evaluation_root = Arc::clone(&root);
         // Deliberately join this work even if shutdown arrives during HTTP.
         match tokio::task::spawn_blocking(move || {
             let mut state = state_clone;
-            let cancelled = || *stop.borrow() || stop.has_changed().is_err();
+            let cancelled = || {
+                *stop.borrow()
+                    || stop.has_changed().is_err()
+                    || evaluation_root.revalidate_canonical_binding().is_err()
+                    || whole_journal_restore_blocks(evaluation_root.canonical_path())
+                    || whole_journal_restore_generation(evaluation_root.canonical_path())
+                        != generation
+            };
             evaluate_once_unless_cancelled(&config_clone, &mut state, &cancelled);
             state
         })
@@ -674,6 +720,7 @@ pub async fn run_embedded_service_token_renewal(
                 log::warn!("private-link service token renewal evaluation did not complete");
             }
         }
+        drop(admission);
     }
 }
 
