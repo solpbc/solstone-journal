@@ -141,6 +141,7 @@ mod paired_device;
 mod pinned;
 #[cfg(feature = "host")]
 mod pinned_write;
+pub mod recovery_drain;
 pub mod registry;
 mod relay_access;
 mod relay_admission;

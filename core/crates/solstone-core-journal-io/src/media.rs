@@ -20,6 +20,8 @@ use sha2::{Digest, Sha256};
 use crate::JournalRoot;
 
 mod activity_carrier;
+#[cfg(target_os = "android")]
+pub(crate) use activity_carrier::android_process_name;
 #[cfg(unix)]
 pub mod teardown_preparation;
 #[cfg(target_os = "linux")]

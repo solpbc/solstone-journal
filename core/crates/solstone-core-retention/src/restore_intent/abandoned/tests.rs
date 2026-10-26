@@ -89,9 +89,9 @@ fn delete(fixture: &Interrupted) -> crate::Outcome {
     )
 }
 
-fn recover(fixture: &Interrupted) -> Vec<AbandonedRestore> {
+fn recover(fixture: &Interrupted) -> std::io::Result<Vec<AbandonedRestore>> {
     let activity = ActivityLease::try_acquire(Arc::clone(&fixture.root)).unwrap();
-    recover_abandoned_restores(&activity).expect("local recovery")
+    recover_abandoned_restores(&activity)
 }
 
 #[test]
@@ -122,7 +122,7 @@ fn unpublished_restore_is_undone_and_owner_deletion_then_proceeds() {
 }
 
 #[test]
-fn exactly_published_restore_is_released_and_deletion_then_proceeds() {
+fn exactly_published_restore_is_released_and_deletion_then_proceeds() -> std::io::Result<()> {
     for linked in [true, false] {
         let interrupted = interrupted();
         let published = interrupted.segment.join("a.flac");
@@ -132,7 +132,7 @@ fn exactly_published_restore_is_released_and_deletion_then_proceeds() {
         } else {
             fs::write(&published, RESTORED).unwrap();
         }
-        let outcome = recover(&interrupted);
+        let outcome = recover(&interrupted)?;
         assert_eq!(outcome.len(), 1);
         assert_eq!(outcome[0].operation_id.as_deref(), Some(OPERATION));
         assert_eq!(
@@ -152,14 +152,15 @@ fn exactly_published_restore_is_released_and_deletion_then_proceeds() {
         let removed = delete(&interrupted);
         assert!(removed.targets[0].not_removed.is_empty(), "{removed:?}");
     }
+    Ok(())
 }
 
 #[test]
-fn mismatched_published_file_is_held_and_never_touched() {
+fn mismatched_published_file_is_held_and_never_touched() -> std::io::Result<()> {
     let interrupted = interrupted();
     let published = interrupted.segment.join("a.flac");
     fs::write(&published, b"other content").unwrap();
-    let outcome = recover(&interrupted);
+    let outcome = recover(&interrupted)?;
     assert_eq!(
         outcome[0].outcome,
         Err(AbandonedRestoreHold::PublishedContentMismatch)
@@ -172,13 +173,14 @@ fn mismatched_published_file_is_held_and_never_touched() {
         RESTORED
     );
     assert!(interrupted.intent.exists());
+    Ok(())
 }
 
 #[test]
-fn a_stage_holding_anything_else_is_held() {
+fn a_stage_holding_anything_else_is_held() -> std::io::Result<()> {
     let interrupted = interrupted();
     fs::write(interrupted.stage.join("unexpected"), b"keep").unwrap();
-    let outcome = recover(&interrupted);
+    let outcome = recover(&interrupted)?;
     assert_eq!(outcome[0].outcome, Err(AbandonedRestoreHold::StageChanged));
     assert_eq!(
         fs::read(interrupted.stage.join("payload")).unwrap(),
@@ -194,10 +196,11 @@ fn a_stage_holding_anything_else_is_held() {
     let original = interrupted.journal.join("original-payload");
     fs::rename(interrupted.stage.join("payload"), &original).unwrap();
     fs::write(interrupted.stage.join("payload"), RESTORED).unwrap();
-    let outcome = recover(&interrupted);
+    let outcome = recover(&interrupted)?;
     assert_eq!(outcome[0].outcome, Err(AbandonedRestoreHold::StageChanged));
     assert!(interrupted.stage.join("payload").exists());
     assert!(interrupted.intent.exists());
+    Ok(())
 }
 
 /// A restore that ended mid-download, before writing its intent.
@@ -246,7 +249,7 @@ fn download_stage_without_intent_is_recovered_and_deletion_then_proceeds() {
 }
 
 #[test]
-fn any_other_stage_without_intent_is_held_untouched() {
+fn any_other_stage_without_intent_is_held_untouched() -> std::io::Result<()> {
     let leaf = super::super::RESTORE_DOWNLOAD_LEAF;
     let readback = crate::archive_approval::READBACK_DOWNLOAD_LEAF;
     for (relative, leaves) in [
@@ -278,9 +281,7 @@ fn any_other_stage_without_intent_is_held_untouched() {
         let root = Arc::new(JournalRoot::open(temp.path()).unwrap());
         let activity = ActivityLease::try_acquire(Arc::clone(&root)).unwrap();
         assert!(
-            recover_abandoned_restores(&activity)
-                .expect("local recovery")
-                .is_empty(),
+            recover_abandoned_restores(&activity)?.is_empty(),
             "{relative}"
         );
         drop(activity);
@@ -288,10 +289,11 @@ fn any_other_stage_without_intent_is_held_untouched() {
             assert_eq!(fs::read(stage.join(name)).unwrap(), RESTORED, "{relative}");
         }
     }
+    Ok(())
 }
 
 #[test]
-fn empty_stage_without_intent_in_a_restore_location_is_removed() {
+fn empty_stage_without_intent_in_a_restore_location_is_removed() -> std::io::Result<()> {
     let temp = tempfile::tempdir().unwrap();
     let day = unrecorded(temp.path(), "chronicle/20261009/.tmp-offload-f", &[]);
     let stream = unrecorded(temp.path(), "chronicle/20261009/camera/.tmp-offload-g", &[]);
@@ -302,19 +304,15 @@ fn empty_stage_without_intent_in_a_restore_location_is_removed() {
     );
     let root = Arc::new(JournalRoot::open(temp.path()).unwrap());
     let activity = ActivityLease::try_acquire(Arc::clone(&root)).unwrap();
-    assert_eq!(
-        recover_abandoned_restores(&activity)
-            .expect("local recovery")
-            .len(),
-        2
-    );
+    assert_eq!(recover_abandoned_restores(&activity)?.len(), 2);
     assert!(!day.exists() && !stream.exists());
     // Inside a segment is not where restores stage; it stays held.
     assert!(segment.is_dir());
+    Ok(())
 }
 
 #[test]
-fn empty_metadata_stage_after_intent_removal_is_recovered() {
+fn empty_metadata_stage_after_intent_removal_is_recovered() -> std::io::Result<()> {
     let temp = tempfile::tempdir().unwrap();
     let empty = unrecorded(temp.path(), "health/offload/.tmp-offload-empty", &[]);
     let retained = unrecorded(
@@ -324,26 +322,18 @@ fn empty_metadata_stage_after_intent_removal_is_recovered() {
     );
     let root = Arc::new(JournalRoot::open(temp.path()).unwrap());
     let activity = ActivityLease::try_acquire(Arc::clone(&root)).unwrap();
-    assert_eq!(
-        recover_abandoned_restores(&activity)
-            .expect("local recovery")
-            .len(),
-        1
-    );
+    assert_eq!(recover_abandoned_restores(&activity)?.len(), 1);
     assert!(!empty.exists());
     assert_eq!(
         fs::read(retained.join(solstone_core_journal_io::media::REMOVAL_ORIGINAL_LEAF)).unwrap(),
         RESTORED
     );
-    assert!(
-        recover_abandoned_restores(&activity)
-            .expect("local recovery")
-            .is_empty()
-    );
+    assert!(recover_abandoned_restores(&activity)?.is_empty());
+    Ok(())
 }
 
 #[test]
-fn readback_stage_without_intent_at_the_root_is_recovered() {
+fn readback_stage_without_intent_at_the_root_is_recovered() -> std::io::Result<()> {
     let temp = tempfile::tempdir().unwrap();
     let readback = unrecorded(
         temp.path(),
@@ -352,15 +342,16 @@ fn readback_stage_without_intent_at_the_root_is_recovered() {
     );
     let root = Arc::new(JournalRoot::open(temp.path()).unwrap());
     let activity = ActivityLease::try_acquire(Arc::clone(&root)).unwrap();
-    let recovered = recover_abandoned_restores(&activity).expect("local recovery");
+    let recovered = recover_abandoned_restores(&activity)?;
     assert_eq!(recovered.len(), 1);
     assert_eq!(recovered[0].outcome, Ok(AbandonedRestoreRelease::Undone));
     assert!(!readback.exists());
     assert!(observe_obligations(&root).unwrap().entries().is_empty());
+    Ok(())
 }
 
 #[test]
-fn offload_copy_stage_without_intent_at_the_root_is_recovered() {
+fn offload_copy_stage_without_intent_at_the_root_is_recovered() -> std::io::Result<()> {
     let temp = tempfile::tempdir().unwrap();
     let copy = unrecorded(
         temp.path(),
@@ -369,9 +360,10 @@ fn offload_copy_stage_without_intent_at_the_root_is_recovered() {
     );
     let root = Arc::new(JournalRoot::open(temp.path()).unwrap());
     let activity = ActivityLease::try_acquire(Arc::clone(&root)).unwrap();
-    let recovered = recover_abandoned_restores(&activity).expect("local recovery");
+    let recovered = recover_abandoned_restores(&activity)?;
     assert_eq!(recovered.len(), 1);
     assert_eq!(recovered[0].outcome, Ok(AbandonedRestoreRelease::Undone));
     assert!(!copy.exists());
     assert!(observe_obligations(&root).unwrap().entries().is_empty());
+    Ok(())
 }

@@ -840,7 +840,8 @@ fn exclusive_local(
             io::Error::new(io::ErrorKind::InvalidData, "journal path is not unicode")
         })?;
         let root = MediaDirectory::open(journal_root.clone(), Path::new(""))?;
-        let name = nix::sys::statfs::fstatfs(&root.inner)?.filesystem_type_name();
+        let stat = nix::sys::statfs::fstatfs(&root.inner)?;
+        let name = stat.filesystem_type_name();
         if qualify_ios_container(name, canonical) {
             Ok(true)
         } else {
@@ -945,7 +946,7 @@ pub fn qualify_ios_container(fs_type_name: &str, canonical_path: &str) -> bool {
 }
 
 #[cfg(target_os = "android")]
-fn android_process_name() -> io::Result<String> {
+pub(crate) fn android_process_name() -> io::Result<String> {
     let bytes = std::fs::read("/proc/self/cmdline")?;
     let end = bytes
         .iter()

@@ -479,7 +479,12 @@ pub(super) fn remove_leaf(parent: &Directory, name: &OsStr, _file: &File) -> io:
     unlinkat(parent, name, UnlinkatFlags::NoRemoveDir).map_err(Into::into)
 }
 
-#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[cfg(any(
+    target_os = "linux",
+    target_os = "android",
+    target_os = "macos",
+    target_os = "ios"
+))]
 pub(super) fn open_removal_directory(
     parent: &Directory,
     name: &OsStr,

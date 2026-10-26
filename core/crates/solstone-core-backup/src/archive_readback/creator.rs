@@ -719,7 +719,7 @@ impl OwnedArchiveCreator {
         Ok(super::OwnerObservation {
             activity: std::sync::Arc::as_ptr(self.activity()) as usize as u64,
             admission: self as *const Self as usize as u64,
-            clock: std::sync::Arc::as_ptr(clock) as usize,
+            clock: std::sync::Arc::as_ptr(clock).cast::<()>() as usize,
             deadline: budget.deadline(),
             journal: std::sync::Arc::as_ptr(self.journal_root()) as usize as u64,
             repository: self.repository_id().to_owned(),
