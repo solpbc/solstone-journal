@@ -1936,7 +1936,7 @@ fn probe_ced_in_process(library: &Path, model: &Path) -> Result<(), String> {
     match solstone_core_ced_analyze::run_probe_request(&text) {
         Ok(response) if response.get("ok") == Some(&Value::Bool(true)) => Ok(()),
         Ok(response) => Err(format!(
-            "ced probe helper returned an unexpected response: {response}"
+            "ced probe returned an unexpected response: {response}"
         )),
         Err(error) => Err(error.detail()),
     }
