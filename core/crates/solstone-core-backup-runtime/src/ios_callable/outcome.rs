@@ -42,6 +42,18 @@ pub(super) fn identifier(value: &str) -> bool {
             .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
 
+pub(super) fn repository_config_id(bytes: &[u8]) -> Result<String, ()> {
+    let envelope: RepositoryEnvelope = serde_json::from_slice(bytes).map_err(|_| ())?;
+    if envelope.schema != "solstone.backup-metadata.v1"
+        || envelope.kind != "repository-config"
+        || !identifier(&envelope.repository.id)
+        || !matches!(envelope.repository.version, 1 | 2)
+    {
+        return Err(());
+    }
+    Ok(envelope.repository.id)
+}
+
 fn optional_id(bytes: &[u8]) -> Result<Option<&str>, RunnerError> {
     let value = text(bytes)?;
     if value.is_empty() {

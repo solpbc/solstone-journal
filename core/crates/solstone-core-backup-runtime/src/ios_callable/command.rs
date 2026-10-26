@@ -326,6 +326,9 @@ mod tests {
             vec!["backup", "/journal/../other"],
             vec!["backup", "/journal", "--exclude", "/other/secret"],
             vec!["backup", "/journal", "--tag", "archive"],
+            vec!["backup", "/journal", "--force"],
+            vec!["backup", "/journal", "--no-cache"],
+            vec!["backup", "/journal", "--tag", "spb-offload-archive"],
             vec!["snapshots", "--exclude", "/journal/secret"],
             vec!["check", "--json"],
         ] {

@@ -657,7 +657,7 @@ fn ended_owners_empty_reservation_is_retired_by_the_next_lease_holder() {
     drop(carrier);
     assert!(path.is_dir());
     let next = ActivityLease::try_acquire(root.clone()).unwrap();
-    assert_eq!(retire_orphan_root_carriers(&next), 1);
+    assert_eq!(retire_orphan_root_carriers(&next).expect("retire"), 1);
     assert!(!path.exists());
     assert!(
         crate::activity_obligations::observe_obligations(&root)
@@ -684,11 +684,11 @@ fn occupied_nested_and_intent_bound_reservations_stay_held() {
     let intent = intents.join(format!("{}.json", "a".repeat(32)));
     fs::write(&intent, b"{}").unwrap();
     // An interrupted restore may name any reservation, so all of them stay.
-    assert_eq!(retire_orphan_root_carriers(&activity), 0);
+    assert_eq!(retire_orphan_root_carriers(&activity).expect("retire"), 0);
     assert!(empty.is_dir());
     fs::remove_file(&intent).unwrap();
     // Only the empty root reservation goes; content and nested stages stay.
-    assert_eq!(retire_orphan_root_carriers(&activity), 1);
+    assert_eq!(retire_orphan_root_carriers(&activity).expect("retire"), 1);
     assert!(!empty.exists());
     assert_eq!(
         fs::read(occupied.join("payload")).unwrap(),
@@ -720,7 +720,10 @@ fn ended_teardowns_empty_reservation_is_retired_by_the_next_teardown() {
     fs::create_dir(&occupied).unwrap();
     fs::write(occupied.join("payload"), b"unpublished copy").unwrap();
     let next = TeardownLease::try_acquire(root.clone()).unwrap();
-    assert_eq!(retire_orphan_root_carriers_for_teardown(&next), 1);
+    assert_eq!(
+        retire_orphan_root_carriers_for_teardown(&next).expect("retire"),
+        1
+    );
     assert!(!path.exists());
     assert_eq!(
         fs::read(occupied.join("payload")).unwrap(),

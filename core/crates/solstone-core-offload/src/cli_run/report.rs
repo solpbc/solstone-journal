@@ -418,6 +418,7 @@ impl OwnedOffloadCliRun {
                 CliPrelaunchRefusal::NamespaceCooperationHeld => "namespace_cooperation_held",
                 CliPrelaunchRefusal::Root(_) => "journal_unavailable",
                 CliPrelaunchRefusal::Budget(_) => "deadline_unavailable",
+                CliPrelaunchRefusal::Recovery(_) => "recovery_unavailable",
             },
             Custody::Skipped { .. } => "offload_off",
             Custody::PreparationFailure { .. } => "preparation_refused",

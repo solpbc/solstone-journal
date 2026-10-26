@@ -697,21 +697,28 @@ pub(crate) fn retire_recovered(
 /// local storage, so other filesystems retire nothing. Any restore intent holds
 /// every reservation, since an interrupted restore may name one. Removal is
 /// rmdir, so a reservation holding anything stays an unresolved obligation.
-pub fn retire_orphan_root_carriers(activity: &Arc<ActivityLease>) -> usize {
+pub fn retire_orphan_root_carriers(activity: &Arc<ActivityLease>) -> io::Result<usize> {
     retire_orphans_under(&StageLease::Activity(Arc::clone(activity)))
 }
 
 /// The same retirement under a teardown's own lease, before it observes
 /// anything, so a teardown that ended mid-run doesn't hold the next one.
-pub fn retire_orphan_root_carriers_for_teardown(lease: &Arc<TeardownLease>) -> usize {
+pub fn retire_orphan_root_carriers_for_teardown(lease: &Arc<TeardownLease>) -> io::Result<usize> {
     retire_orphans_under(&StageLease::Teardown(Arc::clone(lease)))
 }
 
-fn retire_orphans_under(lease: &StageLease) -> usize {
+fn retire_orphans_under(lease: &StageLease) -> io::Result<usize> {
     let mut retired = 0;
-    // A refusal or error retires nothing further; the caller's census decides.
-    retire_orphans(lease, &mut retired).unwrap_or_default();
-    retired
+    match retire_orphans(lease, &mut retired) {
+        Ok(()) => Ok(retired),
+        // Desktop observation failure still retires nothing and reports the
+        // count so far. A phone container that is not qualified must not look
+        // like that empty success.
+        #[cfg(any(target_os = "ios", target_os = "android"))]
+        Err(error) => Err(error),
+        #[cfg(not(any(target_os = "ios", target_os = "android")))]
+        Err(_) => Ok(retired),
+    }
 }
 
 fn retire_orphans(lease: &StageLease, retired: &mut usize) -> io::Result<()> {
@@ -760,9 +767,9 @@ fn retire_orphans(lease: &StageLease, retired: &mut usize) -> io::Result<()> {
 }
 
 /// Whether holding this lease excludes every writer of its journal: Linux and
-/// macOS on local storage only, and Windows, whose journal roots are only ever
-/// admitted on fixed local NTFS or ReFS volumes outside Cloud Files sync roots.
-/// Elsewhere nothing an ended owner left may be retired.
+/// macOS on local storage only, Windows on an admitted fixed volume, and a
+/// qualified private app container on Android and iOS. An unqualified phone
+/// container is `Err`, never a successful `Ok(false)`.
 pub fn exclusive_local_activity(activity: &Arc<ActivityLease>) -> io::Result<bool> {
     exclusive_local(activity.journal_root(), &|| {
         activity
@@ -805,11 +812,150 @@ fn exclusive_local(
         journal_root.revalidate().map_err(io::Error::other)?;
         Ok(true)
     }
-    #[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
+    #[cfg(target_os = "android")]
+    {
+        revalidate()?;
+        journal_root
+            .revalidate_canonical_binding()
+            .map_err(io::Error::other)?;
+        let root = MediaDirectory::open(journal_root.clone(), Path::new(""))?;
+        let magic = nix::sys::statfs::fstatfs(&root.inner)?.filesystem_type().0 as u64;
+        let process = android_process_name()?;
+        let canonical = journal_root.canonical_path().to_str().ok_or_else(|| {
+            io::Error::new(io::ErrorKind::InvalidData, "journal path is not unicode")
+        })?;
+        if qualify_android_container(magic, canonical, &process) {
+            Ok(true)
+        } else {
+            Err(shared_storage())
+        }
+    }
+    #[cfg(target_os = "ios")]
+    {
+        revalidate()?;
+        journal_root
+            .revalidate_canonical_binding()
+            .map_err(io::Error::other)?;
+        let canonical = journal_root.canonical_path().to_str().ok_or_else(|| {
+            io::Error::new(io::ErrorKind::InvalidData, "journal path is not unicode")
+        })?;
+        let root = MediaDirectory::open(journal_root.clone(), Path::new(""))?;
+        let name = nix::sys::statfs::fstatfs(&root.inner)?.filesystem_type_name();
+        if qualify_ios_container(name, canonical) {
+            Ok(true)
+        } else {
+            Err(shared_storage())
+        }
+    }
+    #[cfg(not(any(
+        target_os = "linux",
+        target_os = "macos",
+        target_os = "ios",
+        target_os = "android",
+        windows
+    )))]
     {
         let _ = (journal_root, revalidate);
         Ok(false)
     }
+}
+
+/// Android private-app-container check. `magic` is the statfs type. `process`
+/// is the name from `/proc/self/cmdline`, never an environment variable.
+/// ext4 and f2fs under this process's `/data/data` or `/data/user/<id>` tree
+/// qualify. Shared, fused, and other-package paths do not.
+pub fn qualify_android_container(magic: u64, canonical_path: &str, process: &str) -> bool {
+    const EXT4: u64 = 0xEF53;
+    const F2FS: u64 = 0xF2F5_2010;
+    if magic != EXT4 && magic != F2FS {
+        return false;
+    }
+    let Some(process) = android_process_label(process) else {
+        return false;
+    };
+    android_private_path(canonical_path, process)
+}
+
+fn android_process_label(process: &str) -> Option<&str> {
+    let process = process.split('\0').next().unwrap_or("");
+    let process = process.rsplit('/').next().unwrap_or("");
+    if process.is_empty()
+        || process.contains('/')
+        || process.contains('\0')
+        || process == "."
+        || process == ".."
+    {
+        None
+    } else {
+        Some(process)
+    }
+}
+
+fn android_private_path(path: &str, process: &str) -> bool {
+    if path.contains('\0') || path.split('/').any(|part| part == "." || part == "..") {
+        return false;
+    }
+    let rest = if let Some(rest) = path.strip_prefix("/data/data/") {
+        rest
+    } else if let Some(rest) = path.strip_prefix("/data/user/") {
+        let Some((user, rest)) = rest.split_once('/') else {
+            return false;
+        };
+        if user.is_empty() || !user.bytes().all(|byte| byte.is_ascii_digit()) {
+            return false;
+        }
+        rest
+    } else {
+        return false;
+    };
+    let (owner, tail) = rest.split_once('/').unwrap_or((rest, ""));
+    owner == process && !owner.is_empty() && !tail.starts_with('/')
+}
+
+/// iOS private-app-container check. Only APFS under an application, plugin, or
+/// app-group container qualifies, and a cloud-synced path never does.
+pub fn qualify_ios_container(fs_type_name: &str, canonical_path: &str) -> bool {
+    if fs_type_name != "apfs" {
+        return false;
+    }
+    if canonical_path.contains("Mobile Documents") || canonical_path.contains("CloudStorage") {
+        return false;
+    }
+    if canonical_path
+        .split('/')
+        .any(|part| part == "." || part == "..")
+    {
+        return false;
+    }
+    const ROOTS: [&str; 3] = [
+        "/Containers/Data/Application/",
+        "/Containers/Data/PluginKitPlugin/",
+        "/Containers/Shared/AppGroup/",
+    ];
+    ROOTS.iter().any(|root| {
+        let Some(index) = canonical_path.find(root) else {
+            return false;
+        };
+        let after = &canonical_path[index + root.len()..];
+        let Some(identifier) = after.split('/').next() else {
+            return false;
+        };
+        !identifier.is_empty()
+    })
+}
+
+#[cfg(target_os = "android")]
+fn android_process_name() -> io::Result<String> {
+    let bytes = std::fs::read("/proc/self/cmdline")?;
+    let end = bytes
+        .iter()
+        .position(|byte| *byte == 0)
+        .unwrap_or(bytes.len());
+    let text = std::str::from_utf8(&bytes[..end])
+        .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+    android_process_label(text)
+        .map(str::to_owned)
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "android process name is empty"))
 }
 
 /// Remove one recorded stage whose owner ended: `name` under `parent`, holding
@@ -869,12 +1015,24 @@ pub fn retire_unrecorded_stage_where(
 
 enum Leaf<'a> {
     #[cfg_attr(
-        not(any(target_os = "linux", target_os = "macos", windows)),
+        not(any(
+            target_os = "linux",
+            target_os = "macos",
+            target_os = "ios",
+            target_os = "android",
+            windows
+        )),
         allow(dead_code)
     )]
     Exact(&'a OsStr, Option<MediaIdentity>),
     #[cfg_attr(
-        not(any(target_os = "linux", target_os = "macos", windows)),
+        not(any(
+            target_os = "linux",
+            target_os = "macos",
+            target_os = "ios",
+            target_os = "android",
+            windows
+        )),
         allow(dead_code)
     )]
     Accepted(&'a dyn Fn(&OsStr) -> bool),
@@ -887,7 +1045,13 @@ fn retire_stage(
     directory: MediaIdentity,
     leaf: Leaf<'_>,
 ) -> io::Result<bool> {
-    #[cfg(any(target_os = "linux", target_os = "macos", windows))]
+    #[cfg(any(
+        target_os = "linux",
+        target_os = "macos",
+        target_os = "ios",
+        target_os = "android",
+        windows
+    ))]
     {
         plain_name(name)?;
         if let Leaf::Exact(leaf_name, _) = leaf {
@@ -950,7 +1114,13 @@ fn retire_stage(
         }
         Ok(true)
     }
-    #[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
+    #[cfg(not(any(
+        target_os = "linux",
+        target_os = "macos",
+        target_os = "ios",
+        target_os = "android",
+        windows
+    )))]
     {
         let _ = (activity, parent, name, directory, leaf);
         Err(shared_storage())
@@ -992,6 +1162,110 @@ fn local_storage(kind: nix::sys::statfs::FsType) -> bool {
 pub struct ActivityCarrierRetirement<T> {
     pub owned: T,
     pub receipt: ActivityCarrierRetirementReceipt,
+}
+
+#[cfg(test)]
+mod qualification {
+    use super::{qualify_android_container, qualify_ios_container};
+
+    const EXT4: u64 = 0xEF53;
+    const F2FS: u64 = 0xF2F5_2010;
+    const PROCESS: &str = "journal.app";
+
+    #[test]
+    fn android_private_ext4_and_f2fs_qualify() {
+        assert!(qualify_android_container(
+            EXT4,
+            "/data/data/journal.app/files/journal",
+            PROCESS
+        ));
+        assert!(qualify_android_container(
+            F2FS,
+            "/data/user/0/journal.app/files/journal",
+            PROCESS
+        ));
+        assert!(qualify_android_container(
+            EXT4,
+            "/data/user/10/journal.app",
+            PROCESS
+        ));
+    }
+
+    #[test]
+    fn android_shared_wrong_package_and_other_magic_refuse() {
+        assert!(!qualify_android_container(
+            EXT4,
+            "/data/data/other.app/files/journal",
+            PROCESS
+        ));
+        assert!(!qualify_android_container(
+            EXT4,
+            "/storage/emulated/0/journal",
+            PROCESS
+        ));
+        assert!(!qualify_android_container(EXT4, "/sdcard/journal", PROCESS));
+        assert!(!qualify_android_container(
+            EXT4,
+            "/data/user/0/journal.app.extra/files",
+            PROCESS
+        ));
+        assert!(!qualify_android_container(
+            0x0102_1994,
+            "/data/data/journal.app/files",
+            PROCESS
+        ));
+        assert!(!qualify_android_container(
+            0x0102_1997,
+            "/data/data/journal.app/files",
+            PROCESS
+        ));
+        assert!(!qualify_android_container(
+            EXT4,
+            "/data/data/journal.app/files",
+            ""
+        ));
+        assert!(!qualify_android_container(
+            EXT4,
+            "/data/user/u0/journal.app/files",
+            PROCESS
+        ));
+        assert!(!qualify_android_container(
+            EXT4,
+            "/data/data/journal.app/../other.app/files",
+            PROCESS
+        ));
+    }
+
+    #[test]
+    fn ios_apfs_app_containers_qualify() {
+        for path in [
+            "/private/var/mobile/Containers/Data/Application/8C5E/Documents/journal",
+            "/var/mobile/Containers/Data/PluginKitPlugin/8C5E/journal",
+            "/private/var/mobile/Containers/Shared/AppGroup/8C5E/journal",
+        ] {
+            assert!(qualify_ios_container("apfs", path), "{path}");
+        }
+    }
+
+    #[test]
+    fn ios_cloud_non_apfs_and_outside_paths_refuse() {
+        let app =
+            "/private/var/mobile/Containers/Data/Application/8C5E/Library/Mobile Documents/journal";
+        assert!(!qualify_ios_container("apfs", app));
+        assert!(!qualify_ios_container(
+            "apfs",
+            "/private/var/mobile/Library/CloudStorage/journal"
+        ));
+        assert!(!qualify_ios_container(
+            "hfs",
+            "/private/var/mobile/Containers/Data/Application/8C5E/journal"
+        ));
+        assert!(!qualify_ios_container(
+            "apfs",
+            "/var/mobile/Containers/Data/Application/"
+        ));
+        assert!(!qualify_ios_container("apfs", "/tmp/journal"));
+    }
 }
 
 #[cfg(all(test, feature = "full-tests"))]

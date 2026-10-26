@@ -72,7 +72,8 @@ pub fn admit_teardown(
         let lease = TeardownLease::try_acquire(root).map_err(activity_refusal)?;
         // A teardown that ended mid-run left only an empty reservation; it
         // must not hold this one.
-        solstone_core_journal_io::media::retire_orphan_root_carriers_for_teardown(&lease);
+        solstone_core_journal_io::media::retire_orphan_root_carriers_for_teardown(&lease)
+            .map_err(|_| TeardownAdmissionRefusal::ActivityUnavailable)?;
         let configuration = TeardownConfiguration::capture(lease.journal_root())
             .map_err(TeardownAdmissionRefusal::Configuration)?;
         let admitted = TeardownAdmission {

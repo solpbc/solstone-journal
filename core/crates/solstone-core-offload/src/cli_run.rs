@@ -66,6 +66,7 @@ pub enum CliPrelaunchRefusal {
     NamespaceCooperationHeld,
     Root(JournalRootError),
     Budget(AdmissionError),
+    Recovery(std::io::Error),
 }
 
 pub enum CliPreparedRefusal {
@@ -314,9 +315,18 @@ pub fn run_cli_offload(
     };
     // A run, removal or restore interrupted by a crash would refuse this
     // admission. Recovery may hash originals, so it runs before the deadline starts.
-    if let Ok(activity) = ActivityLease::try_acquire(Arc::clone(&root)) {
-        recover_interrupted_removals(&activity);
-        recover_abandoned_restores(&activity);
+    if let Ok(activity) = ActivityLease::try_acquire(Arc::clone(&root))
+        && let Err(error) = recover_interrupted_removals(&activity)
+            .and_then(|_| recover_abandoned_restores(&activity).map(|_| ()))
+    {
+        return OwnedOffloadCliRun::receive(
+            Custody::Prelaunch {
+                refusal: CliPrelaunchRefusal::Recovery(error),
+                _root: Some(root),
+                _clock: clock,
+            },
+            CliObservedEffects::default(),
+        );
     }
     // Offload stays off until the owner turns it on, and a scheduled run then
     // has nothing to do. Configuration that can't be read goes on to

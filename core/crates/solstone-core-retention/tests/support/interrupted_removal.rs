@@ -74,7 +74,7 @@ impl Journal {
     }
     fn recover(&self) -> Vec<InterruptedRemoval> {
         let activity = ActivityLease::try_acquire(Arc::clone(&self.root)).unwrap();
-        recover_interrupted_removals(&activity)
+        recover_interrupted_removals(&activity).expect("local recovery")
     }
 }
 

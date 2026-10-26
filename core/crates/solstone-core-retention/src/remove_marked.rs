@@ -1612,9 +1612,9 @@ fn execute_reviewed_mode(
             .map_err(ReviewedRemovalRefusal::Activity)?;
         // As at archive admission: first recover what an ended owner left
         // behind, then let the fresh census decide.
-        recover_interrupted_removals(&activity);
-        crate::restore_intent::recover_abandoned_restores(&activity);
-        solstone_core_journal_io::media::retire_orphan_root_carriers(&activity);
+        recover_interrupted_removals(&activity)?;
+        crate::restore_intent::recover_abandoned_restores(&activity)?;
+        solstone_core_journal_io::media::retire_orphan_root_carriers(&activity)?;
         let obligations =
             solstone_core_journal_io::activity_obligations::observe_obligations(&root)
                 .map_err(ReviewedRemovalRefusal::Census)?;

@@ -371,6 +371,11 @@ impl ArchiveBudget {
         self.cancellation.as_ref()
     }
 
+    #[cfg_attr(not(any(target_os = "android", target_os = "ios")), allow(dead_code))]
+    pub(crate) fn deadline(&self) -> i64 {
+        self.deadline
+    }
+
     fn start(
         clock: &dyn Clock,
         cancellation: Option<ArchiveCancellation>,

@@ -603,7 +603,7 @@ fn execute_tracked(
         ChildSetup::Dns(deadline) => Some(deadline),
         _ => None,
     };
-    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "android")))]
     if matches!(setup, ChildSetup::Creator(_)) {
         return Err(io::Error::new(
             io::ErrorKind::Unsupported,
@@ -689,12 +689,30 @@ fn execute_tracked(
         }
     }
     #[cfg(target_os = "android")]
-    {
-        // Ordinary backup/restore receives the same descriptor sweep and
-        // parent-death protection as Linux. Creator admission remains closed
-        // above until Android's media settlement contract is qualified.
-        prepare_dns_child(&mut command);
-        inherit_in_child(&mut command, &request.pass_fds)?;
+    match setup {
+        ChildSetup::Creator(()) => {
+            let mut seen = std::collections::BTreeSet::new();
+            let mut allowed = Vec::new();
+            for descriptor in &request.pass_fds {
+                if descriptor.as_raw_fd() < 3 {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        "invalid archive descriptor",
+                    ));
+                }
+                if seen.insert(descriptor.as_raw_fd()) {
+                    allowed.push(*descriptor);
+                }
+            }
+            // Same contained lifetime as the Linux creator: close from 3, then
+            // inherit only the retained descriptors. Ordinary backup stays below.
+            prepare_dns_child(&mut command);
+            inherit_in_child(&mut command, &allowed)?;
+        }
+        ChildSetup::Ordinary => {
+            prepare_dns_child(&mut command);
+            inherit_in_child(&mut command, &request.pass_fds)?;
+        }
     }
     #[cfg(not(any(target_os = "linux", target_os = "android", target_os = "macos")))]
     inherit_in_child(&mut command, &request.pass_fds)?;
