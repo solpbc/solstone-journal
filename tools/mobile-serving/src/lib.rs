@@ -40,6 +40,8 @@ mod custody;
 #[cfg(feature = "processing")]
 mod daily_queue_observation;
 #[cfg(feature = "processing")]
+pub mod execution;
+#[cfg(feature = "processing")]
 pub mod foreground;
 
 pub struct OwnerResponse {
@@ -240,6 +242,13 @@ impl MobileServing {
             .map(|startup| Arc::clone(&startup.stop_ready))
             .unwrap_or_else(|| Arc::new(|_| {}));
         let early_cancelled = Arc::clone(&cancelled);
+        let owner_routes =
+            solstone_core_mcp_endpoint::owner_routes(root.canonical_path().to_path_buf());
+        #[cfg(feature = "processing")]
+        let (execution_routes, execution_worker) =
+            execution::routes_and_worker(Arc::clone(&root), payload_root.clone(), stop.clone());
+        #[cfg(feature = "processing")]
+        let owner_routes = owner_routes.merge(execution_routes);
         let handle = runtime
             .block_on(async {
                 let startup = solstone_core_convey_shell::EmbeddedStartup {
@@ -261,7 +270,7 @@ impl MobileServing {
                     Arc::clone(&root),
                     address,
                     payload_root,
-                    solstone_core_mcp_endpoint::owner_routes(root.canonical_path().to_path_buf()),
+                    owner_routes,
                     startup,
                 );
                 #[cfg(not(target_os = "ios"))]
@@ -269,12 +278,14 @@ impl MobileServing {
                     root.canonical_path().to_path_buf(),
                     address,
                     payload_root,
-                    solstone_core_mcp_endpoint::owner_routes(root.canonical_path().to_path_buf()),
+                    owner_routes,
                     startup,
                 );
                 binding.await
             })
             .map_err(|e| e.to_string())?;
+        #[cfg(feature = "processing")]
+        let execution_task = runtime.spawn(execution_worker);
         let (ready, registered) = oneshot::channel();
         let brain_task = runtime.spawn(brain::run(Arc::clone(&root), stop.clone(), ready));
         let (backup_ready, subscribed) = oneshot::channel();
@@ -372,7 +383,14 @@ impl MobileServing {
             interface_address: address,
             services: Mutex::new(Some(AppServices {
                 shutdown,
-                tasks: vec![brain_task, relay_task, mcp_task, direct_task],
+                tasks: vec![
+                    brain_task,
+                    relay_task,
+                    mcp_task,
+                    direct_task,
+                    #[cfg(feature = "processing")]
+                    execution_task,
+                ],
                 backup: backup_task,
             })),
             shutdown_complete: std::sync::atomic::AtomicBool::new(false),

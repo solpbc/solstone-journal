@@ -26,10 +26,13 @@ processing = [
     "dep:solstone-core-facets",
     "dep:solstone-core-speaker-resolve",
     "dep:solstone-core-speakers",
+    "dep:solstone-core-linked-share",
+    "dep:solstone-core-talent-runtime",
 ]
 
 [dependencies]
-axum = { version = "0.8.9", default-features = false }
+axum = { version = "0.8.9", default-features = false, features = ["json"] }
+serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 log = "0.4"
 http-body-util = "0.1"
@@ -63,6 +66,8 @@ chrono-tz = { version = "0.10", optional = true }
 solstone-core-facets = { path = "../../core/crates/solstone-core-facets", optional = true }
 solstone-core-speaker-resolve = { path = "../../core/crates/solstone-core-speaker-resolve", optional = true }
 solstone-core-speakers = { path = "../../core/crates/solstone-core-speakers", optional = true }
+solstone-core-linked-share = { path = "../../core/crates/solstone-core-linked-share", optional = true }
+solstone-core-talent-runtime = { path = "../../core/crates/solstone-core-talent-runtime", optional = true }
 ort = { version = "=2.0.0-rc.12", default-features = false, features = ["api-24", "std"] }
 
 # iOS links the pinned static runtime into its app executable.
@@ -70,7 +75,10 @@ ort = { version = "=2.0.0-rc.12", default-features = false, features = ["api-24"
 ort = { version = "=2.0.0-rc.12", default-features = false, features = ["load-dynamic"] }
 
 [dev-dependencies]
+solstone-core-format = { path = "../../core/crates/solstone-core-format" }
+axum = { version = "0.8.9", default-features = false, features = ["http1", "tokio"] }
 tempfile = "3"
+tower = { version = "0.5", features = ["util"] }
 solstone-core-processing-record = { path = "../../core/crates/solstone-core-processing-record" }
 solstone-core-system = { path = "../../core/crates/solstone-core-system" }
 solstone-core-installed-payload = { path = "../../core/crates/solstone-core-installed-payload" }

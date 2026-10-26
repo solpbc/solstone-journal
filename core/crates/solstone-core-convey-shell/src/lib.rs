@@ -120,6 +120,9 @@ mod device_migration;
 mod devices_source_retired;
 #[cfg(feature = "host")]
 mod door;
+#[cfg(feature = "host")]
+#[cfg(all(test, feature = "full-tests"))]
+mod embedded_producer_tests;
 mod entities;
 mod form_body_guard;
 #[cfg(feature = "host")]
@@ -346,6 +349,8 @@ pub struct EmbeddedConveyHandle {
     local_network_task: tokio::task::JoinHandle<()>,
     link_health_task: tokio::task::JoinHandle<()>,
     service_token_renewal_task: tokio::sync::Mutex<Option<tokio::task::JoinHandle<()>>>,
+    weekly_heads_up_task: tokio::sync::Mutex<Option<tokio::task::JoinHandle<()>>>,
+    location_task: tokio::sync::Mutex<Option<tokio::task::JoinHandle<()>>>,
     renewal_shutdown: tokio::sync::watch::Sender<bool>,
     backup_deps: solstone_core_backup_web::BackupWebDeps,
 }
@@ -426,6 +431,8 @@ impl EmbeddedConveyHandle {
     pub async fn shutdown_and_wait(&self) {
         self.shutdown();
         join_embedded_renewal(&self.service_token_renewal_task).await;
+        join_embedded_renewal(&self.weekly_heads_up_task).await;
+        join_embedded_renewal(&self.location_task).await;
     }
 }
 
@@ -651,11 +658,11 @@ async fn bind_embedded_router(
             door::open_after_finalize,
         ))
         .layer(axum::middleware::from_fn_with_state(
-            binding,
+            binding.clone(),
             embedded_root_gate,
         ))
         .layer(axum::middleware::from_fn_with_state(
-            admission,
+            admission.clone(),
             embedded_admission_gate,
         ));
     if let Some(startup) = &startup {
@@ -672,13 +679,36 @@ async fn bind_embedded_router(
     let _ = door.ensure_started().await;
     let local_network_task = tokio::spawn(local_network::watch(door.clone()));
     let (link_health_task, service_token_renewal_task) =
-        start_relay_health_tasks(service_root, cache, Some(renewal_stop));
+        start_relay_health_tasks(service_root.clone(), cache, Some(renewal_stop.clone()));
+    let producer_active: Arc<dyn Fn() -> bool + Send + Sync> = Arc::new(move || {
+        !*admission.stopped.borrow()
+            && !(admission.cancelled)()
+            && binding.revalidate_canonical_binding().is_ok()
+    });
+    let push_portal = std::env::var("SERVICES_PORTAL_URL")
+        .unwrap_or_else(|_| agents_enable::DEFAULT_PORTAL_URL.to_owned())
+        .trim_end_matches('/')
+        .to_owned();
+    let weekly_heads_up_task =
+        tokio::spawn(weekly_heads_up::subscribe_weekly_heads_up_until_stopped(
+            service_root.clone(),
+            push_portal,
+            renewal_stop.clone(),
+            Arc::clone(&producer_active),
+        ));
+    let location_task = tokio::spawn(solstone_core_map_web::run_maintenance_until_stopped(
+        service_root,
+        renewal_stop,
+        producer_active,
+    ));
     let handle = EmbeddedConveyHandle {
         owner_router,
         door,
         local_network_task,
         link_health_task,
         service_token_renewal_task: tokio::sync::Mutex::new(Some(service_token_renewal_task)),
+        weekly_heads_up_task: tokio::sync::Mutex::new(Some(weekly_heads_up_task)),
+        location_task: tokio::sync::Mutex::new(Some(location_task)),
         renewal_shutdown,
         backup_deps,
     };

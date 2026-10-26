@@ -94,6 +94,50 @@ pub fn start_maintenance(journal_root: PathBuf) {
     }
 }
 
+/// Run the maintained reconciliation pass under an embedding owner's Stop.
+/// An admitted pass finishes before this future returns; no blocking work is
+/// detached when Stop arrives.
+pub async fn run_maintenance_until_stopped(
+    journal_root: PathBuf,
+    mut stop: tokio::sync::watch::Receiver<bool>,
+    active: Arc<dyn Fn() -> bool + Send + Sync>,
+) {
+    let mut reconciler = Reconciler::default();
+    loop {
+        if *stop.borrow() || !active() {
+            return;
+        }
+        let journal = journal_root.clone();
+        let pass_active = Arc::clone(&active);
+        let pass_stop = stop.clone();
+        match tokio::task::spawn_blocking(move || {
+            if !*pass_stop.borrow() && pass_active() {
+                match solstone_core_location::reconcile_journal(&journal, &mut reconciler) {
+                    Ok(report) => {
+                        for failure in report.failures {
+                            log::warn!("location document: {failure}");
+                        }
+                    }
+                    Err(error) => log::warn!("location documents paused: {error}"),
+                }
+            }
+            reconciler
+        })
+        .await
+        {
+            Ok(state) => reconciler = state,
+            Err(error) => {
+                log::warn!("location documents worker: {error}");
+                return;
+            }
+        }
+        tokio::select! {
+            _ = stop.changed() => return,
+            _ = tokio::time::sleep(MAINTENANCE_PERIOD) => {},
+        }
+    }
+}
+
 pub(crate) fn valid_day(day: &str) -> bool {
     day.len() == 8
         && day.bytes().all(|byte| byte.is_ascii_digit())

@@ -276,6 +276,26 @@ fn maintenance(hosted: &HostedCommand, id: &str, checkpoint: &StopCheckpoint) ->
         "backup:verify" => backup(hosted, EmbeddedBackupRoutine::Verify, checkpoint),
         "backup:prune" => backup(hosted, EmbeddedBackupRoutine::Prune, checkpoint),
         "health:mark-raw" | "health:prune-logs" => health(hosted, id, checkpoint),
+        "retention:owner-voice-originals" => {
+            let services = solstone_core_maintenance::HealthServices {
+                now: Utc::now(),
+                zone: solstone_core_journal_config::owner_zone(&hosted.journal),
+            };
+            let outcome =
+                solstone_core_maintenance::bodies::retention::owner_voice_originals_checked(
+                    &[],
+                    &hosted.journal,
+                    &services,
+                    checkpoint.as_ref(),
+                );
+            if !outcome.stdout.is_empty() {
+                log::info!("{}", outcome.stdout.trim_end());
+            }
+            if !outcome.stderr.is_empty() {
+                log::warn!("{}", outcome.stderr.trim_end());
+            }
+            outcome.exit_code
+        }
         _ => 1,
     }
 }
