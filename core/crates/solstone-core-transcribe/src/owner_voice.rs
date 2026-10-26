@@ -30,7 +30,7 @@ const SAMPLE_RATE: usize = 16_000;
 const WINDOW_SAMPLES: usize = 2 * SAMPLE_RATE;
 const MIN_SPEECH_SAMPLES: usize = 4_800;
 pub(crate) const PAD_BEFORE_SAMPLES: usize = 8_000;
-const PAD_AFTER_SAMPLES: usize = 16_000;
+pub(crate) const PAD_AFTER_SAMPLES: usize = 16_000;
 /// First-pass statement ids start here, far above any id a published transcript uses.
 const SYNTHETIC_ID_BASE: i64 = 1 << 40;
 const EMBEDDING_DIMENSIONS: usize = 256;
@@ -369,13 +369,39 @@ pub(crate) fn filter_record(
                 .sum::<usize>()
         })
         .sum::<usize>();
+    filter_record_from_totals(
+        speech_samples,
+        kept_samples,
+        kept_speech,
+        decision.windows_scored,
+        decision.windows_kept,
+        original_name,
+        original_size,
+        original_sha256,
+        print,
+    )
+}
+
+/// The same record from totals already accumulated across ordered spans.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn filter_record_from_totals(
+    speech_samples: usize,
+    kept_samples: usize,
+    kept_speech: usize,
+    windows_scored: u64,
+    windows_kept: u64,
+    original_name: &str,
+    original_size: u64,
+    original_sha256: &[u8; 32],
+    print: &[f32],
+) -> OwnerVoiceFilter {
     OwnerVoiceFilter {
         version: 1,
         speech_s: speech_samples as f64 / SAMPLE_RATE as f64,
         kept_s: kept_samples as f64 / SAMPLE_RATE as f64,
         left_out_s: (speech_samples - kept_speech) as f64 / SAMPLE_RATE as f64,
-        windows_scored: decision.windows_scored,
-        windows_kept: decision.windows_kept,
+        windows_scored,
+        windows_kept,
         original: OwnerVoiceOriginal {
             name: original_name.to_owned(),
             size: original_size,

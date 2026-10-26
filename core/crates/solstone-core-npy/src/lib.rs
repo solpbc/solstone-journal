@@ -9,4 +9,4 @@ pub mod reader;
 pub mod writer;
 
 pub use reader::{NpyBlob, NpyReadError, parse_npy};
-pub use writer::write_npy;
+pub use writer::{npy_header, write_npy};

@@ -123,6 +123,12 @@ pub(crate) fn take_processing_test_vad() -> Option<solstone_core_observe_audio::
     PROCESSING_TEST_VAD.with(|result| result.borrow_mut().take())
 }
 
+/// Arm the one-shot hook that runs inside [`commit_input`] before its checkpoint.
+#[cfg(all(test, feature = "full-tests"))]
+pub(crate) fn set_before_processing_commit(hook: Option<Box<dyn FnOnce()>>) {
+    BEFORE_PROCESSING_COMMIT.with(|cell| *cell.borrow_mut() = hook);
+}
+
 /// Run the currently implemented native transcription path for one segment audio file.
 pub(crate) fn process_one(
     audio_path: &Path,
@@ -179,6 +185,37 @@ pub(crate) fn finish_context_output(
                     path: audio_path.to_path_buf(),
                     detail,
                 })
+        })?;
+    }
+    Ok(())
+}
+
+/// Finish admitted index work after publication. A late cancel does not abort it.
+pub(crate) fn finish_context_output_admitted(
+    journal_path: &Path,
+    output: &Path,
+    attempt: Option<&solstone_core_system::work_retry::Attempt>,
+    audio_path: &Path,
+) -> Result<(), TranscribeError> {
+    if let Some(attempt) = attempt {
+        let unit = solstone_core_system::work_retry::raw::unit_for_output(
+            journal_path,
+            output,
+            solstone_core_processing_record::vocab::HANDLER_TRANSCRIBE,
+        )
+        .map_err(|detail| TranscribeError::ProcessingClaim {
+            path: audio_path.to_path_buf(),
+            detail,
+        })?;
+        solstone_core_system::work_retry::raw::finish_output_checked(
+            journal_path,
+            &unit,
+            attempt,
+            &|| Ok(()),
+        )
+        .map_err(|detail| TranscribeError::ProcessingClaim {
+            path: audio_path.to_path_buf(),
+            detail,
         })?;
     }
     Ok(())
@@ -1253,7 +1290,10 @@ pub(crate) fn statements_from_words(
     statements
 }
 
-fn statement_from_words(id: i64, words: &[&parakeet_cpp::TranscriptionWord]) -> Map<String, Value> {
+pub(crate) fn statement_from_words(
+    id: i64,
+    words: &[&parakeet_cpp::TranscriptionWord],
+) -> Map<String, Value> {
     let first = words.first().expect("statement words are nonempty");
     let last = words.last().expect("statement words are nonempty");
     Map::from_iter([

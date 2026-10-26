@@ -272,6 +272,7 @@ impl AudioWorker {
             load_ms: Cell::new(None),
             native_call: &native_call,
         };
+        journal_mobile_audio::install_embedded_ced();
         let result = process_embedded(
             input,
             config.root.canonical_path(),
@@ -290,7 +291,12 @@ impl AudioWorker {
             },
             retry.as_ref(),
         );
-        if cancel() {
+        let cancelled = match &result {
+            Ok(_) => false,
+            Err(solstone_core_transcribe::TranscribeError::Cancelled) => true,
+            Err(_) => cancel(),
+        };
+        if cancelled {
             self.state.status.lock().unwrap()["state"] = json!("cancelled");
             return Ok(false);
         }
@@ -488,6 +494,7 @@ fn run(
                             "previous": prior.get("last"),
                             "model_load_ms": asr.load_ms.get(),
                         }));
+                        journal_mobile_audio::install_embedded_ced();
                         let result = process_embedded(
                             &input,
                             root,
@@ -512,7 +519,12 @@ fn run(
                             },
                             retry.as_ref(),
                         );
-                        if state.cancelled(generation) {
+                        let cancelled = match &result {
+                            Ok(_) => false,
+                            Err(solstone_core_transcribe::TranscribeError::Cancelled) => true,
+                            Err(_) => state.cancelled(generation),
+                        };
+                        if cancelled {
                             state.status.lock().unwrap()["state"] = json!("cancelled");
                             break;
                         }

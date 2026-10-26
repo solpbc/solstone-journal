@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+mod cluster_bound;
 mod filterbank;
 mod segmentation;
 mod statements;
@@ -28,7 +29,7 @@ pub use segmentation::{
     PYANNOTE_OVERLAP_STRIDE_S, PYANNOTE_SAMPLE_RATE_HZ, PYANNOTE_SINGLE_SPEAKER_CLASSES,
     PYANNOTE_WINDOW_S, PyannoteSegmentationPassResult, SLOT_ACTIVE_MIN_SHARE,
     SPEAKER_EVIDENCE_MULTI_MIN, SPEAKER_EVIDENCE_SINGLE_MAX, SpeakerEvidence,
-    SpeakerEvidenceDecision, SpeakerSegmentationError, SpeakerWindowStats,
+    SpeakerEvidenceAccum, SpeakerEvidenceDecision, SpeakerSegmentationError, SpeakerWindowStats,
     compute_speaker_window_stats, decide_speaker_evidence, run_pyannote_segmentation_pass,
 };
 pub use statements::{

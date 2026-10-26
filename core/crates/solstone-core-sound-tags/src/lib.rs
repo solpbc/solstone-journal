@@ -309,6 +309,42 @@ pub fn read_sound_tag_windows(response: &Value, expected_len: usize) -> SoundTag
     SoundTagWindows::Accepted(per_window)
 }
 
+/// Fold one accepted window into the per-label maximum. Scores under [`SCORE_FLOOR`] are ignored.
+pub fn accumulate_sound_tag_window(scores: &mut BTreeMap<String, f64>, window: &Value) {
+    let Some(tags) = window.get("tags").and_then(Value::as_object) else {
+        return;
+    };
+    for (label, score) in tags {
+        let Some(score) = score.as_f64() else {
+            continue;
+        };
+        if score < SCORE_FLOOR {
+            continue;
+        }
+        let entry = scores.entry(label.clone()).or_insert(0.0);
+        if score > *entry {
+            *entry = score;
+        }
+    }
+}
+
+/// The published sound-tag object from a max accumulator and the accepted-window count.
+pub fn fold_sound_tag_scores(scores: &BTreeMap<String, f64>, windows: usize) -> Value {
+    let mut tags_map = Map::new();
+    for (label, score) in scores {
+        tags_map.insert(label.clone(), json!(score));
+    }
+    json!({
+        "engine": ENGINE,
+        "model": MODEL,
+        "threshold": SCORE_FLOOR,
+        "window_s": WINDOW_S,
+        "agg": AGG,
+        "windows": windows,
+        "tags": Value::Object(tags_map),
+    })
+}
+
 /// Max score at or above [`SCORE_FLOOR`] for each label, then the published object.
 ///
 /// `windows` are the accepted (`ok: true`) window objects. A lower score does
@@ -316,37 +352,9 @@ pub fn read_sound_tag_windows(response: &Value, expected_len: usize) -> SoundTag
 pub fn fold_sound_tag_windows(windows: &[Value]) -> Value {
     let mut aggregated: BTreeMap<String, f64> = BTreeMap::new();
     for window in windows {
-        let Some(tags) = window.get("tags").and_then(Value::as_object) else {
-            continue;
-        };
-        for (label, score) in tags {
-            let Some(score) = score.as_f64() else {
-                continue;
-            };
-            if score < SCORE_FLOOR {
-                continue;
-            }
-            let entry = aggregated.entry(label.clone()).or_insert(0.0);
-            if score > *entry {
-                *entry = score;
-            }
-        }
+        accumulate_sound_tag_window(&mut aggregated, window);
     }
-
-    let mut tags_map = Map::new();
-    for (label, score) in aggregated {
-        tags_map.insert(label, json!(score));
-    }
-
-    json!({
-        "engine": ENGINE,
-        "model": MODEL,
-        "threshold": SCORE_FLOOR,
-        "window_s": WINDOW_S,
-        "agg": AGG,
-        "windows": windows.len(),
-        "tags": Value::Object(tags_map),
-    })
+    fold_sound_tag_scores(&aggregated, windows.len())
 }
 
 fn windows_from_response(response: &Value, expected_len: usize) -> Option<Value> {

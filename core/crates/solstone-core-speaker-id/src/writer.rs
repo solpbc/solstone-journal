@@ -5,13 +5,15 @@
 
 use std::collections::HashSet;
 use std::fmt;
-use std::fs;
-use std::io;
+use std::fs::{self, File};
+use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use serde_json::{Map, Value};
 use solstone_core_journal_io::{
-    AtomicWriteError, AtomicWriteOptions, atomic_replace, write_bytes_exclusive,
+    AtomicWriteError, AtomicWriteOptions, atomic_replace, install_file, write_bytes_exclusive,
+    write_reader_exclusive,
 };
 use solstone_core_speakers::SpeakerTurnEvidence;
 
@@ -784,40 +786,208 @@ fn build_jsonl(
     let mut lines = Vec::with_capacity(statements.len() + 1);
     lines.push(ascii_json::to_string(header));
     for statement in statements {
-        let mut entry = Map::new();
-        entry.insert(
-            "start".to_owned(),
-            Value::String(format_start(
-                base_time_us_of_day,
-                statement.start_offset_us,
-            )?),
-        );
-        entry.insert("text".to_owned(), Value::String(statement.text.clone()));
-        if let Some(source) = source.filter(|source| !source.is_empty()) {
-            entry.insert("source".to_owned(), Value::String(source.to_owned()));
-        }
-        if let Some(speaker) = &statement.speaker {
-            entry.insert("speaker".to_owned(), speaker.clone());
-        }
-        entry.insert(
-            "sentence_id".to_owned(),
-            Value::from(i64::from(statement.id)),
-        );
-        if let Some(timing) = &statement.timing {
-            entry.insert("timing".to_owned(), timing.clone());
-        }
-        if let Some(words) = &statement.words {
-            entry.insert("words".to_owned(), words.clone());
-        }
-        if let Some(evidence) = &statement.speaker_turn_evidence {
-            entry.insert("speaker_turn_evidence".to_owned(), evidence.to_value());
-        }
-        if statement.turn_boundary_suspect {
-            entry.insert("turn_boundary_suspect".to_owned(), Value::Bool(true));
-        }
-        lines.push(ascii_json::to_string(&Value::Object(entry)));
+        lines.push(statement_line(statement, source, base_time_us_of_day)?);
     }
     Ok(format!("{}\n", lines.join("\n")).into_bytes())
+}
+
+fn statement_line(
+    statement: &Statement,
+    source: Option<&str>,
+    base_time_us_of_day: u64,
+) -> Result<String, SpeakerTranscriptWriteError> {
+    let mut entry = Map::new();
+    entry.insert(
+        "start".to_owned(),
+        Value::String(format_start(
+            base_time_us_of_day,
+            statement.start_offset_us,
+        )?),
+    );
+    entry.insert("text".to_owned(), Value::String(statement.text.clone()));
+    if let Some(source) = source.filter(|source| !source.is_empty()) {
+        entry.insert("source".to_owned(), Value::String(source.to_owned()));
+    }
+    if let Some(speaker) = &statement.speaker {
+        entry.insert("speaker".to_owned(), speaker.clone());
+    }
+    entry.insert(
+        "sentence_id".to_owned(),
+        Value::from(i64::from(statement.id)),
+    );
+    if let Some(timing) = &statement.timing {
+        entry.insert("timing".to_owned(), timing.clone());
+    }
+    if let Some(words) = &statement.words {
+        entry.insert("words".to_owned(), words.clone());
+    }
+    if let Some(evidence) = &statement.speaker_turn_evidence {
+        entry.insert("speaker_turn_evidence".to_owned(), evidence.to_value());
+    }
+    if statement.turn_boundary_suspect {
+        entry.insert("turn_boundary_suspect".to_owned(), Value::Bool(true));
+    }
+    Ok(ascii_json::to_string(&Value::Object(entry)))
+}
+
+/// Zip staged NPY payload files into one transcript NPZ.
+pub fn stage_npz_from_files(
+    destination: &Path,
+    embeddings_f32le: &Path,
+    rows: usize,
+    statement_ids_i32le: &Path,
+    durations_f32le: &Path,
+    encoder: &str,
+) -> Result<(), SpeakerTranscriptWriteError> {
+    crate::npz::write_npz_from_files(
+        destination,
+        embeddings_f32le,
+        rows,
+        statement_ids_i32le,
+        durations_f32le,
+        encoder,
+    )
+    .map_err(|detail| SpeakerTranscriptWriteError::NpzVerificationFailed {
+        path: destination.display().to_string(),
+        detail,
+    })
+}
+
+/// One JSONL header line, after the writer's header normalization.
+pub fn stage_header_line(header: &Value) -> Result<String, SpeakerTranscriptWriteError> {
+    Ok(ascii_json::to_string(&build_header(header)?))
+}
+
+/// One JSONL statement line. `statement` is one native request statement object.
+pub fn stage_statement_line(
+    statement: &Value,
+    source: Option<&str>,
+    base_time_us_of_day: u64,
+) -> Result<String, SpeakerTranscriptWriteError> {
+    let statements = parse_statements(&Value::Array(vec![statement.clone()]))?;
+    statement_line(
+        statements.first().expect("one statement"),
+        source,
+        base_time_us_of_day,
+    )
+}
+
+const COPY_CHUNK: usize = 64 * 1024;
+
+static STAGED_COPY_SEQ: AtomicU64 = AtomicU64::new(0);
+
+/// Copy staged JSONL and optional NPZ into their destinations.
+///
+/// The caller has already admitted this publication. This function does not
+/// poll cancellation between the two files. `redo` replaces; otherwise the
+/// destination names must be absent. Bytes are copied in 64 KiB chunks.
+pub fn publish_staged_pair(
+    staged_jsonl: &Path,
+    staged_npz: Option<&Path>,
+    jsonl_path: &Path,
+    npz_path: &Path,
+    redo: bool,
+    statement_count: usize,
+    embedding_row_count: usize,
+) -> Result<WriteResponse, SpeakerTranscriptWriteError> {
+    validate_output_paths(jsonl_path, npz_path)?;
+    if !redo {
+        ensure_absent(jsonl_path)?;
+        if staged_npz.is_some() {
+            ensure_absent(npz_path)?;
+        }
+    }
+    if let Some(staged_npz) = staged_npz {
+        copy_published(staged_npz, npz_path, redo)?;
+        crate::npz::verify_npz_file(npz_path).map_err(|detail| {
+            SpeakerTranscriptWriteError::NpzVerificationFailed {
+                path: npz_path.display().to_string(),
+                detail,
+            }
+        })?;
+    }
+    copy_published(staged_jsonl, jsonl_path, redo)?;
+    Ok(WriteResponse {
+        jsonl_path: jsonl_path.display().to_string(),
+        npz_path: npz_path.display().to_string(),
+        statement_count,
+        embedding_row_count,
+    })
+}
+
+fn copy_published(
+    source: &Path,
+    destination: &Path,
+    redo: bool,
+) -> Result<(), SpeakerTranscriptWriteError> {
+    if redo {
+        let parent = destination.parent().ok_or_else(|| {
+            SpeakerTranscriptWriteError::InvalidOutputPath {
+                detail: "output path has no parent".to_owned(),
+            }
+        })?;
+        fs::create_dir_all(parent).map_err(|error| SpeakerTranscriptWriteError::OutputUnwritable {
+            path: destination.display().to_string(),
+            detail: error.to_string(),
+        })?;
+        let temporary = parent.join(format!(
+            ".solstone-stage-{}-{}",
+            std::process::id(),
+            STAGED_COPY_SEQ.fetch_add(1, Ordering::Relaxed)
+        ));
+        let copy = (|| -> Result<(), SpeakerTranscriptWriteError> {
+            stream_copy(source, &temporary)?;
+            install_file(&temporary, destination, AtomicWriteOptions::default()).map_err(|error| {
+                atomic_error(destination, error)
+            })
+        })();
+        if copy.is_err() {
+            let _ = fs::remove_file(&temporary);
+        }
+        return copy;
+    }
+    let mut reader = File::open(source).map_err(|error| SpeakerTranscriptWriteError::OutputUnwritable {
+        path: source.display().to_string(),
+        detail: error.to_string(),
+    })?;
+    write_reader_exclusive(destination, &mut reader, AtomicWriteOptions::default())
+        .map(|_| ())
+        .map_err(|error| atomic_error(destination, error))
+}
+
+fn stream_copy(source: &Path, destination: &Path) -> Result<(), SpeakerTranscriptWriteError> {
+    let mut input = File::open(source).map_err(|error| SpeakerTranscriptWriteError::OutputUnwritable {
+        path: source.display().to_string(),
+        detail: error.to_string(),
+    })?;
+    let mut output = File::create(destination).map_err(|error| {
+        SpeakerTranscriptWriteError::OutputUnwritable {
+            path: destination.display().to_string(),
+            detail: error.to_string(),
+        }
+    })?;
+    let mut buffer = [0_u8; COPY_CHUNK];
+    loop {
+        let read = input.read(&mut buffer).map_err(|error| {
+            SpeakerTranscriptWriteError::OutputUnwritable {
+                path: source.display().to_string(),
+                detail: error.to_string(),
+            }
+        })?;
+        if read == 0 {
+            break;
+        }
+        output.write_all(&buffer[..read]).map_err(|error| {
+            SpeakerTranscriptWriteError::OutputUnwritable {
+                path: destination.display().to_string(),
+                detail: error.to_string(),
+            }
+        })?;
+    }
+    output.sync_all().map_err(|error| SpeakerTranscriptWriteError::OutputUnwritable {
+        path: destination.display().to_string(),
+        detail: error.to_string(),
+    })
 }
 
 fn format_start(
