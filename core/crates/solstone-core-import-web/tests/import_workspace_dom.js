@@ -320,7 +320,7 @@ function makeHarness(ids) {
     'let importEvents = {};',
     'const isTerminalDuplicate = () => false;',
     'const trackPendingImport = id => pending.push(id);',
-    'const loadImports = () => {};',
+    'const loadImports = () => { if (Array.isArray(window.__listReads)) window.__listReads.push(1); };',
     'const navigateTo = view => navigations.push(view);',
     'const closeDetectModal = () => {};',
     'const showDetect = () => {};',
@@ -360,6 +360,36 @@ async function runQuickSubmit() {
   assert.strictEqual(harness.requests.length, 1, 'quick submit posts once');
   assert.strictEqual(harness.requests[0].url, '/app/import/api/save');
   assertFacetAbsentAndSettingPreserved(harness.requests[0], 'quick setting');
+  cases += 1;
+}
+
+async function runQuickSaveFailureReadsOnce() {
+  const harness = makeHarness({
+    dropArea: '',
+    fileInput: '',
+    fileLabel: '',
+    pasteText: 'quick text',
+    importForm: '',
+    quickSettingInput: '',
+    validateBtn: '',
+  });
+  harness.context.window.__listReads = [];
+  harness.context.showError = () => {};
+  harness.context.fetch = async (url, options) => {
+    harness.requests.push({ url, options });
+    throw new Error('socket closed');
+  };
+  vm.runInContext(functionSource(workspace, 'setupQuickImportForm'), harness.context);
+  vm.runInContext('setupQuickImportForm()', harness.context);
+  const before = harness.context.window._quickClientItemId;
+  await harness.elements.importForm.onsubmit({ preventDefault() {} });
+  const saves = harness.requests.filter((request) => request.url === '/app/import/api/save');
+  assert.strictEqual(saves.length, 1, 'a lost save is not posted again');
+  const savedId = formObject(saves[0].options.body).client_item_id;
+  assert.ok(savedId, 'the attempt keeps a client item id');
+  assert.strictEqual(harness.context.window._quickClientItemId, savedId);
+  assert.notStrictEqual(harness.context.window._quickClientItemId, before);
+  assert.strictEqual(harness.context.window.__listReads.length, 1, 'the list is read once before the failure stands');
   cases += 1;
 }
 
@@ -3428,6 +3458,7 @@ Promise.resolve()
   .then(runPreviewEditRequiresNewPreview)
   .then(runThinkingRefreshKeepsControlsAndFocus)
   .then(runQuickSubmit)
+  .then(runQuickSaveFailureReadsOnce)
   .then(runGuidedSubmit)
   .then(runConfirmSubmit)
   .then(runSourceTimeAndProgressIdentityStaySeparate)

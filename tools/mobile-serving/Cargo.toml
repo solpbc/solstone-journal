@@ -16,6 +16,7 @@ processing = [
     "dep:solstone-core-sense",
     "dep:solstone-core-think-cli",
     "dep:solstone-core-depict",
+    "dep:solstone-core-describe",
     "dep:solstone-core-system",
     "dep:solstone-core-transcribe",
     "dep:solstone-core-journal-config",
@@ -29,17 +30,23 @@ processing = [
     "dep:solstone-core-linked-share",
     "dep:solstone-core-talent-runtime",
     "dep:solstone-core-settings-web",
-    "dep:solstone-core-import",
     "dep:solstone-core-import-host",
     "dep:solstone-core-import-sources",
+    "dep:oar-ocr",
+    "dep:image",
+    "dep:rayon",
 ]
+rfdetr-native = ["dep:solstone-core-local"]
+screen-ocr-native = []
+
+in-process-pdf = ["processing", "solstone-core-import-host/in-process-pdf"]
 
 [dependencies]
 axum = { version = "0.8.9", default-features = false, features = ["json"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 log = "0.4"
-http-body-util = "0.1"
+http-body-util = { version = "0.1", features = ["channel"] }
 solstone-core-backup-web = { path = "../../core/crates/solstone-core-backup-web" }
 solstone-core-backup-runtime = { path = "../../core/crates/solstone-core-backup-runtime" }
 solstone-core-backup = { path = "../../core/crates/solstone-core-backup" }
@@ -47,8 +54,11 @@ solstone-core-maintenance = { path = "../../core/crates/solstone-core-maintenanc
 solstone-core-spl = { path = "../../core/crates/solstone-core-spl" }
 solstone-core-mcp-endpoint = { path = "../../core/crates/solstone-core-mcp-endpoint" }
 solstone-core-convey-shell = { path = "../../core/crates/solstone-core-convey-shell" }
+solstone-core-import-web = { path = "../../core/crates/solstone-core-import-web" }
+solstone-core-import = { path = "../../core/crates/solstone-core-import" }
 solstone-core-indexer-store = { path = "../../core/crates/solstone-core-indexer-store" }
 solstone-core-journal-io = { path = "../../core/crates/solstone-core-journal-io" }
+solstone-core-local = { path = "../../core/crates/solstone-core-local", optional = true }
 solstone-core-journal-config-write = { path = "../../core/crates/solstone-core-journal-config-write" }
 tokio = { version = "1", features = ["rt-multi-thread", "time", "sync", "macros"] }
 journal-mobile-audio = { path = "../mobile-audio", optional = true, default-features = false }
@@ -61,6 +71,7 @@ sha2 = { version = "0.10", optional = true }
 solstone-core-sense = { path = "../../core/crates/solstone-core-sense", optional = true }
 solstone-core-think-cli = { path = "../../core/crates/solstone-core-think-cli", optional = true }
 solstone-core-depict = { path = "../../core/crates/solstone-core-depict", optional = true }
+solstone-core-describe = { path = "../../core/crates/solstone-core-describe", optional = true }
 solstone-core-system = { path = "../../core/crates/solstone-core-system", optional = true }
 solstone-core-journal-config = { path = "../../core/crates/solstone-core-journal-config", optional = true }
 solstone-core-cortex-client = { path = "../../core/crates/solstone-core-cortex-client", optional = true }
@@ -73,9 +84,11 @@ solstone-core-speakers = { path = "../../core/crates/solstone-core-speakers", op
 solstone-core-linked-share = { path = "../../core/crates/solstone-core-linked-share", optional = true }
 solstone-core-talent-runtime = { path = "../../core/crates/solstone-core-talent-runtime", optional = true }
 solstone-core-settings-web = { path = "../../core/crates/solstone-core-settings-web", optional = true }
-solstone-core-import = { path = "../../core/crates/solstone-core-import", optional = true }
 solstone-core-import-host = { path = "../../core/crates/solstone-core-import-host", optional = true }
 solstone-core-import-sources = { path = "../../core/crates/solstone-core-import-sources", optional = true }
+oar-ocr = { path = "../../core/vendor/oar-ocr", optional = true, default-features = false, features = ["simd"] }
+image = { version = "0.25.6", optional = true, default-features = false, features = ["png"] }
+rayon = { version = "1", optional = true }
 ort = { version = "=2.0.0-rc.12", default-features = false, features = ["api-24", "std"] }
 
 # iOS links the pinned static runtime into its app executable.

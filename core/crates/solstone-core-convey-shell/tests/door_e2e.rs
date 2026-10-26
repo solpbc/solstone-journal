@@ -1773,6 +1773,7 @@ async fn embedded_door_returns_complete_original_beyond_initial_window() {
     let handle = solstone_core_convey_shell::bind_embedded_device_door(
         fixture.root.clone(),
         std::net::SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0),
+        None,
     )
     .await
     .expect("embedded door");
@@ -1832,6 +1833,7 @@ async fn embedded_door_composes_production_auth_and_refuses_replaced_root() {
     let handle = solstone_core_convey_shell::bind_embedded_device_door(
         fixture.root.clone(),
         std::net::SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0),
+        None,
     )
     .await
     .expect("embedded door");
@@ -1926,6 +1928,7 @@ async fn recovery_reloads_restored_identity_and_policy_and_retires_old_loopback_
         let handle = solstone_core_convey_shell::bind_embedded_device_door(
             fixture.root.clone(),
             std::net::SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0),
+            None,
         )
         .await
         .unwrap();

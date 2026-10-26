@@ -17,10 +17,12 @@ use axum::{
 };
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
+use solstone_core_import::cli_render::CliRun;
 use solstone_core_import::{ImportMetadata, read_import_metadata, write_import_metadata};
 use std::{
     path::{Path, PathBuf},
     process::Stdio,
+    sync::{Arc, mpsc},
     time::Duration,
 };
 
@@ -102,6 +104,7 @@ pub(crate) enum PreviewPlan<'a> {
     Program(&'a Path),
     #[cfg_attr(not(test), allow(dead_code))]
     Stub(std::sync::Arc<PreviewPlanStub>),
+    Embedded(Arc<crate::ImportRouteSlot>),
 }
 
 struct Input {
@@ -172,27 +175,11 @@ pub(crate) fn planner() -> Result<PathBuf, PreviewError> {
         }))
 }
 
-async fn plan(
-    program: PreviewPlan<'_>,
+fn planned_command(
     path: &Path,
     options: &Value,
     metadata: &ImportMetadata,
-) -> Result<Value, PreviewError> {
-    match program {
-        PreviewPlan::Program(prog) => {
-            plan_using(prog, path, options, metadata, Duration::from_secs(600)).await
-        }
-        PreviewPlan::Stub(stub) => stub(path, options, metadata).await,
-    }
-}
-
-async fn plan_using(
-    program: &Path,
-    path: &Path,
-    options: &Value,
-    metadata: &ImportMetadata,
-    bound: Duration,
-) -> Result<Value, PreviewError> {
+) -> Result<Vec<String>, PreviewError> {
     let mut metadata = metadata.clone();
     metadata.remove("preview");
     if options["timestamp_override"].as_bool().unwrap_or(false) {
@@ -208,14 +195,407 @@ async fn plan_using(
     {
         metadata.insert("source_hint".to_owned(), json!(source.name()));
     }
-    let args = command(
+    Ok(command(
         path,
         options["timestamp"]
             .as_str()
             .ok_or_else(|| PreviewError::InvalidRequest("missing timestamp".to_owned()))?,
         &metadata,
         options["force"].as_bool().unwrap_or(false),
-    );
+    ))
+}
+
+fn preview_command(
+    path: &Path,
+    options: &Value,
+    metadata: &ImportMetadata,
+) -> Result<Vec<String>, PreviewError> {
+    let mut args = planned_command(path, options, metadata)?;
+    let zone = options["zone"]
+        .as_str()
+        .ok_or_else(|| PreviewError::PlanFailed("missing time zone".to_owned()))?;
+    args.extend([
+        "--dry-run".to_owned(),
+        "--json".to_owned(),
+        "--preview-zone".to_owned(),
+        zone.to_owned(),
+    ]);
+    Ok(args)
+}
+
+fn size_from_preview(run: CliRun) -> Result<Value, PreviewError> {
+    if run.exit_code != 0 {
+        return Err(PreviewError::PlanFailed(run.stderr));
+    }
+    let size: Value = serde_json::from_str(&run.stdout).map_err(|_| {
+        PreviewError::PlanFailed("the importer did not return a size preview".to_owned())
+    })?;
+    require_size_preview(size)
+}
+
+fn snapshot_failure(error: String) -> PreviewError {
+    match error.as_str() {
+        "choose a source outside its import staging folder" | "source has no filename" => {
+            PreviewError::InvalidRequest(error)
+        }
+        "the source changed while preparing its preview; try again" => {
+            PreviewError::SourceChanged(error)
+        }
+        _ => PreviewError::PlanFailed(error),
+    }
+}
+
+fn checked_input(root: &Path, data: &Value) -> Result<Input, PreviewError> {
+    let input = input(root, data)?;
+    let hash = solstone_core_import::hash_source(&input.source)
+        .map_err(|error| PreviewError::NotFound(error.to_string()))?;
+    if input.metadata.get("source_hash").and_then(Value::as_str) != Some(hash.as_str()) {
+        return Err(PreviewError::SourceChanged(
+            "the staged source changed; choose it again before previewing".to_owned(),
+        ));
+    }
+    Ok(input)
+}
+
+fn require_size_preview(size: Value) -> Result<Value, PreviewError> {
+    if size.get("schema").and_then(Value::as_str) != Some("solstone.import.size.v1") {
+        return Err(PreviewError::PlanFailed(
+            "this source does not provide a recording preview".to_owned(),
+        ));
+    }
+    Ok(size)
+}
+
+type Captured = Arc<dyn crate::CapturedImport>;
+
+async fn plan(
+    program: PreviewPlan<'_>,
+    path: &Path,
+    options: &Value,
+    metadata: &ImportMetadata,
+) -> Result<(Value, Option<Captured>), PreviewError> {
+    match program {
+        PreviewPlan::Program(prog) => Ok((
+            plan_using(prog, path, options, metadata, Duration::from_secs(600)).await?,
+            None,
+        )),
+        PreviewPlan::Stub(stub) => Ok((stub(path, options, metadata).await?, None)),
+        PreviewPlan::Embedded(slot) => {
+            let (size, captured) = plan_embedded(slot, path, options, metadata).await?;
+            Ok((size, Some(captured)))
+        }
+    }
+}
+
+async fn plan_embedded(
+    slot: Arc<crate::ImportRouteSlot>,
+    path: &Path,
+    options: &Value,
+    metadata: &ImportMetadata,
+) -> Result<(Value, Captured), PreviewError> {
+    let args = preview_command(path, options, metadata)?;
+    let source_time =
+        crate::embedded_route::source_time(options["timestamp"].as_str().unwrap_or(""));
+    let captured = slot
+        .capture(args, source_time)
+        .map_err(PreviewError::PlanFailed)?;
+    let preview_slot = Arc::clone(&slot);
+    tokio::task::spawn_blocking(move || plan_embedded_on_worker(preview_slot, captured))
+        .await
+        .map_err(|error| PreviewError::PlanFailed(error.to_string()))?
+}
+
+fn plan_embedded_on_worker(
+    slot: Arc<crate::ImportRouteSlot>,
+    captured: Captured,
+) -> Result<(Value, Captured), PreviewError> {
+    let (sender, receiver) = mpsc::channel();
+    slot.retain(move |run| {
+        if !run {
+            drop(captured);
+            let _ = sender.send(Err(PreviewError::PlanFailed(
+                "importer unavailable".to_owned(),
+            )));
+            return;
+        }
+        let previewed = match captured.preview() {
+            Ok(run) => run,
+            Err(error) => {
+                drop(captured);
+                let _ = sender.send(Err(PreviewError::PlanFailed(error)));
+                return;
+            }
+        };
+        match size_from_preview(previewed) {
+            Ok(size) => {
+                let _ = sender.send(Ok((size, captured)));
+            }
+            Err(error) => {
+                drop(captured);
+                let _ = sender.send(Err(error));
+            }
+        }
+    })
+    .map_err(PreviewError::PlanFailed)?;
+    receiver
+        .recv()
+        .map_err(|_| PreviewError::PlanFailed("importer unavailable".to_owned()))?
+}
+
+/// Prepare, snapshot, preview, and parse the size on the retained worker.
+///
+/// The async task receives the size and a release handle. It does not receive
+/// the snapshot. Dropping the handle signals that worker to delete a fresh tree
+/// before it drops the captured import. Keeping the handle waits until that
+/// worker has persisted the snapshot and dropped the captured import.
+async fn embedded_snapshot(
+    slot: Arc<crate::ImportRouteSlot>,
+    root: &Path,
+    input: &Input,
+) -> Result<EmbeddedReady, PreviewError> {
+    let job = SnapshotJob {
+        slot,
+        journal: root.to_path_buf(),
+        import_id: input.id.clone(),
+        source: input.source.clone(),
+        options: input.options.clone(),
+        metadata: input.metadata.clone(),
+        source_time: crate::embedded_route::source_time(
+            input.options["timestamp"].as_str().unwrap_or(""),
+        ),
+    };
+    tokio::task::spawn_blocking(move || embedded_snapshot_on_worker(job))
+        .await
+        .map_err(|error| PreviewError::PlanFailed(error.to_string()))?
+}
+
+struct SnapshotJob {
+    slot: Arc<crate::ImportRouteSlot>,
+    journal: PathBuf,
+    import_id: String,
+    source: PathBuf,
+    options: Value,
+    metadata: ImportMetadata,
+    source_time: u64,
+}
+
+enum SnapshotFate {
+    Keep,
+    Discard,
+}
+
+struct SnapshotRelease {
+    command: Option<mpsc::Sender<SnapshotFate>>,
+    done: Option<mpsc::Receiver<()>>,
+}
+
+impl SnapshotRelease {
+    fn keep(mut self) {
+        if let Some(command) = self.command.take() {
+            let _ = command.send(SnapshotFate::Keep);
+        }
+        if let Some(done) = self.done.take() {
+            let _ = done.recv();
+        }
+    }
+}
+
+impl Drop for SnapshotRelease {
+    fn drop(&mut self) {
+        if let Some(command) = self.command.take() {
+            let _ = command.send(SnapshotFate::Discard);
+        }
+    }
+}
+
+struct EmbeddedReady {
+    size: Value,
+    relative: PathBuf,
+    digest: String,
+    release: SnapshotRelease,
+}
+
+fn embedded_snapshot_on_worker(job: SnapshotJob) -> Result<EmbeddedReady, PreviewError> {
+    let (sender, receiver) = mpsc::channel();
+    let retain_slot = Arc::clone(&job.slot);
+    retain_slot
+        .retain(move |run| prepare_retained_snapshot(job, run, sender))
+        .map_err(PreviewError::PlanFailed)?;
+    receiver
+        .recv()
+        .map_err(|_| PreviewError::PlanFailed("importer unavailable".to_owned()))?
+}
+
+fn prepare_retained_snapshot(
+    job: SnapshotJob,
+    run: bool,
+    sender: mpsc::Sender<Result<EmbeddedReady, PreviewError>>,
+) {
+    let SnapshotJob {
+        slot,
+        journal,
+        import_id,
+        source,
+        options,
+        metadata,
+        source_time,
+    } = job;
+    if !run {
+        let _ = sender.send(Err(PreviewError::PlanFailed(
+            "importer unavailable".to_owned(),
+        )));
+        return;
+    }
+    let admission = match slot.prepare(source_time) {
+        Ok(admission) => admission,
+        Err(error) => {
+            let _ = sender.send(Err(PreviewError::PlanFailed(error)));
+            return;
+        }
+    };
+    if let Err(error) = admission.checkpoint() {
+        drop(admission);
+        let _ = sender.send(Err(PreviewError::PlanFailed(error)));
+        return;
+    }
+    let snapshot = match solstone_core_import::snapshot::create(&journal, &import_id, &source) {
+        Ok(snapshot) => snapshot,
+        Err(error) => {
+            drop(admission);
+            let _ = sender.send(Err(snapshot_failure(error)));
+            return;
+        }
+    };
+    let relative = match snapshot.relative.to_str() {
+        Some(relative) => relative.to_owned(),
+        None => {
+            discard_retained(
+                &slot,
+                snapshot,
+                None,
+                admission,
+                &sender,
+                PreviewError::PlanFailed("invalid snapshot path".to_owned()),
+            );
+            return;
+        }
+    };
+    let contained = match contained_import_file(&journal, &import_id, &relative) {
+        Ok(path) => path,
+        Err(error) => {
+            discard_retained(
+                &slot,
+                snapshot,
+                None,
+                admission,
+                &sender,
+                PreviewError::NotFound(error.to_string()),
+            );
+            return;
+        }
+    };
+    let args = match preview_command(&contained, &options, &metadata) {
+        Ok(args) => args,
+        Err(error) => {
+            discard_retained(&slot, snapshot, None, admission, &sender, error);
+            return;
+        }
+    };
+    let captured = match slot.bind(Arc::clone(&admission), args) {
+        Ok(captured) => captured,
+        Err(error) => {
+            discard_retained(
+                &slot,
+                snapshot,
+                None,
+                admission,
+                &sender,
+                PreviewError::PlanFailed(error),
+            );
+            return;
+        }
+    };
+    let previewed = match captured.preview() {
+        Ok(run) => run,
+        Err(error) => {
+            discard_retained(
+                &slot,
+                snapshot,
+                Some(captured),
+                admission,
+                &sender,
+                PreviewError::PlanFailed(error),
+            );
+            return;
+        }
+    };
+    let size = match size_from_preview(previewed) {
+        Ok(size) => size,
+        Err(error) => {
+            discard_retained(&slot, snapshot, Some(captured), admission, &sender, error);
+            return;
+        }
+    };
+    let (command_sender, command_receiver) = mpsc::channel();
+    let (done_sender, done_receiver) = mpsc::channel();
+    let ready = EmbeddedReady {
+        size,
+        relative: snapshot.relative.clone(),
+        digest: snapshot.digest.clone(),
+        release: SnapshotRelease {
+            command: Some(command_sender),
+            done: Some(done_receiver),
+        },
+    };
+    if sender.send(Ok(ready)).is_err() {
+        discard_retained_parts(&slot, snapshot, Some(captured), admission);
+        return;
+    }
+    let fate = command_receiver.recv().unwrap_or(SnapshotFate::Discard);
+    match fate {
+        SnapshotFate::Keep => snapshot.persist(),
+        SnapshotFate::Discard => {
+            slot.wait_before_snapshot_delete();
+            snapshot.delete_unkept();
+        }
+    }
+    drop(captured);
+    drop(admission);
+    let _ = done_sender.send(());
+}
+
+fn discard_retained(
+    slot: &crate::ImportRouteSlot,
+    snapshot: solstone_core_import::snapshot::Snapshot,
+    captured: Option<Captured>,
+    admission: Arc<dyn crate::ImportAdmission>,
+    sender: &mpsc::Sender<Result<EmbeddedReady, PreviewError>>,
+    error: PreviewError,
+) {
+    discard_retained_parts(slot, snapshot, captured, admission);
+    let _ = sender.send(Err(error));
+}
+
+fn discard_retained_parts(
+    slot: &crate::ImportRouteSlot,
+    snapshot: solstone_core_import::snapshot::Snapshot,
+    captured: Option<Captured>,
+    admission: Arc<dyn crate::ImportAdmission>,
+) {
+    slot.wait_before_snapshot_delete();
+    snapshot.delete_unkept();
+    drop(captured);
+    drop(admission);
+}
+
+async fn plan_using(
+    program: &Path,
+    path: &Path,
+    options: &Value,
+    metadata: &ImportMetadata,
+    bound: Duration,
+) -> Result<Value, PreviewError> {
+    let args = planned_command(path, options, metadata)?;
     let mut child = tokio::process::Command::new(program);
     child
         .args(&args[2..])
@@ -249,12 +629,7 @@ async fn plan_using(
     let size: Value = serde_json::from_slice(&output.stdout).map_err(|_| {
         PreviewError::PlanFailed("the importer did not return a size preview".to_owned())
     })?;
-    if size.get("schema").and_then(Value::as_str) != Some("solstone.import.size.v1") {
-        return Err(PreviewError::PlanFailed(
-            "this source does not provide a recording preview".to_owned(),
-        ));
-    }
-    Ok(size)
+    require_size_preview(size)
 }
 
 pub(crate) async fn preview(State(state): State<AppState>, Json(data): Json<Value>) -> Response {
@@ -264,9 +639,13 @@ pub(crate) async fn preview(State(state): State<AppState>, Json(data): Json<Valu
     } else {
         None
     };
-    let previewed = match planner() {
-        Ok(program) => create_preview(state.root, data, PreviewPlan::Program(&program)).await,
-        Err(error) => Err(error),
+    let previewed = if let Some(slot) = state.route.clone() {
+        create_preview(state.root, data, PreviewPlan::Embedded(slot)).await
+    } else {
+        match planner() {
+            Ok(program) => create_preview(state.root, data, PreviewPlan::Program(&program)).await,
+            Err(error) => Err(error),
+        }
     };
     match previewed {
         Ok(preview) => json_response(StatusCode::OK, preview),
@@ -276,53 +655,113 @@ pub(crate) async fn preview(State(state): State<AppState>, Json(data): Json<Valu
     }
 }
 
-async fn create_preview(
-    root: PathBuf,
-    data: Value,
-    program: PreviewPlan<'_>,
-) -> Result<Value, PreviewError> {
-    let snapshot_root = root.clone();
-    let (input, snapshot) = tokio::task::spawn_blocking(move || {
-        let input = input(&snapshot_root, &data)?;
-        let hash = solstone_core_import::hash_source(&input.source)
+/// A preview record known in memory and not yet written.
+pub(crate) struct PendingPreview {
+    pub(crate) record: Value,
+    id: String,
+    snapshot: Option<solstone_core_import::snapshot::Snapshot>,
+    release: Option<SnapshotRelease>,
+    hold: Option<Captured>,
+    setting: Option<Value>,
+    source_hint: Option<String>,
+}
+
+impl Drop for PendingPreview {
+    fn drop(&mut self) {
+        drop(self.snapshot.take());
+        drop(self.release.take());
+        drop(self.hold.take());
+    }
+}
+
+struct AssembledPreview {
+    response: Value,
+    pending: PendingPreview,
+}
+
+/// Write a preview record. The planning lease is held until this returns.
+pub(crate) fn commit_pending_preview(
+    root: &Path,
+    mut pending: PendingPreview,
+) -> Result<(), PreviewError> {
+    let committed = (|| {
+        let mut metadata = read_import_metadata(root, &pending.id)
             .map_err(|error| PreviewError::NotFound(error.to_string()))?;
-        if input.metadata.get("source_hash").and_then(Value::as_str) != Some(hash.as_str()) {
+        // A settings edit during planning must not bless the earlier options.
+        if metadata.get("setting") != pending.setting.as_ref()
+            || source_hint(&metadata) != pending.source_hint
+        {
             return Err(PreviewError::SourceChanged(
-                "the staged source changed; choose it again before previewing".to_owned(),
+                "the import settings changed; preview again".to_owned(),
             ));
         }
-        let snapshot = match solstone_core_import::snapshot::create(
-            &snapshot_root,
-            &input.id,
-            &input.source,
-        ) {
-            Ok(s) => s,
-            Err(e) => {
-                return Err(match e.as_str() {
-                    "choose a source outside its import staging folder" => {
-                        PreviewError::InvalidRequest(e)
-                    }
-                    "source has no filename" => PreviewError::InvalidRequest(e),
-                    "the source changed while preparing its preview; try again" => {
-                        PreviewError::SourceChanged(e)
-                    }
-                    "invalid snapshot path" => PreviewError::PlanFailed(e),
-                    _ => PreviewError::PlanFailed(e),
-                });
+        metadata.insert("preview".to_owned(), pending.record.clone());
+        write_import_metadata(root, &pending.id, &metadata)
+            .map_err(|error| PreviewError::PlanFailed(error.to_string()))?;
+        if let Some(snapshot) = pending.snapshot.take() {
+            snapshot.persist();
+        }
+        if let Some(release) = pending.release.take() {
+            release.keep();
+        }
+        Ok(())
+    })();
+    drop(pending.snapshot.take());
+    drop(pending.release.take());
+    drop(pending.hold.take());
+    committed
+}
+
+async fn assemble_preview(
+    root: &Path,
+    data: Value,
+    program: PreviewPlan<'_>,
+) -> Result<AssembledPreview, PreviewError> {
+    let snapshot_root = root.to_path_buf();
+    let input = tokio::task::spawn_blocking(move || checked_input(&snapshot_root, &data))
+        .await
+        .map_err(|error| PreviewError::PlanFailed(error.to_string()))??;
+    // Desktop still snapshots, then plans. Embedded prepares on the retained worker.
+    let prepared = match program {
+        PreviewPlan::Embedded(slot) => {
+            let ready = embedded_snapshot(slot, root, &input).await?;
+            AssembledParts {
+                size: ready.size,
+                relative: ready.relative,
+                digest: ready.digest,
+                hold: None,
+                snapshot: None,
+                release: Some(ready.release),
             }
-        };
-        Ok::<_, PreviewError>((input, snapshot))
-    })
-    .await
-    .map_err(|error| PreviewError::PlanFailed(error.to_string()))??;
-    let relative_str = snapshot
-        .relative
-        .to_str()
-        .ok_or_else(|| PreviewError::PlanFailed("invalid snapshot path".to_owned()))?;
-    let source = contained_import_file(&root, &input.id, relative_str)
-        .map_err(|error| PreviewError::NotFound(error.to_string()))?;
-    let size = plan(program, &source, &input.options, &input.metadata).await?;
-    let record = json!({"source": input.source, "relative": snapshot.relative, "digest": snapshot.digest, "options": input.options, "size": size});
+        }
+        other => {
+            let snapshot_root = root.to_path_buf();
+            let source = input.source.clone();
+            let id = input.id.clone();
+            let snapshot = tokio::task::spawn_blocking(move || {
+                solstone_core_import::snapshot::create(&snapshot_root, &id, &source)
+                    .map_err(snapshot_failure)
+            })
+            .await
+            .map_err(|error| PreviewError::PlanFailed(error.to_string()))??;
+            let relative_str = snapshot
+                .relative
+                .to_str()
+                .ok_or_else(|| PreviewError::PlanFailed("invalid snapshot path".to_owned()))?;
+            let source = contained_import_file(root, &input.id, relative_str)
+                .map_err(|error| PreviewError::NotFound(error.to_string()))?;
+            let (size, hold) = plan(other, &source, &input.options, &input.metadata).await?;
+            AssembledParts {
+                size,
+                relative: snapshot.relative.clone(),
+                digest: snapshot.digest.clone(),
+                hold,
+                snapshot: Some(snapshot),
+                release: None,
+            }
+        }
+    };
+    let record = json!({"source": input.source, "relative": prepared.relative, "digest": prepared.digest, "options": input.options, "size": prepared.size});
     let token = format!("{:x}", Sha256::digest(record.to_string().as_bytes()));
     let mut record = record;
     record["token"] = json!(token);
@@ -351,27 +790,124 @@ async fn create_preview(
     } else {
         None
     };
-    let response = json!({"preview_token": token, "import_id": input.id, "size": size, "force_notice": notice});
+    let response = json!({"preview_token": token, "import_id": input.id, "size": prepared.size, "force_notice": notice});
+    Ok(AssembledPreview {
+        response,
+        pending: PendingPreview {
+            id: input.id,
+            record,
+            snapshot: prepared.snapshot,
+            release: prepared.release,
+            hold: prepared.hold,
+            setting: input.metadata.get("setting").cloned(),
+            source_hint: source_hint(&input.metadata),
+        },
+    })
+}
+
+struct AssembledParts {
+    size: Value,
+    relative: PathBuf,
+    digest: String,
+    hold: Option<Captured>,
+    snapshot: Option<solstone_core_import::snapshot::Snapshot>,
+    release: Option<SnapshotRelease>,
+}
+
+async fn create_preview(
+    root: PathBuf,
+    data: Value,
+    program: PreviewPlan<'_>,
+) -> Result<Value, PreviewError> {
+    let assembled = assemble_preview(&root, data, program).await?;
+    let response = assembled.response.clone();
     tokio::task::spawn_blocking(move || {
-        let mut metadata = read_import_metadata(&root, &input.id)
-            .map_err(|error| PreviewError::NotFound(error.to_string()))?;
-        // A settings edit during planning must not bless the earlier options.
-        if metadata.get("setting") != input.metadata.get("setting")
-            || source_hint(&metadata) != source_hint(&input.metadata)
-        {
-            return Err(PreviewError::SourceChanged(
-                "the import settings changed; preview again".to_owned(),
-            ));
-        }
-        metadata.insert("preview".to_owned(), record);
-        write_import_metadata(&root, &input.id, &metadata)
-            .map_err(|error| PreviewError::PlanFailed(error.to_string()))?;
-        snapshot.persist();
-        Ok::<_, PreviewError>(())
+        commit_pending_preview(&root, assembled.pending)?;
+        Ok::<_, PreviewError>(response)
     })
     .await
-    .map_err(|error| PreviewError::PlanFailed(error.to_string()))??;
-    Ok(response)
+    .map_err(|error| PreviewError::PlanFailed(error.to_string()))?
+}
+
+fn accept_record(
+    root: &Path,
+    data: &Value,
+    input: &Input,
+    record: &Value,
+) -> Result<PathBuf, PreviewError> {
+    let token = data
+        .get("preview_token")
+        .and_then(Value::as_str)
+        .ok_or_else(|| {
+            PreviewError::InvalidRequest("preview the import before starting".to_owned())
+        })?;
+    if record.get("token").and_then(Value::as_str) != Some(token)
+        || record["options"] != input.options
+        || record["source"] != json!(input.source)
+    {
+        return Err(PreviewError::SourceChanged(
+            "the source or settings changed; preview again before starting".to_owned(),
+        ));
+    }
+    let digest = record["digest"]
+        .as_str()
+        .ok_or_else(|| PreviewError::PlanFailed("the saved preview is unreadable".to_owned()))?;
+    solstone_core_import::snapshot::verify(&input.source, digest)
+        .map_err(PreviewError::SourceChanged)?;
+    let relative = record["relative"]
+        .as_str()
+        .ok_or_else(|| PreviewError::PlanFailed("the saved preview is unreadable".to_owned()))?;
+    let snapshot = contained_import_file(root, &input.id, relative)
+        .map_err(|error| PreviewError::NotFound(error.to_string()))?;
+    solstone_core_import::snapshot::verify(&snapshot, digest)
+        .map_err(PreviewError::SourceChanged)?;
+    Ok(snapshot)
+}
+
+fn reject_empty(size: &Value) -> Result<(), PreviewError> {
+    if size["recordings"].as_u64() == Some(0) && size["other_units"].is_null() {
+        return Err(PreviewError::NothingToImport);
+    }
+    Ok(())
+}
+
+fn load_saved_preview(root: &Path, data: &Value) -> Result<(Input, Value, PathBuf), PreviewError> {
+    let input = input(root, data)?;
+    let record = input.metadata.get("preview").cloned().ok_or_else(|| {
+        PreviewError::InvalidRequest("preview the import before starting".to_owned())
+    })?;
+    let snapshot = accept_record(root, data, &input, &record)?;
+    Ok((input, record, snapshot))
+}
+
+async fn confirm_existing_preview(
+    root: &Path,
+    mut data: Value,
+    program: PreviewPlan<'_>,
+    previewed_here: bool,
+) -> Result<Value, PreviewError> {
+    let checked_root = root.to_path_buf();
+    let checked_data = data.clone();
+    let (input, record, snapshot) =
+        tokio::task::spawn_blocking(move || load_saved_preview(&checked_root, &checked_data))
+            .await
+            .map_err(|error| PreviewError::PlanFailed(error.to_string()))??;
+    let (current, hold) = if previewed_here {
+        (record["size"].clone(), None)
+    } else {
+        plan(program, &snapshot, &input.options, &input.metadata).await?
+    };
+    if current != record["size"] {
+        drop(hold);
+        return Err(PreviewError::SourceChanged(
+            "the import size changed as your journal changed; preview it again".to_owned(),
+        ));
+    }
+    drop(hold);
+    reject_empty(&current)?;
+    data["import_id"] = json!(input.id);
+    data["_preview_source"] = record["relative"].clone();
+    Ok(data)
 }
 
 pub(crate) async fn validate_start(
@@ -391,59 +927,53 @@ pub(crate) async fn validate_start(
         let preview = create_preview(root.to_path_buf(), data.clone(), program.clone()).await?;
         data["preview_token"] = preview["preview_token"].clone();
     }
+    confirm_existing_preview(root, data, program, previewed_here).await
+}
+
+/// Prepare an embedded start. A start that still needs a preview keeps that
+/// record in memory so the caller can capture the final command before writing it.
+pub(crate) async fn prepare_embedded_start(
+    root: &Path,
+    mut data: Value,
+    slot: Arc<crate::ImportRouteSlot>,
+) -> Result<(Value, Option<PendingPreview>), PreviewError> {
+    if let Some(object) = data.as_object_mut() {
+        object.remove("_preview_source");
+    }
+    let previewed_here = data.get("preview_token").and_then(Value::as_str).is_none();
+    if !previewed_here {
+        let data = confirm_existing_preview(root, data, PreviewPlan::Embedded(slot), false).await?;
+        return Ok((data, None));
+    }
+    let validation = Arc::clone(&slot);
+    let assembled = assemble_preview(root, data.clone(), PreviewPlan::Embedded(slot)).await?;
+    data["preview_token"] = assembled.response["preview_token"].clone();
     let checked_root = root.to_path_buf();
     let checked_data = data.clone();
-    let (input, record, snapshot) = tokio::task::spawn_blocking(move || {
-        let input = input(&checked_root, &checked_data)?;
-        let token = checked_data
-            .get("preview_token")
-            .and_then(Value::as_str)
-            .ok_or_else(|| {
-                PreviewError::InvalidRequest("preview the import before starting".to_owned())
-            })?;
-        let record = input.metadata.get("preview").cloned().ok_or_else(|| {
-            PreviewError::InvalidRequest("preview the import before starting".to_owned())
-        })?;
-        if record.get("token").and_then(Value::as_str) != Some(token)
-            || record["options"] != input.options
-            || record["source"] != json!(input.source)
-        {
-            return Err(PreviewError::SourceChanged(
-                "the source or settings changed; preview again before starting".to_owned(),
-            ));
+    // The preview moves into the blocking reader. Cancelling this await detaches
+    // that reader and must not signal cleanup before the reader returns.
+    let pending = assembled.pending;
+    let (input, pending) = tokio::task::spawn_blocking(move || {
+        validation.wait_before_validation();
+        let input = match input(&checked_root, &checked_data) {
+            Ok(input) => input,
+            Err(error) => {
+                drop(pending);
+                return Err(error);
+            }
+        };
+        if let Err(error) = accept_record(&checked_root, &checked_data, &input, &pending.record) {
+            drop(pending);
+            return Err(error);
         }
-        let digest = record["digest"].as_str().ok_or_else(|| {
-            PreviewError::PlanFailed("the saved preview is unreadable".to_owned())
-        })?;
-        solstone_core_import::snapshot::verify(&input.source, digest)
-            .map_err(PreviewError::SourceChanged)?;
-        let relative = record["relative"].as_str().ok_or_else(|| {
-            PreviewError::PlanFailed("the saved preview is unreadable".to_owned())
-        })?;
-        let snapshot = contained_import_file(&checked_root, &input.id, relative)
-            .map_err(|error| PreviewError::NotFound(error.to_string()))?;
-        solstone_core_import::snapshot::verify(&snapshot, digest)
-            .map_err(PreviewError::SourceChanged)?;
-        Ok::<_, PreviewError>((input, record, snapshot))
+        Ok((input, pending))
     })
     .await
     .map_err(|error| PreviewError::PlanFailed(error.to_string()))??;
-    let current = if previewed_here {
-        record["size"].clone()
-    } else {
-        plan(program, &snapshot, &input.options, &input.metadata).await?
-    };
-    if current != record["size"] {
-        return Err(PreviewError::SourceChanged(
-            "the import size changed as your journal changed; preview it again".to_owned(),
-        ));
-    }
-    if current["recordings"].as_u64() == Some(0) && current["other_units"].is_null() {
-        return Err(PreviewError::NothingToImport);
-    }
+    reject_empty(&pending.record["size"])?;
     data["import_id"] = json!(input.id);
-    data["_preview_source"] = record["relative"].clone();
-    Ok(data)
+    data["_preview_source"] = pending.record["relative"].clone();
+    Ok((data, Some(pending)))
 }
 
 #[cfg(test)]
@@ -477,6 +1007,7 @@ mod tests {
         write_import_metadata(root.path(), ID, &metadata).unwrap();
         let state = AppState {
             root: root.path().to_path_buf(),
+            route: None,
         };
         let response = crate::lifecycle::meta(
             State(state.clone()),
@@ -605,5 +1136,95 @@ mod tests {
             () = tokio::time::sleep(Duration::from_millis(10)) => {},
         }
         assert!(preview.await.unwrap_err().detail().contains("timed out"));
+    }
+
+    struct HoldWatch {
+        path: PathBuf,
+        expect_present: bool,
+        dropped: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    }
+
+    impl Drop for HoldWatch {
+        fn drop(&mut self) {
+            assert_eq!(self.path.exists(), self.expect_present);
+            self.dropped
+                .store(true, std::sync::atomic::Ordering::Release);
+        }
+    }
+
+    impl crate::CapturedImport for HoldWatch {
+        fn preview(&self) -> Result<CliRun, String> {
+            Err("unused".to_owned())
+        }
+
+        fn run(&self) -> Result<CliRun, String> {
+            Err("unused".to_owned())
+        }
+    }
+
+    fn settings_refusal(
+        root: &Path,
+        snapshot: solstone_core_import::snapshot::Snapshot,
+        present: bool,
+    ) {
+        let directory = root
+            .join("imports")
+            .join(ID)
+            .join(snapshot.relative.parent().expect("snapshot directory"));
+        let dropped = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let pending = PendingPreview {
+            record: json!({}),
+            id: ID.to_owned(),
+            snapshot: Some(snapshot),
+            release: None,
+            hold: Some(Arc::new(HoldWatch {
+                path: directory.clone(),
+                expect_present: present,
+                dropped: Arc::clone(&dropped),
+            })),
+            setting: Some(json!("office")),
+            source_hint: None,
+        };
+        let mut metadata = read_import_metadata(root, ID).unwrap();
+        metadata.insert("setting".into(), json!("home"));
+        write_import_metadata(root, ID, &metadata).unwrap();
+        match commit_pending_preview(root, pending) {
+            Err(PreviewError::SourceChanged(message)) => {
+                assert_eq!(message, "the import settings changed; preview again");
+            }
+            other => panic!("unexpected {other:?}"),
+        }
+        assert!(dropped.load(std::sync::atomic::Ordering::Acquire));
+        assert_eq!(directory.exists(), present);
+    }
+
+    #[test]
+    fn a_settings_change_drops_a_fresh_snapshot_before_the_hold_and_keeps_a_reused_one() {
+        let (root, data) = fixture();
+        let input = input(root.path(), &data).unwrap();
+        let fresh = solstone_core_import::snapshot::create(root.path(), ID, &input.source).unwrap();
+        settings_refusal(root.path(), fresh, false);
+
+        let mut metadata = read_import_metadata(root.path(), ID).unwrap();
+        metadata.insert("setting".into(), json!("office"));
+        write_import_metadata(root.path(), ID, &metadata).unwrap();
+        let prepared =
+            solstone_core_import::snapshot::create(root.path(), ID, &input.source).unwrap();
+        let relative = prepared.relative.clone();
+        let digest = prepared.digest.clone();
+        prepared.persist();
+        metadata.insert(
+            "preview".into(),
+            json!({
+                "source": input.source.to_str().unwrap(),
+                "digest": digest,
+                "relative": relative.to_str().unwrap(),
+            }),
+        );
+        write_import_metadata(root.path(), ID, &metadata).unwrap();
+        let reused =
+            solstone_core_import::snapshot::create(root.path(), ID, &input.source).unwrap();
+        assert_eq!(reused.relative, relative);
+        settings_refusal(root.path(), reused, true);
     }
 }

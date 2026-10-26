@@ -467,8 +467,9 @@ impl Drop for EmbeddedConveyHandle {
 pub async fn bind_embedded_device_door(
     journal_root: PathBuf,
     address: std::net::SocketAddrV4,
+    import_route: Option<Arc<solstone_core_import_web::ImportRouteSlot>>,
 ) -> Result<EmbeddedConveyHandle, ConveyServeError> {
-    bind_embedded_with_dependencies(journal_root, address, None, None, None).await
+    bind_embedded_with_dependencies(journal_root, address, None, None, None, import_route).await
 }
 
 #[cfg(feature = "host")]
@@ -476,8 +477,17 @@ pub async fn bind_embedded_device_door_with_payload(
     journal_root: PathBuf,
     address: std::net::SocketAddrV4,
     payload_root: PathBuf,
+    import_route: Option<Arc<solstone_core_import_web::ImportRouteSlot>>,
 ) -> Result<EmbeddedConveyHandle, ConveyServeError> {
-    bind_embedded_with_dependencies(journal_root, address, Some(payload_root), None, None).await
+    bind_embedded_with_dependencies(
+        journal_root,
+        address,
+        Some(payload_root),
+        None,
+        None,
+        import_route,
+    )
+    .await
 }
 
 /// Compose app-owned routes using the same optional agent owner surface as the
@@ -488,6 +498,7 @@ pub async fn bind_embedded_device_door_with_routes(
     address: std::net::SocketAddrV4,
     payload_root: Option<PathBuf>,
     agents_routes: Router,
+    import_route: Option<Arc<solstone_core_import_web::ImportRouteSlot>>,
 ) -> Result<EmbeddedConveyHandle, ConveyServeError> {
     bind_embedded_with_dependencies(
         journal_root,
@@ -495,6 +506,7 @@ pub async fn bind_embedded_device_door_with_routes(
         payload_root,
         Some(agents_routes),
         None,
+        import_route,
     )
     .await
 }
@@ -506,6 +518,7 @@ pub async fn bind_embedded_device_door_with_routes_and_startup(
     payload_root: Option<PathBuf>,
     agents_routes: Router,
     startup: EmbeddedStartup,
+    import_route: Option<Arc<solstone_core_import_web::ImportRouteSlot>>,
 ) -> Result<EmbeddedConveyHandle, ConveyServeError> {
     bind_embedded_with_dependencies(
         journal_root,
@@ -513,6 +526,7 @@ pub async fn bind_embedded_device_door_with_routes_and_startup(
         payload_root,
         Some(agents_routes),
         Some(startup),
+        import_route,
     )
     .await
 }
@@ -525,6 +539,7 @@ pub async fn bind_embedded_device_door_with_root(
     payload_root: Option<PathBuf>,
     agents_routes: Router,
     startup: EmbeddedStartup,
+    import_route: Option<Arc<solstone_core_import_web::ImportRouteSlot>>,
 ) -> Result<EmbeddedConveyHandle, ConveyServeError> {
     root.revalidate_canonical_binding()
         .map_err(ConveyServeError::EmbeddedRoot)?;
@@ -541,6 +556,7 @@ pub async fn bind_embedded_device_door_with_root(
         Some(agents_routes),
         roots,
         Some(backup_deps.clone()),
+        import_route,
     );
     root.revalidate_canonical_binding()
         .map_err(ConveyServeError::EmbeddedRoot)?;
@@ -562,6 +578,7 @@ async fn bind_embedded_with_dependencies(
     payload_root: Option<PathBuf>,
     agents_routes: Option<Router>,
     startup: Option<EmbeddedStartup>,
+    import_route: Option<Arc<solstone_core_import_web::ImportRouteSlot>>,
 ) -> Result<EmbeddedConveyHandle, ConveyServeError> {
     let roots = payload_root
         .map(|payload| thinking_sol_reads::TalentRoots::from_payload_root(&payload))
@@ -574,6 +591,7 @@ async fn bind_embedded_with_dependencies(
         agents_routes,
         roots,
         Some(backup_deps.clone()),
+        import_route,
     );
     bind_embedded_router(journal_root, address, app, backup_deps, None, startup).await
 }
@@ -1258,7 +1276,7 @@ fn router_with_hosted_parent(
     hosted_parent: Option<Arc<solstone_core_system::lifecycle::HostedServiceParentRuntime>>,
     agents_routes: Option<Router>,
 ) -> Router {
-    router_with_roots(journal_root, hosted_parent, agents_routes, None, None)
+    router_with_roots(journal_root, hosted_parent, agents_routes, None, None, None)
 }
 
 /// Compose the production routes with an explicitly packaged app payload.
@@ -1273,6 +1291,7 @@ pub fn router_with_payload_root(
         None,
         Some(roots),
         None,
+        None,
     ))
 }
 
@@ -1282,6 +1301,7 @@ fn router_with_roots(
     agents_routes: Option<Router>,
     payload_roots: Option<thinking_sol_reads::TalentRoots>,
     backup_deps: Option<solstone_core_backup_web::BackupWebDeps>,
+    import_route: Option<Arc<solstone_core_import_web::ImportRouteSlot>>,
 ) -> Router {
     solstone_core_convey_body::warm_trends(journal_root.clone());
     let include_agents = agents_routes.is_some();
@@ -1620,7 +1640,12 @@ fn router_with_roots(
         .route("/app/body/workspace", get(body::workspace))
         .route("/app/body/background", get(body::background))
         .merge(solstone_core_convey_body::api_router(journal_root.clone()))
-        .merge(solstone_core_import_web::routes(journal_root.clone()))
+        .merge(match import_route {
+            Some(route) => {
+                solstone_core_import_web::routes_with_embedded(journal_root.clone(), route)
+            }
+            None => solstone_core_import_web::routes(journal_root.clone()),
+        })
         .merge(solstone_core_transcripts_web::router(
             journal_root.clone(),
             solstone_core_transcripts_web::Clock::system(),

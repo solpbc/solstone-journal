@@ -659,6 +659,7 @@ mod tests {
         }
         let state = AppState {
             root: dir.path().to_path_buf(),
+            route: None,
         };
         for (filter, page, expected_total, expected_source) in [
             ("", "1", 3, "text"),
@@ -750,6 +751,7 @@ mod tests {
 
             let state = AppState {
                 root: journal.to_path_buf(),
+                route: None,
             };
             let response = detail(State(state), AxumPath(id.to_owned())).await;
             let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
@@ -772,6 +774,7 @@ mod tests {
 
         let state = AppState {
             root: journal.to_path_buf(),
+            route: None,
         };
         let response = detail(State(state), AxumPath(id.to_owned())).await;
         let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
@@ -807,6 +810,7 @@ mod tests {
 
         let state = AppState {
             root: journal.to_path_buf(),
+            route: None,
         };
 
         // Test list endpoint
@@ -862,6 +866,7 @@ mod tests {
 
         let state = AppState {
             root: journal.to_path_buf(),
+            route: None,
         };
 
         // Test list endpoint

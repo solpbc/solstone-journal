@@ -833,7 +833,10 @@ mod tests {
         let outside = temporary.path().join("external.json");
         fs::write(&outside, r#"{"source_type":"chatgpt","importer":"image","segments":[{"day":"20260101","segment":"090000_300"}],"marker":"outside marker"}"#).unwrap();
         std::os::unix::fs::symlink(&outside, directory.join("imported.json")).unwrap();
-        let state = AppState { root: root.clone() };
+        let state = AppState {
+            root: root.clone(),
+            route: None,
+        };
         assert_metadata_refusal(
             list(
                 State(state.clone()),

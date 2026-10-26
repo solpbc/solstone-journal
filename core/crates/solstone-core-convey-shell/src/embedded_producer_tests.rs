@@ -400,7 +400,7 @@ async fn embedded_binding_starts_location_reconciliation_and_joins_both_producer
         let SocketAddr::V4(address) = address else {
             unreachable!()
         };
-        bind_embedded_device_door(root.path().to_path_buf(), address)
+        bind_embedded_device_door(root.path().to_path_buf(), address, None)
             .await
             .unwrap()
     };

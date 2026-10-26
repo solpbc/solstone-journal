@@ -153,6 +153,80 @@ final class OwnerTransport implements Closeable {
         }
         return bytes.toByteArray();
     }
+    final class Upload {
+        final long id;
+        final ParcelFileDescriptor bodyWrite;
+        final ParcelFileDescriptor responseRead;
+        Upload(long id, ParcelFileDescriptor bodyWrite, ParcelFileDescriptor responseRead) {
+            this.id=id; this.bodyWrite=bodyWrite; this.responseRead=responseRead;
+        }
+    }
+    Upload openStream(String method,String url,JSONArray headers,Cancellation cancellation) throws Exception {
+        cancellation.check();
+        String uri=OwnerOrigin.path(url);
+        if (!current() || streams.size() >= 32) throw new IOException("journal controls unavailable");
+        long ownerId=identities.incrementAndGet();
+        JSONObject request=MainActivity.obj("id",ownerId,"method",method,"uri",uri,"body","","headers",headers,
+            "admission_generation",nativeGeneration,"stream",true);
+        byte[] bytes=request.toString().getBytes(StandardCharsets.UTF_8);
+        if (bytes.length > 384*1024) throw new IOException("journal request too large");
+        // The second pipe is opened inside openTwo. A failure there closes the first pair.
+        OwnerPipePair.Ends<ParcelFileDescriptor> pipes=OwnerPipePair.openTwo(ParcelFileDescriptor::createPipe);
+        CompletableFuture<JSONObject> result=new CompletableFuture<>();
+        int id=activity.sequence.incrementAndGet();
+        activity.pending.put(id,result);
+        opening.put(ownerId,result);
+        boolean returned=false;
+        boolean handed=false;
+        try {
+            Os.fcntlInt(pipes.responseWrite.getFileDescriptor(),OsConstants.F_SETFL,OsConstants.O_NONBLOCK);
+            Message message=Message.obtain(null,1); message.arg1=id; message.replyTo=activity.replies;
+            Bundle bundle=new Bundle(); bundle.putString("op","owner-open-stream"); bundle.putString("root",activity.root);
+            bundle.putByteArray("request",bytes); bundle.putParcelable("sink",pipes.responseWrite); bundle.putParcelable("body",pipes.bodyRead);
+            message.setData(bundle);
+            synchronized(cancellation) {
+                cancellation.check();
+                cancellation.id=ownerId; cancellation.waiting=result;
+                worker.send(message);
+            }
+            pipes.responseWrite.close();
+            pipes.bodyRead.close();
+            handed=true;
+            JSONObject nativeResult=result.get(5,TimeUnit.SECONDS).getJSONObject("native");
+            if (!nativeResult.optBoolean("ok")) throw new IOException(nativeResult.optString("error","journal request failed"));
+            if (!current()) throw new IOException("journal connection changed; outcome may be unknown");
+            JSONObject value=nativeResult.getJSONObject("value");
+            if (!value.optBoolean("streaming")) throw new IOException("journal response unavailable; check the result before trying again");
+            synchronized(cancellation) {
+                if (cancellation.cancelled) throw new IOException("journal request cancelled; outcome may be unknown");
+            }
+            returned=true;
+            return new Upload(ownerId,pipes.bodyWrite,pipes.responseRead);
+        } finally {
+            activity.pending.remove(id);
+            opening.remove(ownerId);
+            if (!handed) {
+                try { pipes.responseWrite.close(); } catch(IOException ignored) {}
+                try { pipes.bodyRead.close(); } catch(IOException ignored) {}
+            }
+            if (!returned) { cancel(ownerId); try { pipes.bodyWrite.close(); } catch(IOException ignored) {} try { pipes.responseRead.close(); } catch(IOException ignored) {} }
+        }
+    }
+    JSONObject poll(long ownerId) throws Exception {
+        if (!current()) throw new IOException("journal connection changed; outcome may be unknown");
+        CompletableFuture<JSONObject> result=new CompletableFuture<>();
+        int id=activity.sequence.incrementAndGet();
+        activity.pending.put(id,result);
+        try {
+            Message message=Message.obtain(null,1); message.arg1=id; message.replyTo=activity.replies;
+            Bundle bundle=new Bundle(); bundle.putString("op","owner-poll"); bundle.putLong("owner_id",ownerId);
+            message.setData(bundle);
+            worker.send(message);
+            JSONObject nativeResult=result.get(5,TimeUnit.SECONDS).getJSONObject("native");
+            if (!nativeResult.optBoolean("ok")) throw new IOException(nativeResult.optString("error","journal request failed"));
+            return nativeResult.getJSONObject("value");
+        } finally { activity.pending.remove(id); }
+    }
     public void close() {
         closed=true;
         for(Map.Entry<Long,CompletableFuture<JSONObject>> entry:opening.entrySet()) {

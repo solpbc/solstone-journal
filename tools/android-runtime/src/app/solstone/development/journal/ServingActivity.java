@@ -120,7 +120,8 @@ public class ServingActivity extends Activity {
                     public boolean start() throws Exception {
                         JSONObject res = call(target, MainActivity.obj("op", "start",
                             "address", wifiAddress() + ":7657",
-                            "onnx_library", getApplicationInfo().nativeLibraryDir + "/libonnxruntime.so"));
+                            "onnx_library", getApplicationInfo().nativeLibraryDir + "/libonnxruntime.so",
+                            "pdfium_library", getApplicationInfo().nativeLibraryDir + "/libpdfium.so"));
                         show(res);
                         JSONObject nat = res.optJSONObject("native");
                         return nat != null && nat.optBoolean("ok", false);

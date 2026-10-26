@@ -22,6 +22,23 @@ from android_cross_build import acquire, sha256
 ROOT = Path(__file__).resolve().parents[1]
 INPUTS = ROOT / "core/distribution/mobile/inputs.json"
 COMPONENTS = ("rust", "llama", "parakeet", "ced", "rfdetr", "restic", "rclone", "nvattest", "pdfium", "swift")
+MEDIA_GGML_COMPONENTS = ("parakeet", "rfdetr")
+MEDIA_GGML_SCHEMA = "solstone.mobile-media-ggml.v1"
+
+
+def media_ggml_patches(sources):
+    """Keep both pinned patch series, applying byte-identical patches once."""
+    patches, seen = [], set()
+    for component in MEDIA_GGML_COMPONENTS:
+        series = sorted((sources[component] / "third_party/ggml-patches").glob("*.patch"))
+        if not series:
+            raise ValueError(f"GGML patch series missing: {sources[component]}")
+        for patch in series:
+            digest = sha256(patch)
+            if digest not in seen:
+                seen.add(digest)
+                patches.append((component, patch, digest))
+    return patches
 
 
 def tree_digest(root):
@@ -139,6 +156,7 @@ class Build:
         self.receipts.mkdir()
         self.sources = self.work / "sources"
         self.sources.mkdir()
+        self.source_roots = {}
         self.pins = json.loads(INPUTS.read_text())["inputs"]
         self.env = os.environ.copy()
         for key in ("IPHONEOS_DEPLOYMENT_TARGET", "MACOSX_DEPLOYMENT_TARGET", "SDKROOT", "GOTOOLCHAIN", "GOROOT", "GOFLAGS", "CGO_CFLAGS", "CGO_LDFLAGS"):
@@ -184,6 +202,9 @@ class Build:
         (self.receipts / "mobile-native-build.json").write_text(json.dumps(self.summary, indent=2) + "\n")
 
     def source(self, name, destination=None):
+        if destination is None and name in self.source_roots:
+            return self.source_roots[name]
+        default_destination = destination is None
         pin = dict(self.pins[name])
         pin["filename"] = f"{name}-{pin['sha256']}.tar.gz"
         archive = acquire(pin, self.cache)
@@ -200,6 +221,8 @@ class Build:
                 if member.name:
                     bundle.extract(member, destination, filter="data")
         self.summary["inputs"][name] = {**pin, "archive": str(archive), "source": str(destination)}
+        if default_destination:
+            self.source_roots[name] = destination
         self.save()
         return destination
 
@@ -282,16 +305,30 @@ class Build:
     def ggml(self, name, source):
         ggml = self.source("ggml", source / "third_party/ggml")
         self.run(f"{name}-ggml-git", ["git", "init", ggml])
-        if name in ("parakeet", "rfdetr"):
-            script = source / "scripts/apply_ggml_patches.sh"
-            self.run(f"{name}-patch-series", ["bash", script], source)
-            patches = sorted((source / "third_party/ggml-patches").glob("*.patch"))
-            if not patches:
-                raise ValueError(f"GGML patch series missing: {source}")
-            for i, patch in enumerate(patches):
+        if name in MEDIA_GGML_COMPONENTS:
+            sources = {component: self.source(component) for component in MEDIA_GGML_COMPONENTS}
+            patches = media_ggml_patches(sources)
+            for i, (_, patch, _) in enumerate(patches):
+                self.run(f"{name}-patch-{i}-apply", ["git", "apply", patch], ggml)
+            records = []
+            # Check every complete series after composing them; later patches
+            # must not silently undo a requirement of the other engine.
+            for i, (component, patch, digest) in enumerate(patches):
                 self.run(f"{name}-patch-{i}-proof", ["git", "apply", "--check", "--reverse", patch], ggml)
-                self.summary["patches"].append({"component": name, "path": str(patch.relative_to(source)), "sha256": sha256(patch)})
-            self.summary["inputs"][f"{name}-patched-ggml"] = {"tree_sha256": tree_digest(ggml)}
+                record = {"source_component": component, "path": str(patch.relative_to(sources[component])), "sha256": digest}
+                records.append(record)
+                self.summary["patches"].append({"component": name, **record})
+            tree = tree_digest(ggml)
+            binding = {"schema": MEDIA_GGML_SCHEMA,
+                       "sources": {component: self.pins[component]["sha256"]
+                                   for component in ("ggml", *MEDIA_GGML_COMPONENTS)},
+                       "tree_sha256": tree, "patches": records}
+            prior = self.summary["inputs"].get("media-shared-ggml")
+            if prior is not None and prior != binding:
+                raise ValueError("media engines produced different shared GGML closures")
+            self.summary["inputs"]["media-shared-ggml"] = binding
+            self.summary["inputs"][f"{name}-patched-ggml"] = {"tree_sha256": tree}
+            self.save()
 
     def openssl(self):
         source = self.source("openssl")

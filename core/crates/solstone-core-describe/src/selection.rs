@@ -109,6 +109,7 @@ pub enum SelectionError {
         provider: Option<String>,
     },
     Session,
+    Cancelled,
 }
 
 pub fn select(
@@ -132,6 +133,9 @@ pub fn select(
     let SessionCompletion::Response(response) = completion else {
         return Err(SelectionError::Session);
     };
+    if matches!(response, GenerateResponse::Cancelled) {
+        return Err(SelectionError::Cancelled);
+    }
     let id = match &response {
         GenerateResponse::Generated(generated) => generated.id.as_deref(),
         GenerateResponse::Refused(refusal) => refusal.id.as_deref(),
@@ -159,7 +163,7 @@ pub fn select(
             }
             fallback_with_category_caps(frames, max_extractions, overrides)
         }
-        GenerateResponse::Cancelled => return Err(SelectionError::Session),
+        GenerateResponse::Cancelled => return Err(SelectionError::Cancelled),
     };
     Ok(selected)
 }

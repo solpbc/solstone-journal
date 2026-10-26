@@ -6,6 +6,22 @@ import Foundation
 // Neither accepts an external path as journal or payload authority.
 enum Engine {
   static let queue = DispatchQueue(label: "journal-runtime-work")
+
+  // PDFium is installed on the containing app. Inside the worker appex,
+  // Bundle.main is <app>/Extensions/<name>.appex.
+  private static func pdfiumLibraryPath() -> String {
+    var container = Bundle.main.bundleURL
+    if container.pathExtension == "appex" {
+      container.deleteLastPathComponent()
+      container.deleteLastPathComponent()
+    }
+    return container
+      .appendingPathComponent("Frameworks", isDirectory: true)
+      .appendingPathComponent("PDFium.framework", isDirectory: true)
+      .appendingPathComponent("PDFium", isDirectory: false)
+      .path
+  }
+
   static func execute(_ message: Request) -> Reply {
     do {
       guard !message.journal.isEmpty, message.journal.count <= 64,
@@ -80,6 +96,7 @@ enum Engine {
             throw NSError(domain: "packaged-payload-missing", code: 1)
           }
           request.payload = payload.path
+          request.pdfiumLibrary = pdfiumLibraryPath()
         }
         if request.op == "audio-enable" {
           guard let models = Bundle.main.url(forResource: "AudioModels", withExtension: nil) else {

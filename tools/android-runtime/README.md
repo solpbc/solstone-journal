@@ -24,7 +24,7 @@ Pass the same retained debug keystore across checkouts; the builder does not cre
 
 ## internal owner build
 
-`--owner-app` packages a launcher named `journal`. it opens the existing journal setup and screens through a private in-app transport. start and stop are in the native bar; health carries processing and service status. a saved stop holds across reopening. the owner variant ignores development command files and keeps the screen's normal sleep behavior.
+`--owner-app` packages a launcher named `journal`. it opens the existing journal setup and screens through a private in-app transport. start and stop are in the native bar; health carries processing and service status. a saved stop holds across reopening. the owner variant ignores development command files and keeps the screen's normal sleep behavior. you can choose a file on the import screen and save it through this private transport. saving a file does not run the import by itself.
 
 build native libraries and prepare service tools first. run the current native `solstone-core assets` command and save its JSON catalog. supply that catalog and its pinned Parakeet speech model to the APK builder:
 

@@ -1,0 +1,89 @@
+//! Seal Text Detection Predictor
+//!
+//! This module provides a high-level API for seal text detection in images.
+
+use super::builder::PredictorBuilderState;
+use crate::TaskPredictorBuilder;
+use crate::core::OcrResult;
+use crate::core::traits::OrtConfigurable;
+use crate::core::traits::task::ImageTaskInput;
+use crate::domain::adapters::SealTextDetectionAdapterBuilder;
+use crate::domain::tasks::seal_text_detection::{SealTextDetectionConfig, SealTextDetectionTask};
+use crate::predictors::TaskPredictorCore;
+use image::RgbImage;
+
+/// Seal text detection prediction result
+#[derive(Debug, Clone)]
+pub struct SealTextDetectionResult {
+    /// Detected seal text regions for each input image
+    pub detections: Vec<Vec<crate::domain::tasks::text_detection::Detection>>,
+}
+
+/// Seal text detection predictor
+pub struct SealTextDetectionPredictor {
+    core: TaskPredictorCore<SealTextDetectionTask>,
+}
+
+impl SealTextDetectionPredictor {
+    pub fn builder() -> SealTextDetectionPredictorBuilder {
+        SealTextDetectionPredictorBuilder::new()
+    }
+
+    /// Predict seal text regions in the given images.
+    pub fn predict(&self, images: Vec<RgbImage>) -> OcrResult<SealTextDetectionResult> {
+        let input = ImageTaskInput::new(images);
+        let output = self.core.predict(input)?;
+        Ok(SealTextDetectionResult {
+            detections: output.detections,
+        })
+    }
+}
+
+#[derive(TaskPredictorBuilder)]
+#[builder(config = SealTextDetectionConfig)]
+pub struct SealTextDetectionPredictorBuilder {
+    state: PredictorBuilderState<SealTextDetectionConfig>,
+}
+
+impl SealTextDetectionPredictorBuilder {
+    pub fn new() -> Self {
+        Self {
+            state: PredictorBuilderState::new(SealTextDetectionConfig {
+                score_threshold: 0.2,
+                box_threshold: 0.6,
+                unclip_ratio: 0.5,
+                max_candidates: 1000,
+            }),
+        }
+    }
+
+    pub fn score_threshold(mut self, threshold: f32) -> Self {
+        self.state.config_mut().score_threshold = threshold;
+        self
+    }
+
+    pub fn build(
+        self,
+        model_source: impl Into<crate::core::ModelSource>,
+    ) -> OcrResult<SealTextDetectionPredictor> {
+        let (config, ort_config) = self.state.into_parts();
+        let mut adapter_builder =
+            SealTextDetectionAdapterBuilder::new().with_config(config.clone());
+
+        if let Some(ort_cfg) = ort_config {
+            adapter_builder = adapter_builder.with_ort_config(ort_cfg);
+        }
+
+        let adapter = super::build_adapter(adapter_builder, model_source)?;
+        let task = SealTextDetectionTask::with_config(config.clone());
+        Ok(SealTextDetectionPredictor {
+            core: TaskPredictorCore::new(adapter, task, config),
+        })
+    }
+}
+
+impl Default for SealTextDetectionPredictorBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}

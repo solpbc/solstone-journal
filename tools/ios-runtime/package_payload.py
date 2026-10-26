@@ -5,16 +5,27 @@
 from pathlib import Path
 import shutil
 import os
+import sys
 
 adapter = Path(__file__).resolve().parent
-source = adapter.parents[1] / 'core/payload/solstone'
+repo = adapter.parents[1]
+sys.path.insert(0,str(repo/'scripts'))
+import package_mobile_media
+ocr_directory = os.environ.get('SCREEN_OCR_MODELS_DIR')
+if os.environ.get('REQUIRE_MEDIA_MODELS') == '1' and not ocr_directory:
+    raise ValueError('owner builds require SCREEN_OCR_MODELS_DIR')
+media = package_mobile_media.media_package(repo, os.environ.get('RFDETR_MODEL') or repo/'core/models/assets/rfdetr/rfdetr-nano-f16.gguf', ocr_directory) if ocr_directory else None
+source = repo / 'core/payload/solstone'
 destination = adapter / 'Resources/JournalPayload'
 for marker in ('talent/journal/contract/bundle.json', 'think/contract/layout.json',
                'think/templates/segment_preamble.md'):
-    assert (source / marker).is_file(), f'missing payload marker: {marker}'
+    if not (source / marker).is_file():
+        raise ValueError(f'missing payload marker: {marker}')
 if destination.exists():
     shutil.rmtree(destination)
 shutil.copytree(source, destination / 'solstone')
+if media:
+    package_mobile_media.stage(destination, *media)
 models = adapter / 'Resources/AudioModels'
 if models.exists():
     shutil.rmtree(models)

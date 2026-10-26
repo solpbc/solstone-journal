@@ -1,0 +1,65 @@
+[package]
+name = "oar-ocr-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Core types and predictors for oar-ocr"
+readme = "README.md"
+keywords = [
+    "ocr",
+    "onnx",
+    "computer-vision",
+    "text-recognition",
+    "machine-learning",
+]
+categories = ["computer-vision", "science"]
+
+[features]
+default = ["download-binaries", "simd"]
+# ONNX Runtime execution provider features
+cuda = ["ort/cuda"]
+tensorrt = ["ort/tensorrt"]
+directml = ["ort/directml"]
+coreml = ["ort/coreml"]
+webgpu = ["ort/webgpu"]
+openvino = ["ort/openvino"]
+# Auto-download ONNX Runtime binaries during build (enabled by default).
+download-binaries = ["ort/download-binaries", "ort/tls-native"]
+# Auto-download registered OCR model files at runtime from ModelScope into the
+# on-disk cache (`$OAR_HOME` or `~/.oar`), verifying each file's SHA-256.
+auto-download = ["dep:ureq", "dep:sha2", "dep:dirs"]
+# SIMD-accelerate the hot CPU kernels (image normalization, CTC argmax decode)
+# via `wide` + `multiversion`. Bit-identical to the scalar fallback.
+simd = ["dep:wide", "dep:multiversion"]
+
+[dependencies]
+clipper2-rust = "1.0.3"
+dirs = { version = "7.0", optional = true }
+image.workspace = true
+imageproc.workspace = true
+itertools = "0.15"
+multiversion = { version = "0.9", optional = true }
+nalgebra = "0.35"
+ndarray = "0.17"
+oar-ocr-derive.workspace = true
+# Pinned exactly because `ort` is pre-release and later release candidates may
+# make source-incompatible API changes on a fresh resolve.
+ort = { version = "=2.0.0-rc.12", default-features = false, features = [ "std", "ndarray", "tracing", "copy-dylibs" ] }
+rayon.workspace = true
+regex.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2 = { version = "0.11", optional = true }
+thiserror = "2.0"
+tokenizers.workspace = true
+tracing.workspace = true
+ureq = { version = "3.0", default-features = false, features = ["rustls", "platform-verifier"], optional = true }
+wide = { version = "1.5", optional = true }
+
+[dev-dependencies]
+tempfile.workspace = true
+tracing-subscriber.workspace = true

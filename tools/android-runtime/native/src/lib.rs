@@ -22,12 +22,12 @@ struct ServingInstance {
     handle: Option<journal_mobile_serving::MobileServing>,
     retirement: Option<retirement::Retirement>,
     root: std::sync::Arc<jio::JournalRoot>,
-    host: Option<journal_mobile_serving::foreground::ForegroundProcessingHost>,
+    host: Option<std::sync::Arc<journal_mobile_serving::foreground::ForegroundProcessingHost>>,
 }
 
 struct RetiringServing {
     handle: journal_mobile_serving::MobileServing,
-    host: Option<journal_mobile_serving::foreground::ForegroundProcessingHost>,
+    host: Option<std::sync::Arc<journal_mobile_serving::foreground::ForegroundProcessingHost>>,
 }
 
 impl ServingInstance {
@@ -310,6 +310,11 @@ fn serving(root: &Path, command: &str) -> Result<Value, String> {
             let library = command["onnx_library"]
                 .as_str()
                 .ok_or("ONNX runtime library required")?;
+            let admitted_library = std::path::PathBuf::from(
+                command["pdfium_library"]
+                    .as_str()
+                    .ok_or("admitted pdfium library required")?,
+            );
             ort::init_from(library).map_err(|e| e.to_string())?.commit();
             let binding =
                 std::sync::Arc::new(jio::JournalRoot::open(root).map_err(|e| e.to_string())?);
@@ -360,11 +365,14 @@ fn serving(root: &Path, command: &str) -> Result<Value, String> {
             *PROCESSING_STOP.lock().unwrap_or_else(|p| p.into_inner()) =
                 Some(std::sync::Arc::clone(&processing_stop));
             let backup = handle.backup_dependencies();
-            let mut host = match journal_mobile_serving::foreground::ForegroundProcessingHost::open_with_cancellation(
+            let mut host = match journal_mobile_serving::foreground::ForegroundProcessingHost::open_with_imports(
                 std::sync::Arc::clone(&binding), &payload_dir,
                 std::sync::Arc::new(move || THINKING_GENERATION.load(Ordering::SeqCst) & !1 != generation & !1),
                 processing_stop,
                 backup,
+                journal_mobile_serving::import_route::packaged_import_factory(admitted_library),
+                false,
+                false,
             ) {
                 Ok(host) => host,
                 Err(error) => {
@@ -376,7 +384,25 @@ fn serving(root: &Path, command: &str) -> Result<Value, String> {
                     return Err(error);
                 }
             };
-            if let Err(error) = host.start_workers() {
+            let host_ready = host.start_workers();
+            if let Err(error) = host_ready {
+                let mut current = ServingInstance {
+                    handle: Some(handle),
+                    retirement: None,
+                    root: binding,
+                    host: Some(std::sync::Arc::new(host)),
+                };
+                let _ = current.begin_retirement();
+                *server = Some(current);
+                return Err(error);
+            }
+            let host = std::sync::Arc::new(host);
+            if let Err(error) = handle.import_route().install(std::sync::Arc::new(
+                journal_mobile_serving::import_route::ForegroundImportRoute::new(
+                    std::sync::Arc::clone(&host),
+                ),
+            ))
+            {
                 let mut current = ServingInstance {
                     handle: Some(handle),
                     retirement: None,
@@ -1303,6 +1329,7 @@ mod retirement_start_tests {
             .expect("maintained pinned host ONNX input required");
         let start = || {
             json!({"op":"start","address":address,"onnx_library":library,
+            "pdfium_library":directory.join("libpdfium.so"),
             "admission_generation":THINKING_GENERATION.load(Ordering::SeqCst)})
             .to_string()
         };

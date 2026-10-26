@@ -115,7 +115,7 @@ impl DescribeSessionFactory for ScriptedFactory {
         &self,
         _max_in_flight: usize,
         _explicit_journal: Option<&Path>,
-    ) -> Result<Box<dyn DescribeSession>, SessionLaunchError> {
+    ) -> Result<Box<dyn DescribeSession + '_>, SessionLaunchError> {
         if self.fail_launch {
             return Err(SessionLaunchError {
                 reason: SessionLaunchReason::Spawn("scripted launch failure".to_owned()),
@@ -1549,6 +1549,7 @@ fn ocr_saved_record_and_faults_preserve_actual_pipeline_requests_and_verdicts() 
             let observation = (
                 outcome.as_ref().err().map(|error| match error {
                     RunError::Blocked(_) => "blocked",
+                    RunError::Cancelled => "cancelled",
                     RunError::Internal(_) => "internal",
                 }),
                 factory.requests(),
@@ -1560,6 +1561,19 @@ fn ocr_saved_record_and_faults_preserve_actual_pipeline_requests_and_verdicts() 
                 baseline = Some(observation);
             }
             let public = segment.join("talents/screen_text.md");
+            if mode != "success" {
+                assert!(
+                    !public.exists(),
+                    "an unfinished Describe must not publish OCR: {mode}"
+                );
+                assert!(
+                    solstone_core_indexer_todo::inspect(&test.journal)
+                        .unwrap()
+                        .keys
+                        .is_empty()
+                );
+                continue;
+            }
             if available && failure.is_none() {
                 let record = fs::read_to_string(public).unwrap();
                 assert!(
@@ -1567,18 +1581,6 @@ fn ocr_saved_record_and_faults_preserve_actual_pipeline_requests_and_verdicts() 
                     "even non-E/failed-C frames contribute in {mode}"
                 );
                 assert!(!record.contains("model-only redaction rule"));
-                if mode == "extraction-blocked" {
-                    let sources = crate::screen_ocr::load_segment_sidecars(&segment);
-                    assert_eq!(sources.len(), 1);
-                    assert_eq!(
-                        sources[0].frames[0].word_overlap.extraction,
-                        crate::screen_ocr::ExtractionTextState::Failed
-                    );
-                    assert_eq!(
-                        sources[0].frames[1].word_overlap.extraction,
-                        crate::screen_ocr::ExtractionTextState::NotReached
-                    );
-                }
                 let pending = solstone_core_indexer_todo::inspect(&test.journal).unwrap();
                 assert_eq!(
                     pending.keys,
@@ -1589,4 +1591,256 @@ fn ocr_saved_record_and_faults_preserve_actual_pipeline_requests_and_verdicts() 
             }
         }
     }
+}
+
+#[test]
+fn cancellation_during_final_staging_preserves_the_previous_reading() {
+    let test = TestRun::new("cancel-final-stage");
+    let prior = b"previous successful reading\n";
+    fs::write(test.artifact(), prior).unwrap();
+    let prefix = crate::publication::StagedFile::stage_prefix(&test.artifact());
+    let staging_exists = || {
+        fs::read_dir(test.artifact().parent().unwrap())
+            .unwrap()
+            .filter_map(Result::ok)
+            .any(|entry| entry.file_name().to_string_lossy().starts_with(&prefix))
+    };
+    let saw_staging = std::cell::Cell::new(false);
+    let checkpoint = || {
+        if staging_exists() {
+            saw_staging.set(true);
+            true
+        } else {
+            false
+        }
+    };
+    let factory = ScriptedFactory::new(default_response);
+    let mut ocr = crate::screen_ocr::MobileOcrGap;
+    let result = super::run_prepared(
+        test.options(true, Vec::new()),
+        &factory,
+        &super::SpawnScreenDetector,
+        &mut ocr,
+        &checkpoint,
+        None,
+        super::DecodeStart::Ready(decoded(&[1, 2, 3])),
+    );
+    assert!(matches!(result, Err(RunError::Cancelled)));
+    assert!(
+        saw_staging.get(),
+        "the cancellation must happen after staging begins"
+    );
+    assert_eq!(fs::read(test.artifact()).unwrap(), prior);
+    assert!(!staging_exists());
+    assert!(
+        !test
+            .artifact()
+            .parent()
+            .unwrap()
+            .join("talents/screen_text.md")
+            .exists()
+    );
+}
+
+struct LiteralOcr;
+impl crate::screen_ocr::OcrWorker for LiteralOcr {
+    fn recognize(
+        &mut self,
+        _: &[u8],
+    ) -> Result<Vec<crate::screen_ocr::RawOccurrence>, crate::screen_ocr::OcrFailure> {
+        Ok(vec![crate::screen_ocr::RawOccurrence {
+            line_order: 0,
+            text: "retained literal text".into(),
+            confidence: Some(0.9),
+            geometry: Vec::new(),
+            recurrence: 0,
+        }])
+    }
+}
+impl crate::screen_ocr::OcrWorkerFactory for LiteralOcr {
+    fn recipe_id(&mut self) -> String {
+        "literal-recipe".into()
+    }
+    fn create(
+        &mut self,
+    ) -> Result<Option<Box<dyn crate::screen_ocr::OcrWorker>>, crate::screen_ocr::OcrFailure> {
+        Ok(Some(Box::new(LiteralOcr)))
+    }
+}
+
+fn ocr_test_run(name: &str) -> TestRun {
+    let mut test = TestRun::new(name);
+    let segment = test.journal.join("chronicle/20261020/desktop/090000_300");
+    fs::create_dir_all(&segment).unwrap();
+    test.video = segment.join("screen.mp4");
+    fs::write(&test.video, b"authored raw input").unwrap();
+    test
+}
+
+#[test]
+fn blocked_redo_retains_previous_ocr_and_index_effects() {
+    let test = ocr_test_run("ocr-abort-preserve");
+    let factory = ScriptedFactory::new(default_response);
+    super::run_decoded_with_ocr_factory(
+        test.options(false, Vec::new()),
+        &factory,
+        decoded(&[1, 2, 3]),
+        &mut LiteralOcr,
+    )
+    .unwrap();
+    let public = test.video.parent().unwrap().join("talents/screen_text.md");
+    let before = fs::read(&public).unwrap();
+    let artifact = fs::read(test.artifact()).unwrap();
+    let queued = solstone_core_indexer_todo::inspect(&test.journal)
+        .unwrap()
+        .keys;
+    let blocked = ScriptedFactory::new(|request| {
+        if request.context == "observe.extract.selection" {
+            no_engine(request)
+        } else {
+            default_response(request)
+        }
+    });
+    let result = super::run_decoded_with_ocr_factory(
+        test.options(true, Vec::new()),
+        &blocked,
+        decoded(&[1, 2, 3]),
+        &mut LiteralOcr,
+    );
+    assert!(matches!(result, Err(RunError::Blocked(_))));
+    assert_eq!(fs::read(public).unwrap(), before);
+    assert_eq!(fs::read(test.artifact()).unwrap(), artifact);
+    assert_eq!(
+        solstone_core_indexer_todo::inspect(&test.journal)
+            .unwrap()
+            .keys,
+        queued
+    );
+}
+
+#[test]
+fn extraction_only_video_retry_retains_valid_ocr_and_completes() {
+    let test = ocr_test_run("ocr-extraction-retry");
+    fs::copy(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/delayed_video_probe_screen.mp4"),
+        &test.video,
+    )
+    .unwrap();
+    let failed = ScriptedFactory::new(|request| {
+        if request.context.starts_with("observe.describe.")
+            && request.context != "observe.describe.frame"
+        {
+            refused(request, false, false, None)
+        } else {
+            default_response(request)
+        }
+    });
+    super::run_prepared(
+        test.options(false, Vec::new()),
+        &failed,
+        &super::SpawnScreenDetector,
+        &mut LiteralOcr,
+        &|| false,
+        None,
+        super::DecodeStart::Video,
+    )
+    .unwrap();
+    assert_eq!(test.rows()[0]["_solstone_processing"]["state"], "failed");
+    let public = test.video.parent().unwrap().join("talents/screen_text.md");
+    let before = fs::read(&public).unwrap();
+    assert!(String::from_utf8_lossy(&before).contains("retained literal text"));
+    struct UnavailableOcr;
+    impl crate::screen_ocr::OcrWorkerFactory for UnavailableOcr {
+        fn recipe_id(&mut self) -> String {
+            "literal-recipe".into()
+        }
+        fn create(
+            &mut self,
+        ) -> Result<Option<Box<dyn crate::screen_ocr::OcrWorker>>, crate::screen_ocr::OcrFailure>
+        {
+            Ok(None)
+        }
+    }
+    let retry = ScriptedFactory::new(default_response);
+    super::run_prepared(
+        test.options(false, Vec::new()),
+        &retry,
+        &super::SpawnScreenDetector,
+        &mut UnavailableOcr,
+        &|| false,
+        None,
+        super::DecodeStart::Video,
+    )
+    .unwrap();
+    assert_eq!(test.rows()[0]["_solstone_processing"]["state"], "analyzed");
+    assert!(
+        !retry
+            .requests()
+            .iter()
+            .any(|r| r.context == "observe.describe.frame")
+    );
+    assert_eq!(fs::read(public).unwrap(), before);
+    assert!(
+        !solstone_core_indexer_todo::inspect(&test.journal)
+            .unwrap()
+            .keys
+            .is_empty()
+    );
+}
+
+#[test]
+fn releasing_processed_frames_drops_png_capacity_beyond_the_window() {
+    struct EmptyDetector;
+    impl super::ScreenDetector for EmptyDetector {
+        fn detect(&self, _: &[u8], _: &Path) -> Result<Value, String> {
+            Ok(json!({"image":{"width":2,"height":2},"detections":[]}))
+        }
+    }
+    let ids = (1..=12).collect::<Vec<_>>();
+    let mut decoded = decoded(&ids);
+    let mut categorized = decoded
+        .qualified_frames
+        .iter_mut()
+        .map(|frame| {
+            frame.png.reserve(128 * 1024);
+            let mut png = frame.png.clone();
+            png.reserve(128 * 1024);
+            super::CategorizedRow {
+                frame_id: frame.frame_id,
+                timestamp: frame.timestamp,
+                png,
+                analysis: Some(json!({"primary":"media","secondary":"none","overlap":false})),
+                error: None,
+                requests: Vec::new(),
+                detection: None,
+            }
+        })
+        .collect::<Vec<_>>();
+    assert!(ids.len() > crate::DescribeWorkBound::for_jobs(1).max_png_slots);
+    let mut ocr = crate::screen_ocr::StreamingOcr::new();
+    let released = super::release_held_frames(
+        &mut categorized,
+        &mut decoded,
+        &mut None,
+        &EmptyDetector,
+        Path::new("."),
+        &BTreeMap::new(),
+        &None,
+        "unused",
+        &mut LiteralOcr,
+        &mut ocr,
+        &mut None,
+        &ids.iter().copied().collect(),
+        &|| false,
+    )
+    .unwrap();
+    assert_eq!(released, ids.len());
+    assert_eq!(ocr.fed(), ids.len());
+    assert!(categorized.iter().all(|row| row.png.capacity() == 0));
+    assert!(
+        decoded
+            .qualified_frames
+            .iter()
+            .all(|frame| frame.png.capacity() == 0)
+    );
 }
