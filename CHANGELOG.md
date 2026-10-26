@@ -18,6 +18,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- the backup page now updates after a backup finishes, so you no longer have to leave and reopen it to see the result.
 - the side rail names its pages again: on a wide window each icon has its name beside it, and on a narrower one the name sits under it.
 - on a new journal, home no longer adds a "your first week" card a moment after it opens.
 - when your journal thinks with Claude, a stretch where everything came from your terminal and an AI assistant's input box or menu was on screen is described again. in 2.0.58, your journal asked Claude for it in a form Claude doesn't accept, and the stretch was left without a description.

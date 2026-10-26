@@ -21,7 +21,7 @@ BACKUP_LIB := $(BUILD_ROOT)/backup-native/librestic_bridge.a
 BACKUP_RESOURCES := Resources/BackupRuntime
 APP := $(BUILD_ROOT)/derived/Build/Products/Debug-iphoneos/JournalRuntimeDev.app
 NATIVE_FEATURES := $(if $(AUDIO_MODELS_DIR),audio) $(if $(filter project-owner.yml,$(PROJECT_SPEC)),owner-app)
-.PHONY: build rust appraisal-rust appraisal-native backup-native payload project finalize install run check
+.PHONY: build rust appraisal-rust appraisal-native backup-native payload project finalize install run check check-owner-fixture
 rust:
 	IPHONEOS_DEPLOYMENT_TARGET=26.0 cargo build --locked --manifest-path native/Cargo.toml --features '$(NATIVE_FEATURES)' --target aarch64-apple-ios --target-dir $(BUILD_ROOT)/rust
 appraisal-rust:
@@ -50,7 +50,11 @@ install: build
 run:
 	@test -n "$(DEVICE)" || (echo "Set DEVICE to a connected device identifier"; exit 2)
 	xcrun devicectl device process launch --device $(DEVICE) --console --terminate-existing app.solstone.journal.runtime.dev $(ARGS)
-check:
+check-owner-fixture:
+	mkdir -p $(BUILD_ROOT)/diagnostics
+	swiftc Shared/OwnerFixture.swift diagnostics/OwnerFixtureQualification.swift -o $(BUILD_ROOT)/diagnostics/owner-fixture-check
+	$(BUILD_ROOT)/diagnostics/owner-fixture-check
+check: check-owner-fixture
 	cargo fmt --manifest-path native/Cargo.toml -- --check
 	cargo clippy --locked --manifest-path native/Cargo.toml --all-targets --no-deps -- -D warnings
 	cargo test --locked --manifest-path native/Cargo.toml --features full-tests

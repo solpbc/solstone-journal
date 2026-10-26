@@ -194,6 +194,12 @@ class Element {
   }
 
   focus() { this.ownerDocument.activeElement = this; }
+
+  get isConnected() {
+    let node = this;
+    while (node && node !== this.ownerDocument) node = node.parentElement;
+    return node === this.ownerDocument;
+  }
 }
 
 class Document {
@@ -214,6 +220,9 @@ class Document {
   }
   querySelectorAll(selector) { return this.documentElement.querySelectorAll(selector); }
   addEventListener(type, listener) { (this.listeners[type] ||= []).push(listener); }
+  removeEventListener(type, listener) {
+    this.listeners[type] = (this.listeners[type] || []).filter((candidate) => candidate !== listener);
+  }
   dispatchEvent(event) {
     event.currentTarget = this;
     for (const listener of this.listeners[event.type] || []) listener.call(this, event);
@@ -448,6 +457,22 @@ function createHarness(options = {}) {
       if (timer) timer.cleared = true;
     },
   };
+  const eventListeners = new Set();
+  const connectionListeners = new Set();
+  if (options.realtime) {
+    window.appEvents = {
+      listen(tract, listener) {
+        assert.strictEqual(tract, 'supervisor');
+        eventListeners.add(listener);
+        return () => eventListeners.delete(listener);
+      },
+      onConnectionState(listener) {
+        connectionListeners.add(listener);
+        listener({ connected: true });
+        return () => connectionListeners.delete(listener);
+      },
+    };
+  }
   window.window = window;
   window.top = window;
   const context = vm.createContext({ window, document, console, fetch, URL, navigator, location, setTimeout: window.setTimeout, clearTimeout: window.clearTimeout });
@@ -472,6 +497,13 @@ function createHarness(options = {}) {
     popups,
     window,
     location,
+    emit(message) { for (const listener of [...eventListeners]) listener(message); },
+    connection(connected) { for (const listener of [...connectionListeners]) listener({ connected }); },
+    subscriptions() { return eventListeners.size + connectionListeners.size; },
+    detach() {
+      elements.root.parentElement = null;
+      document.dispatchEvent(event('workspace:mounted'));
+    },
     clearCalls() { calls.splice(0); },
     async runTimer(delay) {
       const timer = timers.find((candidate) => !candidate.cleared && candidate.delay === delay);
@@ -1170,7 +1202,7 @@ for (const scope of ['own', 'global', 'contended']) {
     assert.ok(harness.rotateKey.disabled, 'clearing pending does not enable an otherwise ineligible action');
     click(harness.backupNow);
     await settle();
-    assert.deepStrictEqual(harness.calls.map((call) => call.url), ['/app/backup/api/cleanup/retry', '/app/backup/backup-now']);
+    assert.deepStrictEqual(harness.calls.map((call) => call.url), ['/app/backup/api/cleanup/retry', '/app/backup/backup-now', '/app/backup/status']);
   });
 }
 
@@ -2004,6 +2036,160 @@ for (const reasonCode of ['ready', 'auth_failed']) {
     assert.ok(!harness.management.hidden);
   });
 }
+
+for (const routine of ['run', 'verify', 'prune']) {
+  for (const mobile of [false, true]) {
+    asyncCase(`backup ${routine} ${mobile ? 'embedded' : 'desktop'} completion refreshes the visible result`, async () => {
+      const before = { ...status(), enabled: true, last_backup: { status: 'ok', time: 1770000000 } };
+      const after = { ...before, last_backup: { status: 'error', time: 1770000100, error_reason: 'key_rejected', last_success: before.last_backup } };
+      const harness = createHarness({ realtime: true, statusQueue: [before, after] });
+      await ready(harness);
+      const previous = harness.lastBackup.textContent;
+      const success = harness.root.querySelector('[data-last-successful-backup]').title;
+      harness.emit({ event: 'started', service: 'backup', routine: 'backup:' + routine });
+      harness.emit({ event: 'stopped', service: 'maintenance:indexer:drain', exit_code: 0 });
+      assert.strictEqual(harness.calls.length, 0);
+      harness.emit(mobile
+        ? { event: 'stopped', service: 'backup', routine: 'backup:' + routine, exit_code: 1 }
+        : { event: 'stopped', service: 'maintenance:backup:' + routine,
+          cmd: ['solstone', 'journal', 'maintenance', 'run', 'backup:' + routine], exit_code: 1 });
+      await settle();
+      assert.deepStrictEqual(harness.calls.map((call) => call.url), ['/app/backup/status']);
+      assert.notStrictEqual(harness.lastBackup.textContent, previous);
+      assert.strictEqual(harness.root.querySelector('[data-last-successful-backup]').title, success);
+      assert.strictEqual(harness.root.querySelector('[data-backup-history-note]').hidden, false);
+    });
+  }
+}
+
+asyncCase('completion during a pending initial read follows it once and recovers an initial failure', async () => {
+  let release;
+  let reads = 0;
+  const harness = createHarness({ realtime: true, respond(call) {
+    if (call.url !== '/app/backup/status') return undefined;
+    reads += 1;
+    if (reads === 1) return new Promise((resolve) => { release = resolve; });
+    return response({ ...status(), enabled: true, last_backup: { status: 'ok', time: 1770000200 } });
+  } });
+  harness.emit({ event: 'stopped', service: 'backup', routine: 'backup:run' });
+  harness.emit({ event: 'stopped', service: 'backup', routine: 'backup:verify' });
+  assert.strictEqual(reads, 1, 'pending initial read is shared');
+  release(response({ error: 'unavailable' }, 503));
+  await settle(32);
+  assert.strictEqual(reads, 2, 'one trailing read observes the terminal result');
+  assert.strictEqual(harness.root.querySelector('[data-backup-loading]').hidden, true);
+  assert.strictEqual(harness.management.hidden, false);
+  assert.notStrictEqual(harness.root.querySelector('[data-backup-summary]').dataset.tone, 'unavailable');
+});
+
+asyncCase('completion shares a pending poll and follows its older result', async () => {
+  let release;
+  let reads = 0;
+  const active = { ...status(restoreOperation('restoring')), enabled: true };
+  const done = { ...status(restoreOperation('done')), enabled: true,
+    last_backup: { status: 'ok', time: 1770000300 } };
+  const harness = createHarness({ realtime: true, respond(call) {
+    if (call.url !== '/app/backup/status') return undefined;
+    reads += 1;
+    if (reads === 2) return new Promise((resolve) => { release = resolve; });
+    return response(reads === 1 ? active : done);
+  } });
+  await ready(harness);
+  const poll = harness.runTimer(800);
+  await settle();
+  harness.emit({ event: 'stopped', service: 'backup', routine: 'backup:run' });
+  assert.strictEqual(reads, 2, 'event cannot start a parallel status read');
+  release(response(active));
+  await poll;
+  await settle(32);
+  assert.strictEqual(reads, 3);
+  assert.strictEqual(harness.root.getAttribute('data-state'), 'done');
+  assert.ok(!harness.timers.some((timer) => !timer.cleared && timer.delay === 800));
+});
+
+asyncCase('late backup acceptance does not overwrite a newer completion read', async () => {
+  let releasePost;
+  let current = { ...status(), enabled: true, last_backup: { status: 'ok', time: 1770000000 } };
+  const old = current;
+  const harness = createHarness({ realtime: true, respond(call) {
+    if (call.url === '/app/backup/backup-now') return new Promise((resolve) => { releasePost = resolve; });
+    if (call.url === '/app/backup/status') return response(current);
+    return undefined;
+  } });
+  await ready(harness);
+  click(harness.backupNow);
+  await settle();
+  current = { ...old, last_backup: { status: 'error', time: 1770000400, error_reason: 'key_rejected', last_success: old.last_backup } };
+  harness.emit({ event: 'stopped', service: 'backup', routine: 'backup:run', exit_code: 1 });
+  await settle();
+  const newest = harness.lastBackup.textContent;
+  releasePost(response(old));
+  await settle(32);
+  assert.strictEqual(harness.lastBackup.textContent, newest);
+  assert.strictEqual(harness.calls.filter((call) => call.url === '/app/backup/status').length, 2);
+});
+
+asyncCase('reconnect recovers a missed result and preserves incomplete success history', async () => {
+  let current = { ...status(), enabled: true, last_backup: { status: 'error', time: 1770000000 } };
+  const harness = createHarness({ realtime: true, respond(call) {
+    if (call.url === '/app/backup/status') return response(current);
+    return undefined;
+  } });
+  await ready(harness);
+  harness.connection(false);
+  current = { ...status(), enabled: true, last_backup: {
+    status: 'ok', time: 1770000500, error_reason: 'incomplete', setup_fingerprint: 'previous-setup',
+  } };
+  harness.connection(true);
+  await settle();
+  assert.deepStrictEqual(harness.calls.map((call) => call.url), ['/app/backup/status']);
+  assert.strictEqual(harness.root.querySelector('[data-last-successful-backup-reason]').hidden, false);
+  const summary = harness.root.querySelector('[data-backup-summary]');
+  const expected = harness.window.BackupStatus.select(current);
+  assert.strictEqual(summary.dataset.tone, expected.tone);
+});
+
+asyncCase('reconnect can recover after the initial status request has already failed', async () => {
+  let fail = true;
+  const harness = createHarness({ realtime: true, respond(call) {
+    if (call.url === '/app/backup/status') return fail
+      ? response({ error: 'unavailable' }, 503) : response({ ...status(), enabled: true });
+    return undefined;
+  } });
+  await ready(harness);
+  assert.strictEqual(harness.root.querySelector('[data-backup-loading]').hidden, false);
+  fail = false;
+  harness.connection(false);
+  harness.connection(true);
+  await settle(32);
+  assert.strictEqual(harness.root.querySelector('[data-backup-loading]').hidden, true);
+  assert.strictEqual(harness.management.hidden, false);
+});
+
+asyncCase('detached workspaces dispose subscriptions and ignore an in-flight response', async () => {
+  let release;
+  let reads = 0;
+  const harness = createHarness({ realtime: true, respond(call) {
+    if (call.url !== '/app/backup/status') return undefined;
+    reads += 1;
+    if (reads === 2) return new Promise((resolve) => { release = resolve; });
+    return response({ ...status(), enabled: true });
+  } });
+  await ready(harness);
+  harness.emit({ event: 'stopped', service: 'backup', routine: 'backup:run' });
+  await settle();
+  const previous = harness.lastBackup.textContent;
+  harness.detach();
+  assert.strictEqual(harness.subscriptions(), 0);
+  release(response({ ...status(), enabled: true, last_backup: { status: 'ok', time: 1770000600 } }));
+  await settle();
+  assert.strictEqual(harness.lastBackup.textContent, previous);
+  harness.emit({ event: 'stopped', service: 'backup', routine: 'backup:run' });
+  assert.strictEqual(reads, 2);
+  const replacement = createHarness({ realtime: true });
+  await ready(replacement);
+  assert.strictEqual(replacement.subscriptions(), 2);
+});
 
 async function runAsyncCases() {
   for (const runCase of asyncCases) await runCase();
