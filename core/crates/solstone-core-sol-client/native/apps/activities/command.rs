@@ -20,6 +20,10 @@ const MUTABLE_FIELDS: &[&str] = &["title", "description", "details"];
 
 #[must_use]
 pub fn list(ctx: CommandContext<'_>) -> CommandOutput {
+    crate::agent_output::literal_output(list_output(ctx))
+}
+
+fn list_output(ctx: CommandContext<'_>) -> CommandOutput {
     let parsed = match parse_args(
         ctx.args,
         &[

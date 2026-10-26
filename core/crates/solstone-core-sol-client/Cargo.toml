@@ -19,6 +19,9 @@ solstone-core-format = { workspace = true }
 spl-core = { workspace = true }
 ureq = { workspace = true }
 
+[dev-dependencies]
+pulldown-cmark.workspace = true
+
 [target.'cfg(windows)'.dependencies]
 solstone-core-journal-io = { workspace = true }
 windows-sys = { workspace = true }

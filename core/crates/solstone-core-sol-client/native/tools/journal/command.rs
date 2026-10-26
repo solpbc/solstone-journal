@@ -153,6 +153,10 @@ pub fn facet_update(ctx: CommandContext<'_>) -> CommandOutput {
 
 #[must_use]
 pub fn facets(ctx: CommandContext<'_>) -> CommandOutput {
+    crate::agent_output::literal_output(facets_output(ctx))
+}
+
+fn facets_output(ctx: CommandContext<'_>) -> CommandOutput {
     let parsed = match parse_args(ctx.args, &[], &["--all"]) {
         Ok(value) => value,
         Err(error) => return stderr(error),
@@ -333,6 +337,10 @@ pub fn retention_list(ctx: CommandContext<'_>) -> CommandOutput {
 
 #[must_use]
 pub fn search(ctx: CommandContext<'_>) -> CommandOutput {
+    crate::agent_output::literal_output(search_output(ctx))
+}
+
+fn search_output(ctx: CommandContext<'_>) -> CommandOutput {
     let parsed = match parse_args(
         ctx.args,
         &[
