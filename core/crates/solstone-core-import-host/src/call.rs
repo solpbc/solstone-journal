@@ -299,6 +299,85 @@ mod tests {
         assert_ne!(run.exit_code, 0);
     }
 
+    struct BlockingText {
+        entered: mpsc::Sender<()>,
+        release: std::sync::Mutex<mpsc::Receiver<solstone_core_generate::GenerateResponse>>,
+    }
+
+    impl solstone_core_import::text::WireClient for BlockingText {
+        fn execute(
+            &self,
+            _request: &solstone_core_generate::GenerateRequest,
+        ) -> Result<solstone_core_generate::GenerateResponse, solstone_core_generate::ClientError>
+        {
+            self.entered.send(()).unwrap();
+            Ok(self.release.lock().unwrap().recv().unwrap())
+        }
+    }
+
+    #[test]
+    fn stop_during_the_text_model_does_not_install_the_transcript() {
+        let journal = tempfile::tempdir().unwrap();
+        let source = journal.path().join("plain.txt");
+        std::fs::write(&source, "a short imported note").unwrap();
+        let original = std::fs::read(&source).unwrap();
+        let (entered_tx, entered_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel();
+        let stop = WorkStop::new();
+        let seams = ImportSeams {
+            text: Box::new(BlockingText {
+                entered: entered_tx,
+                release: std::sync::Mutex::new(release_rx),
+            }),
+            image: Box::new(solstone_core_import_sources::NullWireClient),
+            model: Box::new(solstone_core_import_sources::NullDocumentModelClient),
+            pdf: Box::new(solstone_core_import_sources::NullPdfWorker),
+            reindex: Box::new(crate::registry::IndexScan {
+                journal: journal.path().to_path_buf(),
+            }),
+        };
+        let handle = start(
+            vec![
+                "--timestamp".to_owned(),
+                "20260818_062652".to_owned(),
+                source.display().to_string(),
+            ],
+            journal.path().to_path_buf(),
+            seams,
+            stop,
+        )
+        .unwrap();
+        entered_rx.recv().unwrap();
+        handle.cancel();
+        release_tx
+            .send(solstone_core_generate::GenerateResponse::Cancelled)
+            .unwrap();
+        let (run, _) = handle.join();
+        assert_eq!(run.exit_code, 1, "{}", run.stderr);
+        assert_eq!(std::fs::read(&source).unwrap(), original);
+        let mut transcripts = Vec::new();
+        let chronicle = journal.path().join("chronicle");
+        if chronicle.exists() {
+            let mut pending = vec![chronicle];
+            while let Some(directory) = pending.pop() {
+                for entry in std::fs::read_dir(directory).unwrap() {
+                    let path = entry.unwrap().path();
+                    if path.is_dir() {
+                        pending.push(path);
+                    } else if path.file_name().and_then(|name| name.to_str())
+                        == Some("conversation_transcript.jsonl")
+                    {
+                        transcripts.push(path);
+                    }
+                }
+            }
+        }
+        assert!(
+            transcripts.is_empty(),
+            "stopped text import installed {transcripts:?}"
+        );
+    }
+
     #[test]
     fn preview_of_sync_save_and_audio_archive_does_not_publish() {
         let journal = tempfile::tempdir().unwrap();

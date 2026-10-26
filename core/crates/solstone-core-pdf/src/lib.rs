@@ -134,6 +134,16 @@ fn with_pdfium_serialization<T>(body: impl FnOnce() -> T) -> T {
     body()
 }
 
+/// Whether the next native entry or page installation may start.
+///
+/// A caller can record cancellation inside `admit` and still return true for
+/// that observation. The second read is the decision. A native call that has
+/// already been entered is not asked again, and this does not abandon its
+/// installation.
+fn admission_holds(admit: &dyn Fn() -> bool) -> bool {
+    admit() && admit()
+}
+
 impl Pdfium {
     fn load() -> Result<Self, String> {
         let library_path = pdfium_library_path()?;
@@ -880,7 +890,7 @@ fn extract_document(
     };
     account.begin_document(&payload)?;
     for index in 0..page_count {
-        if !admit() {
+        if !admission_holds(admit) {
             return Err(ExtractFailure::Cancelled);
         }
         let (page, page_warnings) = extract_page(
@@ -1128,8 +1138,9 @@ fn render_selected_pages(
 ) -> Result<(), ExtractFailure> {
     // After text extraction. A cancellation that won before this installation
     // creates nothing. One that wins during a page lets that page finish and
-    // starts no later page.
-    if !admit() {
+    // starts no later page. A true admission that records Stop is read again
+    // before the directory and before each page starts.
+    if !admission_holds(admit) {
         return Err(ExtractFailure::Cancelled);
     }
     let selected = selected_pages(pages, request);
@@ -1140,7 +1151,7 @@ fn render_selected_pages(
     fs::create_dir_all(directory)
         .map_err(|error| ExtractFailure::Contract(ContractError::render_io(error.to_string())))?;
     for page_number in selected {
-        if !admit() {
+        if !admission_holds(admit) {
             return Err(ExtractFailure::Cancelled);
         }
         let page = &mut pages[page_number - 1];
@@ -1665,17 +1676,19 @@ pub enum InProcessError {
 /// PDFium init, every PDFium call, and destroy share one process-wide lock
 /// with the subprocess helper. `admit` is read again after that lock is
 /// acquired and before any library load, init, or document open. It is read
-/// before each text page and before each rendered page is installed. A call
-/// that is already inside PDFium stays owned until it returns, and a false
-/// `admit` then starts no later page or render. This function cannot kill a
-/// wedged native frame or isolate a crash inside the calling process.
+/// before each text page and before each rendered page is installed. A true
+/// read that records cancellation is not enough to enter: the callback is
+/// read once more before that native entry or installation. A call that is
+/// already inside PDFium stays owned until it returns, and a false `admit`
+/// then starts no later page or render. This function cannot kill a wedged
+/// native frame or isolate a crash inside the calling process.
 pub fn execute_in_process(
     library: &Path,
     request: &InProcessRequest,
     admit: &dyn Fn() -> bool,
 ) -> Result<InProcessDocument, InProcessError> {
     with_pdfium_serialization(|| {
-        if !admit() {
+        if !admission_holds(admit) {
             return Err(InProcessError::Cancelled);
         }
         let pdfium = Pdfium::load_at(library).map_err(InProcessError::Library)?;
@@ -2132,6 +2145,67 @@ mod tests {
         assert_eq!(calls, 0);
         assert!(pages.iter().all(|page| page.rendered.is_none()));
         assert!(!dir.exists());
+    }
+
+    #[test]
+    fn one_true_admission_sets_stop_and_installs_no_page() {
+        let dir = std::env::temp_dir().join("solstone-pdf-render-one-admission");
+        let _ = fs::remove_dir_all(&dir);
+        let stop = std::sync::atomic::AtomicBool::new(false);
+        let mut pages = two_render_pages();
+        let mut warnings = Vec::new();
+        let mut calls = 0;
+        let mut account = PayloadAccount::unlimited();
+        let result = render_selected_pages(
+            &mut pages,
+            &render_request(&dir),
+            &|| !stop.swap(true, std::sync::atomic::Ordering::AcqRel),
+            &mut warnings,
+            &mut account,
+            |_, _, output| {
+                calls += 1;
+                fs::write(output, b"png").expect("write render");
+                Ok(())
+            },
+        );
+        assert!(matches!(result, Err(ExtractFailure::Cancelled)));
+        assert_eq!(calls, 0);
+        assert!(pages.iter().all(|page| page.rendered.is_none()));
+        assert!(!dir.join("page-0001.png").exists());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn page_admission_that_records_stop_and_returns_true_installs_nothing() {
+        let dir = std::env::temp_dir().join("solstone-pdf-render-stale-true");
+        let _ = fs::remove_dir_all(&dir);
+        let reads = std::sync::atomic::AtomicUsize::new(0);
+        let mut pages = two_render_pages();
+        let mut warnings = Vec::new();
+        let mut calls = 0;
+        let mut account = PayloadAccount::unlimited();
+        let result = render_selected_pages(
+            &mut pages,
+            &render_request(&dir),
+            &|| {
+                // The directory admission is two reads. The next read is the
+                // page admission and returns true while Stop is recorded; only
+                // the read after that refuses the installation.
+                !matches!(reads.fetch_add(1, std::sync::atomic::Ordering::SeqCst), 3..)
+            },
+            &mut warnings,
+            &mut account,
+            |_, _, output| {
+                calls += 1;
+                fs::write(output, b"png").expect("write render");
+                Ok(())
+            },
+        );
+        assert!(matches!(result, Err(ExtractFailure::Cancelled)));
+        assert_eq!(calls, 0);
+        assert!(pages.iter().all(|page| page.rendered.is_none()));
+        assert!(!dir.join("page-0001.png").exists());
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]

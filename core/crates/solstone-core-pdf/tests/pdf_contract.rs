@@ -542,3 +542,37 @@ fn overlapping_in_process_extracts_share_the_pdfium_gate() {
     assert!(left.is_ok(), "{left:?}");
     assert!(right.is_ok(), "{right:?}");
 }
+
+#[cfg(feature = "full-tests")]
+#[test]
+fn one_true_admission_that_sets_stop_renders_nothing() {
+    let Some(library) = packaged_library() else {
+        eprintln!("skipping one-admission render: SOLSTONE_CORE_PDF_LIBRARY is not a file");
+        return;
+    };
+    let root = test_root("one-admission");
+    let render_dir = root.join("pages");
+    let stop = std::sync::atomic::AtomicBool::new(false);
+    let result = solstone_core_pdf::execute_in_process(
+        &library,
+        &solstone_core_pdf::InProcessRequest {
+            command: solstone_core_pdf::InProcessCommand::Extract,
+            source: corpus_path("text.pdf"),
+            password: None,
+            render_pages: BTreeSet::from([1]),
+            render_dir: Some(render_dir.clone()),
+            dpi: 72,
+        },
+        &|| !stop.swap(true, std::sync::atomic::Ordering::AcqRel),
+    );
+    assert!(
+        matches!(result, Err(solstone_core_pdf::InProcessError::Cancelled)),
+        "{result:?}"
+    );
+    assert!(
+        !render_dir.join("page-0001.png").exists(),
+        "stopped admission still installed {}",
+        render_dir.join("page-0001.png").display()
+    );
+    let _ = fs::remove_dir_all(&root);
+}
