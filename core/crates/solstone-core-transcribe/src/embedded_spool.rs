@@ -14,8 +14,8 @@ use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 
 use solstone_core_observe_audio::SAMPLE_RATE;
+use solstone_core_speakers::SENTENCE_TURN_INSET_S;
 use solstone_core_speakers::diarization::SpeakerInterval;
-use solstone_core_speakers::{SENTENCE_TURN_INSET_S, SpeakerTurnEvidence, SpeakerTurnRange};
 
 use crate::backend::parakeet_cpp::TranscriptionWord;
 use crate::speakers::UnitStatementEmbedding;
@@ -26,6 +26,8 @@ const STATEMENT_RECORD: usize = 24 + EMBEDDING_WIDTH * 4;
 const SCAN_CHECKPOINT: u64 = 32;
 const TURN_TILE: u64 = 32;
 const UNIT_RECORD: u64 = 32;
+const COVER_RECORD: u64 = 24;
+const PIECE_RECORD: u64 = 32;
 const NONE_LEN: u64 = u64::MAX;
 
 /// One statement's place in the word spool. The words themselves stay on disk.
@@ -62,7 +64,7 @@ pub(crate) struct StatementAudio {
     pub(crate) reduced: bool,
 }
 
-/// Overlapping turns already merged on disk. The range vector is loaded later.
+/// Overlapping turns already merged on disk. The caller streams one range at a time.
 pub(crate) struct PreparedTurns {
     pub(crate) count: u64,
     pub(crate) boundary_suspect: bool,
@@ -76,8 +78,8 @@ struct UnitRecord {
 }
 
 struct Cover {
-    start: usize,
-    end: usize,
+    start: u64,
+    end: u64,
     seq: u64,
 }
 
@@ -440,8 +442,8 @@ impl DraftSpool {
 
     /// Spill overlapping turns, sort them in 32-record tiles, and merge overlaps.
     ///
-    /// The range vector is not built here. [`Self::load_turn_evidence`] reads
-    /// the merged file after statement admission.
+    /// The range vector is not built here. [`Self::open_merged_turns`] reads one
+    /// range at a time after statement admission.
     pub(crate) fn prepare_overlapping_turns(
         &mut self,
         start_s: f64,
@@ -477,31 +479,24 @@ impl DraftSpool {
         })
     }
 
-    pub(crate) fn load_turn_evidence(
-        &mut self,
-        audio_duration_s: f64,
-        prepared: &PreparedTurns,
-        cancel: &dyn Fn() -> bool,
-    ) -> Result<SpeakerTurnEvidence, std::io::Error> {
-        let mut ranges = Vec::with_capacity(usize::try_from(prepared.count).unwrap_or(0));
-        if prepared.count > 0 {
-            let mut file = File::open(self.merged_turns_path())?;
-            for index in 0..prepared.count {
-                if index.is_multiple_of(SCAN_CHECKPOINT) {
-                    cancelled(cancel)?;
-                }
-                let (start_s, end_s) = read_pair(&mut file)?;
-                ranges.push(SpeakerTurnRange { start_s, end_s });
-            }
+    /// Open the merged turn file when it has ranges. An empty preparation reads nothing.
+    pub(crate) fn open_merged_turns(&self, count: u64) -> Result<Option<File>, std::io::Error> {
+        if count == 0 {
+            return Ok(None);
         }
-        Ok(SpeakerTurnEvidence::new(audio_duration_s, ranges))
+        Ok(Some(File::open(self.merged_turns_path())?))
+    }
+
+    /// Read one merged turn range. The caller polls between ranges.
+    pub(crate) fn read_merged_range(file: &mut File) -> Result<(f64, f64), std::io::Error> {
+        read_pair(file)
     }
 
     /// Count the samples the statement embedder would receive, without copying them.
     ///
-    /// A span no unit reduced is `end - start`, including holes. A span that
-    /// meets a reduced unit is the concatenation of mapped pieces, with the
-    /// later unit winning an overlap.
+    /// A span no unit reduced is `end - start`, including holes, and does not
+    /// build a cover file. A span that meets a reduced unit streams covers and
+    /// pieces to disk, one record at a time, with the later unit winning an overlap.
     pub(crate) fn measure_statement_audio(
         &mut self,
         start: usize,
@@ -514,14 +509,13 @@ impl DraftSpool {
                 "pcm span is inverted",
             ));
         }
-        let scan = self.scan_span(start, end, cancel)?;
-        if !scan.any_reduced {
+        if !self.span_has_reduced_unit(start, end, cancel)? {
             return Ok(StatementAudioMeasure {
                 samples: end - start,
             });
         }
-        let pieces = self.pieces_from_covers(&scan.covers)?;
-        let samples = pieces.iter().map(|piece| piece.len).sum();
+        self.scan_covers(start, end, cancel)?;
+        let samples = self.write_pieces(cancel)?;
         Ok(StatementAudioMeasure { samples })
     }
 
@@ -538,8 +532,7 @@ impl DraftSpool {
                 "pcm span is inverted",
             ));
         }
-        let scan = self.scan_span(start, end, cancel)?;
-        if !scan.any_reduced {
+        if !self.span_has_reduced_unit(start, end, cancel)? {
             let mut samples = vec![0.0_f32; end - start];
             self.units.seek(SeekFrom::Start(0))?;
             for seq in 0..self.unit_count {
@@ -565,29 +558,46 @@ impl DraftSpool {
                 reduced: false,
             });
         }
-        let pieces = self.pieces_from_covers(&scan.covers)?;
-        let total = pieces.iter().map(|piece| piece.len).sum();
+        self.scan_covers(start, end, cancel)?;
+        let total = self.write_pieces(cancel)?;
         let mut samples = vec![0.0_f32; total];
-        let mut filled = 0_usize;
-        for piece in &pieces {
-            let next = filled + piece.len;
-            self.read_piece(piece, &mut samples[filled..next])?;
-            filled = next;
-        }
+        self.copy_pieces(&mut samples, cancel)?;
         Ok(StatementAudio {
             samples,
             reduced: true,
         })
     }
 
-    fn scan_span(
+    fn span_has_reduced_unit(
         &mut self,
         start: usize,
         end: usize,
         cancel: &dyn Fn() -> bool,
-    ) -> Result<SpanScan, std::io::Error> {
-        let mut any_reduced = false;
-        let mut covers = Vec::new();
+    ) -> Result<bool, std::io::Error> {
+        self.units.seek(SeekFrom::Start(0))?;
+        for seq in 0..self.unit_count {
+            if seq.is_multiple_of(SCAN_CHECKPOINT) {
+                cancelled(cancel)?;
+            }
+            let record = read_unit_record(&mut self.units)?;
+            if record.reduced_len.is_none() {
+                continue;
+            }
+            let unit_end = record.origin.saturating_add(record.masked_len);
+            if start.max(record.origin) < end.min(unit_end) {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
+    fn scan_covers(
+        &mut self,
+        start: usize,
+        end: usize,
+        cancel: &dyn Fn() -> bool,
+    ) -> Result<(), std::io::Error> {
+        self.reset_covers()?;
         self.units.seek(SeekFrom::Start(0))?;
         for seq in 0..self.unit_count {
             if seq.is_multiple_of(SCAN_CHECKPOINT) {
@@ -600,41 +610,100 @@ impl DraftSpool {
             if overlap_start >= overlap_end {
                 continue;
             }
-            if record.reduced_len.is_some() {
-                any_reduced = true;
-            }
-            overlay(&mut covers, overlap_start, overlap_end, seq);
+            self.overlay_cover(overlap_start, overlap_end, seq, cancel)?;
         }
-        Ok(SpanScan {
-            any_reduced,
-            covers,
-        })
+        Ok(())
     }
 
-    fn pieces_from_covers(&mut self, covers: &[Cover]) -> Result<Vec<AudioPiece>, std::io::Error> {
-        let mut pieces = Vec::new();
-        for cover in covers {
+    fn reset_covers(&self) -> Result<(), std::io::Error> {
+        let file = read_write(self.covers_path())?;
+        file.set_len(0)?;
+        file.sync_all()
+    }
+
+    /// Rewrite the sorted cover file with one new interval. One record is resident.
+    fn overlay_cover(
+        &self,
+        start: usize,
+        end: usize,
+        seq: u64,
+        cancel: &dyn Fn() -> bool,
+    ) -> Result<(), std::io::Error> {
+        if start >= end {
+            return Ok(());
+        }
+        let covers_path = self.covers_path();
+        let next_path = self.dir.path().join("covers-next.bin");
+        let mut input = File::open(&covers_path)?;
+        let mut output = read_write(&next_path)?;
+        let incoming = Cover {
+            start: start as u64,
+            end: end as u64,
+            seq,
+        };
+        let mut inserted = false;
+        let mut seen = 0_u64;
+        loop {
+            if seen.is_multiple_of(SCAN_CHECKPOINT) {
+                cancelled(cancel)?;
+            }
+            match read_cover(&mut input) {
+                Ok(cover) => {
+                    seen += 1;
+                    emit_overlay(&mut output, &cover, &incoming, &mut inserted)?;
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::UnexpectedEof => break,
+                Err(error) => return Err(error),
+            }
+        }
+        if !inserted {
+            write_cover(&mut output, &incoming)?;
+        }
+        output.sync_all()?;
+        drop(output);
+        drop(input);
+        match fs::remove_file(&covers_path) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error),
+        }
+        fs::rename(&next_path, &covers_path)
+    }
+
+    fn write_pieces(&mut self, cancel: &dyn Fn() -> bool) -> Result<usize, std::io::Error> {
+        let mut covers = File::open(self.covers_path())?;
+        let mut pieces = read_write(self.pieces_path())?;
+        let cover_count = covers.metadata()?.len() / COVER_RECORD;
+        let mut total = 0_usize;
+        let rate = f64::from(SAMPLE_RATE);
+        for index in 0..cover_count {
+            if index.is_multiple_of(SCAN_CHECKPOINT) {
+                cancelled(cancel)?;
+            }
+            let cover = read_cover(&mut covers)?;
             let record = self.read_unit_at(cover.seq)?;
-            let local_start = cover.start.saturating_sub(record.origin);
-            let local_end = cover
-                .end
+            let cover_start = u64_to_usize(cover.start)?;
+            let cover_end = u64_to_usize(cover.end)?;
+            let local_start = cover_start.saturating_sub(record.origin);
+            let local_end = cover_end
                 .saturating_sub(record.origin)
                 .min(record.masked_len);
             if local_start >= local_end {
                 continue;
             }
             let Some(reduced_len) = record.reduced_len else {
-                pieces.push(AudioPiece {
-                    seq: cover.seq,
-                    offset: local_start,
-                    len: local_end - local_start,
-                    reduced: false,
-                });
+                let len = local_end - local_start;
+                write_piece(&mut pieces, cover.seq, local_start, len, false)?;
+                total += len;
                 continue;
             };
-            let maps = self.read_maps(cover.seq, record.map_count)?;
-            let rate = f64::from(SAMPLE_RATE);
-            for span in maps {
+            let mut maps = File::open(self.map_path(cover.seq))?;
+            let map_count = u64::try_from(record.map_count).unwrap_or(0);
+            for span_index in 0..map_count {
+                if span_index.is_multiple_of(SCAN_CHECKPOINT) {
+                    cancelled(cancel)?;
+                }
+                let span = read_span(&mut maps)?;
                 let seg_start = seconds_to_sample(span.original_start_s, rate);
                 let seg_end = seconds_to_sample(span.original_end_s, rate);
                 let overlap_start = local_start.max(seg_start);
@@ -649,41 +718,40 @@ impl DraftSpool {
                 let reduced_start = seconds_to_sample(reduced_start_s, rate).min(reduced_len);
                 let reduced_end = seconds_to_sample(reduced_end_s, rate).min(reduced_len);
                 if reduced_start < reduced_end {
-                    pieces.push(AudioPiece {
-                        seq: cover.seq,
-                        offset: reduced_start,
-                        len: reduced_end - reduced_start,
-                        reduced: true,
-                    });
+                    let len = reduced_end - reduced_start;
+                    write_piece(&mut pieces, cover.seq, reduced_start, len, true)?;
+                    total += len;
                 }
             }
         }
-        Ok(pieces)
+        pieces.sync_all()?;
+        Ok(total)
+    }
+
+    fn copy_pieces(
+        &mut self,
+        dest: &mut [f32],
+        cancel: &dyn Fn() -> bool,
+    ) -> Result<(), std::io::Error> {
+        let mut file = File::open(self.pieces_path())?;
+        let count = file.metadata()?.len() / PIECE_RECORD;
+        let mut filled = 0_usize;
+        for index in 0..count {
+            if index.is_multiple_of(SCAN_CHECKPOINT) {
+                cancelled(cancel)?;
+            }
+            let piece = read_piece_record(&mut file)?;
+            let next = filled + piece.len;
+            self.read_piece(&piece, &mut dest[filled..next])?;
+            filled = next;
+        }
+        Ok(())
     }
 
     fn read_unit_at(&mut self, seq: u64) -> Result<UnitRecord, std::io::Error> {
         self.units
             .seek(SeekFrom::Start(seq.saturating_mul(UNIT_RECORD)))?;
         read_unit_record(&mut self.units)
-    }
-
-    fn read_maps(&self, seq: u64, count: usize) -> Result<Vec<StoredSpan>, std::io::Error> {
-        if count == 0 {
-            return Ok(Vec::new());
-        }
-        let mut file = File::open(self.map_path(seq))?;
-        let mut spans = Vec::with_capacity(count);
-        for _ in 0..count {
-            let mut record = [0_u8; 32];
-            file.read_exact(&mut record)?;
-            spans.push(StoredSpan {
-                original_start_s: f64::from_le_bytes(record[0..8].try_into().expect("8 bytes")),
-                original_end_s: f64::from_le_bytes(record[8..16].try_into().expect("8 bytes")),
-                reduced_start_s: f64::from_le_bytes(record[16..24].try_into().expect("8 bytes")),
-                reduced_end_s: f64::from_le_bytes(record[24..32].try_into().expect("8 bytes")),
-            });
-        }
-        Ok(spans)
     }
 
     fn read_piece(&self, piece: &AudioPiece, dest: &mut [f32]) -> Result<(), std::io::Error> {
@@ -696,6 +764,14 @@ impl DraftSpool {
         let offset = piece.offset * std::mem::size_of::<f32>();
         file.seek(SeekFrom::Start(offset as u64))?;
         read_f32s(&mut file, dest)
+    }
+
+    fn covers_path(&self) -> PathBuf {
+        self.dir.path().join("covers.bin")
+    }
+
+    fn pieces_path(&self) -> PathBuf {
+        self.dir.path().join("pieces.bin")
     }
 
     fn masked_path(&self, seq: u64) -> PathBuf {
@@ -836,39 +912,99 @@ impl DraftSpool {
     }
 }
 
-struct SpanScan {
-    any_reduced: bool,
-    covers: Vec<Cover>,
-}
-
-fn overlay(covers: &mut Vec<Cover>, start: usize, end: usize, seq: u64) {
-    if start >= end {
-        return;
+fn emit_overlay(
+    output: &mut File,
+    cover: &Cover,
+    incoming: &Cover,
+    inserted: &mut bool,
+) -> Result<(), std::io::Error> {
+    if cover.end <= incoming.start || cover.start >= incoming.end {
+        if !*inserted && cover.start >= incoming.end {
+            write_cover(output, incoming)?;
+            *inserted = true;
+        }
+        return write_cover(output, cover);
     }
-    let mut next = Vec::with_capacity(covers.len() + 1);
-    for cover in covers.drain(..) {
-        if cover.end <= start || cover.start >= end {
-            next.push(cover);
-            continue;
-        }
-        if cover.start < start {
-            next.push(Cover {
+    if cover.start < incoming.start {
+        write_cover(
+            output,
+            &Cover {
                 start: cover.start,
-                end: start,
+                end: incoming.start,
                 seq: cover.seq,
-            });
-        }
-        if cover.end > end {
-            next.push(Cover {
-                start: end,
+            },
+        )?;
+    }
+    if !*inserted {
+        write_cover(output, incoming)?;
+        *inserted = true;
+    }
+    if cover.end > incoming.end {
+        write_cover(
+            output,
+            &Cover {
+                start: incoming.end,
                 end: cover.end,
                 seq: cover.seq,
-            });
-        }
+            },
+        )?;
     }
-    next.push(Cover { start, end, seq });
-    next.sort_by_key(|cover| cover.start);
-    *covers = next;
+    Ok(())
+}
+
+fn write_cover(file: &mut File, cover: &Cover) -> Result<(), std::io::Error> {
+    file.write_all(&cover.start.to_le_bytes())?;
+    file.write_all(&cover.end.to_le_bytes())?;
+    file.write_all(&cover.seq.to_le_bytes())
+}
+
+fn read_cover(file: &mut File) -> Result<Cover, std::io::Error> {
+    let mut record = [0_u8; COVER_RECORD as usize];
+    file.read_exact(&mut record)?;
+    Ok(Cover {
+        start: u64::from_le_bytes(record[0..8].try_into().expect("8 bytes")),
+        end: u64::from_le_bytes(record[8..16].try_into().expect("8 bytes")),
+        seq: u64::from_le_bytes(record[16..24].try_into().expect("8 bytes")),
+    })
+}
+
+fn write_piece(
+    file: &mut File,
+    seq: u64,
+    offset: usize,
+    len: usize,
+    reduced: bool,
+) -> Result<(), std::io::Error> {
+    file.write_all(&seq.to_le_bytes())?;
+    file.write_all(&u64::try_from(offset).unwrap_or(0).to_le_bytes())?;
+    file.write_all(&u64::try_from(len).unwrap_or(0).to_le_bytes())?;
+    file.write_all(&(u64::from(reduced)).to_le_bytes())
+}
+
+fn read_piece_record(file: &mut File) -> Result<AudioPiece, std::io::Error> {
+    let mut record = [0_u8; PIECE_RECORD as usize];
+    file.read_exact(&mut record)?;
+    Ok(AudioPiece {
+        seq: u64::from_le_bytes(record[0..8].try_into().expect("8 bytes")),
+        offset: u64_to_usize(u64::from_le_bytes(
+            record[8..16].try_into().expect("8 bytes"),
+        ))?,
+        len: u64_to_usize(u64::from_le_bytes(
+            record[16..24].try_into().expect("8 bytes"),
+        ))?,
+        reduced: u64::from_le_bytes(record[24..32].try_into().expect("8 bytes")) != 0,
+    })
+}
+
+fn read_span(file: &mut File) -> Result<StoredSpan, std::io::Error> {
+    let mut record = [0_u8; 32];
+    file.read_exact(&mut record)?;
+    Ok(StoredSpan {
+        original_start_s: f64::from_le_bytes(record[0..8].try_into().expect("8 bytes")),
+        original_end_s: f64::from_le_bytes(record[8..16].try_into().expect("8 bytes")),
+        reduced_start_s: f64::from_le_bytes(record[16..24].try_into().expect("8 bytes")),
+        reduced_end_s: f64::from_le_bytes(record[24..32].try_into().expect("8 bytes")),
+    })
 }
 
 fn seconds_to_sample(seconds: f64, rate: f64) -> usize {
@@ -1190,5 +1326,72 @@ fn cancelled(cancel: &dyn Fn() -> bool) -> Result<(), std::io::Error> {
         ))
     } else {
         Ok(())
+    }
+}
+
+#[cfg(all(test, feature = "full-tests"))]
+mod tests {
+    use super::*;
+
+    fn span(start: f64, end: f64) -> StoredSpan {
+        StoredSpan {
+            original_start_s: start,
+            original_end_s: end,
+            reduced_start_s: start,
+            reduced_end_s: end,
+        }
+    }
+
+    #[test]
+    fn later_reduced_unit_replaces_the_overlap_without_a_resident_cover_list() {
+        let scratch = tempfile::tempdir().expect("scratch");
+        let mut spool = DraftSpool::open(scratch.path()).expect("spool");
+        let rate = usize::try_from(SAMPLE_RATE).expect("rate");
+        let first = vec![0.1_f32; rate];
+        let second = vec![0.2_f32; rate];
+        spool
+            .store_unit_pcm(0, &first, Some((first.as_slice(), &[span(0.0, 1.0)])))
+            .expect("first unit");
+        spool
+            .store_unit_pcm(
+                rate / 2,
+                &second,
+                Some((second.as_slice(), &[span(0.0, 1.0)])),
+            )
+            .expect("second unit");
+        let measured = spool
+            .measure_statement_audio(0, rate + rate / 2, &|| false)
+            .expect("measure");
+        assert_eq!(measured.samples, rate + rate / 2);
+        let audio = spool
+            .read_statement_audio(0, rate + rate / 2, &|| false)
+            .expect("read");
+        assert!(audio.reduced);
+        assert_eq!(audio.samples.len(), rate + rate / 2);
+        assert!(
+            audio.samples[..rate / 2]
+                .iter()
+                .all(|sample| *sample == 0.1)
+        );
+        assert!(
+            audio.samples[rate / 2..]
+                .iter()
+                .all(|sample| *sample == 0.2)
+        );
+    }
+
+    #[test]
+    fn unreduced_measure_counts_the_span_without_pieces() {
+        let scratch = tempfile::tempdir().expect("scratch");
+        let mut spool = DraftSpool::open(scratch.path()).expect("spool");
+        let samples = vec![0.25_f32; 100];
+        spool
+            .store_unit_pcm(0, &samples, None)
+            .expect("masked unit");
+        let measured = spool
+            .measure_statement_audio(0, 100, &|| false)
+            .expect("measure");
+        assert_eq!(measured.samples, 100);
+        assert!(!spool.pieces_path().exists());
     }
 }

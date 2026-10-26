@@ -239,6 +239,46 @@ fn automatic_retry_replaces_output(output: &Path) -> bool {
     })
 }
 
+/// True when this context is already the held attempt for the output.
+///
+/// Consumption happens once. An interrupted publication keeps the attempt so
+/// the same input can finish without asking for a new permission.
+fn resume_held_attempt(
+    journal_path: &Path,
+    output: &Path,
+    context: &solstone_core_system::work_retry::RetryContext,
+) -> Result<bool, String> {
+    let unit = solstone_core_system::work_retry::raw::unit_for_output(
+        journal_path,
+        output,
+        solstone_core_processing_record::vocab::HANDLER_TRANSCRIBE,
+    )?;
+    if unit.id()? != context.unit_id {
+        return Ok(false);
+    }
+    let Some(record) = solstone_core_system::work_retry::read(journal_path, &context.unit_id)?
+    else {
+        return Ok(false);
+    };
+    Ok(record.held && record.attempt.as_ref() == Some(&context.attempt))
+}
+
+fn same_held_attempt(
+    journal_path: &Path,
+    audio_path: &Path,
+    retry: Option<&solstone_core_system::work_retry::RetryContext>,
+) -> Result<bool, TranscribeError> {
+    let Some(context) = retry else {
+        return Ok(false);
+    };
+    resume_held_attempt(journal_path, &audio_path.with_extension("jsonl"), context).map_err(
+        |detail| TranscribeError::ProcessingClaim {
+            path: audio_path.to_path_buf(),
+            detail,
+        },
+    )
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn process_one_with(
     audio_path: &Path,
@@ -263,7 +303,12 @@ pub(crate) fn process_one_with(
     if let Some(runtime) = embedded {
         runtime.checkpoint()?;
     }
-    if should_skip_process_one_processed(audio_path, redo, Some(journal_path), retry) {
+    // An exhausted failure is otherwise skipped once its permission is consumed.
+    // The same held attempt is still the in-flight publication, so it continues.
+    if !redo
+        && !same_held_attempt(journal_path, audio_path, retry)?
+        && should_skip_process_one_processed(audio_path, redo, Some(journal_path), retry)
+    {
         return Ok(ProcessOutcome::Skipped);
     }
     // Live and catch-up dispatchers have separate queues. The output owner must
@@ -294,7 +339,10 @@ pub(crate) fn process_one_with(
         path: audio_path.to_path_buf(),
         detail: error.to_string(),
     })?;
-    if should_skip_process_one_processed(audio_path, redo, Some(journal_path), retry) {
+    if !redo
+        && !same_held_attempt(journal_path, audio_path, retry)?
+        && should_skip_process_one_processed(audio_path, redo, Some(journal_path), retry)
+    {
         return Ok(ProcessOutcome::Skipped);
     }
     // Voice-only eligibility is decided here, under the output claim and before any retry
@@ -364,18 +412,32 @@ pub(crate) fn process_one_with(
     let started = Instant::now();
     let (admitted_retry, context_attempt) = if !redo {
         if let Some(context) = retry {
-            let attempt = solstone_core_system::work_retry::raw::consume_context_checked(
-                journal_path,
-                &audio_path.with_extension("jsonl"),
-                solstone_core_processing_record::vocab::HANDLER_TRANSCRIBE,
-                context,
-                &|| checkpoint().map_err(|error: TranscribeError| error.to_string()),
-            )
-            .map_err(|detail| TranscribeError::ProcessingClaim {
-                path: audio_path.to_path_buf(),
-                detail,
-            })?;
-            (attempt.is_some(), attempt)
+            // A stop after the attempt was consumed leaves that same attempt
+            // held. Continuing it is not a second permission.
+            let output = audio_path.with_extension("jsonl");
+            let resumed =
+                resume_held_attempt(journal_path, &output, context).map_err(|detail| {
+                    TranscribeError::ProcessingClaim {
+                        path: audio_path.to_path_buf(),
+                        detail,
+                    }
+                })?;
+            if resumed {
+                (true, Some(context.attempt.clone()))
+            } else {
+                let attempt = solstone_core_system::work_retry::raw::consume_context_checked(
+                    journal_path,
+                    &output,
+                    solstone_core_processing_record::vocab::HANDLER_TRANSCRIBE,
+                    context,
+                    &|| checkpoint().map_err(|error: TranscribeError| error.to_string()),
+                )
+                .map_err(|detail| TranscribeError::ProcessingClaim {
+                    path: audio_path.to_path_buf(),
+                    detail,
+                })?;
+                (attempt.is_some(), attempt)
+            }
         } else {
             let admitted = solstone_core_system::work_retry::raw::consume_from_environment(
                 journal_path,

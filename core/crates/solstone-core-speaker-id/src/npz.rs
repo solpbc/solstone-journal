@@ -283,18 +283,30 @@ pub(crate) fn verify_npz_against_files(
             if cancel() {
                 return Err("cancelled".to_owned());
             }
-            let actual_read = member
-                .read(&mut buffer_actual)
-                .map_err(|error| error.to_string())?;
             let expected_read = expected
                 .read(&mut buffer_expected)
                 .map_err(|error| error.to_string())?;
-            if actual_read == 0 && expected_read == 0 {
+            if expected_read == 0 {
+                let trailing = member
+                    .read(&mut buffer_actual[..1])
+                    .map_err(|error| error.to_string())?;
+                if trailing != 0 {
+                    return Err(format!("NPZ member {name} did not round-trip"));
+                }
                 break;
             }
-            if actual_read != expected_read
-                || buffer_actual[..actual_read] != buffer_expected[..expected_read]
-            {
+            // Zip inflation returns short reads. Take the file's count, then
+            // keep reading the member until that many bytes arrive.
+            member
+                .read_exact(&mut buffer_actual[..expected_read])
+                .map_err(|error| {
+                    if error.kind() == std::io::ErrorKind::UnexpectedEof {
+                        format!("NPZ member {name} did not round-trip")
+                    } else {
+                        error.to_string()
+                    }
+                })?;
+            if buffer_actual[..expected_read] != buffer_expected[..expected_read] {
                 return Err(format!("NPZ member {name} did not round-trip"));
             }
         }
@@ -379,5 +391,80 @@ mod tests {
         )
         .unwrap();
         assert!(members.verify_at(&unflagged).is_err());
+    }
+
+    #[test]
+    fn multi_chunk_member_round_trips_and_a_later_byte_fails() {
+        let dir = tempfile::tempdir().unwrap();
+        let rows = 160;
+        let payload_len = rows * 256 * 4;
+        assert!(payload_len > COPY_CHUNK);
+        let mut payload = vec![0_u8; payload_len];
+        payload[70_000] = 0xA5;
+        let embeddings = dir.path().join("embeddings.f32le");
+        let ids = dir.path().join("ids.i32le");
+        let durations = dir.path().join("durations.f32le");
+        std::fs::write(&embeddings, &payload).unwrap();
+        let mut id_bytes = Vec::with_capacity(rows * 4);
+        let mut duration_bytes = Vec::with_capacity(rows * 4);
+        for index in 0..rows {
+            id_bytes.extend_from_slice(&(i32::try_from(index).unwrap()).to_le_bytes());
+            duration_bytes.extend_from_slice(&1.0_f32.to_le_bytes());
+        }
+        std::fs::write(&ids, &id_bytes).unwrap();
+        std::fs::write(&durations, &duration_bytes).unwrap();
+        let destination = dir.path().join("statements.npz");
+        write_npz_from_files(
+            &destination,
+            &embeddings,
+            rows,
+            &ids,
+            &durations,
+            "enc",
+            &|| false,
+        )
+        .expect("member larger than one chunk verifies");
+
+        let embeddings_npy = dir.path().join("embeddings.npy");
+        let ids_npy = dir.path().join("statement_ids.npy");
+        let durations_npy = dir.path().join("durations_s.npy");
+        let encoder_npy = dir.path().join("encoder.npy");
+        std::fs::write(
+            &embeddings_npy,
+            write_npy("<f4", &format!("({rows}, 256)"), &payload),
+        )
+        .unwrap();
+        std::fs::write(&ids_npy, write_npy("<i4", &format!("({rows},)"), &id_bytes)).unwrap();
+        std::fs::write(
+            &durations_npy,
+            write_npy("<f4", &format!("({rows},)"), &duration_bytes),
+        )
+        .unwrap();
+        let encoder = "enc";
+        let width = encoder.chars().count();
+        std::fs::write(
+            &encoder_npy,
+            write_npy(&format!("<U{width}"), "()", &unicode_scalar_bytes(encoder)),
+        )
+        .unwrap();
+        let members = [
+            ("embeddings.npy", embeddings_npy.as_path()),
+            ("encoder.npy", encoder_npy.as_path()),
+            ("statement_ids.npy", ids_npy.as_path()),
+            ("durations_s.npy", durations_npy.as_path()),
+        ];
+        verify_npz_against_files(&destination, &members, &|| false)
+            .expect("reconstructed members match");
+        let mut changed = std::fs::read(&embeddings_npy).unwrap();
+        let index = changed
+            .iter()
+            .rposition(|byte| *byte == 0xA5)
+            .expect("marker");
+        assert!(index > COPY_CHUNK);
+        changed[index] = 0x5A;
+        std::fs::write(&embeddings_npy, changed).unwrap();
+        let error = verify_npz_against_files(&destination, &members, &|| false)
+            .expect_err("a byte past the first chunk must fail");
+        assert!(error.contains("did not round-trip"), "{error}");
     }
 }

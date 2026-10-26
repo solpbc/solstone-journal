@@ -528,6 +528,9 @@ thread_local! {
     static EMBEDDED_SPEAKER_SEEN: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     static EMBEDDED_FIRST_PASS_KEEP: std::cell::RefCell<Option<KeepHook>> =
         const { std::cell::RefCell::new(None) };
+    static EMBEDDED_PCM_PROBE: std::cell::Cell<Option<usize>> = const { std::cell::Cell::new(None) };
+    static EMBEDDED_PCM_PROBE_SAMPLE: std::cell::Cell<Option<f32>> =
+        const { std::cell::Cell::new(None) };
 }
 
 /// Full-tests stand-in: return no interval rows and do not run the helper.
@@ -559,6 +562,21 @@ pub(crate) fn push_embedded_speaker_response(response: Value, statement_payload:
 pub(crate) fn clear_embedded_speaker_responses() {
     EMBEDDED_SPEAKER_QUEUE.with(|cell| cell.borrow_mut().clear());
     EMBEDDED_SPEAKER_SEEN.with(|cell| cell.set(false));
+    EMBEDDED_PCM_PROBE.with(|cell| cell.set(None));
+    EMBEDDED_PCM_PROBE_SAMPLE.with(|cell| cell.set(None));
+}
+
+/// Record one sample of the audio a helper call actually receives.
+#[cfg(all(test, feature = "full-tests", feature = "embedded", unix))]
+pub(crate) fn set_embedded_pcm_probe(index: Option<usize>) {
+    EMBEDDED_PCM_PROBE.with(|cell| cell.set(index));
+    EMBEDDED_PCM_PROBE_SAMPLE.with(|cell| cell.set(None));
+}
+
+/// Last probed sample from [`set_embedded_pcm_probe`].
+#[cfg(all(test, feature = "full-tests", feature = "embedded", unix))]
+pub(crate) fn embedded_pcm_probe_sample() -> Option<f32> {
+    EMBEDDED_PCM_PROBE_SAMPLE.with(|cell| cell.get())
 }
 
 /// Whether a queued response has been parsed on this thread.
@@ -590,6 +608,11 @@ pub(crate) fn collect_unit_speaker_rows(
         EMBEDDED_AUDIO_LEN.with(|cell| {
             cell.set((full_audio.len(), reduced_audio.map(|audio| audio.len())));
         });
+        if let Some(index) = EMBEDDED_PCM_PROBE.with(|cell| cell.get())
+            && let Some(sample) = full_audio.get(index)
+        {
+            EMBEDDED_PCM_PROBE_SAMPLE.with(|cell| cell.set(Some(*sample)));
+        }
     }
     #[cfg(all(test, feature = "full-tests", feature = "embedded", unix))]
     if EMBEDDED_SPEAKER_EMPTY.with(|cell| cell.get()) {

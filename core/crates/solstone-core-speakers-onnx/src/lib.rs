@@ -2,6 +2,8 @@
 // Copyright (c) 2026 sol pbc
 
 #[cfg(feature = "runtime")]
+mod onnx_init;
+#[cfg(feature = "runtime")]
 mod pyannote;
 #[cfg(feature = "runtime")]
 mod session;

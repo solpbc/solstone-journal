@@ -27,7 +27,7 @@ pub(crate) fn open_session(
         .commit_from_file(model_path)?)
 }
 
-fn provider_dispatches(
+pub(crate) fn provider_dispatches(
     providers: &[SpeakerExecutionProvider],
 ) -> Result<Vec<ExecutionProviderDispatch>, SpeakerOnnxError> {
     let mut dispatches = Vec::with_capacity(providers.len());

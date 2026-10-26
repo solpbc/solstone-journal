@@ -3,6 +3,7 @@
 
 use std::error::Error;
 use std::fmt;
+use std::path::Path;
 
 pub const SAMPLE_RATE: u32 = 16_000;
 pub const WINDOW_S: u32 = 10;
@@ -407,6 +408,7 @@ pub fn silhouette_score(
     rows: usize,
     cols: usize,
     labels: &[usize],
+    scratch: &Path,
 ) -> Result<f64, DiarizationError> {
     if rows != labels.len() {
         return Err(DiarizationError::LabelLengthMismatch {
@@ -414,6 +416,7 @@ pub fn silhouette_score(
             labels: labels.len(),
         });
     }
+    let _scope = crate::cluster_bound::ClusterScope::enter(scratch);
     let mut stored = crate::cluster_bound::BoundRows::from_f32(embeddings, rows, cols, &|| false)?;
     let mut labels = crate::cluster_bound::LabelFile::from_slice(labels, &|| false)?;
     silhouette_score_stored_rows(&mut stored, rows, &mut labels, &|| false)
@@ -1162,6 +1165,16 @@ mod tests {
         let score = silhouette_score_from_distances(&distances, 5, &[0, 0, 0, 0, 1]);
 
         assert_close(score, 0.64, 1e-6);
+    }
+
+    #[cfg(all(test, feature = "full-tests"))]
+    #[test]
+    fn silhouette_score_reads_rows_from_the_caller_scratch() {
+        let scratch = tempfile::tempdir().expect("cluster scratch");
+        let embeddings = [1.0_f32, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 1.0];
+        let score =
+            silhouette_score(&embeddings, 4, 2, &[0, 0, 1, 1], scratch.path()).expect("silhouette");
+        assert!(score.is_finite());
     }
 
     #[cfg(all(test, feature = "full-tests"))]

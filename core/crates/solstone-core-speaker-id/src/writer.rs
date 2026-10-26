@@ -15,7 +15,7 @@ use solstone_core_journal_io::{
     AtomicWriteError, AtomicWriteOptions, atomic_replace, install_file, write_bytes_exclusive,
     write_reader_exclusive,
 };
-use solstone_core_speakers::SpeakerTurnEvidence;
+use solstone_core_speakers::{SPEAKER_TURN_EVIDENCE_VERSION, SpeakerTurnEvidence};
 
 use crate::ascii_json;
 use crate::npz::NpzMembers;
@@ -1220,6 +1220,16 @@ pub struct StagedWord {
     pub probability: Option<f64>,
 }
 
+/// One turn range yielded while a statement line is written.
+///
+/// `count` is the number of times `next_range` is called. Zero calls write an
+/// empty `ranges` array. The callback is not asked for the whole statement.
+pub struct StagedTurnWrite<'a> {
+    pub audio_duration_s: f64,
+    pub count: u64,
+    pub next_range: &'a mut dyn FnMut() -> Result<(f64, f64), SpeakerTranscriptWriteError>,
+}
+
 /// Fields around the streamed text of one statement line.
 pub struct StagedStatementLine<'a> {
     pub start_offset_us: i64,
@@ -1228,9 +1238,11 @@ pub struct StagedStatementLine<'a> {
     pub speaker: Option<i64>,
     pub sentence_id: i64,
     pub timing: Option<(f64, f64)>,
-    pub turn_evidence: Option<&'a SpeakerTurnEvidence>,
+    pub turn_evidence: Option<StagedTurnWrite<'a>>,
     pub turn_boundary_suspect: bool,
 }
+
+const TURN_RANGE_CHECKPOINT: u64 = 32;
 
 /// Write one JSONL statement object.
 ///
@@ -1238,7 +1250,7 @@ pub struct StagedStatementLine<'a> {
 /// is not wrapped in one `String`. `next_word` yields one word at a time.
 pub fn write_staged_statement_line(
     output: &mut impl Write,
-    fields: &StagedStatementLine<'_>,
+    fields: &mut StagedStatementLine<'_>,
     text: &mut impl Read,
     text_len: u64,
     cancel: &dyn Fn() -> bool,
@@ -1286,13 +1298,10 @@ pub fn write_staged_statement_line(
         write_staged(output, ascii_json::to_string(&value).as_bytes())?;
     }
     write_staged(output, b"]")?;
-    if let Some(evidence) = fields.turn_evidence {
+    if let Some(evidence) = fields.turn_evidence.as_mut() {
         write_staged(output, b",")?;
         write_json_key(output, "speaker_turn_evidence")?;
-        write_staged(
-            output,
-            ascii_json::to_string(&evidence.to_value()).as_bytes(),
-        )?;
+        write_turn_evidence(output, evidence, cancel)?;
     }
     if fields.turn_boundary_suspect {
         write_staged(output, b",\"turn_boundary_suspect\":true")?;
@@ -1331,6 +1340,14 @@ fn remove_stage_dir(path: &Path) {
     };
     if meta.file_type().is_symlink() || !meta.is_dir() {
         return;
+    }
+    for name in [
+        "transcript.jsonl",
+        "transcript.npz",
+        "prior.jsonl",
+        "prior.npz",
+    ] {
+        let _ = fs::remove_file(path.join(name));
     }
     let _ = fs::remove_dir(path);
 }
@@ -1436,7 +1453,9 @@ pub fn prepare_private_pair(
 ///
 /// The caller has taken the last cancellation check. This renames the private
 /// files into the public names and does not read the recording again. NPZ is
-/// installed first. A failed JSONL install removes that public NPZ.
+/// installed first. A redo snapshots the previous regular files first, and a
+/// failed JSONL install puts that pair back. A successful install with no new
+/// NPZ removes a stale public NPZ.
 pub fn admit_private_pair(
     mut pair: PrivatePair,
     jsonl_path: &Path,
@@ -1446,6 +1465,27 @@ pub fn admit_private_pair(
     embedding_row_count: usize,
 ) -> Result<WriteResponse, SpeakerTranscriptWriteError> {
     validate_output_paths(jsonl_path, npz_path)?;
+    let stage = pair
+        .stage
+        .clone()
+        .ok_or_else(|| SpeakerTranscriptWriteError::Internal {
+            detail: "private stage is missing".to_owned(),
+        })?;
+    let mut prior_jsonl = None;
+    let mut prior_npz = None;
+    if redo {
+        if regular_file(jsonl_path) {
+            let destination = stage.join("prior.jsonl");
+            snapshot_file(jsonl_path, &destination)?;
+            prior_jsonl = Some(destination);
+        }
+        if regular_file(npz_path) {
+            let destination = stage.join("prior.npz");
+            snapshot_file(npz_path, &destination)?;
+            prior_npz = Some(destination);
+        }
+    }
+    let had_npz = pair.npz.is_some();
     let mut installed_npz = false;
     if let Some(source) = pair.npz.take() {
         if !redo && let Err(error) = ensure_absent(npz_path) {
@@ -1475,10 +1515,25 @@ pub fn admit_private_pair(
     }
     if let Err(error) = install_copied(&source, jsonl_path) {
         let _ = fs::remove_file(&source);
-        if installed_npz {
-            let _ = fs::remove_file(npz_path);
+        if installed_npz
+            && let Err(restore_error) = restore_prior_pair(
+                npz_path,
+                jsonl_path,
+                prior_npz.as_deref(),
+                prior_jsonl.as_deref(),
+            )
+        {
+            return Err(restore_error);
         }
         return Err(error);
+    }
+    if !had_npz && regular_file(npz_path) {
+        fs::remove_file(npz_path).map_err(|error| {
+            SpeakerTranscriptWriteError::OutputUnwritable {
+                path: npz_path.display().to_string(),
+                detail: error.to_string(),
+            }
+        })?;
     }
     Ok(WriteResponse {
         jsonl_path: jsonl_path.display().to_string(),
@@ -1486,6 +1541,54 @@ pub fn admit_private_pair(
         statement_count,
         embedding_row_count,
     })
+}
+
+fn regular_file(path: &Path) -> bool {
+    fs::symlink_metadata(path).is_ok_and(|meta| meta.file_type().is_file())
+}
+
+fn snapshot_file(source: &Path, destination: &Path) -> Result<(), SpeakerTranscriptWriteError> {
+    let mut input =
+        File::open(source).map_err(|error| SpeakerTranscriptWriteError::OutputUnwritable {
+            path: source.display().to_string(),
+            detail: error.to_string(),
+        })?;
+    let mut output = File::create(destination).map_err(|error| {
+        SpeakerTranscriptWriteError::OutputUnwritable {
+            path: destination.display().to_string(),
+            detail: error.to_string(),
+        }
+    })?;
+    io::copy(&mut input, &mut output).map_err(|error| {
+        SpeakerTranscriptWriteError::OutputUnwritable {
+            path: destination.display().to_string(),
+            detail: error.to_string(),
+        }
+    })?;
+    output
+        .sync_all()
+        .map_err(|error| SpeakerTranscriptWriteError::OutputUnwritable {
+            path: destination.display().to_string(),
+            detail: error.to_string(),
+        })
+}
+
+fn restore_prior_pair(
+    npz_path: &Path,
+    jsonl_path: &Path,
+    prior_npz: Option<&Path>,
+    prior_jsonl: Option<&Path>,
+) -> Result<(), SpeakerTranscriptWriteError> {
+    if let Some(prior_npz) = prior_npz {
+        let _ = fs::remove_file(npz_path);
+        install_copied(prior_npz, npz_path)?;
+    } else {
+        let _ = fs::remove_file(npz_path);
+    }
+    if let Some(prior_jsonl) = prior_jsonl {
+        install_copied(prior_jsonl, jsonl_path)?;
+    }
+    Ok(())
 }
 
 fn install_copied(source: &Path, destination: &Path) -> Result<(), SpeakerTranscriptWriteError> {
@@ -1603,6 +1706,44 @@ fn write_staged(output: &mut impl Write, bytes: &[u8]) -> Result<(), SpeakerTran
 
 fn write_json_key(output: &mut impl Write, key: &str) -> Result<(), SpeakerTranscriptWriteError> {
     write!(output, "\"{key}\":").map_err(staged_io)
+}
+
+fn write_json_number(
+    output: &mut impl Write,
+    value: f64,
+) -> Result<(), SpeakerTranscriptWriteError> {
+    match serde_json::Number::from_f64(value) {
+        Some(number) => write!(output, "{number}").map_err(staged_io),
+        None => write_staged(output, b"null"),
+    }
+}
+
+fn write_turn_evidence(
+    output: &mut impl Write,
+    evidence: &mut StagedTurnWrite<'_>,
+    cancel: &dyn Fn() -> bool,
+) -> Result<(), SpeakerTranscriptWriteError> {
+    write_staged(output, b"{\"version\":")?;
+    write_json_string(output, SPEAKER_TURN_EVIDENCE_VERSION)?;
+    write_staged(output, b",")?;
+    write_json_key(output, "audio_duration_s")?;
+    write_json_number(output, evidence.audio_duration_s)?;
+    write_staged(output, b",\"ranges\":[")?;
+    for index in 0..evidence.count {
+        if index.is_multiple_of(TURN_RANGE_CHECKPOINT) {
+            publication_cancelled(cancel)?;
+        }
+        if index > 0 {
+            write_staged(output, b",")?;
+        }
+        let (start_s, end_s) = (evidence.next_range)()?;
+        write_staged(output, b"{\"start_s\":")?;
+        write_json_number(output, start_s)?;
+        write_staged(output, b",\"end_s\":")?;
+        write_json_number(output, end_s)?;
+        write_staged(output, b"}")?;
+    }
+    write_staged(output, b"]}")
 }
 
 fn write_json_string(
@@ -1735,7 +1876,7 @@ mod staged_line_tests {
         let mut actual = Vec::new();
         write_staged_statement_line(
             &mut actual,
-            &StagedStatementLine {
+            &mut StagedStatementLine {
                 start_offset_us: 1_500_000,
                 base_time_us_of_day: 0,
                 source: Some("mic"),
@@ -1759,5 +1900,249 @@ mod staged_line_tests {
         )
         .unwrap();
         assert_eq!(String::from_utf8(actual).unwrap(), expected);
+    }
+
+    #[test]
+    fn streamed_turn_ranges_match_the_evidence_value() {
+        let native = serde_json::json!({
+            "id": 1,
+            "start_offset_us": 0,
+            "text": "hello.",
+            "timing": {"start": 1.0, "end": 2.0},
+            "words": [{"word": " hello.", "start": 1.0, "end": 2.0, "probability": null}],
+            "speaker_turn_evidence": {
+                "version": "window-local-turns-v1",
+                "audio_duration_s": 20.0,
+                "ranges": [
+                    {"start_s": 1.25, "end_s": 1.5},
+                    {"start_s": 4.0, "end_s": 5.0}
+                ]
+            },
+            "turn_boundary_suspect": true
+        });
+        let expected = stage_statement_line(&native, None, 0).unwrap();
+        let ranges = [(1.25_f64, 1.5_f64), (4.0, 5.0)];
+        let mut index = 0_usize;
+        let mut next_range = || {
+            let range = ranges[index];
+            index += 1;
+            Ok(range)
+        };
+        let text = "hello.";
+        let mut word_sent = false;
+        let mut actual = Vec::new();
+        write_staged_statement_line(
+            &mut actual,
+            &mut StagedStatementLine {
+                start_offset_us: 0,
+                base_time_us_of_day: 0,
+                source: None,
+                speaker: None,
+                sentence_id: 1,
+                timing: Some((1.0, 2.0)),
+                turn_evidence: Some(StagedTurnWrite {
+                    audio_duration_s: 20.0,
+                    count: 2,
+                    next_range: &mut next_range,
+                }),
+                turn_boundary_suspect: true,
+            },
+            &mut io::Cursor::new(text.as_bytes()),
+            text.len() as u64,
+            &|| false,
+            &mut || {
+                if word_sent {
+                    return Ok(None);
+                }
+                word_sent = true;
+                Ok(Some(StagedWord {
+                    word: " hello.".to_owned(),
+                    start: 1.0,
+                    end: 2.0,
+                    probability: None,
+                }))
+            },
+        )
+        .unwrap();
+        assert_eq!(index, 2);
+        assert_eq!(String::from_utf8(actual).unwrap(), expected);
+    }
+
+    #[test]
+    fn empty_turn_evidence_does_not_ask_for_a_range() {
+        let native = serde_json::json!({
+            "id": 1,
+            "start_offset_us": 0,
+            "text": "hello.",
+            "words": [{"word": " hello.", "start": 0.0, "end": 0.2, "probability": null}],
+            "speaker_turn_evidence": {
+                "version": "window-local-turns-v1",
+                "audio_duration_s": 1.0,
+                "ranges": []
+            }
+        });
+        let expected = stage_statement_line(&native, None, 0).unwrap();
+        let mut next_range = || -> Result<(f64, f64), SpeakerTranscriptWriteError> {
+            panic!("empty evidence asked for a range");
+        };
+        let text = "hello.";
+        let mut word_sent = false;
+        let mut actual = Vec::new();
+        write_staged_statement_line(
+            &mut actual,
+            &mut StagedStatementLine {
+                start_offset_us: 0,
+                base_time_us_of_day: 0,
+                source: None,
+                speaker: None,
+                sentence_id: 1,
+                timing: None,
+                turn_evidence: Some(StagedTurnWrite {
+                    audio_duration_s: 1.0,
+                    count: 0,
+                    next_range: &mut next_range,
+                }),
+                turn_boundary_suspect: false,
+            },
+            &mut io::Cursor::new(text.as_bytes()),
+            text.len() as u64,
+            &|| false,
+            &mut || {
+                if word_sent {
+                    return Ok(None);
+                }
+                word_sent = true;
+                Ok(Some(StagedWord {
+                    word: " hello.".to_owned(),
+                    start: 0.0,
+                    end: 0.2,
+                    probability: None,
+                }))
+            },
+        )
+        .unwrap();
+        assert_eq!(String::from_utf8(actual).unwrap(), expected);
+    }
+}
+
+#[cfg(all(test, feature = "full-tests"))]
+mod replacement_tests {
+    use super::*;
+
+    fn npz_with_marker(dir: &Path, name: &str, marker: u8) -> Vec<u8> {
+        let embeddings = dir.join(format!("{name}-embeddings.f32le"));
+        let mut bytes = vec![0_u8; 256 * 4];
+        bytes[0] = marker;
+        fs::write(&embeddings, bytes).unwrap();
+        let ids = dir.join(format!("{name}-ids.i32le"));
+        fs::write(&ids, 1_i32.to_le_bytes()).unwrap();
+        let durations = dir.join(format!("{name}-durations.f32le"));
+        fs::write(&durations, 1.0_f32.to_le_bytes()).unwrap();
+        let npz = dir.join(format!("{name}.npz"));
+        stage_npz_from_files(&npz, &embeddings, 1, &ids, &durations, "wespeaker", &|| {
+            false
+        })
+        .unwrap();
+        fs::read(npz).unwrap()
+    }
+
+    fn public_paths(dir: &Path) -> (PathBuf, PathBuf) {
+        (dir.join("audio.jsonl"), dir.join("audio.npz"))
+    }
+
+    #[test]
+    fn jsonl_install_failure_restores_the_previous_pair() {
+        let root = tempfile::tempdir().unwrap();
+        let segment = root.path().join("segment");
+        fs::create_dir(&segment).unwrap();
+        let (jsonl, npz) = public_paths(&segment);
+        let prior_jsonl = b"prior-jsonl\n".to_vec();
+        let prior_npz = npz_with_marker(&segment, "prior", 1);
+        fs::write(&jsonl, &prior_jsonl).unwrap();
+        fs::write(&npz, &prior_npz).unwrap();
+        let stage = create_stage_dir(&segment).unwrap();
+        let replacement = npz_with_marker(&segment, "replacement", 2);
+        fs::write(stage.join("transcript.npz"), &replacement).unwrap();
+        let stage_path = stage.clone();
+        let error = admit_private_pair(
+            PrivatePair {
+                stage: Some(stage),
+                jsonl: Some(stage_path.join("transcript.jsonl")),
+                npz: Some(stage_path.join("transcript.npz")),
+            },
+            &jsonl,
+            &npz,
+            true,
+            1,
+            1,
+        )
+        .unwrap_err();
+        assert!(matches!(
+            error,
+            SpeakerTranscriptWriteError::OutputUnwritable { .. }
+        ));
+        assert_eq!(fs::read(&jsonl).unwrap(), prior_jsonl);
+        assert_eq!(fs::read(&npz).unwrap(), prior_npz);
+        assert!(!stage_path.exists());
+    }
+
+    #[test]
+    fn zero_row_replacement_removes_a_stale_npz() {
+        let root = tempfile::tempdir().unwrap();
+        let segment = root.path().join("segment");
+        fs::create_dir(&segment).unwrap();
+        let (jsonl, npz) = public_paths(&segment);
+        fs::write(&jsonl, b"old\n").unwrap();
+        fs::write(&npz, npz_with_marker(&segment, "stale", 3)).unwrap();
+        let stage = create_stage_dir(&segment).unwrap();
+        fs::write(stage.join("transcript.jsonl"), b"new\n").unwrap();
+        let stage_path = stage.clone();
+        admit_private_pair(
+            PrivatePair {
+                stage: Some(stage),
+                jsonl: Some(stage_path.join("transcript.jsonl")),
+                npz: None,
+            },
+            &jsonl,
+            &npz,
+            true,
+            1,
+            0,
+        )
+        .unwrap();
+        assert_eq!(fs::read(&jsonl).unwrap(), b"new\n");
+        assert!(!npz.exists());
+        assert!(!stage_path.exists());
+    }
+
+    #[test]
+    fn replacement_publishes_the_new_pair() {
+        let root = tempfile::tempdir().unwrap();
+        let segment = root.path().join("segment");
+        fs::create_dir(&segment).unwrap();
+        let (jsonl, npz) = public_paths(&segment);
+        fs::write(&jsonl, b"old\n").unwrap();
+        fs::write(&npz, npz_with_marker(&segment, "old", 4)).unwrap();
+        let stage = create_stage_dir(&segment).unwrap();
+        let new_npz = npz_with_marker(&segment, "new", 5);
+        fs::write(stage.join("transcript.jsonl"), b"new\n").unwrap();
+        fs::write(stage.join("transcript.npz"), &new_npz).unwrap();
+        let stage_path = stage.clone();
+        admit_private_pair(
+            PrivatePair {
+                stage: Some(stage),
+                jsonl: Some(stage_path.join("transcript.jsonl")),
+                npz: Some(stage_path.join("transcript.npz")),
+            },
+            &jsonl,
+            &npz,
+            true,
+            1,
+            1,
+        )
+        .unwrap();
+        assert_eq!(fs::read(&jsonl).unwrap(), b"new\n");
+        assert_eq!(fs::read(&npz).unwrap(), new_npz);
+        assert!(!stage_path.exists());
     }
 }
