@@ -13,6 +13,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - security fix on linux: your journal now checks for updates using only release information signed by sol pbc.
 
 - you can choose a file on the import screen in the android and ios owner apps and save it.
+- in a segment's screen tab, pictures of an android phone's screen now show the moment each one was taken. before, most of them showed the recording's last moment.
 - the backup page now updates after a backup finishes, so you no longer have to leave and reopen it to see the result.
 - journals running on a phone now start their local agent connections and close them when you stop the journal. the agents page already offered these connections, but they did not start on phones.
 - after you answer a calendar invitation on your iphone, your journal still marks you on it, and still knows when you declined, as long as your journal holds a copy of that invitation with one of your email addresses on it, from any of your phones. events already in your journal are updated the next time your journal checks them. thanks @dvanduzer for the report.
