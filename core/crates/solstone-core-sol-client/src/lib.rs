@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+mod agent_output;
+#[cfg(test)]
+mod agent_output_tests;
 pub mod aggregate;
 mod args;
 pub mod command;

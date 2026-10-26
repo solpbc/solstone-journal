@@ -25,6 +25,10 @@ const MERGE_NEEDS_YES: &str = "A merge can't be undone. Preview it without --com
 
 #[must_use]
 pub fn list(ctx: CommandContext<'_>) -> CommandOutput {
+    crate::agent_output::literal_output(list_output(ctx))
+}
+
+fn list_output(ctx: CommandContext<'_>) -> CommandOutput {
     let parsed = match parse_args(
         ctx.args,
         &[("--facet", Some("-f")), ("--day", Some("-d"))],
@@ -904,6 +908,10 @@ pub fn restore_version(ctx: CommandContext<'_>) -> CommandOutput {
 
 #[must_use]
 pub fn network(ctx: CommandContext<'_>) -> CommandOutput {
+    crate::agent_output::literal_output(network_output(ctx))
+}
+
+fn network_output(ctx: CommandContext<'_>) -> CommandOutput {
     let parsed = match parse_args(
         ctx.args,
         &[
@@ -957,6 +965,10 @@ pub fn network(ctx: CommandContext<'_>) -> CommandOutput {
 
 #[must_use]
 pub fn history(ctx: CommandContext<'_>) -> CommandOutput {
+    crate::agent_output::literal_output(history_output(ctx))
+}
+
+fn history_output(ctx: CommandContext<'_>) -> CommandOutput {
     let parsed = match parse_args(
         ctx.args,
         &[
@@ -1043,6 +1055,10 @@ pub fn overview(ctx: CommandContext<'_>) -> CommandOutput {
 
 #[must_use]
 pub fn observations(ctx: CommandContext<'_>) -> CommandOutput {
+    crate::agent_output::literal_output(observations_output(ctx))
+}
+
+fn observations_output(ctx: CommandContext<'_>) -> CommandOutput {
     let parsed = match parse_args(
         ctx.args,
         &[("--facet", Some("-f")), ("--limit", None)],
@@ -1286,6 +1302,10 @@ fn observation_error(error: ClientError, name: &str) -> CommandOutput {
 
 #[must_use]
 pub fn search(ctx: CommandContext<'_>) -> CommandOutput {
+    crate::agent_output::literal_output(search_output(ctx))
+}
+
+fn search_output(ctx: CommandContext<'_>) -> CommandOutput {
     let parsed = match parse_args(
         ctx.args,
         &[

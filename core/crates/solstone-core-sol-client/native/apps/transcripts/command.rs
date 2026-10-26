@@ -14,6 +14,10 @@ const DEFAULT_MAX_BYTES: usize = 16_384;
 
 #[must_use]
 pub fn read(ctx: CommandContext<'_>) -> CommandOutput {
+    crate::agent_output::literal_output(read_output(ctx))
+}
+
+fn read_output(ctx: CommandContext<'_>) -> CommandOutput {
     let parsed = match parse_args(
         ctx.args,
         &[
