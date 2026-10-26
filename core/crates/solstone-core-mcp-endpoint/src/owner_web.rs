@@ -2088,9 +2088,13 @@ struct CapabilityBody {
 
 async fn set_capability(
     Extension(journal): Extension<Arc<PathBuf>>,
+    cancel: Option<Extension<solstone_core_convey_http::request::PendingAgentsConsentCancel>>,
     Json(body): Json<CapabilityBody>,
 ) -> Response {
     if !body.enabled {
+        if let Some(Extension(cancel)) = cancel {
+            cancel.cancel();
+        }
         crate::sme_account_replace::withdraw_request(&journal);
     }
     write_endpoint_switch(&journal, "enabled", body.enabled)

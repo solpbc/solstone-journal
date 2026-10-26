@@ -369,6 +369,13 @@ pub struct TargetUse {
     _root: Arc<JournalRoot>,
 }
 
+impl TargetUse {
+    /// Share the original root retained by this admitted use.
+    pub fn root(&self) -> Arc<JournalRoot> {
+        Arc::clone(&self._root)
+    }
+}
+
 impl Drop for TargetUse {
     fn drop(&mut self) {
         let (flights, wake) = target_flights();

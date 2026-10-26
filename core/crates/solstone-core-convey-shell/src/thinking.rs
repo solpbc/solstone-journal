@@ -30,6 +30,7 @@ use solstone_core_thinking::providers::{ManagedKeyValidator, UnavailableValidato
 use solstone_core_backup_web::require_https_portal_url;
 use solstone_core_brain::derive_active_brain_lane;
 
+use crate::service_handoffs::{HandoffRun, ServiceHandoffs, interrupted};
 use crate::{JournalRoot, asset_response, not_found_response};
 
 const DEFAULT_PORTAL_URL: &str = "https://services.solstone.app";
@@ -951,12 +952,15 @@ async fn check_brain(Extension(journal): Extension<Arc<JournalRoot>>) -> Respons
 }
 
 async fn confidential_enable(
-    Extension(journal): Extension<Arc<JournalRoot>>,
+    Extension(admitted_root): Extension<Arc<solstone_core_journal_io::JournalRoot>>,
+    handoffs: Option<Extension<Arc<ServiceHandoffs>>>,
     Extension(operations): Extension<Arc<OperationRegistry>>,
     Extension(runtime): Extension<ConfidentialRuntime>,
     override_runtime: Option<Extension<ConfidentialRuntimeOverride>>,
 ) -> Response {
-    let journal = journal.as_ref();
+    let handoffs =
+        ServiceHandoffs::for_request(handoffs.map(|Extension(owner)| owner), admitted_root);
+    let journal = JournalRoot(handoffs.root().canonical_path().to_owned());
     if let Some(refusal) =
         not_offered_refusal(solstone_core_thinking::confidential::offered_on_this_platform())
     {
@@ -1027,6 +1031,11 @@ async fn confidential_enable(
             Ok(value) => value,
             Err(_) => return service_busy(),
         };
+    let attempt_root = handoffs.root();
+    let attempt_generation =
+        solstone_core_journal_io::whole_journal_restore::whole_journal_restore_generation(
+            attempt_root.canonical_path(),
+        );
     if let Some(hook) = before_attempt {
         tokio::task::spawn_blocking(move || hook()).await.ok();
     }
@@ -1037,15 +1046,39 @@ async fn confidential_enable(
             json!({"success":true,"service":SERVICE_SPP,"operation":remap_operation(live_op)}),
         );
     }
-    if let Err(error) = record_confidential_attempt(&journal.0, &nonce) {
+    let attempt = record_confidential_attempt(&attempt_root, &nonce, &|| {
+        if !operations.is_open(SERVICE_SPP, handle)
+            || solstone_core_journal_io::whole_journal_restore::whole_journal_restore_blocks(
+                attempt_root.canonical_path(),
+            )
+            || solstone_core_journal_io::whole_journal_restore::whole_journal_restore_generation(
+                attempt_root.canonical_path(),
+            ) != attempt_generation
+        {
+            Err("confidential turn-on interrupted".to_owned())
+        } else {
+            Ok(())
+        }
+    });
+    if let Err(error) = attempt {
         let _ = operations.finish(SERVICE_SPP, handle, handoff_error("write_failed", None));
         return match error {
-            solstone_core_thinking::MutationError::ConfigLock(_) => thinking_config_busy_response(),
+            solstone_core_journal_config_write::BoundConfigRefusal::Lock(_) => {
+                thinking_config_busy_response()
+            }
             _ => confidential_enable_failed(),
         };
     }
+    let attempt_publication = attempt.expect("refusal returned above");
+    if !crate::service_handoffs::config_confirmed(&attempt_publication) {
+        log::warn!(
+            "confidential consent attempt was published with uncertainty: {attempt_publication:?}"
+        );
+        operations.finish(SERVICE_SPP, handle, handoff_error("local_error", None));
+        return confidential_enable_failed();
+    }
     spawn_confidential_handoff(
-        journal.0.clone(),
+        handoffs,
         operations,
         handle,
         portal_base_url,
@@ -1053,7 +1086,8 @@ async fn confidential_enable(
         poll,
         now,
         sleep,
-    );
+    )
+    .await;
     json_response_with_status(
         StatusCode::ACCEPTED,
         json!({"success":true,"service":SERVICE_SPP,"operation":remap_operation(operation)}),
@@ -1136,9 +1170,22 @@ fn confidential_instance_id(journal: &Path) -> Option<String> {
     })
 }
 
+async fn handoff_sleep(
+    run: &HandoffRun,
+    duration: Duration,
+    override_sleep: &Option<Arc<dyn Fn(Duration) + Send + Sync>>,
+) -> bool {
+    if let Some(sleep) = override_sleep {
+        let sleep = Arc::clone(sleep);
+        run.blocking(move || sleep(duration)).await.is_ok() && !run.cancelled()
+    } else {
+        run.sleep(duration).await
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
-fn spawn_confidential_handoff(
-    journal: std::path::PathBuf,
+async fn spawn_confidential_handoff(
+    handoffs: Arc<ServiceHandoffs>,
     operations: Arc<OperationRegistry>,
     handle: OperationHandle,
     portal_base_url: String,
@@ -1146,103 +1193,111 @@ fn spawn_confidential_handoff(
     poll: Arc<dyn ConfidentialPoll>,
     now: Arc<dyn Fn() -> Instant + Send + Sync>,
     sleep: Option<Arc<dyn Fn(Duration) + Send + Sync>>,
-) -> tokio::task::JoinHandle<()> {
-    let worker_operations = operations.clone();
-    let worker = tokio::spawn(async move {
-        if !worker_operations.mark_waiting(SERVICE_SPP, handle) {
-            return true;
-        }
-        let mut deadline = now() + Duration::from_secs(15 * 60);
-        let mut first_subscription = true;
-        let result = loop {
-            // Turning confidential processing off ends this turn-on: stop polling.
-            if !worker_operations.is_open(SERVICE_SPP, handle) {
-                return true;
-            }
-            let poll = poll.clone();
-            let base_url = portal_base_url.clone();
-            let poll_nonce = nonce.clone();
-            let poll_result =
-                tokio::task::spawn_blocking(move || poll.poll(&base_url, &poll_nonce)).await;
-            match poll_result {
-                Ok(PollOutcome::Continue) if now() < deadline => {
-                    if let Some(s) = &sleep {
-                        s(Duration::from_secs(1));
-                    } else {
-                        tokio::time::sleep(Duration::from_secs(1)).await;
-                    }
-                    continue;
+) {
+    handoffs
+        .spawn(
+            SERVICE_SPP,
+            operations.clone(),
+            handle,
+            move |run| async move {
+                if !operations.mark_waiting(SERVICE_SPP, handle) {
+                    return interrupted();
                 }
-                Ok(PollOutcome::Continue) => break handoff_error("consent_timeout", None),
-                Ok(PollOutcome::Failed { token, detail }) => break handoff_error(&token, detail),
-                Ok(PollOutcome::EarlyAccess) => {
-                    break HandoffResult {
-                        phase: Phase::EarlyAccess,
-                        guidance: None,
-                        retryable: false,
-                        subscribe_url: None,
-                    };
+                let mut deadline = now() + Duration::from_secs(15 * 60);
+                let mut first_subscription = true;
+                loop {
+                    if run.cancelled() {
+                        return interrupted();
+                    }
+                    let poll = poll.clone();
+                    let base_url = portal_base_url.clone();
+                    let poll_nonce = nonce.clone();
+                    let polled = run
+                        .blocking(move || poll.poll(&base_url, &poll_nonce))
+                        .await;
+                    if run.cancelled() {
+                        return interrupted();
+                    }
+                    match polled {
+                        Ok(PollOutcome::Continue) if now() < deadline => {
+                            if !handoff_sleep(&run, Duration::from_secs(1), &sleep).await {
+                                return interrupted();
+                            }
+                        }
+                        Ok(PollOutcome::Continue) => return handoff_error("consent_timeout", None),
+                        Ok(PollOutcome::Failed { token, detail }) => {
+                            return handoff_error(&token, detail);
+                        }
+                        Ok(PollOutcome::EarlyAccess) => {
+                            return HandoffResult {
+                                phase: Phase::EarlyAccess,
+                                guidance: None,
+                                retryable: false,
+                                subscribe_url: None,
+                            };
+                        }
+                        Ok(PollOutcome::NeedsSubscription { subscribe_url }) => {
+                            if first_subscription {
+                                deadline = now() + Duration::from_secs(60 * 60);
+                                first_subscription = false;
+                            }
+                            if now() >= deadline {
+                                return handoff_error("consent_timeout", None);
+                            }
+                            if !operations.note_subscribing(SERVICE_SPP, handle, subscribe_url) {
+                                return interrupted();
+                            }
+                            if !handoff_sleep(&run, Duration::from_secs(5), &sleep).await {
+                                return interrupted();
+                            }
+                        }
+                        Ok(PollOutcome::JournalLimit { subscribe_url }) => {
+                            return HandoffResult {
+                                phase: Phase::JournalLimit,
+                                guidance: None,
+                                retryable: false,
+                                subscribe_url: Some(subscribe_url),
+                            };
+                        }
+                        Ok(PollOutcome::Success(payload)) => {
+                            let effect = Arc::clone(&run);
+                            let nonce = nonce.clone();
+                            let result = run
+                                .blocking(move || {
+                                    provision_confidential_handoff(
+                                        &effect.root(),
+                                        &payload,
+                                        &nonce,
+                                        || !effect.cancelled(),
+                                    )
+                                })
+                                .await;
+                            return match result {
+                                Ok(Ok(publication))
+                                    if crate::service_handoffs::config_confirmed(&publication) =>
+                                {
+                                    HandoffResult {
+                                        phase: Phase::Enabled,
+                                        guidance: Some(NOT_VERIFIED_GUIDANCE.to_owned()),
+                                        retryable: false,
+                                        subscribe_url: None,
+                                    }
+                                }
+                                _ if run.cancelled() => interrupted(),
+                                Ok(Err(error)) => provision_error_handoff(&error),
+                                Ok(Ok(publication)) => {
+                                    log::warn!("confidential configuration was published with uncertainty: {publication:?}");
+                                    handoff_error("local_error", None)
+                                },
+                                Err(_) => interrupted(),
+                            };
+                        }
+                        Err(_) => return interrupted(),
+                    }
                 }
-                Ok(PollOutcome::NeedsSubscription { subscribe_url }) => {
-                    if first_subscription {
-                        deadline = now() + Duration::from_secs(60 * 60);
-                        first_subscription = false;
-                    }
-                    if now() >= deadline {
-                        break handoff_error("consent_timeout", None);
-                    }
-                    if !worker_operations.note_subscribing(SERVICE_SPP, handle, subscribe_url) {
-                        return true;
-                    }
-                    if let Some(s) = &sleep {
-                        s(Duration::from_secs(5));
-                    } else {
-                        tokio::time::sleep(Duration::from_secs(5)).await;
-                    }
-                    continue;
-                }
-                Ok(PollOutcome::JournalLimit { subscribe_url }) => {
-                    break HandoffResult {
-                        phase: Phase::JournalLimit,
-                        guidance: None,
-                        retryable: false,
-                        subscribe_url: Some(subscribe_url),
-                    };
-                }
-                Ok(PollOutcome::Success(payload)) => {
-                    if !worker_operations.is_open(SERVICE_SPP, handle) {
-                        return true;
-                    }
-                    break match provision_confidential_handoff(&journal, &payload, &nonce) {
-                        Ok(()) => HandoffResult {
-                            phase: Phase::Enabled,
-                            guidance: Some(NOT_VERIFIED_GUIDANCE.to_owned()),
-                            retryable: false,
-                            subscribe_url: None,
-                        },
-                        Err(error) => provision_error_handoff(&error),
-                    };
-                }
-                Err(_) => return false,
-            }
-        };
-        worker_operations.finish(SERVICE_SPP, handle, result)
-    });
-    // The returned task ends once the turn-on has finished one way or another.
-    tokio::spawn(async move {
-        if !worker.await.unwrap_or(false) {
-            let _ = operations.finish(
-                SERVICE_SPP,
-                handle,
-                HandoffResult {
-                    phase: Phase::Error,
-                    guidance: None,
-                    retryable: true,
-                    subscribe_url: None,
-                },
-            );
-        }
-    })
+            },
+        )
+        .await;
 }
 
 fn remap_operation(mut operation: Value) -> Value {
@@ -3039,8 +3094,12 @@ mod tests {
             }
         }));
 
-        let turn_on = super::spawn_confidential_handoff(
-            root.clone(),
+        let handoffs = Arc::new(super::ServiceHandoffs::new(
+            Arc::new(solstone_core_journal_io::JournalRoot::open(&root).unwrap()),
+            None,
+        ));
+        super::spawn_confidential_handoff(
+            handoffs.clone(),
             operations.clone(),
             handle,
             "https://services.solstone.app".to_owned(),
@@ -3048,13 +3107,14 @@ mod tests {
             poll,
             now_fn,
             Some(Arc::new(|_| ())),
-        );
+        )
+        .await;
+        let turn_on = handoffs.join();
 
         // Wait for the turn-on itself, never for a number of scheduler turns.
         tokio::time::timeout(std::time::Duration::from_secs(60), turn_on)
             .await
-            .expect("turn-on ends")
-            .expect("turn-on task completes");
+            .expect("turn-on ends");
         let ended = !operations.is_open(super::SERVICE_SPP, handle);
         assert!(
             ended,
@@ -3125,7 +3185,12 @@ mod tests {
     #[tokio::test]
     async fn confidential_subscribing_then_approval_provisions_fields() {
         let root = temporary_journal("subscribing-approval");
-        super::record_confidential_attempt(&root, "nonce-appr").unwrap();
+        super::record_confidential_attempt(
+            &Arc::new(solstone_core_journal_io::JournalRoot::open(&root).unwrap()),
+            "nonce-appr",
+            &|| Ok(()),
+        )
+        .unwrap();
 
         let operations = Arc::new(super::OperationRegistry::default());
         let (handle, _) = operations
@@ -3148,8 +3213,12 @@ mod tests {
             }
         }));
 
-        let turn_on = super::spawn_confidential_handoff(
-            root.clone(),
+        let handoffs = Arc::new(super::ServiceHandoffs::new(
+            Arc::new(solstone_core_journal_io::JournalRoot::open(&root).unwrap()),
+            None,
+        ));
+        super::spawn_confidential_handoff(
+            handoffs.clone(),
             operations.clone(),
             handle,
             "https://services.solstone.app".to_owned(),
@@ -3157,13 +3226,14 @@ mod tests {
             poll,
             Arc::new(std::time::Instant::now),
             Some(Arc::new(|_| ())),
-        );
+        )
+        .await;
+        let turn_on = handoffs.join();
 
         // Wait for the turn-on itself, never for a number of scheduler turns.
         tokio::time::timeout(std::time::Duration::from_secs(60), turn_on)
             .await
-            .expect("turn-on ends")
-            .expect("turn-on task completes");
+            .expect("turn-on ends");
         let ended = !operations.is_open(super::SERVICE_SPP, handle);
         assert!(
             ended,
@@ -3204,8 +3274,12 @@ mod tests {
                 PollOutcome::EarlyAccess
             }
         }));
-        let turn_on = super::spawn_confidential_handoff(
-            root.clone(),
+        let handoffs = Arc::new(super::ServiceHandoffs::new(
+            Arc::new(solstone_core_journal_io::JournalRoot::open(&root).unwrap()),
+            None,
+        ));
+        super::spawn_confidential_handoff(
+            handoffs.clone(),
             operations.clone(),
             handle,
             "https://services.solstone.app".to_owned(),
@@ -3213,12 +3287,13 @@ mod tests {
             poll,
             Arc::new(std::time::Instant::now),
             Some(Arc::new(|_| ())),
-        );
+        )
+        .await;
+        let turn_on = handoffs.join();
         // Wait for the turn-on itself, never for a number of scheduler turns.
         tokio::time::timeout(std::time::Duration::from_secs(60), turn_on)
             .await
-            .expect("turn-on ends")
-            .expect("turn-on task completes");
+            .expect("turn-on ends");
         let ended = !operations.is_open(super::SERVICE_SPP, handle);
         assert!(
             ended,
@@ -3250,8 +3325,12 @@ mod tests {
                 }
             }
         }));
-        let turn_on = super::spawn_confidential_handoff(
-            root.clone(),
+        let handoffs = Arc::new(super::ServiceHandoffs::new(
+            Arc::new(solstone_core_journal_io::JournalRoot::open(&root).unwrap()),
+            None,
+        ));
+        super::spawn_confidential_handoff(
+            handoffs.clone(),
             operations.clone(),
             handle,
             "https://services.solstone.app".to_owned(),
@@ -3259,12 +3338,13 @@ mod tests {
             poll,
             Arc::new(std::time::Instant::now),
             Some(Arc::new(|_| ())),
-        );
+        )
+        .await;
+        let turn_on = handoffs.join();
         // Wait for the turn-on itself, never for a number of scheduler turns.
         tokio::time::timeout(std::time::Duration::from_secs(60), turn_on)
             .await
-            .expect("turn-on ends")
-            .expect("turn-on task completes");
+            .expect("turn-on ends");
         let ended = !operations.is_open(super::SERVICE_SPP, handle);
         assert!(
             ended,
@@ -3294,8 +3374,12 @@ mod tests {
             }
         }));
 
-        let turn_on = super::spawn_confidential_handoff(
-            root.clone(),
+        let handoffs = Arc::new(super::ServiceHandoffs::new(
+            Arc::new(solstone_core_journal_io::JournalRoot::open(&root).unwrap()),
+            None,
+        ));
+        super::spawn_confidential_handoff(
+            handoffs.clone(),
             operations.clone(),
             handle,
             "https://services.solstone.app".to_owned(),
@@ -3303,13 +3387,14 @@ mod tests {
             poll,
             Arc::new(std::time::Instant::now),
             Some(Arc::new(|_| ())),
-        );
+        )
+        .await;
+        let turn_on = handoffs.join();
 
         // Wait for the turn-on itself, never for a number of scheduler turns.
         tokio::time::timeout(std::time::Duration::from_secs(60), turn_on)
             .await
-            .expect("turn-on ends")
-            .expect("turn-on task completes");
+            .expect("turn-on ends");
         let ended = !operations.is_open(super::SERVICE_SPP, handle);
         assert!(
             ended,
@@ -3354,8 +3439,12 @@ mod tests {
             }
         }));
 
-        let turn_on = super::spawn_confidential_handoff(
-            root.clone(),
+        let handoffs = Arc::new(super::ServiceHandoffs::new(
+            Arc::new(solstone_core_journal_io::JournalRoot::open(&root).unwrap()),
+            None,
+        ));
+        super::spawn_confidential_handoff(
+            handoffs.clone(),
             operations.clone(),
             handle,
             "https://services.solstone.app".to_owned(),
@@ -3363,13 +3452,14 @@ mod tests {
             poll,
             Arc::new(std::time::Instant::now),
             Some(Arc::new(|_| ())),
-        );
+        )
+        .await;
+        let turn_on = handoffs.join();
 
         // Wait for the turn-on itself, never for a number of scheduler turns.
         tokio::time::timeout(std::time::Duration::from_secs(60), turn_on)
             .await
-            .expect("turn-on ends")
-            .expect("turn-on task completes");
+            .expect("turn-on ends");
         let ended = !operations.is_open(super::SERVICE_SPP, handle);
         assert!(
             ended,

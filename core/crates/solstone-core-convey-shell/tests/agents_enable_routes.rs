@@ -146,6 +146,45 @@ struct StaticPoll {
     polled_nonces: Mutex<Vec<String>>,
 }
 
+#[tokio::test]
+async fn hidden_agents_ui_keeps_enable_backend_session_and_restore_gates() {
+    use solstone_core_journal_io::whole_journal_restore::{
+        hold_target_for_restore, release_target_for_restore,
+    };
+    for unestablished in [true, false] {
+        let root = journal();
+        plant_committed_identity(&root);
+        if unestablished {
+            fs::write(root.join("config/journal.json"), b"{}\n").unwrap();
+        } else {
+            hold_target_for_restore(&root);
+        }
+        let registry = Arc::new(OperationRegistry::default());
+        let poll = Arc::new(StaticPoll::new(SmePollOutcome::Continue));
+        // `router` has no optional agents UI/router supplied. Its maintained
+        // enable backend still needs the ordinary guard in that composition.
+        let app = overridden(&root, Arc::clone(&poll), registry);
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/app/agents/api/enable")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::FOUND);
+        drop(response);
+        assert_eq!(poll.calls.load(Ordering::SeqCst), 0);
+        let config: Value =
+            serde_json::from_slice(&fs::read(root.join("config/journal.json")).unwrap()).unwrap();
+        assert!(config.get("mcp_endpoint").is_none());
+        release_target_for_restore(&root);
+        fs::remove_dir_all(root).unwrap();
+    }
+}
+
 impl StaticPoll {
     fn new(outcome: SmePollOutcome) -> Self {
         Self {
@@ -601,4 +640,127 @@ async fn enable_busy_keeps_original_signed_portal_url_until_terminal() {
     assert_eq!(next_params["instance"], instance_id);
 
     let _ = fs::remove_dir_all(root);
+}
+
+#[cfg(feature = "full-tests")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn admitted_consent_handoff_must_drain_after_its_accepted_body_finishes() {
+    use solstone_core_journal_io::whole_journal_restore::{
+        WholeJournalRestoreSource, clear_whole_journal_restore, hold_target_for_restore,
+        publish_whole_journal_restore, release_target_for_restore, wait_for_target_use_to_end,
+    };
+    struct HeldPoll {
+        entered: Mutex<Option<tokio::sync::oneshot::Sender<()>>>,
+        release: Mutex<std::sync::mpsc::Receiver<()>>,
+    }
+    impl SmePoll for HeldPoll {
+        fn poll(&self, _: &str, _: &str) -> SmePollOutcome {
+            if let Some(entered) = self.entered.lock().unwrap().take() {
+                let _ = entered.send(());
+            }
+            self.release
+                .lock()
+                .unwrap()
+                .recv_timeout(Duration::from_secs(5))
+                .unwrap();
+            SmePollOutcome::Success(Map::from_iter([
+                ("service".into(), json!("sme")),
+                ("state".into(), json!("approved")),
+                ("approved_at".into(), json!("2026-09-20T12:00:00Z")),
+            ]))
+        }
+    }
+    let root = journal();
+    plant_committed_identity(&root);
+    let registry = Arc::new(OperationRegistry::default());
+    let (entered, waiting) = tokio::sync::oneshot::channel();
+    let (release, blocked) = std::sync::mpsc::sync_channel(0);
+    let app = solstone_core_convey_shell::session_gate::apply_layer_with_agents(
+        router(root.clone()),
+        root.clone(),
+        true,
+    )
+    .layer(Extension(SmeOperationsOverride(Arc::clone(&registry))))
+    .layer(Extension(SmeRuntimeOverride {
+        portal_base_url: "https://synthetic.invalid".into(),
+        poll: Arc::new(HeldPoll {
+            entered: Mutex::new(Some(entered)),
+            release: Mutex::new(blocked),
+        }),
+    }));
+    // Exercise the real session gate with the agents capability selected.
+    hold_target_for_restore(&root);
+    let refused = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/app/agents/api/enable")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(refused.status(), StatusCode::FOUND);
+    drop(refused);
+    release_target_for_restore(&root);
+    // The maintained owner route returns and its complete 202 body is consumed.
+    let (status, _) = request(app, Method::POST, "/app/agents/api/enable", Body::empty()).await;
+    assert_eq!(status, StatusCode::ACCEPTED);
+    tokio::time::timeout(Duration::from_secs(5), waiting)
+        .await
+        .unwrap()
+        .unwrap();
+    hold_target_for_restore(&root);
+    let pending = publish_whole_journal_restore(
+        &root,
+        &WholeJournalRestoreSource::Byo {
+            repository: "synthetic".into(),
+            backend: "local".into(),
+        },
+        &"b".repeat(64),
+        "/",
+    )
+    .unwrap();
+    let journal = root.clone();
+    let (started, begun) = tokio::sync::oneshot::channel();
+    let mut drain = tokio::task::spawn_blocking(move || {
+        started.send(()).unwrap();
+        wait_for_target_use_to_end(&journal);
+    });
+    begun.await.unwrap();
+    let premature = tokio::time::timeout(Duration::from_millis(50), &mut drain)
+        .await
+        .is_ok();
+    release.send(()).unwrap();
+    if !premature {
+        tokio::time::timeout(Duration::from_secs(5), drain)
+            .await
+            .unwrap()
+            .unwrap();
+    }
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let phase = registry.operation_raw("sme")["phase"]
+                .as_str()
+                .unwrap()
+                .to_owned();
+            if !matches!(phase.as_str(), "starting" | "waiting" | "subscribing") {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }
+    })
+    .await
+    .unwrap();
+    let config: Value =
+        serde_json::from_slice(&fs::read(root.join("config/journal.json")).unwrap()).unwrap();
+    let published = config["mcp_endpoint"]["enabled"] == true;
+    clear_whole_journal_restore(&root, &pending).unwrap();
+    release_target_for_restore(&root);
+    fs::remove_dir_all(root).unwrap();
+    assert!(
+        !premature && !published,
+        "handoff escaped its accepted body: drained_while_poll_held={premature}, enabled_during_pending={published}"
+    );
 }

@@ -9,6 +9,21 @@ use axum::response::{IntoResponse, Response};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
+/// Supplied by the journal's consent owner to its agent capability control.
+/// Request data cannot construct or replace the current-operation callback.
+#[derive(Clone)]
+pub struct PendingAgentsConsentCancel(std::sync::Arc<dyn Fn() + Send + Sync>);
+
+impl PendingAgentsConsentCancel {
+    pub fn new(cancel: impl Fn() + Send + Sync + 'static) -> Self {
+        Self(std::sync::Arc::new(cancel))
+    }
+
+    pub fn cancel(&self) {
+        (self.0)();
+    }
+}
+
 struct AdmittedBody<G> {
     body: Body,
     admission: Option<Box<G>>,

@@ -81,6 +81,7 @@ fn is_exempt_with_agents(path: &str, include_agents: bool) -> bool {
                         name != "link"
                             && name != "devices"
                             && name != "news"
+                            && name != "agents"
                             && served_app(name, include_agents).is_none()
                     })
             }
@@ -92,7 +93,7 @@ fn is_exempt_with_agents(path: &str, include_agents: bool) -> bool {
 
 async fn require_session(
     State(state): State<SessionGateState>,
-    request: Request<Body>,
+    mut request: Request<Body>,
     next: Next,
 ) -> Response {
     let path = request.uri().path();
@@ -109,6 +110,7 @@ async fn require_session(
             let Ok(target_use) = state.target_use.begin() else {
                 return redirect_to_init();
             };
+            request.extensions_mut().insert(target_use.root());
             solstone_core_convey_http::request::run_admitted(target_use, request, next).await
         }
         SessionState::Unestablished => redirect_to_init(),

@@ -150,6 +150,8 @@ pub mod registry;
 mod relay_access;
 mod relay_admission;
 #[cfg(feature = "host")]
+mod service_handoffs;
+#[cfg(feature = "host")]
 pub mod session;
 pub mod session_gate;
 mod setup_host;
@@ -347,6 +349,7 @@ impl std::error::Error for ConveyServeError {}
 #[cfg(feature = "host")]
 pub struct EmbeddedConveyHandle {
     owner_router: Router,
+    service_handoffs: Arc<service_handoffs::ServiceHandoffs>,
     door: Arc<door::DoorLifecycle>,
     door_recovery: recovery_drain::RecoveryHooks,
     local_network_task: tokio::task::JoinHandle<()>,
@@ -434,6 +437,7 @@ impl EmbeddedConveyHandle {
     /// embedding app releases its journal or runtime.
     pub async fn shutdown_and_wait(&self) {
         self.shutdown();
+        self.service_handoffs.join().await;
         self.door.shutdown_and_wait().await;
         self.door_recovery.clear();
         join_embedded_renewal(&self.service_token_renewal_task).await;
@@ -620,6 +624,10 @@ async fn bind_embedded_router(
     };
     let cache: link_health_cache::RelayHealthCacheStore = Arc::new(std::sync::Mutex::new(None));
     let (renewal_shutdown, renewal_stop) = tokio::sync::watch::channel(false);
+    let service_handoffs = Arc::new(service_handoffs::ServiceHandoffs::new(
+        Arc::clone(&binding),
+        Some(renewal_stop.clone()),
+    ));
     let cancelled = startup
         .as_ref()
         .map(|startup| Arc::clone(&startup.cancelled))
@@ -636,6 +644,7 @@ async fn bind_embedded_router(
         None => app,
     };
     let router = app
+        .layer(Extension(Arc::clone(&service_handoffs)))
         .layer(Extension(cache.clone()))
         .layer(axum::middleware::from_fn_with_state(
             admission.clone(),
@@ -737,6 +746,7 @@ async fn bind_embedded_router(
         .await;
     });
     let handle = EmbeddedConveyHandle {
+        service_handoffs,
         owner_router,
         door,
         door_recovery,
@@ -1297,6 +1307,12 @@ fn router_with_roots(
     });
     let route_journal_root = Arc::new(JournalRoot(journal_root.clone()));
     let operation_registry = Arc::new(OperationRegistry::default());
+    let agents_consent_cancel = {
+        let registry = Arc::clone(&operation_registry);
+        solstone_core_convey_http::request::PendingAgentsConsentCancel::new(move || {
+            agents_enable::cancel_pending(&registry);
+        })
+    };
     let relay_admissions = relay_admission::admission_registry_for(&journal_root);
     let relay_access = Arc::new(solstone_core_spl::relay_access::RelayAccessCache::new());
     let pair_windows = Arc::new(pair_window_manager::PairWindowManager::new(
@@ -1660,6 +1676,7 @@ fn router_with_roots(
         ))
         .layer(Extension(shell))
         .layer(Extension(route_journal_root))
+        .layer(Extension(agents_consent_cancel))
         .layer(Extension(HostedLaunchContext(hosted_parent)));
     let routes = session_gate::apply_layer_with_agents(routes, journal_root, include_agents);
     form_body_guard::apply_layer(routes).fallback(not_found)
