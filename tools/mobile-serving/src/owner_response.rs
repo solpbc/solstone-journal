@@ -234,18 +234,26 @@ fn request(
     admit(method, uri, headers)?.into_request(Body::from(body))
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "android"))]
 unsafe extern "C" {
     fn fcntl(fd: i32, cmd: i32, arg: i32) -> i32;
 }
 
 fn cap_pipe(file: &File) -> Result<(), String> {
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "android"))]
     {
         use std::os::fd::AsRawFd;
-        // Linux F_SETPIPE_SZ. A raised pipe would let one transfer hold more than its budget.
-        if unsafe { fcntl(file.as_raw_fd(), 1031, UPLOAD_CHUNK_BYTES as i32) } < 0 {
+        // Linux F_GETPIPE_SZ/F_SETPIPE_SZ. An already bounded pipe does not
+        // need resize permission; only shrink one that exceeds the budget.
+        let capacity = unsafe { fcntl(file.as_raw_fd(), 1032, 0) };
+        if capacity <= 0 {
             return Err("owner upload pipe unavailable".into());
+        }
+        if capacity as usize > UPLOAD_CHUNK_BYTES {
+            let resized = unsafe { fcntl(file.as_raw_fd(), 1031, UPLOAD_CHUNK_BYTES as i32) };
+            if resized <= 0 || resized as usize > UPLOAD_CHUNK_BYTES {
+                return Err("owner upload pipe unavailable".into());
+            }
         }
     }
     let _ = file;
