@@ -1900,6 +1900,174 @@ async fn embedded_door_composes_production_auth_and_refuses_replaced_root() {
     fs::rename(&original, &fixture.root).unwrap();
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn recovery_reloads_restored_identity_and_policy_and_retires_old_loopback_carriers() {
+    use solstone_core_convey_shell::recovery_drain::{
+        relinquish_admitted_work, resume_after_whole_journal_restore,
+    };
+    use solstone_core_journal_io::whole_journal_restore::{
+        WholeJournalRestoreSource, clear_whole_journal_restore, publish_whole_journal_restore,
+    };
+
+    for replace_identity in [false, true] {
+        let fixture = Fixture::established(2);
+        let restored = Fixture::established(2);
+        restored.remove_authorization(1);
+        let source_files = [
+            "link/ca/cert.pem",
+            "link/ca/private.pem",
+            "link/state.json",
+            "link/authorized_clients.json",
+        ];
+        let source_before: Vec<_> = source_files
+            .iter()
+            .map(|name| fs::read(restored.root.join(name)).unwrap())
+            .collect();
+        let handle = solstone_core_convey_shell::bind_embedded_device_door(
+            fixture.root.clone(),
+            std::net::SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0),
+        )
+        .await
+        .unwrap();
+        let address = handle.live_door_addr().unwrap();
+        let mut old_carrier = live_carrier(&fixture, address.port()).await;
+        let mut decoder = FrameDecoder::new();
+        let mut ids = FrameDialer::default();
+        assert_eq!(
+            get_over_carrier(
+                &mut old_carrier,
+                &mut decoder,
+                &mut ids,
+                "/api/system/status"
+            )
+            .await
+            .status,
+            200
+        );
+        let record = publish_whole_journal_restore(
+            &fixture.root,
+            &WholeJournalRestoreSource::Byo {
+                repository: "synthetic-door-recovery".into(),
+                backend: "s3".into(),
+            },
+            &"a".repeat(64),
+            "/journal",
+        )
+        .unwrap();
+        let target = fixture.root.clone();
+        tokio::task::spawn_blocking(move || relinquish_admitted_work(&target))
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(handle.live_door_addr().is_none());
+        let old_request = tokio::time::timeout(
+            Duration::from_secs(2),
+            exchange_over_carrier(
+                &mut old_carrier,
+                &mut decoder,
+                ids.allocate(),
+                "GET",
+                "/api/system/status",
+                &[],
+                &[],
+            ),
+        )
+        .await
+        .expect("retired loopback carrier closes promptly");
+        assert!(
+            old_request.is_err(),
+            "old carrier cannot survive recovery pause"
+        );
+
+        if replace_identity {
+            for name in source_files {
+                fs::copy(restored.root.join(name), fixture.root.join(name)).unwrap();
+            }
+        }
+        clear_whole_journal_restore(&fixture.root, &record).unwrap();
+        let target = fixture.root.clone();
+        tokio::task::spawn_blocking(move || resume_after_whole_journal_restore(&target))
+            .await
+            .unwrap();
+        assert_eq!(handle.live_door_addr(), Some(address));
+        let current = if replace_identity {
+            &restored
+        } else {
+            &fixture
+        };
+        let response = request_once(
+            Arc::new(current.client_config(0)),
+            "127.0.0.1",
+            address.port(),
+            "GET",
+            "/api/system/status",
+            &[],
+            &[],
+        )
+        .await
+        .unwrap();
+        assert_eq!(response.status, 200);
+        let config: serde_json::Value =
+            serde_json::from_slice(&fs::read(fixture.root.join("config/journal.json")).unwrap())
+                .unwrap();
+        assert_eq!(config["pairing"]["direct_port"], address.port());
+        if replace_identity {
+            for (authority, index) in [(&fixture, 0), (&restored, 1)] {
+                let refused = request_once(
+                    Arc::new(authority.client_config(index)),
+                    "127.0.0.1",
+                    address.port(),
+                    "GET",
+                    "/api/system/status",
+                    &[],
+                    &[],
+                )
+                .await;
+                assert!(
+                    refused.is_err(),
+                    "restored identity and ledger govern admission"
+                );
+            }
+        }
+        for (name, before) in source_files.iter().zip(source_before) {
+            assert_eq!(fs::read(restored.root.join(name)).unwrap(), before);
+        }
+        let mut stopping_carrier = live_carrier(current, address.port()).await;
+        let mut stopping_decoder = FrameDecoder::new();
+        let mut stopping_ids = FrameDialer::default();
+        assert_eq!(
+            get_over_carrier(
+                &mut stopping_carrier,
+                &mut stopping_decoder,
+                &mut stopping_ids,
+                "/api/system/status",
+            )
+            .await
+            .status,
+            200
+        );
+        handle.shutdown_and_wait().await;
+        assert!(
+            tokio::time::timeout(
+                Duration::from_secs(2),
+                exchange_over_carrier(
+                    &mut stopping_carrier,
+                    &mut stopping_decoder,
+                    stopping_ids.allocate(),
+                    "GET",
+                    "/api/system/status",
+                    &[],
+                    &[],
+                ),
+            )
+            .await
+            .expect("joined Stop closes the live carrier")
+            .is_err()
+        );
+        assert!(TcpStream::connect(address).await.is_err());
+    }
+}
+
 #[tokio::test]
 async fn ac1_carrier_loop_counter_advances() {
     let fixture = Fixture::established(1);

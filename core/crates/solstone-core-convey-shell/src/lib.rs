@@ -348,6 +348,7 @@ impl std::error::Error for ConveyServeError {}
 pub struct EmbeddedConveyHandle {
     owner_router: Router,
     door: Arc<door::DoorLifecycle>,
+    door_recovery: recovery_drain::RecoveryHooks,
     local_network_task: tokio::task::JoinHandle<()>,
     link_health_task: tokio::task::JoinHandle<()>,
     service_token_renewal_task: tokio::sync::Mutex<Option<tokio::task::JoinHandle<()>>>,
@@ -432,6 +433,8 @@ impl EmbeddedConveyHandle {
     /// embedding app releases its journal or runtime.
     pub async fn shutdown_and_wait(&self) {
         self.shutdown();
+        self.door.shutdown_and_wait().await;
+        self.door_recovery.clear();
         join_embedded_renewal(&self.service_token_renewal_task).await;
         join_embedded_renewal(&self.weekly_heads_up_task).await;
         join_embedded_renewal(&self.location_task).await;
@@ -653,6 +656,16 @@ async fn bind_embedded_router(
         authorization_sender: sender,
         relay_admissions,
     }));
+    let pause_door = Arc::clone(&door);
+    let resume_door = Arc::clone(&door);
+    let pause_runtime = tokio::runtime::Handle::current();
+    let resume_runtime = pause_runtime.clone();
+    let door_recovery = recovery_drain::register_recovery_hooks(
+        "paired-device-door",
+        Arc::clone(&binding),
+        move |journal| pause_runtime.block_on(pause_door.pause_for_recovery(journal)),
+        move |journal| resume_runtime.block_on(resume_door.resume_after_recovery(journal)),
+    );
     let owner_router = router
         .merge(local_network::routes(door.clone()))
         .layer(axum::middleware::from_fn_with_state(
@@ -715,6 +728,7 @@ async fn bind_embedded_router(
     let handle = EmbeddedConveyHandle {
         owner_router,
         door,
+        door_recovery,
         local_network_task,
         link_health_task,
         service_token_renewal_task: tokio::sync::Mutex::new(Some(service_token_renewal_task)),
