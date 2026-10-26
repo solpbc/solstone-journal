@@ -62,18 +62,94 @@ struct WorkDir(PathBuf);
 
 impl WorkDir {
     fn new() -> Result<Self, DiarizationError> {
-        let seq = WORK_DIR_SEQ.fetch_add(1, Ordering::Relaxed);
-        let path =
-            std::env::temp_dir().join(format!("solstone-cluster-{}-{seq}", std::process::id()));
-        fs::create_dir(&path).map_err(|error| DiarizationError::MatrixStore {
-            detail: error.to_string(),
-        })?;
-        Ok(Self(path))
+        for _ in 0..8 {
+            let seq = WORK_DIR_SEQ.fetch_add(1, Ordering::Relaxed);
+            let path =
+                std::env::temp_dir().join(format!("solstone-cluster-{}-{seq}", std::process::id()));
+            if claim_cluster_dir(&path).is_ok() {
+                return Ok(Self(path));
+            }
+        }
+        Err(DiarizationError::MatrixStore {
+            detail: "could not create a private cluster directory".to_owned(),
+        })
     }
+}
+
+fn claim_cluster_dir(path: &Path) -> Result<(), std::io::Error> {
+    match fs::symlink_metadata(path) {
+        Ok(meta) if meta.file_type().is_symlink() => {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::AlreadyExists,
+                "cluster scratch symlink",
+            ));
+        }
+        Ok(_) => {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::AlreadyExists,
+                "cluster scratch exists",
+            ));
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error),
+    }
+    #[cfg(unix)]
+    let builder = {
+        use std::os::unix::fs::DirBuilderExt;
+        let mut builder = fs::DirBuilder::new();
+        builder.mode(0o700);
+        builder
+    };
+    #[cfg(not(unix))]
+    let builder = fs::DirBuilder::new();
+    builder.create(path)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(path, fs::Permissions::from_mode(0o700))?;
+    }
+    let meta = fs::symlink_metadata(path)?;
+    if meta.file_type().is_symlink() || !meta.is_dir() {
+        return Err(std::io::Error::other(
+            "cluster scratch is not a private directory",
+        ));
+    }
+    Ok(())
+}
+
+fn private_file(path: &Path) -> Result<File, DiarizationError> {
+    if let Ok(meta) = fs::symlink_metadata(path)
+        && (meta.file_type().is_symlink() || meta.is_file())
+    {
+        return Err(DiarizationError::MatrixStore {
+            detail: "cluster scratch file already exists".to_owned(),
+        });
+    }
+    let mut options = File::options();
+    options.read(true).write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let file = options.open(path).map_err(store_error)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        file.set_permissions(fs::Permissions::from_mode(0o600))
+            .map_err(store_error)?;
+    }
+    Ok(file)
 }
 
 impl Drop for WorkDir {
     fn drop(&mut self) {
+        let Ok(meta) = fs::symlink_metadata(&self.0) else {
+            return;
+        };
+        if meta.file_type().is_symlink() || !meta.is_dir() {
+            return;
+        }
         let _ = fs::remove_dir_all(&self.0);
     }
 }
@@ -140,14 +216,7 @@ impl BoundRows {
     fn create(rows: usize, cols: usize) -> Result<Self, DiarizationError> {
         let dir = WorkDir::new()?;
         let path = dir.0.join("rows.f64le");
-        let file = File::options()
-            .read(true)
-            .write(true)
-            .create_new(true)
-            .open(&path)
-            .map_err(|error| DiarizationError::MatrixStore {
-                detail: error.to_string(),
-            })?;
+        let file = private_file(&path)?;
         let bytes = rows
             .checked_mul(cols)
             .and_then(|cells| cells.checked_mul(std::mem::size_of::<f64>()))
@@ -334,12 +403,7 @@ impl LinkageTiles {
     fn allocate(stride: usize) -> Result<Self, DiarizationError> {
         let dir = WorkDir::new()?;
         let path = dir.0.join("linkage.f64le");
-        let file = File::options()
-            .read(true)
-            .write(true)
-            .create_new(true)
-            .open(&path)
-            .map_err(store_error)?;
+        let file = private_file(&path)?;
         let per_side = stride.div_ceil(CLUSTER_TILE_EDGE);
         let tile_cells = CLUSTER_TILE_EDGE * CLUSTER_TILE_EDGE;
         let bytes = per_side
@@ -710,12 +774,7 @@ pub(crate) struct StoredMerge {
 impl MergeLog {
     pub(crate) fn new() -> Result<Self, DiarizationError> {
         let dir = WorkDir::new()?;
-        let file = File::options()
-            .read(true)
-            .write(true)
-            .create_new(true)
-            .open(dir.0.join("merges.bin"))
-            .map_err(store_error)?;
+        let file = private_file(&dir.0.join("merges.bin"))?;
         Ok(Self {
             _dir: dir,
             file,
@@ -779,12 +838,7 @@ impl MemberLists {
         let nodes = points.saturating_mul(2).saturating_sub(1).max(points);
         let tiles = tile_count(nodes.max(1))?;
         let dir = WorkDir::new()?;
-        let data = File::options()
-            .read(true)
-            .write(true)
-            .create_new(true)
-            .open(dir.0.join("members.u64le"))
-            .map_err(store_error)?;
+        let data = private_file(&dir.0.join("members.u64le"))?;
         let index_file = create_len(&dir.0, "member-index.bin", tiles * CLUSTER_TILE_EDGE * 16)?;
         let mut lists = Self {
             _dir: dir,
@@ -1246,12 +1300,7 @@ impl LabelFile {
 }
 
 fn create_len(dir: &Path, name: &str, bytes: usize) -> Result<File, DiarizationError> {
-    let file = File::options()
-        .read(true)
-        .write(true)
-        .create_new(true)
-        .open(dir.join(name))
-        .map_err(store_error)?;
+    let file = private_file(&dir.join(name))?;
     file.set_len(bytes as u64).map_err(store_error)?;
     Ok(file)
 }
@@ -1326,5 +1375,46 @@ mod linkage_tests {
         assert_eq!(members, vec![0, 2, 3, 4]);
         assert_eq!(lists.first(7).unwrap(), 0);
         assert_eq!(lists.count(0).unwrap(), 0);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn cluster_scratch_is_owner_only_and_does_not_follow_a_symlink() {
+        use std::os::unix::fs::{PermissionsExt, symlink};
+        let root = std::env::temp_dir().join(format!(
+            "solstone-cluster-privacy-{}-{}",
+            std::process::id(),
+            WORK_DIR_SEQ.fetch_add(1, Ordering::Relaxed)
+        ));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir(&root).unwrap();
+        let planted = root.join("planted");
+        let target = root.join("target");
+        fs::create_dir(&target).unwrap();
+        symlink(&target, &planted).unwrap();
+        let error = claim_cluster_dir(&planted).unwrap_err();
+        assert_eq!(error.kind(), std::io::ErrorKind::AlreadyExists);
+        assert!(fs::read_dir(&target).unwrap().next().is_none());
+        assert!(
+            fs::symlink_metadata(&planted)
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
+
+        let created = root.join("private");
+        claim_cluster_dir(&created).unwrap();
+        let directory = fs::symlink_metadata(&created).unwrap();
+        assert!(directory.is_dir());
+        assert_eq!(directory.permissions().mode() & 0o077, 0);
+        let file_path = created.join("rows.bin");
+        let file = private_file(&file_path).unwrap();
+        drop(file);
+        let file_meta = fs::symlink_metadata(&file_path).unwrap();
+        assert_eq!(file_meta.permissions().mode() & 0o077, 0);
+        let work = WorkDir(created);
+        drop(work);
+        assert!(!root.join("private").exists());
+        let _ = fs::remove_dir_all(&root);
     }
 }

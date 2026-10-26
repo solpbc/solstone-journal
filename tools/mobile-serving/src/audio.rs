@@ -273,9 +273,10 @@ impl AudioWorker {
                 return Err(error);
             }
         };
-        // A retained stamp and the custody receipt name the admitted bytes.
-        // Checkpoints do not hash the recording again. Loss still cancels
-        // before publication, including a deleted original that reappears.
+        // A retained stamp and the accepted receipt's size and digest name the
+        // admitted bytes. Checkpoints do not hash the recording again. Loss
+        // still cancels before publication, including a deleted original that
+        // reappears.
         let owner_original_deleted = Cell::new(false);
         let cancel = || {
             interrupted()
@@ -632,9 +633,8 @@ fn admitted_input_lost(
         !matches!(std::fs::symlink_metadata(input), Err(error)
             if error.kind() == std::io::ErrorKind::NotFound)
     } else {
-        // Stamp and receipt only. The admission hash is not repeated.
-        !admitted.still_current(input)
-            || !crate::custody::receipt_still_names(root, input).unwrap_or(false)
+        // Stamp and the retained receipt size and digest. The admission hash is not repeated.
+        !admitted.still_current(input) || !admitted.receipt_matches(root, input).unwrap_or(false)
     }
 }
 
@@ -1182,7 +1182,14 @@ mod tests {
     fn active_host_cancels_on_custody_loss_after_admission() {
         // These mutations occur at a real embedded checkpoint after admission.
         // No model should be reached once the accepted input is lost or cancelled.
-        for change in ["cancel", "changed", "missing", "oversize", "receipt"] {
+        for change in [
+            "cancel",
+            "changed",
+            "missing",
+            "oversize",
+            "receipt",
+            "receipt-digest",
+        ] {
             let temp = tempfile::tempdir().unwrap();
             let input = setup_fixture_audio(
                 temp.path(),
@@ -1212,6 +1219,33 @@ mod tests {
                             )
                             .unwrap();
                         }
+                        "receipt-digest" => {
+                            let segment = input.parent().unwrap();
+                            std::fs::remove_file(segment.join("events.jsonl")).unwrap();
+                            let event = DeviceIngestEvent {
+                                record_type: "device_ingest".into(),
+                                record_version: 1,
+                                outcome: "accepted".into(),
+                                protocol_version: 3,
+                                cid: "fixture".into(),
+                                source: "audio".into(),
+                                stream: "device_audio".into(),
+                                day: "20261012".into(),
+                                segment: "120000_1".into(),
+                                meta: Default::default(),
+                                extra: Default::default(),
+                                files: vec![FileDescriptor {
+                                    submitted: "audio.wav".into(),
+                                    written: "audio.wav".into(),
+                                    size: 1,
+                                    sha256: format!("{:x}", Sha256::digest(b"other")),
+                                    extra: Default::default(),
+                                }],
+                            };
+                            append_durable_event(segment, &DurableEvent::DeviceIngest(event))
+                                .unwrap();
+                            assert_eq!(std::fs::read(&input).unwrap(), b"speech");
+                        }
                         "cancel" => (),
                         _ => unreachable!(),
                     }
@@ -1236,6 +1270,9 @@ mod tests {
             );
             assert!(!input.with_extension("jsonl").exists(), "{change}");
             assert!(!input.with_extension("npz").exists(), "{change}");
+            if change == "receipt-digest" {
+                assert_eq!(std::fs::read(&input).unwrap(), b"speech");
+            }
         }
     }
 
