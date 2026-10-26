@@ -2782,6 +2782,9 @@ mod tests {
         assert_eq!(cortex["uses"], json!([]));
 
         host.shutdown().unwrap();
+        let shutdown_returned_at = now_ms();
+        let mut after_stop_envelope = None;
+        let mut buffered_pre_stop = None;
         let after_stop = runtime.block_on(async {
             tokio::time::timeout(STATUS_INTERVAL * 2, async {
                 loop {
@@ -2789,7 +2792,13 @@ mod tests {
                         Some(CallosumReceiveEvent::Envelope { envelope, .. })
                             if envelope.event == "status" =>
                         {
-                            return true;
+                            // Arrival may follow Stop even when publication preceded it.
+                            // Missing publication time cannot establish a buffered event.
+                            if envelope.ts.is_none_or(|ts| ts >= shutdown_returned_at) {
+                                after_stop_envelope = Some(envelope);
+                                return true;
+                            }
+                            buffered_pre_stop = Some(envelope);
                         }
                         Some(_) => {}
                         None => return false,
@@ -2799,7 +2808,10 @@ mod tests {
             .await
             .unwrap_or(false)
         });
-        assert!(!after_stop, "a stopped runtime publishes no status");
+        assert!(
+            !after_stop,
+            "a stopped runtime publishes no status; observed={after_stop_envelope:?}; shutdown_returned_at={shutdown_returned_at}; buffered_pre_stop={buffered_pre_stop:?}"
+        );
         runtime.block_on(observer.stop());
         runtime.block_on(bus.stop());
     }

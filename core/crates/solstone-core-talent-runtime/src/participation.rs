@@ -269,12 +269,25 @@ pub(crate) fn apply_result_cancellable(
             entry.insert("role".to_owned(), Value::String("mentioned".to_owned()));
         }
     }
-    // A `mentioned` name the activity only showed on screen is `visible`,
-    // decided from what the activity holds, not the model's pick.
-    let spoken = crate::sense_grounding::Heard::new(&sentences.join("\n"));
     let shown = segments
         .iter()
         .any(|segment| has_screen_input(journal, day, segment, stream));
+    // With no speech in the activity and a screen in it, nobody was heard: an
+    // attendee's name came from the screen, like the tiles of a call recorded
+    // without its audio. The role stands; only the source says so.
+    if sentences.is_empty() && shown {
+        for entry in &mut resolved {
+            if matches!(
+                entry.get("source").and_then(Value::as_str),
+                Some("voice" | "speaker_label" | "transcript")
+            ) {
+                entry.insert("source".to_owned(), Value::String("screen".to_owned()));
+            }
+        }
+    }
+    // A `mentioned` name the activity only showed on screen is `visible`,
+    // decided from what the activity holds, not the model's pick.
+    let spoken = crate::sense_grounding::Heard::new(&sentences.join("\n"));
     let sense_rows = segments
         .iter()
         .flat_map(|segment| sense_entity_rows(journal, day, segment, stream))
@@ -1296,6 +1309,33 @@ mod tests {
         rows.iter()
             .map(|(a, b, c)| ((*a).to_owned(), (*b).to_owned(), (*c).to_owned()))
             .collect()
+    }
+
+    #[test]
+    fn a_call_recorded_without_audio_lists_its_tiles_as_seen_attendees() {
+        // A phone screen recording of a video call with no audio: the call's
+        // tiles name Ada, so she attended, but nothing was heard.
+        let root = tempfile::tempdir().unwrap();
+        write_participation_fixture(root.path(), json!({}), json!(["Ada Lovelace"]));
+        write_screen(root.path());
+        let entry = apply(
+            root.path(),
+            json!({"name":"Ada Lovelace","role":"attendee","source":"speaker_label"}),
+        );
+        assert_eq!(entry["role"], "attendee");
+        assert_eq!(entry["source"], "screen");
+
+        // The same call with its audio keeps the label.
+        let root = tempfile::tempdir().unwrap();
+        write_participation_fixture(root.path(), json!({}), json!(["Ada Lovelace"]));
+        write_screen(root.path());
+        write_transcript(root.path(), &["Let's start with the roadmap."]);
+        let entry = apply(
+            root.path(),
+            json!({"name":"Ada Lovelace","role":"attendee","source":"speaker_label"}),
+        );
+        assert_eq!(entry["role"], "attendee");
+        assert_eq!(entry["source"], "speaker_label");
     }
 
     #[test]
