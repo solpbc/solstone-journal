@@ -527,6 +527,22 @@ fn summarize(report: &mut RestoreResult, files: &[FileRecord]) {
             if detail.reason.is_none() && !done {
                 detail.reason = Some(file.reason.unwrap_or("restore_held").into());
             }
+            if !done {
+                let hold = match &file.owner {
+                    FileOwner::Staging(failure) => Some(failure.facts().hold),
+                    FileOwner::Transaction(outcome) => outcome.facts().hold,
+                    FileOwner::None | FileOwner::Review(_) => None,
+                };
+                if let Some(hold) = hold {
+                    match &mut report.reason_detail {
+                        Some(existing) => {
+                            existing.push_str("; ");
+                            existing.push_str(&hold);
+                        }
+                        None => report.reason_detail = Some(hold),
+                    }
+                }
+            }
         }
         complete &= detail_complete;
         report.files_restored += detail.files_restored;

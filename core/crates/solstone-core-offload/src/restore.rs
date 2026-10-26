@@ -72,8 +72,8 @@ pub struct RestoreResult {
     pub files_restored: u64,
     pub bytes_expected: u64,
     pub bytes_restored: u64,
-    /// Extra identity detail when `reason` is `segment_identity`. The reason
-    /// token itself stays `segment_identity`.
+    /// Actual admission, transaction or settlement causes. The reason token
+    /// and independent effect counters retain their original meanings.
     pub reason_detail: Option<String>,
     pub details: Vec<RestoreSegmentResult>,
 }

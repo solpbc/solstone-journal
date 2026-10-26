@@ -175,8 +175,7 @@ impl TransactionOutcome<'_, '_> {
         }
         let name = intent_filename(&observed.intent.event.operation_id).ok_or(Hold::Retirement)?;
         let relative = Path::new("health/offload/restore-intents").join(&name);
-        let census = observe_with_carrier(self.owner.root(), self.owner.carrier.observation())
-            .map_err(|error| Hold::Admission(error.to_string()))?;
+        let census = observe_restore_obligations(&self.owner)?;
         let mut matched = 0_usize;
         for entry in census.unresolved_entries() {
             if matches!(entry, NativeObligation::Intent { relative: current, entry, contents:
@@ -313,8 +312,7 @@ impl TransactionOutcome<'_, '_> {
         if no_effect {
             self.unchanged_mark()?;
         }
-        let census = observe_with_carrier(self.owner.root(), self.owner.carrier.observation())
-            .map_err(|error| Hold::Admission(error.to_string()))?;
+        let census = observe_restore_obligations(&self.owner)?;
         if census.unresolved_entries().next().is_some() {
             return Err(Hold::Obligations);
         }

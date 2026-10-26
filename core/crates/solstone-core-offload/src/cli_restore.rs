@@ -27,7 +27,8 @@ use solstone_core_retention::remove_marked::recover_interrupted_removals;
 use solstone_core_retention::restore_intent::recover_abandoned_restores;
 
 use crate::restore::owned::{
-    OwnedRestoreFinishHold, SettledRestoreReport, restore_owned_all, restore_owned_day,
+    OwnedRestoreFinishHold, RestoreFinishRefusal, SettledRestoreReport, restore_owned_all,
+    restore_owned_day,
 };
 use crate::restore::{OFFLOAD_RESTORE_REASONS, RestoreResult, selected_repository};
 
@@ -146,6 +147,31 @@ fn base(status: &str, reason: &str, day: Option<&str>) -> RestoreResult {
 
 fn with_detail(mut result: RestoreResult, detail: String) -> RestoreResult {
     result.reason_detail = Some(detail);
+    result
+}
+
+fn with_settlement_detail(
+    mut result: RestoreResult,
+    refusal: RestoreFinishRefusal<'_>,
+) -> RestoreResult {
+    let detail = match refusal {
+        RestoreFinishRefusal::Native {
+            file,
+            reason,
+            source,
+            readback,
+        } => format!(
+            "settlement native file={file:?} reason={reason} source={source:?} readback={readback:?}"
+        ),
+        RestoreFinishRefusal::Lower(reason) => format!("settlement readback {reason:?}"),
+    };
+    match &mut result.reason_detail {
+        Some(existing) => {
+            existing.push_str("; ");
+            existing.push_str(&detail);
+        }
+        None => result.reason_detail = Some(detail),
+    }
     result
 }
 
@@ -396,15 +422,18 @@ pub fn run_cli_restore(
                 Err(_) => unknown(Some(custody), None, Some(Box::new(report)), result),
             }
         }
-        Ok(Err(held)) => OwnedRestoreCliRun::new(
-            Custody::Held {
-                _native: held,
-                _outside: outside,
-                _custody: custody,
-            },
-            CliRestoreSettlement::Held,
-            projected,
-        ),
+        Ok(Err(held)) => {
+            let result = with_settlement_detail(projected, held.refusal());
+            OwnedRestoreCliRun::new(
+                Custody::Held {
+                    _native: held,
+                    _outside: outside,
+                    _custody: custody,
+                },
+                CliRestoreSettlement::Held,
+                result,
+            )
+        }
         Err(_) => {
             let runtime = outside.into_unknown();
             unknown(Some(custody), Some(runtime), None, projected)

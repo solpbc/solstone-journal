@@ -20,6 +20,36 @@ fn whole_cli_restore_result_is_send_static() {
 }
 
 #[test]
+fn settlement_detail_retains_the_transaction_cause_and_actual_counts() {
+    let source = std::io::Error::from(std::io::ErrorKind::PermissionDenied);
+    for transaction in [None, Some("Repair(CatalogChanged)")] {
+        let mut report = base("degraded", "restore_held", None);
+        report.files_restored = 1;
+        report.bytes_restored = 3;
+        report.reason_detail = transaction.map(str::to_owned);
+        let result = with_settlement_detail(
+            report,
+            RestoreFinishRefusal::Native {
+                file: Some(0),
+                reason: "unsettled_transaction",
+                source: Some(&source),
+                readback: None,
+            },
+        );
+        assert_eq!(result.status, "degraded");
+        assert_eq!(result.reason.as_deref(), Some("restore_held"));
+        assert_eq!(result.files_restored, 1);
+        assert_eq!(result.bytes_restored, 3);
+        let detail = result.reason_detail.as_deref().unwrap();
+        assert!(detail.contains("unsettled_transaction"));
+        assert!(detail.contains("PermissionDenied"));
+        if let Some(transaction) = transaction {
+            assert!(detail.starts_with(transaction));
+        }
+    }
+}
+
+#[test]
 fn a_missing_journal_starts_nothing() {
     let temp = tempfile::tempdir().unwrap();
     let missing = temp.path().join("missing-journal");

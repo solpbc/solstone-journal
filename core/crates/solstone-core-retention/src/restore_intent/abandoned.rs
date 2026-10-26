@@ -212,7 +212,12 @@ mod local {
                 return census_miss("unreadable restore intent");
             };
             match RestoreIntent::decode(Ok(bytes)) {
-                Ok(intent) => referenced.insert(intent.stage.stage_name),
+                Ok(intent) => {
+                    referenced.insert(intent.stage.stage_name);
+                    if let Some(binding) = intent.recovery_binding {
+                        referenced.insert(binding.reservation_name().to_owned());
+                    }
+                }
                 Err(_) => return census_miss("unreadable restore intent"),
             };
         }

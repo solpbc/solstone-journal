@@ -26,6 +26,9 @@ pub enum RecoveryBudget {
 pub enum RecoveryObservationFailure {
     Io,
     Changed,
+    /// New directories appeared without replacing any previously listed entry.
+    /// A caller may repeat the whole census; this is never complete evidence.
+    DirectoryAdded,
     NotDirectory,
     Budget(RecoveryBudget),
 }
@@ -270,6 +273,15 @@ enum Relisted<'a> {
     Entered(&'a OsStr, JournalEntryKind, MediaIdentity),
 }
 
+impl<'a> Relisted<'a> {
+    fn name(&self) -> &'a OsStr {
+        match self {
+            Self::Evidence(entry) => entry.name.as_os_str(),
+            Self::Entered(name, _, _) => name,
+        }
+    }
+}
+
 fn relisted(entries: &[MediaEntry], role: Role) -> Vec<Relisted<'_>> {
     entries
         .iter()
@@ -288,6 +300,36 @@ fn relisted(entries: &[MediaEntry], role: Role) -> Vec<Relisted<'_>> {
             }
         })
         .collect()
+}
+
+fn listing_failure(
+    before: &[MediaEntry],
+    after: &[MediaEntry],
+    role: Role,
+) -> Option<RecoveryObservationFailure> {
+    let before = relisted(before, role);
+    let after = relisted(after, role);
+    if before == after {
+        return None;
+    }
+    let before: std::collections::BTreeMap<_, _> =
+        before.iter().map(|entry| (entry.name(), entry)).collect();
+    let after: std::collections::BTreeMap<_, _> =
+        after.iter().map(|entry| (entry.name(), entry)).collect();
+    let unchanged = before
+        .iter()
+        .all(|(name, entry)| after.get(name) == Some(entry));
+    let only_added_directories = after
+        .iter()
+        .filter(|(name, _)| !before.contains_key(*name))
+        .all(|(_, entry)| matches!(entry, Relisted::Entered(_, JournalEntryKind::Directory, _)));
+    Some(
+        if unchanged && after.len() > before.len() && only_added_directories {
+            RecoveryObservationFailure::DirectoryAdded
+        } else {
+            RecoveryObservationFailure::Changed
+        },
+    )
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -368,7 +410,27 @@ fn observe_carrier_with<'a>(
     let before = carrier
         .validate(root)
         .map_err(|source| io_error(Path::new(""), source))?;
-    let all = observe_with(root, Limits::default(), checkpoint)?;
+    let all = match observe_retained_with(root, Limits::default(), checkpoint) {
+        Ok(all) => all,
+        Err(mut failure) => {
+            if failure.error.failure == RecoveryObservationFailure::DirectoryAdded {
+                let after = carrier
+                    .validate(root)
+                    .map_err(|source| io_error(Path::new(""), source))?;
+                let foreign = failure.entries.iter().any(|entry| {
+                    !matches!(entry, NativeObligation::Stage { relative, entry }
+                        if relative == Path::new(&before.name)
+                            && entry.name == before.name
+                            && entry.identity == before.identity
+                            && entry.kind == JournalEntryKind::Directory)
+                });
+                if before != after || foreign {
+                    failure.error.failure = RecoveryObservationFailure::Changed;
+                }
+            }
+            return Err(failure.error);
+        }
+    };
     let after = carrier
         .validate(root)
         .map_err(|source| io_error(Path::new(""), source))?;
@@ -557,7 +619,10 @@ impl<F: FnMut(Checkpoint, &Path)> Reader<F> {
             .map_err(|source| io_error(&child_relative, source))?
             .is_some()
         {
-            return Err(error(RecoveryObservationFailure::Changed, &child_relative));
+            return Err(error(
+                RecoveryObservationFailure::DirectoryAdded,
+                &child_relative,
+            ));
         }
         missing.push(name.into());
         (self.checkpoint)(Checkpoint::Missing, &child_relative);
@@ -666,8 +731,9 @@ impl<F: FnMut(Checkpoint, &Path)> Reader<F> {
             )?;
         }
         (self.checkpoint)(Checkpoint::BeforeFinalList, relative);
-        if relisted(&self.entries(directory, relative)?, role) != relisted(&entries, role) {
-            return Err(error(RecoveryObservationFailure::Changed, relative));
+        if let Some(failure) = listing_failure(&entries, &self.entries(directory, relative)?, role)
+        {
+            return Err(error(failure, relative));
         }
         for name in missing {
             let child_relative = relative.join(&name);
@@ -676,7 +742,10 @@ impl<F: FnMut(Checkpoint, &Path)> Reader<F> {
                 .map_err(|source| io_error(&child_relative, source))?
                 .is_some()
             {
-                return Err(error(RecoveryObservationFailure::Changed, &child_relative));
+                return Err(error(
+                    RecoveryObservationFailure::DirectoryAdded,
+                    &child_relative,
+                ));
             }
         }
         directory
@@ -888,6 +957,45 @@ mod tests {
             0
         );
         carrier.revalidate().unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn additive_frontier_is_retryable_only_without_an_observed_foreign_obligation() {
+        use crate::activity::ActivityLease;
+        use crate::media::RootActivityCarrier;
+        for foreign in [false, true] {
+            let f = Fixture::new();
+            f.directory("chronicle/20260101");
+            let carrier = RootActivityCarrier::prepare(
+                ActivityLease::try_acquire(Arc::clone(&f.root)).unwrap(),
+            )
+            .unwrap();
+            if foreign {
+                f.directory(".tmp-offload-foreign");
+            }
+            let mut hit = false;
+            let result = observe_carrier_with(&f.root, carrier.observation(), |point, relative| {
+                if point == Checkpoint::BeforeFinalList
+                    && relative == Path::new("chronicle/20260101")
+                {
+                    f.directory("chronicle/20260101/new-stream");
+                    hit = true;
+                }
+            });
+            assert!(hit);
+            assert_eq!(
+                result.err().unwrap().failure,
+                if foreign {
+                    RecoveryObservationFailure::Changed
+                } else {
+                    RecoveryObservationFailure::DirectoryAdded
+                }
+            );
+            let fresh = observe_with_carrier(&f.root, carrier.observation()).unwrap();
+            assert_eq!(fresh.unresolved_entries().count(), usize::from(foreign));
+            carrier.revalidate().unwrap();
+        }
     }
 
     #[cfg(unix)]
@@ -1253,6 +1361,10 @@ mod tests {
             assert!(hit);
             match late {
                 "none" => assert!(observed.unwrap().entries().is_empty()),
+                "new_child" => assert_eq!(
+                    observed.unwrap_err().failure,
+                    RecoveryObservationFailure::DirectoryAdded
+                ),
                 _ => assert_eq!(
                     observed.unwrap_err().failure,
                     RecoveryObservationFailure::Changed

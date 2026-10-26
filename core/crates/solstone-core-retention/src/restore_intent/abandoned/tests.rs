@@ -367,3 +367,55 @@ fn offload_copy_stage_without_intent_at_the_root_is_recovered() -> std::io::Resu
     assert!(observe_obligations(&root).unwrap().entries().is_empty());
     Ok(())
 }
+
+#[test]
+fn held_intent_preserves_its_original_recovery_reservation() -> std::io::Result<()> {
+    for leaves in [vec![], vec!["a.flac"]] {
+        let interrupted = interrupted();
+        fs::write(interrupted.stage.join("unexpected"), b"keep")?;
+        let mut intent = RestoreIntent::decode(Ok(&fs::read(&interrupted.intent)?)).unwrap();
+        // These decoded observations grant no native admission. Even an
+        // unqualified original reservation must survive while its intent does.
+        let reservation_name = format!(".tmp-offload-{}", "b".repeat(32));
+        let binding = serde_json::json!({"format_version":1,"origin":{
+            "format_version":1,"boot_id":"11111111-1111-1111-1111-111111111111",
+            "machine_app_id_sha256":"a".repeat(64),
+            "root_identity":"native-root-v1:unix:0000000000010306:0000000000000002",
+            "canonical_chain":[
+                {"name":[],"identity":"native-root-v1:unix:0000000000010306:0000000000000001"},
+                {"name":[106,111,117,114,110,97,108],"identity":"native-root-v1:unix:0000000000010306:0000000000000002"}],
+            "filesystem":"ext4","storage_topology":"direct-pcie-nvme",
+            "filesystem_device":{"major":259,"minor":6},"namespace_device":{"major":259,"minor":0},"partition":1},
+            "reservation_name":reservation_name,
+            "reservation_identity":{"platform":"unix","device":66310,"inode":3},
+            "activity_lock_name":"backup-activity.lock",
+            "activity_lock":{"device":66310,"inode":4,"size":0,"modified_seconds":5,
+                "modified_nanoseconds":6,"changed_seconds":7,"changed_nanoseconds":8,"mode":33152,"links":1},
+            "repository_id":intent.witness.repository_id});
+        intent.recovery_binding = Some(serde_json::from_value(binding).unwrap());
+        let original_intent = intent.encode().unwrap();
+        fs::write(&interrupted.intent, &original_intent)?;
+        let reservation = unrecorded(&interrupted.journal, &reservation_name, &leaves);
+        let original_identity = identity(&reservation);
+        let orphan = unrecorded(&interrupted.journal, ".tmp-offload-unreferenced", &[]);
+
+        let recovered = recover(&interrupted)?;
+        assert!(
+            recovered
+                .iter()
+                .any(|result| result.operation_id.as_deref() == Some(OPERATION)
+                    && result.outcome == Err(AbandonedRestoreHold::StageChanged))
+        );
+        assert!(
+            reservation.is_dir(),
+            "held intent lost its original reservation"
+        );
+        assert_eq!(identity(&reservation), original_identity);
+        assert_eq!(fs::read(&interrupted.intent)?, original_intent);
+        for leaf in leaves {
+            assert_eq!(fs::read(reservation.join(leaf))?, RESTORED);
+        }
+        assert!(!orphan.exists(), "unreferenced empty stages still retire");
+    }
+    Ok(())
+}
