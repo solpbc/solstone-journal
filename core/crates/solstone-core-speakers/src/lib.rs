@@ -28,8 +28,8 @@ pub use segmentation::{
     PYANNOTE_DIARIZE_STRIDE_S, PYANNOTE_FRAMES_PER_WINDOW, PYANNOTE_OVERLAP_CLASSES,
     PYANNOTE_OVERLAP_STRIDE_S, PYANNOTE_SAMPLE_RATE_HZ, PYANNOTE_SINGLE_SPEAKER_CLASSES,
     PYANNOTE_WINDOW_S, PyannoteSegmentationPassResult, SLOT_ACTIVE_MIN_SHARE,
-    SPEAKER_EVIDENCE_MULTI_MIN, SPEAKER_EVIDENCE_SINGLE_MAX, SpeakerEvidence,
-    SpeakerEvidenceAccum, SpeakerEvidenceDecision, SpeakerSegmentationError, SpeakerWindowStats,
+    SPEAKER_EVIDENCE_MULTI_MIN, SPEAKER_EVIDENCE_SINGLE_MAX, SpeakerEvidence, SpeakerEvidenceAccum,
+    SpeakerEvidenceDecision, SpeakerSegmentationError, SpeakerWindowStats,
     compute_speaker_window_stats, decide_speaker_evidence, run_pyannote_segmentation_pass,
 };
 pub use statements::{

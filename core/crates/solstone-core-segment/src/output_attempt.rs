@@ -368,7 +368,7 @@ struct RawFacts {
     identity: solstone_core_journal_io::WindowsFileIdentity,
 }
 
-fn raw_facts(path: &Path) -> Result<(RawFacts, File)> {
+fn raw_facts_checked(path: &Path, cancelled: &dyn Fn() -> bool) -> Result<(RawFacts, File)> {
     let named = fs::symlink_metadata(path)?;
     if !named.file_type().is_file() {
         return Err(refusal("processing input is not a plain file"));
@@ -389,6 +389,9 @@ fn raw_facts(path: &Path) -> Result<(RawFacts, File)> {
     let mut size = 0;
     let mut buffer = [0_u8; 64 * 1024];
     loop {
+        if cancelled() {
+            return Err(refusal("processing input verification cancelled"));
+        }
         let count = file.read(&mut buffer)?;
         if count == 0 {
             break;
@@ -421,12 +424,21 @@ pub struct InputObservation {
 impl InputObservation {
     /// Freeze current raw bytes and the claim's original parent binding.
     pub fn capture(claims: &OutputClaims, path: &Path) -> Result<Self> {
+        Self::capture_checked(claims, path, &|| false)
+    }
+
+    /// Freeze the input while allowing the owner to interrupt long hashing.
+    pub fn capture_checked(
+        claims: &OutputClaims,
+        path: &Path,
+        cancelled: &dyn Fn() -> bool,
+    ) -> Result<Self> {
         if !claims.outputs.contains(&path.with_extension("jsonl")) {
             return Err(refusal("input has no output attempt"));
         }
         claims.validate_parent(parent(path)?)?;
         live(parent(path)?)?;
-        let (facts, input) = raw_facts(path)?;
+        let (facts, input) = raw_facts_checked(path, cancelled)?;
         claims.validate_parent(parent(path)?)?;
         Ok(Self {
             path: path.to_path_buf(),
@@ -447,12 +459,24 @@ impl InputObservation {
 
     /// Revalidate under segment exclusion and retain it through publication.
     pub fn commit<'a>(&self, claims: &'a OutputClaims) -> Result<SegmentCommit<'a>> {
+        self.commit_checked(claims, &|| false)
+    }
+
+    /// Revalidate the exact bytes with cancellation before returning publication authority.
+    pub fn commit_checked<'a>(
+        &self,
+        claims: &'a OutputClaims,
+        cancelled: &dyn Fn() -> bool,
+    ) -> Result<SegmentCommit<'a>> {
         if !claims.outputs.contains(&self.path.with_extension("jsonl")) {
             return Err(refusal("input has no output attempt"));
         }
         let commit = claims.commit(parent(&self.path)?)?;
-        if raw_facts(&self.path)?.0 != self.facts {
+        if raw_facts_checked(&self.path, cancelled)?.0 != self.facts {
             return Err(refusal("processing input changed before publication"));
+        }
+        if cancelled() {
+            return Err(refusal("processing input verification cancelled"));
         }
         Ok(commit)
     }
@@ -582,6 +606,26 @@ mod tests {
             let metadata = fs::metadata(output.with_extension("jsonl.lock")).unwrap();
             assert_eq!((metadata.ino(), metadata.mode()), before);
         }
+    }
+
+    #[test]
+    fn input_hashing_can_stop_before_capture_or_publication() {
+        let (_root, _segment, raw) = fixture();
+        fs::write(&raw, vec![7u8; 256 * 1024]).unwrap();
+        let claims = OutputClaims::acquire([raw.with_extension("jsonl")], no_wait()).unwrap();
+        let polls = std::cell::Cell::new(0);
+        let stop = || {
+            polls.set(polls.get() + 1);
+            polls.get() >= 3
+        };
+        assert!(InputObservation::capture_checked(&claims, &raw, &stop).is_err());
+        assert_eq!(polls.get(), 3);
+        let input = InputObservation::capture(&claims, &raw).unwrap();
+        polls.set(0);
+        assert!(input.commit_checked(&claims, &stop).is_err());
+        assert_eq!(polls.get(), 3);
+        assert!(!raw.with_extension("jsonl").exists());
+        assert!(input.commit(&claims).is_ok());
     }
 
     #[test]

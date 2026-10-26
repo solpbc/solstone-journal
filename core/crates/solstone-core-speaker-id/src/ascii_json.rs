@@ -45,6 +45,20 @@ fn write_value(output: &mut String, value: &Value) {
 
 fn write_string(output: &mut String, value: &str) {
     output.push('"');
+    push_escaped(output, value);
+    output.push('"');
+}
+
+pub(crate) fn write_escaped_to(
+    output: &mut impl std::io::Write,
+    value: &str,
+) -> std::io::Result<()> {
+    let mut escaped = String::new();
+    push_escaped(&mut escaped, value);
+    output.write_all(escaped.as_bytes())
+}
+
+fn push_escaped(output: &mut String, value: &str) {
     for character in value.chars() {
         match character {
             '"' => output.push_str("\\\""),
@@ -64,7 +78,6 @@ fn write_string(output: &mut String, value: &str) {
             }
         }
     }
-    output.push('"');
 }
 
 fn write_escape(output: &mut String, unit: u16) {

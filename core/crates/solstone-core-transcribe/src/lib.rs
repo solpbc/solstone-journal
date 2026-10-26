@@ -578,7 +578,8 @@ impl TranscribeError {
                 | SpeakerTranscriptWriteError::PayloadNonFinite { .. } => 69,
                 SpeakerTranscriptWriteError::OutputUnwritable { .. }
                 | SpeakerTranscriptWriteError::NpzVerificationFailed { .. }
-                | SpeakerTranscriptWriteError::Internal { .. } => 75,
+                | SpeakerTranscriptWriteError::Internal { .. }
+                | SpeakerTranscriptWriteError::Cancelled => 75,
                 SpeakerTranscriptWriteError::MalformedRequest { .. }
                 | SpeakerTranscriptWriteError::UnknownSchema { .. }
                 | SpeakerTranscriptWriteError::MissingStatementId { .. }
@@ -626,7 +627,10 @@ impl From<ModelAssetError> for TranscribeError {
 
 impl From<SpeakerTranscriptWriteError> for TranscribeError {
     fn from(error: SpeakerTranscriptWriteError) -> Self {
-        Self::SpeakerTranscriptWrite(error)
+        match error {
+            SpeakerTranscriptWriteError::Cancelled => Self::Cancelled,
+            other => Self::SpeakerTranscriptWrite(other),
+        }
     }
 }
 

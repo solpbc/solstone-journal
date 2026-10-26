@@ -4,8 +4,9 @@
 //! Scratch files for one embedded recording's draft rows.
 //!
 //! Words, interval rows, statement embeddings, turns, and per-unit PCM stay on
-//! disk. A reader holds one record, one embedding row, or one statement's PCM
-//! span. The PCM index is one entry per native unit.
+//! disk. A reader holds one word, one embedding row, or one statement's PCM
+//! span. Statement text is written by the caller; an unpunctuated recording is
+//! not assembled into one word vector. The PCM index is one entry per native unit.
 
 use std::fs::{self, File};
 use std::io::{Read, Seek, SeekFrom, Write};
@@ -20,6 +21,14 @@ use crate::speakers::UnitStatementEmbedding;
 const EMBEDDING_WIDTH: usize = 256;
 const COPY_CHUNK: usize = 64 * 1024;
 const STATEMENT_RECORD: usize = 24 + EMBEDDING_WIDTH * 4;
+
+/// One statement's place in the word spool. The words themselves stay on disk.
+pub(crate) struct WordSpan {
+    pub(crate) origin: u64,
+    pub(crate) words: u64,
+    pub(crate) start_s: f64,
+    pub(crate) end_s: f64,
+}
 
 /// One statement embedding recovered from the spool.
 pub(crate) struct StoredStatement {
@@ -59,15 +68,15 @@ impl DraftSpool {
             .tempdir_in(scratch)?;
         let embeddings_path = dir.path().join("interval-embeddings.f32le");
         Ok(Self {
-            words: File::create(dir.path().join("words.bin"))?,
+            words: read_write(dir.path().join("words.bin"))?,
             word_count: 0,
-            intervals: File::create(dir.path().join("intervals.bin"))?,
+            intervals: read_write(dir.path().join("intervals.bin"))?,
             interval_count: 0,
-            embeddings: File::create(&embeddings_path)?,
+            embeddings: read_write(&embeddings_path)?,
             embeddings_path,
-            statements: File::create(dir.path().join("statements.bin"))?,
+            statements: read_write(dir.path().join("statements.bin"))?,
             statement_count: 0,
-            turns: File::create(dir.path().join("turns.bin"))?,
+            turns: read_write(dir.path().join("turns.bin"))?,
             turn_count: 0,
             turns_known: false,
             labels: None,
@@ -78,6 +87,10 @@ impl DraftSpool {
 
     pub(crate) fn word_count(&self) -> u64 {
         self.word_count
+    }
+
+    pub(crate) fn statement_count(&self) -> u64 {
+        self.statement_count
     }
 
     pub(crate) fn interval_count(&self) -> u64 {
@@ -109,27 +122,51 @@ impl DraftSpool {
         Ok(())
     }
 
-    /// Read the next statement's words, stopping at punctuation or the last word.
+    /// Locate the next statement without retaining its words.
     ///
-    /// One statement is resident. An unpunctuated recording is that one statement.
-    pub(crate) fn next_statement_words(
+    /// An unpunctuated recording is still one statement. Its words stay in the
+    /// spool; the caller reads them one at a time.
+    pub(crate) fn next_statement_span(
         &mut self,
         index: &mut u64,
-    ) -> Result<Vec<TranscriptionWord>, std::io::Error> {
+    ) -> Result<Option<WordSpan>, std::io::Error> {
+        if *index >= self.word_count {
+            return Ok(None);
+        }
         if *index == 0 {
             self.words.seek(SeekFrom::Start(0))?;
         }
-        let mut words = Vec::new();
+        let origin = self.words.stream_position()?;
+        let mut words = 0_u64;
+        let mut start_s = 0.0_f64;
+        let mut end_s = 0.0_f64;
         while *index < self.word_count {
             let word = read_word(&mut self.words)?;
+            if words == 0 {
+                start_s = word.start;
+            }
+            end_s = word.end;
             *index += 1;
-            let boundary = word.word.trim_end().ends_with(['.', '?', '!']);
-            words.push(word);
-            if boundary {
+            words += 1;
+            if word.word.trim_end().ends_with(['.', '?', '!']) {
                 break;
             }
         }
-        Ok(words)
+        Ok(Some(WordSpan {
+            origin,
+            words,
+            start_s,
+            end_s,
+        }))
+    }
+
+    pub(crate) fn seek_words(&mut self, origin: u64) -> Result<(), std::io::Error> {
+        self.words.seek(SeekFrom::Start(origin))?;
+        Ok(())
+    }
+
+    pub(crate) fn read_next_word(&mut self) -> Result<TranscriptionWord, std::io::Error> {
+        read_word(&mut self.words)
     }
 
     pub(crate) fn append_words(
@@ -248,22 +285,15 @@ impl DraftSpool {
         Ok(())
     }
 
-    pub(crate) fn write_labels(&mut self, labels: &[usize]) -> Result<(), std::io::Error> {
-        if labels.len() as u64 != self.interval_count {
+    pub(crate) fn adopt_labels(&mut self, path: &Path) -> Result<(), std::io::Error> {
+        let length = fs::metadata(path)?.len();
+        let expected = self.interval_count.saturating_mul(4);
+        if length != expected {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
                 "cluster label count",
             ));
         }
-        let path = self.dir.path().join("labels.u32le");
-        let mut file = File::create(&path)?;
-        for label in labels {
-            let label = u32::try_from(*label).map_err(|_| {
-                std::io::Error::new(std::io::ErrorKind::InvalidData, "cluster label exceeds u32")
-            })?;
-            file.write_all(&label.to_le_bytes())?;
-        }
-        file.sync_all()?;
         self.labels = Some(File::open(path)?);
         Ok(())
     }
@@ -410,6 +440,15 @@ fn read_f32s(file: &mut File, samples: &mut [f32]) -> Result<(), std::io::Error>
         *sample = f32::from_le_bytes(chunk.try_into().expect("4 bytes"));
     }
     Ok(())
+}
+
+fn read_write(path: impl AsRef<Path>) -> Result<File, std::io::Error> {
+    fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .open(path)
 }
 
 fn read_word(file: &mut File) -> Result<TranscriptionWord, std::io::Error> {

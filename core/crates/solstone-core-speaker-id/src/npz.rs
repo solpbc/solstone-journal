@@ -110,6 +110,9 @@ const COPY_CHUNK: usize = 64 * 1024;
 static NPY_SCRATCH_SEQ: AtomicU64 = AtomicU64::new(0);
 
 /// Zip NPY members from files. Each payload file is the raw little-endian array body.
+///
+/// `cancel` is polled before each 64 KiB chunk. A true callback returns
+/// `"cancelled"` and the scratch members are removed.
 pub(crate) fn write_npz_from_files(
     destination: &Path,
     embeddings_f32le: &Path,
@@ -117,6 +120,7 @@ pub(crate) fn write_npz_from_files(
     statement_ids_i32le: &Path,
     durations_f32le: &Path,
     encoder: &str,
+    cancel: &dyn Fn() -> bool,
 ) -> Result<(), String> {
     let directory = destination
         .parent()
@@ -132,9 +136,25 @@ pub(crate) fn write_npz_from_files(
             "<f4",
             &format!("({rows}, 256)"),
             embeddings_f32le,
+            cancel,
         )?;
-        write_npy_member(&ids, "<i4", &format!("({rows},)"), statement_ids_i32le)?;
-        write_npy_member(&durations, "<f4", &format!("({rows},)"), durations_f32le)?;
+        write_npy_member(
+            &ids,
+            "<i4",
+            &format!("({rows},)"),
+            statement_ids_i32le,
+            cancel,
+        )?;
+        write_npy_member(
+            &durations,
+            "<f4",
+            &format!("({rows},)"),
+            durations_f32le,
+            cancel,
+        )?;
+        if cancel() {
+            return Err("cancelled".to_owned());
+        }
         let width = usize::max(encoder.chars().count(), 1);
         std::fs::write(
             &encoder_path,
@@ -147,8 +167,8 @@ pub(crate) fn write_npz_from_files(
             ("statement_ids.npy", ids.as_path()),
             ("durations_s.npy", durations.as_path()),
         ];
-        write_zip(destination, &members)?;
-        verify_npz_against_files(destination, &members)
+        write_zip(destination, &members, cancel)?;
+        verify_npz_against_files(destination, &members, cancel)
     })();
     for path in [&embeddings, &ids, &durations, &encoder_path] {
         let _ = std::fs::remove_file(path);
@@ -168,6 +188,7 @@ fn write_npy_member(
     descr: &str,
     shape: &str,
     payload: &Path,
+    cancel: &dyn Fn() -> bool,
 ) -> Result<(), String> {
     let mut output = File::create(destination).map_err(|error| error.to_string())?;
     output
@@ -176,6 +197,9 @@ fn write_npy_member(
     let mut input = File::open(payload).map_err(|error| error.to_string())?;
     let mut buffer = [0_u8; COPY_CHUNK];
     loop {
+        if cancel() {
+            return Err("cancelled".to_owned());
+        }
         let read = input.read(&mut buffer).map_err(|error| error.to_string())?;
         if read == 0 {
             break;
@@ -187,17 +211,27 @@ fn write_npy_member(
     output.sync_all().map_err(|error| error.to_string())
 }
 
-fn write_zip(destination: &Path, members: &[(&str, &Path)]) -> Result<(), String> {
+fn write_zip(
+    destination: &Path,
+    members: &[(&str, &Path)],
+    cancel: &dyn Fn() -> bool,
+) -> Result<(), String> {
     let file = File::create(destination).map_err(|error| error.to_string())?;
     let mut writer = ZipWriter::new(file);
     let options = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
     let mut buffer = [0_u8; COPY_CHUNK];
     for (name, path) in members {
+        if cancel() {
+            return Err("cancelled".to_owned());
+        }
         writer
             .start_file(*name, options)
             .map_err(|error| error.to_string())?;
         let mut input = File::open(path).map_err(|error| error.to_string())?;
         loop {
+            if cancel() {
+                return Err("cancelled".to_owned());
+            }
             let read = input.read(&mut buffer).map_err(|error| error.to_string())?;
             if read == 0 {
                 break;
@@ -217,6 +251,7 @@ fn write_zip(destination: &Path, members: &[(&str, &Path)]) -> Result<(), String
 pub(crate) fn verify_npz_against_files(
     path: &Path,
     members: &[(&str, &Path)],
+    cancel: &dyn Fn() -> bool,
 ) -> Result<(), String> {
     let file = File::open(path).map_err(|error| error.to_string())?;
     let archive = ZipArchive::new(file).map_err(|error| error.to_string())?;
@@ -245,6 +280,9 @@ pub(crate) fn verify_npz_against_files(
         let mut member = archive.by_index(index).map_err(|error| error.to_string())?;
         let mut expected = File::open(expected_path).map_err(|error| error.to_string())?;
         loop {
+            if cancel() {
+                return Err("cancelled".to_owned());
+            }
             let actual_read = member
                 .read(&mut buffer_actual)
                 .map_err(|error| error.to_string())?;

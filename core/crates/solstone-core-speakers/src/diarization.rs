@@ -133,6 +133,7 @@ pub struct ClusterEmbeddingResult {
     pub effective_k: Option<usize>,
 }
 
+#[cfg(test)]
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct Merge {
     left: usize,
@@ -303,12 +304,59 @@ pub fn cluster_embeddings_f32le(
     finish_cluster(&mut stored, rows, n_speakers, cancel)
 }
 
+/// Cluster file-backed rows and write `u32le` labels without a resident label vector.
+///
+/// The first cancellation poll is this function's first check, before any row
+/// is normalized. Linkage flags, sizes, merges, and membership stay in the
+/// private work directory under [`crate::cluster_bound::CLUSTER_LINKAGE_RESIDENT_BYTES`].
+pub fn cluster_embeddings_f32le_into(
+    path: &std::path::Path,
+    rows: usize,
+    cols: usize,
+    n_speakers: Option<usize>,
+    labels_out: &std::path::Path,
+    cancel: &dyn Fn() -> bool,
+) -> Result<(), DiarizationError> {
+    if rows == 0 {
+        return Ok(());
+    }
+    // Named resident ceiling for flags, sizes, one merge, member buffers, and labels.
+    let _linkage_resident_bytes = crate::cluster_bound::CLUSTER_LINKAGE_RESIDENT_BYTES;
+    stop_if_cancelled(cancel)?;
+    let mut stored = crate::cluster_bound::BoundRows::from_f32le(path, rows, cols, cancel)?;
+    let (mut labels, _silhouette_k, _effective_k) =
+        finish_cluster_labels(&mut stored, rows, n_speakers, cancel)?;
+    labels.write_to(labels_out, cancel)
+}
+
 fn finish_cluster(
     stored: &mut crate::cluster_bound::BoundRows,
     rows: usize,
     n_speakers: Option<usize>,
     cancel: &dyn Fn() -> bool,
 ) -> Result<ClusterEmbeddingResult, DiarizationError> {
+    let (mut labels, silhouette_k, effective_k) =
+        finish_cluster_labels(stored, rows, n_speakers, cancel)?;
+    Ok(ClusterEmbeddingResult {
+        labels: labels.to_vec()?,
+        silhouette_k,
+        effective_k,
+    })
+}
+
+fn finish_cluster_labels(
+    stored: &mut crate::cluster_bound::BoundRows,
+    rows: usize,
+    n_speakers: Option<usize>,
+    cancel: &dyn Fn() -> bool,
+) -> Result<
+    (
+        crate::cluster_bound::LabelFile,
+        Option<usize>,
+        Option<usize>,
+    ),
+    DiarizationError,
+> {
     let (requested_k, silhouette_k) = match n_speakers {
         Some(k) => (k, None),
         None => {
@@ -318,15 +366,11 @@ fn finish_cluster(
     };
     let k = clamp_speaker_count(requested_k, rows);
     let labels = if k <= 1 {
-        vec![0; rows]
+        crate::cluster_bound::LabelFile::zeros(rows)?
     } else {
         ahc_labels_from_stored_rows(stored, rows, k, cancel)?
     };
-    Ok(ClusterEmbeddingResult {
-        labels,
-        silhouette_k,
-        effective_k: Some(k),
-    })
+    Ok((labels, silhouette_k, Some(k)))
 }
 
 pub fn normalize_embedding_rows(
@@ -364,7 +408,8 @@ pub fn silhouette_score(
         });
     }
     let mut stored = crate::cluster_bound::BoundRows::from_f32(embeddings, rows, cols, &|| false)?;
-    silhouette_score_stored_rows(&mut stored, rows, labels, &|| false)
+    let mut labels = crate::cluster_bound::LabelFile::from_slice(labels)?;
+    silhouette_score_stored_rows(&mut stored, rows, &mut labels, &|| false)
 }
 
 pub fn select_k_from_silhouette_curve(curve: &[(usize, f64)]) -> usize {
@@ -472,8 +517,8 @@ fn select_k_for_stored_rows(
     let mut curve = Vec::with_capacity(effective_max - 1);
     for k in 2..=effective_max {
         stop_if_cancelled(cancel)?;
-        let labels = ahc_labels_from_stored_rows(stored, rows, k, cancel)?;
-        let score = silhouette_score_stored_rows(stored, rows, &labels, cancel)?;
+        let mut labels = ahc_labels_from_stored_rows(stored, rows, k, cancel)?;
+        let score = silhouette_score_stored_rows(stored, rows, &mut labels, cancel)?;
         curve.push((k, score));
     }
     Ok(select_k_from_silhouette_curve(&curve))
@@ -484,17 +529,19 @@ fn ahc_labels_from_stored_rows(
     rows: usize,
     k: usize,
     cancel: &dyn Fn() -> bool,
-) -> Result<Vec<usize>, DiarizationError> {
+) -> Result<crate::cluster_bound::LabelFile, DiarizationError> {
     if rows == 0 {
-        return Ok(Vec::new());
+        return crate::cluster_bound::LabelFile::zeros(0);
     }
     let k = clamp_speaker_count(k, rows);
     if k <= 1 {
-        return Ok(vec![0; rows]);
+        return crate::cluster_bound::LabelFile::zeros(rows);
     }
-    let mut tiles = crate::cluster_bound::LinkageTiles::from_unclipped(stored, rows, cancel)?;
-    let merges = average_linkage_tree_from_tiles(&mut tiles, rows, cancel)?;
-    cut_tree_canonical_labels(rows, &merges, k, cancel)
+    let mut merges = {
+        let mut tiles = crate::cluster_bound::LinkageTiles::from_unclipped(stored, rows, cancel)?;
+        average_linkage_tree_from_tiles(&mut tiles, rows, cancel)?
+    };
+    cut_tree_canonical_labels(rows, &mut merges, k, cancel)
 }
 
 fn stop_if_cancelled(cancel: &dyn Fn() -> bool) -> Result<(), DiarizationError> {
@@ -505,11 +552,12 @@ fn stop_if_cancelled(cancel: &dyn Fn() -> bool) -> Result<(), DiarizationError> 
     }
 }
 
-// A finished cluster keeps the unclipped cosine matrix and the linkage matrix
-// in fixed tiles. Silhouette reads clipped cosine from the stored rows and
-// does not allocate a second rows*rows buffer. Active flags, cluster sizes,
-// and the merge list stay linear in the interval count: that list is the
-// algorithm's output.
+// A finished cluster keeps the unclipped cosine matrix in fixed tiles.
+// Silhouette reads clipped cosine from the stored rows and does not allocate
+// a second rows*rows buffer. Active flags, sizes, merges, membership, and
+// labels stay in private files. Two tiles of each are resident, bounded by
+// CLUSTER_LINKAGE_RESIDENT_BYTES. Unclipped linkage distance stays 1-dot.
+// Silhouette stays max(1-dot, 0).
 
 #[cfg(test)]
 fn average_linkage_tree_from_distances(
@@ -521,74 +569,75 @@ fn average_linkage_tree_from_distances(
         return Ok(Vec::new());
     }
     let mut tiles = crate::cluster_bound::LinkageTiles::from_square(distances, n, cancel)?;
-    average_linkage_tree_from_tiles(&mut tiles, n, cancel)
+    let mut log = average_linkage_tree_from_tiles(&mut tiles, n, cancel)?;
+    let mut merges = Vec::with_capacity(log.len());
+    for index in 0..log.len() {
+        let stored = log.get(index)?;
+        merges.push(Merge {
+            left: stored.left,
+            right: stored.right,
+            distance: stored.distance,
+            size: stored.size,
+        });
+    }
+    Ok(merges)
 }
 
 fn average_linkage_tree_from_tiles(
     tiles: &mut crate::cluster_bound::LinkageTiles,
     n: usize,
     cancel: &dyn Fn() -> bool,
-) -> Result<Vec<Merge>, DiarizationError> {
+) -> Result<crate::cluster_bound::MergeLog, DiarizationError> {
     if n <= 1 {
-        return Ok(Vec::new());
+        return crate::cluster_bound::MergeLog::new();
     }
-    let max_nodes = tiles.stride();
-    let mut active = vec![false; max_nodes];
-    let mut sizes = vec![0_usize; max_nodes];
-    for idx in 0..n {
-        active[idx] = true;
-        sizes[idx] = 1;
-    }
-
-    let mut merges = Vec::with_capacity(n - 1);
+    let mut nodes = crate::cluster_bound::NodeScratch::new(tiles.stride())?;
+    nodes.activate_singletons(n, cancel)?;
+    let mut merges = crate::cluster_bound::MergeLog::new()?;
     for step in 0..(n - 1) {
         stop_if_cancelled(cancel)?;
-        let (left, right, distance) = lowest_active_pair_tiles(tiles, &active, cancel)?
+        let (left, right, distance) = lowest_active_pair_tiles(tiles, &mut nodes, cancel)?
             .expect("at least two active clusters remain");
         let new_id = n + step;
-        let new_size = sizes[left] + sizes[right];
+        let left_size = nodes.size(left)?;
+        let right_size = nodes.size(right)?;
+        let new_size = left_size + right_size;
+        nodes.set_active(left, false)?;
+        nodes.set_active(right, false)?;
+        nodes.set_active(new_id, true)?;
+        nodes.set_size(new_id, new_size)?;
 
-        active[left] = false;
-        active[right] = false;
-        active[new_id] = true;
-        sizes[new_id] = new_size;
-
-        for (other, is_active) in active.iter().enumerate().take(new_id) {
-            if !*is_active {
+        for other in 0..new_id {
+            if !nodes.is_active(other)? {
                 continue;
             }
-            let merged_distance = (sizes[left] as f64 * tiles.get(left, other)?
-                + sizes[right] as f64 * tiles.get(right, other)?)
+            let merged_distance = (left_size as f64 * tiles.get(left, other)?
+                + right_size as f64 * tiles.get(right, other)?)
                 / new_size as f64;
             tiles.set(new_id, other, merged_distance)?;
             tiles.set(other, new_id, merged_distance)?;
         }
-
-        merges.push(Merge {
-            left,
-            right,
-            distance,
-            size: new_size,
-        });
+        merges.push(left, right, distance, new_size)?;
     }
     Ok(merges)
 }
 
 fn lowest_active_pair_tiles(
     tiles: &mut crate::cluster_bound::LinkageTiles,
-    active: &[bool],
+    nodes: &mut crate::cluster_bound::NodeScratch,
     cancel: &dyn Fn() -> bool,
 ) -> Result<Option<(usize, usize, f64)>, DiarizationError> {
     let mut best: Option<(usize, usize, f64)> = None;
-    for i in 0..active.len() {
+    let limit = nodes.nodes();
+    for i in 0..limit {
         if i % crate::cluster_bound::CLUSTER_TILE_EDGE == 0 {
             stop_if_cancelled(cancel)?;
         }
-        if !active[i] {
+        if !nodes.is_active(i)? {
             continue;
         }
-        for (j, is_active) in active.iter().enumerate().skip(i + 1) {
-            if !*is_active {
+        for j in (i + 1)..limit {
+            if !nodes.is_active(j)? {
                 continue;
             }
             let distance = tiles.get(i, j)?;
@@ -613,60 +662,78 @@ fn lowest_active_pair_tiles(
 
 fn cut_tree_canonical_labels(
     n: usize,
-    merges: &[Merge],
+    merges: &mut crate::cluster_bound::MergeLog,
     k: usize,
     cancel: &dyn Fn() -> bool,
-) -> Result<Vec<usize>, DiarizationError> {
+) -> Result<crate::cluster_bound::LabelFile, DiarizationError> {
     if n == 0 {
-        return Ok(Vec::new());
+        return crate::cluster_bound::LabelFile::zeros(0);
     }
     if k <= 1 {
-        return Ok(vec![0; n]);
+        return crate::cluster_bound::LabelFile::zeros(n);
     }
 
-    let max_nodes = 2 * n - 1;
-    let mut members: Vec<Vec<usize>> = vec![Vec::new(); max_nodes];
-    let mut active = vec![false; max_nodes];
-    for idx in 0..n {
-        members[idx].push(idx);
-        active[idx] = true;
+    let mut lists = crate::cluster_bound::MemberLists::singletons(n)?;
+    let taken = n - k;
+    if taken > merges.len() {
+        return Err(DiarizationError::MatrixStore {
+            detail: "linkage ended before the requested cut".to_owned(),
+        });
     }
-
-    for (step, merge) in merges.iter().take(n - k).enumerate() {
+    for step in 0..taken {
         stop_if_cancelled(cancel)?;
-        let new_id = n + step;
-        // Each point stays in exactly one active cluster. Taking the member
-        // lists moves them instead of copying the history of every merge.
-        let mut merged = std::mem::take(&mut members[merge.left]);
-        merged.append(&mut members[merge.right]);
-        merged.sort_unstable();
-        members[new_id] = merged;
-        active[merge.left] = false;
-        active[merge.right] = false;
-        active[new_id] = true;
+        let merge = merges.get(step)?;
+        if merge.distance.is_nan() {
+            return Err(DiarizationError::MatrixStore {
+                detail: "linkage distance is not a number".to_owned(),
+            });
+        }
+        lists.merge_sorted(merge.left, merge.right, n + step, cancel)?;
+        if lists.count(n + step)? != merge.size {
+            return Err(DiarizationError::MatrixStore {
+                detail: "merge size does not match membership".to_owned(),
+            });
+        }
     }
 
-    let mut clusters: Vec<Vec<usize>> = active
-        .iter()
-        .enumerate()
-        .filter_map(|(node, is_active)| {
-            if *is_active && !members[node].is_empty() {
-                Some(std::mem::take(&mut members[node]))
-            } else {
-                None
+    // Labels follow the ascending smallest member. This is deliberately not
+    // scipy _hc_cut's numbering: those label values are merge-order artifacts,
+    // while only the partition is well-defined. Each choice scans the remaining
+    // clusters and keeps two member tiles, so k is not a resident vector.
+    let mut labels = crate::cluster_bound::LabelFile::zeros(n)?;
+    let max_nodes = n * 2 - 1;
+    for label in 0..k {
+        stop_if_cancelled(cancel)?;
+        let mut best: Option<(u64, usize)> = None;
+        for node in 0..max_nodes {
+            if node % crate::cluster_bound::CLUSTER_TILE_EDGE == 0 {
+                stop_if_cancelled(cancel)?;
             }
-        })
-        .collect();
-    // Labels are assigned by ascending smallest member index. This is
-    // deliberately not scipy _hc_cut's numbering: _hc_cut label values are pure
-    // merge-order artifacts, while only the partition is well-defined.
-    clusters.sort_by_key(|cluster| cluster[0]);
-
-    let mut labels = vec![0_usize; n];
-    for (label, cluster) in clusters.iter().enumerate() {
-        for member in cluster {
-            labels[*member] = label;
+            if lists.count(node)? == 0 {
+                continue;
+            }
+            let first = lists.first(node)?;
+            let replace = match best {
+                None => true,
+                Some((best_first, best_node)) => {
+                    first < best_first || (first == best_first && node < best_node)
+                }
+            };
+            if replace {
+                best = Some((first, node));
+            }
         }
+        let Some((_, node)) = best else {
+            return Err(DiarizationError::MatrixStore {
+                detail: "cut left fewer clusters than requested".to_owned(),
+            });
+        };
+        lists.for_each(node, |member| {
+            let index = usize::try_from(member)
+                .map_err(|_| DiarizationError::ShapeOverflow { rows: n, cols: 1 })?;
+            labels.set(index, label)
+        })?;
+        lists.clear(node)?;
     }
     Ok(labels)
 }
@@ -674,13 +741,13 @@ fn cut_tree_canonical_labels(
 fn silhouette_score_stored_rows(
     stored: &mut crate::cluster_bound::BoundRows,
     rows: usize,
-    labels: &[usize],
+    labels: &mut crate::cluster_bound::LabelFile,
     cancel: &dyn Fn() -> bool,
 ) -> Result<f64, DiarizationError> {
     if rows != labels.len() {
         return Ok(UNDEFINED_SILHOUETTE);
     }
-    let unique = unique_labels(labels);
+    let unique = labels.unique()?;
     if unique.len() < 2 || rows <= unique.len() {
         return Ok(UNDEFINED_SILHOUETTE);
     }
@@ -692,12 +759,8 @@ fn silhouette_score_stored_rows(
         if idx % crate::cluster_bound::CLUSTER_TILE_EDGE == 0 {
             stop_if_cancelled(cancel)?;
         }
-        let own_label = labels[idx];
-        let own_count = labels
-            .iter()
-            .enumerate()
-            .filter(|(other, label)| *other != idx && **label == own_label)
-            .count();
+        let own_label = labels.get(idx)?;
+        let own_count = labels.count_label(own_label, Some(idx))?;
         if own_count == 0 {
             // sklearn computes the singleton intra-cluster mean as 0/0, then
             // np.nan_to_num maps that sample's silhouette contribution to 0.0.
@@ -705,8 +768,8 @@ fn silhouette_score_stored_rows(
             continue;
         }
         let mut sum = 0.0_f64;
-        for (other, label) in labels.iter().enumerate() {
-            if other != idx && *label == own_label {
+        for other in 0..rows {
+            if other != idx && labels.get(other)? == own_label {
                 sum += stored.clipped(idx, other)?;
             }
         }
@@ -718,15 +781,15 @@ fn silhouette_score_stored_rows(
                 continue;
             }
             let mut count = 0_usize;
-            let mut sum = 0.0_f64;
-            for (other, other_label) in labels.iter().enumerate() {
-                if *other_label == *label {
+            let mut other_sum = 0.0_f64;
+            for other in 0..rows {
+                if labels.get(other)? == *label {
                     count += 1;
-                    sum += stored.clipped(idx, other)?;
+                    other_sum += stored.clipped(idx, other)?;
                 }
             }
             if count > 0 {
-                b = b.min(sum / count as f64);
+                b = b.min(other_sum / count as f64);
             }
         }
 
@@ -794,6 +857,7 @@ fn silhouette_score_from_distances(distances: &[f64], rows: usize, labels: &[usi
     total / rows as f64
 }
 
+#[cfg(test)]
 fn unique_labels(labels: &[usize]) -> Vec<usize> {
     let mut labels = labels.to_vec();
     labels.sort_unstable();

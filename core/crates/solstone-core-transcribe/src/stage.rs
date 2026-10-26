@@ -101,12 +101,19 @@ pub(crate) fn commit_input<'a>(
         }
     });
     let commit = input
-        .commit(claims)
-        .map_err(|error| TranscribeError::ProcessingClaim {
-            path: raw.to_path_buf(),
-            detail: error.to_string(),
+        .commit_checked(claims, &|| checkpoint().is_err())
+        .map_err(|error| {
+            if error.to_string() == "processing input verification cancelled" {
+                TranscribeError::Cancelled
+            } else {
+                TranscribeError::ProcessingClaim {
+                    path: raw.to_path_buf(),
+                    detail: error.to_string(),
+                }
+            }
         })?;
     // Segment exclusion can wait after the caller's previous checkpoint.
+    // A cancelled hash already returned, so this poll is not spent on that path.
     checkpoint()?;
     Ok(commit)
 }
@@ -341,12 +348,19 @@ pub(crate) fn process_one_with(
         None
     };
     let automatic_retry = automatic_retry_replaces_output(&output);
-    let observation = InputObservation::capture(&claim, audio_path).map_err(|error| {
-        TranscribeError::ProcessingClaim {
-            path: audio_path.to_path_buf(),
-            detail: error.to_string(),
-        }
-    })?;
+    let observation =
+        InputObservation::capture_checked(&claim, audio_path, &|| checkpoint().is_err()).map_err(
+            |error| {
+                if error.to_string() == "processing input verification cancelled" {
+                    TranscribeError::Cancelled
+                } else {
+                    TranscribeError::ProcessingClaim {
+                        path: audio_path.to_path_buf(),
+                        detail: error.to_string(),
+                    }
+                }
+            },
+        )?;
     let started = Instant::now();
     let (admitted_retry, context_attempt) = if !redo {
         if let Some(context) = retry {
