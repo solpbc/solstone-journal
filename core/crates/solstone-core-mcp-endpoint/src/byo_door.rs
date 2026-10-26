@@ -381,7 +381,6 @@ impl ByoServiceRuntime {
             // start another MCP request after CAA drift withdrew the ingress.
             // Local admission must be withdrawn before waiting on the relay.
             let _ = self.service_shutdown_tx.send(true);
-            res.ingress_task.abort();
             if let Some(a) = res.acme_task.take() {
                 a.abort();
                 let _ = a.await;
@@ -630,8 +629,10 @@ impl ByoServiceRuntime {
             let mut ingress_shut = self.service_shutdown_rx.clone();
 
             let ingress_task = tokio::spawn(async move {
+                let mut connections = tokio::task::JoinSet::new();
                 loop {
                     tokio::select! {
+                        _ = connections.join_next(), if !connections.is_empty() => {}
                         _ = ingress_shut.changed() => break,
                         accepted = ingress_listener.accept() => {
                             let (stream, _) = match accepted {
@@ -652,7 +653,7 @@ impl ByoServiceRuntime {
                             let conn_hostname = Arc::clone(&ingress_host_arc);
                             let conn_shutdown = ingress_shut.clone();
 
-                            tokio::spawn(async move {
+                            connections.spawn(async move {
                                 let _permit = permit;
                                 let acceptor = TlsAcceptor::from(conn_tls_config);
                                 let tls_stream = match tokio::time::timeout(Duration::from_secs(5), acceptor.accept(stream)).await {
@@ -673,6 +674,8 @@ impl ByoServiceRuntime {
                         }
                     }
                 }
+                drop(ingress_listener);
+                connections.shutdown().await;
             });
 
             self.bound_resources = Some(ByoBoundResources {
@@ -1219,8 +1222,7 @@ mod tests {
 }
 
 #[cfg(all(test, feature = "full-tests"))]
-// The owner-hostname door runs on Unix only.
-#[cfg(unix)]
+#[cfg(all(unix, not(any(target_os = "ios", target_os = "android"))))]
 mod full_tests {
     use std::fs;
     use std::os::unix::fs::PermissionsExt;
@@ -1230,7 +1232,7 @@ mod full_tests {
     use chrono::Utc;
     use solstone_core_journal_io::journal_root::JournalRoot;
     use tempfile::TempDir;
-    use tokio::io::AsyncWriteExt;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::sync::watch;
 
     use super::*;
@@ -1535,6 +1537,29 @@ mod full_tests {
 
         let _ = shutdown_send.send(true);
         let _ = handle.await;
+
+        // Stop also owns a peer that connects but never completes TLS.
+        let mut runtime =
+            ByoServiceRuntime::new(&journal_path, &byo_dir, "mcp.example.com".to_string(), 1)
+                .unwrap();
+        runtime
+            .tick_service_admission(&journal_path, &byo_dir, &ingress_address(&journal_path))
+            .await;
+        let mut pending = tokio::net::UnixStream::connect(&socket_path).await.unwrap();
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while runtime.permits.available_permits() == DEFAULT_BYO_CONNECTION_PERMITS {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        runtime.stop(&byo_dir).await;
+        assert_eq!(
+            runtime.permits.available_permits(),
+            DEFAULT_BYO_CONNECTION_PERMITS
+        );
+        let mut byte = [0];
+        assert_eq!(pending.read(&mut byte).await.unwrap(), 0);
     }
 
     #[tokio::test]

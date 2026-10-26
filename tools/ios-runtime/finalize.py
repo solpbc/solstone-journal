@@ -12,10 +12,13 @@ import re
 import shutil
 import struct
 import subprocess
+import sys
 
 import build_backup
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / "scripts"))
+import package_mobile_pdfium
 
 
 def sha256(path: pathlib.Path) -> str:
@@ -245,6 +248,7 @@ def main() -> int:
     parser.add_argument("--appraisal-resources", type=pathlib.Path, required=True)
     parser.add_argument("--backup-lib", type=pathlib.Path, required=True)
     parser.add_argument("--backup-work", type=pathlib.Path, required=True)
+    parser.add_argument("--pdfium-dir", type=pathlib.Path, required=True)
     parser.add_argument(
         "--keychain",
         default=str(
@@ -380,6 +384,16 @@ def main() -> int:
     )
     receipt_path.write_text(json.dumps(receipt, indent=2) + "\n")
 
+    pdfium_record = package_mobile_pdfium.embed_ios(args.pdfium_dir, app)
+    pdfium_framework = app / "Frameworks/PDFium.framework"
+    subprocess.run(
+        ["codesign", "--force", "--sign", args.identity, "--keychain", args.keychain,
+         "--timestamp=none", str(pdfium_framework)], check=True,
+    )
+    subprocess.run(
+        ["codesign", "--verify", "--strict", str(pdfium_framework)], check=True,
+    )
+    signed_pdfium_sha256 = sha256(pdfium_framework / "PDFium")
     expected_members = receipt["package_members"]
     for name, bundle in [
         ("JournalWorker", app / "Extensions/JournalWorker.appex"),
@@ -408,6 +422,20 @@ def main() -> int:
     for bundle in [app, app / "Extensions/JournalWorker.appex"]:
         build_backup.confirm_resource(bundle / "BackupRuntime", backup_record)
     subprocess.run(["codesign", "--verify", "--deep", "--strict", str(app)], check=True)
+    if sha256(pdfium_framework / "PDFium") != signed_pdfium_sha256:
+        raise ValueError("containing app signing changed the PDFium framework")
+    (args.build_root / "pdfium-package-receipt.json").write_text(json.dumps({
+        "schema": "solstone.mobile-pdfium-package.v1",
+        "staging_receipt_sha256": sha256(args.pdfium_dir / "receipt.json"),
+        "archive_sha256": pdfium_record["pin"]["sha256"],
+        "unsigned_library_sha256": next(row["sha256"] for row in pdfium_record["members"]
+                                        if row["path"] == "PDFium.framework/PDFium"),
+        "signed_library_sha256": signed_pdfium_sha256,
+        "framework_members": [{"path": path.relative_to(app).as_posix(), "sha256": sha256(path)}
+                              for path in sorted(pdfium_framework.rglob("*")) if path.is_file()],
+        "notice_members": [{"path": path.relative_to(app).as_posix(), "sha256": sha256(path)}
+                           for path in sorted((app / "PDFiumNotices").rglob("*")) if path.is_file()],
+    }, indent=2) + "\n")
     print("Packaged appraisal closure and verified development signatures")
     return 0
 

@@ -8,7 +8,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
-- the list of journal apps is now a page called more. it lists every view with what it shows and where its contents come from, and, for some, how far back it goes or what still needs setting up. pin a view to the side rail, or unpin it, and your journal keeps that choice wherever you open it. curation is now called suggestions, matching its page.
+- the list of journal apps is now a page called more. it lists every view with what it shows and where its contents come from, and, for some, where it stands: how far back it goes, how many suggestions wait for you, how many agents are connected, or what still needs setting up. pin a view to the side rail, or unpin it, and your journal keeps that choice wherever you open it. curation is now called suggestions, matching its page.
 - work stories use the original material when it fits. when it is too long, they use saved screen descriptions and topics to leave more room for the activity. spoken words and other context stay alongside them.
 - work stories can include short quotes from messages shown on screen. the notes are labelled unverified, with the time they entered your journal kept separate from the message date.
 

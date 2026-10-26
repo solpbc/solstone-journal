@@ -1238,7 +1238,6 @@ pub(crate) async fn run_lan_door_loop_with_sources(
             for ip in to_remove {
                 if let Some((stop_tx, handle)) = active_tasks.remove(&ip) {
                     let _ = stop_tx.send(true);
-                    handle.abort();
                     let _ = handle.await;
                 }
                 address_states.remove(&ip);
@@ -1391,7 +1390,6 @@ pub(crate) async fn run_lan_door_loop_with_sources(
 async fn stop_all_listeners(tasks: &mut HashMap<IpAddr, (watch::Sender<bool>, JoinHandle<()>)>) {
     for (_, (stop_tx, handle)) in tasks.drain() {
         let _ = stop_tx.send(true);
-        handle.abort();
         let _ = handle.await;
     }
 }
@@ -1409,6 +1407,7 @@ async fn accept_loop_for_address(
     run: LanDoorRun,
     mut stop_rx: watch::Receiver<bool>,
 ) {
+    let mut connections = tokio::task::JoinSet::new();
     loop {
         if *stop_rx.borrow() {
             break;
@@ -1423,6 +1422,7 @@ async fn accept_loop_for_address(
         }
 
         tokio::select! {
+            _ = connections.join_next(), if !connections.is_empty() => {}
             _ = stop_rx.changed() => {
                 if *stop_rx.borrow() {
                     break;
@@ -1481,7 +1481,7 @@ async fn accept_loop_for_address(
                         let handshake_deadline = run.handshake_deadline;
                         let mut stop_rx_task = stop_rx.clone();
 
-                        tokio::spawn(async move {
+                        connections.spawn(async move {
                             let _permit = permit;
                             let _guard = slot_guard;
 
@@ -1534,6 +1534,8 @@ async fn accept_loop_for_address(
             }
         }
     }
+    drop(listener);
+    connections.shutdown().await;
 }
 
 #[cfg(test)]
@@ -3443,8 +3445,8 @@ mod full_tests {
             oauth,
             sessions,
             server_config_cell,
-            pool_semaphore,
-            source_counts,
+            Arc::clone(&pool_semaphore),
+            Arc::clone(&source_counts),
             run,
             stop_rx,
         ));
@@ -3484,13 +3486,34 @@ mod full_tests {
             "got {resp}"
         );
 
-        drop(client_tls);
-
-        // Shutdown and verify listener task abort and termination
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while pool_semaphore.available_permits() != 64 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        let mut pending = tokio::net::TcpStream::connect(("127.0.0.1", test_port))
+            .await
+            .unwrap();
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while pool_semaphore.available_permits() == 64 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
         let _ = stop_tx.send(true);
-        accept_task.abort();
-        let res = accept_task.await;
-        assert!(res.is_err() && res.unwrap_err().is_cancelled());
+        tokio::time::timeout(Duration::from_secs(2), accept_task)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(pool_semaphore.available_permits(), 64);
+        assert!(source_counts.lock().unwrap().is_empty());
+        let mut byte = [0];
+        assert_eq!(pending.read(&mut byte).await.unwrap(), 0);
+        // Its accepted TLS handler has also released its permit.
+        drop(client_tls);
     }
 
     #[tokio::test]

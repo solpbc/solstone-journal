@@ -225,6 +225,7 @@ mod tests {
             "/app/entities/api/state",
             "/app/entities/",
             "/app/curation/api/facet/candidates",
+            "/app/curation/api/summary",
         ] {
             let journal = Journal::unestablished();
             let (status, headers, _body) = routed(&journal, "GET", path, b"").await;
@@ -254,11 +255,18 @@ mod tests {
             .0,
             StatusCode::OK
         );
+        assert_eq!(
+            routed(&established, "GET", "/app/curation/api/summary", b"")
+                .await
+                .0,
+            StatusCode::OK
+        );
 
         for path in [
             "/app/entities/api/state",
             "/app/entities/",
             "/app/curation/api/facet/candidates",
+            "/app/curation/api/summary",
         ] {
             let journal = Journal::corrupt();
             let (status, headers, body) = routed(&journal, "GET", path, b"").await;

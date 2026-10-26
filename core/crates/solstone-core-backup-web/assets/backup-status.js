@@ -203,7 +203,40 @@
     }
   }
 
+  const terminalPhases = new Set(['done', 'error', 'needs_subscription', 'degraded', 'refused']);
+
+  function operationActive(operation) {
+    return Boolean(operation) && !terminalPhases.has(operation.phase);
+  }
+
+  function cleanupRequired(state) {
+    return state?.operation?.phase === 'cleanup_pending'
+      || state?.cleanup_admission === 'pending'
+      || state?.cleanup_admission === 'contended';
+  }
+
+  function managedMode(state) {
+    return Boolean(state?.enabled) || state?.mode === 'operated';
+  }
+
+  function initialPanel(state) {
+    if (operationActive(state?.operation) || cleanupRequired(state)) {
+      return managedMode(state) ? 'management' : 'destination';
+    }
+    if (managedMode(state)) return 'management';
+    if (state?.recovery_key_confirmed === true) return 'destination';
+    return 'intro';
+  }
+
   window.BackupStatus = {
-    select, renderSummary, renderFacts, verificationSubsetLine, errorReasons: BACKUP_ERROR_REASONS,
+    select,
+    renderSummary,
+    renderFacts,
+    verificationSubsetLine,
+    errorReasons: BACKUP_ERROR_REASONS,
+    operationActive,
+    cleanupRequired,
+    managedMode,
+    initialPanel,
   };
 })();

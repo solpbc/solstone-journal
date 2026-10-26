@@ -609,6 +609,14 @@ function createHarness(options = {}) {
   );
   vm.runInContext(bootSource, context, { filename: 'shell_boot.js' });
   vm.runInContext(
+    fs.readFileSync(
+      path.resolve(crateDir, '..', 'solstone-core-backup-web', 'assets', 'backup-status.js'),
+      'utf8',
+    ),
+    context,
+    { filename: 'backup-status.js' },
+  );
+  vm.runInContext(
     fs.readFileSync(path.join(crateDir, 'assets/more/more.js'), 'utf8'),
     context,
     { filename: 'more.js' },
@@ -993,6 +1001,139 @@ asyncCase('state lines skip a rejection, a hang, and an unexpected shape', async
   assert.ok(stateOf('thinking').classList.contains('more-state-action'));
   assert.strictEqual(root.querySelector('.more-live').textContent, '');
   assert.ok(!root.innerHTML.includes("couldn't"));
+});
+
+asyncCase('state lines show positive and zero states for curation, agents, and backup', async () => {
+  const harness = createHarness({ pinned: [] });
+  harness.window.apiJson = (url) => {
+    if (url === '/app/curation/api/summary') return Promise.resolve({ to_review: 3 });
+    if (url === '/app/agents/api/state') return Promise.resolve({ connections: [{ id: '1' }, { id: '2' }] });
+    if (url === '/app/backup/status') return Promise.resolve({ success: true, enabled: false, mode: 'byo', operation: null });
+    return Promise.reject(new Error(url));
+  };
+  const root = await paintMore(harness, { timeout: 40 });
+  const stateOf = (name) => root.querySelector('.more-card[data-app-name="' + name + '"] .more-state');
+
+  assert.strictEqual(stateOf('curation').textContent, '3 to review');
+  assert.ok(stateOf('curation').classList.contains('more-state-action'));
+  assert.strictEqual(stateOf('curation').hidden, false);
+
+  assert.strictEqual(stateOf('agents').textContent, '2 connected');
+  assert.ok(!stateOf('agents').classList.contains('more-state-action'));
+  assert.strictEqual(stateOf('agents').hidden, false);
+
+  assert.strictEqual(stateOf('backup').textContent, 'not set up yet');
+  assert.ok(stateOf('backup').classList.contains('more-state-action'));
+  assert.strictEqual(stateOf('backup').hidden, false);
+
+  assert.strictEqual(root.querySelector('.more-live').textContent, '');
+  assert.ok(!root.innerHTML.includes("couldn't"));
+});
+
+asyncCase('state lines show zero or none states for curation and agents', async () => {
+  const harness = createHarness({ pinned: [] });
+  harness.window.apiJson = (url) => {
+    if (url === '/app/curation/api/summary') return Promise.resolve({ to_review: 0 });
+    if (url === '/app/agents/api/state') return Promise.resolve({ connections: [] });
+    return Promise.reject(new Error(url));
+  };
+  const root = await paintMore(harness, { timeout: 40 });
+  const stateOf = (name) => root.querySelector('.more-card[data-app-name="' + name + '"] .more-state');
+
+  assert.strictEqual(stateOf('curation').textContent, 'nothing to review');
+  assert.ok(!stateOf('curation').classList.contains('more-state-action'));
+  assert.strictEqual(stateOf('curation').hidden, false);
+
+  assert.strictEqual(stateOf('agents').textContent, 'none yet');
+  assert.ok(!stateOf('agents').classList.contains('more-state-action'));
+  assert.strictEqual(stateOf('agents').hidden, false);
+
+  assert.strictEqual(root.querySelector('.more-live').textContent, '');
+  assert.ok(!root.innerHTML.includes("couldn't"));
+});
+
+asyncCase('backup suppresses state line when enabled, failed, or beyond intro', async () => {
+  const backupScenarios = [
+    { success: true, enabled: true },
+    { success: false, enabled: false, mode: 'byo' },
+    { success: true, enabled: false, recovery_key_confirmed: true },
+    { success: true, enabled: false, mode: 'operated' },
+    { success: true, enabled: false, mode: 'byo', operation: { kind: 'restore_hosted', phase: 'restoring' } },
+  ];
+  for (const backupBody of backupScenarios) {
+    const harness = createHarness({ pinned: [] });
+    harness.window.apiJson = (url) => {
+      if (url === '/app/backup/status') return Promise.resolve(backupBody);
+      return Promise.reject(new Error(url));
+    };
+    const root = await paintMore(harness, { timeout: 40 });
+    const state = root.querySelector('.more-card[data-app-name="backup"] .more-state');
+    assert.strictEqual(state.hidden, true, JSON.stringify(backupBody));
+    assert.strictEqual(state.textContent, '', JSON.stringify(backupBody));
+    assert.strictEqual(root.querySelector('.more-live').textContent, '');
+    assert.ok(!root.innerHTML.includes("couldn't"));
+  }
+});
+
+asyncCase('curation, agents, and backup state lines skip rejection, hang, and wrong shapes', async () => {
+  // 1. Rejected
+  {
+    const harness = createHarness({ pinned: [] });
+    harness.window.apiJson = (url) => {
+      if (url === '/app/curation/api/summary') return Promise.reject(new Error('fail'));
+      if (url === '/app/agents/api/state') return Promise.reject(new Error('fail'));
+      if (url === '/app/backup/status') return Promise.reject(new Error('fail'));
+      return Promise.reject(new Error(url));
+    };
+    const root = await paintMore(harness, { timeout: 40 });
+    const stateOf = (name) => root.querySelector('.more-card[data-app-name="' + name + '"] .more-state');
+    for (const name of ['curation', 'agents', 'backup']) {
+      assert.strictEqual(stateOf(name).hidden, true, name + ' rejected');
+      assert.strictEqual(stateOf(name).textContent, '', name + ' rejected');
+    }
+    assert.strictEqual(root.querySelector('.more-live').textContent, '');
+    assert.ok(!root.innerHTML.includes("couldn't"));
+  }
+
+  // 2. Aborted / timeout hang
+  {
+    const harness = createHarness({ pinned: [] });
+    harness.window.apiJson = (url, options) => {
+      if (['/app/curation/api/summary', '/app/agents/api/state', '/app/backup/status'].includes(url)) {
+        return new Promise((_resolve, reject) => {
+          options.signal.addEventListener('abort', () => reject(new Error('aborted')));
+        });
+      }
+      return Promise.reject(new Error(url));
+    };
+    const root = await paintMore(harness, { timeout: 40 });
+    const stateOf = (name) => root.querySelector('.more-card[data-app-name="' + name + '"] .more-state');
+    for (const name of ['curation', 'agents', 'backup']) {
+      assert.strictEqual(stateOf(name).hidden, true, name + ' aborted');
+      assert.strictEqual(stateOf(name).textContent, '', name + ' aborted');
+    }
+    assert.strictEqual(root.querySelector('.more-live').textContent, '');
+    assert.ok(!root.innerHTML.includes("couldn't"));
+  }
+
+  // 3. Wrong shape: to_review string, connections not array, success not true
+  {
+    const harness = createHarness({ pinned: [] });
+    harness.window.apiJson = (url) => {
+      if (url === '/app/curation/api/summary') return Promise.resolve({ to_review: '3' });
+      if (url === '/app/agents/api/state') return Promise.resolve({ connections: 'none' });
+      if (url === '/app/backup/status') return Promise.resolve({ success: 'yes' });
+      return Promise.reject(new Error(url));
+    };
+    const root = await paintMore(harness, { timeout: 40 });
+    const stateOf = (name) => root.querySelector('.more-card[data-app-name="' + name + '"] .more-state');
+    for (const name of ['curation', 'agents', 'backup']) {
+      assert.strictEqual(stateOf(name).hidden, true, name + ' wrong shape');
+      assert.strictEqual(stateOf(name).textContent, '', name + ' wrong shape');
+    }
+    assert.strictEqual(root.querySelector('.more-live').textContent, '');
+    assert.ok(!root.innerHTML.includes("couldn't"));
+  }
 });
 
 asyncCase('more boots with its own title', async () => {

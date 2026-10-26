@@ -75,6 +75,13 @@ async function boot(state, {enable = null, pairingResponse, journal = null, acti
       if (idMatch && fields[idMatch[1]]) return fields[idMatch[1]];
       return null;
     },
+    querySelectorAll(selector) {
+      if (selector === '.ag-row') {
+        const count = (this._html.match(/class="ag-row"/g) || []).length;
+        return Array(count).fill({});
+      }
+      return [];
+    },
     insertAdjacentHTML(_, text) { this._html += text; },
   };
   const location = {
@@ -386,6 +393,7 @@ async function test(name, body) {
   await test('your own on: address, agents by lane, turn off through a confirm', async () => {
     const state = baseState({...door({listening: true}), connections: [connection('oauth', 'g1', 'tiles', 'local'), connection('oauth', 'g2', 'Claude', 'relay'), connection('bearer', 't1', 'my script', null)]});
     const {view, click, calls} = await boot(state);
+    assert.strictEqual(view.querySelectorAll('.ag-row').length, state.connections.length);
     has(view, 'class="sdot g"');
     has(view, `data-copy="${ADDRESS}"`);
     has(view, 'data-connection="oauth:g1"');

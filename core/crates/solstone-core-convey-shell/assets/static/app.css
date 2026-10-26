@@ -676,7 +676,7 @@ body.has-managed-dialog .workspace {
   margin: 4px 0;
 }
 
-/* The rail names its places (founder, 2026-10-25): icon and word on every row,
+/* The rail names its places: icon and word on every row,
    so an owner can scan what the journal holds without hovering. Below 1100px
    the word sits under the icon; at 700px and below the dock takes over. */
 #app-rail {

@@ -8,6 +8,10 @@ const vm = require('vm');
 
 const manifestDir = process.argv[2];
 assert.ok(manifestDir, 'manifest directory argument is required');
+const statePath = process.argv[3];
+const summaryPath = process.argv[4];
+assert.ok(statePath, 'state path argument is required');
+assert.ok(summaryPath, 'summary path argument is required');
 
 const dateFormatSource = fs.readFileSync(
   path.resolve(manifestDir, '../solstone-core-convey-shell/assets/static/date_format.js'),
@@ -383,6 +387,18 @@ asyncTest('a journal whose only open suggestions are entity merges has nothing t
   assert.deepStrictEqual(root.querySelectorAll('[data-review-group]'), []);
   assert.strictEqual(root.querySelector('.curation-empty').textContent, populatedState.copy.CUR_EMPTY_STATE);
   assert.strictEqual(root.querySelector('[data-review-total]').textContent, '');
+});
+
+asyncTest('suggestions count matches view total on seeded journal', async () => {
+  const state = JSON.parse(fs.readFileSync(statePath, 'utf8'));
+  const summary = JSON.parse(fs.readFileSync(summaryPath, 'utf8'));
+  assert.ok(summary.to_review > 0, 'the seeded journal must have suggestions to review');
+  const root = await renderWorkspace(state);
+  const totalText = root.querySelector('[data-review-total]')?.textContent || '';
+  const match = totalText.match(/^(\d+)/);
+  assert.ok(match, 'view total must have leading integer');
+  const viewCount = parseInt(match[1], 10);
+  assert.strictEqual(viewCount, summary.to_review);
 });
 
 (async () => {

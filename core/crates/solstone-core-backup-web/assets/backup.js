@@ -482,7 +482,7 @@
     'invalid_operation_for_state',
     'backup_busy',
   ]);
-  const terminalPhases = new Set(['done', 'error', 'needs_subscription', 'degraded', 'refused']);
+  const BackupStatus = window.BackupStatus;
 
   function panel(name) {
     return root.querySelector(`[data-backup-panel="${name}"]`);
@@ -517,13 +517,11 @@
   }
 
   function operationActive(operation) {
-    return operation && !terminalPhases.has(operation.phase);
+    return BackupStatus.operationActive(operation);
   }
 
   function cleanupRequired() {
-    return state.operation?.phase === 'cleanup_pending'
-      || state.cleanup_admission === 'pending'
-      || state.cleanup_admission === 'contended';
+    return BackupStatus.cleanupRequired(state);
   }
 
   function conflictsWithCleanup(button) {
@@ -561,7 +559,7 @@
   }
 
   function managedMode() {
-    return state.enabled || state.mode === 'operated';
+    return BackupStatus.managedMode(state);
   }
 
   function labelForPhase(phase) {
@@ -2354,13 +2352,8 @@
   }
 
   function initialPanel() {
-    if (shouldPoll()) {
-      pollUntilTerminal();
-      return managedMode() ? 'management' : 'destination';
-    }
-    if (managedMode()) return 'management';
-    if (state.recovery_key_confirmed === true) return 'destination';
-    return 'intro';
+    if (shouldPoll()) pollUntilTerminal();
+    return BackupStatus.initialPanel(state);
   }
 
   async function bind() {

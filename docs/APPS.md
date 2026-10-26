@@ -34,8 +34,9 @@ inserts it for that request, the same way it inserts `clock`: the resolved
 group is home, then those pins, then `more`. The bottom group is the
 management rail (import, settings, network, and agents when agent routes are
 mounted), ordered by `rail_rank`. `/app/more/` lists every served view except
-more: what it shows, where its contents come from, and a pin control for each
-pinnable view.
+more: what it shows, where its contents come from, and, for some views, a state
+line read from that view's own endpoint, and a pin control for each pinnable
+view.
 
 `PUT /api/shell/pins` with `{"view","pinned"}` writes only
 `convey.pinned_views` and returns `{"pinned":[...]}`.

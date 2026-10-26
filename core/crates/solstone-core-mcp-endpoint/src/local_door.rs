@@ -519,30 +519,32 @@ async fn run_accept_loop(
     mut period_shutdown: watch::Receiver<bool>,
     #[cfg(test)] fail_accept_flag: Option<Arc<std::sync::atomic::AtomicBool>>,
 ) {
+    let mut connections = tokio::task::JoinSet::new();
     loop {
         #[cfg(test)]
         if let Some(flag) = &fail_accept_flag
             && flag.load(std::sync::atomic::Ordering::SeqCst)
         {
-            return;
+            break;
         }
         if *period_shutdown.borrow() {
-            return;
+            break;
         }
         tokio::select! {
+            _ = connections.join_next(), if !connections.is_empty() => {}
             changed = period_shutdown.changed() => {
                 let _ = changed;
-                return;
+                break;
             }
             accepted = listeners.accept_peer() => {
                 #[cfg(test)]
                 if let Some(flag) = &fail_accept_flag
                     && flag.load(std::sync::atomic::Ordering::SeqCst) {
-                        return;
+                        break;
                     }
                 let Ok((socket, peer_addr)) = accepted else {
                     // Accept error: leave loop, drop listeners, record not_running
-                    return;
+                    break;
                 };
                 let Some(permit) = try_acquire_connection_permit(&permits) else {
                     // Permit exhaustion still drops that socket and keeps accepting
@@ -554,7 +556,7 @@ async fn run_accept_loop(
                 let connection_sessions = Arc::clone(&sessions);
                 let connection_shutdown = period_shutdown.clone();
                 let source = peer_addr.ip();
-                tokio::spawn(async move {
+                connections.spawn(async move {
                     let _permit = permit;
                     // 127.0.0.1 and ::1 are two registration sources. Each source is capped at 16 clients, the store at 1024, and registering still evicts the oldest idle client of that source before the oldest idle client overall.
                     let _ = serve_stream(
@@ -571,6 +573,8 @@ async fn run_accept_loop(
             }
         }
     }
+    drop(listeners);
+    connections.shutdown().await;
 }
 
 #[cfg(all(test, feature = "full-tests"))]
@@ -753,6 +757,54 @@ mod full_tests {
             .next()
             .unwrap()
             .to_owned()
+    }
+
+    #[tokio::test]
+    async fn local_accept_owner_retires_an_accepted_partial_request() {
+        let temp = TempDir::new_in(crate::test_scratch()).unwrap();
+        let port = get_free_port().await;
+        let listeners = bind_loopback(port).await.unwrap();
+        let permits = Arc::new(Semaphore::new(2));
+        let (stop, stopped) = watch::channel(false);
+        let owner = tokio::spawn(run_accept_loop(
+            listeners,
+            Arc::new(temp.path().to_path_buf()),
+            Arc::new(OAuthRuntime::new_bound(
+                temp.path(),
+                format!("http://127.0.0.1:{port}"),
+            )),
+            Arc::new(SessionTable::new()),
+            Arc::clone(&permits),
+            stopped,
+            None,
+        ));
+        let mut client = TcpStream::connect((Ipv4Addr::LOCALHOST, port))
+            .await
+            .unwrap();
+        client.write_all(b"GET /mcp HTTP/1.1\r\n").await.unwrap();
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while permits.available_permits() == 2 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        drop(stop);
+        tokio::time::timeout(Duration::from_secs(2), owner)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            permits.available_permits(),
+            2,
+            "no accepted handler outlives its owner"
+        );
+        let mut byte = [0];
+        let closed = client.read(&mut byte).await;
+        assert!(
+            matches!(closed, Ok(0))
+                || closed.is_err_and(|e| e.kind() == std::io::ErrorKind::ConnectionReset)
+        );
     }
 
     #[tokio::test]
