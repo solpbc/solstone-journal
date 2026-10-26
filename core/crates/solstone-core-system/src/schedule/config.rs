@@ -98,6 +98,14 @@ pub fn validate_schedule_entry(value: &Value) -> Result<ScheduleEntry, Vec<Confi
         .ok_or_else(|| vec![diagnostic("invalid schedule entry")])
 }
 
+/// Project one raw entry with the runtime's enabled, cadence and argv rules.
+pub fn enabled_schedule_entry(value: &Value) -> Option<ScheduleEntry> {
+    validate(Map::from_iter([("entry".to_owned(), value.clone())]))
+        .config
+        .entries
+        .remove("entry")
+}
+
 /// Add the built-in schedule entries that are absent from the configuration,
 /// creating the configuration first when it does not exist. Existing entries,
 /// including disabled or edited built-ins, are left untouched. Returns the

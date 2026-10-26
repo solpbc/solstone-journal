@@ -469,6 +469,190 @@ enum Interrupt {
     Recovery,
 }
 
+#[test]
+fn pre_argv_keepalive_drains_cancelled_copy_cleanup_before_restore_can_write() {
+    use solstone_core_convey_shell::recovery_drain::{
+        register_recovery_hooks, relinquish_admitted_work, resume_after_whole_journal_restore,
+    };
+    fn movable<T: Send + Sync>() {}
+    movable::<ImportPreparation>();
+    let _serial = TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+    let (root, host) = fixture();
+    let factory_calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let calls = Arc::clone(&factory_calls);
+    host.enable_imports(Arc::new(move |context| {
+        calls.fetch_add(1, Ordering::AcqRel);
+        let seams = context.seams_with_pdf(Box::new(solstone_core_import_sources::NullPdfWorker));
+        Ok(PreparedImport::new(context.arguments().to_vec(), seams))
+    }))
+    .unwrap();
+    let original = WorkStop::new();
+    let preparation = host
+        .import_preparation(original.clone(), Default::default())
+        .unwrap();
+    let cleanup_use = preparation.keepalive();
+    let source = tempfile::NamedTempFile::new().unwrap();
+    fs::write(source.path(), b"cancelled snapshot bytes").unwrap();
+    let destination = root.path().join("health/pre-argv-copy");
+    let copied_path = destination.clone();
+    let source_path = source.path().to_path_buf();
+    let (copied_send, copied) = mpsc::channel();
+    let (cleanup_send, cleanup) = mpsc::channel();
+    let copy_cleanup = std::thread::spawn(move || {
+        let _use_until_cleanup_retires = cleanup_use;
+        fs::copy(source_path, &copied_path).unwrap();
+        copied_send.send(()).unwrap();
+        // A disconnected caller's cleanup may retire after its preparation.
+        cleanup.recv_timeout(Duration::from_secs(5)).unwrap();
+        fs::remove_file(copied_path).unwrap();
+    });
+    copied.recv_timeout(Duration::from_secs(5)).unwrap();
+    original.request();
+    assert!(preparation.stop().is_requested());
+    assert!(preparation.checkpoint().is_err());
+    assert!(preparation.bind(owned(&["--list-importers"])).is_err());
+    assert_eq!(factory_calls.load(Ordering::Acquire), 0);
+    assert!(!root.path().join("imports").exists());
+    let (pause_send, paused) = mpsc::channel();
+    let hooks = register_recovery_hooks(
+        "fc3-pre-argv-cleanup-proof",
+        Arc::clone(&host.root),
+        move |_| {
+            pause_send.send(()).unwrap();
+            Ok(())
+        },
+        |_| Ok(()),
+    );
+    let target = root.path().to_path_buf();
+    let (drain_send, drained) = mpsc::channel();
+    let drain = std::thread::spawn(move || {
+        drain_send.send(relinquish_admitted_work(&target)).unwrap();
+    });
+    paused.recv_timeout(Duration::from_secs(5)).unwrap();
+    assert!(drained.recv_timeout(Duration::from_millis(50)).is_err());
+    assert!(
+        destination.exists(),
+        "cleanup is still a live admitted effect"
+    );
+    assert!(
+        host.import_preparation(WorkStop::new(), Default::default())
+            .is_err()
+    );
+    cleanup_send.send(()).unwrap();
+    copy_cleanup.join().unwrap();
+    drained
+        .recv_timeout(Duration::from_secs(5))
+        .unwrap()
+        .unwrap();
+    drain.join().unwrap();
+    assert!(!destination.exists());
+    resume_after_whole_journal_restore(root.path());
+    drop(
+        host.import_preparation(WorkStop::new(), Default::default())
+            .unwrap(),
+    );
+    drop(hooks);
+    host.shutdown().unwrap();
+}
+
+#[test]
+fn pre_argv_snapshot_binds_once_then_shared_preview_and_execution_write_actual_notes() {
+    let _serial = TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+    let (root, host) = fixture();
+    let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let factory_calls = Arc::clone(&calls);
+    host.enable_imports(Arc::new(move |context| {
+        factory_calls.fetch_add(1, Ordering::AcqRel);
+        let seams = context.seams_with_pdf(Box::new(solstone_core_import_sources::NullPdfWorker));
+        Ok(PreparedImport::new(context.arguments().to_vec(), seams))
+    }))
+    .unwrap();
+    let preparation = host
+        .import_preparation(WorkStop::new(), Default::default())
+        .unwrap();
+    let source = tempfile::NamedTempFile::new().unwrap();
+    fs::write(source.path(), "fc3 pre-argv snapshot native output\n").unwrap();
+    let snapshot = root.path().join("health/prepared-input");
+    preparation.checkpoint().unwrap();
+    fs::create_dir(&snapshot).unwrap();
+    fs::copy(source.path(), snapshot.join("prepared.md")).unwrap();
+    let request = preparation
+        .bind(owned(&[
+            "--sync",
+            "obsidian",
+            "--save",
+            "--path",
+            snapshot.to_str().unwrap(),
+        ]))
+        .unwrap();
+    assert_eq!(
+        calls.load(Ordering::Acquire),
+        0,
+        "binding does not prepare or admit an attempt"
+    );
+    assert!(!root.path().join("imports").exists());
+    assert!(!root.path().join("chronicle").exists());
+    let (preview, run) = std::thread::spawn(move || {
+        let prepared = request.prepare().unwrap();
+        (prepared.preview(), prepared.run().unwrap().0)
+    })
+    .join()
+    .unwrap();
+    assert_eq!(preview.exit_code, 0, "{}", preview.stderr);
+    assert_eq!(run.exit_code, 0, "{}", run.stderr);
+    assert_eq!(calls.load(Ordering::Acquire), 1);
+    assert!(contains(
+        &root.path().join("chronicle"),
+        "fc3 pre-argv snapshot native output"
+    ));
+    host.shutdown().unwrap();
+}
+
+#[test]
+fn pre_argv_binding_preserves_original_deadline_host_stop_and_root_authority() {
+    let _serial = TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+    for interrupt in ["deadline", "host", "root"] {
+        let (root, host) = fixture();
+        host.enable_imports(Arc::new(|_| panic!("refused pre-argv work cannot prepare")))
+            .unwrap();
+        let deadline = Instant::now() + Duration::from_millis(100);
+        let original = if interrupt == "deadline" {
+            WorkStop::linked(Arc::new(AtomicBool::new(false)), Some(deadline))
+        } else {
+            WorkStop::new()
+        };
+        let preparation = host
+            .import_preparation(original, Default::default())
+            .unwrap();
+        let retained = tempfile::tempdir().unwrap();
+        match interrupt {
+            "deadline" => std::thread::sleep(deadline.saturating_duration_since(Instant::now())),
+            "host" => host.request_stop(),
+            "root" => {
+                fs::rename(root.path(), retained.path().join("original")).unwrap();
+                fs::create_dir(root.path()).unwrap();
+            }
+            _ => unreachable!(),
+        }
+        assert!(preparation.checkpoint().is_err(), "{interrupt}");
+        assert!(
+            preparation.bind(owned(&["--list-importers"])).is_err(),
+            "{interrupt}"
+        );
+        host.shutdown().unwrap();
+        if interrupt == "root" {
+            assert_eq!(
+                fs::read_dir(root.path()).unwrap().count(),
+                0,
+                "replacement root stays empty"
+            );
+        } else {
+            assert!(!root.path().join("imports").exists());
+            assert!(!root.path().join("chronicle").exists());
+        }
+    }
+}
+
 fn held_owner_request(preparation: bool, interrupt: Interrupt) {
     use solstone_core_convey_shell::recovery_drain::{
         register_recovery_hooks, relinquish_admitted_work, resume_after_whole_journal_restore,

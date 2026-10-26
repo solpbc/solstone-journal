@@ -3,6 +3,7 @@
 
 //! Clock-aligned schedule state and submission primitives.
 
+mod bound;
 mod caps;
 mod completion;
 mod config;
@@ -18,13 +19,14 @@ use chrono::{DateTime, NaiveDateTime, Utc};
 use chrono_tz::Tz;
 use thiserror::Error;
 
+pub use bound::mutate_schedule_entries_at_root_checked;
 pub use caps::baseline_cap_contributions;
 pub use config::{
     ConfigDiagnostic, PreparedDailyTime, ScheduleConfig, ScheduleEntry, ScheduleMutation,
-    add_missing_schedule_entries, configured_weekly_day_name, initialize_schedule_config,
-    mutate_schedule_entries, prepare_daily_time, publish_daily_time, publish_daily_time_checked,
-    read_enabled_schedule_entry, register_default_entries, remove_schedule_entry,
-    set_schedule_metadata, validate_schedule_entry,
+    add_missing_schedule_entries, configured_weekly_day_name, enabled_schedule_entry,
+    initialize_schedule_config, mutate_schedule_entries, prepare_daily_time, publish_daily_time,
+    publish_daily_time_checked, read_enabled_schedule_entry, register_default_entries,
+    remove_schedule_entry, set_schedule_metadata, validate_schedule_entry,
 };
 pub use due::{daily_mark, hour_mark, is_due, weekly_mark};
 pub use engine::{CatchUpReport, CheckReport, ScheduleEngine};

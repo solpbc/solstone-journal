@@ -8,7 +8,7 @@ use axum::extract::Path;
 use axum::routing::put;
 use solstone_core_system::partition::canonical_journal_command;
 use solstone_core_system::schedule::{
-    ScheduleMutation, mutate_schedule_entries, validate_schedule_entry,
+    ScheduleMutation, mutate_schedule_entries_at_root_checked, validate_schedule_entry,
 };
 
 #[derive(Deserialize)]
@@ -45,7 +45,7 @@ pub(super) fn routes(sender: OwnerIngress) -> Router {
         )
         .route(
             "/api/journal/recurrences/source/{source}",
-            put(put_source).delete(remove_source),
+            get(source_status).put(put_source).delete(remove_source),
         )
         .with_state(sender)
 }
@@ -90,18 +90,19 @@ async fn put_source(
     Path(source): Path<String>,
     Json(request): Json<Recurrence>,
 ) -> Response {
-    let Some(command) = source_command(&source) else {
+    if source_command(&source).is_none() {
         return invalid();
-    };
+    }
     submit_operation(
         sender,
-        Operation::PutRecurrence {
-            name: format!("owner:source:{source}"),
-            command,
-            every: request.every,
-            enabled: request.enabled,
-            max_runtime: request.max_runtime,
-        },
+        Operation::Source(sources::SourceOperation {
+            source,
+            action: sources::SourceAction::Put {
+                every: request.every,
+                enabled: request.enabled,
+                max_runtime: request.max_runtime,
+            },
+        }),
     )
     .await
 }
@@ -111,7 +112,23 @@ async fn remove_source(State(sender): State<OwnerIngress>, Path(source): Path<St
     }
     submit_operation(
         sender,
-        Operation::RemoveRecurrence(format!("owner:source:{source}")),
+        Operation::Source(sources::SourceOperation {
+            source,
+            action: sources::SourceAction::Remove,
+        }),
+    )
+    .await
+}
+async fn source_status(State(sender): State<OwnerIngress>, Path(source): Path<String>) -> Response {
+    if source_command(&source).is_none() {
+        return invalid();
+    }
+    submit_operation(
+        sender,
+        Operation::Source(sources::SourceOperation {
+            source,
+            action: sources::SourceAction::Status,
+        }),
     )
     .await
 }
@@ -126,7 +143,7 @@ fn think_name(name: &str) -> Option<String> {
 fn think_command(args: Vec<String>) -> Vec<String> {
     canonical_journal_command(std::iter::once("think".to_owned()).chain(args))
 }
-fn source_command(source: &str) -> Option<Vec<String>> {
+pub(super) fn source_command(source: &str) -> Option<Vec<String>> {
     // Only the maintained auxiliary source connections. Body importers retain
     // their shared migration/approval prerequisite and receive no new schedule.
     matches!(source, "plaud" | "obsidian" | "audio")
@@ -149,7 +166,7 @@ fn valid_think(root: &JournalRoot, args: &[String]) -> bool {
 }
 
 pub(super) fn execute(
-    root: &JournalRoot,
+    root: &Arc<JournalRoot>,
     operation: Operation,
     cancelled: &(dyn Fn() -> bool + Send + Sync),
 ) -> (StatusCode, Value) {
@@ -159,7 +176,6 @@ pub(super) fn execute(
             json!({"error":"execution_stopped"}),
         );
     }
-    let path = root.canonical_path().join("config/schedules.json");
     match operation {
         Operation::Think(args) => {
             if !valid_think(root, &args) {
@@ -221,27 +237,9 @@ pub(super) fn execute(
                 ),
             }
         }
-        Operation::ListRecurrences => {
-            let raw: Value = match std::fs::read(&path) {
-                Ok(bytes) => match serde_json::from_slice::<Value>(&bytes) {
-                    Ok(Value::Object(map)) => Value::Object(map),
-                    _ => {
-                        return (
-                            StatusCode::UNPROCESSABLE_ENTITY,
-                            json!({"error":"schedules_unavailable"}),
-                        );
-                    }
-                },
-                Err(error) if error.kind() == std::io::ErrorKind::NotFound => json!({}),
-                Err(_) => {
-                    return (
-                        StatusCode::UNPROCESSABLE_ENTITY,
-                        json!({"error":"schedules_unavailable"}),
-                    );
-                }
-            };
+        Operation::ListRecurrences => mutate(root, cancelled, |raw| {
             (StatusCode::OK, json!({"schedules":raw}))
-        }
+        }),
         Operation::PutRecurrence {
             name,
             command,
@@ -265,27 +263,34 @@ pub(super) fn execute(
                     json!({"error":"recurrence_invalid"}),
                 );
             }
-            mutate(root, &path, cancelled, move |raw| {
+            mutate(root, cancelled, move |raw| {
                 raw.insert(name.clone(), entry.clone());
-                json!({"name":name,"entry":entry})
+                (StatusCode::OK, json!({"name":name,"entry":entry}))
             })
         }
-        Operation::RemoveRecurrence(name) => mutate(
-            root,
-            &path,
-            cancelled,
-            move |raw| json!({"name":name,"removed":raw.remove(&name).is_some()}),
-        ),
+        Operation::RemoveRecurrence(name) => mutate(root, cancelled, move |raw| {
+            (
+                StatusCode::OK,
+                json!({"name":name,"removed":raw.remove(&name).is_some()}),
+            )
+        }),
+        Operation::Source(request) => sources::execute(root, request, cancelled),
         Operation::Share { .. } => unreachable!("share preview has its own domain owner"),
     }
 }
-fn mutate(
-    root: &JournalRoot,
-    path: &std::path::Path,
+pub(super) fn mutate(
+    root: &Arc<JournalRoot>,
     cancelled: &(dyn Fn() -> bool + Send + Sync),
-    mut apply: impl FnMut(&mut serde_json::Map<String, Value>) -> Value,
+    mut apply: impl FnMut(&mut serde_json::Map<String, Value>) -> (StatusCode, Value),
 ) -> (StatusCode, Value) {
-    let result = mutate_schedule_entries(path, |raw| {
+    let checkpoint = || {
+        if cancelled() {
+            Err("execution stopped".to_owned())
+        } else {
+            Ok(())
+        }
+    };
+    let result = mutate_schedule_entries_at_root_checked(Arc::clone(root), &checkpoint, |raw| {
         if cancelled() || root.revalidate_canonical_binding().is_err() {
             return ScheduleMutation {
                 changed: false,
@@ -300,13 +305,21 @@ fn mutate(
         }
     });
     match result {
-        Ok(Ok(value)) => (StatusCode::OK, value),
+        Ok(Ok(value)) => value,
         Ok(Err(())) => (
             StatusCode::SERVICE_UNAVAILABLE,
             json!({"error":"execution_stopped"}),
         ),
         Err(error) => {
+            // Retain publication/uncertainty facts even when Stop races the
+            // refusal; cancellation must not erase the native diagnosis.
             log::warn!("owner recurrence: {error}");
+            if cancelled() || root.revalidate_canonical_binding().is_err() {
+                return (
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    json!({"error":"execution_stopped"}),
+                );
+            }
             (
                 StatusCode::UNPROCESSABLE_ENTITY,
                 json!({"error":"schedules_unavailable"}),
