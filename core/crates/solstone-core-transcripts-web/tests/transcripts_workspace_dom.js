@@ -2230,6 +2230,55 @@ test('an unfinished delete reported on open names its stream by label, keeping t
   assert.ok(notice.message.includes('<span title="room">LABEL-A</span>'), notice.message);
 });
 
+// A phone records its screen at 15 frames a second, so a frame id is not a
+// second. The page seeks to the time each frame was recorded at, and falls
+// back to the one-frame-a-second reading only for a frame with no time.
+function loadFrameCaptureClass(seeks) {
+  const start = scriptSource.indexOf('class FrameCapture {');
+  assert.ok(start >= 0, 'FrameCapture class found');
+  let depth = 0;
+  let end = start;
+  for (let i = scriptSource.indexOf('{', start); i < scriptSource.length; i += 1) {
+    if (scriptSource[i] === '{') depth += 1;
+    if (scriptSource[i] === '}') depth -= 1;
+    if (depth === 0) { end = i + 1; break; }
+  }
+  const document = {
+    createElement() {
+      const listeners = {};
+      const video = {
+        videoWidth: 1080,
+        videoHeight: 2400,
+        addEventListener(type, fn) { (listeners[type] ||= []).push(fn); },
+        removeEventListener(type, fn) { listeners[type] = (listeners[type] || []).filter((l) => l !== fn); },
+        set src(_url) { setTimeout(() => video.onloadedmetadata(), 0); },
+        set currentTime(value) {
+          seeks.push(value);
+          setTimeout(() => (listeners.seeked || []).forEach((fn) => fn()), 0);
+        },
+      };
+      return video;
+    },
+  };
+  const context = { document, createImageBitmap: async () => ({}), MediaError: {}, console };
+  vm.createContext(context);
+  return vm.runInContext(`(${scriptSource.slice(start, end)})`, context);
+}
+
+test('a screen frame is drawn from the time it was recorded, not its frame number', async () => {
+  const seeks = [];
+  const FrameCapture = loadFrameCaptureClass(seeks);
+  const capture = new FrameCapture();
+  capture.noteFrameTime('/screen.mp4', 300, 20);
+  await capture.captureFullFrame('/screen.mp4', 300);
+  assert.deepStrictEqual(seeks, [20]);
+  await capture.captureFullFrame('/screen.mp4', 5);
+  assert.deepStrictEqual(seeks, [20, 4], 'a frame with no recorded time keeps the one-a-second reading');
+  capture.noteFrameTime('/screen.mp4', 6, null);
+  await capture.captureFullFrame('/screen.mp4', 6);
+  assert.deepStrictEqual(seeks, [20, 4, 5]);
+});
+
 async function run() {
   for (const t of tests) {
     try {

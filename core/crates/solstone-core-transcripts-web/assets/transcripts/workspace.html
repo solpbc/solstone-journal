@@ -2883,6 +2883,20 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
       this.pendingThumbs = new Map();
       this.warnedUrls = new Set();
       this.unsupportedPlaceholderCanvases = new Set();
+      // Map of `${videoUrl}|${frameId}` -> the frame's time in its video, in seconds
+      this.frameTimes = new Map();
+    }
+
+    noteFrameTime(videoUrl, frameId, seconds) {
+      if (!videoUrl || !frameId || !Number.isFinite(seconds) || seconds < 0) return;
+      this.frameTimes.set(`${videoUrl}|${frameId}`, seconds);
+    }
+
+    // Where a frame sits in its video. Frame ids count every decoded frame, so
+    // they only match seconds for a video recorded at one frame per second.
+    frameSeconds(videoUrl, frameId) {
+      const seconds = this.frameTimes.get(`${videoUrl}|${frameId}`);
+      return seconds === undefined ? Math.max(0, frameId - 1) : seconds;
     }
 
     // Load video and wait for metadata
@@ -2980,7 +2994,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
 
       const pending = this._withVideoQueue(videoUrl, async () => {
         const video = entry.video;
-        const timestamp = Math.max(0, frameId - 1);
+        const timestamp = this.frameSeconds(videoUrl, frameId);
         await this._seekTo(video, timestamp);
 
         let bitmap;
@@ -3019,7 +3033,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
       if (entry.unsupported) return null;
       return this._withVideoQueue(videoUrl, async () => {
         const video = entry.video;
-        const timestamp = Math.max(0, frameId - 1);
+        const timestamp = this.frameSeconds(videoUrl, frameId);
         await this._seekTo(video, timestamp);
         return createImageBitmap(video);
       });
@@ -4375,6 +4389,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
     const nonBasicByVideo = new Map();
     (data.chunks || []).forEach(chunk => {
       if (chunk.type !== 'screen') return;
+      frameCapture.noteFrameTime(getVideoUrlForChunk(chunk), chunk.source_ref?.frame_id, chunk.source_ref?.offset);
       if (chunk.basic === true) return;
       const filename = chunk.source_ref?.filename;
       const frameId = chunk.source_ref?.frame_id;
