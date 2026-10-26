@@ -93,6 +93,11 @@ path = "tests/network_corpus.rs"
 name = "shell_chrome_dom"
 path = "tests/shell_chrome_dom.rs"
 
+# The node test guard preloaded through .cargo/config.toml.
+[[test]]
+name = "node_test_guard"
+path = "tests/node_test_guard.rs"
+
 # Cargo auto-discovery is disabled; this custom Node target checks the sun-arc engine's pure frame math.
 [[test]]
 name = "sunarc_frame"

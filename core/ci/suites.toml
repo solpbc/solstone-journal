@@ -2717,6 +2717,21 @@ default_full = true
 required_features = []
 runtime = "none"
 
+
+[[suites]]
+id = "solstone-core-convey-shell::node_test_guard"
+package = "solstone-core-convey-shell"
+target = "node_test_guard"
+set = "component"
+areas = ["services"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+serial_group = "local-services"
+default_full = true
+required_features = []
+runtime = "none"
+
 [[suites]]
 id = "solstone-core-convey-shell::sunarc_frame"
 package = "solstone-core-convey-shell"

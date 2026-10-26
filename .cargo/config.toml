@@ -1,0 +1,7 @@
+# Every node process a cargo test starts preloads the test guard: bounded
+# assertion messages, and a watchdog that kills a runaway harness. See
+# tests/node/solstone-node-test-guard.js. A NODE_OPTIONS or NODE_PATH already
+# set in the environment wins.
+[env]
+NODE_PATH = { value = "tests/node", relative = true }
+NODE_OPTIONS = "--require=solstone-node-test-guard"
