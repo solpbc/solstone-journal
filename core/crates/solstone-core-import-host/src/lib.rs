@@ -12,3 +12,6 @@ pub mod import_publication;
 #[cfg(feature = "in-process-pdf")]
 pub mod pdf_in_process;
 pub mod registry;
+
+#[cfg(test)]
+mod folder_sources;

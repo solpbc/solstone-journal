@@ -19,6 +19,7 @@ pub mod creation;
 pub mod dedupe;
 pub mod detect;
 pub mod events;
+pub mod folder_admit;
 pub mod force_notice;
 pub mod heartbeat;
 pub mod metadata;
@@ -70,6 +71,12 @@ pub use events::{
     emit_file_imported, emit_importer_completed, emit_importer_error, emit_importer_started,
     emit_importer_status, emit_observe_observed, emit_observe_observing, emit_supervisor_drain,
 };
+pub use folder_admit::{
+    AdmittedFolder, FOLDER_COPY_AGGREGATE_BUFFER_BYTES, FOLDER_COPY_BUFFER_BYTES,
+    FOLDER_COPY_MAX_DESCRIPTORS, FolderAdmitError, ReimportPolicy, ReimportSource, admit_folder,
+    folder_preview_current, reimport_policy, release_abandoned_folder_attempt,
+    release_folder_attempt, reserve_buffer,
+};
 pub use force_notice::{flush_force_notice, flush_force_notice_then, force_day_notice};
 pub use heartbeat::{HeartbeatExit, ImportHeartbeat};
 pub use metadata::{
@@ -99,8 +106,10 @@ pub use staging::{
     remove_import_records, stage_source,
 };
 pub use sync_state::{
-    BackendName, SYNC_BACKEND_INVENTORY, SyncState, SyncStateRead, SyncStateReadClass,
-    SyncStateWriteError, read_sync_state, state_path, write_sync_state,
+    AccessState, BackendName, FolderIdentityError, PublicConnection, RefreshPermit, RefreshRefusal,
+    SYNC_BACKEND_INVENTORY, SyncState, SyncStateRead, SyncStateReadClass, SyncStateWriteError,
+    begin_folder, mark_access_lost, permit_remembered_refresh, permit_runtime_refresh,
+    public_connection, read_sync_state, reauthorize, replace_folder, state_path, write_sync_state,
 };
 pub use text::{
     SystemWireClient, TextCreated, TextImportError, TextImportOutcome, TextImportWork, WireClient,

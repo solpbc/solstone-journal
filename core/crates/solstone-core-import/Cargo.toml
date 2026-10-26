@@ -39,6 +39,7 @@ rusqlite.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 sha2.workspace = true
+getrandom.workspace = true
 solstone-core-body-ingest.workspace = true
 solstone-core-callosum = { workspace = true, features = ["wire"] }
 solstone-core-facets.workspace = true

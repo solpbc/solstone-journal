@@ -219,6 +219,7 @@ pub use locking::{
     acquire_existing_parent_lock, hold_daily_location_admission, hold_existing_lock, hold_lock,
     hold_lock_checked,
 };
+pub use media::publish_directory_noreplace;
 pub use name_admission::{
     ClaimName, ConflictEntry, ConflictKind, NameAdmissionError, NameAdmissionReason,
     NoFollowEntryKind, StreamName, check_portable_component,

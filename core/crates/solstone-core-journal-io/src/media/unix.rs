@@ -423,6 +423,96 @@ pub(super) fn claim(
     }
 }
 
+/// Move `from_name` to `to_name` in `parent` only when `to_name` is absent.
+///
+/// An existing destination, including an empty directory, is `AlreadyExists`.
+/// A target without `RENAME_NOREPLACE` or `RENAME_EXCL` returns `Unsupported`.
+pub fn publish_directory_noreplace(
+    parent: &Path,
+    from_name: &OsStr,
+    to_name: &OsStr,
+) -> io::Result<()> {
+    publish_name(from_name)?;
+    publish_name(to_name)?;
+    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "ios"))]
+    {
+        use std::os::fd::AsRawFd;
+
+        let from = CString::new(from_name.as_bytes()).map_err(|_| {
+            io::Error::new(io::ErrorKind::InvalidInput, "publish name contains NUL")
+        })?;
+        let to = CString::new(to_name.as_bytes()).map_err(|_| {
+            io::Error::new(io::ErrorKind::InvalidInput, "publish name contains NUL")
+        })?;
+        let directory = nix::fcntl::open(parent, DIRECTORY, Mode::empty())?;
+        // SAFETY: the directory descriptor and both NUL-terminated names live
+        // for this synchronous create-only rename. No fallback.
+        #[allow(unsafe_code)]
+        let result = unsafe {
+            #[cfg(target_os = "linux")]
+            {
+                libc::syscall(
+                    libc::SYS_renameat2,
+                    directory.as_raw_fd(),
+                    from.as_ptr(),
+                    directory.as_raw_fd(),
+                    to.as_ptr(),
+                    libc::RENAME_NOREPLACE,
+                ) as i32
+            }
+            #[cfg(any(target_os = "macos", target_os = "ios"))]
+            {
+                libc::renameatx_np(
+                    directory.as_raw_fd(),
+                    from.as_ptr(),
+                    directory.as_raw_fd(),
+                    to.as_ptr(),
+                    libc::RENAME_EXCL,
+                )
+            }
+        };
+        if result != 0 {
+            return Err(io::Error::last_os_error());
+        }
+        Ok(())
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "ios")))]
+    {
+        let _ = (parent, from_name, to_name);
+        Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "native no-replace publication unavailable",
+        ))
+    }
+}
+
+fn publish_name(name: &OsStr) -> io::Result<()> {
+    let path = Path::new(name);
+    if name.is_empty() || path.is_absolute() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "publish name must be a relative path",
+        ));
+    }
+    let mut saw_normal = false;
+    for component in path.components() {
+        if !matches!(component, std::path::Component::Normal(_)) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "publish name must contain only normal components",
+            ));
+        }
+        saw_normal = true;
+    }
+    if !saw_normal {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "publish name must be a relative path",
+        ));
+    }
+    Ok(())
+}
+
 pub(super) fn delete_claim(directory: &Directory, name: &OsStr, file: &File) -> io::Result<()> {
     remove_leaf(directory, name, file)?;
     step(MediaPrimitive::DeleteAppliedError)

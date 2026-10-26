@@ -45,10 +45,14 @@ pub use removal::{
 mod unix;
 #[cfg(unix)]
 use unix as platform;
+#[cfg(unix)]
+pub use unix::publish_directory_noreplace;
 #[cfg(windows)]
 mod windows;
 #[cfg(windows)]
 use windows as platform;
+#[cfg(windows)]
+pub use windows::publish_directory_noreplace;
 
 const BUFFER_BYTES: usize = 64 * 1024;
 

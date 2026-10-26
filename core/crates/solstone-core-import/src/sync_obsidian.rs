@@ -278,3 +278,136 @@ fn select_vault<M>(
 fn state_error(error: impl fmt::Display) -> ObsidianSyncError {
     ObsidianSyncError::State(error.to_string())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::sync_state::{begin_folder, replace_folder};
+
+    struct FixedClock;
+
+    impl SyncClock for FixedClock {
+        fn now(&self) -> String {
+            "2026-06-16T12:00:00Z".to_owned()
+        }
+    }
+
+    struct NoHome;
+
+    impl ObsidianHomeCandidates for NoHome {
+        fn candidates(&self) -> &[PathBuf] {
+            &[]
+        }
+    }
+
+    struct OneNote {
+        note: ObsidianNote,
+    }
+
+    impl ObsidianScanner for OneNote {
+        fn is_directory(&self, _path: &Path) -> bool {
+            true
+        }
+
+        fn notes(&self, _vault: &Path) -> Result<Vec<ObsidianNote>, String> {
+            Ok(vec![self.note.clone()])
+        }
+    }
+
+    #[test]
+    fn parked_imported_row_is_not_the_active_catalogue() {
+        let journal = tempfile::tempdir().unwrap();
+        let mut state = SyncState::empty(BackendName::Obsidian);
+        state.files_mut().insert(
+            "notes/a.md".to_owned(),
+            serde_json::json!({
+                "status": "imported",
+                "content_hash": "hash-1"
+            }),
+        );
+        let identity = begin_folder(&mut state, "Notes", false, None).unwrap();
+        write_sync_state(journal.path(), &state).unwrap();
+        let note = ObsidianNote {
+            relative_path: "notes/a.md".to_owned(),
+            filename: "a.md".to_owned(),
+            title: "a".to_owned(),
+            modified_at: 1.0,
+            content_hash: "hash-1".to_owned(),
+        };
+        let request = ObsidianSyncRequest::<SyncPreviewRequest>::new(
+            journal.path().to_path_buf(),
+            Some(PathBuf::from("/vault")),
+            false,
+        );
+        assert!(!request.force);
+        let scanner = OneNote { note };
+        let home = NoHome;
+        let clock = FixedClock;
+        let mut seams = ObsidianPreviewSeams {
+            candidates: &home,
+            scanner: &scanner,
+            clock: &clock,
+        };
+        let outcome = sync_obsidian_preview(&request, &mut seams).unwrap();
+        assert_eq!(
+            outcome
+                .state
+                .root()
+                .get("files")
+                .and_then(Value::as_object)
+                .and_then(|files| files.get("notes/a.md"))
+                .and_then(|entry| entry.get("status"))
+                .and_then(Value::as_str),
+            Some("imported")
+        );
+        let mut replaced = outcome.state;
+        let next = replace_folder(&mut replaced, "Other", false, None).unwrap();
+        assert_ne!(next, identity);
+        assert!(!request.force);
+        write_sync_state(journal.path(), &replaced).unwrap();
+        let mut outcome = sync_obsidian_preview(&request, &mut seams).unwrap();
+        assert_eq!(
+            outcome
+                .state
+                .files_mut()
+                .get("notes/a.md")
+                .and_then(|entry| entry.get("status"))
+                .and_then(Value::as_str),
+            Some("available")
+        );
+        let retained = outcome
+            .state
+            .root()
+            .get("retained_catalogs")
+            .and_then(Value::as_object)
+            .and_then(|catalogs| catalogs.get(&identity))
+            .and_then(Value::as_object)
+            .and_then(|files| files.get("notes/a.md"))
+            .cloned()
+            .unwrap();
+        assert_eq!(
+            retained.get("status").and_then(Value::as_str),
+            Some("imported")
+        );
+        assert_eq!(
+            retained.get("content_hash").and_then(Value::as_str),
+            Some("hash-1")
+        );
+        let SyncStateRead::Loaded(stored) = read_sync_state(journal.path(), BackendName::Obsidian)
+        else {
+            panic!("parked state was written");
+        };
+        assert_eq!(
+            stored
+                .root()
+                .get("retained_catalogs")
+                .and_then(Value::as_object)
+                .and_then(|catalogs| catalogs.get(&identity))
+                .and_then(Value::as_object)
+                .and_then(|files| files.get("notes/a.md"))
+                .and_then(|entry| entry.get("status"))
+                .and_then(Value::as_str),
+            Some("imported")
+        );
+    }
+}

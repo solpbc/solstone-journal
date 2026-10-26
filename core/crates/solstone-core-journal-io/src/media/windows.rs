@@ -554,6 +554,21 @@ pub(super) fn claim(
     Ok(())
 }
 
+/// Move `from_name` to `to_name` in `parent` only when `to_name` is absent.
+///
+/// Windows has no no-replace directory publication here and does not rename.
+pub fn publish_directory_noreplace(
+    parent: &Path,
+    from_name: &OsStr,
+    to_name: &OsStr,
+) -> io::Result<()> {
+    let _ = (parent, from_name, to_name);
+    Err(io::Error::new(
+        io::ErrorKind::Unsupported,
+        "native no-replace publication unavailable",
+    ))
+}
+
 pub(super) fn delete_claim(_directory: &Directory, _name: &OsStr, file: &File) -> io::Result<()> {
     mark_delete(file)?;
     step(MediaPrimitive::DeleteAppliedError)

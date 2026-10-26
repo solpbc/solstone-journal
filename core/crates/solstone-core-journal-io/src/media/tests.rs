@@ -81,6 +81,25 @@ fn portable_name_validation_refuses_non_utf8() {
     );
 }
 
+#[cfg(unix)]
+#[test]
+fn publish_directory_noreplace_leaves_an_empty_directory() {
+    let root = tempfile::tempdir().unwrap();
+    let parent = root.path();
+    std::fs::create_dir(parent.join("source")).unwrap();
+    std::fs::write(parent.join("source/keep.txt"), b"source").unwrap();
+    std::fs::create_dir(parent.join("taken")).unwrap();
+    let error =
+        publish_directory_noreplace(parent, OsStr::new("source"), OsStr::new("taken")).unwrap_err();
+    assert_eq!(error.kind(), io::ErrorKind::AlreadyExists);
+    assert!(parent.join("taken").is_dir());
+    assert_eq!(std::fs::read_dir(parent.join("taken")).unwrap().count(), 0);
+    assert_eq!(
+        std::fs::read(parent.join("source/keep.txt")).unwrap(),
+        b"source"
+    );
+}
+
 #[cfg(all(test, feature = "full-tests"))]
 mod observations {
     use super::*;

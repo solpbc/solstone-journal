@@ -1472,19 +1472,37 @@ fn run_obsidian_sync(journal_path: &Path, options: &Options) -> CliRun {
 }
 
 fn run_plaud_sync(journal_path: &Path, options: &Options) -> CliRun {
-    let credential = ConfiguredPlaudCredential::read(journal_path);
     let mut catalogue = PlaudApi::new();
+    let mut download = PlaudApi::new();
+    let mut pipeline = GenericAudioPipeline { journal_path };
+    run_plaud_with(
+        journal_path,
+        options.save,
+        &mut catalogue,
+        &mut download,
+        &mut pipeline,
+    )
+}
+
+pub(crate) fn run_plaud_with(
+    journal_path: &Path,
+    save: bool,
+    catalogue: &mut dyn PlaudCatalogue,
+    download: &mut dyn PlaudDownload,
+    pipeline: &mut dyn ImportPipeline,
+) -> CliRun {
+    let credential = ConfiguredPlaudCredential::read(journal_path);
     let manifests = ImportFilenameMatches { journal_path };
     let clock = SystemSyncClock;
     let mut state_writer = FilesystemPlaudStateWriter;
     let preview = PlaudPreviewSeams {
         credential: &credential,
-        catalogue: &mut catalogue,
+        catalogue,
         manifests: &manifests,
         clock: &clock,
         state_writer: &mut state_writer,
     };
-    if !options.save {
+    if !save {
         let request = PlaudSyncRequest::<SyncPreviewRequest>::new(journal_path.to_path_buf());
         let mut seams = preview;
         return match sync_plaud_preview(&request, &mut seams) {
@@ -1495,12 +1513,10 @@ fn run_plaud_sync(journal_path: &Path, options: &Options) -> CliRun {
         };
     }
     let request = PlaudSyncRequest::<SyncSaveRequest>::new(journal_path.to_path_buf());
-    let mut download = PlaudApi::new();
-    let mut pipeline = GenericAudioPipeline { journal_path };
     let mut seams = PlaudSaveSeams {
         preview,
-        download: &mut download,
-        pipeline: &mut pipeline,
+        download,
+        pipeline,
     };
     match sync_plaud_save(&request, &mut seams) {
         Ok(outcome) => sync_saved(
