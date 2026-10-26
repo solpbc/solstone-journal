@@ -10,8 +10,11 @@
 //! [`WorkStopGuard`] restores thread-local state and is `!Send` and `!Sync`.
 //! A spawned worker that installs or publishes does not read the entry
 //! thread's local state. It holds the same [`WorkStop`] and checks that.
-//! [`WorkStop::linked`] also observes a parent flag and a deadline. Those are
-//! read when a check runs. Nothing waits on a timer.
+//! [`WorkStop::linked`] observes a parent flag and a deadline.
+//! [`WorkStop::linked_with_checkpoint`] also calls the caller's retained
+//! checkpoint. A foreground checkpoint already folds host stop and root
+//! binding into that callback. Each is read when a check runs. Nothing waits
+//! on a timer.
 
 use std::cell::RefCell;
 use std::marker::PhantomData;
@@ -23,11 +26,23 @@ thread_local! {
     static ACTIVE: RefCell<Option<Arc<StopState>>> = const { RefCell::new(None) };
 }
 
-#[derive(Debug)]
 struct StopState {
     flag: AtomicBool,
     parent: Option<Arc<AtomicBool>>,
     deadline: Option<Instant>,
+    checkpoint: Option<Arc<dyn Fn() -> bool + Send + Sync>>,
+}
+
+impl std::fmt::Debug for StopState {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("StopState")
+            .field("flag", &self.flag)
+            .field("parent", &self.parent)
+            .field("deadline", &self.deadline)
+            .field("checkpoint", &self.checkpoint.is_some())
+            .finish()
+    }
 }
 
 fn stop_requested(state: &StopState) -> bool {
@@ -39,6 +54,10 @@ fn stop_requested(state: &StopState) -> bool {
         || state
             .deadline
             .is_some_and(|deadline| Instant::now() >= deadline)
+        || state
+            .checkpoint
+            .as_ref()
+            .is_some_and(|checkpoint| checkpoint())
 }
 
 /// Shared stopping intent. `request` does not wait for native work to return.
@@ -54,6 +73,7 @@ impl WorkStop {
             flag: AtomicBool::new(false),
             parent: None,
             deadline: None,
+            checkpoint: None,
         })
     }
 
@@ -68,6 +88,28 @@ impl WorkStop {
             flag: AtomicBool::new(false),
             parent: Some(parent),
             deadline,
+            checkpoint: None,
+        })
+    }
+
+    /// Observe a parent flag, an optional deadline, and a retained checkpoint.
+    ///
+    /// `checkpoint` is called at each check and returns true when that
+    /// checkpoint says stop. The foreground host's checkpoint already includes
+    /// host stop and root binding. This stop does not reimplement either one.
+    /// A true checkpoint, a set parent, a past deadline, and [`WorkStop::request`]
+    /// are all stopping intent. There is no monitor thread.
+    #[must_use]
+    pub fn linked_with_checkpoint(
+        parent: Arc<AtomicBool>,
+        deadline: Option<Instant>,
+        checkpoint: impl Fn() -> bool + Send + Sync + 'static,
+    ) -> Self {
+        Self::from_state(StopState {
+            flag: AtomicBool::new(false),
+            parent: Some(parent),
+            deadline,
+            checkpoint: Some(Arc::new(checkpoint)),
         })
     }
 
@@ -202,5 +244,22 @@ mod tests {
         assert!(expired.is_requested());
         let _expired_guard = WorkStopGuard::install(&expired);
         assert!(!work_continues());
+    }
+
+    #[test]
+    fn checkpoint_stops_while_the_task_flag_stays_clear() {
+        let parent = Arc::new(AtomicBool::new(false));
+        let host = Arc::new(AtomicBool::new(false));
+        let seen = Arc::clone(&host);
+        let later = Instant::now() + Duration::from_secs(3_600);
+        let stop = WorkStop::linked_with_checkpoint(Arc::clone(&parent), Some(later), move || {
+            seen.load(Ordering::Acquire)
+        });
+        let _guard = WorkStopGuard::install(&stop);
+        assert!(work_continues());
+        host.store(true, Ordering::Release);
+        assert!(stop.is_requested());
+        assert!(!work_continues());
+        assert!(!parent.load(Ordering::Acquire));
     }
 }

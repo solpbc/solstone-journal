@@ -29,8 +29,10 @@
 //! that parse: the sync backend, `--path` when present, and whether the
 //! command is a held Body entry or a stored Oura sync. It does not load saved
 //! Obsidian or audio settings. [`WorkStop::linked`] observes a
-//! parent cancellation flag and a deadline at each check. There is no timer
-//! thread. [`ImportHandle::join`] still blocks until native work returns.
+//! parent cancellation flag and a deadline at each check.
+//! [`WorkStop::linked_with_checkpoint`] also calls the caller's retained
+//! checkpoint, which already includes host stop and root binding. There is
+//! no timer thread. [`ImportHandle::join`] still blocks until native work returns.
 //!
 //! In-process PDF is the optional `in-process-pdf` feature. The caller
 //! passes an explicit library path: Android `nativeLibraryDir/libpdfium.so`,
@@ -527,6 +529,67 @@ mod tests {
         release_tx.send(()).unwrap();
         let (run, _) = done_rx.recv().unwrap();
         assert_ne!(run.exit_code, 0, "{}", run.stdout);
+        assert!(!journal.path().join("chronicle").exists());
+        assert!(
+            !journal
+                .path()
+                .join("imports")
+                .join("20260809_090000")
+                .join("imported.json")
+                .exists()
+        );
+    }
+
+    #[test]
+    fn host_checkpoint_during_pdf_retains_the_call_and_skips_install() {
+        let journal = tempfile::tempdir().unwrap();
+        let pdf = journal.path().join("notes.pdf");
+        std::fs::write(&pdf, b"%PDF-1.1\n").unwrap();
+        let (entered_tx, entered_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel();
+        let parent = Arc::new(AtomicBool::new(false));
+        let host = Arc::new(AtomicBool::new(false));
+        let seen = Arc::clone(&host);
+        let stop = WorkStop::linked_with_checkpoint(Arc::clone(&parent), None, move || {
+            seen.load(std::sync::atomic::Ordering::Acquire)
+        });
+        let seams = ImportSeams {
+            text: Box::new(IdleText),
+            image: Box::new(solstone_core_import_sources::NullWireClient),
+            model: Box::new(solstone_core_import_sources::NullDocumentModelClient),
+            pdf: Box::new(BlockingPdf {
+                entered: entered_tx,
+                release: release_rx,
+                payload: Some(PdfPayload::default()),
+            }),
+            reindex: Box::new(crate::registry::IndexScan {
+                journal: journal.path().to_path_buf(),
+            }),
+        };
+        let handle = start(
+            vec![
+                "--source".to_owned(),
+                "document".to_owned(),
+                pdf.display().to_string(),
+                "--timestamp".to_owned(),
+                "20260809_090000".to_owned(),
+            ],
+            journal.path().to_path_buf(),
+            seams,
+            stop,
+        )
+        .unwrap();
+        entered_rx.recv().unwrap();
+        host.store(true, std::sync::atomic::Ordering::Release);
+        let (done_tx, done_rx) = mpsc::channel();
+        thread::spawn(move || {
+            done_tx.send(handle.join()).unwrap();
+        });
+        assert_eq!(done_rx.try_recv().unwrap_err(), TryRecvError::Empty);
+        release_tx.send(()).unwrap();
+        let (run, _) = done_rx.recv().unwrap();
+        assert_ne!(run.exit_code, 0, "{}", run.stdout);
+        assert!(!parent.load(std::sync::atomic::Ordering::Acquire));
         assert!(!journal.path().join("chronicle").exists());
         assert!(
             !journal
