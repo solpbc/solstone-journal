@@ -38,6 +38,8 @@ pub enum DiarizationError {
         intervals: usize,
         labels: usize,
     },
+    /// A caller asked to stop before the next quadratic matrix.
+    Cancelled,
 }
 
 impl fmt::Display for DiarizationError {
@@ -61,6 +63,7 @@ impl fmt::Display for DiarizationError {
                 formatter,
                 "sentence assignment label length mismatch: intervals={intervals} labels={labels}"
             ),
+            Self::Cancelled => write!(formatter, "clustering cancelled"),
         }
     }
 }
@@ -235,6 +238,20 @@ pub fn cluster_embeddings(
     cols: usize,
     n_speakers: Option<usize>,
 ) -> Result<ClusterEmbeddingResult, DiarizationError> {
+    cluster_embeddings_cancellable(embeddings, rows, cols, n_speakers, &|| false)
+}
+
+/// Cluster interval rows, stopping when `cancel` is true before a quadratic matrix.
+///
+/// A true callback is [`DiarizationError::Cancelled`]. It is not an empty label
+/// list, an undefined silhouette, or a one-speaker success.
+pub fn cluster_embeddings_cancellable(
+    embeddings: &[f32],
+    rows: usize,
+    cols: usize,
+    n_speakers: Option<usize>,
+    cancel: &dyn Fn() -> bool,
+) -> Result<ClusterEmbeddingResult, DiarizationError> {
     validate_embedding_shape(embeddings, rows, cols)?;
     if rows == 0 {
         // The retired Python implementation had no rows==0 guard here; its behavior was accidental. The
@@ -251,7 +268,7 @@ pub fn cluster_embeddings(
     let (requested_k, silhouette_k) = match n_speakers {
         Some(k) => (k, None),
         None => {
-            let selected = select_k_for_normalized_rows(&normalized, rows, cols)?;
+            let selected = select_k_for_normalized_rows(&normalized, rows, cols, cancel)?;
             (selected, Some(selected))
         }
     };
@@ -259,7 +276,7 @@ pub fn cluster_embeddings(
     let labels = if k <= 1 {
         vec![0; rows]
     } else {
-        ahc_labels_from_normalized_rows(&normalized, rows, cols, k)?
+        ahc_labels_from_normalized_rows(&normalized, rows, cols, k, cancel)?
     };
     Ok(ClusterEmbeddingResult {
         labels,
@@ -303,12 +320,7 @@ pub fn silhouette_score(
         });
     }
     let normalized = normalize_embedding_rows(embeddings, rows, cols)?;
-    Ok(silhouette_score_normalized_rows(
-        &normalized,
-        rows,
-        cols,
-        labels,
-    ))
+    silhouette_score_normalized_rows(&normalized, rows, cols, labels, &|| false)
 }
 
 pub fn select_k_from_silhouette_curve(curve: &[(usize, f64)]) -> usize {
@@ -408,6 +420,7 @@ fn select_k_for_normalized_rows(
     normalized: &[f64],
     rows: usize,
     cols: usize,
+    cancel: &dyn Fn() -> bool,
 ) -> Result<usize, DiarizationError> {
     let effective_max = MAX_K.min(rows.saturating_sub(1));
     if effective_max < 2 {
@@ -415,8 +428,9 @@ fn select_k_for_normalized_rows(
     }
     let mut curve = Vec::with_capacity(effective_max - 1);
     for k in 2..=effective_max {
-        let labels = ahc_labels_from_normalized_rows(normalized, rows, cols, k)?;
-        let score = silhouette_score_normalized_rows(normalized, rows, cols, &labels);
+        stop_if_cancelled(cancel)?;
+        let labels = ahc_labels_from_normalized_rows(normalized, rows, cols, k, cancel)?;
+        let score = silhouette_score_normalized_rows(normalized, rows, cols, &labels, cancel)?;
         curve.push((k, score));
     }
     Ok(select_k_from_silhouette_curve(&curve))
@@ -427,6 +441,7 @@ fn ahc_labels_from_normalized_rows(
     rows: usize,
     cols: usize,
     k: usize,
+    cancel: &dyn Fn() -> bool,
 ) -> Result<Vec<usize>, DiarizationError> {
     if rows == 0 {
         return Ok(Vec::new());
@@ -435,15 +450,35 @@ fn ahc_labels_from_normalized_rows(
     if k <= 1 {
         return Ok(vec![0; rows]);
     }
-    let distances = unclipped_ahc_distances(normalized, rows, cols);
-    let merges = average_linkage_tree_from_distances(&distances, rows);
+    let distances = unclipped_ahc_distances(normalized, rows, cols, cancel)?;
+    let merges = average_linkage_tree_from_distances(&distances, rows, cancel)?;
     Ok(cut_tree_canonical_labels(rows, &merges, k))
 }
 
-fn unclipped_ahc_distances(normalized: &[f64], rows: usize, cols: usize) -> Vec<f64> {
+fn stop_if_cancelled(cancel: &dyn Fn() -> bool) -> Result<(), DiarizationError> {
+    if cancel() {
+        Err(DiarizationError::Cancelled)
+    } else {
+        Ok(())
+    }
+}
+
+// A finished, non-cancelled cluster still allocates these matrices. Memory
+// follows interval count, not sample count: rows*rows f64 for the unclipped
+// distances, another rows*rows f64 for the clipped silhouette, and
+// (2*rows-1)*(2*rows-1) f64 for linkage. The cancel check stops the
+// allocation. It does not shrink a run that is allowed to finish.
+
+fn unclipped_ahc_distances(
+    normalized: &[f64],
+    rows: usize,
+    cols: usize,
+    cancel: &dyn Fn() -> bool,
+) -> Result<Vec<f64>, DiarizationError> {
     // AHC consumes the unclipped cosine distance matrix, matching
     // scipy.pdist(metric="cosine"). This deliberately differs from the
     // silhouette matrix below, which is clipped at zero; do not unify them.
+    stop_if_cancelled(cancel)?;
     let mut distances = vec![0.0; rows * rows];
     for i in 0..rows {
         for j in (i + 1)..rows {
@@ -452,28 +487,39 @@ fn unclipped_ahc_distances(normalized: &[f64], rows: usize, cols: usize) -> Vec<
             distances[j * rows + i] = distance;
         }
     }
-    distances
+    Ok(distances)
 }
 
-fn clipped_silhouette_distances(normalized: &[f64], rows: usize, cols: usize) -> Vec<f64> {
+fn clipped_silhouette_distances(
+    normalized: &[f64],
+    rows: usize,
+    cols: usize,
+    cancel: &dyn Fn() -> bool,
+) -> Result<Vec<f64>, DiarizationError> {
     // Silhouette consumes max(1.0 - dot, 0.0), clipped at zero, matching
     // _silhouette in diarize.py:296. This deliberately differs from the
     // unclipped AHC matrix above; do not unify them.
+    stop_if_cancelled(cancel)?;
     let mut distances = vec![0.0; rows * rows];
     for i in 0..rows {
         for j in 0..rows {
             distances[i * rows + j] = (1.0 - dot_rows(normalized, cols, i, j)).max(0.0);
         }
     }
-    distances
+    Ok(distances)
 }
 
-fn average_linkage_tree_from_distances(distances: &[f64], n: usize) -> Vec<Merge> {
+fn average_linkage_tree_from_distances(
+    distances: &[f64],
+    n: usize,
+    cancel: &dyn Fn() -> bool,
+) -> Result<Vec<Merge>, DiarizationError> {
     if n <= 1 {
-        return Vec::new();
+        return Ok(Vec::new());
     }
 
     let max_nodes = 2 * n - 1;
+    stop_if_cancelled(cancel)?;
     let mut matrix = vec![f64::INFINITY; max_nodes * max_nodes];
     for row in 0..n {
         for col in 0..n {
@@ -490,6 +536,7 @@ fn average_linkage_tree_from_distances(distances: &[f64], n: usize) -> Vec<Merge
 
     let mut merges = Vec::with_capacity(n - 1);
     for step in 0..(n - 1) {
+        stop_if_cancelled(cancel)?;
         let (left, right, distance) = lowest_active_pair(&matrix, &active, max_nodes)
             .expect("at least two active clusters remain");
         let new_id = n + step;
@@ -518,7 +565,7 @@ fn average_linkage_tree_from_distances(distances: &[f64], n: usize) -> Vec<Merge
             size: new_size,
         });
     }
-    merges
+    Ok(merges)
 }
 
 fn lowest_active_pair(
@@ -612,17 +659,18 @@ fn silhouette_score_normalized_rows(
     rows: usize,
     cols: usize,
     labels: &[usize],
-) -> f64 {
+    cancel: &dyn Fn() -> bool,
+) -> Result<f64, DiarizationError> {
     if rows != labels.len() {
-        return UNDEFINED_SILHOUETTE;
+        return Ok(UNDEFINED_SILHOUETTE);
     }
     let unique = unique_labels(labels);
     if unique.len() < 2 || rows <= unique.len() {
-        return UNDEFINED_SILHOUETTE;
+        return Ok(UNDEFINED_SILHOUETTE);
     }
 
-    let distances = clipped_silhouette_distances(normalized, rows, cols);
-    silhouette_score_from_distances(&distances, rows, labels)
+    let distances = clipped_silhouette_distances(normalized, rows, cols, cancel)?;
+    Ok(silhouette_score_from_distances(&distances, rows, labels))
 }
 
 fn silhouette_score_from_distances(distances: &[f64], rows: usize, labels: &[usize]) -> f64 {
@@ -877,7 +925,8 @@ mod tests {
             [0.6, 1.0, 0.2, 0.0],
         ]);
 
-        let merges = average_linkage_tree_from_distances(&distances, 4);
+        let merges = average_linkage_tree_from_distances(&distances, 4, &|| false)
+            .expect("uninterrupted linkage");
 
         assert_merge(&merges[0], 0, 1, 0.1, 2);
         assert_merge(&merges[1], 2, 3, 0.2, 2);
@@ -896,7 +945,8 @@ mod tests {
             [1.0, 1.0, 1.0, 0.0],
         ]);
 
-        let merges = average_linkage_tree_from_distances(&distances, 4);
+        let merges = average_linkage_tree_from_distances(&distances, 4, &|| false)
+            .expect("uninterrupted linkage");
 
         assert_merge(&merges[0], 0, 1, 1.0, 2);
         assert_merge(&merges[1], 2, 3, 1.0, 2);
@@ -1016,6 +1066,54 @@ mod tests {
         assert_eq!(result.labels.len(), 3);
         assert_eq!(result.silhouette_k, Some(2));
         assert_eq!(result.effective_k, Some(2));
+    }
+
+    #[test]
+    fn cluster_embeddings_cancellable_matches_an_uninterrupted_call() {
+        let never = || false;
+        let compare = |embeddings: &[f32], rows: usize| {
+            let plain = cluster_embeddings(embeddings, rows, 2, None).expect("labels");
+            let cancellable =
+                cluster_embeddings_cancellable(embeddings, rows, 2, None, &never).expect("labels");
+            assert_eq!(plain.labels, cancellable.labels);
+            assert_eq!(plain.silhouette_k, cancellable.silhouette_k);
+            assert_eq!(plain.effective_k, cancellable.effective_k);
+        };
+        compare(&[1.0_f32, 0.0, 0.0, 1.0, 0.8, 0.2], 3);
+        compare(&[1.0_f32, 0.0, 0.0, 1.0], 2);
+    }
+
+    #[test]
+    fn cluster_embeddings_cancellable_stops_on_the_first_poll() {
+        let error = cluster_embeddings_cancellable(
+            &[1.0_f32, 0.0, 0.0, 1.0, 0.8, 0.2],
+            3,
+            2,
+            None,
+            &|| true,
+        )
+        .expect_err("first poll cancels");
+        assert_eq!(error, DiarizationError::Cancelled);
+    }
+
+    #[test]
+    fn cluster_embeddings_cancellable_stops_on_a_later_poll() {
+        let polls = std::cell::Cell::new(0_usize);
+        let cancel = || {
+            let seen = polls.get();
+            polls.set(seen + 1);
+            seen > 0
+        };
+        let error = cluster_embeddings_cancellable(
+            &[1.0_f32, 0.0, 0.0, 1.0, 0.8, 0.2],
+            3,
+            2,
+            None,
+            &cancel,
+        )
+        .expect_err("later poll cancels");
+        assert_eq!(error, DiarizationError::Cancelled);
+        assert!(polls.get() >= 2, "polls={}", polls.get());
     }
 
     #[test]

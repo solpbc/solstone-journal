@@ -317,6 +317,14 @@ pub(crate) fn analyze_speakers_embedded(
     models: &Path,
     scratch: &Path,
 ) -> Result<SpeakerAnalyzeResult, SpeakerAnalyzeError> {
+    #[cfg(all(test, feature = "full-tests"))]
+    if let Some(keep) = EMBEDDED_FIRST_PASS_KEEP.with(|cell| *cell.borrow()) {
+        return Ok(synthetic_owner_voice_pass(
+            full_audio.len(),
+            statements_pre_restore,
+            keep,
+        ));
+    }
     let model = |name: &str| {
         crate::model_assets::verify_digest(name, models.join(name))
             .map_err(|error| SpeakerAnalyzeError::new(raw_path, "model", error.to_string(), None))
@@ -488,6 +496,13 @@ pub(crate) struct UnitSpeakerRows {
     pub(crate) intervals: Vec<solstone_core_speakers::diarization::SpeakerInterval>,
     pub(crate) interval_embeddings: Vec<f32>,
     pub(crate) statement_rows: Vec<UnitStatementEmbedding>,
+    /// Pyannote windows shifted onto the recording, keyed by absolute start sample.
+    pub(crate) windows: Vec<(usize, solstone_core_speakers::SpeakerWindowStats)>,
+    pub(crate) overlap_fraction: f64,
+    /// Speaker-turn ranges shifted onto the recording. `None` when the helper omitted them.
+    pub(crate) turns: Option<Vec<(f64, f64)>>,
+    /// Overlap ranges shifted onto the recording. `None` when the helper omitted them.
+    pub(crate) overlaps: Option<Vec<(f64, f64)>>,
 }
 
 /// One statement embedding whose span is on the recording timeline.
@@ -503,12 +518,42 @@ pub(crate) struct UnitStatementEmbedding {
 #[cfg(all(test, feature = "full-tests", feature = "embedded", unix))]
 thread_local! {
     static EMBEDDED_SPEAKER_EMPTY: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    static EMBEDDED_SPEAKER_QUEUE: std::cell::RefCell<Vec<(Value, PathBuf)>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+    static EMBEDDED_SPEAKER_SEEN: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    static EMBEDDED_FIRST_PASS_KEEP: std::cell::RefCell<Option<fn(usize, f64) -> bool>> =
+        const { std::cell::RefCell::new(None) };
 }
 
 /// Full-tests stand-in: return no interval rows and do not run the helper.
 #[cfg(all(test, feature = "full-tests", feature = "embedded", unix))]
 pub(crate) fn set_embedded_unit_speaker_empty(enabled: bool) {
     EMBEDDED_SPEAKER_EMPTY.with(|cell| cell.set(enabled));
+}
+
+/// Queue one helper response. `statement_payload` is the path the response names.
+#[cfg(all(test, feature = "full-tests", feature = "embedded", unix))]
+pub(crate) fn push_embedded_speaker_response(response: Value, statement_payload: PathBuf) {
+    EMBEDDED_SPEAKER_QUEUE.with(|cell| cell.borrow_mut().push((response, statement_payload)));
+}
+
+/// Drop queued responses and the seen flag.
+#[cfg(all(test, feature = "full-tests", feature = "embedded", unix))]
+pub(crate) fn clear_embedded_speaker_responses() {
+    EMBEDDED_SPEAKER_QUEUE.with(|cell| cell.borrow_mut().clear());
+    EMBEDDED_SPEAKER_SEEN.with(|cell| cell.set(false));
+}
+
+/// Whether a queued response has been parsed on this thread.
+#[cfg(all(test, feature = "full-tests", feature = "embedded", unix))]
+pub(crate) fn embedded_speaker_response_seen() -> bool {
+    EMBEDDED_SPEAKER_SEEN.with(|cell| cell.get())
+}
+
+/// Full-tests stand-in for the voice-only first pass. `true` keeps the window.
+#[cfg(all(test, feature = "full-tests", feature = "embedded", unix))]
+pub(crate) fn set_embedded_first_pass_keep(hook: Option<fn(usize, f64) -> bool>) {
+    EMBEDDED_FIRST_PASS_KEEP.with(|cell| *cell.borrow_mut() = hook);
 }
 
 #[cfg(all(feature = "embedded", unix))]
@@ -526,6 +571,25 @@ pub(crate) fn collect_unit_speaker_rows(
     #[cfg(all(test, feature = "full-tests"))]
     if EMBEDDED_SPEAKER_EMPTY.with(|cell| cell.get()) {
         return Ok(UnitSpeakerRows::default());
+    }
+    #[cfg(all(test, feature = "full-tests"))]
+    if let Some((response, statement_payload)) = EMBEDDED_SPEAKER_QUEUE.with(|cell| {
+        let mut queue = cell.borrow_mut();
+        if queue.is_empty() {
+            None
+        } else {
+            Some(queue.remove(0))
+        }
+    }) {
+        EMBEDDED_SPEAKER_SEEN.with(|cell| cell.set(true));
+        return read_unit_speaker_rows(
+            raw_path,
+            &response,
+            &statement_payload,
+            statements_restored,
+            origin_s,
+            full_audio.len(),
+        );
     }
     let model = |name: &str| {
         crate::model_assets::verify_digest(name, models.join(name))
@@ -561,11 +625,38 @@ pub(crate) fn collect_unit_speaker_rows(
         &statement_payload,
         statements_restored,
         origin_s,
+        full_audio.len(),
     );
     temporary
         .close()
         .map_err(|error| SpeakerAnalyzeError::new(raw_path, "cleanup", error.to_string(), None))?;
     rows
+}
+
+/// Pyannote diarization window starts for one unit buffer, including the short-audio pad.
+#[cfg(all(feature = "embedded", unix))]
+pub(crate) fn pyannote_window_starts(audio_len: usize) -> Vec<usize> {
+    let rate = solstone_core_speakers::PYANNOTE_SAMPLE_RATE_HZ as usize;
+    let window = solstone_core_speakers::PYANNOTE_WINDOW_S as usize * rate;
+    let stride = solstone_core_speakers::PYANNOTE_DIARIZE_STRIDE_S as usize * rate;
+    let padded = audio_len.max(window);
+    let mut starts = Vec::new();
+    let mut start = 0usize;
+    while start + window <= padded {
+        starts.push(start);
+        start = match start.checked_add(stride) {
+            Some(next) => next,
+            None => break,
+        };
+        if stride == 0 {
+            break;
+        }
+    }
+    let final_start = padded.saturating_sub(window);
+    if starts.last().copied() != Some(final_start) {
+        starts.push(final_start);
+    }
+    starts
 }
 
 #[cfg(all(feature = "embedded", unix))]
@@ -575,6 +666,7 @@ fn read_unit_speaker_rows(
     statement_payload: &Path,
     statements_restored: &[Map<String, Value>],
     origin_s: f64,
+    audio_len: usize,
 ) -> Result<UnitSpeakerRows, SpeakerAnalyzeError> {
     let diarization = response
         .get("diarization")
@@ -628,11 +720,175 @@ fn read_unit_speaker_rows(
         )?,
         _ => Vec::new(),
     };
+    let evidence = response
+        .get("evidence")
+        .and_then(Value::as_object)
+        .ok_or_else(|| SpeakerAnalyzeError::new(raw_path, "payload", "missing-evidence", None))?;
+    let overlap_fraction = evidence
+        .get("overlap_fraction")
+        .and_then(Value::as_f64)
+        .filter(|value| value.is_finite() && *value >= 0.0)
+        .ok_or_else(|| {
+            SpeakerAnalyzeError::new(raw_path, "payload", "invalid-overlap-fraction", None)
+        })?;
+    let pyannote = response
+        .get("pyannote")
+        .and_then(Value::as_object)
+        .ok_or_else(|| SpeakerAnalyzeError::new(raw_path, "payload", "missing-pyannote", None))?;
+    let stats = parse_window_stats(raw_path, pyannote.get("window_stats"))?;
+    let starts = pyannote_window_starts(audio_len);
+    if stats.len() != starts.len() {
+        return Err(SpeakerAnalyzeError::new(
+            raw_path,
+            "payload",
+            "window-stats-length",
+            None,
+        ));
+    }
+    let origin_samples =
+        (origin_s * f64::from(solstone_core_speakers::PYANNOTE_SAMPLE_RATE_HZ)).round() as usize;
+    let windows = starts
+        .into_iter()
+        .zip(stats)
+        .map(|(start, stats)| (start + origin_samples, stats))
+        .collect();
+    let turns = match pyannote.get("speaker_turns") {
+        None => None,
+        Some(value) => {
+            let parsed = SpeakerTurnEvidence::from_value(value).map_err(|_| {
+                SpeakerAnalyzeError::new(
+                    raw_path,
+                    "payload",
+                    "invalid-pyannote-speaker-turns",
+                    None,
+                )
+            })?;
+            Some(
+                parsed
+                    .ranges
+                    .iter()
+                    .map(|range| (range.start_s + origin_s, range.end_s + origin_s))
+                    .collect(),
+            )
+        }
+    };
+    let overlaps = match pyannote.get("overlap_ranges") {
+        None => None,
+        Some(value) => Some(parse_overlap_ranges(raw_path, value, origin_s)?),
+    };
     Ok(UnitSpeakerRows {
         intervals,
         interval_embeddings,
         statement_rows,
+        windows,
+        overlap_fraction,
+        turns,
+        overlaps,
     })
+}
+
+#[cfg(all(feature = "embedded", unix))]
+fn parse_window_stats(
+    raw_path: &Path,
+    value: Option<&Value>,
+) -> Result<Vec<solstone_core_speakers::SpeakerWindowStats>, SpeakerAnalyzeError> {
+    let invalid =
+        || SpeakerAnalyzeError::new(raw_path, "payload", "invalid-pyannote-window-stats", None);
+    let Some(value) = value else {
+        return Err(invalid());
+    };
+    value
+        .as_array()
+        .ok_or_else(invalid)?
+        .iter()
+        .map(|item| {
+            let speech_frames = item.get("speech_frames").and_then(Value::as_u64);
+            let active_slot_count = item.get("active_slot_count").and_then(Value::as_u64);
+            let overlap_frames = item.get("overlap_frames").and_then(Value::as_u64);
+            match (speech_frames, active_slot_count, overlap_frames) {
+                (Some(speech_frames), Some(active_slot_count), Some(overlap_frames)) => {
+                    Ok(solstone_core_speakers::SpeakerWindowStats {
+                        speech_frames: speech_frames as usize,
+                        active_slot_count: active_slot_count as usize,
+                        overlap_frames: overlap_frames as usize,
+                    })
+                }
+                _ => Err(invalid()),
+            }
+        })
+        .collect()
+}
+
+#[cfg(all(feature = "embedded", unix))]
+fn parse_overlap_ranges(
+    raw_path: &Path,
+    value: &Value,
+    origin_s: f64,
+) -> Result<Vec<(f64, f64)>, SpeakerAnalyzeError> {
+    let invalid =
+        || SpeakerAnalyzeError::new(raw_path, "payload", "invalid-pyannote-overlap-ranges", None);
+    value
+        .as_array()
+        .ok_or_else(invalid)?
+        .iter()
+        .map(|pair| {
+            let pair = pair
+                .as_array()
+                .filter(|pair| pair.len() == 2)
+                .ok_or_else(invalid)?;
+            let start = pair[0]
+                .as_f64()
+                .filter(|value| value.is_finite())
+                .ok_or_else(invalid)?;
+            let end = pair[1]
+                .as_f64()
+                .filter(|value| value.is_finite())
+                .ok_or_else(invalid)?;
+            if start < 0.0 || start > end {
+                return Err(invalid());
+            }
+            Ok((start + origin_s, end + origin_s))
+        })
+        .collect()
+}
+
+#[cfg(all(test, feature = "full-tests", feature = "embedded", unix))]
+fn synthetic_owner_voice_pass(
+    audio_len: usize,
+    statements: &[Map<String, Value>],
+    keep: fn(usize, f64) -> bool,
+) -> SpeakerAnalyzeResult {
+    let mut payload = Vec::new();
+    let mut statement_ids = Vec::new();
+    let mut durations_s = Vec::new();
+    for statement in statements {
+        let start = statement
+            .get("start")
+            .and_then(Value::as_f64)
+            .unwrap_or(0.0);
+        let id = statement.get("id").and_then(Value::as_i64).unwrap_or(0);
+        let mut row = vec![0.0_f32; WESPEAKER_EMBEDDING_WIDTH];
+        let axis = if keep(audio_len, start) { 0 } else { 1 };
+        row[axis] = 1.0;
+        payload.extend(row.into_iter().flat_map(f32::to_le_bytes));
+        statement_ids.push(id);
+        durations_s.push(2.0);
+    }
+    SpeakerAnalyzeResult {
+        statements: Vec::new(),
+        embedding_payload: (!statement_ids.is_empty()).then(|| SpeakerEmbeddingPayload {
+            payload,
+            statement_ids,
+            durations_s,
+            encoder: ENCODER_ID.to_owned(),
+        }),
+        speaker_evidence: "single".to_owned(),
+        speaker_evidence_multi_fraction: 0.0,
+        overlap_fraction: 0.0,
+        statement_labels: None,
+        turn_ranges: Some(Vec::new()),
+        overlap_ranges: Some(Vec::new()),
+    }
 }
 
 #[cfg(all(feature = "embedded", unix))]

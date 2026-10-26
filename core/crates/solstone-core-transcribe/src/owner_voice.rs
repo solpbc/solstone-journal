@@ -29,7 +29,7 @@ pub(crate) const OWNER_VOICE_KEEP_SCORE: f64 = 0.229_677_766_661_508_2;
 const SAMPLE_RATE: usize = 16_000;
 const WINDOW_SAMPLES: usize = 2 * SAMPLE_RATE;
 const MIN_SPEECH_SAMPLES: usize = 4_800;
-const PAD_BEFORE_SAMPLES: usize = 8_000;
+pub(crate) const PAD_BEFORE_SAMPLES: usize = 8_000;
 const PAD_AFTER_SAMPLES: usize = 16_000;
 /// First-pass statement ids start here, far above any id a published transcript uses.
 const SYNTHETIC_ID_BASE: i64 = 1 << 40;
@@ -288,6 +288,13 @@ pub(crate) struct Decision {
     pub(crate) union: Vec<(usize, usize)>,
     pub(crate) windows_scored: u64,
     pub(crate) windows_kept: u64,
+    /// Scored windows in unit order. Embedded aggregation shifts them onto the recording.
+    /// Desktop publication reads the counts, not these vectors.
+    #[allow(dead_code)]
+    pub(crate) scored: Vec<Window>,
+    /// Kept windows, in the same order `union` was built from.
+    #[allow(dead_code)]
+    pub(crate) kept: Vec<Window>,
 }
 
 /// Decide what to keep from the scored windows and the first pass.
@@ -302,6 +309,8 @@ pub(crate) fn decide(windows: &[Window], pass: &FirstPass, print: &[f32], len: u
         union: kept_union(&kept, len),
         windows_scored: windows.len() as u64,
         windows_kept: kept.len() as u64,
+        scored: windows.to_vec(),
+        kept,
     }
 }
 
@@ -311,6 +320,8 @@ pub(crate) fn keep_nothing() -> Decision {
         union: Vec::new(),
         windows_scored: 0,
         windows_kept: 0,
+        scored: Vec::new(),
+        kept: Vec::new(),
     }
 }
 
@@ -609,6 +620,8 @@ mod tests {
             union: vec![(0, 40_000)],
             windows_scored: 2,
             windows_kept: 1,
+            scored: Vec::new(),
+            kept: Vec::new(),
         };
         let filter = filter_record(&speech, &decision, "a.m4a", 7, &[0u8; 32], &unit_print());
         assert_eq!(filter.speech_s, 3.0);

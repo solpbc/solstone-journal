@@ -117,6 +117,12 @@ thread_local! {
     static PROCESSING_TEST_VAD: std::cell::RefCell<Option<solstone_core_observe_audio::VadResult>> = const { std::cell::RefCell::new(None) };
 }
 
+/// Take the one-shot full-tests VAD stand-in, leaving the cell empty.
+#[cfg(all(test, feature = "full-tests"))]
+pub(crate) fn take_processing_test_vad() -> Option<solstone_core_observe_audio::VadResult> {
+    PROCESSING_TEST_VAD.with(|result| result.borrow_mut().take())
+}
+
 /// Run the currently implemented native transcription path for one segment audio file.
 pub(crate) fn process_one(
     audio_path: &Path,

@@ -7,7 +7,7 @@
 # about identical files.
 export TMPDIR := $(shell cd /var/tmp && /bin/pwd -P)
 
-.PHONY: install preflight uninstall test test-cov test-integration test-performance test-app test-only format format-check ci ci-full ci-full-windows clean clean-install coverage watch versions update pre-commit skills check-journal-device-sim check-distribution-route-protocol check-install-fast check-rust-fmt check-rust-msrv check-rust-clippy check-rust-clippy-full check-rust-unit check-rust-test check-rust-journal-mcp-endpoint check-rust-classified-full-clippy-onnx check-rust-describe-cli-stubs check-rust-race check-rust-ios check-rust-macos check-rust-windows check-rust-deny check-rust-shipped-binaries build build-shipped-features build-sandbox-processing dev-package screen-ocr-rust-notices check-screen-ocr-rust-notices check-rust-sandbox-processing-build check-spl-dependency-pin audit contract check-contract build-native-sol-inventory check-native-sol-inventory check-native-sol-architecture dev all sandbox sandbox-stop install-models parakeet-helper parakeet-helper-clean check-rust-vad-analyze-test check-rust-onnx-stage check-rust-onnx-test check-rust-pdf-stage check-rust-pdf-test verify service-logs check-call-http-only check-tools-http-only require-win-remote-host sync-win-host win-host-ci brand-sync FORCE
+.PHONY: install preflight uninstall test test-cov test-integration test-performance test-app test-only format format-check ci ci-full ci-full-windows clean clean-install coverage watch versions update pre-commit skills check-journal-device-sim check-distribution-route-protocol check-install-fast check-rust-fmt check-rust-msrv check-rust-clippy check-rust-clippy-full check-rust-unit check-rust-test check-rust-journal-mcp-endpoint check-rust-embedded-speech check-rust-classified-full-clippy-onnx check-rust-describe-cli-stubs check-rust-race check-rust-ios check-rust-macos check-rust-windows check-rust-deny check-rust-shipped-binaries build build-shipped-features build-sandbox-processing dev-package screen-ocr-rust-notices check-screen-ocr-rust-notices check-rust-sandbox-processing-build check-spl-dependency-pin audit contract check-contract build-native-sol-inventory check-native-sol-inventory check-native-sol-architecture dev all sandbox sandbox-stop install-models parakeet-helper parakeet-helper-clean check-rust-vad-analyze-test check-rust-onnx-stage check-rust-onnx-test check-rust-pdf-stage check-rust-pdf-test verify service-logs check-call-http-only check-tools-http-only require-win-remote-host sync-win-host win-host-ci brand-sync FORCE
 
 # Default target: build the native workspace.
 all: build
@@ -51,7 +51,8 @@ CI_RUSTUP_HOME := $(if $(strip $(RUSTUP_HOME)),$(abspath $(RUSTUP_HOME)),$(HOME)
 CI_CARGO_ENV_TARGETS := ci ci-contained ci-under-poison ci-prep-ffmpeg ci-full ci-full-under-poison ci-full-plan ci-full-prep ci-full-prep-cargo ci-full-prep-onnx ci-full-prep-pdf \
 	\
 	check-rust-classified-full-clippy-onnx \
-	check-rust-journal-mcp-endpoint
+	check-rust-journal-mcp-endpoint \
+	check-rust-embedded-speech
 ifneq ($(strip $(filter $(CI_CARGO_ENV_TARGETS),$(MAKECMDGOALS))),)
 export CARGO_INCREMENTAL CARGO_PROFILE_DEV_DEBUG
 endif
@@ -316,7 +317,7 @@ UV_OPTIONAL_GOALS := \
 	check-rust-fmt check-rust-msrv check-rust-clippy check-rust-clippy-full \
 	check-standalone-lockfiles check-rust-screen-ocr-helper \
 	check-rust-unit check-rust-doc check-rust-test check-rust-race \
-	check-rust-journal-mcp-endpoint \
+	check-rust-journal-mcp-endpoint check-rust-embedded-speech \
 	check-rust-android check-rust-android-prepared \
 	build-mobile-android build-mobile-ios \
 	check-mobile-native-android check-mobile-native-ios check-mobile-native-driver \
@@ -878,6 +879,10 @@ check-rust-test:
 check-rust-journal-mcp-endpoint:
 	@$(REQUIRE_CARGO)
 	cargo test --manifest-path $(RUST_MANIFEST) -p solstone-core --features journal-mcp-endpoint --lib --bins --locked --offline --no-fail-fast -- --test-threads=1
+
+check-rust-embedded-speech:
+	@$(REQUIRE_CARGO)
+	cargo test --manifest-path $(RUST_MANIFEST) -p solstone-core-transcribe --features full-tests,embedded --lib --locked --offline -- --test-threads=1
 
 check-rust-describe-cli-stubs:
 	@$(REQUIRE_CARGO)

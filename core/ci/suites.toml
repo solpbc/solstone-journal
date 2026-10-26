@@ -121,6 +121,17 @@ timeout = "standard"
 default_full = true
 
 [[legs]]
+id = "embedded-speech"
+make_target = "check-rust-embedded-speech"
+set = "component"
+areas = ["audio"]
+packages = ["solstone-core-transcribe"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache", "onnx-runtime"]
+timeout = "slow"
+default_full = true
+
+[[legs]]
 id = "doctests"
 make_target = "check-rust-doc"
 set = "component"
