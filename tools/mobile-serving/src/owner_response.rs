@@ -526,7 +526,9 @@ impl OwnerResponses {
             return Err("owner responses stopped or busy".into());
         }
         let _entered = runtime.enter();
-        let sink = AsyncFd::new(sink).map_err(|error| error.to_string())?;
+        // SAFETY: this owned File stays inside AsyncFd and is used only through
+        // shared references, so its descriptor stays open and unchanged until drop.
+        let sink = unsafe { AsyncFd::register(sink) }.map_err(|error| error.to_string())?;
         let (sender, receiver) = mpsc::channel();
         let (cancel, mut cancelled) = watch::channel(false);
         let task = runtime.spawn(async move {
@@ -575,8 +577,12 @@ impl OwnerResponses {
         }
         let guard = self.reserve()?;
         let _entered = runtime.enter();
-        let body = AsyncFd::new(body).map_err(|error| error.to_string())?;
-        let sink = AsyncFd::new(sink).map_err(|error| error.to_string())?;
+        // SAFETY: this owned File stays inside AsyncFd and is used only through
+        // shared references, so its descriptor stays open and unchanged until drop.
+        let body = unsafe { AsyncFd::register(body) }.map_err(|error| error.to_string())?;
+        // SAFETY: this owned File stays inside AsyncFd and is used only through
+        // shared references, so its descriptor stays open and unchanged until drop.
+        let sink = unsafe { AsyncFd::register(sink) }.map_err(|error| error.to_string())?;
         let (chunk_sender, channel) = http_body_util::Channel::<Bytes, std::io::Error>::new(1);
         let request = admitted.into_request(Body::new(channel))?;
         let (sender, receiver) = mpsc::channel();
