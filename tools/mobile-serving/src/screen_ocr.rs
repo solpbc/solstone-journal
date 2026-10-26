@@ -6,8 +6,10 @@
 //! The `OAROCR` context is created on the first `recognize` inside a job.
 //! A missing or rejected model file never builds a session.
 
+use std::cell::Cell;
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 
 use sha2::{Digest, Sha256};
 use solstone_core_describe::{OcrFailure, OcrWorker, OcrWorkerFactory, RawOccurrence};
@@ -18,6 +20,8 @@ use oar_ocr::oarocr::{OAROCR, OAROCRBuilder};
 use oar_ocr::processors::LimitType;
 
 pub(crate) const PINNED_MODELS_DETAIL: &str = "pinned PP-OCRv6 models were not admitted (detector 193bab7a, recognizer 9ef676d6, dictionary c5cbe34e)";
+
+const ENGINE_FAILED_DETAIL: &str = "screen-ocr engine failed after the pinned models were admitted";
 
 const RECIPE_ID: &str = "mobile-screen-ocr";
 
@@ -57,12 +61,16 @@ const PINNED_FILES: [PinnedFile; 3] = [
 
 pub(crate) struct ScreenOcrFactory {
     payload: PathBuf,
+    /// Read after the worker returns. Admission leaves the pinned-models sentence;
+    /// a later engine failure replaces it before `OcrFailure::Unavailable`.
+    detail: Rc<Cell<&'static str>>,
 }
 
 impl ScreenOcrFactory {
     pub(crate) fn new(payload: &Path) -> Self {
         Self {
             payload: payload.to_path_buf(),
+            detail: Rc::new(Cell::new(PINNED_MODELS_DETAIL)),
         }
     }
 }
@@ -74,16 +82,18 @@ impl OcrWorkerFactory for ScreenOcrFactory {
 
     fn create(&mut self) -> Result<Option<Box<dyn OcrWorker>>, OcrFailure> {
         let Some(models) = admit_models(&model_directory(&self.payload)) else {
+            self.detail.set(PINNED_MODELS_DETAIL);
             return Ok(None);
         };
         Ok(Some(Box::new(ScreenOcrWorker {
             models,
             engine: None,
+            detail: Rc::clone(&self.detail),
         })))
     }
 
     fn unavailable_detail(&mut self) -> Option<&'static str> {
-        Some(PINNED_MODELS_DETAIL)
+        Some(self.detail.get())
     }
 }
 
@@ -96,6 +106,14 @@ struct AdmittedModels {
 struct ScreenOcrWorker {
     models: AdmittedModels,
     engine: Option<OAROCR>,
+    detail: Rc<Cell<&'static str>>,
+}
+
+impl ScreenOcrWorker {
+    fn engine_unavailable(&self) -> OcrFailure {
+        self.detail.set(ENGINE_FAILED_DETAIL);
+        OcrFailure::Unavailable
+    }
 }
 
 impl OcrWorker for ScreenOcrWorker {
@@ -103,20 +121,24 @@ impl OcrWorker for ScreenOcrWorker {
         if self.engine.is_none() {
             // A false commit means a runtime was already committed in this process.
             let _committed = ort::init().with_telemetry(false).commit();
-            self.engine = Some(build_engine(&self.models)?);
+            let engine = match build_engine(&self.models) {
+                Ok(engine) => engine,
+                Err(_) => return Err(self.engine_unavailable()),
+            };
+            self.engine = Some(engine);
         }
         let Some(engine) = self.engine.as_ref() else {
-            return Err(OcrFailure::Unavailable);
+            return Err(self.engine_unavailable());
         };
         let image = image::ImageReader::with_format(Cursor::new(png), image::ImageFormat::Png)
             .decode()
-            .map_err(|_| OcrFailure::Unavailable)?
+            .map_err(|_| self.engine_unavailable())?
             .to_rgb8();
         let predicted = engine
             .predict(vec![image])
-            .map_err(|_| OcrFailure::Unavailable)?;
+            .map_err(|_| self.engine_unavailable())?;
         let Some(result) = predicted.first() else {
-            return Err(OcrFailure::Unavailable);
+            return Err(self.engine_unavailable());
         };
         let mut occurrences = Vec::new();
         for region in &result.text_regions {
@@ -124,7 +146,7 @@ impl OcrWorker for ScreenOcrWorker {
                 continue;
             };
             let line_order =
-                u32::try_from(occurrences.len()).map_err(|_| OcrFailure::Unavailable)?;
+                u32::try_from(occurrences.len()).map_err(|_| self.engine_unavailable())?;
             occurrences.push(RawOccurrence {
                 line_order,
                 text: text.to_owned(),
