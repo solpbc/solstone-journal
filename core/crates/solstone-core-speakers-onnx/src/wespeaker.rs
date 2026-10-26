@@ -86,25 +86,44 @@ impl WespeakerEmbedder {
         &mut self,
         features: &FeatureMatrix,
     ) -> Result<SpeakerEmbedding, SpeakerOnnxError> {
-        if features.frames() == 0 || features.bins() != WESPEAKER_MEL_BINS {
-            return Err(SpeakerOnnxError::InvalidFeatureMatrix {
-                frames: features.frames(),
-                bins: features.bins(),
-            });
+        let frames = features.frames();
+        let bins = features.bins();
+        self.embed_polled(frames, bins, &|| false, |start, end, dest| {
+            copy_feature_window(features, start, end, dest)
+        })
+    }
+
+    /// Embed already centered frames, polling `cancel` before each prefix window and the projection.
+    ///
+    /// `read_window` fills one receptive-field window `[start, end)` in row-major bins.
+    /// The caller owns mean subtraction. This does not average embeddings.
+    pub fn embed_polled<F>(
+        &mut self,
+        frames: usize,
+        bins: usize,
+        cancel: &dyn Fn() -> bool,
+        mut read_window: F,
+    ) -> Result<SpeakerEmbedding, SpeakerOnnxError>
+    where
+        F: FnMut(usize, usize, &mut [f32]) -> Result<(), SpeakerOnnxError>,
+    {
+        if frames == 0 || bins != WESPEAKER_MEL_BINS {
+            return Err(SpeakerOnnxError::InvalidFeatureMatrix { frames, bins });
         }
-        let count = features.frames().div_ceil(STRIDE);
+        let count = frames.div_ceil(STRIDE);
         if count < 2 {
-            return Err(SpeakerOnnxError::InvalidFeatureMatrix {
-                frames: features.frames(),
-                bins: features.bins(),
-            });
+            return Err(SpeakerOnnxError::InvalidFeatureMatrix { frames, bins });
         }
         let mut sum = vec![0.0_f64; FLAT];
         let mut sumsq = vec![0.0_f64; FLAT];
         let mut next = 0_usize;
         while next < count {
+            if cancel() {
+                return Err(SpeakerOnnxError::Cancelled);
+            }
             let end = (next + CORE_OUTPUTS).min(count);
-            let took = self.accumulate_window(features, next, end, &mut sum, &mut sumsq)?;
+            let took =
+                self.accumulate_window(frames, next, end, &mut sum, &mut sumsq, &mut read_window)?;
             if took == 0 {
                 return Err(SpeakerOnnxError::InvalidModelIo {
                     detail: format!("prefix window at output {next} covered no frames"),
@@ -117,25 +136,32 @@ impl WespeakerEmbedder {
                 detail: format!("prefix covered {next} of {count} frames"),
             });
         }
+        if cancel() {
+            return Err(SpeakerOnnxError::Cancelled);
+        }
         self.project(&sum, &sumsq, count)
     }
 
-    fn accumulate_window(
+    fn accumulate_window<F>(
         &mut self,
-        features: &FeatureMatrix,
+        frames: usize,
         start: usize,
         end: usize,
         sum: &mut [f64],
         sumsq: &mut [f64],
-    ) -> Result<usize, SpeakerOnnxError> {
-        let frames = features.frames();
+        read_window: &mut F,
+    ) -> Result<usize, SpeakerOnnxError>
+    where
+        F: FnMut(usize, usize, &mut [f32]) -> Result<(), SpeakerOnnxError>,
+    {
         let ws = (start * STRIDE).saturating_sub(HALO);
         let we = ((end - 1) * STRIDE + HALO + 1).min(frames);
         if we <= ws {
             return Ok(0);
         }
-        let bins = features.bins();
-        let prefix = self.run_prefix(&features.data()[ws * bins..we * bins], we - ws)?;
+        let mut window = vec![0.0_f32; (we - ws) * WESPEAKER_MEL_BINS];
+        read_window(ws, we, &mut window)?;
+        let prefix = self.run_prefix(&window, we - ws)?;
         let local_base = ws / STRIDE;
         let mut took = 0_usize;
         for global in start..end {
@@ -217,6 +243,25 @@ impl WespeakerEmbedder {
 struct Prefix {
     tout: usize,
     values: Vec<f32>,
+}
+
+fn copy_feature_window(
+    features: &FeatureMatrix,
+    start: usize,
+    end: usize,
+    dest: &mut [f32],
+) -> Result<(), SpeakerOnnxError> {
+    let frames = features.frames();
+    let bins = features.bins();
+    if end < start || end > frames {
+        return Err(SpeakerOnnxError::InvalidFeatureMatrix { frames, bins });
+    }
+    let slice = &features.data()[start * bins..end * bins];
+    if dest.len() != slice.len() {
+        return Err(SpeakerOnnxError::InvalidFeatureMatrix { frames, bins });
+    }
+    dest.copy_from_slice(slice);
+    Ok(())
 }
 
 fn prefix_frame_is_inside(global: usize, frames: usize, ws: usize, we: usize) -> bool {
@@ -366,5 +411,27 @@ mod tests {
             }
         }
         FeatureMatrix::from_row_major(frames, WESPEAKER_MEL_BINS, data).expect("synthetic")
+    }
+
+    #[test]
+    fn cancel_before_projection_stops_after_the_prefix_windows() {
+        let model_path = repo_root().join("core/models/assets/wespeaker-resnet34-256.onnx");
+        let mut embedder =
+            WespeakerEmbedder::open(&model_path, &[SpeakerExecutionProvider::Cpu]).expect("open");
+        let features = synthetic_features(605);
+        let seen = std::cell::Cell::new(0_usize);
+        let error = embedder
+            .embed_polled(
+                features.frames(),
+                features.bins(),
+                &|| seen.get() >= 3,
+                |start, end, dest| {
+                    seen.set(seen.get() + 1);
+                    copy_feature_window(&features, start, end, dest)
+                },
+            )
+            .expect_err("projection is cancelled");
+        assert!(matches!(error, SpeakerOnnxError::Cancelled), "{error}");
+        assert_eq!(seen.get(), 3);
     }
 }

@@ -75,6 +75,7 @@ pub enum SpeakerOnnxError {
     Ort {
         message: String,
     },
+    Cancelled,
 }
 
 impl fmt::Display for SpeakerOnnxError {
@@ -105,6 +106,7 @@ impl fmt::Display for SpeakerOnnxError {
                 write!(formatter, "speaker ONNX output was not returned: {name}")
             }
             Self::Ort { message } => write!(formatter, "speaker ONNX Runtime error: {message}"),
+            Self::Cancelled => formatter.write_str("speaker ONNX embedding was cancelled"),
         }
     }
 }

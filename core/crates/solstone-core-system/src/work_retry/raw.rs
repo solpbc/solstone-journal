@@ -389,6 +389,92 @@ pub fn stamp_attempt_from(record: &mut Value, attempt: &Attempt) -> Result<(), S
     Ok(())
 }
 
+/// What a held attempt is allowed to do with the output as it is now.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HeldAttempt {
+    /// The same consumed attempt still matches this input, reason, and failure.
+    Continue,
+    /// The writer already published this attempt's terminal receipt.
+    Accepted,
+    /// The held attempt is not this input, reason, or receipt.
+    Decline,
+}
+
+/// Adjudicate a held attempt from the retry record and the current output.
+///
+/// Attempt identity is decided before the input is read, so a finished or
+/// not-yet-consumed attempt does not hash the recording. Continue requires the
+/// current fingerprint, the failure reason, and a consumed cause with no new
+/// permission. Accepted requires the published receipt. Anything else declines.
+pub fn classify_held_attempt(
+    journal: &Path,
+    output: &Path,
+    input: &Path,
+    handler: &str,
+    context: &RetryContext,
+) -> Result<HeldAttempt, String> {
+    let unit = unit_for_output(journal, output, handler)?;
+    if unit.id()? != context.unit_id {
+        return Ok(HeldAttempt::Decline);
+    }
+    let Some(record) = super::read(journal, &context.unit_id)? else {
+        return Ok(HeldAttempt::Decline);
+    };
+    if !record.held || record.attempt.as_ref() != Some(&context.attempt) {
+        return Ok(HeldAttempt::Decline);
+    }
+    let Some(header) = bounded_header(output)? else {
+        return Ok(HeldAttempt::Decline);
+    };
+    let Some(processing) = header.get("_solstone_processing") else {
+        return Ok(HeldAttempt::Decline);
+    };
+    if processing.get("schema").and_then(Value::as_str)
+        != Some(solstone_core_processing_record::vocab::SCHEMA)
+        || processing.get("handler").and_then(Value::as_str) != Some(handler)
+    {
+        return Ok(HeldAttempt::Decline);
+    }
+    let fingerprint = super::file_fingerprint(input)?;
+    if fingerprint != context.attempt.input || fingerprint != record.input {
+        return Ok(HeldAttempt::Decline);
+    }
+    let attempt_value =
+        serde_json::to_value(&context.attempt).map_err(|error| error.to_string())?;
+    let state = processing.get("state").and_then(Value::as_str);
+    if matches!(state, Some("analyzed" | "empty"))
+        && processing.get("retry_attempt") == Some(&attempt_value)
+    {
+        return Ok(HeldAttempt::Accepted);
+    }
+    if state != Some("failed") {
+        return Ok(HeldAttempt::Decline);
+    }
+    let header_reason = processing
+        .get("reason_code")
+        .and_then(Value::as_str)
+        .unwrap_or("analysis_failed");
+    if context.attempt.reason != record.reason || context.attempt.reason != header_reason {
+        return Ok(HeldAttempt::Decline);
+    }
+    if !record.consumed.contains(&context.attempt.cause) {
+        return Ok(HeldAttempt::Decline);
+    }
+    if record.permission(&fingerprint, DECLARED_FIXES).is_some() {
+        return Ok(HeldAttempt::Decline);
+    }
+    let Some(evidence) = inspect_output(journal, output)? else {
+        return Ok(HeldAttempt::Decline);
+    };
+    if evidence.unit != unit
+        || evidence.input != fingerprint
+        || evidence.reason != context.attempt.reason
+    {
+        return Ok(HeldAttempt::Decline);
+    }
+    Ok(HeldAttempt::Continue)
+}
+
 /// A child exiting successfully is not a terminal receipt. Require a consumed
 /// matching attempt and a recognized processing disposition from the writer.
 pub fn finish_output(journal: &Path, unit: &Unit, attempt: &Attempt) -> Result<(), String> {

@@ -40,6 +40,8 @@ mod embedded_spool;
 #[cfg(all(feature = "embedded", unix))]
 mod embedded_units;
 #[cfg(all(feature = "embedded", unix))]
+mod statement_embed;
+#[cfg(all(feature = "embedded", unix))]
 pub use embedded::{
     EMBEDDED_AUDIO_MAX_SAMPLES, EmbeddedAsr, EmbeddedControl, EmbeddedModelInfo, RetryContext,
     embedded_already_processed, embedded_retry_context, embedded_retryable_failure,

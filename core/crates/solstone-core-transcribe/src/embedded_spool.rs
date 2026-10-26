@@ -56,9 +56,12 @@ pub(crate) struct StoredSpan {
 /// Sample count of the buffer a statement embedding would see.
 pub(crate) struct StatementAudioMeasure {
     pub(crate) samples: usize,
+    /// True when the count is the reduced concatenation, not `end - start`.
+    pub(crate) reduced: bool,
 }
 
-/// PCM for one final statement. `reduced` selects the helper's reduced input.
+/// Whole-statement PCM assembled only by the spool test oracle.
+#[cfg(all(test, feature = "full-tests"))]
 pub(crate) struct StatementAudio {
     pub(crate) samples: Vec<f32>,
     pub(crate) reduced: bool,
@@ -512,14 +515,21 @@ impl DraftSpool {
         if !self.span_has_reduced_unit(start, end, cancel)? {
             return Ok(StatementAudioMeasure {
                 samples: end - start,
+                reduced: false,
             });
         }
         self.scan_covers(start, end, cancel)?;
         let samples = self.write_pieces(cancel)?;
-        Ok(StatementAudioMeasure { samples })
+        Ok(StatementAudioMeasure {
+            samples,
+            reduced: true,
+        })
     }
 
     /// Copy one statement after [`Self::measure_statement_audio`] accepted it.
+    ///
+    /// Test oracle only. Production embedding reads bounded slices.
+    #[cfg(all(test, feature = "full-tests"))]
     pub(crate) fn read_statement_audio(
         &mut self,
         start: usize,
@@ -532,6 +542,8 @@ impl DraftSpool {
                 "pcm span is inverted",
             ));
         }
+        #[cfg(all(test, feature = "full-tests"))]
+        note_whole_statement();
         if !self.span_has_reduced_unit(start, end, cancel)? {
             let mut samples = vec![0.0_f32; end - start];
             self.units.seek(SeekFrom::Start(0))?;
@@ -566,6 +578,138 @@ impl DraftSpool {
             samples,
             reduced: true,
         })
+    }
+
+    /// Copy one bounded slice of a statement measured by [`Self::measure_statement_audio`].
+    ///
+    /// `offset` is into that measured buffer. Unreduced audio zero-fills holes and
+    /// lets a later unit overwrite an overlap. Reduced audio reads `pieces.bin`
+    /// and does not rescan covers. The caller passes `reduced` from the measure.
+    pub(crate) fn read_statement_slice(
+        &mut self,
+        span_start: usize,
+        span_end: usize,
+        offset: usize,
+        dest: &mut [f32],
+        reduced: bool,
+        cancel: &dyn Fn() -> bool,
+    ) -> Result<(), std::io::Error> {
+        #[cfg(all(test, feature = "full-tests"))]
+        note_slice(dest.len());
+        if reduced {
+            self.read_reduced_slice(offset, dest, cancel)?;
+        } else {
+            self.read_unreduced_slice(span_start, span_end, offset, dest, cancel)?;
+        }
+        #[cfg(all(test, feature = "full-tests"))]
+        record_statement_probe(offset, dest);
+        Ok(())
+    }
+
+    fn read_unreduced_slice(
+        &mut self,
+        span_start: usize,
+        span_end: usize,
+        offset: usize,
+        dest: &mut [f32],
+        cancel: &dyn Fn() -> bool,
+    ) -> Result<(), std::io::Error> {
+        if span_end < span_start {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "pcm span is inverted",
+            ));
+        }
+        let Some(slice_start) = span_start.checked_add(offset) else {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "statement slice offset overflows",
+            ));
+        };
+        let Some(slice_end) = slice_start.checked_add(dest.len()) else {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "statement slice length overflows",
+            ));
+        };
+        if slice_end > span_end {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "statement slice passes the span",
+            ));
+        }
+        dest.fill(0.0);
+        self.units.seek(SeekFrom::Start(0))?;
+        for seq in 0..self.unit_count {
+            if seq.is_multiple_of(SCAN_CHECKPOINT) {
+                cancelled(cancel)?;
+            }
+            let record = read_unit_record(&mut self.units)?;
+            let unit_end = record.origin.saturating_add(record.masked_len);
+            let overlap_start = slice_start.max(record.origin);
+            let overlap_end = slice_end.min(unit_end);
+            if overlap_start >= overlap_end {
+                continue;
+            }
+            let mut file = File::open(self.masked_path(seq))?;
+            let file_offset = (overlap_start - record.origin) * std::mem::size_of::<f32>();
+            file.seek(SeekFrom::Start(file_offset as u64))?;
+            let dest_offset = overlap_start - slice_start;
+            let count = overlap_end - overlap_start;
+            read_f32s(&mut file, &mut dest[dest_offset..dest_offset + count])?;
+        }
+        Ok(())
+    }
+
+    fn read_reduced_slice(
+        &mut self,
+        offset: usize,
+        dest: &mut [f32],
+        cancel: &dyn Fn() -> bool,
+    ) -> Result<(), std::io::Error> {
+        let Some(slice_end) = offset.checked_add(dest.len()) else {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "statement slice length overflows",
+            ));
+        };
+        dest.fill(0.0);
+        let mut file = File::open(self.pieces_path())?;
+        let count = file.metadata()?.len() / PIECE_RECORD;
+        let mut cursor = 0_usize;
+        let mut covered = 0_usize;
+        for index in 0..count {
+            if index.is_multiple_of(SCAN_CHECKPOINT) {
+                cancelled(cancel)?;
+            }
+            let piece = read_piece_record(&mut file)?;
+            let Some(piece_end) = cursor.checked_add(piece.len) else {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "statement piece length overflows",
+                ));
+            };
+            let overlap_start = offset.max(cursor);
+            let overlap_end = slice_end.min(piece_end);
+            if overlap_start < overlap_end {
+                let local = overlap_start - cursor;
+                let dest_offset = overlap_start - offset;
+                let len = overlap_end - overlap_start;
+                self.read_piece_range(&piece, local, &mut dest[dest_offset..dest_offset + len])?;
+                covered += len;
+            }
+            cursor = piece_end;
+            if cursor >= slice_end {
+                break;
+            }
+        }
+        if covered != dest.len() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "statement slice is short",
+            ));
+        }
+        Ok(())
     }
 
     fn span_has_reduced_unit(
@@ -728,6 +872,7 @@ impl DraftSpool {
         Ok(total)
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     fn copy_pieces(
         &mut self,
         dest: &mut [f32],
@@ -754,14 +899,30 @@ impl DraftSpool {
         read_unit_record(&mut self.units)
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     fn read_piece(&self, piece: &AudioPiece, dest: &mut [f32]) -> Result<(), std::io::Error> {
+        self.read_piece_range(piece, 0, dest)
+    }
+
+    fn read_piece_range(
+        &self,
+        piece: &AudioPiece,
+        local_offset: usize,
+        dest: &mut [f32],
+    ) -> Result<(), std::io::Error> {
         let path = if piece.reduced {
             self.reduced_path(piece.seq)
         } else {
             self.masked_path(piece.seq)
         };
         let mut file = File::open(path)?;
-        let offset = piece.offset * std::mem::size_of::<f32>();
+        let Some(sample) = piece.offset.checked_add(local_offset) else {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "statement piece offset overflows",
+            ));
+        };
+        let offset = sample * std::mem::size_of::<f32>();
         file.seek(SeekFrom::Start(offset as u64))?;
         read_f32s(&mut file, dest)
     }
@@ -1318,6 +1479,64 @@ fn truncate(file: &mut File) -> Result<(), std::io::Error> {
     file.set_len(0)
 }
 
+#[cfg(all(test, feature = "full-tests"))]
+thread_local! {
+    static STATEMENT_MAX_READ: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    static STATEMENT_VISITED: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    static STATEMENT_WHOLE: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(all(test, feature = "full-tests"))]
+fn note_slice(len: usize) {
+    STATEMENT_MAX_READ.with(|cell| {
+        if len > cell.get() {
+            cell.set(len);
+        }
+    });
+    STATEMENT_VISITED.with(|cell| cell.set(cell.get().saturating_add(len)));
+}
+
+#[cfg(all(test, feature = "full-tests"))]
+fn note_whole_statement() {
+    STATEMENT_WHOLE.with(|cell| cell.set(cell.get().saturating_add(1)));
+}
+
+#[cfg(all(test, feature = "full-tests"))]
+fn record_statement_probe(offset: usize, dest: &[f32]) {
+    let Some(index) = crate::speakers::embedded_pcm_probe_index() else {
+        return;
+    };
+    if index >= offset && index < offset + dest.len() {
+        crate::speakers::record_embedded_pcm_probe_sample(dest[index - offset]);
+    }
+}
+
+/// Clear the statement-read counters. Full tests share one thread.
+#[cfg(all(test, feature = "full-tests"))]
+pub(crate) fn reset_statement_reads() {
+    STATEMENT_MAX_READ.with(|cell| cell.set(0));
+    STATEMENT_VISITED.with(|cell| cell.set(0));
+    STATEMENT_WHOLE.with(|cell| cell.set(0));
+}
+
+/// Largest `read_statement_slice` destination since the last reset.
+#[cfg(all(test, feature = "full-tests"))]
+pub(crate) fn statement_max_read() -> usize {
+    STATEMENT_MAX_READ.with(|cell| cell.get())
+}
+
+/// Samples copied by `read_statement_slice` since the last reset.
+#[cfg(all(test, feature = "full-tests"))]
+pub(crate) fn statement_visited() -> usize {
+    STATEMENT_VISITED.with(|cell| cell.get())
+}
+
+/// Calls to the whole-statement PCM allocator since the last reset.
+#[cfg(all(test, feature = "full-tests"))]
+pub(crate) fn statement_whole_reads() -> usize {
+    STATEMENT_WHOLE.with(|cell| cell.get())
+}
+
 fn cancelled(cancel: &dyn Fn() -> bool) -> Result<(), std::io::Error> {
     if cancel() {
         Err(std::io::Error::new(
@@ -1363,6 +1582,7 @@ mod tests {
             .measure_statement_audio(0, rate + rate / 2, &|| false)
             .expect("measure");
         assert_eq!(measured.samples, rate + rate / 2);
+        assert!(measured.reduced);
         let audio = spool
             .read_statement_audio(0, rate + rate / 2, &|| false)
             .expect("read");
@@ -1392,6 +1612,7 @@ mod tests {
             .measure_statement_audio(0, 100, &|| false)
             .expect("measure");
         assert_eq!(measured.samples, 100);
+        assert!(!measured.reduced);
         assert!(!spool.pieces_path().exists());
     }
 }

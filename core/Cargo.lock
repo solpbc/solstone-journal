@@ -6825,6 +6825,7 @@ dependencies = [
  "solstone-core-speaker-resolve",
  "solstone-core-speakers",
  "solstone-core-speakers-analyze",
+ "solstone-core-speakers-onnx",
  "solstone-core-spp-attest",
  "solstone-core-spp-ratls",
  "solstone-core-system",

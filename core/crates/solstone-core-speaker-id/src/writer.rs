@@ -12,8 +12,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use serde_json::{Map, Value};
 use solstone_core_journal_io::{
-    AtomicWriteError, AtomicWriteOptions, atomic_replace, install_file, write_bytes_exclusive,
-    write_reader_exclusive,
+    AtomicWriteError, AtomicWriteOptions, atomic_replace, install_file, install_retained_file,
+    write_bytes_exclusive, write_reader_exclusive,
 };
 use solstone_core_speakers::{SPEAKER_TURN_EVIDENCE_VERSION, SpeakerTurnEvidence};
 
@@ -1318,10 +1318,24 @@ pub struct PrivatePair {
     stage: Option<PathBuf>,
     jsonl: Option<PathBuf>,
     npz: Option<PathBuf>,
+    /// A failed rollback keeps the stage so the prior sidecars remain recoverable.
+    keep_recovery: bool,
 }
 
 impl Drop for PrivatePair {
     fn drop(&mut self) {
+        if self.keep_recovery {
+            // The new copies were never the recovery record. The prior sidecars
+            // and their directory stay where admission can still find them.
+            if let Some(path) = self.jsonl.take() {
+                let _ = fs::remove_file(path);
+            }
+            if let Some(path) = self.npz.take() {
+                let _ = fs::remove_file(path);
+            }
+            self.stage.take();
+            return;
+        }
         if let Some(path) = self.jsonl.take() {
             let _ = fs::remove_file(path);
         }
@@ -1428,6 +1442,7 @@ pub fn prepare_private_pair(
         stage: Some(stage.clone()),
         jsonl: None,
         npz: None,
+        keep_recovery: false,
     };
     let jsonl = stage.join("transcript.jsonl");
     pair.jsonl = Some(jsonl.clone());
@@ -1449,13 +1464,39 @@ pub fn prepare_private_pair(
     Ok(pair)
 }
 
+/// Copy the public pair into the stage before the last stop check.
+///
+/// Admission then only renames. Each 64 KiB read polls `cancel`. A missing
+/// public file is not a snapshot: there is nothing to put back.
+pub fn snapshot_replaced_pair(
+    pair: &PrivatePair,
+    jsonl_path: &Path,
+    npz_path: &Path,
+    cancel: &dyn Fn() -> bool,
+) -> Result<(), SpeakerTranscriptWriteError> {
+    let stage = pair
+        .stage
+        .as_deref()
+        .ok_or_else(|| SpeakerTranscriptWriteError::Internal {
+            detail: "private stage is missing".to_owned(),
+        })?;
+    if regular_file(jsonl_path) {
+        copy_cancellable(jsonl_path, &stage.join("prior.jsonl"), cancel)?;
+    }
+    if regular_file(npz_path) {
+        copy_cancellable(npz_path, &stage.join("prior.npz"), cancel)?;
+    }
+    Ok(())
+}
+
 /// Install an already verified private pair.
 ///
-/// The caller has taken the last cancellation check. This renames the private
-/// files into the public names and does not read the recording again. NPZ is
-/// installed first. A redo snapshots the previous regular files first, and a
-/// failed JSONL install puts that pair back. A successful install with no new
-/// NPZ removes a stale public NPZ.
+/// The caller has taken the last cancellation check and, for a replacement,
+/// has already snapshotted the public files. This renames the private files
+/// into the public names and does not read the recording again. NPZ is
+/// installed first. A failed JSONL install puts the snapshotted pair back.
+/// A successful install with no new NPZ removes a stale public NPZ, and a
+/// failed removal puts the snapshotted pair back.
 pub fn admit_private_pair(
     mut pair: PrivatePair,
     jsonl_path: &Path,
@@ -1476,12 +1517,20 @@ pub fn admit_private_pair(
     if redo {
         if regular_file(jsonl_path) {
             let destination = stage.join("prior.jsonl");
-            snapshot_file(jsonl_path, &destination)?;
+            if !regular_file(&destination) {
+                return Err(SpeakerTranscriptWriteError::Internal {
+                    detail: "prior jsonl snapshot is missing".to_owned(),
+                });
+            }
             prior_jsonl = Some(destination);
         }
         if regular_file(npz_path) {
             let destination = stage.join("prior.npz");
-            snapshot_file(npz_path, &destination)?;
+            if !regular_file(&destination) {
+                return Err(SpeakerTranscriptWriteError::Internal {
+                    detail: "prior npz snapshot is missing".to_owned(),
+                });
+            }
             prior_npz = Some(destination);
         }
     }
@@ -1523,17 +1572,25 @@ pub fn admit_private_pair(
                 prior_jsonl.as_deref(),
             )
         {
+            pair.keep_recovery = true;
             return Err(restore_error);
         }
         return Err(error);
     }
-    if !had_npz && regular_file(npz_path) {
-        fs::remove_file(npz_path).map_err(|error| {
-            SpeakerTranscriptWriteError::OutputUnwritable {
-                path: npz_path.display().to_string(),
-                detail: error.to_string(),
-            }
-        })?;
+    if !had_npz
+        && regular_file(npz_path)
+        && let Err(unlink_error) = remove_stale_npz(npz_path)
+    {
+        if let Err(restore_error) = restore_prior_pair(
+            npz_path,
+            jsonl_path,
+            prior_npz.as_deref(),
+            prior_jsonl.as_deref(),
+        ) {
+            pair.keep_recovery = true;
+            return Err(restore_error);
+        }
+        return Err(unlink_error);
     }
     Ok(WriteResponse {
         jsonl_path: jsonl_path.display().to_string(),
@@ -1547,30 +1604,34 @@ fn regular_file(path: &Path) -> bool {
     fs::symlink_metadata(path).is_ok_and(|meta| meta.file_type().is_file())
 }
 
-fn snapshot_file(source: &Path, destination: &Path) -> Result<(), SpeakerTranscriptWriteError> {
-    let mut input =
-        File::open(source).map_err(|error| SpeakerTranscriptWriteError::OutputUnwritable {
-            path: source.display().to_string(),
-            detail: error.to_string(),
-        })?;
-    let mut output = File::create(destination).map_err(|error| {
-        SpeakerTranscriptWriteError::OutputUnwritable {
-            path: destination.display().to_string(),
-            detail: error.to_string(),
-        }
-    })?;
-    io::copy(&mut input, &mut output).map_err(|error| {
-        SpeakerTranscriptWriteError::OutputUnwritable {
-            path: destination.display().to_string(),
-            detail: error.to_string(),
-        }
-    })?;
-    output
-        .sync_all()
-        .map_err(|error| SpeakerTranscriptWriteError::OutputUnwritable {
-            path: destination.display().to_string(),
-            detail: error.to_string(),
-        })
+#[cfg(all(test, feature = "full-tests"))]
+thread_local! {
+    static FAIL_STALE_NPZ_UNLINK: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    static FAIL_PRIOR_RESTORE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+#[cfg(all(test, feature = "full-tests"))]
+fn set_fail_stale_npz_unlink(fail: bool) {
+    FAIL_STALE_NPZ_UNLINK.with(|cell| cell.set(fail));
+}
+
+#[cfg(all(test, feature = "full-tests"))]
+fn set_fail_prior_restore(fail: bool) {
+    FAIL_PRIOR_RESTORE.with(|cell| cell.set(fail));
+}
+
+fn remove_stale_npz(path: &Path) -> Result<(), SpeakerTranscriptWriteError> {
+    #[cfg(all(test, feature = "full-tests"))]
+    if FAIL_STALE_NPZ_UNLINK.with(|cell| cell.get()) {
+        return Err(SpeakerTranscriptWriteError::OutputUnwritable {
+            path: path.display().to_string(),
+            detail: "stale npz unlink refused".to_owned(),
+        });
+    }
+    fs::remove_file(path).map_err(|error| SpeakerTranscriptWriteError::OutputUnwritable {
+        path: path.display().to_string(),
+        detail: error.to_string(),
+    })
 }
 
 fn restore_prior_pair(
@@ -1579,16 +1640,44 @@ fn restore_prior_pair(
     prior_npz: Option<&Path>,
     prior_jsonl: Option<&Path>,
 ) -> Result<(), SpeakerTranscriptWriteError> {
+    #[cfg(all(test, feature = "full-tests"))]
+    if FAIL_PRIOR_RESTORE.with(|cell| cell.get()) {
+        return Err(SpeakerTranscriptWriteError::OutputUnwritable {
+            path: jsonl_path.display().to_string(),
+            detail: "prior restore refused".to_owned(),
+        });
+    }
+    // Rename replaces the public file. Deleting it first would drop the only
+    // public copy before the prior sidecar has taken its place.
     if let Some(prior_npz) = prior_npz {
-        let _ = fs::remove_file(npz_path);
-        install_copied(prior_npz, npz_path)?;
-    } else {
-        let _ = fs::remove_file(npz_path);
+        install_retained(prior_npz, npz_path)?;
+    } else if regular_file(npz_path) {
+        fs::remove_file(npz_path).map_err(|error| {
+            SpeakerTranscriptWriteError::OutputUnwritable {
+                path: npz_path.display().to_string(),
+                detail: error.to_string(),
+            }
+        })?;
     }
     if let Some(prior_jsonl) = prior_jsonl {
-        install_copied(prior_jsonl, jsonl_path)?;
+        install_retained(prior_jsonl, jsonl_path)?;
     }
     Ok(())
+}
+
+fn install_retained(source: &Path, destination: &Path) -> Result<(), SpeakerTranscriptWriteError> {
+    let parent =
+        destination
+            .parent()
+            .ok_or_else(|| SpeakerTranscriptWriteError::InvalidOutputPath {
+                detail: "output path has no parent".to_owned(),
+            })?;
+    fs::create_dir_all(parent).map_err(|error| SpeakerTranscriptWriteError::OutputUnwritable {
+        path: destination.display().to_string(),
+        detail: error.to_string(),
+    })?;
+    install_retained_file(source, destination, AtomicWriteOptions::default())
+        .map_err(|error| atomic_error(destination, error))
 }
 
 fn install_copied(source: &Path, destination: &Path) -> Result<(), SpeakerTranscriptWriteError> {
@@ -2027,6 +2116,8 @@ mod staged_line_tests {
 
 #[cfg(all(test, feature = "full-tests"))]
 mod replacement_tests {
+    use solstone_core_journal_io::{AtomicWriteOptions, install_retained_file};
+
     use super::*;
 
     fn npz_with_marker(dir: &Path, name: &str, marker: u8) -> Vec<u8> {
@@ -2050,6 +2141,31 @@ mod replacement_tests {
         (dir.join("audio.jsonl"), dir.join("audio.npz"))
     }
 
+    fn stage_replacement(
+        segment: &Path,
+        jsonl: &Path,
+        npz: &Path,
+        transcript_jsonl: Option<&[u8]>,
+        transcript_npz: Option<&[u8]>,
+    ) -> (PrivatePair, PathBuf) {
+        let stage = create_stage_dir(segment).unwrap();
+        if let Some(bytes) = transcript_jsonl {
+            fs::write(stage.join("transcript.jsonl"), bytes).unwrap();
+        }
+        if let Some(bytes) = transcript_npz {
+            fs::write(stage.join("transcript.npz"), bytes).unwrap();
+        }
+        let stage_path = stage.clone();
+        let pair = PrivatePair {
+            stage: Some(stage),
+            jsonl: Some(stage_path.join("transcript.jsonl")),
+            npz: transcript_npz.map(|_| stage_path.join("transcript.npz")),
+            keep_recovery: false,
+        };
+        snapshot_replaced_pair(&pair, jsonl, npz, &|| false).unwrap();
+        (pair, stage_path)
+    }
+
     #[test]
     fn jsonl_install_failure_restores_the_previous_pair() {
         let root = tempfile::tempdir().unwrap();
@@ -2060,23 +2176,10 @@ mod replacement_tests {
         let prior_npz = npz_with_marker(&segment, "prior", 1);
         fs::write(&jsonl, &prior_jsonl).unwrap();
         fs::write(&npz, &prior_npz).unwrap();
-        let stage = create_stage_dir(&segment).unwrap();
         let replacement = npz_with_marker(&segment, "replacement", 2);
-        fs::write(stage.join("transcript.npz"), &replacement).unwrap();
-        let stage_path = stage.clone();
-        let error = admit_private_pair(
-            PrivatePair {
-                stage: Some(stage),
-                jsonl: Some(stage_path.join("transcript.jsonl")),
-                npz: Some(stage_path.join("transcript.npz")),
-            },
-            &jsonl,
-            &npz,
-            true,
-            1,
-            1,
-        )
-        .unwrap_err();
+        let (pair, stage_path) =
+            stage_replacement(&segment, &jsonl, &npz, None, Some(&replacement));
+        let error = admit_private_pair(pair, &jsonl, &npz, true, 1, 1).unwrap_err();
         assert!(matches!(
             error,
             SpeakerTranscriptWriteError::OutputUnwritable { .. }
@@ -2094,22 +2197,8 @@ mod replacement_tests {
         let (jsonl, npz) = public_paths(&segment);
         fs::write(&jsonl, b"old\n").unwrap();
         fs::write(&npz, npz_with_marker(&segment, "stale", 3)).unwrap();
-        let stage = create_stage_dir(&segment).unwrap();
-        fs::write(stage.join("transcript.jsonl"), b"new\n").unwrap();
-        let stage_path = stage.clone();
-        admit_private_pair(
-            PrivatePair {
-                stage: Some(stage),
-                jsonl: Some(stage_path.join("transcript.jsonl")),
-                npz: None,
-            },
-            &jsonl,
-            &npz,
-            true,
-            1,
-            0,
-        )
-        .unwrap();
+        let (pair, stage_path) = stage_replacement(&segment, &jsonl, &npz, Some(b"new\n"), None);
+        admit_private_pair(pair, &jsonl, &npz, true, 1, 0).unwrap();
         assert_eq!(fs::read(&jsonl).unwrap(), b"new\n");
         assert!(!npz.exists());
         assert!(!stage_path.exists());
@@ -2123,26 +2212,114 @@ mod replacement_tests {
         let (jsonl, npz) = public_paths(&segment);
         fs::write(&jsonl, b"old\n").unwrap();
         fs::write(&npz, npz_with_marker(&segment, "old", 4)).unwrap();
-        let stage = create_stage_dir(&segment).unwrap();
         let new_npz = npz_with_marker(&segment, "new", 5);
-        fs::write(stage.join("transcript.jsonl"), b"new\n").unwrap();
-        fs::write(stage.join("transcript.npz"), &new_npz).unwrap();
-        let stage_path = stage.clone();
-        admit_private_pair(
-            PrivatePair {
-                stage: Some(stage),
-                jsonl: Some(stage_path.join("transcript.jsonl")),
-                npz: Some(stage_path.join("transcript.npz")),
-            },
-            &jsonl,
-            &npz,
-            true,
-            1,
-            1,
-        )
-        .unwrap();
+        let (pair, stage_path) =
+            stage_replacement(&segment, &jsonl, &npz, Some(b"new\n"), Some(&new_npz));
+        admit_private_pair(pair, &jsonl, &npz, true, 1, 1).unwrap();
         assert_eq!(fs::read(&jsonl).unwrap(), b"new\n");
         assert_eq!(fs::read(&npz).unwrap(), new_npz);
         assert!(!stage_path.exists());
+    }
+
+    #[test]
+    fn stale_npz_unlink_failure_restores_the_previous_pair() {
+        let root = tempfile::tempdir().unwrap();
+        let segment = root.path().join("segment");
+        fs::create_dir(&segment).unwrap();
+        let (jsonl, npz) = public_paths(&segment);
+        let prior_jsonl = b"old-jsonl\n".to_vec();
+        let prior_npz = npz_with_marker(&segment, "stale-fail", 6);
+        fs::write(&jsonl, &prior_jsonl).unwrap();
+        fs::write(&npz, &prior_npz).unwrap();
+        set_fail_stale_npz_unlink(true);
+        let (pair, stage_path) =
+            stage_replacement(&segment, &jsonl, &npz, Some(b"new-jsonl\n"), None);
+        let error = admit_private_pair(pair, &jsonl, &npz, true, 1, 0).unwrap_err();
+        set_fail_stale_npz_unlink(false);
+        assert!(matches!(
+            error,
+            SpeakerTranscriptWriteError::OutputUnwritable { .. }
+        ));
+        assert_eq!(fs::read(&jsonl).unwrap(), prior_jsonl);
+        assert_eq!(fs::read(&npz).unwrap(), prior_npz);
+        assert!(!stage_path.exists());
+    }
+
+    #[test]
+    fn failed_rollback_keeps_the_prior_sidecars() {
+        let root = tempfile::tempdir().unwrap();
+        let segment = root.path().join("segment");
+        fs::create_dir(&segment).unwrap();
+        let (jsonl, npz) = public_paths(&segment);
+        let prior_jsonl = b"kept-jsonl\n".to_vec();
+        let prior_npz = npz_with_marker(&segment, "kept", 7);
+        fs::write(&jsonl, &prior_jsonl).unwrap();
+        fs::write(&npz, &prior_npz).unwrap();
+        set_fail_stale_npz_unlink(true);
+        set_fail_prior_restore(true);
+        let (pair, stage_path) =
+            stage_replacement(&segment, &jsonl, &npz, Some(b"new-jsonl\n"), None);
+        let error = admit_private_pair(pair, &jsonl, &npz, true, 1, 0).unwrap_err();
+        set_fail_stale_npz_unlink(false);
+        set_fail_prior_restore(false);
+        assert!(matches!(
+            error,
+            SpeakerTranscriptWriteError::OutputUnwritable { ref detail, .. }
+                if detail == "prior restore refused"
+        ));
+        assert_eq!(
+            fs::read(stage_path.join("prior.jsonl")).unwrap(),
+            prior_jsonl
+        );
+        assert_eq!(fs::read(stage_path.join("prior.npz")).unwrap(), prior_npz);
+
+        let source = segment.join("retained-source.npz");
+        fs::write(&source, &prior_npz).unwrap();
+        let parent = segment.join("not-a-directory");
+        fs::write(&parent, b"file").unwrap();
+        let destination = parent.join("audio.npz");
+        assert!(
+            install_retained_file(&source, &destination, AtomicWriteOptions::default()).is_err()
+        );
+        assert_eq!(fs::read(&source).unwrap(), prior_npz);
+        let blocked = segment.join("blocked-dest");
+        fs::create_dir(&blocked).unwrap();
+        assert!(install_retained_file(&source, &blocked, AtomicWriteOptions::default()).is_err());
+        assert_eq!(fs::read(&source).unwrap(), prior_npz);
+    }
+
+    #[test]
+    fn cancel_during_prior_snapshot_leaves_the_public_pair() {
+        let root = tempfile::tempdir().unwrap();
+        let segment = root.path().join("segment");
+        fs::create_dir(&segment).unwrap();
+        let (jsonl, npz) = public_paths(&segment);
+        let prior_jsonl = vec![b'a'; COPY_CHUNK + 64];
+        let prior_npz = npz_with_marker(&segment, "snapshot", 8);
+        fs::write(&jsonl, &prior_jsonl).unwrap();
+        fs::write(&npz, &prior_npz).unwrap();
+        let stage = create_stage_dir(&segment).unwrap();
+        let pair = PrivatePair {
+            stage: Some(stage.clone()),
+            jsonl: None,
+            npz: None,
+            keep_recovery: false,
+        };
+        let immediate = snapshot_replaced_pair(&pair, &jsonl, &npz, &|| true).unwrap_err();
+        assert!(matches!(immediate, SpeakerTranscriptWriteError::Cancelled));
+        assert_eq!(fs::read(&jsonl).unwrap(), prior_jsonl);
+        assert_eq!(fs::read(&npz).unwrap(), prior_npz);
+        let polls = std::cell::Cell::new(0_usize);
+        let partial = snapshot_replaced_pair(&pair, &jsonl, &npz, &|| {
+            let seen = polls.get();
+            polls.set(seen + 1);
+            seen >= 2
+        })
+        .unwrap_err();
+        assert!(matches!(partial, SpeakerTranscriptWriteError::Cancelled));
+        assert_eq!(fs::read(&jsonl).unwrap(), prior_jsonl);
+        assert_eq!(fs::read(&npz).unwrap(), prior_npz);
+        let copied = fs::metadata(stage.join("prior.jsonl")).unwrap().len();
+        assert!(copied > 0 && copied < prior_jsonl.len() as u64, "{copied}");
     }
 }

@@ -50,8 +50,8 @@ use crate::stage::{
     commit_input, decode_failure, dispatch_backend, dispatch_confidential_with_cap,
     emit_backend_error, emit_event, finish_context_output, finish_context_output_admitted,
     finish_voice_only_deletion, first_pass_analysis, merge_record_extra, segment_meta,
-    source_from_path, statement_from_words, statements_from_words, stt_zero_statements,
-    transcribe_retained_intervals, transcript_paths, vad_no_speech, write_failed_record,
+    source_from_path, statements_from_words, stt_zero_statements, transcribe_retained_intervals,
+    transcript_paths, vad_no_speech, write_failed_record,
 };
 use crate::transcript::{
     FullTranscriptWrite, build_header, remove_orphan_npz, restore_statement_timestamps,
@@ -1732,9 +1732,16 @@ fn publish_transcript(
         destination,
         &|| checkpoint().is_err(),
     )?;
+    // Prior snapshots are cancellable preparation. Admission stays a rename.
+    solstone_core_speaker_id::writer::snapshot_replaced_pair(
+        &private_pair,
+        &jsonl_path,
+        &npz_path,
+        &|| checkpoint().is_err(),
+    )?;
     let commit = commit_input(&observation, &claim, audio_path, &checkpoint)?;
-    // Last check before the public names exist. The private copy already
-    // verified the bytes, so admission only renames those files.
+    // Last check before the public names exist. The private copy and the prior
+    // snapshots already verified their bytes, so admission only renames.
     if let Err(error) = checkpoint() {
         drop(private_pair);
         drop(commit);
@@ -2255,40 +2262,51 @@ fn reembed_statement(
     if measured.samples == 0 || measured.samples < min_samples {
         return Ok(None);
     }
-    let audio = spool
-        .read_statement_audio(start_sample, end_sample, cancel)
+    #[cfg(all(test, feature = "full-tests"))]
+    crate::speakers::set_embedded_audio_lengths(
+        measured.samples,
+        measured.reduced.then_some(measured.samples),
+    );
+    #[cfg(all(test, feature = "full-tests"))]
+    if crate::speakers::embedded_statement_helper_pending() {
+        crate::statement_embed::visit_statement_pcm(
+            spool,
+            start_sample,
+            end_sample,
+            &measured,
+            cancel,
+        )
         .map_err(|error| spool_io(job.embedded.scratch, error))?;
-    let duration = audio.samples.len() as f64 / f64::from(SAMPLE_RATE);
-    let word = TranscriptionWord {
-        word: String::new(),
-        start: 0.0,
-        end: duration,
-        probability: None,
-    };
-    let local = statement_from_words(1, &[&word]);
-    let reduced = audio.reduced.then_some(audio.samples.as_slice());
-    let rows = crate::speakers::collect_unit_speaker_rows(
-        job.audio_path,
-        &audio.samples,
-        reduced,
-        std::slice::from_ref(&local),
-        std::slice::from_ref(&local),
-        job.embedded.models,
-        job.embedded.scratch,
-        start_s,
-    )
-    .map_err(TranscribeError::SpeakerAnalysis)?;
-    let Some(row) = rows.statement_rows.into_iter().next() else {
-        return Err(TranscribeError::SpeakerAnalysis(
-            crate::speakers::SpeakerAnalyzeError::new(
+        let taken = crate::speakers::take_embedded_statement_embedding().map_err(|detail| {
+            TranscribeError::SpeakerAnalysis(crate::speakers::SpeakerAnalyzeError::new(
                 job.audio_path,
                 "payload",
-                "missing-statement-embedding",
+                detail,
                 None,
-            ),
-        ));
-    };
-    Ok(Some((row.duration_s, row.values)))
+            ))
+        })?;
+        let Some((duration_s, values)) = taken else {
+            return Err(TranscribeError::SpeakerAnalysis(
+                crate::speakers::SpeakerAnalyzeError::new(
+                    job.audio_path,
+                    "payload",
+                    "missing-statement-embedding",
+                    None,
+                ),
+            ));
+        };
+        return Ok(Some((duration_s, values)));
+    }
+    crate::statement_embed::embed_statement(
+        job.audio_path,
+        job.embedded.models,
+        spool,
+        start_sample,
+        end_sample,
+        &measured,
+        cancel,
+    )
+    .map(Some)
 }
 
 fn write_embedding_row(
@@ -5254,6 +5272,7 @@ mod tests {
     fn statement_over_the_single_invocation_is_embedded() {
         let _hooks = ClearEmbeddedHooks::arm();
         set_embedded_vad_sticky(Some(speech_vad));
+        crate::embedded_spool::reset_statement_reads();
         let root = tempfile::TempDir::new_in("/var/tmp").unwrap();
         // "there." ends at 100s + 29.7s. Truncation, not rounding, is the
         // sample the embedder receives.
@@ -5330,6 +5349,16 @@ mod tests {
         assert_eq!(npz.statements.len(), 1);
         assert_eq!(npz.statements[0].0, 1);
         assert_eq!(npz.statements[0].1[0], 1.0);
+        assert_eq!(crate::embedded_spool::statement_whole_reads(), 0);
+        assert!(crate::embedded_spool::statement_max_read() > 0);
+        assert!(
+            crate::embedded_spool::statement_max_read()
+                <= crate::statement_embed::STATEMENT_PCM_CHUNK
+        );
+        assert_eq!(
+            crate::embedded_spool::statement_visited(),
+            statement_samples
+        );
     }
 
     #[cfg(all(unix, feature = "embedded", feature = "full-tests"))]
@@ -5624,6 +5653,8 @@ mod tests {
             attempt: held_attempt,
         };
         queue_incompressible_statements(root.path());
+        let success_deleted = std::cell::Cell::new(false);
+        let at_delete = std::cell::Cell::new(false);
         let completed = crate::embedded::process_embedded(
             &audio,
             root.path(),
@@ -5631,7 +5662,18 @@ mod tests {
             &scratch,
             &asr,
             crate::embedded::EmbeddedControl {
-                owner_original_deleted: &|| deleted.set(true),
+                owner_original_deleted: &|| {
+                    success_deleted.set(true);
+                    let analyzed = read_processing_record_header(&jsonl)
+                        .is_some_and(|header| header["state"] == vocab::STATE_ANALYZED);
+                    let npz_ready = audio.with_extension("npz").is_file();
+                    let raw_gone = !audio.exists();
+                    let finished = work_retry::read(root.path(), &unit_id)
+                        .ok()
+                        .flatten()
+                        .is_some_and(|record| !record.held && record.attempt.is_none());
+                    at_delete.set(analyzed && npz_ready && raw_gone && finished);
+                },
                 cancelled: &|| false,
                 service_io: &|_| {},
             },
@@ -5657,6 +5699,24 @@ mod tests {
         let finished = work_retry::read(root.path(), &unit_id).unwrap().unwrap();
         assert!(!finished.held);
         assert!(finished.attempt.is_none());
+        assert!(success_deleted.get(), "deletion callback did not run");
+        assert!(
+            at_delete.get(),
+            "deletion ran before publication or completion"
+        );
+        assert!(
+            !audio.exists(),
+            "raw remains after a successful voice-only retry"
+        );
+        let events = solstone_core_retention::owner_voice::retention_events_for_name(
+            audio.parent().unwrap(),
+            "audio.wav",
+        )
+        .unwrap();
+        assert!(
+            events.deleted,
+            "successful retry did not record original_deleted"
+        );
     }
 
     #[cfg(all(unix, feature = "embedded", feature = "full-tests"))]

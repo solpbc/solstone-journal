@@ -1361,7 +1361,8 @@ fn map_open_onnx_error(field: &'static str, error: SpeakerOnnxError) -> AnalyzeE
             detail: error.to_string(),
         },
         SpeakerOnnxError::InvalidFeatureMatrix { .. }
-        | SpeakerOnnxError::InvalidAudioWindow { .. } => AnalyzeError::Internal {
+        | SpeakerOnnxError::InvalidAudioWindow { .. }
+        | SpeakerOnnxError::Cancelled => AnalyzeError::Internal {
             detail: error.to_string(),
         },
     }
@@ -1388,7 +1389,8 @@ fn map_runtime_onnx_error(operation: &'static str, error: SpeakerOnnxError) -> A
             detail: format!("{operation} failed: {error}"),
         },
         SpeakerOnnxError::InvalidFeatureMatrix { .. }
-        | SpeakerOnnxError::InvalidAudioWindow { .. } => AnalyzeError::Internal {
+        | SpeakerOnnxError::InvalidAudioWindow { .. }
+        | SpeakerOnnxError::Cancelled => AnalyzeError::Internal {
             detail: error.to_string(),
         },
     }

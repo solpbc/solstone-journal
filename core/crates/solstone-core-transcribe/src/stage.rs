@@ -345,6 +345,45 @@ pub(crate) fn process_one_with(
     {
         return Ok(ProcessOutcome::Skipped);
     }
+    // The held attempt is adjudicated again under the claim, before observation.
+    // An already accepted receipt is finished without another inference pass.
+    let mut resumed_attempt = None;
+    if !redo && let Some(context) = retry {
+        let claim_error = |detail: String| TranscribeError::ProcessingClaim {
+            path: audio_path.to_path_buf(),
+            detail,
+        };
+        match solstone_core_system::work_retry::raw::classify_held_attempt(
+            journal_path,
+            &output,
+            audio_path,
+            solstone_core_processing_record::vocab::HANDLER_TRANSCRIBE,
+            context,
+        )
+        .map_err(&claim_error)?
+        {
+            solstone_core_system::work_retry::raw::HeldAttempt::Accepted => {
+                let unit = solstone_core_system::work_retry::raw::unit_for_output(
+                    journal_path,
+                    &output,
+                    solstone_core_processing_record::vocab::HANDLER_TRANSCRIBE,
+                )
+                .map_err(&claim_error)?;
+                solstone_core_system::work_retry::raw::finish_output_checked(
+                    journal_path,
+                    &unit,
+                    &context.attempt,
+                    &|| Ok(()),
+                )
+                .map_err(&claim_error)?;
+                return Ok(ProcessOutcome::Skipped);
+            }
+            solstone_core_system::work_retry::raw::HeldAttempt::Continue => {
+                resumed_attempt = Some(context.attempt.clone());
+            }
+            solstone_core_system::work_retry::raw::HeldAttempt::Decline => {}
+        }
+    }
     // Voice-only eligibility is decided here, under the output claim and before any retry
     // permission is consumed, from the output and the setting as they are on disk now.
     let owner_voice_setting = crate::config::read_transcribe_config(journal_path)
@@ -413,17 +452,10 @@ pub(crate) fn process_one_with(
     let (admitted_retry, context_attempt) = if !redo {
         if let Some(context) = retry {
             // A stop after the attempt was consumed leaves that same attempt
-            // held. Continuing it is not a second permission.
-            let output = audio_path.with_extension("jsonl");
-            let resumed =
-                resume_held_attempt(journal_path, &output, context).map_err(|detail| {
-                    TranscribeError::ProcessingClaim {
-                        path: audio_path.to_path_buf(),
-                        detail,
-                    }
-                })?;
-            if resumed {
-                (true, Some(context.attempt.clone()))
+            // held. Continuing it is not a second permission. A stale input or
+            // a changed reason falls through and the retry owner refuses it.
+            if resumed_attempt.is_some() {
+                (true, resumed_attempt.clone())
             } else {
                 let attempt = solstone_core_system::work_retry::raw::consume_context_checked(
                     journal_path,
@@ -3959,5 +3991,190 @@ mod tests {
         let claims = OutputClaims::acquire([jsonl.clone()], Default::default()).unwrap();
         assert!(raw::consume_context(root.path(), &jsonl, "transcribe", &context).is_err());
         drop(claims);
+    }
+
+    #[cfg(all(feature = "embedded", unix))]
+    fn panicking_embedded<'a>(
+        root: &'a Path,
+        asr: &'a dyn crate::embedded::EmbeddedAsr,
+        cancel: &'a dyn Fn() -> bool,
+    ) -> (
+        crate::embedded::EmbeddedContext<'a>,
+        solstone_core_journal_config::JournalConfigRead,
+        solstone_core_spp_ratls::AttestationStateStore,
+    ) {
+        fn ignore_deleted() {}
+        fn ignore_service_io(_: crate::ConfidentialIoPhase) {}
+        let embedded = crate::embedded::EmbeddedContext {
+            owner_original_deleted: &ignore_deleted,
+            models: root,
+            scratch: root,
+            asr,
+            cancel,
+            service_io: &ignore_service_io,
+        };
+        let config = solstone_core_journal_config::JournalConfigRead {
+            present: false,
+            sha256: None,
+            config: None,
+        };
+        let attestation = solstone_core_spp_ratls::AttestationStateStore::new();
+        (embedded, config, attestation)
+    }
+
+    #[cfg(all(feature = "embedded", unix))]
+    struct PanicAsr;
+
+    #[cfg(all(feature = "embedded", unix))]
+    impl crate::embedded::EmbeddedAsr for PanicAsr {
+        fn transcribe(&self, _samples: &[f32]) -> Result<serde_json::Value, String> {
+            panic!("held retry must not run inference");
+        }
+        fn model_info(&self) -> crate::embedded::EmbeddedModelInfo {
+            crate::embedded::EmbeddedModelInfo {
+                backend: "embedded".into(),
+                model: "stub".into(),
+                device: "cpu".into(),
+                compute_type: "float32".into(),
+            }
+        }
+    }
+
+    #[cfg(all(feature = "embedded", unix))]
+    fn consume_then_drop(
+        root: &Path,
+        jsonl: &Path,
+        context: &solstone_core_system::work_retry::RetryContext,
+    ) {
+        use solstone_core_segment::output_attempt::OutputClaims;
+        use solstone_core_system::work_retry::raw;
+        let claims = OutputClaims::acquire([jsonl.to_path_buf()], Default::default()).unwrap();
+        raw::consume_context(root, jsonl, "transcribe", context)
+            .unwrap()
+            .unwrap();
+        drop(claims);
+    }
+
+    #[cfg(all(feature = "embedded", unix))]
+    #[test]
+    fn resume_declines_when_the_held_input_changes() {
+        use solstone_core_system::work_retry;
+        let root = tempfile::tempdir().unwrap();
+        let (facts, jsonl, context, _, _) =
+            setup_retry_fixture(root.path(), "120000_300", "clip.wav", 3, "analysis_failed");
+        consume_then_drop(root.path(), &jsonl, &context);
+        fs::write(&facts.path, b"replacement-bytes-B").unwrap();
+        let asr = PanicAsr;
+        let cancel = || false;
+        let (embedded, config, attestation) = panicking_embedded(root.path(), &asr, &cancel);
+        let error = super::process_one_with(
+            &facts.path,
+            root.path(),
+            false,
+            None,
+            &config,
+            &attestation,
+            Some(&embedded),
+            Some(&context),
+        )
+        .unwrap_err();
+        assert!(
+            error.to_string().contains("retry permission changed"),
+            "{error}"
+        );
+        let header = read_header(&jsonl);
+        assert_eq!(header["_solstone_processing"]["state"], "failed");
+        let record = work_retry::read(root.path(), &context.unit_id)
+            .unwrap()
+            .unwrap();
+        assert!(record.held);
+        assert_eq!(record.attempt.as_ref(), Some(&context.attempt));
+    }
+
+    #[cfg(all(feature = "embedded", unix))]
+    #[test]
+    fn resume_declines_when_the_failure_reason_changes() {
+        use solstone_core_system::work_retry;
+        let root = tempfile::tempdir().unwrap();
+        let (facts, jsonl, context, _, _) =
+            setup_retry_fixture(root.path(), "120000_301", "clip.wav", 3, "analysis_failed");
+        consume_then_drop(root.path(), &jsonl, &context);
+        let mut header = read_header(&jsonl);
+        header["_solstone_processing"]["reason_code"] = json!("backend_failed");
+        assert_eq!(header["_solstone_processing"]["attempts"], 3);
+        fs::write(&jsonl, format!("{header}\n")).unwrap();
+        let asr = PanicAsr;
+        let cancel = || false;
+        let (embedded, config, attestation) = panicking_embedded(root.path(), &asr, &cancel);
+        let error = super::process_one_with(
+            &facts.path,
+            root.path(),
+            false,
+            None,
+            &config,
+            &attestation,
+            Some(&embedded),
+            Some(&context),
+        )
+        .unwrap_err();
+        assert!(
+            error.to_string().contains("retry permission changed"),
+            "{error}"
+        );
+        let published = read_header(&jsonl);
+        assert_eq!(published["_solstone_processing"]["state"], "failed");
+        assert_eq!(
+            published["_solstone_processing"]["reason_code"],
+            "backend_failed"
+        );
+        let record = work_retry::read(root.path(), &context.unit_id)
+            .unwrap()
+            .unwrap();
+        assert!(record.held);
+        assert_eq!(record.attempt.as_ref(), Some(&context.attempt));
+    }
+
+    #[cfg(all(feature = "embedded", unix))]
+    #[test]
+    fn resume_reconciles_an_already_accepted_output_without_inference() {
+        use solstone_core_system::work_retry;
+        let root = tempfile::tempdir().unwrap();
+        let (facts, jsonl, context, _, _) =
+            setup_retry_fixture(root.path(), "120000_302", "clip.wav", 3, "analysis_failed");
+        consume_then_drop(root.path(), &jsonl, &context);
+        let raw_name = facts.path.file_name().unwrap().to_str().unwrap();
+        let accepted = json!({
+            "raw": raw_name,
+            "_solstone_processing": {
+                "schema": vocab::SCHEMA,
+                "state": "analyzed",
+                "handler": "transcribe",
+                "attempts": 3,
+                "retry_attempt": serde_json::to_value(&context.attempt).unwrap(),
+            }
+        });
+        let bytes = format!("{accepted}\n");
+        fs::write(&jsonl, &bytes).unwrap();
+        let asr = PanicAsr;
+        let cancel = || false;
+        let (embedded, config, attestation) = panicking_embedded(root.path(), &asr, &cancel);
+        let outcome = super::process_one_with(
+            &facts.path,
+            root.path(),
+            false,
+            None,
+            &config,
+            &attestation,
+            Some(&embedded),
+            Some(&context),
+        )
+        .unwrap();
+        assert_eq!(outcome, super::ProcessOutcome::Skipped);
+        assert_eq!(fs::read(&jsonl).unwrap(), bytes.as_bytes());
+        let record = work_retry::read(root.path(), &context.unit_id)
+            .unwrap()
+            .unwrap();
+        assert!(!record.held);
+        assert!(record.attempt.is_none());
     }
 }

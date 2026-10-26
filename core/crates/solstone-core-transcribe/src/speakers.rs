@@ -579,6 +579,89 @@ pub(crate) fn embedded_pcm_probe_sample() -> Option<f32> {
     EMBEDDED_PCM_PROBE_SAMPLE.with(|cell| cell.get())
 }
 
+/// Statement-local index recorded by [`set_embedded_pcm_probe`].
+#[cfg(all(test, feature = "full-tests", feature = "embedded", unix))]
+pub(crate) fn embedded_pcm_probe_index() -> Option<usize> {
+    EMBEDDED_PCM_PROBE.with(|cell| cell.get())
+}
+
+/// Overwrite the probed sample after a statement slice is filled.
+#[cfg(all(test, feature = "full-tests", feature = "embedded", unix))]
+pub(crate) fn record_embedded_pcm_probe_sample(sample: f32) {
+    EMBEDDED_PCM_PROBE_SAMPLE.with(|cell| cell.set(Some(sample)));
+}
+
+/// Record the measured statement length without building an audio vector.
+#[cfg(all(test, feature = "full-tests", feature = "embedded", unix))]
+pub(crate) fn set_embedded_audio_lengths(full: usize, reduced: Option<usize>) {
+    EMBEDDED_AUDIO_LEN.with(|cell| cell.set((full, reduced)));
+}
+
+/// True when the next queued helper carries statement ids.
+#[cfg(all(test, feature = "full-tests", feature = "embedded", unix))]
+pub(crate) fn embedded_statement_helper_pending() -> bool {
+    EMBEDDED_SPEAKER_QUEUE.with(|cell| {
+        cell.borrow().first().is_some_and(|(response, _payload)| {
+            response
+                .get("statement_embeddings")
+                .and_then(|value| value.get("statement_ids"))
+                .and_then(Value::as_array)
+                .is_some_and(|ids| !ids.is_empty())
+        })
+    })
+}
+
+/// Take the queued statement embedding without Pyannote or a sidecar write.
+///
+/// Empty statement ids return `Ok(None)`. A named payload that is not the queued
+/// path, or a short payload, is an error. The duration is the payload's first value.
+#[cfg(all(test, feature = "full-tests", feature = "embedded", unix))]
+pub(crate) fn take_embedded_statement_embedding() -> Result<Option<(f64, Vec<f32>)>, String> {
+    let Some((response, payload)) = EMBEDDED_SPEAKER_QUEUE.with(|cell| {
+        let mut queue = cell.borrow_mut();
+        if queue.is_empty() {
+            None
+        } else {
+            Some(queue.remove(0))
+        }
+    }) else {
+        return Ok(None);
+    };
+    EMBEDDED_SPEAKER_SEEN.with(|cell| cell.set(true));
+    let embeddings = response
+        .get("statement_embeddings")
+        .ok_or_else(|| "statement embeddings are missing".to_owned())?;
+    let ids = embeddings
+        .get("statement_ids")
+        .and_then(Value::as_array)
+        .ok_or_else(|| "statement ids are missing".to_owned())?;
+    if ids.is_empty() {
+        return Ok(None);
+    }
+    let duration = embeddings
+        .get("durations_s")
+        .and_then(Value::as_array)
+        .and_then(|values| values.first())
+        .and_then(Value::as_f64)
+        .ok_or_else(|| "statement duration is missing".to_owned())?;
+    let named = embeddings
+        .get("payload_path")
+        .and_then(Value::as_str)
+        .ok_or_else(|| "statement payload path is missing".to_owned())?;
+    if Path::new(named) != payload.as_path() {
+        return Err("statement payload path does not match".to_owned());
+    }
+    let mut file = fs::File::open(&payload).map_err(|error| error.to_string())?;
+    let mut bytes = vec![0_u8; WESPEAKER_EMBEDDING_WIDTH * 4];
+    file.read_exact(&mut bytes)
+        .map_err(|error| error.to_string())?;
+    let mut values = Vec::with_capacity(WESPEAKER_EMBEDDING_WIDTH);
+    for chunk in bytes.chunks_exact(4) {
+        values.push(f32::from_le_bytes(chunk.try_into().expect("4 bytes")));
+    }
+    Ok(Some((duration, values)))
+}
+
 /// Whether a queued response has been parsed on this thread.
 #[cfg(all(test, feature = "full-tests", feature = "embedded", unix))]
 pub(crate) fn embedded_speaker_response_seen() -> bool {
