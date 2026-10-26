@@ -6,31 +6,32 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.0.59] - 2026-10-26
+
 ### Changed
 
 - the list of journal apps is now a page called more. it lists every view with what it shows and where its contents come from, and, for some, where it stands: how far back it goes, how many suggestions wait for you, how many agents are connected, or what still needs setting up. pin a view to the side rail, or unpin it, and your journal keeps that choice wherever you open it. curation is now called suggestions, matching its page.
-- work stories use the original material when it fits. when it is too long, they use saved screen descriptions and topics to leave more room for the activity. spoken words and other context stay alongside them.
-- work stories can include short quotes from messages shown on screen. the notes are labelled unverified, with the time they entered your journal kept separate from the message date.
-
-- on mac, local thinking now starts directly in the runtime included with your journal. old records from the switch can no longer block it.
-
+- work stories use the original material when it fits. when your journal thinks on your computer, with a model at your own URL, or with confidential processing, and the original is too long, they use saved screen descriptions and topics to leave more room for the activity. spoken words and other context stay alongside them.
+- work stories can quote up to five messages shown on screen. the quotes are labelled unverified, with the time they entered your journal kept separate from the message date.
+- on mac, local thinking now starts directly in the runtime included with your journal. leftovers from the 2.0.58 switch can no longer stop it. if that runtime's model is still downloading, local thinking waits for it. files from the older runtime stay on your mac.
 - when everything that went into your journal for a stretch came from your terminal, the description of that stretch is now written from a compact timeline of what changed on screen, so far less of a long stretch is cut to fit.
 - when a stretch came only from your terminal and you typed in it, its description now follows what you typed in your shell or another program in your terminal, using where your cursor sits on the screen. this needs an up-to-date solstone app for tmux. before, only typing in one AI assistant's input box counted.
 
 ### Fixed
 
+- the weekly reflection that runs early sunday morning covers the week that just ended again. in 2.0.58 it wrote over the reflection for the week before instead, and the week that just ended got none.
+- when your journal thinks with Claude, a stretch where everything came from your terminal is described again. in 2.0.58, when an AI assistant's input box or menu was on screen, your journal asked Claude for it in a form Claude doesn't accept, and the stretch was left without a description.
 - the side rail names its pages again: on a wide window each icon has its name beside it, and on a narrower one the name sits under it.
 - on a new journal, home no longer adds a "your first week" card a moment after it opens.
-- when your journal thinks with Claude, a stretch where everything came from your terminal is described again. in 2.0.58, when an AI assistant's input box or menu was on screen, your journal asked Claude for it in a form Claude doesn't accept, and the stretch was left without a description.
-- on windows, first-time setup no longer stops partway on a computer with a slower disk. setup checks the files that came with your journal, including a large speech model, and it now waits as long as that check keeps moving instead of stopping after a minute. if setup stopped partway for you, this resolves it.
-- the weekly reflection that runs early sunday morning covers the week that just ended again. in 2.0.58 it wrote over the reflection for the week before instead, and the week that just ended got none.
+- on windows, first-time setup no longer stops partway on a computer with a slower disk. setup checks the files that came with your journal, including a large speech model, and it now waits as long as that check keeps moving, up to 10 minutes, instead of stopping after a minute. if setup stopped partway for you, this resolves it.
 - on the transcripts page, every dot in the timeline's legend now matches what the timeline draws. workouts are clay instead of a second gold, so they no longer look like screen. a stretch still awaiting thinking is now an empty outline, so it no longer looks like a finished screen stretch.
-- when an older recording was thought with a model, then more of it arrived with nothing new to think about, your journal could keep re-checking it and never remake that day's daily outputs, like entity suggestions. it now counts as thought, and the day's outputs are remade.
+- when your journal had thought about an older recording with a model, then more of it arrived with nothing new to think about, your journal could keep re-checking it and never make that day's daily outputs, like entity suggestions. it now counts as thought, and the day's outputs are made.
 - your journal no longer saves a label for someone it couldn't name, like "Speaker 2" or "Unknown", as one of your entities. and when you come up under more than one of the names your journal has for you, like a nickname and your full name, they now all lead to you instead of each being saved as someone new. entities already saved this way stay until you hide or merge them. thanks @dvanduzer for the report.
 - when an agent lists your entities, each one now says which facet it's from, so someone in two of your facets no longer looks like two people with the same name.
 - your journal now starts when its folder is reached through a symbolic link, such as a folder under `/var/tmp` on a mac. before, it refused to start and said the saved installation was for a different journal.
-- media offload no longer stops partway when a scheduled backup finishes while it runs. the note your journal keeps about each backup's last run no longer counts as a change to your journal. if something in your journal does change while offload runs, offload now says so and tells you nothing was removed, instead of only saying it didn't finish.
 - `solstone journal setup` now accepts your journal folder when you run it from inside that folder, as in `--journal .`, instead of stopping with `--journal must not be empty`.
+- after you confirm your recovery key, opening backup setup again now picks up at choosing where your backup goes, instead of starting over.
+- media offload no longer stops partway when a scheduled backup finishes while it runs. the note your journal keeps about each backup's last run no longer counts as a change to your journal. if something in your journal does change while offload runs, offload now says so and tells you nothing was removed, instead of only saying it didn't finish.
 - media offload no longer stops when your backup is clearing out older copies at the same time. both run on the same daily schedule, and offload now waits up to 30 minutes for the cleanup to finish. approving an offload proposal and bringing offloaded media back wait the same way.
 
 ## [2.0.58] - 2026-10-25
