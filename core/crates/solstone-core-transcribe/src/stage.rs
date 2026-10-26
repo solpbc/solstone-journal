@@ -123,6 +123,8 @@ thread_local! {
     static BEFORE_PROCESSING_COMMIT: std::cell::RefCell<Option<Box<dyn FnOnce()>>> = const { std::cell::RefCell::new(None) };
     static PROCESSING_TEST_VAD: std::cell::RefCell<Option<solstone_core_observe_audio::VadResult>> = const { std::cell::RefCell::new(None) };
     static INPUT_CAPTURE_REACHED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    static BEFORE_INPUT_CAPTURE: std::cell::RefCell<Option<Box<dyn FnOnce()>>> =
+        const { std::cell::RefCell::new(None) };
 }
 
 /// Take the one-shot full-tests VAD stand-in, leaving the cell empty.
@@ -147,6 +149,12 @@ pub(crate) fn reset_input_capture_reached() {
 #[cfg(all(test, feature = "full-tests"))]
 pub(crate) fn input_capture_reached() -> bool {
     INPUT_CAPTURE_REACHED.with(|reached| reached.get())
+}
+
+/// Arm a one-shot hook that runs after held classification and before input capture.
+#[cfg(all(test, feature = "full-tests"))]
+pub(crate) fn set_before_input_capture(hook: Option<Box<dyn FnOnce()>>) {
+    BEFORE_INPUT_CAPTURE.with(|cell| *cell.borrow_mut() = hook);
 }
 
 /// Run the currently implemented native transcription path for one segment audio file.
@@ -274,6 +282,15 @@ fn resume_held_attempt(
         return Ok(false);
     };
     Ok(record.held && record.attempt.as_ref() == Some(&context.attempt))
+}
+
+fn sha256_hex(digest: [u8; 32]) -> String {
+    let mut encoded = String::with_capacity(digest.len() * 2);
+    for byte in digest {
+        encoded.push(char::from(b"0123456789abcdef"[usize::from(byte >> 4)]));
+        encoded.push(char::from(b"0123456789abcdef"[usize::from(byte & 0x0f)]));
+    }
+    encoded
 }
 
 fn same_held_attempt(
@@ -450,7 +467,14 @@ pub(crate) fn process_one_with(
     };
     let automatic_retry = automatic_retry_replaces_output(&output);
     #[cfg(all(test, feature = "full-tests"))]
-    INPUT_CAPTURE_REACHED.with(|reached| reached.set(true));
+    {
+        INPUT_CAPTURE_REACHED.with(|reached| reached.set(true));
+        BEFORE_INPUT_CAPTURE.with(|hook| {
+            if let Some(hook) = hook.borrow_mut().take() {
+                hook();
+            }
+        });
+    }
     let observation =
         InputObservation::capture_checked(&claim, audio_path, &|| checkpoint().is_err()).map_err(
             |error| {
@@ -470,7 +494,15 @@ pub(crate) fn process_one_with(
             // A stop after the attempt was consumed leaves that same attempt
             // held. Continuing it is not a second permission. A stale input or
             // a changed reason falls through and the retry owner refuses it.
-            if resumed_attempt.is_some() {
+            if let Some(attempt) = resumed_attempt.as_ref() {
+                // Classification hashed the input before this admission. The
+                // admitted digest must still be that attempt, or the resume stops.
+                if sha256_hex(observation.input_sha256()) != attempt.input {
+                    return Err(TranscribeError::ProcessingClaim {
+                        path: audio_path.to_path_buf(),
+                        detail: "retry permission changed".into(),
+                    });
+                }
                 (true, resumed_attempt.clone())
             } else {
                 let attempt = solstone_core_system::work_retry::raw::consume_context_checked(
@@ -4105,6 +4137,40 @@ mod tests {
             .unwrap();
         assert!(record.held);
         assert_eq!(record.attempt.as_ref(), Some(&context.attempt));
+
+        // The same bytes match classification, then change before admission.
+        #[cfg(feature = "full-tests")]
+        {
+            fs::write(&facts.path, b"owner-media-content").unwrap();
+            let path = facts.path.clone();
+            super::set_before_input_capture(Some(Box::new(move || {
+                fs::write(&path, b"interval-bytes-C").unwrap();
+            })));
+            let error = super::process_one_with(
+                &facts.path,
+                root.path(),
+                false,
+                None,
+                &config,
+                &attestation,
+                Some(&embedded),
+                Some(&context),
+            )
+            .unwrap_err();
+            super::set_before_input_capture(None);
+            assert!(
+                error.to_string().contains("retry permission changed"),
+                "{error}"
+            );
+            let header = read_header(&jsonl);
+            assert_eq!(header["_solstone_processing"]["state"], "failed");
+            let record = work_retry::read(root.path(), &context.unit_id)
+                .unwrap()
+                .unwrap();
+            assert!(record.held);
+            assert_eq!(record.attempt.as_ref(), Some(&context.attempt));
+            assert_eq!(fs::read(&facts.path).unwrap(), b"interval-bytes-C");
+        }
     }
 
     #[cfg(all(feature = "embedded", unix))]
