@@ -53,12 +53,14 @@ pub enum StallWait {
     Stalled,
 }
 
-/// Progress resets the deadline. Cancel wins at the same timestamp as a stall.
+/// Progress resets the input deadline. Retire it once the body is closed:
+/// time spent saving after EOF is not a stall. Cancel still wins.
 #[derive(Clone, Copy, Debug)]
 pub struct StallDeadline {
     progress_at: u64,
     limit: u64,
     cancelled: bool,
+    retired: bool,
 }
 
 impl StallDeadline {
@@ -67,13 +69,19 @@ impl StallDeadline {
             progress_at: now,
             limit,
             cancelled: false,
+            retired: false,
         }
     }
 
     pub fn note_progress(&mut self, now: u64) {
-        if !self.cancelled {
+        if !self.cancelled && !self.retired {
             self.progress_at = now;
         }
+    }
+
+    /// The body has been handed off. Further silence is save work, not a stall.
+    pub fn retire(&mut self) {
+        self.retired = true;
     }
 
     #[cfg(test)]
@@ -84,6 +92,9 @@ impl StallDeadline {
     pub fn poll(&self, now: u64) -> StallWait {
         if self.cancelled {
             return StallWait::Cancelled;
+        }
+        if self.retired {
+            return StallWait::Open;
         }
         if now.saturating_sub(self.progress_at) >= self.limit {
             return StallWait::Stalled;
@@ -312,16 +323,15 @@ async fn drive_upload(
             return;
         }
         let now = elapsed_ms(started);
-        if stall.poll(now) == StallWait::Stalled {
+        if body_handed_off(finished, pending.is_some()) {
+            sender.take();
+            stall.retire();
+        } else if stall.poll(now) == StallWait::Stalled {
             if let Some(sender) = sender.take() {
                 sender.abort(std::io::Error::new(std::io::ErrorKind::TimedOut, "stalled"));
             }
             let _ = head.send(Err(UPLOAD_STALL_MESSAGE.to_owned()));
             return;
-        }
-        if finished && pending.is_none() && sender.is_some() {
-            sender.take();
-            stall.note_progress(elapsed_ms(started));
         }
         let remaining = stall
             .progress_at
@@ -354,7 +364,6 @@ async fn drive_upload(
                 _ = cancelled.changed() => UploadStep::Cancel,
                 _ = stop.changed() => UploadStep::Cancel,
                 response = &mut request_fut => UploadStep::Response(response),
-                _ = &mut sleep => UploadStep::Stall,
             }
         };
         match step {
@@ -374,7 +383,6 @@ async fn drive_upload(
             UploadStep::Sent(Err(())) => return,
             UploadStep::Eof => {
                 finished = true;
-                stall.note_progress(elapsed_ms(started));
             }
             UploadStep::Chunk(bytes) => match admit_chunk(bytes.len()) {
                 Ok(()) => {
@@ -401,6 +409,12 @@ async fn drive_upload(
             }
         }
     }
+}
+
+/// Input is finished only when the last read returned EOF and no chunk is
+/// still waiting to be written. Hashing that body is not an input stall.
+fn body_handed_off(finished: bool, pending: bool) -> bool {
+    finished && !pending
 }
 
 enum UploadStep {
@@ -681,6 +695,30 @@ mod tests {
         assert_eq!(cancelled.poll(60), StallWait::Cancelled);
         cancelled.note_progress(60);
         assert_eq!(cancelled.poll(10_000), StallWait::Cancelled);
+    }
+
+    #[test]
+    fn completion_after_eof_is_not_a_stall_and_cancel_still_wins() {
+        let transfer = StallDeadline::arm(0, 60_000);
+        assert!(!body_handed_off(false, false));
+        assert!(!body_handed_off(true, true));
+        assert_eq!(transfer.poll(60_000), StallWait::Stalled);
+
+        let mut held = StallDeadline::arm(0, 60_000);
+        held.note_progress(1_000);
+        assert!(body_handed_off(true, false));
+        held.retire();
+        assert_eq!(held.poll(1_000 + 60_000), StallWait::Open);
+        assert_eq!(held.poll(1_000 + 120_000), StallWait::Open);
+        held.note_progress(1_000 + 120_000);
+        assert_eq!(held.poll(u64::MAX), StallWait::Open);
+        held.cancel();
+        assert_eq!(held.poll(u64::MAX), StallWait::Cancelled);
+
+        let mut cancelled = StallDeadline::arm(0, 60_000);
+        cancelled.cancel();
+        cancelled.retire();
+        assert_eq!(cancelled.poll(120_000), StallWait::Cancelled);
     }
 
     #[test]

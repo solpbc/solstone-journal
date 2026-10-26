@@ -32,7 +32,7 @@ for generated in [classes,dex,host_classes]:
   if generated.exists():shutil.rmtree(generated)
   generated.mkdir()
 owner=root/'src/app/solstone/development/journal'
-run([java/'bin/javac','-d',host_classes,owner/'ThinkingAdmission.java',owner/'JournalExecution.java',owner/'ServingConnection.java',owner/'PackagedPayload.java',owner/'PackagedAudio.java',owner/'OwnerOrigin.java',owner/'OwnerAccept.java',owner/'OwnerBytes.java',owner/'OwnerBridgeFiles.java',owner/'OwnerPipePair.java',owner/'OwnerUploadBoard.java',owner/'OwnerFolderPicker.java',root/'tests/ThinkingAdmissionTest.java',root/'tests/PackagedPayloadTest.java',root/'tests/OwnerOriginTest.java',root/'tests/PackagedAudioTest.java',root/'tests/OwnerAcceptTest.java',root/'tests/OwnerBytesTest.java',root/'tests/OwnerBridgeFilesTest.java',root/'tests/OwnerPipePairTest.java',root/'tests/OwnerUploadBoardTest.java',root/'tests/OwnerFolderPickerTest.java'])
+run([java/'bin/javac','-d',host_classes,owner/'ThinkingAdmission.java',owner/'JournalExecution.java',owner/'ServingConnection.java',owner/'PackagedPayload.java',owner/'PackagedAudio.java',owner/'OwnerOrigin.java',owner/'OwnerAccept.java',owner/'OwnerBytes.java',owner/'OwnerBridgeFiles.java',owner/'OwnerPipePair.java',owner/'OwnerUploadBoard.java',owner/'OwnerFolderPicker.java',owner/'OwnerTransferWait.java',root/'tests/ThinkingAdmissionTest.java',root/'tests/PackagedPayloadTest.java',root/'tests/OwnerOriginTest.java',root/'tests/PackagedAudioTest.java',root/'tests/OwnerAcceptTest.java',root/'tests/OwnerBytesTest.java',root/'tests/OwnerBridgeFilesTest.java',root/'tests/OwnerPipePairTest.java',root/'tests/OwnerUploadBoardTest.java',root/'tests/OwnerFolderPickerTest.java',root/'tests/OwnerTransferWaitTest.java'])
 java_tmp=build/'java-tmp'; java_tmp.mkdir(exist_ok=True)
 run([java/'bin/java','-Djava.io.tmpdir='+str(java_tmp),'-cp',host_classes,'app.solstone.development.journal.PackagedAudioTest'])
 run([java/'bin/java','-Djava.io.tmpdir='+str(java_tmp),'-cp',host_classes,'app.solstone.development.journal.ThinkingAdmissionTest'])
@@ -44,6 +44,7 @@ run([java/'bin/java','-Djava.io.tmpdir='+str(java_tmp),'-cp',host_classes,'app.s
 run([java/'bin/java','-Djava.io.tmpdir='+str(java_tmp),'-cp',host_classes,'app.solstone.development.journal.OwnerPipePairTest'])
 run([java/'bin/java','-Djava.io.tmpdir='+str(java_tmp),'-cp',host_classes,'app.solstone.development.journal.OwnerUploadBoardTest'])
 run([java/'bin/java','-Djava.io.tmpdir='+str(java_tmp),'-cp',host_classes,'app.solstone.development.journal.OwnerFolderPickerTest'])
+run([java/'bin/java','-Djava.io.tmpdir='+str(java_tmp),'-cp',host_classes,'app.solstone.development.journal.OwnerTransferWaitTest'])
 run([java/'bin/javac','-source','8','-target','8','-cp',jar,'-d',classes,*sorted((root/'src').rglob('*.java'))])
 env=os.environ.copy(); env['JAVA_HOME']=str(java); env['PATH']=str(java/'bin')+':'+env.get('PATH',''); os.environ.update(env)
 run([tools/'d8','--lib',jar,'--min-api','31','--output',dex,*sorted(classes.rglob('*.class'))])

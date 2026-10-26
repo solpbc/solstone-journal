@@ -117,10 +117,8 @@
           }
         }
       }
-      const finishedAt = Date.now();
       while (true) {
         if (aborted || request.signal.aborted) fail(new DOMException('aborted; check the result before retrying', 'AbortError'));
-        if (Date.now() - finishedAt > 60000) fail(new TypeError(stallMessage));
         const step = JSON.parse(JournalOwner.finishStream(token, id));
         if (step.pending) { await new Promise(resolve => setTimeout(resolve, 0)); continue; }
         pending.delete(id);

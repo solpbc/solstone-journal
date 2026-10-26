@@ -734,12 +734,12 @@ public final class OwnerActivity extends ServingActivity {
                     }
                 }
                 upload.bodyWrite.close();
-                long quiet=SystemClock.elapsedRealtime();
+                long closedAt=SystemClock.elapsedRealtime();
                 while (true) {
                     if (cancellation.cancelled || !token.equals(pageToken)) throw new IOException("cancelled");
                     JSONObject value=transport.poll(upload.id);
                     if (value.optBoolean("pending")) {
-                        if (SystemClock.elapsedRealtime()-quiet > 60000) throw new IOException("transfer stopped");
+                        if (OwnerTransferWait.stalled(true, SystemClock.elapsedRealtime()-closedAt)) throw new IOException("transfer stopped");
                         Thread.sleep(50);
                         continue;
                     }

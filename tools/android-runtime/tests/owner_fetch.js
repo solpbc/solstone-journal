@@ -144,7 +144,55 @@ async function main() {
   assert.equal(cancellations[cancellations.length - 1].token, 'current-page');
   assert.equal(cancellations[cancellations.length - 1].id, opens[opens.length - 1].id);
   assert.ok(!cancellations.some(item => item.token === 'later-page'));
-  console.log('owner fetch: representation, Unicode, redirect, stale reply, origin, abort, binary upload, and stalled read passed');
+
+  let now = 0;
+  context.Date = {now() { return now; }};
+  let finishMode = 'hold';
+  context.JournalOwner.finishStream = () => {
+    if (finishMode === 'hold') {
+      finishMode = 'release';
+      now += 120000;
+      return JSON.stringify({pending: true});
+    }
+    if (finishMode === 'pending-cancel') return JSON.stringify({pending: true});
+    if (finishMode === 'lose') {
+      return JSON.stringify({error: 'journal response unavailable; check the result before trying again'});
+    }
+    return JSON.stringify({
+      status: 200, headers: {'content-type':'application/json'},
+      url: 'https://journal.invalid/app/import/api/save',
+      body: Buffer.from('{"kept":true}').toString('base64'),
+    });
+  };
+  const held = await context.fetch('https://journal.invalid/app/import/api/save', {
+    method: 'POST', headers: {'content-type': 'application/octet-stream'}, body: new Uint8Array([7]),
+  });
+  assert.equal(held.status, 200);
+  assert.deepEqual(await held.json(), {kept: true});
+  assert.ok(now >= 120000);
+  const heldId = opens[opens.length - 1].id;
+  assert.ok(!cancellations.some(item => item.id === heldId));
+
+  finishMode = 'pending-cancel';
+  const saveController = new AbortController();
+  const cancelDuringSave = context.fetch('https://journal.invalid/app/import/api/save', {
+    method: 'POST', headers: {'content-type': 'application/octet-stream'},
+    body: new Uint8Array([8]), duplex: 'half', signal: saveController.signal,
+  });
+  const saveId = opens[opens.length - 1].id;
+  await new Promise(resolve => setTimeout(resolve, 0));
+  saveController.abort();
+  await assert.rejects(cancelDuringSave, /aborted/);
+  assert.equal(cancellations.filter(item => item.id === saveId && item.token === 'current-page').length, 1);
+
+  finishMode = 'lose';
+  const beforeLoss = cancellations.length;
+  await assert.rejects(context.fetch('https://journal.invalid/app/import/api/save', {
+    method: 'POST', headers: {'content-type': 'application/octet-stream'}, body: new Uint8Array([9]),
+  }), /journal response unavailable/);
+  assert.equal(cancellations.length, beforeLoss + 1);
+  assert.equal(cancellations[cancellations.length - 1].token, 'current-page');
+  console.log('owner fetch: representation, Unicode, redirect, stale reply, origin, abort, binary upload, stalled read, and post-EOF completion passed');
 }
 
 function hangingBody() {

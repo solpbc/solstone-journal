@@ -615,6 +615,13 @@ private enum OwnerOutcome {
   }
 }
 
+private enum OwnerTransferWait {
+  /// Input silence stalls. Time after the body is closed does not.
+  static func stalled(bodyClosed: Bool, elapsed: TimeInterval) -> Bool {
+    !bodyClosed && elapsed > 60
+  }
+}
+
 private enum OwnerUploadCopy {
   static let stall = "the transfer stopped before it finished. check the result before trying again."
   static let lost = "journal response unavailable; check the result before trying again"
@@ -745,13 +752,19 @@ private final class OwnerStreamPump: @unchecked Sendable {
         if bodyOpen { closeBody() ; quiet = Date() }
         switch pollHead(quiet: &quiet) {
         case .pending:
-          if Date().timeIntervalSince(quiet) > 60 { fail(OwnerUploadCopy.stall); return }
+          if OwnerTransferWait.stalled(bodyClosed: true, elapsed: Date().timeIntervalSince(quiet)) {
+            fail(OwnerUploadCopy.stall)
+            return
+          }
           usleep(50_000)
         case .done: return
         }
         continue
       }
-      if Date().timeIntervalSince(quiet) > 60 { fail(OwnerUploadCopy.stall); return }
+      if OwnerTransferWait.stalled(bodyClosed: false, elapsed: Date().timeIntervalSince(quiet)) {
+        fail(OwnerUploadCopy.stall)
+        return
+      }
       usleep(50_000)
     }
     cancel()
@@ -778,7 +791,10 @@ private final class OwnerStreamPump: @unchecked Sendable {
       }
       if wrote > 0 { offset += Int(wrote); quiet = Date(); continue }
       if wrote < 0 && (errno == EAGAIN || errno == EINTR) {
-        if Date().timeIntervalSince(quiet) > 60 { fail(OwnerUploadCopy.stall); return false }
+        if OwnerTransferWait.stalled(bodyClosed: false, elapsed: Date().timeIntervalSince(quiet)) {
+          fail(OwnerUploadCopy.stall)
+          return false
+        }
         usleep(50_000)
         continue
       }
@@ -799,6 +815,7 @@ private final class OwnerStreamPump: @unchecked Sendable {
       return .done
     }
     if value["pending"] as? Bool == true { return .pending }
+    quiet = Date()
     let status = value["status"] as? Int ?? 0
     var headers: [String: String] = [:]
     for pair in value["headers"] as? [[String]] ?? [] where pair.count == 2 { headers[pair[0]] = pair[1] }
@@ -831,7 +848,9 @@ private final class OwnerStreamPump: @unchecked Sendable {
       let ready = poll(&descriptor, 1, 200)
       if ready < 0 { if errno == EINTR { continue }; throw URLError(.networkConnectionLost) }
       if ready == 0 {
-        if Date().timeIntervalSince(quiet) > 60 { throw URLError(.timedOut) }
+        if OwnerTransferWait.stalled(bodyClosed: false, elapsed: Date().timeIntervalSince(quiet)) {
+          throw URLError(.timedOut)
+        }
         continue
       }
       let count = Darwin.read(responseReader, &buffer, buffer.count)
