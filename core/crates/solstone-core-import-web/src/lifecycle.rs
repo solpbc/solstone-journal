@@ -660,6 +660,52 @@ fn staged_metadata(input: StagedMetadata<'_>) -> ImportMetadata {
     ])
 }
 
+/// Register an already copied native folder using the maintained staging record.
+/// The native worker retains its original preparation through this call and
+/// temporary-copy cleanup. An error preserves the admitted folder and its id.
+#[cfg(unix)]
+pub fn register_admitted_folder(
+    root: &solstone_core_journal_io::JournalRoot,
+    folder: &solstone_core_import::AdmittedFolder,
+    source: &str,
+    original_filename: &str,
+    client_item_id: &str,
+    source_timestamp: &solstone_core_import::Timestamp,
+    zone: Tz,
+) -> Result<Value, solstone_core_import::FolderAdmitError> {
+    use solstone_core_import::FolderAdmitError;
+    // These are the supported picked-folder routes. Body setup remains held.
+    if !matches!(source, "obsidian" | "gemini" | "document" | "audio_archive")
+        || client_item_id.is_empty()
+    {
+        return Err(FolderAdmitError::Denied);
+    }
+    let path = root
+        .canonical_path()
+        .join("imports")
+        .join(folder.import_id.as_str())
+        .join("tree");
+    let data = json!({"source_hint":source,"imported_via":"mobile"});
+    let mut metadata = staged_metadata(StagedMetadata {
+        timestamp: source_timestamp.as_str(),
+        original_filename,
+        file_path: path.to_str().ok_or(FolderAdmitError::Denied)?.to_owned(),
+        source_hash: SourceHash::new(folder.legacy_hash.clone()),
+        source,
+        mime_type: None,
+        client_item_id: client_item_id.to_owned(),
+        data: &data,
+        is_local_path: false,
+        method: "path_fallback",
+        zone,
+    });
+    metadata.insert("import_id".into(), json!(folder.import_id.as_str()));
+    metadata.insert("source_timestamp".into(), json!(source_timestamp.as_str()));
+    metadata.insert("folder_snapshot".into(), json!(folder.snapshot));
+    folder.write_metadata_bound(root, &metadata)?;
+    Ok(summary(&metadata))
+}
+
 pub(crate) async fn save(State(state): State<AppState>, mut multipart: Multipart) -> Response {
     let mut fields = BTreeMap::new();
     let mut upload = None;

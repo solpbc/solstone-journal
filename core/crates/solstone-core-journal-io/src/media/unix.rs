@@ -435,6 +435,133 @@ pub(super) fn claim(
     }
 }
 
+/// Move `from_name` to `to_name` in `parent` only when `to_name` is absent.
+///
+/// An existing destination, including an empty directory, is `AlreadyExists`.
+/// A target without `RENAME_NOREPLACE` or `RENAME_EXCL` returns `Unsupported`.
+pub fn publish_directory_noreplace(
+    parent: &Path,
+    from_name: &OsStr,
+    to_name: &OsStr,
+) -> io::Result<()> {
+    publish_name(from_name)?;
+    publish_name(to_name)?;
+    let directory = nix::fcntl::open(parent, DIRECTORY, Mode::empty())?;
+    rename_directory_noreplace(&directory, from_name, &directory, to_name)
+}
+
+/// Move one direct name between retained parents using native create-only rename.
+pub fn publish_directory_noreplace_bound(
+    from_parent: &impl AsFd,
+    from_name: &OsStr,
+    to_parent: &impl AsFd,
+    to_name: &OsStr,
+) -> io::Result<()> {
+    for name in [from_name, to_name] {
+        publish_name(name)?;
+        if Path::new(name).components().count() != 1 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "publish name must be one component",
+            ));
+        }
+    }
+    rename_directory_noreplace(from_parent, from_name, to_parent, to_name)
+}
+
+fn rename_directory_noreplace(
+    from_parent: &impl AsFd,
+    from_name: &OsStr,
+    to_parent: &impl AsFd,
+    to_name: &OsStr,
+) -> io::Result<()> {
+    #[cfg(any(
+        target_os = "linux",
+        target_os = "android",
+        target_os = "macos",
+        target_os = "ios"
+    ))]
+    {
+        use std::os::fd::AsRawFd;
+        let from = CString::new(from_name.as_bytes()).map_err(|_| {
+            io::Error::new(io::ErrorKind::InvalidInput, "publish name contains NUL")
+        })?;
+        let to = CString::new(to_name.as_bytes()).map_err(|_| {
+            io::Error::new(io::ErrorKind::InvalidInput, "publish name contains NUL")
+        })?;
+        // SAFETY: retained directory descriptors and NUL-terminated names live
+        // through this synchronous native create-only rename. No fallback.
+        #[allow(unsafe_code)]
+        let result = unsafe {
+            #[cfg(any(target_os = "linux", target_os = "android"))]
+            {
+                libc::syscall(
+                    libc::SYS_renameat2,
+                    from_parent.as_fd().as_raw_fd(),
+                    from.as_ptr(),
+                    to_parent.as_fd().as_raw_fd(),
+                    to.as_ptr(),
+                    libc::RENAME_NOREPLACE,
+                ) as i32
+            }
+            #[cfg(any(target_os = "macos", target_os = "ios"))]
+            {
+                libc::renameatx_np(
+                    from_parent.as_fd().as_raw_fd(),
+                    from.as_ptr(),
+                    to_parent.as_fd().as_raw_fd(),
+                    to.as_ptr(),
+                    libc::RENAME_EXCL,
+                )
+            }
+        };
+        if result != 0 {
+            return Err(io::Error::last_os_error());
+        }
+        Ok(())
+    }
+    #[cfg(not(any(
+        target_os = "linux",
+        target_os = "android",
+        target_os = "macos",
+        target_os = "ios"
+    )))]
+    {
+        let _ = (from_parent, from_name, to_parent, to_name);
+        Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "native no-replace publication unavailable",
+        ))
+    }
+}
+
+fn publish_name(name: &OsStr) -> io::Result<()> {
+    let path = Path::new(name);
+    if name.is_empty() || path.is_absolute() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "publish name must be a relative path",
+        ));
+    }
+    let mut saw_normal = false;
+    for component in path.components() {
+        if !matches!(component, std::path::Component::Normal(_)) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "publish name must contain only normal components",
+            ));
+        }
+        saw_normal = true;
+    }
+    if !saw_normal {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "publish name must be a relative path",
+        ));
+    }
+    Ok(())
+}
+
 pub(super) fn delete_claim(directory: &Directory, name: &OsStr, file: &File) -> io::Result<()> {
     remove_leaf(directory, name, file)?;
     step(MediaPrimitive::DeleteAppliedError)

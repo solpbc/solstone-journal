@@ -20,6 +20,8 @@ mod http;
 mod imports;
 mod journal_archive;
 mod lifecycle;
+#[cfg(unix)]
+pub use lifecycle::register_admitted_folder;
 pub mod mobile_import_contract;
 mod multipart;
 mod preview;
@@ -30,6 +32,9 @@ pub(crate) mod start_lock;
 pub use embedded_route::{
     CapturedImport, ImportAdmission, ImportRouteRequest, ImportRouteSlot, RetainedImportRoute,
 };
+
+#[cfg(all(test, unix))]
+mod native_folder_tests;
 
 #[cfg(test)]
 mod corpus;

@@ -395,6 +395,7 @@ mod scheduled_commands;
 #[path = "import_commands.rs"]
 mod import_commands;
 pub use import_commands::{
+    FolderCopyError, FolderCopyResult,
     ImportContext, ImportKeepalive, ImportPreparation, ImportRequest, ImportSeamFactory,
     PreparedImport,
 };

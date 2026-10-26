@@ -47,6 +47,8 @@ pub use removal::{
 mod unix;
 #[cfg(unix)]
 use unix as platform;
+#[cfg(unix)]
+pub use unix::{publish_directory_noreplace, publish_directory_noreplace_bound};
 #[cfg(windows)]
 mod windows;
 #[cfg(windows)]
