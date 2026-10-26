@@ -1098,14 +1098,26 @@ pub fn native_processing_wait(
     record_path: PathBuf,
     mut record: AudioImportRecord,
 ) -> Pin<Box<dyn Future<Output = Result<ProcessingWaitOutcome, ImportError>> + Send>> {
-    Box::pin(async move { wait_for_processing(&request, &record_path, &mut record).await })
+    // Captured on the thread that built the future, which is the thread that
+    // installed the guard. The spawned task checks this stop, not that thread's
+    // local slot.
+    let stop = solstone_core_import::installed_stop();
+    Box::pin(async move { wait_for_processing(&request, &record_path, &mut record, stop).await })
 }
 
 async fn wait_for_processing(
     request: &AudioImportRequest,
     record_path: &Path,
     record: &mut AudioImportRecord,
+    stop: Option<solstone_core_import::WorkStop>,
 ) -> Result<ProcessingWaitOutcome, ImportError> {
+    let halted = || {
+        stop.as_ref()
+            .is_some_and(solstone_core_import::WorkStop::is_requested)
+    };
+    if halted() {
+        return Ok(processing_outcome(record));
+    }
     let mut connection = CallosumSocketConnection::new(
         request.journal_root.join("health/callosum.sock"),
         Map::new(),
@@ -1114,10 +1126,18 @@ async fn wait_for_processing(
 
     let mut last_progress = Instant::now();
     if reconcile_processing_from_disk(record) {
+        if halted() {
+            connection.stop().await;
+            return Ok(processing_outcome(record));
+        }
         last_progress = Instant::now();
         write_audio_record_at(record_path, record)?;
     }
     while record.created_segments.iter().any(is_pending) {
+        if halted() {
+            connection.stop().await;
+            return Ok(processing_outcome(record));
+        }
         let now = Instant::now();
         let deadline = last_progress + request.stall_timeout;
         if now >= deadline {
@@ -1130,16 +1150,27 @@ async fn wait_for_processing(
             let event_progress =
                 apply_observed_event(record, &envelope.tract, &envelope.event, &envelope.extra);
             if disk_progress || event_progress {
+                if halted() {
+                    connection.stop().await;
+                    return Ok(processing_outcome(record));
+                }
                 last_progress = Instant::now();
                 write_audio_record_at(record_path, record)?;
             }
         }
         if reconcile_processing_from_disk(record) {
+            if halted() {
+                connection.stop().await;
+                return Ok(processing_outcome(record));
+            }
             last_progress = Instant::now();
             write_audio_record_at(record_path, record)?;
         }
     }
     connection.stop().await;
+    if halted() {
+        return Ok(processing_outcome(record));
+    }
     if reconcile_processing_from_disk(record) {
         write_audio_record_at(record_path, record)?;
     }

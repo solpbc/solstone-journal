@@ -1123,6 +1123,12 @@ pub fn prepare_document_import(
             request.password,
             None,
         )) {
+            Ok(_) if !solstone_core_import::work_continues() => {
+                let message = format!("{}: {}", display_name(source), DocumentFailure::Cancelled);
+                errors.push(message.clone());
+                hard_failures.push(message);
+                break;
+            }
             Ok(payload) => payload,
             Err(failure) => {
                 let message = owner_message(source, &failure);
@@ -1394,6 +1400,7 @@ pub fn install_and_publish_document(
                 let failure = if matches!(
                     error,
                     solstone_core_import::publish::PublishError::NotAdmitted
+                        | solstone_core_import::publish::PublishError::Superseded
                 ) {
                     "document publication failed (one or more publication operations failed)"
                         .to_owned()

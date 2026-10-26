@@ -498,7 +498,10 @@ pub fn run_native_producer(
                     };
 
                     match pub_rec_res {
-                        Err(solstone_core_import::publish::PublishError::NotAdmitted) => {
+                        Err(
+                            solstone_core_import::publish::PublishError::NotAdmitted
+                            | solstone_core_import::publish::PublishError::Superseded,
+                        ) => {
                             let _ = record_unconfirmed_attempt_unlocked(
                                 request.journal_root,
                                 request.import_id,

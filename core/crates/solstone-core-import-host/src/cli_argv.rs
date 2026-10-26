@@ -292,6 +292,65 @@ fn embedded_body_refused() -> CliRun {
     )
 }
 
+/// A stored Oura sync already carries the handwritten confirm or schedule flag.
+/// An ordinary sync, and every connect, does not.
+fn oura_sync_is_stored(options: &Options) -> bool {
+    options.confirm_body_save || options.scheduled
+}
+
+/// Shape one embedded preview so it cannot save, admit, or publish.
+///
+/// A file import that is not already a dry run keeps today's digest and zone
+/// preview. `--sync SOURCE --save` runs as that source's catalog preview.
+/// A non-dry audio archive runs as `--dry-run`. Connect is left for dispatch,
+/// which does not start Oura authorization on the embedded entry. Parse
+/// failures are the same usage error as execution.
+pub(crate) fn library_preview_arguments(
+    args: &[String],
+    journal: &Path,
+) -> Result<Vec<String>, CliRun> {
+    let parsed = match parse_arguments(args) {
+        Ok(parsed) => parsed,
+        Err(message) => return Err(argparse_error(message)),
+    };
+    match parsed {
+        ParsedCommand::Import(options) if !options.dry_run && options.media.is_some() => {
+            preview_arguments_with(args, journal, || Ok(()))
+                .map(|shaped| shaped.unwrap_or_else(|| args.to_vec()))
+        }
+        ParsedCommand::Sync { options, .. } if options.save => Ok(without_flag(args, "--save")),
+        ParsedCommand::AudioArchive(options) if !options.dry_run => {
+            let mut shaped = Vec::with_capacity(args.len() + 1);
+            shaped.push("--dry-run".to_owned());
+            shaped.extend_from_slice(args);
+            Ok(shaped)
+        }
+        _ => Ok(args.to_vec()),
+    }
+}
+
+fn without_flag(args: &[String], flag: &str) -> Vec<String> {
+    args.iter()
+        .filter(|argument| argument.as_str() != flag)
+        .cloned()
+        .collect()
+}
+
+/// Whether `args` is one importer invocation this grammar accepts.
+///
+/// The check parses only. It does not open a journal, probe the supervisor,
+/// or read source bytes. Acceptance is not a preview, not publication, and
+/// not approval of Apple Health or Oura. An import with no media path is
+/// rejected with the same requirement execution reports.
+pub fn admit_arguments(args: &[String]) -> Result<(), String> {
+    match parse_arguments(args)? {
+        ParsedCommand::Import(options) if options.media.is_none() => {
+            Err("the following arguments are required: media".to_owned())
+        }
+        _ => Ok(()),
+    }
+}
+
 pub(crate) fn run_library(
     args: &[String],
     journal_path: &Path,
@@ -341,7 +400,7 @@ fn dispatch_parsed(
             rendered(run_connect(&backend, journal_path))
         }
         ParsedCommand::Sync { backend, options } => {
-            if dispatch.embedded() && backend == "oura" {
+            if dispatch.embedded() && backend == "oura" && !oura_sync_is_stored(&options) {
                 return rendered(embedded_body_refused());
             }
             rendered(run_sync(&backend, &options, journal_path))

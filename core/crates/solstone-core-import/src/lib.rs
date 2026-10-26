@@ -109,7 +109,7 @@ pub use text::{
 pub use timestamp::{
     AutoTimestamp, DetectedTimestamp, Timestamp, TimestampError, validate_timestamp,
 };
-pub use work_stop::{WorkStop, WorkStopGuard, work_continues};
+pub use work_stop::{WorkStop, WorkStopGuard, installed_stop, work_continues};
 
 /// Error returned by an importer seam that has no implementation yet.
 #[derive(Debug)]

@@ -19,8 +19,15 @@
 //! waiting. Cancellation is not reported while a native call is still inside
 //! its owner.
 //!
-//! Apple Health import, Oura sync, and Oura connect stay on the desktop
-//! importer. This entry refuses them and does not call those writers.
+//! Apple Health import and Oura connect stay on the desktop importer. An
+//! ordinary Oura sync does too. A stored Oura sync that already carries
+//! `--confirm-body-save` or `--scheduled` keeps the existing handwritten
+//! approval and is not given a new connect, card, or schedule entry.
+//!
+//! [`crate::cli_argv::admit_arguments`] parses the same grammar and touches
+//! no journal, supervisor, or source bytes. [`WorkStop::linked`] observes a
+//! parent cancellation flag and a deadline at each check. There is no timer
+//! thread. [`ImportHandle::join`] still blocks until native work returns.
 //!
 //! In-process PDF is the optional `in-process-pdf` feature. The caller
 //! passes an explicit library path: Android `nativeLibraryDir/libpdfium.so`,
@@ -37,7 +44,9 @@ use std::thread::{self, JoinHandle};
 use solstone_core_import::cli_render::CliRun;
 use solstone_core_import::{WorkStop, WorkStopGuard};
 
-use crate::cli_argv::{preview_arguments_with, run_library};
+use crate::cli_argv::{library_preview_arguments, run_library};
+
+pub use crate::cli_argv::admit_arguments;
 
 /// Seams an embedded or desktop caller supplies for one attempt.
 ///
@@ -92,14 +101,16 @@ impl Drop for ImportHandle {
 
 /// Preview on the caller's thread.
 ///
-/// A non-dry-run import is shaped into its dry-run arguments first. Preview
-/// does not admit an attempt, allocate an id, or publish. It does not probe
-/// the supervisor and does not build a Tokio runtime.
+/// A non-dry-run file import is shaped into its dry-run arguments. A sync
+/// that carries `--save` runs as that source's catalog preview. A non-dry
+/// audio archive runs as `--dry-run`. Connect does not start Oura
+/// authorization. Preview does not admit an attempt, allocate an id, or
+/// publish. It does not probe the supervisor and does not build a Tokio
+/// runtime.
 #[must_use]
 pub fn preview(args: &[String], journal: &Path, seams: &ImportSeams) -> CliRun {
-    match preview_arguments_with(args, journal, || Ok(())) {
-        Ok(Some(preview_args)) => run_library(&preview_args, journal, seams, true).0,
-        Ok(None) => run_library(args, journal, seams, true).0,
+    match library_preview_arguments(args, journal) {
+        Ok(preview_args) => run_library(&preview_args, journal, seams, true).0,
         Err(run) => run,
     }
 }
@@ -152,9 +163,13 @@ pub fn execute_desktop(
 #[cfg(test)]
 mod tests {
     use std::path::Path;
+    use std::sync::Arc;
+    use std::sync::atomic::AtomicBool;
     use std::sync::mpsc::{self, TryRecvError};
 
-    use solstone_core_import_sources::document::{PdfWorker, PdfWorkerRequest, WorkerFailure};
+    use solstone_core_import_sources::document::{
+        PdfPayload, PdfWorker, PdfWorkerRequest, WorkerFailure,
+    };
 
     use super::*;
 
@@ -220,17 +235,16 @@ mod tests {
     struct BlockingPdf {
         entered: mpsc::Sender<()>,
         release: mpsc::Receiver<()>,
+        payload: Option<PdfPayload>,
     }
 
     impl PdfWorker for BlockingPdf {
         fn execute(&self, _request: &PdfWorkerRequest) -> Result<PdfPayload, WorkerFailure> {
             self.entered.send(()).unwrap();
             let _ = self.release.recv();
-            Err(WorkerFailure::Cancelled)
+            self.payload.clone().ok_or(WorkerFailure::Cancelled)
         }
     }
-
-    use solstone_core_import_sources::document::PdfPayload;
 
     #[test]
     fn join_waits_until_the_native_pdf_call_returns() {
@@ -247,6 +261,7 @@ mod tests {
             pdf: Box::new(BlockingPdf {
                 entered: entered_tx,
                 release: release_rx,
+                payload: None,
             }),
             reindex: Box::new(crate::registry::IndexScan {
                 journal: journal.path().to_path_buf(),
@@ -277,5 +292,174 @@ mod tests {
         release_tx.send(()).unwrap();
         let (run, _) = done_rx.recv().unwrap();
         assert_ne!(run.exit_code, 0);
+    }
+
+    #[test]
+    fn preview_of_sync_save_and_audio_archive_does_not_publish() {
+        let journal = tempfile::tempdir().unwrap();
+        let folder = tempfile::tempdir().unwrap();
+        std::fs::write(folder.path().join("clip.m4a"), b"not audio").unwrap();
+        let seams = idle_seams(journal.path());
+        let sync = preview(
+            &[
+                "--sync".to_owned(),
+                "audio".to_owned(),
+                "--save".to_owned(),
+                "--path".to_owned(),
+                folder.path().display().to_string(),
+            ],
+            journal.path(),
+            &seams,
+        );
+        assert_eq!(sync.exit_code, 0, "{}", sync.stderr);
+        assert!(sync.stdout.contains("preview"), "{}", sync.stdout);
+        assert!(!sync.stdout.contains("saved="), "{}", sync.stdout);
+        assert!(!journal.path().join("chronicle").exists());
+
+        let archive_dir = tempfile::tempdir().unwrap();
+        let archive = preview(
+            &[
+                "--audio-archive".to_owned(),
+                archive_dir.path().display().to_string(),
+                "--source-zone".to_owned(),
+                "UTC".to_owned(),
+            ],
+            journal.path(),
+            &seams,
+        );
+        assert_eq!(archive.exit_code, 0, "{}", archive.stderr);
+        assert!(
+            archive.stdout.contains("audio archive preview"),
+            "{}",
+            archive.stdout
+        );
+        assert!(!journal.path().join("chronicle").exists());
+        assert!(
+            !journal
+                .path()
+                .join("imports")
+                .join("20260809_090000")
+                .join("imported.json")
+                .exists()
+        );
+
+        let connect = preview(
+            &["--connect".to_owned(), "oura".to_owned()],
+            journal.path(),
+            &seams,
+        );
+        assert_eq!(connect.exit_code, 1, "{}", connect.stderr);
+        assert!(connect.stderr.contains("desktop importer"));
+        assert!(!journal.path().join("config").exists());
+    }
+
+    #[test]
+    fn admit_arguments_parses_without_reading_a_source() {
+        let directory = tempfile::tempdir().unwrap();
+        let missing = directory.path().join("missing").join("notes.pdf");
+        assert!(admit_arguments(&["--list-importers".to_owned()]).is_ok());
+        assert!(admit_arguments(&["--nope".to_owned()]).is_err());
+        assert!(admit_arguments(&[]).is_err());
+        assert!(
+            admit_arguments(&[
+                "--source".to_owned(),
+                "document".to_owned(),
+                missing.display().to_string(),
+            ])
+            .is_ok()
+        );
+        assert!(!missing.exists());
+    }
+
+    #[test]
+    fn stored_oura_sync_keeps_the_handwritten_gate() {
+        let journal = tempfile::tempdir().unwrap();
+        let seams = idle_seams(journal.path());
+        for args in [
+            vec![
+                "--sync".to_owned(),
+                "oura".to_owned(),
+                "--save".to_owned(),
+                "--confirm-body-save".to_owned(),
+            ],
+            vec![
+                "--sync".to_owned(),
+                "oura".to_owned(),
+                "--save".to_owned(),
+                "--scheduled".to_owned(),
+            ],
+        ] {
+            let (run, id) = run_library(&args, journal.path(), &seams, true);
+            assert_eq!(run.exit_code, 1, "{args:?} {}", run.stderr);
+            assert!(id.is_none(), "{args:?}");
+            assert!(
+                !run.stderr.contains("desktop importer"),
+                "{args:?} {}",
+                run.stderr
+            );
+            assert!(
+                run.stderr.contains("missing_approval_artifact"),
+                "{args:?} {}",
+                run.stderr
+            );
+            assert!(!journal.path().join("imports").join("oura.json").exists());
+            assert!(!journal.path().join("chronicle").exists());
+        }
+    }
+
+    #[test]
+    fn parent_cancel_during_pdf_retains_the_call_and_skips_install() {
+        let journal = tempfile::tempdir().unwrap();
+        let pdf = journal.path().join("notes.pdf");
+        std::fs::write(&pdf, b"%PDF-1.1\n").unwrap();
+        let (entered_tx, entered_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel();
+        let parent = Arc::new(AtomicBool::new(false));
+        let stop = WorkStop::linked(Arc::clone(&parent), None);
+        let seams = ImportSeams {
+            text: Box::new(IdleText),
+            image: Box::new(solstone_core_import_sources::NullWireClient),
+            model: Box::new(solstone_core_import_sources::NullDocumentModelClient),
+            pdf: Box::new(BlockingPdf {
+                entered: entered_tx,
+                release: release_rx,
+                payload: Some(PdfPayload::default()),
+            }),
+            reindex: Box::new(crate::registry::IndexScan {
+                journal: journal.path().to_path_buf(),
+            }),
+        };
+        let handle = start(
+            vec![
+                "--source".to_owned(),
+                "document".to_owned(),
+                pdf.display().to_string(),
+                "--timestamp".to_owned(),
+                "20260809_090000".to_owned(),
+            ],
+            journal.path().to_path_buf(),
+            seams,
+            stop,
+        )
+        .unwrap();
+        entered_rx.recv().unwrap();
+        parent.store(true, std::sync::atomic::Ordering::Release);
+        let (done_tx, done_rx) = mpsc::channel();
+        thread::spawn(move || {
+            done_tx.send(handle.join()).unwrap();
+        });
+        assert_eq!(done_rx.try_recv().unwrap_err(), TryRecvError::Empty);
+        release_tx.send(()).unwrap();
+        let (run, _) = done_rx.recv().unwrap();
+        assert_ne!(run.exit_code, 0, "{}", run.stdout);
+        assert!(!journal.path().join("chronicle").exists());
+        assert!(
+            !journal
+                .path()
+                .join("imports")
+                .join("20260809_090000")
+                .join("imported.json")
+                .exists()
+        );
     }
 }

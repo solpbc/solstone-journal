@@ -24,8 +24,10 @@
 //! A native frame that is still running after cancel stays owned until it
 //! returns. This call cannot kill that frame.
 //!
-//! Apple Health import, Oura sync, and Oura connect stay on the desktop
-//! importer. `connect_oura` is not available here.
+//! Apple Health import and Oura connect stay on the desktop importer. An
+//! ordinary Oura sync does too. A stored Oura sync that already carries
+//! `--confirm-body-save` or `--scheduled` keeps the existing handwritten
+//! approval. `connect_oura` is not available here.
 //!
 //! This example calls `cancel` immediately after `start` so the sequence is
 //! visible. Delete that call to let the attempt finish.
