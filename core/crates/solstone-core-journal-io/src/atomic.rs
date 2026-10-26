@@ -1873,7 +1873,7 @@ pub fn write_jsonl<T: Serialize>(
 /// caller before rename or hard-link publication. This is distinct from the
 /// best-effort parent-directory sync performed after publication.
 #[cfg(unix)]
-pub(crate) fn sync_file(file: &File) -> io::Result<()> {
+pub fn sync_file(file: &File) -> io::Result<()> {
     file.sync_all()?;
     #[cfg(any(
         target_os = "ios",

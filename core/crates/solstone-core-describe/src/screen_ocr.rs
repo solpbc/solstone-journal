@@ -111,7 +111,7 @@ pub(crate) struct OverlapDiagnostic {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub(crate) struct RawOccurrence {
+pub struct RawOccurrence {
     pub line_order: u32,
     pub text: String,
     pub confidence: Option<f32>,
@@ -148,6 +148,9 @@ pub(crate) struct PrivateSidecar {
     pub state: CoverageState,
     pub frames: Vec<FrameCoverage>,
     pub word_overlap: OverlapDiagnostic,
+    /// Set only for the mobile OCR gap. Desktop unavailability leaves this unset.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -180,7 +183,7 @@ pub(crate) struct SourceBinding {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum OcrFailure {
+pub enum OcrFailure {
     Unavailable,
     Timeout,
     Protocol,
@@ -188,7 +191,7 @@ pub(crate) enum OcrFailure {
 }
 
 impl OcrFailure {
-    fn code(self) -> &'static str {
+    pub fn code(self) -> &'static str {
         match self {
             Self::Unavailable => "helper_unavailable",
             Self::Timeout => "helper_timeout",
@@ -198,13 +201,37 @@ impl OcrFailure {
     }
 }
 
-pub(crate) trait OcrWorker {
+pub trait OcrWorker {
     fn recognize(&mut self, png: &[u8]) -> Result<Vec<RawOccurrence>, OcrFailure>;
 }
 
-pub(crate) trait OcrWorkerFactory {
+pub trait OcrWorkerFactory {
     fn recipe_id(&mut self) -> String;
     fn create(&mut self) -> Result<Option<Box<dyn OcrWorker>>, OcrFailure>;
+
+    /// Sidecar detail for a helper that cannot be loaded. Desktop leaves this unset.
+    fn unavailable_detail(&mut self) -> Option<&'static str> {
+        None
+    }
+}
+
+/// This type is a gap double. The production mobile worker is `ScreenOcrFactory`.
+pub struct MobileOcrGap;
+
+const MOBILE_OCR_GAP_DETAIL: &str = "oar-ocr 84817f58 pins ort =2.0.0-rc.13; mobile ort is =2.0.0-rc.12. Compile needs options.set replaced by options.add_config_entry. Android ONNX Runtime is source 7a71bc57; iOS is 1.25.0 static with ort features api-24 and std. No recognition bytes were loaded.";
+
+impl OcrWorkerFactory for MobileOcrGap {
+    fn recipe_id(&mut self) -> String {
+        "mobile-ocr-gap".to_owned()
+    }
+
+    fn create(&mut self) -> Result<Option<Box<dyn OcrWorker>>, OcrFailure> {
+        Ok(None)
+    }
+
+    fn unavailable_detail(&mut self) -> Option<&'static str> {
+        Some(MOBILE_OCR_GAP_DETAIL)
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -827,6 +854,14 @@ pub(crate) fn load_segment_sidecars(segment: &Path) -> Vec<PrivateSidecar> {
 }
 
 fn source_current(segment: &Path, sidecar: &PrivateSidecar) -> bool {
+    source_current_checked(segment, sidecar, &|| false)
+}
+
+fn source_current_checked(
+    segment: &Path,
+    sidecar: &PrivateSidecar,
+    stop: &dyn Fn() -> bool,
+) -> bool {
     let name = Path::new(&sidecar.source_name);
     if name.components().count() != 1
         || !matches!(
@@ -852,6 +887,9 @@ fn source_current(segment: &Path, sidecar: &PrivateSidecar) -> bool {
     let mut digest = Sha256::new();
     let mut buffer = [0_u8; 65_536];
     loop {
+        if stop() {
+            return false;
+        }
         match file.read(&mut buffer) {
             Ok(0) => break,
             Ok(count) => digest.update(&buffer[..count]),
@@ -939,6 +977,66 @@ pub(crate) fn cache_matches(
         })
 }
 
+/// Metadata-only decode has no PNG payload. Exact whole-source admission plus
+/// the same qualified ids, timestamps, recipe and category policy admits these
+/// previously verified per-frame OCR bytes without requiring a healthy worker.
+pub(crate) fn cache_matches_metadata(
+    cached: &PrivateSidecar,
+    expected: &PrivateSidecar,
+    ignored: &BTreeSet<u64>,
+) -> bool {
+    if cached.frames.len() != expected.frames.len() {
+        return false;
+    }
+    let mut admitted = expected.clone();
+    for (frame, prior) in admitted.frames.iter_mut().zip(&cached.frames) {
+        frame.png_sha256 = prior.png_sha256.clone();
+    }
+    cache_matches(cached, &admitted, ignored, false)
+}
+
+/// An optional retry failure must not erase valid recognition of identical PNGs.
+/// Newly ignored categories are never restored from the cache.
+pub(crate) fn retain_valid_cached_frames(sidecar: &mut PrivateSidecar, cached: &PrivateSidecar) {
+    if cached.schema != sidecar.schema
+        || cached.source_id != sidecar.source_id
+        || cached.segment_identity != sidecar.segment_identity
+        || cached.source_sha256 != sidecar.source_sha256
+        || cached.source_name != sidecar.source_name
+        || cached.recipe_id != sidecar.recipe_id
+    {
+        return;
+    }
+    let mut text_bytes = 0usize;
+    for frame in &mut sidecar.frames {
+        if !matches!(frame.state, CoverageState::Success | CoverageState::Empty)
+            && frame.error_code.as_deref() != Some("category_ignored")
+            && let Some(prior) = cached.frames.iter().find(|prior| {
+                prior.frame_id == frame.frame_id
+                    && prior.segment_offset_ms == frame.segment_offset_ms
+                    && prior.png_sha256 == frame.png_sha256
+                    && prior.category == frame.category
+                    && prior.secondary_category == frame.secondary_category
+                    && matches!(prior.state, CoverageState::Success | CoverageState::Empty)
+            })
+        {
+            *frame = prior.clone();
+        }
+        let next = frame.occurrences.iter().fold(text_bytes, |total, line| {
+            total.saturating_add(line.text.len())
+        });
+        if next > MAX_SOURCE_TEXT_BYTES {
+            frame.occurrences.clear();
+            frame.state = CoverageState::Error;
+            frame.error_code = Some("source_text_limit".into());
+        } else {
+            text_bytes = next;
+        }
+    }
+    annotate_recurrence(sidecar);
+    summarize_coverage(sidecar);
+}
+
 pub(crate) fn expected_sidecar(
     source_id: String,
     segment_identity: String,
@@ -981,17 +1079,23 @@ pub(crate) fn expected_sidecar(
             extraction_words: 0,
             overlapping_words: 0,
         },
+        detail: None,
     }
 }
 
 /// Process retained frames sequentially through one worker for this burst.
 /// Worker failures only update private coverage and never escape into C/S/E.
+/// `true` when `stop` asks the burst to end before recognition finishes.
 pub(crate) fn run_worker(
     sidecar: &mut PrivateSidecar,
     frames: &[QualifiedFrame],
     ignored_ids: &BTreeSet<u64>,
     worker: Option<&mut dyn OcrWorker>,
-) {
+    stop: &dyn Fn() -> bool,
+) -> bool {
+    if stop() {
+        return true;
+    }
     for frame in &mut sidecar.frames {
         if ignored_ids.contains(&frame.frame_id) {
             frame.error_code = Some("category_ignored".to_owned());
@@ -1001,11 +1105,14 @@ pub(crate) fn run_worker(
     }
     let Some(worker) = worker else {
         summarize_coverage(sidecar);
-        return;
+        return false;
     };
     let mut fatal = false;
     let mut text_bytes = 0_usize;
     for coverage in &mut sidecar.frames {
+        if stop() {
+            return true;
+        }
         if ignored_ids.contains(&coverage.frame_id) {
             continue;
         }
@@ -1060,27 +1167,43 @@ pub(crate) fn run_worker(
     }
     annotate_recurrence(sidecar);
     summarize_coverage(sidecar);
+    false
 }
 
+/// `true` when `stop` asks the burst to end before recognition finishes.
 pub(crate) fn run_worker_with_factory(
     sidecar: &mut PrivateSidecar,
     frames: &[QualifiedFrame],
     ignored_ids: &BTreeSet<u64>,
     factory: &mut dyn OcrWorkerFactory,
-) {
+    stop: &dyn Fn() -> bool,
+) -> bool {
+    if stop() {
+        return true;
+    }
     if sidecar
         .frames
         .iter()
         .all(|frame| ignored_ids.contains(&frame.frame_id))
     {
         summarize_coverage(sidecar);
-        return;
+        return false;
     }
     match factory.create() {
         Ok(Some(mut worker)) => {
-            run_worker(sidecar, frames, ignored_ids, Some(worker.as_mut()));
+            let cancelled = run_worker(sidecar, frames, ignored_ids, Some(worker.as_mut()), stop);
+            if !cancelled {
+                record_unavailable_detail(sidecar, factory);
+            }
+            cancelled
         }
-        Ok(None) => run_worker(sidecar, frames, ignored_ids, None),
+        Ok(None) => {
+            let cancelled = run_worker(sidecar, frames, ignored_ids, None, stop);
+            if !cancelled {
+                record_unavailable_detail(sidecar, factory);
+            }
+            cancelled
+        }
         Err(error) => {
             let Some(frame) = sidecar
                 .frames
@@ -1088,12 +1211,156 @@ pub(crate) fn run_worker_with_factory(
                 .find(|frame| !ignored_ids.contains(&frame.frame_id))
             else {
                 summarize_coverage(sidecar);
-                return;
+                return false;
             };
             frame.state = CoverageState::Error;
             frame.error_code = Some(error.code().to_owned());
             summarize_coverage(sidecar);
+            false
         }
+    }
+}
+
+fn record_unavailable_detail(sidecar: &mut PrivateSidecar, factory: &mut dyn OcrWorkerFactory) {
+    if sidecar.detail.is_some() {
+        return;
+    }
+    let unavailable = sidecar
+        .frames
+        .iter()
+        .any(|frame| frame.error_code.as_deref() == Some("helper_unavailable"));
+    if unavailable && let Some(detail) = factory.unavailable_detail() {
+        sidecar.detail = Some(detail.to_owned());
+    }
+}
+
+/// One-frame OCR while a live describe still holds that frame's PNG.
+///
+/// Qualified order, fatal stop, and the missing-helper gap match `run_worker`.
+pub(crate) struct StreamingOcr {
+    worker: Option<Box<dyn OcrWorker>>,
+    started: bool,
+    missing: bool,
+    factory_stopped: bool,
+    fatal: bool,
+    text_bytes: usize,
+    next: usize,
+}
+
+impl StreamingOcr {
+    pub(crate) fn new() -> Self {
+        Self {
+            worker: None,
+            started: false,
+            missing: false,
+            factory_stopped: false,
+            fatal: false,
+            text_bytes: 0,
+            next: 0,
+        }
+    }
+
+    pub(crate) fn fed(&self) -> usize {
+        self.next
+    }
+
+    /// Advance the qualified cursor when this frame has no OCR consumer.
+    pub(crate) fn advance(&mut self) {
+        self.next = self.next.saturating_add(1);
+    }
+
+    pub(crate) fn feed(
+        &mut self,
+        sidecar: &mut PrivateSidecar,
+        index: usize,
+        png: &[u8],
+        ignored: bool,
+        factory: &mut dyn OcrWorkerFactory,
+    ) {
+        if index != self.next {
+            return;
+        }
+        self.next += 1;
+        let Some(coverage) = sidecar.frames.get_mut(index) else {
+            return;
+        };
+        coverage.png_sha256 = png_sha256(png);
+        if ignored {
+            coverage.error_code = Some("category_ignored".to_owned());
+            return;
+        }
+        if self.factory_stopped || self.fatal {
+            return;
+        }
+        if !self.started {
+            self.started = true;
+            match factory.create() {
+                Ok(worker) => {
+                    self.missing = worker.is_none();
+                    self.worker = worker;
+                }
+                Err(error) => {
+                    coverage.state = CoverageState::Error;
+                    coverage.error_code = Some(error.code().to_owned());
+                    self.factory_stopped = true;
+                    return;
+                }
+            }
+        }
+        if self.missing || self.worker.is_none() {
+            coverage.error_code = Some("helper_unavailable".to_owned());
+            return;
+        }
+        if let Err(code) = validate_png(png) {
+            coverage.state = CoverageState::Error;
+            coverage.error_code = Some(code.to_owned());
+            self.fatal = true;
+            return;
+        }
+        let Some(worker) = self.worker.as_mut() else {
+            coverage.error_code = Some("helper_unavailable".to_owned());
+            return;
+        };
+        match worker.recognize(png) {
+            Ok(occurrences) if occurrences.len() <= MAX_REGIONS => {
+                let next_bytes = occurrences.iter().fold(self.text_bytes, |total, line| {
+                    total.saturating_add(line.text.len())
+                });
+                if next_bytes > MAX_SOURCE_TEXT_BYTES {
+                    coverage.state = CoverageState::Error;
+                    coverage.error_code = Some("source_text_limit".to_owned());
+                    self.fatal = true;
+                    return;
+                }
+                self.text_bytes = next_bytes;
+                coverage.state = if occurrences.is_empty() {
+                    CoverageState::Empty
+                } else {
+                    CoverageState::Success
+                };
+                coverage.occurrences = occurrences;
+            }
+            Ok(_) => {
+                coverage.state = CoverageState::Error;
+                coverage.error_code = Some("region_limit".to_owned());
+                self.fatal = true;
+            }
+            Err(error) => {
+                coverage.state = CoverageState::Error;
+                coverage.error_code = Some(error.code().to_owned());
+                self.fatal = true;
+            }
+        }
+    }
+
+    pub(crate) fn finish(
+        &mut self,
+        sidecar: &mut PrivateSidecar,
+        factory: &mut dyn OcrWorkerFactory,
+    ) {
+        annotate_recurrence(sidecar);
+        summarize_coverage(sidecar);
+        record_unavailable_detail(sidecar, factory);
     }
 }
 
@@ -1201,7 +1468,7 @@ pub(crate) fn set_frame_categories(
     }
 }
 
-fn update_frame_diagnostics(sidecar: &mut PrivateSidecar, rows: &[Value]) {
+pub(crate) fn update_frame_diagnostics(sidecar: &mut PrivateSidecar, rows: &[Value]) {
     fn append_text(value: &Value, text: &mut String) {
         match value {
             Value::String(value) => {
@@ -1278,7 +1545,11 @@ fn publish_record(
     segment: &Path,
     lines: &[FoldedLine],
     commit: &SegmentCommit<'_>,
+    stop: &dyn Fn() -> bool,
 ) -> io::Result<()> {
+    if stop() {
+        return Err(io::Error::other("describe cancelled"));
+    }
     commit.revalidate()?;
     let directory = segment.join("talents");
     let path = directory.join("screen_text.md");
@@ -1294,6 +1565,9 @@ fn publish_record(
         publish_record_bytes(segment, &directory, &path, &bytes, &|| {
             commit.revalidate().map_err(|error| error.to_string())
         })?;
+    }
+    if stop() {
+        return Err(io::Error::other("describe cancelled"));
     }
     commit.revalidate()?;
     solstone_core_indexer_todo::enqueue_path(journal, &path)
@@ -1402,12 +1676,13 @@ fn publication_policy(
     segment: &Path,
     recipe_id: &str,
     claims: &OutputClaims,
+    stop: &dyn Fn() -> bool,
 ) -> io::Result<CurrentPolicy> {
     match current_policy(journal) {
         Ok(policy) => Ok(policy),
         Err(error) => {
             let commit = claims.commit(segment)?;
-            publish_record(journal, segment, &[], &commit)?;
+            publish_record(journal, segment, &[], &commit, stop)?;
             let gap = PrivateFoldedSnapshot {
                 schema: SIDECAR_SCHEMA,
                 segment_identity: claims.segment_identity(segment)?.observation_id(),
@@ -1430,6 +1705,254 @@ pub(crate) fn folded_path(segment: &Path) -> PathBuf {
     segment.join(format!(".screen-ocr-v{SIDECAR_SCHEMA}-folded.json"))
 }
 
+/// Build the OCR projection privately before the Describe publication gate.
+/// The policy lock remains held until the short compound publication finishes.
+pub(crate) struct PreparedPublication {
+    _policy: Option<CurrentPolicy>,
+    journal: PathBuf,
+    segment: PathBuf,
+    siblings: Vec<crate::publication::SourceWitness>,
+    sidecar: Option<crate::publication::StagedFile>,
+    folded: Option<crate::publication::StagedFile>,
+    preparation_error: Option<(io::ErrorKind, String)>,
+    record: Option<crate::publication::StagedFile>,
+    withdrawal: Option<crate::publication::StagedFile>,
+}
+
+impl PreparedPublication {
+    pub(crate) fn prepare(
+        journal: &Path,
+        segment: &Path,
+        sidecar: &PrivateSidecar,
+        stop: &dyn Fn() -> bool,
+    ) -> io::Result<Self> {
+        let policy = current_policy(journal).ok();
+        let mut sources = Vec::new();
+        let mut siblings = Vec::new();
+        if let Some(policy) = policy.as_ref() {
+            for cached in load_segment_sidecars(segment) {
+                if stop() {
+                    return Err(io::Error::other("describe cancelled"));
+                }
+                let name = Path::new(&cached.source_name);
+                if cached.segment_identity != sidecar.segment_identity
+                    || cached.recipe_id != sidecar.recipe_id
+                    || cached.source_id == sidecar.source_id
+                    || name.components().count() != 1
+                    || !matches!(
+                        name.components().next(),
+                        Some(std::path::Component::Normal(_))
+                    )
+                    || source_identity(&cached.segment_identity, &segment.join(name))
+                        != cached.source_id
+                {
+                    continue;
+                }
+                if let Ok(witness) = crate::publication::SourceWitness::capture(
+                    &segment.join(name),
+                    &cached.source_sha256,
+                    stop,
+                ) {
+                    siblings.push(witness);
+                    sources.push(cached);
+                }
+            }
+            sources.push(sidecar.clone());
+            apply_ignore_policy(&mut sources, &policy.ignored);
+            sources.sort_by(|a, b| a.source_id.cmp(&b.source_id));
+        }
+        let folded = PrivateFoldedSnapshot {
+            schema: SIDECAR_SCHEMA,
+            segment_identity: sidecar.segment_identity.clone(),
+            recipe_id: sidecar.recipe_id.clone(),
+            lines: fold(&sources),
+            policy_error: policy.is_none().then(|| "policy_unavailable".to_owned()),
+            word_overlap: combined_word_overlap(&sources),
+        };
+        let path = segment.join("talents/screen_text.md");
+        let needed = !folded.lines.is_empty() || path.try_exists()?;
+        let parent = needed.then(|| record_directory(segment)).transpose()?;
+        // Reserve the small fail-closed projection before staging larger files.
+        // A later ENOSPC must not discard this withdrawal and publish stale text.
+        let withdrawal = parent
+            .as_ref()
+            .map(|parent| {
+                crate::publication::StagedFile::prepare_in(
+                    std::sync::Arc::clone(parent),
+                    std::ffi::OsStr::new("screen_text.md"),
+                    stop,
+                    |_| Ok(()),
+                )
+            })
+            .transpose()?;
+        let stages = (|| -> io::Result<_> {
+            let source = sources
+                .iter()
+                .find(|source| source.source_id == sidecar.source_id);
+            let sidecar_file = source
+                .map(|source| {
+                    crate::publication::StagedFile::prepare(
+                        &sidecar_path(segment, &source.source_id),
+                        stop,
+                        |writer| serde_json::to_writer(writer, source).map_err(io::Error::other),
+                    )
+                })
+                .transpose()?;
+            let folded_file =
+                crate::publication::StagedFile::prepare(&folded_path(segment), stop, |writer| {
+                    serde_json::to_writer(writer, &folded).map_err(io::Error::other)
+                })?;
+            let record = parent
+                .as_ref()
+                .map(|parent| {
+                    let text = record_text(&folded.lines);
+                    crate::publication::StagedFile::prepare_in(
+                        std::sync::Arc::clone(parent),
+                        std::ffi::OsStr::new("screen_text.md"),
+                        stop,
+                        |writer| writer.write_all(text.as_bytes()),
+                    )
+                })
+                .transpose()?;
+            Ok((sidecar_file, folded_file, record))
+        })();
+        let (sidecar_file, folded_file, record, preparation_error) = match stages {
+            Ok((sidecar_file, folded_file, record)) => {
+                (sidecar_file, Some(folded_file), record, None)
+            }
+            Err(error) if stop() || error.to_string() == "describe cancelled" => {
+                return Err(io::Error::other("describe cancelled"));
+            }
+            Err(error) => {
+                siblings.clear();
+                (None, None, None, Some((error.kind(), error.to_string())))
+            }
+        };
+        if stop() {
+            return Err(io::Error::other("describe cancelled"));
+        }
+        Ok(Self {
+            _policy: policy,
+            journal: journal.to_owned(),
+            segment: segment.to_owned(),
+            siblings,
+            sidecar: sidecar_file,
+            folded: folded_file,
+            preparation_error,
+            record,
+            withdrawal,
+        })
+    }
+
+    /// Called under segment exclusion before accepting the final commit.
+    pub(crate) fn validate_authority(&self) -> io::Result<()> {
+        for witness in &self.siblings {
+            witness.validate()?;
+        }
+        for file in self
+            .sidecar
+            .iter()
+            .chain(self.folded.iter())
+            .chain(self.record.iter())
+            .chain(self.withdrawal.iter())
+        {
+            file.validate_stage()?;
+        }
+        Ok(())
+    }
+
+    /// Only already-flushed files are renamed after the final cancellation gate.
+    pub(crate) fn install(&self, commit: &SegmentCommit<'_>) -> io::Result<()> {
+        if let Some((kind, message)) = &self.preparation_error {
+            self.withdraw(commit)?;
+            return Err(io::Error::new(*kind, message.clone()));
+        }
+        let result = (|| {
+            for file in self
+                .sidecar
+                .iter()
+                .chain(self.folded.iter())
+                .chain(self.record.iter())
+            {
+                commit.revalidate()?;
+                file.install()?;
+            }
+            if self.record.is_some() {
+                commit.revalidate()?;
+                solstone_core_indexer_todo::enqueue_path(
+                    &self.journal,
+                    &self.segment.join("talents/screen_text.md"),
+                )?;
+            }
+            Ok(())
+        })();
+        if result.is_err() {
+            self.withdraw(commit)?;
+        }
+        result
+    }
+
+    fn withdraw(&self, commit: &SegmentCommit<'_>) -> io::Result<()> {
+        commit.revalidate()?;
+        if let Err(error) = fs::remove_file(folded_path(&self.segment))
+            && error.kind() != io::ErrorKind::NotFound
+        {
+            log::warn!(
+                "screen OCR stale aggregate could not be retired: {:?}",
+                error.kind()
+            );
+        }
+        if let Some(withdrawal) = &self.withdrawal {
+            commit.revalidate()?;
+            withdrawal.install()?;
+            solstone_core_indexer_todo::enqueue_path(
+                &self.journal,
+                &self.segment.join("talents/screen_text.md"),
+            )?;
+        }
+        Ok(())
+    }
+}
+
+fn record_directory(
+    segment: &Path,
+) -> io::Result<std::sync::Arc<solstone_core_journal_io::JournalRoot>> {
+    use solstone_core_journal_io::JournalRoot;
+    let directory = segment.join("talents");
+    #[cfg(unix)]
+    {
+        let segment_root = JournalRoot::open(segment).map_err(io::Error::other)?;
+        let child = solstone_core_journal_io::create_or_open_flat_directory_bound(
+            &segment_root,
+            std::ffi::OsStr::new("talents"),
+            0o700,
+            segment,
+        )
+        .map_err(io::Error::other)?;
+        let parent = JournalRoot::open(&directory).map_err(io::Error::other)?;
+        child.revalidate().map_err(io::Error::other)?;
+        if parent.identity() != child.identity() {
+            return Err(io::Error::other("screen text parent changed"));
+        }
+        Ok(std::sync::Arc::new(parent))
+    }
+    #[cfg(windows)]
+    {
+        if !directory.exists() {
+            fs::create_dir(&directory)?;
+        }
+        if !fs::symlink_metadata(&directory)?.file_type().is_dir() {
+            return Err(io::Error::other(
+                "screen text parent is not a plain directory",
+            ));
+        }
+        Ok(std::sync::Arc::new(
+            JournalRoot::open(directory).map_err(io::Error::other)?,
+        ))
+    }
+}
+
+#[cfg(all(test, feature = "full-tests"))]
 pub(crate) fn publish_sidecar(
     journal: &Path,
     segment: &Path,
@@ -1437,8 +1960,9 @@ pub(crate) fn publish_sidecar(
     sidecar: &PrivateSidecar,
     input: &InputObservation,
     claims: &OutputClaims,
+    stop: &dyn Fn() -> bool,
 ) -> std::io::Result<()> {
-    let policy = publication_policy(journal, segment, &sidecar.recipe_id, claims)?;
+    let policy = publication_policy(journal, segment, &sidecar.recipe_id, claims, stop)?;
     let commit = input.commit(claims)?;
     let mut sources = load_segment_sidecars(segment)
         .into_iter()
@@ -1464,12 +1988,13 @@ pub(crate) fn publish_sidecar(
         .expect("publishing source remains present")
         .clone();
     sources.sort_by(|left, right| left.source_id.cmp(&right.source_id));
-    install_sidecar_and_folded(journal, segment, path, &sidecar, &sources, &commit)
+    install_sidecar_and_folded(journal, segment, path, &sidecar, &sources, &commit, stop)
 }
 
 /// Update the private OCR/Qwen word diagnostic after extraction has completed.
 /// This writes only typed state and counts; the extraction text is never stored.
 #[allow(clippy::too_many_arguments)]
+#[cfg(all(test, feature = "full-tests"))]
 pub(crate) fn publish_extraction_diagnostic(
     journal: &Path,
     segment: &Path,
@@ -1481,8 +2006,9 @@ pub(crate) fn publish_extraction_diagnostic(
     extraction_rows: &[Value],
     input: &InputObservation,
     claims: &OutputClaims,
+    stop: &dyn Fn() -> bool,
 ) -> std::io::Result<()> {
-    let policy = publication_policy(journal, segment, recipe_id, claims)?;
+    let policy = publication_policy(journal, segment, recipe_id, claims, stop)?;
     let commit = input.commit(claims)?;
     let mut sidecar = load_sidecar(path).ok_or_else(|| {
         std::io::Error::new(
@@ -1516,9 +2042,10 @@ pub(crate) fn publish_extraction_diagnostic(
         .expect("publishing source remains present")
         .clone();
     sources.sort_by(|left, right| left.source_id.cmp(&right.source_id));
-    install_sidecar_and_folded(journal, segment, path, &sidecar, &sources, &commit)
+    install_sidecar_and_folded(journal, segment, path, &sidecar, &sources, &commit, stop)
 }
 
+#[cfg(all(test, feature = "full-tests"))]
 fn install_sidecar_and_folded(
     journal: &Path,
     segment: &Path,
@@ -1526,6 +2053,7 @@ fn install_sidecar_and_folded(
     sidecar: &PrivateSidecar,
     sources: &[PrivateSidecar],
     commit: &SegmentCommit<'_>,
+    stop: &dyn Fn() -> bool,
 ) -> std::io::Result<()> {
     let sidecar_bytes =
         serde_json::to_vec(sidecar).map_err(|error| std::io::Error::other(error.to_string()))?;
@@ -1548,10 +2076,10 @@ fn install_sidecar_and_folded(
     install(path, &sidecar_bytes)?;
     if let Err(error) = install(&aggregate_path, &folded_bytes) {
         let _ = fs::remove_file(aggregate_path);
-        let _ = publish_record(journal, segment, &[], commit);
+        let _ = publish_record(journal, segment, &[], commit, stop);
         return Err(error);
     }
-    publish_record(journal, segment, &folded.lines, commit)?;
+    publish_record(journal, segment, &folded.lines, commit, stop)?;
     Ok(())
 }
 
@@ -1567,6 +2095,7 @@ fn publish_pair_with(
     install(folded_path, folded_bytes)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn invalidate_source_state(
     journal: &Path,
     segment: &Path,
@@ -1575,12 +2104,13 @@ pub(crate) fn invalidate_source_state(
     segment_identity: &str,
     recipe_id: &str,
     claims: &OutputClaims,
+    stop: &dyn Fn() -> bool,
 ) -> std::io::Result<()> {
-    let policy = publication_policy(journal, segment, recipe_id, claims)?;
+    let policy = publication_policy(journal, segment, recipe_id, claims, stop)?;
     let commit = claims.commit(segment)?;
     // Withdraw the old projection first. If private regeneration then fails,
     // no previous text remains in the public record or folded snapshot.
-    publish_record(journal, segment, &[], &commit)?;
+    publish_record(journal, segment, &[], &commit, stop)?;
     let aggregate_path = folded_path(segment);
     match fs::remove_file(&aggregate_path) {
         Ok(()) => {}
@@ -1621,7 +2151,7 @@ pub(crate) fn invalidate_source_state(
         AtomicWriteOptions { mode: Some(0o600) },
     )
     .map_err(|error| std::io::Error::other(error.to_string()))?;
-    publish_record(journal, segment, &snapshot.lines, &commit)
+    publish_record(journal, segment, &snapshot.lines, &commit, stop)
 }
 
 /// Matches the existing raw-screen renderer: decoded PTS × time_base is added
@@ -2142,6 +2672,7 @@ mod tests {
                 extraction_words: 0,
                 overlapping_words: 0,
             },
+            detail: None,
         }
     }
 
@@ -2659,7 +3190,7 @@ mod tests {
     #[test]
     fn helper_absence_and_empty_success_have_distinct_coverage_without_processes() {
         let (mut sidecar, frames) = expected_with_frames();
-        run_worker(&mut sidecar, &frames, &BTreeSet::new(), None);
+        run_worker(&mut sidecar, &frames, &BTreeSet::new(), None, &|| false);
         assert_eq!(sidecar.state, CoverageState::NotRun);
         assert!(
             sidecar
@@ -2673,7 +3204,13 @@ mod tests {
             result: Ok(Vec::new()),
             calls: 0,
         };
-        run_worker(&mut sidecar, &frames, &BTreeSet::new(), Some(&mut worker));
+        run_worker(
+            &mut sidecar,
+            &frames,
+            &BTreeSet::new(),
+            Some(&mut worker),
+            &|| false,
+        );
         assert_eq!(worker.calls, 2);
         assert_eq!(sidecar.state, CoverageState::Empty);
         assert!(
@@ -2692,7 +3229,13 @@ mod tests {
                 result: Err(failure),
                 calls: 0,
             };
-            run_worker(&mut sidecar, &frames, &BTreeSet::new(), Some(&mut worker));
+            run_worker(
+                &mut sidecar,
+                &frames,
+                &BTreeSet::new(),
+                Some(&mut worker),
+                &|| false,
+            );
             assert_eq!(worker.calls, 1);
             assert_eq!(sidecar.state, CoverageState::Error);
             assert_eq!(sidecar.frames[0].state, CoverageState::Error);
@@ -2720,7 +3263,9 @@ mod tests {
             result: Ok(Vec::new()),
             calls: 0,
         };
-        run_worker(&mut sidecar, &frames, &ignored, Some(&mut worker));
+        run_worker(&mut sidecar, &frames, &ignored, Some(&mut worker), &|| {
+            false
+        });
         assert_eq!(worker.calls, 1);
         assert_eq!(sidecar.frames[0].state, CoverageState::NotRun);
         assert_eq!(sidecar.frames[1].state, CoverageState::Empty);
@@ -2833,7 +3378,16 @@ mod tests {
         source.source_sha256 = binding.source_sha256.clone();
         source.source_name = binding.source_name.clone();
         let path = sidecar_path(&segment, &binding.source_id);
-        publish_sidecar(journal.path(), &segment, &path, &source, &input, &claims).unwrap();
+        publish_sidecar(
+            journal.path(),
+            &segment,
+            &path,
+            &source,
+            &input,
+            &claims,
+            &|| false,
+        )
+        .unwrap();
         let public = segment.join("talents/screen_text.md");
         assert!(
             fs::read_to_string(&public)
@@ -2858,6 +3412,7 @@ mod tests {
             &binding.segment_identity,
             "recipe",
             &claims,
+            &|| false,
         )
         .unwrap();
         assert_eq!(fs::read_to_string(public).unwrap(), "");
@@ -2918,7 +3473,8 @@ mod tests {
                 "slot",
                 "identity",
                 "recipe",
-                &claims
+                &claims,
+                &|| false,
             )
             .is_err()
         );
@@ -2983,6 +3539,7 @@ mod tests {
                 source,
                 input,
                 &claims,
+                &|| false,
             )
             .unwrap();
         }
@@ -3011,6 +3568,7 @@ mod tests {
             &a.segment_identity,
             "recipe",
             &claims,
+            &|| false,
         )
         .unwrap();
         assert_eq!(fs::read_to_string(&public).unwrap(), "");
@@ -3022,6 +3580,7 @@ mod tests {
             &sources[0],
             &inputs[0],
             &claims,
+            &|| false,
         )
         .unwrap();
         assert_eq!(fs::read_to_string(&public).unwrap(), "");
@@ -3037,6 +3596,7 @@ mod tests {
             &[json!({"frame_id":1,"content":{"text":"beta visible"}})],
             &inputs[1],
             &claims,
+            &|| false,
         )
         .unwrap();
         assert_eq!(fs::read_to_string(&public).unwrap(), "");
@@ -3056,7 +3616,8 @@ mod tests {
                     &sidecar_path(&segment, &a.source_id),
                     &sources[0],
                     &inputs[0],
-                    &claims
+                    &claims,
+                    &|| false,
                 )
                 .is_err(),
                 "accepted {invalid}"
@@ -3067,5 +3628,156 @@ mod tests {
             assert!(gap.lines.is_empty());
             assert_eq!(gap.policy_error.as_deref(), Some("policy_unavailable"));
         }
+    }
+
+    #[cfg(feature = "full-tests")]
+    fn prepared_fixture() -> (
+        tempfile::TempDir,
+        PathBuf,
+        OutputClaims,
+        InputObservation,
+        PrivateSidecar,
+    ) {
+        let journal = tempfile::tempdir().unwrap();
+        let segment = journal.path().join("chronicle/20261020/desktop/090000_300");
+        fs::create_dir_all(segment.join("talents")).unwrap();
+        let raw = segment.join("a_screen.webm");
+        fs::write(&raw, b"authored current source").unwrap();
+        let claims =
+            OutputClaims::acquire([raw.with_extension("jsonl")], Default::default()).unwrap();
+        let input = InputObservation::capture(&claims, &raw).unwrap();
+        let binding = source_binding(&claims, &input, &raw, &segment).unwrap();
+        let mut source = sidecar(&binding.source_id, 1, 12000, "private literal");
+        source.segment_identity = binding.segment_identity;
+        source.source_sha256 = binding.source_sha256;
+        source.source_name = binding.source_name;
+        source.frames[0].category = "code".into();
+        (journal, segment, claims, input, source)
+    }
+
+    #[cfg(feature = "full-tests")]
+    #[test]
+    fn prepared_projection_refuses_a_sibling_changed_after_preparation() {
+        let (journal, segment, claims, input, source) = prepared_fixture();
+        let raw = segment.join("b_screen.webm");
+        fs::write(&raw, b"original sibling").unwrap();
+        let mut sibling = source.clone();
+        sibling.source_name = "b_screen.webm".into();
+        sibling.source_id = source_identity(&source.segment_identity, &raw);
+        sibling.source_sha256 = hex(&Sha256::digest(b"original sibling"));
+        fs::write(
+            sidecar_path(&segment, &sibling.source_id),
+            serde_json::to_vec(&sibling).unwrap(),
+        )
+        .unwrap();
+        let prepared =
+            PreparedPublication::prepare(journal.path(), &segment, &source, &|| false).unwrap();
+        assert_eq!(prepared.siblings.len(), 1);
+        fs::write(&raw, b"changed sibling").unwrap();
+        let _commit = input.commit(&claims).unwrap();
+        assert!(prepared.validate_authority().is_err());
+        assert!(!segment.join("talents/screen_text.md").exists());
+    }
+
+    #[cfg(feature = "full-tests")]
+    #[test]
+    fn prepared_projection_withdraws_on_malformed_policy_or_intermediate_write_failure() {
+        for malformed in [true, false] {
+            let (journal, segment, claims, input, source) = prepared_fixture();
+            fs::create_dir(journal.path().join("config")).unwrap();
+            let config = if malformed {
+                json!({"describe":{"categories":false}})
+            } else {
+                json!({"describe":{"categories":{"code":{"importance":"ignore"}}}})
+            };
+            fs::write(
+                journal.path().join("config/journal.json"),
+                config.to_string(),
+            )
+            .unwrap();
+            let public = segment.join("talents/screen_text.md");
+            fs::write(&public, b"previous private literal").unwrap();
+            let prepared =
+                PreparedPublication::prepare(journal.path(), &segment, &source, &|| false).unwrap();
+            if !malformed {
+                fs::create_dir(folded_path(&segment)).unwrap();
+            }
+            let commit = input.commit(&claims).unwrap();
+            prepared.validate_authority().unwrap();
+            let result = prepared.install(&commit);
+            assert_eq!(result.is_ok(), malformed);
+            assert_eq!(fs::read(&public).unwrap(), b"");
+            assert_eq!(
+                solstone_core_indexer_todo::inspect(journal.path())
+                    .unwrap()
+                    .keys,
+                vec!["20261020/desktop/090000_300/talents/screen_text.md"]
+            );
+            if malformed {
+                let folded: serde_json::Value =
+                    serde_json::from_slice(&fs::read(folded_path(&segment)).unwrap()).unwrap();
+                assert_eq!(folded["policy_error"], "policy_unavailable");
+            }
+        }
+    }
+
+    #[cfg(unix)]
+    #[cfg(all(test, feature = "full-tests"))]
+    #[test]
+    fn preparation_write_failure_keeps_the_reserved_policy_withdrawal() {
+        const CHILD: &str = "DESCRIBE_PREPARATION_WRITE_LIMIT_CHILD";
+        if std::env::var_os(CHILD).is_none() {
+            let program = "import os,resource,signal,sys; signal.signal(signal.SIGXFSZ,signal.SIG_IGN); resource.setrlimit(resource.RLIMIT_FSIZE,(4096,4096)); os.execv(sys.argv[1],sys.argv[1:])";
+            let output = std::process::Command::new("python3").args(["-c", program])
+                .arg(std::env::current_exe().unwrap())
+                .args(["--exact", "screen_ocr::tests::preparation_write_failure_keeps_the_reserved_policy_withdrawal", "--nocapture"])
+                .env(CHILD, "1").output().unwrap();
+            assert!(
+                output.status.success(),
+                "child failed: {:?}\n{}\n{}",
+                output.status,
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+            return;
+        }
+        let (journal, segment, claims, input, mut source) = prepared_fixture();
+        fs::create_dir(journal.path().join("config")).unwrap();
+        fs::write(
+            journal.path().join("config/journal.json"),
+            json!({"describe":{"categories":{"code":{"importance":"ignore"}}}}).to_string(),
+        )
+        .unwrap();
+        let public = segment.join("talents/screen_text.md");
+        fs::write(&public, b"old now-disallowed literal").unwrap();
+        let frame = source.frames[0].clone();
+        source.frames = (1..=40)
+            .map(|id| {
+                let mut frame = frame.clone();
+                frame.frame_id = id;
+                frame.segment_offset_ms = id as i64 * 1000;
+                frame
+            })
+            .collect();
+        let prepared =
+            PreparedPublication::prepare(journal.path(), &segment, &source, &|| false).unwrap();
+        assert!(
+            prepared.preparation_error.is_some(),
+            "the source sidecar must exceed the child file limit"
+        );
+        assert!(
+            prepared.withdrawal.is_some(),
+            "reserve the empty projection before larger writes"
+        );
+        let commit = input.commit(&claims).unwrap();
+        prepared.validate_authority().unwrap();
+        assert!(prepared.install(&commit).is_err());
+        assert_eq!(fs::read(public).unwrap(), b"");
+        assert!(
+            !solstone_core_indexer_todo::inspect(journal.path())
+                .unwrap()
+                .keys
+                .is_empty()
+        );
     }
 }

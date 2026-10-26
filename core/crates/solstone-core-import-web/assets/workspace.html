@@ -1713,6 +1713,10 @@ async function loadGuidedFlow(sourceName) {
   invalidateImportPreview('guided');
         window._guidedClientItemId = crypto.randomUUID();
       });
+      guidedPathInput.addEventListener('focus', () => {
+        const chooser = window.JournalOwner && window.JournalOwner.chooseFolder;
+        if (typeof chooser === 'function') chooser(window.__journalOwnerToken || '');
+      });
     }
   }
   const guidedStartBtn = document.getElementById('guidedStartBtn');
@@ -1923,6 +1927,7 @@ function setupQuickImportForm() {
     } catch (_err) {
       validateBtn.disabled = false;
       validateBtn.textContent = 'validate';
+      await loadImports();
       if (window.showError) {
         showError('Validation failed');
       }
@@ -2143,6 +2148,7 @@ async function startGuidedImport(source) {
     navigateTo(`progress/${importId}`);
   } catch (err) {
     invalidateImportPreview('guided');
+    await loadImports();
     if (window.showError && err instanceof Error) {
       showError(err.message);
     }
@@ -2646,6 +2652,13 @@ function handleImporterEvent(eventData) {
   }
 }
 
+function bindImportReturnRead() {
+  if (typeof window.addEventListener !== 'function') return;
+  window.addEventListener('pageshow', () => {
+    if (window._quickClientItemId || window._guidedClientItemId) loadImports();
+  });
+}
+
 function initImportWorkspace() {
   const listView = document.getElementById('importListView');
   if (window.solPathContext().segment) {
@@ -2698,6 +2711,7 @@ function initImportWorkspace() {
   // rendering an empty "preparing…" panel for an import that had already
   // finished, and nothing re-rendered it. loadImports loads the source grid
   // first, so there is no separate call for it here.
+  if (typeof bindImportReturnRead === 'function') bindImportReturnRead();
   loadImports()
     .catch(err => window.logError?.(err, { context: 'import: initial load failed' }))
     .finally(handleHashChange);

@@ -1,0 +1,168 @@
+//! Task trait definitions for the OCR pipeline.
+//!
+//! This module defines the `Task` trait and related types that represent
+//! different OCR tasks (text detection, recognition, layout analysis, etc.).
+//! Tasks define typed inputs, outputs, and validation contracts.
+
+use crate::core::OCRError;
+use image::RgbImage;
+use std::fmt::Debug;
+use std::sync::Arc;
+
+// Generate TaskType enum from the central task registry
+crate::with_task_registry!(crate::impl_task_type_enum);
+
+/// Core trait for OCR tasks.
+///
+/// Tasks represent distinct operations in the OCR pipeline (detection, recognition, etc.).
+/// Each task defines typed inputs and outputs and can be executed with model adapters.
+pub trait Task: Send + Sync + Debug {
+    /// Configuration type for this task
+    type Config: Send + Sync + Debug + Clone;
+
+    /// Input type for this task
+    type Input: Send + Sync + Debug;
+
+    /// Output type from this task
+    type Output: Send + Sync + Debug;
+
+    /// Returns the task type identifier.
+    fn task_type(&self) -> TaskType;
+
+    /// Validates that the given input is suitable for this task.
+    ///
+    /// # Arguments
+    ///
+    /// * `input` - The input to validate
+    ///
+    /// # Returns
+    ///
+    /// Result indicating success or validation error
+    fn validate_input(&self, input: &Self::Input) -> Result<(), OCRError>;
+
+    /// Validates that the given output is suitable for this task.
+    ///
+    /// # Arguments
+    ///
+    /// * `output` - The output to validate
+    ///
+    /// # Returns
+    ///
+    /// Result indicating success or validation error
+    fn validate_output(&self, output: &Self::Output) -> Result<(), OCRError>;
+
+    /// Returns an empty output instance for when no valid results are produced.
+    fn empty_output(&self) -> Self::Output;
+
+    /// Returns a human-readable description of this task.
+    fn description(&self) -> String {
+        format!("Task: {}", self.task_type().name())
+    }
+}
+
+/// Common input type for image-based tasks.
+#[derive(Debug, Clone)]
+pub struct ImageTaskInput {
+    /// Input images
+    pub images: Vec<Arc<RgbImage>>,
+    /// Optional metadata per image
+    pub metadata: Vec<Option<String>>,
+}
+
+impl ImageTaskInput {
+    /// Creates a new image task input from owned images.
+    pub fn new(images: Vec<RgbImage>) -> Self {
+        let count = images.len();
+        Self {
+            images: images.into_iter().map(Arc::new).collect(),
+            metadata: vec![None; count],
+        }
+    }
+
+    /// Creates a new image task input from shared images.
+    pub fn from_arc_images(images: Vec<Arc<RgbImage>>) -> Self {
+        let count = images.len();
+        Self {
+            images,
+            metadata: vec![None; count],
+        }
+    }
+
+    /// Creates a new image task input with metadata.
+    pub fn with_metadata(images: Vec<RgbImage>, metadata: Vec<Option<String>>) -> Self {
+        Self {
+            images: images.into_iter().map(Arc::new).collect(),
+            metadata,
+        }
+    }
+
+    /// Converts shared images into owned images for model APIs that still take ownership.
+    ///
+    /// This avoids a copy when the image is uniquely owned and clones only when another
+    /// pipeline stage still holds the same image.
+    pub fn into_owned_images(self) -> Vec<RgbImage> {
+        self.images
+            .into_iter()
+            .map(|img| Arc::try_unwrap(img).unwrap_or_else(|img| (*img).clone()))
+            .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+
+    #[test]
+    fn test_task_type_name() {
+        assert_eq!(TaskType::TextDetection.name(), "text_detection");
+        assert_eq!(TaskType::TextRecognition.name(), "text_recognition");
+    }
+
+    #[test]
+    fn test_image_task_input_creation() {
+        let images = vec![RgbImage::new(100, 100), RgbImage::new(200, 200)];
+        let input = ImageTaskInput::new(images.clone());
+
+        assert_eq!(input.images.len(), 2);
+        assert_eq!(input.metadata.len(), 2);
+        assert!(input.metadata.iter().all(|m| m.is_none()));
+    }
+
+    #[test]
+    fn test_image_task_input_from_owned() {
+        let images = vec![RgbImage::new(100, 100), RgbImage::new(200, 200)];
+        let input = ImageTaskInput::new(images);
+
+        assert_eq!(input.images.len(), 2);
+        assert_eq!(input.metadata.len(), 2);
+        assert!(input.metadata.iter().all(|m| m.is_none()));
+    }
+
+    #[test]
+    fn test_into_owned_images_reuses_unique_arc() {
+        let mut image = RgbImage::new(2, 1);
+        image.put_pixel(0, 0, image::Rgb([1, 2, 3]));
+        let input = ImageTaskInput::from_arc_images(vec![Arc::new(image)]);
+
+        let owned = input.into_owned_images();
+
+        assert_eq!(owned.len(), 1);
+        assert_eq!(owned[0].get_pixel(0, 0).0, [1, 2, 3]);
+    }
+
+    #[test]
+    fn test_into_owned_images_clones_when_arc_is_shared() {
+        let mut image = RgbImage::new(2, 1);
+        image.put_pixel(1, 0, image::Rgb([9, 8, 7]));
+        let shared = Arc::new(image);
+        let input = ImageTaskInput::from_arc_images(vec![Arc::clone(&shared)]);
+
+        let owned = input.into_owned_images();
+
+        assert_eq!(Arc::strong_count(&shared), 1);
+        assert_eq!(owned.len(), 1);
+        assert_eq!(owned[0].get_pixel(1, 0).0, [9, 8, 7]);
+        assert_eq!(shared.get_pixel(1, 0).0, [9, 8, 7]);
+    }
+}

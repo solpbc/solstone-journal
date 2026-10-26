@@ -13,6 +13,21 @@ struct Request: Codable, Sendable {
   var payload: String = ""
   var storage: String = "private"
   var admissionGeneration: UInt64? = nil
+  var pdfiumLibrary: String? = nil
+
+  enum CodingKeys: String, CodingKey {
+    case op
+    case journal
+    case root
+    case count
+    case seconds
+    case revision
+    case mode
+    case payload
+    case storage
+    case admissionGeneration
+    case pdfiumLibrary = "pdfium_library"
+  }
 }
 struct ServingCommand: Codable { var id: String; var request: Request }
 struct Reply: Codable, Sendable { var json: String }

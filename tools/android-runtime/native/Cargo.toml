@@ -13,7 +13,7 @@ crate-type = ["cdylib"]
 full-tests = []
 
 [dependencies]
-journal-mobile-serving = { path = "../../mobile-serving", features = ["audio-native", "processing"] }
+journal-mobile-serving = { path = "../../mobile-serving", features = ["audio-native", "processing", "rfdetr-native", "in-process-pdf"] }
 solstone-core-journal-io = { path = "../../../core/crates/solstone-core-journal-io", features = ["test-hooks"] }
 solstone-core-indexer-store = { path = "../../../core/crates/solstone-core-indexer-store" }
 solstone-core-indexer-query = { path = "../../../core/crates/solstone-core-indexer-query" }

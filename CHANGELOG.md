@@ -8,6 +8,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- you can choose a file on the import screen in the android and ios owner apps and save it.
 - the backup page now updates after a backup finishes, so you no longer have to leave and reopen it to see the result.
 - journals running on a phone now start their local agent connections and close them when you stop the journal. the agents page already offered these connections, but they did not start on phones.
 

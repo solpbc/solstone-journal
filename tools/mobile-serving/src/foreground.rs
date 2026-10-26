@@ -3,7 +3,7 @@
 
 //! App-owned processing using the maintained discovery, Sense, think and schedule owners.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -18,7 +18,12 @@ use solstone_core_cortex_client::{
     CortexRequest, CortexRequestClient, CortexRequestPolicy, WaitForUsesReport,
 };
 use solstone_core_depict::WireClient;
-use solstone_core_generate::{ClientError, GenerateExecutor, GenerateRequest, GenerateResponse};
+use solstone_core_describe::session::{DescribeSession, DescribeSessionFactory};
+use solstone_core_generate::{
+    ClientError, GenerateExecutor, GenerateRequest, GenerateResponse, SessionCloseError,
+    SessionCompletion, SessionFailure, SessionFailureReason, SessionReceiveError,
+    SessionSubmitError,
+};
 use solstone_core_journal_config::work_priority::{WorkBand, WorkPriority};
 use solstone_core_journal_io::JournalRoot;
 use solstone_core_sense::{SenseExecutor, SenseJobResult};
@@ -54,8 +59,22 @@ pub fn persist_owner_stop(root: &JournalRoot) -> Result<(), String> {
 
 static HOST_ACTIVE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 static HOST_GENERATION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 pub(super) static TEST_LOCK: Mutex<()> = Mutex::new(());
+#[cfg(all(test, feature = "full-tests"))]
+static DESCRIBE_CANCEL_AT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+#[cfg(all(test, feature = "full-tests"))]
+static DESCRIBE_POLLS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+#[cfg(all(test, feature = "full-tests"))]
+static DESCRIBE_TEST_LOCK: Mutex<()> = Mutex::new(());
+#[cfg(all(test, feature = "full-tests"))]
+static DESCRIBE_AFTER_ENTRY: Mutex<Option<Box<dyn Fn() + Send>>> = Mutex::new(None);
+#[cfg(all(test, feature = "full-tests"))]
+static TEST_DEPICT_DETECTION: Mutex<Option<Value>> = Mutex::new(None);
+#[cfg(all(test, feature = "full-tests"))]
+type StartupCatchUpHook = Box<dyn FnOnce() -> Result<(), String> + Send>;
+#[cfg(all(test, feature = "full-tests"))]
+static STARTUP_AFTER_CATCH_UP: Mutex<Option<StartupCatchUpHook>> = Mutex::new(None);
 type Checkpoint = Arc<dyn Fn() -> bool + Send + Sync>;
 #[allow(clippy::type_complexity)]
 type ForegroundRestart = Arc<dyn Fn() -> Result<(), String> + Send + Sync>;
@@ -453,7 +472,7 @@ struct HostWireClient<'a> {
 }
 impl WireClient for HostWireClient<'_> {
     fn execute(&self, request: &GenerateRequest) -> Result<GenerateResponse, ClientError> {
-        if (self.checkpoint)() {
+        if (self.checkpoint)() || !media_work_permitted(self.generator, self.priority) {
             return Ok(GenerateResponse::Cancelled);
         }
         if let Some(executor) = self.generator.injected.as_ref() {
@@ -473,12 +492,198 @@ impl WireClient for HostWireClient<'_> {
         .map_err(ClientError::Decode)
     }
 }
+
+fn media_work_permitted(generator: &HostGenerator, priority: WorkPriority) -> bool {
+    solstone_core_system::work_policy::WorkPolicy::read(generator.root.canonical_path())
+        .is_ok_and(|policy| policy.permits(priority.band))
+}
+
+#[cfg(test)]
 struct NoDetector;
+#[cfg(test)]
 impl solstone_core_depict::Detector for NoDetector {
     fn detect(&self, _: &[u8]) -> Result<Option<Value>, String> {
         Ok(None)
     }
 }
+
+#[cfg(all(test, feature = "full-tests"))]
+struct FixedDetector(Value);
+#[cfg(all(test, feature = "full-tests"))]
+impl solstone_core_depict::Detector for FixedDetector {
+    fn detect(&self, _: &[u8]) -> Result<Option<Value>, String> {
+        Ok(Some(self.0.clone()))
+    }
+}
+
+fn stamp_missing_id(request_id: Option<&str>, response: &mut GenerateResponse) {
+    let Some(request_id) = request_id else {
+        return;
+    };
+    match response {
+        GenerateResponse::Generated(generated) if generated.id.is_none() => {
+            generated.id = Some(request_id.to_owned());
+        }
+        GenerateResponse::Refused(refused) if refused.id.is_none() => {
+            refused.id = Some(request_id.to_owned());
+        }
+        _ => {}
+    }
+}
+
+struct InProcessDescribeSession<'a> {
+    generator: &'a HostGenerator,
+    checkpoint: &'a (dyn Fn() -> bool + Send + Sync),
+    priority: WorkPriority,
+    cap: usize,
+    closed: AtomicBool,
+    queue: Mutex<VecDeque<GenerateRequest>>,
+}
+
+impl DescribeSession for InProcessDescribeSession<'_> {
+    fn submit(&self, request: GenerateRequest) -> Result<(), SessionSubmitError> {
+        let mut queue = self
+            .queue
+            .lock()
+            .map_err(|_| SessionSubmitError::WriterUnavailable)?;
+        if self.closed.load(Ordering::Acquire) {
+            return Err(SessionSubmitError::Closed);
+        }
+        if queue.len() >= self.cap {
+            return Err(SessionSubmitError::WriterUnavailable);
+        }
+        queue.push_back(request);
+        Ok(())
+    }
+
+    fn recv_timeout(&self, _timeout: Duration) -> Result<SessionCompletion, SessionReceiveError> {
+        let request = {
+            let mut queue = self
+                .queue
+                .lock()
+                .map_err(|_| SessionReceiveError::Disconnected)?;
+            queue.pop_front()
+        };
+        let Some(request) = request else {
+            return Err(if self.closed.load(Ordering::Acquire) {
+                SessionReceiveError::Disconnected
+            } else {
+                SessionReceiveError::TimedOut
+            });
+        };
+        if self.closed.load(Ordering::Acquire)
+            || (self.checkpoint)()
+            || !media_work_permitted(self.generator, self.priority)
+        {
+            return Ok(SessionCompletion::Response(GenerateResponse::Cancelled));
+        }
+        let executed = if let Some(executor) = self.generator.injected.as_ref() {
+            executor.execute(&request)
+        } else {
+            let cancellation = solstone_core_generate::Cancellation::from_fn(self.checkpoint);
+            solstone_core_generate_wire::respond_with_context(
+                &request,
+                &solstone_core_generate_wire::EndpointRuntime::default(),
+                self.generator.root.canonical_path(),
+                |_| None,
+                &solstone_core_generate_wire::GenerateCallContext {
+                    priority: self.priority,
+                    cancellation: &cancellation,
+                },
+            )
+            .map_err(ClientError::Decode)
+        };
+        match executed {
+            Ok(GenerateResponse::Cancelled) => {
+                Ok(SessionCompletion::Response(GenerateResponse::Cancelled))
+            }
+            Ok(mut response) => {
+                stamp_missing_id(request.id.as_deref(), &mut response);
+                Ok(SessionCompletion::Response(response))
+            }
+            Err(error) => Ok(SessionCompletion::Failure(SessionFailure {
+                id: request.id.unwrap_or_default(),
+                reason: SessionFailureReason::Desynchronized(error.to_string()),
+                retryable: false,
+                blocking: true,
+            })),
+        }
+    }
+
+    fn close(&self) -> Result<(), SessionCloseError> {
+        if self.closed.swap(true, Ordering::AcqRel) {
+            return Err(SessionCloseError::AlreadyClosed);
+        }
+        if let Ok(mut queue) = self.queue.lock() {
+            queue.clear();
+        }
+        Ok(())
+    }
+}
+
+struct InProcessDescribeFactory<'a> {
+    generator: &'a HostGenerator,
+    checkpoint: &'a (dyn Fn() -> bool + Send + Sync),
+    priority: WorkPriority,
+}
+
+impl DescribeSessionFactory for InProcessDescribeFactory<'_> {
+    fn spawn(
+        &self,
+        max_in_flight: usize,
+        _explicit_journal: Option<&Path>,
+    ) -> Result<Box<dyn DescribeSession + '_>, solstone_core_generate::SessionLaunchError> {
+        Ok(Box::new(InProcessDescribeSession {
+            generator: self.generator,
+            checkpoint: self.checkpoint,
+            priority: self.priority,
+            cap: max_in_flight.saturating_mul(2).max(1),
+            closed: AtomicBool::new(false),
+            queue: Mutex::new(VecDeque::new()),
+        }))
+    }
+}
+
+fn map_depict(
+    result: Result<solstone_core_depict::RunOutcome, solstone_core_depict::DepictError>,
+) -> SenseJobResult {
+    match result {
+        Ok(solstone_core_depict::RunOutcome::Written) => SenseJobResult::Finished(0),
+        Ok(_) => SenseJobResult::Hold,
+        Err(solstone_core_depict::DepictError::Cancelled) => SenseJobResult::Hold,
+        Err(_) => SenseJobResult::Finished(1),
+    }
+}
+
+fn depict_job(
+    journal: &Path,
+    payload: &Path,
+    input: &Path,
+    wire: &HostWireClient<'_>,
+    checkpoint: &dyn Fn() -> bool,
+    attempt: Option<&solstone_core_system::work_retry::Attempt>,
+) -> SenseJobResult {
+    #[cfg(all(test, feature = "full-tests"))]
+    if let Some(value) = TEST_DEPICT_DETECTION
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner())
+        .clone()
+    {
+        return map_depict(solstone_core_depict::run_with_clients_and_checkpoint(
+            input,
+            false,
+            wire,
+            &FixedDetector(value),
+            checkpoint,
+            attempt,
+        ));
+    }
+    let detector = crate::rfdetr::RfdetrDetector::from_payload(journal, payload);
+    map_depict(solstone_core_depict::run_with_clients_and_checkpoint(
+        input, false, wire, &detector, checkpoint, attempt,
+    ))
+}
+
 struct HostIndexBoundary {
     cancelled: Checkpoint,
 }
@@ -938,6 +1143,7 @@ struct AudioConfig {
 
 struct HostSenseExecutor {
     journal: PathBuf,
+    payload: PathBuf,
     generator: HostGenerator,
     admitted_priority: Option<WorkPriority>,
     cancelled: Checkpoint,
@@ -957,11 +1163,36 @@ impl SenseExecutor for HostSenseExecutor {
         attempt: Option<&solstone_core_system::work_retry::Attempt>,
         stop: &AtomicBool,
     ) -> SenseJobResult {
+        let interrupted = || (self.cancelled)() || stop.load(Ordering::Acquire);
+        let accepted = if matches!(handler, "depict" | "describe") {
+            match crate::custody::AcceptedInput::capture(&self.journal, input, &interrupted) {
+                Ok(Some(accepted)) => Some(accepted),
+                _ => return SenseJobResult::Hold,
+            }
+        } else {
+            None
+        };
         let checkpoint = || {
-            (self.cancelled)()
-                || stop.load(Ordering::Acquire)
-                || (handler == "depict"
-                    && !crate::custody::accepted_input(&self.journal, input).unwrap_or(false))
+            #[cfg(all(test, feature = "full-tests"))]
+            if handler == "describe" {
+                let n = DESCRIBE_POLLS.fetch_add(1, Ordering::SeqCst) + 1;
+                if n == 2
+                    && let Some(hook) = DESCRIBE_AFTER_ENTRY
+                        .lock()
+                        .unwrap_or_else(|poison| poison.into_inner())
+                        .take()
+                {
+                    hook();
+                }
+                let fire = DESCRIBE_CANCEL_AT.load(Ordering::SeqCst);
+                if fire != 0 && n >= fire {
+                    return true;
+                }
+            }
+            interrupted()
+                || accepted
+                    .as_ref()
+                    .is_some_and(|accepted| !accepted.still_current(input))
         };
         if checkpoint() || !solstone_core_system::processing::processing_allowed(&self.journal) {
             return SenseJobResult::Hold;
@@ -990,29 +1221,26 @@ impl SenseExecutor for HostSenseExecutor {
                 WorkBand::Completing
             };
         }
-        if handler == "depict"
+        if matches!(handler, "depict" | "describe")
             && !solstone_core_system::work_policy::WorkPolicy::read(&self.journal)
                 .is_ok_and(|policy| policy.permits(priority.band))
         {
             return SenseJobResult::Hold;
         }
         let result = match handler {
-            "depict" => match solstone_core_depict::run_with_clients_and_checkpoint(
+            "depict" => depict_job(
+                &self.journal,
+                &self.payload,
                 input,
-                false,
                 &HostWireClient {
                     generator: &self.generator,
                     checkpoint: &checkpoint,
                     priority,
                 },
-                &NoDetector,
                 &checkpoint,
                 attempt,
-            ) {
-                Ok(solstone_core_depict::RunOutcome::Written) => SenseJobResult::Finished(0),
-                Ok(_) => SenseJobResult::Hold,
-                Err(_) => SenseJobResult::Finished(1),
-            },
+            ),
+            "describe" => self.describe_job(input, attempt, priority, &checkpoint),
             "transcribe" => {
                 #[cfg(feature = "audio")]
                 {
@@ -1044,9 +1272,67 @@ impl SenseExecutor for HostSenseExecutor {
     }
 }
 
+impl HostSenseExecutor {
+    fn describe_job(
+        &self,
+        input: &Path,
+        attempt: Option<&solstone_core_system::work_retry::Attempt>,
+        priority: WorkPriority,
+        checkpoint: &(dyn Fn() -> bool + Send + Sync),
+    ) -> SenseJobResult {
+        let settings = match solstone_core_describe::read_config(&self.journal) {
+            Ok(settings) => settings,
+            Err(_) => return SenseJobResult::Finished(1),
+        };
+        let sense_config = solstone_core_sense::config::read_config(&self.journal);
+        let workers = solstone_core_sense::config::resolve_concurrency(&sense_config, "describe");
+        let jobs = solstone_core_sense::config::describe_per_proc_jobs(
+            &sense_config,
+            workers,
+            &self.journal,
+        );
+        let factory = InProcessDescribeFactory {
+            generator: &self.generator,
+            checkpoint,
+            priority,
+        };
+        let mut ocr = crate::screen_ocr::ScreenOcrFactory::new(&self.payload);
+        let detector = crate::rfdetr::RfdetrDetector::from_payload(&self.journal, &self.payload);
+        match solstone_core_describe::pipeline::run_with_clients(
+            solstone_core_describe::pipeline::DescribeOptions {
+                video: input,
+                journal: &self.journal,
+                explicit_journal: Some(&self.journal),
+                jobs,
+                redo: false,
+                config: settings.winnow,
+                redact_rules: settings.redact_rules,
+                max_extractions: settings.max_extractions,
+                category_overrides: settings.category_overrides,
+            },
+            &factory,
+            &detector,
+            &mut ocr,
+            checkpoint,
+            attempt,
+        ) {
+            Ok(()) => {
+                if solstone_core_sense::unfinished_output(input, "describe").is_none() {
+                    SenseJobResult::Finished(0)
+                } else {
+                    SenseJobResult::Finished(1)
+                }
+            }
+            Err(solstone_core_describe::pipeline::RunError::Cancelled) => SenseJobResult::Hold,
+            Err(_) => SenseJobResult::Finished(1),
+        }
+    }
+}
+
 struct HostedCommand {
     rebuild_recovery: bool,
     journal: PathBuf,
+    payload: PathBuf,
     root: Arc<JournalRoot>,
     talent_root: PathBuf,
     apps_root: PathBuf,
@@ -1065,6 +1351,7 @@ pub struct ForegroundProcessingHost {
     generation: u64,
     daily_observation: Option<Arc<crate::daily_queue_observation::DailyQueueTap>>,
     journal: PathBuf,
+    payload: PathBuf,
     /// Held so the canonical root stays bound until the host drops.
     #[allow(dead_code)]
     root: Arc<JournalRoot>,
@@ -1171,7 +1458,40 @@ impl ForegroundProcessingHost {
             Utc::now(),
             solstone_core_journal_config::owner_zone(root.canonical_path()),
         );
-        Self::open_bound_observed(root, payload, now, None, external, stop, backup, true, true)
+        Self::open_bound_observed(
+            root, payload, now, None, external, stop, backup, true, true, None,
+        )
+    }
+
+    /// Install native imports before startup catch-up can dispatch any work.
+    /// Native preparation still runs only on its retained callable worker.
+    #[allow(clippy::too_many_arguments)]
+    pub fn open_with_imports(
+        root: Arc<JournalRoot>,
+        payload: &Path,
+        external: Checkpoint,
+        stop: Arc<AtomicBool>,
+        backup: BackupWebDeps,
+        imports: Arc<ImportSeamFactory>,
+        rebuild_recovery: bool,
+        observe_daily: bool,
+    ) -> Result<Self, String> {
+        let now = ScheduleNow::in_zone(
+            Utc::now(),
+            solstone_core_journal_config::owner_zone(root.canonical_path()),
+        );
+        Self::open_bound_observed(
+            root,
+            payload,
+            now,
+            None,
+            external,
+            stop,
+            backup,
+            rebuild_recovery,
+            observe_daily,
+            Some(imports),
+        )
     }
 
     /// Historical emissions and a separate current owner read, never a reservation.
@@ -1261,6 +1581,7 @@ impl ForegroundProcessingHost {
             backup,
             rebuild_recovery,
             false,
+            None,
         )
     }
     #[allow(clippy::too_many_arguments)]
@@ -1274,6 +1595,7 @@ impl ForegroundProcessingHost {
         backup: BackupWebDeps,
         rebuild_recovery: bool,
         observe_daily: bool,
+        initial_imports: Option<Arc<ImportSeamFactory>>,
     ) -> Result<Self, String> {
         let generation = HOST_GENERATION
             .fetch_update(Ordering::AcqRel, Ordering::Acquire, |current| {
@@ -1355,10 +1677,12 @@ impl ForegroundProcessingHost {
             #[cfg(feature = "audio")]
             let audio_state = Arc::new(Mutex::new(None));
             let running = RunningUses::default();
-            let imports = Arc::new(Mutex::new(None));
+            let imports = Arc::new(Mutex::new(initial_imports));
+            let payload_path = payload.to_path_buf();
             let hosted = Arc::new(HostedCommand {
                 rebuild_recovery,
                 journal: journal.clone(),
+                payload: payload_path.clone(),
                 root: Arc::clone(&root),
                 talent_root: payload.join("solstone/talent"),
                 apps_root: payload.join("solstone/apps"),
@@ -1393,7 +1717,7 @@ impl ForegroundProcessingHost {
                         cancelled: Arc::clone(&cancelled),
                     })),
                     process_sink: None,
-                    ready: true,
+                    ready: false,
                     before_deadline_commit: None,
                     child_environment: BTreeMap::new(),
                     task_binary: None,
@@ -1412,14 +1736,6 @@ impl ForegroundProcessingHost {
             ));
             if queue_slot.set(Arc::downgrade(&queue)).is_err() {
                 log::warn!("foreground schedule queue was already installed");
-            } else if let Ok(mut engine) = schedule_engine.lock() {
-                engine.catch_up(
-                    now,
-                    &HostScheduleSink {
-                        queue: queue.clone(),
-                    },
-                    &fresh,
-                );
             }
             let discovery_checkpoint = Arc::clone(&cancelled);
             let discovery = WorkDiscovery::new_with_talent_roots_and_checkpoint(
@@ -1470,10 +1786,11 @@ impl ForegroundProcessingHost {
                 queue: Arc::downgrade(&queue),
                 cancelled: Arc::downgrade(&cancelled),
             });
-            Ok(Self {
+            let host = Self {
                 generation,
                 daily_observation,
                 journal,
+                payload: payload_path,
                 root,
                 queue,
                 schedule_engine,
@@ -1493,7 +1810,33 @@ impl ForegroundProcessingHost {
                 worker,
                 #[cfg(feature = "audio")]
                 audio_state,
-            })
+            };
+            // Dispatch only after this owner can cancel and join every callable.
+            if (host.cancelled)() {
+                return Err("thinking cancelled".into());
+            }
+            host.queue.set_ready();
+            if let Ok(mut engine) = host.schedule_engine.lock() {
+                engine.catch_up(
+                    now,
+                    &HostScheduleSink {
+                        queue: Arc::clone(&host.queue),
+                    },
+                    &fresh,
+                );
+            }
+            #[cfg(all(test, feature = "full-tests"))]
+            {
+                let hook = STARTUP_AFTER_CATCH_UP.lock().unwrap().take();
+                if let Some(hook) = hook {
+                    hook()?;
+                }
+            }
+            if (host.cancelled)() {
+                host.shutdown()?;
+                return Err("thinking cancelled".into());
+            }
+            Ok(host)
         })();
         if result.is_err() {
             let _ =
@@ -1568,6 +1911,7 @@ impl ForegroundProcessingHost {
         });
         let executor = Arc::new(HostSenseExecutor {
             journal: hosted.journal.clone(),
+            payload: hosted.payload.clone(),
             generator: hosted.generator.clone(),
             admitted_priority: Some(control.priority),
             cancelled: Arc::clone(&cancelled),
@@ -1685,6 +2029,7 @@ impl ForegroundProcessingHost {
     fn executor(&self) -> Arc<HostSenseExecutor> {
         Arc::new(HostSenseExecutor {
             journal: self.journal.clone(),
+            payload: self.payload.clone(),
             generator: self.generator.clone(),
             admitted_priority: None,
             cancelled: Arc::clone(&self.cancelled),
@@ -1878,22 +2223,6 @@ impl ForegroundProcessingHost {
                 queue: self.queue.clone(),
             },
         )
-    }
-    /// Install this owner's native import preparation without changing Generate policy.
-    /// Preparation and native resources remain owned until the callable task joins.
-    pub fn enable_imports(&self, factory: Arc<ImportSeamFactory>) -> Result<(), String> {
-        let mut slot = self
-            .imports
-            .lock()
-            .map_err(|_| "importer unavailable".to_owned())?;
-        if (self.cancelled)() {
-            return Err("thinking cancelled".into());
-        }
-        self.root
-            .revalidate_canonical_binding()
-            .map_err(|error| error.to_string())?;
-        *slot = Some(factory);
-        Ok(())
     }
     /// Capture this owner's preparation lifetime before snapshot or metadata effects.
     /// Bind final importer arguments on the retained worker after those inputs exist.
@@ -2175,6 +2504,24 @@ impl Drop for ForegroundProcessingHost {
     }
 }
 
+#[cfg(test)]
+mod detector_contract {
+    #[test]
+    fn no_detector_reports_no_detection() {
+        assert_eq!(
+            solstone_core_depict::Detector::detect(&super::NoDetector, b""),
+            Ok(None)
+        );
+    }
+
+    #[cfg(not(feature = "rfdetr-native"))]
+    #[test]
+    fn unlinked_detector_is_an_error_not_an_absent_run() {
+        let detector = crate::rfdetr::RfdetrDetector::new(std::path::Path::new("."));
+        assert!(solstone_core_depict::Detector::detect(&detector, b"").is_err());
+    }
+}
+
 #[cfg(all(test, feature = "processing", feature = "full-tests"))]
 mod tests {
     use super::*;
@@ -2190,12 +2537,12 @@ mod tests {
         0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
     ];
 
-    fn write_image(path: &Path) {
+    fn write_admitted(path: &Path, bytes: &[u8]) {
         use sha2::{Digest, Sha256};
         use solstone_core_callosum::{
             DeviceIngestEvent, DurableEvent, FileDescriptor, append_durable_event,
         };
-        fs::write(path, TINY_PNG).unwrap();
+        fs::write(path, bytes).unwrap();
         let segment = path.parent().unwrap();
         let stream = segment.parent().unwrap();
         let day = stream.parent().unwrap();
@@ -2217,13 +2564,17 @@ mod tests {
                 files: vec![FileDescriptor {
                     submitted: filename.into(),
                     written: filename.into(),
-                    size: TINY_PNG.len() as u64,
-                    sha256: format!("{:x}", Sha256::digest(TINY_PNG)),
+                    size: bytes.len() as u64,
+                    sha256: format!("{:x}", Sha256::digest(bytes)),
                     extra: Default::default(),
                 }],
             }),
         )
         .unwrap();
+    }
+
+    fn write_image(path: &Path) {
+        write_admitted(path, TINY_PNG);
     }
 
     struct StubGenerateExecutor;
@@ -2311,7 +2662,9 @@ mod tests {
 
     #[test]
     fn the_runtime_publishes_its_status_while_it_runs_and_not_after_stop() {
-        use solstone_core_callosum::{CallosumReceiveEvent, CallosumSocketConnection};
+        use solstone_core_callosum::{
+            CallosumConnectionPhase, CallosumReceiveEvent, CallosumSocketConnection,
+        };
         let _lock = TEST_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         let (temp, payload) = setup_test_journal();
         let socket = temp.path().join("health/callosum.sock");
@@ -2327,6 +2680,40 @@ mod tests {
         let mut observer = runtime.block_on(async {
             let mut observer = CallosumSocketConnection::new(&socket, Map::new());
             observer.start();
+            tokio::time::timeout(Duration::from_secs(20), async {
+                loop {
+                    match observer.next_event().await {
+                        Some(CallosumReceiveEvent::Continuity {
+                            phase: CallosumConnectionPhase::Connected,
+                            ..
+                        }) => {
+                            assert!(
+                                observer.emit(
+                                    "supervisor",
+                                    "subscriber-ready",
+                                    Map::from_iter([(
+                                        "ref".into(),
+                                        json!("foreground-status-observer"),
+                                    )]),
+                                ),
+                                "status observer readiness emission is accepted"
+                            );
+                        }
+                        Some(CallosumReceiveEvent::Envelope { envelope, .. })
+                            if envelope.tract == "supervisor"
+                                && envelope.event == "subscriber-ready"
+                                && envelope.extra.get("ref")
+                                    == Some(&json!("foreground-status-observer")) =>
+                        {
+                            break;
+                        }
+                        None => panic!("status observer closed before readiness"),
+                        _ => {}
+                    }
+                }
+            })
+            .await
+            .expect("status observer readiness within the existing bound");
             observer
         });
         let mut host = ForegroundProcessingHost::open_with_executor(
@@ -2368,7 +2755,17 @@ mod tests {
             .await;
             (supervisor, cortex)
         });
-        let supervisor = supervisor.expect("the runtime publishes its status");
+        let supervisor = supervisor.unwrap_or_else(|| {
+            panic!(
+                "the runtime publishes its status; cortex={cortex:?}; history={:?}; generation={}; stop={}; failed={}; root_binding={:?}; pending_restore={:?}",
+                host.queue().history(),
+                host.generation,
+                host.stop.load(Ordering::SeqCst),
+                host.failed.load(Ordering::SeqCst),
+                host.root.revalidate_canonical_binding(),
+                solstone_core_journal_io::whole_journal_restore::read_whole_journal_restore(temp.path()),
+            )
+        });
         let services = supervisor["services"].as_array().unwrap();
         assert_eq!(
             services.len(),
@@ -3160,6 +3557,653 @@ mod tests {
         );
         runtime.block_on(bus.stop());
     }
+
+    const OCR_GAP_DETAIL: &str = crate::screen_ocr::PINNED_MODELS_DETAIL;
+
+    fn corpus(name: &str) -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../core/fixtures/describe_corpus")
+            .join(name)
+    }
+
+    fn probe_mp4() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(
+            "../../core/crates/solstone-core-describe/tests/fixtures/delayed_video_probe_screen.mp4",
+        )
+    }
+
+    fn segment_dir(journal: &Path, name: &str) -> PathBuf {
+        let path = journal.join("chronicle/20261012/screen").join(name);
+        fs::create_dir_all(&path).unwrap();
+        path
+    }
+
+    fn admit_copy(segment: &Path, source: &Path) -> PathBuf {
+        let bytes = fs::read(source).unwrap();
+        let path = segment.join(source.file_name().unwrap());
+        write_admitted(&path, &bytes);
+        path
+    }
+
+    fn context_for(path: &Path) -> solstone_core_sense::work::SegmentContext {
+        let segment = path.parent().unwrap();
+        let stream = segment.parent().unwrap();
+        let day = stream.parent().unwrap();
+        solstone_core_sense::work::SegmentContext {
+            key: solstone_core_sense::work::SegmentKey {
+                day: day.file_name().unwrap().to_str().unwrap().into(),
+                stream: Some(stream.file_name().unwrap().to_str().unwrap().into()),
+                segment: segment.file_name().unwrap().to_str().unwrap().into(),
+            },
+            cid: Some("fixture".into()),
+            source: Some("screen".into()),
+            batch: false,
+            meta: None,
+        }
+    }
+
+    fn open_stub(journal: &Path, payload: &Path) -> ForegroundProcessingHost {
+        open_executor(journal, payload, Arc::new(StubGenerateExecutor))
+    }
+
+    fn open_executor(
+        journal: &Path,
+        payload: &Path,
+        executor: Arc<dyn GenerateExecutor + Send + Sync>,
+    ) -> ForegroundProcessingHost {
+        ForegroundProcessingHost::open_with_executor(
+            journal,
+            payload,
+            ScheduleNow::in_zone(
+                Utc.with_ymd_and_hms(2026, 10, 17, 12, 0, 0).unwrap(),
+                chrono_tz::UTC,
+            ),
+            executor,
+            backup_deps(journal),
+        )
+        .unwrap()
+    }
+
+    fn run_handler(host: &ForegroundProcessingHost, handler: &str, input: &Path) -> SenseJobResult {
+        host.executor().execute(
+            handler,
+            input,
+            &context_for(input),
+            None,
+            &AtomicBool::new(false),
+        )
+    }
+
+    fn reset_describe_probes() -> (
+        std::sync::MutexGuard<'static, ()>,
+        std::sync::MutexGuard<'static, ()>,
+    ) {
+        let host = TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner());
+        let guard = super::DESCRIBE_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner());
+        super::DESCRIBE_CANCEL_AT.store(0, Ordering::SeqCst);
+        super::DESCRIBE_POLLS.store(0, Ordering::SeqCst);
+        *super::DESCRIBE_AFTER_ENTRY
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner()) = None;
+        *super::TEST_DEPICT_DETECTION
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner()) = None;
+        (guard, host)
+    }
+
+    fn jsonl_rows(path: &Path) -> Vec<Value> {
+        fs::read_to_string(path)
+            .unwrap()
+            .lines()
+            .filter(|line| !line.is_empty())
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect()
+    }
+
+    fn assert_distinct_frames(path: &Path, at_least: usize) {
+        let rows = jsonl_rows(path);
+        assert!(
+            rows[0]
+                .get("_solstone_processing")
+                .and_then(Value::as_object)
+                .is_some(),
+            "processing header missing: {rows:?}"
+        );
+        let mut seen = BTreeSet::new();
+        for row in rows.iter().skip(1) {
+            let id = row["frame_id"].as_u64().expect("frame_id");
+            let timestamp = row["timestamp"].as_f64().expect("timestamp");
+            seen.insert((id, timestamp.to_bits()));
+        }
+        assert!(seen.len() >= at_least, "frames: {seen:?}");
+    }
+
+    fn assert_no_screen_text(segment: &Path) {
+        assert!(!segment.join("talents/screen_text.md").exists());
+    }
+
+    fn assert_no_index_hint(journal: &Path) {
+        let status = solstone_core_indexer_store::todo::inspect(journal).unwrap();
+        assert!(
+            status.keys.is_empty(),
+            "describe must not enqueue a success screen text: {:?}",
+            status.keys
+        );
+    }
+
+    fn ocr_sidecar(segment: &Path) -> Value {
+        let mut paths = fs::read_dir(segment)
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .filter(|path| {
+                let name = path.file_name().unwrap().to_string_lossy();
+                name.starts_with(".screen-ocr-v3-")
+                    && name.ends_with(".json")
+                    && !name.contains("folded")
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(paths.len(), 1, "{paths:?}");
+        serde_json::from_slice(&fs::read(paths.remove(0)).unwrap()).unwrap()
+    }
+
+    fn generated_text(text: String) -> GenerateResponse {
+        GenerateResponse::Generated(Box::new(GeneratedResponse {
+            id: None,
+            text,
+            model: "stub-model".to_string(),
+            usage: json!({}),
+            finish_reason: "stop".to_string(),
+            thinking: None,
+            schema_validation: None,
+            input_budget: None,
+            request_budget: None,
+            inference: None,
+            hints_applied: Vec::new(),
+        }))
+    }
+
+    struct MediaFrameExecutor;
+    impl GenerateExecutor for MediaFrameExecutor {
+        fn execute(&self, request: &GenerateRequest) -> Result<GenerateResponse, ClientError> {
+            if request.context == "observe.describe.frame" {
+                return Ok(generated_text(
+                    json!({
+                        "primary": "media",
+                        "secondary": "none",
+                        "overlap": false,
+                        "visual_description": "kept screen description",
+                        "density": "active",
+                        "content_type": "writing",
+                        "activity_summary": "foreground summary phrase",
+                        "entities": [],
+                        "facets": [],
+                        "speculative_facet": null,
+                        "meeting_detected": false,
+                        "speakers": [],
+                        "recommend": {"screen_record": false, "speaker_attribution": false},
+                        "emotional_register": "neutral",
+                        "topics": [],
+                        "quotes": []
+                    })
+                    .to_string(),
+                ));
+            }
+            GenerateExecutor::execute(&StubGenerateExecutor, request)
+        }
+    }
+
+    struct BlockingProvider;
+    impl GenerateExecutor for BlockingProvider {
+        fn execute(&self, _request: &GenerateRequest) -> Result<GenerateResponse, ClientError> {
+            use solstone_core_generate::{RefusalReason, RefusedResponse};
+            Ok(GenerateResponse::Refused(RefusedResponse {
+                id: None,
+                reason: RefusalReason::NoEngineConfigured,
+                reason_code: None,
+                retryable: false,
+                blocking: true,
+                reset_at_ms: None,
+                provider: Some("fixture".into()),
+                detail: "provider refused".into(),
+            }))
+        }
+    }
+
+    struct CancelAfterFirstGenerate;
+    impl GenerateExecutor for CancelAfterFirstGenerate {
+        fn execute(&self, request: &GenerateRequest) -> Result<GenerateResponse, ClientError> {
+            let polls = super::DESCRIBE_POLLS.load(Ordering::SeqCst);
+            super::DESCRIBE_CANCEL_AT.store(polls.saturating_add(1), Ordering::SeqCst);
+            GenerateExecutor::execute(&StubGenerateExecutor, request)
+        }
+    }
+
+    fn processing_header(state: &str, reason: &str) -> String {
+        format!(
+            "{}\n{{\"timestamp\":0.0,\"frame_id\":1}}\n",
+            json!({
+                "_solstone_processing": {
+                    "schema": 1,
+                    "state": state,
+                    "reason_code": reason,
+                    "handler": "describe",
+                    "attempts": 1
+                }
+            })
+        )
+    }
+
+    #[test]
+    fn describe_history_requires_permission_and_import_is_admitted() {
+        let _probes = reset_describe_probes();
+        let (temp, payload) = setup_test_journal();
+        let config_path = temp.path().join("config/journal.json");
+        let mut config: Value = serde_json::from_slice(&fs::read(&config_path).unwrap()).unwrap();
+        config["processing"]["history_confirmed"] = json!(false);
+        fs::write(&config_path, config.to_string()).unwrap();
+        let policy = solstone_core_system::work_policy::WorkPolicy::read(temp.path()).unwrap();
+        assert_eq!(
+            policy.lane,
+            solstone_core_system::work_policy::ThinkingLane::OwnKeys
+        );
+        let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let count = Arc::clone(&calls);
+        let host = open_executor(
+            temp.path(),
+            &payload,
+            Arc::new(move |request: &GenerateRequest| {
+                count.fetch_add(1, Ordering::SeqCst);
+                StubGenerateExecutor.execute(request)
+            }),
+        );
+        let segment = segment_dir(temp.path(), "history-policy");
+        let video = admit_copy(&segment, &probe_mp4());
+        assert_eq!(run_handler(&host, "describe", &video), SenseJobResult::Hold);
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+        assert!(!video.with_extension("jsonl").exists());
+
+        let mut executor = host.executor();
+        Arc::get_mut(&mut executor).unwrap().admitted_priority = Some(WorkPriority {
+            band: WorkBand::Import,
+            source_time: 0,
+        });
+        assert_eq!(
+            executor.execute(
+                "describe",
+                &video,
+                &context_for(&video),
+                None,
+                &AtomicBool::new(false)
+            ),
+            SenseJobResult::Finished(0)
+        );
+        assert!(calls.load(Ordering::SeqCst) > 0);
+
+        let confirmed_segment = segment_dir(temp.path(), "history-confirmed");
+        let confirmed = admit_copy(&confirmed_segment, &probe_mp4());
+        config["processing"]["history_confirmed"] = json!(true);
+        fs::write(&config_path, config.to_string()).unwrap();
+        assert_eq!(
+            run_handler(&host, "describe", &confirmed),
+            SenseJobResult::Finished(0)
+        );
+    }
+
+    #[test]
+    fn describe_rechecks_spending_permission_before_each_request() {
+        let _probes = reset_describe_probes();
+        let (temp, payload) = setup_test_journal();
+        let config_path = temp.path().join("config/journal.json");
+        let path = config_path.clone();
+        let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let count = Arc::clone(&calls);
+        let host = open_executor(
+            temp.path(),
+            &payload,
+            Arc::new(move |request: &GenerateRequest| {
+                count.fetch_add(1, Ordering::SeqCst);
+                let mut config: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+                config["processing"]["history_confirmed"] = json!(false);
+                fs::write(&path, config.to_string()).unwrap();
+                StubGenerateExecutor.execute(request)
+            }),
+        );
+        let segment = segment_dir(temp.path(), "revoke-history");
+        let video = admit_copy(&segment, &corpus("mixed_vp8_screen.webm"));
+        assert_ne!(
+            run_handler(&host, "describe", &video),
+            SenseJobResult::Finished(0)
+        );
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        assert!(!video.with_extension("jsonl").exists());
+        assert_no_screen_text(&segment);
+        assert_no_index_hint(temp.path());
+    }
+
+    #[test]
+    fn accepted_screen_videos_publish_rows_and_the_ocr_gap() {
+        let _probes = reset_describe_probes();
+        let (temp, payload) = setup_test_journal();
+        let host = open_stub(temp.path(), &payload);
+        for (source, at_least) in [
+            (corpus("mixed_vp8_screen.webm"), 2),
+            (corpus("mixed_h264_screen.mov"), 2),
+            (probe_mp4(), 1),
+        ] {
+            let segment = segment_dir(temp.path(), source.file_stem().unwrap().to_str().unwrap());
+            let video = admit_copy(&segment, &source);
+            let original = fs::read(&video).unwrap();
+            assert_eq!(
+                run_handler(&host, "describe", &video),
+                SenseJobResult::Finished(0)
+            );
+            assert_eq!(fs::read(&video).unwrap(), original);
+            let output = video.with_extension("jsonl");
+            assert_distinct_frames(&output, at_least);
+            assert!(solstone_core_sense::unfinished_output(&video, "describe").is_none());
+            let again = fs::read(&output).unwrap();
+            assert_eq!(
+                run_handler(&host, "describe", &video),
+                SenseJobResult::Finished(0)
+            );
+            assert_eq!(fs::read(&output).unwrap(), again);
+            let sidecar = ocr_sidecar(&segment);
+            assert_eq!(sidecar["detail"], OCR_GAP_DETAIL);
+            assert!(
+                sidecar["frames"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|frame| frame["error_code"] == "helper_unavailable")
+            );
+            assert_no_screen_text(&segment);
+            assert_no_index_hint(temp.path());
+        }
+    }
+
+    #[test]
+    fn unfinished_output_keeps_failed_describe_unfinished() {
+        let _probes = reset_describe_probes();
+        let (temp, payload) = setup_test_journal();
+        let host = open_stub(temp.path(), &payload);
+        for (name, state, reason, finished) in [
+            ("analyzed", "analyzed", "ok", true),
+            ("empty", "empty", "no_decodable_frames", true),
+            ("failed", "failed", "corrupt_input", false),
+        ] {
+            let segment = segment_dir(temp.path(), name);
+            let video = segment.join(format!("{name}.webm"));
+            write_admitted(&video, b"eligibility");
+            let output = video.with_extension("jsonl");
+            let header = processing_header(state, reason);
+            fs::write(&output, &header).unwrap();
+            assert_eq!(
+                solstone_core_sense::unfinished_output(&video, "describe").is_none(),
+                finished,
+                "{name}"
+            );
+            let before = fs::read(&output).unwrap();
+            let result = run_handler(&host, "describe", &video);
+            assert_eq!(
+                result,
+                if finished {
+                    SenseJobResult::Finished(0)
+                } else {
+                    SenseJobResult::Finished(1)
+                },
+                "{name}"
+            );
+            assert_eq!(fs::read(&output).unwrap(), before, "{name}");
+        }
+    }
+
+    #[test]
+    fn malformed_decode_finishes_without_a_success_header() {
+        let _probes = reset_describe_probes();
+        let (temp, payload) = setup_test_journal();
+        let host = open_stub(temp.path(), &payload);
+        let segment = segment_dir(temp.path(), "malformed");
+        let video = admit_copy(&segment, &corpus("not_a_video_screen.webm"));
+        let original = fs::read(&video).unwrap();
+        assert_eq!(
+            run_handler(&host, "describe", &video),
+            SenseJobResult::Finished(1)
+        );
+        assert_eq!(fs::read(&video).unwrap(), original);
+        let output = video.with_extension("jsonl");
+        assert!(output.is_file());
+        assert_eq!(
+            jsonl_rows(&output)[0]["_solstone_processing"]["state"],
+            "failed"
+        );
+        assert!(solstone_core_sense::unfinished_output(&video, "describe").is_some());
+    }
+
+    #[test]
+    fn provider_refusal_does_not_promote() {
+        let _probes = reset_describe_probes();
+        let (temp, payload) = setup_test_journal();
+        let host = open_executor(temp.path(), &payload, Arc::new(BlockingProvider));
+        let segment = segment_dir(temp.path(), "refused");
+        let video = admit_copy(&segment, &probe_mp4());
+        assert_eq!(
+            run_handler(&host, "describe", &video),
+            SenseJobResult::Finished(1)
+        );
+        assert!(!video.with_extension("jsonl").exists());
+        assert_no_screen_text(&segment);
+        assert_no_index_hint(temp.path());
+    }
+
+    #[test]
+    fn detector_refusal_keeps_the_description() {
+        let _probes = reset_describe_probes();
+        let (temp, payload) = setup_test_journal();
+        let host = open_executor(temp.path(), &payload, Arc::new(MediaFrameExecutor));
+        let segment = segment_dir(temp.path(), "detect");
+        let video = admit_copy(&segment, &probe_mp4());
+        assert_eq!(
+            run_handler(&host, "describe", &video),
+            SenseJobResult::Finished(0)
+        );
+        let rows = jsonl_rows(&video.with_extension("jsonl"));
+        let row = &rows[1];
+        assert_eq!(
+            row["analysis"]["visual_description"],
+            "kept screen description"
+        );
+        assert_eq!(row["detection_error"]["reason_code"], "rfdetr-unavailable");
+        assert!(row.get("detections").is_none());
+    }
+
+    #[test]
+    fn cancel_during_decode_and_between_units_holds() {
+        let _probes = reset_describe_probes();
+        let (temp, payload) = setup_test_journal();
+        let segment = segment_dir(temp.path(), "decode-cancel");
+        let video = admit_copy(&segment, &corpus("mixed_vp8_screen.webm"));
+        super::DESCRIBE_CANCEL_AT.store(2, Ordering::SeqCst);
+        let host = open_stub(temp.path(), &payload);
+        assert_eq!(run_handler(&host, "describe", &video), SenseJobResult::Hold);
+        assert!(!video.with_extension("jsonl").exists());
+        assert_no_screen_text(&segment);
+        assert_no_index_hint(temp.path());
+
+        drop(host);
+        super::DESCRIBE_CANCEL_AT.store(0, Ordering::SeqCst);
+        super::DESCRIBE_POLLS.store(0, Ordering::SeqCst);
+        let between = segment_dir(temp.path(), "between-units");
+        let second = admit_copy(&between, &corpus("mixed_h264_screen.mov"));
+        let host = open_executor(temp.path(), &payload, Arc::new(CancelAfterFirstGenerate));
+        assert_eq!(
+            run_handler(&host, "describe", &second),
+            SenseJobResult::Hold
+        );
+        assert!(
+            super::DESCRIBE_CANCEL_AT.load(Ordering::SeqCst) > 0,
+            "the second case must enter Generate before cancellation"
+        );
+        assert!(!second.with_extension("jsonl").exists());
+        assert_no_index_hint(temp.path());
+    }
+
+    #[test]
+    fn replacement_after_entry_leaves_the_prior_output_and_the_twin_completes() {
+        let _probes = reset_describe_probes();
+        let (temp, payload) = setup_test_journal();
+        let prior = segment_dir(temp.path(), "replaced");
+        let video = admit_copy(&prior, &corpus("mixed_vp8_screen.webm"));
+        let output = video.with_extension("jsonl");
+        let header = processing_header("failed", "analysis_failed");
+        fs::write(&output, &header).unwrap();
+        let video_path = video.clone();
+        *super::DESCRIBE_AFTER_ENTRY
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner()) = Some(Box::new(move || {
+            fs::write(&video_path, b"replaced-after-entry").unwrap();
+        }));
+        let host = open_stub(temp.path(), &payload);
+        assert_eq!(run_handler(&host, "describe", &video), SenseJobResult::Hold);
+        assert_eq!(fs::read_to_string(&output).unwrap(), header);
+        assert_no_screen_text(&prior);
+        assert_no_index_hint(temp.path());
+
+        super::DESCRIBE_POLLS.store(0, Ordering::SeqCst);
+        super::DESCRIBE_CANCEL_AT.store(0, Ordering::SeqCst);
+        let twin_dir = segment_dir(temp.path(), "twin");
+        let twin = admit_copy(&twin_dir, &corpus("mixed_vp8_screen.webm"));
+        let original = fs::read(&twin).unwrap();
+        assert_eq!(
+            run_handler(&host, "describe", &twin),
+            SenseJobResult::Finished(0)
+        );
+        assert_eq!(fs::read(&twin).unwrap(), original);
+        assert_distinct_frames(&twin.with_extension("jsonl"), 2);
+    }
+
+    #[test]
+    fn depict_still_records_detection_error_without_the_native_library() {
+        let _probes = reset_describe_probes();
+        let (temp, payload) = setup_test_journal();
+        let host = open_stub(temp.path(), &payload);
+        let segment = segment_dir(temp.path(), "120001_1");
+        let image = segment.join("depict.png");
+        write_image(&image);
+        assert_eq!(
+            run_handler(&host, "depict", &image),
+            SenseJobResult::Finished(0)
+        );
+        let rows = jsonl_rows(&image.with_extension("jsonl"));
+        assert!(
+            rows[1]["text"]
+                .as_str()
+                .unwrap()
+                .contains("foreground summary phrase")
+        );
+        assert_eq!(
+            rows[1]["detection_error"]["reason_code"],
+            "rfdetr-unavailable"
+        );
+        assert!(rows[1].get("detections").is_none());
+    }
+
+    #[test]
+    fn depict_records_detections_only_when_the_adapter_returns_some() {
+        let _probes = reset_describe_probes();
+        let (temp, payload) = setup_test_journal();
+        *super::TEST_DEPICT_DETECTION
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner()) = Some(json!({
+            "image": {"width": 1, "height": 1},
+            "detections": [{"class_id": 85, "score": 0.8}]
+        }));
+        let host = open_stub(temp.path(), &payload);
+        let segment = segment_dir(temp.path(), "120002_1");
+        let image = segment.join("depict.png");
+        write_image(&image);
+        assert_eq!(
+            run_handler(&host, "depict", &image),
+            SenseJobResult::Finished(0)
+        );
+        let rows = jsonl_rows(&image.with_extension("jsonl"));
+        assert!(
+            rows[1]["text"]
+                .as_str()
+                .unwrap()
+                .contains("foreground summary phrase")
+        );
+        assert!(rows[1].get("detection_error").is_none());
+        assert_eq!(rows[1]["detections"]["objects"][0]["class_id"], 85);
+    }
+
+    #[cfg(feature = "rfdetr-native")]
+    #[test]
+    fn native_clock_png_detects_class_85() {
+        let path = std::env::var("SOLSTONE_RFDETR_CLOCK_PNG").unwrap();
+        let png = fs::read(path).unwrap();
+        let value = solstone_core_depict::Detector::detect(
+            &crate::rfdetr::RfdetrDetector::new(Path::new(".")),
+            &png,
+        )
+        .unwrap()
+        .expect("a real detection is Some");
+        let detections = value["detections"].as_array().expect("detections");
+        assert!(
+            detections.iter().any(|detection| {
+                detection["class_id"].as_i64() == Some(85)
+                    && detection["score"].as_f64().is_some_and(|score| score > 0.5)
+            }),
+            "{value}"
+        );
+    }
+
+    #[cfg(feature = "rfdetr-native")]
+    #[test]
+    fn native_blank_png_is_an_empty_detection_list() {
+        let path = std::env::var("SOLSTONE_RFDETR_BLANK_PNG").unwrap();
+        let png = fs::read(path).unwrap();
+        let value = solstone_core_depict::Detector::detect(
+            &crate::rfdetr::RfdetrDetector::new(Path::new(".")),
+            &png,
+        )
+        .unwrap()
+        .expect("an empty detection is Some, not None");
+        assert!(value["detections"].as_array().unwrap().is_empty());
+        assert!(value.get("detection_error").is_none());
+    }
+
+    #[cfg(feature = "rfdetr-native")]
+    #[test]
+    fn native_replacement_after_entry_leaves_the_prior_output() {
+        let _probes = reset_describe_probes();
+        let (temp, payload) = setup_test_journal();
+        let prior = segment_dir(temp.path(), "native-replaced");
+        let video = admit_copy(&prior, &corpus("mixed_vp8_screen.webm"));
+        let output = video.with_extension("jsonl");
+        let header = processing_header("failed", "analysis_failed");
+        fs::write(&output, &header).unwrap();
+        let video_path = video.clone();
+        *super::DESCRIBE_AFTER_ENTRY
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner()) = Some(Box::new(move || {
+            fs::write(&video_path, b"replaced-after-entry").unwrap();
+        }));
+        let host = open_stub(temp.path(), &payload);
+        assert_eq!(run_handler(&host, "describe", &video), SenseJobResult::Hold);
+        assert_eq!(fs::read_to_string(&output).unwrap(), header);
+        let twin_dir = segment_dir(temp.path(), "native-twin");
+        super::DESCRIBE_POLLS.store(0, Ordering::SeqCst);
+        let twin = admit_copy(&twin_dir, &corpus("mixed_h264_screen.mov"));
+        assert_eq!(
+            run_handler(&host, "describe", &twin),
+            SenseJobResult::Finished(0)
+        );
+        assert_distinct_frames(&twin.with_extension("jsonl"), 2);
+    }
 }
 
 #[cfg(all(test, feature = "processing", feature = "full-tests"))]
@@ -3275,6 +4319,7 @@ mod processing_proofs {
                 BackupWebDeps::new(temp.path().to_path_buf()),
                 true,
                 enabled,
+                None,
             )
             .unwrap();
             host.discovery.lock().unwrap().as_ref().unwrap().request();
@@ -3395,6 +4440,7 @@ mod processing_proofs {
             BackupWebDeps::new(temp.path().to_path_buf()),
             true,
             true,
+            None,
         )
         .unwrap();
         armed.store(true, Ordering::Release);
@@ -3424,6 +4470,7 @@ mod processing_proofs {
                 BackupWebDeps::new(temp.path().to_path_buf()),
                 true,
                 true,
+                None,
             )
             .unwrap();
             let value = host.daily_queue_observation().unwrap().unwrap();
@@ -3446,6 +4493,7 @@ mod processing_proofs {
             BackupWebDeps::new(temp.path().to_path_buf()),
             true,
             true,
+            None,
         )
         .unwrap();
         if let Some(mut discovery) = host.discovery.lock().unwrap().take() {
@@ -3503,6 +4551,7 @@ mod processing_proofs {
             BackupWebDeps::new(temp.path().to_path_buf()),
             true,
             true,
+            None,
         )
         .unwrap();
         armed.store(true, Ordering::Release);
@@ -4429,7 +5478,16 @@ mod processing_proofs {
                                 && envelope.event == "stopped"
                                 && envelope.extra.get("service") == Some(&json!("backup")) =>
                         {
-                            assert_eq!(envelope.extra["exit_code"], 0);
+                            assert_eq!(
+                                envelope.extra["exit_code"], 0,
+                                "actual scheduled backup terminal: {:?}; history={:?}; generation={}; stop={}; failed={}; root_binding={:?}",
+                                envelope.extra,
+                                host.queue().history(),
+                                host.generation,
+                                host.stop.load(Ordering::SeqCst),
+                                host.failed.load(Ordering::SeqCst),
+                                host.root.revalidate_canonical_binding(),
+                            );
                             terminal.insert(envelope.extra["routine"].as_str().unwrap().to_owned());
                         }
                         _ => {}

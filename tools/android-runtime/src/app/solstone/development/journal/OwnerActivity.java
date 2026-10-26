@@ -3,9 +3,14 @@
 package app.solstone.development.journal;
 
 import android.content.*;
+import android.database.Cursor;
 import android.net.Uri;
 import android.net.*;
 import android.os.*;
+import android.provider.DocumentsContract;
+import android.system.ErrnoException;
+import android.system.Os;
+import android.system.OsConstants;
 import android.view.*;
 import android.webkit.*;
 import android.widget.*;
@@ -33,6 +38,13 @@ public final class OwnerActivity extends ServingActivity {
     final ConcurrentHashMap<String,OwnerTransport.Cancellation> fetches = new ConcurrentHashMap<>();
     final ExecutorService requests = new ThreadPoolExecutor(4,4,0L,TimeUnit.MILLISECONDS,
         new ArrayBlockingQueue<Runnable>(32),new ThreadPoolExecutor.AbortPolicy());
+    final ExecutorService uploads = new ThreadPoolExecutor(1,32,0L,TimeUnit.MILLISECONDS,
+        new SynchronousQueue<Runnable>(),new ThreadPoolExecutor.AbortPolicy());
+    ValueCallback<Uri[]> pendingChooser;
+    final ConcurrentHashMap<String,StreamPump> pumps = new ConcurrentHashMap<>();
+    final OwnerUploadBoard uploadBoard = new OwnerUploadBoard();
+    final OwnerFolderPicker folderPicker = new OwnerFolderPicker();
+    volatile int folderGeneration;
     boolean diagnosticCommands() { return false; }
     boolean bindWhileStopped() { return true; }
     void stoppedConnectionReady() {
@@ -171,6 +183,23 @@ public final class OwnerActivity extends ServingActivity {
                     .setOnCancelListener(dialog->result.cancel()).show();
                 return true;
             }
+            public boolean onShowFileChooser(WebView view,ValueCallback<Uri[]> callback,FileChooserParams params) {
+                finishChooser(null);
+                pendingChooser=callback;
+                StringBuilder accept=new StringBuilder();
+                String[] types=params == null ? null : params.getAcceptTypes();
+                if (types != null) {
+                    for (int index=0; index<types.length; index++) {
+                        if (index > 0) accept.append(',');
+                        if (types[index] != null) accept.append(types[index]);
+                    }
+                }
+                Intent intent=new Intent(Intent.ACTION_GET_CONTENT).addCategory(Intent.CATEGORY_OPENABLE);
+                intent.setType(OwnerAccept.mime(accept.toString()));
+                try { startActivityForResult(intent,41); }
+                catch(ActivityNotFoundException error) { finishChooser(null); }
+                return true;
+            }
         });
         web.setWebViewClient(new WebViewClient() {
             public boolean shouldOverrideUrlLoading(WebView view,WebResourceRequest request) {
@@ -281,9 +310,19 @@ public final class OwnerActivity extends ServingActivity {
             startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse(value)).addCategory(Intent.CATEGORY_BROWSABLE));
         } catch(Exception error) { pageError("couldn't open your browser"); }
     }
+    void retireDocument() {
+        folderPicker.retire();
+        uploadBoard.retire();
+        folderGeneration++;
+        for(OwnerTransport.Cancellation cancellation:fetches.values()) cancellation.cancel();
+        fetches.clear();
+        for(StreamPump pump:pumps.values()) pump.cancellation.cancel();
+        pumps.clear();
+    }
     void closePage() {
         pageToken="";
-        for(OwnerTransport.Cancellation cancellation:fetches.values()) cancellation.cancel();
+        retireDocument();
+        finishChooser(null);
         if (transport != null) { transport.close(); transport=null; }
         if (web != null) { web.stopLoading(); web.loadUrl("about:blank"); }
     }
@@ -393,10 +432,12 @@ public final class OwnerActivity extends ServingActivity {
             byte[] bytes;
             try { bytes=OwnerTransport.readBounded(stream,4*1024*1024); } finally { stream.close(); }
             String html=new String(bytes,StandardCharsets.UTF_8);
-            // A new document must never receive a prior page's asynchronous reply.
+            // A new document must not receive a prior page's reply or folder result.
+            String token=UUID.randomUUID().toString();
+            pageToken=token;
+            retireDocument();
             current.close();
             transport=new OwnerTransport(this);
-            String token=UUID.randomUUID().toString(); pageToken=token;
             String injection="<script>window.__journalOwnerToken="+JSONObject.quote(token)+";history.replaceState(null,'',"+JSONObject.quote(stream.url)+");</script><script src=\"/__android/owner.js\"></script>";
             int head=html.indexOf("<head>");
             if (head < 0) throw new IOException("journal page has no head");
@@ -414,10 +455,13 @@ public final class OwnerActivity extends ServingActivity {
     }
     final class Bridge {
         @JavascriptInterface public void cancel(String token,String id) {
-            if (token.equals(pageToken) && id.length() < 64) {
-                OwnerTransport.Cancellation cancellation=fetches.get(token+":"+id);
-                if (cancellation != null) cancellation.cancel();
-            }
+            if (token == null || id == null || !token.equals(pageToken) || id.length() >= 64) return;
+            String key=token+":"+id;
+            OwnerTransport.Cancellation cancellation=fetches.remove(key);
+            if (cancellation != null) cancellation.cancel();
+            uploadBoard.cancel(key);
+            StreamPump pump=pumps.remove(key);
+            if (pump != null) pump.cancellation.cancel();
         }
         @JavascriptInterface public void fetch(String encoded) {
             if (encoded.length() > 384*1024) return;
@@ -456,10 +500,272 @@ public final class OwnerActivity extends ServingActivity {
                 }
             } catch(Exception error) { /* No unbounded queue or diagnostic body recording. */ }
         }
+        @JavascriptInterface public String openStream(String encoded) {
+            if (encoded == null || encoded.length() > 384*1024) return "{\"ok\":false,\"error\":\"journal request too large\"}";
+            try {
+                JSONObject request=new JSONObject(encoded);
+                final String token=request.getString("token"), id=request.getString("id");
+                if (!token.equals(pageToken) || token.isEmpty() || id.length() >= 64) return "{\"ok\":false,\"error\":\"journal request cancelled\"}";
+                final OwnerTransport current=transport;
+                if (current == null) return "{\"ok\":false,\"error\":\"journal response unavailable; check the result before trying again\"}";
+                final OwnerTransport.Cancellation cancellation=current.new Cancellation();
+                final String key=token+":"+id;
+                if (fetches.putIfAbsent(key,cancellation) != null) return "{\"ok\":false,\"error\":\"journal controls busy; check health before retrying\"}";
+                if (!uploadBoard.admit(key)) {
+                    fetches.remove(key,cancellation);
+                    return "{\"ok\":false,\"error\":\"journal controls busy; check health before retrying\"}";
+                }
+                if (!token.equals(pageToken)) {
+                    uploadBoard.cancel(key);
+                    fetches.remove(key,cancellation);
+                    return "{\"ok\":false,\"error\":\"journal request cancelled\"}";
+                }
+                try {
+                    OwnerTransport.Upload upload=current.openStream(request.getString("method"),request.getString("url"),request.getJSONArray("headers"),cancellation);
+                    if (!token.equals(pageToken)) {
+                        cancellation.cancel();
+                        uploadBoard.cancel(key);
+                        fetches.remove(key,cancellation);
+                        try { upload.bodyWrite.close(); } catch(IOException ignored) {}
+                        try { upload.responseRead.close(); } catch(IOException ignored) {}
+                        return "{\"ok\":false,\"error\":\"journal request cancelled\"}";
+                    }
+                    final StreamPump pump=new StreamPump(token,id,current,cancellation,upload,request.getString("url"));
+                    pumps.put(key,pump);
+                    try { uploads.execute(pump); }
+                    catch(RejectedExecutionException busy) {
+                        cancellation.cancel();
+                        uploadBoard.cancel(key);
+                        fetches.remove(key,cancellation);
+                        pumps.remove(key,pump);
+                        try { upload.bodyWrite.close(); } catch(IOException ignored) {}
+                        try { upload.responseRead.close(); } catch(IOException ignored) {}
+                        return "{\"ok\":false,\"error\":\"journal controls busy; check health before retrying\"}";
+                    }
+                    return "{\"ok\":true}";
+                } catch(Exception error) {
+                    uploadBoard.cancel(key);
+                    fetches.remove(key,cancellation);
+                    return "{\"ok\":false,\"error\":"+JSONObject.quote(ownerMessage(error))+"}";
+                }
+            } catch(Exception error) {
+                return "{\"ok\":false,\"error\":"+JSONObject.quote(ownerMessage(error))+"}";
+            }
+        }
+        @JavascriptInterface public String writeChunk(String token,String id,String chunk) {
+            if (token == null || !token.equals(pageToken) || id == null) return "{\"error\":\"journal request cancelled\"}";
+            StreamPump pump=pumps.get(token+":"+id);
+            if (pump == null || pump.cancellation.cancelled) return "{\"error\":\"aborted; check the result before retrying\"}";
+            try {
+                byte[] bytes=OwnerBytes.latin1(chunk);
+                if (!pump.chunks.offer(bytes)) return "{\"busy\":true}";
+                return "{\"accepted\":true}";
+            } catch(IllegalArgumentException error) {
+                return "{\"error\":\"this file couldn't be sent. choose it again, and check the result before retrying.\"}";
+            }
+        }
+        @JavascriptInterface public String finishStream(String token,String id) {
+            if (token == null || !token.equals(pageToken) || id == null) return "{\"error\":\"journal request cancelled\"}";
+            String key=token+":"+id;
+            StreamPump pump=pumps.get(key);
+            if (pump == null) return "{\"error\":\"journal response unavailable; check the result before trying again\"}";
+            pump.finished=true;
+            OwnerUploadBoard.Taken taken=uploadBoard.take(key);
+            if (taken.pending) return "{\"pending\":true}";
+            pumps.remove(key,pump);
+            fetches.remove(key,pump.cancellation);
+            if (taken.reply == null) return "{\"error\":\"journal response unavailable; check the result before trying again\"}";
+            return taken.reply;
+        }
+        @JavascriptInterface public void chooseFolder(String token) {
+            if (folderPicker.present(token, pageToken, folderGeneration) == null) return;
+            ui.post(()->{
+                if (!folderPicker.claimStart(pageToken, folderGeneration)) return;
+                startFolderPicker();
+            });
+        }
+    }
+    protected void onActivityResult(int request,int result,Intent data) {
+        if (request == 41) {
+            Uri uri=data == null ? null : data.getData();
+            if (result != RESULT_OK || uri == null) { finishChooser(null); return; }
+            try {
+                InputStream input=getContentResolver().openInputStream(uri);
+                if (input == null) throw new IOException("couldn't be read");
+                input.close();
+                ValueCallback<Uri[]> callback=pendingChooser;
+                pendingChooser=null;
+                if (callback != null) callback.onReceiveValue(new Uri[]{uri});
+            } catch(Exception error) {
+                finishChooser(null);
+                notice("this file couldn't be read. choose it again.");
+            }
+            return;
+        }
+        if (request == 42) {
+            final Uri tree=data == null ? null : data.getData();
+            boolean ok=result == RESULT_OK && tree != null;
+            OwnerFolderPicker.Authority origin=folderPicker.acceptResult(ok, pageToken, folderGeneration);
+            if (origin == null || tree == null) return;
+            final int generation=origin.generation;
+            final String token=origin.token;
+            try { uploads.execute(()->copyFolder(tree,generation,token)); }
+            catch(RejectedExecutionException busy) { notice("journal controls busy; check health before retrying"); }
+        }
+    }
+    void finishChooser(Uri[] value) {
+        ValueCallback<Uri[]> callback=pendingChooser;
+        pendingChooser=null;
+        if (callback != null) callback.onReceiveValue(value);
+    }
+    void startFolderPicker() {
+        try { startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE),42); }
+        catch(ActivityNotFoundException error) {
+            folderPicker.acceptResult(false, pageToken, folderGeneration);
+            notice("this file couldn't be read. choose it again.");
+        }
+    }
+    void notice(String message) {
+        ui.post(()->{ if (web != null && !destroyed) web.evaluateJavascript("alert("+JSONObject.quote(message)+")",null); });
+    }
+    void copyFolder(Uri tree,int generation,String token) {
+        File cache=getCacheDir();
+        OwnerBridgeFiles.Claim claim=null;
+        try {
+            if (!OwnerFolderPicker.same(token, generation, pageToken, folderGeneration)) return;
+            claim=OwnerBridgeFiles.allocate(cache);
+            File dest=OwnerBridgeFiles.directory(cache,claim.id);
+            if (!OwnerFolderPicker.same(token, generation, pageToken, folderGeneration) || copyChildren(tree,DocumentsContract.getTreeDocumentId(tree),dest,generation,token)) {
+                OwnerBridgeFiles.release(cache,claim);
+                claim=null;
+                return;
+            }
+            OwnerBridgeFiles.commit(cache,claim);
+            final OwnerBridgeFiles.Claim owned=claim;
+            claim=null;
+            final String path=dest.getAbsolutePath();
+            ui.post(()->{
+                if (web == null || !OwnerFolderPicker.same(token, generation, pageToken, folderGeneration)) { OwnerBridgeFiles.release(cache,owned); return; }
+                web.evaluateJavascript("(function(){var input=document.getElementById('guidedPathInput');if(!input)return;input.value="+JSONObject.quote(path)+";input.dispatchEvent(new Event('input',{bubbles:true}));})()",null);
+                OwnerBridgeFiles.disarm(cache,owned);
+            });
+        } catch(Exception error) {
+            if (claim != null) OwnerBridgeFiles.release(cache,claim);
+            String message=error.getMessage() == null ? "" : error.getMessage();
+            notice(message.contains("No space") || message.contains("ENOSPC")
+                ? "your journal couldn't store this file. free some space and try again."
+                : "this file couldn't be read. choose it again.");
+        }
+    }
+    boolean copyChildren(Uri tree,String documentId,File dest,int generation,String token) throws IOException {
+        Uri children=DocumentsContract.buildChildDocumentsUriUsingTree(tree,documentId);
+        Cursor cursor=getContentResolver().query(children,new String[]{
+            DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+            DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+            DocumentsContract.Document.COLUMN_MIME_TYPE},null,null,null);
+        if (cursor == null) throw new IOException("couldn't be read");
+        try {
+            while (cursor.moveToNext()) {
+                if (!OwnerFolderPicker.same(token, generation, pageToken, folderGeneration)) return true;
+                String name=cursor.getString(1);
+                if (name == null || name.length() == 0 || name.indexOf('/') >= 0 || ".".equals(name) || "..".equals(name)) continue;
+                File child=new File(dest,name);
+                String childId=cursor.getString(0);
+                if (DocumentsContract.Document.MIME_TYPE_DIR.equals(cursor.getString(2))) {
+                    if (!child.isDirectory() && !child.mkdirs()) throw new IOException("couldn't be read");
+                    if (copyChildren(tree,childId,child,generation,token)) return true;
+                } else {
+                    InputStream input=getContentResolver().openInputStream(DocumentsContract.buildDocumentUriUsingTree(tree,childId));
+                    if (input == null) throw new IOException("couldn't be read");
+                    try { copyStream(input,child); } finally { input.close(); }
+                }
+            }
+        } finally { cursor.close(); }
+        return false;
+    }
+    void copyStream(InputStream input,File dest) throws IOException {
+        byte[] buffer=new byte[64*1024];
+        OutputStream output=new FileOutputStream(dest);
+        try {
+            int count;
+            while ((count=input.read(buffer)) != -1) output.write(buffer,0,count);
+        } catch(IOException error) {
+            String message=error.getMessage() == null ? "" : error.getMessage();
+            if (message.contains("ENOSPC") || message.contains("No space")) throw new IOException("No space");
+            throw error;
+        } finally { output.close(); }
+    }
+    static String ownerMessage(Exception error) {
+        String message=error.getMessage() == null ? "" : error.getMessage();
+        if (message.contains("transfer stopped")) return "the transfer stopped before it finished. check the result before trying again.";
+        if (message.contains("No space") || message.contains("ENOSPC")) return "your journal couldn't store this file. free some space and try again.";
+        if (message.contains("couldn't be read")) return "this file couldn't be read. choose it again.";
+        if (message.contains("busy")) return "journal controls busy; check health before retrying";
+        if (message.contains("cancelled") || message.contains("aborted")) return "aborted; check the result before retrying";
+        return "journal response unavailable; check the result before trying again";
+    }
+    final class StreamPump implements Runnable {
+        final String token,pageId,url;
+        final OwnerTransport transport;
+        final OwnerTransport.Cancellation cancellation;
+        final OwnerTransport.Upload upload;
+        final ArrayBlockingQueue<byte[]> chunks=new ArrayBlockingQueue<byte[]>(1);
+        volatile boolean finished;
+        StreamPump(String token,String pageId,OwnerTransport transport,OwnerTransport.Cancellation cancellation,OwnerTransport.Upload upload,String url) {
+            this.token=token; this.pageId=pageId; this.transport=transport; this.cancellation=cancellation; this.upload=upload; this.url=url;
+        }
+        public void run() {
+            try {
+                Os.fcntlInt(upload.bodyWrite.getFileDescriptor(),OsConstants.F_SETFL,OsConstants.O_NONBLOCK);
+                while (!finished || !chunks.isEmpty()) {
+                    if (cancellation.cancelled || !token.equals(pageToken)) throw new IOException("cancelled");
+                    byte[] chunk=chunks.poll(50,TimeUnit.MILLISECONDS);
+                    if (chunk == null) continue;
+                    int offset=0;
+                    while (offset < chunk.length) {
+                        if (cancellation.cancelled || !token.equals(pageToken)) throw new IOException("cancelled");
+                        try {
+                            int wrote=Os.write(upload.bodyWrite.getFileDescriptor(),java.nio.ByteBuffer.wrap(chunk,offset,chunk.length-offset));
+                            if (wrote > 0) offset += wrote;
+                        } catch(ErrnoException error) {
+                            if (error.errno == OsConstants.EAGAIN) { Thread.sleep(50); continue; }
+                            throw new IOException("couldn't be read");
+                        }
+                    }
+                }
+                upload.bodyWrite.close();
+                long closedAt=SystemClock.elapsedRealtime();
+                while (true) {
+                    if (cancellation.cancelled || !token.equals(pageToken)) throw new IOException("cancelled");
+                    JSONObject value=transport.poll(upload.id);
+                    if (value.optBoolean("pending")) {
+                        if (OwnerTransferWait.stalled(true, SystemClock.elapsedRealtime()-closedAt)) throw new IOException("transfer stopped");
+                        Thread.sleep(50);
+                        continue;
+                    }
+                    JSONObject headers=new JSONObject();
+                    JSONArray pairs=value.getJSONArray("headers");
+                    for (int index=0; index<pairs.length(); index++) {
+                        JSONArray pair=pairs.getJSONArray(index);
+                        headers.put(pair.getString(0),pair.getString(1));
+                    }
+                    byte[] body=OwnerTransport.readBounded(new ParcelFileDescriptor.AutoCloseInputStream(upload.responseRead),8*1024*1024);
+                    uploadBoard.keep(token+":"+pageId,MainActivity.obj("status",value.getInt("status"),"headers",headers,"url",url,
+                        "body",android.util.Base64.encodeToString(body,android.util.Base64.NO_WRAP)).toString());
+                    return;
+                }
+            } catch(Exception error) {
+                uploadBoard.keep(token+":"+pageId,"{\"error\":"+JSONObject.quote(ownerMessage(error))+"}");
+                cancellation.cancel();
+            } finally {
+                try { upload.bodyWrite.close(); } catch(IOException ignored) {}
+                try { upload.responseRead.close(); } catch(IOException ignored) {}
+            }
+        }
     }
     protected void onDestroy() {
         if (connectivity != null && networkCallback != null) connectivity.unregisterNetworkCallback(networkCallback);
-        closePage(); requests.shutdownNow(); web.removeJavascriptInterface("JournalOwner"); web.destroy();
+        closePage(); requests.shutdownNow(); uploads.shutdownNow(); web.removeJavascriptInterface("JournalOwner"); web.destroy();
         super.onDestroy();
     }
     public void onBackPressed() {

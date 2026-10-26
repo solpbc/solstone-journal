@@ -27,7 +27,7 @@ static ROOT: Mutex<Option<Arc<JournalRoot>>> = Mutex::new(None);
 static QUERY: Mutex<Option<OwnerIndex>> = Mutex::new(None);
 struct ServingInstance {
     serving: journal_mobile_serving::MobileServing,
-    processing: Option<journal_mobile_serving::foreground::ForegroundProcessingHost>,
+    processing: Option<Arc<journal_mobile_serving::foreground::ForegroundProcessingHost>>,
 }
 impl ServingInstance {
     fn status(&self) -> Value {
@@ -409,6 +409,11 @@ fn run(v: Value) -> Result<Value, String> {
                 .ok_or("port must be between 1024 and 65535")? as u16;
             let address = std::net::SocketAddrV4::new(wifi_address()?, port);
             let payload = PathBuf::from(v["payload"].as_str().ok_or("missing bundled payload")?);
+            let admitted_library = PathBuf::from(
+                v["pdfium_library"]
+                    .as_str()
+                    .ok_or("admitted pdfium library required")?,
+            );
             #[cfg(target_os = "ios")]
             {
                 let target = std::env::temp_dir().join("callosum.sock");
@@ -478,12 +483,7 @@ fn run(v: Value) -> Result<Value, String> {
                 processing: None,
             });
             *STOP_ROOT.lock().unwrap_or_else(|p| p.into_inner()) = Some(Arc::clone(root));
-            let open_host = if v["mode"].as_str() == Some("observe-daily-queue") {
-                journal_mobile_serving::foreground::ForegroundProcessingHost::open_with_rebuild_recovery_observed
-            } else {
-                journal_mobile_serving::foreground::ForegroundProcessingHost::open_with_rebuild_recovery
-            };
-            let host = open_host(
+            let host = journal_mobile_serving::foreground::ForegroundProcessingHost::open_with_imports(
                 Arc::clone(root),
                 &payload,
                 Arc::new(move || {
@@ -491,8 +491,11 @@ fn run(v: Value) -> Result<Value, String> {
                 }),
                 processing_stop,
                 backup,
+                journal_mobile_serving::import_route::packaged_import_factory(admitted_library),
+                true,
+                v["mode"].as_str() == Some("observe-daily-queue"),
             );
-            let host = match host {
+            let mut host = match host {
                 Ok(host) => host,
                 Err(error) => {
                     journal_ios_processing_request_stop();
@@ -500,11 +503,21 @@ fn run(v: Value) -> Result<Value, String> {
                 }
             };
             let current = serving.as_mut().unwrap();
-            current.processing = Some(host);
-            if let Err(error) = current.processing.as_mut().unwrap().start_workers() {
+            let host_ready = host.start_workers();
+            if let Err(error) = host_ready {
+                current.processing = Some(Arc::new(host));
                 journal_ios_processing_request_stop();
                 return Err(error);
             }
+            let host = Arc::new(host);
+            if let Err(error) = current.serving.import_route().install(Arc::new(
+                journal_mobile_serving::import_route::ForegroundImportRoute::new(Arc::clone(&host)),
+            )) {
+                current.processing = Some(host);
+                journal_ios_processing_request_stop();
+                return Err(error);
+            }
+            current.processing = Some(host);
             if !open_processing_admission(&PROCESSING_GENERATION, generation) {
                 journal_ios_processing_request_stop();
                 return Err("stop requested during startup; journal retained".into());

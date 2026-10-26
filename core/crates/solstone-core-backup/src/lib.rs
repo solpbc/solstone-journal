@@ -15,6 +15,26 @@ pub mod bounded_child;
 mod defaults;
 mod destination;
 mod hosted;
+#[cfg(any(
+    target_os = "ios",
+    all(
+        target_os = "linux",
+        target_arch = "x86_64",
+        feature = "native-archive-host-tests"
+    )
+))]
+#[doc(hidden)]
+pub mod ios_native;
+#[cfg(any(
+    target_os = "ios",
+    all(
+        target_os = "linux",
+        target_arch = "x86_64",
+        feature = "native-archive-host-tests"
+    )
+))]
+#[doc(hidden)]
+pub mod ios_repository;
 mod keys;
 mod merge;
 #[cfg(target_os = "macos")]

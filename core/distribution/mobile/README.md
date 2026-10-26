@@ -41,8 +41,11 @@ dependencies and trust restrictions.
 
 `inputs.json` fixes external inputs by source coordinate and archive digest.
 The nvattest patch is applied to that exact source, with forward and reverse
-checks. Parakeet and RF-DETR use their own source-provided GGML patches; the
-build checks every patch before CMake can hide a failure. The iOS rclone recipe
+checks. Parakeet and RF-DETR use the same union of their pinned GGML patch
+series. Byte-identical patches are applied once, and every patch is checked
+after the two series are composed. The `media-shared-ggml` receipt binding
+records the source archive hashes, patches and shared tree hash. A process
+using both engines must link one matching GGML library set. The iOS rclone recipe
 adds a build constraint to the pinned Storj dependency's macOS-only CPU
 detection file, retaining its portable implementation and the Storj backend.
 Cargo locks, Go module checksums and the Swift resolved input retain their

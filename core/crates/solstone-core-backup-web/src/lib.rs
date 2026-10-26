@@ -47,6 +47,7 @@ mod cleanup;
 mod config;
 mod handoff_poll;
 mod keys;
+pub mod maintenance;
 mod measurement;
 mod offload_report;
 mod operation;

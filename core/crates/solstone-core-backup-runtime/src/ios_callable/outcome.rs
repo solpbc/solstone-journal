@@ -10,9 +10,9 @@ use std::io;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use super::native::{Completed, ResultFields};
 use crate::ios_linked_command::command::Operation;
 use crate::runner::{ResticResult, RunnerError};
+use solstone_core_backup::ios_native::{Completed, ResultFields};
 
 const MAX_METADATA: usize = 4 * 1024 * 1024;
 const MAX_SNAPSHOTS: usize = 4096;

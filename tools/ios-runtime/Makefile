@@ -24,7 +24,7 @@ APP := $(BUILD_ROOT)/derived/Build/Products/Debug-iphoneos/JournalRuntimeDev.app
 NATIVE_FEATURES := $(if $(AUDIO_MODELS_DIR),audio) $(if $(filter project-owner.yml,$(PROJECT_SPEC)),owner-app)
 .PHONY: build rust appraisal-rust appraisal-native backup-native pdfium payload project finalize install run check check-owner-fixture
 rust:
-	IPHONEOS_DEPLOYMENT_TARGET=26.0 cargo build --locked --manifest-path native/Cargo.toml --features '$(NATIVE_FEATURES)' --target aarch64-apple-ios --target-dir $(BUILD_ROOT)/rust
+	IPHONEOS_DEPLOYMENT_TARGET=26.0 $(if $(RFDETR_LIB_DIR),RFDETR_LIB_DIR='$(RFDETR_LIB_DIR)') $(if $(PARAKEET_LIB_DIR),PARAKEET_LIB_DIR='$(PARAKEET_LIB_DIR)') cargo build --locked --manifest-path native/Cargo.toml --features '$(NATIVE_FEATURES)' --target aarch64-apple-ios --target-dir $(BUILD_ROOT)/rust
 appraisal-rust:
 	IPHONEOS_DEPLOYMENT_TARGET=26.0 cargo build --locked --manifest-path appraisal-helper/Cargo.toml --target aarch64-apple-ios --target-dir $(BUILD_ROOT)/appraisal-rust
 appraisal-native:
@@ -34,7 +34,7 @@ backup-native:
 pdfium:
 	python3 ../../scripts/package_mobile_pdfium.py --platform ios --cache-dir $(CACHE_DIR) --output $(PDFIUM_DIR)
 payload:
-	AUDIO_MODELS_DIR='$(AUDIO_MODELS_DIR)' python3 package_payload.py
+	AUDIO_MODELS_DIR='$(AUDIO_MODELS_DIR)' SCREEN_OCR_MODELS_DIR='$(SCREEN_OCR_MODELS_DIR)' RFDETR_MODEL='$(RFDETR_MODEL)' REQUIRE_MEDIA_MODELS='$(if $(filter project-owner.yml,$(PROJECT_SPEC)),1,0)' python3 package_payload.py
 project: payload backup-native
 	xcodegen generate --spec $(PROJECT_SPEC)
 build: rust appraisal-rust appraisal-native pdfium project
@@ -71,3 +71,4 @@ check: check-owner-fixture
 	python3 test_serving_receipts.py
 	python3 ../mobile-audio/test_prepare.py
 	python3 ../../scripts/test_mobile_pdfium.py
+	python3 ../../scripts/test_mobile_media.py

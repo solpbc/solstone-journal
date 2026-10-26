@@ -38,6 +38,44 @@ public class JournalService extends Service {
                     Native.cancelOwner(m.getData().getLong("owner_id"));
                     return;
                 }
+                if ("owner-poll".equals(op)) {
+                    byte[] result = Native.pollOwner(m.getData().getLong("owner_id"));
+                    respond(reply,id,new String(result,StandardCharsets.UTF_8),0);
+                    return;
+                }
+                if ("owner-open-stream".equals(op)) {
+                    final ParcelFileDescriptor sink = m.getData().getParcelable("sink");
+                    final ParcelFileDescriptor body = m.getData().getParcelable("body");
+                    final byte[] request = m.getData().getByteArray("request");
+                    if (destroyed || sink == null || body == null || request == null || request.length > 384*1024) {
+                        if (sink != null) try { sink.close(); } catch(IOException ignored) {}
+                        if (body != null) try { body.close(); } catch(IOException ignored) {}
+                        respond(reply,id,"{\"ok\":false,\"error\":\"owner request unavailable\"}",0);
+                        return;
+                    }
+                    try {
+                        ownerRequests.execute(()->{
+                            int responseFd = -1;
+                            int bodyFd = -1;
+                            try {
+                                responseFd = sink.detachFd();
+                                bodyFd = body.detachFd();
+                                byte[] result = Native.openOwnerStream(root,request,responseFd,bodyFd);
+                                respond(reply,id,new String(result,StandardCharsets.UTF_8),0);
+                            } catch(Exception error) {
+                                respond(reply,id,"{\"ok\":false,\"error\":\"owner response unavailable; outcome may be unknown\"}",0);
+                            } finally {
+                                try { sink.close(); } catch(IOException ignored) {}
+                                try { body.close(); } catch(IOException ignored) {}
+                            }
+                        });
+                    } catch(Exception error) {
+                        try { sink.close(); } catch(IOException ignored) {}
+                        try { body.close(); } catch(IOException ignored) {}
+                        respond(reply,id,"{\"ok\":false,\"error\":\"owner requests busy\"}",0);
+                    }
+                    return;
+                }
                 if ("owner-open".equals(op)) {
                     final ParcelFileDescriptor sink = m.getData().getParcelable("sink");
                     final byte[] request = m.getData().getByteArray("request");
@@ -128,6 +166,9 @@ public class JournalService extends Service {
                             }
                             if (isStart && new JSONObject(result).optBoolean("ok")) {
                                 thinkingAdmission.opened(generation);
+                                // Sweep only here, before this start admits the owner page.
+                                try { Native.reclaimBridge(getCacheDir().getAbsolutePath(), root, "[]"); }
+                                catch (Throwable ignored) { /* A failed cleanup must not hide a started journal. */ }
                             }
                             respond(reply,id,result,SystemClock.elapsedRealtimeNanos()-start);
                         } catch(Throwable e) {

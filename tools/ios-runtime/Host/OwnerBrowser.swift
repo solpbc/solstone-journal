@@ -20,16 +20,10 @@ enum OwnerOrigin {
   static func url(_ path: String) -> URL { URL(string: "\(scheme)://\(host)\(path)")! }
 }
 
-/// Each response owns a private pipe and one cancellation identity. Readers
-/// never retain the runtime's lifecycle queue or allocate a whole media file.
-private enum OwnerSequence {
-  static let lock = NSLock()
-  static var sequence: UInt64 = 0
-  static func next() -> UInt64 {
-    lock.lock(); defer { lock.unlock() }
-    sequence &+= 1
-    return sequence
-  }
+/// One process-wide identity for an ordinary read or a streamed upload.
+/// Folder copies do not take an id from here.
+enum OwnerRequestIdentity {
+  static func next() -> UInt64 { journal_ios_owner_next_id() }
 }
 final class OwnerRead: @unchecked Sendable {
   private let lock = NSLock()
@@ -62,7 +56,7 @@ final class OwnerRead: @unchecked Sendable {
     } ?? []
     for hop in 0..<8 {
       if cancelled { throw URLError(.cancelled) }
-      let id = OwnerSequence.next()
+      let id = OwnerRequestIdentity.next()
       lock.lock(); activeID = id; lock.unlock()
       let path = try OwnerOrigin.admit(url)
       let (reader, writer) = try OwnerPipe.make()
@@ -142,6 +136,7 @@ final class OwnerRead: @unchecked Sendable {
 @MainActor final class OwnerBrowserCoordinator: NSObject, WKURLSchemeHandler, WKNavigationDelegate, WKUIDelegate {
   private struct Slot { let read: OwnerRead; let task: WKURLSchemeTask }
   private let owner: OwnerJournal
+  let uploads: OwnerUploadBridge
   private var requests: [ObjectIdentifier: Slot] = [:]
   private weak var web: WKWebView?
   private var mainNavigation: URL
@@ -154,9 +149,11 @@ final class OwnerRead: @unchecked Sendable {
   }()
   init(_ owner: OwnerJournal) {
     self.owner = owner
+    uploads = OwnerUploadBridge(owner)
     mainNavigation = OwnerOrigin.url(owner.route)
   }
   func close() {
+    uploads.close()
     for request in requests.values { request.read.cancel() }
     requests.removeAll()
     workers.cancelAllOperations()
@@ -253,8 +250,17 @@ final class OwnerRead: @unchecked Sendable {
     if let url = action.request.url { external(url) }
     return nil
   }
+  func webView(_: WKWebView, didStartProvisionalNavigation _: WKNavigation!) {
+    uploads.rotateDocument()
+  }
+  func webView(_: WKWebView, didCommit _: WKNavigation!) {
+    uploads.commitDocument()
+  }
   func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
-    if (error as NSError).code != NSURLErrorCancelled { owner.pageFailed() }
+    if (error as NSError).code != NSURLErrorCancelled {
+      uploads.abandonProvisionalDocument()
+      owner.pageFailed()
+    }
   }
   func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
     if (error as NSError).code != NSURLErrorCancelled { owner.pageFailed() }
@@ -284,6 +290,7 @@ struct OwnerBrowser: UIViewRepresentable {
     let configuration = WKWebViewConfiguration()
     configuration.websiteDataStore = .nonPersistent()
     configuration.setURLSchemeHandler(context.coordinator, forURLScheme: OwnerOrigin.scheme)
+    context.coordinator.uploads.install(on: configuration)
     let contract = Bundle.main.url(forResource: "JournalWebHost", withExtension: "json")
       .flatMap { try? Data(contentsOf: $0) }
       .flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
@@ -296,6 +303,7 @@ struct OwnerBrowser: UIViewRepresentable {
         source: "window[\(key)] = 1;", injectionTime: .atDocumentStart, forMainFrameOnly: true))
     }
     let web = WKWebView(frame: .zero, configuration: configuration)
+    context.coordinator.uploads.attach(web)
     web.navigationDelegate = context.coordinator
     web.uiDelegate = context.coordinator
     web.allowsBackForwardNavigationGestures = true
