@@ -1682,7 +1682,7 @@ fn run_job(
 }
 
 /// Exit zero cannot finish a file that the ordinary scanner would admit again.
-fn unfinished_output(file: &Path, handler: &str) -> Option<String> {
+pub fn unfinished_output(file: &Path, handler: &str) -> Option<String> {
     use solstone_core_processing_record::{
         read_processing_record_header, should_reenter_analysis_output,
     };

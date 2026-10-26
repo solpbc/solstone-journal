@@ -15,7 +15,7 @@ pub mod registry;
 pub mod service;
 pub mod work;
 
-pub use dispatch::{SenseDispatcher, SenseExecutor, SenseJobResult};
+pub use dispatch::{SenseDispatcher, SenseExecutor, SenseJobResult, unfinished_output};
 pub use service::{
     NativeServiceError, SenseOptions, run_native_service, run_native_service_with_hosted_parent,
 };

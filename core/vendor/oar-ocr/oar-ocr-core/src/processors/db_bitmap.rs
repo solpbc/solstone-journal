@@ -1,0 +1,424 @@
+use crate::processors::geometry::{BoundingBox, MinAreaRect, Point};
+use crate::processors::types::ScoreMode;
+use clipper2_rust::{
+    clipper::inflate_paths_d,
+    core::{PathD, PathsD, PointD, area},
+    offset::{EndType, JoinType},
+};
+use image::GrayImage;
+use imageproc::contours::{Contour, find_contours};
+use std::cmp::Ordering;
+use std::f32::consts::PI;
+
+use super::DBPostProcess;
+
+impl DBPostProcess {
+    pub(super) fn polygons_from_bitmap(
+        &self,
+        pred: &ndarray::ArrayView2<f32>,
+        bitmap: &GrayImage,
+        dest_width: u32,
+        dest_height: u32,
+        box_thresh: f32,
+        unclip_ratio: f32,
+    ) -> (Vec<BoundingBox>, Vec<f32>) {
+        let height = bitmap.height() as usize;
+        let width = bitmap.width() as usize;
+        let width_scale = dest_width as f32 / width as f32;
+        let height_scale = dest_height as f32 / height as f32;
+        let dest_w_f = dest_width as f32;
+        let dest_h_f = dest_height as f32;
+
+        let contours = find_contours::<u32>(bitmap);
+        let max_candidates = self.max_candidates;
+        let mut boxes: Vec<BoundingBox> = Vec::with_capacity(contours.len().min(max_candidates));
+        let mut scores: Vec<f32> = Vec::with_capacity(boxes.capacity());
+
+        for contour in contours.into_iter().take(max_candidates) {
+            if contour.points.len() < 4 {
+                continue;
+            }
+
+            let bbox = BoundingBox::from_contour(&contour);
+            let epsilon = 0.002 * bbox.perimeter();
+            let approx = bbox.approx_poly_dp(epsilon);
+
+            if approx.points.len() < 4 {
+                continue;
+            }
+
+            let score = self.box_score_fast(pred, &approx);
+            if score < box_thresh {
+                continue;
+            }
+
+            let unclipped = self.unclip(&approx, unclip_ratio);
+            if unclipped.points.is_empty() {
+                continue;
+            }
+
+            let Some((_, sside)) = self.get_mini_boxes_from_points(&unclipped.points) else {
+                continue;
+            };
+            if sside < self.min_size + 2.0 {
+                continue;
+            }
+
+            // Scale unclipped points back to the original image coords
+            // in a single pass with pre-allocated capacity.
+            let n = unclipped.points.len();
+            let mut scaled_points: Vec<Point> = Vec::with_capacity(n);
+            for point in &unclipped.points {
+                let x = (point.x * width_scale).round().clamp(0.0, dest_w_f);
+                let y = (point.y * height_scale).round().clamp(0.0, dest_h_f);
+                scaled_points.push(Point::new(x, y));
+            }
+
+            boxes.push(BoundingBox::new(scaled_points));
+            scores.push(score);
+        }
+
+        (boxes, scores)
+    }
+
+    pub(super) fn boxes_from_bitmap(
+        &self,
+        pred: &ndarray::ArrayView2<f32>,
+        bitmap: &GrayImage,
+        dest_width: u32,
+        dest_height: u32,
+        box_thresh: f32,
+        unclip_ratio: f32,
+    ) -> (Vec<BoundingBox>, Vec<f32>) {
+        let height = bitmap.height() as usize;
+        let width = bitmap.width() as usize;
+        let width_scale = dest_width as f32 / width as f32;
+        let height_scale = dest_height as f32 / height as f32;
+        let dest_w_f = dest_width as f32;
+        let dest_h_f = dest_height as f32;
+
+        let contours = find_contours::<u32>(bitmap);
+        let max_candidates = self.max_candidates;
+        let mut boxes: Vec<BoundingBox> = Vec::with_capacity(contours.len().min(max_candidates));
+        let mut scores: Vec<f32> = Vec::with_capacity(boxes.capacity());
+
+        for contour in contours.into_iter().take(max_candidates) {
+            let Some((mini_box_points, min_side)) = self.get_mini_boxes_from_contour(&contour)
+            else {
+                continue;
+            };
+            if min_side < self.min_size {
+                continue;
+            }
+            let mini_box = BoundingBox::new(mini_box_points);
+
+            let score = match self.score_mode {
+                ScoreMode::Fast => self.box_score_fast(pred, &mini_box),
+                ScoreMode::Slow => self.box_score_slow(pred, &contour),
+            };
+
+            if score < box_thresh {
+                continue;
+            }
+
+            let unclipped = self.unclip(&mini_box, unclip_ratio);
+            if unclipped.points.is_empty() {
+                continue;
+            }
+
+            let Some((box_points, sside)) = self.get_mini_boxes_from_points(&unclipped.points)
+            else {
+                continue;
+            };
+            if sside < self.min_size + 2.0 {
+                continue;
+            }
+
+            let n = box_points.len();
+            let mut scaled_points: Vec<Point> = Vec::with_capacity(n);
+            for point in &box_points {
+                let x = (point.x * width_scale).round().clamp(0.0, dest_w_f);
+                let y = (point.y * height_scale).round().clamp(0.0, dest_h_f);
+                scaled_points.push(Point::new(x, y));
+            }
+
+            boxes.push(BoundingBox::new(scaled_points));
+            scores.push(score);
+        }
+
+        (boxes, scores)
+    }
+
+    /// PaddleX `get_mini_boxes(contour)` equivalent.
+    fn get_mini_boxes_from_contour(&self, contour: &Contour<u32>) -> Option<(Vec<Point>, f32)> {
+        let points = contour
+            .points
+            .iter()
+            .map(|p| Point::new(p.x as f32, p.y as f32))
+            .collect::<Vec<_>>();
+        let simplified = Self::simplify_chain_points(&points);
+        if simplified.len() >= 3 {
+            self.get_mini_boxes_from_points(&simplified)
+        } else {
+            self.get_mini_boxes_from_points(&points)
+        }
+    }
+
+    /// PaddleX `get_mini_boxes` equivalent from polygon points.
+    fn get_mini_boxes_from_points(&self, points: &[Point]) -> Option<(Vec<Point>, f32)> {
+        if points.len() < 3 {
+            return None;
+        }
+
+        let min_rect = BoundingBox::get_min_area_rect_from_points(points);
+        let min_side = min_rect.min_side();
+        if !min_side.is_finite() || min_side <= 0.0 {
+            return None;
+        }
+
+        let raw_points = Self::box_points_without_reorder(&min_rect);
+        if raw_points.len() != 4 {
+            return None;
+        }
+
+        Some((Self::paddlex_order_mini_box_points(raw_points), min_side))
+    }
+
+    fn box_points_without_reorder(rect: &MinAreaRect) -> Vec<Point> {
+        let cos_a = (rect.angle * PI / 180.0).cos();
+        let sin_a = (rect.angle * PI / 180.0).sin();
+        let w_2 = rect.width / 2.0;
+        let h_2 = rect.height / 2.0;
+        let corners = [(-w_2, -h_2), (w_2, -h_2), (w_2, h_2), (-w_2, h_2)];
+
+        corners
+            .iter()
+            .map(|(x, y)| {
+                let rotated_x = x * cos_a - y * sin_a + rect.center.x;
+                let rotated_y = x * sin_a + y * cos_a + rect.center.y;
+                Point::new(rotated_x, rotated_y)
+            })
+            .collect()
+    }
+
+    /// Compress contour chain points similarly to OpenCV CHAIN_APPROX_SIMPLE.
+    ///
+    /// This keeps turning points and removes interior points on straight segments.
+    fn simplify_chain_points(points: &[Point]) -> Vec<Point> {
+        if points.len() <= 2 {
+            return points.to_vec();
+        }
+
+        let mut simplified = Vec::with_capacity(points.len());
+        let n = points.len();
+
+        for i in 0..n {
+            let prev = points[(i + n - 1) % n];
+            let curr = points[i];
+            let next = points[(i + 1) % n];
+
+            let dir_prev = (
+                Self::sign_step(curr.x - prev.x),
+                Self::sign_step(curr.y - prev.y),
+            );
+            let dir_next = (
+                Self::sign_step(next.x - curr.x),
+                Self::sign_step(next.y - curr.y),
+            );
+
+            if dir_prev != dir_next {
+                simplified.push(curr);
+            }
+        }
+
+        if simplified.len() < 3 {
+            points.to_vec()
+        } else {
+            simplified
+        }
+    }
+
+    fn sign_step(v: f32) -> i8 {
+        if v > 0.0 {
+            1
+        } else if v < 0.0 {
+            -1
+        } else {
+            0
+        }
+    }
+
+    /// PaddleX `get_mini_boxes` point ordering:
+    /// sort by x, then select [top-left, top-right, bottom-right, bottom-left].
+    fn paddlex_order_mini_box_points(mut points: Vec<Point>) -> Vec<Point> {
+        if points.len() != 4 {
+            return points;
+        }
+
+        points.sort_by(|a, b| a.x.partial_cmp(&b.x).unwrap_or(Ordering::Equal));
+
+        let (index_1, index_4) = if points[1].y > points[0].y {
+            (0usize, 1usize)
+        } else {
+            (1usize, 0usize)
+        };
+        let (index_2, index_3) = if points[3].y > points[2].y {
+            (2usize, 3usize)
+        } else {
+            (3usize, 2usize)
+        };
+
+        vec![
+            points[index_1],
+            points[index_2],
+            points[index_3],
+            points[index_4],
+        ]
+    }
+
+    fn unclip(&self, bbox: &BoundingBox, unclip_ratio: f32) -> BoundingBox {
+        if bbox.points.len() < 3 {
+            return bbox.clone();
+        }
+
+        let clipper_path: PathD = bbox
+            .points
+            .iter()
+            .map(|point| PointD {
+                x: point.x as f64,
+                y: point.y as f64,
+            })
+            .collect();
+
+        if clipper_path.len() < 3 {
+            return BoundingBox::new(Vec::new());
+        }
+
+        let polygon_area = area(&clipper_path).abs();
+        if polygon_area <= f64::EPSILON {
+            return BoundingBox::new(Vec::new());
+        }
+
+        // Sum the perimeter as a manual wrap-around loop to avoid the
+        // `zip(cycle().skip(1))` allocation pattern (which clones the
+        // iterator to advance the cycle by one).
+        let mut perimeter = 0.0f64;
+        let n = clipper_path.len();
+        if n >= 2 {
+            // Walk consecutive edges, then close the loop separately, so the
+            // hot inner loop avoids a `%` per iteration.
+            let mut p1 = &clipper_path[0];
+            for p2 in &clipper_path[1..] {
+                perimeter += (p2.x - p1.x).hypot(p2.y - p1.y);
+                p1 = p2;
+            }
+            let first = &clipper_path[0];
+            perimeter += (first.x - p1.x).hypot(first.y - p1.y);
+        }
+
+        if perimeter <= f64::EPSILON {
+            return BoundingBox::new(Vec::new());
+        }
+
+        let delta = polygon_area * unclip_ratio as f64 / perimeter;
+        if delta.abs() <= f64::EPSILON {
+            return BoundingBox::new(Vec::new());
+        }
+
+        // `precision = 2` and `arc_tolerance = 0.0` match Clipper2's PathsD
+        // defaults: two decimal places of internal fixed-point precision
+        // (the C++ default) and an arc-tolerance derived from `delta`.
+        let paths: PathsD = vec![clipper_path];
+        let offset_paths = inflate_paths_d(
+            &paths,
+            delta,
+            JoinType::Round,
+            EndType::Polygon,
+            2.0,
+            2,
+            0.0,
+        );
+
+        if offset_paths.len() != 1 {
+            return BoundingBox::new(Vec::new());
+        }
+
+        // Safe: we just verified len() == 1
+        let path = offset_paths.into_iter().next().unwrap();
+
+        let mut points: Vec<Point> = path
+            .iter()
+            .map(|pt| Point::new(pt.x as f32, pt.y as f32))
+            .collect();
+
+        // Remove duplicate closing point if present
+        if points.len() > 1
+            && let (Some(first), Some(last)) = (points.first(), points.last())
+            && (first.x - last.x).abs() < f32::EPSILON
+            && (first.y - last.y).abs() < f32::EPSILON
+        {
+            points.pop();
+        }
+
+        if points.len() < 3 {
+            return BoundingBox::new(Vec::new());
+        }
+
+        BoundingBox::new(points)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_paddlex_order_mini_box_points() {
+        let input = vec![
+            Point::new(20.0, 20.0),
+            Point::new(10.0, 10.0),
+            Point::new(20.0, 10.0),
+            Point::new(10.0, 20.0),
+        ];
+
+        let ordered = DBPostProcess::paddlex_order_mini_box_points(input);
+        assert_eq!(ordered.len(), 4);
+        assert!((ordered[0].x - 10.0).abs() < 1e-6 && (ordered[0].y - 10.0).abs() < 1e-6);
+        assert!((ordered[1].x - 20.0).abs() < 1e-6 && (ordered[1].y - 10.0).abs() < 1e-6);
+        assert!((ordered[2].x - 20.0).abs() < 1e-6 && (ordered[2].y - 20.0).abs() < 1e-6);
+        assert!((ordered[3].x - 10.0).abs() < 1e-6 && (ordered[3].y - 20.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_get_mini_boxes_from_points_returns_min_side() {
+        let post = DBPostProcess::new(None, None, None, None, None, None, None);
+        let points = vec![
+            Point::new(0.0, 0.0),
+            Point::new(10.0, 0.0),
+            Point::new(10.0, 5.0),
+            Point::new(0.0, 5.0),
+        ];
+
+        let (_, min_side) = post
+            .get_mini_boxes_from_points(&points)
+            .expect("expected mini box");
+        assert!((min_side - 5.0).abs() < 1e-3);
+    }
+
+    #[test]
+    fn test_simplify_chain_points_removes_straight_segment_points() {
+        let points = vec![
+            Point::new(0.0, 0.0),
+            Point::new(1.0, 0.0),
+            Point::new(2.0, 0.0),
+            Point::new(2.0, 1.0),
+            Point::new(2.0, 2.0),
+            Point::new(1.0, 2.0),
+            Point::new(0.0, 2.0),
+            Point::new(0.0, 1.0),
+        ];
+
+        let simplified = DBPostProcess::simplify_chain_points(&points);
+        assert_eq!(simplified.len(), 4);
+    }
+}

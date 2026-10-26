@@ -16,7 +16,7 @@ use solstone_core_processing_record::{
 
 use crate::WinnowConfig;
 use crate::categories::OutputKind;
-use crate::decode::{QualifiedFrame, process_video, resize_for_vlm_png};
+use crate::decode::{PullNext, QualifiedFrame, RedecodeFail, resize_for_vlm_png};
 use solstone_core_journal_io::LockOptions;
 use solstone_core_segment::output_attempt::{InputObservation, OutputClaims};
 
@@ -37,7 +37,24 @@ const RFDETR_UNAVAILABLE_DETAIL: &str = "Object detection is unavailable. Run `s
 #[derive(Debug)]
 pub enum RunError {
     Blocked(Option<String>),
+    Cancelled,
     Internal(String),
+}
+
+/// Screen detection for one PNG. Describe does not depend on depict.
+///
+/// The value is the detector's raw JSON (`image` and `detections`).
+pub trait ScreenDetector {
+    fn detect(&self, png: &[u8], journal: &Path) -> Result<Value, String>;
+}
+
+/// Desktop detector: the existing child or packaged helper.
+pub struct SpawnScreenDetector;
+
+impl ScreenDetector for SpawnScreenDetector {
+    fn detect(&self, png: &[u8], journal: &Path) -> Result<Value, String> {
+        detect::detect(png, journal)
+    }
 }
 
 struct Pending {
@@ -57,6 +74,9 @@ struct CategorizedRow {
     analysis: Option<Value>,
     error: Option<String>,
     requests: Vec<Value>,
+    /// Stored in completion order while the PNG is held. `None` means detect
+    /// still runs later, in that same order.
+    detection: Option<Result<Option<Value>, String>>,
 }
 
 struct Promotion<'a> {
@@ -73,6 +93,7 @@ struct Promotion<'a> {
     previous_attempts: i64,
     carry_forward_observer: Option<&'a str>,
     existing: Option<&'a merge::ExistingDescribeArtifact>,
+    attempt: Option<&'a solstone_core_system::work_retry::Attempt>,
 }
 
 struct OcrPublication<'a> {
@@ -157,12 +178,36 @@ pub fn run_with_factory(
     options: DescribeOptions<'_>,
     factory: &dyn DescribeSessionFactory,
 ) -> Result<(), RunError> {
-    if options.jobs == 0 {
-        return Err(RunError::Internal("--jobs must be positive".to_owned()));
-    }
-    let video = options.video;
-    let config = options.config;
-    run_with_decoder(options, factory, || process_video(video, config))
+    let resolver = screen_ocr::InstalledHelperResolver;
+    let mut ocr = screen_ocr::ResolvedWorkerFactory::new(&resolver);
+    run_with_clients(
+        options,
+        factory,
+        &SpawnScreenDetector,
+        &mut ocr,
+        &|| false,
+        None,
+    )
+}
+
+/// In-process describe. One file, caller-owned session, detector, OCR, and cancel.
+pub fn run_with_clients(
+    options: DescribeOptions<'_>,
+    sessions: &dyn DescribeSessionFactory,
+    detector: &dyn ScreenDetector,
+    ocr: &mut dyn OcrWorkerFactory,
+    checkpoint: &dyn Fn() -> bool,
+    attempt: Option<&solstone_core_system::work_retry::Attempt>,
+) -> Result<(), RunError> {
+    run_prepared(
+        options,
+        sessions,
+        detector,
+        ocr,
+        checkpoint,
+        attempt,
+        DecodeStart::Video,
+    )
 }
 
 /// Run the describe pipeline after media decoding has completed.
@@ -179,6 +224,7 @@ fn run_decoded(
     run_with_decoder(options, factory, || decoded)
 }
 
+#[allow(dead_code)]
 fn run_with_decoder(
     options: DescribeOptions<'_>,
     factory: &dyn DescribeSessionFactory,
@@ -186,7 +232,15 @@ fn run_with_decoder(
 ) -> Result<(), RunError> {
     let resolver = screen_ocr::InstalledHelperResolver;
     let mut ocr_factory = screen_ocr::ResolvedWorkerFactory::new(&resolver);
-    run_with_decoder_and_ocr(options, factory, decode, &mut ocr_factory)
+    run_prepared(
+        options,
+        factory,
+        &SpawnScreenDetector,
+        &mut ocr_factory,
+        &|| false,
+        None,
+        DecodeStart::Deferred(Box::new(decode)),
+    )
 }
 
 #[cfg(all(test, feature = "full-tests"))]
@@ -196,15 +250,68 @@ fn run_decoded_with_ocr_factory(
     decoded: crate::DescribeResult,
     ocr_factory: &mut dyn OcrWorkerFactory,
 ) -> Result<(), RunError> {
-    run_with_decoder_and_ocr(options, factory, || decoded, ocr_factory)
+    run_prepared(
+        options,
+        factory,
+        &SpawnScreenDetector,
+        ocr_factory,
+        &|| false,
+        None,
+        DecodeStart::Ready(decoded),
+    )
 }
 
-fn run_with_decoder_and_ocr(
+#[allow(dead_code)]
+enum DecodeStart<'a> {
+    Ready(crate::DescribeResult),
+    /// Invoked only after the output claim is held, so a test can observe that lock.
+    Deferred(Box<dyn FnOnce() -> crate::DescribeResult + 'a>),
+    Video,
+}
+
+struct LivePull {
+    pull: crate::decode::FramePull,
+    eof: bool,
+    window: usize,
+    held_pngs: usize,
+}
+
+impl LivePull {
+    fn pull_available(
+        &mut self,
+        checkpoint: &dyn Fn() -> bool,
+    ) -> Result<Vec<QualifiedFrame>, RunError> {
+        let mut frames = Vec::new();
+        while self.held_pngs < self.window && !self.eof {
+            match self.pull.next(checkpoint) {
+                PullNext::Frame(frame) => {
+                    self.held_pngs += 1;
+                    frames.push(frame);
+                }
+                PullNext::Done => self.eof = true,
+                PullNext::Cancelled => return Err(RunError::Cancelled),
+            }
+        }
+        Ok(frames)
+    }
+
+    fn release(&mut self, count: usize) {
+        self.held_pngs = self.held_pngs.saturating_sub(count);
+    }
+}
+
+fn run_prepared(
     options: DescribeOptions<'_>,
     factory: &dyn DescribeSessionFactory,
-    decode: impl FnOnce() -> crate::DescribeResult,
+    detector: &dyn ScreenDetector,
     ocr_factory: &mut dyn OcrWorkerFactory,
+    checkpoint: &dyn Fn() -> bool,
+    attempt: Option<&solstone_core_system::work_retry::Attempt>,
+    decode_start: DecodeStart<'_>,
 ) -> Result<(), RunError> {
+    if options.jobs == 0 {
+        return Err(RunError::Internal("--jobs must be positive".to_owned()));
+    }
     let output = options.video.with_extension("jsonl");
     let claims = OutputClaims::acquire([output.clone()], LockOptions::default())
         .map_err(|error| RunError::Internal(error.to_string()))?;
@@ -224,6 +331,7 @@ fn run_with_decoder_and_ocr(
                     &identity,
                     &recipe_id,
                     &claims,
+                    &|| false,
                 );
             }
             return Err(RunError::Internal(error.to_string()));
@@ -251,18 +359,47 @@ fn run_with_decoder_and_ocr(
                 &binding.segment_identity,
                 &recipe_id,
                 &claims,
+                &|| false,
             );
         }
     }
     let mut previous_attempts = 0;
     let mut incremental_source = None;
-    let admitted = !options.redo
-        && solstone_core_system::work_retry::raw::consume_from_environment(
+    let admitted = if options.redo {
+        false
+    } else if let Some(attempt) = attempt {
+        let unit = solstone_core_system::work_retry::raw::unit_for_output(
             options.journal,
             &output,
             vocab::HANDLER_DESCRIBE,
         )
         .map_err(RunError::Internal)?;
+        solstone_core_system::work_retry::raw::consume_context_checked(
+            options.journal,
+            &output,
+            vocab::HANDLER_DESCRIBE,
+            &solstone_core_system::work_retry::raw::RetryContext {
+                unit_id: unit.id().map_err(RunError::Internal)?,
+                attempt: attempt.clone(),
+            },
+            &|| {
+                if checkpoint() {
+                    Err("describe cancelled".to_owned())
+                } else {
+                    Ok(())
+                }
+            },
+        )
+        .map_err(RunError::Internal)?
+        .is_some()
+    } else {
+        solstone_core_system::work_retry::raw::consume_from_environment(
+            options.journal,
+            &output,
+            vocab::HANDLER_DESCRIBE,
+        )
+        .map_err(RunError::Internal)?
+    };
     if !options.redo && output.exists() {
         let record = read_processing_record_header(&output);
         if !admitted
@@ -273,7 +410,16 @@ fn run_with_decoder_and_ocr(
         previous_attempts = record.as_ref().map(record_attempts).unwrap_or(0);
         incremental_source = Some(output.clone());
     }
-    let decoded = decode();
+    let window = crate::DescribeWorkBound::for_jobs(options.jobs).max_png_slots;
+    let (mut decoded, video_source) = match decode_start {
+        DecodeStart::Ready(decoded) => (decoded, false),
+        DecodeStart::Deferred(decode) => (decode(), false),
+        DecodeStart::Video => {
+            let decoded = walk_video_metadata(options.video, options.config, checkpoint)?;
+            (decoded, true)
+        }
+    };
+    let redecode = video_source;
     let start = Instant::now();
     let parent = output
         .parent()
@@ -294,7 +440,7 @@ fn run_with_decoder_and_ocr(
             .filter(|observer| !observer.is_empty())
             .map(str::to_owned)
     });
-    let qualified_ids = decoded
+    let mut qualified_ids = decoded
         .qualified_frames
         .iter()
         .map(|frame| frame.frame_id)
@@ -309,7 +455,10 @@ fn run_with_decoder_and_ocr(
         &options.category_overrides,
     );
     if decoded.qualified_frames.is_empty() {
-        let _ = publish_ocr_best_effort::<(), RunError>(
+        if checkpoint() {
+            return Err(RunError::Cancelled);
+        }
+        publish_ocr_best_effort::<(), RunError>(
             Ok(()),
             OcrPublication {
                 journal: options.journal,
@@ -325,12 +474,16 @@ fn run_with_decoder_and_ocr(
                 redo: options.redo,
                 worker_factory: ocr_factory,
             },
-        );
+            checkpoint,
+        )??;
         let (state, reason) = if decoded.decode_failed {
             (vocab::STATE_FAILED, vocab::REASON_CORRUPT_INPUT)
         } else {
             (vocab::STATE_EMPTY, vocab::REASON_NO_DECODABLE_FRAMES)
         };
+        if checkpoint() {
+            return Err(RunError::Cancelled);
+        }
         promote(Promotion {
             claims: &claims,
             input: &input,
@@ -345,20 +498,59 @@ fn run_with_decoder_and_ocr(
             previous_attempts,
             carry_forward_observer: carry_forward_observer.as_deref(),
             existing: existing_artifact.as_ref(),
+            attempt,
         })?;
         send_described(&options, &output, start);
         return Ok(());
     }
+    let png_ids = if video_source {
+        plan.as_ref()
+            .map(|plan| plan.phase1_gap_ids.clone())
+            .unwrap_or_else(|| qualified_ids.clone())
+    } else {
+        BTreeSet::new()
+    };
+    let mut queued_pngs = BTreeSet::new();
+    let mut live = if video_source && !png_ids.is_empty() {
+        let mut pull = crate::decode::FramePull::open(options.video, options.config, true)
+            .map_err(|_| {
+                RunError::Internal(
+                    "describe could not reopen the video to materialize frame payloads".to_owned(),
+                )
+            })?;
+        pull.retain_pngs(png_ids.clone());
+        let mut live = LivePull {
+            pull,
+            eof: false,
+            window,
+            held_pngs: 0,
+        };
+        for frame in live.pull_available(checkpoint)? {
+            accept_materialized_frame(&mut decoded, &png_ids, &mut queued_pngs, &frame)?;
+        }
+        if live.eof {
+            ensure_png_ids_queued(&png_ids, &queued_pngs)?;
+        }
+        Some(live)
+    } else {
+        None
+    };
+    let mut incremental_ocr = live.as_ref().is_some_and(|live| !live.eof);
+    let streamed = incremental_ocr;
     let work_key = options
         .video
         .file_stem()
         .and_then(|v| v.to_str())
         .unwrap_or("describe");
-    let frame_pngs = decoded
-        .qualified_frames
-        .iter()
-        .map(|frame| (frame.frame_id, frame.png.clone()))
-        .collect::<HashMap<_, _>>();
+    let frame_pngs = if redecode {
+        HashMap::new()
+    } else {
+        decoded
+            .qualified_frames
+            .iter()
+            .map(|frame| (frame.frame_id, frame.png.clone()))
+            .collect::<HashMap<_, _>>()
+    };
     let mut incremental_rows = plan.as_ref().map(|_| BTreeMap::new());
     let mut final_rows = Vec::new();
     if let (Some(plan), Some(incremental_rows)) = (&plan, &mut incremental_rows) {
@@ -371,8 +563,10 @@ fn run_with_decoder_and_ocr(
         .qualified_frames
         .iter()
         .filter(|frame| {
-            plan.as_ref()
-                .is_none_or(|plan| plan.phase1_gap_ids.contains(&frame.frame_id))
+            let gap = plan
+                .as_ref()
+                .is_none_or(|plan| plan.phase1_gap_ids.contains(&frame.frame_id));
+            gap && (!video_source || !frame.png.is_empty())
         })
         .cloned()
         .map(|frame| Pending { frame, attempt: 0 })
@@ -381,6 +575,9 @@ fn run_with_decoder_and_ocr(
     let mut categorized = Vec::new();
     let mut model = None;
     let mut session = None;
+    let mut detection_disabled_early = None;
+    let mut streaming_ocr = screen_ocr::StreamingOcr::new();
+    let mut streaming_sidecar = None;
     let categorization = (|| -> Result<(), RunError> {
         session = Some(
             factory
@@ -389,8 +586,45 @@ fn run_with_decoder_and_ocr(
         );
         let session = session.as_deref().expect("spawned describe session");
         let instruction = request::system_instruction(&options.redact_rules);
-        let window = options.jobs.saturating_mul(2);
-        while !waiting.is_empty() || !outstanding.is_empty() {
+        loop {
+            if checkpoint() {
+                return Err(RunError::Cancelled);
+            }
+            if incremental_ocr && let Some(live) = live.as_mut() {
+                let released = release_held_frames(
+                    &mut categorized,
+                    &mut decoded,
+                    &mut detection_disabled_early,
+                    detector,
+                    options.journal,
+                    &options.category_overrides,
+                    &source_binding,
+                    &recipe_id,
+                    ocr_factory,
+                    &mut streaming_ocr,
+                    &mut streaming_sidecar,
+                    &png_ids,
+                    checkpoint,
+                )?;
+                live.release(released);
+                let more = live.pull_available(checkpoint)?;
+                for frame in more {
+                    accept_materialized_frame(&mut decoded, &png_ids, &mut queued_pngs, &frame)?;
+                    waiting.push_back(Pending { frame, attempt: 0 });
+                }
+                if live.eof {
+                    ensure_png_ids_queued(&png_ids, &queued_pngs)?;
+                    incremental_ocr = false;
+                }
+            }
+            if waiting.is_empty() && outstanding.is_empty() {
+                if live.as_ref().is_some_and(|pull| !pull.eof) {
+                    return Err(RunError::Internal(
+                        "describe frame window made no progress".to_owned(),
+                    ));
+                }
+                break;
+            }
             while outstanding.len() < window {
                 let Some(pending) = waiting.pop_front() else {
                     break;
@@ -419,6 +653,10 @@ fn run_with_decoder_and_ocr(
             let SessionCompletion::Response(response) = completion else {
                 return Err(blocked(options.journal, work_key, None, None, None));
             };
+            if matches!(response, GenerateResponse::Cancelled) {
+                let _ = session.close();
+                return Err(RunError::Cancelled);
+            }
             let id = match &response {
                 GenerateResponse::Generated(g) => g.id.clone(),
                 GenerateResponse::Refused(r) => r.id.clone(),
@@ -435,7 +673,7 @@ fn run_with_decoder_and_ocr(
             match response {
                 GenerateResponse::Cancelled => {
                     let _ = session.close();
-                    return Err(RunError::Internal("generate cancelled".to_owned()));
+                    return Err(RunError::Cancelled);
                 }
                 GenerateResponse::Generated(generated) => {
                     model.get_or_insert(generated.model.clone());
@@ -465,6 +703,7 @@ fn run_with_decoder_and_ocr(
                             pending.attempt,
                             None,
                         )],
+                        detection: None,
                     });
                 }
                 GenerateResponse::Refused(refusal) => {
@@ -498,6 +737,7 @@ fn run_with_decoder_and_ocr(
                                 pending.attempt,
                                 None,
                             )],
+                            detection: None,
                         });
                     }
                 }
@@ -505,26 +745,95 @@ fn run_with_decoder_and_ocr(
         }
         Ok(())
     })();
-    let categorization = publish_ocr_best_effort(
-        categorization,
-        OcrPublication {
-            journal: options.journal,
-            segment,
-            claims: &claims,
-            input: &input,
-            binding: source_binding.as_ref(),
-            decoded: &decoded,
-            plan: plan.as_ref(),
-            categorized: &categorized,
-            overrides: &options.category_overrides,
-            recipe_id: &recipe_id,
-            redo: options.redo,
-            worker_factory: ocr_factory,
-        },
-    );
-    let publish_ocr_diagnostics = |diagnostic_rows: &[Value]| {
-        if let Some(binding) = source_binding.as_ref()
-            && let Err(error) = screen_ocr::publish_extraction_diagnostic(
+    if matches!(categorization, Err(RunError::Cancelled)) {
+        return Err(RunError::Cancelled);
+    }
+    decoded.qualified_count = decoded.qualified_frames.len();
+    qualified_ids = decoded
+        .qualified_frames
+        .iter()
+        .map(|frame| frame.frame_id)
+        .collect();
+    if streamed {
+        let released = release_held_frames(
+            &mut categorized,
+            &mut decoded,
+            &mut detection_disabled_early,
+            detector,
+            options.journal,
+            &options.category_overrides,
+            &source_binding,
+            &recipe_id,
+            ocr_factory,
+            &mut streaming_ocr,
+            &mut streaming_sidecar,
+            &png_ids,
+            checkpoint,
+        )?;
+        if let Some(live) = live.as_mut() {
+            live.release(released);
+        }
+    }
+    if checkpoint() {
+        return Err(RunError::Cancelled);
+    }
+    let categorization = if streamed {
+        if let (Some(binding), Some(sidecar)) =
+            (source_binding.as_ref(), streaming_sidecar.as_mut())
+        {
+            let analyses = ocr_analyses(plan.as_ref(), &categorized);
+            sidecar.admission_policy_id =
+                screen_ocr::admission_policy_id(&analyses, &options.category_overrides);
+            sidecar.decode =
+                screen_ocr::decode_coverage(decoded.decode_failed, decoded.qualified_frames.len());
+            screen_ocr::set_frame_categories(sidecar, &analyses, &options.category_overrides);
+            streaming_ocr.finish(sidecar, ocr_factory);
+            let path = screen_ocr::sidecar_path(segment, &binding.source_id);
+            if let Err(error) = screen_ocr::publish_sidecar(
+                options.journal,
+                segment,
+                &path,
+                sidecar,
+                &input,
+                &claims,
+                checkpoint,
+            ) {
+                if screen_ocr::is_describe_cancel(&error) {
+                    return Err(RunError::Cancelled);
+                }
+                log::warn!(
+                    "screen OCR record publication failed: {:?}; screen processing continues",
+                    error.kind()
+                );
+            }
+        }
+        categorization
+    } else {
+        publish_ocr_best_effort(
+            categorization,
+            OcrPublication {
+                journal: options.journal,
+                segment,
+                claims: &claims,
+                input: &input,
+                binding: source_binding.as_ref(),
+                decoded: &decoded,
+                plan: plan.as_ref(),
+                categorized: &categorized,
+                overrides: &options.category_overrides,
+                recipe_id: &recipe_id,
+                redo: options.redo,
+                worker_factory: ocr_factory,
+            },
+            checkpoint,
+        )?
+    };
+    let publish_ocr_diagnostics = |diagnostic_rows: &[Value]| -> Result<(), RunError> {
+        if checkpoint() {
+            return Err(RunError::Cancelled);
+        }
+        if let Some(binding) = source_binding.as_ref() {
+            match screen_ocr::publish_extraction_diagnostic(
                 options.journal,
                 segment,
                 &screen_ocr::sidecar_path(segment, &binding.source_id),
@@ -535,13 +844,21 @@ fn run_with_decoder_and_ocr(
                 diagnostic_rows,
                 &input,
                 &claims,
-            )
-        {
-            log::warn!(
-                "screen OCR grounding diagnostic could not be saved: {:?}",
-                error.kind()
-            );
+                checkpoint,
+            ) {
+                Ok(()) => {}
+                Err(error) if screen_ocr::is_describe_cancel(&error) => {
+                    return Err(RunError::Cancelled);
+                }
+                Err(error) => {
+                    log::warn!(
+                        "screen OCR grounding diagnostic could not be saved: {:?}",
+                        error.kind()
+                    );
+                }
+            }
         }
+        Ok(())
     };
     categorization?;
     let session_ref = session
@@ -551,6 +868,9 @@ fn run_with_decoder_and_ocr(
     let failed_frames = categorized.iter().filter(|row| row.error.is_some()).count();
     if total_frames > 0 && failed_frames == total_frames && plan.is_none() {
         let _ = session_ref.close();
+        if checkpoint() {
+            return Err(RunError::Cancelled);
+        }
         promote(Promotion {
             claims: &claims,
             input: &input,
@@ -565,6 +885,7 @@ fn run_with_decoder_and_ocr(
             previous_attempts,
             carry_forward_observer: carry_forward_observer.as_deref(),
             existing: existing_artifact.as_ref(),
+            attempt,
         })?;
         return Err(RunError::Internal(
             "all describe frame requests failed".to_owned(),
@@ -608,6 +929,10 @@ fn run_with_decoder_and_ocr(
                 let _ = session_ref.close();
                 return Err(blocked(options.journal, work_key, None, None, None));
             }
+            Err(SelectionError::Cancelled) => {
+                let _ = session_ref.close();
+                return Err(RunError::Cancelled);
+            }
         }
     };
     let selected = selected.into_iter().collect::<HashSet<_>>();
@@ -627,7 +952,21 @@ fn run_with_decoder_and_ocr(
             final_rows.push(result);
             continue;
         };
-        match maybe_detect(&mut detection_disabled, analysis, &row.png, options.journal) {
+        if checkpoint() {
+            return Err(RunError::Cancelled);
+        }
+        let detection = if let Some(stored) = row.detection.clone() {
+            stored
+        } else {
+            maybe_detect(
+                &mut detection_disabled,
+                analysis,
+                &row.png,
+                options.journal,
+                detector,
+            )
+        };
+        match detection {
             Ok(Some(detections)) => result["detections"] = detections,
             Ok(None) => {}
             Err(detail) => {
@@ -652,13 +991,23 @@ fn run_with_decoder_and_ocr(
         }
         result["enhanced"] = json!(true);
         result["content"] = json!({});
+        let png = owned_frame_png(
+            redecode,
+            options.video,
+            options.config,
+            row.frame_id,
+            row.timestamp,
+            &row.png,
+            checkpoint,
+        )?;
         for category in categories {
             match extract_category(
                 session_ref,
                 row.frame_id,
                 category,
-                &row.png,
+                &png,
                 &options.redact_rules,
+                checkpoint,
             ) {
                 Ok((value, record)) => {
                     result["requests"]
@@ -683,7 +1032,7 @@ fn run_with_decoder_and_ocr(
                     let mut failed = result.clone();
                     failed["error"] = json!("extraction_failed");
                     diagnostic_rows.push(failed);
-                    publish_ocr_diagnostics(&diagnostic_rows);
+                    publish_ocr_diagnostics(&diagnostic_rows)?;
                     let _ = session_ref.close();
                     return Err(blocked(
                         options.journal,
@@ -693,12 +1042,16 @@ fn run_with_decoder_and_ocr(
                         Some(&category.context),
                     ));
                 }
+                Err(ExtractionError::Cancelled) => {
+                    let _ = session_ref.close();
+                    return Err(RunError::Cancelled);
+                }
                 Err(ExtractionError::Session) => {
                     let mut diagnostic_rows = final_rows.clone();
                     let mut failed = result.clone();
                     failed["error"] = json!("extraction_failed");
                     diagnostic_rows.push(failed);
-                    publish_ocr_diagnostics(&diagnostic_rows);
+                    publish_ocr_diagnostics(&diagnostic_rows)?;
                     let _ = session_ref.close();
                     return Err(blocked(options.journal, work_key, None, None, None));
                 }
@@ -715,9 +1068,28 @@ fn run_with_decoder_and_ocr(
                 .as_object_mut()
                 .expect("merge rows are objects")
                 .remove("error");
-            let png = frame_pngs
-                .get(frame_id)
-                .ok_or_else(|| RunError::Internal("missing merge frame".to_owned()))?;
+            let timestamp = result
+                .get("timestamp")
+                .and_then(Value::as_f64)
+                .ok_or_else(|| {
+                    RunError::Internal(format!("describe frame {frame_id} omitted timestamp"))
+                })?;
+            let png = if redecode {
+                owned_frame_png(
+                    true,
+                    options.video,
+                    options.config,
+                    *frame_id,
+                    timestamp,
+                    &[],
+                    checkpoint,
+                )?
+            } else {
+                frame_pngs
+                    .get(frame_id)
+                    .cloned()
+                    .ok_or_else(|| RunError::Internal("missing merge frame".to_owned()))?
+            };
             let analysis = result.get("analysis").expect("merge rows have analysis");
             let categories =
                 extraction::categories_for_analysis(analysis, &options.category_overrides);
@@ -726,8 +1098,14 @@ fn run_with_decoder_and_ocr(
                     .iter()
                     .find(|category| category.name == *name)
                     .expect("merge plan category is current");
-                match extract_category(session_ref, *frame_id, category, png, &options.redact_rules)
-                {
+                match extract_category(
+                    session_ref,
+                    *frame_id,
+                    category,
+                    &png,
+                    &options.redact_rules,
+                    checkpoint,
+                ) {
                     Ok((value, record)) => {
                         result["requests"]
                             .as_array_mut()
@@ -751,7 +1129,7 @@ fn run_with_decoder_and_ocr(
                         let mut failed = result.clone();
                         failed["error"] = json!("extraction_failed");
                         diagnostic_rows.push(failed);
-                        publish_ocr_diagnostics(&diagnostic_rows);
+                        publish_ocr_diagnostics(&diagnostic_rows)?;
                         let _ = session_ref.close();
                         return Err(blocked(
                             options.journal,
@@ -761,12 +1139,16 @@ fn run_with_decoder_and_ocr(
                             Some(&category.context),
                         ));
                     }
+                    Err(ExtractionError::Cancelled) => {
+                        let _ = session_ref.close();
+                        return Err(RunError::Cancelled);
+                    }
                     Err(ExtractionError::Session) => {
                         let mut diagnostic_rows = final_rows.clone();
                         let mut failed = result.clone();
                         failed["error"] = json!("extraction_failed");
                         diagnostic_rows.push(failed);
-                        publish_ocr_diagnostics(&diagnostic_rows);
+                        publish_ocr_diagnostics(&diagnostic_rows)?;
                         let _ = session_ref.close();
                         return Err(blocked(options.journal, work_key, None, None, None));
                     }
@@ -776,7 +1158,7 @@ fn run_with_decoder_and_ocr(
             final_rows.push(result);
         }
     }
-    publish_ocr_diagnostics(&final_rows);
+    publish_ocr_diagnostics(&final_rows)?;
     if let Some(incremental_rows) = incremental_rows.take() {
         for (_, row) in incremental_rows {
             match row {
@@ -794,6 +1176,9 @@ fn run_with_decoder_and_ocr(
             != qualified_ids;
     let _ = session_ref.close();
     let (state, reason) = verdict(decoded.decode_failed, failures);
+    if checkpoint() {
+        return Err(RunError::Cancelled);
+    }
     promote(Promotion {
         claims: &claims,
         input: &input,
@@ -808,6 +1193,7 @@ fn run_with_decoder_and_ocr(
         previous_attempts,
         carry_forward_observer: carry_forward_observer.as_deref(),
         existing: existing_artifact.as_ref(),
+        attempt,
     })?;
     send_described(&options, &output, start);
     Ok(())
@@ -823,6 +1209,212 @@ enum ExtractionError {
         record: Option<Value>,
     },
     Session,
+    Cancelled,
+}
+
+/// One forward metadata pass. PNGs stay empty so the merge plan sees every qualified id.
+#[allow(clippy::result_large_err)]
+fn walk_video_metadata(
+    video: &Path,
+    config: WinnowConfig,
+    checkpoint: &dyn Fn() -> bool,
+) -> Result<crate::DescribeResult, RunError> {
+    let mut pull = match crate::decode::FramePull::open(video, config, false) {
+        Ok(pull) => pull,
+        Err(result) => return Ok(result),
+    };
+    loop {
+        match pull.next(checkpoint) {
+            PullNext::Frame(_) => {}
+            PullNext::Done => break,
+            PullNext::Cancelled => return Err(RunError::Cancelled),
+        }
+    }
+    Ok(pull.metadata())
+}
+
+fn accept_materialized_frame(
+    decoded: &mut crate::DescribeResult,
+    png_ids: &BTreeSet<u64>,
+    queued: &mut BTreeSet<u64>,
+    frame: &QualifiedFrame,
+) -> Result<(), RunError> {
+    if !png_ids.contains(&frame.frame_id) || !queued.insert(frame.frame_id) {
+        return Err(frame_did_not_reappear(frame.frame_id));
+    }
+    let Some(existing) = decoded
+        .qualified_frames
+        .iter_mut()
+        .find(|row| row.frame_id == frame.frame_id)
+    else {
+        return Err(frame_did_not_reappear(frame.frame_id));
+    };
+    if existing.timestamp.to_bits() != frame.timestamp.to_bits() {
+        return Err(frame_did_not_reappear(frame.frame_id));
+    }
+    existing.png.clone_from(&frame.png);
+    Ok(())
+}
+
+fn ensure_png_ids_queued(png_ids: &BTreeSet<u64>, queued: &BTreeSet<u64>) -> Result<(), RunError> {
+    if let Some(frame_id) = png_ids.iter().find(|frame_id| !queued.contains(frame_id)) {
+        return Err(frame_did_not_reappear(*frame_id));
+    }
+    Ok(())
+}
+
+fn frame_did_not_reappear(frame_id: u64) -> RunError {
+    RunError::Internal(format!(
+        "describe frame {frame_id} did not reappear with the same timestamp"
+    ))
+}
+
+fn owned_frame_png(
+    redecode: bool,
+    video: &Path,
+    config: WinnowConfig,
+    frame_id: u64,
+    timestamp: f64,
+    held: &[u8],
+    checkpoint: &dyn Fn() -> bool,
+) -> Result<Vec<u8>, RunError> {
+    if !redecode {
+        return Ok(held.to_vec());
+    }
+    if checkpoint() {
+        return Err(RunError::Cancelled);
+    }
+    match crate::decode::redecode_frame(video, config, frame_id, timestamp, checkpoint) {
+        Ok(png) => Ok(png),
+        Err(RedecodeFail::Cancelled) => Err(RunError::Cancelled),
+        Err(RedecodeFail::Missing) => Err(RunError::Internal(format!(
+            "describe frame {frame_id} did not reappear with the same timestamp"
+        ))),
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn release_held_frames(
+    categorized: &mut [CategorizedRow],
+    decoded: &mut crate::DescribeResult,
+    detection_disabled: &mut Option<String>,
+    detector: &dyn ScreenDetector,
+    journal: &Path,
+    overrides: &BTreeMap<String, CategoryOverride>,
+    binding: &Option<screen_ocr::SourceBinding>,
+    recipe_id: &str,
+    ocr_factory: &mut dyn OcrWorkerFactory,
+    streaming_ocr: &mut screen_ocr::StreamingOcr,
+    streaming_sidecar: &mut Option<screen_ocr::PrivateSidecar>,
+    png_ids: &BTreeSet<u64>,
+    checkpoint: &dyn Fn() -> bool,
+) -> Result<usize, RunError> {
+    if checkpoint() {
+        return Err(RunError::Cancelled);
+    }
+    if let Some(binding) = binding {
+        let sidecar = streaming_sidecar.get_or_insert_with(|| {
+            let mut sidecar = screen_ocr::expected_sidecar(
+                binding.source_id.clone(),
+                binding.segment_identity.clone(),
+                binding.source_sha256.clone(),
+                recipe_id.to_owned(),
+                String::new(),
+                screen_ocr::DecodeCoverage::Complete,
+                &[],
+            );
+            sidecar.source_name = binding.source_name.clone();
+            sidecar
+        });
+        for frame in &decoded.qualified_frames {
+            if sidecar
+                .frames
+                .iter()
+                .any(|row| row.frame_id == frame.frame_id)
+            {
+                continue;
+            }
+            let staged = screen_ocr::expected_sidecar(
+                String::new(),
+                String::new(),
+                String::new(),
+                String::new(),
+                String::new(),
+                screen_ocr::DecodeCoverage::Complete,
+                std::slice::from_ref(frame),
+            );
+            if let Some(row) = staged.frames.into_iter().next() {
+                sidecar.frames.push(row);
+            }
+        }
+    }
+    for row in categorized.iter_mut() {
+        if row.detection.is_some() || row.analysis.is_none() {
+            continue;
+        }
+        if checkpoint() {
+            return Err(RunError::Cancelled);
+        }
+        let analysis = row.analysis.as_ref().expect("analysis row");
+        let detection = maybe_detect(detection_disabled, analysis, &row.png, journal, detector);
+        row.detection = Some(detection);
+    }
+    let mut released = 0_usize;
+    let mut index = streaming_ocr.fed();
+    while index < decoded.qualified_frames.len() {
+        let frame_id = decoded.qualified_frames[index].frame_id;
+        if !png_ids.is_empty() && !png_ids.contains(&frame_id) {
+            if streaming_ocr.fed() != index {
+                break;
+            }
+            streaming_ocr.advance();
+            index += 1;
+            continue;
+        }
+        let Some(row_index) = categorized.iter().position(|row| row.frame_id == frame_id) else {
+            break;
+        };
+        let detect_ready =
+            categorized[row_index].analysis.is_none() || categorized[row_index].detection.is_some();
+        if !detect_ready {
+            break;
+        }
+        if checkpoint() {
+            return Err(RunError::Cancelled);
+        }
+        let ignored = frame_ignored(&categorized[row_index], overrides);
+        if binding.is_some() {
+            let png = decoded.qualified_frames[index].png.clone();
+            let sidecar = streaming_sidecar
+                .as_mut()
+                .expect("a bound source has a sidecar");
+            streaming_ocr.feed(sidecar, index, &png, ignored, ocr_factory);
+        } else if streaming_ocr.fed() == index {
+            streaming_ocr.advance();
+        }
+        let mut cleared = false;
+        if !categorized[row_index].png.is_empty() {
+            categorized[row_index].png.clear();
+            cleared = true;
+        }
+        if !decoded.qualified_frames[index].png.is_empty() {
+            decoded.qualified_frames[index].png.clear();
+            cleared = true;
+        }
+        if cleared {
+            released += 1;
+        }
+        index += 1;
+    }
+    Ok(released)
+}
+
+fn frame_ignored(row: &CategorizedRow, overrides: &BTreeMap<String, CategoryOverride>) -> bool {
+    let Some(analysis) = row.analysis.as_ref() else {
+        return false;
+    };
+    let analyses = BTreeMap::from([(row.frame_id, analysis.clone())]);
+    screen_ocr::ignored_frame_ids(&analyses, overrides).contains(&row.frame_id)
 }
 
 fn extract_category(
@@ -831,7 +1423,11 @@ fn extract_category(
     category: &crate::categories::CategoryMeta,
     png: &[u8],
     redact_rules: &[String],
+    checkpoint: &dyn Fn() -> bool,
 ) -> Result<(Value, Value), ExtractionError> {
+    if checkpoint() {
+        return Err(ExtractionError::Cancelled);
+    }
     let mut attempt = 0;
     loop {
         let request = extraction::request(frame_id, category, png, attempt, redact_rules)
@@ -850,6 +1446,9 @@ fn extract_category(
         let SessionCompletion::Response(response) = completion else {
             return Err(ExtractionError::Session);
         };
+        if matches!(response, GenerateResponse::Cancelled) {
+            return Err(ExtractionError::Cancelled);
+        }
         let response_id = match &response {
             GenerateResponse::Generated(generated) => generated.id.as_deref(),
             GenerateResponse::Refused(refusal) => refusal.id.as_deref(),
@@ -861,7 +1460,7 @@ fn extract_category(
         let duration = submitted_at.elapsed().as_secs_f64();
         let (failure, model) = match response {
             GenerateResponse::Cancelled => {
-                return Err(ExtractionError::Session);
+                return Err(ExtractionError::Cancelled);
             }
             GenerateResponse::Generated(generated) => {
                 let model = generated.model;
@@ -1033,6 +1632,7 @@ fn maybe_detect(
     analysis: &Value,
     png: &[u8],
     journal: &Path,
+    detector: &dyn ScreenDetector,
 ) -> Result<Option<Value>, String> {
     let Some(gate) = detect::screen_gate(analysis) else {
         return Ok(None);
@@ -1040,7 +1640,8 @@ fn maybe_detect(
     if let Some(detail) = disabled.as_ref() {
         return Err(detail.clone());
     }
-    let result = detect::detect(png, journal)
+    let result = detector
+        .detect(png, journal)
         .and_then(|result| detect::detections_block(&result, "screen", &gate))
         .map_err(|_| rfdetr_unavailable_detail().to_owned());
     match result {
@@ -1077,7 +1678,8 @@ fn blocked(
 fn publish_ocr_best_effort<T, E>(
     outcome: Result<T, E>,
     publication: OcrPublication<'_>,
-) -> Result<T, E> {
+    checkpoint: &dyn Fn() -> bool,
+) -> Result<Result<T, E>, RunError> {
     let OcrPublication {
         journal,
         segment,
@@ -1093,7 +1695,7 @@ fn publish_ocr_best_effort<T, E>(
         worker_factory,
     } = publication;
     let Some(binding) = binding else {
-        return outcome;
+        return Ok(outcome);
     };
     let analyses = ocr_analyses(plan, categorized);
     let ignored = screen_ocr::ignored_frame_ids(&analyses, overrides);
@@ -1117,7 +1719,7 @@ fn publish_ocr_best_effort<T, E>(
     let mut sidecar = if cache_hit {
         cached.expect("cache match has a sidecar")
     } else {
-        let _ = screen_ocr::invalidate_source_state(
+        if let Err(error) = screen_ocr::invalidate_source_state(
             journal,
             segment,
             &path,
@@ -1125,29 +1727,60 @@ fn publish_ocr_best_effort<T, E>(
             &binding.segment_identity,
             recipe_id,
             claims,
-        );
+            checkpoint,
+        ) && screen_ocr::is_describe_cancel(&error)
+        {
+            return Err(RunError::Cancelled);
+        }
         expected
     };
-    complete_private_ocr(
+    let cancel = std::cell::Cell::new(false);
+    let stop = &|| {
+        if checkpoint() {
+            cancel.set(true);
+            true
+        } else {
+            false
+        }
+    };
+    let outcome = complete_private_ocr(
         outcome,
         &mut sidecar,
         &decoded.qualified_frames,
         &ignored,
         worker_factory,
         !cache_hit,
+        stop,
         |sidecar| {
-            screen_ocr::publish_sidecar(journal, segment, &path, sidecar, input, claims).map_err(
-                |error| {
+            if cancel.get() || checkpoint() {
+                cancel.set(true);
+                return Err(());
+            }
+            match screen_ocr::publish_sidecar(
+                journal, segment, &path, sidecar, input, claims, checkpoint,
+            ) {
+                Ok(()) => Ok(()),
+                Err(error) if screen_ocr::is_describe_cancel(&error) => {
+                    cancel.set(true);
+                    Err(())
+                }
+                Err(error) => {
                     log::warn!(
                         "screen OCR record publication failed: {:?}; screen processing continues",
                         error.kind()
                     );
-                },
-            )
+                    Ok(())
+                }
+            }
         },
-    )
+    );
+    if cancel.get() {
+        return Err(RunError::Cancelled);
+    }
+    Ok(outcome)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn complete_private_ocr<T, E>(
     outcome: Result<T, E>,
     sidecar: &mut screen_ocr::PrivateSidecar,
@@ -1155,10 +1788,13 @@ fn complete_private_ocr<T, E>(
     ignored_ids: &BTreeSet<u64>,
     worker_factory: &mut dyn OcrWorkerFactory,
     run_worker: bool,
+    stop: &dyn Fn() -> bool,
     publish: impl FnOnce(&screen_ocr::PrivateSidecar) -> Result<(), ()>,
 ) -> Result<T, E> {
-    if run_worker {
-        screen_ocr::run_worker_with_factory(sidecar, frames, ignored_ids, worker_factory);
+    if run_worker
+        && screen_ocr::run_worker_with_factory(sidecar, frames, ignored_ids, worker_factory, stop)
+    {
+        return outcome;
     }
     if sidecar.frames.iter().any(|frame| {
         matches!(frame.state, screen_ocr::CoverageState::Error)
@@ -1369,6 +2005,7 @@ mod ocr_boundary_tests {
                 &ignored,
                 &mut factory,
                 true,
+                &|| false,
                 |_| Ok(()),
             );
             assert_eq!(actual, Ok(baseline.clone()));
@@ -1417,6 +2054,7 @@ mod ocr_boundary_tests {
             &ignored,
             &mut worker_factory,
             true,
+            &|| false,
             |_| Ok(()),
         );
 
@@ -1462,6 +2100,7 @@ mod ocr_boundary_tests {
                 &ignored,
                 &mut factory,
                 true,
+                &|| false,
                 |_| Ok(()),
             );
             assert_eq!(actual, Err(failure));
@@ -1503,6 +2142,7 @@ mod ocr_boundary_tests {
             &ignored,
             &mut factory,
             true,
+            &|| false,
             |_| Ok(()),
         )
         .expect("OCR is best effort");
@@ -1542,6 +2182,7 @@ mod ocr_boundary_tests {
             analysis: Some(json!({"primary":"unknown-category","secondary":"none"})),
             error: None,
             requests: Vec::new(),
+            detection: None,
         }];
         let analyses = super::ocr_analyses(Some(&plan), &current);
         let overrides = BTreeMap::from([
@@ -1593,6 +2234,7 @@ mod ocr_boundary_tests {
                 &ignored,
                 &mut factory,
                 false,
+                &|| false,
                 |_| Ok(()),
             ),
             Ok(baseline.clone())
@@ -1609,6 +2251,7 @@ mod ocr_boundary_tests {
                 &ignored,
                 &mut failed_write_factory,
                 true,
+                &|| false,
                 |_| Err(()),
             ),
             Ok(baseline)
@@ -1660,6 +2303,31 @@ fn send_described(options: &DescribeOptions<'_>, output: &Path, start: Instant) 
         segment.as_deref(),
         observer.as_deref(),
     );
+}
+
+fn stamp_processing(
+    record: &mut Value,
+    attempt: Option<&solstone_core_system::work_retry::Attempt>,
+) -> Result<(), RunError> {
+    match attempt {
+        Some(attempt) => solstone_core_system::work_retry::raw::stamp_attempt_from(record, attempt),
+        None => solstone_core_system::work_retry::raw::stamp_attempt(record),
+    }
+    .map_err(RunError::Internal)
+}
+
+fn stamp_failed(
+    record: &mut Value,
+    input: &Path,
+    attempt: Option<&solstone_core_system::work_retry::Attempt>,
+) -> Result<(), RunError> {
+    match attempt {
+        Some(attempt) => {
+            solstone_core_system::work_retry::raw::stamp_failed_input_from(record, input, attempt)
+        }
+        None => solstone_core_system::work_retry::raw::stamp_failed_input(record, input),
+    }
+    .map_err(RunError::Internal)
 }
 
 fn promote(promotion: Promotion<'_>) -> Result<(), RunError> {
@@ -1717,12 +2385,10 @@ fn promote(promotion: Promotion<'_>) -> Result<(), RunError> {
             header.insert("_solstone_thinking".to_owned(), json!({"model":model}));
         }
         let mut record = json!({"schema":vocab::SCHEMA,"state":promotion.state,"reason_code":promotion.reason,"handler":vocab::HANDLER_DESCRIBE,"attempted_at":chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true),"input_size":promotion.input_size});
-        solstone_core_system::work_retry::raw::stamp_attempt(&mut record)
-            .map_err(RunError::Internal)?;
+        stamp_processing(&mut record, promotion.attempt)?;
         if promotion.state == vocab::STATE_FAILED {
             record["attempts"] = json!(promotion.previous_attempts + 1);
-            solstone_core_system::work_retry::raw::stamp_failed_input(&mut record, promotion.video)
-                .map_err(RunError::Internal)?;
+            stamp_failed(&mut record, promotion.video, promotion.attempt)?;
         }
         header.insert("_solstone_processing".to_owned(), record);
         let mut final_file =
@@ -1794,8 +2460,7 @@ fn keep_existing_reading(
     record["attempted_at"] =
         json!(chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true));
     record["attempts"] = json!(promotion.previous_attempts + 1);
-    solstone_core_system::work_retry::raw::stamp_failed_input(&mut record, promotion.video)
-        .map_err(RunError::Internal)?;
+    stamp_failed(&mut record, promotion.video, promotion.attempt)?;
     header["_solstone_processing"] = record;
     let mut final_file =
         File::create(final_path).map_err(|error| RunError::Internal(error.to_string()))?;

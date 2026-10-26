@@ -1,0 +1,140 @@
+//! Text region types for OCR results.
+
+use crate::processors::BoundingBox;
+use serde::{Deserialize, Serialize};
+use std::sync::Arc;
+
+/// A single detected text region: bounding box, recognized text, confidence,
+/// orientation, and optional word-level boxes — grouped to avoid parallel vectors.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TextRegion {
+    /// The bounding box of the detected text region.
+    pub bounding_box: BoundingBox,
+    /// Detection polygon (dt_polys in overall OCR).
+    /// When available, this preserves the original detection polygon before any
+    /// layout-guided refinement. Defaults to the same as `bounding_box`.
+    #[serde(default)]
+    pub dt_poly: Option<BoundingBox>,
+    /// Recognition polygon (rec_polys in overall OCR).
+    /// After layout-guided refinement, this may differ from `dt_poly`.
+    #[serde(default)]
+    pub rec_poly: Option<BoundingBox>,
+    /// The recognized text, if recognition was successful.
+    /// None indicates that recognition failed or was filtered out due to low confidence.
+    pub text: Option<Arc<str>>,
+    /// The confidence score for the recognized text.
+    /// None indicates that recognition failed or was filtered out due to low confidence.
+    pub confidence: Option<f32>,
+    /// The text line orientation angle, if orientation classification was performed.
+    /// None indicates that orientation classification was not performed or failed.
+    pub orientation_angle: Option<f32>,
+    /// Word-level bounding boxes within this text region (optional).
+    /// Only populated when word-level detection is enabled.
+    /// Each box corresponds to a word or character in the recognized text.
+    pub word_boxes: Option<Vec<BoundingBox>>,
+    /// Label indicating the type of this text region.
+    /// Used to distinguish between normal text and special content like formulas.
+    /// Common values: "formula", "text", "seal", etc.
+    /// PaddleX: corresponds to `rec_labels` in OCR results.
+    #[serde(default)]
+    pub label: Option<Arc<str>>,
+}
+
+impl TextRegion {
+    /// Creates a new TextRegion with the given bounding box.
+    ///
+    /// The text, confidence, orientation_angle, word_boxes, and label are initially set to None.
+    pub fn new(bounding_box: BoundingBox) -> Self {
+        Self {
+            bounding_box,
+            dt_poly: None,
+            rec_poly: None,
+            text: None,
+            confidence: None,
+            orientation_angle: None,
+            word_boxes: None,
+            label: None,
+        }
+    }
+
+    /// Creates a new TextRegion with detection and recognition results.
+    pub fn with_recognition(
+        bounding_box: BoundingBox,
+        text: Option<Arc<str>>,
+        confidence: Option<f32>,
+    ) -> Self {
+        Self {
+            bounding_box,
+            dt_poly: None,
+            rec_poly: None,
+            text,
+            confidence,
+            orientation_angle: None,
+            word_boxes: None,
+            label: None,
+        }
+    }
+
+    /// Creates a new TextRegion with all fields specified.
+    pub fn with_all(
+        bounding_box: BoundingBox,
+        text: Option<Arc<str>>,
+        confidence: Option<f32>,
+        orientation_angle: Option<f32>,
+    ) -> Self {
+        Self {
+            bounding_box,
+            dt_poly: None,
+            rec_poly: None,
+            text,
+            confidence,
+            orientation_angle,
+            word_boxes: None,
+            label: None,
+        }
+    }
+
+    /// Returns true if this text region has recognized text.
+    pub fn has_text(&self) -> bool {
+        self.text.is_some()
+    }
+
+    /// Returns true if this text region has a confidence score.
+    pub fn has_confidence(&self) -> bool {
+        self.confidence.is_some()
+    }
+
+    /// Returns true if this text region has an orientation angle.
+    pub fn has_orientation(&self) -> bool {
+        self.orientation_angle.is_some()
+    }
+
+    /// Returns true if this text region has word-level boxes.
+    pub fn has_word_boxes(&self) -> bool {
+        self.word_boxes.is_some()
+    }
+
+    /// Returns the text and confidence as a tuple if both are available.
+    pub fn text_with_confidence(&self) -> Option<(&str, f32)> {
+        match (&self.text, self.confidence) {
+            (Some(text), Some(confidence)) => Some((text, confidence)),
+            _ => None,
+        }
+    }
+
+    /// Returns true if this text region has a label.
+    pub fn has_label(&self) -> bool {
+        self.label.is_some()
+    }
+
+    /// Returns true if this text region is labeled as a formula.
+    pub fn is_formula(&self) -> bool {
+        self.label.as_deref() == Some("formula")
+    }
+
+    /// Sets the label for this text region.
+    pub fn with_label(mut self, label: Option<&str>) -> Self {
+        self.label = label.map(|s| s.into());
+        self
+    }
+}

@@ -41,6 +41,10 @@ mod custody;
 mod daily_queue_observation;
 #[cfg(feature = "processing")]
 pub mod foreground;
+#[cfg(feature = "processing")]
+mod rfdetr;
+#[cfg(feature = "processing")]
+mod screen_ocr;
 
 pub struct OwnerResponse {
     pub status: u16,
