@@ -12,7 +12,7 @@ pub mod reduce;
 pub mod sidecar;
 pub mod wav;
 
-pub use decode::{decode_f32_mono, decode_f32_mono_bounded};
+pub use decode::{UnitDecoder, decode_f32_mono, decode_f32_mono_bounded};
 pub use nonspeech::{
     DEFAULT_LOUD_RMS_THRESHOLD, DEFAULT_LOUD_WINDOW_SECONDS, MIN_NONSPEECH_SEGMENT_SECONDS,
     compute_loud_speech_windows, compute_nonspeech_rms, get_nonspeech_segments,

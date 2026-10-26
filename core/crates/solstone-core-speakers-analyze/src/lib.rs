@@ -467,6 +467,11 @@ fn analyze_request(request: &Request) -> Result<Value, AnalyzeError> {
                 interval_indices.push(interval_index);
                 interval_embedding_values.extend_from_slice(embedding.values());
             }
+            let scratch = Path::new(&request.full_audio_f32le_path);
+            let scratch = scratch
+                .parent()
+                .filter(|parent| !parent.as_os_str().is_empty())
+                .unwrap_or(scratch);
             diarization_with_interval_embeddings(
                 &intervals,
                 &valid_intervals,
@@ -474,6 +479,7 @@ fn analyze_request(request: &Request) -> Result<Value, AnalyzeError> {
                 &interval_embedding_values,
                 &request.diarization_spans,
                 request.interval_embedding_payload_f32le_path.as_deref(),
+                scratch,
             )?
         }
     };
@@ -1074,6 +1080,7 @@ fn diarization_with_interval_embeddings(
     interval_embedding_values: &[f32],
     diarization_spans: &[StatementSpan],
     interval_payload_path: Option<&str>,
+    scratch: &Path,
 ) -> Result<(Value, Option<PayloadWrite>), AnalyzeError> {
     let rows = valid_intervals.len();
     let cluster = cluster_diarization_embeddings(
@@ -1081,6 +1088,7 @@ fn diarization_with_interval_embeddings(
         rows,
         WESPEAKER_EMBEDDING_SIZE,
         None,
+        scratch,
     )
     .map_err(map_diarization_error)?;
     let timings: Vec<SentenceTiming> = diarization_spans
@@ -1353,7 +1361,8 @@ fn map_open_onnx_error(field: &'static str, error: SpeakerOnnxError) -> AnalyzeE
             detail: error.to_string(),
         },
         SpeakerOnnxError::InvalidFeatureMatrix { .. }
-        | SpeakerOnnxError::InvalidAudioWindow { .. } => AnalyzeError::Internal {
+        | SpeakerOnnxError::InvalidAudioWindow { .. }
+        | SpeakerOnnxError::Cancelled => AnalyzeError::Internal {
             detail: error.to_string(),
         },
     }
@@ -1380,7 +1389,8 @@ fn map_runtime_onnx_error(operation: &'static str, error: SpeakerOnnxError) -> A
             detail: format!("{operation} failed: {error}"),
         },
         SpeakerOnnxError::InvalidFeatureMatrix { .. }
-        | SpeakerOnnxError::InvalidAudioWindow { .. } => AnalyzeError::Internal {
+        | SpeakerOnnxError::InvalidAudioWindow { .. }
+        | SpeakerOnnxError::Cancelled => AnalyzeError::Internal {
             detail: error.to_string(),
         },
     }
@@ -1798,6 +1808,31 @@ mod tests {
 
         #[cfg(not(feature = "full-tests"))]
         #[test]
+        fn all_statement_spans_skipped_writes_zero_row_payload() {
+            let request = parse_request(&request_string(base_request())).expect("request");
+            let value = statement_embeddings_value(
+                &request,
+                StatementAudioBuffer::Full,
+                Vec::new(),
+                Vec::new(),
+                0,
+                0,
+                request.statement_spans.len(),
+            );
+
+            assert_eq!(value["shape"], json!([0, WESPEAKER_EMBEDDING_SIZE]));
+            assert_eq!(value["byte_count"], 0);
+            assert_eq!(value["admitted_count"], 0);
+            assert_eq!(value["skipped_count"], 2);
+        }
+    }
+
+    #[cfg(all(test, feature = "full-tests"))]
+    mod full_filesystem {
+        use super::*;
+
+        #[cfg(feature = "full-tests")]
+        #[test]
         fn synthetic_frame_matrix_emits_diarization_fields() {
             let intervals = [
                 SpeakerInterval {
@@ -1835,13 +1870,17 @@ mod tests {
                 }
             }
 
+            let scratch_dir = TestDir::new();
+            let scratch = scratch_dir.path("cluster");
+            fs::create_dir(&scratch).expect("cluster scratch");
             let (value, payload) = diarization_with_interval_embeddings(
                 &intervals,
                 &intervals,
                 &[0, 1, 2],
                 &embeddings,
                 &spans,
-                Some("/tmp/intervals.f32"),
+                Some(&scratch_dir.path("intervals.f32")),
+                Path::new(&scratch),
             )
             .expect("diarization");
 
@@ -1855,31 +1894,6 @@ mod tests {
             assert_eq!(value["statement_labels"].as_array().unwrap().len(), 2);
             assert!(payload.is_some());
         }
-
-        #[cfg(not(feature = "full-tests"))]
-        #[test]
-        fn all_statement_spans_skipped_writes_zero_row_payload() {
-            let request = parse_request(&request_string(base_request())).expect("request");
-            let value = statement_embeddings_value(
-                &request,
-                StatementAudioBuffer::Full,
-                Vec::new(),
-                Vec::new(),
-                0,
-                0,
-                request.statement_spans.len(),
-            );
-
-            assert_eq!(value["shape"], json!([0, WESPEAKER_EMBEDDING_SIZE]));
-            assert_eq!(value["byte_count"], 0);
-            assert_eq!(value["admitted_count"], 0);
-            assert_eq!(value["skipped_count"], 2);
-        }
-    }
-
-    #[cfg(all(test, feature = "full-tests"))]
-    mod full_filesystem {
-        use super::*;
 
         #[cfg(feature = "full-tests")]
         #[test]

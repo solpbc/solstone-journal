@@ -24,6 +24,8 @@ pub fn classify_session(journal_root: &Path) -> SessionState {
     if !journal_root.is_dir() {
         return SessionState::Unestablished;
     }
+    let recovery_paused =
+        solstone_core_journal_io::whole_journal_restore::whole_journal_restore_blocks(journal_root);
     let config_path = journal_root.join("config/journal.json");
     let bytes = match fs::read(&config_path) {
         Ok(bytes) => bytes,
@@ -57,7 +59,9 @@ pub fn classify_session(journal_root: &Path) -> SessionState {
         .and_then(Value::as_object)
         .and_then(|setup| setup.get("completed_at"));
     match completed_at {
-        Some(Value::Number(number)) if number.as_f64().is_some_and(|value| value > 0.0) => {
+        Some(Value::Number(number))
+            if !recovery_paused && number.as_f64().is_some_and(|value| value > 0.0) =>
+        {
             SessionState::Established
         }
         _ => SessionState::Unestablished,
@@ -135,5 +139,60 @@ mod tests {
                 SessionState::Corrupt { .. }
             ));
         }
+    }
+
+    #[test]
+    fn pending_restore_does_not_promote_a_completed_config() {
+        use solstone_core_journal_io::whole_journal_restore::{
+            WholeJournalRestoreSource, publish_whole_journal_restore,
+        };
+        let temporary = TempDir::new();
+        temporary.write(br#"{"setup":{"completed_at":1}}"#);
+        publish_whole_journal_restore(
+            temporary.0.path(),
+            &WholeJournalRestoreSource::Byo {
+                repository: "repo".into(),
+                backend: "s3".into(),
+            },
+            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+            "/journal",
+        )
+        .expect("obligation");
+        assert_eq!(
+            classify_session(temporary.0.path()),
+            SessionState::Unestablished
+        );
+        let path = temporary.0.path().join("health/whole-journal-restore.json");
+        let saved = fs::read(&path).expect("obligation bytes");
+        fs::write(&path, b"{").expect("replace");
+        assert_eq!(
+            classify_session(temporary.0.path()),
+            SessionState::Unestablished
+        );
+        fs::write(&path, saved).expect("restore obligation");
+        fs::write(temporary.0.path().join("config/journal.json"), b"{").expect("corrupt");
+        assert!(matches!(
+            classify_session(temporary.0.path()),
+            SessionState::Corrupt { .. }
+        ));
+    }
+
+    #[test]
+    fn held_target_does_not_promote_before_publication_and_resumes_after_release() {
+        use solstone_core_journal_io::whole_journal_restore::{
+            hold_target_for_restore, release_target_for_restore,
+        };
+        let temporary = TempDir::new();
+        temporary.write(br#"{"setup":{"completed_at":1}}"#);
+        hold_target_for_restore(temporary.0.path());
+        assert_eq!(
+            classify_session(temporary.0.path()),
+            SessionState::Unestablished
+        );
+        release_target_for_restore(temporary.0.path());
+        assert_eq!(
+            classify_session(temporary.0.path()),
+            SessionState::Established
+        );
     }
 }

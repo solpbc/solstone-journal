@@ -116,6 +116,9 @@ pub(crate) fn check_actual_accounting(
     }
     assert_eq!(stopped, held);
     let mut report = refused_selection("all", None, vec![segment]).unwrap();
+    if held {
+        report.reason_detail = Some("earlier discovery failure".into());
+    }
     summarize(&mut report, &files);
     assert_eq!(
         (report.files_restored, report.bytes_restored),
@@ -137,6 +140,13 @@ pub(crate) fn check_actual_accounting(
     }
     if held {
         assert_eq!(files[1].disposition, RestoreDisposition::Unattempted);
+        let FileOwner::Transaction(transaction) = &files[0].owner else {
+            panic!("actual held transaction required");
+        };
+        let actual_hold = transaction.facts().hold.unwrap();
+        let detail = report.reason_detail.as_deref().unwrap();
+        assert!(detail.starts_with("earlier discovery failure"));
+        assert!(detail.ends_with(&actual_hold));
     }
 }
 

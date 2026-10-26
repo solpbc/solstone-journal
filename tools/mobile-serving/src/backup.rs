@@ -205,6 +205,17 @@ pub(crate) fn settle_embedded_backup(
             exit_code: 1,
         });
     }
+    let _restore_use = match solstone_core_journal_io::whole_journal_restore::begin_target_use(
+        root.canonical_path(),
+    ) {
+        Ok(guard) => guard,
+        Err(_) => {
+            return BackupRequestOutcome::AdmissionRefused {
+                reference: reference.to_owned(),
+                routine,
+            };
+        }
+    };
     let permit = match deps.lifetime().admit_maintenance() {
         Ok(permit) => permit,
         Err(_) => {
@@ -360,26 +371,33 @@ fn terminal_fields(outcome: &BackupRequestOutcome) -> Map<String, serde_json::Va
 }
 
 #[cfg(feature = "processing")]
-pub(crate) fn report_scheduled_terminal(root: &JournalRoot, outcome: &BackupRequestOutcome) {
+pub(crate) fn report_scheduled_terminal(
+    root: &JournalRoot,
+    outcome: &BackupRequestOutcome,
+) -> Result<(), solstone_core_callosum::CallosumOneShotError> {
     if root.revalidate_canonical_binding().is_err() {
         log::warn!("embedded backup terminal report refused a changed root");
-        return;
+        return Err(solstone_core_callosum::CallosumOneShotError::Unavailable);
     }
     let mut fields = terminal_fields(outcome);
     fields.insert("tract".into(), json!("supervisor"));
     fields.insert("event".into(), json!("stopped"));
     match serde_json::to_string(&fields) {
         Ok(line) => {
-            if let Err(error) = CallosumOneShotSender::new(
+            let result = CallosumOneShotSender::new(
                 root.canonical_path().join("health/callosum.sock"),
                 std::time::Duration::from_secs(2),
             )
-            .send_line(&format!("{line}\n"))
-            {
+            .send_line_confirmed(&format!("{line}\n"));
+            if let Err(error) = &result {
                 log::warn!("embedded backup terminal report failed: {error}");
             }
+            result
         }
-        Err(error) => log::warn!("embedded backup terminal report encoding failed: {error}"),
+        Err(error) => {
+            log::warn!("embedded backup terminal report encoding failed: {error}");
+            Err(solstone_core_callosum::CallosumOneShotError::Unavailable)
+        }
     }
 }
 

@@ -138,11 +138,13 @@ pub struct MediaRemoval {
     source: Arc<MediaDirectory>,
     name: OsString,
     expected: MediaObservation,
-    stage: MediaStage,
     source_file: Option<File>,
     claim_file: Option<File>,
     stage_observation: Option<StageObservation>,
     receipt: RemovalReceipt,
+    attempted: bool,
+    // The stage owns exclusion through closure of both original file handles.
+    stage: MediaStage,
 }
 
 impl MediaDirectory {
@@ -153,7 +155,19 @@ impl MediaDirectory {
         expected: &MediaObservation,
         stage: MediaStage,
     ) -> MediaRemoval {
-        let mut removal = MediaRemoval {
+        let mut removal = self.prepare_removal(name, expected, stage);
+        removal.remove();
+        removal
+    }
+
+    /// Retain the original removal before its mutation enters a fallible actor.
+    pub fn prepare_removal(
+        self: &Arc<Self>,
+        name: &OsStr,
+        expected: &MediaObservation,
+        stage: MediaStage,
+    ) -> MediaRemoval {
+        MediaRemoval {
             source: Arc::clone(self),
             name: name.to_owned(),
             expected: expected.clone(),
@@ -161,6 +175,7 @@ impl MediaDirectory {
             source_file: None,
             claim_file: None,
             stage_observation: None,
+            attempted: false,
             receipt: RemovalReceipt {
                 effect: RemovalEffect::NotClaimed,
                 original_name: OriginalName::Unverified,
@@ -174,17 +189,31 @@ impl MediaDirectory {
                 restoration_attempted: false,
                 failures: Vec::new(),
             },
-        };
-        if let Err(error) = removal.perform() {
-            removal.receipt.claim_confirmation = Confirmation::Unverified;
-            removal.failure(RemovalPhase::Mutation, error);
         }
-        removal.finish();
-        removal
     }
 }
 
 impl MediaRemoval {
+    /// One original attempt, borrowing its retained native owner. An unwind
+    /// leaves the actual claim and its independent facts with the caller.
+    pub fn remove(&mut self) {
+        self.remove_checked(&|| Ok(()));
+    }
+
+    /// Retain the caller's original refusal checkpoint at native effect and
+    /// cleanup boundaries. Cancellation never erases an earlier effect.
+    pub fn remove_checked(&mut self, checkpoint: &dyn Fn() -> io::Result<()>) {
+        if self.attempted {
+            return;
+        }
+        self.attempted = true;
+        if let Err(error) = self.perform(checkpoint) {
+            self.receipt.claim_confirmation = Confirmation::Unverified;
+            self.failure(RemovalPhase::Mutation, error);
+        }
+        self.finish(checkpoint);
+    }
+
     pub fn receipt(&self) -> &RemovalReceipt {
         &self.receipt
     }
@@ -257,7 +286,8 @@ impl MediaRemoval {
         directory.revalidate()
     }
 
-    fn perform(&mut self) -> io::Result<()> {
+    fn perform(&mut self, checkpoint: &dyn Fn() -> io::Result<()>) -> io::Result<()> {
+        checkpoint()?;
         plain_name(&self.name)?;
         platform::supported_mutation()?;
         if self.stage.leaf.is_some() || self.stage.removed {
@@ -277,6 +307,7 @@ impl MediaRemoval {
             &self.expected,
         )?;
         step(MediaPrimitive::BeforeRemovalClaim)?;
+        checkpoint()?;
         self.validate_context()?;
         Self::check_file(
             &self.source,
@@ -304,6 +335,7 @@ impl MediaRemoval {
             Err(ClaimFailure::Uncertain(error)) => return Err(error),
         }
         step(MediaPrimitive::AfterRemovalClaim)?;
+        checkpoint()?;
         step(MediaPrimitive::BeforeClaimRead)?;
         self.validate_context()?;
         self.claim_file = platform::open_plain(&directory.inner, leaf)?;
@@ -312,6 +344,7 @@ impl MediaRemoval {
         Self::check_file(directory, leaf, claim, &self.expected)?;
         self.receipt.claim_confirmation = Confirmation::Confirmed;
         step(MediaPrimitive::BeforeClaimDelete)?;
+        checkpoint()?;
         self.validate_context()?;
         let directory = self.stage.directory.as_ref().ok_or_else(changed)?;
         Self::check_file(
@@ -396,7 +429,11 @@ impl MediaRemoval {
         directory.revalidate()
     }
 
-    fn finish(&mut self) {
+    fn finish(&mut self, checkpoint: &dyn Fn() -> io::Result<()>) {
+        if let Err(error) = checkpoint() {
+            self.failure(RemovalPhase::Completion, error);
+            return;
+        }
         if self.receipt.effect != RemovalEffect::NotClaimed {
             match Self::sync(&self.source, MediaPrimitive::RemovalSourceSync) {
                 Ok(()) => self.receipt.source_durability = Durability::Synced,
@@ -417,7 +454,15 @@ impl MediaRemoval {
                 }
             }
         }
+        if let Err(error) = checkpoint() {
+            self.failure(RemovalPhase::Cleanup, error);
+            return;
+        }
         self.cleanup();
+        if let Err(error) = checkpoint() {
+            self.failure(RemovalPhase::Completion, error);
+            return;
+        }
         if self.stage.removed {
             match Self::sync(&self.stage.parent, MediaPrimitive::RemovalParentSync) {
                 Ok(()) => self.receipt.stage_parent_durability = Durability::Synced,
@@ -476,6 +521,9 @@ impl MediaRemoval {
 
     /// Only known empty stages may be retired. Never retries a claim deletion.
     pub fn cleanup(&mut self) -> Cleanup {
+        if !self.attempted {
+            return self.receipt.cleanup;
+        }
         if let Err(error) = self.stage.revalidate_activity() {
             self.receipt.cleanup = Cleanup::Refused;
             if error.kind() == io::ErrorKind::InvalidData
@@ -581,7 +629,13 @@ pub fn resolve_interrupted_removal(
     directory: MediaIdentity,
     deleted_by_owner: impl FnOnce(&OsStr) -> io::Result<bool>,
 ) -> io::Result<Option<InterruptedRemovalResolution>> {
-    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+    #[cfg(any(
+        target_os = "linux",
+        target_os = "macos",
+        target_os = "ios",
+        target_os = "android",
+        target_os = "windows"
+    ))]
     {
         use crate::journal_root::JournalEntryKind;
         const REMOVAL_RECORD_MAX: usize = 4096;
@@ -711,7 +765,13 @@ pub fn resolve_interrupted_removal(
         sync_dir(parent)?;
         Ok(Some(resolution))
     }
-    #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+    #[cfg(not(any(
+        target_os = "linux",
+        target_os = "macos",
+        target_os = "ios",
+        target_os = "android",
+        target_os = "windows"
+    )))]
     {
         let _ = (activity, parent, name, directory, deleted_by_owner);
         Err(io::Error::new(

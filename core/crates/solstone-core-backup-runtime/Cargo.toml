@@ -22,7 +22,7 @@ test-support = []
 # iOS only: the final link supplies the Go backup bridge archive. Only the
 # app's static library (tools/ios-runtime/native) enables it; without it the
 # iOS callable path refuses and references no bridge symbol.
-ios-linked-bridge = []
+ios-linked-bridge = ["solstone-core-backup/ios-linked-bridge"]
 
 [dependencies]
 chrono.workspace = true

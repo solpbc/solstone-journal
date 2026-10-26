@@ -299,6 +299,7 @@ dependencies = [
  "http",
  "http-body",
  "http-body-util",
+ "hyper",
  "hyper-util",
  "itoa",
  "matchit",
@@ -4331,6 +4332,7 @@ version = "2.0.59"
 dependencies = [
  "getrandom 0.3.4",
  "hmac 0.12.1",
+ "log",
  "nix 0.30.1",
  "rustix",
  "serde",
@@ -4691,12 +4693,14 @@ dependencies = [
  "solstone-core-callosum",
  "solstone-core-convey-body",
  "solstone-core-convey-http",
+ "solstone-core-cortex",
  "solstone-core-entities",
  "solstone-core-entity",
  "solstone-core-entity-matching",
  "solstone-core-facets",
  "solstone-core-facets-web",
  "solstone-core-format",
+ "solstone-core-generate",
  "solstone-core-handoff-nonce",
  "solstone-core-health-web",
  "solstone-core-home",
@@ -5744,6 +5748,7 @@ dependencies = [
  "sha2 0.10.9",
  "solstone-core-convey-http",
  "solstone-core-journal-config",
+ "solstone-core-journal-io",
  "solstone-core-location",
  "tempfile",
  "tokio",
@@ -6063,6 +6068,7 @@ version = "2.0.59"
 dependencies = [
  "chrono",
  "getrandom 0.3.4",
+ "log",
  "serde",
  "serde_json",
  "sha2 0.10.9",
@@ -6409,6 +6415,7 @@ version = "2.0.59"
 dependencies = [
  "hdbscan",
  "serde_json",
+ "tempfile",
 ]
 
 [[package]]
@@ -6816,6 +6823,7 @@ dependencies = [
  "solstone-core-assets",
  "solstone-core-brain",
  "solstone-core-callosum",
+ "solstone-core-ced-analyze",
  "solstone-core-distribution",
  "solstone-core-format",
  "solstone-core-installation-identity",
@@ -6833,6 +6841,7 @@ dependencies = [
  "solstone-core-speaker-resolve",
  "solstone-core-speakers",
  "solstone-core-speakers-analyze",
+ "solstone-core-speakers-onnx",
  "solstone-core-spp-attest",
  "solstone-core-spp-ratls",
  "solstone-core-system",

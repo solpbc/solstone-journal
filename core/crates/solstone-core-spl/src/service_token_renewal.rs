@@ -10,6 +10,10 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use solstone_core_journal_config::read_journal_config;
+use solstone_core_journal_io::JournalRoot;
+use solstone_core_journal_io::whole_journal_restore::{
+    begin_target_use_bound, whole_journal_restore_blocks, whole_journal_restore_generation,
+};
 use solstone_core_sol_link::ca::jid_from_spki;
 use solstone_core_sol_link::service_identity::{ServiceIdentityError, load_service_identity_ca};
 
@@ -17,15 +21,15 @@ use crate::health::{ServiceTokenHealth, service_token_health_is_refused};
 use crate::link_state_files::{
     LinkServiceTokenRead, LinkStateRead, load_link_service_token, load_link_state,
 };
-use crate::private_link::{
-    EnrollError, EnrollMode, enroll_home, relay_url, save_service_token_unlocked,
-};
+use crate::private_link::{EnrollError, EnrollMode, enroll_home, relay_url};
 use crate::relay_access::{decode_base64url, mutate_service_configuration};
+use crate::service_token_write::save_service_token_at_root_unlocked;
 
 pub const SERVICE_TOKEN_RENEWAL_TICK: Duration = Duration::from_secs(5 * 60);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SkipClass {
+    RootUnavailable,
     Posture,
     TokenMissing,
     TokenUnreadable,
@@ -41,6 +45,7 @@ pub enum SkipClass {
 impl SkipClass {
     pub fn as_str(&self) -> &'static str {
         match self {
+            Self::RootUnavailable => "root_unavailable",
             Self::Posture => "posture",
             Self::TokenMissing => "token_missing",
             Self::TokenUnreadable => "token_unreadable",
@@ -77,6 +82,7 @@ impl Trigger {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Outcome {
     Renewed,
+    PublishedUnconfirmed,
     Unreachable,
     Rejected { status: u16 },
     NotEnrolled,
@@ -89,6 +95,7 @@ impl Outcome {
     pub fn as_str(&self) -> String {
         match self {
             Self::Renewed => "renewed".to_owned(),
+            Self::PublishedUnconfirmed => "published_unconfirmed".to_owned(),
             Self::Unreachable => "unreachable".to_owned(),
             Self::Rejected { status } => format!("rejected {status}"),
             Self::NotEnrolled => "not_enrolled".to_owned(),
@@ -358,15 +365,19 @@ fn validate_new_token(
 }
 
 pub fn evaluate_once(config: &RenewalConfig, state: &mut RenewalState) -> RenewalStep {
-    evaluate_once_unless_cancelled(config, state, &|| false)
+    let Ok(root) = JournalRoot::open(&config.journal_root).map(Arc::new) else {
+        return record_skip(state, SkipClass::RootUnavailable);
+    };
+    evaluate_once_unless_cancelled(&root, config, state, &|| false)
 }
 
 fn evaluate_once_unless_cancelled(
+    root: &Arc<JournalRoot>,
     config: &RenewalConfig,
     state: &mut RenewalState,
     cancelled: &dyn Fn() -> bool,
 ) -> RenewalStep {
-    if cancelled() {
+    if cancelled() || root.revalidate_canonical_binding().is_err() {
         return RenewalStep::Current;
     }
     // 1. Skips (no HTTP)
@@ -471,6 +482,9 @@ fn evaluate_once_unless_cancelled(
     let relay_base = relay_url(&config.journal_root);
     let pem = ca.public_key_spki_pem();
     let enroll_res = (config.enroll)(&relay_base, &identity.instance_id, &pem, EnrollMode::Renew);
+    if cancelled() {
+        return record_attempt(state, config, now_mono, trigger, Outcome::Superseded);
+    }
 
     let outcome = match enroll_res {
         Err(EnrollError::Rejected {
@@ -517,8 +531,25 @@ fn evaluate_once_unless_cancelled(
                     if relay_url(&config.journal_root) != relay_base {
                         return Outcome::Superseded;
                     }
-                    match save_service_token_unlocked(&config.journal_root, &new_token) {
-                        Ok(()) => Outcome::Renewed,
+                    // This check admits publication. A later pause drains this
+                    // already-admitted atomic save before restore can write.
+                    if cancelled() {
+                        return Outcome::Superseded;
+                    }
+                    match save_service_token_at_root_unlocked(root, &new_token, &|| {
+                        if cancelled() {
+                            Err("renewal interrupted".to_owned())
+                        } else {
+                            Ok(())
+                        }
+                    }) {
+                        Ok(publication) if publication.confirmed() => Outcome::Renewed,
+                        Ok(publication) => {
+                            log::warn!(
+                                "private-link renewal token was published with uncertainty: {publication:?}"
+                            );
+                            Outcome::PublishedUnconfirmed
+                        }
                         Err(_) => Outcome::WriteFailed,
                     }
                 })
@@ -556,7 +587,7 @@ fn record_attempt(
 ) -> RenewalStep {
     let outcome_str = outcome.as_str();
     match &outcome {
-        Outcome::Renewed => {
+        Outcome::Renewed | Outcome::PublishedUnconfirmed => {
             state.consecutive_ordinary_failures = 0;
             state.backoff_deadline = Duration::ZERO;
             state.floor_end = now_mono + Duration::from_secs(24 * 3600);
@@ -614,15 +645,26 @@ fn record_attempt(
 }
 
 pub fn spawn_service_token_renewal(config: RenewalConfig) -> tokio::task::JoinHandle<()> {
+    let root = JournalRoot::open(&config.journal_root).map(Arc::new);
     tokio::spawn(async move {
+        let Ok(root) = root else {
+            log::warn!("private-link renewal root could not be retained");
+            return;
+        };
         let mut state = RenewalState::default();
         loop {
             tokio::time::sleep(config.tick).await;
             let config_clone = config.clone();
             let state_clone = state.clone();
+            let evaluation_root = Arc::clone(&root);
             match tokio::task::spawn_blocking(move || {
                 let mut s = state_clone;
-                let step = evaluate_once(&config_clone, &mut s);
+                let step = evaluate_once_unless_cancelled(
+                    &evaluation_root,
+                    &config_clone,
+                    &mut s,
+                    &|| false,
+                );
                 (step, s)
             })
             .await
@@ -640,13 +682,16 @@ pub fn spawn_service_token_renewal(config: RenewalConfig) -> tokio::task::JoinHa
     })
 }
 
-/// App-owned renewal lifecycle. Shutdown waits for an active blocking appraisal
-/// to finish and prevents its token from being committed after cancellation.
+/// App-owned renewal lifecycle. Recovery drains admitted work; shutdown joins
+/// active HTTP and publication. The original root remains bound across retries.
 pub async fn run_embedded_service_token_renewal(
-    config: RenewalConfig,
+    root: Arc<JournalRoot>,
+    mut config: RenewalConfig,
     mut shutdown: tokio::sync::watch::Receiver<bool>,
 ) {
+    config.journal_root = root.canonical_path().to_owned();
     let mut state = RenewalState::default();
+    let mut observed_generation = None;
     loop {
         if *shutdown.borrow() || shutdown.has_changed().is_err() {
             return;
@@ -655,14 +700,45 @@ pub async fn run_embedded_service_token_renewal(
             _ = tokio::time::sleep(config.tick) => {},
             _ = shutdown.changed() => return,
         }
+        // Admission performs filesystem checks off the runtime thread. Keep
+        // its guard outside the evaluation so even a panic joins before drain.
+        let admission_root = Arc::clone(&root);
+        let (admission, generation) = match tokio::task::spawn_blocking(move || {
+            let admission = begin_target_use_bound(Arc::clone(&admission_root))?;
+            let generation = whole_journal_restore_generation(admission_root.canonical_path());
+            Ok::<_, solstone_core_journal_io::whole_journal_restore::TargetUseRefused>((
+                admission, generation,
+            ))
+        })
+        .await
+        {
+            Ok(Ok(admitted)) => admitted,
+            Ok(Err(_)) => continue,
+            Err(_) => {
+                log::warn!("private-link service token renewal admission did not complete");
+                continue;
+            }
+        };
+        if observed_generation != Some(generation) {
+            state = RenewalState::default();
+            observed_generation = Some(generation);
+        }
         let config_clone = config.clone();
         let state_clone = state.clone();
         let stop = shutdown.clone();
+        let evaluation_root = Arc::clone(&root);
         // Deliberately join this work even if shutdown arrives during HTTP.
         match tokio::task::spawn_blocking(move || {
             let mut state = state_clone;
-            let cancelled = || *stop.borrow() || stop.has_changed().is_err();
-            evaluate_once_unless_cancelled(&config_clone, &mut state, &cancelled);
+            let cancelled = || {
+                *stop.borrow()
+                    || stop.has_changed().is_err()
+                    || evaluation_root.revalidate_canonical_binding().is_err()
+                    || whole_journal_restore_blocks(evaluation_root.canonical_path())
+                    || whole_journal_restore_generation(evaluation_root.canonical_path())
+                        != generation
+            };
+            evaluate_once_unless_cancelled(&evaluation_root, &config_clone, &mut state, &cancelled);
             state
         })
         .await
@@ -674,6 +750,7 @@ pub async fn run_embedded_service_token_renewal(
                 log::warn!("private-link service token renewal evaluation did not complete");
             }
         }
+        drop(admission);
     }
 }
 
@@ -799,6 +876,154 @@ mod tests {
         let identity = load_or_create_service_identity(journal.path()).unwrap();
         save_service_token(journal.path(), token_str).unwrap();
         identity.instance_id
+    }
+
+    #[cfg(all(unix, feature = "test-hooks"))]
+    #[test]
+    fn actual_uncertain_renewal_publication_keeps_the_existing_floor() {
+        use solstone_core_journal_io::{
+            BoundPublicationPrimitive, run_with_bound_publication_fault,
+        };
+        let journal = TempJournal::new();
+        let id = setup_test_journal(&journal, "expired-token");
+        let token = make_test_jwt(
+            Some("current"),
+            &id,
+            1_000_000,
+            1_000_000 + 365 * 86_400,
+            "session.listen",
+            None,
+        );
+        let calls = Arc::new(AtomicUsize::new(0));
+        let enrolled = Arc::clone(&calls);
+        let config = RenewalConfig {
+            journal_root: journal.path().to_owned(),
+            enroll: Arc::new(move |_, _, _, mode| {
+                assert_eq!(mode, EnrollMode::Renew);
+                enrolled.fetch_add(1, Ordering::SeqCst);
+                Ok(token.clone())
+            }),
+            jwks_fetch: Arc::new(|_| JwksSet::Healthy {
+                kids: vec!["current".to_owned()],
+            }),
+            health_read: Arc::new(|| ServiceTokenHealth {
+                event_at_ms: None,
+                now_ms: 0,
+                reason: None,
+                tunnel_error_at_ms: None,
+                tunnel_success_at_ms: None,
+            }),
+            clock: RenewalClock {
+                now_unix: Arc::new(|| 1_000_100),
+                now_mono: Arc::new(|| Duration::from_secs(100)),
+            },
+            tick: Duration::from_secs(1),
+            jitter: Arc::new(|duration| duration),
+            before_commit: Arc::new(|| {}),
+        };
+        let mut state = RenewalState::default();
+        let (step, consumed) =
+            run_with_bound_publication_fault(BoundPublicationPrimitive::ParentSync, 1, 5, || {
+                evaluate_once(&config, &mut state)
+            });
+        assert!(consumed);
+        assert!(matches!(
+            step,
+            RenewalStep::Attempted {
+                outcome: Outcome::PublishedUnconfirmed,
+                ..
+            }
+        ));
+        assert_eq!(state.floor_end, Duration::from_secs(100 + 24 * 3600));
+        assert_eq!(state.consecutive_ordinary_failures, 0);
+        // Even if a later read sees an undecodable token, uncertainty must not
+        // be treated as a failed write and immediately repeat enrollment.
+        save_service_token(journal.path(), "undecodable-after-publication").unwrap();
+        assert_eq!(evaluate_once(&config, &mut state), RenewalStep::Blocked);
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn replacement_after_final_evaluation_check_cannot_receive_the_renewed_token() {
+        let journal = TempJournal::new();
+        let id = setup_test_journal(&journal, "expired-token");
+        let root = Arc::new(JournalRoot::open(journal.path()).unwrap());
+        let token = make_test_jwt(
+            Some("current"),
+            &id,
+            1_000_000,
+            1_000_000 + 365 * 86_400,
+            "session.listen",
+            None,
+        );
+        let armed = Arc::new(AtomicBool::new(false));
+        let arm = Arc::clone(&armed);
+        let config = RenewalConfig {
+            journal_root: journal.path().to_owned(),
+            enroll: Arc::new(move |_, _, _, _| Ok(token.clone())),
+            jwks_fetch: Arc::new(|_| JwksSet::Healthy {
+                kids: vec!["current".to_owned()],
+            }),
+            health_read: Arc::new(|| ServiceTokenHealth {
+                event_at_ms: None,
+                now_ms: 0,
+                reason: None,
+                tunnel_error_at_ms: None,
+                tunnel_success_at_ms: None,
+            }),
+            clock: RenewalClock {
+                now_unix: Arc::new(|| 1_000_100),
+                now_mono: Arc::new(|| Duration::from_secs(100)),
+            },
+            tick: Duration::from_secs(1),
+            jitter: Arc::new(|duration| duration),
+            before_commit: Arc::new(move || {
+                arm.store(true, Ordering::SeqCst);
+            }),
+        };
+        let checks = std::cell::Cell::new(0);
+        let retained = journal.path().with_extension("retained");
+        let cancelled = || {
+            if armed.load(Ordering::SeqCst) {
+                let previous = checks.replace(checks.get() + 1);
+                if previous == 1 {
+                    // Exactly the final evaluation check: admit it, then
+                    // substitute the pathname before the writer opens it.
+                    std::fs::rename(journal.path(), &retained).unwrap();
+                    std::fs::create_dir_all(journal.path().join("link/tokens")).unwrap();
+                    std::fs::write(
+                        journal.path().join("link/tokens/account.json"),
+                        b"replacement-control",
+                    )
+                    .unwrap();
+                }
+            }
+            false
+        };
+        let mut state = RenewalState::default();
+        let step = evaluate_once_unless_cancelled(&root, &config, &mut state, &cancelled);
+        let actual = std::fs::read(journal.path().join("link/tokens/account.json")).unwrap();
+        let original = std::fs::read(retained.join("link/tokens/account.json")).unwrap();
+        std::fs::remove_dir_all(retained).unwrap();
+        assert!(
+            checks.get() >= 2,
+            "the final evaluation check must be reached"
+        );
+        assert_eq!(
+            actual, b"replacement-control",
+            "replacement journal must receive no credential"
+        );
+        assert_eq!(
+            serde_json::from_slice::<Value>(&original).unwrap()["service_token"],
+            "expired-token"
+        );
+        assert!(matches!(
+            step,
+            RenewalStep::Attempted {
+                outcome: Outcome::WriteFailed,
+                ..
+            }
+        ));
     }
 
     #[test]
@@ -2204,7 +2429,7 @@ mod tests {
         let hook5 = Arc::new({
             let root = journal.path().to_path_buf();
             move || {
-                enable_spl_with(&root, |_, _| Ok(stub_tok.into())).unwrap();
+                enable_spl_with(&root, |_, _| Ok(stub_tok.into()), || true).unwrap();
             }
         });
         let mut state = RenewalState::default();

@@ -1755,6 +1755,7 @@ version = "2.0.59"
 dependencies = [
  "getrandom 0.3.4",
  "hmac",
+ "log",
  "nix 0.30.1",
  "rustix",
  "serde",
@@ -1810,6 +1811,23 @@ dependencies = [
  "solstone-core-journal-io",
  "widestring",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "solstone-core-ced-analyze"
+version = "2.0.59"
+dependencies = [
+ "serde_json",
+ "solstone-core-ced-sys",
+ "solstone-core-local",
+]
+
+[[package]]
+name = "solstone-core-ced-sys"
+version = "2.0.59"
+dependencies = [
+ "libloading 0.8.9",
+ "solstone-core-win-dll-load",
 ]
 
 [[package]]
@@ -2140,6 +2158,7 @@ version = "2.0.59"
 dependencies = [
  "chrono",
  "getrandom 0.3.4",
+ "log",
  "serde",
  "serde_json",
  "sha2",
@@ -2228,6 +2247,7 @@ version = "2.0.59"
 dependencies = [
  "hdbscan",
  "serde_json",
+ "tempfile",
 ]
 
 [[package]]
@@ -2371,6 +2391,7 @@ dependencies = [
  "solstone-core-assets",
  "solstone-core-brain",
  "solstone-core-callosum",
+ "solstone-core-ced-analyze",
  "solstone-core-format",
  "solstone-core-journal-config",
  "solstone-core-journal-io",
@@ -2384,6 +2405,7 @@ dependencies = [
  "solstone-core-speaker-resolve",
  "solstone-core-speakers",
  "solstone-core-speakers-analyze",
+ "solstone-core-speakers-onnx",
  "solstone-core-spp-ratls",
  "solstone-core-system",
  "solstone-core-system-health",

@@ -460,6 +460,14 @@ func runWorker(h *callHandle, req bridgeRequest) {
 		result, _ = executeListRecoveryKeys(h.ctx, req)
 	case OpRemoveRecoveryKey:
 		result, _ = executeRemoveRecoveryKey(h.ctx, req, markWrite)
+	case OpArchiveSources:
+		result, _ = executeArchiveSources(h.ctx, req, markWrite)
+	case OpListNodes:
+		result, _ = executeListNodes(h.ctx, req)
+	case OpReadFile:
+		result, _ = executeReadFile(h.ctx, req, markWrite)
+	case OpRetention:
+		result, _ = executeRetention(h.ctx, req, markWrite)
 	default:
 		result = bridgeResult{status: StatusInvalidArgument, diagnostic: DiagInvalidArgument}
 	}
@@ -499,14 +507,22 @@ func restic_bridge_operation_v1_start(request *C.restic_request, options *C.rest
 	if status != StatusOk {
 		return C.int32_t(status)
 	}
+	var retention *retentionPolicy
 	if request.operation == C.int32_t(OpSnapshot) {
 		selection, status := parseCSnapshotSelection(policy, policyLen)
 		if status != StatusOk {
 			return C.int32_t(status)
 		}
 		return startWithWorkspaceSourceOwned(request, workspace, workspaceLen, selection, ownedOptions, nil, entry, outID)
-	}
-	if workspaceLen != 0 || policyLen != 0 {
+	} else if request.operation == C.int32_t(OpRetention) {
+		if workspaceLen != 0 || request.recovery_password_len != 0 || request.source_path_len != 0 || request.restore_path_len != 0 || request.snapshot_id_len != 0 {
+			return C.int32_t(StatusInvalidArgument)
+		}
+		retention, status = parseCRetentionPolicy(policy, policyLen)
+		if status != StatusOk {
+			return C.int32_t(status)
+		}
+	} else if workspaceLen != 0 || policyLen != 0 {
 		return C.int32_t(StatusInvalidArgument)
 	}
 	req, status := validateRequestOwned(request, entry)
@@ -514,6 +530,7 @@ func restic_bridge_operation_v1_start(request *C.restic_request, options *C.rest
 		return C.int32_t(status)
 	}
 	req.executionOptions = ownedOptions
+	req.retentionPolicy = retention
 	id, status := startBridgeCall(req)
 	if status == StatusOk {
 		*outID = C.uint64_t(id)
@@ -580,6 +597,7 @@ func restic_bridge_operation_directories_v1_start(request *C.restic_request, opt
 	if status != StatusOk {
 		return C.int32_t(status)
 	}
+	var retention *retentionPolicy
 	if request.operation == C.int32_t(OpSnapshot) {
 		selection, status := parseCSnapshotSelection(policy, policyLen)
 		if status != StatusOk {
@@ -594,8 +612,15 @@ func restic_bridge_operation_directories_v1_start(request *C.restic_request, opt
 			return C.int32_t(status)
 		}
 		return startWithWorkspaceDirectoriesOwned(request, workspace, workspaceLen, selection, ownedOptions, source, metadata, entry, outID)
-	}
-	if sourceFD != -1 || workspaceFD != -1 || request.source_path_len != 0 || workspaceLen != 0 || policyLen != 0 {
+	} else if request.operation == C.int32_t(OpRetention) {
+		if sourceFD != -1 || workspaceFD != -1 || request.source_path_len != 0 || workspaceLen != 0 || request.recovery_password_len != 0 {
+			return C.int32_t(StatusInvalidArgument)
+		}
+		retention, status = parseCRetentionPolicy(policy, policyLen)
+		if status != StatusOk {
+			return C.int32_t(status)
+		}
+	} else if sourceFD != -1 || workspaceFD != -1 || request.source_path_len != 0 || workspaceLen != 0 || policyLen != 0 {
 		return C.int32_t(StatusInvalidArgument)
 	}
 	req, status := validateRequestOwned(request, entry)
@@ -603,6 +628,7 @@ func restic_bridge_operation_directories_v1_start(request *C.restic_request, opt
 		return C.int32_t(status)
 	}
 	req.executionOptions = ownedOptions
+	req.retentionPolicy = retention
 	id, status := startBridgeCall(req)
 	if status == StatusOk {
 		*outID = C.uint64_t(id)
@@ -725,6 +751,16 @@ func parseCSnapshotSelection(pointer *C.char, length C.uint32_t) (*snapshotSelec
 		return nil, StatusInvalidArgument
 	}
 	return parseSnapshotSelection(copyCBytes(pointer, length))
+}
+
+func parseCRetentionPolicy(pointer *C.char, length C.uint32_t) (*retentionPolicy, int32) {
+	if pointer == nil || length == 0 || length > 256 {
+		return nil, StatusInvalidArgument
+	}
+	buf := copyCBytes(pointer, length)
+	policy, status := parseRetentionPolicy(buf)
+	zeroBytes(buf)
+	return policy, status
 }
 
 //export restic_bridge_snapshot_v1_start

@@ -13,7 +13,15 @@ use solstone_core_thinking_copy::{
     DownloadMember, SetupCatalogFacts, current_setup_facts, sum_download_bytes,
 };
 
-pub(crate) struct ConveySetupHost;
+pub(crate) struct ConveySetupHost {
+    backup: solstone_core_backup_web::BackupWebDeps,
+}
+
+impl ConveySetupHost {
+    pub(crate) fn new(backup: solstone_core_backup_web::BackupWebDeps) -> Self {
+        Self { backup }
+    }
+}
 
 impl SetupHost for ConveySetupHost {
     fn start_local(&self, journal_root: &Path) -> Result<(), String> {
@@ -75,6 +83,53 @@ impl SetupHost for ConveySetupHost {
         if !crate::thinking::send_brain_refresh_request(journal_root) {
             log::warn!("setup: thinking check after the setup choice was not queued");
         }
+    }
+
+    fn recover_whole_journal(&self, journal_root: &Path, body: &[u8]) -> Result<(), String> {
+        let journal = journal_root.to_path_buf();
+        let mut drain = {
+            let journal = journal.clone();
+            move || crate::recovery_drain::relinquish_admitted_work(&journal)
+        };
+        if journal != self.backup.journal_root {
+            return Err("recovery host is bound to a different journal".into());
+        }
+        match solstone_core_backup_web::recover_recorded_journal_with(
+            &self.backup,
+            body,
+            &mut drain,
+        ) {
+            Ok(()) => {
+                crate::recovery_drain::resume_after_whole_journal_restore(&journal);
+                Ok(())
+            }
+            Err(error) => {
+                solstone_core_journal_io::whole_journal_restore::release_target_for_restore(
+                    &journal,
+                );
+                Err(error)
+            }
+        }
+    }
+
+    fn stop_for_recovery(&self, journal_root: &Path) -> Result<(), String> {
+        if journal_root != self.backup.journal_root {
+            return Err("recovery host is bound to a different journal".into());
+        }
+        solstone_core_backup_web::stop_recorded_journal(&self.backup)?;
+        let result = crate::recovery_drain::stop_admitted_work(journal_root);
+        if result.is_err() {
+            solstone_core_journal_io::whole_journal_restore::release_target_for_restore(
+                journal_root,
+            );
+        }
+        result
+    }
+
+    fn recovery_in_progress(&self, journal_root: &Path) -> Option<bool> {
+        (journal_root == self.backup.journal_root)
+            .then(|| solstone_core_backup_web::recorded_journal_recovery_active(&self.backup).ok())
+            .flatten()
     }
 }
 
@@ -554,7 +609,9 @@ mod tests {
             let journal = temp.path();
             let app = solstone_core_sol_link::http::init_router_with_host(
                 journal,
-                Arc::new(ConveySetupHost),
+                Arc::new(ConveySetupHost::new(
+                    solstone_core_backup_web::BackupWebDeps::new(journal.to_path_buf()),
+                )),
             )
             .layer(Extension(AccessBasis::Localhost));
             async move {
@@ -577,7 +634,10 @@ mod tests {
             }
         };
 
-        let _ = ConveySetupHost.start_local(temp.path());
+        let _ = ConveySetupHost::new(solstone_core_backup_web::BackupWebDeps::new(
+            temp.path().to_path_buf(),
+        ))
+        .start_local(temp.path());
         let (status, _) = make_request(
             Method::POST,
             "/init/api/action",

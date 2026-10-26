@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+mod cluster_bound;
 mod filterbank;
 mod segmentation;
 mod statements;
@@ -18,16 +19,17 @@ pub use speaker_turns::{
 };
 
 pub use filterbank::{
-    WESPEAKER_EMBEDDING_SIZE, WESPEAKER_FFT_SIZE, WESPEAKER_FRAME_LENGTH_SAMPLES,
+    KaldiFrames, WESPEAKER_EMBEDDING_SIZE, WESPEAKER_FFT_SIZE, WESPEAKER_FRAME_LENGTH_SAMPLES,
     WESPEAKER_FRAME_SHIFT_SAMPLES, WESPEAKER_MEL_BINS, WESPEAKER_SAMPLE_RATE_HZ,
     compute_kaldi_filterbank, compute_wespeaker_filterbank_cmn, row_l2_normalize,
+    snipped_frame_count,
 };
 pub use segmentation::{
     DIARIZE_MIN_OVERLAP, MAX_SAME_WINDOW_TURN_GAP_S, PYANNOTE_CLASS_COUNT,
     PYANNOTE_DIARIZE_STRIDE_S, PYANNOTE_FRAMES_PER_WINDOW, PYANNOTE_OVERLAP_CLASSES,
     PYANNOTE_OVERLAP_STRIDE_S, PYANNOTE_SAMPLE_RATE_HZ, PYANNOTE_SINGLE_SPEAKER_CLASSES,
     PYANNOTE_WINDOW_S, PyannoteSegmentationPassResult, SLOT_ACTIVE_MIN_SHARE,
-    SPEAKER_EVIDENCE_MULTI_MIN, SPEAKER_EVIDENCE_SINGLE_MAX, SpeakerEvidence,
+    SPEAKER_EVIDENCE_MULTI_MIN, SPEAKER_EVIDENCE_SINGLE_MAX, SpeakerEvidence, SpeakerEvidenceAccum,
     SpeakerEvidenceDecision, SpeakerSegmentationError, SpeakerWindowStats,
     compute_speaker_window_stats, decide_speaker_evidence, run_pyannote_segmentation_pass,
 };

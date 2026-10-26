@@ -348,50 +348,67 @@ pub fn compute_speaker_window_stats(
     })
 }
 
+/// Running counts for [`decide_speaker_evidence`]. One window is noted at a time.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct SpeakerEvidenceAccum {
+    speech_windows: u64,
+    multi_windows: u64,
+    overlap_share_sum: f64,
+}
+
+impl SpeakerEvidenceAccum {
+    /// Count one window. A window with no speech frames does not enter the mean.
+    pub fn note(&mut self, stats: SpeakerWindowStats) {
+        if stats.speech_frames == 0 {
+            return;
+        }
+        self.speech_windows += 1;
+        if stats.active_slot_count > 1 {
+            self.multi_windows += 1;
+        }
+        self.overlap_share_sum += stats.overlap_frames as f64 / stats.speech_frames as f64;
+    }
+
+    /// The same decision [`decide_speaker_evidence`] returns for the noted windows.
+    pub fn decide(self, overlap_fraction: f64) -> SpeakerEvidenceDecision {
+        if self.speech_windows == 0 {
+            return SpeakerEvidenceDecision {
+                speaker_evidence: SpeakerEvidence::NoSpeech,
+                multi_window_fraction: 0.0,
+                mean_window_overlap_share: 0.0,
+            };
+        }
+        let speech_windows = self.speech_windows as f64;
+        let multi_window_fraction = self.multi_windows as f64 / speech_windows;
+        let mean_window_overlap_share = self.overlap_share_sum / speech_windows;
+        let speaker_evidence = if multi_window_fraction >= SPEAKER_EVIDENCE_MULTI_MIN
+            || overlap_fraction >= DIARIZE_MIN_OVERLAP
+        {
+            SpeakerEvidence::Multi
+        } else if multi_window_fraction < SPEAKER_EVIDENCE_SINGLE_MAX
+            && mean_window_overlap_share < DIARIZE_MIN_OVERLAP
+        {
+            SpeakerEvidence::Single
+        } else {
+            SpeakerEvidence::Multi
+        };
+        SpeakerEvidenceDecision {
+            speaker_evidence,
+            multi_window_fraction,
+            mean_window_overlap_share,
+        }
+    }
+}
+
 pub fn decide_speaker_evidence(
     overlap_fraction: f64,
     window_stats: &[SpeakerWindowStats],
 ) -> SpeakerEvidenceDecision {
-    let speech_windows: Vec<&SpeakerWindowStats> = window_stats
-        .iter()
-        .filter(|row| row.speech_frames > 0)
-        .collect();
-    if speech_windows.is_empty() {
-        return SpeakerEvidenceDecision {
-            speaker_evidence: SpeakerEvidence::NoSpeech,
-            multi_window_fraction: 0.0,
-            mean_window_overlap_share: 0.0,
-        };
+    let mut accum = SpeakerEvidenceAccum::default();
+    for row in window_stats {
+        accum.note(*row);
     }
-
-    let multi_window_count = speech_windows
-        .iter()
-        .filter(|row| row.active_slot_count > 1)
-        .count();
-    let multi_window_fraction = multi_window_count as f64 / speech_windows.len() as f64;
-    let mean_window_overlap_share = speech_windows
-        .iter()
-        .map(|row| row.overlap_frames as f64 / row.speech_frames as f64)
-        .sum::<f64>()
-        / speech_windows.len() as f64;
-
-    let speaker_evidence = if multi_window_fraction >= SPEAKER_EVIDENCE_MULTI_MIN
-        || overlap_fraction >= DIARIZE_MIN_OVERLAP
-    {
-        SpeakerEvidence::Multi
-    } else if multi_window_fraction < SPEAKER_EVIDENCE_SINGLE_MAX
-        && mean_window_overlap_share < DIARIZE_MIN_OVERLAP
-    {
-        SpeakerEvidence::Single
-    } else {
-        SpeakerEvidence::Multi
-    };
-
-    SpeakerEvidenceDecision {
-        speaker_evidence,
-        multi_window_fraction,
-        mean_window_overlap_share,
-    }
+    accum.decide(overlap_fraction)
 }
 
 fn window_starts(len_padded: usize, window_samples: usize, stride_samples: usize) -> Vec<usize> {

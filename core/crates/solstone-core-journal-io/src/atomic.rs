@@ -996,6 +996,38 @@ pub fn write_bytes_exclusive_bound_detailed(
     )
 }
 
+/// Create-only publication beneath the supplied Windows parent. The spelling
+/// is admitted existing-only and must match this retained identity before any
+/// stage is allocated; the existing native no-replace protocol then owns it.
+#[cfg(windows)]
+pub fn write_bytes_exclusive_bound_detailed(
+    directory: &crate::windows_sync_dir::WindowsFlatDirectory,
+    name: &OsStr,
+    contents: &[u8],
+    mode: u32,
+) -> Result<ExclusivePublication, DetailedAtomicError> {
+    let mut parts = Path::new(name).components();
+    if !matches!((parts.next(), parts.next()),
+        (Some(std::path::Component::Normal(component)), None) if component == name)
+    {
+        return Err(detailed_error(
+            Path::new(name),
+            "validate destination",
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "destination has no normal name",
+            ),
+        ));
+    }
+    windows_create_only::write_bytes_exclusive_detailed_bound(
+        directory,
+        name,
+        contents,
+        AtomicWriteOptions { mode: Some(mode) },
+        &|| Ok(()),
+    )
+}
+
 #[cfg(unix)]
 fn bind_existing_parent(path: &Path) -> Result<(File, &OsStr), DetailedAtomicError> {
     let parent = path

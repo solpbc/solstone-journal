@@ -16,7 +16,13 @@ use std::sync::Arc;
 
 use solstone_core_journal_io::activity::ActivityLease;
 
-#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+#[cfg(any(
+    target_os = "linux",
+    target_os = "macos",
+    target_os = "windows",
+    target_os = "ios",
+    target_os = "android"
+))]
 use super::RestoreIntent;
 
 /// Why an interrupted restore stays an unresolved obligation.
@@ -54,21 +60,63 @@ pub struct AbandonedRestore {
 }
 
 /// End every interrupted restore that left nothing uncertain. Call only with a
-/// freshly acquired lease, before creating anything: holding it proves no live
-/// owner, and only on local storage, so elsewhere nothing is done.
-pub fn recover_abandoned_restores(activity: &Arc<ActivityLease>) -> Vec<AbandonedRestore> {
-    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+/// freshly acquired lease, before creating anything. Desktop storage that is
+/// not exclusive-local still returns an empty list. Android and iOS refuse
+/// when the private container is not qualified, and never report that refusal
+/// as an empty success.
+pub fn recover_abandoned_restores(
+    activity: &Arc<ActivityLease>,
+) -> Result<Vec<AbandonedRestore>, std::io::Error> {
+    #[cfg(any(
+        target_os = "linux",
+        target_os = "macos",
+        target_os = "windows",
+        target_os = "ios",
+        target_os = "android"
+    ))]
     {
         local::recover(activity)
     }
-    #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+    #[cfg(not(any(
+        target_os = "linux",
+        target_os = "macos",
+        target_os = "windows",
+        target_os = "ios",
+        target_os = "android"
+    )))]
     {
         let _ = activity;
-        Vec::new()
+        Err(unsupported_storage())
     }
 }
 
-#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+#[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+fn unsupported_storage() -> std::io::Error {
+    std::io::Error::new(
+        std::io::ErrorKind::Unsupported,
+        "the activity lease does not exclude every writer here",
+    )
+}
+
+fn platform_miss<T>(error: Option<std::io::Error>) -> Result<Vec<T>, std::io::Error> {
+    #[cfg(any(target_os = "ios", target_os = "android"))]
+    {
+        Err(error.unwrap_or_else(unsupported_storage))
+    }
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
+    {
+        let _ = error;
+        Ok(Vec::new())
+    }
+}
+
+#[cfg(any(
+    target_os = "linux",
+    target_os = "macos",
+    target_os = "windows",
+    target_os = "ios",
+    target_os = "android"
+))]
 mod local {
     use std::collections::BTreeSet;
     use std::ffi::OsStr;
@@ -93,12 +141,15 @@ mod local {
 
     type Hold = AbandonedRestoreHold;
 
-    pub(super) fn recover(activity: &Arc<ActivityLease>) -> Vec<AbandonedRestore> {
-        if !matches!(exclusive_local_activity(activity), Ok(true)) {
-            return Vec::new();
+    pub(super) fn recover(
+        activity: &Arc<ActivityLease>,
+    ) -> Result<Vec<AbandonedRestore>, std::io::Error> {
+        if let Some(miss) = storage_miss(exclusive_local_activity(activity)) {
+            return miss;
         }
-        let Ok(census) = observe_obligations(activity.journal_root()) else {
-            return Vec::new();
+        let census = match observe_obligations(activity.journal_root()) {
+            Ok(census) => census,
+            Err(error) => return census_miss(error),
         };
         let mut recovered: Vec<_> = census
             .entries()
@@ -123,9 +174,21 @@ mod local {
                 },
             })
             .collect();
-        recovered.extend(retire_unrecorded_downloads(activity));
-        recovered.extend(retire_empty_metadata_stages(activity));
-        recovered
+        recovered.extend(retire_unrecorded_downloads(activity)?);
+        recovered.extend(retire_empty_metadata_stages(activity)?);
+        Ok(recovered)
+    }
+
+    fn storage_miss<T>(qualified: std::io::Result<bool>) -> Option<Result<Vec<T>, std::io::Error>> {
+        match qualified {
+            Ok(true) => None,
+            Ok(false) => Some(super::platform_miss(None)),
+            Err(error) => Some(super::platform_miss(Some(error))),
+        }
+    }
+
+    fn census_miss<T>(error: impl std::fmt::Display) -> Result<Vec<T>, std::io::Error> {
+        super::platform_miss(Some(std::io::Error::other(error.to_string())))
     }
 
     /// A restore, legacy probe or approval readback that ended mid-download
@@ -133,9 +196,12 @@ mod local {
     /// ended before creating it. An offload producer that ended mid-run leaves
     /// a root stage holding one copy of an original that never moved. Only such
     /// a stage, where that producer stages and named by no intent, is removed.
-    fn retire_unrecorded_downloads(activity: &Arc<ActivityLease>) -> Vec<AbandonedRestore> {
-        let Ok(census) = observe_obligations(activity.journal_root()) else {
-            return Vec::new();
+    fn retire_unrecorded_downloads(
+        activity: &Arc<ActivityLease>,
+    ) -> Result<Vec<AbandonedRestore>, std::io::Error> {
+        let census = match observe_obligations(activity.journal_root()) {
+            Ok(census) => census,
+            Err(error) => return census_miss(error),
         };
         let mut referenced = BTreeSet::new();
         for obligation in census.entries() {
@@ -143,14 +209,19 @@ mod local {
                 continue;
             };
             let IntentRead::Complete { bytes, .. } = contents else {
-                return Vec::new();
+                return census_miss("unreadable restore intent");
             };
             match RestoreIntent::decode(Ok(bytes)) {
-                Ok(intent) => referenced.insert(intent.stage.stage_name),
-                Err(_) => return Vec::new(),
+                Ok(intent) => {
+                    referenced.insert(intent.stage.stage_name);
+                    if let Some(binding) = intent.recovery_binding {
+                        referenced.insert(binding.reservation_name().to_owned());
+                    }
+                }
+                Err(_) => return census_miss("unreadable restore intent"),
             };
         }
-        census
+        Ok(census
             .entries()
             .iter()
             .filter_map(|obligation| match obligation {
@@ -191,7 +262,7 @@ mod local {
                     outcome: Ok(AbandonedRestoreRelease::Undone),
                 })
             })
-            .collect()
+            .collect())
     }
 
     enum Leaf {
@@ -362,15 +433,20 @@ mod local {
         }
     }
 
-    fn retire_empty_metadata_stages(activity: &Arc<ActivityLease>) -> Vec<AbandonedRestore> {
-        let Ok(census) = observe_obligations(activity.journal_root()) else {
-            return Vec::new();
+    fn retire_empty_metadata_stages(
+        activity: &Arc<ActivityLease>,
+    ) -> Result<Vec<AbandonedRestore>, std::io::Error> {
+        let census = match observe_obligations(activity.journal_root()) {
+            Ok(census) => census,
+            Err(error) => return census_miss(error),
         };
-        let Ok(health) = MediaDirectory::open(
+        let health = match MediaDirectory::open(
             Arc::clone(activity.journal_root()),
             Path::new("health/offload"),
-        ) else {
-            return Vec::new();
+        ) {
+            Ok(health) => health,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+            Err(error) => return census_miss(error),
         };
         let mut retired = Vec::new();
         for obligation in census.entries() {
@@ -396,7 +472,7 @@ mod local {
                 });
             }
         }
-        retired
+        Ok(retired)
     }
 }
 

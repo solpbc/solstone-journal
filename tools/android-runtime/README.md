@@ -147,16 +147,13 @@ A paired client reads the result through the existing transcript API. The networ
 remains production multipart `/app/devices/ingest`, protocol version 3, over
 paired TLS/SPL. No private command is needed to complete an accepted recording.
 
-this embedded mode admits at most 16 MiB of encoded audio and 120 seconds of
-decoded mono 16 kHz samples per input. for multitrack M4A, the decoded sample
-budget is shared across tracks before mixing. inputs above either limit receive
-a held failure with an explanation in health; their originals are retained.
-these holds do not automatically retry on restart. retryable failures are
-skipped for the rest of that worker's run; cancel/resume or restart retries them.
-cancellation is cooperative between stages and before publication;
-it cannot interrupt a native inference already running. serving uses separate
-threads, and stopping the worker waits for active native work to return.
-these are development-mode bounds, not changes to desktop import support.
+supported speech recordings are processed to the end in bounded units, with one
+native call at a time. cancellation is checked between calls and before
+publication; a running call may finish first. failed processing keeps the
+original recording. inputs at the retry limit stay held across restarts. other
+retryable failures are skipped for the rest of that worker run and can be retried
+in a later run. serving runs on separate threads, and stopping the worker waits
+for active native work to return. desktop import support is unchanged.
 
 `qualify_audio.py` uploads supplied fixtures from a separate LAN client and
 checks authenticated transcript retrieval, source bytes, transcript provenance

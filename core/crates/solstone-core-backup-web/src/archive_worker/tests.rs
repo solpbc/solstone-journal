@@ -5,6 +5,22 @@ use super::*;
 use solstone_core_journal_io::activity::{ActivityAdmissionError, ActivityLease, TeardownLease};
 use std::{sync::mpsc, thread, time::Duration};
 
+#[test]
+fn retained_archive_root_keeps_original_custody_and_refuses_replacement() {
+    let parent = tempfile::tempdir().unwrap();
+    let journal = parent.path().join("journal");
+    std::fs::create_dir(&journal).unwrap();
+    let root = Arc::new(JournalRoot::open(&journal).unwrap());
+    let retained = clone_bound_archive_root(&root, &journal).unwrap();
+    assert!(Arc::ptr_eq(&root, &retained));
+    let original = parent.path().join("original");
+    std::fs::rename(&journal, &original).unwrap();
+    std::fs::create_dir(&journal).unwrap();
+    assert!(clone_bound_archive_root(&root, &journal).is_err());
+    assert!(std::fs::read_dir(&journal).unwrap().next().is_none());
+    assert!(std::fs::read_dir(&original).unwrap().next().is_none());
+}
+
 struct FixedClock;
 impl Clock for FixedClock {
     fn now_unix(&self) -> i64 {

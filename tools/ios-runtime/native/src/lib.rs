@@ -27,7 +27,7 @@ static ROOT: Mutex<Option<Arc<JournalRoot>>> = Mutex::new(None);
 static QUERY: Mutex<Option<OwnerIndex>> = Mutex::new(None);
 struct ServingInstance {
     serving: journal_mobile_serving::MobileServing,
-    processing: Option<journal_mobile_serving::foreground::ForegroundProcessingHost>,
+    processing: Option<Arc<journal_mobile_serving::foreground::ForegroundProcessingHost>>,
 }
 impl ServingInstance {
     fn status(&self) -> Value {
@@ -305,6 +305,14 @@ fn wifi_address() -> Result<std::net::Ipv4Addr, String> {
     let ip = address.ok_or("no private en0 IPv4 address")?;
     Ok(ip)
 }
+fn hold_ready_journal(
+    root: &std::sync::Arc<solstone_core_journal_io::JournalRoot>,
+) -> Result<solstone_core_journal_io::whole_journal_restore::TargetUse, String> {
+    solstone_core_journal_io::whole_journal_restore::begin_target_use_bound(std::sync::Arc::clone(root)).map_err(|_| {
+        solstone_core_journal_io::whole_journal_restore::WHOLE_JOURNAL_RESTORE_NOT_READY.to_owned()
+    })
+}
+
 fn run(v: Value) -> Result<Value, String> {
     let op = v["op"].as_str().ok_or("missing operation")?;
     if op == "serve-suspend" {
@@ -361,6 +369,32 @@ fn run(v: Value) -> Result<Value, String> {
         *STOP_ROOT.lock().unwrap_or_else(|p| p.into_inner()) = Some(Arc::clone(root));
     }
     let p = root.canonical_path();
+    let _restore_use = if matches!(
+        op,
+        "audio-enable"
+            | "audio-resume"
+            | "serve-generate"
+            | "serve-talent"
+            | "serve-index"
+            | "serve-inventory"
+            | "audio-inventory"
+            | "seed"
+            | "index"
+            | "query"
+            | "inventory"
+            | "create"
+            | "recover"
+            | "mixed"
+            | "active"
+            | "control"
+            | "crash-write"
+            | "commit-disconnect"
+            | "binding-control"
+    ) {
+        Some(hold_ready_journal(root)?)
+    } else {
+        None
+    };
     match op {
         "serve-start" => {
             let generation = generation.unwrap();
@@ -375,6 +409,11 @@ fn run(v: Value) -> Result<Value, String> {
                 .ok_or("port must be between 1024 and 65535")? as u16;
             let address = std::net::SocketAddrV4::new(wifi_address()?, port);
             let payload = PathBuf::from(v["payload"].as_str().ok_or("missing bundled payload")?);
+            let admitted_library = PathBuf::from(
+                v["pdfium_library"]
+                    .as_str()
+                    .ok_or("admitted pdfium library required")?,
+            );
             #[cfg(target_os = "ios")]
             {
                 let target = std::env::temp_dir().join("callosum.sock");
@@ -444,12 +483,7 @@ fn run(v: Value) -> Result<Value, String> {
                 processing: None,
             });
             *STOP_ROOT.lock().unwrap_or_else(|p| p.into_inner()) = Some(Arc::clone(root));
-            let open_host = if v["mode"].as_str() == Some("observe-daily-queue") {
-                journal_mobile_serving::foreground::ForegroundProcessingHost::open_with_rebuild_recovery_observed
-            } else {
-                journal_mobile_serving::foreground::ForegroundProcessingHost::open_with_rebuild_recovery
-            };
-            let host = open_host(
+            let host = journal_mobile_serving::foreground::ForegroundProcessingHost::open_with_imports(
                 Arc::clone(root),
                 &payload,
                 Arc::new(move || {
@@ -457,8 +491,11 @@ fn run(v: Value) -> Result<Value, String> {
                 }),
                 processing_stop,
                 backup,
+                journal_mobile_serving::import_route::packaged_import_factory(admitted_library),
+                true,
+                v["mode"].as_str() == Some("observe-daily-queue"),
             );
-            let host = match host {
+            let mut host = match host {
                 Ok(host) => host,
                 Err(error) => {
                     journal_ios_processing_request_stop();
@@ -466,11 +503,21 @@ fn run(v: Value) -> Result<Value, String> {
                 }
             };
             let current = serving.as_mut().unwrap();
-            current.processing = Some(host);
-            if let Err(error) = current.processing.as_mut().unwrap().start_workers() {
+            let host_ready = host.start_workers();
+            if let Err(error) = host_ready {
+                current.processing = Some(Arc::new(host));
                 journal_ios_processing_request_stop();
                 return Err(error);
             }
+            let host = Arc::new(host);
+            if let Err(error) = current.serving.import_route().install(Arc::new(
+                journal_mobile_serving::import_route::ForegroundImportRoute::new(Arc::clone(&host)),
+            )) {
+                current.processing = Some(host);
+                journal_ios_processing_request_stop();
+                return Err(error);
+            }
+            current.processing = Some(host);
             if !open_processing_admission(&PROCESSING_GENERATION, generation) {
                 journal_ios_processing_request_stop();
                 return Err("stop requested during startup; journal retained".into());
@@ -514,7 +561,7 @@ fn run(v: Value) -> Result<Value, String> {
                 host.cancel_audio();
             } else {
                 admit_processing(&v, &PROCESSING_GENERATION)?;
-                host.resume_audio();
+                host.resume_audio()?;
             }
             Ok(serving.status())
         }

@@ -44,7 +44,7 @@ pub use config::{
     JournalConfigTransaction, insert_daily_input_since, insert_daily_input_since_checked,
     mutate_journal_config, mutate_journal_config_cas, mutate_journal_config_checked,
 };
-pub use direct_port::persist_direct_door_port;
+pub use direct_port::{persist_direct_door_port, persist_direct_door_port_at_root_checked};
 pub use pairing_migration::{PairingAddressMigrationReport, migrate_pairing_home_address};
 pub use solstone_core_journal_config::ConfigLoadError;
 pub use solstone_core_journal_io::{

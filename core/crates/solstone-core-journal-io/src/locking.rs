@@ -1155,12 +1155,27 @@ fn hold_sidecar_lock(
     open_options
         .mode(options.mode.unwrap_or(0o666))
         .custom_flags(nix::libc::O_NOFOLLOW);
+    hold_file_lock_unix(path, options, operation, checkpoint, || {
+        open_options.open(&sidecar)
+    })
+}
+
+#[cfg(unix)]
+fn hold_file_lock_unix(
+    path: &Path,
+    options: LockOptions,
+    operation: FlockArg,
+    checkpoint: &dyn Fn() -> Result<(), String>,
+    open: impl Fn() -> io::Result<File>,
+) -> Result<FileLock, LockError> {
+    let check = || {
+        checkpoint()
+            .map_err(|detail| io_error(path, io::Error::new(io::ErrorKind::Interrupted, detail)))
+    };
     let deadline = Instant::now() + options.timeout;
     loop {
         check()?;
-        let file = open_options
-            .open(&sidecar)
-            .map_err(|source| io_error(path, source))?;
+        let file = open().map_err(|source| io_error(path, source))?;
         match Flock::lock(file, operation) {
             Ok(guard) => {
                 check()?;
@@ -1186,6 +1201,43 @@ fn hold_sidecar_lock(
             }
         }
     }
+}
+
+/// Hold the ordinary sidecar beneath a retained parent. Lock names, modes,
+/// shared/exclusive semantics and acquisition budgets match the pathname API.
+/// diagnostic_parent supplies error metadata only.
+#[cfg(unix)]
+pub fn hold_lock_bound_checked(
+    parent: &impl AsFd,
+    name: &OsStr,
+    diagnostic_parent: &Path,
+    options: LockOptions,
+    shared: bool,
+    checkpoint: &dyn Fn() -> Result<(), String>,
+) -> Result<FileLock, LockError> {
+    if NormalLockName::parse(name).is_none() {
+        return Err(io_error(
+            Path::new(name),
+            io::Error::new(io::ErrorKind::InvalidInput, "invalid protected lock name"),
+        ));
+    }
+    let path = diagnostic_parent.join(name);
+    let sidecar = derive_sidecar_path(Path::new(""), name);
+    let operation = if shared {
+        FlockArg::LockSharedNonblock
+    } else {
+        FlockArg::LockExclusiveNonblock
+    };
+    hold_file_lock_unix(&path, options, operation, checkpoint, || {
+        openat(
+            parent,
+            sidecar.as_os_str(),
+            OFlag::O_WRONLY | OFlag::O_CREAT | OFlag::O_CLOEXEC | OFlag::O_NOFOLLOW,
+            Mode::from_bits_truncate(options.mode.unwrap_or(0o666) as nix::libc::mode_t),
+        )
+        .map(File::from)
+        .map_err(io::Error::from)
+    })
 }
 
 /// Reports whether another process currently holds `path`'s sidecar lock.
@@ -2092,16 +2144,32 @@ fn hold_sidecar_lock_windows(
         )
     })?;
     let sidecar = derive_sidecar_path(parent, file_name);
-    let deadline = Instant::now() + options.timeout;
-    loop {
-        check()?;
-        let file = open_windows_path(
+    hold_file_lock_windows(path, options, checkpoint, shared, || {
+        open_windows_path(
             &sidecar,
             GENERIC_READ | GENERIC_WRITE,
             OPEN_ALWAYS,
             FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT,
         )
-        .map_err(|source| io_error(path, source))?;
+    })
+}
+
+#[cfg(windows)]
+fn hold_file_lock_windows(
+    path: &Path,
+    options: LockOptions,
+    checkpoint: &dyn Fn() -> Result<(), String>,
+    shared: bool,
+    open: impl Fn() -> io::Result<File>,
+) -> Result<FileLock, LockError> {
+    let check = || {
+        checkpoint()
+            .map_err(|detail| io_error(path, io::Error::new(io::ErrorKind::Interrupted, detail)))
+    };
+    let deadline = Instant::now() + options.timeout;
+    loop {
+        check()?;
+        let file = open().map_err(|source| io_error(path, source))?;
         let attributes = attribute_tag_windows(&file).map_err(|source| io_error(path, source))?;
         if is_reparse_point_windows(attributes) {
             return Err(io_error(
@@ -2142,6 +2210,36 @@ fn hold_sidecar_lock_windows(
             }
         }
     }
+}
+
+/// Windows retained-parent counterpart of the ordinary shared/exclusive lock.
+#[cfg(windows)]
+pub fn hold_lock_bound_checked(
+    parent: &impl AsHandle,
+    name: &OsStr,
+    diagnostic_parent: &Path,
+    options: LockOptions,
+    shared: bool,
+    checkpoint: &dyn Fn() -> Result<(), String>,
+) -> Result<FileLock, LockError> {
+    if NormalLockName::parse(name).is_none() {
+        return Err(io_error(
+            Path::new(name),
+            io::Error::new(io::ErrorKind::InvalidInput, "invalid protected lock name"),
+        ));
+    }
+    let path = diagnostic_parent.join(name);
+    let sidecar = derive_sidecar_path(Path::new(""), name);
+    hold_file_lock_windows(&path, options, checkpoint, shared, || {
+        nt_create_relative(
+            parent.as_handle().as_raw_handle(),
+            sidecar.as_os_str(),
+            GENERIC_READ | GENERIC_WRITE | SYNCHRONIZE,
+            FILE_OPEN_IF,
+            FILE_NON_DIRECTORY_FILE | FILE_OPEN_REPARSE_POINT | FILE_SYNCHRONOUS_IO_NONALERT,
+        )
+        .map(File::from)
+    })
 }
 
 #[cfg(windows)]
@@ -2363,9 +2461,14 @@ fn io_error(path: &Path, source: io::Error) -> LockError {
 #[cfg(any(unix, windows))]
 pub fn hold_daily_location_admission(journal: &Path) -> Result<FileLock, LockError> {
     hold_lock(
-        journal.join("health").join("daily-location-admission"),
+        daily_location_admission_path(journal),
         LockOptions::default(),
     )
+}
+
+/// The maintained protected path, shared by pathname and retained-root callers.
+pub fn daily_location_admission_path(journal: &Path) -> PathBuf {
+    journal.join("health").join("daily-location-admission")
 }
 
 #[cfg(all(test, unix))]

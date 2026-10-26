@@ -17,6 +17,7 @@ publish = false
 workspace = true
 
 [dependencies]
+log.workspace = true
 solstone-core-backup.workspace = true
 getrandom.workspace = true
 chrono = { workspace = true }

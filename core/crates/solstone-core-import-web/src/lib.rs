@@ -4,6 +4,7 @@
 //! Native read routes for the Import Convey surface.
 
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use axum::{
     Router,
@@ -14,6 +15,7 @@ use axum::{
 mod assets;
 mod callosum;
 mod content;
+mod embedded_route;
 mod http;
 mod imports;
 mod journal_archive;
@@ -25,6 +27,10 @@ mod progress;
 mod save_stream;
 pub(crate) mod start_lock;
 
+pub use embedded_route::{
+    CapturedImport, ImportAdmission, ImportRouteRequest, ImportRouteSlot, RetainedImportRoute,
+};
+
 #[cfg(test)]
 mod corpus;
 #[cfg(test)]
@@ -33,9 +39,19 @@ mod test_support;
 #[derive(Clone)]
 pub(crate) struct AppState {
     root: PathBuf,
+    route: Option<Arc<ImportRouteSlot>>,
 }
 
 pub fn routes(journal_root: PathBuf) -> Router {
+    router(journal_root, None)
+}
+
+/// The same import paths as [`routes`], with a retained route installed.
+pub fn routes_with_embedded(journal_root: PathBuf, route: Arc<ImportRouteSlot>) -> Router {
+    router(journal_root, Some(route))
+}
+
+fn router(journal_root: PathBuf, route: Option<Arc<ImportRouteSlot>>) -> Router {
     lifecycle::sweep_abandoned_strava_uploads(&journal_root);
     Router::new()
         .route("/app/import/", get(assets::shell))
@@ -71,5 +87,8 @@ pub fn routes(journal_root: PathBuf) -> Router {
         .route("/app/import/api/{timestamp}", get(imports::detail))
         .route("/app/import/{timestamp}", get(assets::shell))
         .layer(DefaultBodyLimit::max(multipart::MAX_BODY_BYTES))
-        .with_state(AppState { root: journal_root })
+        .with_state(AppState {
+            root: journal_root,
+            route,
+        })
 }

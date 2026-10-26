@@ -3,13 +3,28 @@
 
 //! Exact archive bytes in an owned target. These values never authorize release.
 
+#[cfg(any(
+    target_os = "ios",
+    all(
+        target_os = "linux",
+        target_arch = "x86_64",
+        feature = "native-archive-host-tests"
+    )
+))]
+#[doc(hidden)]
+pub mod ios;
+
 mod creator;
+mod nodes;
+mod seal;
 use creator::ArchivePredecessorCustody;
 pub use creator::{
     ArchiveEndpointCapture, ArchivePredecessorCapture, ArchiveWriterObservation,
     ArchiveWriterSourceObservation, DirectArchiveEffects, DirectArchiveFailure,
     DirectArchiveSnapshot, OwnedArchiveCreator, OwnedArchiveCreatorAdmission,
 };
+pub use nodes::{ArchiveNodeRecord, parse_bounded_nodes};
+pub use seal::{OwnerObservation, same_owner};
 mod historical;
 pub use historical::{HistoricalArchiveFile, HistoricalSnapshotFiles};
 
@@ -48,9 +63,9 @@ fn query_argv(argv: Vec<std::ffi::OsString>) -> Vec<std::ffi::OsString> {
 }
 
 use std::fmt;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
-#[cfg(any(unix, windows))]
+#[cfg(any(all(unix, not(target_os = "ios")), windows))]
 use std::time::Duration;
 
 #[cfg(any(unix, windows, test))]
@@ -101,7 +116,7 @@ pub use windows_executor::{
     WindowsArchiveCleanup, WindowsArchiveExecutor, WindowsArchiveRequest, WindowsExecutionOutput,
 };
 
-#[cfg(any(unix, windows))]
+#[cfg(any(all(unix, not(target_os = "ios")), windows))]
 use crate::archive_admission::ARCHIVE_LS_TIMEOUT_SECONDS;
 use crate::archive_admission::Clock;
 use crate::archive_admission::{AdmissionError, ArchiveBudget, ArchiveConfiguration};
@@ -117,6 +132,77 @@ pub(crate) const RESTIC_MEMBER: &str = "lib/solstone-restic/restic";
 #[cfg(unix)]
 pub(crate) const RCLONE_MEMBER: &str = "lib/solstone-rclone/rclone";
 pub const SUPPORTED_RESTIC_VERSION: &str = "0.19.0";
+
+#[cfg(unix)]
+enum AdmittedTool {
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    Installed(Box<CurrentInstalledMember>),
+    #[cfg(target_os = "android")]
+    Service {
+        path: PathBuf,
+        device: u64,
+        inode: u64,
+    },
+    #[cfg(any(
+        target_os = "ios",
+        all(
+            target_os = "linux",
+            target_arch = "x86_64",
+            feature = "native-archive-host-tests"
+        )
+    ))]
+    Linked(Arc<ios::IosReadContext>),
+}
+
+#[cfg(unix)]
+impl AdmittedTool {
+    fn program(&self) -> Result<&Path, ReadbackError> {
+        match self {
+            #[cfg(not(any(target_os = "android", target_os = "ios")))]
+            Self::Installed(member) => Ok(member.path()),
+            #[cfg(target_os = "android")]
+            Self::Service { path, .. } => Ok(path),
+            #[cfg(any(
+                target_os = "ios",
+                all(
+                    target_os = "linux",
+                    target_arch = "x86_64",
+                    feature = "native-archive-host-tests"
+                )
+            ))]
+            Self::Linked(_) => Err(ReadbackError::Unsupported),
+        }
+    }
+
+    fn revalidate(&self) -> Result<(), ReadbackError> {
+        match self {
+            #[cfg(not(any(target_os = "android", target_os = "ios")))]
+            Self::Installed(member) => member.revalidate().map_err(|_| ReadbackError::ToolChanged),
+            #[cfg(target_os = "android")]
+            Self::Service {
+                path,
+                device,
+                inode,
+            } => {
+                use std::os::unix::fs::MetadataExt;
+                let meta = std::fs::metadata(path).map_err(|_| ReadbackError::ToolChanged)?;
+                if meta.dev() != *device || meta.ino() != *inode {
+                    return Err(ReadbackError::ToolChanged);
+                }
+                Ok(())
+            }
+            #[cfg(any(
+                target_os = "ios",
+                all(
+                    target_os = "linux",
+                    target_arch = "x86_64",
+                    feature = "native-archive-host-tests"
+                )
+            ))]
+            Self::Linked(context) => context.revalidate(),
+        }
+    }
+}
 #[cfg(any(unix, windows))]
 const MAX_QUERY_BYTES: usize = 1024 * 1024;
 
@@ -128,6 +214,15 @@ pub struct ReadAdmission<'a> {
     repository: RepositoryBinding,
     expected_restic_path: PathBuf,
     predecessor: Option<ArchivePredecessorCustody>,
+    #[cfg(any(
+        target_os = "ios",
+        all(
+            target_os = "linux",
+            target_arch = "x86_64",
+            feature = "native-archive-host-tests"
+        )
+    ))]
+    native: Option<Arc<ios::IosReadContext>>,
 }
 impl<'a> ReadAdmission<'a> {
     pub fn bind(
@@ -144,6 +239,15 @@ impl<'a> ReadAdmission<'a> {
             repository: RepositoryBinding::Expected(repository_id),
             expected_restic_path,
             predecessor: None,
+            #[cfg(any(
+                target_os = "ios",
+                all(
+                    target_os = "linux",
+                    target_arch = "x86_64",
+                    feature = "native-archive-host-tests"
+                )
+            ))]
+            native: None,
         }
     }
     pub fn capture_current(
@@ -159,6 +263,15 @@ impl<'a> ReadAdmission<'a> {
             repository: RepositoryBinding::CaptureCurrent,
             expected_restic_path,
             predecessor: None,
+            #[cfg(any(
+                target_os = "ios",
+                all(
+                    target_os = "linux",
+                    target_arch = "x86_64",
+                    feature = "native-archive-host-tests"
+                )
+            ))]
+            native: None,
         }
     }
     pub fn retain_unqualified_archive(mut self, capture: ArchivePredecessorCapture) -> Self {
@@ -203,6 +316,7 @@ pub enum ReadbackError {
     RepositoryIdentityChanged,
     InvalidRepositoryIdentity,
     SnapshotNodeUnavailable,
+    IncompleteDiscovery,
     ToolFailed,
     NativeFailure,
     TargetRootChanged,
@@ -232,6 +346,7 @@ impl fmt::Display for ReadbackError {
                 Self::RepositoryIdentityChanged => "the backup no longer matches",
                 Self::InvalidRepositoryIdentity => "the backup could not be identified",
                 Self::SnapshotNodeUnavailable => "the archived file could not be confirmed",
+                Self::IncompleteDiscovery => "the archive walk did not account for every node",
                 Self::ToolFailed => "the archive read command failed",
                 Self::NativeFailure => "the archived file could not be prepared",
                 Self::TargetRootChanged => "the file could not be prepared in your journal",
@@ -279,6 +394,57 @@ impl ReadbackAdmissionError<'_> {
     }
 }
 
+#[cfg(unix)]
+enum QueryCompletion {
+    Child(CompletedChild),
+    #[cfg(any(
+        target_os = "ios",
+        all(
+            target_os = "linux",
+            target_arch = "x86_64",
+            feature = "native-archive-host-tests"
+        )
+    ))]
+    Native(ios::NativeQuery),
+}
+#[cfg(unix)]
+impl QueryCompletion {
+    fn successful(&self) -> bool {
+        match self {
+            Self::Child(child) => child.successful(),
+            #[cfg(any(
+                target_os = "ios",
+                all(
+                    target_os = "linux",
+                    target_arch = "x86_64",
+                    feature = "native-archive-host-tests"
+                )
+            ))]
+            Self::Native(native) => native.successful(),
+        }
+    }
+    fn output(&self) -> &crate::bounded_child::Output {
+        match self {
+            Self::Child(child) => child.output(),
+            #[cfg(any(
+                target_os = "ios",
+                all(
+                    target_os = "linux",
+                    target_arch = "x86_64",
+                    feature = "native-archive-host-tests"
+                )
+            ))]
+            Self::Native(native) => native.output(),
+        }
+    }
+}
+#[cfg(unix)]
+impl From<CompletedChild> for QueryCompletion {
+    fn from(child: CompletedChild) -> Self {
+        Self::Child(child)
+    }
+}
+
 #[derive(Default)]
 struct DirectExecution {
     predecessor: Option<ArchivePredecessorCustody>,
@@ -301,6 +467,8 @@ impl DirectExecution {
     #[cfg(any(
         all(target_os = "linux", target_arch = "x86_64"),
         target_os = "macos",
+        target_os = "android",
+        target_os = "ios",
         windows
     ))]
     fn qualify_read_state(&self) -> Result<(), ReadbackError> {
@@ -320,6 +488,8 @@ impl DirectExecution {
     #[cfg(any(
         all(target_os = "linux", target_arch = "x86_64"),
         target_os = "macos",
+        target_os = "android",
+        target_os = "ios",
         windows
     ))]
     fn quiescent(&self) -> bool {
@@ -332,6 +502,8 @@ impl DirectExecution {
     #[cfg(any(
         all(target_os = "linux", target_arch = "x86_64"),
         target_os = "macos",
+        target_os = "android",
+        target_os = "ios",
         windows
     ))]
     fn helpers_quiescent(&self) -> bool {
@@ -366,7 +538,8 @@ impl DirectExecution {
         }
     }
     #[cfg(unix)]
-    fn accept(&mut self, kind: DirectInvocation, child: CompletedChild) {
+    fn accept(&mut self, kind: DirectInvocation, child: impl Into<QueryCompletion>) {
+        let child = child.into();
         if !child.successful() {
             self.fail(ReadbackError::ToolFailed);
             return;
@@ -380,6 +553,20 @@ impl DirectExecution {
         // Only genuine owned completion reaches this compact record. The large
         // output is released after its caller has parsed/checked the result.
         drop(child);
+    }
+    /// Version and config counters move only after a confirmed linked drain.
+    /// A failed or still-pending drain leaves both at zero.
+    #[cfg(target_os = "ios")]
+    fn note_linked_qualification(&mut self, drain_ok: bool) {
+        if !drain_ok {
+            return;
+        }
+        for index in [
+            DirectInvocation::Version as usize,
+            DirectInvocation::Config as usize,
+        ] {
+            self.completed[index] = self.completed[index].saturating_add(1);
+        }
     }
     #[cfg(windows)]
     fn accept_windows(&mut self, kind: DirectInvocation, successful: bool) {
@@ -493,7 +680,7 @@ pub struct OwnedDirectReadHold {
     operation: OwnedPreparedArchiveHold,
     _root: Arc<JournalRoot>,
     #[cfg(unix)]
-    _member: CurrentInstalledMember,
+    _tool: AdmittedTool,
     #[cfg(windows)]
     _restic_path: PathBuf,
     #[cfg(windows)]
@@ -566,10 +753,21 @@ impl OwnedDirectReadHold {
     fn qualify_release(&self) -> Result<(), ReadbackError> {
         #[cfg(any(all(target_os = "linux", target_arch = "x86_64"), target_os = "macos"))]
         {
-            pinned_member(&self._member)?;
-            revalidate_member(&self._member)?;
+            pinned_member(&self._tool)?;
+            self._tool.revalidate()?;
             if !self._execution.quiescent() {
                 return Err(ReadbackError::ToolFailed);
+            }
+            Ok(())
+        }
+        #[cfg(any(target_os = "android", target_os = "ios"))]
+        {
+            self._tool.revalidate()?;
+            if !self._execution.quiescent() {
+                return Err(ReadbackError::ToolFailed);
+            }
+            if let Some(predecessor) = &self._execution.predecessor {
+                predecessor.qualify_settlement()?;
             }
             Ok(())
         }
@@ -583,6 +781,8 @@ impl OwnedDirectReadHold {
         #[cfg(not(any(
             all(target_os = "linux", target_arch = "x86_64"),
             target_os = "macos",
+            target_os = "android",
+            target_os = "ios",
             windows
         )))]
         {
@@ -654,6 +854,15 @@ struct OwnedReadInput {
     _repository: RepositoryBinding,
     _expected_restic_path: PathBuf,
     _predecessor: Option<ArchivePredecessorCustody>,
+    #[cfg(any(
+        target_os = "ios",
+        all(
+            target_os = "linux",
+            target_arch = "x86_64",
+            feature = "native-archive-host-tests"
+        )
+    ))]
+    _native: Option<Arc<ios::IosReadContext>>,
 }
 enum ClosedAdmissionOwner {
     Input(Box<OwnedReadInput>),
@@ -768,6 +977,15 @@ impl ReadbackAdmissionError<'_> {
                     repository,
                     expected_restic_path,
                     predecessor,
+                    #[cfg(any(
+                        target_os = "ios",
+                        all(
+                            target_os = "linux",
+                            target_arch = "x86_64",
+                            feature = "native-archive-host-tests"
+                        )
+                    ))]
+                    native,
                 } = *input;
                 let operation = operation
                     .into_owned_hold()
@@ -780,6 +998,15 @@ impl ReadbackAdmissionError<'_> {
                     _repository: repository,
                     _expected_restic_path: expected_restic_path,
                     _predecessor: predecessor,
+                    #[cfg(any(
+                        target_os = "ios",
+                        all(
+                            target_os = "linux",
+                            target_arch = "x86_64",
+                            feature = "native-archive-host-tests"
+                        )
+                    ))]
+                    _native: native,
                 }))
             }
             AdmissionOwner::Admitted(read) => ClosedAdmissionOwner::Admitted(Box::new(
@@ -796,7 +1023,7 @@ pub struct ReadOperation<'a> {
     #[cfg(all(unix, feature = "full-tests"))]
     source_observations: std::cell::Cell<(usize, usize)>,
     #[cfg(unix)]
-    member: CurrentInstalledMember,
+    tool: AdmittedTool,
     #[cfg(windows)]
     restic_path: PathBuf,
     #[cfg(windows)]
@@ -853,6 +1080,19 @@ impl OwnedPreparedArchiveOperation {
     }
 }
 impl OwnedReadAdmission {
+    #[cfg(any(
+        target_os = "ios",
+        all(
+            target_os = "linux",
+            target_arch = "x86_64",
+            feature = "native-archive-host-tests"
+        )
+    ))]
+    pub fn with_ios_context(mut self, context: Arc<ios::IosReadContext>) -> Self {
+        self.input.native = Some(context);
+        self
+    }
+
     #[cfg(unix)]
     pub fn admit(self) -> Result<OwnedReadOperation, OwnedReadbackAdmissionError> {
         let Self { input, clock } = self;
@@ -992,7 +1232,7 @@ impl OwnedSettledDirectRead {
         #[cfg(unix)]
         {
             self.read.operation.revalidate()?;
-            revalidate_member(&self.read._member)
+            self.read._tool.revalidate()
         }
         #[cfg(windows)]
         {
@@ -1041,7 +1281,7 @@ fn close_owned_read(
         #[cfg(all(unix, feature = "full-tests"))]
             source_observations: _,
         #[cfg(unix)]
-        member,
+        tool,
         #[cfg(windows)]
         restic_path,
         #[cfg(windows)]
@@ -1055,7 +1295,7 @@ fn close_owned_read(
         operation: close_owned_prepared(operation, clock),
         _root: root,
         #[cfg(unix)]
-        _member: member,
+        _tool: tool,
         #[cfg(windows)]
         _restic_path: restic_path,
         #[cfg(windows)]
@@ -1081,6 +1321,15 @@ fn close_owned_admission(
                 repository,
                 expected_restic_path,
                 predecessor,
+                #[cfg(any(
+                    target_os = "ios",
+                    all(
+                        target_os = "linux",
+                        target_arch = "x86_64",
+                        feature = "native-archive-host-tests"
+                    )
+                ))]
+                native,
             } = *input;
             ClosedAdmissionOwner::Input(Box::new(OwnedReadInput {
                 operation: close_owned_prepared(operation, clock),
@@ -1089,6 +1338,15 @@ fn close_owned_admission(
                 _repository: repository,
                 _expected_restic_path: expected_restic_path,
                 _predecessor: predecessor,
+                #[cfg(any(
+                    target_os = "ios",
+                    all(
+                        target_os = "linux",
+                        target_arch = "x86_64",
+                        feature = "native-archive-host-tests"
+                    )
+                ))]
+                _native: native,
             }))
         }
         AdmissionOwner::Admitted(read) => {
@@ -1323,7 +1581,7 @@ impl<'a> ReadOperation<'a> {
             #[cfg(all(unix, feature = "full-tests"))]
                 source_observations: _,
             #[cfg(unix)]
-            member,
+            tool,
             #[cfg(windows)]
             restic_path,
             #[cfg(windows)]
@@ -1341,7 +1599,7 @@ impl<'a> ReadOperation<'a> {
             operation,
             _root: root,
             #[cfg(unix)]
-            _member: member,
+            _tool: tool,
             #[cfg(windows)]
             _restic_path: restic_path,
             #[cfg(windows)]
@@ -1359,7 +1617,16 @@ impl<'a> ReadOperation<'a> {
         }
         #[cfg(any(all(target_os = "linux", target_arch = "x86_64"), target_os = "macos"))]
         {
-            pinned_member(&self.member)?;
+            pinned_member(&self.tool)?;
+            let execution = self.execution.borrow();
+            if let Some(predecessor) = &execution.predecessor {
+                predecessor.qualify_settlement()?;
+            }
+            execution.qualify_read_state()
+        }
+        #[cfg(any(target_os = "android", target_os = "ios"))]
+        {
+            self.tool.revalidate()?;
             let execution = self.execution.borrow();
             if let Some(predecessor) = &execution.predecessor {
                 predecessor.qualify_settlement()?;
@@ -1377,6 +1644,8 @@ impl<'a> ReadOperation<'a> {
         #[cfg(not(any(
             all(target_os = "linux", target_arch = "x86_64"),
             target_os = "macos",
+            target_os = "android",
+            target_os = "ios",
             windows
         )))]
         {
@@ -1516,18 +1785,30 @@ impl<'a> ReadOperation<'a> {
             if let Some(predecessor) = &input.predecessor {
                 predecessor.validate_input(&input)?;
             }
-            let env = direct_environment(&input.destination, &input.password)?;
-            let member = solstone_core_installed_payload::resolve_current_member(RESTIC_MEMBER)
-                .map_err(|_| ReadbackError::ToolUnavailable)?;
-            if member.path() != input.expected_restic_path {
-                return Err(ReadbackError::ToolChanged);
-            }
-            if let Some(predecessor) = &input.predecessor {
-                predecessor.validate_member(&member)?;
-            }
-            Ok((env, member))
+            #[cfg(all(
+                target_os = "linux",
+                target_arch = "x86_64",
+                feature = "native-archive-host-tests"
+            ))]
+            let native_local_control = input
+                .native
+                .as_ref()
+                .is_some_and(|context| context.is_local_host_control());
+            #[cfg(not(all(
+                target_os = "linux",
+                target_arch = "x86_64",
+                feature = "native-archive-host-tests"
+            )))]
+            let native_local_control = false;
+            let env = if native_local_control {
+                std::collections::BTreeMap::new()
+            } else {
+                direct_environment(&input.destination, &input.password)?
+            };
+            let tool = admit_tool(&input)?;
+            Ok((env, tool))
         })();
-        let (env, member) = match admission {
+        let (env, tool) = match admission {
             Ok(admitted) => admitted,
             Err(reason) => {
                 return Err(ReadbackAdmissionError {
@@ -1541,7 +1822,7 @@ impl<'a> ReadOperation<'a> {
             operation: input.operation,
             #[cfg(feature = "full-tests")]
             source_observations: std::cell::Cell::new((0, 0)),
-            member,
+            tool,
             env,
             repository: input.repository,
             execution: std::cell::RefCell::new(DirectExecution {
@@ -1653,7 +1934,7 @@ impl<'a> ReadOperation<'a> {
     #[cfg(unix)]
     fn revalidate_local(&self) -> Result<(), ReadbackError> {
         self.operation.revalidate()?;
-        revalidate_member(&self.member)
+        self.tool.revalidate()
     }
 
     #[cfg(windows)]
@@ -1715,35 +1996,56 @@ impl<'a> ReadOperation<'a> {
     }
 
     #[cfg(unix)]
-    fn query(&self, argv: Vec<std::ffi::OsString>) -> Result<CompletedChild, ReadbackError> {
+    fn query(&self, argv: Vec<std::ffi::OsString>) -> Result<QueryCompletion, ReadbackError> {
         self.query_inner(argv)
             .inspect_err(|reason| self.execution.borrow_mut().fail(*reason))
     }
     #[cfg(unix)]
-    fn query_inner(&self, argv: Vec<std::ffi::OsString>) -> Result<CompletedChild, ReadbackError> {
-        self.revalidate_local()?;
-        let timeout = self
-            .operation
-            .budget()
-            .remaining(self.operation.clock())?
-            .min(Duration::from_secs(ARCHIVE_LS_TIMEOUT_SECONDS));
-        let output = self
-            .run_child(
-                &Request {
-                    program: self.member.path().as_os_str().to_owned(),
-                    argv: query_argv(argv),
-                    env: self.env.clone(),
-                    timeout: Some(timeout),
-                    pass_fds: vec![],
-                },
-                MAX_QUERY_BYTES,
+    fn query_inner(&self, argv: Vec<std::ffi::OsString>) -> Result<QueryCompletion, ReadbackError> {
+        #[cfg(any(
+            target_os = "ios",
+            all(
+                target_os = "linux",
+                target_arch = "x86_64",
+                feature = "native-archive-host-tests"
             )
-            .map_err(|(reason, _)| reason)?;
-        self.revalidate_local()?;
-        if !output.successful() {
-            return Err(ReadbackError::ToolFailed);
+        ))]
+        {
+            #[cfg(target_os = "ios")]
+            let AdmittedTool::Linked(context) = &self.tool;
+            #[cfg(target_os = "ios")]
+            return context.query(self, &argv).map(QueryCompletion::Native);
+            #[cfg(not(target_os = "ios"))]
+            if let AdmittedTool::Linked(context) = &self.tool {
+                return context.query(self, &argv).map(QueryCompletion::Native);
+            }
         }
-        Ok(output)
+        #[cfg(not(target_os = "ios"))]
+        {
+            self.revalidate_local()?;
+            let timeout = self
+                .operation
+                .budget()
+                .remaining(self.operation.clock())?
+                .min(Duration::from_secs(ARCHIVE_LS_TIMEOUT_SECONDS));
+            let output = self
+                .run_child(
+                    &Request {
+                        program: self.tool.program()?.as_os_str().to_owned(),
+                        argv: query_argv(argv),
+                        env: self.env.clone(),
+                        timeout: Some(timeout),
+                        pass_fds: vec![],
+                    },
+                    MAX_QUERY_BYTES,
+                )
+                .map_err(|(reason, _)| reason)?;
+            self.revalidate_local()?;
+            if !output.successful() {
+                return Err(ReadbackError::ToolFailed);
+            }
+            Ok(output.into())
+        }
     }
 
     #[cfg(windows)]
@@ -1858,21 +2160,23 @@ impl<'a> ReadOperation<'a> {
 
     #[cfg(unix)]
     fn check_repository(&self) -> Result<(), ReadbackError> {
-        let result = self.query(vec!["cat".into(), "config".into(), "--no-cache".into()])?;
-        let parsed: Value = serde_json::from_slice(&result.output().stdout)
-            .map_err(|_| ReadbackError::InvalidRepositoryIdentity)?;
-        let id = parsed
-            .get("id")
-            .and_then(Value::as_str)
-            .filter(|id| full_hex_identity(id))
-            .ok_or(ReadbackError::InvalidRepositoryIdentity)?;
-        if id != self.repository_id() {
-            return Err(ReadbackError::RepositoryIdentityChanged);
+        {
+            let result = self.query(vec!["cat".into(), "config".into(), "--no-cache".into()])?;
+            let parsed: Value = serde_json::from_slice(&result.output().stdout)
+                .map_err(|_| ReadbackError::InvalidRepositoryIdentity)?;
+            let id = parsed
+                .get("id")
+                .and_then(Value::as_str)
+                .filter(|id| full_hex_identity(id))
+                .ok_or(ReadbackError::InvalidRepositoryIdentity)?;
+            if id != self.repository_id() {
+                return Err(ReadbackError::RepositoryIdentityChanged);
+            }
+            self.execution
+                .borrow_mut()
+                .accept(DirectInvocation::Config, result);
+            Ok(())
         }
-        self.execution
-            .borrow_mut()
-            .accept(DirectInvocation::Config, result);
-        Ok(())
     }
 
     #[cfg(windows)]
@@ -2315,53 +2619,104 @@ impl<'a> ReadOperation<'a> {
                     Arc::clone(self.carrier()),
                 ));
             }
+            #[cfg(any(
+                target_os = "ios",
+                all(
+                    target_os = "linux",
+                    target_arch = "x86_64",
+                    feature = "native-archive-host-tests"
+                )
+            ))]
+            let native_target_identity = format!("{:?}", target.identity());
             let execution = (|| {
                 self.revalidate_local()?;
                 let timeout = self.operation.budget().remaining(self.operation.clock())?;
                 let transport = target
                     .helper_transport()
                     .map_err(|_| ReadbackError::NativeFailure)?;
-                let request = Request {
-                    program: self.member.path().as_os_str().to_owned(),
-                    argv: waiting_for_repository(vec![
-                        "dump".into(),
-                        "--target".into(),
-                        transport.target.into_os_string(),
-                        file.snapshot_id.as_str().into(),
-                        file.archive_path.as_str().into(),
-                        "--no-cache".into(),
-                    ]),
-                    env: self.env.clone(),
-                    timeout: Some(timeout),
-                    pass_fds: vec![transport.descriptor],
-                };
-                writer = WriterState::Unknown;
-                let completed = match self.run_child(&request, MAX_QUERY_BYTES) {
-                    Ok(completed) => completed,
-                    Err((reason, settled)) => {
-                        // A cancelled or refused run that was reaped, or never
-                        // spawned, leaves no writer either.
-                        if settled && self.member.revalidate().is_ok() {
-                            writer = WriterState::QualifiedCompletion;
-                        }
-                        return Err(reason);
+                #[cfg(any(
+                    target_os = "ios",
+                    all(
+                        target_os = "linux",
+                        target_arch = "x86_64",
+                        feature = "native-archive-host-tests"
+                    )
+                ))]
+                {
+                    let _ = timeout;
+                    #[cfg(target_os = "ios")]
+                    let AdmittedTool::Linked(context) = &self.tool;
+                    #[cfg(not(target_os = "ios"))]
+                    let native_context = match &self.tool {
+                        AdmittedTool::Linked(context) => Some(context),
+                        _ => None,
+                    };
+                    #[cfg(target_os = "ios")]
+                    let native_context = Some(context);
+                    if let Some(context) = native_context {
+                        writer = WriterState::Unknown;
+                        let result = context.download(
+                            self,
+                            &file.snapshot_id,
+                            &file.archive_path,
+                            transport.descriptor,
+                            file.bytes,
+                            &native_target_identity,
+                        );
+                        // This fixed backend returns only after wait/free; unknown
+                        // native drain parks the actual lifetime instead of returning.
+                        writer = WriterState::QualifiedCompletion;
+                        let completed = QueryCompletion::Native(result?);
+                        self.operation.budget().remaining(self.operation.clock())?;
+                        self.check_repository()?;
+                        self.revalidate_local()?;
+                        return Ok(completed);
                     }
-                };
-                self.member
-                    .revalidate()
-                    .map_err(|_| ReadbackError::ToolChanged)?;
-                // Qualification is restricted to this admitted direct restic
-                // profile; killpg alone does not prove descendant cessation.
-                // The runner returns only after reaping the root, so this holds
-                // for a failed or timed-out dump as for a successful one.
-                writer = WriterState::QualifiedCompletion;
-                self.operation.budget().remaining(self.operation.clock())?;
-                if !completed.successful() {
-                    return Err(ReadbackError::ToolFailed);
+                    #[cfg(target_os = "ios")]
+                    return Err(ReadbackError::Unsupported);
                 }
-                self.check_repository()?;
-                self.revalidate_local()?;
-                Ok(completed)
+                #[cfg(not(target_os = "ios"))]
+                {
+                    let request = Request {
+                        program: self.tool.program()?.as_os_str().to_owned(),
+                        argv: waiting_for_repository(vec![
+                            "dump".into(),
+                            "--target".into(),
+                            transport.target.into_os_string(),
+                            file.snapshot_id.as_str().into(),
+                            file.archive_path.as_str().into(),
+                            "--no-cache".into(),
+                        ]),
+                        env: self.env.clone(),
+                        timeout: Some(timeout),
+                        pass_fds: vec![transport.descriptor],
+                    };
+                    writer = WriterState::Unknown;
+                    let completed = match self.run_child(&request, MAX_QUERY_BYTES) {
+                        Ok(completed) => completed,
+                        Err((reason, settled)) => {
+                            // A cancelled or refused run that was reaped, or never
+                            // spawned, leaves no writer either.
+                            if settled && self.tool.revalidate().is_ok() {
+                                writer = WriterState::QualifiedCompletion;
+                            }
+                            return Err(reason);
+                        }
+                    };
+                    self.tool.revalidate()?;
+                    // Qualification is restricted to this admitted direct restic
+                    // profile; killpg alone does not prove descendant cessation.
+                    // The runner returns only after reaping the root, so this holds
+                    // for a failed or timed-out dump as for a successful one.
+                    writer = WriterState::QualifiedCompletion;
+                    self.operation.budget().remaining(self.operation.clock())?;
+                    if !completed.successful() {
+                        return Err(ReadbackError::ToolFailed);
+                    }
+                    self.check_repository()?;
+                    self.revalidate_local()?;
+                    Ok(QueryCompletion::Child(completed))
+                }
             })();
             let completed = match execution {
                 Ok(completed) => completed,
@@ -2406,12 +2761,74 @@ impl<'a> ReadOperation<'a> {
 }
 
 #[cfg(unix)]
-fn revalidate_member(member: &CurrentInstalledMember) -> Result<(), ReadbackError> {
-    member.revalidate().map_err(|_| ReadbackError::ToolChanged)
+fn admit_tool(input: &ReadAdmission<'_>) -> Result<AdmittedTool, ReadbackError> {
+    #[cfg(all(
+        target_os = "linux",
+        target_arch = "x86_64",
+        feature = "native-archive-host-tests"
+    ))]
+    if let Some(context) = &input.native {
+        if !context.binds(
+            input.operation.journal_root(),
+            &input.destination,
+            &input.password,
+        ) {
+            return Err(ReadbackError::ToolChanged);
+        }
+        context.revalidate()?;
+        return Ok(AdmittedTool::Linked(Arc::clone(context)));
+    }
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    {
+        let member = solstone_core_installed_payload::resolve_current_member(RESTIC_MEMBER)
+            .map_err(|_| ReadbackError::ToolUnavailable)?;
+        if member.path() != input.expected_restic_path {
+            return Err(ReadbackError::ToolChanged);
+        }
+        if let Some(predecessor) = &input.predecessor {
+            predecessor.validate_member(&member)?;
+        }
+        Ok(AdmittedTool::Installed(Box::new(member)))
+    }
+    #[cfg(target_os = "android")]
+    {
+        use std::os::unix::fs::MetadataExt;
+        let path = input.expected_restic_path.clone();
+        let meta = std::fs::metadata(&path).map_err(|_| ReadbackError::ToolUnavailable)?;
+        Ok(AdmittedTool::Service {
+            path,
+            device: meta.dev(),
+            inode: meta.ino(),
+        })
+    }
+    #[cfg(target_os = "ios")]
+    {
+        let context = input
+            .native
+            .as_ref()
+            .ok_or(ReadbackError::ToolUnavailable)?;
+        if !context.binds(
+            input.operation.journal_root(),
+            &input.destination,
+            &input.password,
+        ) {
+            return Err(ReadbackError::ToolChanged);
+        }
+        context.revalidate()?;
+        Ok(AdmittedTool::Linked(Arc::clone(context)))
+    }
 }
 
 #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
-fn pinned_member(member: &CurrentInstalledMember) -> Result<(), ReadbackError> {
+fn pinned_member(tool: &AdmittedTool) -> Result<(), ReadbackError> {
+    #[cfg(feature = "native-archive-host-tests")]
+    if let AdmittedTool::Linked(context) = tool {
+        return context.revalidate();
+    }
+    #[allow(irrefutable_let_patterns)]
+    let AdmittedTool::Installed(member) = tool else {
+        return Err(ReadbackError::ToolChanged);
+    };
     if member.bytes() != 30_924_962
         || member.sha256() != "ae7fe58ab3511f830fd31d157158620b209522ff1332b119199d2e938d72338c"
     {
@@ -2424,8 +2841,8 @@ fn pinned_member(member: &CurrentInstalledMember) -> Result<(), ReadbackError> {
 /// pin there: the member is the signed package's own manifest record, revalidated
 /// around every use, and it reported the supported version at admission.
 #[cfg(target_os = "macos")]
-fn pinned_member(member: &CurrentInstalledMember) -> Result<(), ReadbackError> {
-    revalidate_member(member)
+fn pinned_member(tool: &AdmittedTool) -> Result<(), ReadbackError> {
+    tool.revalidate()
 }
 
 #[cfg(any(unix, windows, test))]

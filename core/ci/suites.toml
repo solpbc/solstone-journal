@@ -121,6 +121,17 @@ timeout = "standard"
 default_full = true
 
 [[legs]]
+id = "embedded-speech"
+make_target = "check-rust-embedded-speech"
+set = "component"
+areas = ["audio"]
+packages = ["solstone-core-transcribe"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache", "onnx-runtime"]
+timeout = "slow"
+default_full = true
+
+[[legs]]
 id = "doctests"
 make_target = "check-rust-doc"
 set = "component"
@@ -1508,8 +1519,9 @@ areas = ["audio"]
 platforms = ["linux", "macos", "windows"]
 prerequisites = ["cargo-cache"]
 timeout = "standard"
-default_full = false
+default_full = true
 runtime = "none"
+features = ["full-tests"]
 
 [[package_suites]]
 id = "package::solstone-core-speakers-analyze"
@@ -2352,6 +2364,22 @@ prerequisites = ["cargo-cache"]
 timeout = "standard"
 default_full = true
 required_features = []
+runtime = "none"
+
+# Opt-in real C-archive reader effects. The caller supplies the source-bound
+# maintained Go archive and system libraries through RUSTFLAGS before selection.
+[[suites]]
+id = "solstone-core-backup::native_archive_readback"
+package = "solstone-core-backup"
+target = "native_archive_readback"
+set = "native"
+areas = ["backup"]
+platforms = ["linux"]
+prerequisites = ["cargo-cache", "host-tools"]
+timeout = "standard"
+serial_group = "host-contention"
+default_full = false
+required_features = ["native-archive-host-tests"]
 runtime = "none"
 
 [[suites]]

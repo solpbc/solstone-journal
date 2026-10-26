@@ -67,6 +67,19 @@
       @keyframes mark-pop { from { opacity: 0; transform: translateY(4px) scale(.98); } to { opacity: 1; transform: none; } }
     }
     [hidden] { display: none !important; }
+    body[data-recovery] #setup-heading,
+    body[data-recovery] #welcome-beats,
+    body[data-recovery] #section-machine-card,
+    body[data-recovery] #setup-mark,
+    body[data-recovery] #setup-thinking,
+    body[data-recovery] #downloads,
+    body[data-recovery] #setup-footer,
+    body[data-recovery] #setup-help { display: none !important; }
+    #setup-recovery label { display: block; margin-top: 1rem; }
+    #setup-recovery input { display: block; box-sizing: border-box; width: 100%; min-height: 46px; padding: .6rem; font-size: 1rem; }
+    #setup-recovery button { min-height: 46px; }
+    #setup-recovery details { margin-top: 1rem; overflow-wrap: anywhere; }
+    #setup-recovery summary { cursor: pointer; }
     .machine-card {
       margin-bottom: 2rem;
       padding: 1rem;
@@ -128,6 +141,34 @@
   <main>
     <div class="init-container">
       <h1 id="setup-heading" tabindex="-1"></h1>
+
+      <section id="setup-recovery" hidden aria-labelledby="recovery-heading">
+        <h2 id="recovery-heading" tabindex="-1">restore your journal</h2>
+        <p id="recovery-message" role="status" aria-live="polite">checking restore status...</p>
+        <p id="recovery-source"></p>
+        <form id="recovery-form" hidden>
+          <label for="recovery-key">recovery key</label>
+          <input id="recovery-key" type="password" autocomplete="off" spellcheck="false" required>
+          <button id="recovery-show-key" type="button" class="settings-preset-btn" aria-pressed="false">show key</button>
+          <details id="recovery-credentials" hidden>
+            <summary>update storage credentials</summary>
+            <label id="recovery-access-label" for="recovery-access">access key id</label>
+            <input id="recovery-access" autocomplete="off" spellcheck="false">
+            <label id="recovery-secret-label" for="recovery-secret">secret access key</label>
+            <input id="recovery-secret" type="password" autocomplete="off" spellcheck="false">
+            <button id="recovery-show-secret" type="button" class="settings-preset-btn" aria-pressed="false">show secret</button>
+            <div id="recovery-region-row">
+              <label for="recovery-region">region (optional)</label>
+              <input id="recovery-region" autocomplete="off" spellcheck="false">
+            </div>
+          </details>
+          <button id="recovery-continue" type="submit" class="cta-button">continue restore</button>
+        </form>
+        <button id="recovery-stop" type="button" class="settings-preset-btn" hidden>stop restore</button>
+        <button id="recovery-check" type="button" class="settings-preset-btn">check restore status</button>
+        <div id="recovery-error" class="error-message" role="alert" tabindex="-1" hidden></div>
+        <details id="recovery-details" hidden><summary>restore details</summary><p id="recovery-selection"></p></details>
+      </section>
 
       <div id="welcome-beats"></div>
 
@@ -222,6 +263,10 @@
     let saveThinkingInFlight = false;
     let downloadsNeedReconciliation = false;
     let finalizeInFlight = false;
+    let recoveryShown = false;
+    let recoveryState = null;
+    let recoveryBound = false;
+    let recoveryRequestInFlight = false;
 
     let requestSeq = 0;
     let newestAppliedSeq = 0;
@@ -280,6 +325,97 @@
     async function apiCall(endpoint, options = {}) {
       const opts = { ...options, noAuthRedirect: true };
       return await window.apiJson(endpoint, opts);
+    }
+
+    function recoveryError(message) {
+      const error = document.getElementById('recovery-error');
+      error.textContent = message;
+      error.hidden = !message;
+    }
+
+    function showRecovery(state) {
+      recoveryShown = true;
+      recoveryState = state;
+      for (const id of ['setup-heading', 'welcome-beats', 'section-machine-card', 'setup-mark', 'setup-thinking', 'downloads', 'setup-footer']) {
+        document.getElementById(id).hidden = true;
+      }
+      document.getElementById('setup-recovery').hidden = false;
+      const active = state.in_progress === true;
+      const ready = state.recovery === 'pending' && state.source && state.in_progress === false;
+      document.getElementById('recovery-form').hidden = !ready;
+      document.getElementById('recovery-stop').hidden = !active;
+      document.getElementById('recovery-continue').disabled = recoveryRequestInFlight;
+      document.getElementById('recovery-message').textContent = active
+        ? 'restoring your journal...'
+        : recoveryRequestInFlight ? 'starting restore...'
+        : ready ? "the restore hasn't finished. enter your recovery key to continue."
+        : state.recovery === 'unavailable'
+          ? "the restore record can't be read. your journal isn't ready to use."
+          : 'checking restore status...';
+      const source = state.source;
+      document.getElementById('recovery-source').textContent = source && source.kind === 'byo' ? source.repository : '';
+      document.getElementById('recovery-credentials').hidden = !source || source.kind !== 'byo';
+      const b2 = source && source.backend === 'b2';
+      document.getElementById('recovery-access-label').textContent = b2 ? 'account id' : 'access key id';
+      document.getElementById('recovery-secret-label').textContent = b2 ? 'application key' : 'secret access key';
+      document.getElementById('recovery-region-row').hidden = b2;
+      document.getElementById('recovery-details').hidden = !state.snapshot_id;
+      document.getElementById('recovery-selection').textContent = state.snapshot_id ? `${state.snapshot_id}\n${state.subtree}` : '';
+      if (!recoveryBound) {
+        recoveryBound = true;
+        document.getElementById('recovery-check').addEventListener('click', runInitialStateRead);
+        for (const [button, input, show, hide] of [
+          ['recovery-show-key', 'recovery-key', 'show key', 'hide key'],
+          ['recovery-show-secret', 'recovery-secret', 'show secret', 'hide secret'],
+        ]) {
+          document.getElementById(button).addEventListener('click', () => {
+            const field = document.getElementById(input);
+            const visible = field.type === 'password';
+            field.type = visible ? 'text' : 'password';
+            document.getElementById(button).textContent = visible ? hide : show;
+            document.getElementById(button).setAttribute('aria-pressed', String(visible));
+          });
+        }
+        document.getElementById('recovery-form').addEventListener('submit', async event => {
+          event.preventDefault();
+          if (recoveryRequestInFlight || !recoveryState || recoveryState.in_progress !== false) return;
+          const source = recoveryState.source;
+          const key = document.getElementById('recovery-key').value.trim();
+          if (!key) { recoveryError('enter your recovery key.'); return; }
+          const payload = { recovery_key: key, snapshot_id: recoveryState.snapshot_id, subtree: recoveryState.subtree };
+          if (source && source.kind === 'byo') {
+            const access = document.getElementById('recovery-access').value.trim();
+            const secret = document.getElementById('recovery-secret').value.trim();
+            if (!!access !== !!secret) { recoveryError('enter both storage credentials.'); return; }
+            if (access && secret) {
+              payload.kind = 'byo'; payload.repository = source.repository; payload.backend = source.backend;
+              payload.credentials = source.backend === 'b2' ? {account_id: access, account_key: secret} : {access_key_id: access, secret_access_key: secret};
+              const region = document.getElementById('recovery-region').value.trim();
+              if (source.backend === 's3' && region) payload.credentials.region = region;
+            }
+          }
+          for (const id of ['recovery-key', 'recovery-access', 'recovery-secret', 'recovery-region']) document.getElementById(id).value = '';
+          recoveryRequestInFlight = true; recoveryError(''); showRecovery(recoveryState);
+          try {
+            await apiCall('/init/api/recovery/retry', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload) });
+          } catch (error) {
+            recoveryError(error.serverMessage || "the restore result couldn't be read. check restore status.");
+          } finally {
+            recoveryRequestInFlight = false;
+            showRecovery(recoveryState);
+            runInitialStateRead();
+          }
+        });
+        document.getElementById('recovery-stop').addEventListener('click', async () => {
+          const button = document.getElementById('recovery-stop');
+          button.disabled = true;
+          try {
+            await apiCall('/init/api/recovery/stop', {method: 'POST'});
+          } catch (error) { recoveryError(error.serverMessage || "the stop result couldn't be read. check restore status."); }
+          finally { button.disabled = false; runInitialStateRead(); }
+        });
+      }
+      managePollInterval();
     }
 
     async function postAction(payload) {
@@ -931,6 +1067,7 @@
     }
 
     function shouldPoll() {
+      if (recoveryShown) return true;
       if (saveThinkingInFlight || downloadsNeedReconciliation) return true;
       if (!setupState || !setupState.downloads) return false;
       const d = setupState.downloads;
@@ -972,13 +1109,16 @@
         const opts = controller ? { signal: controller.signal } : {};
         const freshState = await apiCall('/init/api/state', opts);
         if (deadlineTimeout) clearTimeout(deadlineTimeout);
+        if (freshState && freshState.recovery) { showRecovery(freshState); return; }
+        if (recoveryShown) { window.location.href = freshState && freshState.done && freshState.redirect ? freshState.redirect : '/init'; return; }
         if (freshState && freshState.downloads) {
           applyDownloadsSnapshot(freshState.downloads, seq);
         }
       } catch (err) {
         if (deadlineTimeout) clearTimeout(deadlineTimeout);
         if (reconciling) downloadsNeedReconciliation = true;
-        showCurrentError(errorText(err));
+        if (recoveryShown) recoveryError(errorText(err));
+        else showCurrentError(errorText(err));
       } finally {
         stateReadInFlight = false;
         managePollInterval();
@@ -1012,6 +1152,9 @@
         if (didAbort || (controller && controller.signal.aborted)) {
           return;
         }
+
+        if (freshState && freshState.recovery) { showRecovery(freshState); return; }
+        if (recoveryShown) { window.location.href = freshState && freshState.done && freshState.redirect ? freshState.redirect : '/init'; return; }
 
         if (freshState && freshState.done === true && freshState.redirect) {
           window.location.href = freshState.redirect;

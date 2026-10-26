@@ -15,15 +15,22 @@ use solstone_core_handoff_nonce::mint_nonce;
 use solstone_core_journal_config::{
     McpEndpointCapability, mcp_endpoint_capability, read_journal_config,
 };
-use solstone_core_journal_config_write::{JournalConfigMutation, mutate_journal_config};
+use solstone_core_journal_config_write::{
+    JournalConfigMutation, mutate_journal_config_at_root_checked,
+};
 use solstone_core_thinking::confidential::{
     HandoffResult, OperationHandle, OperationRegistry, Phase,
 };
 
 use crate::JournalRoot;
 use crate::assets;
+use crate::service_handoffs::{HandoffRun, ServiceHandoffs, interrupted};
 
 pub const SERVICE: &str = "sme";
+
+pub(crate) fn cancel_pending(operations: &OperationRegistry) {
+    operations.cancel(SERVICE, outcome(Phase::Revoked, "revoked", None));
+}
 pub(crate) const DEFAULT_PORTAL_URL: &str = "https://services.solstone.app";
 const BUSY_ERROR: &str = "a request to turn on solstone.me is already open. finish it or wait for it to end, then try again.";
 const BUSY_DETAIL: &str = "operation already running";
@@ -150,12 +157,16 @@ async fn agents_operation(
 }
 
 async fn agents_enable(
-    Extension(journal): Extension<Arc<JournalRoot>>,
+    Extension(admitted_root): Extension<Arc<solstone_core_journal_io::JournalRoot>>,
+    handoffs: Option<Extension<Arc<ServiceHandoffs>>>,
     Extension(operations): Extension<Arc<OperationRegistry>>,
     Extension(runtime): Extension<SmeRuntime>,
     override_operations: Option<Extension<SmeOperationsOverride>>,
     override_runtime: Option<Extension<SmeRuntimeOverride>>,
 ) -> Response {
+    let handoffs =
+        ServiceHandoffs::for_request(handoffs.map(|Extension(owner)| owner), admitted_root);
+    let journal = JournalRoot(handoffs.root().canonical_path().to_owned());
     let operations = override_operations
         .map(|Extension(value)| value.0)
         .unwrap_or(operations);
@@ -253,7 +264,7 @@ async fn agents_enable(
             Ok(value) => value,
             Err(_) => return busy_refusal(),
         };
-    spawn_handoff(journal.0.clone(), operations, handle, runtime, nonce);
+    spawn_handoff(handoffs, operations, handle, runtime, nonce).await;
     (
         StatusCode::ACCEPTED,
         Json(json!({"success":true,"service":SERVICE,"operation":operation})),
@@ -287,83 +298,113 @@ fn refusal(code: &'static str, detail: &str, status: StatusCode) -> Response {
         .into_response()
 }
 
-fn spawn_handoff(
-    journal: std::path::PathBuf,
+async fn spawn_handoff(
+    handoffs: Arc<ServiceHandoffs>,
     operations: Arc<OperationRegistry>,
     handle: OperationHandle,
     runtime: SmeRuntime,
     nonce: String,
 ) {
-    tokio::spawn(async move {
-        if !operations.mark_waiting(SERVICE, handle) {
-            return;
-        }
-        let deadline = Instant::now() + Duration::from_secs(900);
-        let result = loop {
-            let poll = runtime.poll.clone();
-            let base = runtime.portal_base_url.clone();
-            let nonce = nonce.clone();
-            match tokio::task::spawn_blocking(move || poll.poll(&base, &nonce)).await {
-                Ok(SmePollOutcome::Continue) if Instant::now() < deadline => {
-                    tokio::time::sleep(Duration::from_secs(1)).await;
-                }
-                Ok(SmePollOutcome::Continue) => break outcome(Phase::Error, "expired", None),
-                Ok(SmePollOutcome::Failed { token, detail }) => {
-                    break outcome_for_token(&token, detail);
-                }
-                Ok(SmePollOutcome::Success(payload)) => match classify_payload(&payload) {
-                    Ok(("pending", _)) if Instant::now() < deadline => {
-                        tokio::time::sleep(Duration::from_secs(1)).await;
-                    }
-                    Ok(("revoked", _)) => break outcome(Phase::Revoked, "revoked", None),
-                    // The portal has saved the owner's consent and is waiting on a
-                    // subscription. Turning on now lets the service hold on the
-                    // portal's no-write 402 and retry, so a purchase is picked up
-                    // by itself. Ending here instead made the owner turn solstone.me
-                    // on and approve it again after paying.
-                    Ok(("needs_subscription", url)) => {
-                        let result = enable_sme(&journal);
-                        break match result {
-                            Ok(()) => outcome(Phase::Enabled, "approved", url),
-                            Err(_) => outcome(Phase::Error, "local_error", None),
-                        };
-                    }
-                    Ok(("approved", _)) => {
-                        let result = enable_sme(&journal);
-                        break match result {
-                            Ok(()) => outcome(Phase::Enabled, "approved", None),
-                            Err(_) => outcome(Phase::Error, "local_error", None),
-                        };
-                    }
-                    _ => break outcome(Phase::Error, "malformed", None),
-                },
-                Err(_) => break outcome(Phase::Error, "local_error", None),
+    handoffs
+        .spawn(SERVICE, operations.clone(), handle, move |run| async move {
+            if !operations.mark_waiting(SERVICE, handle) {
+                return interrupted();
             }
-        };
-        operations.finish(SERVICE, handle, result);
-    });
+            let deadline = Instant::now() + Duration::from_secs(900);
+            loop {
+                if run.cancelled() {
+                    return interrupted();
+                }
+                let poll = runtime.poll.clone();
+                let base = runtime.portal_base_url.clone();
+                let nonce = nonce.clone();
+                let polled = run.blocking(move || poll.poll(&base, &nonce)).await;
+                if run.cancelled() {
+                    return interrupted();
+                }
+                match polled {
+                    Ok(SmePollOutcome::Continue) if Instant::now() < deadline => {
+                        if !run.sleep(Duration::from_secs(1)).await {
+                            return interrupted();
+                        }
+                    }
+                    Ok(SmePollOutcome::Continue) => return outcome(Phase::Error, "expired", None),
+                    Ok(SmePollOutcome::Failed { token, detail }) => {
+                        return outcome_for_token(&token, detail);
+                    }
+                    Ok(SmePollOutcome::Success(payload)) => match classify_payload(&payload) {
+                        Ok(("pending", _)) if Instant::now() < deadline => {
+                            if !run.sleep(Duration::from_secs(1)).await {
+                                return interrupted();
+                            }
+                        }
+                        Ok(("revoked", _)) => return outcome(Phase::Revoked, "revoked", None),
+                        // Existing consent may wait on a subscription. The service
+                        // stays on its no-write refusal until that access is active.
+                        Ok(("needs_subscription", url)) | Ok(("approved", url)) => {
+                            let effect = Arc::clone(&run);
+                            return match run.blocking(move || enable_sme(&effect)).await {
+                                Ok(Ok(())) => outcome(Phase::Enabled, "approved", url),
+                                _ => outcome(Phase::Error, "local_error", None),
+                            };
+                        }
+                        _ => return outcome(Phase::Error, "malformed", None),
+                    },
+                    Err(_) => return outcome(Phase::Error, "local_error", None),
+                }
+            }
+        })
+        .await;
 }
 
-fn enable_sme(journal: &std::path::Path) -> Result<(), String> {
-    mutate_journal_config(journal, Default::default(), |config| {
-        let endpoint = config
-            .entry("mcp_endpoint".to_owned())
-            .or_insert_with(|| json!({}));
-        let Some(endpoint) = endpoint.as_object_mut() else {
-            return JournalConfigMutation {
-                changed: false,
-                value: Err("mcp_endpoint setting is not an object".to_owned()),
+fn enable_sme(run: &HandoffRun) -> Result<(), String> {
+    mutate_journal_config_at_root_checked(
+        &run.root(),
+        Default::default(),
+        &|| {
+            if run.cancelled() {
+                Err("service turn-on interrupted".to_owned())
+            } else {
+                Ok(())
+            }
+        },
+        |config| {
+            if run.cancelled() {
+                return JournalConfigMutation {
+                    changed: false,
+                    value: Err("service turn-on interrupted".to_owned()),
+                };
+            }
+            let endpoint = config
+                .entry("mcp_endpoint".to_owned())
+                .or_insert_with(|| json!({}));
+            let Some(endpoint) = endpoint.as_object_mut() else {
+                return JournalConfigMutation {
+                    changed: false,
+                    value: Err("mcp_endpoint setting is not an object".to_owned()),
+                };
             };
-        };
-        let changed = endpoint.get("enabled") != Some(&Value::Bool(true));
-        endpoint.insert("enabled".to_owned(), Value::Bool(true));
-        JournalConfigMutation {
-            changed,
-            value: Ok(()),
+            let changed = endpoint.get("enabled") != Some(&Value::Bool(true));
+            endpoint.insert("enabled".to_owned(), Value::Bool(true));
+            JournalConfigMutation {
+                changed,
+                value: Ok(()),
+            }
+        },
+    )
+    .map_err(|e| e.to_string())
+    .and_then(|mutation| {
+        mutation.value?;
+        if crate::service_handoffs::config_confirmed(&mutation.outcome) {
+            Ok(())
+        } else {
+            log::warn!(
+                "solstone.me configuration was published with uncertainty: {:?}",
+                mutation.outcome
+            );
+            Err("service turn-on publication could not be confirmed".to_owned())
         }
     })
-    .map_err(|e| e.to_string())
-    .and_then(|mutation| mutation.value)
 }
 
 fn classify_payload(payload: &Map<String, Value>) -> Result<(&str, Option<String>), ()> {

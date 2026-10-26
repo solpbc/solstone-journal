@@ -6,7 +6,7 @@
 use std::path::Path;
 use std::time::Duration;
 
-use solstone_core_retention::owner_voice::finish_owed_owner_voice_deletions;
+use solstone_core_retention::owner_voice::finish_owed_owner_voice_deletions_checked;
 
 use crate::{CliRun, HealthServices};
 
@@ -20,6 +20,16 @@ pub(crate) fn owner_voice_originals(
     journal: &Path,
     services: &HealthServices,
 ) -> CliRun {
+    owner_voice_originals_checked(args, journal, services, &|| Ok(()))
+}
+
+/// Use the same cleanup from an app-owned worker, retaining its Stop checkpoint.
+pub fn owner_voice_originals_checked(
+    args: &[String],
+    journal: &Path,
+    services: &HealthServices,
+    checkpoint: &dyn Fn() -> Result<(), String>,
+) -> CliRun {
     if !args.is_empty() {
         return CliRun {
             stdout: String::new(),
@@ -28,13 +38,23 @@ pub(crate) fn owner_voice_originals(
         };
     }
     let today = services.now.with_timezone(&services.zone).date_naive();
-    let counts = finish_owed_owner_voice_deletions(
+    let counts = match finish_owed_owner_voice_deletions_checked(
         journal,
         today,
         BUSY_RETRIES,
         BUSY_PAUSE,
         &chrono::Utc::now,
-    );
+        checkpoint,
+    ) {
+        Ok(counts) => counts,
+        Err(error) => {
+            return CliRun {
+                stdout: String::new(),
+                stderr: format!("owner voice original cleanup incomplete: {error}\n"),
+                exit_code: 1,
+            };
+        }
+    };
     CliRun {
         stdout: format!(
             "owner-voice-originals: deleted {}, deleted without a record {}, already gone {}, still owed {}, kept for good {}, not provable {}, nothing owed {}, skipped while busy {}, events unreadable {}\n",
@@ -49,6 +69,6 @@ pub(crate) fn owner_voice_originals(
             counts.unknown,
         ),
         stderr: String::new(),
-        exit_code: 0,
+        exit_code: i32::from(counts.unknown > 0 || counts.deleted_unrecorded > 0),
     }
 }

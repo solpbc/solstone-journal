@@ -627,6 +627,18 @@ fn required_string(
 /// outcome; it is self-healing the same way, since the content and its event
 /// are already durably written and idempotent by the time it can occur.
 fn write_envelope(state: &IngestState, cid: &str, envelope: Envelope) -> Response {
+    let _restore_use = match solstone_core_journal_io::whole_journal_restore::begin_target_use(
+        &state.journal_root,
+    ) {
+        Ok(guard) => guard,
+        Err(_) => {
+            return refusal(
+                ReasonCode::JournalWriteFailed,
+                StatusCode::CONFLICT,
+                "whole-journal restore is pending",
+            );
+        }
+    };
     // Location uploads share the daily admission lock with place, accuracy,
     // removal, and publication writers. Other sources do not take it. It is
     // acquired before the source lock and is not taken again inside the write.
@@ -2007,6 +2019,70 @@ mod tests {
 
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(stream_record_count(&journal), 1);
+    }
+
+    #[test]
+    fn pending_restore_refuses_a_write_and_clearing_it_writes_again() {
+        let directory = root();
+        let journal = directory.path().to_path_buf();
+        let source =
+            solstone_core_journal_io::whole_journal_restore::WholeJournalRestoreSource::Byo {
+                repository: "repo".into(),
+                backend: "s3".into(),
+            };
+        let snapshot = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+        let absent = write_envelope(
+            &direct_state(&journal),
+            CID_A,
+            direct_envelope("audio", "audio-a.flac"),
+        );
+        assert_eq!(absent.status(), StatusCode::OK);
+        assert!(chronicle_has(&journal, "audio-a.flac"));
+
+        let record =
+            solstone_core_journal_io::whole_journal_restore::publish_whole_journal_restore(
+                &journal, &source, snapshot, "/journal",
+            )
+            .expect("obligation");
+        let pending = write_envelope(
+            &direct_state(&journal),
+            CID_A,
+            direct_envelope("audio", "audio-b.flac"),
+        );
+        assert_eq!(pending.status(), StatusCode::CONFLICT);
+        assert!(!chronicle_has(&journal, "audio-b.flac"));
+
+        solstone_core_journal_io::whole_journal_restore::clear_whole_journal_restore(
+            &journal, &record,
+        )
+        .expect("clear");
+        let resumed = write_envelope(
+            &direct_state(&journal),
+            CID_A,
+            direct_envelope("audio", "audio-c.flac"),
+        );
+        assert_eq!(resumed.status(), StatusCode::OK);
+        assert!(chronicle_has(&journal, "audio-c.flac"));
+    }
+
+    fn chronicle_has(root: &Path, name: &str) -> bool {
+        fn walk(dir: &Path, name: &str) -> bool {
+            let Ok(entries) = fs::read_dir(dir) else {
+                return false;
+            };
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    if walk(&path, name) {
+                        return true;
+                    }
+                } else if path.file_name().and_then(|item| item.to_str()) == Some(name) {
+                    return true;
+                }
+            }
+            false
+        }
+        walk(&root.join("chronicle"), name)
     }
 
     #[cfg(feature = "full-tests")]

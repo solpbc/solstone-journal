@@ -3,7 +3,13 @@
 
 //! Run an already admitted restore and retain its whole owning return.
 
-#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+#[cfg(any(
+    target_os = "linux",
+    target_os = "macos",
+    target_os = "windows",
+    target_os = "ios",
+    target_os = "android"
+))]
 use crate::operation;
 #[cfg(all(
     test,
@@ -12,7 +18,13 @@ use crate::operation;
 ))]
 use solstone_core_backup_runtime::DirectReadFinishState;
 use std::panic::{AssertUnwindSafe, catch_unwind};
-#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+#[cfg(any(
+    target_os = "linux",
+    target_os = "macos",
+    target_os = "windows",
+    target_os = "ios",
+    target_os = "android"
+))]
 use std::sync::Arc;
 
 use serde_json::{Value, json};
@@ -27,19 +39,30 @@ use super::{ArchivePayload, PreparedArchiveWorker, entry, return_owned, runtime_
 use crate::operation::{SharedOperationSlot, Terminal};
 use crate::restore_report;
 
-#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+#[cfg(any(
+    target_os = "linux",
+    target_os = "macos",
+    target_os = "windows",
+    target_os = "ios",
+    target_os = "android"
+))]
 use {
     super::{ArchiveTicket, OwnedArchiveBegin, begin_owned_locked, prepare_read_in},
     crate::{BackupWebDeps, operation::OperationState},
     solstone_core_backup::archive_admission::AdmissionError,
     solstone_core_backup_runtime::ClosedToolError,
-    solstone_core_backup_runtime::resolve::resolve_restic_member,
     solstone_core_journal_io::JournalRoot,
     solstone_core_offload::restore::selected_repository as repository,
     std::{path::PathBuf, thread::JoinHandle},
 };
 
-#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+#[cfg(any(
+    target_os = "linux",
+    target_os = "macos",
+    target_os = "windows",
+    target_os = "ios",
+    target_os = "android"
+))]
 struct Input {
     begin: OwnedArchiveBegin,
     repository: Option<String>,
@@ -48,13 +71,25 @@ struct Input {
     executable: PathBuf,
 }
 
-#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+#[cfg(any(
+    target_os = "linux",
+    target_os = "macos",
+    target_os = "windows",
+    target_os = "ios",
+    target_os = "android"
+))]
 struct Unused {
     input: Input,
     refusal: UnusedRefusal,
 }
 
-#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+#[cfg(any(
+    target_os = "linux",
+    target_os = "macos",
+    target_os = "windows",
+    target_os = "ios",
+    target_os = "android"
+))]
 enum UnusedRefusal {
     Start,
     Budget(AdmissionError),
@@ -62,7 +97,13 @@ enum UnusedRefusal {
     ResolverUnknown,
 }
 
-#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+#[cfg(any(
+    target_os = "linux",
+    target_os = "macos",
+    target_os = "windows",
+    target_os = "ios",
+    target_os = "android"
+))]
 impl UnusedRefusal {
     fn reason(&self) -> String {
         match self {
@@ -85,37 +126,91 @@ impl UnusedRefusal {
 
 #[derive(Default)]
 pub(super) struct Custody {
-    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+    #[cfg(any(
+        target_os = "linux",
+        target_os = "macos",
+        target_os = "windows",
+        target_os = "ios",
+        target_os = "android"
+    ))]
     ticket: Option<ArchiveTicket>,
-    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+    #[cfg(any(
+        target_os = "linux",
+        target_os = "macos",
+        target_os = "windows",
+        target_os = "ios",
+        target_os = "android"
+    ))]
     input: Option<Input>,
-    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+    #[cfg(any(
+        target_os = "linux",
+        target_os = "macos",
+        target_os = "windows",
+        target_os = "ios",
+        target_os = "android"
+    ))]
     unused: Vec<Unused>,
-    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+    #[cfg(any(
+        target_os = "linux",
+        target_os = "macos",
+        target_os = "windows",
+        target_os = "ios",
+        target_os = "android"
+    ))]
     worker: Option<JoinHandle<()>>,
 }
 
 impl Custody {
     pub(super) fn needs_settlement(&self) -> bool {
-        #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+        #[cfg(any(
+            target_os = "linux",
+            target_os = "macos",
+            target_os = "windows",
+            target_os = "ios",
+            target_os = "android"
+        ))]
         {
             !self.unused.is_empty()
         }
-        #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+        #[cfg(not(any(
+            target_os = "linux",
+            target_os = "macos",
+            target_os = "windows",
+            target_os = "ios",
+            target_os = "android"
+        )))]
         false
     }
     pub(super) fn worker_running(&self) -> bool {
-        #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+        #[cfg(any(
+            target_os = "linux",
+            target_os = "macos",
+            target_os = "windows",
+            target_os = "ios",
+            target_os = "android"
+        ))]
         {
             self.worker
                 .as_ref()
                 .is_some_and(|worker| !worker.is_finished())
         }
-        #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+        #[cfg(not(any(
+            target_os = "linux",
+            target_os = "macos",
+            target_os = "windows",
+            target_os = "ios",
+            target_os = "android"
+        )))]
         false
     }
     pub(super) fn is_busy(&self) -> bool {
-        #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+        #[cfg(any(
+            target_os = "linux",
+            target_os = "macos",
+            target_os = "windows",
+            target_os = "ios",
+            target_os = "android"
+        ))]
         {
             self.input.is_some()
                 || !self.unused.is_empty()
@@ -124,12 +219,24 @@ impl Custody {
                     .as_ref()
                     .is_some_and(|worker| !worker.is_finished())
         }
-        #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+        #[cfg(not(any(
+            target_os = "linux",
+            target_os = "macos",
+            target_os = "windows",
+            target_os = "ios",
+            target_os = "android"
+        )))]
         false
     }
 
     pub(super) fn take_finished_worker(&mut self) -> Option<std::thread::JoinHandle<()>> {
-        #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+        #[cfg(any(
+            target_os = "linux",
+            target_os = "macos",
+            target_os = "windows",
+            target_os = "ios",
+            target_os = "android"
+        ))]
         {
             if self.worker.as_ref().is_some_and(JoinHandle::is_finished) {
                 self.worker.take()
@@ -137,12 +244,24 @@ impl Custody {
                 None
             }
         }
-        #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+        #[cfg(not(any(
+            target_os = "linux",
+            target_os = "macos",
+            target_os = "windows",
+            target_os = "ios",
+            target_os = "android"
+        )))]
         None
     }
 }
 
-#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+#[cfg(any(
+    target_os = "linux",
+    target_os = "macos",
+    target_os = "windows",
+    target_os = "ios",
+    target_os = "android"
+))]
 fn refuse(reason: &str) -> axum::response::Response {
     crate::response::error(
         axum::http::StatusCode::BAD_REQUEST,
@@ -153,12 +272,19 @@ fn refuse(reason: &str) -> axum::response::Response {
 }
 
 /// Reserve the original input before an installed restore worker can start.
-#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+#[cfg(any(
+    target_os = "linux",
+    target_os = "macos",
+    target_os = "windows",
+    target_os = "ios",
+    target_os = "android"
+))]
 pub(crate) fn start(
     deps: &BackupWebDeps,
     day: Option<String>,
 ) -> Result<u64, axum::response::Response> {
-    let root = Arc::new(JournalRoot::open(&deps.journal_root).map_err(|_| refuse("restore_held"))?);
+    let root: Arc<JournalRoot> =
+        super::retained_archive_root(deps).map_err(|_| refuse("restore_held"))?;
     let repository = repository(&root, day.as_deref()).map_err(refuse)?;
     let time = u64::try_from(deps.clock.now_unix()).map_err(|_| refuse("failed"))?;
     let mut state =
@@ -208,7 +334,13 @@ pub(crate) fn start(
     Ok(generation)
 }
 
-#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+#[cfg(any(
+    target_os = "linux",
+    target_os = "macos",
+    target_os = "windows",
+    target_os = "ios",
+    target_os = "android"
+))]
 fn current_matches(state: &OperationState, ticket: &ArchiveTicket) -> bool {
     state.archive.matches(ticket)
         && state
@@ -225,7 +357,13 @@ fn current_matches(state: &OperationState, ticket: &ArchiveTicket) -> bool {
         })
 }
 
-#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+#[cfg(any(
+    target_os = "linux",
+    target_os = "macos",
+    target_os = "windows",
+    target_os = "ios",
+    target_os = "android"
+))]
 fn retain_unused(slot: &SharedOperationSlot, input: Input, refusal: UnusedRefusal) {
     slot.lock()
         .unwrap_or_else(|error| error.into_inner())
@@ -235,7 +373,13 @@ fn retain_unused(slot: &SharedOperationSlot, input: Input, refusal: UnusedRefusa
         .push(Unused { input, refusal });
 }
 
-#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+#[cfg(any(
+    target_os = "linux",
+    target_os = "macos",
+    target_os = "windows",
+    target_os = "ios",
+    target_os = "android"
+))]
 fn run_pending(slot: &SharedOperationSlot, ticket: &ArchiveTicket) {
     #[cfg(all(test, feature = "full-tests"))]
     tests::before_pending();
@@ -275,7 +419,8 @@ fn run_pending(slot: &SharedOperationSlot, ticket: &ArchiveTicket) {
             .map_err(UnusedRefusal::Budget)?;
         #[cfg(all(test, feature = "full-tests"))]
         tests::before_resolver();
-        resolve_restic_member(&input.executable).map_err(UnusedRefusal::Tools)
+        super::resolve_read_invocation(&input.begin.ticket.0.root, &input.executable)
+            .map_err(UnusedRefusal::Tools)
     }));
     let restic = match resolution {
         Ok(Ok(restic)) => restic,
@@ -289,7 +434,7 @@ fn run_pending(slot: &SharedOperationSlot, ticket: &ArchiveTicket) {
         time,
         ..
     } = input;
-    if let Some(worker) = prepare_read_in(slot, begin, repository, &restic) {
+    if let Some(worker) = prepare_read_in(slot, begin, repository, restic.invocation()) {
         match selection {
             Some(selection) => day(slot, worker, &selection, time),
             None => all(slot, worker, time),
@@ -302,12 +447,24 @@ pub(crate) fn response(
     deps: &crate::BackupWebDeps,
     expected: Option<u64>,
 ) -> Option<axum::response::Response> {
-    #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+    #[cfg(not(any(
+        target_os = "linux",
+        target_os = "macos",
+        target_os = "windows",
+        target_os = "ios",
+        target_os = "android"
+    )))]
     {
         let _ = (deps, expected);
         None
     }
-    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+    #[cfg(any(
+        target_os = "linux",
+        target_os = "macos",
+        target_os = "windows",
+        target_os = "ios",
+        target_os = "android"
+    ))]
     {
         let mut state = match deps.operations.lock() {
             Ok(state) => state,
@@ -387,9 +544,21 @@ pub(crate) fn response(
 
 /// Called synchronously inside the worker holding the original admission.
 pub(super) fn settle_closed(state: &mut crate::operation::OperationState) {
-    #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+    #[cfg(not(any(
+        target_os = "linux",
+        target_os = "macos",
+        target_os = "windows",
+        target_os = "ios",
+        target_os = "android"
+    )))]
     let _ = state;
-    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+    #[cfg(any(
+        target_os = "linux",
+        target_os = "macos",
+        target_os = "windows",
+        target_os = "ios",
+        target_os = "android"
+    ))]
     {
         let pending = &state.archive.restore;
         if !state.closed

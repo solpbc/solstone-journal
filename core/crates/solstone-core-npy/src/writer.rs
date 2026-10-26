@@ -3,17 +3,23 @@
 
 //! NPY byte construction compatible with the legacy Python writer.
 
-/// Write a version-1 NPY blob with its supplied payload.
-pub fn write_npy(descr: &str, shape: &str, payload: &[u8]) -> Vec<u8> {
+/// Version-1 NPY header, padded so the payload starts on a 64-byte boundary.
+pub fn npy_header(descr: &str, shape: &str) -> Vec<u8> {
     let mut header = format!("{{'descr': '{descr}', 'fortran_order': False, 'shape': {shape}, }}");
     let padding = (64 - ((10 + header.len() + 1) % 64)) % 64;
     header.push_str(&" ".repeat(padding));
     header.push('\n');
-    let mut bytes = Vec::with_capacity(10 + header.len() + payload.len());
+    let mut bytes = Vec::with_capacity(10 + header.len());
     bytes.extend_from_slice(b"\x93NUMPY");
     bytes.extend_from_slice(&[1, 0]);
     bytes.extend_from_slice(&(header.len() as u16).to_le_bytes());
     bytes.extend_from_slice(header.as_bytes());
+    bytes
+}
+
+/// Write a version-1 NPY blob with its supplied payload.
+pub fn write_npy(descr: &str, shape: &str, payload: &[u8]) -> Vec<u8> {
+    let mut bytes = npy_header(descr, shape);
     bytes.extend_from_slice(payload);
     bytes
 }

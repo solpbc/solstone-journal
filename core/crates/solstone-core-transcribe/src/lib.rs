@@ -36,11 +36,19 @@ mod config;
 #[cfg(all(feature = "embedded", unix))]
 mod embedded;
 #[cfg(all(feature = "embedded", unix))]
+mod embedded_spool;
+#[cfg(all(feature = "embedded", unix))]
+mod embedded_units;
+#[cfg(all(feature = "embedded", unix))]
+mod statement_embed;
+#[cfg(all(feature = "embedded", unix))]
 pub use embedded::{
     EMBEDDED_AUDIO_MAX_SAMPLES, EmbeddedAsr, EmbeddedControl, EmbeddedModelInfo, RetryContext,
     embedded_already_processed, embedded_retry_context, embedded_retryable_failure,
     process_embedded,
 };
+#[cfg(all(feature = "embedded", unix))]
+pub use embedded_units::{MOBILE_CED_CANCELLED, install_mobile_ced_engine};
 #[allow(dead_code)]
 mod event;
 mod model_assets;
@@ -572,7 +580,8 @@ impl TranscribeError {
                 | SpeakerTranscriptWriteError::PayloadNonFinite { .. } => 69,
                 SpeakerTranscriptWriteError::OutputUnwritable { .. }
                 | SpeakerTranscriptWriteError::NpzVerificationFailed { .. }
-                | SpeakerTranscriptWriteError::Internal { .. } => 75,
+                | SpeakerTranscriptWriteError::Internal { .. }
+                | SpeakerTranscriptWriteError::Cancelled => 75,
                 SpeakerTranscriptWriteError::MalformedRequest { .. }
                 | SpeakerTranscriptWriteError::UnknownSchema { .. }
                 | SpeakerTranscriptWriteError::MissingStatementId { .. }
@@ -620,7 +629,10 @@ impl From<ModelAssetError> for TranscribeError {
 
 impl From<SpeakerTranscriptWriteError> for TranscribeError {
     fn from(error: SpeakerTranscriptWriteError) -> Self {
-        Self::SpeakerTranscriptWrite(error)
+        match error {
+            SpeakerTranscriptWriteError::Cancelled => Self::Cancelled,
+            other => Self::SpeakerTranscriptWrite(other),
+        }
     }
 }
 

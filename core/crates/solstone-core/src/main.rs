@@ -2960,7 +2960,8 @@ fn speaker_transcript_write_exit_code(
         | SpeakerTranscriptWriteError::PayloadNonFinite { .. } => EXIT_UNAVAILABLE,
         SpeakerTranscriptWriteError::OutputUnwritable { .. }
         | SpeakerTranscriptWriteError::NpzVerificationFailed { .. }
-        | SpeakerTranscriptWriteError::Internal { .. } => EXIT_TEMPFAIL,
+        | SpeakerTranscriptWriteError::Internal { .. }
+        | SpeakerTranscriptWriteError::Cancelled => EXIT_TEMPFAIL,
     }
 }
 

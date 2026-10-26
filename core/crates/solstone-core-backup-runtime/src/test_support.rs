@@ -327,6 +327,8 @@ fn admitted_restore_argv(argv: &[String]) -> bool {
         .iter()
         .flat_map(|pattern| ["--exclude", *pattern])
         .collect();
+    expected.extend(["--exclude", "/health/whole-journal-restore.json"]);
+    expected.extend(["--exclude", "/health/!solstone-claim-00000000-*"]);
     let keeps = expected.len();
     expected.push("--json");
     let with_lock = {

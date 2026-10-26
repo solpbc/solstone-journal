@@ -3,6 +3,8 @@
 
 //! Direct LAN MCP door service.
 
+use crate::door_state_writer::DoorStateWriter;
+use solstone_core_journal_io::JournalRoot;
 use std::collections::{BTreeSet, HashMap};
 use std::io;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
@@ -208,6 +210,25 @@ pub fn write_lan_door_state(
     ) {
         log::error!("failed to write LAN door state");
     }
+}
+
+pub(crate) fn write_terminal_lan_state(state: &DoorStateWriter) {
+    write_lan_state_at_root(state, false, Some("not_running"), None, None);
+}
+fn write_lan_state_at_root(
+    state: &DoorStateWriter,
+    listening: bool,
+    reason: Option<&str>,
+    fingerprint: Option<&str>,
+    addresses: Option<Vec<LanAddressState>>,
+) {
+    state.publish_lan(&LanDoorState {
+        listening,
+        observed_at: Utc::now(),
+        reason: reason.map(str::to_owned),
+        fingerprint: fingerprint.map(str::to_owned),
+        addresses,
+    });
 }
 
 /// Admission predicate for interface addresses to bind.
@@ -769,7 +790,7 @@ fn generate_and_save_ca(journal_root: &Path) -> Result<ValidatedCa, McpServiceEr
     })
 }
 
-fn write_lan_door_state_tls_unavailable(journal_root: &Path, admitted_ips: &[IpAddr]) {
+fn write_lan_door_state_tls_unavailable(state: &DoorStateWriter, admitted_ips: &[IpAddr]) {
     let addr_states: Vec<LanAddressState> = admitted_ips
         .iter()
         .map(|ip| LanAddressState {
@@ -778,8 +799,8 @@ fn write_lan_door_state_tls_unavailable(journal_root: &Path, admitted_ips: &[IpA
             reason: Some("tls_unavailable".to_string()),
         })
         .collect();
-    write_lan_door_state(
-        journal_root,
+    write_lan_state_at_root(
+        state,
         false,
         Some("tls_unavailable"),
         None,
@@ -788,6 +809,23 @@ fn write_lan_door_state_tls_unavailable(journal_root: &Path, admitted_ips: &[IpA
 }
 
 pub fn reconcile_lan_identity(journal_root: &Path, admitted_ips: &[IpAddr]) -> LanIdentity {
+    let Ok(root) = JournalRoot::open(journal_root) else {
+        return LanIdentity {
+            ca_fingerprint: None,
+            selected: None,
+        };
+    };
+    reconcile_lan_identity_at_root(&DoorStateWriter::new(Arc::new(root)), admitted_ips)
+}
+
+fn reconcile_lan_identity_at_root(state: &DoorStateWriter, admitted_ips: &[IpAddr]) -> LanIdentity {
+    if state.root().revalidate_canonical_binding().is_err() {
+        return LanIdentity {
+            ca_fingerprint: None,
+            selected: None,
+        };
+    }
+    let journal_root = state.root().canonical_path();
     let ca = match validate_existing_ca(journal_root) {
         CaValidation::Valid(ca) => ca,
         CaValidation::Absent => match generate_and_save_ca(journal_root) {
@@ -798,7 +836,7 @@ pub fn reconcile_lan_identity(journal_root: &Path, admitted_ips: &[IpAddr]) -> L
                     selected: None,
                 };
                 if !admitted_ips.is_empty() {
-                    write_lan_door_state_tls_unavailable(journal_root, admitted_ips);
+                    write_lan_door_state_tls_unavailable(state, admitted_ips);
                 }
                 return identity;
             }
@@ -809,7 +847,7 @@ pub fn reconcile_lan_identity(journal_root: &Path, admitted_ips: &[IpAddr]) -> L
                 selected: None,
             };
             if !admitted_ips.is_empty() {
-                write_lan_door_state_tls_unavailable(journal_root, admitted_ips);
+                write_lan_door_state_tls_unavailable(state, admitted_ips);
             }
             return identity;
         }
@@ -836,7 +874,7 @@ pub fn reconcile_lan_identity(journal_root: &Path, admitted_ips: &[IpAddr]) -> L
                 ca_fingerprint: Some(ca_fingerprint),
                 selected: None,
             };
-            write_lan_door_state_tls_unavailable(journal_root, admitted_ips);
+            write_lan_door_state_tls_unavailable(state, admitted_ips);
             return identity;
         }
     };
@@ -850,7 +888,7 @@ pub fn reconcile_lan_identity(journal_root: &Path, admitted_ips: &[IpAddr]) -> L
                 ca_fingerprint: Some(ca_fingerprint),
                 selected: None,
             };
-            write_lan_door_state_tls_unavailable(journal_root, admitted_ips);
+            write_lan_door_state_tls_unavailable(state, admitted_ips);
             return identity;
         }
         LeafValidation::Absent | LeafValidation::NeedsReissue { .. } => {
@@ -866,7 +904,7 @@ pub fn reconcile_lan_identity(journal_root: &Path, admitted_ips: &[IpAddr]) -> L
                     selected: previous_usable,
                 };
                 if identity.selected.is_none() {
-                    write_lan_door_state_tls_unavailable(journal_root, admitted_ips);
+                    write_lan_door_state_tls_unavailable(state, admitted_ips);
                 }
                 return identity;
             }
@@ -879,7 +917,7 @@ pub fn reconcile_lan_identity(journal_root: &Path, admitted_ips: &[IpAddr]) -> L
                         selected: previous_usable,
                     };
                     if identity.selected.is_none() {
-                        write_lan_door_state_tls_unavailable(journal_root, admitted_ips);
+                        write_lan_door_state_tls_unavailable(state, admitted_ips);
                     }
                     return identity;
                 }
@@ -991,6 +1029,9 @@ pub async fn run_lan_door_hosted_async(
     run: LanDoorRun,
     hosted_parent: Option<Arc<HostedServiceParentRuntime>>,
 ) -> Result<(), McpServiceError> {
+    let state = Arc::new(DoorStateWriter::new(Arc::new(
+        JournalRoot::open(&journal_root).map_err(|_| McpServiceError::Bootstrap)?,
+    )));
     let (shutdown_send, shutdown_receive) = watch::channel(false);
     let signal_task = tokio::spawn(wait_for_shutdown_signal(shutdown_send.clone()));
     let (parent_loss_send, mut parent_loss_receive) = tokio::sync::oneshot::channel();
@@ -1005,9 +1046,14 @@ pub async fn run_lan_door_hosted_async(
     let oauth = Arc::new(OAuthRuntime::new_lan_door(&journal_root));
     let iface_source = SystemInterfaceSource;
 
-    let result =
-        run_lan_door_loop_with_sources(&journal_root, run, shutdown_receive, oauth, &iface_source)
-            .await;
+    let result = run_lan_door_loop_at_root(
+        Arc::clone(&state),
+        run,
+        shutdown_receive,
+        oauth,
+        &iface_source,
+    )
+    .await;
 
     let service_stopped = result.is_ok();
     signal_task.abort();
@@ -1016,7 +1062,7 @@ pub async fn run_lan_door_hosted_async(
         parent_task.abort();
         let _ = parent_task.await;
     }
-    write_lan_door_state(&journal_root, false, Some("not_running"), None, None);
+    write_terminal_lan_state(&state);
     if let Some(parent) = hosted_parent {
         // As spl and cortex do: a host signal can arrive before the
         // supervisor's retirement request, so wait for either briefly.
@@ -1063,12 +1109,12 @@ async fn wait_for_hosted_parent(
 
 /// Run the LAN door asynchronously with production defaults.
 pub(crate) async fn run_lan_door_async(
-    journal_root: PathBuf,
+    state: Arc<DoorStateWriter>,
     oauth: Arc<OAuthRuntime>,
     shutdown_rx: watch::Receiver<bool>,
 ) -> Result<(), McpServiceError> {
-    run_lan_door_loop_with_sources(
-        &journal_root,
+    run_lan_door_loop_at_root(
+        state,
         LanDoorRun::production(),
         shutdown_rx,
         oauth,
@@ -1092,10 +1138,29 @@ pub async fn run_lan_door_loop(
 pub(crate) async fn run_lan_door_loop_with_sources(
     journal_root: &Path,
     run: LanDoorRun,
+    shutdown_rx: watch::Receiver<bool>,
+    oauth: Arc<OAuthRuntime>,
+    iface_source: &(dyn RawInterfaceSource + Send + Sync),
+) -> Result<(), McpServiceError> {
+    let root = Arc::new(JournalRoot::open(journal_root).map_err(|_| McpServiceError::Bootstrap)?);
+    run_lan_door_loop_at_root(
+        Arc::new(DoorStateWriter::new(root)),
+        run,
+        shutdown_rx,
+        oauth,
+        iface_source,
+    )
+    .await
+}
+
+async fn run_lan_door_loop_at_root(
+    state: Arc<DoorStateWriter>,
+    run: LanDoorRun,
     mut shutdown_rx: watch::Receiver<bool>,
     oauth: Arc<OAuthRuntime>,
     iface_source: &(dyn RawInterfaceSource + Send + Sync),
 ) -> Result<(), McpServiceError> {
+    let journal_root = state.root().canonical_path();
     let journal_root_arc = Arc::new(journal_root.to_path_buf());
     let sessions = Arc::new(SessionTable::new());
     let pool_semaphore = Arc::new(Semaphore::new(run.connection_permits));
@@ -1131,13 +1196,7 @@ pub(crate) async fn run_lan_door_loop_with_sources(
                     address_states.clear();
                     server_config_cell.store(Arc::new(None));
                     current_fingerprint = None;
-                    write_lan_door_state(
-                        journal_root,
-                        false,
-                        Some("config_unreadable"),
-                        None,
-                        None,
-                    );
+                    write_lan_state_at_root(&state, false, Some("config_unreadable"), None, None);
                     return Ok(());
                 }
             };
@@ -1148,7 +1207,7 @@ pub(crate) async fn run_lan_door_loop_with_sources(
                     address_states.clear();
                     server_config_cell.store(Arc::new(None));
                     current_fingerprint = None;
-                    write_lan_door_state(journal_root, false, Some("config_invalid"), None, None);
+                    write_lan_state_at_root(&state, false, Some("config_invalid"), None, None);
                     return Ok(());
                 }
                 LocalDoorConfig::Off => {
@@ -1156,7 +1215,7 @@ pub(crate) async fn run_lan_door_loop_with_sources(
                     address_states.clear();
                     server_config_cell.store(Arc::new(None));
                     current_fingerprint = None;
-                    write_lan_door_state(journal_root, false, Some("disabled"), None, None);
+                    write_lan_state_at_root(&state, false, Some("disabled"), None, None);
                     return Ok(());
                 }
                 LocalDoorConfig::On => {}
@@ -1168,7 +1227,7 @@ pub(crate) async fn run_lan_door_loop_with_sources(
                 address_states.clear();
                 server_config_cell.store(Arc::new(None));
                 current_fingerprint = None;
-                write_lan_door_state(journal_root, false, Some("tls_unavailable"), None, None);
+                write_lan_state_at_root(&state, false, Some("tls_unavailable"), None, None);
                 return Ok(());
             }
 
@@ -1178,8 +1237,8 @@ pub(crate) async fn run_lan_door_loop_with_sources(
                 Err(_) => {
                     log::error!("interface enumeration failed");
                     if active_tasks.is_empty() {
-                        write_lan_door_state(
-                            journal_root,
+                        write_lan_state_at_root(
+                            &state,
                             false,
                             Some("enumeration_failed"),
                             None,
@@ -1207,12 +1266,12 @@ pub(crate) async fn run_lan_door_loop_with_sources(
                 address_states.clear();
                 server_config_cell.store(Arc::new(None));
                 current_fingerprint = None;
-                write_lan_door_state(journal_root, false, Some("no_address"), None, None);
+                write_lan_state_at_root(&state, false, Some("no_address"), None, None);
                 return Ok(());
             }
 
             // 3. Reconcile TLS identity
-            let identity = reconcile_lan_identity(journal_root, &admitted_ips);
+            let identity = reconcile_lan_identity_at_root(&state, &admitted_ips);
             let selected = match identity.selected {
                 Some(s) => s,
                 None => {
@@ -1220,7 +1279,7 @@ pub(crate) async fn run_lan_door_loop_with_sources(
                     address_states.clear();
                     server_config_cell.store(Arc::new(None));
                     current_fingerprint = None;
-                    write_lan_door_state_tls_unavailable(journal_root, &admitted_ips);
+                    write_lan_door_state_tls_unavailable(&state, &admitted_ips);
                     return Ok(());
                 }
             };
@@ -1354,8 +1413,8 @@ pub(crate) async fn run_lan_door_loop_with_sources(
                 None
             };
 
-            write_lan_door_state(
-                journal_root,
+            write_lan_state_at_root(
+                &state,
                 listening,
                 top_reason.as_deref(),
                 fp,
@@ -4411,5 +4470,38 @@ mod full_tests {
             store.complete_pairing_with_permission(&tx5, code, None, &local_runtime.binding(),),
             Err(crate::oauth::store::OAuthStoreError::PairingMismatch)
         ));
+    }
+}
+
+#[cfg(all(test, feature = "full-tests"))]
+mod retained_state_reconciliation_tests {
+    use super::*;
+    #[test]
+    fn owned_lan_reconciliation_refuses_root_loss_before_ca_or_failure_state_effects() {
+        let temporary = tempfile::tempdir().unwrap();
+        let journal = temporary.path().join("journal");
+        let retained = temporary.path().join("retained");
+        std::fs::create_dir(&journal).unwrap();
+        let state = DoorStateWriter::new(Arc::new(JournalRoot::open(&journal).unwrap()));
+        let ips = ["192.168.1.2".parse().unwrap()];
+        let identity = reconcile_lan_identity_at_root(&state, &ips);
+        assert!(
+            identity.selected.is_some(),
+            "same original root retains native CA/cert behavior"
+        );
+        write_lan_door_state_tls_unavailable(&state, &ips);
+        assert_eq!(
+            read_lan_door_state(&journal).unwrap().reason.as_deref(),
+            Some("tls_unavailable")
+        );
+        std::fs::rename(&journal, &retained).unwrap();
+        std::fs::create_dir(&journal).unwrap();
+        assert!(
+            reconcile_lan_identity_at_root(&state, &ips)
+                .selected
+                .is_none()
+        );
+        write_lan_door_state_tls_unavailable(&state, &ips);
+        assert_eq!(std::fs::read_dir(&journal).unwrap().count(), 0);
     }
 }

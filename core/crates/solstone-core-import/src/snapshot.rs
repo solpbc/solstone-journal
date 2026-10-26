@@ -93,6 +93,15 @@ impl Snapshot {
             let _ = temporary.keep();
         }
     }
+
+    /// Delete a fresh temporary directory on this thread.
+    ///
+    /// A reused snapshot has no temporary directory. This does not use [`Drop`].
+    pub fn delete_unkept(mut self) {
+        if let Some(temporary) = self.temporary.take() {
+            drop(temporary);
+        }
+    }
 }
 
 impl Drop for Snapshot {
@@ -110,17 +119,8 @@ impl Drop for Snapshot {
 }
 
 pub fn create(journal: &Path, import_id: &str, source: &Path) -> Result<Snapshot, String> {
-    crate::validate_timestamp(import_id).map_err(|error| error.to_string())?;
-    let parent = solstone_core_journal_io::contained_path(journal, &format!("imports/{import_id}"))
-        .map_err(|error| error.to_string())?;
-    let canonical_source = source.canonicalize().map_err(|error| error.to_string())?;
-    if parent
-        .canonicalize()
-        .map_err(|error| error.to_string())?
-        .starts_with(&canonical_source)
-    {
-        return Err("choose a source outside its import staging folder".to_owned());
-    }
+    let parent = staged_parent(journal, import_id)?;
+    refuse_source_inside_staging(&parent, source)?;
     let before = fingerprint(source).map_err(|error| error.to_string())?;
     let metadata =
         crate::read_import_metadata(journal, import_id).map_err(|error| error.to_string())?;
@@ -141,6 +141,33 @@ pub fn create(journal: &Path, import_id: &str, source: &Path) -> Result<Snapshot
         .prefix("preview-")
         .tempdir_in(&parent)
         .map_err(|error| error.to_string())?;
+    finish_copy(&parent, source, before, temporary)
+}
+
+fn staged_parent(journal: &Path, import_id: &str) -> Result<PathBuf, String> {
+    crate::validate_timestamp(import_id).map_err(|error| error.to_string())?;
+    solstone_core_journal_io::contained_path(journal, &format!("imports/{import_id}"))
+        .map_err(|error| error.to_string())
+}
+
+fn refuse_source_inside_staging(parent: &Path, source: &Path) -> Result<(), String> {
+    let canonical_source = source.canonicalize().map_err(|error| error.to_string())?;
+    if parent
+        .canonicalize()
+        .map_err(|error| error.to_string())?
+        .starts_with(&canonical_source)
+    {
+        return Err("choose a source outside its import staging folder".to_owned());
+    }
+    Ok(())
+}
+
+fn finish_copy(
+    parent: &Path,
+    source: &Path,
+    before: String,
+    temporary: tempfile::TempDir,
+) -> Result<Snapshot, String> {
     let destination = temporary
         .path()
         .join(source.file_name().ok_or("source has no filename")?);
@@ -151,7 +178,7 @@ pub fn create(journal: &Path, import_id: &str, source: &Path) -> Result<Snapshot
     }
     let relative = portable_relative(
         destination
-            .strip_prefix(&parent)
+            .strip_prefix(parent)
             .map_err(|error| error.to_string())?,
     )?;
     Ok(Snapshot {
@@ -476,5 +503,40 @@ mod tests {
         .unwrap();
         assert!(discard_download(root.path(), ID).is_err());
         assert!(source.exists());
+    }
+    #[test]
+    fn dropping_a_snapshot_removes_its_tree_before_drop_returns_outside_a_runtime() {
+        let (root, source) = fixture();
+        let prepared = create(root.path(), ID, &source).unwrap();
+        let path = root
+            .path()
+            .join("imports")
+            .join(ID)
+            .join(&prepared.relative);
+        assert!(path.exists());
+        drop(prepared);
+        assert!(!path.exists());
+    }
+
+    #[test]
+    fn dropping_a_snapshot_on_a_runtime_returns_without_removing_the_tree_first() {
+        let (root, source) = fixture();
+        let path = {
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .build()
+                .expect("runtime");
+            runtime.block_on(async {
+                let prepared = create(root.path(), ID, &source).unwrap();
+                let path = root
+                    .path()
+                    .join("imports")
+                    .join(ID)
+                    .join(&prepared.relative);
+                assert!(path.exists());
+                drop(prepared);
+                path
+            })
+        };
+        assert!(!path.exists());
     }
 }

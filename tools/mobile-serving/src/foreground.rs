@@ -57,9 +57,10 @@ pub fn persist_owner_stop(root: &JournalRoot) -> Result<(), String> {
         .map_err(|e| e.to_string())
 }
 
-static HOST_ACTIVE: AtomicBool = AtomicBool::new(false);
+static HOST_ACTIVE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static HOST_GENERATION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 #[cfg(all(test, feature = "full-tests"))]
-static TEST_LOCK: Mutex<()> = Mutex::new(());
+pub(super) static TEST_LOCK: Mutex<()> = Mutex::new(());
 #[cfg(all(test, feature = "full-tests"))]
 static DESCRIBE_CANCEL_AT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 #[cfg(all(test, feature = "full-tests"))]
@@ -70,11 +71,334 @@ static DESCRIBE_TEST_LOCK: Mutex<()> = Mutex::new(());
 static DESCRIBE_AFTER_ENTRY: Mutex<Option<Box<dyn Fn() + Send>>> = Mutex::new(None);
 #[cfg(all(test, feature = "full-tests"))]
 static TEST_DEPICT_DETECTION: Mutex<Option<Value>> = Mutex::new(None);
+#[cfg(all(test, feature = "full-tests"))]
+type StartupCatchUpHook = Box<dyn FnOnce() -> Result<(), String> + Send>;
+#[cfg(all(test, feature = "full-tests"))]
+static STARTUP_AFTER_CATCH_UP: Mutex<Option<StartupCatchUpHook>> = Mutex::new(None);
 type Checkpoint = Arc<dyn Fn() -> bool + Send + Sync>;
+#[allow(clippy::type_complexity)]
+type ForegroundRestart = Arc<dyn Fn() -> Result<(), String> + Send + Sync>;
+struct OwnerQueue {
+    generation: u64,
+    root: Weak<JournalRoot>,
+    queue: Weak<TaskQueue>,
+    cancelled: Weak<dyn Fn() -> bool + Send + Sync>,
+}
+static OWNER_QUEUE: Mutex<Option<OwnerQueue>> = Mutex::new(None);
+static OWNER_REQUEST_SERIAL: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Submit to this process's one live foreground queue. A Weak capability owns
+/// no runtime; checked Stop revokes it before joining admitted work.
+pub(super) fn submit_owner_think(
+    root: &JournalRoot,
+    args: Vec<String>,
+) -> Result<String, &'static str> {
+    submit_owner_command(
+        root,
+        solstone_core_system::partition::canonical_journal_command(
+            std::iter::once("think".to_owned()).chain(args),
+        ),
+    )
+}
+pub(super) fn submit_owner_maintenance(
+    root: &JournalRoot,
+    routine: &str,
+) -> Result<String, &'static str> {
+    submit_owner_command(
+        root,
+        solstone_core_system::partition::canonical_journal_command(["maintenance", "run", routine]),
+    )
+}
+fn submit_owner_command(root: &JournalRoot, command: Vec<String>) -> Result<String, &'static str> {
+    let (owner, queue, cancelled) = {
+        let slot = OWNER_QUEUE.lock().map_err(|_| "queue unavailable")?;
+        let owner = slot.as_ref().ok_or("queue unavailable")?;
+        (
+            owner.root.upgrade().ok_or("queue unavailable")?,
+            owner.queue.upgrade().ok_or("queue unavailable")?,
+            owner.cancelled.upgrade().ok_or("queue unavailable")?,
+        )
+    };
+    if cancelled()
+        || owner.canonical_path() != root.canonical_path()
+        || owner.revalidate_canonical_binding().is_err()
+        || root.revalidate_canonical_binding().is_err()
+    {
+        return Err("queue unavailable");
+    }
+    if !admit_command(owner.canonical_path(), &command) {
+        return Err("command refused");
+    }
+    let reference = format!(
+        "owner-think-{}-{}",
+        now_ms(),
+        OWNER_REQUEST_SERIAL.fetch_add(1, Ordering::Relaxed)
+    );
+    let request = BusTaskRequest::decode(
+        solstone_core_system::request::WireTaskRequest {
+            cmd: Some(command),
+            reference: Some(reference.clone()),
+            ..Default::default()
+        },
+        reference.clone(),
+    )
+    .map_err(|_| "command refused")?;
+    if cancelled()
+        || matches!(
+            queue.submit(ExecutionRequest::Bus(request)),
+            solstone_core_system::queue::SubmitOutcome::Rejected
+        )
+    {
+        return Err("queue unavailable");
+    }
+    Ok(reference)
+}
+
 const UNCOMPLETED_HOLD_EXIT: i32 = 4;
+
+struct InstalledWorkers {
+    generation: u64,
+    journal: PathBuf,
+    sense_handle: Arc<Mutex<Option<std::thread::JoinHandle<()>>>>,
+    schedule_handle: Arc<Mutex<Option<std::thread::JoinHandle<()>>>>,
+    restart: Mutex<Option<ForegroundRestart>>,
+}
+
+fn installed_workers() -> &'static Mutex<Option<Arc<InstalledWorkers>>> {
+    static INSTALLED: Mutex<Option<Arc<InstalledWorkers>>> = Mutex::new(None);
+    &INSTALLED
+}
+
+fn same_bound_journal(bound: &Path, requested: &Path) -> bool {
+    match (bound.canonicalize(), requested.canonicalize()) {
+        (Ok(left), Ok(right)) => left == right,
+        _ => bound == requested,
+    }
+}
+
+fn current_installed(journal: &Path) -> Result<Arc<InstalledWorkers>, String> {
+    let installed = installed_workers()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .as_ref()
+        .cloned()
+        .ok_or_else(|| "foreground workers are not installed".to_owned())?;
+    if !same_bound_journal(&installed.journal, journal) {
+        return Err("foreground host is bound to a different journal".into());
+    }
+    Ok(installed)
+}
+
+fn relinquish_installed_workers(
+    installed: &InstalledWorkers,
+    journal: &Path,
+) -> Result<(), String> {
+    if !same_bound_journal(&installed.journal, journal) {
+        return Err("foreground host is bound to a different journal".into());
+    }
+    for slot in [&installed.sense_handle, &installed.schedule_handle] {
+        if let Some(handle) = slot.lock().unwrap().as_ref() {
+            handle.thread().unpark();
+        }
+    }
+    for slot in [&installed.sense_handle, &installed.schedule_handle] {
+        if let Some(handle) = slot.lock().unwrap().take() {
+            handle
+                .join()
+                .map_err(|_| "foreground worker failed to join".to_owned())?;
+        }
+    }
+    Ok(())
+}
+
+fn resume_installed_workers(installed: &InstalledWorkers, journal: &Path) -> Result<(), String> {
+    if !same_bound_journal(&installed.journal, journal) {
+        return Err("foreground host is bound to a different journal".into());
+    }
+    if solstone_core_journal_io::whole_journal_restore::whole_journal_restore_blocks(journal) {
+        return Ok(());
+    }
+    let restart = installed
+        .restart
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .clone();
+    if let Some(restart) = restart {
+        restart()?;
+    }
+    Ok(())
+}
+
+struct WorkerParts {
+    journal: PathBuf,
+    discovery: Arc<Mutex<Option<WorkDiscovery>>>,
+    sense_handle: Arc<Mutex<Option<std::thread::JoinHandle<()>>>>,
+    schedule_handle: Arc<Mutex<Option<std::thread::JoinHandle<()>>>>,
+    executor: Arc<HostSenseExecutor>,
+    cancelled: Checkpoint,
+    engine: Arc<Mutex<ScheduleEngine>>,
+    queue: Arc<TaskQueue>,
+    flush: Arc<Mutex<FlushState>>,
+    running: RunningUses,
+    failed: Arc<AtomicBool>,
+}
+
+#[allow(clippy::too_many_lines)]
+fn spawn_foreground_workers(parts: &WorkerParts) -> Result<(), String> {
+    if parts.sense_handle.lock().unwrap().is_some()
+        || parts.schedule_handle.lock().unwrap().is_some()
+    {
+        return Err("foreground workers already active".into());
+    }
+    if let Some(discovery) = parts.discovery.lock().unwrap().as_ref() {
+        discovery.request();
+    }
+    let journal = parts.journal.clone();
+    let executor = Arc::clone(&parts.executor);
+    let cancelled = Arc::clone(&parts.cancelled);
+    let sense = std::thread::Builder::new()
+        .name("journal-sense".into())
+        .spawn(move || {
+            while !cancelled() {
+                let restore_use = match solstone_core_journal_io::whole_journal_restore::begin_target_use(
+                    &journal,
+                ) {
+                    Ok(guard) => guard,
+                    Err(_) => break,
+                };
+                if let Err(error) = ForegroundProcessingHost::sense_pass(&journal, executor.clone())
+                {
+                    log::warn!("foreground Sense: {error}");
+                }
+                drop(restore_use);
+                if cancelled()
+                    || solstone_core_journal_io::whole_journal_restore::whole_journal_restore_blocks(
+                        &journal,
+                    )
+                {
+                    break;
+                }
+                std::thread::park_timeout(Duration::from_secs(2));
+            }
+        })
+        .map_err(|e| e.to_string())?;
+    *parts.sense_handle.lock().unwrap() = Some(sense);
+    let engine = Arc::clone(&parts.engine);
+    let queue = Arc::clone(&parts.queue);
+    let journal = parts.journal.clone();
+    let cancelled = Arc::clone(&parts.cancelled);
+    let flush = Arc::clone(&parts.flush);
+    let running = parts.running.clone();
+    let failed = Arc::clone(&parts.failed);
+    let schedule = std::thread::Builder::new()
+        .name("journal-schedule".into())
+        .spawn(move || {
+            let started = Instant::now();
+            let mut last_settle_scan = Instant::now();
+            let mut last_index_check = Instant::now() - Duration::from_secs(30);
+            let mut last_status = Instant::now() - STATUS_INTERVAL;
+            while !cancelled() {
+                let restore_use = match solstone_core_journal_io::whole_journal_restore::begin_target_use(
+                    &journal,
+                ) {
+                    Ok(guard) => guard,
+                    Err(_) => break,
+                };
+                let tick = Instant::now();
+                if last_status.elapsed() >= STATUS_INTERVAL
+                    && !failed.load(Ordering::Acquire)
+                    && !queue.callable_workers_failed()
+                {
+                    last_status = tick;
+                    publish_status(&journal, &queue, &engine, &running, started);
+                }
+                queue.resume_processing();
+                let today = Utc::now()
+                    .with_timezone(&solstone_core_journal_config::owner_zone(&journal))
+                    .format("%Y%m%d")
+                    .to_string();
+                if let Ok(mut flush) = flush.lock()
+                    && !cancelled()
+                {
+                    let force = day_still_closing(&journal, &queue, SystemTime::now());
+                    check_segment_flush(&journal, &queue, &mut flush, force.as_deref(), tick);
+                }
+                if !cancelled() {
+                    check_activity_settle(
+                        &journal,
+                        &queue,
+                        &mut last_settle_scan,
+                        tick,
+                        now_ms(),
+                        &today,
+                    );
+                }
+                if last_index_check.elapsed() >= Duration::from_secs(30) {
+                    last_index_check = tick;
+                    match solstone_core_indexer_store::todo::has_due(&journal, now_ms() as u64) {
+                        Ok(true) if !queue.contains_reference("index-todo") => {
+                            let _ = queue.submit(ExecutionRequest::Bus(BusTaskRequest {
+                                cmd: TaskArgv::from_wire(vec![
+                                    "journal".into(),
+                                    "indexer".into(),
+                                    "drain".into(),
+                                ])
+                                .expect("fixed command"),
+                                reference: "index-todo".into(),
+                                day: None,
+                                scheduler_name: None,
+                                queue_if_active_cmd_differs: false,
+                                priority: None,
+                                daily_catchup_provenance: None,
+                            }));
+                        }
+                        Ok(_) => {}
+                        Err(error) => log::warn!("foreground search work list: {error}"),
+                    }
+                }
+                if let Ok(mut engine) = engine.lock() {
+                    if cancelled() {
+                        break;
+                    }
+                    let now = ScheduleNow::in_zone(
+                        Utc::now(),
+                        solstone_core_journal_config::owner_zone(&journal),
+                    );
+                    if let Err(error) = engine.check(
+                        now,
+                        &HostScheduleSink {
+                            queue: queue.clone(),
+                        },
+                    ) {
+                        log::warn!("foreground schedule: {error}");
+                    }
+                }
+                drop(restore_use);
+                if cancelled()
+                    || solstone_core_journal_io::whole_journal_restore::whole_journal_restore_blocks(
+                        &journal,
+                    )
+                {
+                    break;
+                }
+                std::thread::park_timeout(Duration::from_secs(1));
+            }
+        })
+        .map_err(|e| e.to_string())?;
+    *parts.schedule_handle.lock().unwrap() = Some(schedule);
+    Ok(())
+}
 
 #[path = "scheduled_commands.rs"]
 mod scheduled_commands;
+
+#[path = "import_commands.rs"]
+mod import_commands;
+pub use import_commands::{
+    ImportContext, ImportKeepalive, ImportPreparation, ImportRequest, ImportSeamFactory,
+    PreparedImport,
+};
+type ImportFactorySlot = Arc<Mutex<Option<Arc<ImportSeamFactory>>>>;
 
 const MAINTENANCE_ROUTINE_IDS: &[&str] = &[
     "speakers:discover-voices",
@@ -87,6 +411,7 @@ const MAINTENANCE_ROUTINE_IDS: &[&str] = &[
     "backup:prune",
     "health:mark-raw",
     "health:prune-logs",
+    "retention:owner-voice-originals",
 ];
 
 struct NoProcesses;
@@ -735,35 +1060,15 @@ fn has_flag(args: &[String], flag: &str) -> bool {
 }
 
 fn think_admitted(args: &[String]) -> bool {
-    if args
-        .iter()
-        .any(|arg| matches!(arg.as_str(), "--refresh" | "--segments"))
-    {
-        return false;
-    }
     if has_flag(args, "--from-scratch") {
         return flag_value(args, "--day").is_some()
             && flag_value(args, "--work-intent").is_some_and(|id| !id.is_empty())
             && !has_flag(args, "--weekly")
             && !has_flag(args, "--daily-only");
     }
-    if has_flag(args, "--weekly") {
-        return true;
-    }
-    if has_flag(args, "--daily-only") {
-        return flag_value(args, "--day").is_some();
-    }
-    has_flag(args, "--cadence")
-        || (has_flag(args, "--settle") && flag_value(args, "--stream").is_some())
-        || (has_flag(args, "--segment")
-            && flag_value(args, "--day").is_some()
-            && flag_value(args, "--stream").is_some())
-        || (has_flag(args, "--activity")
-            && flag_value(args, "--day").is_some()
-            && flag_value(args, "--facet").is_some())
-        || (flag_value(args, "--retry-unit").is_some_and(|id| !id.is_empty())
-            && flag_value(args, "--retry-cause").is_some()
-            && flag_value(args, "--day").is_some())
+    // The shared hosted parser validates options and mode combinations. Keep
+    // rebuild intent admission above, but do not exclude portable repair modes.
+    !has_flag(args, "--work-intent")
 }
 
 fn exact_command(args: &[String]) -> bool {
@@ -798,11 +1103,17 @@ fn admit_argv(args: &[String]) -> Option<Vec<String>> {
     Some(rest.to_vec())
 }
 
-fn admit_command(journal: &Path, raw: &[String]) -> bool {
+pub(super) fn admit_command(journal: &Path, raw: &[String]) -> bool {
+    if solstone_core_journal_io::whole_journal_restore::whole_journal_restore_blocks(journal) {
+        return false;
+    }
     let args = strip_launcher(raw);
     let [command, rest @ ..] = args.as_slice() else {
         return false;
     };
+    if command == "importer" {
+        return import_commands::admit(rest);
+    }
     if command == "think" {
         if !think_admitted(rest) {
             return false;
@@ -1032,10 +1343,12 @@ struct HostedCommand {
     running: RunningUses,
     failed: Arc<AtomicBool>,
     backup: BackupWebDeps,
+    imports: ImportFactorySlot,
     #[cfg(feature = "audio")]
     audio_state: Arc<Mutex<Option<AudioConfig>>>,
 }
 pub struct ForegroundProcessingHost {
+    generation: u64,
     daily_observation: Option<Arc<crate::daily_queue_observation::DailyQueueTap>>,
     journal: PathBuf,
     payload: PathBuf,
@@ -1045,14 +1358,17 @@ pub struct ForegroundProcessingHost {
     queue: Arc<TaskQueue>,
     schedule_engine: Arc<Mutex<ScheduleEngine>>,
     flush: Arc<Mutex<FlushState>>,
-    discovery: Mutex<Option<WorkDiscovery>>,
-    sense_handle: Mutex<Option<std::thread::JoinHandle<()>>>,
-    schedule_handle: Mutex<Option<std::thread::JoinHandle<()>>>,
+    discovery: Arc<Mutex<Option<WorkDiscovery>>>,
+    sense_handle: Arc<Mutex<Option<std::thread::JoinHandle<()>>>>,
+    schedule_handle: Arc<Mutex<Option<std::thread::JoinHandle<()>>>>,
+    request_handle: Arc<Mutex<Option<std::thread::JoinHandle<()>>>>,
+    recovery_hooks: solstone_core_convey_shell::recovery_drain::RecoveryHooks,
     running: RunningUses,
     stop: Arc<AtomicBool>,
     cancelled: Checkpoint,
     failed: Arc<AtomicBool>,
     generator: HostGenerator,
+    imports: ImportFactorySlot,
     #[cfg(test)]
     worker: CallableQueueWorker,
     #[cfg(feature = "audio")]
@@ -1142,7 +1458,40 @@ impl ForegroundProcessingHost {
             Utc::now(),
             solstone_core_journal_config::owner_zone(root.canonical_path()),
         );
-        Self::open_bound_observed(root, payload, now, None, external, stop, backup, true, true)
+        Self::open_bound_observed(
+            root, payload, now, None, external, stop, backup, true, true, None,
+        )
+    }
+
+    /// Install native imports before startup catch-up can dispatch any work.
+    /// Native preparation still runs only on its retained callable worker.
+    #[allow(clippy::too_many_arguments)]
+    pub fn open_with_imports(
+        root: Arc<JournalRoot>,
+        payload: &Path,
+        external: Checkpoint,
+        stop: Arc<AtomicBool>,
+        backup: BackupWebDeps,
+        imports: Arc<ImportSeamFactory>,
+        rebuild_recovery: bool,
+        observe_daily: bool,
+    ) -> Result<Self, String> {
+        let now = ScheduleNow::in_zone(
+            Utc::now(),
+            solstone_core_journal_config::owner_zone(root.canonical_path()),
+        );
+        Self::open_bound_observed(
+            root,
+            payload,
+            now,
+            None,
+            external,
+            stop,
+            backup,
+            rebuild_recovery,
+            observe_daily,
+            Some(imports),
+        )
     }
 
     /// Historical emissions and a separate current owner read, never a reservation.
@@ -1232,6 +1581,7 @@ impl ForegroundProcessingHost {
             backup,
             rebuild_recovery,
             false,
+            None,
         )
     }
     #[allow(clippy::too_many_arguments)]
@@ -1245,9 +1595,17 @@ impl ForegroundProcessingHost {
         backup: BackupWebDeps,
         rebuild_recovery: bool,
         observe_daily: bool,
+        initial_imports: Option<Arc<ImportSeamFactory>>,
     ) -> Result<Self, String> {
+        let generation = HOST_GENERATION
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |current| {
+                current.checked_add(1)
+            })
+            .map_err(|_| "foreground generation exhausted".to_owned())?
+            .checked_add(1)
+            .ok_or_else(|| "foreground generation exhausted".to_owned())?;
         if HOST_ACTIVE
-            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .compare_exchange(0, generation, Ordering::AcqRel, Ordering::Acquire)
             .is_err()
         {
             return Err("foreground processing host already active".into());
@@ -1319,6 +1677,7 @@ impl ForegroundProcessingHost {
             #[cfg(feature = "audio")]
             let audio_state = Arc::new(Mutex::new(None));
             let running = RunningUses::default();
+            let imports = Arc::new(Mutex::new(initial_imports));
             let payload_path = payload.to_path_buf();
             let hosted = Arc::new(HostedCommand {
                 rebuild_recovery,
@@ -1334,12 +1693,14 @@ impl ForegroundProcessingHost {
                 running: running.clone(),
                 failed: Arc::clone(&failed),
                 backup,
+                imports: Arc::clone(&imports),
                 #[cfg(feature = "audio")]
                 audio_state: Arc::clone(&audio_state),
             });
             let worker: CallableQueueWorker =
                 Arc::new(move |args, stop| Self::execute_command(&hosted, args, stop));
             let admitted_cancelled = Arc::clone(&cancelled);
+            let admitted_journal = journal.clone();
             let queue_slot = Arc::new(OnceLock::new());
             let queue = Arc::new(TaskQueue::with_callable_worker_and_admission(
                 TaskQueueOptions {
@@ -1356,13 +1717,18 @@ impl ForegroundProcessingHost {
                         cancelled: Arc::clone(&cancelled),
                     })),
                     process_sink: None,
-                    ready: true,
+                    ready: false,
                     before_deadline_commit: None,
                     child_environment: BTreeMap::new(),
                     task_binary: None,
                 },
                 Arc::clone(&worker),
-                Arc::new(move |_args| !admitted_cancelled()),
+                Arc::new(move |_args| {
+                    !admitted_cancelled()
+                        && !solstone_core_journal_io::whole_journal_restore::whole_journal_restore_blocks(
+                            &admitted_journal,
+                        )
+                }),
                 Some((
                     payload.join("solstone/talent"),
                     payload.join("solstone/apps"),
@@ -1370,14 +1736,6 @@ impl ForegroundProcessingHost {
             ));
             if queue_slot.set(Arc::downgrade(&queue)).is_err() {
                 log::warn!("foreground schedule queue was already installed");
-            } else if let Ok(mut engine) = schedule_engine.lock() {
-                engine.catch_up(
-                    now,
-                    &HostScheduleSink {
-                        queue: queue.clone(),
-                    },
-                    &fresh,
-                );
             }
             let discovery_checkpoint = Arc::clone(&cancelled);
             let discovery = WorkDiscovery::new_with_talent_roots_and_checkpoint(
@@ -1397,7 +1755,39 @@ impl ForegroundProcessingHost {
                     }
                 }),
             );
-            Ok(Self {
+            let discovery = Arc::new(Mutex::new(Some(discovery)));
+            let sense_handle = Arc::new(Mutex::new(None));
+            let schedule_handle = Arc::new(Mutex::new(None));
+            let installed = Arc::new(InstalledWorkers {
+                generation,
+                journal: journal.clone(),
+                sense_handle: Arc::clone(&sense_handle),
+                schedule_handle: Arc::clone(&schedule_handle),
+                restart: Mutex::new(None),
+            });
+            *installed_workers()
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(Arc::clone(&installed));
+            let pause_installed = Arc::clone(&installed);
+            let resume_installed = Arc::clone(&installed);
+            let recovery_hooks =
+                solstone_core_convey_shell::recovery_drain::register_recovery_hooks(
+                    "foreground",
+                    Arc::clone(&root),
+                    move |journal| relinquish_installed_workers(&pause_installed, journal),
+                    move |journal| resume_installed_workers(&resume_installed, journal),
+                );
+            let request_handle = Arc::new(Mutex::new(None));
+            *OWNER_QUEUE
+                .lock()
+                .map_err(|_| "owner queue unavailable".to_owned())? = Some(OwnerQueue {
+                generation,
+                root: Arc::downgrade(&root),
+                queue: Arc::downgrade(&queue),
+                cancelled: Arc::downgrade(&cancelled),
+            });
+            let host = Self {
+                generation,
                 daily_observation,
                 journal,
                 payload: payload_path,
@@ -1405,22 +1795,52 @@ impl ForegroundProcessingHost {
                 queue,
                 schedule_engine,
                 flush,
-                discovery: Mutex::new(Some(discovery)),
-                sense_handle: Mutex::new(None),
-                schedule_handle: Mutex::new(None),
+                discovery,
+                sense_handle,
+                schedule_handle,
+                request_handle,
+                recovery_hooks,
                 running,
                 stop,
                 cancelled,
                 failed,
                 generator,
+                imports,
                 #[cfg(test)]
                 worker,
                 #[cfg(feature = "audio")]
                 audio_state,
-            })
+            };
+            // Dispatch only after this owner can cancel and join every callable.
+            if (host.cancelled)() {
+                return Err("thinking cancelled".into());
+            }
+            host.queue.set_ready();
+            if let Ok(mut engine) = host.schedule_engine.lock() {
+                engine.catch_up(
+                    now,
+                    &HostScheduleSink {
+                        queue: Arc::clone(&host.queue),
+                    },
+                    &fresh,
+                );
+            }
+            #[cfg(all(test, feature = "full-tests"))]
+            {
+                let hook = STARTUP_AFTER_CATCH_UP.lock().unwrap().take();
+                if let Some(hook) = hook {
+                    hook()?;
+                }
+            }
+            if (host.cancelled)() {
+                host.shutdown()?;
+                return Err("thinking cancelled".into());
+            }
+            Ok(host)
         })();
         if result.is_err() {
-            HOST_ACTIVE.store(false, Ordering::Release);
+            let _ =
+                HOST_ACTIVE.compare_exchange(generation, 0, Ordering::AcqRel, Ordering::Acquire);
         }
         result
     }
@@ -1429,6 +1849,12 @@ impl ForegroundProcessingHost {
         raw: &[String],
         control: CallableTaskContext,
     ) -> i32 {
+        let _restore_use = match solstone_core_journal_io::whole_journal_restore::begin_target_use(
+            &hosted.journal,
+        ) {
+            Ok(guard) => guard,
+            Err(_) => return UNCOMPLETED_HOLD_EXIT,
+        };
         let checkpoint: Arc<dyn Fn() -> Result<(), String> + Send + Sync> = {
             let host = Arc::clone(&hosted.cancelled);
             let control = control.clone();
@@ -1446,21 +1872,25 @@ impl ForegroundProcessingHost {
         if !admit_command(&hosted.journal, raw) {
             return UNCOMPLETED_HOLD_EXIT;
         }
+        let command = strip_launcher(raw);
+        if let [name, args @ ..] = command.as_slice()
+            && name == "importer"
+        {
+            return import_commands::execute(hosted, args, &control, Arc::clone(&checkpoint));
+        }
         let Some(args) = admit_argv(raw) else {
-            return scheduled_commands::run(hosted, &strip_launcher(raw), &checkpoint);
+            return scheduled_commands::run(hosted, &command, &checkpoint);
         };
-        let value = |flag: &str| {
-            args.iter()
-                .position(|arg| arg == flag)
-                .and_then(|i| args.get(i + 1))
-                .cloned()
+        let today = Utc::now()
+            .with_timezone(&solstone_core_journal_config::owner_zone(&hosted.journal))
+            .date_naive();
+        let day = match solstone_core_think_cli::hosted_command_day(&args, today) {
+            Ok(day) => day,
+            Err(error) => {
+                log::warn!("foreground thinking arguments: {error}");
+                return 2;
+            }
         };
-        let day = value("--day").unwrap_or_else(|| {
-            Utc::now()
-                .with_timezone(&solstone_core_journal_config::owner_zone(&hosted.journal))
-                .format("%Y%m%d")
-                .to_string()
-        });
         let cancelled: Checkpoint = {
             let host = Arc::clone(&hosted.cancelled);
             let control = control.clone();
@@ -1524,6 +1954,13 @@ impl ForegroundProcessingHost {
             log::warn!("foreground search update: {error}");
         }
         result
+    }
+    #[cfg(test)]
+    pub(super) fn stop_discovery_for_test(&self) {
+        if let Some(mut discovery) = self.discovery.lock().unwrap().take() {
+            discovery.shutdown_checked().unwrap();
+        }
+        self.queue.resume_processing();
     }
     #[cfg(test)]
     pub fn execute_worker_command(&self, args: &[String]) -> i32 {
@@ -1604,121 +2041,179 @@ impl ForegroundProcessingHost {
     pub fn start_workers(&mut self) -> Result<(), String> {
         if self.sense_handle.lock().unwrap().is_some()
             || self.schedule_handle.lock().unwrap().is_some()
+            || self.request_handle.lock().unwrap().is_some()
         {
             return Err("foreground workers already active".into());
         }
-        if let Some(discovery) = self.discovery.lock().unwrap().as_ref() {
-            discovery.request();
+        let parts = WorkerParts {
+            journal: self.journal.clone(),
+            discovery: Arc::clone(&self.discovery),
+            sense_handle: Arc::clone(&self.sense_handle),
+            schedule_handle: Arc::clone(&self.schedule_handle),
+            executor: self.executor(),
+            cancelled: Arc::clone(&self.cancelled),
+            engine: Arc::clone(&self.schedule_engine),
+            queue: Arc::clone(&self.queue),
+            flush: Arc::clone(&self.flush),
+            running: self.running.clone(),
+            failed: Arc::clone(&self.failed),
+        };
+        let restart: ForegroundRestart = Arc::new(move || spawn_foreground_workers(&parts));
+        let installed = current_installed(&self.journal)?;
+        *installed
+            .restart
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(Arc::clone(&restart));
+        if !solstone_core_journal_io::whole_journal_restore::whole_journal_restore_blocks(
+            &self.journal,
+        ) {
+            restart()?;
         }
+        self.spawn_request_subscription()
+    }
+    fn spawn_request_subscription(&self) -> Result<(), String> {
         let journal = self.journal.clone();
-        let executor = self.executor();
+        let queue = Arc::clone(&self.queue);
         let cancelled = Arc::clone(&self.cancelled);
-        let sense = std::thread::Builder::new()
-            .name("journal-sense".into())
+        let marker = self.generation;
+        let (registered, registration) = std::sync::mpsc::sync_channel(1);
+        let requests = std::thread::Builder::new()
+            .name("journal-requests".into())
             .spawn(move || {
-                while !cancelled() {
-                    if let Err(error) = Self::sense_pass(&journal, executor.clone()) {
-                        log::warn!("foreground Sense: {error}");
-                    }
-                    if !cancelled() {
-                        std::thread::park_timeout(Duration::from_secs(2));
-                    }
-                }
-            })
-            .map_err(|e| e.to_string())?;
-        *self.sense_handle.lock().unwrap() = Some(sense);
-        let engine = Arc::clone(&self.schedule_engine);
-        let queue = self.queue.clone();
-        let journal = self.journal.clone();
-        let cancelled = Arc::clone(&self.cancelled);
-        let flush = Arc::clone(&self.flush);
-        let running = self.running.clone();
-        let failed = Arc::clone(&self.failed);
-        let schedule = std::thread::Builder::new()
-            .name("journal-schedule".into())
-            .spawn(move || {
-                let started = Instant::now();
-                let mut last_settle_scan = Instant::now();
-                let mut last_index_check = Instant::now() - Duration::from_secs(30);
-                let mut last_status = Instant::now() - STATUS_INTERVAL;
-                while !cancelled() {
-                    let tick = Instant::now();
-                    if last_status.elapsed() >= STATUS_INTERVAL
-                        && !failed.load(Ordering::Acquire)
-                        && !queue.callable_workers_failed()
-                    {
-                        last_status = tick;
-                        publish_status(&journal, &queue, &engine, &running, started);
-                    }
-                    queue.resume_processing();
-                    let today = Utc::now()
-                        .with_timezone(&solstone_core_journal_config::owner_zone(&journal))
-                        .format("%Y%m%d")
-                        .to_string();
-                    if let Ok(mut flush) = flush.lock()
-                        && !cancelled()
-                    {
-                        let force = day_still_closing(&journal, &queue, SystemTime::now());
-                        check_segment_flush(&journal, &queue, &mut flush, force.as_deref(), tick);
-                    }
-                    if !cancelled() {
-                        check_activity_settle(
+                let runtime = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .expect("foreground request runtime");
+                runtime.block_on(async move {
+                    let mut connection = solstone_core_callosum::CallosumSocketConnection::new(
+                        journal.join("health/callosum.sock"),
+                        Map::new(),
+                    );
+                    connection.start();
+                    let mut serial = 0_u64;
+                    let mut registered = Some(registered);
+                    let mut held_requests = std::collections::VecDeque::new();
+                    while !cancelled() {
+                        if !solstone_core_journal_io::whole_journal_restore::whole_journal_restore_blocks(
                             &journal,
-                            &queue,
-                            &mut last_settle_scan,
-                            tick,
-                            now_ms(),
-                            &today,
-                        );
-                    }
-                    if last_index_check.elapsed() >= Duration::from_secs(30) {
-                        last_index_check = tick;
-                        match solstone_core_indexer_store::todo::has_due(&journal, now_ms() as u64)
-                        {
-                            Ok(true) if !queue.contains_reference("index-todo") => {
-                                let _ = queue.submit(ExecutionRequest::Bus(BusTaskRequest {
-                                    cmd: TaskArgv::from_wire(vec![
-                                        "journal".into(),
-                                        "indexer".into(),
-                                        "drain".into(),
-                                    ])
-                                    .expect("fixed command"),
-                                    reference: "index-todo".into(),
-                                    day: None,
-                                    scheduler_name: None,
-                                    queue_if_active_cmd_differs: false,
-                                    priority: None,
-                                    daily_catchup_provenance: None,
-                                }));
-                            }
-                            Ok(_) => {}
-                            Err(error) => log::warn!("foreground search work list: {error}"),
-                        }
-                    }
-                    if let Ok(mut engine) = engine.lock() {
-                        if cancelled() {
-                            break;
-                        }
-                        let now = ScheduleNow::in_zone(
-                            Utc::now(),
-                            solstone_core_journal_config::owner_zone(&journal),
-                        );
-                        if let Err(error) = engine.check(
-                            now,
-                            &HostScheduleSink {
-                                queue: queue.clone(),
-                            },
                         ) {
-                            log::warn!("foreground schedule: {error}");
+                            while let Some(request) = held_requests.pop_front() {
+                                if cancelled() {
+                                    break;
+                                }
+                                let _ = queue.submit(ExecutionRequest::Bus(request));
+                            }
+                        }
+                        tokio::select! {
+                            _ = tokio::time::sleep(Duration::from_millis(100)) => {}
+                            event = connection.next_event() => {
+                                let envelope = match event {
+                                    Some(solstone_core_callosum::CallosumReceiveEvent::Continuity {
+                                        phase: solstone_core_callosum::CallosumConnectionPhase::Connected,
+                                        ..
+                                    }) => {
+                                        connection.emit(
+                                            "supervisor",
+                                            "subscriber-ready",
+                                            Map::from_iter([(
+                                                "embedded_requests_start".into(),
+                                                json!(marker),
+                                            )]),
+                                        );
+                                        continue;
+                                    }
+                                    Some(solstone_core_callosum::CallosumReceiveEvent::Continuity { .. }) => {
+                                        continue;
+                                    }
+                                    Some(solstone_core_callosum::CallosumReceiveEvent::Envelope {
+                                        envelope,
+                                        ..
+                                    }) => envelope,
+                                    None => break,
+                                };
+                                if envelope.tract == "supervisor"
+                                    && envelope.event == "subscriber-ready"
+                                    && envelope.extra.get("embedded_requests_start")
+                                        == Some(&json!(marker))
+                                {
+                                    if let Some(registered) = registered.take() {
+                                        let _ = registered.send(());
+                                    }
+                                    continue;
+                                }
+                                if registered.is_some()
+                                    || cancelled()
+                                    || envelope.tract != "supervisor"
+                                    || envelope.event != "request"
+                                {
+                                    continue;
+                                }
+                                let Ok(wire) = serde_json::from_value::<
+                                    solstone_core_system::request::WireTaskRequest,
+                                >(Value::Object(envelope.extra)) else {
+                                    continue;
+                                };
+                                serial = serial.saturating_add(1);
+                                let Ok(request) = BusTaskRequest::decode(
+                                    wire,
+                                    format!("mobile-request-{}-{serial}", now_ms()),
+                                ) else {
+                                    continue;
+                                };
+                                let args = strip_launcher(request.cmd.as_wire());
+                                // Manual backup requests already have their own service owner.
+                                // This subscriber supplies ordinary general Journal requests.
+                                let general = match args.as_slice() {
+                                    [command, ..]
+                                        if matches!(
+                                            command.as_str(),
+                                            "think" | "importer" | "indexer"
+                                        ) =>
+                                    {
+                                        true
+                                    }
+                                    [command]
+                                        if matches!(
+                                            command.as_str(),
+                                            "facet-candidates" | "heartbeat"
+                                        ) =>
+                                    {
+                                        true
+                                    }
+                                    [command, verb, id]
+                                        if command == "maintenance"
+                                            && verb == "run"
+                                            && !id.starts_with("backup:") =>
+                                    {
+                                        true
+                                    }
+                                    _ => false,
+                                };
+                                if !general || cancelled() {
+                                    continue;
+                                }
+                                // Keep the accepted request until this restore is open again.
+                                // Stop still observes `cancelled` on the next loop. The queue
+                                // and the command filter stay the subscriber's own dispatch.
+                                if solstone_core_journal_io::whole_journal_restore::whole_journal_restore_blocks(
+                                    &journal,
+                                ) {
+                                    held_requests.push_back(request);
+                                    continue;
+                                }
+                                let _ = queue.submit(ExecutionRequest::Bus(request));
+                            }
                         }
                     }
-                    if !cancelled() {
-                        std::thread::park_timeout(Duration::from_secs(1));
-                    }
-                }
+                    connection.stop().await;
+                });
             })
-            .map_err(|e| e.to_string())?;
-        *self.schedule_handle.lock().unwrap() = Some(schedule);
+            .map_err(|error| error.to_string())?;
+        *self.request_handle.lock().unwrap() = Some(requests);
+        if registration.recv_timeout(Duration::from_secs(10)).is_err() {
+            self.request_stop();
+            return Err("foreground request subscription did not become ready".into());
+        }
         Ok(())
     }
     pub fn check_schedule(&self, now: ScheduleNow) -> Result<CheckReport, ScheduleError> {
@@ -1727,6 +2222,40 @@ impl ForegroundProcessingHost {
             &HostScheduleSink {
                 queue: self.queue.clone(),
             },
+        )
+    }
+    /// Capture this owner's preparation lifetime before snapshot or metadata effects.
+    /// Bind final importer arguments on the retained worker after those inputs exist.
+    pub fn import_preparation(
+        &self,
+        stop: solstone_core_import::WorkStop,
+        priority: WorkPriority,
+    ) -> Result<ImportPreparation, String> {
+        import_commands::preparation(
+            Arc::clone(&self.root),
+            &self.generator,
+            &self.imports,
+            Arc::clone(&self.cancelled),
+            stop,
+            priority,
+        )
+    }
+    /// Capture the owner import authority before handing it to a retained worker.
+    /// Call prepare, preview and run on that worker; preparation may block.
+    pub fn import_request(
+        &self,
+        args: Vec<String>,
+        stop: solstone_core_import::WorkStop,
+        priority: WorkPriority,
+    ) -> Result<ImportRequest, String> {
+        import_commands::request(
+            Arc::clone(&self.root),
+            &self.generator,
+            &self.imports,
+            Arc::clone(&self.cancelled),
+            args,
+            stop,
+            priority,
         )
     }
     pub fn queue(&self) -> &TaskQueue {
@@ -1739,6 +2268,14 @@ impl ForegroundProcessingHost {
         model: PathBuf,
         scratch: PathBuf,
     ) -> Result<(), String> {
+        if solstone_core_journal_io::whole_journal_restore::whole_journal_restore_blocks(
+            &self.journal,
+        ) {
+            return Err(
+                solstone_core_journal_io::whole_journal_restore::WHOLE_JOURNAL_RESTORE_NOT_READY
+                    .into(),
+            );
+        }
         if (self.cancelled)() {
             return Err("thinking cancelled".into());
         }
@@ -1769,10 +2306,19 @@ impl ForegroundProcessingHost {
         }
     }
     #[cfg(feature = "audio")]
-    pub fn resume_audio(&self) {
+    pub fn resume_audio(&self) -> Result<(), String> {
+        if solstone_core_journal_io::whole_journal_restore::whole_journal_restore_blocks(
+            &self.journal,
+        ) {
+            return Err(
+                solstone_core_journal_io::whole_journal_restore::WHOLE_JOURNAL_RESTORE_NOT_READY
+                    .into(),
+            );
+        }
         if let Some(config) = self.audio_state.lock().unwrap().as_ref() {
             config.worker.resume();
         }
+        Ok(())
     }
     #[cfg(feature = "audio")]
     pub fn audio_status(&self) -> Value {
@@ -1798,6 +2344,11 @@ impl ForegroundProcessingHost {
         Self::sense_pass(&self.journal, self.executor())
     }
     fn sense_pass(journal: &Path, executor: Arc<HostSenseExecutor>) -> Result<(), String> {
+        let _restore_use =
+            match solstone_core_journal_io::whole_journal_restore::begin_target_use(journal) {
+                Ok(guard) => guard,
+                Err(_) => return Ok(()),
+            };
         if executor.cancelled() {
             return Ok(());
         }
@@ -1851,13 +2402,24 @@ impl ForegroundProcessingHost {
     }
     pub fn request_stop(&self) {
         self.stop.store(true, Ordering::Release);
+        if let Ok(mut owner) = OWNER_QUEUE.lock()
+            && owner
+                .as_ref()
+                .is_some_and(|owner| owner.generation == self.generation)
+        {
+            owner.take();
+        }
         if let Some(tap) = &self.daily_observation {
             tap.close();
         }
         if let Some(discovery) = self.discovery.lock().unwrap().as_ref() {
             discovery.stop();
         }
-        for slot in [&self.sense_handle, &self.schedule_handle] {
+        for slot in [
+            &self.sense_handle,
+            &self.schedule_handle,
+            &self.request_handle,
+        ] {
             if let Some(handle) = slot.lock().unwrap().as_ref() {
                 handle.thread().unpark();
             }
@@ -1871,7 +2433,11 @@ impl ForegroundProcessingHost {
         }
         let _ = self.queue.shutdown();
         failed |= self.queue.join_callable_workers().is_err();
-        for slot in [&self.sense_handle, &self.schedule_handle] {
+        for slot in [
+            &self.sense_handle,
+            &self.schedule_handle,
+            &self.request_handle,
+        ] {
             if let Some(handle) = slot.lock().unwrap().take() {
                 failed |= handle.join().is_err();
             }
@@ -1879,7 +2445,19 @@ impl ForegroundProcessingHost {
         if failed || self.failed() {
             return Err("foreground worker failed to join".into());
         }
-        HOST_ACTIVE.store(false, Ordering::Release);
+        self.recovery_hooks.clear();
+        let mut slot = installed_workers()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if slot
+            .as_ref()
+            .is_some_and(|installed| installed.generation == self.generation)
+        {
+            *slot = None;
+        }
+        drop(slot);
+        let _ =
+            HOST_ACTIVE.compare_exchange(self.generation, 0, Ordering::AcqRel, Ordering::Acquire);
         Ok(())
     }
 }
@@ -2084,7 +2662,9 @@ mod tests {
 
     #[test]
     fn the_runtime_publishes_its_status_while_it_runs_and_not_after_stop() {
-        use solstone_core_callosum::{CallosumReceiveEvent, CallosumSocketConnection};
+        use solstone_core_callosum::{
+            CallosumConnectionPhase, CallosumReceiveEvent, CallosumSocketConnection,
+        };
         let _lock = TEST_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         let (temp, payload) = setup_test_journal();
         let socket = temp.path().join("health/callosum.sock");
@@ -2100,6 +2680,40 @@ mod tests {
         let mut observer = runtime.block_on(async {
             let mut observer = CallosumSocketConnection::new(&socket, Map::new());
             observer.start();
+            tokio::time::timeout(Duration::from_secs(20), async {
+                loop {
+                    match observer.next_event().await {
+                        Some(CallosumReceiveEvent::Continuity {
+                            phase: CallosumConnectionPhase::Connected,
+                            ..
+                        }) => {
+                            assert!(
+                                observer.emit(
+                                    "supervisor",
+                                    "subscriber-ready",
+                                    Map::from_iter([(
+                                        "ref".into(),
+                                        json!("foreground-status-observer"),
+                                    )]),
+                                ),
+                                "status observer readiness emission is accepted"
+                            );
+                        }
+                        Some(CallosumReceiveEvent::Envelope { envelope, .. })
+                            if envelope.tract == "supervisor"
+                                && envelope.event == "subscriber-ready"
+                                && envelope.extra.get("ref")
+                                    == Some(&json!("foreground-status-observer")) =>
+                        {
+                            break;
+                        }
+                        None => panic!("status observer closed before readiness"),
+                        _ => {}
+                    }
+                }
+            })
+            .await
+            .expect("status observer readiness within the existing bound");
             observer
         });
         let mut host = ForegroundProcessingHost::open_with_executor(
@@ -2141,7 +2755,17 @@ mod tests {
             .await;
             (supervisor, cortex)
         });
-        let supervisor = supervisor.expect("the runtime publishes its status");
+        let supervisor = supervisor.unwrap_or_else(|| {
+            panic!(
+                "the runtime publishes its status; cortex={cortex:?}; history={:?}; generation={}; stop={}; failed={}; root_binding={:?}; pending_restore={:?}",
+                host.queue().history(),
+                host.generation,
+                host.stop.load(Ordering::SeqCst),
+                host.failed.load(Ordering::SeqCst),
+                host.root.revalidate_canonical_binding(),
+                solstone_core_journal_io::whole_journal_restore::read_whole_journal_restore(temp.path()),
+            )
+        });
         let services = supervisor["services"].as_array().unwrap();
         assert_eq!(
             services.len(),
@@ -2257,7 +2881,16 @@ mod tests {
         )
         .unwrap();
 
-        host.run_sense_pass().unwrap();
+        assert_eq!(
+            host.execute_worker_command(&[
+                "think".into(),
+                "--sense-batch".into(),
+                "--day".into(),
+                "20261012".into(),
+            ]),
+            0,
+            "the maintained Sense batch caller must execute on eligible input"
+        );
 
         let depict_output = segment_dir.join("depict.jsonl");
         assert!(
@@ -2485,7 +3118,7 @@ mod tests {
     }
 
     #[test]
-    fn describe_and_daily_only_think_stay_held() {
+    fn direct_describe_stays_held_and_ordinary_daily_think_is_admitted() {
         let _lock = TEST_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         let (temp, payload) = setup_test_journal();
         let segment_dir = temp.path().join("chronicle/20261012/notes/120000_5");
@@ -2522,13 +3155,11 @@ mod tests {
             "describe command must exit with non-zero code"
         );
 
-        // Submit daily-only think command - should be held (exit code non-zero)
+        // Ordinary daily thinking uses the shared parser/executor. Missing
+        // media retry consent remains held independently.
         let daily_res =
             host.execute_worker_command(&["think".into(), "--day".into(), "20261012".into()]);
-        assert_ne!(
-            daily_res, 0,
-            "daily-only think must exit with non-zero code"
-        );
+        assert_eq!(daily_res, 0, "ordinary daily thinking is supported");
 
         // The retry record is still held
         let record = work_retry::read(temp.path(), &id).unwrap().unwrap();
@@ -2764,6 +3395,16 @@ mod tests {
     fn sense_worker_processes_new_input_after_its_initial_batch() {
         let _lock = TEST_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         let (temp, payload) = setup_test_journal();
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(1)
+            .enable_all()
+            .build()
+            .unwrap();
+        let bus = runtime
+            .block_on(solstone_core_callosum::CallosumSocketServer::bind(
+                temp.path().join("health/callosum.sock"),
+            ))
+            .unwrap();
         let first = temp
             .path()
             .join("chronicle/20261012/notes/120000_1/depict.png");
@@ -2796,6 +3437,7 @@ mod tests {
         host.shutdown().unwrap();
         assert!(host.sense_handle.lock().unwrap().is_none());
         assert!(host.schedule_handle.lock().unwrap().is_none());
+        runtime.block_on(bus.stop());
     }
 
     #[test]
@@ -2850,6 +3492,16 @@ mod tests {
     fn stop_signals_held_generate_and_keeps_root_until_actual_worker_join() {
         let _lock = TEST_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         let (temp, payload) = setup_test_journal();
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(1)
+            .enable_all()
+            .build()
+            .unwrap();
+        let bus = runtime
+            .block_on(solstone_core_callosum::CallosumSocketServer::bind(
+                temp.path().join("health/callosum.sock"),
+            ))
+            .unwrap();
         let image = temp
             .path()
             .join("chronicle/20261012/notes/120000_1/depict.png");
@@ -2903,6 +3555,7 @@ mod tests {
             root.upgrade().is_none(),
             "original root may drop only after actual drain"
         );
+        runtime.block_on(bus.stop());
     }
 
     const OCR_GAP_DETAIL: &str = crate::screen_ocr::PINNED_MODELS_DETAIL;
@@ -3612,6 +4265,24 @@ mod processing_proofs {
     }
 
     #[test]
+    fn repeated_old_shutdown_preserves_the_reopened_recovery_owner() {
+        let _lock = TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner());
+        let (journal, payload) = journal_fixture();
+        let now = Utc::now();
+        let first = open_host(journal.path(), &payload, now);
+        first.shutdown().expect("first retirement");
+        let successor = open_host(journal.path(), &payload, now);
+        let installed = current_installed(journal.path()).expect("successor installed");
+        first.shutdown().expect("repeated old retirement");
+        let still_installed = current_installed(journal.path()).expect("successor retained");
+        assert!(Arc::ptr_eq(&installed, &still_installed));
+        assert_eq!(still_installed.generation, successor.generation);
+        successor.shutdown().expect("successor retirement");
+    }
+
+    #[test]
     fn optional_daily_observation_reports_real_held_discovery_and_closes_on_stop() {
         let _lock = TEST_LOCK
             .lock()
@@ -3648,6 +4319,7 @@ mod processing_proofs {
                 BackupWebDeps::new(temp.path().to_path_buf()),
                 true,
                 enabled,
+                None,
             )
             .unwrap();
             host.discovery.lock().unwrap().as_ref().unwrap().request();
@@ -3768,6 +4440,7 @@ mod processing_proofs {
             BackupWebDeps::new(temp.path().to_path_buf()),
             true,
             true,
+            None,
         )
         .unwrap();
         armed.store(true, Ordering::Release);
@@ -3797,6 +4470,7 @@ mod processing_proofs {
                 BackupWebDeps::new(temp.path().to_path_buf()),
                 true,
                 true,
+                None,
             )
             .unwrap();
             let value = host.daily_queue_observation().unwrap().unwrap();
@@ -3819,6 +4493,7 @@ mod processing_proofs {
             BackupWebDeps::new(temp.path().to_path_buf()),
             true,
             true,
+            None,
         )
         .unwrap();
         if let Some(mut discovery) = host.discovery.lock().unwrap().take() {
@@ -3876,6 +4551,7 @@ mod processing_proofs {
             BackupWebDeps::new(temp.path().to_path_buf()),
             true,
             true,
+            None,
         )
         .unwrap();
         armed.store(true, Ordering::Release);
@@ -4096,6 +4772,13 @@ mod processing_proofs {
         let journal = root.path();
         assert!(!MAINTENANCE_ROUTINE_IDS.is_empty());
         let admitted = [
+            &["think"][..],
+            &["think", "--day", "20261012"][..],
+            &["think", "--day", "20261012", "--refresh"][..],
+            &["think", "--weekly", "--refresh"][..],
+            &["think", "--segments"][..],
+            &["think", "--updated"][..],
+            &["think", "--sense-batch", "--day", "20261012"][..],
             &["think", "--cadence"][..],
             &["think", "--settle", "--stream", "notes"][..],
             &[
@@ -4194,12 +4877,8 @@ mod processing_proofs {
         ));
         for args in [
             &["maintenance", "run", "backup:offload"][..],
-            &["think", "--day", "20261012", "--refresh"][..],
-            &["think", "--weekly", "--refresh"][..],
-            &["think", "--segments"][..],
             &["describe"][..],
             &["describe", "sample.png"][..],
-            &["think", "--day", "20261012"][..],
             &["think", "--day", "20261012", "--from-scratch"][..],
             &[
                 "think",
@@ -4375,6 +5054,517 @@ mod processing_proofs {
             json!(false)
         );
         drop(second);
+    }
+
+    #[test]
+    fn maintained_daily_schedule_intentionally_updates_daily_time_and_preserves_other_choices() {
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let (temp, payload) = journal_fixture();
+        write_schedules(temp.path(), quiet_entries());
+        let config_path = temp.path().join("config/journal.json");
+        let mut configured = read_json(&config_path);
+        configured["providers"] = json!({"active":{"provider":"openai","model":"fixture"}});
+        fs::write(&config_path, configured.to_string()).unwrap();
+        let owner_choices = configured.as_object().unwrap().clone();
+        let maintained = checkout_payload().join("solstone/talent");
+        for name in ["daily_schedule.md", "daily_schedule.schema.json"] {
+            fs::copy(
+                maintained.join(name),
+                payload.join("solstone/talent").join(name),
+            )
+            .unwrap();
+        }
+        let generate = |_: &GenerateRequest| {
+            Ok(GenerateResponse::Generated(Box::new(
+                solstone_core_generate::GeneratedResponse {
+                    id: None,
+                    text: r#"{"primary":"00:00","fallback":"01:00"}"#.into(),
+                    model: "fixture".into(),
+                    usage: json!({}),
+                    finish_reason: "stop".into(),
+                    thinking: None,
+                    schema_validation: Some(json!({"valid":true})),
+                    input_budget: None,
+                    request_budget: None,
+                    inference: None,
+                    hints_applied: vec![],
+                },
+            )))
+        };
+        let now = ScheduleNow::in_zone(Utc::now(), chrono_tz::UTC);
+        let host = ForegroundProcessingHost::open_with_executor(
+            temp.path(),
+            &payload,
+            now,
+            Arc::new(generate),
+            BackupWebDeps::new(temp.path().to_path_buf()),
+        )
+        .unwrap();
+        assert_eq!(
+            read_json(&temp.path().join("config/schedules.json"))["daily_time"],
+            "00:15"
+        );
+        assert_eq!(
+            host.execute_worker_command(&owned(&["think", "--day", "20261012", "--daily-only"])),
+            0
+        );
+        let output = read_json(&temp.path().join(format!(
+            "chronicle/{}/talents/daily_schedule.json",
+            Utc::now().format("%Y%m%d")
+        )));
+        assert_eq!(output["primary"], "00:00");
+        assert_eq!(
+            read_json(&temp.path().join("config/schedules.json"))["daily_time"],
+            "00:00"
+        );
+        assert_eq!(
+            read_json(&temp.path().join("config/schedules.json"))["weekly_time"],
+            "03:15"
+        );
+        drop(host);
+        let after_daily = read_json(&config_path);
+        for (key, value) in &owner_choices {
+            assert_eq!(&after_daily[key], value, "owner choice {key}");
+        }
+        let reopened = ForegroundProcessingHost::open_at(
+            temp.path(),
+            &payload,
+            ScheduleNow::in_zone(Utc::now(), chrono_tz::UTC),
+            BackupWebDeps::new(temp.path().to_path_buf()),
+        )
+        .unwrap();
+        drop(reopened);
+        assert_eq!(
+            read_json(&temp.path().join("config/schedules.json"))["daily_time"],
+            "00:00"
+        );
+    }
+
+    #[test]
+    fn scheduled_owner_voice_cleanup_deletes_once_and_preserves_owner_choices() {
+        use sha2::{Digest, Sha256};
+        let _lock = TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner());
+        let (temp, payload) = journal_fixture();
+        let now = Utc::now();
+        let day = now.format("%Y%m%d").to_string();
+        let segment = temp
+            .path()
+            .join("chronicle")
+            .join(&day)
+            .join("voice/120000_300");
+        fs::create_dir_all(&segment).unwrap();
+        let original = segment.join("120000_300.m4a");
+        let transcript = segment.join("120000_300.jsonl");
+        let audio = b"synthetic owner-voice original";
+        fs::write(&original, audio).unwrap();
+        let header = json!({"raw":"120000_300.m4a","_solstone_processing":{
+            "schema":solstone_core_processing_record::vocab::SCHEMA,"state":"analyzed","reason_code":"ok","handler":"transcribe",
+            "attempted_at":now.to_rfc3339(),"input_size":audio.len(),"owner_voice_filter":true,
+            "owner_voice":{"version":1,"speech_s":10.0,"kept_s":6.0,"left_out_s":4.0,"windows_scored":5,"windows_kept":3,
+                "original":{"name":"120000_300.m4a","size":audio.len(),"sha256":format!("{:x}",Sha256::digest(audio))},"print":{"sha256":"0".repeat(64)}}
+        }});
+        fs::write(
+            &transcript,
+            format!("{header}\n{{\"start\":\"12:00:01\",\"text\":\"kept words\"}}\n"),
+        )
+        .unwrap();
+        let name = "maintenance:retention:owner-voice-originals";
+        let mut entries = quiet_entries();
+        entries.get_mut(name).unwrap()["enabled"] = json!(true);
+        write_schedules(temp.path(), entries);
+        let config_before = fs::read(temp.path().join("config/journal.json")).unwrap();
+        let host = open_host(temp.path(), &payload, now);
+        wait_until(|| {
+            scheduler_field(temp.path(), name, "last_status").as_deref() == Some("success")
+        });
+        assert!(!original.exists());
+        assert!(
+            fs::read_to_string(&transcript)
+                .unwrap()
+                .contains("kept words")
+        );
+        let events = fs::read_to_string(segment.join("events.jsonl")).unwrap();
+        assert_eq!(events.matches("owner_voice_raw_release").count(), 1);
+        assert_eq!(
+            read_json(&temp.path().join("config/schedules.json"))["daily_time"],
+            "00:15"
+        );
+        assert_eq!(
+            read_json(&temp.path().join("config/schedules.json"))["weekly_time"],
+            "03:15"
+        );
+        assert_eq!(
+            fs::read(temp.path().join("config/journal.json")).unwrap(),
+            config_before
+        );
+        host.request_stop();
+        host.shutdown().unwrap();
+        drop(host);
+        let reopened = open_host(temp.path(), &payload, now);
+        assert_eq!(
+            fs::read_to_string(segment.join("events.jsonl")).unwrap(),
+            events
+        );
+        assert_eq!(
+            fs::read(temp.path().join("config/journal.json")).unwrap(),
+            config_before
+        );
+        drop(reopened);
+    }
+
+    #[test]
+    fn scheduled_backup_dispatch_retains_publication_until_the_real_bus_echoes() {
+        use solstone_core_callosum::{
+            CallosumConnectionPhase, CallosumReceiveEvent, CallosumSocketConnection,
+            CallosumSocketServer,
+        };
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let (temp, payload) = journal_fixture();
+        write_schedules(temp.path(), quiet_entries());
+        // This runtime has no worker threads. Outside block_on the real bus
+        // cannot accept or publish the new terminal, even if its kernel socket
+        // has accepted the producer's write.
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let socket = temp.path().join("health/callosum.sock");
+        let bus = runtime
+            .block_on(CallosumSocketServer::bind(&socket))
+            .unwrap();
+        let (mut observer, host) = runtime.block_on(async {
+            let mut observer = CallosumSocketConnection::new(&socket, Map::new());
+            observer.start();
+            tokio::time::timeout(Duration::from_secs(5), async {
+                loop {
+                    match observer.next_event().await {
+                        Some(CallosumReceiveEvent::Continuity {
+                            phase: CallosumConnectionPhase::Connected,
+                            ..
+                        }) => {
+                            observer.emit(
+                                "supervisor",
+                                "status",
+                                Map::from_iter([("backup_echo_observer".into(), json!(true))]),
+                            );
+                        }
+                        Some(CallosumReceiveEvent::Envelope { envelope, .. })
+                            if envelope.extra.get("backup_echo_observer") == Some(&json!(true)) =>
+                        {
+                            break;
+                        }
+                        _ => {}
+                    }
+                }
+            })
+            .await
+            .unwrap();
+            let journal = temp.path().to_path_buf();
+            let payload = payload.clone();
+            let host = tokio::task::spawn_blocking(move || {
+                open_host(
+                    &journal,
+                    &payload,
+                    Utc.with_ymd_and_hms(2030, 1, 1, 12, 0, 0).unwrap(),
+                )
+            })
+            .await
+            .unwrap();
+            (observer, host)
+        });
+        let (done_send, done) = std::sync::mpsc::channel();
+        let (settled_send, settled) = tokio::sync::oneshot::channel();
+        let worker = std::thread::spawn(move || {
+            let result =
+                host.execute_worker_command(&owned(&["maintenance", "run", "backup:verify"]));
+            done_send.send(result).unwrap();
+            settled_send.send(result).unwrap();
+            host
+        });
+        let before_bus_progress = done.recv_timeout(Duration::from_millis(100));
+        let (terminal, completed) = runtime.block_on(async {
+            let terminal = async {
+                tokio::time::timeout(Duration::from_secs(10), async {
+                    loop {
+                        if let Some(CallosumReceiveEvent::Envelope { envelope, .. }) =
+                            observer.next_event().await
+                            && envelope.tract == "supervisor"
+                            && envelope.event == "stopped"
+                            && envelope.extra.get("service") == Some(&json!("backup"))
+                            && envelope.extra.get("routine") == Some(&json!("backup:verify"))
+                        {
+                            return envelope;
+                        }
+                    }
+                })
+                .await
+            };
+            tokio::join!(terminal, settled)
+        });
+        // Settle all native ownership even when the pre-fix control fails.
+        let host = worker.join().unwrap();
+        host.shutdown().unwrap();
+        runtime.block_on(async {
+            observer.stop().await;
+            bus.stop().await;
+        });
+        assert!(
+            matches!(
+                before_bus_progress,
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout)
+            ),
+            "dispatcher returned before the real bus could publish: {before_bus_progress:?}; terminal={terminal:?}"
+        );
+        assert_eq!(completed.unwrap(), 0);
+        let terminal = terminal.expect("same10s terminal receipt bound");
+        assert_eq!(terminal.extra["exit_code"], 0);
+        assert_eq!(terminal.extra["ref"], "scheduled-backup:verify");
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn scheduled_backup_broker_failure_is_explicit_and_stop_joins_the_publisher() {
+        use std::io::{BufRead, BufReader, Write};
+        use std::os::unix::net::UnixListener;
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let (temp, payload) = journal_fixture();
+        write_schedules(temp.path(), quiet_entries());
+        let socket = temp.path().join("health/callosum.sock");
+        fs::create_dir_all(socket.parent().unwrap()).unwrap();
+        let endpoint = solstone_core_callosum::endpoint_path(&socket).unwrap();
+        let listener = UnixListener::bind(endpoint.as_ref()).unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let stopped = Arc::new(AtomicBool::new(false));
+        let peer_stop = Arc::clone(&stopped);
+        let (reached_send, reached) = std::sync::mpsc::channel();
+        let (release_send, release) = std::sync::mpsc::channel();
+        let peer = std::thread::spawn(move || {
+            while !peer_stop.load(Ordering::Acquire) {
+                let (stream, _) = match listener.accept() {
+                    Ok(peer) => peer,
+                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                        std::thread::sleep(Duration::from_millis(1));
+                        continue;
+                    }
+                    Err(error) => panic!("controlled broker accept: {error}"),
+                };
+                stream
+                    .set_read_timeout(Some(Duration::from_millis(100)))
+                    .unwrap();
+                let mut reader = BufReader::new(stream);
+                let mut line = String::new();
+                if reader.read_line(&mut line).unwrap_or(0) == 0 {
+                    continue;
+                }
+                let fields: serde_json::Value = serde_json::from_str(&line).unwrap();
+                if fields["service"] == "backup" && fields["event"] == "stopped" {
+                    reached_send.send(fields).unwrap();
+                    // Keep a live transport while withholding publication/echo.
+                    let _ = release.recv_timeout(Duration::from_secs(5));
+                    break;
+                }
+                let _ = reader.get_mut().write_all(line.as_bytes());
+            }
+        });
+        let now = Utc.with_ymd_and_hms(2030, 1, 1, 12, 0, 0).unwrap();
+        let mut entries = quiet_entries();
+        entries.get_mut(&schedule_name("backup:verify")).unwrap()["enabled"] = json!(true);
+        write_schedules(temp.path(), entries);
+        let host = Arc::new(open_host(temp.path(), &payload, now));
+        let published_frame = reached.recv_timeout(Duration::from_secs(5));
+        host.request_stop();
+        let stopping = Arc::clone(&host);
+        let (joined_send, joined) = std::sync::mpsc::channel();
+        let retirement = std::thread::spawn(move || {
+            joined_send.send(stopping.shutdown()).unwrap();
+        });
+        let stop_result = joined.recv_timeout(Duration::from_secs(3));
+        let _ = release_send.send(());
+        stopped.store(true, Ordering::Release);
+        peer.join().unwrap();
+        retirement.join().unwrap();
+        let frame = published_frame.expect("actual dispatcher reached withheld publication");
+        assert_eq!(frame["routine"], "backup:verify");
+        assert_eq!(
+            frame["exit_code"], 0,
+            "native unconfigured skip disposition remains authoritative"
+        );
+        stop_result
+            .expect("Stop joins within the existing2s publication budget")
+            .unwrap();
+        // Publication failure is distinct from the already-settled native work.
+        let deps = BackupWebDeps::new(temp.path().to_path_buf());
+        let checkpoint: Arc<dyn Fn() -> Result<(), String> + Send + Sync> = Arc::new(|| Ok(()));
+        let outcome = crate::backup::settle_embedded_backup(
+            &host.root,
+            solstone_core_maintenance::EmbeddedBackupRoutine::Verify,
+            &deps,
+            "failed-publication-control",
+            &checkpoint,
+        );
+        assert_eq!(crate::backup::outcome_exit(&outcome), 0);
+        assert!(
+            crate::backup::report_scheduled_terminal(&host.root, &outcome).is_err(),
+            "a closed broker cannot report confirmed publication"
+        );
+    }
+
+    #[test]
+    fn scheduled_backup_terminals_reach_bus_and_general_requests_keep_existing_owners() {
+        use solstone_core_callosum::{
+            CallosumConnectionPhase, CallosumReceiveEvent, CallosumSocketConnection,
+            CallosumSocketServer,
+        };
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let (temp, payload) = journal_fixture();
+        let mut entries = quiet_entries();
+        for id in ["backup:run", "backup:verify", "backup:prune"] {
+            entries.get_mut(&schedule_name(id)).unwrap()["enabled"] = json!(true);
+        }
+        write_schedules(temp.path(), entries);
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
+            .enable_all()
+            .build()
+            .unwrap();
+        let socket = temp.path().join("health/callosum.sock");
+        let bus = runtime
+            .block_on(CallosumSocketServer::bind(&socket))
+            .unwrap();
+        let mut observer = runtime.block_on(async {
+            let mut observer = CallosumSocketConnection::new(&socket, Map::new());
+            observer.start();
+            tokio::time::timeout(Duration::from_secs(5), async {
+                loop {
+                    match observer.next_event().await {
+                        Some(CallosumReceiveEvent::Continuity {
+                            phase: CallosumConnectionPhase::Connected,
+                            ..
+                        }) => {
+                            observer.emit(
+                                "supervisor",
+                                "status",
+                                Map::from_iter([("scheduled_backup_observer".into(), json!(true))]),
+                            );
+                        }
+                        Some(CallosumReceiveEvent::Envelope { envelope, .. })
+                            if envelope.extra.get("scheduled_backup_observer")
+                                == Some(&json!(true)) =>
+                        {
+                            break;
+                        }
+                        _ => {}
+                    }
+                }
+            })
+            .await
+            .unwrap();
+            observer
+        });
+        // Backup is intentionally unconfigured: these are real native skip
+        // terminals, testing dispatch/publication separately from FC4's
+        // eligible repository and target-native leaf proofs.
+        let now = Utc.with_ymd_and_hms(2030, 1, 1, 12, 0, 0).unwrap();
+        let mut host = open_host(temp.path(), &payload, now);
+        let terminal = runtime.block_on(async {
+            let mut terminal = BTreeSet::new();
+            tokio::time::timeout(Duration::from_secs(10), async {
+                while terminal.len() < 3 {
+                    match observer.next_event().await {
+                        Some(CallosumReceiveEvent::Envelope { envelope, .. })
+                            if envelope.tract == "supervisor"
+                                && envelope.event == "stopped"
+                                && envelope.extra.get("service") == Some(&json!("backup")) =>
+                        {
+                            assert_eq!(
+                                envelope.extra["exit_code"], 0,
+                                "actual scheduled backup terminal: {:?}; history={:?}; generation={}; stop={}; failed={}; root_binding={:?}",
+                                envelope.extra,
+                                host.queue().history(),
+                                host.generation,
+                                host.stop.load(Ordering::SeqCst),
+                                host.failed.load(Ordering::SeqCst),
+                                host.root.revalidate_canonical_binding(),
+                            );
+                            terminal.insert(envelope.extra["routine"].as_str().unwrap().to_owned());
+                        }
+                        _ => {}
+                    }
+                }
+            })
+            .await
+            .unwrap_or_else(|error| panic!(
+                "scheduled backup terminal wait: {error}; observed={terminal:?}; history={:?}; scheduler={:?}; bus_clients={}; saturated={}; evictions={}; malformed={}; root={}",
+                host.queue().history(),
+                fs::read_to_string(temp.path().join("health/scheduler.json")),
+                bus.client_count(), bus.broadcast_saturation_drops(), bus.stalled_client_evictions(), bus.malformed_frame_drops(),
+                temp.path().display(),
+            ));
+            terminal
+        });
+        assert_eq!(
+            terminal,
+            BTreeSet::from([
+                "backup:run".into(),
+                "backup:verify".into(),
+                "backup:prune".into()
+            ])
+        );
+        wait_until(|| {
+            ["backup:run", "backup:verify", "backup:prune"]
+                .iter()
+                .all(|id| {
+                    scheduler_field(temp.path(), &schedule_name(id), "last_status").as_deref()
+                        == Some("success")
+                })
+        });
+        host.stop_discovery_for_test();
+        host.start_workers().unwrap(); // Reflected subscription witness.
+        for (reference, command) in [
+            (
+                "manual-backup-existing-owner",
+                canonical_journal_command(["maintenance", "run", "backup:run"]),
+            ),
+            (
+                "manual-brain-existing-owner",
+                canonical_journal_command(["brain", "refresh"]),
+            ),
+            (
+                "manual-general-control",
+                canonical_journal_command(["heartbeat"]),
+            ),
+        ] {
+            assert!(observer.emit(
+                "supervisor",
+                "request",
+                Map::from_iter([
+                    ("cmd".into(), json!(command)),
+                    ("ref".into(), json!(reference)),
+                ])
+            ));
+        }
+        wait_until(|| {
+            host.queue()
+                .history()
+                .iter()
+                .any(|row| row.reference == "manual-general-control" && row.exit_status == "ok")
+        });
+        assert!(
+            !host.queue().history().iter().any(|row| {
+                matches!(
+                    row.reference.as_str(),
+                    "manual-backup-existing-owner" | "manual-brain-existing-owner"
+                )
+            }),
+            "general subscriber must not duplicate existing service owners"
+        );
+        assert_eq!(heartbeat_events(temp.path(), "pass.outcome"), 1);
+        host.shutdown().unwrap();
+        assert!(host.request_handle.lock().unwrap().is_none());
+        runtime.block_on(observer.stop());
+        runtime.block_on(bus.stop());
     }
 
     #[test]
@@ -5479,5 +6669,41 @@ mod processing_proofs {
                 || heartbeat_events(temp.path(), "pass") >= 1
         );
         drop(host);
+    }
+}
+
+#[cfg(test)]
+mod admission {
+    use super::admit_command;
+
+    #[test]
+    fn indexer_drain_pauses_while_restore_is_pending_and_resumes_after_clear() {
+        let journal = tempfile::TempDir::new().expect("journal");
+        let args = [
+            "journal".to_owned(),
+            "indexer".to_owned(),
+            "drain".to_owned(),
+        ];
+        assert!(admit_command(journal.path(), &args));
+        let source =
+            solstone_core_journal_io::whole_journal_restore::WholeJournalRestoreSource::Byo {
+                repository: "repo".into(),
+                backend: "s3".into(),
+            };
+        let record =
+            solstone_core_journal_io::whole_journal_restore::publish_whole_journal_restore(
+                journal.path(),
+                &source,
+                "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+                "/journal",
+            )
+            .expect("obligation");
+        assert!(!admit_command(journal.path(), &args));
+        solstone_core_journal_io::whole_journal_restore::clear_whole_journal_restore(
+            journal.path(),
+            &record,
+        )
+        .expect("clear");
+        assert!(admit_command(journal.path(), &args));
     }
 }

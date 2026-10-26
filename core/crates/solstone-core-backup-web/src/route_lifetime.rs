@@ -280,7 +280,7 @@ impl BackupRouteLifetime {
     }
 
     pub fn admit_maintenance(&self) -> Result<MaintenancePermit, Response> {
-        let write = operation::admit_write(&self.operations, AdmitWrite::IdleOnly)?;
+        let write = operation::admit_write(&self.operations, AdmitWrite::Maintenance)?;
         let cancellation = match self.operations.lock() {
             Ok(guard) => guard.cancellation.clone(),
             Err(poisoned) => poisoned.into_inner().cancellation.clone(),

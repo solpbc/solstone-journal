@@ -15,3 +15,5 @@ pub mod registry;
 
 #[cfg(test)]
 mod folder_sources;
+#[cfg(all(test, feature = "full-tests"))]
+mod embedded_admission;

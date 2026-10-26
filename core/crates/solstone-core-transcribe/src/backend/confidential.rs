@@ -282,6 +282,26 @@ pub(crate) fn transcribe_cancellable(
     checkpoint: &dyn Fn() -> Result<(), TranscribeError>,
     service_io: &dyn Fn(ConfidentialIoPhase),
 ) -> Result<(TranscriptionResponse, ModelInfo), TranscribeError> {
+    #[cfg(all(test, feature = "full-tests"))]
+    if CONFIDENTIAL_SEND_HOOK.with(|cell| cell.get()) {
+        CONFIDENTIAL_SENDS.with(|cell| cell.borrow_mut().push(audio.len()));
+        return Ok((
+            TranscriptionResponse {
+                text: "c.".to_owned(),
+                words: vec![crate::backend::parakeet_cpp::TranscriptionWord {
+                    word: "c.".to_owned(),
+                    start: 0.0,
+                    end: 0.2,
+                    probability: None,
+                }],
+            },
+            ModelInfo {
+                model: "confidential-stub".to_owned(),
+                device: "cpu".to_owned(),
+                compute_type: "f32".to_owned(),
+            },
+        ));
+    }
     #[cfg(not(windows))]
     let readiness = |_: &Path| match solstone_core_spp_ratls::resolve_nvattest_from_current_exe() {
         Ok(_) => NvattestEnsureStatus::AlreadyInstalled,
@@ -304,6 +324,27 @@ pub(crate) fn transcribe_cancellable(
             service_io,
         },
     )
+}
+
+#[cfg(all(test, feature = "full-tests"))]
+thread_local! {
+    static CONFIDENTIAL_SEND_HOOK: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    static CONFIDENTIAL_SENDS: std::cell::RefCell<Vec<usize>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// Full-tests stand-in: record each confidential send and return a canned transcript.
+#[cfg(all(test, feature = "full-tests"))]
+pub(crate) fn set_confidential_send_hook(enabled: bool) {
+    CONFIDENTIAL_SEND_HOOK.with(|cell| cell.set(enabled));
+    if !enabled {
+        CONFIDENTIAL_SENDS.with(|cell| cell.borrow_mut().clear());
+    }
+}
+
+/// Lengths of confidential sends captured since the hook was enabled.
+#[cfg(all(test, feature = "full-tests"))]
+pub(crate) fn take_confidential_sends() -> Vec<usize> {
+    CONFIDENTIAL_SENDS.with(|cell| std::mem::take(&mut *cell.borrow_mut()))
 }
 
 fn confidential_endpoint(config: &JournalConfigRead) -> Result<ByoEndpoint, TranscribeError> {

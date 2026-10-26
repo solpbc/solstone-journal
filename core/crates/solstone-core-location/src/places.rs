@@ -20,14 +20,11 @@
 //! here.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::fs;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use solstone_core_journal_io::{
-    AtomicWriteOptions, LockOptions, atomic_replace, hold_daily_location_admission, hold_lock,
-};
+use solstone_core_journal_io::LockOptions;
 
 use crate::pack::distance_m;
 
@@ -152,7 +149,7 @@ pub fn store_path(journal: &Path) -> PathBuf {
 
 impl PlaceStore {
     pub fn read(journal: &Path) -> Self {
-        fs::read(store_path(journal))
+        crate::reconcile_io::read(&store_path(journal))
             .ok()
             .and_then(|bytes| serde_json::from_slice::<Self>(&bytes).ok())
             .filter(|store| store.version == STORE_VERSION)
@@ -164,7 +161,7 @@ impl PlaceStore {
     /// A missing file is an empty store. IO, invalid JSON, and a wrong version
     /// are errors. This read takes no place-store lock.
     pub fn read_strict(journal: &Path) -> std::io::Result<Self> {
-        let bytes = match fs::read(store_path(journal)) {
+        let bytes = match crate::reconcile_io::read(&store_path(journal)) {
             Ok(bytes) => bytes,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
                 return Ok(Self::default());
@@ -184,25 +181,31 @@ impl PlaceStore {
 
     pub fn write(&self, journal: &Path) -> std::io::Result<()> {
         let path = store_path(journal);
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)?;
-        }
         let mut bytes = serde_json::to_vec_pretty(self).unwrap_or_default();
         bytes.push(b'\n');
-        atomic_replace(&path, &bytes, AtomicWriteOptions::default())
-            .map_err(|error| std::io::Error::other(error.to_string()))
+        crate::reconcile_io::replace(&path, &bytes)
     }
 
     /// Read, change and write the store under its lock, so the background
     /// pass and an owner's edit never overwrite each other. Writes only when
     /// the store changed. Returns what `change` returned.
     pub fn update<T>(journal: &Path, change: impl FnOnce(&mut Self) -> T) -> std::io::Result<T> {
-        let _admission = hold_daily_location_admission(journal)
-            .map_err(|error| std::io::Error::other(error.to_string()))?;
+        crate::reconcile_io::transaction(|| Self::update_inner(journal, change))
+    }
+
+    fn update_inner<T>(journal: &Path, change: impl FnOnce(&mut Self) -> T) -> std::io::Result<T> {
+        let _admission = crate::reconcile_io::hold_lock(
+            &solstone_core_journal_io::locking::daily_location_admission_path(journal),
+            LockOptions::default(),
+            false,
+        )?;
         let path = store_path(journal);
-        let _lock = hold_lock(&path, LockOptions::default())
-            .map_err(|error| std::io::Error::other(error.to_string()))?;
-        let mut store = Self::read(journal);
+        let _lock = crate::reconcile_io::hold_lock(&path, LockOptions::default(), false)?;
+        let mut store = if crate::reconcile_io::is_owned() {
+            Self::read_strict(journal)?
+        } else {
+            Self::read(journal)
+        };
         let before = store.clone();
         let result = change(&mut store);
         if store != before {
@@ -442,6 +445,8 @@ pub fn clean_name(name: &str) -> Option<String> {
 mod tests {
     use super::*;
     #[cfg(feature = "full-tests")]
+    use std::fs;
+    #[cfg(feature = "full-tests")]
     use std::sync::mpsc;
     #[cfg(feature = "full-tests")]
     use std::thread;
@@ -463,7 +468,8 @@ mod tests {
         };
         store.write(journal.path()).unwrap();
         let before = fs::read(store_path(journal.path())).unwrap();
-        let guard = hold_daily_location_admission(journal.path()).unwrap();
+        let guard =
+            solstone_core_journal_io::hold_daily_location_admission(journal.path()).unwrap();
         let path = journal.path().to_path_buf();
         let (sender, receiver) = mpsc::channel();
         let (ready_sender, ready) = mpsc::channel();

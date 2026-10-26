@@ -95,6 +95,13 @@ impl ScheduleEngine {
         now: ScheduleNow,
         sink: &dyn ScheduleSubmissionSink,
     ) -> Result<CheckReport, ScheduleError> {
+        // Owner edits take effect at the next tick, including disabling or
+        // removing an interval job between hourly boundaries.
+        let loaded = load_runtime(&self.config_path)?;
+        self.config = loaded.config;
+        let diagnostics = loaded.diagnostics;
+        self.pending_retry
+            .retain(|name| self.config.entries.contains_key(name));
         let current_minute = now
             .local
             .date()
@@ -107,15 +114,12 @@ impl ScheduleEngine {
         let mut weekly_changed = current_weekly_mark != self.last_weekly_mark;
         let minute_changed = current_minute != self.last_minute;
         if !hour_changed && !daily_changed && !weekly_changed && !minute_changed {
-            return Ok(CheckReport::default());
+            return Ok(CheckReport {
+                diagnostics,
+                ..CheckReport::default()
+            });
         }
 
-        let mut diagnostics = Vec::new();
-        if hour_changed || daily_changed || weekly_changed {
-            let loaded = load_runtime(&self.config_path)?;
-            self.config = loaded.config;
-            diagnostics = loaded.diagnostics;
-        }
         self.state = load_runtime_state(&self.state_path)?;
         self.last_minute = current_minute;
         self.last_hour = current_hour;

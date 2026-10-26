@@ -360,6 +360,30 @@ pub(super) fn write_reader_exclusive_detailed(
     reader: &mut impl Read,
     options: crate::atomic::AtomicWriteOptions,
 ) -> Result<ExclusivePublication, DetailedAtomicError> {
+    write_reader_exclusive_detailed_inner(path, reader, options, None)
+}
+
+pub(super) fn write_bytes_exclusive_detailed_bound(
+    parent: &crate::windows_sync_dir::WindowsFlatDirectory,
+    name: &OsStr,
+    contents: &[u8],
+    options: crate::atomic::AtomicWriteOptions,
+    checkpoint: &dyn Fn() -> Result<(), String>,
+) -> Result<ExclusivePublication, DetailedAtomicError> {
+    let path = parent.diagnostic_path().join(name);
+    let mut reader = Cursor::new(contents);
+    write_reader_exclusive_detailed_inner(&path, &mut reader, options, Some((parent, checkpoint)))
+}
+
+fn write_reader_exclusive_detailed_inner(
+    path: &Path,
+    reader: &mut impl Read,
+    options: crate::atomic::AtomicWriteOptions,
+    bound: Option<(
+        &crate::windows_sync_dir::WindowsFlatDirectory,
+        &dyn Fn() -> Result<(), String>,
+    )>,
+) -> Result<ExclusivePublication, DetailedAtomicError> {
     if let Some(mode) = options.mode
         && mode > 0o777
     {
@@ -398,8 +422,43 @@ pub(super) fn write_reader_exclusive_detailed(
             io::Error::new(io::ErrorKind::InvalidInput, "stage name is not valid UTF-8"),
         )
     })?;
-    let capability = prepare_publication_path_with_terminals(input, &[stage_shape])
-        .map_err(|error| map_prepare_error_detailed(path, error))?;
+    let capability = if let Some((parent, checkpoint)) = bound {
+        checkpoint().map_err(|detail| {
+            detailed_error(
+                path,
+                "authorize create-only publication",
+                io::Error::new(io::ErrorKind::Interrupted, detail),
+            )
+        })?;
+        parent.revalidate_bound().map_err(|error| {
+            detailed_error(path, "verify bound parent", io::Error::other(error))
+        })?;
+        let admitted =
+            crate::windows_publication_path::admit_publication_path(input, &[stage_shape])
+                .map_err(|error| map_prepare_error_detailed(path, error))?;
+        // Existing-only admission cannot create parents through the spelling.
+        let capability = admitted
+            .retain_ancestors(crate::windows_publication_path::AncestorAdmission::ExistingOnly)
+            .map_err(|error| map_prepare_error_detailed(path, error))?;
+        if capability.terminal_parent_identity() != parent.identity() {
+            return Err(detailed_error(
+                path,
+                "verify bound parent",
+                io::Error::other("publication parent changed"),
+            ));
+        }
+        checkpoint().map_err(|detail| {
+            detailed_error(
+                path,
+                "authorize create-only publication",
+                io::Error::new(io::ErrorKind::Interrupted, detail),
+            )
+        })?;
+        capability
+    } else {
+        prepare_publication_path_with_terminals(input, &[stage_shape])
+            .map_err(|error| map_prepare_error_detailed(path, error))?
+    };
     let dest_name = capability.leaf_name().to_os_string();
     if destination_present(capability.terminal_parent(), &dest_name)
         .map_err(|source| detailed_error(path, "inspect destination", source))?
@@ -450,6 +509,18 @@ pub(super) fn write_reader_exclusive_detailed(
     };
 
     for attempt in 1..=CREATE_ONLY_MAX_ATTEMPTS {
+        if let Some((_, checkpoint)) = bound
+            && let Err(detail) = checkpoint()
+        {
+            return Err(fail_with_cleanup_detailed(
+                path,
+                "authorize create-only publication",
+                capability.terminal_parent(),
+                &stage_name,
+                Some(stage_identity),
+                io::Error::new(io::ErrorKind::Interrupted, detail),
+            ));
+        }
         if let Err(source) =
             admit_before_move(&capability, &dest_name, &stage_name, &stage, stage_identity)
         {

@@ -20,6 +20,9 @@ pub const COPY_EXCLUDES: &[&str] = &[
     // These namespaces are application-owned, unlike raw segment filenames.
     "health/sync",
     "health/brain.json",
+    // Local restore obligation. A snapshot must not import, overwrite, or erase it.
+    crate::whole_journal_restore::WHOLE_JOURNAL_RESTORE_FILE,
+    "health/!solstone-claim-00000000-*",
     "health/brain.log",
     "health/brain-fingerprint.key",
     "health/brain-refresh.lease",
@@ -156,6 +159,7 @@ mod tests {
             "indexer/journal.sqlite-wal",
             "cache/providers/model",
             "health/brain-fingerprint.key",
+            "health/whole-journal-restore.json",
             "health/callosum.sock",
             "health/callosum.pipe-secret",
             "health/supervisor.process_instance",

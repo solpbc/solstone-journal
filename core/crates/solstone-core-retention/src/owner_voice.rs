@@ -237,6 +237,22 @@ pub fn finish_owner_voice_deletion(
     commit: &SegmentCommit<'_>,
     at: DateTime<Utc>,
 ) -> OwnerVoiceDeletion {
+    finish_owner_voice_deletion_checked(journal, jsonl, claims, commit, at, &|| Ok(()))
+}
+
+/// The same release with cooperative cancellation before each mutation. Claims
+/// and the segment commit remain held until an admitted release finishes.
+pub fn finish_owner_voice_deletion_checked(
+    journal: &Path,
+    jsonl: &Path,
+    claims: &OutputClaims,
+    commit: &SegmentCommit<'_>,
+    at: DateTime<Utc>,
+    checkpoint: &dyn Fn() -> Result<(), String>,
+) -> OwnerVoiceDeletion {
+    if let Err(error) = checkpoint() {
+        return OwnerVoiceDeletion::Owed(error);
+    }
     let Some(segment) = jsonl.parent() else {
         return OwnerVoiceDeletion::NotProvable("transcript has no segment".to_owned());
     };
@@ -280,6 +296,9 @@ pub fn finish_owner_voice_deletion(
     let size = match verified {
         Ok(size) => size,
         Err(reason) => {
+            if let Err(error) = checkpoint() {
+                return OwnerVoiceDeletion::Owed(error);
+            }
             return match record_owner_voice_release_refused(
                 journal,
                 &segment_rel,
@@ -315,6 +334,9 @@ pub fn finish_owner_voice_deletion(
     };
     if journal.join(proven.rel()) != original {
         return OwnerVoiceDeletion::NotProvable("proof names a different path".to_owned());
+    }
+    if let Err(error) = checkpoint() {
+        return OwnerVoiceDeletion::Owed(error);
     }
     release_proven(journal, segment, &proven, &name, at)
 }
@@ -385,18 +407,45 @@ pub fn finish_owed_owner_voice_deletions(
     pause: std::time::Duration,
     now: &dyn Fn() -> DateTime<Utc>,
 ) -> OwedRunCounts {
+    finish_owed_owner_voice_deletions_checked(journal, today, retries, pause, now, &|| Ok(()))
+        .unwrap_or_else(|error| {
+            log::warn!("owner voice original cleanup incomplete: {error}");
+            OwedRunCounts {
+                unknown: 1,
+                ..Default::default()
+            }
+        })
+}
+
+/// Run the maintained cleanup while its owner remains active. A refused
+/// checkpoint leaves unprocessed originals owed; traversal failures are errors
+/// rather than a successful empty pass.
+pub fn finish_owed_owner_voice_deletions_checked(
+    journal: &Path,
+    today: NaiveDate,
+    retries: usize,
+    pause: std::time::Duration,
+    now: &dyn Fn() -> DateTime<Utc>,
+    checkpoint: &dyn Fn() -> Result<(), String>,
+) -> Result<OwedRunCounts, String> {
     let mut counts = OwedRunCounts::default();
     let mut owed = Vec::new();
     for day in owner_voice_owed_days(today) {
+        checkpoint()?;
         let key = day.format("%Y%m%d").to_string();
-        let Ok(segments) = solstone_core_segment::list_segments(journal, &key) else {
-            continue;
-        };
+        let segments = solstone_core_segment::list_segments(journal, &key)
+            .map_err(|error| format!("owner voice originals: {key}: {error}"))?;
         for segment in segments {
-            let Ok(entries) = fs::read_dir(segment.path()) else {
-                continue;
-            };
-            for entry in entries.flatten() {
+            checkpoint()?;
+            let entries = fs::read_dir(segment.path()).map_err(|error| {
+                format!(
+                    "owner voice originals: {}: {error}",
+                    segment.path().display()
+                )
+            })?;
+            for entry in entries {
+                checkpoint()?;
+                let entry = entry.map_err(|error| format!("owner voice originals: {error}"))?;
                 let jsonl = entry.path();
                 if jsonl.extension().and_then(|value| value.to_str()) != Some("jsonl") {
                     continue;
@@ -410,16 +459,24 @@ pub fn finish_owed_owner_voice_deletions(
         }
     }
     for attempt in 0..=retries {
+        checkpoint()?;
         if owed.is_empty() {
             break;
         }
         if attempt > 0 {
-            std::thread::sleep(pause);
+            let mut remaining = pause;
+            while !remaining.is_zero() {
+                checkpoint()?;
+                let slice = remaining.min(std::time::Duration::from_millis(100));
+                std::thread::sleep(slice);
+                remaining = remaining.saturating_sub(slice);
+            }
         }
         let last = attempt == retries;
         let mut still_owed = Vec::new();
         for jsonl in owed {
-            match finish_one(journal, &jsonl, now()) {
+            checkpoint()?;
+            match finish_one(journal, &jsonl, now(), checkpoint) {
                 Some(OwnerVoiceDeletion::Owed(_)) if !last => still_owed.push(jsonl),
                 Some(outcome) => tally(&mut counts, &outcome),
                 None => counts.skipped = counts.skipped.saturating_add(1),
@@ -427,10 +484,16 @@ pub fn finish_owed_owner_voice_deletions(
         }
         owed = still_owed;
     }
-    counts
+    checkpoint()?;
+    Ok(counts)
 }
 
-fn finish_one(journal: &Path, jsonl: &Path, at: DateTime<Utc>) -> Option<OwnerVoiceDeletion> {
+fn finish_one(
+    journal: &Path,
+    jsonl: &Path,
+    at: DateTime<Utc>,
+    checkpoint: &dyn Fn() -> Result<(), String>,
+) -> Option<OwnerVoiceDeletion> {
     let segment = jsonl.parent()?;
     let options = solstone_core_journal_io::LockOptions {
         timeout: std::time::Duration::ZERO,
@@ -438,8 +501,8 @@ fn finish_one(journal: &Path, jsonl: &Path, at: DateTime<Utc>) -> Option<OwnerVo
     };
     let claims = OutputClaims::acquire([jsonl.to_path_buf()], options).ok()?;
     let commit = claims.commit(segment).ok()?;
-    Some(finish_owner_voice_deletion(
-        journal, jsonl, &claims, &commit, at,
+    Some(finish_owner_voice_deletion_checked(
+        journal, jsonl, &claims, &commit, at, checkpoint,
     ))
 }
 

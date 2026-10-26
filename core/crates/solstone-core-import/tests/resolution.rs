@@ -407,6 +407,47 @@ fn ac9_zero_entry_manifest_does_not_skip_generic_source() {
 }
 
 #[test]
+fn registry_exports_keep_the_supplied_fallback_across_later_resolution() {
+    let tree = Tree::new();
+    let export = tree.file("export.zip");
+    for source in [
+        "ics",
+        "obsidian",
+        "claude",
+        "chatgpt",
+        "gemini",
+        "document",
+        "journal_archive",
+        "strava",
+    ] {
+        let mut options = opt(&export);
+        options.source = Some(source);
+        options.fallback_timestamp = Some("20261014_090000");
+        let mut seam = ResolutionSeams {
+            apple_detector: no_apple,
+            claims: no_claim,
+            deterministic_detector: deterministic,
+            model_detector: no_model,
+            manifest_lookup: lookup_none,
+            generated_timestamp: || panic!("saved export must retain its fallback identity"),
+        };
+        let outcome = solstone_core_import::detect::resolve_import(&options, &mut seam).unwrap();
+        assert!(
+            matches!(outcome, ResolutionOutcome::Resolved { timestamp, .. }
+            if timestamp.as_str() == "20261014_090000"),
+            "{source}"
+        );
+        options.timestamp = Some("20261015_100000");
+        let outcome = solstone_core_import::detect::resolve_import(&options, &mut seam).unwrap();
+        assert!(
+            matches!(outcome, ResolutionOutcome::Resolved { timestamp, .. }
+            if timestamp.as_str() == "20261015_100000"),
+            "{source}"
+        );
+    }
+}
+
+#[test]
 fn registry_timestamp_is_injected_and_not_used_by_generic_resolution() {
     // constructed registry and generic files; cli.py:617 supplies local current time in the caller.
     let tree = Tree::new();

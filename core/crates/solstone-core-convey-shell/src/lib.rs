@@ -120,6 +120,9 @@ mod device_migration;
 mod devices_source_retired;
 #[cfg(feature = "host")]
 mod door;
+#[cfg(feature = "host")]
+#[cfg(all(test, feature = "full-tests"))]
+mod embedded_producer_tests;
 mod entities;
 mod form_body_guard;
 #[cfg(feature = "host")]
@@ -141,9 +144,13 @@ mod paired_device;
 mod pinned;
 #[cfg(feature = "host")]
 mod pinned_write;
+pub mod recovery_drain;
+pub mod recovery_watch;
 pub mod registry;
 mod relay_access;
 mod relay_admission;
+#[cfg(feature = "host")]
+mod service_handoffs;
 #[cfg(feature = "host")]
 pub mod session;
 pub mod session_gate;
@@ -342,10 +349,14 @@ impl std::error::Error for ConveyServeError {}
 #[cfg(feature = "host")]
 pub struct EmbeddedConveyHandle {
     owner_router: Router,
+    service_handoffs: Arc<service_handoffs::ServiceHandoffs>,
     door: Arc<door::DoorLifecycle>,
+    door_recovery: recovery_drain::RecoveryHooks,
     local_network_task: tokio::task::JoinHandle<()>,
     link_health_task: tokio::task::JoinHandle<()>,
     service_token_renewal_task: tokio::sync::Mutex<Option<tokio::task::JoinHandle<()>>>,
+    weekly_heads_up_task: tokio::sync::Mutex<Option<tokio::task::JoinHandle<()>>>,
+    location_task: tokio::sync::Mutex<Option<tokio::task::JoinHandle<()>>>,
     renewal_shutdown: tokio::sync::watch::Sender<bool>,
     backup_deps: solstone_core_backup_web::BackupWebDeps,
 }
@@ -364,6 +375,7 @@ pub struct EmbeddedConveyStop {
 /// receives signals only; the constructor retains the actual serving owner.
 #[cfg(feature = "host")]
 pub struct EmbeddedStartup {
+    pub settings_sync: Option<solstone_core_settings_web::SourceSyncDelegate>,
     pub cancelled: Arc<dyn Fn() -> bool + Send + Sync>,
     pub stop_ready: Arc<
         dyn Fn(EmbeddedConveyStop, solstone_core_backup_web::BackupRouteLifetime) + Send + Sync,
@@ -425,7 +437,12 @@ impl EmbeddedConveyHandle {
     /// embedding app releases its journal or runtime.
     pub async fn shutdown_and_wait(&self) {
         self.shutdown();
+        self.service_handoffs.join().await;
+        self.door.shutdown_and_wait().await;
+        self.door_recovery.clear();
         join_embedded_renewal(&self.service_token_renewal_task).await;
+        join_embedded_renewal(&self.weekly_heads_up_task).await;
+        join_embedded_renewal(&self.location_task).await;
     }
 }
 
@@ -454,8 +471,9 @@ impl Drop for EmbeddedConveyHandle {
 pub async fn bind_embedded_device_door(
     journal_root: PathBuf,
     address: std::net::SocketAddrV4,
+    import_route: Option<Arc<solstone_core_import_web::ImportRouteSlot>>,
 ) -> Result<EmbeddedConveyHandle, ConveyServeError> {
-    bind_embedded_with_dependencies(journal_root, address, None, None, None).await
+    bind_embedded_with_dependencies(journal_root, address, None, None, None, import_route).await
 }
 
 #[cfg(feature = "host")]
@@ -463,8 +481,17 @@ pub async fn bind_embedded_device_door_with_payload(
     journal_root: PathBuf,
     address: std::net::SocketAddrV4,
     payload_root: PathBuf,
+    import_route: Option<Arc<solstone_core_import_web::ImportRouteSlot>>,
 ) -> Result<EmbeddedConveyHandle, ConveyServeError> {
-    bind_embedded_with_dependencies(journal_root, address, Some(payload_root), None, None).await
+    bind_embedded_with_dependencies(
+        journal_root,
+        address,
+        Some(payload_root),
+        None,
+        None,
+        import_route,
+    )
+    .await
 }
 
 /// Compose app-owned routes using the same optional agent owner surface as the
@@ -475,6 +502,7 @@ pub async fn bind_embedded_device_door_with_routes(
     address: std::net::SocketAddrV4,
     payload_root: Option<PathBuf>,
     agents_routes: Router,
+    import_route: Option<Arc<solstone_core_import_web::ImportRouteSlot>>,
 ) -> Result<EmbeddedConveyHandle, ConveyServeError> {
     bind_embedded_with_dependencies(
         journal_root,
@@ -482,6 +510,7 @@ pub async fn bind_embedded_device_door_with_routes(
         payload_root,
         Some(agents_routes),
         None,
+        import_route,
     )
     .await
 }
@@ -493,6 +522,7 @@ pub async fn bind_embedded_device_door_with_routes_and_startup(
     payload_root: Option<PathBuf>,
     agents_routes: Router,
     startup: EmbeddedStartup,
+    import_route: Option<Arc<solstone_core_import_web::ImportRouteSlot>>,
 ) -> Result<EmbeddedConveyHandle, ConveyServeError> {
     bind_embedded_with_dependencies(
         journal_root,
@@ -500,6 +530,7 @@ pub async fn bind_embedded_device_door_with_routes_and_startup(
         payload_root,
         Some(agents_routes),
         Some(startup),
+        import_route,
     )
     .await
 }
@@ -512,6 +543,7 @@ pub async fn bind_embedded_device_door_with_root(
     payload_root: Option<PathBuf>,
     agents_routes: Router,
     startup: EmbeddedStartup,
+    import_route: Option<Arc<solstone_core_import_web::ImportRouteSlot>>,
 ) -> Result<EmbeddedConveyHandle, ConveyServeError> {
     root.revalidate_canonical_binding()
         .map_err(ConveyServeError::EmbeddedRoot)?;
@@ -528,6 +560,7 @@ pub async fn bind_embedded_device_door_with_root(
         Some(agents_routes),
         roots,
         Some(backup_deps.clone()),
+        import_route,
     );
     root.revalidate_canonical_binding()
         .map_err(ConveyServeError::EmbeddedRoot)?;
@@ -549,6 +582,7 @@ async fn bind_embedded_with_dependencies(
     payload_root: Option<PathBuf>,
     agents_routes: Option<Router>,
     startup: Option<EmbeddedStartup>,
+    import_route: Option<Arc<solstone_core_import_web::ImportRouteSlot>>,
 ) -> Result<EmbeddedConveyHandle, ConveyServeError> {
     let roots = payload_root
         .map(|payload| thinking_sol_reads::TalentRoots::from_payload_root(&payload))
@@ -561,6 +595,7 @@ async fn bind_embedded_with_dependencies(
         agents_routes,
         roots,
         Some(backup_deps.clone()),
+        import_route,
     );
     bind_embedded_router(journal_root, address, app, backup_deps, None, startup).await
 }
@@ -607,6 +642,10 @@ async fn bind_embedded_router(
     };
     let cache: link_health_cache::RelayHealthCacheStore = Arc::new(std::sync::Mutex::new(None));
     let (renewal_shutdown, renewal_stop) = tokio::sync::watch::channel(false);
+    let service_handoffs = Arc::new(service_handoffs::ServiceHandoffs::new(
+        Arc::clone(&binding),
+        Some(renewal_stop.clone()),
+    ));
     let cancelled = startup
         .as_ref()
         .map(|startup| Arc::clone(&startup.cancelled))
@@ -615,7 +654,15 @@ async fn bind_embedded_router(
         stopped: renewal_stop.clone(),
         cancelled,
     };
+    let app = match startup
+        .as_ref()
+        .and_then(|startup| startup.settings_sync.clone())
+    {
+        Some(delegate) => app.layer(Extension(delegate)),
+        None => app,
+    };
     let router = app
+        .layer(Extension(Arc::clone(&service_handoffs)))
         .layer(Extension(cache.clone()))
         .layer(axum::middleware::from_fn_with_state(
             admission.clone(),
@@ -644,6 +691,16 @@ async fn bind_embedded_router(
         authorization_sender: sender,
         relay_admissions,
     }));
+    let pause_door = Arc::clone(&door);
+    let resume_door = Arc::clone(&door);
+    let pause_runtime = tokio::runtime::Handle::current();
+    let resume_runtime = pause_runtime.clone();
+    let door_recovery = recovery_drain::register_recovery_hooks(
+        "paired-device-door",
+        Arc::clone(&binding),
+        move |journal| pause_runtime.block_on(pause_door.pause_for_recovery(journal)),
+        move |journal| resume_runtime.block_on(resume_door.resume_after_recovery(journal)),
+    );
     let owner_router = router
         .merge(local_network::routes(door.clone()))
         .layer(axum::middleware::from_fn_with_state(
@@ -651,11 +708,11 @@ async fn bind_embedded_router(
             door::open_after_finalize,
         ))
         .layer(axum::middleware::from_fn_with_state(
-            binding,
+            binding.clone(),
             embedded_root_gate,
         ))
         .layer(axum::middleware::from_fn_with_state(
-            admission,
+            admission.clone(),
             embedded_admission_gate,
         ));
     if let Some(startup) = &startup {
@@ -671,14 +728,51 @@ async fn bind_embedded_router(
     }
     let _ = door.ensure_started().await;
     let local_network_task = tokio::spawn(local_network::watch(door.clone()));
-    let (link_health_task, service_token_renewal_task) =
-        start_relay_health_tasks(service_root, cache, Some(renewal_stop));
+    let (link_health_task, service_token_renewal_task) = start_relay_health_tasks(
+        service_root.clone(),
+        cache,
+        Some((Arc::clone(&binding), renewal_stop.clone())),
+    );
+    let producer_root = Arc::clone(&binding);
+    let producer_active: Arc<dyn Fn() -> bool + Send + Sync> = Arc::new(move || {
+        !*admission.stopped.borrow()
+            && !(admission.cancelled)()
+            && binding.revalidate_canonical_binding().is_ok()
+    });
+    let push_portal = std::env::var("SERVICES_PORTAL_URL")
+        .unwrap_or_else(|_| agents_enable::DEFAULT_PORTAL_URL.to_owned())
+        .trim_end_matches('/')
+        .to_owned();
+    let weekly_heads_up_task =
+        tokio::spawn(weekly_heads_up::subscribe_weekly_heads_up_until_stopped(
+            Arc::clone(&producer_root),
+            push_portal,
+            renewal_stop.clone(),
+            Arc::clone(&producer_active),
+        ));
+    let location_recovery =
+        recovery_watch::RecoveryWatch::new("map-maintenance", Arc::clone(&producer_root));
+    let location_changes = location_recovery.subscribe();
+    let location_task = tokio::spawn(async move {
+        let _recovery = location_recovery;
+        solstone_core_map_web::run_maintenance_until_stopped(
+            producer_root,
+            renewal_stop,
+            producer_active,
+            location_changes,
+        )
+        .await;
+    });
     let handle = EmbeddedConveyHandle {
+        service_handoffs,
         owner_router,
         door,
+        door_recovery,
         local_network_task,
         link_health_task,
         service_token_renewal_task: tokio::sync::Mutex::new(Some(service_token_renewal_task)),
+        weekly_heads_up_task: tokio::sync::Mutex::new(Some(weekly_heads_up_task)),
+        location_task: tokio::sync::Mutex::new(Some(location_task)),
         renewal_shutdown,
         backup_deps,
     };
@@ -739,7 +833,10 @@ async fn embedded_root_gate(
 fn start_relay_health_tasks(
     journal_root: PathBuf,
     cache: link_health_cache::RelayHealthCacheStore,
-    shutdown: Option<tokio::sync::watch::Receiver<bool>>,
+    embedded: Option<(
+        Arc<solstone_core_journal_io::JournalRoot>,
+        tokio::sync::watch::Receiver<bool>,
+    )>,
 ) -> (tokio::task::JoinHandle<()>, tokio::task::JoinHandle<()>) {
     let link_health_task = tokio::spawn(link_health_cache::subscribe_relay_health(
         journal_root.clone(),
@@ -759,11 +856,10 @@ fn start_relay_health_tasks(
             link_health_cache::service_token_health_from_cache(cache.as_ref(), now_ms)
         }),
     );
-    let service_token_renewal_task = match shutdown {
-        Some(shutdown) => tokio::spawn(solstone_core_spl::run_embedded_service_token_renewal(
-            renewal_config,
-            shutdown,
-        )),
+    let service_token_renewal_task = match embedded {
+        Some((root, shutdown)) => tokio::spawn(
+            solstone_core_spl::run_embedded_service_token_renewal(root, renewal_config, shutdown),
+        ),
         None => solstone_core_spl::spawn_service_token_renewal(renewal_config),
     };
     (link_health_task, service_token_renewal_task)
@@ -1195,7 +1291,7 @@ fn router_with_hosted_parent(
     hosted_parent: Option<Arc<solstone_core_system::lifecycle::HostedServiceParentRuntime>>,
     agents_routes: Option<Router>,
 ) -> Router {
-    router_with_roots(journal_root, hosted_parent, agents_routes, None, None)
+    router_with_roots(journal_root, hosted_parent, agents_routes, None, None, None)
 }
 
 /// Compose the production routes with an explicitly packaged app payload.
@@ -1210,6 +1306,7 @@ pub fn router_with_payload_root(
         None,
         Some(roots),
         None,
+        None,
     ))
 }
 
@@ -1219,6 +1316,7 @@ fn router_with_roots(
     agents_routes: Option<Router>,
     payload_roots: Option<thinking_sol_reads::TalentRoots>,
     backup_deps: Option<solstone_core_backup_web::BackupWebDeps>,
+    import_route: Option<Arc<solstone_core_import_web::ImportRouteSlot>>,
 ) -> Router {
     solstone_core_convey_body::warm_trends(journal_root.clone());
     let include_agents = agents_routes.is_some();
@@ -1229,6 +1327,12 @@ fn router_with_roots(
     });
     let route_journal_root = Arc::new(JournalRoot(journal_root.clone()));
     let operation_registry = Arc::new(OperationRegistry::default());
+    let agents_consent_cancel = {
+        let registry = Arc::clone(&operation_registry);
+        solstone_core_convey_http::request::PendingAgentsConsentCancel::new(move || {
+            agents_enable::cancel_pending(&registry);
+        })
+    };
     let relay_admissions = relay_admission::admission_registry_for(&journal_root);
     let relay_access = Arc::new(solstone_core_spl::relay_access::RelayAccessCache::new());
     let pair_windows = Arc::new(pair_window_manager::PairWindowManager::new(
@@ -1237,6 +1341,7 @@ fn router_with_roots(
     ));
     let backup_deps = backup_deps
         .unwrap_or_else(|| solstone_core_backup_web::BackupWebDeps::new(journal_root.clone()));
+    let setup_host = Arc::new(setup_host::ConveySetupHost::new(backup_deps.clone()));
     let mut routes = Router::new()
         .route("/", get(root))
         .route("/favicon.ico", get(favicon))
@@ -1556,7 +1661,12 @@ fn router_with_roots(
         .route("/app/body/workspace", get(body::workspace))
         .route("/app/body/background", get(body::background))
         .merge(solstone_core_convey_body::api_router(journal_root.clone()))
-        .merge(solstone_core_import_web::routes(journal_root.clone()))
+        .merge(match import_route {
+            Some(route) => {
+                solstone_core_import_web::routes_with_embedded(journal_root.clone(), route)
+            }
+            None => solstone_core_import_web::routes(journal_root.clone()),
+        })
         .merge(solstone_core_transcripts_web::router(
             journal_root.clone(),
             solstone_core_transcripts_web::Clock::system(),
@@ -1578,7 +1688,7 @@ fn router_with_roots(
         })
         .merge(solstone_core_sol_link::http::init_router_with_host(
             journal_root.clone(),
-            Arc::new(setup_host::ConveySetupHost),
+            setup_host,
         ))
         .merge(solstone_core_facets_web::routes(
             journal_root.clone(),
@@ -1591,6 +1701,7 @@ fn router_with_roots(
         ))
         .layer(Extension(shell))
         .layer(Extension(route_journal_root))
+        .layer(Extension(agents_consent_cancel))
         .layer(Extension(HostedLaunchContext(hosted_parent)));
     let routes = session_gate::apply_layer_with_agents(routes, journal_root, include_agents);
     form_body_guard::apply_layer(routes).fallback(not_found)

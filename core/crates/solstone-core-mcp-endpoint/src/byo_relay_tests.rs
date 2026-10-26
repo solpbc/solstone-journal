@@ -19,7 +19,7 @@ use russh::server::Server;
 use serde_json::{Value, json};
 use solstone_core_journal_io::journal_root::JournalRoot;
 use tempfile::TempDir;
-use tokio::sync::{Mutex, mpsc, watch};
+use tokio::sync::{mpsc, watch};
 
 use crate::byo_dns::{BYO_TEST_SEAM, DnsVerdict, DnsVerdictCode, TEST_VERDICT_OVERRIDE};
 use crate::byo_door::{
@@ -33,7 +33,7 @@ use crate::byo_relay::{
 use crate::owner_web::{byo_outside_check, byo_relay_check, byo_relay_trust_again, set_byo_relay};
 use crate::unix;
 
-static BYO_FULL_TEST_SERIAL: Mutex<()> = Mutex::const_new(());
+use crate::byo_dns::BYO_TEST_SERIAL;
 
 struct OverridesResetGuard;
 impl Drop for OverridesResetGuard {
@@ -94,7 +94,7 @@ fn generate_ed25519_keypair() -> russh::keys::PrivateKey {
 
 #[test]
 fn test_setup_and_remove_scripts() {
-    let _serial = BYO_FULL_TEST_SERIAL.blocking_lock();
+    let _serial = BYO_TEST_SERIAL.blocking_lock();
 
     let root_dir = tempfile::Builder::new()
         .prefix("relay-script-root-")
@@ -488,7 +488,7 @@ exec /bin/rm "$@"
 
 #[tokio::test]
 async fn test_outside_check() {
-    let _serial = BYO_FULL_TEST_SERIAL.lock().await;
+    let _serial = BYO_TEST_SERIAL.lock().await;
     let _guard = OverridesResetGuard;
 
     let (dir, root_jr) = create_test_journal();
@@ -844,7 +844,7 @@ async fn start_mock_ssh_server(
 
 #[tokio::test]
 async fn test_host_key_pin() {
-    let _serial = BYO_FULL_TEST_SERIAL.lock().await;
+    let _serial = BYO_TEST_SERIAL.lock().await;
     let _guard = OverridesResetGuard;
 
     let (dir, _root_jr) = create_test_journal();
@@ -1007,7 +1007,7 @@ impl russh::server::Server for StallingAuthServer {
 
 #[tokio::test]
 async fn stalled_relay_auth_does_not_block_admission_withdrawal_or_shutdown() {
-    let _serial = BYO_FULL_TEST_SERIAL.lock().await;
+    let _serial = BYO_TEST_SERIAL.lock().await;
     let _guard = OverridesResetGuard;
     let (dir, root_jr) = create_test_journal();
     let root = dir.path().to_path_buf();
@@ -1061,8 +1061,15 @@ async fn stalled_relay_auth_does_not_block_admission_withdrawal_or_shutdown() {
     )
     .unwrap();
 
-    let mut runtime =
-        crate::byo_door::ByoServiceRuntime::new(&root, &byo_dir, hostname.to_string(), 1).unwrap();
+    let mut runtime = crate::byo_door::ByoServiceRuntime::new(
+        Arc::new(crate::door_state_writer::DoorStateWriter::new(Arc::new(
+            solstone_core_journal_io::JournalRoot::open(&root).unwrap(),
+        ))),
+        &byo_dir,
+        hostname.to_string(),
+        1,
+    )
+    .unwrap();
     let ingress = crate::byo_door::ingress_address(&root);
     runtime
         .tick_service_admission(&root, &byo_dir, &ingress)
@@ -1078,9 +1085,10 @@ async fn stalled_relay_auth_does_not_block_admission_withdrawal_or_shutdown() {
             .acme_task
             .is_none()
     );
+    let observed = acme_rx.try_recv();
     assert!(
-        acme_rx.try_recv().is_err(),
-        "no issuance before relay readiness"
+        observed.is_err(),
+        "no issuance before relay readiness: observer={observed:?}; current={hostname} {root:?}"
     );
 
     // Account withdrawal must close ingress even while the remote server withholds auth.
@@ -1144,7 +1152,7 @@ where
 
 #[tokio::test]
 async fn test_lifetime() {
-    let _serial = BYO_FULL_TEST_SERIAL.lock().await;
+    let _serial = BYO_TEST_SERIAL.lock().await;
     let _guard = OverridesResetGuard;
 
     let (dir, root_jr) = create_test_journal();
@@ -1777,7 +1785,7 @@ impl rustls::client::danger::ServerCertVerifier for NoCertVerifier {
 
 #[tokio::test]
 async fn test_hostile_server() {
-    let _serial = BYO_FULL_TEST_SERIAL.lock().await;
+    let _serial = BYO_TEST_SERIAL.lock().await;
     let _guard = OverridesResetGuard;
 
     let (dir, root_jr) = create_test_journal();

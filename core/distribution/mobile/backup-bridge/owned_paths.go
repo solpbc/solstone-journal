@@ -278,6 +278,12 @@ func closeOwnedRequestPaths(req *bridgeRequest) (resultErr error) {
 			}
 			req.sourceRoot = nil
 		}
+		if req.archiveTarget != nil {
+			if err := req.archiveTarget.Close(); err != nil {
+				resultErr = errors.Join(resultErr, err)
+			}
+			req.archiveTarget = nil
+		}
 		for _, file := range req.pathFiles {
 			if err := closeOwnedPrivateDirectory(file, entry, "request-directory"); err != nil {
 				return err

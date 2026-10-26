@@ -26,6 +26,7 @@ mod service;
 mod service_process;
 mod service_shutdown;
 pub mod service_token_renewal;
+mod service_token_write;
 mod service_transition;
 mod tunnel_route;
 mod ws_buffer;
@@ -57,8 +58,9 @@ pub use posture_gate::{
     PostureGate, PostureInput, RelayBlocked, RelayDecision, RelayPermit, ServiceToken, TokenInput,
 };
 pub use private_link::{
-    DEFAULT_RELAY_URL, EnableSplError, EnrollError, EnrollMode, SplDisableOutcome, disable_spl,
-    enable_spl, enable_spl_with, enroll_home, relay_url, save_service_token,
+    DEFAULT_RELAY_URL, EnableSplError, EnrollError, EnrollMode, SplDisableOutcome,
+    SplEnablePublication, SplTokenFailure, disable_spl, enable_spl, enable_spl_at_root_with,
+    enable_spl_with, enroll_home, relay_url, save_service_token,
 };
 pub use reconnect_backoff::{
     INITIAL_RECONNECT_BASE, MAX_RECONNECT_BASE, ReconnectBackoffError, ReconnectSchedule,
@@ -85,6 +87,7 @@ pub use service_token_renewal::{
     SERVICE_TOKEN_RENEWAL_TICK, SkipClass, Trigger, age_reached, classify_jwks, evaluate_once,
     run_embedded_service_token_renewal, share_bp, spawn_service_token_renewal,
 };
+pub use service_token_write::{ServiceTokenPublication, ServiceTokenWriteRefusal};
 
 #[cfg(feature = "test-hooks")]
 #[doc(hidden)]

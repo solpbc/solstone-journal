@@ -23,21 +23,51 @@ pub struct InterruptedRemoval {
 }
 
 /// Resolve every interrupted removal. Call only with a freshly acquired lease,
-/// before creating anything: holding it proves no live owner, and only on
-/// local storage, so elsewhere nothing is done. Other stages are untouched.
-pub fn recover_interrupted_removals(activity: &Arc<ActivityLease>) -> Vec<InterruptedRemoval> {
-    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+/// before creating anything. Desktop storage that is not exclusive-local still
+/// returns an empty list. Android and iOS refuse when the private container
+/// is not qualified, and never report that refusal as an empty success.
+/// Other stages are untouched.
+pub fn recover_interrupted_removals(
+    activity: &Arc<ActivityLease>,
+) -> Result<Vec<InterruptedRemoval>, std::io::Error> {
+    #[cfg(any(
+        target_os = "linux",
+        target_os = "macos",
+        target_os = "windows",
+        target_os = "ios",
+        target_os = "android"
+    ))]
     {
         local::recover(activity)
     }
-    #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+    #[cfg(not(any(
+        target_os = "linux",
+        target_os = "macos",
+        target_os = "windows",
+        target_os = "ios",
+        target_os = "android"
+    )))]
     {
         let _ = activity;
-        Vec::new()
+        Err(unsupported_storage())
     }
 }
 
-#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+#[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+fn unsupported_storage() -> std::io::Error {
+    std::io::Error::new(
+        std::io::ErrorKind::Unsupported,
+        "the activity lease does not exclude every writer here",
+    )
+}
+
+#[cfg(any(
+    target_os = "linux",
+    target_os = "macos",
+    target_os = "windows",
+    target_os = "ios",
+    target_os = "android"
+))]
 mod local {
     use std::path::Path;
 
@@ -50,14 +80,17 @@ mod local {
 
     use super::*;
 
-    pub(super) fn recover(activity: &Arc<ActivityLease>) -> Vec<InterruptedRemoval> {
-        if !matches!(exclusive_local_activity(activity), Ok(true)) {
-            return Vec::new();
+    pub(super) fn recover(
+        activity: &Arc<ActivityLease>,
+    ) -> Result<Vec<InterruptedRemoval>, std::io::Error> {
+        if let Some(miss) = storage_miss(exclusive_local_activity(activity)) {
+            return miss;
         }
-        let Ok(census) = observe_obligations(activity.journal_root()) else {
-            return Vec::new();
+        let census = match observe_obligations(activity.journal_root()) {
+            Ok(census) => census,
+            Err(error) => return census_miss(error),
         };
-        census
+        Ok(census
             .entries()
             .iter()
             .filter_map(|obligation| match obligation {
@@ -101,7 +134,31 @@ mod local {
                     }),
                 }
             })
-            .collect()
+            .collect())
+    }
+
+    fn storage_miss<T>(qualified: std::io::Result<bool>) -> Option<Result<Vec<T>, std::io::Error>> {
+        match qualified {
+            Ok(true) => None,
+            Ok(false) => Some(super::platform_miss(None)),
+            Err(error) => Some(super::platform_miss(Some(error))),
+        }
+    }
+
+    fn census_miss<T>(error: impl std::fmt::Display) -> Result<Vec<T>, std::io::Error> {
+        super::platform_miss(Some(std::io::Error::other(error.to_string())))
+    }
+}
+
+pub(super) fn platform_miss<T>(error: Option<std::io::Error>) -> Result<Vec<T>, std::io::Error> {
+    #[cfg(any(target_os = "ios", target_os = "android"))]
+    {
+        Err(error.unwrap_or_else(unsupported_storage))
+    }
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
+    {
+        let _ = error;
+        Ok(Vec::new())
     }
 }
 

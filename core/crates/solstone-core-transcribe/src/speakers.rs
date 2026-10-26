@@ -317,6 +317,14 @@ pub(crate) fn analyze_speakers_embedded(
     models: &Path,
     scratch: &Path,
 ) -> Result<SpeakerAnalyzeResult, SpeakerAnalyzeError> {
+    #[cfg(all(test, feature = "full-tests"))]
+    if let Some(keep) = EMBEDDED_FIRST_PASS_KEEP.with(|cell| *cell.borrow()) {
+        return Ok(synthetic_owner_voice_pass(
+            full_audio.len(),
+            statements_pre_restore,
+            keep,
+        ));
+    }
     let model = |name: &str| {
         crate::model_assets::verify_digest(name, models.join(name))
             .map_err(|error| SpeakerAnalyzeError::new(raw_path, "model", error.to_string(), None))
@@ -405,6 +413,7 @@ where
         sample_rate,
         wespeaker_model,
         pyannote_model,
+        None,
     )?;
     let request_ids = statement_ids(raw_path, statements_pre_restore)?;
     let expected_ids = admitted_statement_ids(
@@ -444,6 +453,7 @@ fn build_request(
     sample_rate: u32,
     wespeaker_model: &Path,
     pyannote_model: &Path,
+    interval_payload: Option<&Path>,
 ) -> Result<(Value, PathBuf), SpeakerAnalyzeError> {
     let full_path = temporary.join("full-audio.f32le");
     write_audio_sidecar(raw_path, &full_path, full_audio)?;
@@ -464,7 +474,7 @@ fn build_request(
             "full_audio_f32le_path": full_path,
             "reduced_audio_f32le_path": reduced_path,
             "output_payload_f32le_path": payload_path,
-            "interval_embedding_payload_f32le_path": Value::Null,
+            "interval_embedding_payload_f32le_path": interval_payload,
             "models": {
                 "pyannote_segmentation_onnx_path": pyannote_model,
                 "wespeaker_onnx_path": wespeaker_model,
@@ -474,6 +484,659 @@ fn build_request(
         }),
         payload_path,
     ))
+}
+
+/// Interval rows and statement embeddings for one embedded unit.
+///
+/// Cluster labels inside the helper response are ignored. Interval times are
+/// already shifted onto the recording timeline.
+#[cfg(all(feature = "embedded", unix))]
+#[derive(Clone, Debug, Default)]
+pub(crate) struct UnitSpeakerRows {
+    pub(crate) intervals: Vec<solstone_core_speakers::diarization::SpeakerInterval>,
+    pub(crate) interval_embeddings: Vec<f32>,
+    pub(crate) statement_rows: Vec<UnitStatementEmbedding>,
+    /// Pyannote windows shifted onto the recording, keyed by absolute start sample.
+    pub(crate) windows: Vec<(usize, solstone_core_speakers::SpeakerWindowStats)>,
+    pub(crate) overlap_fraction: f64,
+    /// Speaker-turn ranges shifted onto the recording. `None` when the helper omitted them.
+    pub(crate) turns: Option<Vec<(f64, f64)>>,
+    /// Overlap ranges shifted onto the recording. `None` when the helper omitted them.
+    pub(crate) overlaps: Option<Vec<(f64, f64)>>,
+}
+
+/// One statement embedding whose span is on the recording timeline.
+#[cfg(all(feature = "embedded", unix))]
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct UnitStatementEmbedding {
+    pub(crate) start_s: f64,
+    pub(crate) end_s: f64,
+    pub(crate) duration_s: f64,
+    pub(crate) values: Vec<f32>,
+}
+
+#[cfg(all(test, feature = "full-tests", feature = "embedded", unix))]
+type KeepHook = fn(usize, f64) -> bool;
+
+#[cfg(all(test, feature = "full-tests", feature = "embedded", unix))]
+thread_local! {
+    static EMBEDDED_SPEAKER_EMPTY: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    static EMBEDDED_AUDIO_LEN: std::cell::Cell<(usize, Option<usize>)> =
+        const { std::cell::Cell::new((0, None)) };
+    static EMBEDDED_SPEAKER_QUEUE: std::cell::RefCell<Vec<(Value, PathBuf)>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+    static EMBEDDED_SPEAKER_SEEN: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    static EMBEDDED_FIRST_PASS_KEEP: std::cell::RefCell<Option<KeepHook>> =
+        const { std::cell::RefCell::new(None) };
+    static EMBEDDED_PCM_PROBE: std::cell::Cell<Option<usize>> = const { std::cell::Cell::new(None) };
+    static EMBEDDED_PCM_PROBE_SAMPLE: std::cell::Cell<Option<f32>> =
+        const { std::cell::Cell::new(None) };
+}
+
+/// Full-tests stand-in: return no interval rows and do not run the helper.
+#[cfg(all(test, feature = "full-tests", feature = "embedded", unix))]
+pub(crate) fn set_embedded_unit_speaker_empty(enabled: bool) {
+    EMBEDDED_SPEAKER_EMPTY.with(|cell| cell.set(enabled));
+}
+
+/// Whether the full-tests speaker helper is standing in with an empty result.
+#[cfg(all(test, feature = "full-tests", feature = "embedded", unix))]
+pub(crate) fn embedded_unit_speaker_empty() -> bool {
+    EMBEDDED_SPEAKER_EMPTY.with(|cell| cell.get())
+}
+
+/// Full audio length and reduced length from the latest helper call.
+#[cfg(all(test, feature = "full-tests", feature = "embedded", unix))]
+pub(crate) fn embedded_audio_lengths() -> (usize, Option<usize>) {
+    EMBEDDED_AUDIO_LEN.with(|cell| cell.get())
+}
+
+/// Queue one helper response. `statement_payload` is the path the response names.
+#[cfg(all(test, feature = "full-tests", feature = "embedded", unix))]
+pub(crate) fn push_embedded_speaker_response(response: Value, statement_payload: PathBuf) {
+    EMBEDDED_SPEAKER_QUEUE.with(|cell| cell.borrow_mut().push((response, statement_payload)));
+}
+
+/// Drop queued responses and the seen flag.
+#[cfg(all(test, feature = "full-tests", feature = "embedded", unix))]
+pub(crate) fn clear_embedded_speaker_responses() {
+    EMBEDDED_SPEAKER_QUEUE.with(|cell| cell.borrow_mut().clear());
+    EMBEDDED_SPEAKER_SEEN.with(|cell| cell.set(false));
+    EMBEDDED_PCM_PROBE.with(|cell| cell.set(None));
+    EMBEDDED_PCM_PROBE_SAMPLE.with(|cell| cell.set(None));
+}
+
+/// Record one sample of the audio a helper call actually receives.
+#[cfg(all(test, feature = "full-tests", feature = "embedded", unix))]
+pub(crate) fn set_embedded_pcm_probe(index: Option<usize>) {
+    EMBEDDED_PCM_PROBE.with(|cell| cell.set(index));
+    EMBEDDED_PCM_PROBE_SAMPLE.with(|cell| cell.set(None));
+}
+
+/// Last probed sample from [`set_embedded_pcm_probe`].
+#[cfg(all(test, feature = "full-tests", feature = "embedded", unix))]
+pub(crate) fn embedded_pcm_probe_sample() -> Option<f32> {
+    EMBEDDED_PCM_PROBE_SAMPLE.with(|cell| cell.get())
+}
+
+/// Statement-local index recorded by [`set_embedded_pcm_probe`].
+#[cfg(all(test, feature = "full-tests", feature = "embedded", unix))]
+pub(crate) fn embedded_pcm_probe_index() -> Option<usize> {
+    EMBEDDED_PCM_PROBE.with(|cell| cell.get())
+}
+
+/// Overwrite the probed sample after a statement slice is filled.
+#[cfg(all(test, feature = "full-tests", feature = "embedded", unix))]
+pub(crate) fn record_embedded_pcm_probe_sample(sample: f32) {
+    EMBEDDED_PCM_PROBE_SAMPLE.with(|cell| cell.set(Some(sample)));
+}
+
+/// Record the measured statement length without building an audio vector.
+#[cfg(all(test, feature = "full-tests", feature = "embedded", unix))]
+pub(crate) fn set_embedded_audio_lengths(full: usize, reduced: Option<usize>) {
+    EMBEDDED_AUDIO_LEN.with(|cell| cell.set((full, reduced)));
+}
+
+/// True when the next queued helper carries statement ids.
+#[cfg(all(test, feature = "full-tests", feature = "embedded", unix))]
+pub(crate) fn embedded_statement_helper_pending() -> bool {
+    EMBEDDED_SPEAKER_QUEUE.with(|cell| {
+        cell.borrow().first().is_some_and(|(response, _payload)| {
+            response
+                .get("statement_embeddings")
+                .and_then(|value| value.get("statement_ids"))
+                .and_then(Value::as_array)
+                .is_some_and(|ids| !ids.is_empty())
+        })
+    })
+}
+
+/// Take the queued statement embedding without Pyannote or a sidecar write.
+///
+/// Empty statement ids return `Ok(None)`. A named payload that is not the queued
+/// path, or a short payload, is an error. The duration is the payload's first value.
+#[cfg(all(test, feature = "full-tests", feature = "embedded", unix))]
+pub(crate) fn take_embedded_statement_embedding() -> Result<Option<(f64, Vec<f32>)>, String> {
+    let Some((response, payload)) = EMBEDDED_SPEAKER_QUEUE.with(|cell| {
+        let mut queue = cell.borrow_mut();
+        if queue.is_empty() {
+            None
+        } else {
+            Some(queue.remove(0))
+        }
+    }) else {
+        return Ok(None);
+    };
+    EMBEDDED_SPEAKER_SEEN.with(|cell| cell.set(true));
+    let embeddings = response
+        .get("statement_embeddings")
+        .ok_or_else(|| "statement embeddings are missing".to_owned())?;
+    let ids = embeddings
+        .get("statement_ids")
+        .and_then(Value::as_array)
+        .ok_or_else(|| "statement ids are missing".to_owned())?;
+    if ids.is_empty() {
+        return Ok(None);
+    }
+    let duration = embeddings
+        .get("durations_s")
+        .and_then(Value::as_array)
+        .and_then(|values| values.first())
+        .and_then(Value::as_f64)
+        .ok_or_else(|| "statement duration is missing".to_owned())?;
+    let named = embeddings
+        .get("payload_path")
+        .and_then(Value::as_str)
+        .ok_or_else(|| "statement payload path is missing".to_owned())?;
+    if Path::new(named) != payload.as_path() {
+        return Err("statement payload path does not match".to_owned());
+    }
+    let mut file = fs::File::open(&payload).map_err(|error| error.to_string())?;
+    let mut bytes = vec![0_u8; WESPEAKER_EMBEDDING_WIDTH * 4];
+    file.read_exact(&mut bytes)
+        .map_err(|error| error.to_string())?;
+    let mut values = Vec::with_capacity(WESPEAKER_EMBEDDING_WIDTH);
+    for chunk in bytes.chunks_exact(4) {
+        values.push(f32::from_le_bytes(chunk.try_into().expect("4 bytes")));
+    }
+    Ok(Some((duration, values)))
+}
+
+/// Whether a queued response has been parsed on this thread.
+#[cfg(all(test, feature = "full-tests", feature = "embedded", unix))]
+pub(crate) fn embedded_speaker_response_seen() -> bool {
+    EMBEDDED_SPEAKER_SEEN.with(|cell| cell.get())
+}
+
+/// Full-tests stand-in for the voice-only first pass. `true` keeps the window.
+#[cfg(all(test, feature = "full-tests", feature = "embedded", unix))]
+pub(crate) fn set_embedded_first_pass_keep(hook: Option<fn(usize, f64) -> bool>) {
+    EMBEDDED_FIRST_PASS_KEEP.with(|cell| *cell.borrow_mut() = hook);
+}
+
+#[cfg(all(feature = "embedded", unix))]
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn collect_unit_speaker_rows(
+    raw_path: &Path,
+    full_audio: &[f32],
+    reduced_audio: Option<&[f32]>,
+    statements_pre_restore: &[Map<String, Value>],
+    statements_restored: &[Map<String, Value>],
+    models: &Path,
+    scratch: &Path,
+    origin_s: f64,
+) -> Result<UnitSpeakerRows, SpeakerAnalyzeError> {
+    #[cfg(all(test, feature = "full-tests", feature = "embedded", unix))]
+    {
+        EMBEDDED_AUDIO_LEN.with(|cell| {
+            cell.set((full_audio.len(), reduced_audio.map(|audio| audio.len())));
+        });
+        if let Some(index) = EMBEDDED_PCM_PROBE.with(|cell| cell.get())
+            && let Some(sample) = full_audio.get(index)
+        {
+            EMBEDDED_PCM_PROBE_SAMPLE.with(|cell| cell.set(Some(*sample)));
+        }
+    }
+    #[cfg(all(test, feature = "full-tests", feature = "embedded", unix))]
+    if EMBEDDED_SPEAKER_EMPTY.with(|cell| cell.get()) {
+        return Ok(UnitSpeakerRows::default());
+    }
+    #[cfg(all(test, feature = "full-tests"))]
+    if let Some((response, statement_payload)) = EMBEDDED_SPEAKER_QUEUE.with(|cell| {
+        let mut queue = cell.borrow_mut();
+        if queue.is_empty() {
+            None
+        } else {
+            Some(queue.remove(0))
+        }
+    }) {
+        EMBEDDED_SPEAKER_SEEN.with(|cell| cell.set(true));
+        return read_unit_speaker_rows(
+            raw_path,
+            &response,
+            &statement_payload,
+            statements_restored,
+            origin_s,
+            full_audio.len(),
+        );
+    }
+    let model = |name: &str| {
+        crate::model_assets::verify_digest(name, models.join(name))
+            .map_err(|error| SpeakerAnalyzeError::new(raw_path, "model", error.to_string(), None))
+    };
+    let wespeaker = model("wespeaker-resnet34-256.onnx")?;
+    let pyannote = model("pyannote-segmentation-3.0.onnx")?;
+    let temporary = tempfile::Builder::new()
+        .prefix(TEMP_PREFIX)
+        .tempdir_in(scratch)
+        .map_err(|error| SpeakerAnalyzeError::new(raw_path, "scratch", error.to_string(), None))?;
+    let interval_path = temporary.path().join("interval-embeddings.f32le");
+    let (request, statement_payload) = build_request(
+        raw_path,
+        temporary.path(),
+        full_audio,
+        reduced_audio,
+        statements_pre_restore,
+        statements_restored,
+        16_000,
+        &wespeaker,
+        &pyannote,
+        Some(&interval_path),
+    )?;
+    let request = serde_json::to_string(&request)
+        .map_err(|error| SpeakerAnalyzeError::new(raw_path, "request", error.to_string(), None))?;
+    let response = solstone_core_speakers_analyze::run_request(&request).map_err(|error| {
+        SpeakerAnalyzeError::new(raw_path, "inference", error.to_string(), None)
+    })?;
+    let rows = read_unit_speaker_rows(
+        raw_path,
+        &response,
+        &statement_payload,
+        statements_restored,
+        origin_s,
+        full_audio.len(),
+    );
+    temporary
+        .close()
+        .map_err(|error| SpeakerAnalyzeError::new(raw_path, "cleanup", error.to_string(), None))?;
+    rows
+}
+
+/// Pyannote diarization window starts for one unit buffer, including the short-audio pad.
+#[cfg(all(feature = "embedded", unix))]
+pub(crate) fn pyannote_window_starts(audio_len: usize) -> Vec<usize> {
+    let rate = solstone_core_speakers::PYANNOTE_SAMPLE_RATE_HZ as usize;
+    let window = solstone_core_speakers::PYANNOTE_WINDOW_S as usize * rate;
+    let stride = solstone_core_speakers::PYANNOTE_DIARIZE_STRIDE_S as usize * rate;
+    let padded = audio_len.max(window);
+    let mut starts = Vec::new();
+    let mut start = 0usize;
+    while start + window <= padded {
+        starts.push(start);
+        start = match start.checked_add(stride) {
+            Some(next) => next,
+            None => break,
+        };
+        if stride == 0 {
+            break;
+        }
+    }
+    let final_start = padded.saturating_sub(window);
+    if starts.last().copied() != Some(final_start) {
+        starts.push(final_start);
+    }
+    starts
+}
+
+#[cfg(all(feature = "embedded", unix))]
+fn read_unit_speaker_rows(
+    raw_path: &Path,
+    response: &Value,
+    statement_payload: &Path,
+    statements_restored: &[Map<String, Value>],
+    origin_s: f64,
+    audio_len: usize,
+) -> Result<UnitSpeakerRows, SpeakerAnalyzeError> {
+    let diarization = response
+        .get("diarization")
+        .and_then(Value::as_object)
+        .ok_or_else(|| {
+            SpeakerAnalyzeError::new(raw_path, "payload", "missing-diarization", None)
+        })?;
+    let (intervals, interval_embeddings) = match diarization.get("interval_embeddings") {
+        Some(value) if !value.is_null() => {
+            let valid = diarization
+                .get("valid_intervals")
+                .and_then(Value::as_array)
+                .ok_or_else(|| {
+                    SpeakerAnalyzeError::new(raw_path, "payload", "missing-valid-intervals", None)
+                })?;
+            let intervals = valid
+                .iter()
+                .map(|interval| {
+                    let start_s = interval.get("start_s").and_then(Value::as_f64);
+                    let end_s = interval.get("end_s").and_then(Value::as_f64);
+                    let local_class = interval.get("local_class").and_then(Value::as_u64);
+                    match (start_s, end_s, local_class) {
+                        (Some(start_s), Some(end_s), Some(local_class)) => {
+                            Ok(solstone_core_speakers::diarization::SpeakerInterval {
+                                start_s: start_s + origin_s,
+                                end_s: end_s + origin_s,
+                                local_class: u8::try_from(local_class).unwrap_or(u8::MAX),
+                            })
+                        }
+                        _ => Err(SpeakerAnalyzeError::new(
+                            raw_path,
+                            "payload",
+                            "invalid-valid-interval",
+                            None,
+                        )),
+                    }
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            let embeddings = read_embedding_matrix(raw_path, value, intervals.len())?;
+            (intervals, embeddings)
+        }
+        _ => (Vec::new(), Vec::new()),
+    };
+    let statement_rows = match response.get("statement_embeddings") {
+        Some(value) if !value.is_null() => read_statement_rows(
+            raw_path,
+            value,
+            statement_payload,
+            statements_restored,
+            origin_s,
+        )?,
+        _ => Vec::new(),
+    };
+    let evidence = response
+        .get("evidence")
+        .and_then(Value::as_object)
+        .ok_or_else(|| SpeakerAnalyzeError::new(raw_path, "payload", "missing-evidence", None))?;
+    let overlap_fraction = evidence
+        .get("overlap_fraction")
+        .and_then(Value::as_f64)
+        .filter(|value| value.is_finite() && *value >= 0.0)
+        .ok_or_else(|| {
+            SpeakerAnalyzeError::new(raw_path, "payload", "invalid-overlap-fraction", None)
+        })?;
+    let pyannote = response
+        .get("pyannote")
+        .and_then(Value::as_object)
+        .ok_or_else(|| SpeakerAnalyzeError::new(raw_path, "payload", "missing-pyannote", None))?;
+    let stats = parse_window_stats(raw_path, pyannote.get("window_stats"))?;
+    let starts = pyannote_window_starts(audio_len);
+    if stats.len() != starts.len() {
+        return Err(SpeakerAnalyzeError::new(
+            raw_path,
+            "payload",
+            "window-stats-length",
+            None,
+        ));
+    }
+    let origin_samples =
+        (origin_s * f64::from(solstone_core_speakers::PYANNOTE_SAMPLE_RATE_HZ)).round() as usize;
+    let windows = starts
+        .into_iter()
+        .zip(stats)
+        .map(|(start, stats)| (start + origin_samples, stats))
+        .collect();
+    let turns = match pyannote.get("speaker_turns") {
+        None => None,
+        Some(value) => {
+            let parsed = SpeakerTurnEvidence::from_value(value).map_err(|_| {
+                SpeakerAnalyzeError::new(
+                    raw_path,
+                    "payload",
+                    "invalid-pyannote-speaker-turns",
+                    None,
+                )
+            })?;
+            Some(
+                parsed
+                    .ranges
+                    .iter()
+                    .map(|range| (range.start_s + origin_s, range.end_s + origin_s))
+                    .collect(),
+            )
+        }
+    };
+    let overlaps = match pyannote.get("overlap_ranges") {
+        None => None,
+        Some(value) => Some(parse_overlap_ranges(raw_path, value, origin_s)?),
+    };
+    Ok(UnitSpeakerRows {
+        intervals,
+        interval_embeddings,
+        statement_rows,
+        windows,
+        overlap_fraction,
+        turns,
+        overlaps,
+    })
+}
+
+#[cfg(all(feature = "embedded", unix))]
+fn parse_window_stats(
+    raw_path: &Path,
+    value: Option<&Value>,
+) -> Result<Vec<solstone_core_speakers::SpeakerWindowStats>, SpeakerAnalyzeError> {
+    let invalid =
+        || SpeakerAnalyzeError::new(raw_path, "payload", "invalid-pyannote-window-stats", None);
+    let Some(value) = value else {
+        return Err(invalid());
+    };
+    value
+        .as_array()
+        .ok_or_else(invalid)?
+        .iter()
+        .map(|item| {
+            let speech_frames = item.get("speech_frames").and_then(Value::as_u64);
+            let active_slot_count = item.get("active_slot_count").and_then(Value::as_u64);
+            let overlap_frames = item.get("overlap_frames").and_then(Value::as_u64);
+            match (speech_frames, active_slot_count, overlap_frames) {
+                (Some(speech_frames), Some(active_slot_count), Some(overlap_frames)) => {
+                    Ok(solstone_core_speakers::SpeakerWindowStats {
+                        speech_frames: speech_frames as usize,
+                        active_slot_count: active_slot_count as usize,
+                        overlap_frames: overlap_frames as usize,
+                    })
+                }
+                _ => Err(invalid()),
+            }
+        })
+        .collect()
+}
+
+#[cfg(all(feature = "embedded", unix))]
+fn parse_overlap_ranges(
+    raw_path: &Path,
+    value: &Value,
+    origin_s: f64,
+) -> Result<Vec<(f64, f64)>, SpeakerAnalyzeError> {
+    let invalid =
+        || SpeakerAnalyzeError::new(raw_path, "payload", "invalid-pyannote-overlap-ranges", None);
+    value
+        .as_array()
+        .ok_or_else(invalid)?
+        .iter()
+        .map(|pair| {
+            let pair = pair
+                .as_array()
+                .filter(|pair| pair.len() == 2)
+                .ok_or_else(invalid)?;
+            let start = pair[0]
+                .as_f64()
+                .filter(|value| value.is_finite())
+                .ok_or_else(invalid)?;
+            let end = pair[1]
+                .as_f64()
+                .filter(|value| value.is_finite())
+                .ok_or_else(invalid)?;
+            if start < 0.0 || start > end {
+                return Err(invalid());
+            }
+            Ok((start + origin_s, end + origin_s))
+        })
+        .collect()
+}
+
+#[cfg(all(test, feature = "full-tests", feature = "embedded", unix))]
+fn synthetic_owner_voice_pass(
+    audio_len: usize,
+    statements: &[Map<String, Value>],
+    keep: fn(usize, f64) -> bool,
+) -> SpeakerAnalyzeResult {
+    let mut payload = Vec::new();
+    let mut statement_ids = Vec::new();
+    let mut durations_s = Vec::new();
+    for statement in statements {
+        let start = statement
+            .get("start")
+            .and_then(Value::as_f64)
+            .unwrap_or(0.0);
+        let id = statement.get("id").and_then(Value::as_i64).unwrap_or(0);
+        let mut row = vec![0.0_f32; WESPEAKER_EMBEDDING_WIDTH];
+        let axis = if keep(audio_len, start) { 0 } else { 1 };
+        row[axis] = 1.0;
+        payload.extend(row.into_iter().flat_map(f32::to_le_bytes));
+        statement_ids.push(id);
+        durations_s.push(2.0);
+    }
+    SpeakerAnalyzeResult {
+        statements: Vec::new(),
+        embedding_payload: (!statement_ids.is_empty()).then(|| SpeakerEmbeddingPayload {
+            payload,
+            statement_ids,
+            durations_s,
+            encoder: ENCODER_ID.to_owned(),
+        }),
+        speaker_evidence: "single".to_owned(),
+        speaker_evidence_multi_fraction: 0.0,
+        overlap_fraction: 0.0,
+        statement_labels: None,
+        turn_ranges: Some(Vec::new()),
+        overlap_ranges: Some(Vec::new()),
+    }
+}
+
+#[cfg(all(feature = "embedded", unix))]
+fn read_embedding_matrix(
+    raw_path: &Path,
+    embeddings: &Value,
+    rows: usize,
+) -> Result<Vec<f32>, SpeakerAnalyzeError> {
+    let shape = embeddings
+        .get("shape")
+        .and_then(Value::as_array)
+        .ok_or_else(|| {
+            SpeakerAnalyzeError::new(raw_path, "payload", "invalid-embedding-shape", None)
+        })?;
+    let shape_rows = shape.first().and_then(Value::as_u64).unwrap_or(u64::MAX) as usize;
+    let cols = shape.get(1).and_then(Value::as_u64).unwrap_or(0) as usize;
+    if shape_rows != rows || cols != WESPEAKER_EMBEDDING_WIDTH {
+        return Err(SpeakerAnalyzeError::new(
+            raw_path,
+            "payload",
+            "embedding-shape-mismatch",
+            None,
+        ));
+    }
+    let path = embeddings
+        .get("payload_path")
+        .and_then(Value::as_str)
+        .ok_or_else(|| {
+            SpeakerAnalyzeError::new(raw_path, "payload", "invalid-payload-path", None)
+        })?;
+    let bytes = fs::read(path)
+        .map_err(|error| SpeakerAnalyzeError::new(raw_path, "payload", error.to_string(), None))?;
+    if bytes.len() != rows * cols * 4 {
+        return Err(SpeakerAnalyzeError::new(
+            raw_path,
+            "payload",
+            "embedding-byte-count-mismatch",
+            None,
+        ));
+    }
+    Ok(bytes
+        .chunks_exact(4)
+        .map(|chunk| f32::from_le_bytes(chunk.try_into().expect("four-byte chunk")))
+        .collect())
+}
+
+#[cfg(all(feature = "embedded", unix))]
+fn read_statement_rows(
+    raw_path: &Path,
+    embeddings: &Value,
+    payload_path: &Path,
+    statements_restored: &[Map<String, Value>],
+    origin_s: f64,
+) -> Result<Vec<UnitStatementEmbedding>, SpeakerAnalyzeError> {
+    let ids = embeddings
+        .get("statement_ids")
+        .and_then(Value::as_array)
+        .ok_or_else(|| {
+            SpeakerAnalyzeError::new(raw_path, "payload", "invalid-statement-ids", None)
+        })?;
+    if ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let durations = embeddings
+        .get("durations_s")
+        .and_then(Value::as_array)
+        .ok_or_else(|| SpeakerAnalyzeError::new(raw_path, "payload", "invalid-durations", None))?;
+    let values = read_embedding_matrix(raw_path, embeddings, ids.len())?;
+    if embeddings.get("payload_path").and_then(Value::as_str) != payload_path.to_str() {
+        return Err(SpeakerAnalyzeError::new(
+            raw_path,
+            "payload",
+            "invalid-payload-path",
+            None,
+        ));
+    }
+    let mut rows = Vec::with_capacity(ids.len());
+    for (index, id) in ids.iter().enumerate() {
+        let Some(id) = id.as_i64() else {
+            return Err(SpeakerAnalyzeError::new(
+                raw_path,
+                "payload",
+                "invalid-statement-ids",
+                None,
+            ));
+        };
+        let Some(duration_s) = durations.get(index).and_then(Value::as_f64) else {
+            return Err(SpeakerAnalyzeError::new(
+                raw_path,
+                "payload",
+                "invalid-durations",
+                None,
+            ));
+        };
+        let Some(statement) = statements_restored
+            .iter()
+            .find(|statement| statement.get("id").and_then(Value::as_i64) == Some(id))
+        else {
+            continue;
+        };
+        let start_s = statement
+            .get("start")
+            .and_then(Value::as_f64)
+            .unwrap_or(0.0)
+            + origin_s;
+        let end_s = statement
+            .get("end")
+            .and_then(Value::as_f64)
+            .unwrap_or(start_s)
+            + origin_s;
+        let start = index * WESPEAKER_EMBEDDING_WIDTH;
+        rows.push(UnitStatementEmbedding {
+            start_s,
+            end_s,
+            duration_s,
+            values: values[start..start + WESPEAKER_EMBEDDING_WIDTH].to_vec(),
+        });
+    }
+    Ok(rows)
 }
 
 fn write_audio_sidecar(

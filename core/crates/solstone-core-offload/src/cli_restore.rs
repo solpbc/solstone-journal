@@ -14,7 +14,9 @@ use solstone_core_backup::archive_activity::{
     ArchivePreparationCustody, OwnedArchivePreparationFailure, OwnedArchivePreparationInput,
     OwnedPreparedArchiveHold,
 };
-use solstone_core_backup::archive_admission::{AdmissionError, ArchiveBudget, Clock};
+use solstone_core_backup::archive_admission::{
+    AdmissionError, ArchiveBudget, ArchiveCancellation, Clock,
+};
 use solstone_core_backup_runtime::{
     ArchiveError, ClosedToolError, DirectReadFinishOwner, DirectReadFinishState,
     OwnedArchiveAdmissionFailure, OwnedDirectReadFinish, UreqHttpTransport,
@@ -23,18 +25,24 @@ use solstone_core_backup_runtime::{
 };
 use solstone_core_journal_io::JournalRoot;
 use solstone_core_journal_io::activity::ActivityLease;
-use solstone_core_retention::remove_marked::recover_interrupted_removals;
-use solstone_core_retention::restore_intent::recover_abandoned_restores;
+use solstone_core_journal_io::activity_obligations::observe_obligations;
+use solstone_core_journal_io::whole_journal_restore::{
+    TargetUse, begin_target_use_bound, whole_journal_restore_blocks,
+};
+
+mod local_cleanup;
+use local_cleanup::{CompletedLocalCleanup, LocalCleanup};
 
 use crate::restore::owned::{
-    OwnedRestoreFinishHold, SettledRestoreReport, restore_owned_all, restore_owned_day,
+    OwnedRestoreFinishHold, RestoreFinishRefusal, SettledRestoreReport, restore_owned_all,
+    restore_owned_day,
 };
 use crate::restore::{OFFLOAD_RESTORE_REASONS, RestoreResult, selected_repository};
 
 /// How far the owning restore got, independent of the restore's own status.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CliRestoreSettlement {
-    /// Refused before any activity, read or child.
+    /// No archive read or media restore started. Local recovery may have completed.
     NotStarted,
     /// Every file settled and the read finished.
     Settled,
@@ -47,6 +55,9 @@ pub enum CliRestoreSettlement {
 }
 
 enum Custody {
+    LocalCleanup {
+        _owner: Box<LocalCleanup>,
+    },
     NotStarted {
         _root: Option<Arc<JournalRoot>>,
     },
@@ -82,7 +93,10 @@ enum Custody {
 /// Borrow the result while retaining every original owner through exit.
 #[must_use = "Retain the whole restore result through the command receiving boundary"]
 pub struct OwnedRestoreCliRun {
+    // Native owners retire before their original whole-restore admission.
     custody: Custody,
+    _local_cleanup: Option<CompletedLocalCleanup>,
+    _target_use: Option<TargetUse>,
     settlement: CliRestoreSettlement,
     result: RestoreResult,
 }
@@ -97,6 +111,26 @@ impl std::fmt::Debug for OwnedRestoreCliRun {
 }
 
 impl OwnedRestoreCliRun {
+    #[cfg(all(test, feature = "full-tests"))]
+    pub(crate) fn local_native_removals(
+        &self,
+    ) -> Vec<&solstone_core_journal_io::media::MediaRemoval> {
+        match &self.custody {
+            Custody::LocalCleanup { _owner } => _owner.removals().collect(),
+            _ => vec![],
+        }
+    }
+
+    #[cfg(all(test, feature = "full-tests"))]
+    pub(crate) fn local_native_creations(
+        &self,
+    ) -> Vec<&solstone_core_journal_io::media::MediaStageCreation> {
+        match &self.custody {
+            Custody::LocalCleanup { _owner } => _owner.creations().collect(),
+            _ => vec![],
+        }
+    }
+
     pub fn result(&self) -> &RestoreResult {
         &self.result
     }
@@ -121,6 +155,8 @@ impl OwnedRestoreCliRun {
     fn new(custody: Custody, settlement: CliRestoreSettlement, result: RestoreResult) -> Self {
         Self {
             custody,
+            _local_cleanup: None,
+            _target_use: None,
             settlement,
             result,
         }
@@ -146,6 +182,31 @@ fn base(status: &str, reason: &str, day: Option<&str>) -> RestoreResult {
 
 fn with_detail(mut result: RestoreResult, detail: String) -> RestoreResult {
     result.reason_detail = Some(detail);
+    result
+}
+
+fn with_settlement_detail(
+    mut result: RestoreResult,
+    refusal: RestoreFinishRefusal<'_>,
+) -> RestoreResult {
+    let detail = match refusal {
+        RestoreFinishRefusal::Native {
+            file,
+            reason,
+            source,
+            readback,
+        } => format!(
+            "settlement native file={file:?} reason={reason} source={source:?} readback={readback:?}"
+        ),
+        RestoreFinishRefusal::Lower(reason) => format!("settlement readback {reason:?}"),
+    };
+    match &mut result.reason_detail {
+        Some(existing) => {
+            existing.push_str("; ");
+            existing.push_str(&detail);
+        }
+        None => result.reason_detail = Some(detail),
+    }
     result
 }
 
@@ -187,6 +248,15 @@ pub fn run_cli_restore(
     clock: Arc<dyn Clock + Send + Sync>,
     day: Option<&str>,
 ) -> OwnedRestoreCliRun {
+    run_cli_restore_with_cancellation(journal, clock, day, ArchiveCancellation::new())
+}
+
+pub(crate) fn run_cli_restore_with_cancellation(
+    journal: &Path,
+    clock: Arc<dyn Clock + Send + Sync>,
+    day: Option<&str>,
+    cancellation: ArchiveCancellation,
+) -> OwnedRestoreCliRun {
     let not_started = |root: Option<Arc<JournalRoot>>, result: RestoreResult| {
         OwnedRestoreCliRun::new(
             Custody::NotStarted { _root: root },
@@ -210,6 +280,158 @@ pub fn run_cli_restore(
             );
         }
     };
+    let target_use = match begin_target_use_bound(Arc::clone(&root)) {
+        Ok(guard) => guard,
+        Err(error) => {
+            return not_started(
+                Some(root),
+                with_detail(base("refused", "restore_held", day), error.to_string()),
+            );
+        }
+    };
+    let mut run = run_captured_root(root, clock, day, cancellation);
+    run._target_use = Some(target_use);
+    run
+}
+
+fn run_captured_root(
+    root: Arc<JournalRoot>,
+    clock: Arc<dyn Clock + Send + Sync>,
+    day: Option<&str>,
+    cancellation: ArchiveCancellation,
+) -> OwnedRestoreCliRun {
+    let not_started = |result: RestoreResult| {
+        OwnedRestoreCliRun::new(
+            Custody::NotStarted {
+                _root: Some(Arc::clone(&root)),
+            },
+            CliRestoreSettlement::NotStarted,
+            result,
+        )
+    };
+    let Ok(now) = u64::try_from(clock.now_unix()) else {
+        return not_started(base("error", "failed", day));
+    };
+    let budget = match ArchiveBudget::new_cancellable(clock.as_ref(), cancellation) {
+        Ok(budget) => budget,
+        Err(error) => {
+            return not_started(with_detail(
+                base("refused", "restore_held", day),
+                admission_code(error).into(),
+            ));
+        }
+    };
+    let checkpoint = || {
+        root.revalidate_canonical_binding()
+            .map_err(std::io::Error::other)?;
+        if whole_journal_restore_blocks(root.canonical_path()) {
+            return Err(std::io::Error::other("whole-journal restore is pending"));
+        }
+        budget
+            .remaining(clock.as_ref())
+            .map_err(|error| std::io::Error::other(admission_code(error)))?;
+        Ok(())
+    };
+    if let Err(error) = checkpoint() {
+        return not_started(with_detail(
+            base("refused", "restore_held", day),
+            error.to_string(),
+        ));
+    }
+    let observed = match observe_obligations(&root) {
+        Ok(observed) => observed,
+        Err(error) => {
+            return not_started(with_detail(
+                base("refused", "restore_held", day),
+                error.to_string(),
+            ));
+        }
+    };
+    let completed = if observed.entries().is_empty() {
+        CompletedLocalCleanup::default()
+    } else {
+        // The first possible local mutation is ordinary lock admission.
+        if let Err(error) = checkpoint() {
+            return not_started(with_detail(
+                base("refused", "restore_held", day),
+                error.to_string(),
+            ));
+        }
+        let activity = match ActivityLease::try_acquire(Arc::clone(&root)) {
+            Ok(activity) => activity,
+            Err(error) => {
+                return not_started(with_detail(
+                    base("refused", "restore_held", day),
+                    error.to_string(),
+                ));
+            }
+        };
+        let mut cleanup = LocalCleanup::new(activity);
+        let result = catch_unwind(AssertUnwindSafe(|| {
+            cleanup.prepare(&checkpoint)?;
+            cleanup.retire(&checkpoint)
+        }));
+        match result {
+            Ok(Ok(())) => match cleanup.into_completed() {
+                Ok(report) => report,
+                Err(owner) => {
+                    return OwnedRestoreCliRun::new(
+                        Custody::LocalCleanup { _owner: owner },
+                        CliRestoreSettlement::Held,
+                        base("refused", "restore_held", day),
+                    );
+                }
+            },
+            Ok(Err(error)) => {
+                return OwnedRestoreCliRun::new(
+                    Custody::LocalCleanup {
+                        _owner: Box::new(cleanup),
+                    },
+                    CliRestoreSettlement::Held,
+                    with_detail(base("refused", "restore_held", day), error.to_string()),
+                );
+            }
+            Err(_) => {
+                return OwnedRestoreCliRun::new(
+                    Custody::LocalCleanup {
+                        _owner: Box::new(cleanup),
+                    },
+                    CliRestoreSettlement::Unknown,
+                    with_detail(
+                        base("error", "restore_held", day),
+                        "local recovery unwound; disposition unknown".into(),
+                    ),
+                );
+            }
+        }
+    };
+    if let Err(error) = checkpoint() {
+        let mut run = not_started(with_detail(
+            base("refused", "restore_held", day),
+            error.to_string(),
+        ));
+        run._local_cleanup = Some(completed);
+        return run;
+    }
+    let mut run = run_read(root, clock, day, budget, now);
+    run._local_cleanup = Some(completed);
+    run
+}
+
+fn run_read(
+    root: Arc<JournalRoot>,
+    clock: Arc<dyn Clock + Send + Sync>,
+    day: Option<&str>,
+    budget: ArchiveBudget,
+    now: u64,
+) -> OwnedRestoreCliRun {
+    let not_started = |root: Option<Arc<JournalRoot>>, result: RestoreResult| {
+        OwnedRestoreCliRun::new(
+            Custody::NotStarted { _root: root },
+            CliRestoreSettlement::NotStarted,
+            result,
+        )
+    };
     let repository = match selected_repository(&root, day) {
         Ok(repository) => repository,
         Err("nothing_to_restore") => {
@@ -225,26 +447,6 @@ pub fn run_cli_restore(
             );
         }
     };
-    let Ok(now) = u64::try_from(clock.now_unix()) else {
-        return not_started(Some(root), base("error", "failed", day));
-    };
-    let budget = match ArchiveBudget::new(clock.as_ref()) {
-        Ok(budget) => budget,
-        Err(error) => {
-            return not_started(
-                Some(root),
-                with_detail(
-                    base("refused", "restore_held", day),
-                    admission_code(error).into(),
-                ),
-            );
-        }
-    };
-    // A removal or restore interrupted by a crash would refuse this admission.
-    if let Ok(activity) = ActivityLease::try_acquire(Arc::clone(&root)) {
-        recover_interrupted_removals(&activity);
-        recover_abandoned_restores(&activity);
-    }
     let preparation_refused =
         |failure: OwnedArchivePreparationFailure, custody: Option<ArchivePreparationCustody>| {
             let result = with_detail(
@@ -391,15 +593,18 @@ pub fn run_cli_restore(
                 Err(_) => unknown(Some(custody), None, Some(Box::new(report)), result),
             }
         }
-        Ok(Err(held)) => OwnedRestoreCliRun::new(
-            Custody::Held {
-                _native: held,
-                _outside: outside,
-                _custody: custody,
-            },
-            CliRestoreSettlement::Held,
-            projected,
-        ),
+        Ok(Err(held)) => {
+            let result = with_settlement_detail(projected, held.refusal());
+            OwnedRestoreCliRun::new(
+                Custody::Held {
+                    _native: held,
+                    _outside: outside,
+                    _custody: custody,
+                },
+                CliRestoreSettlement::Held,
+                result,
+            )
+        }
         Err(_) => {
             let runtime = outside.into_unknown();
             unknown(Some(custody), Some(runtime), None, projected)

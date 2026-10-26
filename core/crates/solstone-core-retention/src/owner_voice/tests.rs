@@ -395,6 +395,94 @@ fn an_absent_original_is_not_owed() {
 }
 
 #[test]
+fn cancellation_at_release_preserves_owed_original_and_resume_records_once() {
+    let fixture = fixture("analyzed");
+    let claims = OutputClaims::acquire(
+        [fixture.jsonl.clone()],
+        LockOptions {
+            timeout: Duration::ZERO,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let commit = claims.commit(&fixture.segment).unwrap();
+    let checks = std::cell::Cell::new(0);
+    let result = finish_owner_voice_deletion_checked(
+        &fixture.journal,
+        &fixture.jsonl,
+        &claims,
+        &commit,
+        at(),
+        &|| {
+            checks.set(checks.get() + 1);
+            if checks.get() >= 2 {
+                Err("cancelled".into())
+            } else {
+                Ok(())
+            }
+        },
+    );
+    assert!(matches!(result, OwnerVoiceDeletion::Owed(_)));
+    assert_eq!(fs::read(&fixture.original).unwrap(), AUDIO);
+    assert!(owner_voice_deletion_owed(&fixture.segment, &fixture.jsonl));
+    drop(commit);
+    drop(claims);
+    assert_eq!(finish(&fixture), OwnerVoiceDeletion::Deleted);
+    assert_eq!(finish(&fixture), OwnerVoiceDeletion::NotOwed);
+    let events = fs::read_to_string(fixture.segment.join(EVENTS_FILE)).unwrap();
+    assert_eq!(events.matches("owner_voice_raw_release").count(), 1);
+    assert!(fixture.jsonl.exists());
+}
+
+#[cfg(feature = "full-tests")]
+#[test]
+fn cancellation_interrupts_busy_retry_wait_without_releasing_the_original() {
+    let fixture = fixture("analyzed");
+    let root = JournalRoot::open(&fixture.journal).unwrap();
+    let _lease = ActivityLease::try_acquire(Arc::new(root)).unwrap();
+    let cancel = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let (waiting, arrived) = std::sync::mpsc::channel();
+    let cancelled = Arc::clone(&cancel);
+    let journal = fixture.journal.clone();
+    let started = std::time::Instant::now();
+    let worker = std::thread::spawn(move || {
+        let after_attempt = std::cell::Cell::new(None::<usize>);
+        finish_owed_owner_voice_deletions_checked(
+            &journal,
+            NaiveDate::from_ymd_opt(2026, 10, 20).unwrap(),
+            6,
+            Duration::from_secs(120),
+            &|| {
+                after_attempt.set(Some(0));
+                at()
+            },
+            &|| {
+                // Attempt entry and pre-release are the first two checks;
+                // retry admission is third, and waiting itself is fourth.
+                if let Some(checks) = after_attempt.get() {
+                    let checks = checks + 1;
+                    after_attempt.set(Some(checks));
+                    if checks == 4 {
+                        waiting.send(()).unwrap();
+                    }
+                }
+                if cancelled.load(Ordering::Acquire) {
+                    Err("cancelled".into())
+                } else {
+                    Ok(())
+                }
+            },
+        )
+    });
+    arrived.recv_timeout(Duration::from_secs(5)).unwrap();
+    cancel.store(true, Ordering::Release);
+    assert!(worker.join().unwrap().is_err());
+    assert!(started.elapsed() < Duration::from_secs(5));
+    assert_eq!(fs::read(&fixture.original).unwrap(), AUDIO);
+    assert!(owner_voice_deletion_owed(&fixture.segment, &fixture.jsonl));
+}
+
+#[test]
 fn an_original_removed_after_verification_is_not_our_deletion() {
     let fixture = fixture("analyzed");
     let transcript = fs::read(&fixture.jsonl).unwrap();

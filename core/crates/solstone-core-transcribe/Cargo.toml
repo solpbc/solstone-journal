@@ -10,7 +10,12 @@ license.workspace = true
 publish = false
 
 [features]
-embedded = ["dep:solstone-core-vad-analyze", "dep:solstone-core-speakers-analyze"]
+embedded = [
+    "dep:solstone-core-vad-analyze",
+    "dep:solstone-core-speakers-analyze",
+    "dep:solstone-core-ced-analyze",
+    "dep:solstone-core-speakers-onnx",
+]
 full-tests = []
 test-hooks = ["solstone-core-system/test-hooks"]
 test-fixture-pin = ["solstone-core-local/test-fixture-pin"]
@@ -23,6 +28,8 @@ required-features = ["test-hooks"]
 [dependencies]
 solstone-core-vad-analyze = { path = "../solstone-core-vad-analyze", optional = true }
 solstone-core-speakers-analyze = { path = "../solstone-core-speakers-analyze", optional = true }
+solstone-core-ced-analyze = { path = "../solstone-core-ced-analyze", optional = true }
+solstone-core-speakers-onnx = { workspace = true, optional = true }
 solstone-core-segment.workspace = true
 log.workspace = true
 thiserror.workspace = true

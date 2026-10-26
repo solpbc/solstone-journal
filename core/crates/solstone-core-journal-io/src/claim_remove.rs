@@ -23,14 +23,24 @@ use crate::observation::{
 };
 
 #[cfg(target_os = "android")]
+mod android_native;
+#[cfg(target_os = "android")]
 mod android_teardown;
 #[cfg(target_os = "android")]
 pub use android_teardown::claim_and_remove_android_teardown_observed_bounded;
+#[cfg(target_os = "android")]
+mod android_restore;
+#[cfg(target_os = "android")]
+pub(crate) use android_restore::{
+    claim_and_remove_android_restore_observed_bounded, restore_android_restore_claim,
+};
 
 enum RenamePolicy {
     Platform,
     #[cfg(target_os = "android")]
     AndroidTeardown(android_teardown::Authority),
+    #[cfg(target_os = "android")]
+    AndroidRestore(android_restore::Authority),
 }
 
 impl RenamePolicy {
@@ -39,6 +49,8 @@ impl RenamePolicy {
             Self::Platform => Ok(()),
             #[cfg(target_os = "android")]
             Self::AndroidTeardown(authority) => authority.revalidate(_directory),
+            #[cfg(target_os = "android")]
+            Self::AndroidRestore(authority) => authority.revalidate(_directory),
         }
     }
 
@@ -46,7 +58,12 @@ impl RenamePolicy {
         match self {
             Self::Platform => rename_no_replace(directory, from, to),
             #[cfg(target_os = "android")]
-            Self::AndroidTeardown(_) => android_teardown::rename_no_replace(directory, from, to),
+            Self::AndroidTeardown(_) => android_native::rename_no_replace(directory, from, to),
+            #[cfg(target_os = "android")]
+            Self::AndroidRestore(authority) => {
+                authority.revalidate(directory)?;
+                android_native::rename_no_replace(directory, from, to)
+            }
         }
     }
 
@@ -55,6 +72,8 @@ impl RenamePolicy {
             Self::Platform => no_replace_primitive(),
             #[cfg(target_os = "android")]
             Self::AndroidTeardown(_) => NoReplacePrimitive::LinuxRenameAt2,
+            #[cfg(target_os = "android")]
+            Self::AndroidRestore(_) => NoReplacePrimitive::LinuxRenameAt2,
         }
     }
 
@@ -67,6 +86,16 @@ impl RenamePolicy {
     ) -> io::Result<()> {
         match self {
             Self::Platform => Ok(()),
+            #[cfg(target_os = "android")]
+            Self::AndroidRestore(authority) => {
+                authority.revalidate(_directory)?;
+                match read_observed_file_unchecked_bounded(_directory, _claim.as_os_str(), _maximum)
+                    .map_err(io::Error::other)?
+                {
+                    Some(current) if same_observation(&current, _prior) => Ok(()),
+                    _ => Err(io::Error::other("restore claim changed before unlink")),
+                }
+            }
             #[cfg(target_os = "android")]
             Self::AndroidTeardown(authority) => {
                 authority.revalidate(_directory)?;
@@ -90,6 +119,16 @@ impl RenamePolicy {
     ) -> io::Result<()> {
         match self {
             Self::Platform => Ok(()),
+            #[cfg(target_os = "android")]
+            Self::AndroidRestore(authority) => {
+                authority.revalidate(_directory)?;
+                match claimed_object_state(_directory, _claim.as_os_str(), _claimed, _maximum)
+                    .map_err(io::Error::other)?
+                {
+                    ObservationState::Matches => Ok(()),
+                    _ => Err(io::Error::other("restore claim changed before restoration")),
+                }
+            }
             #[cfg(target_os = "android")]
             Self::AndroidTeardown(authority) => {
                 authority.revalidate(_directory)?;

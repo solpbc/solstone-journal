@@ -11,8 +11,9 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
 
-use super::{AdmittedIosBackupAuthority, ExecuteError, native, repository, storage};
+use super::{AdmittedIosBackupAuthority, ExecuteError, storage};
 use crate::teardown::owned::TeardownOperation;
+use solstone_core_backup::{ios_native as native, ios_repository as repository};
 
 // Private development progress only. Arguments are fixed labels and numeric
 // status/length/flag values; failed output must not affect custody or results.

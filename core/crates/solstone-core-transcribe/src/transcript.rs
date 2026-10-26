@@ -230,7 +230,7 @@ fn build_full_request(
     })
 }
 
-fn native_statement(statement: &Map<String, Value>) -> Result<Value, TranscribeError> {
+pub(crate) fn native_statement(statement: &Map<String, Value>) -> Result<Value, TranscribeError> {
     let id = statement
         .get("id")
         .and_then(Value::as_i64)
@@ -289,7 +289,7 @@ fn invalid_statement(field: &str) -> TranscribeError {
     }
 }
 
-fn build_header(request: &FullTranscriptWrite<'_>) -> Value {
+pub(crate) fn build_header(request: &FullTranscriptWrite<'_>) -> Value {
     let mut header = Map::from_iter([
         (
             "raw".to_owned(),

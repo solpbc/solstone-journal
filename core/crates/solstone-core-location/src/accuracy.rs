@@ -316,7 +316,7 @@ impl Installed {
 
 /// Read `installed.json`, if the journal has a complete install.
 pub fn read_installed(journal: &Path) -> Option<Installed> {
-    let bytes = std::fs::read(accuracy_root(journal).join(INSTALLED_RECORD)).ok()?;
+    let bytes = crate::reconcile_io::read(&accuracy_root(journal).join(INSTALLED_RECORD)).ok()?;
     let record: Installed = serde_json::from_slice(&bytes).ok()?;
     record.valid_paths().then_some(record)
 }
@@ -325,7 +325,7 @@ pub fn read_installed(journal: &Path) -> Option<Installed> {
 ///
 /// A missing file is no install. Other IO and invalid JSON are errors.
 pub fn read_installed_strict(journal: &Path) -> std::io::Result<Option<Installed>> {
-    match std::fs::read(accuracy_root(journal).join(INSTALLED_RECORD)) {
+    match crate::reconcile_io::read(&accuracy_root(journal).join(INSTALLED_RECORD)) {
         Ok(bytes) => {
             let record: Installed = serde_json::from_slice(&bytes)
                 .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
@@ -352,7 +352,10 @@ fn open_installed(journal: &Path, installed: &Installed) -> Packs {
     let mut failure = None;
     for file in &installed.files {
         let path = directory.join(&file.file);
-        match Pack::open_verified(&path, &file.sha256, file.size_bytes) {
+        match crate::reconcile_io::open_file(&path)
+            .map_err(crate::pack::PackError::from)
+            .and_then(|source| Pack::open_verified_file(source, &file.sha256, file.size_bytes))
+        {
             Ok(pack) if pack.kind() == PackKind::Venues => venues = Some(pack),
             Ok(pack) if pack.kind() == PackKind::Containment => containment = Some(pack),
             Err(error) => failure = Some(error.to_string()),
@@ -385,6 +388,13 @@ fn read_installed_snapshot(
     journal: &Path,
     after_read: impl FnOnce(),
 ) -> Option<(Installed, Option<Arc<Packs>>)> {
+    crate::reconcile_io::transaction(|| read_installed_snapshot_inner(journal, after_read))
+}
+
+fn read_installed_snapshot_inner(
+    journal: &Path,
+    after_read: impl FnOnce(),
+) -> Option<(Installed, Option<Arc<Packs>>)> {
     let _publication = hold_publication(journal).ok()?;
     let installed = read_installed(journal);
     after_read();
@@ -409,10 +419,11 @@ fn read_installed_snapshot(
 
 pub(crate) fn hold_publication(
     journal: &Path,
-) -> Result<solstone_core_journal_io::FileLock, solstone_core_journal_io::LockError> {
-    solstone_core_journal_io::hold_lock(
-        accuracy_root(journal).join(".publication.lock"),
+) -> std::io::Result<solstone_core_journal_io::FileLock> {
+    crate::reconcile_io::hold_lock(
+        &accuracy_root(journal).join(".publication.lock"),
         solstone_core_journal_io::LockOptions::default(),
+        false,
     )
 }
 

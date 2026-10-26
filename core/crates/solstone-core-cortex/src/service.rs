@@ -155,7 +155,28 @@ fn execute_callable_with_store(
             completed: false,
         });
     }
-    solstone_core_talent_runtime::emit_outcome(&mut writer, outcome);
+    // The talent wire deliberately omits caller context. Restore that context
+    // at the Cortex boundary, just as the subprocess owner does for its bus.
+    let mut terminal = Vec::new();
+    solstone_core_talent_runtime::emit_outcome(&mut terminal, outcome);
+    let mut finish = None;
+    for line in terminal
+        .split(|byte| *byte == b'\n')
+        .filter(|line| !line.is_empty())
+    {
+        let mut event: Map<String, Value> =
+            serde_json::from_slice(line).map_err(|e| e.to_string())?;
+        event.insert("name".into(), Value::String(name.to_owned()));
+        event.insert("use_id".into(), Value::String(use_id.clone()));
+        if let Some(day) = request.get("day") {
+            event.insert("day".into(), day.clone());
+        }
+        if event.get("event").and_then(Value::as_str) == Some("finish") {
+            finish = Some(event.clone());
+        }
+        serde_json::to_writer(&mut writer, &event).map_err(|e| e.to_string())?;
+        writer.push(b'\n');
+    }
 
     if !writer.is_empty() {
         let mut file = OpenOptions::new()
@@ -179,6 +200,28 @@ fn execute_callable_with_store(
     }
 
     let completed = store.complete_checked(&use_id, name, identity, Some(&request), cancel);
+    if completed
+        && !cancel()
+        && let Some(mut fields) = finish
+    {
+        // Publish only after durable completion. Startup scan covers a missed
+        // best-effort bus send; no result body is needed by subscribers.
+        fields.retain(|key, _| matches!(key.as_str(), "name" | "use_id" | "day" | "skip_reason"));
+        let envelope = solstone_core_callosum::CallosumEnvelope {
+            tract: "cortex".into(),
+            event: "finish".into(),
+            ts: Some(now_ms),
+            extra: fields,
+        };
+        if let Ok(mut line) = serde_json::to_string(&envelope) {
+            line.push('\n');
+            let _ = solstone_core_callosum::CallosumOneShotSender::new(
+                journal.join("health/callosum.sock"),
+                Duration::from_secs(1),
+            )
+            .send_line(&line);
+        }
+    }
     Ok(CallableUse { use_id, completed })
 }
 

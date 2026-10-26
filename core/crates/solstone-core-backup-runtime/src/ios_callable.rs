@@ -4,12 +4,12 @@
 //! Explicit iOS linked backup authority. Only normal app startup installs build
 //! and private-container authority; every invocation separately captures a root.
 
+mod archive;
 mod build_identity;
 mod bundle;
-mod command;
-pub(crate) mod native;
+use solstone_core_backup::ios_native as native;
 mod outcome;
-pub mod repository;
+use solstone_core_backup::ios_repository as repository;
 mod root;
 mod storage;
 pub mod teardown;
@@ -30,6 +30,7 @@ use solstone_core_journal_io::JournalRoot;
 use zeroize::Zeroizing;
 
 use crate::engine::ClosedToolError;
+use crate::ios_linked_command::command;
 use crate::repo::RepoError;
 use crate::runner::{PassedHandle, ResticResult, RunnerError, guard_argv};
 
@@ -103,6 +104,7 @@ pub fn admit_ios_backup_at_startup() -> Result<(), &'static str> {
     install().map_err(Refusal::code)
 }
 
+#[derive(Clone)]
 pub struct AdmittedIosBackupAuthority {
     installed: Arc<Installed>,
     root: Arc<JournalRoot>,
@@ -117,11 +119,92 @@ impl std::fmt::Debug for AdmittedIosBackupAuthority {
 }
 
 impl AdmittedIosBackupAuthority {
+    pub(crate) fn archive_read_context(
+        &self,
+        destination: &Destination,
+        password: &str,
+        environment: &BTreeMap<String, Option<String>>,
+    ) -> Result<
+        Arc<solstone_core_backup::archive_readback::ios::IosReadContext>,
+        solstone_core_backup::archive_readback::ReadbackError,
+    > {
+        use solstone_core_backup::archive_readback::{
+            ReadbackError,
+            ios::{IosReadContext, IosReadState},
+        };
+        self.revalidate().map_err(|_| ReadbackError::ToolChanged)?;
+        let state = match repository::parse(
+            &destination.repository,
+            (!environment.is_empty()).then_some(environment),
+        )
+        .map_err(|_| ReadbackError::CredentialsUnavailable)?
+        {
+            repository::Repository::Local(_) => None,
+            repository::Repository::S3 { destination, .. } => Some(Arc::new(
+                self.open_destination_state(&destination.namespace())
+                    .map_err(|_| ReadbackError::ToolChanged)?,
+            )),
+        };
+        let native_state = state
+            .as_ref()
+            .map(|state| {
+                IosReadState::new(
+                    state.path().to_owned(),
+                    state
+                        .as_fd()
+                        .try_clone_to_owned()
+                        .map_err(|_| ReadbackError::ToolChanged)?,
+                )
+            })
+            .transpose()?;
+        let authority = self.clone();
+        let check = Arc::new(move || {
+            authority
+                .revalidate()
+                .map_err(|_| ReadbackError::ToolChanged)?;
+            if let Some(state) = &state {
+                state.revalidate().map_err(|_| ReadbackError::ToolChanged)?;
+            }
+            Ok(())
+        });
+        IosReadContext::new(
+            Arc::clone(&self.root),
+            self.generation(),
+            destination.clone(),
+            password.to_owned(),
+            environment.clone(),
+            native_state,
+            check,
+        )
+        .map(Arc::new)
+    }
+
+    pub(crate) fn revalidate_archive_root(
+        &self,
+        root: &Arc<JournalRoot>,
+    ) -> Result<(), &'static str> {
+        if !Arc::ptr_eq(&self.root, root) {
+            return Err(Refusal::Root.code());
+        }
+        self.revalidate().map_err(Refusal::code)
+    }
+
     fn revalidate(&self) -> Result<(), Refusal> {
         self.installed.revalidate()?;
         self.root
             .revalidate_canonical_binding()
             .map_err(|_| Refusal::Root)
+    }
+
+    /// The installed private-storage authority for this process. A replacement
+    /// install is a different generation and cannot finish an earlier call.
+    fn generation(&self) -> u64 {
+        Arc::as_ptr(&self.installed) as u64
+    }
+
+    fn open_destination_state(&self, namespace: &str) -> Result<storage::Directory, Refusal> {
+        self.revalidate()?;
+        self.installed.storage.create_state(namespace)
     }
 }
 
@@ -329,6 +412,17 @@ fn policy(
     authority: &AdmittedIosBackupAuthority,
     operation: &command::Operation,
 ) -> Result<Vec<u8>, RunnerError> {
+    if let command::Operation::Retention {
+        hourly,
+        daily,
+        weekly,
+        monthly,
+    } = operation
+    {
+        return Ok(command::retention_policy_blob(
+            *hourly, *daily, *weekly, *monthly,
+        ));
+    }
     let command::Operation::Snapshot {
         source,
         exclusions,
@@ -505,6 +599,69 @@ fn execute(
 }
 
 // The bridge's diagnostic is a bounded code, never a credential or path.
+/// Open the admitted repository and return its config id. This is qualification
+/// only: it does not archive, list, or download.
+pub(crate) fn open_repository_id(
+    authority: &AdmittedIosBackupAuthority,
+    repository: &str,
+    password: &str,
+    env: Option<&BTreeMap<String, Option<String>>>,
+    timeout: Option<Duration>,
+    cancellation: Option<&ArchiveCancellation>,
+) -> Result<String, crate::engine::ArchiveError> {
+    if cancellation.is_some_and(ArchiveCancellation::is_cancelled) {
+        return Err(crate::engine::ArchiveError::Cancelled);
+    }
+    let parsed = repository::parse(repository, env)
+        .map_err(|_| crate::engine::ArchiveError::ConfigurationUnavailable)?;
+    authority
+        .revalidate()
+        .map_err(|_| crate::engine::ArchiveError::ConfigurationChanged)?;
+    let options = native::Options {
+        version: 1,
+        check_read_mode: 0,
+        retry_lock_ms: 0,
+        group: 0,
+        groups: 0,
+        reserved1: 0,
+        reserved2: 0,
+    };
+    let completed = execute(
+        authority,
+        2,
+        false,
+        parsed,
+        password,
+        "",
+        &[],
+        &options,
+        timeout,
+        cancellation,
+        true,
+    )
+    .map_err(|_| crate::engine::ArchiveError::ToolFailed { reason: "failed" })?;
+    if completed.cancellation_requested || completed.fields.status == 3 {
+        return Err(crate::engine::ArchiveError::Cancelled);
+    }
+    if completed.deadline_requested {
+        return Err(crate::engine::ArchiveError::DeadlineExceeded);
+    }
+    if completed.monitor_failed || completed.fields.status != 0 {
+        return Err(crate::engine::ArchiveError::ToolFailed { reason: "failed" });
+    }
+    authority
+        .revalidate()
+        .map_err(|_| crate::engine::ArchiveError::ConfigurationChanged)?;
+    let bytes = completed
+        .metadata
+        .as_ref()
+        .ok()
+        .and_then(Option::as_deref)
+        .ok_or(crate::engine::ArchiveError::RepositoryIdentityInvalid)?;
+    outcome::repository_config_id(bytes)
+        .map_err(|_| crate::engine::ArchiveError::RepositoryIdentityInvalid)
+}
+
 fn log_failure(operation: i32, completed: &native::Completed) {
     if completed.fields.status == 0 {
         return;
@@ -537,7 +694,10 @@ pub(crate) fn run(
     cancellation: Option<&ArchiveCancellation>,
     restore_target: Option<&RestoreTarget>,
 ) -> Result<ResticResult, RunnerError> {
-    if max_repack_size.is_some() || !pass_fds.is_empty() || stdin.is_some() {
+    if !pass_fds.is_empty() || stdin.is_some() {
+        return Err(refused("ios_backup_unsupported_process_input"));
+    }
+    if max_repack_size.is_some_and(|size| size != "1G") {
         return Err(refused("ios_backup_unsupported_process_input"));
     }
     let repository = validate_call(
@@ -550,6 +710,14 @@ pub(crate) fn run(
         cancellation,
     )?;
     let command = command::decode(args).map_err(|_| refused("ios_backup_unsupported_command"))?;
+    if command::accept_repack(
+        matches!(command.operation, command::Operation::Retention { .. }),
+        max_repack_size,
+    )
+    .is_err()
+    {
+        return Err(refused("ios_backup_unsupported_process_input"));
+    }
     if let command::Operation::Restore {
         snapshot,
         selector,
@@ -585,6 +753,7 @@ pub(crate) fn run(
         command::Operation::Snapshot { .. } => 4,
         command::Operation::ListSnapshots => 5,
         command::Operation::Restore { .. } => unreachable!("restore dispatched above"),
+        command::Operation::Retention { .. } => 12,
         command::Operation::Check(mode) => {
             // The native check modes: structure 1, all data 2, one data group 3.
             match mode {

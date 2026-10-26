@@ -22,12 +22,12 @@ struct ServingInstance {
     handle: Option<journal_mobile_serving::MobileServing>,
     retirement: Option<retirement::Retirement>,
     root: std::sync::Arc<jio::JournalRoot>,
-    host: Option<journal_mobile_serving::foreground::ForegroundProcessingHost>,
+    host: Option<std::sync::Arc<journal_mobile_serving::foreground::ForegroundProcessingHost>>,
 }
 
 struct RetiringServing {
     handle: journal_mobile_serving::MobileServing,
-    host: Option<journal_mobile_serving::foreground::ForegroundProcessingHost>,
+    host: Option<std::sync::Arc<journal_mobile_serving::foreground::ForegroundProcessingHost>>,
 }
 
 impl ServingInstance {
@@ -186,6 +186,8 @@ fn serving(root: &Path, command: &str) -> Result<Value, String> {
         let cancelled = || thinking_cancelled(&THINKING_GENERATION, generation, &binding);
         let cancellation = solstone_core_generate::Cancellation::from_fn(&cancelled);
         let root = binding.canonical_path();
+        let _restore_use = jio::whole_journal_restore::begin_target_use_bound(std::sync::Arc::clone(&binding))
+            .map_err(|_| jio::whole_journal_restore::WHOLE_JOURNAL_RESTORE_NOT_READY.to_owned())?;
         let raw = command["payload"]
             .as_str()
             .ok_or("thinking request required")?;
@@ -308,6 +310,11 @@ fn serving(root: &Path, command: &str) -> Result<Value, String> {
             let library = command["onnx_library"]
                 .as_str()
                 .ok_or("ONNX runtime library required")?;
+            let admitted_library = std::path::PathBuf::from(
+                command["pdfium_library"]
+                    .as_str()
+                    .ok_or("admitted pdfium library required")?,
+            );
             ort::init_from(library).map_err(|e| e.to_string())?.commit();
             let binding =
                 std::sync::Arc::new(jio::JournalRoot::open(root).map_err(|e| e.to_string())?);
@@ -358,11 +365,14 @@ fn serving(root: &Path, command: &str) -> Result<Value, String> {
             *PROCESSING_STOP.lock().unwrap_or_else(|p| p.into_inner()) =
                 Some(std::sync::Arc::clone(&processing_stop));
             let backup = handle.backup_dependencies();
-            let mut host = match journal_mobile_serving::foreground::ForegroundProcessingHost::open_with_cancellation(
+            let mut host = match journal_mobile_serving::foreground::ForegroundProcessingHost::open_with_imports(
                 std::sync::Arc::clone(&binding), &payload_dir,
                 std::sync::Arc::new(move || THINKING_GENERATION.load(Ordering::SeqCst) & !1 != generation & !1),
                 processing_stop,
                 backup,
+                journal_mobile_serving::import_route::packaged_import_factory(admitted_library),
+                false,
+                false,
             ) {
                 Ok(host) => host,
                 Err(error) => {
@@ -374,7 +384,25 @@ fn serving(root: &Path, command: &str) -> Result<Value, String> {
                     return Err(error);
                 }
             };
-            if let Err(error) = host.start_workers() {
+            let host_ready = host.start_workers();
+            if let Err(error) = host_ready {
+                let mut current = ServingInstance {
+                    handle: Some(handle),
+                    retirement: None,
+                    root: binding,
+                    host: Some(std::sync::Arc::new(host)),
+                };
+                let _ = current.begin_retirement();
+                *server = Some(current);
+                return Err(error);
+            }
+            let host = std::sync::Arc::new(host);
+            if let Err(error) = handle.import_route().install(std::sync::Arc::new(
+                journal_mobile_serving::import_route::ForegroundImportRoute::new(
+                    std::sync::Arc::clone(&host),
+                ),
+            ))
+            {
                 let mut current = ServingInstance {
                     handle: Some(handle),
                     retirement: None,
@@ -517,7 +545,7 @@ fn serving(root: &Path, command: &str) -> Result<Value, String> {
                 .host
                 .as_ref()
                 .ok_or("foreground processing stopped")?;
-            host.resume_audio();
+            host.resume_audio()?;
             Ok(json!({"resumed": true}))
         }
         "owner" => {
@@ -537,6 +565,7 @@ fn serving(root: &Path, command: &str) -> Result<Value, String> {
 }
 
 fn seed_mixed(root: &Path, turn: usize) -> Result<(), Box<dyn std::error::Error>> {
+    let _restore_use = refuse_pending_restore(root)?;
     // Synthetic fixture generation belongs only to this development harness.
     // Production activity writes continue through the facets authority.
     let directory = root.join("facets/work/activities");
@@ -564,6 +593,7 @@ fn seed_mixed(root: &Path, turn: usize) -> Result<(), Box<dyn std::error::Error>
 }
 
 fn publication_race(root: &Path) -> Result<Value, Box<dyn std::error::Error>> {
+    let _restore_use = refuse_pending_restore(root)?;
     use std::sync::{Arc, Barrier};
     let dir = root.join(format!("publication-race-{}", std::process::id()));
     fs::create_dir(&dir)?;
@@ -635,6 +665,7 @@ fn publication_race(root: &Path) -> Result<Value, Box<dyn std::error::Error>> {
 }
 
 fn publication_faults(root: &Path) -> Result<Value, Box<dyn std::error::Error>> {
+    let _restore_use = refuse_pending_restore(root)?;
     let authority = jio::JournalRoot::open(root)?;
     let mut checked = Vec::new();
     for (i, primitive) in [
@@ -688,7 +719,16 @@ fn publication_faults(root: &Path) -> Result<Value, Box<dyn std::error::Error>> 
     Ok(json!({"passed":true,"checked":checked}))
 }
 
+fn refuse_pending_restore(
+    root: &Path,
+) -> Result<jio::whole_journal_restore::TargetUse, Box<dyn std::error::Error>> {
+    jio::whole_journal_restore::begin_target_use(root).map_err(|_| -> Box<dyn std::error::Error> {
+        jio::whole_journal_restore::WHOLE_JOURNAL_RESTORE_NOT_READY.into()
+    })
+}
+
 fn work(root: &Path, scan: bool) -> Result<Value, Box<dyn std::error::Error>> {
+    let _restore_use = refuse_pending_restore(root)?;
     let begin = Instant::now();
     let authority = jio::JournalRoot::open(root)?;
     authority.revalidate_canonical_binding()?;
@@ -838,6 +878,7 @@ fn run(root: &Path, op: &str, count: usize) -> Result<Value, Box<dyn std::error:
         "publication-race" => publication_race(root),
         "publication-faults" => publication_faults(root),
         "publication" => {
+            let _restore_use = refuse_pending_restore(root)?;
             let authority = jio::JournalRoot::open(root)?;
             let name = format!("exclusive-{}-{count}.txt", std::process::id());
             let result = jio::write_bytes_exclusive_bound_detailed(
@@ -1288,6 +1329,7 @@ mod retirement_start_tests {
             .expect("maintained pinned host ONNX input required");
         let start = || {
             json!({"op":"start","address":address,"onnx_library":library,
+            "pdfium_library":directory.join("libpdfium.so"),
             "admission_generation":THINKING_GENERATION.load(Ordering::SeqCst)})
             .to_string()
         };

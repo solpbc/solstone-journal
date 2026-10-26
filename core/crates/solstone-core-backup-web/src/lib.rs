@@ -26,6 +26,9 @@ use solstone_core_backup::{
 };
 use solstone_core_backup_runtime::hosted_runtime::fetch_hosted_credentials;
 use solstone_core_backup_runtime::repo::RepoError;
+use solstone_core_backup_runtime::restore::{
+    MobileRestoreIdentity, MobileSelection, restore_mobile_journal,
+};
 use solstone_core_backup_runtime::{
     BackupServices, Clock, ClosedToolError, HttpTransport, JournalMaintenance,
     NativeJournalMaintenance, NativeRestoreRecorder, ResolvedTools, RestoreDraft, RestoreOutcome,
@@ -44,9 +47,11 @@ mod cleanup;
 mod config;
 mod handoff_poll;
 mod keys;
+pub mod maintenance;
 mod measurement;
 mod offload_report;
 mod operation;
+mod recovery_owner;
 pub mod removal_report;
 mod response;
 mod restore_prepare;
@@ -1115,6 +1120,195 @@ fn restore_pending_response(deps: &BackupWebDeps) -> Option<axum::response::Resp
             )
         },
     )
+}
+
+/// Continue the recorded restore through the retained caller lifetime.
+pub fn recover_recorded_journal_with(
+    deps: &BackupWebDeps,
+    body: &[u8],
+    drain: &mut dyn FnMut() -> Result<(), String>,
+) -> Result<(), String> {
+    use solstone_core_journal_io::whole_journal_restore::{
+        WholeJournalRestoreReadiness, read_whole_journal_restore,
+    };
+    let record = match read_whole_journal_restore(&deps.journal_root) {
+        WholeJournalRestoreReadiness::Pending(record) => *record,
+        _ => return Err("whole-journal restore record is unavailable".into()),
+    };
+    let payload = serde_json::from_slice::<Map<String, Value>>(body)
+        .map_err(|_| "malformed json request".to_owned())?;
+    let recovery_key = required_text(&payload, "recovery_key")?;
+    if let Some(snapshot_id) = optional_text(&payload, "snapshot_id")
+        && snapshot_id != record.snapshot_id
+    {
+        return Err("restore_source_mismatch".into());
+    }
+    if let Some(subtree) = optional_text(&payload, "subtree")
+        && subtree != record.subtree
+    {
+        return Err("restore_source_mismatch".into());
+    }
+    let (identity, destination) = retry_destination(&deps.journal_root, &record, &payload)?;
+    let selection = MobileSelection {
+        snapshot_id: record.snapshot_id,
+        subtree: record.subtree,
+    };
+    let frame = recovery_owner::RecoveryFrame::begin(&deps.operations)?;
+    let tools = resolve_tools(deps).map_err(|error| error.to_string())?;
+    let runner = LifetimeRunner::new(deps.runner.as_ref(), frame.cancellation());
+    let outcome = restore_mobile_journal(
+        &deps.journal_root,
+        &services(deps, &runner, &tools),
+        deps.restore_recorder.as_ref(),
+        destination,
+        recovery_key,
+        identity,
+        selection,
+        drain,
+    );
+    let result = match outcome.status.as_str() {
+        "ok" | "degraded" => Ok(()),
+        _ => Err(outcome
+            .reason_code
+            .clone()
+            .unwrap_or_else(|| "restore_failed".into())),
+    };
+    frame.finish(map_restore(outcome));
+    result
+}
+
+/// Cancel only the active recovery generation and wait for its actual frame.
+pub fn stop_recorded_journal(deps: &BackupWebDeps) -> Result<(), String> {
+    recovery_owner::stop(&deps.operations)
+}
+
+pub fn recorded_journal_recovery_active(deps: &BackupWebDeps) -> Result<bool, String> {
+    recovery_owner::active(&deps.operations)
+}
+
+fn optional_text<'a>(payload: &'a Map<String, Value>, key: &str) -> Option<&'a str> {
+    payload
+        .get(key)
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+}
+
+fn required_text<'a>(payload: &'a Map<String, Value>, key: &str) -> Result<&'a str, String> {
+    optional_text(payload, key).ok_or_else(|| format!("{key} required"))
+}
+
+fn payload_supplies_destination(payload: &Map<String, Value>) -> bool {
+    optional_text(payload, "repository").is_some() || optional_text(payload, "backend").is_some()
+}
+
+fn retry_destination(
+    journal: &Path,
+    record: &solstone_core_journal_io::whole_journal_restore::WholeJournalRestore,
+    payload: &Map<String, Value>,
+) -> Result<(MobileRestoreIdentity, Destination), String> {
+    use solstone_core_journal_io::whole_journal_restore::WholeJournalRestoreSource;
+    let mismatch = || Err("restore_source_mismatch".to_owned());
+    match &record.source {
+        WholeJournalRestoreSource::Hosted {
+            account_id,
+            instance_id,
+            bucket,
+            prefix,
+        } => {
+            if let Some(kind) = optional_text(payload, "kind")
+                && kind != "hosted"
+            {
+                return mismatch();
+            }
+            for (key, expected) in [
+                ("account_id", account_id.as_str()),
+                ("instance_id", instance_id.as_str()),
+                ("bucket", bucket.as_str()),
+                ("prefix", prefix.as_str()),
+            ] {
+                if let Some(value) = optional_text(payload, key)
+                    && value != expected
+                {
+                    return mismatch();
+                }
+            }
+            if payload_supplies_destination(payload) {
+                return mismatch();
+            }
+            let identity = MobileRestoreIdentity::Hosted {
+                account_id: account_id.clone(),
+                instance_id: instance_id.clone(),
+                bucket: bucket.clone(),
+                prefix: prefix.clone(),
+            };
+            let binding = load_hosted_binding(journal);
+            if let Some(binding) = binding.as_ref()
+                && (binding.account_id != *account_id
+                    || binding.instance_id != *instance_id
+                    || binding.bucket != *bucket
+                    || binding.prefix != *prefix)
+            {
+                return mismatch();
+            }
+            if let Some(endpoint) = optional_text(payload, "broker_endpoint") {
+                let Some(mut binding) = binding else {
+                    return mismatch();
+                };
+                binding.broker_endpoint = endpoint.to_owned();
+                return hosted_destination_from_binding(identity, &binding);
+            }
+            match get_destination(journal) {
+                Ok(Some(destination)) => Ok((identity, destination)),
+                Ok(None) => mismatch(),
+                Err(_) => Err("config_unreadable".into()),
+            }
+        }
+        WholeJournalRestoreSource::Byo {
+            repository,
+            backend,
+        } => {
+            if let Some(kind) = optional_text(payload, "kind")
+                && kind != "byo"
+            {
+                return mismatch();
+            }
+            let identity = MobileRestoreIdentity::Byo;
+            if payload_supplies_destination(payload) {
+                let destination = destination_from_payload(payload);
+                if destination.repository != *repository || destination.backend != *backend {
+                    return mismatch();
+                }
+                validation::destination(payload)
+                    .map_err(|_| "invalid_restore_credentials".to_owned())?;
+                return Ok((identity, destination));
+            }
+            match get_destination(journal) {
+                Ok(Some(destination))
+                    if destination.repository == *repository && destination.backend == *backend =>
+                {
+                    Ok((identity, destination))
+                }
+                Ok(_) => mismatch(),
+                Err(_) => Err("config_unreadable".into()),
+            }
+        }
+    }
+}
+
+fn hosted_destination_from_binding(
+    identity: MobileRestoreIdentity,
+    binding: &HostedBinding,
+) -> Result<(MobileRestoreIdentity, Destination), String> {
+    let deps_http = UreqHttpTransport;
+    let credentials = fetch_hosted_credentials(
+        &deps_http,
+        binding,
+        "maintenance",
+        env!("CARGO_PKG_VERSION"),
+    )
+    .map_err(|error| error.reason_code.to_owned())?;
+    Ok((identity, operated_destination(binding, &credentials)))
 }
 
 async fn restore_route(deps: BackupWebDeps, body: Bytes) -> axum::response::Response {

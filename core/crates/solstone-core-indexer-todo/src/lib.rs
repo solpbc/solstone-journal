@@ -121,6 +121,127 @@ pub fn enqueue_path(journal: &Path, path: &Path) -> io::Result<()> {
     enqueue(journal, path_key(journal, path)?, "path")
 }
 
+/// Publish the maintained path hint beneath a retained journal identity.
+/// This keeps create-only publication and existing valid-hint deduplication.
+pub fn enqueue_path_bound(
+    namespace: &solstone_core_journal_io::journal_directory::JournalNamespace,
+    path: &Path,
+) -> io::Result<()> {
+    namespace.revalidate()?;
+    let owner = namespace.root();
+    let entry = Entry {
+        key: path_key(owner.canonical_path(), path)?,
+        kind: "path".to_owned(),
+        enqueued_ms: now_ms(),
+        attempts: 0,
+        not_before_ms: 0,
+    };
+    let directory = namespace
+        .directory(Path::new("indexer/todo"), true)?
+        .expect("created index hint directory");
+    let name = entry.filename();
+    let bytes = serde_json::to_vec(&entry)?;
+    loop {
+        namespace.revalidate()?;
+        let result = solstone_core_journal_io::write_bytes_exclusive_bound_detailed(
+            directory.as_ref(),
+            std::ffi::OsStr::new(&name),
+            &bytes,
+            0o600,
+        );
+        match result {
+            Ok(published) => {
+                use solstone_core_journal_io::{
+                    FinalNameConfirmation, MetadataDurability, StageCleanup,
+                };
+                let final_ok = matches!(
+                    published.final_name,
+                    FinalNameConfirmation::Confirmed { .. }
+                );
+                let cleanup_ok = matches!(&published.cleanup, StageCleanup::Removed);
+                let durable = match &published.durability {
+                    MetadataDurability::Confirmed => true,
+                    #[cfg(windows)]
+                    MetadataDurability::Unproven { source: None } => true,
+                    _ => false,
+                };
+                if !final_ok || !cleanup_ok || !durable {
+                    // Do not erase committed/cleanup facts or log hint contents.
+                    return Err(io::Error::other(HintPublicationUncertain {
+                        path: root(owner.canonical_path()).join(&name),
+                        publication: published,
+                    }));
+                }
+                namespace.revalidate()?;
+                return Ok(());
+            }
+            Err(error) if error.source.kind() == io::ErrorKind::AlreadyExists => {
+                #[cfg(unix)]
+                let existing = solstone_core_journal_io::flat_directory::read_observed_file_bounded(
+                    directory.as_ref(),
+                    std::ffi::OsStr::new(&name),
+                    usize::MAX,
+                );
+                #[cfg(windows)]
+                let existing =
+                    solstone_core_journal_io::windows_sync_dir::read_windows_observed_file_bounded(
+                        directory.as_ref(),
+                        std::ffi::OsStr::new(&name),
+                        usize::MAX,
+                    );
+                match existing.map_err(io::Error::other)? {
+                    Some(existing) => {
+                        serde_json::from_slice::<serde_json::Value>(&existing.bytes)
+                            .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+                        namespace.revalidate()?;
+                        return Ok(());
+                    }
+                    None => continue,
+                }
+            }
+            Err(error) => return Err(io::Error::other(error)),
+        }
+    }
+}
+
+#[derive(Debug)]
+struct HintPublicationUncertain {
+    path: PathBuf,
+    publication: solstone_core_journal_io::ExclusivePublication,
+}
+impl std::fmt::Display for HintPublicationUncertain {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use solstone_core_journal_io::{FinalNameConfirmation, MetadataDurability, StageCleanup};
+        write!(
+            formatter,
+            "index hint {} was published",
+            self.path.display()
+        )?;
+        match &self.publication.final_name {
+            FinalNameConfirmation::Confirmed { .. } => write!(formatter, "; final name confirmed")?,
+            FinalNameConfirmation::Unverified { reason, .. } => {
+                write!(formatter, "; final name unverified: {reason}")?
+            }
+        }
+        match &self.publication.cleanup {
+            StageCleanup::Removed => write!(formatter, "; stage removed")?,
+            StageCleanup::Retained { stage, source } => {
+                write!(formatter, "; retained stage {:?}: {source}", stage)?
+            }
+        }
+        match &self.publication.durability {
+            MetadataDurability::Confirmed => write!(formatter, "; durability confirmed"),
+            MetadataDurability::Unproven {
+                source: Some(source),
+            } => write!(formatter, "; durability unproven: {source}"),
+            MetadataDurability::Unproven { source: None } => {
+                write!(formatter, "; platform has no directory flush")
+            }
+        }
+    }
+}
+impl std::error::Error for HintPublicationUncertain {}
+
 pub fn enqueue_token(journal: &Path, token: Token) -> io::Result<()> {
     enqueue(journal, token.key().to_owned(), &token.key()[1..])
 }

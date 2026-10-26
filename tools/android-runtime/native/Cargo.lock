@@ -2707,6 +2707,7 @@ dependencies = [
  "oar-ocr",
  "ort",
  "rayon",
+ "serde",
  "serde_json",
  "sha2 0.10.9",
  "solstone-core-backup",
@@ -2723,18 +2724,24 @@ dependencies = [
  "solstone-core-generate",
  "solstone-core-generate-wire",
  "solstone-core-import",
+ "solstone-core-import-host",
+ "solstone-core-import-sources",
+ "solstone-core-import-web",
  "solstone-core-indexer-store",
  "solstone-core-journal-config",
  "solstone-core-journal-config-write",
  "solstone-core-journal-io",
+ "solstone-core-linked-share",
  "solstone-core-local",
  "solstone-core-maintenance",
  "solstone-core-mcp-endpoint",
  "solstone-core-sense",
+ "solstone-core-settings-web",
  "solstone-core-speaker-resolve",
  "solstone-core-speakers",
  "solstone-core-spl",
  "solstone-core-system",
+ "solstone-core-talent-runtime",
  "solstone-core-think-cli",
  "solstone-core-transcribe",
  "tokio",
@@ -5107,6 +5114,7 @@ version = "2.0.59"
 dependencies = [
  "getrandom 0.3.4",
  "hmac 0.12.1",
+ "log",
  "nix 0.30.1",
  "rustix",
  "serde",
@@ -5282,6 +5290,23 @@ dependencies = [
  "tokio",
  "widestring",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "solstone-core-ced-analyze"
+version = "2.0.59"
+dependencies = [
+ "serde_json",
+ "solstone-core-ced-sys",
+ "solstone-core-local",
+]
+
+[[package]]
+name = "solstone-core-ced-sys"
+version = "2.0.59"
+dependencies = [
+ "libloading 0.8.9",
+ "solstone-core-win-dll-load",
 ]
 
 [[package]]
@@ -5840,6 +5865,39 @@ dependencies = [
 ]
 
 [[package]]
+name = "solstone-core-import-host"
+version = "2.0.59"
+dependencies = [
+ "chrono",
+ "chrono-tz",
+ "ffmpeg-next",
+ "ffmpeg-sys-next",
+ "log",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "solstone-core-body-ingest",
+ "solstone-core-callosum",
+ "solstone-core-facets",
+ "solstone-core-format",
+ "solstone-core-generate",
+ "solstone-core-generate-wire",
+ "solstone-core-import",
+ "solstone-core-import-sources",
+ "solstone-core-indexer-store",
+ "solstone-core-journal-config",
+ "solstone-core-journal-io",
+ "solstone-core-pdf",
+ "solstone-core-processing-record",
+ "solstone-core-retention",
+ "solstone-core-segment",
+ "solstone-core-system-health",
+ "tempfile",
+ "tokio",
+ "ureq",
+]
+
+[[package]]
 name = "solstone-core-import-sources"
 version = "2.0.59"
 dependencies = [
@@ -6131,6 +6189,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "solstone-core-linked-share"
+version = "2.0.59"
+dependencies = [
+ "log",
+ "serde",
+ "serde_json",
+ "solstone-core-entity",
+ "solstone-core-facets",
+ "solstone-core-format",
+ "solstone-core-generate",
+ "solstone-core-journal-config",
+ "solstone-core-processing-record",
+ "solstone-core-system-health",
+ "solstone-core-talent-runtime",
+ "solstone-core-transcripts",
+]
+
+[[package]]
 name = "solstone-core-local"
 version = "2.0.59"
 dependencies = [
@@ -6209,7 +6285,9 @@ dependencies = [
  "sha2 0.10.9",
  "solstone-core-convey-http",
  "solstone-core-journal-config",
+ "solstone-core-journal-io",
  "solstone-core-location",
+ "tokio",
 ]
 
 [[package]]
@@ -6345,6 +6423,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "solstone-core-pdf"
+version = "2.0.59"
+dependencies = [
+ "image",
+ "libc",
+ "libloading 0.8.9",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+]
+
+[[package]]
 name = "solstone-core-possible-names"
 version = "2.0.59"
 dependencies = [
@@ -6450,6 +6540,7 @@ version = "2.0.59"
 dependencies = [
  "chrono",
  "getrandom 0.3.4",
+ "log",
  "serde",
  "serde_json",
  "sha2 0.10.9",
@@ -6694,6 +6785,7 @@ version = "2.0.59"
 dependencies = [
  "hdbscan",
  "serde_json",
+ "tempfile",
 ]
 
 [[package]]
@@ -7017,6 +7109,7 @@ dependencies = [
  "solstone-core-assets",
  "solstone-core-brain",
  "solstone-core-callosum",
+ "solstone-core-ced-analyze",
  "solstone-core-format",
  "solstone-core-journal-config",
  "solstone-core-journal-io",
@@ -7030,6 +7123,7 @@ dependencies = [
  "solstone-core-speaker-resolve",
  "solstone-core-speakers",
  "solstone-core-speakers-analyze",
+ "solstone-core-speakers-onnx",
  "solstone-core-spp-ratls",
  "solstone-core-system",
  "solstone-core-system-health",

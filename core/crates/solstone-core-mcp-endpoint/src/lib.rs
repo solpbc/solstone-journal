@@ -39,6 +39,7 @@ mod byo_relay_tests;
 #[cfg(all(test, feature = "full-tests"))]
 mod calendar_tests;
 mod dispatch;
+mod door_state_writer;
 mod http1;
 mod jsonrpc;
 pub mod lan_door;

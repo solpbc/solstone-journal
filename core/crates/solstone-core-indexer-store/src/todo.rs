@@ -7,7 +7,8 @@ use crate::StoreError;
 use crate::writer_admission::IndexAdmission;
 use serde::Serialize;
 pub use solstone_core_indexer_todo::{
-    Entry, TodoStatus, Token, enqueue_path, enqueue_token, has_due, inspect, now_ms,
+    Entry, TodoStatus, Token, enqueue_path, enqueue_path_bound, enqueue_token, has_due, inspect,
+    now_ms,
 };
 use solstone_core_indexer_todo::{
     entry_paths, path_absent, publish_if_absent, read_entry, rewrite, root,

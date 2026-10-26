@@ -770,7 +770,9 @@ async fn in_flight_service_changes_reject_returned_capability() {
                 solstone_core_spl::disable_spl(&journal.0).unwrap();
                 setup_test_journal(&journal.0, "inst-test", "service-old", &origin);
             }
-            "token" => solstone_core_spl::save_service_token(&journal.0, "service-new").unwrap(),
+            "token" => {
+                solstone_core_spl::save_service_token(&journal.0, "service-new").unwrap();
+            }
             "instance" => setup_test_journal(&journal.0, "inst-new", "service-old", &origin),
             _ => unreachable!(),
         }

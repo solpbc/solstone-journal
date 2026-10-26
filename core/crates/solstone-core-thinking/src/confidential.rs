@@ -6,13 +6,18 @@
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Mutex;
+use std::task::{Poll, Waker};
 use std::time::Instant;
 
 use chrono::Utc;
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
 use solstone_core_brain::derive_active_brain_lane;
-use solstone_core_journal_config_write::{JournalConfigMutation, mutate_journal_config};
+use solstone_core_journal_config_write::{
+    BoundConfigOutcome, BoundConfigRefusal, JournalConfigMutation, mutate_journal_config,
+    mutate_journal_config_at_root_checked,
+};
+use solstone_core_journal_io::JournalRoot;
 
 use crate::MutationError;
 
@@ -109,6 +114,7 @@ struct OperationEntry {
     started: Instant,
     ended: Option<Instant>,
     generation: u64,
+    closed_waiters: Vec<Waker>,
 }
 
 #[derive(Default)]
@@ -164,6 +170,7 @@ impl OperationRegistry {
             started: now,
             ended: None,
             generation,
+            closed_waiters: Vec::new(),
         };
         let payload = payload(&entry, now, false);
         state.entries.insert(service.to_owned(), entry);
@@ -222,6 +229,11 @@ impl OperationRegistry {
         entry.retryable = result.retryable;
         entry.subscribe_url = result.subscribe_url;
         entry.ended = Some(Instant::now());
+        let waiters = std::mem::take(&mut entry.closed_waiters);
+        drop(state);
+        for waiter in waiters {
+            waiter.wake();
+        }
         true
     }
 
@@ -242,7 +254,37 @@ impl OperationRegistry {
         entry.retryable = result.retryable;
         entry.subscribe_url = result.subscribe_url;
         entry.ended = Some(Instant::now());
+        let waiters = std::mem::take(&mut entry.closed_waiters);
+        drop(state);
+        for waiter in waiters {
+            waiter.wake();
+        }
         true
+    }
+
+    /// Wake when this operation ends or is no longer the current generation.
+    pub async fn wait_until_closed(&self, service: &str, handle: OperationHandle) {
+        std::future::poll_fn(|context| {
+            let mut state = self
+                .state
+                .lock()
+                .expect("operation registry lock is not poisoned");
+            let Some(entry) = state.entries.get_mut(service) else {
+                return Poll::Ready(());
+            };
+            if entry.generation != handle.generation || entry.ended.is_some() {
+                return Poll::Ready(());
+            }
+            if !entry
+                .closed_waiters
+                .iter()
+                .any(|waiter| waiter.will_wake(context.waker()))
+            {
+                entry.closed_waiters.push(context.waker().clone());
+            }
+            Poll::Pending
+        })
+        .await
     }
 
     pub fn is_open(&self, service: &str, handle: OperationHandle) -> bool {
@@ -271,11 +313,17 @@ impl OperationRegistry {
 
     /// Removes one service operation, primarily for deterministic route tests.
     pub fn clear_operation(&self, service: &str) {
-        self.state
+        let removed = self
+            .state
             .lock()
             .expect("operation registry lock is not poisoned")
             .entries
             .remove(service);
+        if let Some(entry) = removed {
+            for waiter in entry.closed_waiters {
+                waiter.wake();
+            }
+        }
     }
 
     fn operation_with_phase_vocabulary(&self, service: &str, product: bool) -> Value {
@@ -430,8 +478,12 @@ pub fn handoff_result(code: HandoffCode) -> HandoffResult {
     }
 }
 
-pub fn record_confidential_attempt(journal: &Path, attempt: &str) -> Result<(), MutationError> {
-    mutate_journal_config(journal, Default::default(), |config| {
+pub fn record_confidential_attempt(
+    root: &std::sync::Arc<JournalRoot>,
+    attempt: &str,
+    checkpoint: &dyn Fn() -> Result<(), String>,
+) -> Result<BoundConfigOutcome, BoundConfigRefusal> {
+    mutate_journal_config_at_root_checked(root, Default::default(), checkpoint, |config| {
         let services = object_at(config, "services");
         let current = services
             .get(CONFIDENTIAL_ATTEMPT_FIELD)
@@ -452,8 +504,7 @@ pub fn record_confidential_attempt(journal: &Path, attempt: &str) -> Result<(), 
             }
         }
     })
-    .map_err(MutationError::config)
-    .map(|_| ())
+    .map(|transaction| transaction.outcome)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -476,7 +527,7 @@ pub fn confidential_enabled(config: &Map<String, Value>) -> bool {
 #[derive(Debug)]
 pub enum ProvisionError {
     Invalid,
-    Mutation(MutationError),
+    Mutation(BoundConfigRefusal),
     Superseded,
 }
 
@@ -496,18 +547,24 @@ pub fn handoff_error(token: &str, detail: Option<String>) -> HandoffResult {
 }
 
 pub fn provision_confidential_handoff(
-    journal: &Path,
+    root: &std::sync::Arc<JournalRoot>,
     handoff: &Map<String, Value>,
     attempt: &str,
-) -> Result<(), ProvisionError> {
+    active: impl Fn() -> bool,
+) -> Result<BoundConfigOutcome, ProvisionError> {
+    if !active() {
+        return Err(ProvisionError::Superseded);
+    }
     let values = validate_handoff(handoff).ok_or(ProvisionError::Invalid)?;
-    mutate_journal_config(journal, Default::default(), |config| {
+    let transaction = mutate_journal_config_at_root_checked(root, Default::default(), &|| {
+        if active() { Ok(()) } else { Err("confidential turn-on interrupted".to_owned()) }
+    }, |config| {
         let stored_attempt = config
             .get("services")
             .and_then(Value::as_object)
             .and_then(|services| services.get(CONFIDENTIAL_ATTEMPT_FIELD))
             .and_then(Value::as_str);
-        if stored_attempt != Some(attempt) {
+        if stored_attempt != Some(attempt) || !active() {
             return JournalConfigMutation {
                 changed: false,
                 value: Err(ProvisionError::Superseded),
@@ -549,9 +606,9 @@ pub fn provision_confidential_handoff(
             value: Ok(()),
         }
     })
-    .map_err(MutationError::config)
-    .map_err(ProvisionError::Mutation)
-    .and_then(|transaction| transaction.value)
+    .map_err(ProvisionError::Mutation)?;
+    transaction.value?;
+    Ok(transaction.outcome)
 }
 
 /// Disables confidential processing and restores or preserves provider settings.
@@ -836,6 +893,129 @@ fn fingerprint(credential: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::future::Future;
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::task::{Context, Wake};
+
+    struct RegistryWake {
+        registry: Arc<OperationRegistry>,
+        wakes: AtomicUsize,
+    }
+
+    impl Wake for RegistryWake {
+        fn wake(self: Arc<Self>) {
+            self.wake_by_ref();
+        }
+
+        fn wake_by_ref(self: &Arc<Self>) {
+            assert!(
+                self.registry.state.try_lock().is_ok(),
+                "wake held the registry mutex"
+            );
+            self.wakes.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    fn interrupted() -> HandoffResult {
+        HandoffResult {
+            phase: Phase::Error,
+            guidance: None,
+            retryable: true,
+            subscribe_url: None,
+        }
+    }
+
+    #[test]
+    fn operation_closed_before_first_poll_does_not_need_a_later_notification() {
+        let registry = Arc::new(OperationRegistry::default());
+        let (handle, _) = registry.start_operation("sme", "enable", None).unwrap();
+        let wake = Arc::new(RegistryWake {
+            registry: registry.clone(),
+            wakes: AtomicUsize::new(0),
+        });
+        let waker = Waker::from(wake.clone());
+        let mut context = Context::from_waker(&waker);
+        let mut closed = Box::pin(registry.wait_until_closed("sme", handle));
+        assert!(registry.cancel("sme", interrupted()));
+        assert!(closed.as_mut().poll(&mut context).is_ready());
+        assert_eq!(wake.wakes.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn operation_notifications_preserve_service_and_generation_ownership() {
+        let registry = Arc::new(OperationRegistry::default());
+        let (first, _) = registry.start_operation("sme", "enable", None).unwrap();
+        let (other, _) = registry.start_operation("spl", "enable", None).unwrap();
+        let wake = Arc::new(RegistryWake {
+            registry: registry.clone(),
+            wakes: AtomicUsize::new(0),
+        });
+        let waker = Waker::from(wake.clone());
+        let mut context = Context::from_waker(&waker);
+        let mut closed = Box::pin(registry.wait_until_closed("sme", first));
+        assert!(closed.as_mut().poll(&mut context).is_pending());
+        assert!(registry.finish("spl", other, interrupted()));
+        assert_eq!(wake.wakes.load(Ordering::SeqCst), 0);
+        assert!(registry.finish("sme", first, interrupted()));
+        assert_eq!(wake.wakes.load(Ordering::SeqCst), 1);
+        assert!(closed.as_mut().poll(&mut context).is_ready());
+        let (next, _) = registry.start_operation("sme", "enable", None).unwrap();
+        let mut stale = Box::pin(registry.wait_until_closed("sme", first));
+        assert!(stale.as_mut().poll(&mut context).is_ready());
+        let mut replacement = Box::pin(registry.wait_until_closed("sme", next));
+        assert!(replacement.as_mut().poll(&mut context).is_pending());
+        assert!(!registry.finish("sme", first, interrupted()));
+        assert_eq!(wake.wakes.load(Ordering::SeqCst), 1);
+        assert!(registry.is_open("sme", next));
+        registry.clear_operation("sme");
+        assert_eq!(wake.wakes.load(Ordering::SeqCst), 2);
+        assert!(replacement.as_mut().poll(&mut context).is_ready());
+    }
+
+    #[cfg(feature = "full-tests")]
+    #[test]
+    fn operation_terminal_mutation_racing_registration_cannot_lose_the_wake() {
+        for _ in 0..32 {
+            let registry = Arc::new(OperationRegistry::default());
+            let (handle, _) = registry.start_operation("sme", "enable", None).unwrap();
+            let wake = Arc::new(RegistryWake {
+                registry: registry.clone(),
+                wakes: AtomicUsize::new(0),
+            });
+            let barrier = Arc::new(std::sync::Barrier::new(2));
+            let (finished, finish) = std::sync::mpsc::sync_channel(0);
+            std::thread::scope(|scope| {
+                let waiting = scope.spawn({
+                    let registry = registry.clone();
+                    let wake = wake.clone();
+                    let barrier = barrier.clone();
+                    move || {
+                        let waker = Waker::from(wake.clone());
+                        let mut context = Context::from_waker(&waker);
+                        let mut future = Box::pin(registry.wait_until_closed("sme", handle));
+                        barrier.wait();
+                        let pending = future.as_mut().poll(&mut context).is_pending();
+                        finish
+                            .recv_timeout(std::time::Duration::from_secs(5))
+                            .unwrap();
+                        if pending {
+                            assert!(future.as_mut().poll(&mut context).is_ready());
+                            assert_eq!(wake.wakes.load(Ordering::SeqCst), 1);
+                        } else {
+                            // An async future completed by its first poll must
+                            // not be polled again when cancellation won the race.
+                            assert_eq!(wake.wakes.load(Ordering::SeqCst), 0);
+                        }
+                    }
+                });
+                barrier.wait();
+                assert!(registry.cancel("sme", interrupted()));
+                finished.send(()).unwrap();
+                waiting.join().unwrap();
+            });
+        }
+    }
 
     #[test]
     fn stale_generation_cannot_change_a_replacement_operation() {
@@ -896,6 +1076,7 @@ mod tests {
             started: long_ago,
             ended: Some(long_ago),
             generation: 1,
+            closed_waiters: Vec::new(),
         };
         let mut entries = HashMap::from([
             (SERVICE_SPP.to_owned(), ended(Phase::Error, None)),
@@ -1048,6 +1229,32 @@ mod tests {
     }
 
     #[test]
+    fn cancelled_provision_preserves_the_current_provider_and_attempt() {
+        let temp = tempfile::tempdir().unwrap();
+        let journal = temp.path();
+        write_config(
+            journal,
+            json!({"providers": {"active": {"provider":"openai","model":"existing"}}}),
+        );
+        record_confidential_attempt(
+            &std::sync::Arc::new(JournalRoot::open(journal).unwrap()),
+            "attempt-a",
+            &|| Ok(()),
+        )
+        .unwrap();
+        let path = journal.join("config/journal.json");
+        let before = std::fs::read(&path).unwrap();
+        let result = provision_confidential_handoff(
+            &std::sync::Arc::new(JournalRoot::open(journal).unwrap()),
+            &sample_handoff(),
+            "attempt-a",
+            || false,
+        );
+        assert!(matches!(result, Err(ProvisionError::Superseded)));
+        assert_eq!(std::fs::read(path).unwrap(), before);
+    }
+
+    #[test]
     fn in_flight_turn_on_superseded_by_disable_cannot_turn_confidential_back_on() {
         let temp = tempfile::tempdir().unwrap();
         let journal = temp.path();
@@ -1063,12 +1270,22 @@ mod tests {
                 }
             }),
         );
-        record_confidential_attempt(journal, "attempt-a").unwrap();
+        record_confidential_attempt(
+            &std::sync::Arc::new(JournalRoot::open(journal).unwrap()),
+            "attempt-a",
+            &|| Ok(()),
+        )
+        .unwrap();
         let outcome = disable_confidential(journal).unwrap();
         assert!(!outcome.was_enabled);
 
         let handoff = sample_handoff();
-        let result = provision_confidential_handoff(journal, &handoff, "attempt-a");
+        let result = provision_confidential_handoff(
+            &std::sync::Arc::new(JournalRoot::open(journal).unwrap()),
+            &handoff,
+            "attempt-a",
+            || true,
+        );
         assert!(matches!(result, Err(ProvisionError::Superseded)));
 
         let cfg = read_config(journal);
@@ -1108,9 +1325,20 @@ mod tests {
                 }
             }),
         );
-        record_confidential_attempt(journal, "attempt-a").unwrap();
+        record_confidential_attempt(
+            &std::sync::Arc::new(JournalRoot::open(journal).unwrap()),
+            "attempt-a",
+            &|| Ok(()),
+        )
+        .unwrap();
         let handoff = sample_handoff();
-        provision_confidential_handoff(journal, &handoff, "attempt-a").unwrap();
+        provision_confidential_handoff(
+            &std::sync::Arc::new(JournalRoot::open(journal).unwrap()),
+            &handoff,
+            "attempt-a",
+            || true,
+        )
+        .unwrap();
 
         let cfg = read_config(journal);
         assert!(cfg["services"].get("confidential").is_some());
@@ -1156,11 +1384,27 @@ mod tests {
                 }
             }),
         );
-        record_confidential_attempt(journal, "attempt-a").unwrap();
+        record_confidential_attempt(
+            &std::sync::Arc::new(JournalRoot::open(journal).unwrap()),
+            "attempt-a",
+            &|| Ok(()),
+        )
+        .unwrap();
         disable_confidential(journal).unwrap();
-        record_confidential_attempt(journal, "attempt-b").unwrap();
+        record_confidential_attempt(
+            &std::sync::Arc::new(JournalRoot::open(journal).unwrap()),
+            "attempt-b",
+            &|| Ok(()),
+        )
+        .unwrap();
         let handoff = sample_handoff();
-        provision_confidential_handoff(journal, &handoff, "attempt-b").unwrap();
+        provision_confidential_handoff(
+            &std::sync::Arc::new(JournalRoot::open(journal).unwrap()),
+            &handoff,
+            "attempt-b",
+            || true,
+        )
+        .unwrap();
 
         let cfg = read_config(journal);
         assert!(cfg["services"].get("confidential").is_some());

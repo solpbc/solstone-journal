@@ -24,8 +24,7 @@ use chrono::NaiveDate;
 use chrono_tz::Tz;
 use serde::{Deserialize, Serialize};
 use solstone_core_journal_io::{
-    AtomicWriteOptions, HealthMarkerKind, HealthMarkerState, PathOrDay, atomic_replace, day_dirs,
-    iter_segments, read_health_marker,
+    HealthMarkerKind, HealthMarkerState, PathOrDay, day_dirs, iter_segments, read_health_marker,
 };
 
 use crate::accuracy::{Packs, StopWords};
@@ -425,46 +424,50 @@ pub fn render_day_document(day: &DayLocation, store: &PlaceStore) -> String {
 }
 
 fn write_file(path: &Path, bytes: &[u8]) -> Result<(), ProjectionError> {
-    atomic_replace(path, bytes, AtomicWriteOptions::default()).map_err(|error| {
-        ProjectionError::Write {
-            path: path.to_path_buf(),
-            detail: error.to_string(),
-        }
+    crate::reconcile_io::replace(path, bytes).map_err(|error| ProjectionError::Write {
+        path: path.to_path_buf(),
+        detail: error.to_string(),
     })
 }
 
 fn remove(path: &Path) -> Result<bool, ProjectionError> {
-    match fs::remove_file(path) {
-        Ok(()) => Ok(true),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
-        Err(error) => Err(ProjectionError::Write {
-            path: path.to_path_buf(),
-            detail: error.to_string(),
-        }),
-    }
+    crate::reconcile_io::remove(path).map_err(|error| ProjectionError::Write {
+        path: path.to_path_buf(),
+        detail: error.to_string(),
+    })
 }
 
 fn index_document(journal: &Path, path: &Path) -> Result<(), ProjectionError> {
-    solstone_core_indexer_store::todo::enqueue_path(journal, path).map_err(|error| {
-        ProjectionError::Index {
-            path: path.to_path_buf(),
-            detail: error.to_string(),
-        }
+    crate::reconcile_io::enqueue(journal, path).map_err(|error| ProjectionError::Index {
+        path: path.to_path_buf(),
+        detail: error.to_string(),
     })
 }
 
 fn forget_document(journal: &Path, day: &str) -> Result<(), ProjectionError> {
     let rel = format!("{day}/{DAY_DOCUMENT}");
-    solstone_core_indexer_store::todo::enqueue_path(journal, Path::new(&rel)).map_err(|error| {
-        ProjectionError::Index {
-            path: document_path(journal, day),
-            detail: error.to_string(),
-        }
+    crate::reconcile_io::enqueue(journal, Path::new(&rel)).map_err(|error| ProjectionError::Index {
+        path: document_path(journal, day),
+        detail: error.to_string(),
     })
 }
 
 /// Rebuild one day's document from the segments it holds now.
 pub fn rebuild_day(
+    journal: &Path,
+    day: &str,
+    tier: &AreaTier,
+    packs: Option<&Packs>,
+    store: &PlaceStore,
+    directory: &dyn DeviceDirectory,
+    owner: Tz,
+) -> Result<Rebuilt, ProjectionError> {
+    crate::reconcile_io::transaction(|| {
+        rebuild_day_inner(journal, day, tier, packs, store, directory, owner)
+    })
+}
+
+fn rebuild_day_inner(
     journal: &Path,
     day: &str,
     tier: &AreaTier,
@@ -508,14 +511,21 @@ pub fn rebuild_day(
     };
     let unchanged = fs::read(&document).is_ok_and(|existing| existing == text.as_bytes());
     if !unchanged {
+        // A restored current record must not hide an owed hint if rebuilding
+        // its missing/corrupt document succeeds but hint publication refuses.
+        if read_build_record(journal, day).as_ref() == Some(&built) {
+            remove(&record)?;
+        }
         write_file(&document, text.as_bytes())?;
     }
+    // A current record certifies both the document and its index hint. If hint
+    // publication refuses, leave the old record so reconciliation retries.
+    index_document(journal, &document)?;
     if read_build_record(journal, day).as_ref() != Some(&built) {
         let mut bytes = serde_json::to_vec_pretty(&built).unwrap_or_default();
         bytes.push(b'\n');
         write_file(&record, &bytes)?;
     }
-    index_document(journal, &document)?;
     if unchanged {
         return Ok(Rebuilt::Unchanged);
     }

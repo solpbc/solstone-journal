@@ -35,6 +35,7 @@ pub struct RuntimeTalents<'a> {
     paths: RuntimePaths,
     context: ExecutionContext,
     generate: &'a dyn GenerateExecutor,
+    cancelled: Option<&'a (dyn Fn() -> bool + Send + Sync)>,
 }
 
 impl<'a> RuntimeTalents<'a> {
@@ -49,12 +50,26 @@ impl<'a> RuntimeTalents<'a> {
                 journal: journal.into(),
             },
             generate,
+            cancelled: None,
         }
+    }
+
+    /// Attach read-only preview work to its owner, including every talent
+    /// preparation and model call in a multi-segment package.
+    pub fn with_cancellation(mut self, cancelled: &'a (dyn Fn() -> bool + Send + Sync)) -> Self {
+        self.cancelled = Some(cancelled);
+        self
     }
 }
 
 impl TalentCaller for RuntimeTalents<'_> {
     fn call(&self, talent: &str, transcript: &str) -> Result<Value, String> {
+        let never = || false;
+        let cancellation =
+            solstone_core_generate::Cancellation::from_fn(self.cancelled.unwrap_or(&never));
+        if cancellation.is_cancelled() {
+            return Err("cancelled".to_owned());
+        }
         let request = Map::from_iter([
             ("name".to_owned(), Value::String(talent.to_owned())),
             (
@@ -68,7 +83,7 @@ impl TalentCaller for RuntimeTalents<'_> {
             &self.context,
             self.generate,
             &mut std::io::sink(),
-            &solstone_core_generate::Cancellation::never(),
+            &cancellation,
         );
         match outcome {
             RuntimeOutcome::Finished { output, .. } => serde_json::from_str(&output)

@@ -476,7 +476,7 @@ func completeS3StateJSON(raw []byte) error {
 
 func validOwnerOperation(operation int32) bool {
 	switch operation {
-	case OpInit, OpOpen, OpAddRecoveryKey, OpSnapshot, OpListSnapshots, OpRestore, OpCheck, OpListRecoveryKeys, OpRemoveRecoveryKey, OpTeardown:
+	case OpInit, OpOpen, OpAddRecoveryKey, OpSnapshot, OpListSnapshots, OpRestore, OpCheck, OpListRecoveryKeys, OpRemoveRecoveryKey, OpTeardown, OpRetention, OpArchiveSources, OpListNodes, OpReadFile:
 		return true
 	default:
 		return false
@@ -979,7 +979,7 @@ func (owner *s3Owner) noteAttemptFailed() {
 // limited to content-addressed data, index or snapshot objects and owned locks.
 func adoptsUncertainty(operation int32) bool {
 	switch operation {
-	case OpOpen, OpSnapshot, OpListSnapshots, OpRestore, OpCheck:
+	case OpOpen, OpSnapshot, OpListSnapshots, OpRestore, OpCheck, OpArchiveSources:
 		return true
 	default:
 		return false
@@ -1315,7 +1315,7 @@ func (owner *s3Owner) complete() (published bool, err error) {
 	if owner.writeFailed || owner.stateFailed {
 		return false, errS3OwnerPending
 	}
-	if owner.attemptFailed && owner.record.Active.Operation == OpTeardown && owner.record.Active.MayHaveWritten {
+	if owner.attemptFailed && (owner.record.Active.Operation == OpTeardown || owner.record.Active.Operation == OpRetention) && owner.record.Active.MayHaveWritten {
 		return false, errS3OwnerPending
 	}
 	for _, id := range owner.record.Active.Locks {

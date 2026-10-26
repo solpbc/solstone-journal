@@ -2088,9 +2088,13 @@ struct CapabilityBody {
 
 async fn set_capability(
     Extension(journal): Extension<Arc<PathBuf>>,
+    cancel: Option<Extension<solstone_core_convey_http::request::PendingAgentsConsentCancel>>,
     Json(body): Json<CapabilityBody>,
 ) -> Response {
     if !body.enabled {
+        if let Some(Extension(cancel)) = cancel {
+            cancel.cancel();
+        }
         crate::sme_account_replace::withdraw_request(&journal);
     }
     write_endpoint_switch(&journal, "enabled", body.enabled)
@@ -4148,6 +4152,16 @@ mod tests {
 
     #[tokio::test]
     async fn byo_dns_check_writes_no_door_file_and_uses_override() {
+        let _serial = crate::byo_dns::BYO_TEST_SERIAL.lock().await;
+        struct ResetDnsOverride;
+        impl Drop for ResetDnsOverride {
+            fn drop(&mut self) {
+                if let Ok(mut value) = crate::byo_dns::TEST_VERDICT_OVERRIDE.write() {
+                    *value = None;
+                }
+            }
+        }
+        let _reset = ResetDnsOverride;
         use axum::body::to_bytes;
 
         let dir = tempfile::Builder::new()
@@ -4180,8 +4194,6 @@ mod tests {
         assert_eq!(val["diagnostics"], json!([]));
 
         assert!(!door_path.exists());
-
-        *crate::byo_dns::TEST_VERDICT_OVERRIDE.write().unwrap() = None;
     }
 
     #[tokio::test]

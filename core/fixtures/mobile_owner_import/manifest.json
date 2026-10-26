@@ -1,0 +1,35 @@
+{
+  "scope": "Synthetic retained mobile import inputs; no owner data or model/account evidence",
+  "files": [
+    {
+      "path": "claude.zip",
+      "bytes": 311,
+      "sha256": "db3557079601b820565ce317fc576eb90c70f8ecfbb7a8a23d0882e6eb30579a",
+      "authority": "import-fixtures-v1.json"
+    },
+    {
+      "path": "chatgpt.zip",
+      "bytes": 347,
+      "sha256": "d9c116d7de0c6909ab6bd10429f9f89bff8cac3501dd776b1039585dd1f04f3b",
+      "authority": "import-fixtures-v1.json"
+    },
+    {
+      "path": "gemini.zip",
+      "bytes": 356,
+      "sha256": "70519190218fc9c17ac8f10116ee348ee28baf6fdab44c36881283d1ffebe2c9",
+      "authority": "import-fixtures-v1.json"
+    },
+    {
+      "path": "strava.zip",
+      "bytes": 843,
+      "sha256": "7f3a6849f97063f8c19e5fac03dde678a5a4e4842bb0d796aa19a61275db4f09",
+      "authority": "import-fixtures-v1.json"
+    },
+    {
+      "path": "journal.zip",
+      "bytes": 1647,
+      "sha256": "5c293ce89663c2b803bb569eb195d2bdfa8e741a77ee1d3d5721a3dcf92d28b2",
+      "authority": "import-archive-fixtures-v1.json"
+    }
+  ]
+}

@@ -21,10 +21,12 @@ use solstone_core_system::lifecycle::{
 use tokio::sync::{Semaphore, oneshot, watch};
 
 use crate::McpServiceError;
+use crate::door_state_writer::DoorStateWriter;
 use crate::oauth::OAuthRuntime;
 use crate::permits::try_acquire_connection_permit;
 use crate::server::{RequestGuard, serve_stream};
 use crate::session::SessionTable;
+use solstone_core_journal_io::JournalRoot;
 
 pub(crate) const LOCAL_DOOR_STATE_PATH: &str = "mcp-endpoint/local-door-state.json";
 
@@ -116,6 +118,7 @@ pub async fn run_local_door_async(
 ) -> Result<(), McpServiceError> {
     #[cfg(unix)]
     crate::rlimit::apply_soft_nofile_limit();
+    let root = Arc::new(JournalRoot::open(&journal_root).map_err(|_| McpServiceError::Bootstrap)?);
     let (shutdown_send, shutdown_receive) = watch::channel(false);
     let signal_task = tokio::spawn(wait_for_shutdown_signal(shutdown_send.clone()));
     let (parent_loss_send, mut parent_loss_receive) = oneshot::channel();
@@ -127,7 +130,7 @@ pub async fn run_local_door_async(
         ))
     });
 
-    let result = run_direct_doors(journal_root.clone(), run, shutdown_receive).await;
+    let result = run_direct_doors(root, run, shutdown_receive).await;
     let service_stopped = result.is_ok();
     signal_task.abort();
     let _ = signal_task.await;
@@ -158,35 +161,39 @@ pub async fn run_local_door_async(
 /// No process-wide signal handlers are installed. Closing the channel or sending
 /// true retires every listener and its connections before this call returns.
 pub async fn run_embedded_direct_doors(
-    journal_root: PathBuf,
+    root: Arc<JournalRoot>,
     shutdown: watch::Receiver<bool>,
 ) -> Result<(), McpServiceError> {
-    run_direct_doors(journal_root, LocalDoorRun::production(), shutdown).await
+    run_direct_doors(root, LocalDoorRun::production(), shutdown).await
 }
 
 async fn run_direct_doors(
-    journal_root: PathBuf,
+    root: Arc<JournalRoot>,
     run: LocalDoorRun,
     mut shutdown: watch::Receiver<bool>,
 ) -> Result<(), McpServiceError> {
     if *shutdown.borrow() || shutdown.has_changed().is_err() {
         return Ok(());
     }
+    root.revalidate_canonical_binding()
+        .map_err(|_| McpServiceError::Bootstrap)?;
+    let state = Arc::new(DoorStateWriter::new(root));
+    let journal_root = state.root().canonical_path().to_path_buf();
     let (stop, stopped) = watch::channel(false);
     let lan_oauth = Arc::new(OAuthRuntime::new_lan_door(&journal_root));
-    let lan_root = journal_root.clone();
+    let lan_root = Arc::clone(&state);
     let lan_shutdown = stopped.clone();
     let mut lan_task = tokio::spawn(async move {
         crate::lan_door::run_lan_door_async(lan_root, lan_oauth, lan_shutdown).await
     });
 
-    let byo_root = journal_root.clone();
+    let byo_root = Arc::clone(&state);
     let byo_shutdown = stopped.clone();
     let mut byo_task =
         tokio::spawn(
-            async move { crate::byo_door::run_byo_door_async(byo_root, byo_shutdown).await },
+            async move { crate::byo_door::run_byo_door_at_root(byo_root, byo_shutdown).await },
         );
-    let local = run_local_door_loop(&journal_root, run, stopped);
+    let local = run_local_door_loop_at_root(Arc::clone(&state), run, stopped);
     tokio::pin!(local);
     let mut lan_done = None;
     let mut byo_done = None;
@@ -222,30 +229,27 @@ async fn run_direct_doors(
         Some(result) => result,
         None => byo_task.await,
     };
-    write_local_door_state(&journal_root, false, Some("not_running"));
-    crate::lan_door::write_lan_door_state(&journal_root, false, Some("not_running"), None, None);
-    crate::byo_door::write_byo_door_state(
-        &journal_root,
-        &crate::byo_door::ByoDoorState {
-            hostname: None,
-            enabled: false,
-            generation: 0,
-            account_uri: None,
-            caa: None,
-            dns_verdict: None,
-            dns_observed_at: None,
-            socket_listening: false,
-            certificate_active: false,
-            socket_path: None,
-            socket_blocker: None,
-            next_action: None,
-            relay_state: "none".to_string(),
-            relay_detail: None,
-            relay_observed_at: None,
-            dns_addresses: Vec::new(),
-            observed_at: chrono::Utc::now(),
-        },
-    );
+    write_terminal_local_state(&state);
+    crate::lan_door::write_terminal_lan_state(&state);
+    state.publish_byo(&crate::byo_door::ByoDoorState {
+        hostname: None,
+        enabled: false,
+        generation: 0,
+        account_uri: None,
+        caa: None,
+        dns_verdict: None,
+        dns_observed_at: None,
+        socket_listening: false,
+        certificate_active: false,
+        socket_path: None,
+        socket_blocker: None,
+        next_action: None,
+        relay_state: "none".to_string(),
+        relay_detail: None,
+        relay_observed_at: None,
+        dns_addresses: Vec::new(),
+        observed_at: chrono::Utc::now(),
+    });
     if !matches!(lan_result, Ok(Ok(()))) || !matches!(byo_result, Ok(Ok(()))) {
         return Err(McpServiceError::Listener);
     }
@@ -304,8 +308,18 @@ struct ActiveListener {
 pub async fn run_local_door_loop(
     journal_root: &Path,
     run: LocalDoorRun,
+    shutdown_receive: watch::Receiver<bool>,
+) -> Result<(), McpServiceError> {
+    let root = Arc::new(JournalRoot::open(journal_root).map_err(|_| McpServiceError::Bootstrap)?);
+    run_local_door_loop_at_root(Arc::new(DoorStateWriter::new(root)), run, shutdown_receive).await
+}
+
+async fn run_local_door_loop_at_root(
+    state: Arc<DoorStateWriter>,
+    run: LocalDoorRun,
     mut shutdown_receive: watch::Receiver<bool>,
 ) -> Result<(), McpServiceError> {
+    let journal_root = state.root().canonical_path();
     let mut active_listener: Option<ActiveListener> = None;
     let sessions = Arc::new(SessionTable::new());
     let permits = Arc::new(Semaphore::new(run.connection_permits));
@@ -349,7 +363,7 @@ pub async fn run_local_door_loop(
                     if current_state.as_ref() != Some(&new_snapshot)
                         || last_write_at.elapsed() >= run.rewrite_interval
                     {
-                        write_local_door_state(journal_root, false, Some("config_unreadable"));
+                        write_local_state_at_root(&state, false, Some("config_unreadable"));
                         current_state = Some(new_snapshot);
                         last_write_at = Instant::now();
                     }
@@ -379,7 +393,7 @@ pub async fn run_local_door_loop(
                 if current_state.as_ref() != Some(&new_snapshot)
                     || last_write_at.elapsed() >= run.rewrite_interval
                 {
-                    write_local_door_state(journal_root, false, Some("disabled"));
+                    write_local_state_at_root(&state, false, Some("disabled"));
                     current_state = Some(new_snapshot);
                     last_write_at = Instant::now();
                 }
@@ -393,7 +407,7 @@ pub async fn run_local_door_loop(
                 if current_state.as_ref() != Some(&new_snapshot)
                     || last_write_at.elapsed() >= run.rewrite_interval
                 {
-                    write_local_door_state(journal_root, false, Some("config_invalid"));
+                    write_local_state_at_root(&state, false, Some("config_invalid"));
                     current_state = Some(new_snapshot);
                     last_write_at = Instant::now();
                 }
@@ -405,7 +419,7 @@ pub async fn run_local_door_loop(
                         let active = active_listener.take().unwrap();
                         drop(active._period_shutdown_send);
                         let _ = active.accept_task.await;
-                        write_local_door_state(journal_root, false, Some("not_running"));
+                        write_local_state_at_root(&state, false, Some("not_running"));
                         current_state = Some((false, Some("not_running".to_owned())));
                         last_write_at = Instant::now();
                         next_bind_attempt = Instant::now() + run.bind_retry_interval;
@@ -415,7 +429,7 @@ pub async fn run_local_door_loop(
                         if current_state.as_ref() != Some(&new_snapshot)
                             || last_write_at.elapsed() >= run.rewrite_interval
                         {
-                            write_local_door_state(journal_root, true, None);
+                            write_local_state_at_root(&state, true, None);
                             current_state = Some(new_snapshot);
                             last_write_at = Instant::now();
                         }
@@ -427,7 +441,7 @@ pub async fn run_local_door_loop(
                         // another process can bind 7659 while this journal is down and show a lookalike consent page. A code made for this door works only here, so a code typed into that page opens nothing anywhere else, and the agents app says the address is taken.
                         match bind_loopback(run.port).await {
                             Ok(listeners) => {
-                                write_local_door_state(journal_root, true, None);
+                                write_local_state_at_root(&state, true, None);
                                 current_state = Some((true, None));
                                 last_write_at = Instant::now();
                                 let (period_send, period_receive) = watch::channel(false);
@@ -465,7 +479,7 @@ pub async fn run_local_door_loop(
                                 } else {
                                     "bind_failed"
                                 };
-                                write_local_door_state(journal_root, false, Some(reason));
+                                write_local_state_at_root(&state, false, Some(reason));
                                 current_state = Some((false, Some(reason.to_owned())));
                                 last_write_at = Instant::now();
                                 next_bind_attempt = Instant::now() + run.bind_retry_interval;
@@ -474,7 +488,7 @@ pub async fn run_local_door_loop(
                     } else if last_write_at.elapsed() >= run.rewrite_interval {
                         // Rewrite state during retry wait
                         if let Some((listening, reason)) = &current_state {
-                            write_local_door_state(journal_root, *listening, reason.as_deref());
+                            write_local_state_at_root(&state, *listening, reason.as_deref());
                             last_write_at = Instant::now();
                         }
                     }
@@ -506,8 +520,20 @@ pub async fn run_local_door_loop(
         drop(active._period_shutdown_send);
         let _ = active.accept_task.await;
     }
-    write_local_door_state(journal_root, false, Some("not_running"));
+    write_terminal_local_state(&state);
     Ok(())
+}
+
+fn write_terminal_local_state(state: &DoorStateWriter) {
+    write_local_state_at_root(state, false, Some("not_running"));
+}
+
+fn write_local_state_at_root(state: &DoorStateWriter, listening: bool, reason: Option<&str>) {
+    state.publish_local(&LocalDoorState {
+        listening,
+        observed_at: Utc::now(),
+        reason: reason.map(str::to_owned),
+    });
 }
 
 async fn run_accept_loop(
@@ -808,10 +834,27 @@ mod full_tests {
     }
 
     #[tokio::test]
+    async fn cli_root_refusal_starts_no_signal_or_parent_helper_tasks() {
+        let temporary = TempDir::new_in(crate::test_scratch()).unwrap();
+        let missing = temporary.path().join("absent");
+        let metrics = tokio::runtime::Handle::current().metrics();
+        let baseline = metrics.num_alive_tasks();
+        let result = run_local_door_async(missing.clone(), LocalDoorRun::production(), None).await;
+        assert_eq!(result, Err(McpServiceError::Bootstrap));
+        tokio::task::yield_now().await;
+        assert_eq!(
+            metrics.num_alive_tasks(),
+            baseline,
+            "refused CLI entry left a helper task on its caller's runtime"
+        );
+        assert!(!missing.exists());
+    }
+
+    #[tokio::test]
     async fn embedded_direct_doors_respect_an_already_closed_lifetime() {
         let temp = TempDir::new_in(crate::test_scratch()).unwrap();
         let (stop, stopped) = watch::channel(true);
-        run_embedded_direct_doors(temp.path().to_path_buf(), stopped)
+        run_embedded_direct_doors(Arc::new(JournalRoot::open(temp.path()).unwrap()), stopped)
             .await
             .unwrap();
         assert_eq!(fs::read_dir(temp.path()).unwrap().count(), 0);
@@ -819,7 +862,7 @@ mod full_tests {
         drop(stop);
         let (stop, stopped) = watch::channel(false);
         drop(stop);
-        run_embedded_direct_doors(temp.path().to_path_buf(), stopped)
+        run_embedded_direct_doors(Arc::new(JournalRoot::open(temp.path()).unwrap()), stopped)
             .await
             .unwrap();
         assert_eq!(fs::read_dir(temp.path()).unwrap().count(), 0);
@@ -840,7 +883,11 @@ mod full_tests {
         let (_stop, stopped) = watch::channel(false);
         let result = tokio::time::timeout(
             Duration::from_secs(5),
-            run_direct_doors(temp.path().to_path_buf(), run, stopped),
+            run_direct_doors(
+                Arc::new(JournalRoot::open(temp.path()).unwrap()),
+                run,
+                stopped,
+            ),
         )
         .await
         .expect("a failed child must stop the whole direct service");
@@ -879,7 +926,11 @@ mod full_tests {
 
         let (shutdown_send, shutdown_receive) = watch::channel(false);
         let root_clone = journal_root.clone();
-        let server_task = tokio::spawn(run_direct_doors(root_clone, run, shutdown_receive));
+        let server_task = tokio::spawn(run_direct_doors(
+            Arc::new(JournalRoot::open(&root_clone).unwrap()),
+            run,
+            shutdown_receive,
+        ));
 
         // Wait for door to start listening
         for _ in 0..50 {

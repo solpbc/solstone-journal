@@ -7,7 +7,7 @@ use std::future::Future;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::PathBuf;
 use std::pin::Pin;
-use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU16, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
 use std::time::Duration;
@@ -57,6 +57,8 @@ use solstone_core_system::direct_door::{
 use crate::relay_admission::{RelayAdmissionClaim, RelayAdmissionRegistry, RelayNonceIdentity};
 use crate::session::{SessionState, classify_session};
 use crate::{DoorOutcome, DoorWithheldReason};
+
+mod recovery;
 
 const MAX_CONCURRENT_STREAMS: usize = 16;
 const AUTHORIZATION_REFRESH_INTERVAL: Duration = Duration::from_millis(500);
@@ -123,12 +125,16 @@ pub(super) struct DoorStart {
     pub outcome: DoorOutcome,
     pub refresh_task: Option<tokio::task::JoinHandle<()>>,
     pub accept_task: Option<tokio::task::JoinHandle<()>>,
+    network_carriers: Option<Arc<recovery::Carriers>>,
     pub pairing_reaper_task: Option<tokio::task::JoinHandle<()>>,
     pub pairing_cap_refusals: Option<Arc<AtomicU64>>,
 }
 
 impl DoorStart {
     fn abort(&self) {
+        if let Some(carriers) = &self.network_carriers {
+            carriers.request_stop();
+        }
         if let Some(task) = &self.refresh_task {
             task.abort();
         }
@@ -140,14 +146,22 @@ impl DoorStart {
         }
     }
 
-    /// Abort, then wait for the accept task to finish so its listener (and the
-    /// network carriers it owns) are gone before the port is bound again.
+    /// Stop admission and join the listener, workers, and accepted network
+    /// carriers before the port or restored identity is used again.
     async fn retire(mut self) {
         self.abort();
-        if let Some(task) = self.accept_task.take() {
-            match task.await {
-                Ok(()) | Err(_) => {}
-            }
+        for task in [
+            self.accept_task.take(),
+            self.refresh_task.take(),
+            self.pairing_reaper_task.take(),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            let _ = task.await;
+        }
+        if let Some(carriers) = self.network_carriers.take() {
+            carriers.stop_and_join().await;
         }
     }
 }
@@ -160,6 +174,10 @@ pub(super) struct DoorLifecycle {
     parts: DoorStartParts,
     running: Mutex<Option<DoorStart>>,
     stopped: AtomicBool,
+    recovery_paused: AtomicBool,
+    selected_port: AtomicU16,
+    loopback_carriers: Arc<recovery::Carriers>,
+    target_use: solstone_core_journal_io::whole_journal_restore::TargetUseOwner,
     rebinding: AsyncMutex<()>,
 }
 
@@ -210,10 +228,18 @@ impl DoorStartParts {
 
 impl DoorLifecycle {
     pub(super) fn new(options: DoorStartOptions) -> Self {
+        let selected_port = AtomicU16::new(options.port);
+        let target_use = solstone_core_journal_io::whole_journal_restore::TargetUseOwner::new(
+            &options.journal_root,
+        );
         Self {
             parts: DoorStartParts::from_options(options),
             running: Mutex::new(None),
             stopped: AtomicBool::new(false),
+            recovery_paused: AtomicBool::new(false),
+            selected_port,
+            loopback_carriers: Arc::new(recovery::Carriers::new()),
+            target_use,
             rebinding: AsyncMutex::new(()),
         }
     }
@@ -241,16 +267,20 @@ impl DoorLifecycle {
     /// bridge) carry on.
     pub(crate) async fn rebind(&self) -> bool {
         let _rebinding = self.rebinding.lock().await;
-        if self.stopped.load(Ordering::Acquire) {
+        if self.stopped.load(Ordering::Acquire) || self.recovery_paused.load(Ordering::Acquire) {
             return false;
         }
+        let Ok(_target_use) = self.target_use.begin() else {
+            return false;
+        };
         let previous = self.running.lock().expect("door lifecycle lock").take();
         if let Some(previous) = previous {
             previous.retire().await;
         }
         self.parts.relay_admissions.clear_door_port();
-        let started = start(self.parts.to_options()).await;
-        let ok = self.install_started(started);
+        let started =
+            start_with_carriers(self.parts.to_options(), Arc::clone(&self.loopback_carriers)).await;
+        let ok = self.install_started(started).await;
         match self.clone_outcome() {
             Some(DoorOutcome::Bound(address)) => {
                 eprintln!("convey: paired-device door listening on {address}");
@@ -275,46 +305,53 @@ impl DoorLifecycle {
     }
 
     pub(super) async fn ensure_started(&self) -> bool {
-        if self.stopped.load(Ordering::Acquire) {
+        let _rebinding = self.rebinding.lock().await;
+        if self.stopped.load(Ordering::Acquire) || self.recovery_paused.load(Ordering::Acquire) {
             return false;
         }
+        let Ok(_target_use) = self.target_use.begin() else {
+            return false;
+        };
         if self.is_bound() {
             return !self.stopped.load(Ordering::Acquire);
         }
-        let started = start(self.parts.to_options()).await;
-        self.install_started(started)
+        let started =
+            start_with_carriers(self.parts.to_options(), Arc::clone(&self.loopback_carriers)).await;
+        self.install_started(started).await
     }
 
-    fn install_started(&self, started: DoorStart) -> bool {
-        let mut running = self.running.lock().expect("door lifecycle lock");
-        if self.stopped.load(Ordering::Acquire) {
-            started.abort();
-            self.parts.relay_admissions.clear_door_port();
-            return false;
-        }
-        if running
-            .as_ref()
-            .is_some_and(|current| matches!(&current.outcome, DoorOutcome::Bound(_)))
-        {
-            started.abort();
-            return true;
-        }
-        let ok = matches!(started.outcome, DoorOutcome::Bound(_));
-        if ok || running.is_none() {
-            if let Some(previous) = running.take() {
-                previous.abort();
-            }
-            if let DoorOutcome::Bound(address) = &started.outcome {
-                self.parts.relay_admissions.set_door_port(address.port());
-            } else {
+    async fn install_started(&self, started: DoorStart) -> bool {
+        let (ok, retired) = {
+            let mut running = self.running.lock().expect("door lifecycle lock");
+            if self.stopped.load(Ordering::Acquire) || self.recovery_paused.load(Ordering::Acquire)
+            {
+                self.loopback_carriers.request_stop();
                 self.parts.relay_admissions.clear_door_port();
+                (false, Some(started))
+            } else if running
+                .as_ref()
+                .is_some_and(|current| matches!(&current.outcome, DoorOutcome::Bound(_)))
+            {
+                (true, Some(started))
+            } else {
+                let ok = matches!(started.outcome, DoorOutcome::Bound(_));
+                if ok || running.is_none() {
+                    if let DoorOutcome::Bound(address) = &started.outcome {
+                        self.selected_port.store(address.port(), Ordering::Release);
+                        self.parts.relay_admissions.set_door_port(address.port());
+                    } else {
+                        self.parts.relay_admissions.clear_door_port();
+                    }
+                    (ok, running.replace(started))
+                } else {
+                    (false, Some(started))
+                }
             }
-            *running = Some(started);
-            ok
-        } else {
-            started.abort();
-            false
+        };
+        if let Some(retired) = retired {
+            retired.retire().await;
         }
+        ok
     }
 
     pub(super) fn is_bound(&self) -> bool {
@@ -399,6 +436,7 @@ impl DoorLifecycle {
 
     pub(super) fn shutdown(&self) {
         self.stopped.store(true, Ordering::Release);
+        self.loopback_carriers.request_stop();
         let running = self.running.lock().expect("door lifecycle lock");
         if let Some(current) = running.as_ref() {
             current.abort();
@@ -453,6 +491,11 @@ pub(super) async fn open_after_finalize(
     };
     let response = next.run(request).await;
     if !is_finalize || !response.status().is_success() {
+        return response;
+    }
+    if solstone_core_journal_io::whole_journal_restore::whole_journal_restore_blocks(
+        door.journal_root(),
+    ) {
         return response;
     }
     if door.ensure_started().await {
@@ -748,7 +791,10 @@ impl ClientCertVerifier for DoorIdentityVerifier {
     }
 }
 
-pub(super) async fn start(options: DoorStartOptions) -> DoorStart {
+async fn start_with_carriers(
+    options: DoorStartOptions,
+    loopback_carriers: Arc<recovery::Carriers>,
+) -> DoorStart {
     let withheld = match classify_session(&options.journal_root) {
         SessionState::Established => None,
         SessionState::Unestablished => Some(DoorWithheldReason::Unestablished),
@@ -759,6 +805,7 @@ pub(super) async fn start(options: DoorStartOptions) -> DoorStart {
             outcome: DoorOutcome::Withheld(reason),
             refresh_task: None,
             accept_task: None,
+            network_carriers: None,
             pairing_reaper_task: None,
             pairing_cap_refusals: None,
         };
@@ -771,6 +818,7 @@ pub(super) async fn start(options: DoorStartOptions) -> DoorStart {
                 outcome: DoorOutcome::Withheld(DoorWithheldReason::CommittedIdentityUnavailable),
                 refresh_task: None,
                 accept_task: None,
+                network_carriers: None,
                 pairing_reaper_task: None,
                 pairing_cap_refusals: None,
             };
@@ -799,6 +847,7 @@ pub(super) async fn start(options: DoorStartOptions) -> DoorStart {
                 },
                 refresh_task: None,
                 accept_task: None,
+                network_carriers: None,
                 pairing_reaper_task: None,
                 pairing_cap_refusals: None,
             };
@@ -818,6 +867,7 @@ pub(super) async fn start(options: DoorStartOptions) -> DoorStart {
                 },
                 refresh_task: None,
                 accept_task: None,
+                network_carriers: None,
                 pairing_reaper_task: None,
                 pairing_cap_refusals: None,
             };
@@ -838,6 +888,7 @@ pub(super) async fn start(options: DoorStartOptions) -> DoorStart {
                     },
                     refresh_task: None,
                     accept_task: None,
+                    network_carriers: None,
                     pairing_reaper_task: None,
                     pairing_cap_refusals: None,
                 };
@@ -854,6 +905,7 @@ pub(super) async fn start(options: DoorStartOptions) -> DoorStart {
                 outcome: DoorOutcome::Withheld(DoorWithheldReason::CommittedIdentityUnavailable),
                 refresh_task: None,
                 accept_task: None,
+                network_carriers: None,
                 pairing_reaper_task: None,
                 pairing_cap_refusals: None,
             };
@@ -867,6 +919,7 @@ pub(super) async fn start(options: DoorStartOptions) -> DoorStart {
                 outcome: DoorOutcome::Withheld(DoorWithheldReason::CommittedIdentityUnavailable),
                 refresh_task: None,
                 accept_task: None,
+                network_carriers: None,
                 pairing_reaper_task: None,
                 pairing_cap_refusals: None,
             };
@@ -884,6 +937,7 @@ pub(super) async fn start(options: DoorStartOptions) -> DoorStart {
             outcome: DoorOutcome::Withheld(DoorWithheldReason::CommittedIdentityUnavailable),
             refresh_task: None,
             accept_task: None,
+            network_carriers: None,
             pairing_reaper_task: None,
             pairing_cap_refusals: None,
         };
@@ -902,6 +956,7 @@ pub(super) async fn start(options: DoorStartOptions) -> DoorStart {
                 outcome: DoorOutcome::Withheld(DoorWithheldReason::CommittedIdentityUnavailable),
                 refresh_task: None,
                 accept_task: None,
+                network_carriers: None,
                 pairing_reaper_task: None,
                 pairing_cap_refusals: None,
             };
@@ -936,17 +991,21 @@ pub(super) async fn start(options: DoorStartOptions) -> DoorStart {
         pairing_registry: pairing_registry.clone(),
         relay_admissions: options.relay_admissions,
     });
+    let network_carriers = Arc::new(recovery::Carriers::new());
     let accept_task = tokio::spawn(accept_loop(
         listener,
         loopback_listener,
         options.router,
         config,
         options.stream_stall_timeout,
+        loopback_carriers,
+        Arc::clone(&network_carriers),
     ));
     DoorStart {
         outcome: DoorOutcome::Bound(bound),
         refresh_task: Some(refresh_task),
         accept_task: Some(accept_task),
+        network_carriers: Some(network_carriers),
         pairing_reaper_task: Some(pairing_reaper_task),
         pairing_cap_refusals: Some(pairing_registry.cap_refusals()),
     }
@@ -1083,11 +1142,11 @@ async fn accept_loop(
     router: Router,
     config: Arc<DoorConnectionConfig>,
     stream_stall_timeout: Duration,
+    loopback_carriers: Arc<recovery::Carriers>,
+    network_carriers: Arc<recovery::Carriers>,
 ) {
-    // Carriers from the network belong to this listener and end with it, so
-    // closing the door to the network closes them too. Loopback carriers (this
-    // computer and the relay bridge) are detached and survive a rebind.
-    let mut network_carriers = tokio::task::JoinSet::new();
+    // Network carriers retire with this listener. Loopback carriers survive an
+    // ordinary rebind, and are joined separately for recovery or owner Stop.
     loop {
         let accepted = tokio::select! {
             accepted = listener.accept() => accepted,
@@ -1097,7 +1156,6 @@ async fn accept_loop(
                     None => std::future::pending().await,
                 }
             } => accepted,
-            Some(_) = network_carriers.join_next(), if !network_carriers.is_empty() => continue,
         };
         let Ok((stream, peer)) = accepted else {
             continue;
@@ -1108,7 +1166,7 @@ async fn accept_loop(
             serve_carrier(stream, Some(peer), router, config, stream_stall_timeout).await
         };
         if peer.ip().is_loopback() {
-            tokio::spawn(carrier);
+            loopback_carriers.spawn(carrier);
         } else {
             network_carriers.spawn(carrier);
         }
@@ -1833,8 +1891,8 @@ mod tests {
         assert_eq!(MAX_PAIRING_CARRIERS * per_carrier, 201_326_620);
     }
 
-    #[test]
-    fn completed_start_cannot_publish_after_shutdown() {
+    #[tokio::test]
+    async fn completed_start_cannot_publish_after_shutdown() {
         let (authorization_sender, _) = watch::channel(DeviceDoorAuthorization::from(
             AuthorizedClientsRead::Missing,
         ));
@@ -1853,19 +1911,24 @@ mod tests {
         });
         lifecycle.shutdown();
 
-        assert!(!lifecycle.install_started(DoorStart {
-            outcome: DoorOutcome::Bound("127.0.0.1:47657".parse().expect("Door address")),
-            refresh_task: None,
-            accept_task: None,
-            pairing_reaper_task: None,
-            pairing_cap_refusals: None,
-        }));
+        assert!(
+            !lifecycle
+                .install_started(DoorStart {
+                    outcome: DoorOutcome::Bound("127.0.0.1:47657".parse().expect("Door address")),
+                    refresh_task: None,
+                    accept_task: None,
+                    network_carriers: None,
+                    pairing_reaper_task: None,
+                    pairing_cap_refusals: None,
+                })
+                .await
+        );
         assert_eq!(lifecycle.bound_addr(), None);
         assert_eq!(relay_admissions.door_availability(), None);
     }
 
-    #[test]
-    fn door_opened_after_finalize_republishes_the_record_boot_left_withheld() {
+    #[tokio::test]
+    async fn door_opened_after_finalize_republishes_the_record_boot_left_withheld() {
         let journal = tempfile::TempDir::new_in("/var/tmp").expect("temporary journal creates");
         let port = 47659;
         solstone_core_system::direct_door::initialize_direct_door(journal.path(), port)
@@ -1892,13 +1955,20 @@ mod tests {
         };
         assert_eq!(read_state()["state"], "withheld");
 
-        assert!(lifecycle.install_started(DoorStart {
-            outcome: DoorOutcome::Bound(format!("127.0.0.1:{port}").parse().expect("Door address")),
-            refresh_task: None,
-            accept_task: None,
-            pairing_reaper_task: None,
-            pairing_cap_refusals: None,
-        }));
+        assert!(
+            lifecycle
+                .install_started(DoorStart {
+                    outcome: DoorOutcome::Bound(
+                        format!("127.0.0.1:{port}").parse().expect("Door address")
+                    ),
+                    refresh_task: None,
+                    accept_task: None,
+                    network_carriers: None,
+                    pairing_reaper_task: None,
+                    pairing_cap_refusals: None,
+                })
+                .await
+        );
         // Installing the running door does not touch the record; publishing does.
         assert_eq!(read_state()["state"], "withheld");
         assert_eq!(
@@ -1910,8 +1980,8 @@ mod tests {
         assert_eq!(after["port"], port);
     }
 
-    #[test]
-    fn losing_concurrent_start_does_not_advance_the_running_door_generation() {
+    #[tokio::test]
+    async fn losing_concurrent_start_does_not_advance_the_running_door_generation() {
         let (authorization_sender, _) = watch::channel(DeviceDoorAuthorization::from(
             AuthorizedClientsRead::Missing,
         ));
@@ -1929,24 +1999,36 @@ mod tests {
             relay_admissions: Arc::clone(&relay_admissions),
         });
         let first_address = "127.0.0.1:47657".parse().expect("first Door address");
-        assert!(lifecycle.install_started(DoorStart {
-            outcome: DoorOutcome::Bound(first_address),
-            refresh_task: None,
-            accept_task: None,
-            pairing_reaper_task: None,
-            pairing_cap_refusals: None,
-        }));
+        assert!(
+            lifecycle
+                .install_started(DoorStart {
+                    outcome: DoorOutcome::Bound(first_address),
+                    refresh_task: None,
+                    accept_task: None,
+                    network_carriers: None,
+                    pairing_reaper_task: None,
+                    pairing_cap_refusals: None,
+                })
+                .await
+        );
         let first_generation = relay_admissions
             .door_availability()
             .expect("first Door generation");
 
-        assert!(lifecycle.install_started(DoorStart {
-            outcome: DoorOutcome::Bound("127.0.0.1:47658".parse().expect("losing Door address")),
-            refresh_task: None,
-            accept_task: None,
-            pairing_reaper_task: None,
-            pairing_cap_refusals: None,
-        }));
+        assert!(
+            lifecycle
+                .install_started(DoorStart {
+                    outcome: DoorOutcome::Bound(
+                        "127.0.0.1:47658".parse().expect("losing Door address")
+                    ),
+                    refresh_task: None,
+                    accept_task: None,
+                    network_carriers: None,
+                    pairing_reaper_task: None,
+                    pairing_cap_refusals: None,
+                })
+                .await
+        );
 
         assert_eq!(lifecycle.bound_addr(), Some(first_address));
         assert!(relay_admissions.is_current(first_generation));

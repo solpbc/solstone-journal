@@ -112,7 +112,7 @@ pub struct ResolutionSeams<A, C, D, M, L, T> {
     pub model_detector: M,
     /// Called only for non-dry generic deduplication; `None` means no previous manifest.
     pub manifest_lookup: L,
-    /// Called only for a selected registry source missing an explicit timestamp.
+    /// Called only for a selected registry source missing an explicit or fallback timestamp.
     pub generated_timestamp: T,
 }
 
@@ -293,7 +293,10 @@ where
             },
         }
     } else if selected.is_some() {
-        (seams.generated_timestamp)()
+        match options.fallback_timestamp {
+            Some(raw) => validate(raw)?,
+            None => (seams.generated_timestamp)(),
+        }
     } else {
         let detected = (seams.deterministic_detector)(
             options.media,

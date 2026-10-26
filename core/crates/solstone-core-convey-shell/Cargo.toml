@@ -230,6 +230,9 @@ nix = { workspace = true, features = ["signal"] }
 serde_json.workspace = true
 
 [dev-dependencies]
+solstone-core-cortex.workspace = true
+solstone-core-generate.workspace = true
+axum = { workspace = true, features = ["tokio", "http1"] }
 jsonschema.workspace = true
 filetime = "0.2.29"
 futures-util = { version = "0.3.33", default-features = false, features = ["sink", "std"] }

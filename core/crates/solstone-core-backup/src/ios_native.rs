@@ -20,19 +20,22 @@ const ADD_RECOVERY_KEY: i32 = 3;
 const SNAPSHOT: i32 = 4;
 const RESTORE: i32 = 6;
 const REMOVE_KEY: i32 = 10;
+const ARCHIVE_SOURCES: i32 = 20;
+const LIST_NODES: i32 = 21;
+const READ_FILE: i32 = 22;
 const CAP_EXCEEDED: i32 = 5;
 const MAX_METADATA: u32 = 4 * 1024 * 1024;
 static DRAIN_FAILED: AtomicBool = AtomicBool::new(false);
 
 #[repr(C)]
 #[derive(Clone, Copy)]
-pub(super) struct Bytes {
-    pub(super) pointer: *const c_char,
-    pub(super) length: u32,
+pub struct Bytes {
+    pub pointer: *const c_char,
+    pub length: u32,
 }
 
 impl Bytes {
-    pub(super) fn new(value: &[u8]) -> Result<Self, i32> {
+    pub fn new(value: &[u8]) -> Result<Self, i32> {
         Ok(Self {
             pointer: value.as_ptr().cast(),
             length: value.len().try_into().map_err(|_| CAP_EXCEEDED)?,
@@ -41,39 +44,39 @@ impl Bytes {
 }
 
 #[repr(C)]
-pub(super) struct LocalRequest {
-    pub(super) operation: i32,
-    pub(super) password: Bytes,
-    pub(super) recovery_password: Bytes,
-    pub(super) repository: Bytes,
-    pub(super) source: Bytes,
-    pub(super) restore: Bytes,
-    pub(super) snapshot: Bytes,
+pub struct LocalRequest {
+    pub operation: i32,
+    pub password: Bytes,
+    pub recovery_password: Bytes,
+    pub repository: Bytes,
+    pub source: Bytes,
+    pub restore: Bytes,
+    pub snapshot: Bytes,
 }
 
 #[repr(C)]
-pub(super) struct RemoteRequest {
-    pub(super) version: u32,
-    pub(super) operation: i32,
-    pub(super) endpoint: Bytes,
-    pub(super) region: Bytes,
-    pub(super) bucket: Bytes,
-    pub(super) prefix: Bytes,
-    pub(super) access: Bytes,
-    pub(super) secret: Bytes,
-    pub(super) token: Bytes,
-    pub(super) password: Bytes,
-    pub(super) recovery_password: Bytes,
-    pub(super) state: Bytes,
-    pub(super) source: Bytes,
-    pub(super) restore: Bytes,
-    pub(super) snapshot: Bytes,
-    pub(super) workspace: Bytes,
+pub struct RemoteRequest {
+    pub version: u32,
+    pub operation: i32,
+    pub endpoint: Bytes,
+    pub region: Bytes,
+    pub bucket: Bytes,
+    pub prefix: Bytes,
+    pub access: Bytes,
+    pub secret: Bytes,
+    pub token: Bytes,
+    pub password: Bytes,
+    pub recovery_password: Bytes,
+    pub state: Bytes,
+    pub source: Bytes,
+    pub restore: Bytes,
+    pub snapshot: Bytes,
+    pub workspace: Bytes,
 }
 
 #[derive(Clone, Copy)]
 #[repr(C)]
-pub(super) struct Options {
+pub struct Options {
     pub version: u32,
     pub check_read_mode: u32,
     pub retry_lock_ms: u64,
@@ -84,7 +87,7 @@ pub(super) struct Options {
 }
 
 #[repr(C)]
-pub(super) struct ResultFields {
+pub struct ResultFields {
     pub status: i32,
     pub key_id: [u8; 65],
     pub snapshot_id: [u8; 65],
@@ -168,7 +171,7 @@ unsafe extern "C" {
         out: *mut u64,
     ) -> i32;
     fn restic_bridge_free(id: u64) -> i32;
-    pub(super) fn restic_bridge_teardown_v1_start(
+    pub fn restic_bridge_teardown_v1_start(
         local: *const LocalRequest,
         remote: *const RemoteRequest,
         options: *const Options,
@@ -179,7 +182,71 @@ unsafe extern "C" {
         admission_len: u32,
         out_id: *mut u64,
     ) -> i32;
-    pub(crate) fn restic_bridge_http_exchange(
+    fn restic_bridge_archive_sources_v1_start(
+        version: u32,
+        password: *const c_char,
+        password_len: u32,
+        repo_path: *const c_char,
+        repo_path_len: u32,
+        logical_root: *const c_char,
+        logical_root_len: u32,
+        source_fd: i32,
+        names_json: *const c_char,
+        names_len: u32,
+        out_id: *mut u64,
+    ) -> i32;
+    fn restic_bridge_list_nodes_v1_start(
+        version: u32,
+        password: *const c_char,
+        password_len: u32,
+        repo_path: *const c_char,
+        repo_path_len: u32,
+        snapshot_id: *const c_char,
+        snapshot_len: u32,
+        out_id: *mut u64,
+    ) -> i32;
+    fn restic_bridge_download_exact_v1_start(
+        version: u32,
+        password: *const c_char,
+        password_len: u32,
+        repo_path: *const c_char,
+        repo_path_len: u32,
+        snapshot_id: *const c_char,
+        snapshot_len: u32,
+        node_path: *const c_char,
+        node_path_len: u32,
+        target_fd: i32,
+        size_bound: u64,
+        out_id: *mut u64,
+    ) -> i32;
+    fn restic_bridge_s3_archive_sources_v1_start(
+        request: *const RemoteRequest,
+        state_fd: i32,
+        source_fd: i32,
+        logical_root: *const c_char,
+        logical_root_len: u32,
+        names_json: *const c_char,
+        names_len: u32,
+        append_only: u32,
+        out_id: *mut u64,
+    ) -> i32;
+    fn restic_bridge_s3_list_nodes_v1_start(
+        request: *const RemoteRequest,
+        state_fd: i32,
+        append_only: u32,
+        out_id: *mut u64,
+    ) -> i32;
+    fn restic_bridge_s3_download_exact_v1_start(
+        request: *const RemoteRequest,
+        state_fd: i32,
+        target_fd: i32,
+        node_path: *const c_char,
+        node_path_len: u32,
+        size_bound: u64,
+        append_only: u32,
+        out_id: *mut u64,
+    ) -> i32;
+    pub fn restic_bridge_http_exchange(
         method: *const c_char,
         method_len: u32,
         url_str: *const c_char,
@@ -207,7 +274,7 @@ mod unlinked {
     use super::{INVALID_ARGUMENT, LocalRequest, Options, RemoteRequest, ResultFields};
     use std::ffi::c_char;
 
-    pub(super) unsafe fn restic_bridge_operation_directories_v1_start(
+    pub unsafe fn restic_bridge_operation_directories_v1_start(
         _: *const LocalRequest,
         _: *const Options,
         _: i32,
@@ -220,7 +287,7 @@ mod unlinked {
     ) -> i32 {
         INVALID_ARGUMENT
     }
-    pub(super) unsafe fn restic_bridge_s3_operation_directories_v1_start(
+    pub unsafe fn restic_bridge_s3_operation_directories_v1_start(
         _: *const RemoteRequest,
         _: *const Options,
         _: i32,
@@ -232,7 +299,7 @@ mod unlinked {
     ) -> i32 {
         INVALID_ARGUMENT
     }
-    pub(super) unsafe fn restic_bridge_target_admit_v1(
+    pub unsafe fn restic_bridge_target_admit_v1(
         _: u32,
         _: i32,
         _: *const c_char,
@@ -241,13 +308,13 @@ mod unlinked {
     ) -> i32 {
         INVALID_ARGUMENT
     }
-    pub(super) unsafe fn restic_bridge_target_revalidate_v1(_: u32, _: u64) -> i32 {
+    pub unsafe fn restic_bridge_target_revalidate_v1(_: u32, _: u64) -> i32 {
         INVALID_ARGUMENT
     }
-    pub(super) unsafe fn restic_bridge_target_release_v1(_: u32, _: u64) -> i32 {
+    pub unsafe fn restic_bridge_target_release_v1(_: u32, _: u64) -> i32 {
         INVALID_ARGUMENT
     }
-    pub(super) unsafe fn restic_bridge_s3_restore_admitted_v1_start(
+    pub unsafe fn restic_bridge_s3_restore_admitted_v1_start(
         _: *const RemoteRequest,
         _: u64,
         _: *const c_char,
@@ -256,13 +323,13 @@ mod unlinked {
     ) -> i32 {
         INVALID_ARGUMENT
     }
-    pub(super) unsafe fn restic_bridge_cancel(_: u64) -> i32 {
+    pub unsafe fn restic_bridge_cancel(_: u64) -> i32 {
         INVALID_ARGUMENT
     }
-    pub(super) unsafe fn restic_bridge_wait(_: u64, _: *mut ResultFields) -> i32 {
+    pub unsafe fn restic_bridge_wait(_: u64, _: *mut ResultFields) -> i32 {
         INVALID_ARGUMENT
     }
-    pub(super) unsafe fn restic_bridge_result_metadata(
+    pub unsafe fn restic_bridge_result_metadata(
         _: u64,
         _: *mut c_char,
         _: u32,
@@ -270,7 +337,7 @@ mod unlinked {
     ) -> i32 {
         INVALID_ARGUMENT
     }
-    pub(super) unsafe fn restic_bridge_remove_recovery_key_v1_start(
+    pub unsafe fn restic_bridge_remove_recovery_key_v1_start(
         _: *const LocalRequest,
         _: *const Options,
         _: *const c_char,
@@ -280,7 +347,7 @@ mod unlinked {
     ) -> i32 {
         INVALID_ARGUMENT
     }
-    pub(super) unsafe fn restic_bridge_s3_remove_recovery_key_v1_start(
+    pub unsafe fn restic_bridge_s3_remove_recovery_key_v1_start(
         _: *const RemoteRequest,
         _: *const Options,
         _: i32,
@@ -291,7 +358,7 @@ mod unlinked {
     ) -> i32 {
         INVALID_ARGUMENT
     }
-    pub(super) unsafe fn restic_bridge_s3_add_recovery_key_v1_start(
+    pub unsafe fn restic_bridge_s3_add_recovery_key_v1_start(
         _: *const RemoteRequest,
         _: *const Options,
         _: i32,
@@ -300,10 +367,10 @@ mod unlinked {
     ) -> i32 {
         INVALID_ARGUMENT
     }
-    pub(super) unsafe fn restic_bridge_free(_: u64) -> i32 {
+    pub unsafe fn restic_bridge_free(_: u64) -> i32 {
         INVALID_ARGUMENT
     }
-    pub(super) unsafe fn restic_bridge_teardown_v1_start(
+    pub unsafe fn restic_bridge_teardown_v1_start(
         _: *const LocalRequest,
         _: *const RemoteRequest,
         _: *const Options,
@@ -316,7 +383,83 @@ mod unlinked {
     ) -> i32 {
         INVALID_ARGUMENT
     }
-    pub(crate) unsafe fn restic_bridge_http_exchange(
+    pub unsafe fn restic_bridge_archive_sources_v1_start(
+        _: u32,
+        _: *const c_char,
+        _: u32,
+        _: *const c_char,
+        _: u32,
+        _: *const c_char,
+        _: u32,
+        _: i32,
+        _: *const c_char,
+        _: u32,
+        _: *mut u64,
+    ) -> i32 {
+        INVALID_ARGUMENT
+    }
+    pub unsafe fn restic_bridge_list_nodes_v1_start(
+        _: u32,
+        _: *const c_char,
+        _: u32,
+        _: *const c_char,
+        _: u32,
+        _: *const c_char,
+        _: u32,
+        _: *mut u64,
+    ) -> i32 {
+        INVALID_ARGUMENT
+    }
+    pub unsafe fn restic_bridge_download_exact_v1_start(
+        _: u32,
+        _: *const c_char,
+        _: u32,
+        _: *const c_char,
+        _: u32,
+        _: *const c_char,
+        _: u32,
+        _: *const c_char,
+        _: u32,
+        _: i32,
+        _: u64,
+        _: *mut u64,
+    ) -> i32 {
+        INVALID_ARGUMENT
+    }
+    pub unsafe fn restic_bridge_s3_archive_sources_v1_start(
+        _: *const RemoteRequest,
+        _: i32,
+        _: i32,
+        _: *const c_char,
+        _: u32,
+        _: *const c_char,
+        _: u32,
+        _: u32,
+        _: *mut u64,
+    ) -> i32 {
+        INVALID_ARGUMENT
+    }
+    pub unsafe fn restic_bridge_s3_list_nodes_v1_start(
+        _: *const RemoteRequest,
+        _: i32,
+        _: u32,
+        _: *mut u64,
+    ) -> i32 {
+        INVALID_ARGUMENT
+    }
+    pub unsafe fn restic_bridge_s3_download_exact_v1_start(
+        _: *const RemoteRequest,
+        _: i32,
+        _: i32,
+        _: *const c_char,
+        _: u32,
+        _: u64,
+        _: u32,
+        _: *mut u64,
+    ) -> i32 {
+        INVALID_ARGUMENT
+    }
+    pub unsafe fn restic_bridge_http_exchange(
         _: *const c_char,
         _: u32,
         _: *const c_char,
@@ -335,7 +478,7 @@ mod unlinked {
     }
 }
 
-pub(super) struct Remote<'a> {
+pub struct Remote<'a> {
     pub endpoint: &'a str,
     pub region: &'a str,
     pub bucket: &'a str,
@@ -348,7 +491,7 @@ pub(super) struct Remote<'a> {
 
 /// The parent borrows only its retained JournalRoot. Go captures this identity
 /// synchronously and owns its pinned source afterward; it never adopts this fd.
-pub(super) struct Source<'a> {
+pub struct Source<'a> {
     pub path: &'a str,
     pub descriptor: BorrowedFd<'a>,
 }
@@ -356,7 +499,7 @@ pub(super) struct Source<'a> {
 /// A path and the actual private directory retained by startup storage. Native
 /// entry copies its identity synchronously, with no transfer of fd ownership.
 #[derive(Clone, Copy)]
-pub(super) struct PrivateDirectory<'a> {
+pub struct PrivateDirectory<'a> {
     pub path: &'a str,
     pub descriptor: BorrowedFd<'a>,
 }
@@ -373,7 +516,7 @@ fn snapshot_directories<'a>(
             workspace.path,
             workspace.descriptor.as_raw_fd(),
         )),
-        (1 | 2 | 3 | 5 | 7 | 9, None, None) => Ok(("", -1, "", -1)),
+        (1 | 2 | 3 | 5 | 7 | 9 | 12, None, None) => Ok(("", -1, "", -1)),
         _ => Err(INVALID_ARGUMENT),
     }
 }
@@ -382,12 +525,12 @@ fn snapshot_directories<'a>(
 /// the target's activity lease from admission until release; an operation's
 /// wait/free never releases it. A refused admission that still names an owner
 /// keeps that cleanup custody in native code, so nothing here can reuse it.
-pub(super) struct Target {
+pub struct Target {
     id: u64,
 }
 
 impl Target {
-    pub(super) fn admit(descriptor: BorrowedFd<'_>, path: &str) -> Result<Self, i32> {
+    pub fn admit(descriptor: BorrowedFd<'_>, path: &str) -> Result<Self, i32> {
         let path = Bytes::new(path.as_bytes())?;
         let mut id = 0;
         let status = unsafe {
@@ -406,7 +549,7 @@ impl Target {
         }
     }
 
-    pub(super) fn revalidate(&self) -> Result<(), i32> {
+    pub fn revalidate(&self) -> Result<(), i32> {
         match unsafe { restic_bridge_target_revalidate_v1(1, self.id) } {
             OK => Ok(()),
             status => Err(status),
@@ -426,12 +569,12 @@ impl Drop for Target {
 
 /// A live handle keeps the caller's actual worker/lifetime stack until native
 /// wait and free complete. It never carries pointers into Rust request storage.
-pub(super) struct Call {
+pub struct Call {
     id: u64,
     began: Instant,
 }
 
-pub(super) struct Completed {
+pub struct Completed {
     pub fields: Box<ResultFields>,
     pub metadata: Result<Option<Vec<u8>>, i32>,
     pub cancellation_requested: bool,
@@ -439,7 +582,7 @@ pub(super) struct Completed {
     pub monitor_failed: bool,
 }
 
-pub(super) fn drain_failed() -> bool {
+pub fn drain_failed() -> bool {
     DRAIN_FAILED.load(Ordering::Acquire)
 }
 
@@ -461,9 +604,201 @@ fn result_storage() -> Box<ResultFields> {
     }
 }
 
+fn s3_request(
+    operation: i32,
+    password: &[u8],
+    remote: &Remote<'_>,
+    snapshot: &[u8],
+) -> Result<RemoteRequest, i32> {
+    Ok(RemoteRequest {
+        version: 1,
+        operation,
+        endpoint: Bytes::new(remote.endpoint.as_bytes())?,
+        region: Bytes::new(remote.region.as_bytes())?,
+        bucket: Bytes::new(remote.bucket.as_bytes())?,
+        prefix: Bytes::new(remote.prefix.as_bytes())?,
+        access: Bytes::new(remote.access)?,
+        secret: Bytes::new(remote.secret)?,
+        token: Bytes::new(remote.token)?,
+        password: Bytes::new(password)?,
+        recovery_password: Bytes::new(&[])?,
+        state: Bytes::new(remote.state.path.as_bytes())?,
+        source: Bytes::new(&[])?,
+        restore: Bytes::new(&[])?,
+        snapshot: Bytes::new(snapshot)?,
+        workspace: Bytes::new(&[])?,
+    })
+}
+
 impl Call {
+    pub fn handle(&self) -> u64 {
+        self.id
+    }
+
+    pub fn archive_local(
+        password: &[u8],
+        repository: &str,
+        logical_root: &str,
+        source: BorrowedFd<'_>,
+        names: &[u8],
+    ) -> Result<Self, i32> {
+        let began = Instant::now();
+        let password = Bytes::new(password)?;
+        let repository = Bytes::new(repository.as_bytes())?;
+        let logical_root = Bytes::new(logical_root.as_bytes())?;
+        let names = Bytes::new(names)?;
+        let mut id = 0;
+        let status = unsafe {
+            restic_bridge_archive_sources_v1_start(
+                1,
+                password.pointer,
+                password.length,
+                repository.pointer,
+                repository.length,
+                logical_root.pointer,
+                logical_root.length,
+                source.as_raw_fd(),
+                names.pointer,
+                names.length,
+                &mut id,
+            )
+        };
+        Self::published(id, status, began)
+    }
+
+    pub fn list_local(password: &[u8], repository: &str, snapshot_id: &str) -> Result<Self, i32> {
+        let began = Instant::now();
+        let password = Bytes::new(password)?;
+        let repository = Bytes::new(repository.as_bytes())?;
+        let snapshot_id = Bytes::new(snapshot_id.as_bytes())?;
+        let mut id = 0;
+        let status = unsafe {
+            restic_bridge_list_nodes_v1_start(
+                1,
+                password.pointer,
+                password.length,
+                repository.pointer,
+                repository.length,
+                snapshot_id.pointer,
+                snapshot_id.length,
+                &mut id,
+            )
+        };
+        Self::published(id, status, began)
+    }
+
+    pub fn download_local(
+        password: &[u8],
+        repository: &str,
+        snapshot_id: &str,
+        node_path: &str,
+        target: BorrowedFd<'_>,
+        size_bound: u64,
+    ) -> Result<Self, i32> {
+        let began = Instant::now();
+        let password = Bytes::new(password)?;
+        let repository = Bytes::new(repository.as_bytes())?;
+        let snapshot_id = Bytes::new(snapshot_id.as_bytes())?;
+        let node_path = Bytes::new(node_path.as_bytes())?;
+        let mut id = 0;
+        let status = unsafe {
+            restic_bridge_download_exact_v1_start(
+                1,
+                password.pointer,
+                password.length,
+                repository.pointer,
+                repository.length,
+                snapshot_id.pointer,
+                snapshot_id.length,
+                node_path.pointer,
+                node_path.length,
+                target.as_raw_fd(),
+                size_bound,
+                &mut id,
+            )
+        };
+        Self::published(id, status, began)
+    }
+
+    pub fn archive_remote(
+        password: &[u8],
+        remote: &Remote<'_>,
+        logical_root: &str,
+        source: BorrowedFd<'_>,
+        names: &[u8],
+        append_only: bool,
+    ) -> Result<Self, i32> {
+        let began = Instant::now();
+        let request = s3_request(ARCHIVE_SOURCES, password, remote, &[])?;
+        let logical_root = Bytes::new(logical_root.as_bytes())?;
+        let names = Bytes::new(names)?;
+        let mut id = 0;
+        let status = unsafe {
+            restic_bridge_s3_archive_sources_v1_start(
+                &request,
+                remote.state.descriptor.as_raw_fd(),
+                source.as_raw_fd(),
+                logical_root.pointer,
+                logical_root.length,
+                names.pointer,
+                names.length,
+                u32::from(append_only),
+                &mut id,
+            )
+        };
+        Self::published(id, status, began)
+    }
+
+    pub fn list_remote(
+        password: &[u8],
+        remote: &Remote<'_>,
+        snapshot_id: &str,
+        append_only: bool,
+    ) -> Result<Self, i32> {
+        let began = Instant::now();
+        let request = s3_request(LIST_NODES, password, remote, snapshot_id.as_bytes())?;
+        let mut id = 0;
+        let status = unsafe {
+            restic_bridge_s3_list_nodes_v1_start(
+                &request,
+                remote.state.descriptor.as_raw_fd(),
+                u32::from(append_only),
+                &mut id,
+            )
+        };
+        Self::published(id, status, began)
+    }
+
+    pub fn download_remote(
+        password: &[u8],
+        remote: &Remote<'_>,
+        snapshot_id: &str,
+        node_path: &str,
+        target: BorrowedFd<'_>,
+        size_bound: u64,
+        append_only: bool,
+    ) -> Result<Self, i32> {
+        let began = Instant::now();
+        let request = s3_request(READ_FILE, password, remote, snapshot_id.as_bytes())?;
+        let node_path = Bytes::new(node_path.as_bytes())?;
+        let mut id = 0;
+        let status = unsafe {
+            restic_bridge_s3_download_exact_v1_start(
+                &request,
+                remote.state.descriptor.as_raw_fd(),
+                target.as_raw_fd(),
+                node_path.pointer,
+                node_path.length,
+                size_bound,
+                u32::from(append_only),
+                &mut id,
+            )
+        };
+        Self::published(id, status, began)
+    }
+
     #[allow(clippy::too_many_arguments)]
-    pub(super) fn local(
+    pub fn local(
         operation: i32,
         password: &[u8],
         recovery: &[u8],
@@ -505,7 +840,7 @@ impl Call {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub(super) fn remote(
+    pub fn remote(
         operation: i32,
         password: &[u8],
         recovery: &[u8],
@@ -555,7 +890,7 @@ impl Call {
 
     /// Restore one snapshot subtree into the admitted target. The snapshot ID,
     /// selector and target path are each checked again natively.
-    pub(super) fn remote_restore(
+    pub fn remote_restore(
         password: &[u8],
         remote: &Remote<'_>,
         target: &Target,
@@ -596,7 +931,7 @@ impl Call {
         Self::published(id, status, began)
     }
 
-    pub(super) fn local_remove_key(
+    pub fn local_remove_key(
         password: &[u8],
         repo_path: &str,
         key_id: &str,
@@ -628,7 +963,7 @@ impl Call {
         Self::published(id, status, began)
     }
 
-    pub(super) fn remote_remove_key(
+    pub fn remote_remove_key(
         password: &[u8],
         remote: &Remote<'_>,
         key_id: &str,
@@ -670,7 +1005,7 @@ impl Call {
         Self::published(id, status, began)
     }
 
-    pub(super) fn remote_add_recovery_key_rotation(
+    pub fn remote_add_recovery_key_rotation(
         password: &[u8],
         recovery_password: &[u8],
         remote: &Remote<'_>,
@@ -709,7 +1044,7 @@ impl Call {
         Self::published(id, status, began)
     }
 
-    pub(super) fn teardown(
+    pub fn teardown(
         local: Option<&LocalRequest>,
         remote: Option<&RemoteRequest>,
         options: &Options,
@@ -750,7 +1085,7 @@ impl Call {
         }
     }
 
-    pub(super) fn wait(
+    pub fn wait(
         mut self,
         timeout: Option<Duration>,
         cancelled: Option<&(dyn Fn() -> bool + Sync)>,

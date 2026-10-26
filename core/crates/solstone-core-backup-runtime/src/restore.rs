@@ -14,7 +14,7 @@ use solstone_core_backup::{
 };
 
 use crate::engine::{BackupServices, Clock, RestoreRecorder};
-use crate::restore_catalog::{CatalogError, select_journal_snapshot};
+use crate::restore_catalog::{CatalogError, select_journal_snapshot, snapshot_with_id};
 use crate::runner::{ResticResult, reason_for_returncode, run_restic, select_summary};
 
 pub const RESTORE_LIST_TIMEOUT_SECONDS: u64 = 5 * 60;
@@ -319,8 +319,23 @@ pub(crate) fn restore_args(snapshot_id: &str, tree_path: &str, target: &str) -> 
     // These name a desktop journal's own resident; iOS runs none, reads neither
     // file, and its linked restore takes no exclusions, so it emits none.
     #[cfg(not(target_os = "ios"))]
-    for pattern in RESTORE_KEEPS_LOCAL {
-        args.extend(["--exclude".to_owned(), pattern.to_owned()]);
+    {
+        for pattern in RESTORE_KEEPS_LOCAL {
+            args.extend(["--exclude".to_owned(), pattern.to_owned()]);
+        }
+        // The obligation is local runtime state. Excluding it here, including
+        // from a snapshot taken before the backup omit existed, keeps restore
+        // from importing, overwriting, or erasing it. iOS emits no exclude
+        // arguments; its rooted restore filter carries the same path.
+        args.extend([
+            "--exclude".to_owned(),
+            format!(
+                "/{}",
+                solstone_core_journal_io::whole_journal_restore::WHOLE_JOURNAL_RESTORE_FILE
+            ),
+            "--exclude".to_owned(),
+            "/health/!solstone-claim-00000000-*".to_owned(),
+        ]);
     }
     #[cfg(any(target_os = "linux", target_os = "android"))]
     args.extend(["--exclude".to_owned(), "backup-activity.lock".to_owned()]);
@@ -365,13 +380,238 @@ impl crate::runner::ToolRunner for IosTargetRunner<'_> {
     }
 }
 
+/// Repository identity for one mobile whole-journal restore.
+///
+/// Hosted recovery stores the account, instance, bucket, and prefix. The
+/// endpoint and token stay on the destination and can be corrected later.
+/// A BYO restore stores the destination repository and backend, not its credentials.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum MobileRestoreIdentity {
+    Hosted {
+        account_id: String,
+        instance_id: String,
+        bucket: String,
+        prefix: String,
+    },
+    Byo,
+}
+
+/// The snapshot and subtree a mobile host recorded or is asking to record.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MobileSelection {
+    pub snapshot_id: String,
+    pub subtree: String,
+}
+
+struct MobileRestore<'a> {
+    identity: MobileRestoreIdentity,
+    selection: MobileSelection,
+    drain: &'a mut dyn FnMut() -> Result<(), String>,
+}
+
+enum RestorePhase {
+    Desktop,
+    First {
+        identity: MobileRestoreIdentity,
+        selection: MobileSelection,
+    },
+    Adopted {
+        record: solstone_core_journal_io::whole_journal_restore::WholeJournalRestore,
+    },
+}
+
+fn source_from(
+    identity: &MobileRestoreIdentity,
+    destination: &Destination,
+) -> solstone_core_journal_io::whole_journal_restore::WholeJournalRestoreSource {
+    use solstone_core_journal_io::whole_journal_restore::WholeJournalRestoreSource;
+    match identity {
+        MobileRestoreIdentity::Hosted {
+            account_id,
+            instance_id,
+            bucket,
+            prefix,
+        } => WholeJournalRestoreSource::Hosted {
+            account_id: account_id.clone(),
+            instance_id: instance_id.clone(),
+            bucket: bucket.clone(),
+            prefix: prefix.clone(),
+        },
+        MobileRestoreIdentity::Byo => WholeJournalRestoreSource::Byo {
+            repository: destination.repository.clone(),
+            backend: destination.backend.clone(),
+        },
+    }
+}
+
+fn source_matches(
+    source: &solstone_core_journal_io::whole_journal_restore::WholeJournalRestoreSource,
+    identity: &MobileRestoreIdentity,
+    destination: &Destination,
+) -> bool {
+    use solstone_core_journal_io::whole_journal_restore::WholeJournalRestoreSource;
+    match (source, identity) {
+        (
+            WholeJournalRestoreSource::Hosted {
+                account_id,
+                instance_id,
+                bucket,
+                prefix,
+            },
+            MobileRestoreIdentity::Hosted {
+                account_id: requested_account,
+                instance_id: requested_instance,
+                bucket: requested_bucket,
+                prefix: requested_prefix,
+            },
+        ) => {
+            account_id == requested_account
+                && instance_id == requested_instance
+                && bucket == requested_bucket
+                && prefix == requested_prefix
+        }
+        (
+            WholeJournalRestoreSource::Byo {
+                repository,
+                backend,
+            },
+            MobileRestoreIdentity::Byo,
+        ) => repository == &destination.repository && backend == &destination.backend,
+        _ => false,
+    }
+}
+
+#[allow(clippy::result_large_err)]
+fn classify_restore(
+    journal: &Path,
+    destination: &Destination,
+    mobile: Option<&MobileRestore<'_>>,
+) -> Result<RestorePhase, RestoreOutcome> {
+    use solstone_core_journal_io::whole_journal_restore::{
+        WholeJournalRestoreReadiness, read_whole_journal_restore,
+    };
+    let refuse = || unrecorded_outcome(error_draft(RESTORE_REASON_DESTINATION_ADMISSION_FAILED));
+    match mobile {
+        None => match read_whole_journal_restore(journal) {
+            WholeJournalRestoreReadiness::Absent => Ok(RestorePhase::Desktop),
+            WholeJournalRestoreReadiness::Pending(_)
+            | WholeJournalRestoreReadiness::Unavailable => Err(refuse()),
+        },
+        Some(request) => match read_whole_journal_restore(journal) {
+            WholeJournalRestoreReadiness::Unavailable => Err(refuse()),
+            WholeJournalRestoreReadiness::Absent => Ok(RestorePhase::First {
+                identity: request.identity.clone(),
+                selection: request.selection.clone(),
+            }),
+            WholeJournalRestoreReadiness::Pending(record) => {
+                if record.snapshot_id != request.selection.snapshot_id
+                    || record.subtree != request.selection.subtree
+                    || !source_matches(&record.source, &request.identity, destination)
+                {
+                    Err(refuse())
+                } else {
+                    Ok(RestorePhase::Adopted { record: *record })
+                }
+            }
+        },
+    }
+}
+
+/// An adopted retry treats an unreadable config as incomplete, not as permission
+/// to materialize defaults or to ignore a later imported revocation. A first
+/// attempt still refuses before any obligation is published.
+fn pre_copy_refusal(journal: &Path, adopted: bool) -> Option<&'static str> {
+    match restore_pending_rotation_refusal(journal) {
+        Some(RESTORE_REASON_DESTINATION_ADMISSION_FAILED) if adopted => None,
+        refusal => refusal,
+    }
+}
+
+fn catalog_reason(error: CatalogError) -> &'static str {
+    match error {
+        CatalogError::Invalid => RESTORE_REASON_SNAPSHOT_CATALOG_INVALID,
+        CatalogError::NotFound => RESTORE_REASON_JOURNAL_SNAPSHOT_NOT_FOUND,
+        CatalogError::Ambiguous => RESTORE_REASON_SNAPSHOT_SELECTION_AMBIGUOUS,
+    }
+}
+
+fn retire_obligation(
+    journal: &Path,
+    obligation: Option<&solstone_core_journal_io::whole_journal_restore::WholeJournalRestore>,
+    mut outcome: RestoreOutcome,
+) -> RestoreOutcome {
+    let Some(record) = obligation else {
+        return outcome;
+    };
+    if outcome.status != "ok" && outcome.status != "degraded" {
+        return outcome;
+    }
+    if solstone_core_journal_io::whole_journal_restore::clear_whole_journal_restore(journal, record)
+        .is_err()
+    {
+        outcome.status = "error".to_owned();
+        outcome.reason_code = Some(RESTORE_REASON_RESTORE_RECORD_FAILED.to_owned());
+    }
+    outcome
+}
+
 /// Restore a BYO repository. The three config setters remain purposefully independent.
+///
+/// Desktop selection stays on the single latest untagged journal snapshot.
+/// A pending mobile obligation refuses this entry before copy.
 pub fn restore_journal(
     journal: &Path,
     services: &BackupServices<'_>,
     recorder: &dyn RestoreRecorder,
     destination: Destination,
     entered_recovery_key: &str,
+) -> RestoreOutcome {
+    restore_journal_with(
+        journal,
+        services,
+        recorder,
+        destination,
+        entered_recovery_key,
+        None,
+    )
+}
+
+/// Restore one explicit mobile selection into the retained target.
+///
+/// `drain` must return only after work already admitted on that target has
+/// stopped using and publishing it. An empty obligation census is not that proof.
+#[allow(clippy::too_many_arguments)]
+pub fn restore_mobile_journal(
+    journal: &Path,
+    services: &BackupServices<'_>,
+    recorder: &dyn RestoreRecorder,
+    destination: Destination,
+    entered_recovery_key: &str,
+    identity: MobileRestoreIdentity,
+    selection: MobileSelection,
+    drain: &mut dyn FnMut() -> Result<(), String>,
+) -> RestoreOutcome {
+    restore_journal_with(
+        journal,
+        services,
+        recorder,
+        destination,
+        entered_recovery_key,
+        Some(MobileRestore {
+            identity,
+            selection,
+            drain,
+        }),
+    )
+}
+
+fn restore_journal_with(
+    journal: &Path,
+    services: &BackupServices<'_>,
+    recorder: &dyn RestoreRecorder,
+    destination: Destination,
+    entered_recovery_key: &str,
+    mut mobile: Option<MobileRestore<'_>>,
 ) -> RestoreOutcome {
     let admitted = match crate::destination_admission::admit_restore_destination(journal) {
         Ok(admitted) => admitted,
@@ -410,7 +650,11 @@ pub fn restore_journal(
             return unrecorded_outcome(error_draft(RESTORE_REASON_DESTINATION_ADMISSION_FAILED));
         }
     };
-    if let Some(reason) = restore_pending_rotation_refusal(journal) {
+    let phase = match classify_restore(journal, &destination, mobile.as_ref()) {
+        Ok(phase) => phase,
+        Err(outcome) => return outcome,
+    };
+    if let Some(reason) = pre_copy_refusal(journal, matches!(phase, RestorePhase::Adopted { .. })) {
         return unrecorded_outcome(error_draft(reason));
     }
     let active_binding = load_hosted_binding(journal);
@@ -506,31 +750,51 @@ pub fn restore_journal(
             .unwrap_or(RESTORE_REASON_SNAPSHOT_LIST_FAILED);
         return finish(journal, services.clock, recorder, error_draft(reason));
     }
-    let snapshot = match select_journal_snapshot(snapshots.json.as_ref()) {
-        Ok(snapshot) => snapshot,
-        Err(CatalogError::Invalid) => {
-            return finish(
-                journal,
-                services.clock,
-                recorder,
-                error_draft(RESTORE_REASON_SNAPSHOT_CATALOG_INVALID),
-            );
+    let (snapshot, tree_path) = match &phase {
+        RestorePhase::Desktop => {
+            let snapshot = match select_journal_snapshot(snapshots.json.as_ref()) {
+                Ok(snapshot) => snapshot,
+                Err(error) => {
+                    return finish(
+                        journal,
+                        services.clock,
+                        recorder,
+                        error_draft(catalog_reason(error)),
+                    );
+                }
+            };
+            (
+                snapshot.clone(),
+                crate::restic_tree_path(Path::new(&snapshot.path)),
+            )
         }
-        Err(CatalogError::NotFound) => {
-            return finish(
-                journal,
-                services.clock,
-                recorder,
-                error_draft(RESTORE_REASON_JOURNAL_SNAPSHOT_NOT_FOUND),
-            );
+        RestorePhase::First { selection, .. } => {
+            let snapshot = match snapshot_with_id(snapshots.json.as_ref(), &selection.snapshot_id) {
+                Ok(snapshot) => snapshot,
+                Err(error) => {
+                    return finish(
+                        journal,
+                        services.clock,
+                        recorder,
+                        error_draft(catalog_reason(error)),
+                    );
+                }
+            };
+            (snapshot, selection.subtree.clone())
         }
-        Err(CatalogError::Ambiguous) => {
-            return finish(
-                journal,
-                services.clock,
-                recorder,
-                error_draft(RESTORE_REASON_SNAPSHOT_SELECTION_AMBIGUOUS),
-            );
+        RestorePhase::Adopted { record } => {
+            let snapshot = match snapshot_with_id(snapshots.json.as_ref(), &record.snapshot_id) {
+                Ok(snapshot) => snapshot,
+                Err(error) => {
+                    return finish(
+                        journal,
+                        services.clock,
+                        recorder,
+                        error_draft(catalog_reason(error)),
+                    );
+                }
+            };
+            (snapshot, record.subtree.clone())
         }
     };
     let target_path = match admitted.revalidate_for_target() {
@@ -539,14 +803,54 @@ pub fn restore_journal(
             return unrecorded_outcome(error_draft(RESTORE_REASON_DESTINATION_ADMISSION_FAILED));
         }
     };
+    let mut obligation = match &phase {
+        RestorePhase::Desktop => None,
+        RestorePhase::Adopted { record } => Some(record.clone()),
+        RestorePhase::First { identity, .. } => {
+            match solstone_core_journal_io::whole_journal_restore::publish_whole_journal_restore(
+                journal,
+                &source_from(identity, &destination),
+                &snapshot.id,
+                &tree_path,
+            ) {
+                Ok(record) => Some(record),
+                Err(error) => {
+                    log::warn!("whole-journal restore obligation was not published: {error}");
+                    return unrecorded_outcome(error_draft(RESTORE_REASON_RESTORE_IO_FAILED));
+                }
+            }
+        }
+    };
+    if let Some(record) = obligation.as_mut() {
+        if let Some(request) = mobile.as_mut()
+            && let Err(error) = (request.drain)()
+        {
+            log::warn!("whole-journal restore waited for admitted work: {error}");
+            return unrecorded_outcome(error_draft(RESTORE_REASON_DESTINATION_ADMISSION_FAILED));
+        }
+        if !solstone_core_journal_io::whole_journal_restore::whole_journal_restore_matches(
+            journal, record,
+        ) {
+            return unrecorded_outcome(error_draft(RESTORE_REASON_DESTINATION_ADMISSION_FAILED));
+        }
+        if matches!(phase, RestorePhase::Adopted { .. }) {
+            match solstone_core_journal_io::whole_journal_restore::adopt_whole_journal_restore(
+                journal, record,
+            ) {
+                Ok(renewed) => *record = renewed,
+                Err(error) => {
+                    log::warn!("whole-journal restore obligation was not adopted: {error}");
+                    return unrecorded_outcome(error_draft(
+                        RESTORE_REASON_DESTINATION_ADMISSION_FAILED,
+                    ));
+                }
+            }
+        }
+    }
     let restored = match restic(
         services,
         &admitted,
-        restore_args(
-            &snapshot.id,
-            &crate::restic_tree_path(Path::new(&snapshot.path)),
-            &target_path.display().to_string(),
-        ),
+        restore_args(&snapshot.id, &tree_path, &target_path.display().to_string()),
         &destination,
         &canonical,
         &env,
@@ -736,11 +1040,15 @@ pub fn restore_journal(
             ),
         );
     }
-    finish(
+    retire_obligation(
         journal,
-        services.clock,
-        recorder,
-        counters.into_draft(status, reason_code, integrity_ok, resumable),
+        obligation.as_ref(),
+        finish(
+            journal,
+            services.clock,
+            recorder,
+            counters.into_draft(status, reason_code, integrity_ok, resumable),
+        ),
     )
 }
 
@@ -754,9 +1062,16 @@ mod tests {
     use crate::hosted_runtime::{HttpError, HttpRequest, HttpResponse, HttpTransport};
     use crate::runner::{ToolOutput, ToolRequest, ToolRunner};
     use crate::test_support::RestoreRecorderSpy;
+    use solstone_core_journal_io::whole_journal_restore::{
+        WholeJournalRestoreReadiness, WholeJournalRestoreSource, begin_target_use,
+        publish_whole_journal_restore, read_whole_journal_restore, wait_for_target_use_to_end,
+    };
     use std::cell::RefCell;
     use std::collections::VecDeque;
+    use std::fs;
     use std::io;
+    use std::sync::mpsc;
+    use std::thread;
 
     const SNAPSHOT_ID: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
@@ -1424,6 +1739,649 @@ mod tests {
         assert_eq!(recorder.calls.borrow().len(), 0);
         assert_eq!(runner.calls.borrow().len(), 0);
     }
+
+    const RESTORE_SUMMARY: &str = r#"[{"message_type":"summary","total_files":1,"files_restored":1,"total_bytes":4,"bytes_restored":4}]"#;
+    const NEWER_ID: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+
+    fn obligation_path(journal: &Path) -> std::path::PathBuf {
+        journal.join("health/whole-journal-restore.json")
+    }
+
+    fn publish_byo(journal: &Path, snapshot: &str, subtree: &str) {
+        publish_whole_journal_restore(
+            journal,
+            &WholeJournalRestoreSource::Byo {
+                repository: "repo".into(),
+                backend: "s3".into(),
+            },
+            snapshot,
+            subtree,
+        )
+        .expect("obligation");
+    }
+
+    fn two_snapshot_catalog() -> String {
+        format!(
+            "[{{\"id\":\"{SNAPSHOT_ID}\",\"time\":\"2026-01-01T00:00:00.000000000+00:00\",\"paths\":[\"/journal\"]}},{{\"id\":\"{NEWER_ID}\",\"time\":\"2026-06-01T00:00:00.000000000+00:00\",\"paths\":[\"/newest\"]}}]"
+        )
+    }
+
+    fn success_script(catalog_body: &str) -> Script {
+        Script::new(vec![
+            output(0, catalog_body),
+            output(0, RESTORE_SUMMARY),
+            output(0, ""),
+        ])
+    }
+
+    fn restore_argv(runner: &Script) -> Option<Vec<String>> {
+        runner
+            .calls
+            .borrow()
+            .iter()
+            .find(|argv| argv.first().is_some_and(|arg| arg == "restore"))
+            .cloned()
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn mobile_with(
+        journal: &Path,
+        runner: &Script,
+        recorder: &dyn RestoreRecorder,
+        maintenance: &dyn JournalMaintenance,
+        key: &str,
+        snapshot: &str,
+        subtree: &str,
+        drain: &mut dyn FnMut() -> Result<(), String>,
+    ) -> RestoreOutcome {
+        let clock = TestClock;
+        restore_mobile_journal(
+            journal,
+            &services(runner, &clock, maintenance),
+            recorder,
+            destination(),
+            key,
+            MobileRestoreIdentity::Byo,
+            MobileSelection {
+                snapshot_id: snapshot.into(),
+                subtree: subtree.into(),
+            },
+            drain,
+        )
+    }
+
+    struct FailingRebuild;
+    impl JournalMaintenance for FailingRebuild {
+        fn rebuild_body_history(&self, _: &Path) -> Result<(), JournalMaintenanceError> {
+            Err(JournalMaintenanceError)
+        }
+
+        fn full_scan(&self, _: &Path) -> Result<(), JournalMaintenanceError> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn mobile_restore_publishes_before_copy_and_clears_after_postwork() {
+        let journal = tempfile::tempdir().expect("journal");
+        let stored = solstone_core_backup::generate_and_store_keys(journal.path()).expect("keys");
+        let runner = success_script(&catalog());
+        let recorder = Recorder::new();
+        let mut published_before_restore = false;
+        let mut drain = || {
+            published_before_restore = obligation_path(journal.path()).is_file();
+            assert!(restore_argv(&runner).is_none());
+            Ok(())
+        };
+
+        let outcome = mobile_with(
+            journal.path(),
+            &runner,
+            &recorder,
+            &Maintenance,
+            &stored.recovery_key,
+            SNAPSHOT_ID,
+            "/recorded",
+            &mut drain,
+        );
+
+        assert!(published_before_restore);
+        assert_eq!(outcome.status, "ok");
+        assert_eq!(outcome.reason_code, None);
+        assert!(matches!(
+            read_whole_journal_restore(journal.path()),
+            WholeJournalRestoreReadiness::Absent
+        ));
+        let argv = restore_argv(&runner).expect("restore");
+        assert!(
+            argv.iter()
+                .any(|arg| arg == &format!("{SNAPSHOT_ID}:/recorded"))
+        );
+        #[cfg(not(target_os = "ios"))]
+        assert!(
+            argv.windows(2)
+                .any(|pair| pair == ["--exclude", "/health/whole-journal-restore.json"])
+        );
+    }
+
+    #[test]
+    fn admitted_use_finishes_before_the_restore_command() {
+        let journal = tempfile::tempdir().expect("journal");
+        let stored = solstone_core_backup::generate_and_store_keys(journal.path()).expect("keys");
+        let runner = success_script(&catalog());
+        let recorder = Recorder::new();
+        let path = journal.path().to_path_buf();
+        let marker = path.join("owner-was-using.txt");
+        let (started_tx, started_rx) = mpsc::channel();
+        let (published_tx, published_rx) = mpsc::channel();
+        let marker_for_owner = marker.clone();
+        let owner = thread::spawn(move || {
+            let guard = begin_target_use(&path).expect("use");
+            started_tx.send(()).expect("started");
+            published_rx.recv().expect("published");
+            fs::write(&marker_for_owner, b"using").expect("marker");
+            drop(guard);
+        });
+        started_rx.recv().expect("owner holds the target");
+        let mut drain = || {
+            assert!(obligation_path(journal.path()).is_file());
+            assert!(restore_argv(&runner).is_none());
+            published_tx.send(()).expect("release owner");
+            wait_for_target_use_to_end(journal.path());
+            assert_eq!(fs::read(&marker).expect("marker"), b"using");
+            assert!(restore_argv(&runner).is_none());
+            Ok(())
+        };
+
+        let outcome = mobile_with(
+            journal.path(),
+            &runner,
+            &recorder,
+            &Maintenance,
+            &stored.recovery_key,
+            SNAPSHOT_ID,
+            "/recorded",
+            &mut drain,
+        );
+
+        owner.join().expect("owner");
+        assert_eq!(outcome.status, "ok");
+        assert!(matches!(
+            read_whole_journal_restore(journal.path()),
+            WholeJournalRestoreReadiness::Absent
+        ));
+        assert!(restore_argv(&runner).is_some());
+    }
+
+    #[test]
+    fn wrong_key_does_not_publish_or_clear_an_obligation() {
+        let journal = tempfile::tempdir().expect("journal");
+        let stored = solstone_core_backup::generate_and_store_keys(journal.path()).expect("keys");
+        let runner = Script::new(vec![]);
+        let recorder = Recorder::new();
+        let mut drain = || panic!("wrong key must not drain");
+        let outcome = mobile_with(
+            journal.path(),
+            &runner,
+            &recorder,
+            &Maintenance,
+            "not a recovery key",
+            SNAPSHOT_ID,
+            "/recorded",
+            &mut drain,
+        );
+        assert_eq!(
+            outcome.reason_code.as_deref(),
+            Some(RESTORE_REASON_INVALID_KEY)
+        );
+        assert!(runner.calls.borrow().is_empty());
+        assert!(matches!(
+            read_whole_journal_restore(journal.path()),
+            WholeJournalRestoreReadiness::Absent
+        ));
+
+        publish_byo(journal.path(), SNAPSHOT_ID, "/recorded");
+        let saved = fs::read(obligation_path(journal.path())).expect("obligation");
+        let mut config: serde_json::Value =
+            serde_json::from_slice(&fs::read(journal.path().join("config/journal.json")).unwrap())
+                .unwrap();
+        config["setup"] = json!({"completed_at": 1});
+        fs::write(
+            journal.path().join("config/journal.json"),
+            serde_json::to_vec(&config).unwrap(),
+        )
+        .unwrap();
+        let outcome = mobile_with(
+            journal.path(),
+            &runner,
+            &recorder,
+            &Maintenance,
+            "not a recovery key",
+            SNAPSHOT_ID,
+            "/recorded",
+            &mut drain,
+        );
+        assert_eq!(
+            outcome.reason_code.as_deref(),
+            Some(RESTORE_REASON_INVALID_KEY)
+        );
+        assert!(runner.calls.borrow().is_empty());
+        assert_eq!(fs::read(obligation_path(journal.path())).unwrap(), saved);
+        assert_eq!(
+            solstone_core_backup::get_backup_config(journal.path()).unwrap()["daily_key"],
+            Value::String(stored.daily_key)
+        );
+    }
+
+    #[test]
+    fn desktop_pending_obligation_refuses_before_snapshot_selection() {
+        let journal = tempfile::tempdir().expect("journal");
+        let stored = solstone_core_backup::generate_and_store_keys(journal.path()).expect("keys");
+        publish_byo(journal.path(), SNAPSHOT_ID, "/recorded");
+        let saved = fs::read(obligation_path(journal.path())).unwrap();
+        let runner = Script::new(vec![]);
+        let recorder = Recorder::new();
+        let outcome = restore_journal(
+            journal.path(),
+            &services(&runner, &TestClock, &Maintenance),
+            &recorder,
+            destination(),
+            &stored.recovery_key,
+        );
+        assert_eq!(outcome.status, "error");
+        assert_eq!(
+            outcome.reason_code.as_deref(),
+            Some(RESTORE_REASON_DESTINATION_ADMISSION_FAILED)
+        );
+        assert_eq!(outcome.recording_failure, None);
+        assert_eq!(recorder.calls.borrow().len(), 0);
+        assert!(runner.calls.borrow().is_empty());
+        assert_eq!(fs::read(obligation_path(journal.path())).unwrap(), saved);
+    }
+
+    #[test]
+    fn desktop_without_an_obligation_still_selects_the_latest_snapshot() {
+        let journal = tempfile::tempdir().expect("journal");
+        let stored = solstone_core_backup::generate_and_store_keys(journal.path()).expect("keys");
+        let runner = success_script(&two_snapshot_catalog());
+        let outcome = restore_journal(
+            journal.path(),
+            &services(&runner, &TestClock, &Maintenance),
+            &Recorder::new(),
+            destination(),
+            &stored.recovery_key,
+        );
+        assert_eq!(outcome.status, "ok");
+        let argv = restore_argv(&runner).expect("restore");
+        assert!(
+            argv.iter()
+                .any(|arg| arg.starts_with(&format!("{NEWER_ID}:")))
+        );
+        assert!(argv.iter().all(|arg| !arg.contains(SNAPSHOT_ID)));
+        assert!(matches!(
+            read_whole_journal_restore(journal.path()),
+            WholeJournalRestoreReadiness::Absent
+        ));
+    }
+
+    #[test]
+    fn mobile_retry_uses_the_recorded_snapshot_instead_of_the_newest() {
+        let journal = tempfile::tempdir().expect("journal");
+        let stored = solstone_core_backup::generate_and_store_keys(journal.path()).expect("keys");
+        publish_byo(journal.path(), SNAPSHOT_ID, "/recorded");
+        let runner = success_script(&two_snapshot_catalog());
+        let outcome = mobile_with(
+            journal.path(),
+            &runner,
+            &Recorder::new(),
+            &Maintenance,
+            &stored.recovery_key,
+            SNAPSHOT_ID,
+            "/recorded",
+            &mut || Ok(()),
+        );
+        assert_eq!(outcome.status, "ok");
+        let argv = restore_argv(&runner).expect("restore");
+        assert!(
+            argv.iter()
+                .any(|arg| arg == &format!("{SNAPSHOT_ID}:/recorded"))
+        );
+        assert!(argv.iter().all(|arg| !arg.contains(NEWER_ID)));
+        assert!(matches!(
+            read_whole_journal_restore(journal.path()),
+            WholeJournalRestoreReadiness::Absent
+        ));
+    }
+
+    #[test]
+    fn selection_or_source_mismatch_does_not_clear_or_copy() {
+        let journal = tempfile::tempdir().expect("journal");
+        let stored = solstone_core_backup::generate_and_store_keys(journal.path()).expect("keys");
+        publish_byo(journal.path(), SNAPSHOT_ID, "/recorded");
+        let saved = fs::read(obligation_path(journal.path())).unwrap();
+        let runner = Script::new(vec![]);
+        let recorder = Recorder::new();
+        let mut drain = || panic!("mismatch must not drain");
+        let mismatched_selection = mobile_with(
+            journal.path(),
+            &runner,
+            &recorder,
+            &Maintenance,
+            &stored.recovery_key,
+            NEWER_ID,
+            "/recorded",
+            &mut drain,
+        );
+        assert_eq!(
+            mismatched_selection.reason_code.as_deref(),
+            Some(RESTORE_REASON_DESTINATION_ADMISSION_FAILED)
+        );
+        assert_eq!(mismatched_selection.recording_failure, None);
+        assert!(runner.calls.borrow().is_empty());
+        assert_eq!(fs::read(obligation_path(journal.path())).unwrap(), saved);
+
+        let other = Destination {
+            repository: "other".into(),
+            ..destination()
+        };
+        let mismatched_source = restore_mobile_journal(
+            journal.path(),
+            &services(&runner, &TestClock, &Maintenance),
+            &recorder,
+            other,
+            &stored.recovery_key,
+            MobileRestoreIdentity::Byo,
+            MobileSelection {
+                snapshot_id: SNAPSHOT_ID.into(),
+                subtree: "/recorded".into(),
+            },
+            &mut drain,
+        );
+        assert_eq!(
+            mismatched_source.reason_code.as_deref(),
+            Some(RESTORE_REASON_DESTINATION_ADMISSION_FAILED)
+        );
+        assert_eq!(recorder.calls.borrow().len(), 0);
+        assert_eq!(fs::read(obligation_path(journal.path())).unwrap(), saved);
+    }
+
+    #[test]
+    fn unavailable_obligation_refuses_without_rewriting_it() {
+        let journal = tempfile::tempdir().expect("journal");
+        let stored = solstone_core_backup::generate_and_store_keys(journal.path()).expect("keys");
+        fs::create_dir_all(journal.path().join("health")).unwrap();
+        fs::write(obligation_path(journal.path()), b"{").unwrap();
+        let runner = Script::new(vec![]);
+        let mut drain = || panic!("unavailable obligation must not drain");
+        let outcome = mobile_with(
+            journal.path(),
+            &runner,
+            &Recorder::new(),
+            &Maintenance,
+            &stored.recovery_key,
+            SNAPSHOT_ID,
+            "/recorded",
+            &mut drain,
+        );
+        assert_eq!(
+            outcome.reason_code.as_deref(),
+            Some(RESTORE_REASON_DESTINATION_ADMISSION_FAILED)
+        );
+        assert_eq!(outcome.recording_failure, None);
+        assert!(runner.calls.borrow().is_empty());
+        assert_eq!(fs::read(obligation_path(journal.path())).unwrap(), b"{");
+    }
+
+    #[test]
+    fn pretty_obligation_stays_pending_and_is_not_copied() {
+        let journal = tempfile::tempdir().expect("journal");
+        let stored = solstone_core_backup::generate_and_store_keys(journal.path()).expect("keys");
+        publish_byo(journal.path(), SNAPSHOT_ID, "/recorded");
+        let parsed: serde_json::Value =
+            serde_json::from_slice(&fs::read(obligation_path(journal.path())).unwrap()).unwrap();
+        let pretty = serde_json::to_vec_pretty(&parsed).unwrap();
+        fs::write(obligation_path(journal.path()), &pretty).unwrap();
+        let runner = Script::new(vec![output(0, &catalog())]);
+        let outcome = mobile_with(
+            journal.path(),
+            &runner,
+            &Recorder::new(),
+            &Maintenance,
+            &stored.recovery_key,
+            SNAPSHOT_ID,
+            "/recorded",
+            &mut || Ok(()),
+        );
+        assert_eq!(
+            outcome.reason_code.as_deref(),
+            Some(RESTORE_REASON_DESTINATION_ADMISSION_FAILED)
+        );
+        assert_eq!(outcome.recording_failure, None);
+        assert!(restore_argv(&runner).is_none());
+        assert_eq!(fs::read(obligation_path(journal.path())).unwrap(), pretty);
+        assert!(matches!(
+            read_whole_journal_restore(journal.path()),
+            WholeJournalRestoreReadiness::Pending(_)
+        ));
+    }
+
+    #[test]
+    fn unreadable_config_does_not_publish_and_an_adopted_retry_does_not_materialize_it() {
+        let journal = tempfile::tempdir().expect("journal");
+        let stored = solstone_core_backup::generate_and_store_keys(journal.path()).expect("keys");
+        let config = journal.path().join("config/journal.json");
+        fs::write(&config, b"{").unwrap();
+        let runner = Script::new(vec![]);
+        let mut drain = || panic!("unreadable first attempt must not drain");
+        let first = mobile_with(
+            journal.path(),
+            &runner,
+            &Recorder::new(),
+            &Maintenance,
+            &stored.recovery_key,
+            SNAPSHOT_ID,
+            "/recorded",
+            &mut drain,
+        );
+        assert_eq!(
+            first.reason_code.as_deref(),
+            Some(RESTORE_REASON_DESTINATION_ADMISSION_FAILED)
+        );
+        assert!(matches!(
+            read_whole_journal_restore(journal.path()),
+            WholeJournalRestoreReadiness::Absent
+        ));
+        assert_eq!(fs::read(&config).unwrap(), b"{");
+
+        fs::write(&config, br#"{"backup":{"daily_key":"present"}}"#).unwrap();
+        publish_byo(journal.path(), SNAPSHOT_ID, "/recorded");
+        fs::write(&config, b"{").unwrap();
+        let adopted_runner = Script::new(vec![output(0, &catalog()), output(0, RESTORE_SUMMARY)]);
+        let adopted = mobile_with(
+            journal.path(),
+            &adopted_runner,
+            &Recorder::new(),
+            &Maintenance,
+            &stored.recovery_key,
+            SNAPSHOT_ID,
+            "/recorded",
+            &mut || Ok(()),
+        );
+        assert_eq!(
+            adopted.reason_code.as_deref(),
+            Some(RESTORE_REASON_DESTINATION_ADMISSION_FAILED)
+        );
+        assert_eq!(adopted.recording_failure, None);
+        assert!(restore_argv(&adopted_runner).is_some());
+        assert_eq!(fs::read(&config).unwrap(), b"{");
+        assert!(matches!(
+            read_whole_journal_restore(journal.path()),
+            WholeJournalRestoreReadiness::Pending(_)
+        ));
+    }
+
+    #[test]
+    fn drain_failure_and_copy_failure_keep_the_obligation() {
+        let journal = tempfile::tempdir().expect("journal");
+        let stored = solstone_core_backup::generate_and_store_keys(journal.path()).expect("keys");
+        let runner = Script::new(vec![output(0, &catalog())]);
+        let drained = mobile_with(
+            journal.path(),
+            &runner,
+            &Recorder::new(),
+            &Maintenance,
+            &stored.recovery_key,
+            SNAPSHOT_ID,
+            "/recorded",
+            &mut || Err("still publishing".into()),
+        );
+        assert_eq!(
+            drained.reason_code.as_deref(),
+            Some(RESTORE_REASON_DESTINATION_ADMISSION_FAILED)
+        );
+        assert_eq!(drained.recording_failure, None);
+        assert!(restore_argv(&runner).is_none());
+        assert!(matches!(
+            read_whole_journal_restore(journal.path()),
+            WholeJournalRestoreReadiness::Pending(_)
+        ));
+
+        let copy_runner = Script::new(vec![output(0, &catalog()), output(1, "")]);
+        let copied = mobile_with(
+            journal.path(),
+            &copy_runner,
+            &Recorder::new(),
+            &Maintenance,
+            &stored.recovery_key,
+            SNAPSHOT_ID,
+            "/recorded",
+            &mut || Ok(()),
+        );
+        assert_eq!(copied.status, "error");
+        assert_eq!(
+            copied.reason_code.as_deref(),
+            Some(RESTORE_REASON_RESTORE_FAILED)
+        );
+        assert!(matches!(
+            read_whole_journal_restore(journal.path()),
+            WholeJournalRestoreReadiness::Pending(_)
+        ));
+    }
+
+    #[test]
+    fn a_stale_attempt_cannot_clear_the_renewed_obligation() {
+        let journal = tempfile::tempdir().expect("journal");
+        let stored = solstone_core_backup::generate_and_store_keys(journal.path()).expect("keys");
+        publish_byo(journal.path(), SNAPSHOT_ID, "/recorded");
+        let WholeJournalRestoreReadiness::Pending(original) =
+            read_whole_journal_restore(journal.path())
+        else {
+            panic!("published obligation");
+        };
+        let copy_runner = Script::new(vec![output(0, &catalog()), output(1, "")]);
+        let copied = mobile_with(
+            journal.path(),
+            &copy_runner,
+            &Recorder::new(),
+            &Maintenance,
+            &stored.recovery_key,
+            SNAPSHOT_ID,
+            "/recorded",
+            &mut || Ok(()),
+        );
+        assert_eq!(copied.status, "error");
+        let WholeJournalRestoreReadiness::Pending(renewed) =
+            read_whole_journal_restore(journal.path())
+        else {
+            panic!("renewed obligation");
+        };
+        assert_ne!(renewed.attempt, original.attempt);
+        assert_eq!(renewed.snapshot_id, original.snapshot_id);
+        assert!(
+            solstone_core_journal_io::whole_journal_restore::clear_whole_journal_restore(
+                journal.path(),
+                &original,
+            )
+            .is_err()
+        );
+        assert!(
+            solstone_core_journal_io::whole_journal_restore::whole_journal_restore_matches(
+                journal.path(),
+                &renewed,
+            )
+        );
+    }
+
+    #[test]
+    fn postwork_and_outcome_failures_do_not_clear_and_degraded_completion_does() {
+        let journal = tempfile::tempdir().expect("journal");
+        let stored = solstone_core_backup::generate_and_store_keys(journal.path()).expect("keys");
+        publish_byo(journal.path(), SNAPSHOT_ID, "/recorded");
+        let rebuild_runner = success_script(&catalog());
+        let rebuild = mobile_with(
+            journal.path(),
+            &rebuild_runner,
+            &Recorder::new(),
+            &FailingRebuild,
+            &stored.recovery_key,
+            SNAPSHOT_ID,
+            "/recorded",
+            &mut || Ok(()),
+        );
+        assert_eq!(
+            rebuild.reason_code.as_deref(),
+            Some(RESTORE_REASON_BODY_REBUILD_FAILED)
+        );
+        assert!(matches!(
+            read_whole_journal_restore(journal.path()),
+            WholeJournalRestoreReadiness::Pending(_)
+        ));
+
+        let record_runner = success_script(&catalog());
+        let recorded = mobile_with(
+            journal.path(),
+            &record_runner,
+            &Recorder::failing(),
+            &Maintenance,
+            &stored.recovery_key,
+            SNAPSHOT_ID,
+            "/recorded",
+            &mut || Ok(()),
+        );
+        assert_eq!(recorded.status, "error");
+        assert_eq!(
+            recorded.reason_code.as_deref(),
+            Some(RESTORE_REASON_RESTORE_RECORD_FAILED)
+        );
+        assert!(matches!(
+            read_whole_journal_restore(journal.path()),
+            WholeJournalRestoreReadiness::Pending(_)
+        ));
+
+        let degraded_runner =
+            Script::new(vec![output(0, &catalog()), output(0, "[]"), output(0, "")]);
+        let degraded = mobile_with(
+            journal.path(),
+            &degraded_runner,
+            &Recorder::new(),
+            &Maintenance,
+            &stored.recovery_key,
+            SNAPSHOT_ID,
+            "/recorded",
+            &mut || Ok(()),
+        );
+        assert_eq!(degraded.status, "degraded");
+        assert!(degraded.integrity_ok);
+        assert_eq!(
+            degraded.reason_code.as_deref(),
+            Some(RESTORE_REASON_RESTORE_SUMMARY_MISSING)
+        );
+        assert!(matches!(
+            read_whole_journal_restore(journal.path()),
+            WholeJournalRestoreReadiness::Absent
+        ));
+    }
+
     #[cfg(feature = "full-tests")]
     mod pending_rotation {
         use super::*;

@@ -211,6 +211,10 @@ fn parse_caa_issue_value(value: &str) -> Option<(String, HashMap<String, String>
     Some((ca_domain, params))
 }
 
+// All tests sharing the process-wide DNS and relay seams hold this guard.
+#[cfg(test)]
+pub(crate) static BYO_TEST_SERIAL: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 #[cfg(test)]
 pub static TEST_VERDICT_OVERRIDE: std::sync::RwLock<Option<(DnsVerdict, Vec<String>)>> =
     std::sync::RwLock::new(None);
@@ -221,7 +225,7 @@ pub struct ByoTestSeam {
     pub tick_notify: tokio::sync::Notify,
     pub outside_check_addr_override: std::sync::RwLock<Option<std::net::SocketAddr>>,
     pub relay_dial_addr_override: std::sync::RwLock<Option<std::net::SocketAddr>>,
-    pub acme_spawn_observer: std::sync::RwLock<Option<tokio::sync::mpsc::UnboundedSender<()>>>,
+    pub acme_spawn_observer: std::sync::RwLock<Option<tokio::sync::mpsc::UnboundedSender<String>>>,
     pub dns_lookup_stall: std::sync::atomic::AtomicBool,
     pub dns_stall_notify: tokio::sync::Notify,
     pub check_hold: std::sync::atomic::AtomicBool,

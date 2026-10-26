@@ -158,7 +158,7 @@ func (be *s3OperationBackend) Remove(ctx context.Context, handle backend.Handle)
 		if !validS3ID(handle.Name) || !be.owner.ownsLock(handle.Name) {
 			return errS3Denied
 		}
-	} else if isTeardownScope(ctx) && (handle.Type == backend.SnapshotFile || handle.Type == backend.PackFile || handle.Type == backend.IndexFile) {
+	} else if (isTeardownScope(ctx) || isRetentionScope(ctx)) && (handle.Type == backend.SnapshotFile || handle.Type == backend.PackFile || handle.Type == backend.IndexFile) {
 		if !validS3ID(handle.Name) {
 			return errS3Denied
 		}

@@ -228,15 +228,17 @@ impl AudioWorker {
         if interrupted() {
             return Ok(false);
         }
+        let root = config.root.canonical_path();
         let retry = {
             let mut held = config.held.lock().unwrap();
             if held.0 != generation {
                 *held = (generation, HashSet::new());
             }
-            match decide_input(config.root.canonical_path(), input, &held.1) {
+            match gate_input(root, input, &held.1) {
                 InputDecision::Skip => return Ok(false),
                 InputDecision::Hold(error) => {
                     held.1.insert(input.to_path_buf());
+                    drop(held);
                     self.state.input_failed(generation, input, &error);
                     *self.state.status.lock().unwrap() =
                         json!({"state":"failed","input":input,"error":error});
@@ -248,17 +250,37 @@ impl AudioWorker {
         if attempt.is_some_and(|attempt| retry.as_ref().map(|r| &r.attempt) != Some(attempt)) {
             return Err("audio retry permission changed".into());
         }
-        // Initial admission errors belong to the failure path above. Once
-        // admitted, any loss of the accepted bytes must still cancel work at
-        // embedded checkpoints and before publication.
+        if interrupted() {
+            return Ok(false);
+        }
+        // Hash the accepted recording once. Later checkpoints keep this witness.
+        let admitted = match crate::custody::AcceptedInput::capture(root, input, &interrupted) {
+            Ok(Some(admitted)) => admitted,
+            Ok(None) => return Ok(false),
+            Err(error) => {
+                if interrupted() || error == crate::custody::CUSTODY_CANCELLED {
+                    return Ok(false);
+                }
+                let mut held = config.held.lock().unwrap();
+                if held.0 != generation {
+                    *held = (generation, HashSet::new());
+                }
+                held.1.insert(input.to_path_buf());
+                drop(held);
+                self.state.input_failed(generation, input, &error);
+                *self.state.status.lock().unwrap() =
+                    json!({"state":"failed","input":input,"error":error});
+                return Err(error);
+            }
+        };
+        // A retained stamp and the accepted receipt's size and digest name the
+        // admitted bytes. Checkpoints do not hash the recording again. Loss
+        // still cancels before publication, including a deleted original that
+        // reappears.
         let owner_original_deleted = Cell::new(false);
         let cancel = || {
             interrupted()
-                || input_custody_lost(
-                    config.root.canonical_path(),
-                    input,
-                    owner_original_deleted.get(),
-                )
+                || admitted_input_lost(&admitted, root, input, owner_original_deleted.get())
         };
         *self.state.status.lock().unwrap() = json!({"state":"processing","input":input});
         let started = Instant::now();
@@ -272,6 +294,7 @@ impl AudioWorker {
             load_ms: Cell::new(None),
             native_call: &native_call,
         };
+        journal_mobile_audio::install_embedded_ced();
         let result = process_embedded(
             input,
             config.root.canonical_path(),
@@ -290,7 +313,12 @@ impl AudioWorker {
             },
             retry.as_ref(),
         );
-        if cancel() {
+        let cancelled = match &result {
+            Ok(_) => false,
+            Err(solstone_core_transcribe::TranscribeError::Cancelled) => true,
+            Err(_) => cancel(),
+        };
+        if cancelled {
             self.state.status.lock().unwrap()["state"] = json!("cancelled");
             return Ok(false);
         }
@@ -365,7 +393,7 @@ pub(crate) enum InputDecision {
     Process(Option<solstone_core_transcribe::RetryContext>),
 }
 
-pub(crate) fn decide_input(root: &Path, input: &Path, held: &HashSet<PathBuf>) -> InputDecision {
+fn gate_input(root: &Path, input: &Path, held: &HashSet<PathBuf>) -> InputDecision {
     let retry = match embedded_retry_context(root, input) {
         Ok(context) => context,
         Err(error) => return InputDecision::Hold(error),
@@ -376,10 +404,17 @@ pub(crate) fn decide_input(root: &Path, input: &Path, held: &HashSet<PathBuf>) -
     if embedded_already_processed(root, input, retry.as_ref()) {
         return InputDecision::Skip;
     }
-    match accepted_input(root, input) {
-        Ok(true) => InputDecision::Process(retry),
-        Ok(false) => InputDecision::Skip,
-        Err(error) => InputDecision::Hold(error),
+    InputDecision::Process(retry)
+}
+
+pub(crate) fn decide_input(root: &Path, input: &Path, held: &HashSet<PathBuf>) -> InputDecision {
+    match gate_input(root, input, held) {
+        InputDecision::Process(retry) => match accepted_input(root, input) {
+            Ok(true) => InputDecision::Process(retry),
+            Ok(false) => InputDecision::Skip,
+            Err(error) => InputDecision::Hold(error),
+        },
+        decision => decision,
     }
 }
 
@@ -488,6 +523,7 @@ fn run(
                             "previous": prior.get("last"),
                             "model_load_ms": asr.load_ms.get(),
                         }));
+                        journal_mobile_audio::install_embedded_ced();
                         let result = process_embedded(
                             &input,
                             root,
@@ -512,7 +548,12 @@ fn run(
                             },
                             retry.as_ref(),
                         );
-                        if state.cancelled(generation) {
+                        let cancelled = match &result {
+                            Ok(_) => false,
+                            Err(solstone_core_transcribe::TranscribeError::Cancelled) => true,
+                            Err(_) => state.cancelled(generation),
+                        };
+                        if cancelled {
                             state.status.lock().unwrap()["state"] = json!("cancelled");
                             break;
                         }
@@ -567,7 +608,7 @@ fn accepted_input(root: &Path, input: &Path) -> Result<bool, String> {
     crate::custody::accepted_input(root, input)
 }
 
-#[cfg(feature = "processing")]
+#[cfg(all(feature = "processing", test))]
 fn input_custody_lost(root: &Path, input: &Path, owner_original_deleted: bool) -> bool {
     if owner_original_deleted {
         // Retention deleted the admitted original under the publication claim.
@@ -576,6 +617,24 @@ fn input_custody_lost(root: &Path, input: &Path, owner_original_deleted: bool) -
             if error.kind() == std::io::ErrorKind::NotFound)
     } else {
         !accepted_input(root, input).unwrap_or(false)
+    }
+}
+
+#[cfg(feature = "processing")]
+fn admitted_input_lost(
+    admitted: &crate::custody::AcceptedInput,
+    root: &Path,
+    input: &Path,
+    owner_original_deleted: bool,
+) -> bool {
+    if owner_original_deleted {
+        // Retention deleted the admitted original under the publication claim.
+        // Recreated bytes cannot inherit that completed deletion's authority.
+        !matches!(std::fs::symlink_metadata(input), Err(error)
+            if error.kind() == std::io::ErrorKind::NotFound)
+    } else {
+        // Stamp and the retained receipt size and digest. The admission hash is not repeated.
+        !admitted.still_current(input) || !admitted.receipt_matches(root, input).unwrap_or(false)
     }
 }
 
@@ -1004,47 +1063,53 @@ mod tests {
     #[cfg(feature = "processing")]
     #[test]
     fn active_host_persists_oversize_refusal_without_repeating_it_on_resume() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = tempfile::TempDir::new_in("/var/tmp").unwrap();
+        let original = vec![0; 16 * 1024 * 1024 + 1];
         let input = setup_fixture_audio(
             temp.path(),
             "20261012",
             "device_audio",
             "120000_1",
             "audio.wav",
-            &vec![0; 16 * 1024 * 1024 + 1],
+            &original,
         );
         let worker = host_worker(temp.path());
 
-        let error = worker
-            .process_host_input(&input, None, &|| false)
-            .unwrap_err();
-        assert!(error.contains("16 MiB"), "{error}");
+        assert!(worker.process_host_input(&input, None, &|| false).unwrap());
         let status = worker.status();
-        assert_eq!(status["state"], "failed");
-        assert_eq!(status["input"], json!(input));
-        assert_eq!(status["recent_failures"].as_array().unwrap().len(), 1);
-        assert_eq!(status["recent_failures"][0]["error"], error);
-        assert_eq!(status["recent_failures"][0]["generation"], 0);
+        assert_eq!(status["state"], "ready");
+        assert!(status["recent_failures"].as_array().unwrap().is_empty());
         let record = solstone_core_processing_record::read_processing_record_header(
             &input.with_extension("jsonl"),
         )
         .unwrap();
-        assert_eq!(record["reason_code"], "embedded-input-budget");
+        let reason = record["reason_code"].as_str().expect("decode reason");
+        assert!(
+            reason == solstone_core_processing_record::vocab::REASON_CORRUPT_INPUT
+                || reason == solstone_core_processing_record::vocab::REASON_NO_AUDIO_STREAM,
+            "{reason}"
+        );
+        assert_ne!(reason, "embedded-input-budget");
         assert!(solstone_core_processing_record::is_failure_exhausted(
             &record
         ));
         assert!(!input.with_extension("npz").exists());
+        assert_eq!(std::fs::read(&input).unwrap(), original);
 
         assert!(!worker.process_host_input(&input, None, &|| false).unwrap());
-        assert_eq!(
-            worker.status()["recent_failures"].as_array().unwrap().len(),
-            1
+        assert!(
+            worker.status()["recent_failures"]
+                .as_array()
+                .unwrap()
+                .is_empty()
         );
         worker.resume();
         assert!(!worker.process_host_input(&input, None, &|| false).unwrap());
-        assert_eq!(
-            worker.status()["recent_failures"].as_array().unwrap().len(),
-            1
+        assert!(
+            worker.status()["recent_failures"]
+                .as_array()
+                .unwrap()
+                .is_empty()
         );
     }
 
@@ -1117,7 +1182,14 @@ mod tests {
     fn active_host_cancels_on_custody_loss_after_admission() {
         // These mutations occur at a real embedded checkpoint after admission.
         // No model should be reached once the accepted input is lost or cancelled.
-        for change in ["cancel", "changed", "missing", "oversize", "receipt"] {
+        for change in [
+            "cancel",
+            "changed",
+            "missing",
+            "oversize",
+            "receipt",
+            "receipt-digest",
+        ] {
             let temp = tempfile::tempdir().unwrap();
             let input = setup_fixture_audio(
                 temp.path(),
@@ -1147,6 +1219,33 @@ mod tests {
                             )
                             .unwrap();
                         }
+                        "receipt-digest" => {
+                            let segment = input.parent().unwrap();
+                            std::fs::remove_file(segment.join("events.jsonl")).unwrap();
+                            let event = DeviceIngestEvent {
+                                record_type: "device_ingest".into(),
+                                record_version: 1,
+                                outcome: "accepted".into(),
+                                protocol_version: 3,
+                                cid: "fixture".into(),
+                                source: "audio".into(),
+                                stream: "device_audio".into(),
+                                day: "20261012".into(),
+                                segment: "120000_1".into(),
+                                meta: Default::default(),
+                                extra: Default::default(),
+                                files: vec![FileDescriptor {
+                                    submitted: "audio.wav".into(),
+                                    written: "audio.wav".into(),
+                                    size: 1,
+                                    sha256: format!("{:x}", Sha256::digest(b"other")),
+                                    extra: Default::default(),
+                                }],
+                            };
+                            append_durable_event(segment, &DurableEvent::DeviceIngest(event))
+                                .unwrap();
+                            assert_eq!(std::fs::read(&input).unwrap(), b"speech");
+                        }
                         "cancel" => (),
                         _ => unreachable!(),
                     }
@@ -1171,6 +1270,9 @@ mod tests {
             );
             assert!(!input.with_extension("jsonl").exists(), "{change}");
             assert!(!input.with_extension("npz").exists(), "{change}");
+            if change == "receipt-digest" {
+                assert_eq!(std::fs::read(&input).unwrap(), b"speech");
+            }
         }
     }
 

@@ -2636,6 +2636,15 @@ mod tests {
         let value: Value = serde_json::from_str(&json.stdout).unwrap();
         assert_eq!(value["bytes_restored"], 40);
         assert_eq!(value["reason"], Value::Null);
+        let mut held = offload_result("degraded", Some("restore_held"));
+        let cause = "Repair(CatalogChanged); settlement native reason=unsettled_transaction";
+        held.reason_detail = Some(cause.into());
+        let output = offload_restore_result(held, true);
+        let value: Value = serde_json::from_str(&output.stdout).unwrap();
+        assert_eq!(output.exit_code, 1);
+        assert_eq!(value["reason"], "restore_held");
+        assert_eq!(value["reason_detail"], cause);
+        assert_eq!(value["bytes_restored"], 40);
     }
 
     #[test]
@@ -3050,6 +3059,13 @@ mod tests {
             "--exclude".into(),
             "/health/callosum.pipe-*".into(),
         ];
+        #[cfg(not(target_os = "ios"))]
+        restore_argv.extend([
+            "--exclude".into(),
+            "/health/whole-journal-restore.json".into(),
+            "--exclude".into(),
+            "/health/!solstone-claim-00000000-*".into(),
+        ]);
         #[cfg(target_os = "linux")]
         restore_argv.extend(["--exclude".into(), "backup-activity.lock".into()]);
         restore_argv.push("--json".into());

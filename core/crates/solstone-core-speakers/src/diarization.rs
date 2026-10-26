@@ -3,6 +3,7 @@
 
 use std::error::Error;
 use std::fmt;
+use std::path::Path;
 
 pub const SAMPLE_RATE: u32 = 16_000;
 pub const WINDOW_S: u32 = 10;
@@ -18,6 +19,10 @@ pub const SILHOUETTE_IMPROVEMENT: f64 = 0.03;
 pub const UNDEFINED_SILHOUETTE: f64 = -1.0;
 
 const ROW_NORM_EPSILON: f64 = 1e-9;
+
+pub(crate) fn row_norm_epsilon() -> f64 {
+    ROW_NORM_EPSILON
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DiarizationError {
@@ -37,6 +42,12 @@ pub enum DiarizationError {
     LabelLengthMismatch {
         intervals: usize,
         labels: usize,
+    },
+    /// A caller asked to stop before the next tile or merge.
+    Cancelled,
+    /// A bounded matrix tile could not be stored.
+    MatrixStore {
+        detail: String,
     },
 }
 
@@ -61,6 +72,8 @@ impl fmt::Display for DiarizationError {
                 formatter,
                 "sentence assignment label length mismatch: intervals={intervals} labels={labels}"
             ),
+            Self::Cancelled => write!(formatter, "clustering cancelled"),
+            Self::MatrixStore { detail } => write!(formatter, "clustering matrix store: {detail}"),
         }
     }
 }
@@ -121,6 +134,7 @@ pub struct ClusterEmbeddingResult {
     pub effective_k: Option<usize>,
 }
 
+#[cfg(all(test, feature = "full-tests"))]
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct Merge {
     left: usize,
@@ -234,6 +248,25 @@ pub fn cluster_embeddings(
     rows: usize,
     cols: usize,
     n_speakers: Option<usize>,
+    scratch: &std::path::Path,
+) -> Result<ClusterEmbeddingResult, DiarizationError> {
+    cluster_embeddings_cancellable(embeddings, rows, cols, n_speakers, scratch, &|| false)
+}
+
+/// Cluster interval rows. Cancellation is checked before each matrix tile and
+/// between linkage merges. A true callback is [`DiarizationError::Cancelled`].
+/// It is not an empty label list, an undefined silhouette, or a one-speaker success.
+///
+/// The distance and linkage matrices are the tiled store in `cluster_bound`.
+/// A finished recording does not allocate `rows * rows` or `(2 * rows - 1)^2`
+/// resident buffers.
+pub fn cluster_embeddings_cancellable(
+    embeddings: &[f32],
+    rows: usize,
+    cols: usize,
+    n_speakers: Option<usize>,
+    scratch: &std::path::Path,
+    cancel: &dyn Fn() -> bool,
 ) -> Result<ClusterEmbeddingResult, DiarizationError> {
     validate_embedding_shape(embeddings, rows, cols)?;
     if rows == 0 {
@@ -246,26 +279,106 @@ pub fn cluster_embeddings(
             effective_k: None,
         });
     }
+    stop_if_cancelled(cancel)?;
+    let _scope = crate::cluster_bound::ClusterScope::enter(scratch);
+    let mut stored = crate::cluster_bound::BoundRows::from_f32(embeddings, rows, cols, cancel)?;
+    finish_cluster(&mut stored, rows, n_speakers, cancel)
+}
 
-    let normalized = normalize_embedding_rows(embeddings, rows, cols)?;
+/// Cluster embeddings already stored as little-endian `f32` rows.
+///
+/// One row is normalized at a time. The quadratic matrices use the same tiled
+/// store as [`cluster_embeddings_cancellable`].
+pub fn cluster_embeddings_f32le(
+    path: &std::path::Path,
+    rows: usize,
+    cols: usize,
+    n_speakers: Option<usize>,
+    scratch: &std::path::Path,
+    cancel: &dyn Fn() -> bool,
+) -> Result<ClusterEmbeddingResult, DiarizationError> {
+    if rows == 0 {
+        return Ok(ClusterEmbeddingResult {
+            labels: Vec::new(),
+            silhouette_k: None,
+            effective_k: None,
+        });
+    }
+    stop_if_cancelled(cancel)?;
+    let _scope = crate::cluster_bound::ClusterScope::enter(scratch);
+    let mut stored = crate::cluster_bound::BoundRows::from_f32le(path, rows, cols, cancel)?;
+    finish_cluster(&mut stored, rows, n_speakers, cancel)
+}
+
+/// Cluster file-backed rows and write `u32le` labels without a resident label vector.
+///
+/// The first cancellation poll is this function's first check, before any row
+/// is normalized. Linkage flags, sizes, merges, and membership stay in the
+/// private work directory under [`crate::cluster_bound::CLUSTER_LINKAGE_RESIDENT_BYTES`].
+pub fn cluster_embeddings_f32le_into(
+    path: &std::path::Path,
+    rows: usize,
+    cols: usize,
+    n_speakers: Option<usize>,
+    labels_out: &std::path::Path,
+    scratch: &std::path::Path,
+    cancel: &dyn Fn() -> bool,
+) -> Result<(), DiarizationError> {
+    if rows == 0 {
+        return Ok(());
+    }
+    // Named resident ceiling for flags, sizes, one merge, member buffers, and labels.
+    let _linkage_resident_bytes = crate::cluster_bound::CLUSTER_LINKAGE_RESIDENT_BYTES;
+    stop_if_cancelled(cancel)?;
+    let _scope = crate::cluster_bound::ClusterScope::enter(scratch);
+    let mut stored = crate::cluster_bound::BoundRows::from_f32le(path, rows, cols, cancel)?;
+    let (mut labels, _silhouette_k, _effective_k) =
+        finish_cluster_labels(&mut stored, rows, n_speakers, cancel)?;
+    labels.write_to(labels_out, cancel)
+}
+
+fn finish_cluster(
+    stored: &mut crate::cluster_bound::BoundRows,
+    rows: usize,
+    n_speakers: Option<usize>,
+    cancel: &dyn Fn() -> bool,
+) -> Result<ClusterEmbeddingResult, DiarizationError> {
+    let (mut labels, silhouette_k, effective_k) =
+        finish_cluster_labels(stored, rows, n_speakers, cancel)?;
+    Ok(ClusterEmbeddingResult {
+        labels: labels.read_labels(cancel)?,
+        silhouette_k,
+        effective_k,
+    })
+}
+
+fn finish_cluster_labels(
+    stored: &mut crate::cluster_bound::BoundRows,
+    rows: usize,
+    n_speakers: Option<usize>,
+    cancel: &dyn Fn() -> bool,
+) -> Result<
+    (
+        crate::cluster_bound::LabelFile,
+        Option<usize>,
+        Option<usize>,
+    ),
+    DiarizationError,
+> {
     let (requested_k, silhouette_k) = match n_speakers {
         Some(k) => (k, None),
         None => {
-            let selected = select_k_for_normalized_rows(&normalized, rows, cols)?;
+            let selected = select_k_for_stored_rows(stored, rows, cancel)?;
             (selected, Some(selected))
         }
     };
     let k = clamp_speaker_count(requested_k, rows);
     let labels = if k <= 1 {
-        vec![0; rows]
+        crate::cluster_bound::LabelFile::zeros(rows)?
     } else {
-        ahc_labels_from_normalized_rows(&normalized, rows, cols, k)?
+        ahc_labels_from_stored_rows(stored, rows, k, cancel)?
     };
-    Ok(ClusterEmbeddingResult {
-        labels,
-        silhouette_k,
-        effective_k: Some(k),
-    })
+    Ok((labels, silhouette_k, Some(k)))
 }
 
 pub fn normalize_embedding_rows(
@@ -295,6 +408,7 @@ pub fn silhouette_score(
     rows: usize,
     cols: usize,
     labels: &[usize],
+    scratch: &Path,
 ) -> Result<f64, DiarizationError> {
     if rows != labels.len() {
         return Err(DiarizationError::LabelLengthMismatch {
@@ -302,13 +416,10 @@ pub fn silhouette_score(
             labels: labels.len(),
         });
     }
-    let normalized = normalize_embedding_rows(embeddings, rows, cols)?;
-    Ok(silhouette_score_normalized_rows(
-        &normalized,
-        rows,
-        cols,
-        labels,
-    ))
+    let _scope = crate::cluster_bound::ClusterScope::enter(scratch);
+    let mut stored = crate::cluster_bound::BoundRows::from_f32(embeddings, rows, cols, &|| false)?;
+    let mut labels = crate::cluster_bound::LabelFile::from_slice(labels, &|| false)?;
+    silhouette_score_stored_rows(&mut stored, rows, &mut labels, &|| false)
 }
 
 pub fn select_k_from_silhouette_curve(curve: &[(usize, f64)]) -> usize {
@@ -404,10 +515,10 @@ fn clamp_speaker_count(k: usize, n: usize) -> usize {
     std::cmp::max(1, std::cmp::min(k, if n > 1 { n - 1 } else { 1 }))
 }
 
-fn select_k_for_normalized_rows(
-    normalized: &[f64],
+fn select_k_for_stored_rows(
+    stored: &mut crate::cluster_bound::BoundRows,
     rows: usize,
-    cols: usize,
+    cancel: &dyn Fn() -> bool,
 ) -> Result<usize, DiarizationError> {
     let effective_max = MAX_K.min(rows.saturating_sub(1));
     if effective_max < 2 {
@@ -415,127 +526,141 @@ fn select_k_for_normalized_rows(
     }
     let mut curve = Vec::with_capacity(effective_max - 1);
     for k in 2..=effective_max {
-        let labels = ahc_labels_from_normalized_rows(normalized, rows, cols, k)?;
-        let score = silhouette_score_normalized_rows(normalized, rows, cols, &labels);
+        stop_if_cancelled(cancel)?;
+        let mut labels = ahc_labels_from_stored_rows(stored, rows, k, cancel)?;
+        let score = silhouette_score_stored_rows(stored, rows, &mut labels, cancel)?;
         curve.push((k, score));
     }
     Ok(select_k_from_silhouette_curve(&curve))
 }
 
-fn ahc_labels_from_normalized_rows(
-    normalized: &[f64],
+fn ahc_labels_from_stored_rows(
+    stored: &mut crate::cluster_bound::BoundRows,
     rows: usize,
-    cols: usize,
     k: usize,
-) -> Result<Vec<usize>, DiarizationError> {
+    cancel: &dyn Fn() -> bool,
+) -> Result<crate::cluster_bound::LabelFile, DiarizationError> {
     if rows == 0 {
-        return Ok(Vec::new());
+        return crate::cluster_bound::LabelFile::zeros(0);
     }
     let k = clamp_speaker_count(k, rows);
     if k <= 1 {
-        return Ok(vec![0; rows]);
+        return crate::cluster_bound::LabelFile::zeros(rows);
     }
-    let distances = unclipped_ahc_distances(normalized, rows, cols);
-    let merges = average_linkage_tree_from_distances(&distances, rows);
-    Ok(cut_tree_canonical_labels(rows, &merges, k))
+    let mut merges = {
+        let mut tiles = crate::cluster_bound::LinkageTiles::from_unclipped(stored, rows, cancel)?;
+        average_linkage_tree_from_tiles(&mut tiles, rows, cancel)?
+    };
+    cut_tree_canonical_labels(rows, &mut merges, k, cancel)
 }
 
-fn unclipped_ahc_distances(normalized: &[f64], rows: usize, cols: usize) -> Vec<f64> {
-    // AHC consumes the unclipped cosine distance matrix, matching
-    // scipy.pdist(metric="cosine"). This deliberately differs from the
-    // silhouette matrix below, which is clipped at zero; do not unify them.
-    let mut distances = vec![0.0; rows * rows];
-    for i in 0..rows {
-        for j in (i + 1)..rows {
-            let distance = 1.0 - dot_rows(normalized, cols, i, j);
-            distances[i * rows + j] = distance;
-            distances[j * rows + i] = distance;
-        }
+fn stop_if_cancelled(cancel: &dyn Fn() -> bool) -> Result<(), DiarizationError> {
+    if cancel() {
+        Err(DiarizationError::Cancelled)
+    } else {
+        Ok(())
     }
-    distances
 }
 
-fn clipped_silhouette_distances(normalized: &[f64], rows: usize, cols: usize) -> Vec<f64> {
-    // Silhouette consumes max(1.0 - dot, 0.0), clipped at zero, matching
-    // _silhouette in diarize.py:296. This deliberately differs from the
-    // unclipped AHC matrix above; do not unify them.
-    let mut distances = vec![0.0; rows * rows];
-    for i in 0..rows {
-        for j in 0..rows {
-            distances[i * rows + j] = (1.0 - dot_rows(normalized, cols, i, j)).max(0.0);
-        }
-    }
-    distances
-}
+// A finished cluster keeps the unclipped cosine matrix in fixed tiles.
+// Silhouette reads clipped cosine from the stored rows and does not allocate
+// a second rows*rows buffer. Active flags, sizes, merges, membership, and
+// labels stay in private files. Two tiles of each are resident, bounded by
+// CLUSTER_LINKAGE_RESIDENT_BYTES. Unclipped linkage distance stays 1-dot.
+// Silhouette stays max(1-dot, 0).
 
-fn average_linkage_tree_from_distances(distances: &[f64], n: usize) -> Vec<Merge> {
+#[cfg(all(test, feature = "full-tests"))]
+fn average_linkage_tree_from_distances(
+    distances: &[f64],
+    n: usize,
+    cancel: &dyn Fn() -> bool,
+) -> Result<Vec<Merge>, DiarizationError> {
     if n <= 1 {
-        return Vec::new();
+        return Ok(Vec::new());
     }
-
-    let max_nodes = 2 * n - 1;
-    let mut matrix = vec![f64::INFINITY; max_nodes * max_nodes];
-    for row in 0..n {
-        for col in 0..n {
-            matrix[row * max_nodes + col] = distances[row * n + col];
-        }
-    }
-
-    let mut active = vec![false; max_nodes];
-    let mut sizes = vec![0_usize; max_nodes];
-    for idx in 0..n {
-        active[idx] = true;
-        sizes[idx] = 1;
-    }
-
-    let mut merges = Vec::with_capacity(n - 1);
-    for step in 0..(n - 1) {
-        let (left, right, distance) = lowest_active_pair(&matrix, &active, max_nodes)
-            .expect("at least two active clusters remain");
-        let new_id = n + step;
-        let new_size = sizes[left] + sizes[right];
-
-        active[left] = false;
-        active[right] = false;
-        active[new_id] = true;
-        sizes[new_id] = new_size;
-
-        for other in 0..new_id {
-            if !active[other] {
-                continue;
-            }
-            let merged_distance = (sizes[left] as f64 * matrix[left * max_nodes + other]
-                + sizes[right] as f64 * matrix[right * max_nodes + other])
-                / new_size as f64;
-            matrix[new_id * max_nodes + other] = merged_distance;
-            matrix[other * max_nodes + new_id] = merged_distance;
-        }
-
+    let scratch = tempfile::tempdir().map_err(|error| DiarizationError::MatrixStore {
+        detail: error.to_string(),
+    })?;
+    let _scope = crate::cluster_bound::ClusterScope::enter(scratch.path());
+    let mut tiles = crate::cluster_bound::LinkageTiles::from_square(distances, n, cancel)?;
+    let mut log = average_linkage_tree_from_tiles(&mut tiles, n, cancel)?;
+    let mut merges = Vec::with_capacity(log.len());
+    for index in 0..log.len() {
+        let stored = log.get(index)?;
         merges.push(Merge {
-            left,
-            right,
-            distance,
-            size: new_size,
+            left: stored.left,
+            right: stored.right,
+            distance: stored.distance,
+            size: stored.size,
         });
     }
-    merges
+    Ok(merges)
 }
 
-fn lowest_active_pair(
-    matrix: &[f64],
-    active: &[bool],
-    stride: usize,
-) -> Option<(usize, usize, f64)> {
-    let mut best: Option<(usize, usize, f64)> = None;
-    for i in 0..active.len() {
-        if !active[i] {
-            continue;
-        }
-        for j in (i + 1)..active.len() {
-            if !active[j] {
+fn average_linkage_tree_from_tiles(
+    tiles: &mut crate::cluster_bound::LinkageTiles,
+    n: usize,
+    cancel: &dyn Fn() -> bool,
+) -> Result<crate::cluster_bound::MergeLog, DiarizationError> {
+    if n <= 1 {
+        return crate::cluster_bound::MergeLog::new();
+    }
+    let mut nodes = crate::cluster_bound::NodeScratch::new(tiles.stride())?;
+    nodes.activate_singletons(n, cancel)?;
+    let mut merges = crate::cluster_bound::MergeLog::new()?;
+    for step in 0..(n - 1) {
+        stop_if_cancelled(cancel)?;
+        let (left, right, distance) = lowest_active_pair_tiles(tiles, &mut nodes, cancel)?
+            .expect("at least two active clusters remain");
+        let new_id = n + step;
+        let left_size = nodes.size(left, cancel)?;
+        let right_size = nodes.size(right, cancel)?;
+        let new_size = left_size + right_size;
+        nodes.set_active(left, false, cancel)?;
+        nodes.set_active(right, false, cancel)?;
+        nodes.set_active(new_id, true, cancel)?;
+        nodes.set_size(new_id, new_size, cancel)?;
+
+        for other in 0..new_id {
+            if other % crate::cluster_bound::CLUSTER_TILE_EDGE == 0 {
+                stop_if_cancelled(cancel)?;
+            }
+            if !nodes.is_active(other, cancel)? {
                 continue;
             }
-            let distance = matrix[i * stride + j];
+            let merged_distance = (left_size as f64 * tiles.get(left, other, cancel)?
+                + right_size as f64 * tiles.get(right, other, cancel)?)
+                / new_size as f64;
+            tiles.set(new_id, other, merged_distance, cancel)?;
+            tiles.set(other, new_id, merged_distance, cancel)?;
+        }
+        merges.push(left, right, distance, new_size)?;
+    }
+    Ok(merges)
+}
+
+fn lowest_active_pair_tiles(
+    tiles: &mut crate::cluster_bound::LinkageTiles,
+    nodes: &mut crate::cluster_bound::NodeScratch,
+    cancel: &dyn Fn() -> bool,
+) -> Result<Option<(usize, usize, f64)>, DiarizationError> {
+    let mut best: Option<(usize, usize, f64)> = None;
+    let limit = nodes.nodes();
+    for i in 0..limit {
+        if i % crate::cluster_bound::CLUSTER_TILE_EDGE == 0 {
+            stop_if_cancelled(cancel)?;
+        }
+        if !nodes.is_active(i, cancel)? {
+            continue;
+        }
+        for j in (i + 1)..limit {
+            if (j - i) % crate::cluster_bound::CLUSTER_TILE_EDGE == 0 {
+                stop_if_cancelled(cancel)?;
+            }
+            if !nodes.is_active(j, cancel)? {
+                continue;
+            }
+            let distance = tiles.get(i, j, cancel)?;
             let replace = match best {
                 None => true,
                 Some((best_i, best_j, best_distance)) => {
@@ -552,79 +677,156 @@ fn lowest_active_pair(
             }
         }
     }
-    best
+    Ok(best)
 }
 
-fn cut_tree_canonical_labels(n: usize, merges: &[Merge], k: usize) -> Vec<usize> {
+fn cut_tree_canonical_labels(
+    n: usize,
+    merges: &mut crate::cluster_bound::MergeLog,
+    k: usize,
+    cancel: &dyn Fn() -> bool,
+) -> Result<crate::cluster_bound::LabelFile, DiarizationError> {
     if n == 0 {
-        return Vec::new();
+        return crate::cluster_bound::LabelFile::zeros(0);
     }
     if k <= 1 {
-        return vec![0; n];
+        return crate::cluster_bound::LabelFile::zeros(n);
     }
 
-    let max_nodes = 2 * n - 1;
-    let mut members: Vec<Vec<usize>> = vec![Vec::new(); max_nodes];
-    let mut active = vec![false; max_nodes];
-    for idx in 0..n {
-        members[idx].push(idx);
-        active[idx] = true;
+    let mut lists = crate::cluster_bound::MemberLists::singletons(n, cancel)?;
+    let taken = n - k;
+    if taken > merges.len() {
+        return Err(DiarizationError::MatrixStore {
+            detail: "linkage ended before the requested cut".to_owned(),
+        });
     }
-
-    for (step, merge) in merges.iter().take(n - k).enumerate() {
-        let new_id = n + step;
-        let mut merged = members[merge.left].clone();
-        merged.extend(members[merge.right].iter().copied());
-        merged.sort_unstable();
-        members[new_id] = merged;
-        active[merge.left] = false;
-        active[merge.right] = false;
-        active[new_id] = true;
-    }
-
-    let mut clusters: Vec<Vec<usize>> = active
-        .iter()
-        .enumerate()
-        .filter_map(|(node, is_active)| {
-            if *is_active && !members[node].is_empty() {
-                Some(members[node].clone())
-            } else {
-                None
-            }
-        })
-        .collect();
-    // Labels are assigned by ascending smallest member index. This is
-    // deliberately not scipy _hc_cut's numbering: _hc_cut label values are pure
-    // merge-order artifacts, while only the partition is well-defined.
-    clusters.sort_by_key(|cluster| cluster[0]);
-
-    let mut labels = vec![0_usize; n];
-    for (label, cluster) in clusters.iter().enumerate() {
-        for member in cluster {
-            labels[*member] = label;
+    for step in 0..taken {
+        stop_if_cancelled(cancel)?;
+        let merge = merges.get(step)?;
+        if merge.distance.is_nan() {
+            return Err(DiarizationError::MatrixStore {
+                detail: "linkage distance is not a number".to_owned(),
+            });
+        }
+        lists.merge_sorted(merge.left, merge.right, n + step, cancel)?;
+        if lists.count(n + step, cancel)? != merge.size {
+            return Err(DiarizationError::MatrixStore {
+                detail: "merge size does not match membership".to_owned(),
+            });
         }
     }
-    labels
+
+    // Labels follow the ascending smallest member. This is deliberately not
+    // scipy _hc_cut's numbering: those label values are merge-order artifacts,
+    // while only the partition is well-defined. Each choice scans the remaining
+    // clusters and keeps two member tiles, so k is not a resident vector.
+    let mut labels = crate::cluster_bound::LabelFile::zeros(n)?;
+    let max_nodes = n * 2 - 1;
+    for label in 0..k {
+        stop_if_cancelled(cancel)?;
+        let mut best: Option<(u64, usize)> = None;
+        for node in 0..max_nodes {
+            if node % crate::cluster_bound::CLUSTER_TILE_EDGE == 0 {
+                stop_if_cancelled(cancel)?;
+            }
+            if lists.count(node, cancel)? == 0 {
+                continue;
+            }
+            let first = lists.first(node, cancel)?;
+            let replace = match best {
+                None => true,
+                Some((best_first, best_node)) => {
+                    first < best_first || (first == best_first && node < best_node)
+                }
+            };
+            if replace {
+                best = Some((first, node));
+            }
+        }
+        let Some((_, node)) = best else {
+            return Err(DiarizationError::MatrixStore {
+                detail: "cut left fewer clusters than requested".to_owned(),
+            });
+        };
+        lists.for_each(node, cancel, |member| {
+            let index = usize::try_from(member)
+                .map_err(|_| DiarizationError::ShapeOverflow { rows: n, cols: 1 })?;
+            labels.set(index, label, cancel)
+        })?;
+        lists.clear(node, cancel)?;
+    }
+    Ok(labels)
 }
 
-fn silhouette_score_normalized_rows(
-    normalized: &[f64],
+fn silhouette_score_stored_rows(
+    stored: &mut crate::cluster_bound::BoundRows,
     rows: usize,
-    cols: usize,
-    labels: &[usize],
-) -> f64 {
+    labels: &mut crate::cluster_bound::LabelFile,
+    cancel: &dyn Fn() -> bool,
+) -> Result<f64, DiarizationError> {
     if rows != labels.len() {
-        return UNDEFINED_SILHOUETTE;
+        return Ok(UNDEFINED_SILHOUETTE);
     }
-    let unique = unique_labels(labels);
+    let unique = labels.unique(cancel)?;
     if unique.len() < 2 || rows <= unique.len() {
-        return UNDEFINED_SILHOUETTE;
+        return Ok(UNDEFINED_SILHOUETTE);
     }
 
-    let distances = clipped_silhouette_distances(normalized, rows, cols);
-    silhouette_score_from_distances(&distances, rows, labels)
+    // Clipped cosine is max(1 - dot, 0), matching _silhouette in diarize.py.
+    // It is not the unclipped distance stored for agglomerative clustering.
+    let mut total = 0.0_f64;
+    for idx in 0..rows {
+        if idx % crate::cluster_bound::CLUSTER_TILE_EDGE == 0 {
+            stop_if_cancelled(cancel)?;
+        }
+        let own_label = labels.get(idx, cancel)?;
+        let own_count = labels.count_label(own_label, Some(idx), cancel)?;
+        if own_count == 0 {
+            // sklearn computes the singleton intra-cluster mean as 0/0, then
+            // np.nan_to_num maps that sample's silhouette contribution to 0.0.
+            // The singleton contribution is therefore independent of b.
+            continue;
+        }
+        let mut sum = 0.0_f64;
+        for other in 0..rows {
+            if other % crate::cluster_bound::CLUSTER_TILE_EDGE == 0 {
+                stop_if_cancelled(cancel)?;
+            }
+            if other != idx && labels.get(other, cancel)? == own_label {
+                sum += stored.clipped(idx, other)?;
+            }
+        }
+        let a = sum / own_count as f64;
+
+        let mut b = f64::INFINITY;
+        for label in &unique {
+            if *label == own_label {
+                continue;
+            }
+            let mut count = 0_usize;
+            let mut other_sum = 0.0_f64;
+            for other in 0..rows {
+                if other % crate::cluster_bound::CLUSTER_TILE_EDGE == 0 {
+                    stop_if_cancelled(cancel)?;
+                }
+                if labels.get(other, cancel)? == *label {
+                    count += 1;
+                    other_sum += stored.clipped(idx, other)?;
+                }
+            }
+            if count > 0 {
+                b = b.min(other_sum / count as f64);
+            }
+        }
+
+        let denom = a.max(b);
+        let sample_score = if denom > 0.0 { (b - a) / denom } else { 0.0 };
+        total += sample_score;
+    }
+    Ok(total / rows as f64)
 }
 
+#[cfg(test)]
 fn silhouette_score_from_distances(distances: &[f64], rows: usize, labels: &[usize]) -> f64 {
     if rows != labels.len() {
         return UNDEFINED_SILHOUETTE;
@@ -681,21 +883,12 @@ fn silhouette_score_from_distances(distances: &[f64], rows: usize, labels: &[usi
     total / rows as f64
 }
 
+#[cfg(test)]
 fn unique_labels(labels: &[usize]) -> Vec<usize> {
     let mut labels = labels.to_vec();
     labels.sort_unstable();
     labels.dedup();
     labels
-}
-
-fn dot_rows(data: &[f64], cols: usize, left: usize, right: usize) -> f64 {
-    let left_start = left * cols;
-    let right_start = right * cols;
-    data[left_start..left_start + cols]
-        .iter()
-        .zip(&data[right_start..right_start + cols])
-        .map(|(left, right)| left * right)
-        .sum()
 }
 
 #[cfg(test)]
@@ -848,6 +1041,7 @@ mod tests {
         assert!(score_comparison_error(actual, expected, CLUSTER_SCORE_ABS_TOLERANCE).is_some());
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn ahc_recovers_well_separated_known_partition_at_k_three() {
         // Fixture cannot supply this because the committed stage fixture has no
@@ -857,11 +1051,14 @@ mod tests {
             0.01, 0.99,
         ];
 
-        let result = cluster_embeddings(&embeddings, 6, 3, Some(3)).expect("cluster labels");
+        let scratch = tempfile::tempdir().expect("cluster scratch");
+        let result =
+            cluster_embeddings(&embeddings, 6, 3, Some(3), scratch.path()).expect("cluster labels");
 
         assert_same_partition(&result.labels, &[0, 0, 1, 1, 2, 2]);
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn ahc_hand_walked_average_linkage_merge_sequence() {
         // Fixture cannot supply this because the arithmetic oracle is a
@@ -877,13 +1074,15 @@ mod tests {
             [0.6, 1.0, 0.2, 0.0],
         ]);
 
-        let merges = average_linkage_tree_from_distances(&distances, 4);
+        let merges = average_linkage_tree_from_distances(&distances, 4, &|| false)
+            .expect("uninterrupted linkage");
 
         assert_merge(&merges[0], 0, 1, 0.1, 2);
         assert_merge(&merges[1], 2, 3, 0.2, 2);
         assert_merge(&merges[2], 4, 5, 0.775, 4);
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn ahc_exact_ties_use_lowest_active_pair_index() {
         // Fixture cannot supply this because the tie rule is intentionally
@@ -896,13 +1095,15 @@ mod tests {
             [1.0, 1.0, 1.0, 0.0],
         ]);
 
-        let merges = average_linkage_tree_from_distances(&distances, 4);
+        let merges = average_linkage_tree_from_distances(&distances, 4, &|| false)
+            .expect("uninterrupted linkage");
 
         assert_merge(&merges[0], 0, 1, 1.0, 2);
         assert_merge(&merges[1], 2, 3, 1.0, 2);
         assert_merge(&merges[2], 4, 5, 1.0, 4);
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn ahc_partition_nesting_across_k_two_through_five_is_property_based() {
         // Fixture cannot supply this because it records nested partitions but
@@ -916,11 +1117,12 @@ mod tests {
             0.03, 0.97, 0.7, 0.7, 0.0, 0.7, 0.0, 0.7,
         ];
 
-        let mut previous = cluster_embeddings(&embeddings, 8, 3, Some(2))
+        let scratch = tempfile::tempdir().expect("cluster scratch");
+        let mut previous = cluster_embeddings(&embeddings, 8, 3, Some(2), scratch.path())
             .expect("k=2")
             .labels;
         for k in 3..=5 {
-            let current = cluster_embeddings(&embeddings, 8, 3, Some(k))
+            let current = cluster_embeddings(&embeddings, 8, 3, Some(k), scratch.path())
                 .expect("labels")
                 .labels;
             assert!(partition_refines(&current, &previous));
@@ -965,6 +1167,17 @@ mod tests {
         assert_close(score, 0.64, 1e-6);
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
+    #[test]
+    fn silhouette_score_reads_rows_from_the_caller_scratch() {
+        let scratch = tempfile::tempdir().expect("cluster scratch");
+        let embeddings = [1.0_f32, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 1.0];
+        let score =
+            silhouette_score(&embeddings, 4, 2, &[0, 0, 1, 1], scratch.path()).expect("silhouette");
+        assert!(score.is_finite());
+    }
+
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn zero_norm_embedding_row_passes_through_and_clusters_without_error() {
         // Fixture cannot supply this because it has no raw clustering rows and
@@ -972,52 +1185,204 @@ mod tests {
         let embeddings = [0.0_f32, 0.0, 1.0, 0.0, 0.0, 1.0];
 
         let normalized = normalize_embedding_rows(&embeddings, 3, 2).expect("normalized");
-        let result = cluster_embeddings(&embeddings, 3, 2, Some(2)).expect("labels");
+        let scratch = tempfile::tempdir().expect("cluster scratch");
+        let result =
+            cluster_embeddings(&embeddings, 3, 2, Some(2), scratch.path()).expect("labels");
 
         assert_eq!(&normalized[0..2], &[0.0, 0.0]);
         assert_eq!(result.labels.len(), 3);
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn cluster_embeddings_reports_selection_for_zero_rows() {
         // Fixture cannot supply this because it has only populated clustering
         // curves, not empty or single-row degenerate inputs.
-        let empty = cluster_embeddings(&[], 0, 2, None).expect("empty labels");
+        let scratch = tempfile::tempdir().expect("cluster scratch");
+        let empty = cluster_embeddings(&[], 0, 2, None, scratch.path()).expect("empty labels");
 
         assert_eq!(empty.labels, Vec::<usize>::new());
         assert_eq!(empty.silhouette_k, None);
         assert_eq!(empty.effective_k, None);
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn cluster_embeddings_reports_selection_for_one_row() {
-        let result = cluster_embeddings(&[1.0_f32, 0.0], 1, 2, None).expect("single labels");
+        let scratch = tempfile::tempdir().expect("cluster scratch");
+        let result =
+            cluster_embeddings(&[1.0_f32, 0.0], 1, 2, None, scratch.path()).expect("single labels");
 
         assert_eq!(result.labels, vec![0]);
         assert_eq!(result.silhouette_k, Some(1));
         assert_eq!(result.effective_k, Some(1));
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn cluster_embeddings_reports_selection_for_two_rows() {
-        let result =
-            cluster_embeddings(&[1.0_f32, 0.0, 0.0, 1.0], 2, 2, None).expect("two-row labels");
+        let scratch = tempfile::tempdir().expect("cluster scratch");
+        let result = cluster_embeddings(&[1.0_f32, 0.0, 0.0, 1.0], 2, 2, None, scratch.path())
+            .expect("two-row labels");
 
         assert_eq!(result.labels, vec![0, 0]);
         assert_eq!(result.silhouette_k, Some(1));
         assert_eq!(result.effective_k, Some(1));
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn cluster_embeddings_reports_selection_for_three_rows() {
-        let result = cluster_embeddings(&[1.0_f32, 0.0, 0.0, 1.0, 0.8, 0.2], 3, 2, None)
-            .expect("three-row labels");
+        let scratch = tempfile::tempdir().expect("cluster scratch");
+        let result = cluster_embeddings(
+            &[1.0_f32, 0.0, 0.0, 1.0, 0.8, 0.2],
+            3,
+            2,
+            None,
+            scratch.path(),
+        )
+        .expect("three-row labels");
 
         assert_eq!(result.labels.len(), 3);
         assert_eq!(result.silhouette_k, Some(2));
         assert_eq!(result.effective_k, Some(2));
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
+    #[test]
+    fn cluster_embeddings_cancellable_matches_an_uninterrupted_call() {
+        let never = || false;
+        let scratch = tempfile::tempdir().expect("cluster scratch");
+        let compare = |embeddings: &[f32], rows: usize| {
+            let plain =
+                cluster_embeddings(embeddings, rows, 2, None, scratch.path()).expect("labels");
+            let cancellable =
+                cluster_embeddings_cancellable(embeddings, rows, 2, None, scratch.path(), &never)
+                    .expect("labels");
+            assert_eq!(plain.labels, cancellable.labels);
+            assert_eq!(plain.silhouette_k, cancellable.silhouette_k);
+            assert_eq!(plain.effective_k, cancellable.effective_k);
+        };
+        compare(&[1.0_f32, 0.0, 0.0, 1.0, 0.8, 0.2], 3);
+        compare(&[1.0_f32, 0.0, 0.0, 1.0], 2);
+    }
+
+    #[cfg(all(test, feature = "full-tests"))]
+    #[test]
+    fn cluster_embeddings_cancellable_stops_on_the_first_poll() {
+        let scratch = tempfile::tempdir().expect("cluster scratch");
+        let error = cluster_embeddings_cancellable(
+            &[1.0_f32, 0.0, 0.0, 1.0, 0.8, 0.2],
+            3,
+            2,
+            None,
+            scratch.path(),
+            &|| true,
+        )
+        .expect_err("first poll cancels");
+        assert_eq!(error, DiarizationError::Cancelled);
+    }
+
+    #[cfg(all(test, feature = "full-tests"))]
+    #[test]
+    fn cluster_embeddings_cancellable_stops_on_a_later_poll() {
+        let polls = std::cell::Cell::new(0_usize);
+        let cancel = || {
+            let seen = polls.get();
+            polls.set(seen + 1);
+            seen > 0
+        };
+        let scratch = tempfile::tempdir().expect("cluster scratch");
+        let error = cluster_embeddings_cancellable(
+            &[1.0_f32, 0.0, 0.0, 1.0, 0.8, 0.2],
+            3,
+            2,
+            None,
+            scratch.path(),
+            &cancel,
+        )
+        .expect_err("later poll cancels");
+        assert_eq!(error, DiarizationError::Cancelled);
+        assert!(polls.get() >= 2, "polls={}", polls.get());
+    }
+
+    #[cfg(all(test, feature = "full-tests"))]
+    #[test]
+    fn cluster_embeddings_keeps_labels_inside_the_tiled_resident_cap() {
+        let rows = 96;
+        let cols = 2;
+        let mut embeddings = Vec::with_capacity(rows * cols);
+        for index in 0..rows {
+            let angle = (index as f32) * 0.2;
+            embeddings.push(angle.cos());
+            embeddings.push(angle.sin());
+        }
+        let _ = crate::cluster_bound::take_cluster_tile_work_units();
+        let scratch = tempfile::tempdir().expect("cluster scratch");
+        let result =
+            cluster_embeddings(&embeddings, rows, cols, Some(3), scratch.path()).expect("labels");
+        let tile_units = crate::cluster_bound::take_cluster_tile_work_units();
+
+        assert_eq!(result.labels.len(), rows);
+        assert!(tile_units > 1, "tile work units={tile_units}");
+        assert!(
+            crate::cluster_bound::cluster_matrix_resident_bytes(cols)
+                < rows * rows * std::mem::size_of::<f64>()
+        );
+    }
+
+    #[cfg(all(test, feature = "full-tests"))]
+    #[test]
+    fn cluster_embeddings_cancellable_stops_inside_a_later_tile() {
+        let rows = 96;
+        let cols = 2;
+        let mut embeddings = Vec::with_capacity(rows * cols);
+        for index in 0..rows {
+            let angle = (index as f32) * 0.2;
+            embeddings.push(angle.cos());
+            embeddings.push(angle.sin());
+        }
+        let polls = std::cell::Cell::new(0_usize);
+        let cancel = || {
+            let seen = polls.get();
+            polls.set(seen + 1);
+            // Opening check, then row normalization at 0, 32, and 64. The
+            // following polls are linkage tiles.
+            seen > 4
+        };
+
+        let scratch = tempfile::tempdir().expect("cluster scratch");
+        let error = cluster_embeddings_cancellable(
+            &embeddings,
+            rows,
+            cols,
+            Some(3),
+            scratch.path(),
+            &cancel,
+        )
+        .expect_err("later tile cancels");
+
+        assert_eq!(error, DiarizationError::Cancelled);
+    }
+
+    #[cfg(all(test, feature = "full-tests"))]
+    #[test]
+    fn cluster_embeddings_gives_one_label_to_the_same_speaker_across_units() {
+        let scratch = tempfile::tempdir().expect("cluster scratch");
+        let result = cluster_embeddings(
+            &[1.0_f32, 0.0, 0.0, 1.0, 1.0, 0.0],
+            3,
+            2,
+            None,
+            scratch.path(),
+        )
+        .expect("same-speaker labels");
+
+        assert_eq!(result.labels[0], result.labels[2]);
+        assert_ne!(result.labels[0], result.labels[1]);
+    }
+
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn cluster_embeddings_reports_requested_speaker_count_without_silhouette() {
         // Fixture cannot supply this because selected fixture k values are
@@ -1027,7 +1392,9 @@ mod tests {
         assert_eq!(clamp_speaker_count(4, 0), 1);
 
         let embeddings = [1.0_f32, 0.0, 0.0, 1.0, 0.8, 0.2];
-        let result = cluster_embeddings(&embeddings, 3, 2, Some(99)).expect("labels");
+        let scratch = tempfile::tempdir().expect("cluster scratch");
+        let result =
+            cluster_embeddings(&embeddings, 3, 2, Some(99), scratch.path()).expect("labels");
 
         assert_eq!(unique_labels(&result.labels).len(), 2);
         assert_eq!(result.silhouette_k, None);
@@ -1225,6 +1592,7 @@ mod tests {
         rows.iter().flat_map(|row| row.iter().copied()).collect()
     }
 
+    #[cfg(feature = "full-tests")]
     fn assert_merge(merge: &Merge, left: usize, right: usize, distance: f64, size: usize) {
         assert_eq!(merge.left, left);
         assert_eq!(merge.right, right);
@@ -1239,6 +1607,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "full-tests")]
     fn assert_same_partition(actual: &[usize], expected: &[usize]) {
         assert_eq!(actual.len(), expected.len());
         for left in 0..actual.len() {
@@ -1252,6 +1621,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "full-tests")]
     fn partition_refines(finer: &[usize], coarser: &[usize]) -> bool {
         if finer.len() != coarser.len() {
             return false;

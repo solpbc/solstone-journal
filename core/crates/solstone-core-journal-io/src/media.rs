@@ -20,6 +20,12 @@ use sha2::{Digest, Sha256};
 use crate::JournalRoot;
 
 mod activity_carrier;
+mod stage_creation;
+pub use stage_creation::MediaStageCreation;
+mod stage_retirement;
+#[cfg(target_os = "android")]
+pub(crate) use activity_carrier::android_process_name;
+pub use stage_retirement::{StageRemovalEffect, StageRetirement, StageRetirementReceipt};
 #[cfg(unix)]
 pub mod teardown_preparation;
 #[cfg(target_os = "linux")]
@@ -28,9 +34,9 @@ pub use activity_carrier::{
     ActivityCarrierPreparationFailure, ActivityCarrierPreparationReceipt,
     ActivityCarrierRetirement, ActivityCarrierRetirementEffect, ActivityCarrierRetirementReceipt,
     RootActivityCarrier, RootCarrierObservation, RootTeardownCarrier,
-    TeardownCarrierPreparationFailure, exclusive_local_activity, retire_orphan_root_carriers,
-    retire_orphan_root_carriers_for_teardown, retire_recorded_stage, retire_unrecorded_stage,
-    retire_unrecorded_stage_where,
+    TeardownCarrierPreparationFailure, exclusive_local_activity, qualify_android_container,
+    qualify_ios_container, retire_orphan_root_carriers, retire_orphan_root_carriers_for_teardown,
+    retire_recorded_stage, retire_unrecorded_stage, retire_unrecorded_stage_where,
 };
 mod observation;
 pub use observation::{MediaEntry, MediaRead};
@@ -370,7 +376,6 @@ impl StageLease {
 /// Exactly one private sibling stage. Drop only closes handles, never unlinks.
 pub struct MediaStage {
     parent: Arc<MediaDirectory>,
-    activity: StageLease,
     name: OsString,
     directory: Option<Arc<MediaDirectory>>,
     leaf: Option<Box<Leaf>>,
@@ -381,6 +386,8 @@ pub struct MediaStage {
     payload_delete_pending: Option<OsString>,
     #[cfg(windows)]
     directory_delete_pending: bool,
+    // Native close can complete a pending deletion; release exclusion last.
+    activity: StageLease,
 }
 
 impl MediaStage {
@@ -398,69 +405,9 @@ impl MediaStage {
         parent: Arc<MediaDirectory>,
         activity: StageLease,
     ) -> Result<Self, OwnedMediaFailure<Option<Self>>> {
-        let preflight = (|| {
-            platform::supported_mutation()?;
-            if !Arc::ptr_eq(parent.inner.journal_root(), activity.journal_root()) {
-                return Err(invalid("stage belongs to another activity root"));
-            }
-            activity
-                .revalidate()
-                .map_err(crate::activity::ActivityAdmissionError::into_io)?;
-            parent.revalidate()
-        })();
-        if let Err(error) = preflight {
-            return Err(OwnedMediaFailure { error, owned: None });
-        }
-        let mut random = [0u8; 16];
-        if let Err(error) = getrandom::fill(&mut random) {
-            return Err(OwnedMediaFailure {
-                error: io::Error::other(error.to_string()),
-                owned: None,
-            });
-        }
-        let name = OsString::from(format!(".tmp-offload-{:032x}", u128::from_le_bytes(random)));
-        let mut stage = Self {
-            parent,
-            activity,
-            name,
-            directory: None,
-            leaf: None,
-            removed: false,
-            #[cfg(windows)]
-            published: false,
-            #[cfg(windows)]
-            payload_delete_pending: None,
-            #[cfg(windows)]
-            directory_delete_pending: false,
-        };
-        match stage
-            .revalidate_activity()
-            .and_then(|()| platform::create_directory(&stage.parent.inner, &stage.name))
-        {
-            Ok(inner) => {
-                stage.directory = Some(Arc::new(MediaDirectory { inner }));
-                let result = (|| {
-                    step(MediaPrimitive::StageCreated)?;
-                    stage
-                        .directory
-                        .as_ref()
-                        .expect("retained stage")
-                        .revalidate()?;
-                    stage.revalidate_activity()
-                })();
-                match result {
-                    Ok(()) => Ok(stage),
-                    Err(error) => Err(OwnedMediaFailure {
-                        error,
-                        owned: Some(stage),
-                    }),
-                }
-            }
-            Err(error) => Err(OwnedMediaFailure {
-                error,
-                owned: Some(stage),
-            }),
-        }
+        let mut creation = MediaStageCreation::with_lease(parent, activity);
+        creation.create();
+        creation.into_result()
     }
 
     pub fn diagnostic_path(&self) -> PathBuf {
@@ -670,9 +617,9 @@ impl OwnedMediaTarget {
             return Err(invalid("helper target is not empty"));
         }
         self.helper_taken = true;
-        #[cfg(target_os = "linux")]
+        #[cfg(any(target_os = "linux", target_os = "android"))]
         let target = PathBuf::from(format!("/proc/self/fd/{}", file.as_raw_fd()));
-        #[cfg(not(target_os = "linux"))]
+        #[cfg(not(any(target_os = "linux", target_os = "android")))]
         let target = PathBuf::from(format!("/dev/fd/{}", file.as_raw_fd()));
         Ok(HelperTransport {
             target,
@@ -853,7 +800,7 @@ impl ArchiveSource<'_> {
     /// Pass this exact descriptor through the existing helper pass_fds adapter.
     #[cfg(unix)]
     pub fn descriptor(&self) -> Option<std::os::fd::BorrowedFd<'_>> {
-        #[cfg(target_os = "linux")]
+        #[cfg(any(target_os = "linux", target_os = "android"))]
         {
             use std::os::fd::AsFd;
             Some(
@@ -867,10 +814,24 @@ impl ArchiveSource<'_> {
                     .as_fd(),
             )
         }
-        #[cfg(not(target_os = "linux"))]
+        #[cfg(not(any(target_os = "linux", target_os = "android")))]
         {
             None
         }
+    }
+
+    /// Directory descriptor for a linked archive. The path string is not authority.
+    #[cfg(target_os = "ios")]
+    pub fn stage_directory(&self) -> std::os::fd::BorrowedFd<'_> {
+        use std::os::fd::AsFd;
+        self.prepared
+            .target
+            .stage
+            .directory
+            .as_ref()
+            .expect("prepared stage")
+            .inner
+            .as_fd()
     }
 
     /// macOS can't traverse a directory descriptor by path, so the helper is

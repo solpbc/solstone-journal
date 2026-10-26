@@ -10,6 +10,7 @@ use std::sync::Arc;
 use solstone_core_backup::archive_readback::{
     ExactArchiveFile, OwnedReadOperation, ReadOperation, ReadbackFailure,
 };
+#[cfg(all(test, feature = "full-tests"))]
 use solstone_core_journal_io::activity_obligations::observe_with_carrier;
 use solstone_core_journal_io::media::{
     Cleanup, Confirmation, Durability, MediaObservation, MediaStage, OwnedMediaFailure,
@@ -55,6 +56,9 @@ pub(super) enum Hold {
     Register,
     Retirement,
 }
+
+mod observation;
+use observation::observe_restore_obligations;
 
 enum Admission<'operation, 'clock> {
     Readback(&'operation ReadOperation<'clock>),
@@ -435,8 +439,7 @@ impl<'operation, 'clock> StagedRestore<'operation, 'clock> {
             if !selection.active.contains(&witness) {
                 return Err(Hold::Repair(RepairHold::CatalogChanged));
             }
-            let coverage = observe_with_carrier(owner.root(), owner.carrier.observation())
-                .map_err(|error| Hold::Admission(format!("{error:?}")))?;
+            let coverage = observe_restore_obligations(&owner)?;
             if coverage.unresolved_entries().next().is_some() {
                 return Err(Hold::Obligations);
             }
