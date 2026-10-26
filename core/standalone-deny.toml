@@ -1,0 +1,38 @@
+# Advisory policy for the independently locked tools listed in the Makefile.
+# The workspace keeps its own stricter policy in deny.toml.
+[advisories]
+yanked = "deny"
+ignore = [
+    # 2026-10-26: mobile-serving reaches the same bounded hostname precheck as
+    # the workspace. See deny.toml for the call-site rationale and revisit rule.
+    { id = "RUSTSEC-2026-0119", reason = "hickory-proto 0.24.4 only encodes bounded single-question stub lookups in the shared hostname precheck; revisit on resolver or query-surface changes" },
+    # 2026-10-26: paste 1.0.15 is a build-time macro dependency of pulp/gemm
+    # in OCR and native inference. No patched release exists. Replacing that
+    # transitive dependency requires an upstream change or a reviewed fork.
+    # Revisit when those dependencies migrate or a vulnerability is reported.
+    # https://rustsec.org/advisories/RUSTSEC-2024-0436
+    { id = "RUSTSEC-2024-0436", reason = "unmaintained build-time paste macro in OCR/native inference dependencies; no patched release; revisit on upstream migration or a vulnerability advisory" },
+    # 2026-10-26: ttf-parser 0.25.1 is reached by ab_glyph/imageproc in the
+    # independent OCR helper. The helper does not use text drawing or load
+    # fonts. No patched release exists; changing the transitive parser requires
+    # an upstream migration. Revisit on imageproc/ab_glyph changes, font input,
+    # or a vulnerability advisory.
+    # https://rustsec.org/advisories/RUSTSEC-2026-0192
+    { id = "RUSTSEC-2026-0192", reason = "unmaintained ttf-parser via imageproc/ab_glyph in the OCR helper; no font loading or drawing call sites and no patched release; revisit on dependency, input or vulnerability changes" },
+]
+
+[graph]
+targets = [
+    "x86_64-unknown-linux-gnu",
+    "x86_64-unknown-linux-musl",
+    "aarch64-unknown-linux-gnu",
+    "aarch64-unknown-linux-musl",
+    "aarch64-apple-darwin",
+    "aarch64-apple-ios",
+    "aarch64-apple-ios-sim",
+    "x86_64-apple-ios",
+    "aarch64-linux-android",
+    "x86_64-linux-android",
+    "x86_64-pc-windows-msvc",
+    "aarch64-pc-windows-msvc",
+]

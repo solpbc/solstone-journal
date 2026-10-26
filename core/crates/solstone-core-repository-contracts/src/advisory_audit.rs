@@ -29,6 +29,8 @@ pub struct AdvisoryAuditRequest {
     pub receipt: PathBuf,
     pub public_key: PathBuf,
     pub locator: String,
+    pub manifest_path: PathBuf,
+    pub config: PathBuf,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -65,6 +67,9 @@ struct AdvisoryWitness {
     public_key_id: &'static str,
     max_age: u64,
     checked_at: String,
+    manifest_path: String,
+    policy_path: String,
+    policy_sha256: String,
     cargo_lock_sha256: String,
     cargo_deny_version: &'static str,
     advisories: Vec<AdvisoryFinding>,
@@ -262,15 +267,20 @@ fn run_in_scratch(
     }
 
     let config_path = run_root.join("deny.toml");
-    materialize_config(repo, &config_path, &database_root, &request.locator)?;
-    let cargo_lock_path = repo.join("core/Cargo.lock");
+    let manifest_path = repo_relative_path(repo, &request.manifest_path)?;
+    let policy_path = repo_relative_path(repo, &request.config)?;
+    let policy = fs::read_to_string(&policy_path)
+        .map_err(|error| format!("read policy {}: {error}", policy_path.display()))?;
+    materialize_config(&policy, &config_path, &database_root, &request.locator)?;
+    let cargo_lock_path = manifest_path.with_file_name("Cargo.lock");
     let lock_before = fs::read(&cargo_lock_path)
-        .map_err(|error| format!("read core/Cargo.lock before audit: {error}"))?;
+        .map_err(|error| format!("read {} before audit: {error}", cargo_lock_path.display()))?;
     let mut advisory_args = vec![
         "--format".to_owned(),
         "json".to_owned(),
         "--manifest-path".to_owned(),
-        path_text(&repo.join("core/Cargo.toml"))?.to_owned(),
+        path_text(&manifest_path)?.to_owned(),
+        "--all-features".to_owned(),
         "--locked".to_owned(),
         "--offline".to_owned(),
         "--config".to_owned(),
@@ -289,16 +299,28 @@ fn run_in_scratch(
     )?;
     if !advisory_output.status.success() {
         return Err(format!(
-            "cargo-deny rejected the authenticated advisory packet: {}",
+            "cargo-deny rejected {} against the authenticated advisory packet: {}",
+            request.manifest_path.display(),
             rejected_findings(&advisory_output.stderr)
                 .unwrap_or_else(|| compact_stderr(&advisory_output.stderr))
         ));
     }
     let advisories = parse_advisories(&advisory_output.stdout)?;
     let lock_after = fs::read(&cargo_lock_path)
-        .map_err(|error| format!("read core/Cargo.lock after audit: {error}"))?;
+        .map_err(|error| format!("read {} after audit: {error}", cargo_lock_path.display()))?;
     if lock_after != lock_before {
-        return Err("core/Cargo.lock changed during advisory audit".to_owned());
+        return Err(format!(
+            "{} changed during advisory audit",
+            cargo_lock_path.display()
+        ));
+    }
+    if fs::read(&policy_path).map_err(|error| format!("re-read audit policy: {error}"))?
+        != policy.as_bytes()
+    {
+        return Err(format!(
+            "{} changed during advisory audit",
+            policy_path.display()
+        ));
     }
     verify_packet_unchanged(request, packet)?;
     let witness = AdvisoryWitness {
@@ -314,6 +336,9 @@ fn run_in_scratch(
         public_key_id: PUBLIC_KEY_ID,
         max_age: receipt.max_age,
         checked_at: format_utc(now),
+        manifest_path: path_text(&request.manifest_path)?.to_owned(),
+        policy_path: path_text(&request.config)?.to_owned(),
+        policy_sha256: sha256_hex(policy.as_bytes()),
         cargo_lock_sha256: sha256_hex(&lock_before),
         cargo_deny_version: CARGO_DENY_VERSION,
         advisories,
@@ -454,14 +479,26 @@ fn verify_bundle_heads(bytes: &[u8], commit: &str) -> Result<(), String> {
     Ok(())
 }
 
+fn repo_relative_path(repo: &Path, relative: &Path) -> Result<PathBuf, String> {
+    if relative.as_os_str().is_empty()
+        || relative
+            .components()
+            .any(|part| !matches!(part, std::path::Component::Normal(_)))
+    {
+        return Err(format!(
+            "audit path must be relative to the repository: {}",
+            relative.display()
+        ));
+    }
+    Ok(repo.join(relative))
+}
+
 fn materialize_config(
-    repo: &Path,
+    source: &str,
     destination: &Path,
     database_root: &Path,
     locator: &str,
 ) -> Result<(), String> {
-    let source = fs::read_to_string(repo.join("core/deny.toml"))
-        .map_err(|error| format!("read core/deny.toml: {error}"))?;
     let header = "[advisories]\n";
     let insertion = format!(
         "{header}db-path = {}\ndb-urls = [{}]\n",
@@ -472,7 +509,7 @@ fn materialize_config(
     );
     let rendered = source.replacen(header, &insertion, 1);
     if rendered == source {
-        return Err("core/deny.toml has no [advisories] table".to_owned());
+        return Err("audit policy has no [advisories] table".to_owned());
     }
     write_new(destination, rendered.as_bytes())
 }
@@ -886,7 +923,8 @@ fn sha256_hex(bytes: &[u8]) -> String {
 mod tests {
     use super::{
         FreshnessReceipt, format_utc, materialize_config, parse_advisories, parse_utc,
-        rejected_findings, validate_locator, validate_receipt, verify_bundle_heads, xxh64,
+        rejected_findings, repo_relative_path, validate_locator, validate_receipt,
+        verify_bundle_heads, xxh64,
     };
     use std::fs;
 
@@ -928,6 +966,23 @@ mod tests {
             .expect("comment commit");
         wrong_comment[index + 14] = b'f';
         assert!(validate_receipt(&body, &wrong_comment, now).is_err());
+    }
+
+    #[test]
+    fn selected_audit_inputs_stay_relative_to_the_repository() {
+        let root = std::path::Path::new("/checkout");
+        assert_eq!(
+            repo_relative_path(root, std::path::Path::new("tools/helper/Cargo.toml")).unwrap(),
+            root.join("tools/helper/Cargo.toml")
+        );
+        for invalid in [
+            "",
+            "/outside/Cargo.toml",
+            "../Cargo.toml",
+            "core/../Cargo.toml",
+        ] {
+            assert!(repo_relative_path(root, std::path::Path::new(invalid)).is_err());
+        }
     }
 
     #[test]
@@ -978,7 +1033,8 @@ mod tests {
         fs::create_dir(&database).expect("database root");
         let destination = root.path().join("materialized.toml");
         let locator = "ssh://no-route.invalid/mirror/rustsec-advisory-db.git";
-        materialize_config(root.path(), &destination, &database, locator)
+        let source = fs::read_to_string(root.path().join("core/deny.toml")).expect("source policy");
+        materialize_config(&source, &destination, &database, locator)
             .expect("materialize advisory policy");
         let rendered = fs::read_to_string(destination).expect("rendered policy");
         assert!(rendered.contains(&format!("db-path = {:?}", database)));

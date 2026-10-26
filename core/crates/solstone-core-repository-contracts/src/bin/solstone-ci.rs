@@ -217,6 +217,8 @@ fn parse_advisory_audit(
     let mut receipt = None;
     let mut public_key = None;
     let mut locator = None;
+    let mut manifest_path = None;
+    let mut config = None;
     while let Some(flag) = args.next() {
         let value = args
             .next()
@@ -226,6 +228,8 @@ fn parse_advisory_audit(
             "--receipt" => &mut receipt,
             "--pubkey" => &mut public_key,
             "--locator" => &mut locator,
+            "--manifest-path" => &mut manifest_path,
+            "--config" => &mut config,
             _ => return Err(format!("unknown advisory-audit option {flag}")),
         };
         if slot.replace(value).is_some() {
@@ -237,6 +241,8 @@ fn parse_advisory_audit(
         receipt: PathBuf::from(receipt.ok_or("--receipt is required")?),
         public_key: PathBuf::from(public_key.ok_or("--pubkey is required")?),
         locator: locator.ok_or("--locator is required")?,
+        manifest_path: PathBuf::from(manifest_path.unwrap_or_else(|| "core/Cargo.toml".to_owned())),
+        config: PathBuf::from(config.unwrap_or_else(|| "core/deny.toml".to_owned())),
     })
 }
 

@@ -1,4 +1,5 @@
 [advisories]
+yanked = "deny"
 # cargo-deny here is `make audit`, not `make ci` / `ci-full`. The weekly fleet
 # audit is the only place this section is evaluated.
 ignore = [

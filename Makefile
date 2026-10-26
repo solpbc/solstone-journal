@@ -1203,7 +1203,7 @@ check-rust-release-manifest:
 		$(SOLSTONE_CI_RUNNER) release-manifest-check; \
 	fi
 
-audit:
+audit: check-standalone-lockfiles
 	@$(REQUIRE_CARGO)
 	@set -eu; \
 	[ -n "$${AUDIT_ADVISORY_BUNDLE:-}" ] || { echo "audit: AUDIT_ADVISORY_BUNDLE is required" >&2; exit 2; }; \
@@ -1214,7 +1214,16 @@ audit:
 		--bundle "$${AUDIT_ADVISORY_BUNDLE}" \
 		--receipt "$${AUDIT_ADVISORY_RECEIPT}" \
 		--pubkey "$${AUDIT_ADVISORY_PUBKEY}" \
-		--locator "$${AUDIT_ADVISORY_LOCATOR}"
+		--locator "$${AUDIT_ADVISORY_LOCATOR}"; \
+	for manifest in $(STANDALONE_LOCK_MANIFESTS); do \
+		printf 'Auditing standalone graph: %s\n' "$$manifest"; \
+		$(SOLSTONE_CI_RUNNER) advisory-audit \
+			--bundle "$${AUDIT_ADVISORY_BUNDLE}" \
+			--receipt "$${AUDIT_ADVISORY_RECEIPT}" \
+			--pubkey "$${AUDIT_ADVISORY_PUBKEY}" \
+			--locator "$${AUDIT_ADVISORY_LOCATOR}" \
+			--manifest-path "$$manifest" --config core/standalone-deny.toml; \
+	done
 
 # Re-vendor brand assets from the canonical brand source. CI verifies the
 # committed output (it does not run brand-sync) — run this locally when the
