@@ -23,6 +23,7 @@ use crate::detect;
 use crate::extraction;
 use crate::merge;
 use crate::notify;
+use crate::phone::PhoneScreen;
 use crate::request;
 use crate::screen_ocr::{self, OcrWorkerFactory};
 use crate::selection::{self, CategorizedFrame, CategoryOverride, SelectionError};
@@ -311,6 +312,8 @@ fn run_prepared(
         return Err(RunError::Internal("--jobs must be positive".to_owned()));
     }
     let output = options.video.with_extension("jsonl");
+    // A phone or tablet recording gets a note in its frame prompts.
+    let phone = PhoneScreen::from_environment();
     let claims = OutputClaims::acquire([output.clone()], LockOptions::default())
         .map_err(|error| RunError::Internal(error.to_string()))?;
     let segment = output.parent().unwrap_or_else(|| Path::new(""));
@@ -586,7 +589,7 @@ fn run_prepared(
                 .map_err(|_| blocked(options.journal, work_key, None, None, None))?,
         );
         let session = session.as_deref().expect("spawned describe session");
-        let instruction = request::system_instruction(&options.redact_rules);
+        let instruction = request::system_instruction(&options.redact_rules, phone);
         loop {
             if checkpoint() {
                 return Err(RunError::Cancelled);
@@ -633,8 +636,13 @@ fn run_prepared(
                 let png = resize_for_vlm_png(&pending.frame.png, Some(1024)).ok_or_else(|| {
                     RunError::Internal("failed to resize categorization frame".to_owned())
                 })?;
-                let req =
-                    request::request(pending.frame.frame_id, pending.attempt, &png, &instruction);
+                let req = request::request(
+                    pending.frame.frame_id,
+                    pending.attempt,
+                    &png,
+                    &instruction,
+                    phone,
+                );
                 let id = req.id.clone().expect("describe request ids are present");
                 let submitted_at = Instant::now();
                 if session.submit(req).is_err() {
@@ -985,6 +993,7 @@ fn run_prepared(
                 category,
                 &png,
                 &options.redact_rules,
+                phone,
                 checkpoint,
             ) {
                 Ok((value, record)) => {
@@ -1082,6 +1091,7 @@ fn run_prepared(
                     category,
                     &png,
                     &options.redact_rules,
+                    phone,
                     checkpoint,
                 ) {
                     Ok((value, record)) => {
@@ -1406,6 +1416,7 @@ fn extract_category(
     category: &crate::categories::CategoryMeta,
     png: &[u8],
     redact_rules: &[String],
+    phone: Option<PhoneScreen>,
     checkpoint: &dyn Fn() -> bool,
 ) -> Result<(Value, Value), ExtractionError> {
     if checkpoint() {
@@ -1413,7 +1424,7 @@ fn extract_category(
     }
     let mut attempt = 0;
     loop {
-        let request = extraction::request(frame_id, category, png, attempt, redact_rules)
+        let request = extraction::request(frame_id, category, png, attempt, redact_rules, phone)
             .ok_or_else(|| ExtractionError::Failed {
                 error: "failed to resize extraction frame".to_owned(),
                 record: None,

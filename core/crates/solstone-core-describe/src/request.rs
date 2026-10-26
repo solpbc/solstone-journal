@@ -7,12 +7,17 @@ use base64::Engine;
 use solstone_core_generate::{ContentPart, GenerateRequest};
 
 use crate::categories::CATEGORIES_META;
+use crate::phone::PhoneScreen;
 
 const PROMPT: &str = include_str!("../assets/describe.md");
 const SCHEMA: &str = include_str!("../assets/describe.schema.json");
-pub fn system_instruction(redact_rules: &[String]) -> String {
+pub fn system_instruction(redact_rules: &[String], phone: Option<PhoneScreen>) -> String {
     let categories = render_categories();
     let mut prompt = PROMPT.replace("$categories", &categories).trim().to_owned();
+    if let Some(phone) = phone {
+        prompt.push_str("\n\n");
+        prompt.push_str(&phone.describe_note());
+    }
     append_redaction(&mut prompt, redact_rules);
     prompt
 }
@@ -42,13 +47,17 @@ pub fn request(
     attempt_index: u64,
     png: &[u8],
     instruction: &str,
+    phone: Option<PhoneScreen>,
 ) -> GenerateRequest {
     GenerateRequest {
         id: Some(format!("frame:{frame_id}:attempt:{attempt_index}")),
         context: "observe.describe.frame".to_owned(),
         contents: vec![
             ContentPart::Text {
-                text: "Analyze this screenshot frame from a screencast recording.".to_owned(),
+                text: phone.map_or_else(
+                    || "Analyze this screenshot frame from a screencast recording.".to_owned(),
+                    |phone| phone.frame_text(),
+                ),
             },
             ContentPart::Image {
                 mime_type: "image/png".to_owned(),
