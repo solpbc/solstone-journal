@@ -237,15 +237,21 @@ fn prepare_segment(
                     let owner = solstone_core_format::calendar::OwnerAddresses::new(
                         solstone_core_entity::journal_identity_emails(root).unwrap_or_default(),
                     );
-                    for note in text.lines().filter_map(|line| {
-                        solstone_core_format::calendar::parse_calendar_note(line).ok()
-                    }) {
+                    let notes = text
+                        .lines()
+                        .filter_map(|line| {
+                            solstone_core_format::calendar::parse_calendar_note(line).ok()
+                        })
+                        .collect::<Vec<_>>();
+                    let owners =
+                        solstone_core_indexer_store::calendar::note_owners(root, &owner, &notes);
+                    for (note, owner) in notes.iter().zip(&owners) {
                         let timestamp = note.changed_at_ms();
                         chunks.push(json!({
                             "type": "calendar",
                             "time": local_time(zone, timestamp),
                             "timestamp": timestamp,
-                            "text": solstone_core_format::calendar::render_calendar_note(&note, &owner),
+                            "text": solstone_core_format::calendar::render_calendar_note(note, owner),
                         }));
                     }
                 }

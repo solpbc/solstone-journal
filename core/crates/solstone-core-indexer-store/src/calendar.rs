@@ -512,13 +512,95 @@ pub(crate) fn owner_addresses(journal: &Path) -> Result<OwnerAddresses, StoreErr
         })
 }
 
+/// The owner on one event's invites: their own addresses, plus the names that
+/// carried one of them on any note stored for the event, in any occurrence, so
+/// an occurrence first sent after the owner answered still finds them.
+pub(crate) fn event_owner(
+    conn: &Connection,
+    owner: &OwnerAddresses,
+    event: &str,
+) -> Result<OwnerAddresses, StoreError> {
+    let records = conn
+        .prepare_cached("SELECT record FROM calendar_notes WHERE event=?")?
+        .query_map(params![event], |row| row.get::<_, String>(0))?
+        .collect::<Result<Vec<_>, _>>()?;
+    let records = records
+        .iter()
+        .filter_map(|record| {
+            serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(record).ok()
+        })
+        .collect::<Vec<_>>();
+    Ok(owner.carried_from(&records))
+}
+
+/// The owner on each note's invites as search has them. Without a search
+/// index, or when it cannot be read, the owner's addresses alone.
+pub fn note_owners(
+    journal: &Path,
+    owner: &OwnerAddresses,
+    notes: &[CalendarNote],
+) -> Vec<OwnerAddresses> {
+    let conn = crate::db::db_path(journal)
+        .is_file()
+        .then(|| crate::db::open_index_reader(journal).ok())
+        .flatten();
+    notes
+        .iter()
+        .map(|note| {
+            conn.as_ref()
+                .and_then(|conn| event_owner(conn, owner, &note.event).ok())
+                .unwrap_or_else(|| owner.clone())
+        })
+        .collect()
+}
+
+/// Rewrite the stored-day text of an identity's notes where who is the owner
+/// has changed since it was written, keeping each row's id.
+fn refresh_recorded(
+    conn: &Connection,
+    (event, occurrence): &Identity,
+    owner: &OwnerAddresses,
+) -> Result<(), StoreError> {
+    let rows = conn
+        .prepare_cached(
+            "SELECT h.rowid, c.content, n.record FROM calendar_hits h \
+             JOIN chunks c ON c.rowid=h.rowid AND c.path=h.path \
+             JOIN calendar_notes n ON n.path=h.path AND n.line=h.idx \
+             WHERE h.version='recorded' AND h.event=? AND h.occurrence=?",
+        )?
+        .query_map(params![event, occurrence], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+            ))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut update = conn.prepare_cached("UPDATE chunks SET content=? WHERE rowid=?")?;
+    for (rowid, content, record) in rows {
+        let Ok(note) = parse_calendar_note(&record) else {
+            continue;
+        };
+        let text = render_calendar_note(&note, owner);
+        if text != content {
+            update.execute(params![text, rowid])?;
+        }
+    }
+    Ok(())
+}
+
 /// The `index_meta` key holding the owner's addresses calendar text was
 /// written with.
 const OWNER_ADDRESSES_META: &str = "calendar_owner_addresses";
 
+/// Which rule for finding the owner the calendar text was written with,
+/// kept with the addresses. Changing it redoes every calendar file once.
+/// 2: a name that carried the owner's address on the same event.
+const OWNER_RULE: &str = "2";
+
 /// Which attendee is "you" in calendar text, and who is left off an event's
-/// people, follows the owner's addresses. When they differ from the ones the
-/// index was written with, or the index predates this mark, every calendar
+/// people, follows the owner's addresses. When they or the rule differ from
+/// the ones the index was written with, or the index predates this mark, every calendar
 /// file is left for this scan to index again, and the mark moves on. An
 /// unreadable settings file leaves everything as it is.
 pub(crate) fn reindex_calendar_if_owner_changed(
@@ -528,7 +610,7 @@ pub(crate) fn reindex_calendar_if_owner_changed(
     let Ok(owner) = owner_addresses(journal) else {
         return Ok(false);
     };
-    let stamp = owner.stamp();
+    let stamp = format!("{OWNER_RULE}\n{}", owner.stamp());
     let written: Option<String> = conn
         .query_row(
             "SELECT value FROM index_meta WHERE key=?",
@@ -587,11 +669,22 @@ pub(crate) fn relist(
     journal: &Path,
     identities: &BTreeSet<Identity>,
 ) -> Result<Relisted, StoreError> {
+    // Who is the owner is worked out across an event's occurrences, so every
+    // occurrence of an event a change touched is relisted with it.
+    let events = identities
+        .iter()
+        .map(|(event, _)| event.clone())
+        .collect::<BTreeSet<_>>();
+    let mut identities = identities.clone();
+    identities.extend(identities_of_events(conn, &events)?);
+    let identities = &identities;
+    let mut event_owners: BTreeMap<String, OwnerAddresses> = BTreeMap::new();
     let mut relisted = Relisted::default();
     let mut zone: Option<Result<Tz, String>> = None;
     let mut owner_read: Option<Result<OwnerAddresses, String>> = None;
     let mut event_covers: BTreeMap<String, EventImports> = BTreeMap::new();
-    for (event, occurrence) in identities {
+    for identity in identities {
+        let (event, occurrence) = identity;
         if !event_covers.contains_key(event) {
             event_covers.insert(event.clone(), event_imports(conn, event)?);
         }
@@ -617,12 +710,12 @@ pub(crate) fn relist(
         let mut wanted: Option<(String, String, CalendarNote, Vec<WantedRow>, bool)> = None;
         // Who is "you" in the text needs the settings file too: unreadable,
         // the rows stand and the file waits for the next scan, as for the zone.
-        let owner = match (
+        let (owner, owner_known) = match (
             &winner,
             &*owner_read
                 .get_or_insert_with(|| owner_addresses(journal).map_err(|error| error.to_string())),
         ) {
-            (_, Ok(owner)) => owner,
+            (_, Ok(owner)) => (owner, true),
             (Some((path, ..)), Err(error)) => {
                 relisted.warnings.push(format!(
                     "calendar event in {path} is listed once the settings file can be read: {error}"
@@ -630,7 +723,23 @@ pub(crate) fn relist(
                 relisted.reindex.insert(path.clone());
                 continue;
             }
-            (None, Err(_)) => &OwnerAddresses::NONE,
+            (None, Err(_)) => (&OwnerAddresses::NONE, false),
+        };
+        // A name that carried the owner's address on any note of this event
+        // is the owner where a later note lost the address.
+        let owner = if owner_known {
+            let owner = match event_owners.get(event) {
+                Some(owner) => owner.clone(),
+                None => {
+                    let carried = event_owner(conn, owner, event)?;
+                    event_owners.insert(event.clone(), carried.clone());
+                    carried
+                }
+            };
+            refresh_recorded(conn, identity, &owner)?;
+            owner
+        } else {
+            owner.clone()
         };
         if let Some((path, line, record, stream)) = winner {
             match parse_calendar_note(&record) {
@@ -688,7 +797,7 @@ pub(crate) fn relist(
         }
         let listed = {
             let mut statement = conn.prepare_cached(
-                "SELECT h.rowid, h.path, h.idx, c.day, c.time_bucket FROM calendar_hits h \
+                "SELECT h.rowid, h.path, h.idx, c.day, c.time_bucket, c.content FROM calendar_hits h \
                  LEFT JOIN chunks c ON c.rowid=h.rowid AND c.path=h.path \
                  WHERE h.version='latest' AND h.event=? AND h.occurrence=?",
             )?;
@@ -700,12 +809,17 @@ pub(crate) fn relist(
                         row.get::<_, i64>(2)?,
                         row.get::<_, Option<String>>(3)?,
                         row.get::<_, Option<String>>(4)?,
+                        row.get::<_, Option<String>>(5)?,
                     ))
                 })?
                 .collect::<Result<Vec<_>, _>>()?
         };
-        // Rows the winning note already owns are left alone.
-        if let Some((path, _, _, rows, _)) = &wanted {
+        let content = wanted
+            .as_ref()
+            .map(|(_, _, note, _, _)| render_calendar_note(note, &owner));
+        // Rows the winning note already owns keep their ids; only text that
+        // changed is rewritten.
+        if let (Some((path, _, _, rows, _)), Some(content)) = (&wanted, &content) {
             let current = listed
                 .iter()
                 .filter(|row| &row.1 == path)
@@ -718,6 +832,11 @@ pub(crate) fn relist(
                 })
                 .collect::<BTreeSet<_>>();
             if listed.len() == rows.len() && current == rows.iter().cloned().collect() {
+                let mut update =
+                    conn.prepare_cached("UPDATE chunks SET content=? WHERE rowid=?")?;
+                for row in listed.iter().filter(|row| row.5.as_ref() != Some(content)) {
+                    update.execute(params![content, row.0])?;
+                }
                 continue;
             }
         }
@@ -730,10 +849,9 @@ pub(crate) fn relist(
             .collect::<Vec<_>>();
         delete_chunk_rows(conn, &stale)?;
         interruption_point()?;
-        let Some((path, stream, note, rows, continues)) = wanted else {
+        let (Some((path, stream, note, rows, continues)), Some(content)) = (wanted, content) else {
             continue;
         };
-        let content = render_calendar_note(&note, owner);
         for (idx, day, bucket) in rows {
             let rowid = insert_chunk(conn, &content, &path, &day, &stream, idx, &bucket)?;
             record_hit(conn, rowid, &path, idx, "latest", &note, continues)?;

@@ -807,6 +807,55 @@ fn you_is_the_attendee_with_one_of_the_owners_addresses_never_the_phones_mark() 
 }
 
 #[test]
+fn a_name_that_carried_the_owners_address_on_the_same_event_is_you_without_one() {
+    let owner = OwnerAddresses::new(["owner@example.com"]);
+    let record = |attendees: Value| -> Map<String, Value> {
+        serde_json::from_str(&with(golden(0), "attendees", attendees)).unwrap()
+    };
+    let invited = record(json!([
+        {"email": "owner@example.com", "name": "Fwiffo Tennica", "status": "unknown", "you": false},
+        {"email": "sharer@example.com", "name": "Enoch Root", "status": "accepted", "you": true},
+    ]));
+    // Answering the invitation, the phone sent no address on anyone.
+    let answered = with(
+        golden(0),
+        "attendees",
+        json!([
+            {"email": null, "name": "fwiffo tennica ", "status": "accepted", "you": false},
+            {"email": null, "name": "Enoch Root", "status": "accepted", "you": true},
+        ]),
+    );
+    let answered_note = parse_calendar_note(&answered).unwrap();
+    let carried = owner.carried_from([&invited, &answered_note.record]);
+    assert_eq!(
+        invited_line(&render_calendar_note(&answered_note, &carried)),
+        "Invited: fwiffo tennica, you (accepted); Enoch Root (accepted)"
+    );
+    // The answer alone, or the addresses alone, find no one.
+    assert_eq!(
+        invited_line(&render_calendar_note(&answered_note, &owner)),
+        "Invited: fwiffo tennica (accepted); Enoch Root (accepted)"
+    );
+    // A different address on the note itself is never the owner.
+    let elsewhere = with(
+        golden(0),
+        "attendees",
+        json!([{"email": "fwiffo@elsewhere.example", "name": "Fwiffo Tennica", "status": "accepted", "you": false}]),
+    );
+    let text = render_calendar_note(&parse_calendar_note(&elsewhere).unwrap(), &carried);
+    assert_eq!(invited_line(&text), "Invited: Fwiffo Tennica (accepted)");
+    // A name that also carried someone else's address could be either.
+    let shared_name = record(json!([
+        {"email": "other@example.com", "name": "Fwiffo Tennica", "status": "accepted", "you": false},
+    ]));
+    let ambiguous = owner.carried_from([&invited, &shared_name]);
+    assert_eq!(
+        invited_line(&render_calendar_note(&answered_note, &ambiguous)),
+        "Invited: fwiffo tennica (accepted); Enoch Root (accepted)"
+    );
+}
+
+#[test]
 fn a_calendar_is_shown_with_its_account_when_the_phone_sends_one() {
     let owner = OwnerAddresses::default();
     let with_account = parse_calendar_note(GOLDEN_WITH_ACCOUNT).unwrap();

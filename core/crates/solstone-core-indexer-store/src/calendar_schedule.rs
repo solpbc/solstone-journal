@@ -15,7 +15,7 @@
 //! ignoring case, or as the entity's id. Nobody new is created and nothing is
 //! learned about anyone.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use chrono::{NaiveDate, NaiveDateTime};
@@ -27,7 +27,7 @@ use solstone_core_indexer::edges::candidates::KnownPeople;
 
 use crate::StoreError;
 use crate::calendar::{
-    Identity, LISTING_IDX_BASE, LISTING_IDX_STRIDE, listing_zone, owner_addresses,
+    Identity, LISTING_IDX_BASE, LISTING_IDX_STRIDE, event_owner, listing_zone, owner_addresses,
 };
 use crate::db::{db_path, open_index_reader};
 
@@ -138,12 +138,15 @@ pub fn scheduled_on_day(journal: &Path, day: &str) -> Result<Vec<ScheduledEvent>
         "SELECT entity_id FROM calendar_people WHERE event=? AND occurrence=? ORDER BY position",
     )?;
     let mut events = Vec::new();
-    for ((event_id, occurrence), record) in notes {
+    for (identity, record) in notes {
+        let owner = event_owner(&conn, &owner, &identity.0)?;
         let Some(mut event) = scheduled_event(&record, &zone, &owner) else {
             continue;
         };
         let entity_ids = invited
-            .query_map(params![event_id, occurrence], |row| row.get::<_, String>(0))?
+            .query_map(params![identity.0, identity.1], |row| {
+                row.get::<_, String>(0)
+            })?
             .collect::<Result<Vec<_>, _>>()?;
         event.people = entity_ids
             .into_iter()
@@ -216,7 +219,8 @@ fn invitees(record: &Map<String, Value>) -> impl Iterator<Item = &Map<String, Va
 }
 
 /// The owner answered no. The owner is the attendee with one of the owner's
-/// addresses, never whoever the phone marked.
+/// addresses, or whose name carried one on another note of the same event,
+/// never whoever the phone marked.
 fn owner_declined(record: &Map<String, Value>, owner: &OwnerAddresses) -> bool {
     invitees(record)
         .filter(|attendee| owner.is_owner(attendee))
@@ -230,15 +234,13 @@ fn owner_declined(record: &Map<String, Value>, owner: &OwnerAddresses) -> bool {
 /// one, rather than failing the index write that asked.
 struct People<'a> {
     journal: &'a Path,
-    owner: &'a OwnerAddresses,
     loaded: Option<(KnownPeople, Option<String>)>,
 }
 
 impl<'a> People<'a> {
-    fn new(journal: &'a Path, owner: &'a OwnerAddresses) -> Self {
+    fn new(journal: &'a Path) -> Self {
         Self {
             journal,
-            owner,
             loaded: None,
         }
     }
@@ -261,12 +263,12 @@ impl<'a> People<'a> {
 
     /// The known people on an invite, its organizer included, anyone with
     /// one of the owner's addresses left out, each once, in invite order.
-    fn on_invite(&mut self, record: &Map<String, Value>) -> Vec<String> {
+    fn on_invite(&mut self, record: &Map<String, Value>, owner: &OwnerAddresses) -> Vec<String> {
         let organizer = record.get("organizer").and_then(Value::as_object);
         let invited = organizer
             .into_iter()
             .chain(invitees(record))
-            .filter(|person| !self.owner.is_owner(person))
+            .filter(|person| !owner.is_owner(person))
             .collect::<Vec<_>>();
         if invited.is_empty() {
             return Vec::new();
@@ -318,7 +320,8 @@ pub(crate) fn relink_people(
         .ok();
     static NO_OWNER: OwnerAddresses = OwnerAddresses::NONE;
     let owner_or_none = owner.as_ref().unwrap_or(&NO_OWNER);
-    let mut people = People::new(journal, owner_or_none);
+    let mut people = People::new(journal);
+    let mut event_owners: BTreeMap<String, OwnerAddresses> = BTreeMap::new();
     for identity in identities {
         let latest: Option<(String, i64, String)> = conn
             .prepare_cached(
@@ -352,14 +355,22 @@ pub(crate) fn relink_people(
         let Some(record) = record else {
             continue;
         };
+        let owner = match event_owners.get(&identity.0) {
+            Some(owner) => owner.clone(),
+            None => {
+                let carried = event_owner(conn, owner_or_none, &identity.0)?;
+                event_owners.insert(identity.0.clone(), carried.clone());
+                carried
+            }
+        };
         // Only the title and the owner's answer matter here, not the clock.
-        let Some(event) = scheduled_event(&record, &chrono_tz::UTC, owner_or_none) else {
+        let Some(event) = scheduled_event(&record, &chrono_tz::UTC, &owner) else {
             continue;
         };
         let Ok(note) = serde_json::from_str::<Map<String, Value>>(&record) else {
             continue;
         };
-        let invited = people.on_invite(&note);
+        let invited = people.on_invite(&note, &owner);
         let mut remember = conn.prepare_cached(
             "INSERT INTO calendar_people(event, occurrence, position, entity_id) VALUES (?, ?, ?, ?)",
         )?;
