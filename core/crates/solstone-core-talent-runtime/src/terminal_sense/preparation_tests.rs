@@ -49,10 +49,9 @@ fn setup(
         json!({"providers":{"active":{"provider":"test","model":"test-model"}}}).to_string(),
     )
     .unwrap();
-    let raw = json!({"timestamp":0.001,"analysis":{"primary":"tmux","visual_description":"A terminal"},"content":{"tmux":{"session":"main","window":{"id":"@0","index":0,"name":"work"},"windows":[{"id":"@0","index":0,"name":"work","active":true}],"panes":[{"id":"%0","index":0,"active":true,"content":screen}]}}});
     fs::write(
         journal.join("chronicle/20261021/device/100000_300/tmux_main_screen.jsonl"),
-        format!("{raw}\n"),
+        typing_frames(screen),
     )
     .unwrap();
     let paths = crate::prepare::RuntimePaths {
@@ -69,6 +68,36 @@ fn setup(
             .unwrap()
             .clone(),
     )
+}
+/// Two captures of a screen whose `❯` row is being typed: the row first holds
+/// only its prompt, then the whole input, with the cursor at its end. A screen
+/// with no such row is captured once, with no cursor fields.
+fn typing_frames(screen: &str) -> String {
+    let frame = |time: f64, content: &str, cursor: Option<(usize, usize)>| {
+        let mut pane = json!({"id":"%0","index":0,"active":true,"content":content});
+        if let Some((x, y)) = cursor {
+            for (key, value) in [
+                ("cursor_x", json!(x)),
+                ("cursor_y", json!(y)),
+                ("cursor_visible", json!(true)),
+                ("alternate_on", json!(true)),
+                ("pane_in_mode", json!(false)),
+            ] {
+                pane[key] = value;
+            }
+        }
+        let raw = json!({"timestamp":time,"analysis":{"primary":"tmux","visual_description":"A terminal"},"content":{"tmux":{"session":"main","window":{"id":"@0","index":0,"name":"work"},"windows":[{"id":"@0","index":0,"name":"work","active":true}],"panes":[pane]}}});
+        format!("{raw}\n")
+    };
+    let lines: Vec<&str> = screen.split('\n').collect();
+    let Some(y) = lines.iter().position(|l| l.starts_with("❯ ")) else {
+        return frame(0.001, screen, None);
+    };
+    let typed = lines[y].split("\x1b[2m").next().unwrap();
+    let x = typed.chars().count();
+    let mut prompt = lines.clone();
+    prompt[y] = "❯ ";
+    frame(0.001, &prompt.join("\n"), Some((2, y))) + &frame(5.001, screen, Some((x, y)))
 }
 fn display() -> String {
     format!(
@@ -132,8 +161,8 @@ fn the_anchored_schema_is_one_every_structured_output_provider_accepts() {
 #[test]
 fn unsupported_ui_styles_read_the_timeline_without_an_anchor() {
     for text in [
+        // Only dim suggestion text after the prompt: nothing was typed.
         display().replace("❯ Is", "❯ \x1b[2mIs"),
-        display().replace("❯ Is", "❯ \x1b[9mIs"),
         display().replace("❯ Is", "❯ \x1b[2JIs"),
         "plain terminal without a known field".to_owned(),
     ] {
@@ -286,7 +315,7 @@ fn ordinary_fitting_trims_the_timeline_from_complete_screens() {
 }
 
 #[test]
-fn capture_metadata_preserves_complete_sense_requests_on_native_and_fallback_paths() {
+fn only_a_usable_cursor_anchors_and_cursor_fields_never_change_the_timeline() {
     for text in [display(), "ordinary shell prompt> text".to_owned()] {
         let (_root, paths, context, request) = setup(&text);
         let old = crate::prepare::prepare(
@@ -299,14 +328,21 @@ fn capture_metadata_preserves_complete_sense_requests_on_native_and_fallback_pat
         let path = context
             .journal
             .join("chronicle/20261021/device/100000_300/tmux_main_screen.jsonl");
-        let mut raw: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
-        let pane = &mut raw["content"]["tmux"]["panes"][0];
-        pane["cursor_x"] = json!(7);
-        pane["cursor_y"] = json!(3);
-        pane["cursor_visible"] = json!(false);
-        pane["alternate_on"] = json!(true);
-        pane["pane_in_mode"] = json!(true);
-        fs::write(&path, format!("{raw}\n")).unwrap();
+        let hidden: String = fs::read_to_string(&path)
+            .unwrap()
+            .lines()
+            .map(|line| {
+                let mut raw: Value = serde_json::from_str(line).unwrap();
+                let pane = &mut raw["content"]["tmux"]["panes"][0];
+                pane["cursor_x"] = json!(7);
+                pane["cursor_y"] = json!(3);
+                pane["cursor_visible"] = json!(false);
+                pane["alternate_on"] = json!(true);
+                pane["pane_in_mode"] = json!(true);
+                format!("{raw}\n")
+            })
+            .collect();
+        fs::write(&path, hidden).unwrap();
         let new = crate::prepare::prepare(
             request,
             &paths,
@@ -314,12 +350,12 @@ fn capture_metadata_preserves_complete_sense_requests_on_native_and_fallback_pat
             crate::prepare::PrepareMode::Preview,
         )
         .unwrap();
-        assert_eq!(old.terminal_sense.is_some(), new.terminal_sense.is_some());
-        let encode = |p: &PreparedTalent| {
-            solstone_core_generate::encode_one_shot_request(&crate::generate_request(p).unwrap())
-                .unwrap()
-        };
-        assert_eq!(encode(&old), encode(&new));
+        let (old, new) = (old.terminal_sense.unwrap(), new.terminal_sense.unwrap());
+        // A hidden cursor in a pane mode is no typed input.
+        assert!(!new.anchored());
+        assert_eq!(old.anchored(), text == display());
+        // The timeline itself never reads the cursor fields.
+        assert_eq!(old.request.contents[0], new.request.contents[0]);
     }
 }
 

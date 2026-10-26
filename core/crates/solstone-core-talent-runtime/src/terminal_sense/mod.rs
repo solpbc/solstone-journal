@@ -2,6 +2,7 @@
 // Copyright (c) 2026 sol pbc
 
 //! Complete terminal state input and source-bound Sense activity descriptions.
+mod cursor;
 mod diff_matcher;
 mod execution;
 #[cfg(test)]
@@ -11,22 +12,19 @@ mod passages;
 #[cfg(all(test, feature = "full-tests"))]
 mod preparation_tests;
 mod progressive_frames;
-mod prompt_attention;
-mod prompt_lines;
 mod python_json;
 mod raw_changes;
 mod readable_changes;
 mod readable_terminal;
 mod state_codec;
-mod ui;
 pub(crate) use execution::execute;
 
 use crate::{ExecutionContext, PreparedTalent};
+use cursor::Bound;
 use passages::Passage;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use solstone_core_generate::{ContentPart, GenerateRequest};
-use ui::Bound;
 
 #[derive(Clone, Debug)]
 pub(crate) struct Candidate {
@@ -224,12 +222,8 @@ fn anchor(
     guides: &[String],
     request: &mut GenerateRequest,
 ) -> Option<Anchor> {
-    let bound = ui::choose(frames)?;
+    let (bound, inputs) = cursor::choose(frames)?;
     let passages = passages::prepare(frames, &bound)?;
-    let inputs = prompt_lines::excerpts(frames, 6000);
-    if inputs.is_empty() {
-        return None;
-    }
     let mut cards = String::new();
     for (i, row) in inputs.iter().enumerate() {
         let mut meta = row.as_object()?.clone();
@@ -483,7 +477,7 @@ pub fn inspect(prepared: &PreparedTalent, text: Option<&str>) -> Result<Value, S
             frames.extend(observed);value
         }
     }).collect::<Vec<_>>();
-    let bound = ui::choose(&frames);
+    let bound = cursor::choose(&frames).map(|(bound, _)| bound);
     result["diagnostic"] = json!({"stock":prepared.stock_task.is_some(),"counts":prepared.config.get("source_counts"),"sources":sources,"bound":bound.as_ref().map(|b|b.kind),"passages":bound.as_ref().and_then(|b|passages::prepare(&frames,b)).map(|p|p.len())});
     if let (Some(candidate), Some(text)) = (&prepared.terminal_sense, text) {
         result["publication"] =

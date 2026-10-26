@@ -2,9 +2,9 @@
 // Copyright (c) 2026 sol pbc
 
 use super::{
+    cursor::{self, Bound},
     digest,
     state_codec::split_lines_keepends,
-    ui::{self, Bound},
 };
 use regex::Regex;
 use serde_json::{Value, json};
@@ -50,7 +50,7 @@ fn row(raw: &str, lo: usize, screen: &str, scope: &Value, time: &Value) -> Optio
     if display.contains("<strike>") {
         return None;
     }
-    let text = ui::plain(raw).ok()?;
+    let text = cursor::plain(raw).ok()?;
     if text.trim().is_empty() {
         return None;
     }
@@ -71,7 +71,7 @@ fn blocks(text: &str) -> Vec<(&str, usize)> {
     let mut start = None;
     let mut cursor = 0;
     for line in split_lines_keepends(text) {
-        let plain = super::prompt_attention::CSI.replace_all(&line, "");
+        let plain = cursor::CSI.replace_all(&line, "");
         let plain = plain.trim();
         if plain.is_empty() || RULE.is_match(plain) {
             if let Some(lo) = start.take() {
