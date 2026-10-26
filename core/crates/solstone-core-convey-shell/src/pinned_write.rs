@@ -534,11 +534,17 @@ mod tests {
                 "import",
                 "network",
                 "thinking",
+                "curation",
+                "agents",
+                "backup",
             ])
         );
         let journal = established();
         let app = router(journal.path().to_path_buf());
         for field in fields {
+            if field.view == "agents" {
+                continue;
+            }
             let (status, _, body) = call(app.clone(), "GET", &field.url, None, b"").await;
             assert_eq!(status, StatusCode::OK, "{}", field.url);
             let parsed = json_body(&body);
@@ -551,7 +557,60 @@ mod tests {
             if field.view == "thinking" {
                 assert_eq!(current.as_str(), Some("none"));
             }
+            if field.view == "curation" {
+                assert!(current.is_number(), "curation to_review must be a number");
+            }
         }
+
+        #[cfg(unix)]
+        {
+            let agents_app = router(journal.path().to_path_buf()).merge(
+                solstone_core_mcp_endpoint::owner_routes(journal.path().to_path_buf()),
+            );
+            let (status, _, body) =
+                call(agents_app, "GET", "/app/agents/api/state", None, b"").await;
+            assert_eq!(status, StatusCode::OK);
+            let parsed = json_body(&body);
+            assert!(parsed["connections"].is_array());
+        }
+
+        let (status, _, workspace_body) =
+            call(app.clone(), "GET", "/app/more/workspace", None, b"").await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(
+            workspace_body,
+            include_bytes!("../assets/more/workspace.html")
+        );
+        let html = std::str::from_utf8(&workspace_body).expect("utf-8 workspace html");
+        let mut script_sources = Vec::new();
+        for line in html.lines() {
+            if let Some(start) = line.find("<script src=\"") {
+                let rest = &line[start + "<script src=\"".len()..];
+                if let Some(end) = rest.find('"') {
+                    script_sources.push(&rest[..end]);
+                }
+            }
+        }
+        let mut backup_status_idx = None;
+        let mut more_idx = None;
+        for (idx, src) in script_sources.iter().enumerate() {
+            let (status, _, _) = call(app.clone(), "GET", src, None, b"").await;
+            assert_eq!(status, StatusCode::OK, "GET {src}");
+            if src.ends_with("backup-status.js") {
+                backup_status_idx = Some(idx);
+            } else if src.ends_with("more.js") {
+                more_idx = Some(idx);
+            }
+        }
+        assert!(
+            backup_status_idx.is_some(),
+            "backup-status.js script tag required"
+        );
+        assert!(more_idx.is_some(), "more.js script tag required");
+        assert!(
+            backup_status_idx.unwrap() < more_idx.unwrap(),
+            "backup-status.js must precede more.js"
+        );
     }
 }
 

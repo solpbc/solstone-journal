@@ -47,6 +47,7 @@ pub fn routes(root: PathBuf) -> Router {
             get(|| async { assets::curation_evidence_js() }),
         )
         .route("/app/curation/api/state", get(state))
+        .route("/app/curation/api/summary", get(summary))
         .route("/app/curation/api/entity/preview", post(entity_preview))
         .route("/app/curation/api/entity/accept", post(entity_accept))
         .route("/app/curation/api/entity/dismiss", post(entity_dismiss))
@@ -117,6 +118,70 @@ async fn state(State(root): State<PathBuf>, Query(query): Query<StateQuery>) -> 
             StatusCode::INTERNAL_SERVER_ERROR,
         ),
     }
+}
+
+async fn summary(State(root): State<PathBuf>) -> Response {
+    if let Some(response) = corrupt_config(&root) {
+        return response;
+    }
+    match load_state(&root) {
+        Ok(value) => {
+            let to_review = suggestions_to_review(&value);
+            Json(json!({ "to_review": to_review })).into_response()
+        }
+        Err(error) => http::error(
+            "entity_operation_failed",
+            "that entity operation couldn't be completed.",
+            error,
+            StatusCode::INTERNAL_SERVER_ERROR,
+        ),
+    }
+}
+
+static HUMAN_RE: std::sync::LazyLock<regex::Regex> =
+    std::sync::LazyLock::new(|| regex::Regex::new(r"[_-]+").expect("humanize regex"));
+
+fn humanize_facet_name(name: &str) -> String {
+    if name.is_empty() {
+        return String::new();
+    }
+    HUMAN_RE.replace_all(name, " ").trim().to_owned()
+}
+
+fn facet_group_key(name: &str) -> String {
+    let slug = solstone_core_facets::facet_slug(name);
+    if !slug.is_empty() {
+        slug
+    } else {
+        humanize_facet_name(name)
+    }
+}
+
+fn suggestions_to_review(state: &Value) -> usize {
+    let mut facet_groups = std::collections::BTreeSet::new();
+    if let Some(items) = state.get("facet_items").and_then(Value::as_array) {
+        for item in items {
+            let name = item.get("name").and_then(Value::as_str).unwrap_or_default();
+            facet_groups.insert(facet_group_key(name));
+        }
+    }
+    let ambiguity_count = state
+        .get("ambiguity_groups")
+        .and_then(Value::as_array)
+        .map(|arr| arr.len())
+        .unwrap_or(0);
+    let speaker_count = state
+        .get("speaker_items")
+        .and_then(Value::as_array)
+        .map(|arr| arr.len())
+        .unwrap_or(0);
+    let pair_count = state
+        .get("speaker_candidate_pair_items")
+        .and_then(Value::as_array)
+        .map(|arr| arr.len())
+        .unwrap_or(0);
+
+    facet_groups.len() + ambiguity_count + speaker_count + pair_count
 }
 
 const UNKNOWN_GROUP: &str = "unknown curation group";
@@ -2142,5 +2207,33 @@ mod tests {
             echo_foxtrot.is_none(),
             "echo/foxtrot must not be in set-aside"
         );
+    }
+
+    #[tokio::test]
+    async fn summary_returns_zero_on_empty_established_journal() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let config_dir = temp.path().join("config");
+        fs::create_dir_all(&config_dir).expect("create config dir");
+        fs::write(
+            config_dir.join("journal.json"),
+            br#"{"setup":{"completed_at":1767225600}}"#,
+        )
+        .expect("write journal.json");
+        let response = routes(temp.path().to_path_buf())
+            .oneshot(
+                Request::get("/app/curation/api/summary")
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(response.status(), StatusCode::OK);
+        let body: Value = serde_json::from_slice(
+            &to_bytes(response.into_body(), usize::MAX)
+                .await
+                .expect("body"),
+        )
+        .expect("json");
+        assert_eq!(body, json!({ "to_review": 0 }));
     }
 }
