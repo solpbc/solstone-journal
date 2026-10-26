@@ -228,15 +228,17 @@ impl AudioWorker {
         if interrupted() {
             return Ok(false);
         }
+        let root = config.root.canonical_path();
         let retry = {
             let mut held = config.held.lock().unwrap();
             if held.0 != generation {
                 *held = (generation, HashSet::new());
             }
-            match decide_input(config.root.canonical_path(), input, &held.1) {
+            match gate_input(root, input, &held.1) {
                 InputDecision::Skip => return Ok(false),
                 InputDecision::Hold(error) => {
                     held.1.insert(input.to_path_buf());
+                    drop(held);
                     self.state.input_failed(generation, input, &error);
                     *self.state.status.lock().unwrap() =
                         json!({"state":"failed","input":input,"error":error});
@@ -248,17 +250,36 @@ impl AudioWorker {
         if attempt.is_some_and(|attempt| retry.as_ref().map(|r| &r.attempt) != Some(attempt)) {
             return Err("audio retry permission changed".into());
         }
-        // Initial admission errors belong to the failure path above. Once
-        // admitted, any loss of the accepted bytes must still cancel work at
-        // embedded checkpoints and before publication.
+        if interrupted() {
+            return Ok(false);
+        }
+        // Hash the accepted recording once. Later checkpoints keep this witness.
+        let admitted = match crate::custody::AcceptedInput::capture(root, input, &interrupted) {
+            Ok(Some(admitted)) => admitted,
+            Ok(None) => return Ok(false),
+            Err(error) => {
+                if interrupted() || error == crate::custody::CUSTODY_CANCELLED {
+                    return Ok(false);
+                }
+                let mut held = config.held.lock().unwrap();
+                if held.0 != generation {
+                    *held = (generation, HashSet::new());
+                }
+                held.1.insert(input.to_path_buf());
+                drop(held);
+                self.state.input_failed(generation, input, &error);
+                *self.state.status.lock().unwrap() =
+                    json!({"state":"failed","input":input,"error":error});
+                return Err(error);
+            }
+        };
+        // A retained stamp and the custody receipt name the admitted bytes.
+        // Checkpoints do not hash the recording again. Loss still cancels
+        // before publication, including a deleted original that reappears.
         let owner_original_deleted = Cell::new(false);
         let cancel = || {
             interrupted()
-                || input_custody_lost(
-                    config.root.canonical_path(),
-                    input,
-                    owner_original_deleted.get(),
-                )
+                || admitted_input_lost(&admitted, root, input, owner_original_deleted.get())
         };
         *self.state.status.lock().unwrap() = json!({"state":"processing","input":input});
         let started = Instant::now();
@@ -371,7 +392,7 @@ pub(crate) enum InputDecision {
     Process(Option<solstone_core_transcribe::RetryContext>),
 }
 
-pub(crate) fn decide_input(root: &Path, input: &Path, held: &HashSet<PathBuf>) -> InputDecision {
+fn gate_input(root: &Path, input: &Path, held: &HashSet<PathBuf>) -> InputDecision {
     let retry = match embedded_retry_context(root, input) {
         Ok(context) => context,
         Err(error) => return InputDecision::Hold(error),
@@ -382,10 +403,17 @@ pub(crate) fn decide_input(root: &Path, input: &Path, held: &HashSet<PathBuf>) -
     if embedded_already_processed(root, input, retry.as_ref()) {
         return InputDecision::Skip;
     }
-    match accepted_input(root, input) {
-        Ok(true) => InputDecision::Process(retry),
-        Ok(false) => InputDecision::Skip,
-        Err(error) => InputDecision::Hold(error),
+    InputDecision::Process(retry)
+}
+
+pub(crate) fn decide_input(root: &Path, input: &Path, held: &HashSet<PathBuf>) -> InputDecision {
+    match gate_input(root, input, held) {
+        InputDecision::Process(retry) => match accepted_input(root, input) {
+            Ok(true) => InputDecision::Process(retry),
+            Ok(false) => InputDecision::Skip,
+            Err(error) => InputDecision::Hold(error),
+        },
+        decision => decision,
     }
 }
 
@@ -579,7 +607,7 @@ fn accepted_input(root: &Path, input: &Path) -> Result<bool, String> {
     crate::custody::accepted_input(root, input)
 }
 
-#[cfg(feature = "processing")]
+#[cfg(all(feature = "processing", test))]
 fn input_custody_lost(root: &Path, input: &Path, owner_original_deleted: bool) -> bool {
     if owner_original_deleted {
         // Retention deleted the admitted original under the publication claim.
@@ -588,6 +616,25 @@ fn input_custody_lost(root: &Path, input: &Path, owner_original_deleted: bool) -
             if error.kind() == std::io::ErrorKind::NotFound)
     } else {
         !accepted_input(root, input).unwrap_or(false)
+    }
+}
+
+#[cfg(feature = "processing")]
+fn admitted_input_lost(
+    admitted: &crate::custody::AcceptedInput,
+    root: &Path,
+    input: &Path,
+    owner_original_deleted: bool,
+) -> bool {
+    if owner_original_deleted {
+        // Retention deleted the admitted original under the publication claim.
+        // Recreated bytes cannot inherit that completed deletion's authority.
+        !matches!(std::fs::symlink_metadata(input), Err(error)
+            if error.kind() == std::io::ErrorKind::NotFound)
+    } else {
+        // Stamp and receipt only. The admission hash is not repeated.
+        !admitted.still_current(input)
+            || !crate::custody::receipt_still_names(root, input).unwrap_or(false)
     }
 }
 
