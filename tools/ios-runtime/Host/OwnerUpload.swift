@@ -309,7 +309,9 @@ final class OwnerUploadBridge: NSObject, WKScriptMessageHandlerWithReply, UIDocu
     pumps[key] = pump
     published = true
     lock.unlock()
-    streams.addOperation { [weak pump] in pump?.run() }
+    // The operation retains the pump until it runs or the queue drops it.
+    // Idle cancel closes the descriptors; a running worker closes them when run returns.
+    streams.addOperation { [pump] in pump.run() }
     return ["ok": true]
   }
 
@@ -698,23 +700,19 @@ private final class OwnerStreamPump: @unchecked Sendable {
   let nativeID: UInt64
   let authority: UInt64
   let url: String
-  private let bodyWriter: Int32
-  private let responseReader: Int32
+  private let descriptors: OwnerStreamDescriptors
   private weak var bridge: OwnerUploadBridge?
   private let lock = NSLock()
   private var queued: Data?
   private var finished = false
   private var cancelled = false
-  private var bodyOpen = true
-  private var responseOpen = true
 
   init(pageID: String, nativeID: UInt64, authority: UInt64, url: String, bodyWriter: Int32, responseReader: Int32, bridge: OwnerUploadBridge) {
     self.pageID = pageID
     self.nativeID = nativeID
     self.authority = authority
     self.url = url
-    self.bodyWriter = bodyWriter
-    self.responseReader = responseReader
+    self.descriptors = OwnerStreamDescriptors(writer: bodyWriter, reader: responseReader)
     self.bridge = bridge
   }
 
@@ -736,38 +734,41 @@ private final class OwnerStreamPump: @unchecked Sendable {
     if cancelled { lock.unlock(); return }
     cancelled = true
     lock.unlock()
+    // Signal before descriptor retirement. The numbers stay open while run is inside them.
     OwnerOutcome.cancel(pageID, authority: authority)
     journal_ios_owner_cancel(nativeID)
-    releaseDescriptors()
+    _ = descriptors.retireIfIdle()
   }
 
   func run() {
-    var quiet = Date()
-    while bridge?.authorityMatches(authority) == true && !isCancelled {
-      if let chunk = take() {
-        if !write(chunk, quiet: &quiet) { return }
-        continue
-      }
-      if isFinished {
-        if bodyOpen { closeBody() ; quiet = Date() }
-        switch pollHead(quiet: &quiet) {
-        case .pending:
-          if OwnerTransferWait.stalled(bodyClosed: true, elapsed: Date().timeIntervalSince(quiet)) {
-            fail(OwnerUploadCopy.stall)
-            return
-          }
-          usleep(50_000)
-        case .done: return
+    descriptors.perform {
+      var quiet = Date()
+      while self.bridge?.authorityMatches(self.authority) == true && !self.isCancelled {
+        if let chunk = self.take() {
+          if !self.write(chunk, quiet: &quiet) { return }
+          continue
         }
-        continue
+        if self.isFinished {
+          if self.descriptors.closeWriter() { quiet = Date() }
+          switch self.pollHead(quiet: &quiet) {
+          case .pending:
+            if OwnerTransferWait.stalled(bodyClosed: true, elapsed: Date().timeIntervalSince(quiet)) {
+              self.fail(OwnerUploadCopy.stall)
+              return
+            }
+            usleep(50_000)
+          case .done: return
+          }
+          continue
+        }
+        if OwnerTransferWait.stalled(bodyClosed: false, elapsed: Date().timeIntervalSince(quiet)) {
+          self.fail(OwnerUploadCopy.stall)
+          return
+        }
+        usleep(50_000)
       }
-      if OwnerTransferWait.stalled(bodyClosed: false, elapsed: Date().timeIntervalSince(quiet)) {
-        fail(OwnerUploadCopy.stall)
-        return
-      }
-      usleep(50_000)
+      self.cancel()
     }
-    cancel()
   }
 
   private var isCancelled: Bool { lock.lock(); defer { lock.unlock() }; return cancelled }
@@ -787,7 +788,7 @@ private final class OwnerStreamPump: @unchecked Sendable {
       if isCancelled || bridge?.authorityMatches(authority) != true { cancel(); return false }
       let wrote = bytes.withUnsafeBytes { raw -> ssize_t in
         guard let base = raw.bindMemory(to: UInt8.self).baseAddress else { return -1 }
-        return Darwin.write(bodyWriter, base.advanced(by: offset), bytes.count - offset)
+        return Darwin.write(descriptors.writer, base.advanced(by: offset), bytes.count - offset)
       }
       if wrote > 0 { offset += Int(wrote); quiet = Date(); continue }
       if wrote < 0 && (errno == EAGAIN || errno == EINTR) {
@@ -828,14 +829,12 @@ private final class OwnerStreamPump: @unchecked Sendable {
       return .done
     }
     if isCancelled || bridge?.authorityMatches(authority) != true {
-      releaseDescriptors()
       return .done
     }
     let stored = OwnerOutcome.keep(pageID, authority: authority, reply: [
       "status": status, "headers": headers, "url": url,
       "body": body.base64EncodedString(),
     ])
-    releaseDescriptors()
     if !stored { fail(OwnerUploadCopy.lost) }
     return .done
   }
@@ -844,7 +843,7 @@ private final class OwnerStreamPump: @unchecked Sendable {
     var data = Data()
     var buffer = [UInt8](repeating: 0, count: 64 * 1024)
     while data.count <= 8 * 1024 * 1024 {
-      var descriptor = pollfd(fd: responseReader, events: Int16(POLLIN), revents: 0)
+      var descriptor = pollfd(fd: descriptors.reader, events: Int16(POLLIN), revents: 0)
       let ready = poll(&descriptor, 1, 200)
       if ready < 0 { if errno == EINTR { continue }; throw URLError(.networkConnectionLost) }
       if ready == 0 {
@@ -853,7 +852,7 @@ private final class OwnerStreamPump: @unchecked Sendable {
         }
         continue
       }
-      let count = Darwin.read(responseReader, &buffer, buffer.count)
+      let count = Darwin.read(descriptors.reader, &buffer, buffer.count)
       if count == 0 { return data }
       if count < 0 { if errno == EINTR || errno == EAGAIN { continue }; throw URLError(.networkConnectionLost) }
       if data.count + count > 8 * 1024 * 1024 { throw URLError(.dataLengthExceedsMaximum) }
@@ -866,26 +865,6 @@ private final class OwnerStreamPump: @unchecked Sendable {
   private func fail(_ message: String) {
     _ = OwnerOutcome.keep(pageID, authority: authority, reply: ["error": message])
     journal_ios_owner_cancel(nativeID)
-    releaseDescriptors()
-  }
-
-  private func closeBody() {
-    lock.lock()
-    let open = bodyOpen
-    bodyOpen = false
-    lock.unlock()
-    if open { Darwin.close(bodyWriter) }
-  }
-
-  private func releaseDescriptors() {
-    lock.lock()
-    let writer = bodyOpen ? bodyWriter : -1
-    let reader = responseOpen ? responseReader : -1
-    bodyOpen = false
-    responseOpen = false
-    lock.unlock()
-    if writer >= 0 { Darwin.close(writer) }
-    if reader >= 0 { Darwin.close(reader) }
   }
 }
 #endif
