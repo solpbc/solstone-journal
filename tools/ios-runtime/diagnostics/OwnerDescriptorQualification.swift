@@ -175,7 +175,7 @@ import Foundation
     var byte: UInt8 = 0
     errno = 0
     let count = Darwin.read(fd, &byte, 1)
-    precondition(count < 0 && errno == EAGAIN, "unexpected byte \(byte) on \(fd)")
+    precondition(count == 0 || (count < 0 && errno == EAGAIN), "unexpected byte \(byte) on \(fd)")
   }
 
   /// Puts a new pipe writer on `retired`, which must already be closed.
