@@ -24,7 +24,7 @@ for library in cxx_inputs:shutil.copy2(library,cxx_dir/library.name)
 # Expose only C++ archives; the NDK's generic directory also has a Rust-based libc.a.
 env['CARGO_TARGET_AARCH64_LINUX_ANDROID_RUSTFLAGS'] += ' -L native=' + str(cxx_dir)
 for key, value in {'CC':str(bins/'clang'),'CXX':str(bins/'clang++'),'AR':str(bins/'llvm-ar'),'CFLAGS':'--target=aarch64-linux-android31','CXXFLAGS':'--target=aarch64-linux-android31'}.items(): env[key+'_aarch64-linux-android']=value
-for key in ('PARAKEET_LIB_DIR','SOLSTONE_FFMPEG_SOURCE_ARCHIVE','JOURNAL_ONNX_LIBRARY','RFDETR_LIB_DIR'):
+for key in ('PARAKEET_LIB_DIR','SOUND_CED_LIB_DIR','SOLSTONE_FFMPEG_SOURCE_ARCHIVE','JOURNAL_ONNX_LIBRARY','RFDETR_LIB_DIR'):
  if not env.get(key): raise RuntimeError(key+' is required for the native development app')
 out=root/'evidence';out.mkdir(exist_ok=True)
 (out/'source-manifest.json').write_text(json.dumps(source_manifest(repo),indent=2)+'\n')
@@ -33,7 +33,7 @@ def run(name,argv):
  start=time.time();log=out/(name+'.log')
  with log.open('wb') as f:p=subprocess.run(list(map(str,argv)),cwd=repo,env=env,stdin=subprocess.DEVNULL,stdout=f,stderr=subprocess.STDOUT,timeout=1800)
  row={'name':name,'argv':list(map(str,argv)),'exit':p.returncode,'seconds':time.time()-start,'log_sha256':hashlib.sha256(log.read_bytes()).hexdigest()}
- steps.append(row);(out/'native-build.json').write_text(json.dumps({'source':subprocess.check_output(['git','rev-parse','HEAD'],cwd=repo,text=True).strip(),'environment':{k:v for k,v in env.items() if k.startswith(('CARGO_','CC_','CXX_','AR_','CFLAGS_','CXXFLAGS_','PARAKEET_','SOLSTONE_FFMPEG_','JOURNAL_ONNX_','RFDETR_'))},'steps':steps},indent=2))
+ steps.append(row);(out/'native-build.json').write_text(json.dumps({'source':subprocess.check_output(['git','rev-parse','HEAD'],cwd=repo,text=True).strip(),'environment':{k:v for k,v in env.items() if k.startswith(('CARGO_','CC_','CXX_','AR_','CFLAGS_','CXXFLAGS_','PARAKEET_','SOUND_CED_','SOLSTONE_FFMPEG_','JOURNAL_ONNX_','RFDETR_'))},'steps':steps},indent=2))
  print(json.dumps(row),flush=True)
  if p.returncode:print(log.read_text(errors='replace')[-12000:]);sys.exit(p.returncode)
 profile_args=['--release'] if args.release else []
@@ -51,7 +51,7 @@ if header is None: raise RuntimeError('rfdetr_capi.h was not found under RFDETR_
 model=repo/'core/models/assets/rfdetr/rfdetr-nano-f16.gguf'
 rfdetr_archives=sorted(p for p in rfdetr.rglob('librfdetr.a') if p.is_file())
 if len(rfdetr_archives)!=1: raise RuntimeError('RFDETR_LIB_DIR must contain exactly one librfdetr.a')
-inputs=[onnx,*cxx_inputs,pathlib.Path(env['SOLSTONE_FFMPEG_SOURCE_ARCHIVE']),*sorted(pathlib.Path(env['PARAKEET_LIB_DIR']).rglob('*.a')),*rfdetr_archives,header,model]
+inputs=[onnx,*cxx_inputs,pathlib.Path(env['SOLSTONE_FFMPEG_SOURCE_ARCHIVE']),*sorted(pathlib.Path(env['PARAKEET_LIB_DIR']).rglob('*.a')),pathlib.Path(env['SOUND_CED_LIB_DIR'])/'libsolstone_sound_ced.a',*rfdetr_archives,header,model]
 (out/'audio-native-inputs.json').write_text(json.dumps({str(p):hashlib.sha256(p.read_bytes()).hexdigest() for p in inputs},indent=2)+'\n')
 profile='release' if args.release else 'debug'
 shutil.copy2(root/'target/aarch64-linux-android'/profile/'libandroid_journal_runtime.so',lib/'libandroid_journal_runtime.so')

@@ -16,6 +16,7 @@ fn archives(root: &Path, output: &mut Vec<std::path::PathBuf>) {
 
 fn main() {
     println!("cargo:rerun-if-env-changed=PARAKEET_LIB_DIR");
+    println!("cargo:rerun-if-env-changed=SOUND_CED_LIB_DIR");
     if env::var_os("CARGO_FEATURE_NATIVE").is_none() {
         return;
     }
@@ -50,6 +51,29 @@ fn main() {
             .strip_prefix("lib")
             .unwrap();
         println!("cargo:rustc-link-lib=static={name}");
+    }
+    if let Some(root) = env::var_os("SOUND_CED_LIB_DIR") {
+        let root = Path::new(&root);
+        let mut sound = Vec::new();
+        archives(root, &mut sound);
+        assert!(
+            sound.len() == 1
+                && sound[0]
+                    .file_name()
+                    .is_some_and(|name| name == "libsolstone_sound_ced.a"),
+            "SOUND_CED_LIB_DIR must contain only libsolstone_sound_ced.a; use the Parakeet GGML family"
+        );
+        println!("cargo:rerun-if-changed={}", sound[0].display());
+        println!(
+            "cargo:rustc-link-search=native={}",
+            sound[0].parent().unwrap().display()
+        );
+        println!("cargo:rustc-link-lib=static=solstone_sound_ced");
+    } else {
+        assert!(
+            !matches!(target.as_str(), "ios" | "android"),
+            "SOUND_CED_LIB_DIR is required for the native mobile build"
+        );
     }
     if target == "ios" {
         for name in ["Metal", "MetalKit", "Foundation", "Accelerate"] {

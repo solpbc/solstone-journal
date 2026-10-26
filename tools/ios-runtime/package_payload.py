@@ -36,7 +36,11 @@ repo = adapter.parents[1]
 shutil.copyfile(repo / 'contracts/journal-web-host/v1.json', adapter / 'Resources/JournalWebHost.json')
 shutil.copyfile(repo / 'core/distribution/licenses/fireredvad/LICENSE', notices / 'FireRedVAD-LICENSE.txt')
 shutil.copyfile(repo / 'core/distribution/model-notices.md', notices / 'NOTICE.md')
+for source, name in package_mobile_media.SOUND_TAG_NOTICES:
+    shutil.copyfile(repo / source, notices / name)
 if directory := os.environ.get('AUDIO_MODELS_DIR'):
+    ced = package_mobile_media.verify_sound_tag_model(repo, directory)
     for name in ('tdt-0.6b-v3-q8_0.gguf', 'firered_vad.onnx',
-                 'wespeaker-resnet34-256.onnx', 'pyannote-segmentation-3.0.onnx'):
+                 'wespeaker-resnet34-256.onnx', 'pyannote-segmentation-3.0.onnx', ced['filename']):
         shutil.copyfile(Path(directory) / name, models / name)
+    package_mobile_media.verify_sound_tag_resources(repo, models)

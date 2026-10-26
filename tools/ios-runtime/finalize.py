@@ -271,6 +271,11 @@ def main() -> int:
         / "derived/Build/Intermediates.noindex/JournalRuntimeDev.build/Debug-iphoneos"
     )
     app = products / "JournalRuntimeDev.app"
+    sound_tag = None
+    audio_source = ROOT / "tools/ios-runtime/Resources/AudioModels"
+    if args.bundle_identifier == "app.solstone.journal.owner.dev" or any(audio_source.glob("*.gguf")):
+        sound_tag = package_mobile_media.verify_sound_tag_resources(ROOT, audio_source)
+        package_mobile_media.verify_sound_tag_resources(ROOT, app / "AudioModels")
     media_manifest = None
     payload_source = ROOT / "tools/ios-runtime/Resources/JournalPayload"
     if args.bundle_identifier == "app.solstone.journal.owner.dev" or (payload_source / "media-models.json").exists():
@@ -433,6 +438,12 @@ def main() -> int:
     subprocess.run(["codesign", "--verify", "--deep", "--strict", str(app)], check=True)
     if sha256(pdfium_framework / "PDFium") != signed_pdfium_sha256:
         raise ValueError("containing app signing changed the PDFium framework")
+    if sound_tag:
+        package_mobile_media.verify_sound_tag_resources(ROOT, app / "AudioModels")
+        (args.build_root / "sound-tag-model-package-receipt.json").write_text(json.dumps({
+            "schema": "solstone.mobile-sound-tag-model.v1",
+            "pin": sound_tag, "bundle": "JournalRuntimeDev.app/AudioModels",
+        }, indent=2) + "\n")
     if media_manifest:
         (args.build_root / "media-package-receipt.json").write_text(json.dumps({
             "schema": "solstone.mobile-media-package.v1",
