@@ -48,6 +48,7 @@ const fn focus(group: FocusGroup, rank: u8) -> Option<Focus> {
     Some(Focus { group, rank })
 }
 
+#[allow(clippy::too_many_arguments)] // One positional row per registry entry, read as a table.
 const fn view(
     name: &'static str,
     icon: &'static str,
