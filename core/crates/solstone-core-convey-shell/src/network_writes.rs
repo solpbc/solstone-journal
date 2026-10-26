@@ -20,7 +20,6 @@ use axum::extract::{Extension, Path};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use serde_json::{Map, Value, json};
-use solstone_core_handoff_nonce::mint_nonce;
 use solstone_core_journal_config::read_direct_door_port;
 use solstone_core_journal_config_write::{JournalConfigMutation, mutate_journal_config};
 use solstone_core_sol_link::ledger::{
@@ -32,16 +31,14 @@ use solstone_core_sol_link::service_identity::ServiceIdentity;
 use solstone_core_spl::{
     EnrollError, EnrollMode, disable_spl, enable_spl_at_root_with, enroll_home,
 };
-use solstone_core_thinking::confidential::{
-    HandoffResult, OperationHandle, OperationRegistry, Phase,
-};
+use solstone_core_thinking::confidential::{HandoffResult, OperationRegistry, Phase};
 
 use crate::JournalRoot;
 use crate::assets;
 use crate::network::{refusal, unpair_mutation_refusal};
 use crate::network_status::private_link_body;
 use crate::pair_window_manager::{PairWindowManager, unix_seconds};
-use crate::service_handoffs::{ServiceHandoffs, interrupted};
+use crate::service_handoffs::{HandoffRun, ServiceHandoffs, interrupted};
 
 const SERVICE: &str = "spl";
 const DEFAULT_PORTAL_URL: &str = "https://services.solstone.app";
@@ -274,7 +271,23 @@ async fn private_link_enable(
     let operations = override_operations
         .map(|Extension(value)| value.0)
         .unwrap_or(operations);
-    if private_link_body(&journal.0, Some(operations.operation_raw(SERVICE))).state == "enabled" {
+    if handoffs.root().revalidate_canonical_binding().is_err() {
+        return refusal(
+            "service_operation_failed",
+            "",
+            StatusCode::INTERNAL_SERVER_ERROR,
+        );
+    }
+    let enabled =
+        private_link_body(&journal.0, Some(operations.operation_raw(SERVICE))).state == "enabled";
+    if handoffs.root().revalidate_canonical_binding().is_err() {
+        return refusal(
+            "service_operation_failed",
+            "",
+            StatusCode::INTERNAL_SERVER_ERROR,
+        );
+    }
+    if enabled {
         return refusal(
             "invalid_operation_for_state",
             &copy("SPL_PRIVATE_LINK_ALREADY_ENABLED_DETAIL"),
@@ -289,96 +302,59 @@ async fn private_link_enable(
             subscribe_poll: value.subscribe_poll,
         })
         .unwrap_or(runtime);
-    if solstone_core_sol_link::service_identity::load_or_create_service_identity(&journal.0)
-        .is_err()
-    {
-        return refusal(
+    let (ready, result) = tokio::sync::oneshot::channel();
+    let polling_operations = Arc::clone(&operations);
+    let reply_operations = Arc::clone(&operations);
+    let start = handoffs
+        .start(SERVICE, "spl_enable", operations, move |run| async move {
+            let Ok(prepared) = run
+                .prepare_consent(runtime.portal_base_url.clone(), "spl")
+                .await
+            else {
+                return outcome(Phase::Error, "local_error", None);
+            };
+            let Some(operation) = run.publish_portal(prepared.portal_url) else {
+                return interrupted();
+            };
+            let _ = ready.send(operation);
+            run_handoff(
+                run,
+                polling_operations,
+                runtime,
+                prepared.nonce,
+                pair_windows.map(|Extension(pw)| pw),
+                (prepared.service, prepared.ca_pem),
+            )
+            .await
+        })
+        .await;
+    let handle = match start {
+        Err(crate::service_handoffs::StartRefused::Busy) => return busy_refusal(),
+        Err(crate::service_handoffs::StartRefused::Stopped) => {
+            return refusal(
+                "service_operation_failed",
+                &copy("SPL_PRIVATE_LINK_CONSENT_LINK_PREPARE_FAILED_DETAIL"),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            );
+        }
+        Ok(handle) => handle,
+    };
+    let prepared = result.await;
+    if prepared.is_err() {
+        reply_operations.wait_until_closed(SERVICE, handle).await;
+    }
+    match prepared {
+        Ok(operation) => (
+            StatusCode::ACCEPTED,
+            Json(json!({"success":true,"service":SERVICE,"operation":operation})),
+        )
+            .into_response(),
+        Err(_) => refusal(
             "service_operation_failed",
             &copy("SPL_PRIVATE_LINK_CONSENT_LINK_PREPARE_FAILED_DETAIL"),
             StatusCode::INTERNAL_SERVER_ERROR,
-        );
-    }
-    let committed = match solstone_core_sol_link::committed::load_committed_identity(&journal.0) {
-        Ok(value) => value,
-        Err(_) => {
-            return refusal(
-                "service_operation_failed",
-                &copy("SPL_PRIVATE_LINK_CONSENT_LINK_PREPARE_FAILED_DETAIL"),
-                StatusCode::INTERNAL_SERVER_ERROR,
-            );
-        }
-    };
-    let nonce = match mint_nonce() {
-        Ok(value) => value,
-        Err(_) => {
-            return refusal(
-                "service_operation_failed",
-                &copy("SPL_PRIVATE_LINK_CONSENT_LINK_PREPARE_FAILED_DETAIL"),
-                StatusCode::INTERNAL_SERVER_ERROR,
-            );
-        }
-    };
-    let wall_unix_seconds = match std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
-    {
-        Ok(duration) => duration.as_secs() as i64,
-        Err(_) => {
-            return refusal(
-                "service_operation_failed",
-                &copy("SPL_PRIVATE_LINK_CONSENT_LINK_PREPARE_FAILED_DETAIL"),
-                StatusCode::INTERNAL_SERVER_ERROR,
-            );
-        }
-    };
-    let assertion = match solstone_core_sol_link::home_reach::sign_service_enable_assertion(
-        &committed,
-        "spl",
-        &nonce,
-        wall_unix_seconds,
-    ) {
-        Ok(value) => value,
-        Err(_) => {
-            return refusal(
-                "service_operation_failed",
-                &copy("SPL_PRIVATE_LINK_CONSENT_LINK_PREPARE_FAILED_DETAIL"),
-                StatusCode::INTERNAL_SERVER_ERROR,
-            );
-        }
-    };
-    let portal_url = solstone_core_sol_link::home_reach::service_enable_portal_url(
-        &runtime.portal_base_url,
-        "spl",
-        &nonce,
-        committed.instance_id(),
-        &assertion.compact,
-        &assertion.ca_pubkey_pem,
-    );
-    let (handle, operation) =
-        match operations.start_operation(SERVICE, "spl_enable", Some(portal_url)) {
-            Ok(value) => value,
-            Err(_) => return busy_refusal(),
-        };
-    spawn_handoff(
-        handoffs,
-        operations,
-        handle,
-        runtime,
-        nonce,
-        pair_windows.map(|Extension(pw)| pw),
-        (
-            ServiceIdentity {
-                instance_id: committed.instance_id().to_owned(),
-                home_label: committed.home_label().to_owned(),
-                locked_at: None,
-            },
-            assertion.ca_pubkey_pem,
         ),
-    )
-    .await;
-    (
-        StatusCode::ACCEPTED,
-        Json(json!({"success":true,"service":SERVICE,"operation":operation})),
-    )
-        .into_response()
+    }
 }
 
 async fn private_link_disable(
@@ -453,123 +429,119 @@ fn busy_refusal() -> Response {
         .into_response()
 }
 
-async fn spawn_handoff(
-    handoffs: Arc<ServiceHandoffs>,
+async fn run_handoff(
+    run: Arc<HandoffRun>,
     operations: Arc<OperationRegistry>,
-    handle: OperationHandle,
     runtime: SplRuntime,
     nonce: String,
     pair_windows: Option<Arc<PairWindowManager>>,
     enrollment_identity: (ServiceIdentity, String),
-) {
-    handoffs
-        .spawn(SERVICE, operations.clone(), handle, move |run| async move {
-            if !operations.mark_waiting(SERVICE, handle) {
-                return interrupted();
-            }
-            let mut deadline = Instant::now() + Duration::from_secs(900);
-            let mut subscribing = false;
-            loop {
-                if run.cancelled() {
+) -> HandoffResult {
+    let handle = run.operation();
+    if !operations.mark_waiting(SERVICE, handle) {
+        return interrupted();
+    }
+    let mut deadline = Instant::now() + Duration::from_secs(900);
+    let mut subscribing = false;
+    loop {
+        if run.cancelled() {
+            return interrupted();
+        }
+        let poll = runtime.poll.clone();
+        let base = runtime.portal_base_url.clone();
+        let nonce = nonce.clone();
+        let polled = run.blocking(move || poll.poll(&base, &nonce)).await;
+        if run.cancelled() {
+            return interrupted();
+        }
+        match polled {
+            Ok(SplPollOutcome::Continue) if Instant::now() < deadline => {
+                if !run.sleep(Duration::from_secs(1)).await {
                     return interrupted();
                 }
-                let poll = runtime.poll.clone();
-                let base = runtime.portal_base_url.clone();
-                let nonce = nonce.clone();
-                let polled = run.blocking(move || poll.poll(&base, &nonce)).await;
-                if run.cancelled() {
-                    return interrupted();
-                }
-                match polled {
-                    Ok(SplPollOutcome::Continue) if Instant::now() < deadline => {
-                        if !run.sleep(Duration::from_secs(1)).await {
-                            return interrupted();
-                        }
-                    }
-                    Ok(SplPollOutcome::Continue) => return outcome(Phase::Error, "expired", None),
-                    Ok(SplPollOutcome::Failed { token, detail }) => {
-                        return outcome_for_token(&token, detail);
-                    }
-                    Ok(SplPollOutcome::Success(payload)) => match classify_payload(&payload) {
-                        Ok(("pending", _)) if Instant::now() < deadline => {
-                            if !run.sleep(Duration::from_secs(1)).await {
-                                return interrupted();
-                            }
-                        }
-                        Ok(("revoked", _)) => return outcome(Phase::Revoked, "revoked", None),
-                        Ok(("needs_subscription", Some(url))) => {
-                            if !subscribing {
-                                deadline = Instant::now() + SUBSCRIBE_WAIT;
-                                subscribing = true;
-                            }
-                            if Instant::now() >= deadline {
-                                return outcome(Phase::Error, "expired", None);
-                            }
-                            if !operations.note_subscribing(SERVICE, handle, url) {
-                                return interrupted();
-                            }
-                            if !run.sleep(runtime.subscribe_poll).await {
-                                return interrupted();
-                            }
-                        }
-                        Ok(("approved", _)) => {
-                            let enroll = runtime.enrollment.clone();
-                            let effect = Arc::clone(&run);
-                            let windows = pair_windows.clone();
-                            let result = run
-                                .blocking(move || {
-                                    let result = enable_spl_at_root_with(
-                                        &effect.root(),
-                                        &enrollment_identity.0,
-                                        &enrollment_identity.1,
-                                        |identity, ca| {
-                                            enroll.enroll(effect.journal(), identity, ca)
-                                        },
-                                        || !effect.cancelled(),
-                                    );
-                                    if result
-                                        .as_ref()
-                                        .is_ok_and(|publication| publication.confirmed())
-                                    {
-                                        if let Some(windows) = windows {
-                                            windows.relay_access().bump_epoch();
-                                            windows.relay_admissions().bump_service_epoch();
-                                        } else {
-                                            crate::relay_admission::admission_registry_for(
-                                                effect.journal(),
-                                            )
-                                            .bump_service_epoch();
-                                        }
-                                    }
-                                    result
-                                })
-                                .await;
-                            return match result {
-                                Ok(Ok(publication)) if publication.confirmed() => {
-                                    outcome(Phase::Enabled, "approved", None)
-                                }
-                                _ if run.cancelled() => interrupted(),
-                                Ok(Err(solstone_core_spl::EnableSplError::Enroll(error))) => {
-                                    outcome_from_enroll(error)
-                                }
-                                Ok(Ok(publication)) => {
-                                    log::warn!("private-link enable publication was not confirmed: {publication:?}");
-                                    outcome(Phase::Error, "local_error", None)
-                                }
-                                Ok(Err(error)) => {
-                                    log::warn!("private-link enable publication failed: {error:?}");
-                                    outcome(Phase::Error, "local_error", None)
-                                }
-                                Err(_) => outcome(Phase::Error, "local_error", None),
-                            };
-                        }
-                        _ => return outcome(Phase::Error, "malformed", None),
-                    },
-                    Err(_) => return outcome(Phase::Error, "local_error", None),
-                }
             }
-        })
-        .await;
+            Ok(SplPollOutcome::Continue) => return outcome(Phase::Error, "expired", None),
+            Ok(SplPollOutcome::Failed { token, detail }) => {
+                return outcome_for_token(&token, detail);
+            }
+            Ok(SplPollOutcome::Success(payload)) => match classify_payload(&payload) {
+                Ok(("pending", _)) if Instant::now() < deadline => {
+                    if !run.sleep(Duration::from_secs(1)).await {
+                        return interrupted();
+                    }
+                }
+                Ok(("revoked", _)) => return outcome(Phase::Revoked, "revoked", None),
+                Ok(("needs_subscription", Some(url))) => {
+                    if !subscribing {
+                        deadline = Instant::now() + SUBSCRIBE_WAIT;
+                        subscribing = true;
+                    }
+                    if Instant::now() >= deadline {
+                        return outcome(Phase::Error, "expired", None);
+                    }
+                    if !operations.note_subscribing(SERVICE, handle, url) {
+                        return interrupted();
+                    }
+                    if !run.sleep(runtime.subscribe_poll).await {
+                        return interrupted();
+                    }
+                }
+                Ok(("approved", _)) => {
+                    let enroll = runtime.enrollment.clone();
+                    let effect = Arc::clone(&run);
+                    let windows = pair_windows.clone();
+                    let result = run
+                        .blocking(move || {
+                            let result = enable_spl_at_root_with(
+                                &effect.root(),
+                                &enrollment_identity.0,
+                                &enrollment_identity.1,
+                                |identity, ca| enroll.enroll(effect.journal(), identity, ca),
+                                || !effect.cancelled(),
+                            );
+                            if result
+                                .as_ref()
+                                .is_ok_and(|publication| publication.confirmed())
+                            {
+                                if let Some(windows) = windows {
+                                    windows.relay_access().bump_epoch();
+                                    windows.relay_admissions().bump_service_epoch();
+                                } else {
+                                    crate::relay_admission::admission_registry_for(
+                                        effect.journal(),
+                                    )
+                                    .bump_service_epoch();
+                                }
+                            }
+                            result
+                        })
+                        .await;
+                    return match result {
+                        Ok(Ok(publication)) if publication.confirmed() => {
+                            outcome(Phase::Enabled, "approved", None)
+                        }
+                        _ if run.cancelled() => interrupted(),
+                        Ok(Err(solstone_core_spl::EnableSplError::Enroll(error))) => {
+                            outcome_from_enroll(error)
+                        }
+                        Ok(Ok(publication)) => {
+                            log::warn!(
+                                "private-link enable publication was not confirmed: {publication:?}"
+                            );
+                            outcome(Phase::Error, "local_error", None)
+                        }
+                        Ok(Err(error)) => {
+                            log::warn!("private-link enable publication failed: {error:?}");
+                            outcome(Phase::Error, "local_error", None)
+                        }
+                        Err(_) => outcome(Phase::Error, "local_error", None),
+                    };
+                }
+                _ => return outcome(Phase::Error, "malformed", None),
+            },
+            Err(_) => return outcome(Phase::Error, "local_error", None),
+        }
+    }
 }
 
 fn classify_payload(payload: &Map<String, Value>) -> Result<(&str, Option<String>), ()> {

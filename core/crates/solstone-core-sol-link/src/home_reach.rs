@@ -389,13 +389,37 @@ struct HomeReachFault {
 
 #[cfg(any(test, feature = "test-hooks"))]
 thread_local! {
-    static HOME_REACH_FAULT: std::cell::RefCell<Option<HomeReachFault>> = const {
+    static HOME_REACH_FAULT: std::cell::RefCell<Option<std::sync::Arc<std::sync::Mutex<HomeReachFault>>>> = const {
         std::cell::RefCell::new(None)
     };
 }
 
 #[cfg(any(test, feature = "test-hooks"))]
 pub struct HomeReachFaultGuard;
+
+/// Test-only fault scope carried across an owned blocking-task boundary.
+#[cfg(any(test, feature = "test-hooks"))]
+#[derive(Clone)]
+pub struct HomeReachFaultContext(Option<std::sync::Arc<std::sync::Mutex<HomeReachFault>>>);
+
+#[cfg(any(test, feature = "test-hooks"))]
+impl HomeReachFaultContext {
+    pub fn capture() -> Self {
+        Self(HOME_REACH_FAULT.with(|fault| fault.borrow().clone()))
+    }
+
+    pub fn run<T>(&self, work: impl FnOnce() -> T) -> T {
+        struct Restore(Option<std::sync::Arc<std::sync::Mutex<HomeReachFault>>>);
+        impl Drop for Restore {
+            fn drop(&mut self) {
+                HOME_REACH_FAULT.with(|fault| *fault.borrow_mut() = self.0.take());
+            }
+        }
+        let previous = HOME_REACH_FAULT.with(|fault| fault.replace(self.0.clone()));
+        let _restore = Restore(previous);
+        work()
+    }
+}
 
 #[cfg(any(test, feature = "test-hooks"))]
 impl HomeReachFaultGuard {
@@ -405,10 +429,11 @@ impl HomeReachFaultGuard {
                 fault.borrow().is_none(),
                 "home-reach fault is already active"
             );
-            *fault.borrow_mut() = Some(HomeReachFault {
-                primitive,
-                consumed: false,
-            });
+            *fault.borrow_mut() =
+                Some(std::sync::Arc::new(std::sync::Mutex::new(HomeReachFault {
+                    primitive,
+                    consumed: false,
+                })));
         });
         Self
     }
@@ -419,6 +444,8 @@ impl HomeReachFaultGuard {
                 .borrow()
                 .as_ref()
                 .expect("home-reach fault remains active")
+                .lock()
+                .expect("home-reach fault lock is not poisoned")
                 .consumed
         })
     }
@@ -449,10 +476,11 @@ pub fn run_with_home_reach_fault<T>(
 #[cfg(any(test, feature = "test-hooks"))]
 fn checkpoint(primitive: HomeReachFaultPrimitive) -> Result<(), HomeReachAssertionError> {
     HOME_REACH_FAULT.with(|fault| {
-        let mut fault = fault.borrow_mut();
-        let Some(fault) = fault.as_mut() else {
+        let current = fault.borrow();
+        let Some(fault) = current.as_ref() else {
             return Ok(());
         };
+        let mut fault = fault.lock().expect("home-reach fault lock is not poisoned");
         if fault.primitive != primitive || fault.consumed {
             return Ok(());
         }

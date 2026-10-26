@@ -1768,7 +1768,7 @@ async fn confidential_operations_are_router_scoped_and_report_a_live_busy_operat
     assert_eq!(enable.0, StatusCode::ACCEPTED);
     let enable_body: Value = serde_json::from_slice(&enable.3).expect("enable JSON");
     assert_eq!(enable_body["operation"]["phase"], "starting");
-    assert_eq!(enable_body["operation"]["elapsed_ms"], 0);
+    assert!(enable_body["operation"]["elapsed_ms"].as_u64().is_some());
     let url = enable_body["operation"]["portal_url"]
         .as_str()
         .expect("consent URL");
@@ -1852,6 +1852,9 @@ async fn confidential_operations_are_router_scoped_and_report_a_live_busy_operat
             .as_u64()
             .expect("elapsed_ms")
     };
+    assert!(
+        elapsed_of(&providers_body) >= enable_body["operation"]["elapsed_ms"].as_u64().unwrap()
+    );
     assert!(
         elapsed_of(&updated_body) >= elapsed_of(&providers_body),
         "elapsed_ms must not go backwards across the PUT"
@@ -2021,14 +2024,14 @@ async fn confidential_enable_bootstraps_or_repairs_identity_like_the_other_servi
     assert_eq!(link_snapshot(&fallback_journal.0), before);
     let providers = request(fallback, "GET", "/app/thinking/api/providers").await;
     let providers_body: Value = serde_json::from_slice(&providers.3).expect("providers JSON");
-    assert_eq!(
-        providers_body["active_lane"]["confidential_operation"],
-        Value::Null
-    );
+    let operation = &providers_body["active_lane"]["confidential_operation"];
+    assert_eq!(operation["phase"], "repair_needed");
+    assert!(operation["portal_url"].is_null());
+    assert_eq!(operation["retryable"], true);
 }
 
 #[tokio::test]
-async fn confidential_enable_refuses_a_corrupt_identity_without_starting_an_operation() {
+async fn confidential_enable_refuses_corrupt_identity_and_settles_preparation_without_consent() {
     async fn assert_refusal(journal: &Path) {
         let (started_tx, started_rx) = channel();
         let (_release_tx, release_rx) = channel();
@@ -2059,10 +2062,10 @@ async fn confidential_enable_refuses_a_corrupt_identity_without_starting_an_oper
         assert_eq!(link_snapshot(journal), before);
         let providers = request(app, "GET", "/app/thinking/api/providers").await;
         let providers_body: Value = serde_json::from_slice(&providers.3).expect("providers JSON");
-        assert_eq!(
-            providers_body["active_lane"]["confidential_operation"],
-            Value::Null
-        );
+        let operation = &providers_body["active_lane"]["confidential_operation"];
+        assert_eq!(operation["phase"], "repair_needed");
+        assert!(operation["portal_url"].is_null());
+        assert_eq!(operation["retryable"], true);
         assert!(started_rx.try_recv().is_err(), "poll must not be called");
     }
 

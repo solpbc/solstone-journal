@@ -13,7 +13,7 @@ use solstone_core_journal_io::whole_journal_restore::{
     whole_journal_restore_generation,
 };
 use solstone_core_thinking::confidential::{
-    HandoffResult, OperationHandle, OperationRegistry, Phase,
+    HandoffResult, OperationBusy, OperationHandle, OperationRegistry, Phase,
 };
 use tokio::sync::{Mutex as AsyncMutex, oneshot, watch};
 use tokio::task::JoinHandle;
@@ -24,6 +24,8 @@ pub(crate) struct ServiceHandoffs {
     root: Arc<JournalRoot>,
     stop: Option<watch::Receiver<bool>>,
     tasks: AsyncMutex<Vec<OwnedHandoff>>,
+    #[cfg(test)]
+    admission_hook: Mutex<Option<Arc<dyn Fn() + Send + Sync>>>,
 }
 
 struct OwnedHandoff {
@@ -37,10 +39,29 @@ pub(crate) struct HandoffRun {
     operations: Arc<OperationRegistry>,
     service: &'static str,
     operation: OperationHandle,
-    generation: u64,
-    admission: Mutex<Option<Arc<TargetUse>>>,
+    admission: Mutex<Option<AdmittedTarget>>,
     child: AsyncMutex<Option<JoinHandle<()>>>,
     recovery: RecoveryWatch,
+    #[cfg(feature = "full-tests")]
+    assertion_fault: solstone_core_sol_link::home_reach::HomeReachFaultContext,
+}
+
+struct AdmittedTarget {
+    lease: Arc<TargetUse>,
+    generation: u64,
+}
+
+#[derive(Debug)]
+pub(crate) enum StartRefused {
+    Busy,
+    Stopped,
+}
+
+pub(crate) struct PreparedConsent {
+    pub nonce: String,
+    pub portal_url: String,
+    pub service: solstone_core_sol_link::service_identity::ServiceIdentity,
+    pub ca_pem: String,
 }
 
 pub(crate) fn config_confirmed(
@@ -95,6 +116,8 @@ impl ServiceHandoffs {
             root,
             stop,
             tasks: AsyncMutex::new(Vec::new()),
+            #[cfg(test)]
+            admission_hook: Mutex::new(None),
         }
     }
 
@@ -102,19 +125,56 @@ impl ServiceHandoffs {
         Arc::clone(&self.root)
     }
 
-    pub(crate) async fn spawn<F, W>(
+    pub(crate) fn config(&self) -> Result<solstone_core_journal_config::JournalConfigRead, ()> {
+        use solstone_core_journal_io::media::MediaDirectory;
+        let root = MediaDirectory::open(self.root(), std::path::Path::new("")).map_err(|_| ())?;
+        let config = root
+            .open_child(std::ffi::OsStr::new("config"))
+            .map_err(|_| ())?;
+        let result = match config {
+            Some(directory) => solstone_core_journal_config::read_journal_config_in_directory(
+                &directory,
+                1024 * 1024,
+            )
+            .map_err(|_| ())?,
+            None => solstone_core_journal_config::JournalConfigRead {
+                present: false,
+                sha256: None,
+                config: None,
+            },
+        };
+        root.revalidate().map_err(|_| ())?;
+        Ok(result)
+    }
+
+    pub(crate) async fn start<F, W>(
         self: &Arc<Self>,
         service: &'static str,
+        kind: &'static str,
         operations: Arc<OperationRegistry>,
-        operation: OperationHandle,
         work: W,
-    ) where
+    ) -> Result<OperationHandle, StartRefused>
+    where
         W: FnOnce(Arc<HandoffRun>) -> F + Send + 'static,
         F: Future<Output = HandoffResult> + Send + 'static,
     {
-        // Registration and joins share this lock. Stop is already published by
-        // the app before it waits for the lock, so it cannot miss a late task.
+        // No operation exists while this caller can still be cancelled waiting
+        // for the mutex or reaping a previous job.
         let mut tasks = self.tasks.lock().await;
+        Self::reap(&mut tasks).await;
+        if stopped(&self.stop) {
+            return Err(StartRefused::Stopped);
+        }
+        let (operation, _) = operations
+            .start_operation(service, kind, None)
+            .map_err(|OperationBusy| StartRefused::Busy)?;
+        // Reserve, spawn and record synchronously under the same owner lock.
+        // Blocking admission starts only inside this already registered job.
+        self.record(&mut tasks, service, operations, operation, work);
+        Ok(operation)
+    }
+
+    async fn reap(tasks: &mut Vec<OwnedHandoff>) {
         let mut index = 0;
         while index < tasks.len() {
             if tasks[index]
@@ -128,49 +188,89 @@ impl ServiceHandoffs {
                 index += 1;
             }
         }
-        if stopped(&self.stop) {
-            operations.finish(service, operation, interrupted());
-            return;
-        }
-        let root = Arc::clone(&self.root);
-        let admitted = tokio::task::spawn_blocking(move || {
-            let lease = begin_target_use_bound(Arc::clone(&root))?;
-            let generation = whole_journal_restore_generation(root.canonical_path());
-            Ok::<_, solstone_core_journal_io::whole_journal_restore::TargetUseRefused>((
-                lease, generation,
-            ))
-        })
-        .await;
-        let Ok(Ok((lease, generation))) = admitted else {
-            operations.finish(service, operation, interrupted());
-            return;
-        };
+    }
+
+    #[cfg(test)]
+    pub(crate) async fn spawn<F, W>(
+        self: &Arc<Self>,
+        service: &'static str,
+        operations: Arc<OperationRegistry>,
+        operation: OperationHandle,
+        work: W,
+    ) where
+        W: FnOnce(Arc<HandoffRun>) -> F + Send + 'static,
+        F: Future<Output = HandoffResult> + Send + 'static,
+    {
+        let mut tasks = self.tasks.lock().await;
+        Self::reap(&mut tasks).await;
+        self.record(&mut tasks, service, operations, operation, work);
+    }
+
+    fn record<F, W>(
+        self: &Arc<Self>,
+        tasks: &mut Vec<OwnedHandoff>,
+        service: &'static str,
+        operations: Arc<OperationRegistry>,
+        operation: OperationHandle,
+        work: W,
+    ) where
+        W: FnOnce(Arc<HandoffRun>) -> F + Send + 'static,
+        F: Future<Output = HandoffResult> + Send + 'static,
+    {
         let run = Arc::new(HandoffRun {
             root: Arc::clone(&self.root),
             stop: self.stop.clone(),
             operations,
             service,
             operation,
-            generation,
-            admission: Mutex::new(Some(Arc::new(lease))),
+            admission: Mutex::new(None),
             child: AsyncMutex::new(None),
             recovery: RecoveryWatch::new(
                 &format!("service-consent-{service}"),
                 Arc::clone(&self.root),
             ),
+            #[cfg(feature = "full-tests")]
+            assertion_fault: solstone_core_sol_link::home_reach::HomeReachFaultContext::capture(),
         });
         let owned = Arc::clone(&run);
         let lifetime = Arc::clone(self);
-        let task = tokio::spawn(async move {
-            let _lifetime = lifetime;
-            if owned.cancelled() {
-                owned.settle(interrupted()).await;
-                return;
-            }
-            let evaluation = tokio::spawn(work(Arc::clone(&owned)));
-            let result = evaluation.await.unwrap_or_else(|_| interrupted());
-            owned.settle(result).await;
-        });
+        #[cfg(test)]
+        let admission_hook = self.admission_hook.lock().unwrap().take();
+        let task =
+            tokio::spawn(async move {
+                let _lifetime = lifetime;
+                // Admission itself is a registered blocking child. If this
+                // supervisor fails, the owner still joins and settles that child.
+                let admitting = Arc::clone(&owned);
+                let admitted = owned
+                .run_child(
+                    move || {
+                        #[cfg(test)]
+                        if let Some(hook) = admission_hook { hook(); }
+                        let lease = begin_target_use_bound(Arc::clone(&admitting.root))?;
+                        let generation = whole_journal_restore_generation(admitting.journal());
+                        *admitting
+                            .admission
+                            .lock()
+                            .unwrap_or_else(|p| p.into_inner()) = Some(AdmittedTarget {
+                            lease: Arc::new(lease),
+                            generation,
+                        });
+                        Ok::<_, solstone_core_journal_io::whole_journal_restore::TargetUseRefused>(
+                            (),
+                        )
+                    },
+                    None,
+                )
+                .await;
+                if !matches!(admitted, Ok(Ok(()))) || owned.cancelled() {
+                    owned.settle(interrupted()).await;
+                    return;
+                }
+                let evaluation = tokio::spawn(work(Arc::clone(&owned)));
+                let result = evaluation.await.unwrap_or_else(|_| interrupted());
+                owned.settle(result).await;
+            });
         tasks.push(OwnedHandoff {
             task: Some(task),
             run,
@@ -194,15 +294,7 @@ impl OwnedHandoff {
         }
         // A failed supervisor still retains its child and admission in this
         // record. A cancelled join waiter leaves this record in the owner.
-        let pending = self
-            .run
-            .admission
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .is_some();
-        if pending {
-            self.run.settle(interrupted()).await;
-        }
+        self.run.settle(interrupted()).await;
     }
 }
 
@@ -220,7 +312,88 @@ impl HandoffRun {
             || !self.operations.is_open(self.service, self.operation)
             || self.root.revalidate_canonical_binding().is_err()
             || whole_journal_restore_blocks(self.root.canonical_path())
-            || whole_journal_restore_generation(self.root.canonical_path()) != self.generation
+            || self
+                .admission
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .as_ref()
+                .is_some_and(|admitted| {
+                    whole_journal_restore_generation(self.root.canonical_path())
+                        != admitted.generation
+                })
+    }
+
+    pub(crate) fn operation(&self) -> OperationHandle {
+        self.operation
+    }
+
+    pub(crate) fn publish_portal(&self, portal: String) -> Option<serde_json::Value> {
+        if self.cancelled() {
+            return None;
+        }
+        self.operations
+            .publish_portal_url(self.service, self.operation, portal)
+    }
+
+    pub(crate) async fn prepare_consent(
+        self: &Arc<Self>,
+        base: String,
+        route: &'static str,
+    ) -> Result<PreparedConsent, ()> {
+        let effect = Arc::clone(self);
+        self.blocking(move || {
+            let prepared =
+                solstone_core_sol_link::service_identity::prepare_service_identity_at_root_checked(
+                    &effect.root,
+                    &|| {
+                        if effect.cancelled() {
+                            Err("service turn-on interrupted".to_owned())
+                        } else {
+                            Ok(())
+                        }
+                    },
+                )
+                .map_err(|_| ())?;
+            if effect.cancelled() {
+                return Err(());
+            }
+            let nonce = solstone_core_handoff_nonce::mint_nonce().map_err(|_| ())?;
+            let seconds = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_err(|_| ())?
+                .as_secs() as i64;
+            let sign = || {
+                solstone_core_sol_link::home_reach::sign_service_enable_assertion(
+                    &prepared.identity,
+                    effect.service,
+                    &nonce,
+                    seconds,
+                )
+            };
+            #[cfg(feature = "full-tests")]
+            let assertion = effect.assertion_fault.run(sign);
+            #[cfg(not(feature = "full-tests"))]
+            let assertion = sign();
+            let assertion = assertion.map_err(|_| ())?;
+            if effect.cancelled() {
+                return Err(());
+            }
+            let portal_url = solstone_core_sol_link::home_reach::service_enable_portal_url(
+                &base,
+                route,
+                &nonce,
+                prepared.identity.instance_id(),
+                &assertion.compact,
+                &assertion.ca_pubkey_pem,
+            );
+            Ok(PreparedConsent {
+                nonce,
+                portal_url,
+                service: prepared.service,
+                ca_pem: assertion.ca_pubkey_pem,
+            })
+        })
+        .await?
     }
 
     pub(crate) async fn sleep(&self, duration: Duration) -> bool {
@@ -243,17 +416,25 @@ impl HandoffRun {
         T: Send + 'static,
         F: FnOnce() -> T + Send + 'static,
     {
-        let mut child = self.child.lock().await;
-        if self.cancelled() {
-            return Err(());
-        }
         let admission = self
             .admission
             .lock()
             .unwrap_or_else(|p| p.into_inner())
             .as_ref()
-            .cloned()
+            .map(|a| Arc::clone(&a.lease))
             .ok_or(())?;
+        self.run_child(work, Some(admission)).await
+    }
+
+    async fn run_child<T, F>(&self, work: F, admission: Option<Arc<TargetUse>>) -> Result<T, ()>
+    where
+        T: Send + 'static,
+        F: FnOnce() -> T + Send + 'static,
+    {
+        let mut child = self.child.lock().await;
+        if self.cancelled() {
+            return Err(());
+        }
         let (sender, receiver) = oneshot::channel();
         *child = Some(tokio::task::spawn_blocking(move || {
             let _admission = admission;
@@ -374,6 +555,14 @@ mod tests {
         root: &std::path::Path,
         portal: Arc<HeldPortal>,
     ) -> crate::EmbeddedConveyHandle {
+        embedded_fixture_with_hook(root, portal, None).await
+    }
+
+    async fn embedded_fixture_with_hook(
+        root: &std::path::Path,
+        portal: Arc<HeldPortal>,
+        before_attempt: Option<Arc<dyn Fn() + Send + Sync>>,
+    ) -> crate::EmbeddedConveyHandle {
         use axum::Extension;
         let root = root.to_owned();
         std::fs::create_dir(root.join("config")).unwrap();
@@ -403,7 +592,7 @@ mod tests {
         .layer(Extension(crate::ConfidentialRuntimeOverride {
             portal_base_url: "https://synthetic.invalid".to_owned(),
             poll: portal,
-            before_attempt: None,
+            before_attempt,
             now: Arc::new(std::time::Instant::now),
             sleep: Arc::new(std::thread::sleep),
             access: None,
@@ -452,6 +641,257 @@ mod tests {
             "spl" => config["link"]["posture"] == "spl",
             "spp" => config["services"]["confidential"].is_object(),
             _ => unreachable!(),
+        }
+    }
+
+    #[tokio::test]
+    async fn preparation_caller_dropped_waiting_for_owner_mutex_reserves_nothing() {
+        let temporary = tempfile::tempdir().unwrap();
+        let owner = Arc::new(ServiceHandoffs::new(
+            Arc::new(JournalRoot::open(temporary.path()).unwrap()),
+            None,
+        ));
+        let operations = Arc::new(OperationRegistry::default());
+        let guard = owner.tasks.lock().await;
+        let waiter = Arc::clone(&owner);
+        let registry = Arc::clone(&operations);
+        let call = tokio::spawn(async move {
+            waiter
+                .start("sme", "enable", registry, |_| async {
+                    panic!("unadmitted preparation")
+                })
+                .await
+        });
+        tokio::task::yield_now().await;
+        call.abort();
+        assert!(call.await.unwrap_err().is_cancelled());
+        assert!(operations.operation_raw("sme").is_null());
+        assert!(guard.is_empty());
+        drop(guard);
+        owner.join().await;
+    }
+
+    #[tokio::test]
+    async fn registered_initial_native_admission_survives_lost_caller_and_rearmed_stop() {
+        let temporary = tempfile::tempdir().unwrap();
+        let (stop, stopped) = watch::channel(false);
+        let owner = Arc::new(ServiceHandoffs::new(
+            Arc::new(JournalRoot::open(temporary.path()).unwrap()),
+            Some(stopped),
+        ));
+        let operations = Arc::new(OperationRegistry::default());
+        let (entered, waiting) = oneshot::channel();
+        let (release, held) = std::sync::mpsc::channel();
+        let entered = Mutex::new(Some(entered));
+        let held = Mutex::new(held);
+        *owner.admission_hook.lock().unwrap() = Some(Arc::new(move || {
+            entered.lock().unwrap().take().unwrap().send(()).unwrap();
+            held.lock()
+                .unwrap()
+                .recv_timeout(Duration::from_secs(5))
+                .unwrap();
+        }));
+        let (ready, caller) = oneshot::channel::<()>();
+        let handle = owner
+            .start("sme", "enable", Arc::clone(&operations), move |_| async {
+                let _ = ready.send(());
+                panic!("preparation must not run after Stop")
+            })
+            .await
+            .ok()
+            .unwrap();
+        waiting.await.unwrap();
+        drop(caller);
+        assert!(operations.is_open("sme", handle));
+        assert_eq!(
+            operations.operation_raw("sme")["portal_url"],
+            serde_json::Value::Null
+        );
+        stop.send_replace(true);
+        assert!(
+            tokio::time::timeout(Duration::from_millis(30), owner.join())
+                .await
+                .is_err()
+        );
+        assert!(
+            operations.is_open("sme", handle),
+            "pending native child remains owned before admission exists"
+        );
+        release.send(()).unwrap();
+        tokio::time::timeout(Duration::from_secs(5), owner.join())
+            .await
+            .unwrap();
+        assert!(!operations.is_open("sme", handle));
+        assert_eq!(operations.operation_raw("sme")["phase"], "error");
+        assert!(!temporary.path().join("link").exists());
+    }
+
+    #[tokio::test]
+    async fn ordinary_pre202_preparation_is_busy_joined_and_stale_after_off_stop_or_restore() {
+        use solstone_core_journal_io::whole_journal_restore::{
+            WholeJournalRestoreSource, clear_whole_journal_restore, publish_whole_journal_restore,
+        };
+        for mode in ["off", "stop", "restore"] {
+            let temporary = tempfile::tempdir().unwrap();
+            let (entered, waiting) = oneshot::channel();
+            let (release, held) = std::sync::mpsc::channel();
+            let entered = Mutex::new(Some(entered));
+            let held = Mutex::new(held);
+            let hook = Arc::new(move || {
+                if let Some(entered) = entered.lock().unwrap().take() {
+                    entered.send(()).unwrap();
+                    held.lock()
+                        .unwrap()
+                        .recv_timeout(Duration::from_secs(10))
+                        .unwrap();
+                }
+            });
+            let (_, unused) = std::sync::mpsc::channel();
+            let portal = Arc::new(HeldPortal {
+                entered: Mutex::new(None),
+                release: Mutex::new(unused),
+                calls: 0.into(),
+                enrollments: 0.into(),
+            });
+            let owner = Arc::new(
+                embedded_fixture_with_hook(temporary.path(), Arc::clone(&portal), Some(hook)).await,
+            );
+            let caller_owner = Arc::clone(&owner);
+            let call = tokio::spawn(async move {
+                owner_request(
+                    &caller_owner,
+                    "POST",
+                    "/app/thinking/api/confidential/enable",
+                    "",
+                )
+                .await
+            });
+            tokio::time::timeout(Duration::from_secs(5), waiting)
+                .await
+                .unwrap()
+                .unwrap();
+            let (operations, handle) = {
+                let tasks = owner.service_handoffs.tasks.lock().await;
+                let run = &tasks.first().unwrap().run;
+                (Arc::clone(&run.operations), run.operation)
+            };
+            assert!(operations.is_open("spp", handle));
+            assert!(operations.operation_raw("spp")["portal_url"].is_null());
+            assert_eq!(
+                owner_request(&owner, "POST", "/app/thinking/api/confidential/enable", "")
+                    .await
+                    .0,
+                axum::http::StatusCode::SERVICE_UNAVAILABLE
+            );
+            assert!(
+                operations.is_open("spp", handle),
+                "busy request did not replace or end generation"
+            );
+            let cert = std::fs::read(temporary.path().join("link/ca/cert.pem")).unwrap();
+            let private = std::fs::read(temporary.path().join("link/ca/private.pem")).unwrap();
+            // The actual request disappears before202; the registered job and
+            // its real native hook must remain owned by the app.
+            call.abort();
+            let _ = call.await;
+            let mut pending = None;
+            let mut drain = None;
+            if mode == "off" {
+                assert_eq!(
+                    owner_request(&owner, "POST", "/app/thinking/api/confidential/disable", "")
+                        .await
+                        .0,
+                    axum::http::StatusCode::OK
+                );
+                assert!(
+                    tokio::time::timeout(Duration::from_millis(30), owner.service_handoffs.join())
+                        .await
+                        .is_err()
+                );
+            } else if mode == "stop" {
+                assert!(
+                    tokio::time::timeout(Duration::from_millis(30), owner.shutdown_and_wait())
+                        .await
+                        .is_err()
+                );
+            } else {
+                pending = Some(
+                    publish_whole_journal_restore(
+                        temporary.path(),
+                        &WholeJournalRestoreSource::Byo {
+                            repository: "synthetic".to_owned(),
+                            backend: "local".to_owned(),
+                        },
+                        &"b".repeat(64),
+                        "/",
+                    )
+                    .unwrap(),
+                );
+                let journal = temporary.path().to_owned();
+                let mut task = tokio::task::spawn_blocking(move || {
+                    crate::recovery_drain::relinquish_admitted_work(&journal)
+                });
+                assert!(
+                    tokio::time::timeout(Duration::from_millis(30), &mut task)
+                        .await
+                        .is_err()
+                );
+                drain = Some(task);
+            }
+            release.send(()).unwrap();
+            if let Some(task) = drain {
+                tokio::time::timeout(Duration::from_secs(5), task)
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .unwrap();
+            }
+            tokio::time::timeout(Duration::from_secs(5), owner.service_handoffs.join())
+                .await
+                .unwrap();
+            assert_eq!(
+                portal.calls.load(Ordering::SeqCst),
+                0,
+                "no stale provider call in {mode}"
+            );
+            let config = solstone_core_thinking::read_config(temporary.path()).unwrap();
+            assert!(
+                config
+                    .get("services")
+                    .and_then(|s| s.get("confidential_attempt"))
+                    .is_none()
+            );
+            assert!(!enabled(temporary.path(), "spp"));
+            if let Some(pending) = pending {
+                clear_whole_journal_restore(temporary.path(), &pending).unwrap();
+                let journal = temporary.path().to_owned();
+                tokio::task::spawn_blocking(move || {
+                    crate::recovery_drain::resume_after_whole_journal_restore(&journal)
+                })
+                .await
+                .unwrap();
+            }
+            if mode != "stop" {
+                assert_eq!(
+                    owner_request(&owner, "POST", "/app/thinking/api/confidential/enable", "")
+                        .await
+                        .0,
+                    axum::http::StatusCode::ACCEPTED
+                );
+                tokio::time::timeout(Duration::from_secs(5), owner.service_handoffs.join())
+                    .await
+                    .unwrap();
+                assert!(enabled(temporary.path(), "spp"));
+                assert_eq!(portal.calls.load(Ordering::SeqCst), 1);
+            }
+            assert_eq!(
+                std::fs::read(temporary.path().join("link/ca/cert.pem")).unwrap(),
+                cert
+            );
+            assert_eq!(
+                std::fs::read(temporary.path().join("link/ca/private.pem")).unwrap(),
+                private
+            );
+            owner.shutdown_and_wait().await;
         }
     }
 
