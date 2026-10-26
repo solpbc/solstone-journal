@@ -98,21 +98,52 @@ pub fn start_maintenance(journal_root: PathBuf) {
 /// An admitted pass finishes before this future returns; no blocking work is
 /// detached when Stop arrives.
 pub async fn run_maintenance_until_stopped(
-    journal_root: PathBuf,
+    root: Arc<solstone_core_journal_io::JournalRoot>,
     mut stop: tokio::sync::watch::Receiver<bool>,
     active: Arc<dyn Fn() -> bool + Send + Sync>,
+    mut recovery: tokio::sync::watch::Receiver<()>,
 ) {
+    use solstone_core_journal_io::whole_journal_restore::{
+        begin_target_use_bound, whole_journal_restore_blocks, whole_journal_restore_generation,
+    };
     let mut reconciler = Reconciler::default();
+    let mut generation = whole_journal_restore_generation(root.canonical_path());
+    let mut rescan = false;
     loop {
-        if *stop.borrow() || !active() {
+        if *stop.borrow() || !active() || root.revalidate_canonical_binding().is_err() {
             return;
         }
-        let journal = journal_root.clone();
+        let current_generation = whole_journal_restore_generation(root.canonical_path());
+        if rescan || generation != current_generation {
+            reconciler = Reconciler::default();
+            generation = current_generation;
+            rescan = false;
+        }
+        let lease = match begin_target_use_bound(Arc::clone(&root)) {
+            Ok(lease) => Arc::new(lease),
+            Err(_) => {
+                tokio::select! {
+                    _ = stop.changed() => return,
+                    result = recovery.changed() => { if result.is_err() { return; } },
+                }
+                rescan = true;
+                continue;
+            }
+        };
+        let frame_root = Arc::clone(&root);
+        let frame_lease = Arc::clone(&lease);
         let pass_active = Arc::clone(&active);
         let pass_stop = stop.clone();
         match tokio::task::spawn_blocking(move || {
-            if !*pass_stop.borrow() && pass_active() {
-                match solstone_core_location::reconcile_journal(&journal, &mut reconciler) {
+            let _frame_lease = frame_lease;
+            if !*pass_stop.borrow()
+                && pass_active()
+                && !whole_journal_restore_blocks(frame_root.canonical_path())
+            {
+                match solstone_core_location::reconcile_journal_owned(
+                    Arc::clone(&frame_root),
+                    &mut reconciler,
+                ) {
                     Ok(report) => {
                         for failure in report.failures {
                             log::warn!("location document: {failure}");
@@ -131,8 +162,13 @@ pub async fn run_maintenance_until_stopped(
                 return;
             }
         }
+        drop(lease);
         tokio::select! {
             _ = stop.changed() => return,
+            result = recovery.changed() => {
+                if result.is_err() { return; }
+                rescan = true;
+            },
             _ = tokio::time::sleep(MAINTENANCE_PERIOD) => {},
         }
     }

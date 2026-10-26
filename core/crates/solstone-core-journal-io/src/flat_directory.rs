@@ -232,6 +232,31 @@ impl AsFd for FlatDirectory {
     }
 }
 
+/// Open a regular source under a retained parent without following a leaf alias.
+/// The returned file, rather than its diagnostic spelling, remains the source.
+pub fn open_regular_file_from_bound_parent(
+    directory: &FlatDirectory,
+    name: &OsStr,
+) -> Result<Option<File>, FlatDirectoryError> {
+    validate_portable_name(name)?;
+    directory.revalidate()?;
+    let path = directory.diagnostic_entry(name);
+    let fd = match openat(directory, name, FILE_FLAGS, Mode::empty()) {
+        Ok(fd) => fd,
+        Err(Errno::ENOENT) => return Ok(None),
+        Err(Errno::ELOOP) => return Err(FlatDirectoryError::NotRegular { path }),
+        Err(error) => return Err(errno_error("open bound source file", path, error)),
+    };
+    let status =
+        fstat(&fd).map_err(|error| errno_error("stat bound source file", path.clone(), error))?;
+    let entry = entry_from_stat(name.to_os_string(), &status, &path)?;
+    if entry.kind != JournalEntryKind::RegularFile {
+        return Err(FlatDirectoryError::NotRegular { path });
+    }
+    directory.revalidate()?;
+    Ok(Some(File::from(fd)))
+}
+
 /// List direct entries, returning `None` instead of a partial list above `maximum`.
 pub fn list_flat_directory(
     directory: &FlatDirectory,

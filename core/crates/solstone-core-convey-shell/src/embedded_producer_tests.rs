@@ -239,7 +239,7 @@ async fn embedded_weekly_catches_up_resumes_pending_and_retry_and_obeys_current_
     .unwrap();
     let (stop, stopped) = tokio::sync::watch::channel(false);
     let task = tokio::spawn(weekly_heads_up::subscribe_weekly_heads_up_until_stopped(
-        root.path().to_path_buf(),
+        Arc::new(solstone_core_journal_io::JournalRoot::open(root.path()).unwrap()),
         portal.clone(),
         stopped,
         Arc::new(|| true),
@@ -285,7 +285,7 @@ async fn embedded_weekly_catches_up_resumes_pending_and_retry_and_obeys_current_
         r#"{"version":2,"devices":[]}"#,
     );
     let task = tokio::spawn(weekly_heads_up::subscribe_weekly_heads_up_until_stopped(
-        root.path().to_path_buf(),
+        Arc::new(solstone_core_journal_io::JournalRoot::open(root.path()).unwrap()),
         portal,
         stopped,
         Arc::new(|| true),
@@ -314,7 +314,7 @@ async fn weekly_completion_during_startup_delivery_is_not_lost() {
     .unwrap();
     let (stop, stopped) = tokio::sync::watch::channel(false);
     let task = tokio::spawn(weekly_heads_up::subscribe_weekly_heads_up_until_stopped(
-        root.path().to_path_buf(),
+        Arc::new(solstone_core_journal_io::JournalRoot::open(root.path()).unwrap()),
         portal,
         stopped,
         Arc::new(|| true),
@@ -343,7 +343,7 @@ async fn weekly_stop_retains_an_active_delivery_and_closed_startup_runs_nothing(
     receiver.hold.store(true, Ordering::Release);
     let (stop, stopped) = tokio::sync::watch::channel(false);
     let mut task = tokio::spawn(weekly_heads_up::subscribe_weekly_heads_up_until_stopped(
-        root.path().to_path_buf(),
+        Arc::new(solstone_core_journal_io::JournalRoot::open(root.path()).unwrap()),
         portal.clone(),
         stopped,
         Arc::new(|| true),
@@ -366,7 +366,7 @@ async fn weekly_stop_retains_an_active_delivery_and_closed_startup_runs_nothing(
     assert_eq!(state(root.path(), "20260802").as_deref(), Some("done"));
     week(root.path(), "20260809", true);
     weekly_heads_up::subscribe_weekly_heads_up_until_stopped(
-        root.path().to_path_buf(),
+        Arc::new(solstone_core_journal_io::JournalRoot::open(root.path()).unwrap()),
         portal,
         stop.subscribe(),
         Arc::new(|| true),
@@ -432,4 +432,173 @@ async fn embedded_binding_starts_location_reconciliation_and_joins_both_producer
         content,
         "unchanged marker must stay idempotent"
     );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn weekly_recovery_drains_delivery_and_rescans_restored_completion_without_bus() {
+    use crate::recovery_drain::{relinquish_admitted_work, resume_after_whole_journal_restore};
+    let (root, portal, receiver, server) = weekly_fixture().await;
+    let consent = std::fs::read(root.path().join("config/push-registry.json")).unwrap();
+    let retained = tempfile::tempdir().unwrap();
+    write(
+        retained.path(),
+        "config/journal.json",
+        std::fs::read(root.path().join("config/journal.json")).unwrap(),
+    );
+    week(retained.path(), "20260809", true);
+    week(root.path(), "20260802", true);
+    receiver.hold.store(true, Ordering::Release);
+    let (stop, stopped) = tokio::sync::watch::channel(false);
+    let task = tokio::spawn(weekly_heads_up::subscribe_weekly_heads_up_until_stopped(
+        Arc::new(solstone_core_journal_io::JournalRoot::open(root.path()).unwrap()),
+        portal,
+        stopped,
+        Arc::new(|| true),
+    ));
+    tokio::time::timeout(Duration::from_secs(10), receiver.entered.notified())
+        .await
+        .unwrap();
+    let target = root.path().to_path_buf();
+    let mut drain = tokio::task::spawn_blocking(move || relinquish_admitted_work(&target));
+    assert!(
+        tokio::time::timeout(Duration::from_millis(100), &mut drain)
+            .await
+            .is_err()
+    );
+    receiver.hold.store(false, Ordering::Release);
+    receiver.release.notify_one();
+    tokio::time::timeout(Duration::from_secs(5), drain)
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    assert_eq!(state(root.path(), "20260802").as_deref(), Some("done"));
+    // Copy a real maintained completion produced in a separate retained
+    // journal. No completion bus exists here; only recovery resume can rescan it.
+    write(
+        root.path(),
+        "reflections/weekly/20260809.json",
+        std::fs::read(retained.path().join("reflections/weekly/20260809.json")).unwrap(),
+    );
+    for entry in std::fs::read_dir(retained.path().join("talents/weekly_reflection")).unwrap() {
+        let entry = entry.unwrap();
+        write(
+            root.path(),
+            &format!(
+                "talents/weekly_reflection/{}",
+                entry.file_name().to_str().unwrap()
+            ),
+            std::fs::read(entry.path()).unwrap(),
+        );
+    }
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    assert!(state(root.path(), "20260809").is_none());
+    assert_eq!(receiver.count.load(Ordering::Acquire), 1);
+    assert!(!task.is_finished());
+    resume_after_whole_journal_restore(root.path());
+    until(|| state(root.path(), "20260809").as_deref() == Some("done")).await;
+    assert_eq!(receiver.count.load(Ordering::Acquire), 2);
+    assert_eq!(
+        std::fs::read(root.path().join("config/push-registry.json")).unwrap(),
+        consent
+    );
+    let target = root.path().to_path_buf();
+    tokio::task::spawn_blocking(move || relinquish_admitted_work(&target))
+        .await
+        .unwrap()
+        .unwrap();
+    stop.send_replace(true);
+    tokio::time::timeout(Duration::from_secs(5), task)
+        .await
+        .unwrap()
+        .unwrap();
+    resume_after_whole_journal_restore(root.path());
+    server.abort();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn map_recovery_joins_admitted_pass_rebuilds_unchanged_source_and_stops_while_paused() {
+    use crate::recovery_drain::{relinquish_admitted_work, resume_after_whole_journal_restore};
+    let root = tempfile::tempdir().unwrap();
+    write(
+        root.path(),
+        "config/journal.json",
+        r#"{"identity":{"timezone":"UTC"}}"#,
+    );
+    write(
+        root.path(),
+        "chronicle/20261001/phone/140000_300/location.jsonl",
+        concat!(
+            "{\"accuracy\":\"full\",\"gap\":false,\"kind\":\"location\",\"platform\":\"ios\",\"schema\":\"solstone.location.segment/1\",\"source\":\"location\",\"tier\":\"full\"}\n",
+            "{\"h_acc\":10,\"lat\":39.7555,\"lon\":-105.2211,\"schema\":\"solstone.location.fix/1\",\"stationary\":false,\"t\":\"2026-10-01T14:00:10Z\"}\n"
+        ),
+    );
+    let binding = Arc::new(solstone_core_journal_io::JournalRoot::open(root.path()).unwrap());
+    let bridge = recovery_watch::RecoveryWatch::new("map-recovery-proof", Arc::clone(&binding));
+    let (stop, stopped) = tokio::sync::watch::channel(false);
+    let entered = Arc::new(tokio::sync::Notify::new());
+    let notify = Arc::clone(&entered);
+    let (release, released) = std::sync::mpsc::channel();
+    let released = Mutex::new(released);
+    let calls = AtomicUsize::new(0);
+    let active = Arc::new(move || {
+        // The first call is the async loop preflight; the second is the
+        // actual blocking pass, after admission acquired its target lease.
+        if calls.fetch_add(1, Ordering::AcqRel) == 1 {
+            notify.notify_one();
+            released.lock().unwrap().recv().unwrap();
+        }
+        true
+    });
+    let task = tokio::spawn(solstone_core_map_web::run_maintenance_until_stopped(
+        binding,
+        stopped,
+        active,
+        bridge.subscribe(),
+    ));
+    tokio::time::timeout(Duration::from_secs(10), entered.notified())
+        .await
+        .unwrap();
+    let output = root.path().join("chronicle/20261001/location.md");
+    let target = root.path().to_path_buf();
+    let mut drain = tokio::task::spawn_blocking(move || relinquish_admitted_work(&target));
+    assert!(
+        tokio::time::timeout(Duration::from_millis(100), &mut drain)
+            .await
+            .is_err()
+    );
+    assert!(!output.exists());
+    release.send(()).unwrap();
+    tokio::time::timeout(Duration::from_secs(5), drain)
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    assert!(!output.exists(), "held pass must relinquish publication");
+    resume_after_whole_journal_restore(root.path());
+    until(|| output.is_file()).await;
+    let content = std::fs::read(&output).unwrap();
+    assert!(!content.is_empty());
+    // Drain again after the reconciler has remembered this exact source.
+    let target = root.path().to_path_buf();
+    tokio::task::spawn_blocking(move || relinquish_admitted_work(&target))
+        .await
+        .unwrap()
+        .unwrap();
+    std::fs::remove_file(&output).unwrap();
+    resume_after_whole_journal_restore(root.path());
+    until(|| output.is_file()).await;
+    assert_eq!(std::fs::read(&output).unwrap(), content);
+    let target = root.path().to_path_buf();
+    tokio::task::spawn_blocking(move || relinquish_admitted_work(&target))
+        .await
+        .unwrap()
+        .unwrap();
+    stop.send_replace(true);
+    tokio::time::timeout(Duration::from_secs(5), task)
+        .await
+        .unwrap()
+        .unwrap();
+    resume_after_whole_journal_restore(root.path());
+    drop(bridge);
 }

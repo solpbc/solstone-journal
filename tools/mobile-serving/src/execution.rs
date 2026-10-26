@@ -19,6 +19,9 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use solstone_core_generate::{ClientError, GenerateExecutor, GenerateRequest, GenerateResponse};
 use solstone_core_journal_io::JournalRoot;
+use solstone_core_journal_io::whole_journal_restore::{
+    TargetUse, begin_target_use_bound, whole_journal_restore_blocks,
+};
 use solstone_core_talent_runtime::prepare::RuntimePaths;
 use tokio::sync::{mpsc, oneshot, watch};
 
@@ -64,6 +67,14 @@ struct Job {
     operation: Operation,
     cancelled: Arc<AtomicBool>,
     reply: oneshot::Sender<(StatusCode, Value)>,
+    lease: Arc<TargetUse>,
+}
+
+#[derive(Clone)]
+struct OwnerIngress {
+    sender: mpsc::Sender<Job>,
+    root: std::sync::Weak<JournalRoot>,
+    stop: watch::Receiver<bool>,
 }
 
 struct CancelRequest(Arc<AtomicBool>);
@@ -82,14 +93,24 @@ pub fn routes_and_worker(
     mut stop: watch::Receiver<bool>,
 ) -> (Router, impl Future<Output = ()> + Send + 'static) {
     let (sender, mut receiver) = mpsc::channel::<Job>(1);
-    let schedule_routes = schedules::routes(sender.clone());
+    let ingress = OwnerIngress {
+        sender,
+        root: Arc::downgrade(&root),
+        stop: stop.clone(),
+    };
+    let schedule_routes = schedules::routes(ingress.clone());
     let routes = Router::new()
         .route("/api/journal/share", get(discover))
         .route("/api/journal/share/match", post(match_preview))
         .route("/api/journal/share/package", post(package_preview))
-        .with_state(sender)
+        .with_state(ingress)
         .merge(schedule_routes);
     let worker = async move {
+        let bridge = solstone_core_convey_shell::recovery_watch::RecoveryWatch::new(
+            "owner-execution",
+            Arc::clone(&root),
+        );
+        let mut recovery = bridge.subscribe();
         loop {
             if *stop.borrow() {
                 return;
@@ -97,18 +118,22 @@ pub fn routes_and_worker(
             let job = tokio::select! {
                 biased;
                 _ = stop.changed() => return,
+                _ = recovery.changed() => continue,
                 job = receiver.recv() => match job { Some(job) => job, None => return },
             };
             let root = Arc::clone(&root);
             let payload = payload.clone();
             let stopped = stop.clone();
+            let lease = Arc::clone(&job.lease);
             // Await this task even if its HTTP receiver disconnects or Stop
             // arrives. The root and runtime stay owned until it has retired.
             if let Err(error) = tokio::task::spawn_blocking(move || {
+                let _frame_lease = job.lease;
                 let cancelled = || {
                     *stopped.borrow()
                         || job.cancelled.load(Ordering::Acquire)
                         || root.revalidate_canonical_binding().is_err()
+                        || whole_journal_restore_blocks(root.canonical_path())
                 };
                 let result = match job.operation {
                     Operation::Share { args, package } => match payload {
@@ -133,6 +158,9 @@ pub fn routes_and_worker(
                 log::warn!("linked-share preview worker: {error}");
                 return;
             }
+            // The queued job owns one lease through its native frame. This
+            // second owner remains until the blocking task has actually joined.
+            drop(lease);
         }
     };
     (routes, worker)
@@ -148,7 +176,7 @@ async fn discover() -> Json<Value> {
 }
 
 async fn match_preview(
-    State(sender): State<mpsc::Sender<Job>>,
+    State(sender): State<OwnerIngress>,
     Json(request): Json<MatchRequest>,
 ) -> Response {
     let mut args = vec![
@@ -165,7 +193,7 @@ async fn match_preview(
 }
 
 async fn package_preview(
-    State(sender): State<mpsc::Sender<Job>>,
+    State(sender): State<OwnerIngress>,
     Json(request): Json<PackageRequest>,
 ) -> Response {
     let args = vec![
@@ -182,18 +210,35 @@ async fn package_preview(
     submit(sender, args, true).await
 }
 
-async fn submit(sender: mpsc::Sender<Job>, args: Vec<OsString>, package: bool) -> Response {
+async fn submit(sender: OwnerIngress, args: Vec<OsString>, package: bool) -> Response {
     submit_operation(sender, Operation::Share { args, package }).await
 }
 
-async fn submit_operation(sender: mpsc::Sender<Job>, operation: Operation) -> Response {
+async fn submit_operation(sender: OwnerIngress, operation: Operation) -> Response {
+    if *sender.stop.borrow() {
+        return stopped_response();
+    }
+    let Some(root) = sender.root.upgrade() else {
+        return stopped_response();
+    };
+    let lease = match begin_target_use_bound(root) {
+        Ok(lease) => Arc::new(lease),
+        Err(_) => {
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(json!({"error":"preview_busy"})),
+            )
+                .into_response();
+        }
+    };
     let cancelled = Arc::new(AtomicBool::new(false));
     let _request = CancelRequest(Arc::clone(&cancelled));
     let (reply, result) = oneshot::channel();
-    match sender.try_send(Job {
+    match sender.sender.try_send(Job {
         operation,
         cancelled,
         reply,
+        lease,
     }) {
         Ok(()) => {}
         Err(mpsc::error::TrySendError::Full(_)) => {

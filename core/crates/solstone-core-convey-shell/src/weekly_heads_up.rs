@@ -12,6 +12,10 @@ use serde_json::{Map, Value, json};
 use solstone_core_callosum::{
     CallosumConnectionPhase, CallosumEnvelope, CallosumReceiveEvent, CallosumSocketConnection,
 };
+use solstone_core_journal_io::JournalRoot;
+use solstone_core_journal_io::whole_journal_restore::{
+    begin_target_use_bound, whole_journal_restore_blocks, whole_journal_restore_generation,
+};
 use solstone_core_push::weekly;
 use time::OffsetDateTime;
 
@@ -20,14 +24,20 @@ static NEXT_SUBSCRIBER: AtomicU64 = AtomicU64::new(1);
 
 pub(crate) async fn subscribe_weekly_heads_up(journal_root: PathBuf, portal_base: String) {
     let (_owner, stop) = tokio::sync::watch::channel(false);
-    subscribe_weekly_heads_up_until_stopped(journal_root, portal_base, stop, Arc::new(|| true))
-        .await;
+    let root = match JournalRoot::open(&journal_root) {
+        Ok(root) => Arc::new(root),
+        Err(error) => {
+            log::warn!("weekly heads-up root: {error}");
+            return;
+        }
+    };
+    subscribe_weekly_heads_up_until_stopped(root, portal_base, stop, Arc::new(|| true)).await;
 }
 
 /// Retain and await blocking passes: aborting their async parent would detach
 /// delivery from the embedding owner's checked Stop.
 pub(crate) async fn subscribe_weekly_heads_up_until_stopped(
-    journal_root: PathBuf,
+    root: Arc<JournalRoot>,
     portal_base: String,
     mut stop: tokio::sync::watch::Receiver<bool>,
     active: Arc<dyn Fn() -> bool + Send + Sync>,
@@ -35,39 +45,68 @@ pub(crate) async fn subscribe_weekly_heads_up_until_stopped(
     if *stop.borrow() || !active() {
         return;
     }
+    let journal_root = root.canonical_path().to_path_buf();
+    let bridge = crate::recovery_watch::RecoveryWatch::new("weekly-heads-up", Arc::clone(&root));
+    let mut recovery = bridge.subscribe();
+    let mut generation = whole_journal_restore_generation(&journal_root);
+    let mut rescan = true;
     // Subscribe before catch-up can block on a delivery. Re-scan on each
     // reflected subscription epoch as well, covering completions before
     // registration and events lost during a later connection gap.
     let marker = NEXT_SUBSCRIBER.fetch_add(1, Ordering::Relaxed);
     let mut connection = Some(connect(&journal_root));
-    let journal_scan = journal_root.clone();
-    let portal_scan = portal_base.clone();
-    let scan_active = Arc::clone(&active);
-    let scan_stop = stop.clone();
-    if let Err(error) = tokio::task::spawn_blocking(move || {
-        if !*scan_stop.borrow() && scan_active() {
-            let now = OffsetDateTime::now_utc();
-            weekly::scan(&journal_scan, &portal_scan, now);
-        }
-    })
-    .await
-    {
-        log::warn!("weekly heads-up scan: {error}");
-        return;
-    }
-
     loop {
-        if *stop.borrow() || !active() {
+        if *stop.borrow() || !active() || root.revalidate_canonical_binding().is_err() {
             return;
         }
+        if whole_journal_restore_blocks(&journal_root) {
+            tokio::select! {
+                _ = stop.changed() => return,
+                result = recovery.changed() => { if result.is_err() { return; } }
+            }
+            rescan = true;
+            continue;
+        }
+        let current_generation = whole_journal_restore_generation(&journal_root);
+        if generation != current_generation {
+            generation = current_generation;
+            rescan = true;
+        }
+        if rescan {
+            let journal_scan = journal_root.clone();
+            let portal_scan = portal_base.clone();
+            if let Err(error) = run_pass(
+                Arc::clone(&root),
+                stop.clone(),
+                Arc::clone(&active),
+                move || {
+                    weekly::scan(&journal_scan, &portal_scan, OffsetDateTime::now_utc());
+                },
+            )
+            .await
+            {
+                log::warn!("weekly heads-up scan: {error}");
+                return;
+            }
+            rescan = false;
+        }
         let journal_due = journal_root.clone();
-        let next_due = match tokio::task::spawn_blocking(move || {
-            let now = OffsetDateTime::now_utc();
-            weekly::next_due(&journal_due, now)
-        })
+        let next_due = match run_pass(
+            Arc::clone(&root),
+            stop.clone(),
+            Arc::clone(&active),
+            move || {
+                let now = OffsetDateTime::now_utc();
+                weekly::next_due(&journal_due, now)
+            },
+        )
         .await
         {
-            Ok(due) => due,
+            Ok(Some(due)) => due,
+            Ok(None) => {
+                rescan = true;
+                continue;
+            }
             Err(error) => {
                 log::warn!("weekly heads-up due read: {error}");
                 return;
@@ -80,6 +119,10 @@ pub(crate) async fn subscribe_weekly_heads_up_until_stopped(
 
         tokio::select! {
             _ = stop.changed() => return,
+            result = recovery.changed() => {
+                if result.is_err() { return; }
+                rescan = true;
+            },
             message = recv_event(connection.as_mut()) => {
                 let envelope = match message {
                     Some(CallosumReceiveEvent::Envelope { envelope, .. }) => envelope,
@@ -108,7 +151,7 @@ pub(crate) async fn subscribe_weekly_heads_up_until_stopped(
                     let portal = portal_base.clone();
                     let active = Arc::clone(&active);
                     let stop = stop.clone();
-                    if let Err(error) = tokio::task::spawn_blocking(move || {
+                    if let Err(error) = run_pass(Arc::clone(&root), stop.clone(), Arc::clone(&active), move || {
                         if *stop.borrow() || !active() { return; }
                         weekly::scan(&journal, &portal, OffsetDateTime::now_utc());
                     }).await {
@@ -127,7 +170,7 @@ pub(crate) async fn subscribe_weekly_heads_up_until_stopped(
                 let portal = portal_base.clone();
                 let active = Arc::clone(&active);
                 let stop = stop.clone();
-                if let Err(error) = tokio::task::spawn_blocking(move || {
+                if let Err(error) = run_pass(Arc::clone(&root), stop.clone(), Arc::clone(&active), move || {
                     if *stop.borrow() || !active() { return; }
                     let now = OffsetDateTime::now_utc();
                     weekly::observe(&journal, &portal, "weekly_reflection", &day, now);
@@ -141,7 +184,7 @@ pub(crate) async fn subscribe_weekly_heads_up_until_stopped(
                 let portal = portal_base.clone();
                 let active = Arc::clone(&active);
                 let stop = stop.clone();
-                if let Err(error) = tokio::task::spawn_blocking(move || {
+                if let Err(error) = run_pass(Arc::clone(&root), stop.clone(), Arc::clone(&active), move || {
                     if *stop.borrow() || !active() { return; }
                     let now = OffsetDateTime::now_utc();
                     weekly::poll(&journal, &portal, now);
@@ -155,6 +198,29 @@ pub(crate) async fn subscribe_weekly_heads_up_until_stopped(
             }
         }
     }
+}
+
+async fn run_pass<T: Send + 'static>(
+    root: Arc<JournalRoot>,
+    stop: tokio::sync::watch::Receiver<bool>,
+    active: Arc<dyn Fn() -> bool + Send + Sync>,
+    work: impl FnOnce() -> T + Send + 'static,
+) -> Result<Option<T>, tokio::task::JoinError> {
+    let lease = match begin_target_use_bound(Arc::clone(&root)) {
+        Ok(lease) => Arc::new(lease),
+        Err(_) => return Ok(None),
+    };
+    let frame_lease = Arc::clone(&lease);
+    let outcome = tokio::task::spawn_blocking(move || {
+        let _frame_lease = frame_lease;
+        if *stop.borrow() || !active() || whole_journal_restore_blocks(root.canonical_path()) {
+            return None;
+        }
+        Some(work())
+    })
+    .await;
+    drop(lease);
+    outcome
 }
 
 fn connect(journal_root: &Path) -> CallosumSocketConnection {

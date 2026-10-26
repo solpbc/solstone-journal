@@ -335,6 +335,15 @@ pub fn hold_use(directory: &Path) -> io::Result<FileLock> {
     hold_shared_lock(use_path(directory)?, LockOptions::default()).map_err(io::Error::other)
 }
 
+/// Retain the same generation-use exclusion through a caller's admitted lock
+/// opener. The generation module still owns the protected-path grammar.
+pub fn hold_use_with_lock(
+    directory: &Path,
+    acquire: impl FnOnce(&Path, LockOptions) -> io::Result<FileLock>,
+) -> io::Result<FileLock> {
+    acquire(&use_path(directory)?, LockOptions::default())
+}
+
 pub fn hold_write(directory: &Path) -> io::Result<FileLock> {
     hold_lock(
         use_path(directory)?,

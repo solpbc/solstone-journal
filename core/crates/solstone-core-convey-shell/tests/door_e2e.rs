@@ -1891,7 +1891,12 @@ async fn embedded_door_composes_production_auth_and_refuses_replaced_root() {
         TcpStream::connect(address).await.is_err(),
         "shutdown closes listener"
     );
-    fs::remove_dir(&fixture.root).unwrap();
+    fs::remove_dir(&fixture.root).unwrap_or_else(|error| {
+        panic!(
+            "replacement root cleanup: {error}; entries: {:?}",
+            tree(&fixture.root)
+        );
+    });
     fs::rename(&original, &fixture.root).unwrap();
 }
 

@@ -5289,6 +5289,7 @@ dependencies = [
  "sha2 0.10.9",
  "solstone-core-convey-http",
  "solstone-core-journal-config",
+ "solstone-core-journal-io",
  "solstone-core-location",
  "tokio",
 ]

@@ -324,8 +324,16 @@ impl Pack {
 
     /// Verify all bytes and parse that same open file, before native pack use.
     pub fn open_verified(path: &Path, sha256: &str, size_bytes: u64) -> Result<Self, PackError> {
+        Self::open_verified_file(File::open(path)?, sha256, size_bytes)
+    }
+
+    /// Verify and parse the same retained source file supplied by its owner.
+    pub fn open_verified_file(
+        mut file: File,
+        sha256: &str,
+        size_bytes: u64,
+    ) -> Result<Self, PackError> {
         use sha2::{Digest, Sha256};
-        let mut file = File::open(path)?;
         if file.metadata()?.len() != size_bytes {
             return Err(malformed("installed pack size changed"));
         }

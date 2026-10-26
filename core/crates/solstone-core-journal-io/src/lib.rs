@@ -39,6 +39,7 @@ pub mod health_marker;
 pub mod identifier;
 mod install_retry;
 pub mod inventory_budget;
+pub mod journal_directory;
 pub mod journal_root;
 #[cfg(any(unix, windows))]
 pub mod lease;
@@ -91,7 +92,7 @@ pub use append::run_with_bound_append_open_barrier;
 pub use append::{append_text_bound_checked, append_text_checked};
 pub use atomic::is_publication_candidate_name;
 pub use atomic::serialize_json_bytes;
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 pub use atomic::write_bytes_exclusive_bound_detailed;
 #[cfg(any(unix, windows))]
 pub use atomic::{
@@ -212,7 +213,8 @@ pub use locking::lock_is_held;
 #[cfg(any(unix, windows))]
 pub use locking::{
     BoundParentLock, acquire_existing_parent_lock_bound,
-    acquire_existing_parent_lock_bound_checked, open_existing_parent_lock_bound,
+    acquire_existing_parent_lock_bound_checked, hold_lock_bound_checked,
+    open_existing_parent_lock_bound,
 };
 #[cfg(any(unix, windows))]
 pub use locking::{

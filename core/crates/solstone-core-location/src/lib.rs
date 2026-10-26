@@ -23,6 +23,7 @@ pub mod install;
 pub mod pack;
 pub mod places;
 pub mod projection;
+mod reconcile_io;
 pub mod record;
 pub mod stay;
 
@@ -140,6 +141,18 @@ pub fn reconcile_journal(
         &JournalDirectory::read(journal),
         solstone_core_journal_config::owner_zone(journal),
     ))
+}
+
+/// Reconcile under one retained owner's mutation authority on this native frame.
+pub fn reconcile_journal_owned(
+    root: std::sync::Arc<solstone_core_journal_io::JournalRoot>,
+    reconciler: &mut Reconciler,
+) -> std::io::Result<projection::ReconcileReport> {
+    let _owner = reconcile_io::Scope::install(std::sync::Arc::clone(&root))?;
+    let result =
+        reconcile_journal(root.canonical_path(), reconciler).map_err(std::io::Error::other)?;
+    reconcile_io::checkpoint()?;
+    Ok(result)
 }
 
 /// Days that hold location, from their build records, with reading counts.

@@ -145,6 +145,7 @@ mod pinned;
 #[cfg(feature = "host")]
 mod pinned_write;
 pub mod recovery_drain;
+pub mod recovery_watch;
 pub mod registry;
 mod relay_access;
 mod relay_admission;
@@ -681,6 +682,7 @@ async fn bind_embedded_router(
     let local_network_task = tokio::spawn(local_network::watch(door.clone()));
     let (link_health_task, service_token_renewal_task) =
         start_relay_health_tasks(service_root.clone(), cache, Some(renewal_stop.clone()));
+    let producer_root = Arc::clone(&binding);
     let producer_active: Arc<dyn Fn() -> bool + Send + Sync> = Arc::new(move || {
         !*admission.stopped.borrow()
             && !(admission.cancelled)()
@@ -692,16 +694,24 @@ async fn bind_embedded_router(
         .to_owned();
     let weekly_heads_up_task =
         tokio::spawn(weekly_heads_up::subscribe_weekly_heads_up_until_stopped(
-            service_root.clone(),
+            Arc::clone(&producer_root),
             push_portal,
             renewal_stop.clone(),
             Arc::clone(&producer_active),
         ));
-    let location_task = tokio::spawn(solstone_core_map_web::run_maintenance_until_stopped(
-        service_root,
-        renewal_stop,
-        producer_active,
-    ));
+    let location_recovery =
+        recovery_watch::RecoveryWatch::new("map-maintenance", Arc::clone(&producer_root));
+    let location_changes = location_recovery.subscribe();
+    let location_task = tokio::spawn(async move {
+        let _recovery = location_recovery;
+        solstone_core_map_web::run_maintenance_until_stopped(
+            producer_root,
+            renewal_stop,
+            producer_active,
+            location_changes,
+        )
+        .await;
+    });
     let handle = EmbeddedConveyHandle {
         owner_router,
         door,
