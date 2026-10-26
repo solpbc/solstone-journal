@@ -1814,7 +1814,7 @@ dependencies = [
 
 [[package]]
 name = "solstone-core-ced-analyze"
-version = "2.0.58"
+version = "2.0.59"
 dependencies = [
  "serde_json",
  "solstone-core-ced-sys",
@@ -1823,7 +1823,7 @@ dependencies = [
 
 [[package]]
 name = "solstone-core-ced-sys"
-version = "2.0.58"
+version = "2.0.59"
 dependencies = [
  "libloading 0.8.9",
  "solstone-core-win-dll-load",
@@ -2245,6 +2245,7 @@ version = "2.0.59"
 dependencies = [
  "hdbscan",
  "serde_json",
+ "tempfile",
 ]
 
 [[package]]
@@ -2402,6 +2403,7 @@ dependencies = [
  "solstone-core-speaker-resolve",
  "solstone-core-speakers",
  "solstone-core-speakers-analyze",
+ "solstone-core-speakers-onnx",
  "solstone-core-spp-ratls",
  "solstone-core-system",
  "solstone-core-system-health",
