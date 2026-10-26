@@ -15,7 +15,7 @@ use solstone_core_import_sources::document::{PdfPayload, PdfWorkerRequest, Worke
 use solstone_core_system::request::{BusTaskRequest, ExecutionRequest, WireTaskRequest};
 use solstone_core_system::schedule::ScheduleNow;
 
-fn fixture() -> (tempfile::TempDir, ForegroundProcessingHost) {
+fn fixture_directory() -> tempfile::TempDir {
     let root = tempfile::tempdir().unwrap();
     let payload = root.path().join("payload");
     for relative in [
@@ -31,6 +31,12 @@ fn fixture() -> (tempfile::TempDir, ForegroundProcessingHost) {
         r#"{"identity":{"timezone":"UTC"},"processing":{"history_confirmed":true}}"#,
     )
     .unwrap();
+    root
+}
+
+fn fixture() -> (tempfile::TempDir, ForegroundProcessingHost) {
+    let root = fixture_directory();
+    let payload = root.path().join("payload");
     let host = ForegroundProcessingHost::open_at(
         root.path(),
         &payload,
@@ -40,6 +46,24 @@ fn fixture() -> (tempfile::TempDir, ForegroundProcessingHost) {
     .unwrap();
     host.stop_discovery_for_test();
     (root, host)
+}
+
+fn open_import_fixture(
+    root: &Path,
+    imports: Arc<ImportSeamFactory>,
+) -> Result<ForegroundProcessingHost, String> {
+    let bound = Arc::new(JournalRoot::open(root).map_err(|error| error.to_string())?);
+    let host = ForegroundProcessingHost::open_with_rebuild_recovery_and_imports(
+        bound,
+        &root.join("payload"),
+        Arc::new(|| false),
+        Arc::new(AtomicBool::new(false)),
+        BackupWebDeps::new(root.to_path_buf()),
+        imports,
+        false,
+    )?;
+    host.stop_discovery_for_test();
+    Ok(host)
 }
 
 fn owned(args: &[&str]) -> Vec<String> {
@@ -96,6 +120,242 @@ fn contains(root: &Path, needle: &str) -> bool {
     false
 }
 
+fn due_import_fixture() -> (tempfile::TempDir, tempfile::TempDir) {
+    let root = fixture_directory();
+    let source = tempfile::tempdir().unwrap();
+    fs::write(
+        source.path().join("startup.md"),
+        "fc3 constructor catch-up native import sentinel\n",
+    )
+    .unwrap();
+    fs::write(
+        root.path().join("config/schedules.json"),
+        serde_json::to_vec(&serde_json::json!({
+            "owner:startup-import": {
+                "cmd": ["solstone", "journal", "importer", "--sync", "obsidian", "--save",
+                    "--path", source.path().to_str().unwrap()],
+                "every": "1m",
+                "enabled": true
+            }
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+    fs::create_dir_all(root.path().join("health")).unwrap();
+    fs::write(
+        root.path().join("health/scheduler.json"),
+        br#"{"owner:startup-import":{"last_run":1.0}}"#,
+    )
+    .unwrap();
+    (root, source)
+}
+
+fn startup_import_finished(host: &ForegroundProcessingHost) -> String {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        if let Some(record) = host
+            .queue()
+            .history()
+            .iter()
+            .find(|row| row.scheduler_name.as_deref() == Some("owner:startup-import"))
+        {
+            return record.exit_status.clone();
+        }
+        assert!(
+            Instant::now() < deadline,
+            "startup scheduled import did not settle"
+        );
+        std::thread::sleep(Duration::from_millis(5));
+    }
+}
+
+#[test]
+fn due_import_at_constructor_start_writes_real_notes_without_start_workers() {
+    let _serial = TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+    let (root, source) = due_import_fixture();
+    let host = open_import_fixture(
+        root.path(),
+        Arc::new(|request| {
+            let seams =
+                request.seams_with_pdf(Box::new(solstone_core_import_sources::NullPdfWorker));
+            Ok(PreparedImport::new(request.arguments().to_vec(), seams))
+        }),
+    )
+    .unwrap();
+    let terminal = startup_import_finished(&host);
+    host.shutdown().unwrap();
+    let scheduler = fs::read_to_string(root.path().join("health/scheduler.json")).unwrap();
+    assert_eq!(
+        terminal, "ok",
+        "actual startup scheduler state: {scheduler}"
+    );
+    assert!(contains(
+        &root.path().join("chronicle"),
+        "fc3 constructor catch-up native import sentinel"
+    ));
+    let state: serde_json::Value =
+        serde_json::from_slice(&fs::read(root.path().join("imports/obsidian.json")).unwrap())
+            .unwrap();
+    assert_eq!(state["files"]["startup.md"]["status"], "imported");
+    assert_eq!(
+        fs::read_to_string(source.path().join("startup.md")).unwrap(),
+        "fc3 constructor catch-up native import sentinel\n"
+    );
+}
+
+#[test]
+fn constructor_error_and_stop_join_due_import_then_reopen_for_real_work() {
+    let _serial = TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+    struct ResetStartupHook;
+    impl Drop for ResetStartupHook {
+        fn drop(&mut self) {
+            super::super::STARTUP_AFTER_CATCH_UP
+                .lock()
+                .unwrap_or_else(|error| error.into_inner())
+                .take();
+        }
+    }
+    for stop_after_start in [false, true] {
+        let _reset = ResetStartupHook;
+        let (root, source) = due_import_fixture();
+        let bound = Arc::new(JournalRoot::open(root.path()).unwrap());
+        let retained = Arc::downgrade(&bound);
+        let stop = Arc::new(AtomicBool::new(false));
+        let constructor_stop = Arc::clone(&stop);
+        let (entered_send, entered) = mpsc::channel();
+        let (release, released) = mpsc::channel();
+        let released = Arc::new(Mutex::new(released));
+        let resources_released = Arc::new(AtomicBool::new(false));
+        let resource_state = Arc::clone(&resources_released);
+        let observed_stop = Arc::new(AtomicBool::new(false));
+        let native_stop = Arc::clone(&observed_stop);
+        let factory: Arc<ImportSeamFactory> = Arc::new(move |context| {
+            let resource = NativeGuard {
+                owner: std::thread::current().id(),
+                released: Arc::clone(&resource_state),
+            };
+            entered_send.send(()).unwrap();
+            released
+                .lock()
+                .unwrap()
+                .recv_timeout(Duration::from_secs(10))
+                .unwrap();
+            native_stop.store(context.stop().is_requested(), Ordering::Release);
+            let seams =
+                context.seams_with_pdf(Box::new(solstone_core_import_sources::NullPdfWorker));
+            Ok(PreparedImport::new(context.arguments().to_vec(), seams).with_resources(resource))
+        });
+        let (at_failure_send, at_failure) = mpsc::channel();
+        let hook_stop = Arc::clone(&stop);
+        *super::super::STARTUP_AFTER_CATCH_UP.lock().unwrap() = Some(Box::new(move || {
+            entered.recv_timeout(Duration::from_secs(10)).unwrap();
+            at_failure_send.send(()).unwrap();
+            if stop_after_start {
+                hook_stop.store(true, Ordering::Release);
+                Ok(())
+            } else {
+                Err("synthetic constructor failure after due admission".into())
+            }
+        }));
+        let payload = root.path().join("payload");
+        let backup = BackupWebDeps::new(root.path().to_path_buf());
+        let (settled_send, settled) = mpsc::channel();
+        let constructor = std::thread::spawn(move || {
+            let result = ForegroundProcessingHost::open_with_rebuild_recovery_and_imports(
+                bound,
+                &payload,
+                Arc::new(|| false),
+                constructor_stop,
+                backup,
+                factory,
+                false,
+            );
+            let result = match result {
+                Ok(host) => {
+                    host.shutdown().unwrap();
+                    Ok(())
+                }
+                Err(error) => Err(error),
+            };
+            settled_send.send(result).unwrap();
+        });
+        let reached = at_failure.recv_timeout(Duration::from_secs(10));
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while !stop.load(Ordering::Acquire) && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        let stop_seen = stop.load(Ordering::Acquire);
+        let premature = settled.recv_timeout(Duration::from_millis(50));
+        let root_retained = retained.upgrade().is_some();
+        let resources_retained = !resources_released.load(Ordering::Acquire);
+        let _ = release.send(());
+        let result = match &premature {
+            Ok(result) => result.clone(),
+            Err(_) => settled.recv_timeout(Duration::from_secs(10)).unwrap(),
+        };
+        constructor.join().unwrap();
+        let root_retired_on_return = retained.upgrade().is_none();
+        // Retire a deliberately broken asynchronous-constructor control before
+        // asserting its captured early acknowledgment, so failure leaves no work.
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while retained.upgrade().is_some() && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        assert!(
+            reached.is_ok(),
+            "actual due preparation must precede the constructor failure"
+        );
+        assert!(
+            stop_seen,
+            "constructor failure must signal the original host Stop"
+        );
+        assert!(
+            premature.is_err(),
+            "constructor returned before native preparation retired"
+        );
+        assert!(root_retained);
+        assert!(resources_retained);
+        assert!(resources_released.load(Ordering::Acquire));
+        assert!(observed_stop.load(Ordering::Acquire));
+        assert!(root_retired_on_return);
+        assert!(retained.upgrade().is_none());
+        assert_eq!(
+            result,
+            Err(if stop_after_start {
+                "thinking cancelled"
+            } else {
+                "synthetic constructor failure after due admission"
+            }
+            .to_owned())
+        );
+        assert!(!root.path().join("chronicle").exists());
+        assert!(!root.path().join("imports/obsidian.json").exists());
+
+        // Error/Stop releases the original generation only after its native
+        // frame joins. Reopening preserves the stored due job and really runs it.
+        let reopened = open_import_fixture(
+            root.path(),
+            Arc::new(|context| {
+                let seams =
+                    context.seams_with_pdf(Box::new(solstone_core_import_sources::NullPdfWorker));
+                Ok(PreparedImport::new(context.arguments().to_vec(), seams))
+            }),
+        )
+        .unwrap();
+        let terminal = startup_import_finished(&reopened);
+        reopened.shutdown().unwrap();
+        assert_eq!(terminal, "ok");
+        assert!(contains(
+            &root.path().join("chronicle"),
+            "fc3 constructor catch-up native import sentinel"
+        ));
+        assert_eq!(
+            fs::read_to_string(source.path().join("startup.md")).unwrap(),
+            "fc3 constructor catch-up native import sentinel\n"
+        );
+    }
+}
+
 #[test]
 fn queued_import_writes_real_notes_and_unresolved_sync_cannot_borrow_retained_path() {
     let _serial = TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
@@ -107,10 +367,16 @@ fn queued_import_writes_real_notes_and_unresolved_sync_cannot_borrow_retained_pa
         host.execute_worker_command(&owned(&["importer", "--list-importers"])),
         UNCOMPLETED_HOLD_EXIT
     );
-    host.enable_imports(Arc::new(|request| {
-        let seams = request.seams_with_pdf(Box::new(solstone_core_import_sources::NullPdfWorker));
-        Ok(PreparedImport::new(request.arguments().to_vec(), seams))
-    }))
+    host.shutdown().unwrap();
+    drop(host);
+    let host = open_import_fixture(
+        root.path(),
+        Arc::new(|request| {
+            let seams =
+                request.seams_with_pdf(Box::new(solstone_core_import_sources::NullPdfWorker));
+            Ok(PreparedImport::new(request.arguments().to_vec(), seams))
+        }),
+    )
     .unwrap();
     submit(
         &host,
@@ -164,7 +430,7 @@ fn queued_import_writes_real_notes_and_unresolved_sync_cannot_borrow_retained_pa
     assert!(admit(&owned(&["--sync", "oura", "--save", "--scheduled"])));
     host.shutdown().unwrap();
     assert!(
-        host.enable_imports(Arc::new(|_| panic!("stopped factory must not run")))
+        host.import_preparation(WorkStop::new(), Default::default())
             .is_err()
     );
 }
@@ -198,7 +464,7 @@ impl PdfWorker for SharedPdf {
 }
 
 fn held_import(preparation: bool) {
-    let (root, host) = fixture();
+    let root = fixture_directory();
     let pdf = root.path().join("held.pdf");
     fs::write(&pdf, b"%PDF-1.1\n").unwrap();
     let (entered_send, entered) = mpsc::channel();
@@ -208,27 +474,30 @@ fn held_import(preparation: bool) {
     let resource_state = Arc::clone(&resources_released);
     let observed_stop = Arc::new(AtomicBool::new(false));
     let native_stop = Arc::clone(&observed_stop);
-    host.enable_imports(Arc::new(move |request| {
-        let guard = NativeGuard {
-            owner: std::thread::current().id(),
-            released: Arc::clone(&resource_state),
-        };
-        let worker: Box<dyn PdfWorker + Send> = if preparation {
-            entered_send.send(()).unwrap();
-            released.lock().unwrap().recv().unwrap();
-            Box::new(solstone_core_import_sources::NullPdfWorker)
-        } else {
-            // Only one native entry is expected, and it remains behind this
-            // gate until the test releases the original operation.
-            Box::new(SharedPdf {
-                entered: entered_send.clone(),
-                release: Arc::clone(&released),
-                observed_stop: Arc::clone(&native_stop),
-            })
-        };
-        let seams = request.seams_with_pdf(worker);
-        Ok(PreparedImport::new(request.arguments().to_vec(), seams).with_resources(guard))
-    }))
+    let host = open_import_fixture(
+        root.path(),
+        Arc::new(move |request| {
+            let guard = NativeGuard {
+                owner: std::thread::current().id(),
+                released: Arc::clone(&resource_state),
+            };
+            let worker: Box<dyn PdfWorker + Send> = if preparation {
+                entered_send.send(()).unwrap();
+                released.lock().unwrap().recv().unwrap();
+                Box::new(solstone_core_import_sources::NullPdfWorker)
+            } else {
+                // Only one native entry is expected, and it remains behind this
+                // gate until the test releases the original operation.
+                Box::new(SharedPdf {
+                    entered: entered_send.clone(),
+                    release: Arc::clone(&released),
+                    observed_stop: Arc::clone(&native_stop),
+                })
+            };
+            let seams = request.seams_with_pdf(worker);
+            Ok(PreparedImport::new(request.arguments().to_vec(), seams).with_resources(guard))
+        }),
+    )
     .unwrap();
     submit(
         &host,
@@ -288,7 +557,7 @@ fn owner_request_holds_admitted_use_and_same_owner_previews_and_runs_after_resum
     fn can_queue<T: Send>() {}
     can_queue::<ImportRequest>();
     let _serial = TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
-    let (root, host) = fixture();
+    let root = fixture_directory();
     let vault = tempfile::tempdir().unwrap();
     fs::write(
         vault.path().join("resumed.md"),
@@ -297,11 +566,15 @@ fn owner_request_holds_admitted_use_and_same_owner_previews_and_runs_after_resum
     .unwrap();
     let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let factory_calls = Arc::clone(&calls);
-    host.enable_imports(Arc::new(move |request| {
-        factory_calls.fetch_add(1, Ordering::AcqRel);
-        let seams = request.seams_with_pdf(Box::new(solstone_core_import_sources::NullPdfWorker));
-        Ok(PreparedImport::new(request.arguments().to_vec(), seams))
-    }))
+    let host = open_import_fixture(
+        root.path(),
+        Arc::new(move |request| {
+            factory_calls.fetch_add(1, Ordering::AcqRel);
+            let seams =
+                request.seams_with_pdf(Box::new(solstone_core_import_sources::NullPdfWorker));
+            Ok(PreparedImport::new(request.arguments().to_vec(), seams))
+        }),
+    )
     .unwrap();
     let args = owned(&[
         "--sync",
@@ -377,7 +650,7 @@ fn opaque_keepalive_retains_outer_preview_work_after_worker_local_resources_reti
     fn outer_handle<T: Clone + Send + Sync>() {}
     outer_handle::<ImportKeepalive>();
     let _serial = TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
-    let (root, host) = fixture();
+    let root = fixture_directory();
     let source = tempfile::tempdir().unwrap();
     fs::write(
         source.path().join("preview.md"),
@@ -386,15 +659,19 @@ fn opaque_keepalive_retains_outer_preview_work_after_worker_local_resources_reti
     .unwrap();
     let released = Arc::new(AtomicBool::new(false));
     let resource_state = Arc::clone(&released);
-    host.enable_imports(Arc::new(move |request| {
-        let seams = request.seams_with_pdf(Box::new(solstone_core_import_sources::NullPdfWorker));
-        let guard = NativeGuard {
-            owner: std::thread::current().id(),
-            released: Arc::clone(&resource_state),
-        };
-        Ok(PreparedImport::new(request.arguments().to_vec(), seams)
-            .with_resources((std::rc::Rc::new(()), guard)))
-    }))
+    let host = open_import_fixture(
+        root.path(),
+        Arc::new(move |request| {
+            let seams =
+                request.seams_with_pdf(Box::new(solstone_core_import_sources::NullPdfWorker));
+            let guard = NativeGuard {
+                owner: std::thread::current().id(),
+                released: Arc::clone(&resource_state),
+            };
+            Ok(PreparedImport::new(request.arguments().to_vec(), seams)
+                .with_resources((std::rc::Rc::new(()), guard)))
+        }),
+    )
     .unwrap();
     let args = owned(&[
         "--sync",
@@ -477,14 +754,18 @@ fn pre_argv_keepalive_drains_cancelled_copy_cleanup_before_restore_can_write() {
     fn movable<T: Send + Sync>() {}
     movable::<ImportPreparation>();
     let _serial = TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
-    let (root, host) = fixture();
+    let root = fixture_directory();
     let factory_calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let calls = Arc::clone(&factory_calls);
-    host.enable_imports(Arc::new(move |context| {
-        calls.fetch_add(1, Ordering::AcqRel);
-        let seams = context.seams_with_pdf(Box::new(solstone_core_import_sources::NullPdfWorker));
-        Ok(PreparedImport::new(context.arguments().to_vec(), seams))
-    }))
+    let host = open_import_fixture(
+        root.path(),
+        Arc::new(move |context| {
+            calls.fetch_add(1, Ordering::AcqRel);
+            let seams =
+                context.seams_with_pdf(Box::new(solstone_core_import_sources::NullPdfWorker));
+            Ok(PreparedImport::new(context.arguments().to_vec(), seams))
+        }),
+    )
     .unwrap();
     let original = WorkStop::new();
     let preparation = host
@@ -558,14 +839,18 @@ fn pre_argv_keepalive_drains_cancelled_copy_cleanup_before_restore_can_write() {
 #[test]
 fn pre_argv_snapshot_binds_once_then_shared_preview_and_execution_write_actual_notes() {
     let _serial = TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
-    let (root, host) = fixture();
+    let root = fixture_directory();
     let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let factory_calls = Arc::clone(&calls);
-    host.enable_imports(Arc::new(move |context| {
-        factory_calls.fetch_add(1, Ordering::AcqRel);
-        let seams = context.seams_with_pdf(Box::new(solstone_core_import_sources::NullPdfWorker));
-        Ok(PreparedImport::new(context.arguments().to_vec(), seams))
-    }))
+    let host = open_import_fixture(
+        root.path(),
+        Arc::new(move |context| {
+            factory_calls.fetch_add(1, Ordering::AcqRel);
+            let seams =
+                context.seams_with_pdf(Box::new(solstone_core_import_sources::NullPdfWorker));
+            Ok(PreparedImport::new(context.arguments().to_vec(), seams))
+        }),
+    )
     .unwrap();
     let preparation = host
         .import_preparation(WorkStop::new(), Default::default())
@@ -612,9 +897,12 @@ fn pre_argv_snapshot_binds_once_then_shared_preview_and_execution_write_actual_n
 fn pre_argv_binding_preserves_original_deadline_host_stop_and_root_authority() {
     let _serial = TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
     for interrupt in ["deadline", "host", "root"] {
-        let (root, host) = fixture();
-        host.enable_imports(Arc::new(|_| panic!("refused pre-argv work cannot prepare")))
-            .unwrap();
+        let root = fixture_directory();
+        let host = open_import_fixture(
+            root.path(),
+            Arc::new(|_| panic!("refused pre-argv work cannot prepare")),
+        )
+        .unwrap();
         let deadline = Instant::now() + Duration::from_millis(100);
         let original = if interrupt == "deadline" {
             WorkStop::linked(Arc::new(AtomicBool::new(false)), Some(deadline))
@@ -657,7 +945,7 @@ fn held_owner_request(preparation: bool, interrupt: Interrupt) {
     use solstone_core_convey_shell::recovery_drain::{
         register_recovery_hooks, relinquish_admitted_work, resume_after_whole_journal_restore,
     };
-    let (root, host) = fixture();
+    let root = fixture_directory();
     let pdf = root.path().join("owner-held.pdf");
     fs::write(&pdf, b"%PDF-1.1\n").unwrap();
     let (entered_send, entered) = mpsc::channel();
@@ -667,25 +955,28 @@ fn held_owner_request(preparation: bool, interrupt: Interrupt) {
     let resource_state = Arc::clone(&resources_released);
     let observed_stop = Arc::new(AtomicBool::new(false));
     let native_stop = Arc::clone(&observed_stop);
-    host.enable_imports(Arc::new(move |context| {
-        let guard = NativeGuard {
-            owner: std::thread::current().id(),
-            released: Arc::clone(&resource_state),
-        };
-        let worker: Box<dyn PdfWorker + Send> = if preparation {
-            entered_send.send(()).unwrap();
-            released.lock().unwrap().recv().unwrap();
-            Box::new(solstone_core_import_sources::NullPdfWorker)
-        } else {
-            Box::new(SharedPdf {
-                entered: entered_send.clone(),
-                release: Arc::clone(&released),
-                observed_stop: Arc::clone(&native_stop),
-            })
-        };
-        let seams = context.seams_with_pdf(worker);
-        Ok(PreparedImport::new(context.arguments().to_vec(), seams).with_resources(guard))
-    }))
+    let host = open_import_fixture(
+        root.path(),
+        Arc::new(move |context| {
+            let guard = NativeGuard {
+                owner: std::thread::current().id(),
+                released: Arc::clone(&resource_state),
+            };
+            let worker: Box<dyn PdfWorker + Send> = if preparation {
+                entered_send.send(()).unwrap();
+                released.lock().unwrap().recv().unwrap();
+                Box::new(solstone_core_import_sources::NullPdfWorker)
+            } else {
+                Box::new(SharedPdf {
+                    entered: entered_send.clone(),
+                    release: Arc::clone(&released),
+                    observed_stop: Arc::clone(&native_stop),
+                })
+            };
+            let seams = context.seams_with_pdf(worker);
+            Ok(PreparedImport::new(context.arguments().to_vec(), seams).with_resources(guard))
+        }),
+    )
     .unwrap();
     let original = WorkStop::new();
     let deadline =
@@ -818,7 +1109,7 @@ fn late_stop_after_native_commit_preserves_actual_success() {
         }
     }
     let _serial = TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
-    let (root, host) = fixture();
+    let root = fixture_directory();
     let source = tempfile::tempdir().unwrap();
     fs::write(
         source.path().join("late.md"),
@@ -827,11 +1118,15 @@ fn late_stop_after_native_commit_preserves_actual_success() {
     .unwrap();
     let original = WorkStop::new();
     let late_stop = original.clone();
-    host.enable_imports(Arc::new(move |context| {
-        let seams = context.seams_with_pdf(Box::new(solstone_core_import_sources::NullPdfWorker));
-        Ok(PreparedImport::new(context.arguments().to_vec(), seams)
-            .with_resources(StopOnDrop(late_stop.clone())))
-    }))
+    let host = open_import_fixture(
+        root.path(),
+        Arc::new(move |context| {
+            let seams =
+                context.seams_with_pdf(Box::new(solstone_core_import_sources::NullPdfWorker));
+            Ok(PreparedImport::new(context.arguments().to_vec(), seams)
+                .with_resources(StopOnDrop(late_stop.clone())))
+        }),
+    )
     .unwrap();
     let (outcome, _) = host
         .import_request(

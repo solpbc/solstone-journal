@@ -56,6 +56,10 @@ static HOST_ACTIVE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64:
 static HOST_GENERATION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 #[cfg(test)]
 pub(super) static TEST_LOCK: Mutex<()> = Mutex::new(());
+#[cfg(all(test, feature = "full-tests"))]
+type StartupCatchUpHook = Box<dyn FnOnce() -> Result<(), String> + Send>;
+#[cfg(all(test, feature = "full-tests"))]
+static STARTUP_AFTER_CATCH_UP: Mutex<Option<StartupCatchUpHook>> = Mutex::new(None);
 type Checkpoint = Arc<dyn Fn() -> bool + Send + Sync>;
 #[allow(clippy::type_complexity)]
 type ForegroundRestart = Arc<dyn Fn() -> Result<(), String> + Send + Sync>;
@@ -1171,7 +1175,38 @@ impl ForegroundProcessingHost {
             Utc::now(),
             solstone_core_journal_config::owner_zone(root.canonical_path()),
         );
-        Self::open_bound_observed(root, payload, now, None, external, stop, backup, true, true)
+        Self::open_bound_observed(
+            root, payload, now, None, external, stop, backup, true, true, None,
+        )
+    }
+
+    /// Install native imports before startup catch-up can dispatch any work.
+    /// Native preparation still runs only on its retained callable worker.
+    pub fn open_with_rebuild_recovery_and_imports(
+        root: Arc<JournalRoot>,
+        payload: &Path,
+        external: Checkpoint,
+        stop: Arc<AtomicBool>,
+        backup: BackupWebDeps,
+        imports: Arc<ImportSeamFactory>,
+        observe_daily: bool,
+    ) -> Result<Self, String> {
+        let now = ScheduleNow::in_zone(
+            Utc::now(),
+            solstone_core_journal_config::owner_zone(root.canonical_path()),
+        );
+        Self::open_bound_observed(
+            root,
+            payload,
+            now,
+            None,
+            external,
+            stop,
+            backup,
+            true,
+            observe_daily,
+            Some(imports),
+        )
     }
 
     /// Historical emissions and a separate current owner read, never a reservation.
@@ -1261,6 +1296,7 @@ impl ForegroundProcessingHost {
             backup,
             rebuild_recovery,
             false,
+            None,
         )
     }
     #[allow(clippy::too_many_arguments)]
@@ -1274,6 +1310,7 @@ impl ForegroundProcessingHost {
         backup: BackupWebDeps,
         rebuild_recovery: bool,
         observe_daily: bool,
+        initial_imports: Option<Arc<ImportSeamFactory>>,
     ) -> Result<Self, String> {
         let generation = HOST_GENERATION
             .fetch_update(Ordering::AcqRel, Ordering::Acquire, |current| {
@@ -1355,7 +1392,7 @@ impl ForegroundProcessingHost {
             #[cfg(feature = "audio")]
             let audio_state = Arc::new(Mutex::new(None));
             let running = RunningUses::default();
-            let imports = Arc::new(Mutex::new(None));
+            let imports = Arc::new(Mutex::new(initial_imports));
             let hosted = Arc::new(HostedCommand {
                 rebuild_recovery,
                 journal: journal.clone(),
@@ -1393,7 +1430,7 @@ impl ForegroundProcessingHost {
                         cancelled: Arc::clone(&cancelled),
                     })),
                     process_sink: None,
-                    ready: true,
+                    ready: false,
                     before_deadline_commit: None,
                     child_environment: BTreeMap::new(),
                     task_binary: None,
@@ -1412,14 +1449,6 @@ impl ForegroundProcessingHost {
             ));
             if queue_slot.set(Arc::downgrade(&queue)).is_err() {
                 log::warn!("foreground schedule queue was already installed");
-            } else if let Ok(mut engine) = schedule_engine.lock() {
-                engine.catch_up(
-                    now,
-                    &HostScheduleSink {
-                        queue: queue.clone(),
-                    },
-                    &fresh,
-                );
             }
             let discovery_checkpoint = Arc::clone(&cancelled);
             let discovery = WorkDiscovery::new_with_talent_roots_and_checkpoint(
@@ -1470,7 +1499,7 @@ impl ForegroundProcessingHost {
                 queue: Arc::downgrade(&queue),
                 cancelled: Arc::downgrade(&cancelled),
             });
-            Ok(Self {
+            let host = Self {
                 generation,
                 daily_observation,
                 journal,
@@ -1493,7 +1522,33 @@ impl ForegroundProcessingHost {
                 worker,
                 #[cfg(feature = "audio")]
                 audio_state,
-            })
+            };
+            // Dispatch only after this owner can cancel and join every callable.
+            if (host.cancelled)() {
+                return Err("thinking cancelled".into());
+            }
+            host.queue.set_ready();
+            if let Ok(mut engine) = host.schedule_engine.lock() {
+                engine.catch_up(
+                    now,
+                    &HostScheduleSink {
+                        queue: Arc::clone(&host.queue),
+                    },
+                    &fresh,
+                );
+            }
+            #[cfg(all(test, feature = "full-tests"))]
+            {
+                let hook = STARTUP_AFTER_CATCH_UP.lock().unwrap().take();
+                if let Some(hook) = hook {
+                    hook()?;
+                }
+            }
+            if (host.cancelled)() {
+                host.shutdown()?;
+                return Err("thinking cancelled".into());
+            }
+            Ok(host)
         })();
         if result.is_err() {
             let _ =
@@ -1878,22 +1933,6 @@ impl ForegroundProcessingHost {
                 queue: self.queue.clone(),
             },
         )
-    }
-    /// Install this owner's native import preparation without changing Generate policy.
-    /// Preparation and native resources remain owned until the callable task joins.
-    pub fn enable_imports(&self, factory: Arc<ImportSeamFactory>) -> Result<(), String> {
-        let mut slot = self
-            .imports
-            .lock()
-            .map_err(|_| "importer unavailable".to_owned())?;
-        if (self.cancelled)() {
-            return Err("thinking cancelled".into());
-        }
-        self.root
-            .revalidate_canonical_binding()
-            .map_err(|error| error.to_string())?;
-        *slot = Some(factory);
-        Ok(())
     }
     /// Capture this owner's preparation lifetime before snapshot or metadata effects.
     /// Bind final importer arguments on the retained worker after those inputs exist.
@@ -3275,6 +3314,7 @@ mod processing_proofs {
                 BackupWebDeps::new(temp.path().to_path_buf()),
                 true,
                 enabled,
+                None,
             )
             .unwrap();
             host.discovery.lock().unwrap().as_ref().unwrap().request();
@@ -3395,6 +3435,7 @@ mod processing_proofs {
             BackupWebDeps::new(temp.path().to_path_buf()),
             true,
             true,
+            None,
         )
         .unwrap();
         armed.store(true, Ordering::Release);
@@ -3424,6 +3465,7 @@ mod processing_proofs {
                 BackupWebDeps::new(temp.path().to_path_buf()),
                 true,
                 true,
+                None,
             )
             .unwrap();
             let value = host.daily_queue_observation().unwrap().unwrap();
@@ -3446,6 +3488,7 @@ mod processing_proofs {
             BackupWebDeps::new(temp.path().to_path_buf()),
             true,
             true,
+            None,
         )
         .unwrap();
         if let Some(mut discovery) = host.discovery.lock().unwrap().take() {
@@ -3503,6 +3546,7 @@ mod processing_proofs {
             BackupWebDeps::new(temp.path().to_path_buf()),
             true,
             true,
+            None,
         )
         .unwrap();
         armed.store(true, Ordering::Release);
