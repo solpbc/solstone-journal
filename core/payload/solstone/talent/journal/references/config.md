@@ -40,15 +40,11 @@ This configuration helps meeting extraction identify the owner as a participant,
 
 ## Convey configuration
 
-The separate `config/convey.json` file stores optional app navigation personalization. Workspace-local facet selection is not stored here.
+Pins live on the journal, in `config/journal.json`, under `convey.pinned_views`: an ordered list of view names. The side rail shows home, then those pins, then more. When the key is absent, the rail uses search, entities, and thinking. An empty list stays empty.
 
-```json
-{
-  "apps": {"order": ["home", "activities", "entities"]}
-}
-```
+`PUT /api/shell/pins` is the writer. It changes only `pinned_views` and leaves every other `convey` key in place. `GET /api/shell` reports the resolved list as `pinned` on each request.
 
-- `apps.order` – Custom app ordering in menu bar.
+Workspace-local facet selection is not stored in journal config.
 
 ## Retention configuration
 

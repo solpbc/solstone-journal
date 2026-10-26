@@ -8,6 +8,9 @@ const vm = require('vm');
 
 const crateDir = process.argv[2];
 assert.ok(crateDir, 'crate directory argument is required');
+const generatedShell = JSON.parse(fs.readFileSync(process.argv[3], 'utf8'));
+assert.ok(Array.isArray(generatedShell.apps) && generatedShell.apps.length > 0, 'generated apps');
+assert.strictEqual(generatedShell.pinned, undefined, 'cached payload carries no pinned list');
 
 class ClassList {
   constructor(element) {
@@ -167,6 +170,14 @@ class Element {
 
   set id(value) {
     this.setAttribute('id', value);
+  }
+
+  get className() {
+    return this.getAttribute('class') || '';
+  }
+
+  set className(value) {
+    this.setAttribute('class', value);
   }
 
   get href() {
@@ -400,52 +411,39 @@ function addStaticElement(document, tagName, attributes = {}) {
 }
 
 function shellFixture(options = {}) {
-  const groups = [
-    ['your_journal', [
-      ['home', 'home', 'primary', 0],
-      ['transcripts', 'transcripts', null, 0],
-      ['speakers', 'speakers', null, 0],
-      ['body', 'body', null, 0],
-      ['news', 'newsletters', null, 0],
-    ]],
-    ['understand', [
-      ['search', 'search', 'primary', 2],
-      ['entities', 'entities', 'primary', 3],
-      ['thinking', 'thinking', 'primary', 4],
-      ['stats', 'stats', null, 0],
-      ['curation', 'curation', null, 0],
-      ['activities', 'activities', null, 0],
-    ]],
-    ['manage', [
-      ['import', 'import', 'management', 0],
-      ['network', 'network', null, 0],
-      ['backup', 'backup', null, 0],
-      ['health', 'health', null, 0],
-      ['support', 'support', null, 0],
-      ['settings', 'settings', 'management', 1],
-    ]],
-  ];
-  const apps = groups.flatMap(([launcherGroup, rows]) => rows.map(([name, label, railGroup, railRank], launcherRank) => ({
-    app_bar: '',
-    background_url: options.boot && name === 'support'
-      ? '/app/' + name + '/background'
-      : null,
-    date_nav: false,
-    icon: name,
-    icon_svg: '',
-    label,
-    launcher_group: launcherGroup,
-    launcher_rank: launcherRank,
-    name,
-    rail_group: railGroup,
-    rail_rank: railRank,
-    workspace_url: '/app/' + name + '/workspace',
-  })));
-  return { apps, version: "1.2.3" };
+  const shell = JSON.parse(JSON.stringify(generatedShell));
+  shell.pinned = Object.prototype.hasOwnProperty.call(options, 'pinned')
+    ? options.pinned.slice()
+    : ['search', 'entities', 'thinking'];
+  if (options.boot) {
+    const support = shell.apps.find((app) => app.name === 'support');
+    if (support) support.background_url = '/app/support/background';
+  }
+  return shell;
+}
+
+class AbortController {
+  constructor() {
+    this.signal = {
+      aborted: false,
+      listeners: [],
+      addEventListener(_type, listener) { this.listeners.push(listener); },
+    };
+  }
+
+  abort() {
+    if (this.signal.aborted) return;
+    this.signal.aborted = true;
+    for (const listener of this.signal.listeners) listener();
+  }
 }
 
 function createHarness(options = {}) {
-  const shell = options.shell || shellFixture({ boot: options.boot });
+  const fixtureOptions = { boot: options.boot };
+  if (Object.prototype.hasOwnProperty.call(options, 'pinned')) {
+    fixtureOptions.pinned = options.pinned;
+  }
+  const shell = options.shell || shellFixture(fixtureOptions);
   const fetchCalls = [];
   const surfaceCalls = [];
   const logErrors = [];
@@ -478,16 +476,8 @@ function createHarness(options = {}) {
     });
   };
   const document = new Document();
-  addStaticElement(document, 'nav', { id: 'app-rail', class: 'app-rail' });
-  addStaticElement(document, 'nav', { id: 'app-dock', class: 'app-dock' });
-  const launcher = addStaticElement(document, 'div', {
-    id: 'app-launcher',
-    role: 'dialog',
-    'aria-modal': 'true',
-    hidden: '',
-    inert: '',
-  });
-  launcher.style.position = 'fixed';
+  addStaticElement(document, 'nav', { id: 'app-rail', class: 'app-rail', 'aria-label': 'views' });
+  addStaticElement(document, 'nav', { id: 'app-dock', class: 'app-dock', 'aria-label': 'views' });
   addStaticElement(document, 'div', { id: 'status-instrument' });
   addStaticElement(document, 'div', { id: 'status-pane', class: 'status-pane' });
   addStaticElement(document, 'main', { id: 'main-content', tabindex: '-1' });
@@ -510,7 +500,13 @@ function createHarness(options = {}) {
     navigator,
     location,
     top: null,
-    matchMedia() { return { matches: Boolean(options.mobile), addEventListener() {} }; },
+    matchMedia(query) {
+      const text = String(query || '');
+      const matches = text.includes('hover: none') && text.includes('pointer: coarse')
+        ? Boolean(options.coarse)
+        : Boolean(options.mobile);
+      return { matches, addEventListener() {} };
+    },
     requestAnimationFrame(callback) { callback(); },
     getComputedStyle(element) {
       return {
@@ -576,6 +572,7 @@ function createHarness(options = {}) {
     getComputedStyle: window.getComputedStyle,
     CustomEvent: window.CustomEvent,
     fetch,
+    AbortController,
   });
   const read = (file) => fs.readFileSync(path.join(crateDir, 'assets/static', file), 'utf8');
   const surfaceStub = window.SurfaceState;
@@ -599,18 +596,23 @@ function createHarness(options = {}) {
   if (options.report) {
     vm.runInContext(read('report-error.js'), context, { filename: 'report-error.js' });
   }
+  vm.runInContext(read('date_format.js'), context, { filename: 'date_format.js' });
   if (options.boot) {
     vm.runInContext(read('convey_copy.js'), context, { filename: 'convey_copy.js' });
-    vm.runInContext(read('date_format.js'), context, { filename: 'date_format.js' });
     vm.runInContext(read('mount-workspace.js'), context, { filename: 'mount-workspace.js' });
   }
   const bootSource = read('shell_boot.js').replace(
     /\s*boot\(\);\s*\}\)\(\);\s*$/,
-    '\n  window.__shellChrome = { renderAppRail, renderAppDock, renderAppLauncher, renderStatusInstrument, installLauncherInteractions };\n'
+    '\n  window.__shellChrome = window.solShellChrome;\n'
       + (options.boot ? '  window.__shellBoot = boot;\n' : '')
       + '})();\n',
   );
   vm.runInContext(bootSource, context, { filename: 'shell_boot.js' });
+  vm.runInContext(
+    fs.readFileSync(path.join(crateDir, 'assets/more/more.js'), 'utf8'),
+    context,
+    { filename: 'more.js' },
+  );
   return {
     document,
     window,
@@ -628,11 +630,19 @@ function createHarness(options = {}) {
 function renderChrome(harness, currentAppName) {
   const app = harness.shell.apps.find((candidate) => candidate.name === currentAppName);
   assert.ok(app, 'fixture app ' + currentAppName + ' exists');
+  harness.window.location.pathname = '/app/' + currentAppName + '/';
   harness.chrome.renderAppRail(harness.shell, currentAppName);
   harness.chrome.renderAppDock(harness.shell, currentAppName);
-  harness.chrome.renderAppLauncher(harness.shell, currentAppName);
   harness.chrome.renderStatusInstrument();
-  harness.chrome.installLauncherInteractions();
+}
+
+function namedApps(slot) {
+  return slot.querySelectorAll('[data-app-name]').map((element) => element.getAttribute('data-app-name'));
+}
+
+function moreLabel(html) {
+  const match = html.match(/data-app-name="more"[^>]*>[\s\S]*?<span class="app-chrome-label">([^<]*)<\/span>/);
+  return match && match[1];
 }
 
 function appNames(elements) {
@@ -668,10 +678,24 @@ function asyncCase(name, fn) {
   });
 }
 
+testCase('launcher markup and wiring are gone', () => {
+  const html = fs.readFileSync(path.join(crateDir, 'assets/static/shell.html'), 'utf8');
+  const boot = fs.readFileSync(path.join(crateDir, 'assets/static/shell_boot.js'), 'utf8');
+  const css = fs.readFileSync(path.join(crateDir, 'assets/static/app.css'), 'utf8');
+  assert.ok(!html.includes('app-launcher'));
+  assert.ok(!html.includes('journal apps'));
+  assert.ok(html.includes('aria-label="views"'));
+  assert.ok(!boot.includes('renderAppLauncher'));
+  assert.ok(!boot.includes('data-app-launcher'));
+  assert.ok(!boot.includes('presentation-mode:change'));
+  assert.ok(!boot.includes('journal apps'));
+  assert.ok(!css.includes('app-launcher'));
+});
+
 testCase('app navigation uses full documents, never workspace fragments', () => {
   const harness = createHarness();
   renderChrome(harness, 'home');
-  for (const slot of ['#app-rail', '#app-dock', '#app-launcher']) {
+  for (const slot of ['#app-rail', '#app-dock']) {
     const links = harness.document.querySelector(slot).querySelectorAll('a');
     assert(links.length > 0);
     for (const link of links) {
@@ -686,132 +710,309 @@ testCase('version survives chrome navigation and opens about', () => {
   const harness = createHarness();
   for (const app of ['home', 'network', 'health', 'settings']) {
     renderChrome(harness, app);
-    for (const slot of ['#app-rail', '#app-launcher']) {
-      const link = harness.document.querySelector(`${slot} .journal-about-link`);
-      assert.ok(link, `${slot} has a version destination`);
-      assert.strictEqual(link.getAttribute('href'), '/app/settings/#about');
-    }
+    const link = harness.document.querySelector('#app-rail .journal-about-link');
+    assert.ok(link, 'rail has a version destination');
+    assert.strictEqual(link.getAttribute('href'), '/app/settings/#about');
+    assert.strictEqual(harness.document.querySelector('#app-dock .journal-about-link'), null);
   }
 });
 
-testCase('rail composition', () => {
+testCase('status instrument stays the same node across chrome rebuilds', () => {
   const harness = createHarness();
   renderChrome(harness, 'home');
-  const rail = harness.document.querySelector('#app-rail');
-  assert.strictEqual(rail.children.length, 11);
-  assert.deepStrictEqual(appNames(rail.children.slice(0, 4)), ['home', 'search', 'entities', 'thinking']);
-  assert.ok(rail.children[4].hasAttribute('data-app-launcher-toggle'));
-  assert.ok(rail.innerHTML.includes('<span class="app-chrome-label" aria-hidden="true">journal apps</span>'));
-  assert.ok(rail.children[5].classList.contains('app-rail-spacer'));
-  assert.strictEqual(rail.children[6].id, 'status-instrument');
-  assert.ok(rail.children[7].classList.contains('app-rail-divider'));
-  assert.deepStrictEqual(appNames(rail.children.slice(8, 10)), ['import', 'settings']);
+  const icon = harness.document.querySelector('#status-instrument .status-icon');
+  renderChrome(harness, 'search');
+  assert.strictEqual(harness.document.querySelector('#status-instrument .status-icon'), icon);
 });
 
-testCase('launcher completeness and order', () => {
-  const harness = createHarness();
-  renderChrome(harness, 'home');
-  const groups = harness.document.querySelectorAll('[data-launcher-group]');
-  assert.deepStrictEqual(groups.map((group) => group.getAttribute('data-launcher-group')), ['your_journal', 'understand', 'manage']);
-  assert.deepStrictEqual(appNames(groups[0].querySelectorAll('[data-launcher-app]')), ['home', 'transcripts', 'speakers', 'body', 'news']);
-  assert.deepStrictEqual(appNames(groups[1].querySelectorAll('[data-launcher-app]')), ['search', 'entities', 'thinking', 'stats', 'curation', 'activities']);
-  assert.deepStrictEqual(appNames(groups[2].querySelectorAll('[data-launcher-app]')), ['import', 'network', 'backup', 'health', 'support', 'settings']);
-  const allApps = harness.document.querySelectorAll('[data-launcher-app]');
-  assert.strictEqual(allApps.length, 17);
-  assert.strictEqual(new Set(appNames(allApps)).size, 17);
-});
-
-testCase('dock composition', () => {
-  const harness = createHarness({mobile: true});
-  renderChrome(harness, 'home');
-  const dock = harness.document.querySelector('#app-dock');
-  assert.strictEqual(dock.children.length, 5);
-  assert.strictEqual(dock.children[4].id, 'status-instrument');
-  assert.deepStrictEqual(appNames(dock.children.slice(0, 3)), ['home', 'search', 'entities']);
-  assert.ok(dock.children[3].hasAttribute('data-app-launcher-toggle'));
-});
-
-testCase('launcher toggle accessible name and current treatment', () => {
-  const unpinned = createHarness();
-  renderChrome(unpinned, 'curation');
-  const unpinnedToggle = unpinned.document.querySelector('#app-rail [data-app-launcher-toggle]');
-  assert.strictEqual(unpinnedToggle.getAttribute('aria-label'), 'journal apps, current: curation');
-  assert.ok(unpinnedToggle.classList.contains('is-current'));
-
-  const pinned = createHarness();
+testCase('rail and dock follow the resolved pin list', () => {
+  const pinned = createHarness({ pinned: ['map', 'search'] });
   renderChrome(pinned, 'home');
-  const pinnedToggle = pinned.document.querySelector('#app-rail [data-app-launcher-toggle]');
-  assert.ok(!pinnedToggle.classList.contains('is-current'));
-  assert.ok(pinned.document.querySelector('#app-rail [data-app-name="home"]').classList.contains('is-current'));
+  const rail = pinned.document.querySelector('#app-rail');
+  assert.strictEqual(rail.getAttribute('aria-label'), 'views');
+  assert.strictEqual(rail.children.length, 12);
+  assert.deepStrictEqual(namedApps(rail), ['home', 'map', 'search', 'more', 'import', 'settings', 'network', 'agents']);
+  assert.ok(!namedApps(rail).includes('entities'));
+  assert.ok(!namedApps(rail).includes('thinking'));
+  assert.ok(rail.children[4].classList.contains('app-rail-spacer'));
+  assert.strictEqual(rail.children[5].id, 'status-instrument');
+  assert.ok(rail.children[6].classList.contains('app-rail-divider'));
+  assert.deepStrictEqual(
+    ['import', 'settings', 'network', 'agents'],
+    rail.children.slice(7, 11).map((element) => element.getAttribute('data-app-name'))
+  );
+  assert.ok(rail.children[11].classList.contains('journal-about-link'));
+  const desktopDock = pinned.document.querySelector('#app-dock');
+  assert.deepStrictEqual(namedApps(desktopDock), ['home', 'map', 'search', 'more']);
+  assert.strictEqual(desktopDock.children.length, 4);
+
+  const phone = createHarness({ pinned: ['map', 'search'], mobile: true });
+  renderChrome(phone, 'home');
+  const dock = phone.document.querySelector('#app-dock');
+  assert.strictEqual(dock.getAttribute('aria-label'), 'views');
+  assert.strictEqual(dock.children.length, 5);
+  assert.deepStrictEqual(namedApps(dock), ['home', 'map', 'search', 'more']);
+  assert.strictEqual(dock.children[4].id, 'status-instrument');
+
+  const empty = createHarness({ pinned: [] });
+  renderChrome(empty, 'home');
+  const emptyRail = empty.document.querySelector('#app-rail');
+  assert.strictEqual(emptyRail.children.length, 10);
+  assert.deepStrictEqual(namedApps(emptyRail), ['home', 'more', 'import', 'settings', 'network', 'agents']);
+  assert.deepStrictEqual(namedApps(empty.document.querySelector('#app-dock')), ['home', 'more']);
+
+  const emptyPhone = createHarness({ pinned: [], mobile: true });
+  renderChrome(emptyPhone, 'home');
+  const emptyDock = emptyPhone.document.querySelector('#app-dock');
+  assert.strictEqual(emptyDock.children.length, 3);
+  assert.deepStrictEqual(namedApps(emptyDock), ['home', 'more']);
+  assert.strictEqual(emptyDock.children[2].id, 'status-instrument');
 });
 
-testCase('launcher open and close lifecycle', () => {
-  const harness = createHarness();
-  renderChrome(harness, 'home');
-  const launcher = harness.document.querySelector('#app-launcher');
-  const toggle = harness.document.querySelector('#app-rail [data-app-launcher-toggle]');
-  toggle.dispatchEvent(event('click', { bubbles: true }));
-  assert.ok(!launcher.hidden && !launcher.inert);
-  harness.document.dispatchEvent(event('keydown', { key: 'Escape' }));
-  assert.ok(launcher.hidden && launcher.inert);
-  assert.strictEqual(harness.document.activeElement, toggle);
-  const statusIcon = harness.document.querySelector('#status-instrument .status-icon');
-  renderChrome(harness, 'search');
-  assert.strictEqual(harness.document.querySelector('#status-instrument .status-icon'), statusIcon);
-  const rerenderedToggle = harness.document.querySelector('#app-rail [data-app-launcher-toggle]');
-  rerenderedToggle.dispatchEvent(event('click', { bubbles: true }));
-  launcher.dispatchEvent(event('click', { target: launcher }));
-  assert.ok(launcher.hidden && launcher.inert);
-  rerenderedToggle.dispatchEvent(event('click', { bubbles: true }));
-  launcher.querySelector('[data-launcher-app] a').dispatchEvent(event('click', { bubbles: true }));
-  assert.ok(launcher.hidden && launcher.inert);
+testCase('more keeps its label and current treatment follows each surface', () => {
+  const pinned = ['map', 'search'];
+  for (const name of ['home', 'activities', 'more']) {
+    const harness = createHarness({ pinned });
+    renderChrome(harness, name);
+    assert.strictEqual(moreLabel(harness.document.querySelector('#app-rail').innerHTML), 'more');
+    assert.strictEqual(moreLabel(harness.document.querySelector('#app-dock').innerHTML), 'more');
+  }
+
+  const onMore = createHarness({ pinned });
+  renderChrome(onMore, 'more');
+  for (const slot of ['#app-rail', '#app-dock']) {
+    const link = onMore.document.querySelector(slot + ' [data-app-name="more"]');
+    assert.ok(link.classList.contains('is-current'));
+    assert.strictEqual(link.getAttribute('aria-current'), 'page');
+  }
+
+  const offRail = createHarness({ pinned });
+  renderChrome(offRail, 'activities');
+  for (const slot of ['#app-rail', '#app-dock']) {
+    const link = offRail.document.querySelector(slot + ' [data-app-name="more"]');
+    assert.ok(link.classList.contains('is-current'));
+    assert.ok(!link.hasAttribute('aria-current'));
+  }
+
+  const third = createHarness({ pinned: ['map', 'search', 'entities'] });
+  renderChrome(third, 'entities');
+  const railMore = third.document.querySelector('#app-rail [data-app-name="more"]');
+  const dockMore = third.document.querySelector('#app-dock [data-app-name="more"]');
+  assert.ok(third.document.querySelector('#app-rail [data-app-name="entities"]').classList.contains('is-current'));
+  assert.ok(!railMore.classList.contains('is-current'));
+  assert.ok(!railMore.hasAttribute('aria-current'));
+  assert.ok(dockMore.classList.contains('is-current'));
+  assert.ok(!dockMore.hasAttribute('aria-current'));
+  assert.strictEqual(moreLabel(third.document.querySelector('#app-rail').innerHTML), 'more');
+  assert.strictEqual(moreLabel(third.document.querySelector('#app-dock').innerHTML), 'more');
 });
 
-testCase('launcher dismissal finds visible replacement after chrome rebuild', () => {
-  const harness = createHarness();
-  renderChrome(harness, 'home');
-  const previous = harness.document.querySelector('#app-rail [data-app-launcher-toggle]');
-  previous.dispatchEvent(event('click', { bubbles: true }));
-  renderChrome(harness, 'search');
-  const rail = harness.document.querySelector('#app-rail [data-app-launcher-toggle]');
-  rail.style.display = 'none';
-  const dock = harness.document.querySelector('#app-dock [data-app-launcher-toggle]');
-  harness.document.dispatchEvent(event('keydown', { key: 'Escape' }));
-  assert.ok(!previous.isConnected);
-  assert.strictEqual(harness.document.activeElement, dock);
+function viewBlob(app) {
+  return [app.label, app.name, app.description, app.source, ...(app.keywords || [])].join(' ').toLowerCase();
+}
+
+async function paintMore(harness, options) {
+  const root = addStaticElement(harness.document, 'div', { id: 'more-root' });
+  await harness.window.renderMorePage(root, harness.shell, options || { timeout: 30 });
+  return root;
+}
+
+asyncCase('more page groups every served view except more', async () => {
+  const harness = createHarness({ pinned: ['search', 'entities', 'thinking'] });
+  const root = await paintMore(harness);
+  const html = root.innerHTML;
+  assert.ok(html.includes('<h1>more</h1>'));
+  assert.ok(html.includes('every view your journal has: what each one shows, and where its contents come from.'));
+  assert.ok(html.indexOf('what your journal keeps') < html.indexOf('what you shape'));
+  assert.ok(html.indexOf('what you shape') < html.indexOf('how it runs'));
+  assert.ok(html.includes('your days, as your journal holds them'));
+  assert.ok(html.includes('fix and tidy what it keeps'));
+  assert.ok(html.includes('set it up and keep it running'));
+  assert.ok(html.includes('placeholder="type to filter views"'));
+  assert.ok(html.includes('>filter views</label>'));
+  const input = root.querySelector('#more-filter');
+  assert.strictEqual(harness.document.activeElement, input);
+
+  const groupNames = (group) => root.querySelectorAll('[data-focus="' + group + '"] .more-card')
+    .map((card) => card.getAttribute('data-app-name'));
+  assert.deepStrictEqual(groupNames('keeps'), ['home', 'activities', 'transcripts', 'map', 'body', 'search']);
+  assert.deepStrictEqual(groupNames('shape'), ['entities', 'speakers', 'curation']);
+  assert.deepStrictEqual(groupNames('runs'), ['thinking', 'health', 'network', 'agents', 'backup', 'import', 'stats', 'settings', 'support']);
+  const names = root.querySelectorAll('.more-card').map((card) => card.getAttribute('data-app-name'));
+  assert.strictEqual(new Set(names).size, names.length);
+  assert.ok(!names.includes('more'));
+  const served = harness.shell.apps.map((app) => app.name).filter((name) => name !== 'more').sort();
+  assert.deepStrictEqual(names.slice().sort(), served);
+
+  for (const card of root.querySelectorAll('.more-card')) {
+    const name = card.getAttribute('data-app-name');
+    const app = harness.shell.apps.find((item) => item.name === name);
+    const link = card.querySelector('a.more-card-link');
+    const button = card.querySelector('button');
+    assert.strictEqual(link.getAttribute('href'), '/app/' + name + '/');
+    if (app.pinnable) {
+      assert.ok(button, name);
+      assert.strictEqual(button.parentElement, card);
+      assert.strictEqual(link.querySelector('button'), null);
+      const pinned = harness.shell.pinned.includes(name);
+      assert.strictEqual(button.getAttribute('aria-pressed'), pinned ? 'true' : 'false');
+    } else {
+      assert.strictEqual(button, null, name);
+      assert.strictEqual(card.querySelector('.more-pin-static').getAttribute('title'), 'always in the side rail');
+    }
+  }
+  const curation = root.querySelector('[data-pin-view="curation"]');
+  assert.strictEqual(curation.getAttribute('aria-label'), 'pin suggestions to the side rail');
+  assert.strictEqual(curation.getAttribute('title'), 'pin suggestions to the side rail');
 });
 
-testCase('launcher remains inert while closed', () => {
-  const harness = createHarness();
-  renderChrome(harness, 'home');
-  const launcher = harness.document.querySelector('#app-launcher');
-  const toggle = harness.document.querySelector('#app-rail [data-app-launcher-toggle]');
-  assert.ok(launcher.inert);
-  toggle.dispatchEvent(event('click', { bubbles: true }));
-  assert.ok(!launcher.inert);
-  harness.document.dispatchEvent(event('keydown', { key: 'Escape' }));
-  assert.ok(launcher.inert);
+asyncCase('more page skips filter focus on a coarse pointer', async () => {
+  const harness = createHarness({ coarse: true, pinned: [] });
+  const root = await paintMore(harness);
+  assert.notStrictEqual(harness.document.activeElement, root.querySelector('#more-filter'));
 });
 
-testCase('launcher no-match filter state', () => {
-  const harness = createHarness();
-  renderChrome(harness, 'home');
-  const input = harness.document.querySelector('#app-launcher-filter');
-  input.value = 'nothing matches';
+asyncCase('more page filter uses a generated keyword and escape clears it', async () => {
+  const harness = createHarness({ pinned: [] });
+  const root = await paintMore(harness);
+  const map = harness.shell.apps.find((app) => app.name === 'map');
+  const keyword = map.keywords.find((word) => {
+    const query = word.toLowerCase();
+    const hits = harness.shell.apps.filter((app) => app.name !== 'more' && viewBlob(app).includes(query));
+    return hits.length === 1 && hits[0].name === 'map';
+  });
+  assert.ok(keyword, 'a generated map keyword matches only map');
+  const input = root.querySelector('#more-filter');
+  input.value = keyword.toUpperCase();
   input.dispatchEvent(event('input'));
-  const empty = harness.document.querySelector('.app-launcher-empty');
-  assert.ok(!empty.hidden);
-  assert.ok(harness.document.querySelectorAll('[data-launcher-app]:not([hidden])').length === 0);
+  assert.deepStrictEqual(
+    root.querySelectorAll('.more-card:not([hidden])').map((card) => card.getAttribute('data-app-name')),
+    ['map']
+  );
+  const visibleGroups = root.querySelectorAll('.more-group:not([hidden])');
+  assert.strictEqual(visibleGroups.length, 1);
+  assert.strictEqual(visibleGroups[0].getAttribute('data-focus'), 'keeps');
+
+  input.value = 'zzzz-no-view';
+  input.dispatchEvent(event('input'));
+  assert.strictEqual(root.querySelectorAll('.more-card:not([hidden])').length, 0);
+  assert.strictEqual(root.querySelectorAll('.more-group:not([hidden])').length, 0);
+  assert.strictEqual(root.querySelector('.more-empty').hidden, false);
+  assert.ok(root.innerHTML.includes('no views match that.'));
+
+  harness.document.dispatchEvent(event('keydown', { key: 'Escape' }));
+  assert.strictEqual(input.value, '');
+  assert.strictEqual(root.querySelector('.more-empty').hidden, true);
+  assert.strictEqual(root.querySelectorAll('.more-card[hidden]').length, 0);
 });
 
-testCase('presentation mode closes launcher', () => {
-  const harness = createHarness();
+asyncCase('successful pin toggle updates rail and dock from the returned list', async () => {
+  const harness = createHarness({ pinned: ['search'] });
   renderChrome(harness, 'home');
-  const launcher = harness.document.querySelector('#app-launcher');
-  harness.document.querySelector('#app-rail [data-app-launcher-toggle]').dispatchEvent(event('click', { bubbles: true }));
-  assert.ok(!launcher.hidden);
-  harness.window.solstonePresentation.on();
-  assert.ok(launcher.hidden && launcher.inert);
+  let release;
+  const pending = new Promise((resolve) => { release = resolve; });
+  const calls = [];
+  harness.window.apiJson = (url, options) => {
+    if (url === '/api/shell/pins') {
+      calls.push(options);
+      return pending;
+    }
+    return Promise.reject(new Error('state ' + url));
+  };
+  const root = await paintMore(harness);
+  const button = root.querySelector('[data-pin-view="map"]');
+  button.dispatchEvent(event('click', { bubbles: true }));
+  assert.strictEqual(button.disabled, true);
+  assert.strictEqual(calls.length, 1);
+  button.dispatchEvent(event('click', { bubbles: true }));
+  assert.strictEqual(calls.length, 1, 'a second click during the request issues no second request');
+  release({ pinned: ['entities'] });
+  await pending;
+  await settle();
+  await settle();
+  assert.deepStrictEqual(namedApps(harness.document.querySelector('#app-rail')), ['home', 'entities', 'more', 'import', 'settings', 'network', 'agents']);
+  assert.deepStrictEqual(namedApps(harness.document.querySelector('#app-dock')), ['home', 'entities', 'more']);
+  assert.ok(!namedApps(harness.document.querySelector('#app-rail')).includes('map'));
+  assert.ok(!namedApps(harness.document.querySelector('#app-rail')).includes('search'));
+  assert.strictEqual(root.querySelector('[data-pin-view="map"]').getAttribute('aria-pressed'), 'false');
+  assert.strictEqual(root.querySelector('[data-pin-view="entities"]').getAttribute('aria-pressed'), 'true');
+  assert.strictEqual(root.querySelector('.more-live').textContent, '');
+  assert.strictEqual(button.disabled, false);
+});
+
+asyncCase('failed pin save restores the previous list and says so', async () => {
+  const harness = createHarness({ pinned: ['search'] });
+  renderChrome(harness, 'home');
+  let shellReads = 0;
+  harness.window.apiJson = (url) => {
+    if (url === '/api/shell') {
+      shellReads += 1;
+      return Promise.reject(new Error('read failed'));
+    }
+    return Promise.reject(new Error('save failed'));
+  };
+  const root = await paintMore(harness);
+  root.querySelector('[data-pin-view="map"]').dispatchEvent(event('click', { bubbles: true }));
+  await settle();
+  await settle();
+  assert.strictEqual(shellReads, 1);
+  assert.deepStrictEqual(namedApps(harness.document.querySelector('#app-rail')), ['home', 'search', 'more', 'import', 'settings', 'network', 'agents']);
+  assert.strictEqual(root.querySelector('.more-live').textContent, "couldn't save that. try again.");
+  assert.strictEqual(root.querySelector('[data-pin-view="map"]').getAttribute('aria-pressed'), 'false');
+});
+
+asyncCase('state lines skip a rejection, a hang, and an unexpected shape', async () => {
+  const harness = createHarness({ pinned: [] });
+  harness.window.apiJson = (url, options) => {
+    if (url === '/app/activities/api/index') return Promise.reject(new Error('no'));
+    if (url === '/app/transcripts/api/index') {
+      return new Promise((_resolve, reject) => {
+        options.signal.addEventListener('abort', () => reject(new Error('aborted')));
+      });
+    }
+    if (url === '/app/map/api/index') return Promise.resolve({ unexpected: true });
+    if (url === '/app/body/api/index') return Promise.resolve({ coverage: null });
+    if (url === '/app/speakers/api/index') return Promise.resolve({ coverage: { start: '20260303', end: '20261025' } });
+    if (url === '/app/entities/api/journal/summary') return Promise.resolve({ folder_counts: { all: 4 } });
+    if (url === '/app/import/api/list') return Promise.resolve({ total: 1 });
+    if (url === '/app/network/api/clients') return Promise.resolve({ clients: [] });
+    if (url === '/app/thinking/api/state') return Promise.resolve({ providers: { active_lane: { lane: 'none' }, saved_lane: { lane: 'local' } } });
+    return Promise.reject(new Error(url));
+  };
+  const root = await paintMore(harness, { timeout: 40 });
+  const stateOf = (name) => root.querySelector('.more-card[data-app-name="' + name + '"] .more-state');
+  for (const name of ['activities', 'transcripts', 'map']) {
+    assert.strictEqual(stateOf(name).hidden, true, name);
+    assert.strictEqual(stateOf(name).textContent, '', name);
+  }
+  assert.strictEqual(stateOf('body').textContent, 'nothing yet');
+  assert.ok(!stateOf('body').classList.contains('more-state-action'));
+  const since = harness.window.JournalFormat.sinceDay('20260303');
+  assert.ok(since);
+  assert.strictEqual(stateOf('speakers').textContent, 'since ' + since);
+  assert.strictEqual(stateOf('entities').textContent, '4 kept');
+  assert.strictEqual(stateOf('import').textContent, '1 import');
+  assert.strictEqual(stateOf('network').textContent, 'no devices yet');
+  assert.ok(stateOf('network').classList.contains('more-state-action'));
+  assert.strictEqual(stateOf('thinking').textContent, 'not set up yet');
+  assert.ok(stateOf('thinking').classList.contains('more-state-action'));
+  assert.strictEqual(root.querySelector('.more-live').textContent, '');
+  assert.ok(!root.innerHTML.includes("couldn't"));
+});
+
+asyncCase('more boots with its own title', async () => {
+  const harness = createHarness({
+    boot: true,
+    pathname: '/app/more/',
+    pinned: ['search'],
+    fetchResponses: {
+      '/app/support/background': { status: 200, body: '' },
+      '/app/more/workspace': { status: 200, body: '<div data-workspace="more"></div>' },
+    },
+  });
+  await harness.boot();
+  assert.strictEqual(harness.document.title, 'more - journal');
+  assert.strictEqual(moreLabel(harness.document.querySelector('#app-rail').innerHTML), 'more');
 });
 
 testCase('status instrument target', () => {

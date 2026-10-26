@@ -21,15 +21,24 @@ Framework-level shell changes live in [CONVEY.md](CONVEY.md).
 
 ## Shell chrome metadata
 
-`/api/shell` exposes each registry row as a 12-field `ShellApp`: `app_bar`,
-`background_url`, `date_nav`, `icon`, `icon_svg`, `label`,
-`launcher_group`, `launcher_rank`, `name`, `rail_group`, `rail_rank`, and
-`workspace_url`. There is no starred-app state.
+`/api/shell` exposes each registry row with the fields the chrome reads:
+`app_bar`, `background_url`, `date_nav`, `description`, `focus`, `icon`,
+`icon_svg`, `keywords`, `label`, `name`, `pinnable`, `rail_group`,
+`rail_rank`, `source`, and `workspace_url`. `focus` is
+`{ "group": "keeps"|"shape"|"runs", "rank": <number> }`, or `null` on `more`.
+`rail_group` is `"management"` or `null`.
 
-The launcher renders every app once by `launcher_group` and `launcher_rank`.
-Apps with a non-null `rail_group` render in the pinned rail by `rail_rank`;
-the `primary` and `management` rail groups are independent of launcher
-grouping.
+`pinned` is not stored on that registry payload. Each `GET /api/shell`
+inserts it for that request, the same way it inserts `clock`: the resolved
+`convey.pinned_views` list from `config/journal.json`. The side rail's top
+group is home, then those pins, then `more`. The bottom group is the
+management rail (import, settings, network, and agents when agent routes are
+mounted), ordered by `rail_rank`. `/app/more/` lists every served view except
+more: what it shows, where its contents come from, and a pin control for each
+pinnable view.
+
+`PUT /api/shell/pins` with `{"view","pinned"}` writes only
+`convey.pinned_views` and returns `{"pinned":[...]}`.
 
 ## Journal storage
 

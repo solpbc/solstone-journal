@@ -111,6 +111,8 @@ fn main() {
     let network_workspace = network_root.join("workspace.html");
     let network_static = network_root.join("network.js");
     let agents_workspace = manifest.join("assets/agents/workspace.html");
+    let more_workspace = manifest.join("assets/more/workspace.html");
+    let more_static = manifest.join("assets/more/more.js");
 
     let mut files = Vec::new();
     collect_files(&static_root, &mut files);
@@ -128,6 +130,8 @@ fn main() {
         &network_workspace,
         &network_static,
         &agents_workspace,
+        &more_workspace,
+        &more_static,
     ] {
         println!("cargo:rerun-if-changed={}", path.display());
     }
@@ -161,6 +165,8 @@ fn main() {
     assets.push(("/app/network/workspace".to_owned(), network_workspace));
     assets.push(("/app/network/static/network.js".to_owned(), network_static));
     assets.push(("/app/agents/workspace".to_owned(), agents_workspace));
+    assets.push(("/app/more/workspace".to_owned(), more_workspace));
+    assets.push(("/app/more/static/more.js".to_owned(), more_static));
     assets.sort_by(|left, right| left.0.cmp(&right.0));
 
     let speakers = read_object(&speakers_copy);

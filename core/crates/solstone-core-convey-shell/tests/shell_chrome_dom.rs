@@ -17,14 +17,22 @@ fn shell_chrome_dom_contract() {
         ),
         Ok(_) => {}
     }
+    let payload =
+        serde_json::to_vec(&solstone_core_convey_shell::registry::shell_payload_with_agents(true))
+            .expect("generated shell payload");
+    let fixture =
+        std::env::temp_dir().join(format!("solstone-shell-chrome-{}.json", std::process::id()));
+    std::fs::write(&fixture, payload).expect("generated shell fixture");
     let output = Command::new("node")
         .arg(format!(
             "{}/tests/shell_chrome_dom.js",
             env!("CARGO_MANIFEST_DIR")
         ))
         .arg(env!("CARGO_MANIFEST_DIR"))
+        .arg(&fixture)
         .output()
         .expect("shell chrome DOM harness starts");
+    let _ = std::fs::remove_file(&fixture);
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
         output.status.success(),

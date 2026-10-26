@@ -8,6 +8,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- the list of journal apps is now a page called more. it lists every view with what it shows and where its contents come from, and, for some, how far back it goes or what still needs setting up. pin a view to the side rail, or unpin it, and your journal keeps that choice wherever you open it. curation is now called suggestions, matching its page.
 - work stories use the original material when it fits. when it is too long, they use saved screen descriptions and topics to leave more room for the activity. spoken words and other context stay alongside them.
 - work stories can include short quotes from messages shown on screen. the notes are labelled unverified, with the time they entered your journal kept separate from the message date.
 
@@ -17,7 +18,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
-- the side rail names its pages again: on a wide window each icon has its name beside it, and on a narrower one the name sits under it. the button that opens every page now reads "journal apps" and sits after the rail's top group.
+- the side rail names its pages again: on a wide window each icon has its name beside it, and on a narrower one the name sits under it.
 - on a new journal, home no longer adds a "your first week" card a moment after it opens.
 - when your journal thinks with Claude, a stretch where everything came from your terminal and an AI assistant's input box or menu was on screen is described again. in 2.0.58, your journal asked Claude for it in a form Claude doesn't accept, and the stretch was left without a description.
 - on windows, first-time setup no longer stops partway on a computer with a slower disk. setup checks the files that came with your journal, including a large speech model, and it now waits as long as that check keeps moving instead of stopping after a minute. if setup stopped partway for you, this resolves it.

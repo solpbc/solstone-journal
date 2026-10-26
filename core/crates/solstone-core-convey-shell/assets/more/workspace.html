@@ -1,0 +1,31 @@
+<style>
+  .more-page { max-width: 1040px; margin: 0 auto; padding: 28px 20px 80px; color: var(--ink); }
+  .more-page h1 { font-size: 1.6rem; line-height: 1.15; margin: 0 0 8px; }
+  .more-lede { margin: 0 0 16px; max-width: 42rem; }
+  .more-live { min-height: 1.2em; margin: 0 0 12px; }
+  .more-filter { display: block; width: 100%; max-width: 28rem; margin: 0 0 22px; padding: 8px 10px; border: 1px solid var(--hairline); border-radius: 8px; background: var(--paper); color: inherit; font: inherit; }
+  .more-group { margin: 0 0 22px; }
+  .more-group h2 { font-size: 1.05rem; margin: 0; }
+  .more-sub { margin: 2px 0 10px; color: var(--ink-faint); }
+  .more-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
+  .more-card { position: relative; background: var(--cream-bright); border: 1px solid var(--hairline); border-radius: 14px; }
+  .more-card-link { display: flex; flex-direction: column; gap: 6px; min-height: 100%; padding: 14px 40px 14px 14px; color: inherit; text-decoration: none; font-size: 14px; }
+  .more-card-top { display: flex; align-items: center; gap: 8px; }
+  .more-card-label { font-weight: 700; }
+  .more-card-source { font-style: italic; }
+  .more-state { color: var(--ink-faint); }
+  .more-state-action { color: var(--orange-text-aa); font-weight: 600; }
+  .more-pin { position: absolute; top: 8px; right: 8px; width: 32px; height: 32px; display: inline-flex; align-items: center; justify-content: center; }
+  .more-pin-button { appearance: none; border: 0; border-radius: 8px; background: transparent; color: inherit; cursor: pointer; opacity: 0; padding: 0; }
+  .more-card:hover .more-pin-button,
+  .more-card:focus-within .more-pin-button,
+  .more-pin-button[aria-pressed="true"] { opacity: 1; }
+  .more-pin-button[aria-pressed="true"] { color: var(--orange-ink); }
+  .more-pin-static { color: var(--ink-faint); }
+  .more-pin svg, .more-card-icon svg { width: 22px; height: 22px; }
+  .more-empty { margin: 8px 0 0; }
+  @media (hover: none) { .more-pin-button { opacity: 1; } }
+  @media (max-width: 700px) { .more-grid { grid-template-columns: 1fr; } .more-page { padding: 20px 16px 72px; } }
+</style>
+<main id="more-root" class="more-page" tabindex="-1"></main>
+<script src="/app/more/static/more.js"></script>

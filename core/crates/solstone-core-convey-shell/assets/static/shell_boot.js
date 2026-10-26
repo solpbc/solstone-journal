@@ -127,18 +127,30 @@
     );
   }
 
-  // The rail shows its labels and names the toggle after the panel it opens;
-  // the dock's narrower slot keeps "more".
-  function launcherToggle(currentApp, visibleApps, restLabel = 'more') {
-    const isCurrent = !visibleApps.some((app) => app.name === currentApp.name);
-    const label = isCurrent ? `journal apps, current: ${currentApp.label}` : 'journal apps';
+  function pinnedApps(shell) {
+    const names = Array.isArray(shell.pinned) ? shell.pinned : [];
+    const seen = new Set();
+    const apps = [];
+    for (const name of names) {
+      if (name === 'home' || name === 'more' || seen.has(name)) continue;
+      const app = findApp(shell, name);
+      if (!app) continue;
+      seen.add(name);
+      apps.push(app);
+    }
+    return apps;
+  }
+
+  function moreLink(shell, currentAppName, surfaceApps, className) {
+    const more = findApp(shell, 'more');
+    const icon = more && more.icon_svg ? more.icon_svg : '';
+    const onMore = currentAppName === 'more';
+    const onSurface = surfaceApps.some((app) => app.name === currentAppName);
+    const isCurrent = onMore || !onSurface;
     return (
-      `<button type="button" class="app-launcher-toggle${isCurrent ? ' is-current' : ''}"` +
-      ` data-app-launcher-toggle aria-expanded="false" aria-controls="app-launcher"` +
-      ` aria-haspopup="dialog" aria-label="${escapeHtml(label)}">` +
-      '<span class="app-chrome-icon" aria-hidden="true">⌘</span>' +
-      `<span class="app-chrome-label" aria-hidden="true">${escapeHtml(isCurrent ? currentApp.label : restLabel)}</span>` +
-      '</button>'
+      `<a class="${className}${isCurrent ? ' is-current' : ''}" href="/app/more/" data-app-name="more"${onMore ? ' aria-current="page"' : ''}>` +
+      `<span class="app-chrome-icon" aria-hidden="true">${icon}</span>` +
+      '<span class="app-chrome-label">more</span></a>'
     );
   }
 
@@ -153,12 +165,13 @@
     if (!rail || !currentApp) return;
     const status = rail.querySelector('#status-instrument');
     if (status) document.body.appendChild(status);
-    const primary = appsByRank(shell, 'rail_group', 'rail_rank', 'primary');
+    const home = findApp(shell, 'home');
+    const pins = pinnedApps(shell);
     const management = appsByRank(shell, 'rail_group', 'rail_rank', 'management');
-    const railApps = [...primary, ...management];
+    const top = home ? [home, ...pins] : pins;
     rail.innerHTML = [
-      ...primary.map((app) => appLink(app, currentAppName, 'app-rail-link')),
-      launcherToggle(currentApp, railApps, 'journal apps'),
+      ...top.map((app) => appLink(app, currentAppName, 'app-rail-link')),
+      moreLink(shell, currentAppName, [...top, ...management], 'app-rail-link'),
       '<div class="app-rail-spacer" aria-hidden="true"></div>',
       '<div class="app-rail-divider" aria-hidden="true"></div>',
       ...management.map((app) => appLink(app, currentAppName, 'app-rail-link')),
@@ -172,67 +185,13 @@
     if (!dock || !currentApp) return;
     const status = dock.querySelector('#status-instrument');
     if (status) document.body.appendChild(status);
-    const dockApps = appsByRank(shell, 'rail_group', 'rail_rank', 'primary').slice(0, 3);
+    const home = findApp(shell, 'home');
+    const pins = pinnedApps(shell).slice(0, 2);
+    const top = home ? [home, ...pins] : pins;
     dock.innerHTML = [
-      ...dockApps.map((app) => appLink(app, currentAppName, 'app-dock-link')),
-      launcherToggle(currentApp, dockApps)
+      ...top.map((app) => appLink(app, currentAppName, 'app-dock-link')),
+      moreLink(shell, currentAppName, top, 'app-dock-link')
     ].join('');
-  }
-
-  function renderAppLauncher(shell, currentAppName) {
-    const launcher = document.getElementById('app-launcher');
-    if (!launcher) return;
-    const groups = [
-      ['your_journal', 'your journal'],
-      ['understand', 'understand'],
-      ['manage', 'manage']
-    ];
-    const groupMarkup = groups.map(([group, label]) => {
-      const apps = appsByRank(shell, 'launcher_group', 'launcher_rank', group);
-      const rows = apps.map((app) => {
-        const labelText = escapeHtml(app.label);
-        const isCurrent = app.name === currentAppName;
-        return (
-          `<li class="app-launcher-app" data-launcher-app data-label="${labelText.toLowerCase()}">` +
-          `<a href="${escapeHtml(`/app/${encodeURIComponent(app.name)}/`)}"${isCurrent ? ' aria-current="page"' : ''}>${labelText}</a>` +
-          '</li>'
-        );
-      }).join('');
-      return (
-        `<section class="app-launcher-group" data-launcher-group="${group}">` +
-        `<h2>${label}</h2><ul>${rows}</ul></section>`
-      );
-    }).join('');
-
-    launcher.innerHTML =
-      '<div class="app-launcher-panel">' +
-      '<header class="app-launcher-header">' +
-      '<h1>journal apps</h1>' +
-      '<button type="button" data-app-launcher-close aria-label="close">×</button>' +
-      '</header>' +
-      '<label for="app-launcher-filter">find a journal app</label>' +
-      '<input id="app-launcher-filter" type="search" placeholder="find a journal app">' +
-      `<div class="app-launcher-groups">${groupMarkup}</div>` +
-      '<p class="app-launcher-empty" hidden>no journal apps match that search.</p>' +
-      aboutLink(shell) +
-      '</div>';
-
-    const filter = document.getElementById('app-launcher-filter');
-    const rows = Array.from(launcher.querySelectorAll('[data-launcher-app]'));
-    const empty = launcher.querySelector('.app-launcher-empty');
-    filter?.addEventListener('input', () => {
-      const query = filter.value.trim().toLowerCase();
-      let visible = 0;
-      rows.forEach((row) => {
-        const matches = row.dataset.label.includes(query);
-        row.hidden = !matches;
-        if (matches) visible += 1;
-      });
-      launcher.querySelectorAll('[data-launcher-group]').forEach((group) => {
-        group.hidden = !group.querySelector('[data-launcher-app]:not([hidden])');
-      });
-      empty.hidden = visible !== 0;
-    });
   }
 
   function renderStatusInstrument() {
@@ -257,81 +216,22 @@
     }
   }
 
-  function launcherIsOpen() {
-    const launcher = document.getElementById('app-launcher');
-    return Boolean(launcher && !launcher.hidden);
+  function updatePinnedViews(shell, pinnedList) {
+    shell.pinned = Array.isArray(pinnedList) ? pinnedList.slice() : [];
+    const current = pathContext().appName;
+    if (!current || !findApp(shell, current)) return;
+    renderAppRail(shell, current);
+    renderAppDock(shell, current);
+    renderStatusInstrument();
   }
 
-  function setLauncherToggleExpanded(expanded) {
-    document.querySelectorAll('[data-app-launcher-toggle]').forEach((toggle) => {
-      toggle.setAttribute('aria-expanded', String(expanded));
-    });
-  }
-
-  let launcherOpener = null;
-
-  function openLauncher(opener) {
-    const launcher = document.getElementById('app-launcher');
-    if (!launcher || launcherIsOpen()) return;
-    launcherOpener = opener;
-    launcher.inert = false;
-    launcher.removeAttribute('inert');
-    launcher.hidden = false;
-    setLauncherToggleExpanded(true);
-  }
-
-  function closeLauncher(restoreFocus = true) {
-    const launcher = document.getElementById('app-launcher');
-    if (!launcher || !launcherIsOpen()) return;
-    launcher.hidden = true;
-    launcher.inert = true;
-    setLauncherToggleExpanded(false);
-    // Release the modal's background inert state before restoring focus.
-    window.ConveyModalLayer?.reconcile();
-    if (restoreFocus) {
-      const visible = (element) => element?.isConnected && element.getClientRects().length > 0;
-      const target = visible(launcherOpener) ? launcherOpener
-        : Array.from(document.querySelectorAll('[data-app-launcher-toggle]')).find(visible);
-      target?.focus();
-    }
-    launcherOpener = null;
-  }
-
-  let launcherInteractionsInstalled = false;
-
-  function installLauncherInteractions() {
-    if (launcherInteractionsInstalled) return;
-    const launcher = document.getElementById('app-launcher');
-    if (!launcher) return;
-    launcherInteractionsInstalled = true;
-
-    document.addEventListener('click', (event) => {
-      const target = event.target instanceof Element ? event.target : null;
-      if (target?.closest('[data-app-launcher-toggle]')) {
-        openLauncher(target.closest('[data-app-launcher-toggle]'));
-        return;
-      }
-      if (target?.closest('[data-app-launcher-close]')) closeLauncher();
-    });
-    launcher.addEventListener('click', (event) => {
-      if (event.target === launcher) {
-        closeLauncher();
-        return;
-      }
-      const target = event.target instanceof Element ? event.target : null;
-      if (target?.closest('[data-launcher-app] a')) {
-        closeLauncher(false);
-      }
-    });
-    document.addEventListener('keydown', (event) => {
-      if (event.key !== 'Escape' || !launcherIsOpen()) return;
-      event.preventDefault();
-      event.stopImmediatePropagation();
-      closeLauncher();
-    });
-    window.addEventListener('presentation-mode:change', (event) => {
-      if (event.detail?.on) closeLauncher();
-    });
+  if (!window.solShellChrome) {
+    window.solShellChrome = {
+      renderAppRail,
+      renderAppDock,
+      renderStatusInstrument,
+      updatePinnedViews,
+    };
   }
 
   function seedGlobals(shell) {
@@ -377,9 +277,7 @@
       seedGlobals(shell);
       renderAppRail(shell, app.name);
       renderAppDock(shell, app.name);
-      renderAppLauncher(shell, app.name);
       renderStatusInstrument();
-      installLauncherInteractions();
       applyBodyState(app);
       window.resolveSolShellReady(shell);
 

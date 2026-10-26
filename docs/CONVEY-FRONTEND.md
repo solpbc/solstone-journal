@@ -32,14 +32,17 @@ serving path.
 
 ## Shell boot sequence
 
-1. Static shell parses with `#app-launcher`, `#app-rail`, `#app-dock`, and
-   `#status-instrument` slots. The launcher is a direct body child.
-2. `GET /api/shell` returns the app registry and shell state. `shell_boot.js`
-   calls `renderAppRail`, `renderAppDock`, `renderAppLauncher`,
-   `renderStatusInstrument`, and `installLauncherInteractions`. Status sits in
+1. Static shell parses with `#app-rail`, `#app-dock`, and `#status-instrument`
+   slots.
+2. `GET /api/shell` returns the app registry and shell state. `pinned` is
+   computed for that request, the same way `clock` is, and is not cached with
+   the registry. `shell_boot.js` calls `renderAppRail`, `renderAppDock`, and
+   `renderStatusInstrument`. The rail's top group is home, the resolved pins,
+   and more. The dock is home, the first two pins, and more. Status sits in
    the desktop rail or mobile dock, with a tooltip and a link to Health details.
    The same status node survives navigation rebuilds. Health mounts the shared
-   status details section after its workspace loads.
+   status details section after its workspace loads. `/app/more/` is the page
+   that lists every other view.
 3. The workspace fragment for the current app is fetched and mounted.
 4. The fragment's script(s) run; each app makes **at most one initial-state
    fetch** before first meaningful paint (see below), then subscribes to its
@@ -62,26 +65,31 @@ contract. The day, where an app is day-scoped, lives in the URL path
       "icon_svg": "<svg …>",
       "date_nav": false,
       "app_bar": true,
-      "launcher_group": "your_journal",
-      "launcher_rank": 0,
-      "rail_group": "primary",
+      "pinnable": false,
+      "focus": { "group": "keeps", "rank": 0 },
+      "description": "today and yesterday, written up, and anything your journal needs from you",
+      "source": "written by your journal from everything in it",
+      "keywords": ["today", "yesterday", "briefing", "week"],
+      "rail_group": null,
       "rail_rank": 0,
       "workspace_url": "/app/home/workspace",
       "background_url": null
     }
   ],
+  "pinned": ["search", "entities", "thinking"],
   "settings": { "reporting_enabled": true }
 }
 ```
 
 Notes:
 
-- Each app has 12 fields: `app_bar`, `background_url`, `date_nav`, `icon`,
-  `icon_svg`, `label`, `launcher_group`,
-  `launcher_rank`, `name`, `rail_group`, `rail_rank`, and `workspace_url`.
-  The grouped launcher sorts by launcher group/rank. The pinned rail is the
-  independent non-null rail group/rank projection; it is not a persisted
-  starred or user-reordered list.
+- Each app carries `app_bar`, `background_url`, `date_nav`, `description`,
+  `focus`, `icon`, `icon_svg`, `keywords`, `label`, `name`, `pinnable`,
+  `rail_group`, `rail_rank`, `source`, and `workspace_url`. `focus` is
+  `{ "group": "keeps"|"shape"|"runs", "rank": <number> }`, or `null` on
+  `more`. `rail_group` is `"management"` or `null`. The side rail's top group
+  is home, then `pinned`, then more. `pinned` is per-request chrome, inserted
+  like `clock`, and is not a field of the registry payload built at startup.
 - `workspace_url` always points at the static workspace fragment route.
   `background_url` points at the static background fragment route when present;
   a `null` `background_url` means the app registers no background service.

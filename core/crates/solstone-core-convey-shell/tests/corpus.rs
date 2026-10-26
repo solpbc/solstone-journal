@@ -406,7 +406,7 @@ fn apply_permanent_global_facet_contract_removal_divergence(expected: &mut Value
     }
 }
 
-fn strip_permanent_launcher_metadata_from_actual(actual: &mut Value) {
+fn strip_permanent_app_metadata_from_actual(actual: &mut Value) {
     let apps = actual["apps"]
         .as_array_mut()
         .expect("shell apps are an array");
@@ -415,23 +415,46 @@ fn strip_permanent_launcher_metadata_from_actual(actual: &mut Value) {
         let name = object
             .get("name")
             .and_then(Value::as_str)
-            .unwrap_or("<unnamed>");
+            .unwrap_or("<unnamed>")
+            .to_owned();
 
-        let launcher_group = object
-            .get("launcher_group")
-            .and_then(Value::as_str)
-            .unwrap_or_else(|| panic!("actual shell app {name} has no string launcher_group"));
         assert!(
-            matches!(launcher_group, "your_journal" | "understand" | "manage"),
-            "actual shell app {name} has invalid launcher_group {launcher_group:?}"
+            object.get("pinnable").is_some_and(Value::is_boolean),
+            "actual shell app {name} has no boolean pinnable"
         );
         assert!(
-            object.get("launcher_rank").is_some_and(Value::is_u64),
-            "actual shell app {name} has no non-negative integer launcher_rank"
+            object.get("description").is_some_and(Value::is_string),
+            "actual shell app {name} has no string description"
         );
+        assert!(
+            object.get("source").is_some_and(Value::is_string),
+            "actual shell app {name} has no string source"
+        );
+        match object.get("keywords") {
+            Some(Value::Array(keywords)) if keywords.iter().all(Value::is_string) => {}
+            _ => panic!("actual shell app {name} has no string-array keywords"),
+        }
+        match object.get("focus") {
+            Some(Value::Null) => assert_eq!(name, "more", "only more may omit focus"),
+            Some(Value::Object(focus)) => {
+                let group = focus
+                    .get("group")
+                    .and_then(Value::as_str)
+                    .unwrap_or_else(|| panic!("actual shell app {name} has no focus group"));
+                assert!(
+                    matches!(group, "keeps" | "shape" | "runs"),
+                    "actual shell app {name} has invalid focus group {group:?}"
+                );
+                assert!(
+                    focus.get("rank").is_some_and(Value::is_u64),
+                    "actual shell app {name} has no non-negative integer focus rank"
+                );
+            }
+            _ => panic!("actual shell app {name} has no focus object or null"),
+        }
         match object.get("rail_group") {
             Some(Value::Null) => {}
-            Some(Value::String(group)) if matches!(group.as_str(), "primary" | "management") => {}
+            Some(Value::String(group)) if group == "management" => {}
             Some(Value::String(group)) => {
                 panic!("actual shell app {name} has invalid rail_group {group:?}")
             }
@@ -442,13 +465,70 @@ fn strip_permanent_launcher_metadata_from_actual(actual: &mut Value) {
             object.get("rail_rank").is_some_and(Value::is_u64),
             "actual shell app {name} has no non-negative integer rail_rank"
         );
+        if name == "curation" {
+            assert_eq!(
+                object.get("label").and_then(Value::as_str),
+                Some("suggestions"),
+                "curation's display label is suggestions"
+            );
+            object.insert("label".to_owned(), Value::String("curation".to_owned()));
+        }
+        if name != "more" {
+            assert!(
+                !object
+                    .get("description")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .is_empty(),
+                "actual shell app {name} has an empty description"
+            );
+        }
 
-        for field in ["launcher_group", "launcher_rank", "rail_group", "rail_rank"] {
+        for field in [
+            "pinnable",
+            "focus",
+            "description",
+            "source",
+            "keywords",
+            "rail_group",
+            "rail_rank",
+        ] {
             object
                 .remove(field)
-                .expect("validated launcher metadata exists");
+                .unwrap_or_else(|| panic!("validated app metadata {field} exists on {name}"));
         }
     }
+}
+
+/// Permanent documented divergence: `more` is served with the shell and is not
+/// in the frozen corpus. Remove that one app after its metadata has been
+/// validated.
+fn strip_permanent_more_addition_from_actual(actual: &mut Value) {
+    let apps = actual["apps"]
+        .as_array_mut()
+        .expect("shell apps are an array");
+    assert_eq!(
+        apps.iter().filter(|app| app["name"] == "more").count(),
+        1,
+        "the live shell contains exactly one more app"
+    );
+    apps.retain(|app| app["name"] != "more");
+}
+
+fn strip_permanent_pinned_from_actual(actual: &mut Value) {
+    let pinned = actual
+        .get("pinned")
+        .unwrap_or_else(|| panic!("actual shell has no pinned list"));
+    assert!(
+        pinned
+            .as_array()
+            .is_some_and(|items| items.iter().all(Value::is_string)),
+        "actual shell pinned list must be an array of strings"
+    );
+    actual
+        .as_object_mut()
+        .expect("shell object")
+        .remove("pinned");
 }
 
 #[test]
@@ -527,61 +607,82 @@ fn global_facet_contract_divergence_rejects_missing_or_malformed_fields_before_r
     }
 }
 
-#[test]
-fn permanent_launcher_metadata_divergence_validates_and_strips_only_metadata() {
-    let app = || {
-        json!({
-            "name": "home",
-            "starred": false,
-            "launcher_group": "your_journal",
-            "launcher_rank": 0,
-            "rail_group": "primary",
-            "rail_rank": 0
-        })
-    };
+fn app_metadata(name: &str) -> Value {
+    json!({
+        "name": name,
+        "label": if name == "curation" { "suggestions" } else { name },
+        "pinnable": name != "more" && name != "home",
+        "focus": if name == "more" {
+            Value::Null
+        } else {
+            json!({"group": "keeps", "rank": 0})
+        },
+        "description": if name == "more" { "" } else { "shows something" },
+        "source": "",
+        "keywords": ["one"],
+        "rail_group": if name == "import" { json!("management") } else { Value::Null },
+        "rail_rank": 0
+    })
+}
 
+#[test]
+fn permanent_app_metadata_strip_requires_valid_fields_on_every_app() {
     let mut actual = json!({
         "apps": [
-            app(),
+            app_metadata("home"),
             {
                 "name": "body",
                 "other_key": "unchanged",
-                "launcher_group": "your_journal",
-                "launcher_rank": 4,
+                "label": "body",
+                "pinnable": true,
+                "focus": {"group": "keeps", "rank": 4},
+                "description": "shows something",
+                "source": "from somewhere",
+                "keywords": ["a", "b"],
                 "rail_group": null,
                 "rail_rank": 0
-            }
+            },
+            app_metadata("curation")
         ]
     });
-    strip_permanent_launcher_metadata_from_actual(&mut actual);
+    strip_permanent_app_metadata_from_actual(&mut actual);
     assert_eq!(
         actual,
         json!({
             "apps": [
-                {"name": "home", "starred": false},
-                {"name": "body", "other_key": "unchanged"}
+                {"name": "home", "label": "home"},
+                {"name": "body", "other_key": "unchanged", "label": "body"},
+                {"name": "curation", "label": "curation"}
             ]
         }),
         "metadata stripping preserves all other app keys"
     );
 
-    for (case, mut actual) in [
+    for (case, mut broken) in [
         (
             "missing field",
             json!({"apps": [{
                 "name": "home",
-                "launcher_group": "your_journal",
-                "launcher_rank": 0,
-                "rail_group": "primary"
+                "label": "home",
+                "pinnable": false,
+                "focus": {"group": "keeps", "rank": 0},
+                "description": "shows something",
+                "source": "",
+                "keywords": [],
+                "rail_group": null
             }]}),
         ),
         (
             "wrong type",
             json!({"apps": [{
                 "name": "home",
-                "launcher_group": "your_journal",
-                "launcher_rank": "0",
-                "rail_group": "primary",
+                "label": "home",
+                "pinnable": "no",
+                "focus": {"group": "keeps", "rank": 0},
+                "description": "shows something",
+                "source": "",
+                "keywords": [],
+                "rail_group": null,
                 "rail_rank": 0
             }]}),
         ),
@@ -589,21 +690,78 @@ fn permanent_launcher_metadata_divergence_validates_and_strips_only_metadata() {
             "unknown group",
             json!({"apps": [{
                 "name": "home",
-                "launcher_group": "other",
-                "launcher_rank": 0,
+                "label": "home",
+                "pinnable": false,
+                "focus": {"group": "primary", "rank": 0},
+                "description": "shows something",
+                "source": "",
+                "keywords": [],
                 "rail_group": "primary",
+                "rail_rank": 0
+            }]}),
+        ),
+        (
+            "curation label",
+            json!({"apps": [{
+                "name": "curation",
+                "label": "curation",
+                "pinnable": true,
+                "focus": {"group": "shape", "rank": 2},
+                "description": "shows something",
+                "source": "",
+                "keywords": [],
+                "rail_group": null,
                 "rail_rank": 0
             }]}),
         ),
     ] {
         assert!(
             std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                strip_permanent_launcher_metadata_from_actual(&mut actual);
+                strip_permanent_app_metadata_from_actual(&mut broken);
             }))
             .is_err(),
-            "{case} launcher metadata must fail validation"
+            "{case} app metadata must fail validation"
         );
     }
+}
+
+#[test]
+fn strip_permanent_more_addition_requires_exactly_one_more_app() {
+    for actual in [
+        json!({"apps": []}),
+        json!({"apps": [{"name": "more"}, {"name": "more"}]}),
+    ] {
+        let mut actual = actual;
+        assert!(
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                strip_permanent_more_addition_from_actual(&mut actual);
+            }))
+            .is_err()
+        );
+    }
+    let mut actual = json!({"apps": [{"name": "home"}, {"name": "more"}]});
+    strip_permanent_more_addition_from_actual(&mut actual);
+    assert_eq!(actual, json!({"apps": [{"name": "home"}]}));
+}
+
+#[test]
+fn strip_permanent_pinned_requires_a_string_array() {
+    for actual in [
+        json!({}),
+        json!({"pinned": [1]}),
+        json!({"pinned": "search"}),
+    ] {
+        let mut actual = actual;
+        assert!(
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                strip_permanent_pinned_from_actual(&mut actual);
+            }))
+            .is_err()
+        );
+    }
+    let mut actual = json!({"pinned": ["search"], "version": "x"});
+    strip_permanent_pinned_from_actual(&mut actual);
+    assert_eq!(actual, json!({"version": "x"}));
 }
 
 fn journal_for_phase(phase: &str) -> TempDir {
@@ -756,8 +914,10 @@ async fn corpus_gate_and_converted_surface_match_all_non_deferred_cases() {
                     apply_permanent_news_removal_divergence(&mut expected);
                     apply_permanent_support_background_removal_divergence(&mut expected);
                     apply_permanent_starred_removal_divergence(&mut expected);
-                    strip_permanent_launcher_metadata_from_actual(&mut actual);
+                    strip_permanent_app_metadata_from_actual(&mut actual);
                     strip_permanent_map_addition_from_actual(&mut actual);
+                    strip_permanent_more_addition_from_actual(&mut actual);
+                    strip_permanent_pinned_from_actual(&mut actual);
                     actual.as_object_mut().unwrap().remove("clock");
                 }
                 if phase == "established" && path == "/api/system/status" {
@@ -890,10 +1050,9 @@ async fn registry_contract_is_stable() {
     let shell: Value = serde_json::from_slice(&shell_body).expect("shell parses");
     let apps = shell["apps"].as_array().expect("apps array");
     assert!(shell.get("chat_bar").is_none());
-    assert_eq!(apps.len(), 17);
+    assert_eq!(apps.len(), 18);
     for app in apps {
-        // `starred` and the global facet capability were removed; launcher and rail metadata add four fields.
-        assert_eq!(app.as_object().unwrap().len(), 12);
+        assert_eq!(app.as_object().unwrap().len(), 15);
         assert!(app["icon_svg"].is_string());
     }
     let backgrounds: Vec<_> = apps

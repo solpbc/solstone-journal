@@ -13,8 +13,11 @@ pub struct AppDefinition {
     pub icon: &'static str,
     pub label: &'static str,
     pub lucide_icon: &'static str,
-    pub launcher_group: AppLauncherGroup,
-    pub launcher_rank: u8,
+    pub pinnable: bool,
+    pub focus: Option<Focus>,
+    pub description: &'static str,
+    pub source: &'static str,
+    pub keywords: &'static [&'static str],
     pub rail_group: Option<RailGroup>,
     pub rail_rank: u8,
     pub date_nav: Option<DateNav>,
@@ -22,18 +25,58 @@ pub struct AppDefinition {
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
+pub struct Focus {
+    pub group: FocusGroup,
+    pub rank: u8,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub enum AppLauncherGroup {
-    YourJournal,
-    Understand,
-    Manage,
+pub enum FocusGroup {
+    Keeps,
+    Shape,
+    Runs,
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RailGroup {
-    Primary,
     Management,
+}
+
+const fn focus(group: FocusGroup, rank: u8) -> Option<Focus> {
+    Some(Focus { group, rank })
+}
+
+const fn view(
+    name: &'static str,
+    icon: &'static str,
+    label: &'static str,
+    lucide_icon: &'static str,
+    pinnable: bool,
+    focus: Option<Focus>,
+    description: &'static str,
+    source: &'static str,
+    keywords: &'static [&'static str],
+    rail_group: Option<RailGroup>,
+    rail_rank: u8,
+    date_nav: Option<DateNav>,
+) -> AppDefinition {
+    AppDefinition {
+        name,
+        icon,
+        label,
+        lucide_icon,
+        pinnable,
+        focus,
+        description,
+        source,
+        keywords,
+        rail_group,
+        rail_rank,
+        date_nav,
+        has_background: false,
+    }
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
@@ -60,30 +103,35 @@ const fn content_date_nav(one: &'static str, other: &'static str, none: &'static
 
 /// Agents are how an owner puts their journal to work, and nothing else in
 /// the journal links to them, so they keep a management rail slot.
-pub static AGENTS_APP: AppDefinition = AppDefinition {
-    name: "agents",
-    icon: "🤖",
-    label: "agents",
-    lucide_icon: "bot",
-    launcher_group: AppLauncherGroup::Manage,
-    launcher_rank: 2,
-    rail_group: Some(RailGroup::Management),
-    rail_rank: 3,
-    date_nav: None,
-    has_background: false,
-};
+pub static AGENTS_APP: AppDefinition = view(
+    "agents",
+    "🤖",
+    "agents",
+    "bot",
+    false,
+    focus(FocusGroup::Runs, 3),
+    "connect an agent to read and search your journal, within what you choose",
+    "agents you connect",
+    &["claude", "chatgpt", "mcp", "connect", "solstone.me"],
+    Some(RailGroup::Management),
+    3,
+    None,
+);
 
 pub static APP_REGISTRY: &[AppDefinition] = &[
-    AppDefinition {
-        name: "activities",
-        icon: "📅",
-        label: "activities",
-        lucide_icon: "calendar-days",
-        launcher_group: AppLauncherGroup::Understand,
-        launcher_rank: 5,
-        rail_group: None,
-        rail_rank: 0,
-        date_nav: Some(DateNav {
+    view(
+        "activities",
+        "📅",
+        "activities",
+        "calendar-days",
+        true,
+        focus(FocusGroup::Keeps, 1),
+        "what you did each day, sorted by facet",
+        "written up by your journal from what you shared",
+        &["day", "calendar", "facets", "did"],
+        None,
+        0,
+        Some(DateNav {
             allow_future: true,
             step: None,
             unit: DateNavUnit {
@@ -92,200 +140,274 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
                 none: "no activities",
             },
         }),
-        has_background: false,
-    },
-    AppDefinition {
-        name: "backup",
-        icon: "🛡️",
-        label: "backup",
-        lucide_icon: "history",
-        launcher_group: AppLauncherGroup::Manage,
-        launcher_rank: 3,
-        rail_group: None,
-        rail_rank: 0,
-        date_nav: None,
-        has_background: false,
-    },
-    AppDefinition {
-        name: "body",
-        icon: "🫀",
-        label: "body",
-        lucide_icon: "heart-pulse",
-        launcher_group: AppLauncherGroup::YourJournal,
-        launcher_rank: 4,
-        rail_group: None,
-        rail_rank: 0,
-        date_nav: Some(content_date_nav("reading", "readings", "no readings")),
-        has_background: false,
-    },
-    AppDefinition {
-        name: "curation",
-        icon: "✨",
-        label: "curation",
-        lucide_icon: "wand-sparkles",
-        launcher_group: AppLauncherGroup::Understand,
-        launcher_rank: 4,
-        rail_group: None,
-        rail_rank: 0,
-        date_nav: None,
-        has_background: false,
-    },
-    AppDefinition {
-        name: "entities",
-        icon: "📇",
-        label: "entities",
-        lucide_icon: "contact",
-        launcher_group: AppLauncherGroup::Understand,
-        launcher_rank: 1,
-        rail_group: Some(RailGroup::Primary),
-        rail_rank: 3,
-        date_nav: None,
-        has_background: false,
-    },
-    AppDefinition {
-        name: "health",
-        icon: "🩺",
-        label: "health",
-        lucide_icon: "stethoscope",
-        launcher_group: AppLauncherGroup::Manage,
-        launcher_rank: 4,
-        rail_group: None,
-        rail_rank: 0,
-        date_nav: None,
-        has_background: false,
-    },
-    AppDefinition {
-        name: "home",
-        icon: "🏠",
-        label: "home",
-        lucide_icon: "house",
-        launcher_group: AppLauncherGroup::YourJournal,
-        launcher_rank: 0,
-        rail_group: Some(RailGroup::Primary),
-        rail_rank: 0,
-        date_nav: None,
-        has_background: false,
-    },
-    AppDefinition {
-        name: "import",
-        icon: "📥",
-        label: "import",
-        lucide_icon: "import",
-        launcher_group: AppLauncherGroup::Manage,
-        launcher_rank: 0,
-        rail_group: Some(RailGroup::Management),
-        rail_rank: 0,
-        date_nav: None,
-        has_background: false,
-    },
-    AppDefinition {
-        name: "map",
-        icon: "🗺️",
-        label: "map",
-        lucide_icon: "map",
-        launcher_group: AppLauncherGroup::YourJournal,
-        launcher_rank: 1,
-        rail_group: None,
-        rail_rank: 0,
-        date_nav: Some(content_date_nav("record", "records", "no location")),
-        has_background: false,
-    },
-    AppDefinition {
-        name: "network",
-        icon: "🔗",
-        label: "network",
-        lucide_icon: "network",
-        launcher_group: AppLauncherGroup::Manage,
-        launcher_rank: 1,
-        rail_group: Some(RailGroup::Management),
-        rail_rank: 2,
-        date_nav: None,
-        has_background: false,
-    },
-    AppDefinition {
-        name: "search",
-        icon: "🔍",
-        label: "search",
-        lucide_icon: "search",
-        launcher_group: AppLauncherGroup::Understand,
-        launcher_rank: 0,
-        rail_group: Some(RailGroup::Primary),
-        rail_rank: 2,
-        date_nav: None,
-        has_background: false,
-    },
-    AppDefinition {
-        name: "settings",
-        icon: "⚙️",
-        label: "settings",
-        lucide_icon: "settings",
-        launcher_group: AppLauncherGroup::Manage,
-        launcher_rank: 5,
-        rail_group: Some(RailGroup::Management),
-        rail_rank: 1,
-        date_nav: None,
-        has_background: false,
-    },
-    AppDefinition {
-        name: "speakers",
-        icon: "🎙️",
-        label: "speakers",
-        lucide_icon: "mic-vocal",
-        launcher_group: AppLauncherGroup::YourJournal,
-        launcher_rank: 3,
-        rail_group: None,
-        rail_rank: 0,
-        date_nav: Some(content_date_nav("segment", "segments", "no segments")),
-        has_background: false,
-    },
-    AppDefinition {
-        name: "stats",
-        icon: "📊",
-        label: "stats",
-        lucide_icon: "chart-column",
-        launcher_group: AppLauncherGroup::Understand,
-        launcher_rank: 3,
-        rail_group: None,
-        rail_rank: 0,
-        date_nav: None,
-        has_background: false,
-    },
-    AppDefinition {
-        name: "support",
-        icon: "🛟",
-        label: "support",
-        lucide_icon: "life-buoy",
-        launcher_group: AppLauncherGroup::Manage,
-        launcher_rank: 4,
-        rail_group: None,
-        rail_rank: 0,
-        date_nav: None,
-        has_background: false,
-    },
-    AppDefinition {
-        name: "thinking",
-        icon: "🧠",
-        label: "thinking",
-        lucide_icon: "brain",
-        launcher_group: AppLauncherGroup::Understand,
-        launcher_rank: 2,
-        rail_group: Some(RailGroup::Primary),
-        rail_rank: 4,
-        date_nav: None,
-        has_background: false,
-    },
-    AppDefinition {
-        name: "transcripts",
-        icon: "📜",
-        label: "transcripts",
-        lucide_icon: "scroll-text",
-        launcher_group: AppLauncherGroup::YourJournal,
-        launcher_rank: 2,
-        rail_group: None,
-        rail_rank: 0,
-        date_nav: Some(content_date_nav("segment", "segments", "no segments")),
-        has_background: false,
-    },
+    ),
+    view(
+        "backup",
+        "🛡️",
+        "backup",
+        "history",
+        true,
+        focus(FocusGroup::Runs, 4),
+        "an encrypted copy of your journal that only you can read",
+        "your own storage, or storage sol pbc operates",
+        &["restore", "key", "encrypted", "copy"],
+        None,
+        0,
+        None,
+    ),
+    view(
+        "body",
+        "🫀",
+        "body",
+        "heart-pulse",
+        true,
+        focus(FocusGroup::Keeps, 4),
+        "sleep, workouts and heart readings",
+        "workouts, from a Strava download on the import page",
+        &[
+            "health", "sleep", "workout", "strava", "oura", "apple", "heart",
+        ],
+        None,
+        0,
+        Some(content_date_nav("reading", "readings", "no readings")),
+    ),
+    view(
+        "curation",
+        "✨",
+        "suggestions",
+        "wand-sparkles",
+        true,
+        focus(FocusGroup::Shape, 2),
+        "changes your journal suggests, for you to accept or skip",
+        "suggested by your journal as it works",
+        &["curation", "review", "suggestions", "duplicates"],
+        None,
+        0,
+        None,
+    ),
+    view(
+        "entities",
+        "📇",
+        "entities",
+        "contact",
+        true,
+        focus(FocusGroup::Shape, 0),
+        "the people, companies, projects and tools your journal keeps, to edit, merge or hide",
+        "names your journal found in what it keeps",
+        &[
+            "people",
+            "names",
+            "companies",
+            "projects",
+            "tools",
+            "contacts",
+        ],
+        None,
+        0,
+        None,
+    ),
+    view(
+        "health",
+        "🩺",
+        "health",
+        "stethoscope",
+        true,
+        focus(FocusGroup::Runs, 1),
+        "whether your journal is keeping up: processing, devices, errors",
+        "your journal's own checks",
+        &["status", "errors", "processing", "working", "problem"],
+        None,
+        0,
+        None,
+    ),
+    view(
+        "home",
+        "🏠",
+        "home",
+        "house",
+        false,
+        focus(FocusGroup::Keeps, 0),
+        "today and yesterday, written up, and anything your journal needs from you",
+        "written by your journal from everything in it",
+        &["today", "yesterday", "briefing", "week"],
+        None,
+        0,
+        None,
+    ),
+    view(
+        "import",
+        "📥",
+        "import",
+        "import",
+        false,
+        focus(FocusGroup::Runs, 5),
+        "bring in chats, calendars, notes, audio and workouts",
+        "files you bring in",
+        &[
+            "upload", "chatgpt", "claude", "gemini", "calendar", "notes", "strava", "file",
+        ],
+        Some(RailGroup::Management),
+        0,
+        None,
+    ),
+    view(
+        "map",
+        "🗺️",
+        "map",
+        "map",
+        true,
+        focus(FocusGroup::Keeps, 3),
+        "where you were, day by day, and the places you name",
+        "from the solstone app on your phone, once location is on there",
+        &["location", "places", "where", "gps"],
+        None,
+        0,
+        Some(content_date_nav("record", "records", "no location")),
+    ),
+    view(
+        "more",
+        "⋯",
+        "more",
+        "ellipsis",
+        false,
+        None,
+        "",
+        "",
+        &[],
+        None,
+        0,
+        None,
+    ),
+    view(
+        "network",
+        "🔗",
+        "network",
+        "network",
+        false,
+        focus(FocusGroup::Runs, 2),
+        "pair a phone or computer, and how your devices reach your journal",
+        "your devices",
+        &[
+            "devices", "pair", "phone", "computer", "private", "link", "qr",
+        ],
+        Some(RailGroup::Management),
+        2,
+        None,
+    ),
+    view(
+        "search",
+        "🔍",
+        "search",
+        "search",
+        true,
+        focus(FocusGroup::Keeps, 5),
+        "find words and phrases anywhere in your journal",
+        "everything your journal keeps",
+        &["find", "look"],
+        None,
+        0,
+        None,
+    ),
+    view(
+        "settings",
+        "⚙️",
+        "settings",
+        "settings",
+        false,
+        focus(FocusGroup::Runs, 7),
+        "your profile, keys, transcription, storage and facets",
+        "",
+        &[
+            "profile",
+            "facets",
+            "keys",
+            "storage",
+            "retention",
+            "transcription",
+        ],
+        Some(RailGroup::Management),
+        1,
+        None,
+    ),
+    view(
+        "speakers",
+        "🎙️",
+        "speakers",
+        "mic-vocal",
+        true,
+        focus(FocusGroup::Shape, 1),
+        "the voices in your audio: teach yours, name others, fix who said what",
+        "voices in the audio you shared",
+        &["voice", "voices", "who", "said", "speaker"],
+        None,
+        0,
+        Some(content_date_nav("segment", "segments", "no segments")),
+    ),
+    view(
+        "stats",
+        "📊",
+        "stats",
+        "chart-column",
+        true,
+        focus(FocusGroup::Runs, 6),
+        "how much your journal holds, and how much processing it has done",
+        "your journal's own counts",
+        &["usage", "tokens", "disk", "hours", "numbers"],
+        None,
+        0,
+        None,
+    ),
+    view(
+        "support",
+        "🛟",
+        "support",
+        "life-buoy",
+        true,
+        focus(FocusGroup::Runs, 8),
+        "make a report, or track one you made",
+        "",
+        &["help", "report", "bug", "problem"],
+        None,
+        0,
+        None,
+    ),
+    view(
+        "thinking",
+        "🧠",
+        "thinking",
+        "brain",
+        true,
+        focus(FocusGroup::Runs, 0),
+        "where the thinking happens, and every run",
+        "on your journal's computer, on confidential processing operated by sol pbc, or with your own model",
+        &[
+            "model",
+            "ai",
+            "processing",
+            "local",
+            "claude",
+            "gemini",
+            "gpt",
+            "runs",
+        ],
+        None,
+        0,
+        None,
+    ),
+    view(
+        "transcripts",
+        "📜",
+        "transcripts",
+        "scroll-text",
+        true,
+        focus(FocusGroup::Keeps, 2),
+        "what was said and on screen, moment by moment, with the audio",
+        "from your mic and screen through the solstone app, and from imports",
+        &["audio", "screen", "recording", "said", "heard", "listen"],
+        None,
+        0,
+        Some(content_date_nav("segment", "segments", "no segments")),
+    ),
 ];
 
 #[derive(Debug, Clone, Serialize)]
@@ -300,14 +422,17 @@ pub struct ShellApp {
     pub app_bar: bool,
     pub background_url: Option<String>,
     pub date_nav: Option<DateNav>,
+    pub description: &'static str,
+    pub focus: Option<Focus>,
     pub icon: &'static str,
     pub icon_svg: Option<String>,
+    pub keywords: &'static [&'static str],
     pub label: &'static str,
-    pub launcher_group: AppLauncherGroup,
-    pub launcher_rank: u8,
     pub name: &'static str,
+    pub pinnable: bool,
     pub rail_group: Option<RailGroup>,
     pub rail_rank: u8,
+    pub source: &'static str,
     pub workspace_url: String,
 }
 
@@ -323,7 +448,7 @@ pub fn known_app(name: &str) -> Option<&'static AppDefinition> {
 /// Every app one router serves: the registry, plus the agents app when its
 /// owner routes are mounted. The shell payload, the session gate and the
 /// bare-path redirect all read this one list, so an app that is mounted only
-/// sometimes cannot be in the launcher and missing from the redirect.
+/// sometimes cannot be offered in the shell and missing from the redirect.
 pub fn served_apps(include_agents: bool) -> impl Iterator<Item = &'static AppDefinition> {
     APP_REGISTRY
         .iter()
@@ -353,14 +478,17 @@ pub fn shell_payload_with_agents(include_agents: bool) -> ShellPayload {
                     .has_background
                     .then(|| format!("/app/{}/background", app.name)),
                 date_nav: app.date_nav,
+                description: app.description,
+                focus: app.focus,
                 icon: app.icon,
                 icon_svg: icons.get(app.lucide_icon).cloned(),
+                keywords: app.keywords,
                 label: app.label,
-                launcher_group: app.launcher_group,
-                launcher_rank: app.launcher_rank,
                 name: app.name,
+                pinnable: app.pinnable,
                 rail_group: app.rail_group,
                 rail_rank: app.rail_rank,
+                source: app.source,
                 workspace_url: format!("/app/{}/workspace", app.name),
             })
             .collect(),
@@ -380,8 +508,7 @@ mod tests {
     use tower::ServiceExt;
 
     use super::{
-        APP_REGISTRY, AppLauncherGroup, RailGroup, known_app, shell_payload,
-        shell_payload_with_agents,
+        APP_REGISTRY, FocusGroup, RailGroup, known_app, shell_payload, shell_payload_with_agents,
     };
 
     #[test]
@@ -429,7 +556,7 @@ mod tests {
     }
 
     #[test]
-    fn management_rail_apps_are_ordered_and_network_remains_manage_launcher() {
+    fn management_rail_apps_are_ordered_and_network_focus_is_runs() {
         let mut management_apps: Vec<_> = APP_REGISTRY
             .iter()
             .filter(|app| matches!(app.rail_group, Some(RailGroup::Management)))
@@ -442,7 +569,92 @@ mod tests {
             .iter()
             .find(|app| app.name == "network")
             .expect("network app is present");
-        assert!(matches!(network.launcher_group, AppLauncherGroup::Manage));
+        assert_eq!(
+            network.focus.map(|focus| focus.group),
+            Some(FocusGroup::Runs)
+        );
+    }
+
+    #[test]
+    fn more_app_is_served_and_chat_news_devices_stay_absent() {
+        let more = known_app("more").expect("more is served");
+        assert_eq!(more.label, "more");
+        assert!(!more.pinnable);
+        assert!(more.focus.is_none());
+        assert!(more.rail_group.is_none());
+        assert!(known_app("chat").is_none());
+        assert!(known_app("news").is_none());
+        assert!(known_app("devices").is_none());
+        let payload = shell_payload();
+        assert_eq!(
+            payload.apps.iter().filter(|app| app.name == "more").count(),
+            1
+        );
+    }
+
+    #[test]
+    fn shell_payload_serializes_new_fields_and_omits_top_level_pinned_cache() {
+        let encoded = serde_json::to_value(shell_payload_with_agents(true))
+            .expect("shell payload serializes");
+        assert!(encoded.get("pinned").is_none());
+        let apps = encoded["apps"].as_array().expect("apps array");
+        let mut grouped: std::collections::BTreeMap<&str, Vec<(&str, u64)>> =
+            std::collections::BTreeMap::new();
+        for app in apps {
+            let name = app["name"].as_str().expect("name");
+            assert!(app["pinnable"].is_boolean(), "{name} pinnable");
+            assert!(app["description"].is_string(), "{name} description");
+            assert!(app["source"].is_string(), "{name} source");
+            let keywords = app["keywords"].as_array().expect("keywords");
+            assert!(keywords.iter().all(|keyword| keyword.is_string()));
+            match app.get("focus") {
+                Some(serde_json::Value::Null) => assert_eq!(name, "more"),
+                Some(focus) => {
+                    let group = focus["group"].as_str().expect("focus group");
+                    let rank = focus["rank"].as_u64().expect("focus rank");
+                    assert!(matches!(group, "keeps" | "shape" | "runs"), "{name}");
+                    grouped.entry(group).or_default().push((name, rank));
+                }
+                None => panic!("{name} has no focus"),
+            }
+            if name == "more" {
+                assert_eq!(app["description"], "");
+                assert_eq!(app["pinnable"], false);
+                assert!(app["rail_group"].is_null());
+            } else {
+                assert!(!app["description"].as_str().expect("description").is_empty());
+            }
+            assert!(app.get("launcher_group").is_none());
+            assert!(app.get("launcher_rank").is_none());
+        }
+        for (group, names) in [
+            (
+                "keeps",
+                &["home", "activities", "transcripts", "map", "body", "search"][..],
+            ),
+            ("shape", &["entities", "speakers", "curation"][..]),
+            (
+                "runs",
+                &[
+                    "thinking", "health", "network", "agents", "backup", "import", "stats",
+                    "settings", "support",
+                ][..],
+            ),
+        ] {
+            let mut rows = grouped.remove(group).expect(group);
+            rows.sort_by_key(|(_, rank)| *rank);
+            let ordered: Vec<&str> = rows.iter().map(|(name, _)| *name).collect();
+            let ranks: Vec<u64> = rows.iter().map(|(_, rank)| *rank).collect();
+            assert_eq!(ordered, names, "{group}");
+            assert_eq!(
+                ranks,
+                (0..names.len() as u64).collect::<Vec<_>>(),
+                "{group}"
+            );
+        }
+        assert!(grouped.is_empty());
+        let curation = apps.iter().find(|app| app["name"] == "curation").unwrap();
+        assert_eq!(curation["label"], "suggestions");
     }
 
     #[test]

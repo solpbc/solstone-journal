@@ -27,9 +27,9 @@
 //! ## D4: fixed native registry inventory
 //!
 //! The app definitions and Lucide mapping are compiled into this crate as a
-//! fixed native inventory. Configuration-driven ordering and stars are
-//! intentionally deferred; chat-bar placeholder likewise uses its stable
-//! default, not live state.
+//! fixed native inventory. The side rail's top group is home, then the pins
+//! read from the journal on each `/api/shell` request, then more. The chat-bar
+//! placeholder uses its stable default, not live state.
 //!
 //! ## D5: generated, dependency-free asset embedding
 //!
@@ -96,6 +96,8 @@ use axum::body::Body;
 use axum::extract::Path;
 use axum::http::{StatusCode, header};
 use axum::response::{IntoResponse, Redirect, Response};
+#[cfg(feature = "host")]
+use axum::routing::put;
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use chrono::{Offset, Utc};
@@ -136,6 +138,9 @@ mod network_writes;
 mod pair_window_manager;
 #[cfg(feature = "host")]
 mod paired_device;
+mod pinned;
+#[cfg(feature = "host")]
+mod pinned_write;
 pub mod registry;
 mod relay_access;
 mod relay_admission;
@@ -1237,7 +1242,12 @@ fn router_with_roots(
         .route("/favicon.ico", get(favicon))
         .route("/static/{*path}", get(static_asset))
         .route("/api/shell", get(shell_api))
-        .route("/api/streams/labels", get(streams_labels_api))
+        .route("/api/streams/labels", get(streams_labels_api));
+    #[cfg(feature = "host")]
+    {
+        routes = routes.route("/api/shell/pins", put(pinned_write::put_pins));
+    }
+    let mut routes = routes
         .route(
             "/api/system/about",
             get(|| async {
@@ -1523,6 +1533,9 @@ fn router_with_roots(
         )
         .route("/app/entities/", get(entities::shell))
         .route("/app/entities/workspace", get(entities::workspace))
+        .route("/app/more/", get(more_shell))
+        .route("/app/more/workspace", get(more_workspace))
+        .route("/app/more/static/{*rest}", get(more_static))
         .merge(solstone_core_entities::api_router(journal_root.clone()))
         .merge(solstone_core_settings_web::routes(journal_root.clone()))
         .merge(solstone_core_health_web::routes(journal_root.clone()))
@@ -1655,7 +1668,36 @@ async fn shell_api(
             "today": now.format("%Y%m%d").to_string(),
         }),
     );
+    match pinned::read_pinned_views(&journal.0) {
+        Ok(pinned) => {
+            payload.insert(
+                "pinned".to_string(),
+                Value::Array(pinned.into_iter().map(Value::String).collect()),
+            );
+        }
+        Err(error) => {
+            return solstone_core_convey_http::envelope::error_envelope(
+                "corrupt_config",
+                "your settings couldn't be read.",
+                error.to_string(),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            )
+            .into_response();
+        }
+    }
     Json(Value::Object(payload)).into_response()
+}
+
+async fn more_shell() -> Response {
+    asset_response("/static/shell.html")
+}
+
+async fn more_workspace() -> Response {
+    asset_response("/app/more/workspace")
+}
+
+async fn more_static(Path(rest): Path<String>) -> Response {
+    asset_response(&format!("/app/more/static/{rest}"))
 }
 
 async fn streams_labels_api(Extension(journal): Extension<Arc<JournalRoot>>) -> Response {

@@ -20,13 +20,15 @@ Read it before touching any workspace, shell chrome, or shared client helper.
 
 ### Shell chrome
 
-The canonical static shell has dedicated rail, dock, launcher, and status
-instrument slots. `shell_boot.js` renders the rail, dock, grouped launcher,
-and status instrument from `/api/shell`. The launcher is a body-level modal
-dialog so the shared modal-layer focus and inert behavior applies. The rail
-uses non-null `rail_group`/`rail_rank`; the launcher uses
-`launcher_group`/`launcher_rank` and contains every registered app exactly
-once. Facet selection belongs to the workspace that owns it.
+The canonical static shell has dedicated rail, dock, and status instrument
+slots. `shell_boot.js` renders the rail, dock, and status instrument from
+`/api/shell`. The rail's top group is home, then the pins on that response,
+then more (`/app/more/`). The bottom group is `rail_group` `management` by
+`rail_rank`. `/app/more/` lists every served view except more. Pins are
+`convey.pinned_views` in `config/journal.json`, and `pinned` is inserted on
+each `/api/shell` request the same way `clock` is. `PUT /api/shell/pins`
+returns `{"pinned":[...]}`. Facet selection belongs to the workspace that
+owns it.
 
 ### HTTP API conventions
 
