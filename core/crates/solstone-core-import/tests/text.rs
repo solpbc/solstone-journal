@@ -1404,3 +1404,117 @@ fn limitless_utc_keeps_the_second_repeated_hour_for_elapsed_text() {
         ["015800_300", "020300_300"]
     );
 }
+
+struct StoppingTopics {
+    stop: solstone_core_import::WorkStop,
+    requests: RefCell<usize>,
+}
+
+impl WireClient for StoppingTopics {
+    fn execute(&self, _: &GenerateRequest) -> Result<GenerateResponse, ClientError> {
+        let call = self.requests.borrow().saturating_add(1);
+        *self.requests.borrow_mut() = call;
+        if call == 2 {
+            self.stop.request();
+        }
+        context("roadmap", "workplace")
+    }
+}
+
+fn files_named(root: &Path, name: &str) -> Vec<PathBuf> {
+    let mut found = Vec::new();
+    if !root.exists() {
+        return found;
+    }
+    let mut pending = vec![root.to_path_buf()];
+    while let Some(directory) = pending.pop() {
+        for entry in fs::read_dir(&directory).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                pending.push(path);
+            } else if path.file_name().is_some_and(|item| item == name) {
+                found.push(path);
+            }
+        }
+    }
+    found.sort();
+    found
+}
+
+#[test]
+fn stop_before_the_source_writes_no_raw_transcript_or_marker() {
+    let (_temporary, source, day) = setup("meeting.md", MEETING);
+    let source_bytes = fs::read(&source).unwrap();
+    let stop = solstone_core_import::WorkStop::new();
+    stop.request();
+    let _guard = solstone_core_import::WorkStopGuard::install(&stop);
+    let wire = StoppingTopics {
+        stop: stop.clone(),
+        requests: RefCell::new(0),
+    };
+    let outcome = run(&source, &day, "12:00:00", &wire);
+    let TextImportOutcome::Failed { created, error } = outcome else {
+        panic!("stop before the source is a failed import");
+    };
+    assert!(created.created.is_empty());
+    assert_eq!(error.to_string(), "import stopped");
+    assert_eq!(*wire.requests.borrow(), 0);
+    assert_eq!(fs::read(&source).unwrap(), source_bytes);
+    let journal = day.parent().unwrap().parent().unwrap();
+    assert!(files_named(journal, "meeting.md").is_empty());
+    assert!(files_named(&day, "conversation_transcript.jsonl").is_empty());
+    assert!(
+        !journal
+            .join("imports/20260311_120000/imported.json")
+            .exists()
+    );
+    assert_eq!(
+        read_health_marker(journal, "20260311", HealthMarkerKind::Stream).unwrap(),
+        HealthMarkerState::Absent
+    );
+}
+
+#[test]
+fn stop_after_the_second_model_keeps_the_first_tile_and_starts_no_later_one() {
+    let (_temporary, source, day) = setup("meeting.md", MEETING);
+    let source_bytes = fs::read(&source).unwrap();
+    let stop = solstone_core_import::WorkStop::new();
+    let _guard = solstone_core_import::WorkStopGuard::install(&stop);
+    let wire = StoppingTopics {
+        stop: stop.clone(),
+        requests: RefCell::new(0),
+    };
+    let outcome = run(&source, &day, "12:00:00", &wire);
+    let TextImportOutcome::Failed { created, error } = outcome else {
+        panic!("stop during the second tile is a failed import");
+    };
+    assert_eq!(error.to_string(), "import stopped");
+    assert_eq!(created.created.len(), 1);
+    assert_eq!(created.created[0].segment, "120000_300");
+    assert_eq!(*wire.requests.borrow(), 2);
+    assert_eq!(fs::read(&source).unwrap(), source_bytes);
+
+    let journal = day.parent().unwrap().parent().unwrap();
+    let raw = journal.join("imports/20260311_120000/meeting.md");
+    assert_eq!(fs::read(&raw).unwrap(), source_bytes);
+    assert!(
+        !journal
+            .join("imports/20260311_120000/imported.json")
+            .exists()
+    );
+
+    let transcripts = files_named(&day, "conversation_transcript.jsonl");
+    assert_eq!(transcripts.len(), 1);
+    assert_eq!(
+        transcripts[0],
+        day.join("import.text/120000_300/conversation_transcript.jsonl")
+    );
+    assert!(day.join("import.text/120500_300").is_dir());
+    assert!(
+        !day.join("import.text/120500_300/conversation_transcript.jsonl")
+            .exists()
+    );
+    assert!(!day.join("import.text/123000_300").exists());
+    assert!(!day.join("import.text/130000_300").exists());
+    assert_stream_generation(&day, 1);
+}

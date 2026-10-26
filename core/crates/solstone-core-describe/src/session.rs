@@ -37,7 +37,7 @@ pub trait DescribeSessionFactory {
         &self,
         max_in_flight: usize,
         explicit_journal: Option<&Path>,
-    ) -> Result<Box<dyn DescribeSession>, SessionLaunchError>;
+    ) -> Result<Box<dyn DescribeSession + '_>, SessionLaunchError>;
 }
 
 pub struct SystemSessionFactory;
@@ -65,7 +65,7 @@ impl DescribeSessionFactory for SystemSessionFactory {
         &self,
         max_in_flight: usize,
         explicit_journal: Option<&Path>,
-    ) -> Result<Box<dyn DescribeSession>, SessionLaunchError> {
+    ) -> Result<Box<dyn DescribeSession + '_>, SessionLaunchError> {
         Ok(Box::new(
             Self::client(explicit_journal)?.spawn(max_in_flight)?,
         ))

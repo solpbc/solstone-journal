@@ -147,6 +147,7 @@ pub enum TextImportError {
         path: PathBuf,
         source: std::io::Error,
     },
+    Stopped,
 }
 
 impl fmt::Display for TextImportError {
@@ -180,6 +181,7 @@ impl fmt::Display for TextImportError {
                 path.display()
             ),
             Self::RawCopy { path, source } => write!(formatter, "{}: {source}", path.display()),
+            Self::Stopped => formatter.write_str("import stopped"),
         }
     }
 }
@@ -192,6 +194,7 @@ impl Error for TextImportError {
             Self::Write { source, .. } => Some(source),
             Self::StreamMarker { source, .. } => Some(source),
             Self::RawCopy { source, .. } => Some(source),
+            Self::Stopped => None,
             Self::LocalTimeMissing { .. }
             | Self::UnsupportedFormat { .. }
             | Self::RawFilename { .. }
@@ -205,6 +208,9 @@ impl Error for TextImportError {
 /// Model-boundary seam for the topics and setting of each imported segment.
 pub trait WireClient {
     fn execute(&self, request: &GenerateRequest) -> Result<GenerateResponse, ClientError>;
+
+    /// Release a sibling session. Injected clients keep the default.
+    fn finish(&self) {}
 }
 
 /// Production client for the sibling `solstone-core generate` process.
@@ -324,6 +330,9 @@ fn import(
     source_instant: Option<DateTime<Utc>>,
 ) -> ImportResult {
     let early = |error| (Vec::new(), error);
+    if !crate::work_continues() {
+        return Err(early(TextImportError::Stopped));
+    }
     let text = read_transcript(path).map_err(early)?;
     let raw_filename = path
         .file_name()
@@ -347,6 +356,9 @@ fn import(
     let (planned, untimed) =
         plan_tiles(&text, day_dir, start_time, stream, source_instant).map_err(early)?;
     for tile_plan in planned {
+        if !crate::work_continues() {
+            return Err((created, TextImportError::Stopped));
+        }
         let tile_plan = tile_plan.map_err(|error| (created.clone(), error))?;
         let PlannedTile {
             start_offset,
@@ -401,6 +413,9 @@ fn import(
         } else {
             None
         };
+        if !crate::work_continues() {
+            return Err((created, TextImportError::Stopped));
+        }
         let output = parent
             .join(&segment_key)
             .join("conversation_transcript.jsonl");
@@ -1136,6 +1151,9 @@ fn tile_context(
         overflow_text: None,
         transport_retries: None,
     };
+    if !crate::work_continues() {
+        return None;
+    }
     match wire.execute(&request) {
         Ok(GenerateResponse::Generated(response)) => parse_context(&response.text),
         Ok(GenerateResponse::Refused(refused)) => {

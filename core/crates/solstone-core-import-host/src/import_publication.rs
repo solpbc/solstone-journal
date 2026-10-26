@@ -9,8 +9,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use solstone_core_import::ImportError;
 use solstone_core_import::metadata::{
-    AttemptFacts, AttemptRead, AttemptState, IMPORT_FAILED_REASON, hold_import_lock,
-    read_attempt_facts, read_provenance, record_completed_attempt_unlocked,
+    AttemptFacts, AttemptRead, AttemptState, IMPORT_FAILED_REASON, IMPORT_UNCONFIRMED_REASON,
+    hold_import_lock, read_attempt_facts, read_provenance, record_completed_attempt_unlocked,
     record_unconfirmed_attempt_unlocked,
 };
 use solstone_core_import::publish::{
@@ -184,10 +184,12 @@ fn finish_import_attempt_inner(
     let files_created: Vec<PathBuf> = input.created().iter().map(|c| c.path.clone()).collect();
 
     let mut publication_failed = false;
-    let should_publish = match &input {
-        ImportTerminalInput::Success(_) => true,
-        ImportTerminalInput::Failed(created) => !created.is_empty(),
-    };
+    let stopped = !solstone_core_import::work_continues();
+    let should_publish = !stopped
+        && match &input {
+            ImportTerminalInput::Success(_) => true,
+            ImportTerminalInput::Failed(created) => !created.is_empty(),
+        };
 
     if should_publish {
         let import_dir = journal.join("imports").join(import_id);
@@ -232,6 +234,22 @@ fn finish_import_attempt_inner(
         .as_millis() as u64;
 
     let record_res = match &input {
+        _ if stopped => match seams.record_unconfirmed_fn {
+            Some(custom) => custom(
+                journal,
+                import_id,
+                generation,
+                finished_at_ms,
+                Some(IMPORT_UNCONFIRMED_REASON.to_owned()),
+            ),
+            None => record_unconfirmed_attempt_unlocked(
+                journal,
+                import_id,
+                generation,
+                finished_at_ms,
+                Some(IMPORT_UNCONFIRMED_REASON.to_owned()),
+            ),
+        },
         ImportTerminalInput::Success(_) if !publication_failed => match seams.record_completed_fn {
             Some(custom) => custom(journal, import_id, generation, finished_at_ms, None, None),
             None => record_completed_attempt_unlocked(

@@ -13,9 +13,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use solstone_core_import::ImportError;
 use solstone_core_import::metadata::{
-    AttemptState, IMPORT_FAILED_REASON, get_attempt_facts, hold_import_lock, read_provenance,
-    record_completed_attempt_unlocked, record_completed_attempt_with_input_failures_unlocked,
-    record_unconfirmed_attempt_unlocked,
+    AttemptState, IMPORT_FAILED_REASON, IMPORT_UNCONFIRMED_REASON, get_attempt_facts,
+    hold_import_lock, read_provenance, record_completed_attempt_unlocked,
+    record_completed_attempt_with_input_failures_unlocked, record_unconfirmed_attempt_unlocked,
 };
 use solstone_core_import::publish::{
     CreatedSegment, NativePublicationOperations, PublicationInput, PublicationOperations,
@@ -147,9 +147,8 @@ pub fn finish_audio_attempt(
         return;
     };
 
-    // The real guard. `may_write_record` is consulted only after every stream advance,
-    // marker write and event emission, so it cannot protect the stream record; this can.
-    // A superseded generation writes nothing, advances nothing and emits nothing.
+    // Generation is the admission. A superseded generation writes nothing.
+    // Stopping that has already won records the attempt and does not publish.
     let current = read_provenance(journal, import_id)
         .ok()
         .flatten()
@@ -157,6 +156,20 @@ pub fn finish_audio_attempt(
     if current.map(|facts| (facts.generation, facts.state))
         != Some((generation, AttemptState::Running))
     {
+        return;
+    }
+    if !solstone_core_import::work_continues() {
+        let finished_at_ms = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64;
+        let _ = record_unconfirmed_attempt_unlocked(
+            journal,
+            import_id,
+            generation,
+            finished_at_ms,
+            Some(IMPORT_UNCONFIRMED_REASON.to_owned()),
+        );
         return;
     }
 
@@ -173,10 +186,9 @@ pub fn finish_audio_attempt(
                     .and_then(|metadata| get_attempt_facts(&metadata))
                     .is_some_and(|facts| facts.generation == generation)
             };
-            // Inspected, not swallowed. `publish_with_operations` returns Err only when the
-            // `imported.json` write itself failed, and recording Completed over that leaves a
-            // durable record claiming a publication the projection cannot find -- it renders
-            // the row `unconfirmed` while the attempt says completed. Record the truth.
+            // A refused admission and a failed publication record both leave no
+            // publication to call completed. Recording Completed over either
+            // claims a publication the projection cannot find.
             let published = publish_with_operations(
                 PublicationInput {
                     journal,

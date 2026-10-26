@@ -362,3 +362,87 @@ fn a_file_the_sync_already_imported_is_not_imported_again() {
     // Once for the first sync, not for the second, and again when forced.
     assert_eq!(pipeline.0, 2);
 }
+
+struct StoppingAudioPipeline {
+    stop: solstone_core_import::WorkStop,
+    calls: std::cell::RefCell<Vec<String>>,
+}
+
+impl ImportPipeline for StoppingAudioPipeline {
+    fn import_one(
+        &mut self,
+        request: PipelineImportRequest<'_>,
+    ) -> Result<PipelineOutcome, String> {
+        self.calls
+            .borrow_mut()
+            .push(request.source.display().to_string());
+        self.stop.request();
+        Ok(PipelineOutcome::Imported)
+    }
+}
+
+#[test]
+fn stop_after_the_first_audio_import_keeps_that_checkpoint_and_skips_the_next() {
+    let tree = TempDir::new().unwrap();
+    let stop = solstone_core_import::WorkStop::new();
+    let _guard = solstone_core_import::WorkStopGuard::install(&stop);
+    let scanner = Scanner;
+    let probe = Probe;
+    let manifests = Manifests;
+    let clock = Clock;
+    let mut writer = Writer::default();
+    let mut pipeline = StoppingAudioPipeline {
+        stop: stop.clone(),
+        calls: std::cell::RefCell::new(Vec::new()),
+    };
+    let preview = AudioPreviewSeams {
+        scanner: &scanner,
+        probe: &probe,
+        manifests: &manifests,
+        clock: &clock,
+        state_writer: &mut writer,
+    };
+    let mut seams = AudioSaveSeams {
+        preview,
+        pipeline: &mut pipeline,
+    };
+    let outcome = sync_audio_save(
+        &AudioSyncRequest::<SyncSaveRequest>::new(
+            tree.path().to_path_buf(),
+            PathBuf::from("audio"),
+            false,
+            AudioAuto::Enabled,
+        ),
+        &mut seams,
+    )
+    .unwrap();
+    assert_eq!(pipeline.calls.borrow().as_slice(), ["first.wav"]);
+    assert!(outcome.stopped);
+    assert_eq!(
+        outcome.state.root()["files"]["already.wav"]["status"],
+        "imported"
+    );
+    assert_eq!(
+        outcome.state.root()["files"]["first.wav"]["status"],
+        "imported"
+    );
+    assert_eq!(
+        outcome.state.root()["files"]["failed.wav"]["status"],
+        "available"
+    );
+    assert!(
+        outcome.state.root()["files"]["failed.wav"]
+            .get("last_error")
+            .is_none()
+    );
+    assert_eq!(
+        writer.checkpoints[0].root()["files"]["first.wav"]["status"],
+        "imported"
+    );
+    assert!(
+        outcome
+            .items
+            .iter()
+            .all(|item| item.relative_path != "failed.wav")
+    );
+}

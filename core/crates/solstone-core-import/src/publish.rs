@@ -59,6 +59,11 @@ pub enum PublishError {
         path: PathBuf,
         source: serde_json::Error,
     },
+    /// Cancellation or a refused predicate won before any publication side effect.
+    NotAdmitted,
+    /// The attempt generation changed after stream, index, or marker writes
+    /// had started. The publication record and its events were not written.
+    Superseded,
 }
 
 impl fmt::Display for PublishError {
@@ -70,6 +75,8 @@ impl fmt::Display for PublishError {
             Self::RecordDecode { path, source } => {
                 write!(formatter, "{}: {source}", path.display())
             }
+            Self::NotAdmitted => formatter.write_str("import stopped before publication"),
+            Self::Superseded => formatter.write_str("publication superseded by a newer attempt"),
         }
     }
 }
@@ -77,7 +84,7 @@ impl fmt::Display for PublishError {
 impl Error for PublishError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
-            Self::Thinking(_) => None,
+            Self::Thinking(_) | Self::NotAdmitted | Self::Superseded => None,
             Self::RecordWrite(error) => Some(error),
             Self::RecordRead { source, .. } => Some(source),
             Self::RecordDecode { source, .. } => Some(source),
@@ -287,6 +294,15 @@ pub fn publish_with_operations(
     input: PublicationInput<'_>,
     operations: &dyn PublicationOperations,
 ) -> Result<PublicationRecord, PublishError> {
+    // Admission is the one point before stream, index, marker, and event writes.
+    // A refusal here leaves those untouched. Cancellation that arrives after
+    // this check does not unwind the transaction. The attempt generation is
+    // read again immediately before the publication record and its events.
+    let admitted =
+        input.may_write_record.is_none_or(|predicate| predicate()) && crate::work_continues();
+    if !admitted {
+        return Err(PublishError::NotAdmitted);
+    }
     let mut segments = Vec::with_capacity(input.segments.len());
     let mut failed_streams = BTreeSet::new();
     for segment in input.segments {
@@ -391,6 +407,12 @@ pub fn publish_with_operations(
         || day_markers
             .iter()
             .any(|marker| matches!(marker.outcome, DayMarkerStatus::Failed { .. }));
+    // Generation only. A cancellation that won after admission still finishes
+    // this transaction, including its record and events.
+    let still_this_attempt = input.may_write_record.is_none_or(|predicate| predicate());
+    if !still_this_attempt {
+        return Err(PublishError::Superseded);
+    }
     let mut record = PublicationRecord {
         schema: PUBLICATION_SCHEMA.to_owned(),
         status: if failed {
@@ -402,34 +424,31 @@ pub fn publish_with_operations(
         indexing,
         day_markers,
     };
-    let should_write = input.may_write_record.is_none_or(|predicate| predicate());
-    if should_write {
-        record = write_publication_record(input.import_dir, &record)?;
-        // The durable coordinate scope is visible before any admission wakeup.
-        for segment in &record.segments {
-            if matches!(segment.outcome, SegmentBindingOutcome::Bound { .. }) {
-                operations.emit_observed(
-                    input.journal,
-                    input.revision,
-                    &segment.day,
-                    &segment.segment,
-                    &segment.stream,
-                );
-            }
-        }
-        if let Some(day) = days.last() {
-            operations.emit_drain(input.journal, input.revision, day);
-        }
-        if thinking_file_count > 0 && !days.is_empty() {
-            operations.emit_enrichment_ready(
+    record = write_publication_record(input.import_dir, &record)?;
+    // The durable coordinate scope is visible before any admission wakeup.
+    for segment in &record.segments {
+        if matches!(segment.outcome, SegmentBindingOutcome::Bound { .. }) {
+            operations.emit_observed(
                 input.journal,
                 input.revision,
-                input.import_id,
-                input.importer,
-                &days,
-                u64::try_from(thinking_file_count).expect("file count fits u64"),
+                &segment.day,
+                &segment.segment,
+                &segment.stream,
             );
         }
+    }
+    if let Some(day) = days.last() {
+        operations.emit_drain(input.journal, input.revision, day);
+    }
+    if thinking_file_count > 0 && !days.is_empty() {
+        operations.emit_enrichment_ready(
+            input.journal,
+            input.revision,
+            input.import_id,
+            input.importer,
+            &days,
+            u64::try_from(thinking_file_count).expect("file count fits u64"),
+        );
     }
     Ok(record)
 }
@@ -1073,5 +1092,247 @@ mod tests {
             *fake.enrichment.borrow(),
             vec![(vec!["20260801".to_owned()], 1)]
         );
+    }
+
+    #[test]
+    fn cancellation_before_admission_writes_nothing() {
+        let temporary = tempfile::TempDir::new().unwrap();
+        let stop = crate::WorkStop::new();
+        let _guard = crate::WorkStopGuard::install(&stop);
+        stop.request();
+        let segments = vec![segment("20260801", "120000_60")];
+        let fake = FakeOperations::default();
+        let error = publish_with_operations(input(temporary.path(), None, &segments, &[]), &fake)
+            .unwrap_err();
+        assert!(matches!(error, PublishError::NotAdmitted));
+        assert!(fake.enqueues_seen.borrow().is_empty());
+        assert!(fake.markers.borrow().is_empty());
+        assert!(fake.observed.borrow().is_empty());
+        assert!(fake.drains.borrow().is_empty());
+    }
+
+    #[test]
+    fn rejected_predicate_writes_nothing() {
+        let temporary = tempfile::TempDir::new().unwrap();
+        let segments = vec![segment("20260801", "120000_60")];
+        let mut publication = input(temporary.path(), None, &segments, &[]);
+        publication.may_write_record = Some(&|| false);
+        let fake = FakeOperations::default();
+        let error = publish_with_operations(publication, &fake).unwrap_err();
+        assert!(matches!(error, PublishError::NotAdmitted));
+        assert!(fake.markers.borrow().is_empty());
+        assert!(fake.observed.borrow().is_empty());
+    }
+
+    #[test]
+    fn admitted_transaction_finishes_after_cancel_and_the_next_one_does_not_start() {
+        let temporary = tempfile::TempDir::new().unwrap();
+        let stop = crate::WorkStop::new();
+        let worker_stop = stop.clone();
+        let (started_tx, started_rx) = std::sync::mpsc::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel();
+        let journal = temporary.path().to_path_buf();
+        let worker = std::thread::spawn(move || {
+            let _guard = crate::WorkStopGuard::install(&worker_stop);
+            let ops = AdmissionGate {
+                started: started_tx,
+                release: release_rx,
+            };
+            let segments = vec![segment("20260801", "120000_60")];
+            let mut publication = input(&journal, None, &segments, &[]);
+            publication.may_write_record = Some(&|| true);
+            let first = publish_with_operations(publication, &ops).unwrap();
+            let mut again = input(&journal, None, &segments, &[]);
+            again.may_write_record = Some(&|| true);
+            let second = publish_with_operations(again, &ExplodeOnUse);
+            (first.status, second.unwrap_err())
+        });
+        started_rx.recv().unwrap();
+        stop.request();
+        release_tx.send(()).unwrap();
+        let (status, second) = worker.join().unwrap();
+        assert_eq!(status, PublicationStatus::Success);
+        assert!(matches!(second, PublishError::NotAdmitted));
+    }
+
+    #[test]
+    fn generation_change_during_admission_skips_the_record_and_events() {
+        let temporary = tempfile::TempDir::new().unwrap();
+        let journal = temporary.path().to_path_buf();
+        let import_id = "20260809_090000";
+        let admitted = crate::admit_running_attempt(&journal, import_id, 1_000, None).unwrap();
+        assert_eq!(admitted.generation, 1);
+        let import_dir = journal.join("imports").join(import_id);
+        let (started_tx, started_rx) = std::sync::mpsc::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel();
+        let emitted = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let worker_journal = journal.clone();
+        let worker_dir = import_dir.clone();
+        let worker_emitted = std::sync::Arc::clone(&emitted);
+        let worker = std::thread::spawn(move || {
+            let ops = GenerationGate {
+                started: started_tx,
+                release: release_rx,
+                emitted: worker_emitted,
+            };
+            let segments = vec![segment("20260801", "120000_60")];
+            let mut publication = input(&worker_journal, Some(&worker_dir), &segments, &[]);
+            publication.import_id = import_id;
+            let generation = admitted.generation;
+            let may_write = || {
+                crate::read_provenance(&worker_journal, import_id)
+                    .ok()
+                    .flatten()
+                    .and_then(|metadata| crate::get_attempt_facts(&metadata))
+                    .is_some_and(|facts| facts.generation == generation)
+            };
+            publication.may_write_record = Some(&may_write);
+            publish_with_operations(publication, &ops)
+        });
+        started_rx.recv().unwrap();
+        let newer = crate::admit_running_attempt(&journal, import_id, 2_000, None).unwrap();
+        assert_eq!(newer.generation, 2);
+        assert_eq!(newer.state, crate::AttemptState::Running);
+        release_tx.send(()).unwrap();
+        let error = worker.join().unwrap().unwrap_err();
+        assert!(matches!(error, PublishError::Superseded));
+        assert!(!import_dir.join("imported.json").exists());
+        assert!(!emitted.load(std::sync::atomic::Ordering::Acquire));
+        let facts = crate::read_provenance(&journal, import_id)
+            .unwrap()
+            .and_then(|metadata| crate::get_attempt_facts(&metadata))
+            .unwrap();
+        assert_eq!(facts.generation, 2);
+        assert_eq!(facts.state, crate::AttemptState::Running);
+        crate::release_attempt(&journal, import_id);
+    }
+
+    struct GenerationGate {
+        started: std::sync::mpsc::Sender<()>,
+        release: std::sync::mpsc::Receiver<()>,
+        emitted: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    }
+
+    impl PublicationOperations for GenerationGate {
+        fn advance_stream(
+            &self,
+            _: &Path,
+            _: &CreatedSegment,
+        ) -> Result<StreamAdvance, UnboundStreamAdvanceError> {
+            self.started.send(()).unwrap();
+            self.release.recv().unwrap();
+            advance(1)
+        }
+
+        fn enqueue_path(&self, _: &Path, _: &Path) -> Result<QueueFileOutcome, String> {
+            Ok(QueueFileOutcome::Queued)
+        }
+
+        fn touch_stream_health_marker(&self, _: &Path, _: &str) -> Result<(), String> {
+            Ok(())
+        }
+
+        fn emit_observed(&self, _: &Path, _: Option<&str>, _: &str, _: &str, _: &str) {
+            self.emitted
+                .store(true, std::sync::atomic::Ordering::Release);
+        }
+
+        fn emit_enrichment_ready(
+            &self,
+            _: &Path,
+            _: Option<&str>,
+            _: &str,
+            _: &str,
+            _: &[String],
+            _: u64,
+        ) {
+            self.emitted
+                .store(true, std::sync::atomic::Ordering::Release);
+        }
+
+        fn emit_drain(&self, _: &Path, _: Option<&str>, _: &str) {
+            self.emitted
+                .store(true, std::sync::atomic::Ordering::Release);
+        }
+    }
+
+    struct AdmissionGate {
+        started: std::sync::mpsc::Sender<()>,
+        release: std::sync::mpsc::Receiver<()>,
+    }
+
+    impl PublicationOperations for AdmissionGate {
+        fn advance_stream(
+            &self,
+            _: &Path,
+            _: &CreatedSegment,
+        ) -> Result<StreamAdvance, UnboundStreamAdvanceError> {
+            self.started.send(()).unwrap();
+            self.release.recv().unwrap();
+            advance(1)
+        }
+
+        fn enqueue_path(&self, _: &Path, _: &Path) -> Result<QueueFileOutcome, String> {
+            Ok(QueueFileOutcome::Queued)
+        }
+
+        fn touch_stream_health_marker(&self, _: &Path, _: &str) -> Result<(), String> {
+            Ok(())
+        }
+
+        fn emit_observed(&self, _: &Path, _: Option<&str>, _: &str, _: &str, _: &str) {}
+
+        fn emit_enrichment_ready(
+            &self,
+            _: &Path,
+            _: Option<&str>,
+            _: &str,
+            _: &str,
+            _: &[String],
+            _: u64,
+        ) {
+        }
+
+        fn emit_drain(&self, _: &Path, _: Option<&str>, _: &str) {}
+    }
+
+    struct ExplodeOnUse;
+
+    impl PublicationOperations for ExplodeOnUse {
+        fn advance_stream(
+            &self,
+            _: &Path,
+            _: &CreatedSegment,
+        ) -> Result<StreamAdvance, UnboundStreamAdvanceError> {
+            panic!("later publication started after cancellation");
+        }
+
+        fn enqueue_path(&self, _: &Path, _: &Path) -> Result<QueueFileOutcome, String> {
+            panic!("later index write started after cancellation");
+        }
+
+        fn touch_stream_health_marker(&self, _: &Path, _: &str) -> Result<(), String> {
+            panic!("later marker write started after cancellation");
+        }
+
+        fn emit_observed(&self, _: &Path, _: Option<&str>, _: &str, _: &str, _: &str) {
+            panic!("later event started after cancellation");
+        }
+
+        fn emit_enrichment_ready(
+            &self,
+            _: &Path,
+            _: Option<&str>,
+            _: &str,
+            _: &str,
+            _: &[String],
+            _: u64,
+        ) {
+            panic!("later event started after cancellation");
+        }
+
+        fn emit_drain(&self, _: &Path, _: Option<&str>, _: &str) {
+            panic!("later event started after cancellation");
+        }
     }
 }

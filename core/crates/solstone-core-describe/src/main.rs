@@ -16,8 +16,6 @@ use solstone_core_journal::{
     detect_checkout_root, discover_home, installed_site_packages_from_executable_dir,
     read_config_journal, resolve_journal_path,
 };
-use solstone_core_journal_config::read_journal_config;
-
 const EXIT_DECODE_FAILURE: u8 = 2;
 const EXIT_USAGE: u8 = 2;
 const EXIT_CONFIG: u8 = 78;
@@ -149,6 +147,9 @@ fn run(arguments: impl IntoIterator<Item = OsString>) -> Result<(), CliError> {
             })
             .map_err(|error| match error {
                 pipeline::RunError::Blocked(reason) => CliError::Blocked(reason),
+                pipeline::RunError::Cancelled => {
+                    CliError::Internal("describe cancelled".to_owned())
+                }
                 pipeline::RunError::Internal(message) => CliError::Internal(message),
             })
         }
@@ -337,74 +338,12 @@ fn effective_journal(explicit: Option<&Path>) -> Result<PathBuf, CliError> {
 }
 
 fn read_config(journal_path: &Path) -> Result<DescribeConfig, CliError> {
-    let config = read_journal_config(journal_path)
-        .map_err(|error| CliError::Config(format!("failed to read journal config: {error}")))?
-        .config;
-    let Some(describe) = config
-        .as_ref()
-        .and_then(|config| config.get("describe"))
-        .and_then(Value::as_object)
-    else {
-        return Ok(DescribeConfig {
-            winnow: WinnowConfig::default(),
-            redact_rules: Vec::new(),
-            max_extractions: 20,
-            category_overrides: BTreeMap::new(),
-        });
-    };
-
-    let mut result = WinnowConfig::default();
-    if let Some(value) = describe.get("scene_cut_threshold") {
-        let Some(value) = value.as_u64().and_then(|value| u32::try_from(value).ok()) else {
-            return Err(CliError::Config(
-                "describe.scene_cut_threshold must be an unsigned 32-bit integer".to_owned(),
-            ));
-        };
-        result.scene_cut_threshold = value;
-    }
-    if let Some(value) = describe.get("min_stride_seconds") {
-        let Some(value) = value.as_f64().filter(|value| value.is_finite()) else {
-            return Err(CliError::Config(
-                "describe.min_stride_seconds must be a finite number".to_owned(),
-            ));
-        };
-        result.min_stride_seconds = value;
-    }
-    let redact_rules = match describe.get("redact") {
-        None => Vec::new(),
-        Some(Value::Array(rules)) => rules
-            .iter()
-            .map(|value| {
-                value.as_str().map(str::to_owned).ok_or_else(|| {
-                    CliError::Config("describe.redact must be an array of strings".to_owned())
-                })
-            })
-            .collect::<Result<Vec<_>, _>>()?,
-        Some(_) => {
-            return Err(CliError::Config(
-                "describe.redact must be an array of strings".to_owned(),
-            ));
-        }
-    };
-    let max_extractions = match describe.get("max_extractions") {
-        None => 20,
-        Some(value) => value
-            .as_u64()
-            .and_then(|value| u32::try_from(value).ok())
-            .ok_or_else(|| {
-                CliError::Config(
-                    "describe.max_extractions must be an unsigned 32-bit integer".to_owned(),
-                )
-            })?,
-    };
-    let category_overrides =
-        solstone_core_describe::selection::parse_category_overrides(describe.get("categories"))
-            .map_err(CliError::Config)?;
+    let settings = solstone_core_describe::read_config(journal_path).map_err(CliError::Config)?;
     Ok(DescribeConfig {
-        winnow: result,
-        redact_rules,
-        max_extractions,
-        category_overrides,
+        winnow: settings.winnow,
+        redact_rules: settings.redact_rules,
+        max_extractions: settings.max_extractions,
+        category_overrides: settings.category_overrides,
     })
 }
 

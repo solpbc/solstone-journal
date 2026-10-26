@@ -111,7 +111,7 @@ pub(crate) struct OverlapDiagnostic {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub(crate) struct RawOccurrence {
+pub struct RawOccurrence {
     pub line_order: u32,
     pub text: String,
     pub confidence: Option<f32>,
@@ -148,6 +148,9 @@ pub(crate) struct PrivateSidecar {
     pub state: CoverageState,
     pub frames: Vec<FrameCoverage>,
     pub word_overlap: OverlapDiagnostic,
+    /// Set only for the mobile OCR gap. Desktop unavailability leaves this unset.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -180,7 +183,7 @@ pub(crate) struct SourceBinding {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum OcrFailure {
+pub enum OcrFailure {
     Unavailable,
     Timeout,
     Protocol,
@@ -188,7 +191,7 @@ pub(crate) enum OcrFailure {
 }
 
 impl OcrFailure {
-    fn code(self) -> &'static str {
+    pub fn code(self) -> &'static str {
         match self {
             Self::Unavailable => "helper_unavailable",
             Self::Timeout => "helper_timeout",
@@ -198,13 +201,37 @@ impl OcrFailure {
     }
 }
 
-pub(crate) trait OcrWorker {
+pub trait OcrWorker {
     fn recognize(&mut self, png: &[u8]) -> Result<Vec<RawOccurrence>, OcrFailure>;
 }
 
-pub(crate) trait OcrWorkerFactory {
+pub trait OcrWorkerFactory {
     fn recipe_id(&mut self) -> String;
     fn create(&mut self) -> Result<Option<Box<dyn OcrWorker>>, OcrFailure>;
+
+    /// Sidecar detail for a helper that cannot be loaded. Desktop leaves this unset.
+    fn unavailable_detail(&mut self) -> Option<&'static str> {
+        None
+    }
+}
+
+/// This type is a gap double. The production mobile worker is `ScreenOcrFactory`.
+pub struct MobileOcrGap;
+
+const MOBILE_OCR_GAP_DETAIL: &str = "oar-ocr 84817f58 pins ort =2.0.0-rc.13; mobile ort is =2.0.0-rc.12. Compile needs options.set replaced by options.add_config_entry. Android ONNX Runtime is source 7a71bc57; iOS is 1.25.0 static with ort features api-24 and std. No recognition bytes were loaded.";
+
+impl OcrWorkerFactory for MobileOcrGap {
+    fn recipe_id(&mut self) -> String {
+        "mobile-ocr-gap".to_owned()
+    }
+
+    fn create(&mut self) -> Result<Option<Box<dyn OcrWorker>>, OcrFailure> {
+        Ok(None)
+    }
+
+    fn unavailable_detail(&mut self) -> Option<&'static str> {
+        Some(MOBILE_OCR_GAP_DETAIL)
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -981,17 +1008,23 @@ pub(crate) fn expected_sidecar(
             extraction_words: 0,
             overlapping_words: 0,
         },
+        detail: None,
     }
 }
 
 /// Process retained frames sequentially through one worker for this burst.
 /// Worker failures only update private coverage and never escape into C/S/E.
+/// `true` when `stop` asks the burst to end before recognition finishes.
 pub(crate) fn run_worker(
     sidecar: &mut PrivateSidecar,
     frames: &[QualifiedFrame],
     ignored_ids: &BTreeSet<u64>,
     worker: Option<&mut dyn OcrWorker>,
-) {
+    stop: &dyn Fn() -> bool,
+) -> bool {
+    if stop() {
+        return true;
+    }
     for frame in &mut sidecar.frames {
         if ignored_ids.contains(&frame.frame_id) {
             frame.error_code = Some("category_ignored".to_owned());
@@ -1001,11 +1034,14 @@ pub(crate) fn run_worker(
     }
     let Some(worker) = worker else {
         summarize_coverage(sidecar);
-        return;
+        return false;
     };
     let mut fatal = false;
     let mut text_bytes = 0_usize;
     for coverage in &mut sidecar.frames {
+        if stop() {
+            return true;
+        }
         if ignored_ids.contains(&coverage.frame_id) {
             continue;
         }
@@ -1060,27 +1096,43 @@ pub(crate) fn run_worker(
     }
     annotate_recurrence(sidecar);
     summarize_coverage(sidecar);
+    false
 }
 
+/// `true` when `stop` asks the burst to end before recognition finishes.
 pub(crate) fn run_worker_with_factory(
     sidecar: &mut PrivateSidecar,
     frames: &[QualifiedFrame],
     ignored_ids: &BTreeSet<u64>,
     factory: &mut dyn OcrWorkerFactory,
-) {
+    stop: &dyn Fn() -> bool,
+) -> bool {
+    if stop() {
+        return true;
+    }
     if sidecar
         .frames
         .iter()
         .all(|frame| ignored_ids.contains(&frame.frame_id))
     {
         summarize_coverage(sidecar);
-        return;
+        return false;
     }
     match factory.create() {
         Ok(Some(mut worker)) => {
-            run_worker(sidecar, frames, ignored_ids, Some(worker.as_mut()));
+            let cancelled = run_worker(sidecar, frames, ignored_ids, Some(worker.as_mut()), stop);
+            if !cancelled {
+                record_unavailable_detail(sidecar, factory);
+            }
+            cancelled
         }
-        Ok(None) => run_worker(sidecar, frames, ignored_ids, None),
+        Ok(None) => {
+            let cancelled = run_worker(sidecar, frames, ignored_ids, None, stop);
+            if !cancelled {
+                record_unavailable_detail(sidecar, factory);
+            }
+            cancelled
+        }
         Err(error) => {
             let Some(frame) = sidecar
                 .frames
@@ -1088,12 +1140,155 @@ pub(crate) fn run_worker_with_factory(
                 .find(|frame| !ignored_ids.contains(&frame.frame_id))
             else {
                 summarize_coverage(sidecar);
-                return;
+                return false;
             };
             frame.state = CoverageState::Error;
             frame.error_code = Some(error.code().to_owned());
             summarize_coverage(sidecar);
+            false
         }
+    }
+}
+
+fn record_unavailable_detail(sidecar: &mut PrivateSidecar, factory: &mut dyn OcrWorkerFactory) {
+    if sidecar.detail.is_some() {
+        return;
+    }
+    let unavailable = sidecar
+        .frames
+        .iter()
+        .any(|frame| frame.error_code.as_deref() == Some("helper_unavailable"));
+    if unavailable && let Some(detail) = factory.unavailable_detail() {
+        sidecar.detail = Some(detail.to_owned());
+    }
+}
+
+/// One-frame OCR while a live describe still holds that frame's PNG.
+///
+/// Qualified order, fatal stop, and the missing-helper gap match `run_worker`.
+pub(crate) struct StreamingOcr {
+    worker: Option<Box<dyn OcrWorker>>,
+    started: bool,
+    missing: bool,
+    factory_stopped: bool,
+    fatal: bool,
+    text_bytes: usize,
+    next: usize,
+}
+
+impl StreamingOcr {
+    pub(crate) fn new() -> Self {
+        Self {
+            worker: None,
+            started: false,
+            missing: false,
+            factory_stopped: false,
+            fatal: false,
+            text_bytes: 0,
+            next: 0,
+        }
+    }
+
+    pub(crate) fn fed(&self) -> usize {
+        self.next
+    }
+
+    /// Advance the qualified cursor when this frame has no OCR consumer.
+    pub(crate) fn advance(&mut self) {
+        self.next = self.next.saturating_add(1);
+    }
+
+    pub(crate) fn feed(
+        &mut self,
+        sidecar: &mut PrivateSidecar,
+        index: usize,
+        png: &[u8],
+        ignored: bool,
+        factory: &mut dyn OcrWorkerFactory,
+    ) {
+        if index != self.next {
+            return;
+        }
+        self.next += 1;
+        let Some(coverage) = sidecar.frames.get_mut(index) else {
+            return;
+        };
+        if ignored {
+            coverage.error_code = Some("category_ignored".to_owned());
+            return;
+        }
+        if self.factory_stopped || self.fatal {
+            return;
+        }
+        if !self.started {
+            self.started = true;
+            match factory.create() {
+                Ok(worker) => {
+                    self.missing = worker.is_none();
+                    self.worker = worker;
+                }
+                Err(error) => {
+                    coverage.state = CoverageState::Error;
+                    coverage.error_code = Some(error.code().to_owned());
+                    self.factory_stopped = true;
+                    return;
+                }
+            }
+        }
+        if self.missing || self.worker.is_none() {
+            coverage.error_code = Some("helper_unavailable".to_owned());
+            return;
+        }
+        if let Err(code) = validate_png(png) {
+            coverage.state = CoverageState::Error;
+            coverage.error_code = Some(code.to_owned());
+            self.fatal = true;
+            return;
+        }
+        let Some(worker) = self.worker.as_mut() else {
+            coverage.error_code = Some("helper_unavailable".to_owned());
+            return;
+        };
+        match worker.recognize(png) {
+            Ok(occurrences) if occurrences.len() <= MAX_REGIONS => {
+                let next_bytes = occurrences.iter().fold(self.text_bytes, |total, line| {
+                    total.saturating_add(line.text.len())
+                });
+                if next_bytes > MAX_SOURCE_TEXT_BYTES {
+                    coverage.state = CoverageState::Error;
+                    coverage.error_code = Some("source_text_limit".to_owned());
+                    self.fatal = true;
+                    return;
+                }
+                self.text_bytes = next_bytes;
+                coverage.state = if occurrences.is_empty() {
+                    CoverageState::Empty
+                } else {
+                    CoverageState::Success
+                };
+                coverage.occurrences = occurrences;
+            }
+            Ok(_) => {
+                coverage.state = CoverageState::Error;
+                coverage.error_code = Some("region_limit".to_owned());
+                self.fatal = true;
+            }
+            Err(error) => {
+                coverage.state = CoverageState::Error;
+                coverage.error_code = Some(error.code().to_owned());
+                self.fatal = true;
+            }
+        }
+    }
+
+    pub(crate) fn finish(
+        &mut self,
+        sidecar: &mut PrivateSidecar,
+        factory: &mut dyn OcrWorkerFactory,
+    ) {
+        annotate_recurrence(sidecar);
+        summarize_coverage(sidecar);
+        record_unavailable_detail(sidecar, factory);
     }
 }
 
@@ -1273,12 +1468,20 @@ fn record_text(lines: &[FoldedLine]) -> String {
 
 /// Called only under segment publication exclusion. An empty replacement
 /// withholds all prior text while preserving the normal saved-file queue seam.
+pub(crate) fn is_describe_cancel(error: &io::Error) -> bool {
+    error.kind() == io::ErrorKind::Other && error.to_string() == "describe cancelled"
+}
+
 fn publish_record(
     journal: &Path,
     segment: &Path,
     lines: &[FoldedLine],
     commit: &SegmentCommit<'_>,
+    stop: &dyn Fn() -> bool,
 ) -> io::Result<()> {
+    if stop() {
+        return Err(io::Error::other("describe cancelled"));
+    }
     commit.revalidate()?;
     let directory = segment.join("talents");
     let path = directory.join("screen_text.md");
@@ -1294,6 +1497,9 @@ fn publish_record(
         publish_record_bytes(segment, &directory, &path, &bytes, &|| {
             commit.revalidate().map_err(|error| error.to_string())
         })?;
+    }
+    if stop() {
+        return Err(io::Error::other("describe cancelled"));
     }
     commit.revalidate()?;
     solstone_core_indexer_todo::enqueue_path(journal, &path)
@@ -1402,12 +1608,13 @@ fn publication_policy(
     segment: &Path,
     recipe_id: &str,
     claims: &OutputClaims,
+    stop: &dyn Fn() -> bool,
 ) -> io::Result<CurrentPolicy> {
     match current_policy(journal) {
         Ok(policy) => Ok(policy),
         Err(error) => {
             let commit = claims.commit(segment)?;
-            publish_record(journal, segment, &[], &commit)?;
+            publish_record(journal, segment, &[], &commit, stop)?;
             let gap = PrivateFoldedSnapshot {
                 schema: SIDECAR_SCHEMA,
                 segment_identity: claims.segment_identity(segment)?.observation_id(),
@@ -1437,8 +1644,9 @@ pub(crate) fn publish_sidecar(
     sidecar: &PrivateSidecar,
     input: &InputObservation,
     claims: &OutputClaims,
+    stop: &dyn Fn() -> bool,
 ) -> std::io::Result<()> {
-    let policy = publication_policy(journal, segment, &sidecar.recipe_id, claims)?;
+    let policy = publication_policy(journal, segment, &sidecar.recipe_id, claims, stop)?;
     let commit = input.commit(claims)?;
     let mut sources = load_segment_sidecars(segment)
         .into_iter()
@@ -1464,7 +1672,7 @@ pub(crate) fn publish_sidecar(
         .expect("publishing source remains present")
         .clone();
     sources.sort_by(|left, right| left.source_id.cmp(&right.source_id));
-    install_sidecar_and_folded(journal, segment, path, &sidecar, &sources, &commit)
+    install_sidecar_and_folded(journal, segment, path, &sidecar, &sources, &commit, stop)
 }
 
 /// Update the private OCR/Qwen word diagnostic after extraction has completed.
@@ -1481,8 +1689,9 @@ pub(crate) fn publish_extraction_diagnostic(
     extraction_rows: &[Value],
     input: &InputObservation,
     claims: &OutputClaims,
+    stop: &dyn Fn() -> bool,
 ) -> std::io::Result<()> {
-    let policy = publication_policy(journal, segment, recipe_id, claims)?;
+    let policy = publication_policy(journal, segment, recipe_id, claims, stop)?;
     let commit = input.commit(claims)?;
     let mut sidecar = load_sidecar(path).ok_or_else(|| {
         std::io::Error::new(
@@ -1516,7 +1725,7 @@ pub(crate) fn publish_extraction_diagnostic(
         .expect("publishing source remains present")
         .clone();
     sources.sort_by(|left, right| left.source_id.cmp(&right.source_id));
-    install_sidecar_and_folded(journal, segment, path, &sidecar, &sources, &commit)
+    install_sidecar_and_folded(journal, segment, path, &sidecar, &sources, &commit, stop)
 }
 
 fn install_sidecar_and_folded(
@@ -1526,6 +1735,7 @@ fn install_sidecar_and_folded(
     sidecar: &PrivateSidecar,
     sources: &[PrivateSidecar],
     commit: &SegmentCommit<'_>,
+    stop: &dyn Fn() -> bool,
 ) -> std::io::Result<()> {
     let sidecar_bytes =
         serde_json::to_vec(sidecar).map_err(|error| std::io::Error::other(error.to_string()))?;
@@ -1548,10 +1758,10 @@ fn install_sidecar_and_folded(
     install(path, &sidecar_bytes)?;
     if let Err(error) = install(&aggregate_path, &folded_bytes) {
         let _ = fs::remove_file(aggregate_path);
-        let _ = publish_record(journal, segment, &[], commit);
+        let _ = publish_record(journal, segment, &[], commit, stop);
         return Err(error);
     }
-    publish_record(journal, segment, &folded.lines, commit)?;
+    publish_record(journal, segment, &folded.lines, commit, stop)?;
     Ok(())
 }
 
@@ -1567,6 +1777,7 @@ fn publish_pair_with(
     install(folded_path, folded_bytes)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn invalidate_source_state(
     journal: &Path,
     segment: &Path,
@@ -1575,12 +1786,13 @@ pub(crate) fn invalidate_source_state(
     segment_identity: &str,
     recipe_id: &str,
     claims: &OutputClaims,
+    stop: &dyn Fn() -> bool,
 ) -> std::io::Result<()> {
-    let policy = publication_policy(journal, segment, recipe_id, claims)?;
+    let policy = publication_policy(journal, segment, recipe_id, claims, stop)?;
     let commit = claims.commit(segment)?;
     // Withdraw the old projection first. If private regeneration then fails,
     // no previous text remains in the public record or folded snapshot.
-    publish_record(journal, segment, &[], &commit)?;
+    publish_record(journal, segment, &[], &commit, stop)?;
     let aggregate_path = folded_path(segment);
     match fs::remove_file(&aggregate_path) {
         Ok(()) => {}
@@ -1621,7 +1833,7 @@ pub(crate) fn invalidate_source_state(
         AtomicWriteOptions { mode: Some(0o600) },
     )
     .map_err(|error| std::io::Error::other(error.to_string()))?;
-    publish_record(journal, segment, &snapshot.lines, &commit)
+    publish_record(journal, segment, &snapshot.lines, &commit, stop)
 }
 
 /// Matches the existing raw-screen renderer: decoded PTS × time_base is added
@@ -2142,6 +2354,7 @@ mod tests {
                 extraction_words: 0,
                 overlapping_words: 0,
             },
+            detail: None,
         }
     }
 
@@ -2659,7 +2872,7 @@ mod tests {
     #[test]
     fn helper_absence_and_empty_success_have_distinct_coverage_without_processes() {
         let (mut sidecar, frames) = expected_with_frames();
-        run_worker(&mut sidecar, &frames, &BTreeSet::new(), None);
+        run_worker(&mut sidecar, &frames, &BTreeSet::new(), None, &|| false);
         assert_eq!(sidecar.state, CoverageState::NotRun);
         assert!(
             sidecar
@@ -2673,7 +2886,13 @@ mod tests {
             result: Ok(Vec::new()),
             calls: 0,
         };
-        run_worker(&mut sidecar, &frames, &BTreeSet::new(), Some(&mut worker));
+        run_worker(
+            &mut sidecar,
+            &frames,
+            &BTreeSet::new(),
+            Some(&mut worker),
+            &|| false,
+        );
         assert_eq!(worker.calls, 2);
         assert_eq!(sidecar.state, CoverageState::Empty);
         assert!(
@@ -2692,7 +2911,13 @@ mod tests {
                 result: Err(failure),
                 calls: 0,
             };
-            run_worker(&mut sidecar, &frames, &BTreeSet::new(), Some(&mut worker));
+            run_worker(
+                &mut sidecar,
+                &frames,
+                &BTreeSet::new(),
+                Some(&mut worker),
+                &|| false,
+            );
             assert_eq!(worker.calls, 1);
             assert_eq!(sidecar.state, CoverageState::Error);
             assert_eq!(sidecar.frames[0].state, CoverageState::Error);
@@ -2720,7 +2945,9 @@ mod tests {
             result: Ok(Vec::new()),
             calls: 0,
         };
-        run_worker(&mut sidecar, &frames, &ignored, Some(&mut worker));
+        run_worker(&mut sidecar, &frames, &ignored, Some(&mut worker), &|| {
+            false
+        });
         assert_eq!(worker.calls, 1);
         assert_eq!(sidecar.frames[0].state, CoverageState::NotRun);
         assert_eq!(sidecar.frames[1].state, CoverageState::Empty);
@@ -2833,7 +3060,16 @@ mod tests {
         source.source_sha256 = binding.source_sha256.clone();
         source.source_name = binding.source_name.clone();
         let path = sidecar_path(&segment, &binding.source_id);
-        publish_sidecar(journal.path(), &segment, &path, &source, &input, &claims).unwrap();
+        publish_sidecar(
+            journal.path(),
+            &segment,
+            &path,
+            &source,
+            &input,
+            &claims,
+            &|| false,
+        )
+        .unwrap();
         let public = segment.join("talents/screen_text.md");
         assert!(
             fs::read_to_string(&public)
@@ -2858,6 +3094,7 @@ mod tests {
             &binding.segment_identity,
             "recipe",
             &claims,
+            &|| false,
         )
         .unwrap();
         assert_eq!(fs::read_to_string(public).unwrap(), "");
@@ -2918,7 +3155,8 @@ mod tests {
                 "slot",
                 "identity",
                 "recipe",
-                &claims
+                &claims,
+                &|| false,
             )
             .is_err()
         );
@@ -2983,6 +3221,7 @@ mod tests {
                 source,
                 input,
                 &claims,
+                &|| false,
             )
             .unwrap();
         }
@@ -3011,6 +3250,7 @@ mod tests {
             &a.segment_identity,
             "recipe",
             &claims,
+            &|| false,
         )
         .unwrap();
         assert_eq!(fs::read_to_string(&public).unwrap(), "");
@@ -3022,6 +3262,7 @@ mod tests {
             &sources[0],
             &inputs[0],
             &claims,
+            &|| false,
         )
         .unwrap();
         assert_eq!(fs::read_to_string(&public).unwrap(), "");
@@ -3037,6 +3278,7 @@ mod tests {
             &[json!({"frame_id":1,"content":{"text":"beta visible"}})],
             &inputs[1],
             &claims,
+            &|| false,
         )
         .unwrap();
         assert_eq!(fs::read_to_string(&public).unwrap(), "");
@@ -3056,7 +3298,8 @@ mod tests {
                     &sidecar_path(&segment, &a.source_id),
                     &sources[0],
                     &inputs[0],
-                    &claims
+                    &claims,
+                    &|| false,
                 )
                 .is_err(),
                 "accepted {invalid}"
