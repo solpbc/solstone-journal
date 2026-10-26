@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use super::stage_retirement::{Leaf, retire_stage};
 use super::*;
 use crate::activity::{ActivityLease, TeardownLease};
 
@@ -1012,120 +1013,6 @@ pub fn retire_unrecorded_stage_where(
     accept: &dyn Fn(&OsStr) -> bool,
 ) -> io::Result<bool> {
     retire_stage(activity, parent, name, directory, Leaf::Accepted(accept))
-}
-
-enum Leaf<'a> {
-    #[cfg_attr(
-        not(any(
-            target_os = "linux",
-            target_os = "macos",
-            target_os = "ios",
-            target_os = "android",
-            windows
-        )),
-        allow(dead_code)
-    )]
-    Exact(&'a OsStr, Option<MediaIdentity>),
-    #[cfg_attr(
-        not(any(
-            target_os = "linux",
-            target_os = "macos",
-            target_os = "ios",
-            target_os = "android",
-            windows
-        )),
-        allow(dead_code)
-    )]
-    Accepted(&'a dyn Fn(&OsStr) -> bool),
-}
-
-fn retire_stage(
-    activity: &Arc<ActivityLease>,
-    parent: &Arc<MediaDirectory>,
-    name: &OsStr,
-    directory: MediaIdentity,
-    leaf: Leaf<'_>,
-) -> io::Result<bool> {
-    #[cfg(any(
-        target_os = "linux",
-        target_os = "macos",
-        target_os = "ios",
-        target_os = "android",
-        windows
-    ))]
-    {
-        plain_name(name)?;
-        if let Leaf::Exact(leaf_name, _) = leaf {
-            plain_name(leaf_name)?;
-        }
-        if !crate::activity_obligations::is_stage_namespace_name(name)
-            || !Arc::ptr_eq(parent.inner.journal_root(), activity.journal_root())
-        {
-            return Err(invalid("not a stage of this journal"));
-        }
-        if !exclusive_local_activity(activity)? {
-            return Err(shared_storage());
-        }
-        let Some(stage) = platform::open_removal_directory(&parent.inner, name)? else {
-            return Ok(false);
-        };
-        if stage.identity() != directory {
-            return Err(changed());
-        }
-        let entries = platform::entries(&stage, 2)?.ok_or_else(changed)?;
-        match entries.as_slice() {
-            // An empty directory holds no data.
-            [] => {}
-            [entry]
-                if entry.kind == crate::journal_root::JournalEntryKind::RegularFile
-                    && match leaf {
-                        Leaf::Exact(leaf_name, recorded) => {
-                            entry.name == leaf_name
-                                && recorded.is_none_or(|leaf| entry.identity == leaf)
-                        }
-                        Leaf::Accepted(accept) => {
-                            plain_name(&entry.name).is_ok() && accept(&entry.name)
-                        }
-                    } =>
-            {
-                let leaf_name = entry.name.as_os_str();
-                let leaf = entry.identity;
-                activity
-                    .revalidate()
-                    .map_err(crate::activity::ActivityAdmissionError::into_io)?;
-                let file = platform::open_removal(&stage, leaf_name)?.ok_or_else(changed)?;
-                if platform::identity(&file)? != leaf {
-                    return Err(changed());
-                }
-                platform::check_leaf(&stage, leaf_name, leaf)?;
-                platform::remove_leaf(&stage, leaf_name, &file)?;
-                drop(file);
-                platform::ensure_absent(&stage, leaf_name)?;
-            }
-            _ => return Err(changed()),
-        }
-        activity
-            .revalidate()
-            .map_err(crate::activity::ActivityAdmissionError::into_io)?;
-        platform::remove_directory(&parent.inner, name, &stage)?;
-        drop(stage);
-        platform::ensure_absent(&parent.inner, name)?;
-        if cfg!(not(windows)) {
-            parent.sync()?;
-        }
-        Ok(true)
-    }
-    #[cfg(not(any(
-        target_os = "linux",
-        target_os = "macos",
-        target_os = "ios",
-        target_os = "android",
-        windows
-    )))]
-    {
-        let _ = (activity, parent, name, directory, leaf);
-        Err(shared_storage())
-    }
 }
 
 pub(super) fn shared_storage() -> io::Error {
