@@ -12,6 +12,8 @@ use solstone_core_format::segment::segment_start_and_end_seconds;
 
 pub const GAP_THRESHOLD_SECONDS: i64 = 600;
 pub const END_HYSTERESIS_SEGMENTS: usize = 2;
+/// The segments an open activity holds while its facet is missing from them.
+const PENDING_MISS_SEGMENTS: &str = "_pending_miss_segments";
 
 /// The snapshot every stream shared before activity state was kept per stream.
 /// Only read, once, to carry the activities it holds over to one stream.
@@ -427,6 +429,7 @@ impl ActivityStateMachine {
                 prior.insert("_pending_facet_misses".to_owned(), json!(misses));
                 prior.insert("_change".to_owned(), json!("facet_gone_pending"));
                 append_segment(prior, segment);
+                note_pending_miss(prior, segment);
                 changes.push(Value::Object(prior.clone()));
             }
         }
@@ -444,6 +447,9 @@ impl ActivityStateMachine {
             );
             if let Some(prior) = self.state.get_mut(&facet) {
                 prior.insert("_pending_facet_misses".to_owned(), json!(0));
+                // The facet came back, so the segments it missed bridge one
+                // activity and stay in it.
+                prior.remove(PENDING_MISS_SEGMENTS);
                 if prior.get("activity").and_then(Value::as_str) != Some(content) {
                     let same = prior.get("_pending_type").and_then(Value::as_str) == Some(content);
                     let count = if same {
@@ -628,9 +634,41 @@ fn ended(prior: &Map<String, Value>, facet: &str, segment: &str, change: &str) -
     json!({"id": prior.get("id"), "activity": prior.get("activity"), "state": "ended", "since": prior.get("since"), "description": prior.get("description"), "_change": change, "facet": facet, "segment": segment})
 }
 fn completed(entry: &Map<String, Value>, created_at: i64) -> Value {
+    // A segment the facet was missing from is held in case the facet comes
+    // back. If the activity ends first, that segment was never part of it.
+    let unresolved = entry
+        .get(PENDING_MISS_SEGMENTS)
+        .and_then(Value::as_array)
+        .map(|values| {
+            values
+                .iter()
+                .filter_map(Value::as_str)
+                .collect::<BTreeSet<_>>()
+        })
+        .unwrap_or_default();
+    let segments = match entry.get("segments").and_then(Value::as_array) {
+        Some(values) => Value::Array(
+            values
+                .iter()
+                .filter(|value| value.as_str().is_none_or(|key| !unresolved.contains(key)))
+                .cloned()
+                .collect(),
+        ),
+        None => json!([entry.get("since")]),
+    };
     // Keep the stored key for existing journals: this is the last tracked
     // segment's level, not an average over the activity's segments.
-    json!({"id": entry.get("id"), "facet": entry.get("facet"), "activity": entry.get("activity"), "segments": entry.get("segments").cloned().unwrap_or_else(|| json!([entry.get("since")])), "level_avg": level_value(entry.get("level").and_then(Value::as_str).unwrap_or("medium")), "description": entry.get("description"), "active_entities": entry.get("active_entities").cloned().unwrap_or_else(|| json!([])), "created_at": created_at})
+    json!({"id": entry.get("id"), "facet": entry.get("facet"), "activity": entry.get("activity"), "segments": segments, "level_avg": level_value(entry.get("level").and_then(Value::as_str).unwrap_or("medium")), "description": entry.get("description"), "active_entities": entry.get("active_entities").cloned().unwrap_or_else(|| json!([])), "created_at": created_at})
+}
+fn note_pending_miss(entry: &mut Map<String, Value>, segment: &str) {
+    let missed = entry
+        .entry(PENDING_MISS_SEGMENTS.to_owned())
+        .or_insert_with(|| json!([]));
+    if let Some(values) = missed.as_array_mut()
+        && !values.iter().any(|value| value.as_str() == Some(segment))
+    {
+        values.push(json!(segment));
+    }
 }
 fn append_segment(entry: &mut Map<String, Value>, segment: &str) {
     entry.insert("segment".to_owned(), json!(segment));
@@ -870,6 +908,89 @@ mod tests {
             !machine.should_reset("235959_60", "20260101", Some("235000_7200")),
             "the reference clamps an overrun to 23:59:59"
         );
+    }
+
+    fn completed_segments(machine: &ActivityStateMachine, facet: &str) -> Vec<String> {
+        let record = machine
+            .completed_activities()
+            .into_iter()
+            .find(|record| record["facet"] == facet)
+            .expect("completed record");
+        serde_json::from_value(record["segments"].clone()).expect("segment keys")
+    }
+
+    #[test]
+    fn a_segment_the_facet_missed_leaves_the_activity_when_it_never_returns() {
+        // A phone's airport announcement (home), then its screen recording of
+        // a work call: the call segment must not join the announcement.
+        let mut machine = ActivityStateMachine::default();
+        machine.update(
+            &sense(json!([{"facet":"home"}])),
+            "170012_80",
+            "20261026",
+            None,
+            0,
+        );
+        machine.update(
+            &sense(json!([{"facet":"work"}])),
+            "170248_300",
+            "20261026",
+            None,
+            0,
+        );
+        machine.update(
+            &sense(json!([{"facet":"work"}])),
+            "170748_300",
+            "20261026",
+            None,
+            0,
+        );
+        assert_eq!(completed_segments(&machine, "home"), ["170012_80"]);
+
+        // Ending any other way (here the day's end) drops it too.
+        let mut machine = ActivityStateMachine::default();
+        machine.update(
+            &sense(json!([{"facet":"home"}])),
+            "170012_80",
+            "20261026",
+            None,
+            0,
+        );
+        machine.update(&sense(json!([])), "170248_300", "20261026", None, 0);
+        machine.close_active("170248_300", 0);
+        assert_eq!(completed_segments(&machine, "home"), ["170012_80"]);
+    }
+
+    #[test]
+    fn a_segment_the_facet_missed_stays_when_the_facet_returns() {
+        let mut machine = ActivityStateMachine::default();
+        for (facets, segment) in [
+            (json!([{"facet":"work"}]), "090000_60"),
+            (json!([]), "090100_60"),
+            (json!([{"facet":"work"}]), "090200_60"),
+        ] {
+            machine.update(&sense(facets), segment, "20260101", None, 0);
+        }
+        // The pending miss survives a snapshot round trip and then resolves.
+        let mut machine = ActivityStateMachine::from_snapshot(&machine.snapshot());
+        machine.close_active("090200_60", 0);
+        assert_eq!(
+            completed_segments(&machine, "work"),
+            ["090000_60", "090100_60", "090200_60"]
+        );
+
+        let mut machine = ActivityStateMachine::default();
+        machine.update(
+            &sense(json!([{"facet":"work"}])),
+            "090000_60",
+            "20260101",
+            None,
+            0,
+        );
+        machine.update(&sense(json!([])), "090100_60", "20260101", None, 0);
+        let mut machine = ActivityStateMachine::from_snapshot(&machine.snapshot());
+        machine.close_active("090100_60", 0);
+        assert_eq!(completed_segments(&machine, "work"), ["090000_60"]);
     }
 
     #[test]
