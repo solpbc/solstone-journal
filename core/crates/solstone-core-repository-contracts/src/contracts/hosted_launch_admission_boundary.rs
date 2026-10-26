@@ -372,6 +372,16 @@ const SCANNED_MODULE_SOURCES: &[(&str, &str, &str)] = &[
     ),
     (
         "convey",
+        "pinned",
+        include_str!("../../../solstone-core-convey-shell/src/pinned.rs"),
+    ),
+    (
+        "convey",
+        "pinned_write",
+        include_str!("../../../solstone-core-convey-shell/src/pinned_write.rs"),
+    ),
+    (
+        "convey",
         "registry",
         include_str!("../../../solstone-core-convey-shell/src/registry.rs"),
     ),
