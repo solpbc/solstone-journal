@@ -170,6 +170,8 @@ pub struct PlaudSyncOutcome {
     pub state: SyncState,
     pub downloaded: u64,
     pub errors: Vec<String>,
+    /// A later file was not started because the attempt was stopping.
+    pub stopped: bool,
 }
 
 struct ResolvedImportTimestamp {
@@ -212,6 +214,7 @@ pub fn sync_plaud_preview(
         state: catalogued.state,
         downloaded: 0,
         errors: Vec::new(),
+        stopped: false,
     })
 }
 
@@ -233,9 +236,11 @@ pub fn sync_plaud_save(
 
     let mut downloaded = 0;
     let mut errors = Vec::new();
+    let mut stopped = false;
     let mut used_fallback_timestamps = HashSet::new();
     for file in catalogued.available {
         if !crate::work_continues() {
+            stopped = true;
             break;
         }
         let result = import_file(
@@ -252,7 +257,11 @@ pub fn sync_plaud_save(
             .and_then(Value::as_object_mut)
             .expect("catalogued file exists");
         match result {
-            Ok(resolved) => {
+            FiledPlaud::Stopped => {
+                stopped = true;
+                break;
+            }
+            FiledPlaud::Imported(resolved) => {
                 entry.insert("status".to_owned(), Value::String("imported".to_owned()));
                 entry.insert(
                     "import_timestamp".to_owned(),
@@ -273,7 +282,7 @@ pub fn sync_plaud_save(
                     .checkpoint(&request.journal_root, &catalogued.state)
                     .map_err(state_error)?;
             }
-            Err(kind) => {
+            FiledPlaud::Failed(kind) => {
                 entry.insert("status".to_owned(), Value::String("available".to_owned()));
                 entry.insert(
                     "last_error".to_owned(),
@@ -292,6 +301,7 @@ pub fn sync_plaud_save(
         state: catalogued.state,
         downloaded,
         errors,
+        stopped,
     })
 }
 
@@ -400,32 +410,51 @@ fn catalogue<M>(
     Ok(CataloguedPlaud { state, available })
 }
 
+enum FiledPlaud {
+    Imported(ResolvedImportTimestamp),
+    Failed(PlaudFailureKind),
+    Stopped,
+}
+
 fn import_file(
     file: &PlaudFile,
     token: &str,
     journal_root: &Path,
     seams: &mut PlaudSaveSeams<'_>,
     used_fallback_timestamps: &mut HashSet<String>,
-) -> Result<ResolvedImportTimestamp, PlaudFailureKind> {
+) -> FiledPlaud {
     let now = seams.preview.clock.now();
     let zone = solstone_core_journal_config::owner_zone(journal_root);
-    let resolved = import_timestamp(file.start_time, &now, zone, used_fallback_timestamps)
-        .ok_or(PlaudFailureKind::Pipeline)?;
-    let semantic =
-        crate::validate_timestamp(&resolved.timestamp).map_err(|_| PlaudFailureKind::Pipeline)?;
+    let Some(resolved) = import_timestamp(file.start_time, &now, zone, used_fallback_timestamps)
+    else {
+        return FiledPlaud::Failed(PlaudFailureKind::Pipeline);
+    };
+    let Ok(semantic) = crate::validate_timestamp(&resolved.timestamp) else {
+        return FiledPlaud::Failed(PlaudFailureKind::Pipeline);
+    };
     // The device time stays the source timestamp. The directory id is whatever
     // the allocator can claim, so two recordings in one second do not share it.
-    let bound = crate::bind_import_record(journal_root, &semantic, None)
-        .map_err(|_| PlaudFailureKind::Download)?;
+    let Ok(bound) = crate::bind_import_record(journal_root, &semantic, None) else {
+        return FiledPlaud::Failed(PlaudFailureKind::Download);
+    };
     let selected = bound.import_id.as_str().to_owned();
     let destination_dir = journal_root.join("imports").join(&selected);
-    let url = seams.download.temporary_url(token, &file.id)?;
+    let url = match seams.download.temporary_url(token, &file.id) {
+        Ok(url) => url,
+        Err(kind) => return FiledPlaud::Failed(kind),
+    };
     let destination = destination_dir.join(destination_name(file));
-    seams.download.download(&url, &destination)?;
+    if let Err(kind) = seams.download.download(&url, &destination) {
+        return FiledPlaud::Failed(kind);
+    }
     if destination.is_file()
         && let Ok(source_hash) = crate::hash_source(&destination)
     {
         let _ = crate::remember_source_hash(journal_root, &selected, &source_hash);
+    }
+    // The download and its admitted copy stay. The next audio unit does not start.
+    if !crate::work_continues() {
+        return FiledPlaud::Stopped;
     }
     match seams.pipeline.import_one(PipelineImportRequest {
         source: &destination,
@@ -434,7 +463,7 @@ fn import_file(
         source_instant: Some(resolved.source_instant),
         auto: PipelineAuto::Enabled,
     }) {
-        Ok(PipelineOutcome::Imported) => Ok(ResolvedImportTimestamp {
+        Ok(PipelineOutcome::Imported) => FiledPlaud::Imported(ResolvedImportTimestamp {
             timestamp: selected,
             source_instant: resolved.source_instant,
             used_fallback: resolved.used_fallback,
@@ -442,7 +471,7 @@ fn import_file(
         Ok(PipelineOutcome::Skipped { .. })
         | Ok(PipelineOutcome::NoResult)
         | Ok(PipelineOutcome::Unrecognized)
-        | Err(_) => Err(PlaudFailureKind::Pipeline),
+        | Err(_) => FiledPlaud::Failed(PlaudFailureKind::Pipeline),
     }
 }
 

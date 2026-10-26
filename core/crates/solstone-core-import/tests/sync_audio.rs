@@ -417,6 +417,7 @@ fn stop_after_the_first_audio_import_keeps_that_checkpoint_and_skips_the_next() 
     )
     .unwrap();
     assert_eq!(pipeline.calls.borrow().as_slice(), ["first.wav"]);
+    assert!(outcome.stopped);
     assert_eq!(
         outcome.state.root()["files"]["already.wav"]["status"],
         "imported"

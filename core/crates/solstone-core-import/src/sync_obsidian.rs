@@ -79,6 +79,8 @@ pub struct ObsidianSyncOutcome {
     pub state: SyncState,
     pub imported: u64,
     pub errors: Vec<String>,
+    /// A later note was not started because the attempt was stopping.
+    pub stopped: bool,
 }
 
 /// Named Obsidian sync failure.
@@ -111,6 +113,7 @@ pub fn sync_obsidian_preview(
         state: catalogued.state,
         imported: 0,
         errors: Vec::new(),
+        stopped: false,
     })
 }
 
@@ -126,8 +129,10 @@ pub fn sync_obsidian_save(
     )?;
     let mut imported = 0;
     let mut errors = Vec::new();
+    let mut stopped = false;
     for note in catalogued.pending {
         if !crate::work_continues() {
+            stopped = true;
             break;
         }
         let result = seams.writer.import_note(&catalogued.vault, &note);
@@ -157,6 +162,7 @@ pub fn sync_obsidian_save(
         state: catalogued.state,
         imported,
         errors,
+        stopped,
     })
 }
 

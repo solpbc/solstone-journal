@@ -789,10 +789,14 @@ fn utf16_buffer_cells(count: i32, max_text_bytes: usize) -> Result<usize, ()> {
     Ok(cells)
 }
 
-/// Remaining text bytes for one page. The empty-text page shell is already
-/// charged, so ASCII of this length still fits. Inspect keeps a response-sized
-/// conversion cap because it does not store the text. The subprocess path is
-/// not enforced here; its stdout reader keeps the encoded bound.
+/// Remaining stored-text bytes for one page.
+///
+/// When the payload is bounded and this page stores text, the empty-text page
+/// shell is already charged, so ASCII of this length still fits the encoded
+/// response. Unlimited extraction and Inspect keep checked conversion only:
+/// overflow still refuses the buffer, and the response bound is not applied
+/// as a page-text cap. A printed subprocess response keeps the encoded bound
+/// in its stdout reader.
 fn text_byte_limit(
     account: &PayloadAccount,
     admitted_pages: usize,
@@ -802,7 +806,7 @@ fn text_byte_limit(
     height_pt: f64,
 ) -> usize {
     if !account.enforced || !include_text {
-        return RESPONSE_BYTE_BOUND;
+        return usize::MAX;
     }
     let provisional = PageEntry {
         index: index + 1,
@@ -1813,6 +1817,43 @@ mod tests {
             super::RESPONSE_BYTE_BOUND + 1
         );
         assert!(super::utf16_buffer_cells(full, super::RESPONSE_BYTE_BOUND - 1).is_err());
+    }
+
+    #[test]
+    fn unlimited_and_inspect_keep_checked_conversion_without_a_page_text_cap() {
+        let page = (0, 612.0, 792.0);
+        let unlimited = super::text_byte_limit(
+            &super::PayloadAccount::unlimited(),
+            0,
+            true,
+            page.0,
+            page.1,
+            page.2,
+        );
+        let inspect = super::text_byte_limit(
+            &super::PayloadAccount::bounded(),
+            0,
+            false,
+            page.0,
+            page.1,
+            page.2,
+        );
+        assert_eq!(unlimited, usize::MAX);
+        assert_eq!(inspect, usize::MAX);
+        let included = super::text_byte_limit(
+            &super::PayloadAccount::bounded(),
+            0,
+            true,
+            page.0,
+            page.1,
+            page.2,
+        );
+        assert!(included < super::RESPONSE_BYTE_BOUND);
+        let count = i32::try_from(super::RESPONSE_BYTE_BOUND).unwrap();
+        assert!(super::utf16_buffer_cells(count, unlimited).is_ok());
+        assert!(super::utf16_buffer_cells(count, inspect).is_ok());
+        assert!(super::utf16_buffer_cells(count, included).is_err());
+        assert!(super::utf16_buffer_cells(-1, unlimited).is_err());
     }
 
     fn empty_shell() -> super::SuccessPayload {

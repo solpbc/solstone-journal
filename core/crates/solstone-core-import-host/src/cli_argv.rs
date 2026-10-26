@@ -458,7 +458,7 @@ pub(crate) fn run_library(
     if !solstone_core_import::work_continues() {
         return (failure("", "import stopped\n", 1), None);
     }
-    let (run, import_id) =
+    let (mut run, import_id) =
         match dispatch_parsed(parsed, journal_path, Dispatch::Library { seams, embedded }) {
             CliOutcome::Rendered(run) => (run, None),
             CliOutcome::Imported { run, import_id } => (run, Some(import_id)),
@@ -466,6 +466,11 @@ pub(crate) fn run_library(
                 unreachable!("library dispatch executes registry sources")
             }
         };
+    // A dispatch that returns success after Stop was requested would report
+    // exit 0. Keep its stdout, including a sync count, and fail the attempt.
+    if run.exit_code == 0 && !solstone_core_import::work_continues() {
+        run = failure(&run.stdout, "import stopped\n", 1);
+    }
     if run.exit_code == 0
         && let Some(import_id) = &import_id
     {
@@ -1414,7 +1419,12 @@ fn run_audio_sync(journal_path: &Path, options: &Options) -> CliRun {
         pipeline: &mut pipeline,
     };
     match sync_audio_save(&request, &mut seams) {
-        Ok(outcome) => sync_saved("Audio", outcome.downloaded, &outcome.errors),
+        Ok(outcome) => sync_saved(
+            "Audio",
+            outcome.downloaded,
+            &outcome.errors,
+            outcome.stopped,
+        ),
         Err(error) => failure("", &format!("{error}\n"), 1),
     }
 }
@@ -1456,7 +1466,12 @@ fn run_obsidian_sync(journal_path: &Path, options: &Options) -> CliRun {
         writer: &mut writer,
     };
     match sync_obsidian_save(&request, &mut seams) {
-        Ok(outcome) => sync_saved("Obsidian", outcome.imported, &outcome.errors),
+        Ok(outcome) => sync_saved(
+            "Obsidian",
+            outcome.imported,
+            &outcome.errors,
+            outcome.stopped,
+        ),
         Err(error) => failure("", &format!("{error}\n"), 1),
     }
 }
@@ -1493,14 +1508,30 @@ fn run_plaud_sync(journal_path: &Path, options: &Options) -> CliRun {
         pipeline: &mut pipeline,
     };
     match sync_plaud_save(&request, &mut seams) {
-        Ok(outcome) => sync_saved("Plaud", outcome.downloaded, &outcome.errors),
+        Ok(outcome) => sync_saved(
+            "Plaud",
+            outcome.downloaded,
+            &outcome.errors,
+            outcome.stopped,
+        ),
         Err(error) => failure("", &format!("{error}\n"), 1),
     }
 }
 
 /// A sync that saved: a count on stdout, and each item that failed on stderr, failing the run.
-fn sync_saved(backend: &str, saved: u64, errors: &[String]) -> CliRun {
+///
+/// A stop that skipped a later unit keeps that count and fails the run. The
+/// skipped unit is not an item error.
+fn sync_saved(backend: &str, saved: u64, errors: &[String], stopped: bool) -> CliRun {
     let stdout = cli_render::sync_save_complete(backend, saved, errors.len());
+    if stopped {
+        let mut stderr = String::from("import stopped\n");
+        for error in errors {
+            stderr.push_str(error);
+            stderr.push('\n');
+        }
+        return failure(&stdout, &stderr, 1);
+    }
     if errors.is_empty() {
         return success(stdout);
     }

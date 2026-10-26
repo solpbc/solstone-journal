@@ -239,6 +239,7 @@ fn stop_after_the_first_note_keeps_that_import_and_skips_the_next() {
     .unwrap();
     assert_eq!(writer.calls.borrow().as_slice(), ["one.md"]);
     assert_eq!(outcome.imported, 1);
+    assert!(outcome.stopped);
     assert!(outcome.errors.is_empty());
     assert_eq!(
         outcome.state.root()["files"]["one.md"]["status"],

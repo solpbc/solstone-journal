@@ -169,7 +169,7 @@ pub fn execute_desktop(
 mod tests {
     use std::path::Path;
     use std::sync::Arc;
-    use std::sync::atomic::AtomicBool;
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
     use std::sync::mpsc::{self, TryRecvError};
 
     use solstone_core_import_sources::document::{
@@ -376,6 +376,50 @@ mod tests {
             transcripts.is_empty(),
             "stopped text import installed {transcripts:?}"
         );
+    }
+
+    #[test]
+    fn stopped_sync_keeps_the_saved_count_and_fails_the_join() {
+        let journal = tempfile::tempdir().unwrap();
+        let vault = tempfile::tempdir().unwrap();
+        std::fs::write(vault.path().join("a.md"), "").unwrap();
+        std::fs::write(vault.path().join("b.md"), "").unwrap();
+        let seen = AtomicUsize::new(0);
+        // The attempt checks once before dispatch and once before the first
+        // note. The next check is the following note, which must not start.
+        let stop =
+            WorkStop::linked_with_checkpoint(Arc::new(AtomicBool::new(false)), None, move || {
+                seen.fetch_add(1, Ordering::AcqRel) >= 2
+            });
+        let seams = idle_seams(journal.path());
+        let handle = start(
+            vec![
+                "--sync".to_owned(),
+                "obsidian".to_owned(),
+                "--save".to_owned(),
+                "--path".to_owned(),
+                vault.path().display().to_string(),
+            ],
+            journal.path().to_path_buf(),
+            seams,
+            stop,
+        )
+        .unwrap();
+        let (run, id) = handle.join();
+        assert_eq!(run.exit_code, 1, "{}", run.stderr);
+        assert_eq!(run.stderr, "import stopped\n");
+        assert!(run.stdout.contains("saved=1"), "{}", run.stdout);
+        assert!(run.stdout.contains("errors=0"), "{}", run.stdout);
+        assert!(id.is_none());
+        let state: serde_json::Value = serde_json::from_slice(
+            &std::fs::read(journal.path().join("imports").join("obsidian.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(state["files"]["a.md"]["status"], "imported");
+        assert_eq!(state["files"]["b.md"]["status"], "available");
+        assert!(!journal.path().join("chronicle").exists());
+        assert!(vault.path().join("a.md").is_file());
+        assert!(vault.path().join("b.md").is_file());
     }
 
     #[test]
