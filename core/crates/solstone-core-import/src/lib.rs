@@ -35,6 +35,7 @@ pub mod sync_state;
 pub mod text;
 pub mod thinking;
 pub mod timestamp;
+pub mod work_stop;
 
 pub use allocate::{
     AllocatedImport, BoundImport, IMPORT_ID_PROBE_LIMIT, allocate_import_id, bind_import_record,
@@ -108,6 +109,7 @@ pub use text::{
 pub use timestamp::{
     AutoTimestamp, DetectedTimestamp, Timestamp, TimestampError, validate_timestamp,
 };
+pub use work_stop::{WorkStop, WorkStopGuard, work_continues};
 
 /// Error returned by an importer seam that has no implementation yet.
 #[derive(Debug)]

@@ -160,19 +160,13 @@ fn resolve_unbound_import_id(request: &NativeProducerRequest<'_>) -> Result<Stri
     Ok(bound.import_id.as_str().to_owned())
 }
 
-pub fn run_native_producer<W, P, D, Pub>(
+pub fn run_native_producer(
     request: NativeProducerRequest<'_>,
-    wire: &W,
-    pdf_worker: &P,
-    doc_model: &D,
-    publication: &Pub,
-) -> Result<NativeProducerOutcome, NativeProducerError>
-where
-    W: WireClient,
-    P: PdfWorker,
-    D: DocumentModelClient,
-    Pub: PublicationOperations,
-{
+    wire: &dyn WireClient,
+    pdf_worker: &dyn PdfWorker,
+    doc_model: &dyn DocumentModelClient,
+    publication: &dyn PublicationOperations,
+) -> Result<NativeProducerOutcome, NativeProducerError> {
     if request.source != RegistrySource::Image && request.source != RegistrySource::Document {
         return Err(NativeProducerError::UnsupportedSource {
             source: request.source,
@@ -504,6 +498,20 @@ where
                     };
 
                     match pub_rec_res {
+                        Err(solstone_core_import::publish::PublishError::NotAdmitted) => {
+                            let _ = record_unconfirmed_attempt_unlocked(
+                                request.journal_root,
+                                request.import_id,
+                                generation,
+                                finished_at_ms,
+                                Some(IMPORT_UNCONFIRMED_REASON.to_owned()),
+                            );
+                            heartbeat.finish_then(|| {
+                                Err(NativeProducerError::PublicationFailed {
+                                    detail: "one or more publication operations failed".to_owned(),
+                                })
+                            })
+                        }
                         Ok(pub_rec) if pub_rec.status == PublicationStatus::Success => {
                             if let Err(meta_err) = record_completed_attempt_unlocked(
                                 request.journal_root,
@@ -774,6 +782,23 @@ where
                                 unavailable_pages: proj.unavailable_pages,
                                 publication: None,
                                 errors: import_res.errors,
+                            })
+                        })
+                    } else if !solstone_core_import::work_continues() {
+                        let _ = record_unconfirmed_attempt_unlocked(
+                            request.journal_root,
+                            request.import_id,
+                            generation,
+                            finished_at_ms,
+                            Some(IMPORT_UNCONFIRMED_REASON.to_owned()),
+                        );
+                        heartbeat.finish_then(|| {
+                            Err(NativeProducerError::SourceFailed {
+                                detail: if import_res.hard_failures.is_empty() {
+                                    "the document import produced no entries".to_owned()
+                                } else {
+                                    import_res.hard_failures.join("; ")
+                                },
                             })
                         })
                     } else {

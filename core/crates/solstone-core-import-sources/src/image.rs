@@ -423,6 +423,9 @@ pub fn prepare_image(
         .into_owned();
 
     let description = match vision_png(&image, orientation) {
+        Ok(_) if !solstone_core_import::work_continues() => DescriptionOutcome::Unavailable {
+            reason: "generate cancelled".to_owned(),
+        },
         Ok(png) => interpret_generate(wire.execute(&build_generate_request(&png))),
         Err(error) => DescriptionOutcome::Unavailable {
             reason: format!("cannot prepare image for vision: {error}"),

@@ -63,7 +63,7 @@ mod health_logs;
 mod heartbeat;
 #[cfg(windows)]
 mod heartbeat_pid_windows;
-mod import_sources;
+mod importer_desktop;
 mod install_models;
 mod install_provider;
 #[cfg(unix)]
@@ -1343,84 +1343,7 @@ fn run_streams(args: Vec<OsString>) -> ExitCode {
 }
 
 fn run_importer(args: Vec<OsString>) -> ExitCode {
-    run_storage_ops_verb("importer", args, |arguments, journal| {
-        use solstone_core_import_host::cli_argv::CliOutcome;
-        let mut execution_arguments = arguments.to_vec();
-        let day_notice = match solstone_core_import_host::cli_argv::force_day_notice_for_args(
-            arguments, journal,
-        ) {
-            Ok(notice) => notice,
-            Err(run) => return (run.stdout, run.stderr, run.exit_code),
-        };
-        if let Some(notice) = day_notice {
-            let json_mode = arguments.iter().any(|arg| arg == "--json");
-            if let Err(error) = solstone_core_import::flush_force_notice(
-                json_mode,
-                &notice,
-                &mut std::io::stdout(),
-                &mut std::io::stderr(),
-            ) {
-                return (
-                    String::new(),
-                    format!("could not show import day notice: {error}\n"),
-                    1,
-                );
-            }
-        }
-        let preview_args =
-            match solstone_core_import_host::cli_argv::preview_arguments(arguments, journal) {
-                Ok(args) => args,
-                Err(run) => return (run.stdout, run.stderr, run.exit_code),
-            };
-        if let Some(preview_args) = preview_args {
-            execution_arguments = preview_args[1..].to_vec();
-            let preview = match solstone_core_import_host::cli_argv::run_cli(&preview_args, journal)
-            {
-                CliOutcome::Rendered(run) => run,
-                CliOutcome::Registry(dispatch) => import_sources::run_bound(dispatch, journal).0,
-                CliOutcome::Imported { .. } => unreachable!("preview never admits an import"),
-            };
-            if preview.exit_code != 0 {
-                return (preview.stdout, preview.stderr, preview.exit_code);
-            }
-            // Nothing to add means nothing starts: the import's own outcome
-            // ("Import skipped: ...", "... did not merge anything ...") stays first.
-            let announces =
-                solstone_core_import::size::ImportSize::rendered_announces_work(&preview.stdout);
-            use std::io::Write;
-            let mut notice: Box<dyn Write> = if arguments.iter().any(|arg| arg == "--json") {
-                Box::new(std::io::stderr())
-            } else {
-                Box::new(std::io::stdout())
-            };
-            if announces
-                && let Err(error) = notice
-                    .write_all(preview.stdout.as_bytes())
-                    .and_then(|()| notice.flush())
-            {
-                return (
-                    String::new(),
-                    format!("could not show import size: {error}\n"),
-                    1,
-                );
-            }
-        }
-        let started_ms = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_or(0, |elapsed| elapsed.as_millis() as u64);
-        let (run, import_id) =
-            match solstone_core_import_host::cli_argv::run_cli(&execution_arguments, journal) {
-                CliOutcome::Rendered(run) => (run, None),
-                CliOutcome::Imported { run, import_id } => (run, Some(import_id)),
-                CliOutcome::Registry(dispatch) => import_sources::run_bound(dispatch, journal),
-            };
-        if run.exit_code == 0
-            && let Some(import_id) = import_id
-        {
-            import_sources::record_finished_import(journal, &import_id, started_ms);
-        }
-        (run.stdout, run.stderr, run.exit_code)
-    })
+    run_storage_ops_verb("importer", args, importer_desktop::run)
 }
 
 fn run_segment(args: Vec<OsString>) -> ExitCode {

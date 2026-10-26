@@ -81,7 +81,11 @@ pub fn preview_arguments(args: &[String], journal: &Path) -> Result<Option<Vec<S
     preview_arguments_with(args, journal, || require_solstone(journal))
 }
 
-fn preview_arguments_with(
+/// Shape preview arguments with the caller's supervisor preflight.
+///
+/// The embedded entry passes a preflight that succeeds without probing. The
+/// desktop adapter passes [`require_solstone`].
+pub fn preview_arguments_with(
     args: &[String],
     journal: &Path,
     preflight: impl FnOnce() -> Result<(), SupervisorRefusal>,
@@ -127,7 +131,11 @@ pub fn force_day_notice_for_args(
     force_day_notice_with(args, journal, || require_solstone(journal))
 }
 
-fn force_day_notice_with(
+/// Resolve a force-import day notice with the caller's supervisor preflight.
+///
+/// The embedded entry does not probe. The desktop adapter passes
+/// [`require_solstone`].
+pub fn force_day_notice_with(
     args: &[String],
     journal: &Path,
     preflight: impl FnOnce() -> Result<(), SupervisorRefusal>,
@@ -252,12 +260,90 @@ fn run_after_parse(
         return rendered(refusal_run(refusal));
     }
 
+    dispatch_parsed(parsed, journal_path, Dispatch::Cli)
+}
+
+pub(crate) enum Dispatch<'a> {
+    Cli,
+    Library {
+        seams: &'a crate::call::ImportSeams,
+        embedded: bool,
+    },
+}
+
+impl Dispatch<'_> {
+    fn embedded(&self) -> bool {
+        matches!(self, Self::Library { embedded: true, .. })
+    }
+
+    fn seams(&self) -> Option<&crate::call::ImportSeams> {
+        match self {
+            Self::Library { seams, .. } => Some(seams),
+            Self::Cli => None,
+        }
+    }
+}
+
+fn embedded_body_refused() -> CliRun {
+    failure(
+        "",
+        "Apple Health import, Oura sync, and Oura connect stay on the desktop importer.\n",
+        1,
+    )
+}
+
+pub(crate) fn run_library(
+    args: &[String],
+    journal_path: &Path,
+    seams: &crate::call::ImportSeams,
+    embedded: bool,
+) -> (CliRun, Option<String>) {
+    let started_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |elapsed| elapsed.as_millis() as u64);
+    let parsed = match parse_arguments(args) {
+        Ok(ParsedCommand::Help) => return (success(cli_render::HELP.to_owned()), None),
+        Ok(parsed) => parsed,
+        Err(arguments) => return (argparse_error(arguments), None),
+    };
+    if !solstone_core_import::work_continues() {
+        return (failure("", "import stopped\n", 1), None);
+    }
+    let (run, import_id) =
+        match dispatch_parsed(parsed, journal_path, Dispatch::Library { seams, embedded }) {
+            CliOutcome::Rendered(run) => (run, None),
+            CliOutcome::Imported { run, import_id } => (run, Some(import_id)),
+            CliOutcome::Registry(_) => {
+                unreachable!("library dispatch executes registry sources")
+            }
+        };
+    if run.exit_code == 0
+        && let Some(import_id) = &import_id
+    {
+        crate::registry::record_finished_import(journal_path, import_id, started_ms);
+    }
+    (run, import_id)
+}
+
+fn dispatch_parsed(
+    parsed: ParsedCommand,
+    journal_path: &Path,
+    dispatch: Dispatch<'_>,
+) -> CliOutcome {
     match parsed {
-        ParsedCommand::Help => unreachable!("help returns before supervisor preflight"),
+        ParsedCommand::Help => rendered(success(cli_render::HELP.to_owned())),
         ParsedCommand::ListImporters { json } => rendered(success(cli_render::importers(json))),
         ParsedCommand::Backends => rendered(success(cli_render::backends())),
-        ParsedCommand::Connect { backend } => rendered(run_connect(&backend, journal_path)),
+        ParsedCommand::Connect { backend } => {
+            if dispatch.embedded() && backend == "oura" {
+                return rendered(embedded_body_refused());
+            }
+            rendered(run_connect(&backend, journal_path))
+        }
         ParsedCommand::Sync { backend, options } => {
+            if dispatch.embedded() && backend == "oura" {
+                return rendered(embedded_body_refused());
+            }
             rendered(run_sync(&backend, &options, journal_path))
         }
         ParsedCommand::AudioArchive(options) => rendered(crate::audio_archive::run_audio_archive(
@@ -279,7 +365,7 @@ fn run_after_parse(
             json,
             journal_path,
         )),
-        ParsedCommand::Import(options) => run_import(options, journal_path),
+        ParsedCommand::Import(options) => run_import(options, journal_path, dispatch),
     }
 }
 
@@ -347,7 +433,7 @@ fn run_sync(backend: &str, options: &Options, journal_path: &Path) -> CliRun {
     }
 }
 
-fn run_import(mut options: Options, journal_path: &Path) -> CliOutcome {
+fn run_import(mut options: Options, journal_path: &Path, dispatch: Dispatch<'_>) -> CliOutcome {
     let owner_instant = match owner_instant(&mut options, journal_path) {
         Ok(instant) => instant,
         Err(run) => return rendered(run),
@@ -396,7 +482,13 @@ fn run_import(mut options: Options, journal_path: &Path) -> CliOutcome {
         Err(error) => return rendered(failure("", &format!("{error}\n"), 1)),
     };
     match outcome {
-        ResolutionOutcome::RouteAppleHealth => rendered(run_apple(media, &options, journal_path)),
+        ResolutionOutcome::RouteAppleHealth => {
+            if dispatch.embedded() {
+                rendered(embedded_body_refused())
+            } else {
+                rendered(run_apple(media, &options, journal_path))
+            }
+        }
         ResolutionOutcome::Skipped {
             reason: solstone_core_import::SkipReason::TimestampRequired,
             detected_timestamp: Some(timestamp),
@@ -433,23 +525,67 @@ fn run_import(mut options: Options, journal_path: &Path) -> CliOutcome {
             stream,
         } => {
             let timestamp = with_owner_instant(timestamp, owner_instant);
-            let (run, import_id) = run_text(media, &options, journal_path, &timestamp, &stream);
-            imported(run, &import_id, options.dry_run)
+            match dispatch.seams() {
+                Some(seams) => {
+                    let (run, import_id) = run_text(
+                        media,
+                        &options,
+                        journal_path,
+                        &timestamp,
+                        &stream,
+                        seams.text.as_ref(),
+                    );
+                    seams.text.finish();
+                    imported(run, &import_id, options.dry_run)
+                }
+                None => {
+                    let wire = solstone_core_import::text::SystemWireClient::sibling();
+                    let (run, import_id) =
+                        run_text(media, &options, journal_path, &timestamp, &stream, &wire);
+                    wire.finish();
+                    imported(run, &import_id, options.dry_run)
+                }
+            }
         }
         ResolutionOutcome::Resolved {
             source: ResolvedSource::Registry(source),
             timestamp,
             ..
-        } => CliOutcome::Registry(RegistryDispatch {
-            media: PathBuf::from(media),
-            source,
-            timestamp: timestamp.as_str().to_owned(),
-            dry_run: options.dry_run,
-            json: options.json,
-            force: options.force,
-            owner_timestamp: options.timestamp.clone(),
-            fallback_timestamp: options.fallback_timestamp.clone(),
-        }),
+        } => {
+            let registry_dispatch = RegistryDispatch {
+                media: PathBuf::from(media),
+                source,
+                timestamp: timestamp.as_str().to_owned(),
+                dry_run: options.dry_run,
+                json: options.json,
+                force: options.force,
+                owner_timestamp: options.timestamp.clone(),
+                fallback_timestamp: options.fallback_timestamp.clone(),
+            };
+            match dispatch.seams() {
+                None => CliOutcome::Registry(registry_dispatch),
+                Some(seams) => {
+                    let reindex = seams.reindex.as_ref();
+                    let source_seams = crate::registry::SourceSeams {
+                        pdf: seams.pdf.as_ref(),
+                        model: seams.model.as_ref(),
+                        image: seams.image.as_ref(),
+                        reindex,
+                    };
+                    let (run, import_id) = crate::registry::run_with_seams(
+                        registry_dispatch,
+                        journal_path,
+                        &source_seams,
+                    );
+                    match import_id {
+                        Some(import_id) if !options.dry_run => {
+                            CliOutcome::Imported { run, import_id }
+                        }
+                        _ => CliOutcome::Rendered(run),
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -507,7 +643,18 @@ fn imported(run: CliRun, import_id: &str, dry_run: bool) -> CliOutcome {
 }
 
 /// Current-thread runtime for generic audio import, including the processing wait.
+///
+/// The calling thread must not already have a Tokio runtime. Nesting one
+/// panics inside the runtime constructor, so this returns an error instead.
+/// The embedded entry runs audio on a fresh thread that has no runtime.
+/// Desktop `execute_desktop` uses the caller's thread and has the same rule.
 pub fn audio_import_runtime() -> Result<tokio::runtime::Runtime, String> {
+    if tokio::runtime::Handle::try_current().is_ok() {
+        return Err(
+            "generic audio import builds its runtime on a thread that does not already have one"
+                .to_owned(),
+        );
+    }
     tokio::runtime::Builder::new_current_thread()
         .enable_io()
         .enable_time()
@@ -734,6 +881,7 @@ fn run_text(
     journal_path: &Path,
     timestamp: &solstone_core_import::Timestamp,
     stream: &str,
+    wire: &dyn solstone_core_import::text::WireClient,
 ) -> (CliRun, String) {
     if options.dry_run {
         let semantic = match solstone_core_import::source_timestamp_for_preview(
@@ -813,7 +961,7 @@ fn run_text(
     // transcript parser a second format. The clock is the source time, not a
     // shifted bookkeeping id.
     let clock = source_timestamp.clock();
-    let outcome = solstone_core_import::process_transcript(
+    let outcome = solstone_core_import::text::process_transcript_with_wire(
         Path::new(media),
         &day_dir,
         &clock,
@@ -821,6 +969,7 @@ fn run_text(
         stream,
         options.facet.as_deref(),
         options.setting.as_deref(),
+        wire,
         source_timestamp.source_instant(),
     );
     let input = match &outcome {
@@ -2185,7 +2334,7 @@ mod tests {
             )
         );
         fs::write(&config, r#"{"identity":{"timezone":"Asia/Tokyo"}}"#).unwrap();
-        let CliOutcome::Rendered(run) = run_import(options, root.path()) else {
+        let CliOutcome::Rendered(run) = run_import(options, root.path(), Dispatch::Cli) else {
             panic!("refusal");
         };
         assert_eq!(run.exit_code, 1);

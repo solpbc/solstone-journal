@@ -451,6 +451,9 @@ pub fn publish_audio_archive(
                 fs::create_dir_all(&stage)?;
                 let mut staged = Vec::with_capacity(parts.len());
                 for part in &parts {
+                    if !crate::work_continues() {
+                        return Err(AudioArchiveError::Other("import stopped".to_owned()));
+                    }
                     let member = store.member_for_part(part)?;
                     if store.part_is_rejected(part)? {
                         continue;

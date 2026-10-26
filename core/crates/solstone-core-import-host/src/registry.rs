@@ -4,19 +4,18 @@
 //! Top-level dispatch for source bodies that depend on the import contract.
 
 use std::collections::HashSet;
-use std::env;
 use std::path::{Path, PathBuf};
-use std::time::{Duration, SystemTime};
+use std::time::SystemTime;
 
+use crate::cli_argv::RegistryDispatch;
+use crate::import_publication::{
+    ImportFinish, ImportTerminalInput, finish_import_attempt, finish_import_attempt_indexing,
+};
 use serde_json::Map;
 use solstone_core_import::cli_render::CliRun;
 use solstone_core_import::publish::NativePublicationOperations;
 use solstone_core_import::{
     AttemptFacts, AttemptState, BoundImport, ImportError, ImportResult, RegistrySource, cli_render,
-};
-use solstone_core_import_host::cli_argv::RegistryDispatch;
-use solstone_core_import_host::import_publication::{
-    ImportFinish, ImportTerminalInput, finish_import_attempt, finish_import_attempt_indexing,
 };
 use solstone_core_import_sources::archive::{
     ArchiveMergeOptions, ArchiveMergeResult, FullReindexRequester, ReindexStatus, RetryDisposition,
@@ -27,11 +26,13 @@ use solstone_core_import_sources::{
 };
 use solstone_core_journal_io::{DEFAULT_LOCK_TIMEOUT, LockOptions, hold_lock};
 
-struct SupervisorRescan {
-    journal: PathBuf,
+/// Asks the indexer to scan the journal. Desktop and embedded callers pass the
+/// same implementation; it does not start a process.
+pub struct IndexScan {
+    pub journal: PathBuf,
 }
 
-impl FullReindexRequester for SupervisorRescan {
+impl FullReindexRequester for IndexScan {
     fn request_full_reindex(&self) -> Result<bool, String> {
         solstone_core_indexer_store::todo::enqueue_token(
             &self.journal,
@@ -42,7 +43,15 @@ impl FullReindexRequester for SupervisorRescan {
     }
 }
 
-const PDF_WORKER_TIMEOUT: Duration = Duration::from_secs(90);
+pub(crate) struct SourceSeams<'a> {
+    pub pdf: &'a dyn document::PdfWorker,
+    pub model: &'a dyn document::DocumentModelClient,
+    pub image: &'a dyn image::WireClient,
+    pub reindex: &'a dyn FullReindexRequester,
+}
+
+#[cfg(test)]
+const PDF_WORKER_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(90);
 
 #[cfg(test)]
 pub fn run(dispatch: RegistryDispatch, journal: &Path) -> CliRun {
@@ -53,10 +62,17 @@ pub fn run(dispatch: RegistryDispatch, journal: &Path) -> CliRun {
 ///
 /// Dry-run and preview return `None` and do not allocate. The id is the
 /// selected directory, which can differ from the source timestamp.
-pub fn run_bound(dispatch: RegistryDispatch, journal: &Path) -> (CliRun, Option<String>) {
+pub(crate) fn run_with_seams(
+    dispatch: RegistryDispatch,
+    journal: &Path,
+    seams: &SourceSeams<'_>,
+) -> (CliRun, Option<String>) {
+    if !solstone_core_import::work_continues() {
+        return (failure("import stopped\n".to_owned()), None);
+    }
     if dispatch.dry_run {
         return (
-            match preview_size(&dispatch, journal) {
+            match preview_size(&dispatch, journal, seams) {
                 Ok(size) => success(size.render(dispatch.json)),
                 Err(error) => failure(format!("import preview failed: {error}\n")),
             },
@@ -70,9 +86,9 @@ pub fn run_bound(dispatch: RegistryDispatch, journal: &Path) -> (CliRun, Option<
         | RegistrySource::Claude
         | RegistrySource::Chatgpt
         | RegistrySource::Gemini => run_save(dispatch, journal, &mut selected),
-        RegistrySource::Document => run_document(dispatch, journal, &mut selected),
-        RegistrySource::Image => run_image(dispatch, journal, &mut selected),
-        RegistrySource::JournalArchive => run_archive(dispatch, journal, &mut selected),
+        RegistrySource::Document => run_document(dispatch, journal, &mut selected, seams),
+        RegistrySource::Image => run_image(dispatch, journal, &mut selected, seams),
+        RegistrySource::JournalArchive => run_archive(dispatch, journal, &mut selected, seams),
         RegistrySource::Strava => run_strava(dispatch, journal, &mut selected),
         RegistrySource::AppleHealth | RegistrySource::Oura => {
             unreachable!("resolver preempts body")
@@ -84,6 +100,7 @@ pub fn run_bound(dispatch: RegistryDispatch, journal: &Path) -> (CliRun, Option<
 fn preview_size(
     dispatch: &RegistryDispatch,
     journal: &Path,
+    seams: &SourceSeams<'_>,
 ) -> Result<solstone_core_import::size::ImportSize, String> {
     let zone = solstone_core_journal_config::owner_zone(journal);
     if let Some(rendered) = save::render(
@@ -116,11 +133,7 @@ fn preview_size(
                 .map_err(|error| error.to_string())
         }
         RegistrySource::Document => {
-            #[cfg(windows)]
-            let worker = document::WindowsPdfWorker::from_verified_package(PDF_WORKER_TIMEOUT)
-                .map_err(|error| error.to_string())?;
-            #[cfg(not(windows))]
-            let worker = document::SystemPdfWorker::new(pdf_worker_sibling()?, PDF_WORKER_TIMEOUT);
+            seams.pdf.prepare()?;
             document::preview_size(
                 document::DocumentPreviewRequest {
                     source: &dispatch.media,
@@ -131,7 +144,7 @@ fn preview_size(
                 },
                 journal,
                 dispatch.force,
-                &worker,
+                seams.pdf,
             )
         }
         RegistrySource::Strava => {
@@ -464,29 +477,17 @@ fn run_document(
     mut dispatch: RegistryDispatch,
     journal: &Path,
     selected: &mut Option<String>,
+    seams: &SourceSeams<'_>,
 ) -> CliRun {
-    #[cfg(windows)]
-    let worker = match document::WindowsPdfWorker::from_verified_package(PDF_WORKER_TIMEOUT) {
-        Ok(worker) => worker,
-        Err(error) => return failure(format!("{error}\n")),
-    };
-    #[cfg(not(windows))]
-    let worker_path = match pdf_worker_sibling() {
-        Ok(path) => path,
-        Err(error) => return failure(format!("{error}\n")),
-    };
-    #[cfg(not(windows))]
-    let worker = document::SystemPdfWorker::new(worker_path, PDF_WORKER_TIMEOUT);
-    let model_client = match solstone_core_generate::OneShotClient::sibling() {
-        Ok(client) => client,
-        Err(error) => {
-            return failure(format!(
-                "{} import failed: {error}\n",
-                dispatch.source.name()
-            ));
-        }
-    };
-    let model = document::SystemDocumentModelClient::new(model_client);
+    if let Err(error) = seams.pdf.prepare() {
+        return failure(format!("{error}\n"));
+    }
+    if let Err(error) = seams.model.prepare() {
+        return failure(format!(
+            "{} import failed: {error}\n",
+            dispatch.source.name()
+        ));
+    }
     if let Err(error) = claim_dispatch_id(journal, &mut dispatch, selected) {
         return failure(format!(
             "{} import failed: {error}\n",
@@ -516,20 +517,20 @@ fn run_document(
     let outcome = match solstone_core_import_sources::run_native_producer(
         req,
         &solstone_core_import_sources::NullWireClient,
-        &worker,
-        &model,
+        seams.pdf,
+        seams.model,
         &publication,
     ) {
         Ok(outcome) => outcome,
         Err(error) => {
-            model.finish();
+            seams.model.finish();
             return failure(format!(
                 "{} import failed: {error}\n",
                 dispatch.source.name()
             ));
         }
     };
-    model.finish();
+    seams.model.finish();
     let proj = solstone_core_import::project_import_result(journal, &dispatch.timestamp);
     let mut errors = outcome.errors;
     if let Some(err) = proj.error
@@ -563,6 +564,7 @@ fn run_image(
     mut dispatch: RegistryDispatch,
     journal: &Path,
     selected: &mut Option<String>,
+    seams: &SourceSeams<'_>,
 ) -> CliRun {
     let bound = match claim_dispatch_id(journal, &mut dispatch, selected) {
         Ok(bound) => bound,
@@ -591,15 +593,14 @@ fn run_image(
             return failure(format!("{} import failed: {err}\n", dispatch.source.name()));
         }
     };
-    let wire = image::SystemWireClient;
     let mut req = cli_producer_request(journal, &dispatch, facts.generation);
     req.owner_timestamp = Some(bound.source_timestamp.as_str());
     req.fallback_timestamp = None;
     let outcome = match solstone_core_import_sources::run_native_producer(
         req,
-        &wire,
-        &solstone_core_import_sources::NullPdfWorker,
-        &solstone_core_import_sources::NullDocumentModelClient,
+        seams.image,
+        seams.pdf,
+        seams.model,
         &NativePublicationOperations,
     ) {
         Ok(outcome) => outcome,
@@ -661,8 +662,15 @@ fn run_archive(
     dispatch: RegistryDispatch,
     journal: &Path,
     selected: &mut Option<String>,
+    seams: &SourceSeams<'_>,
 ) -> CliRun {
-    run_archive_with_seams(dispatch, journal, selected, &DEFAULT_ARCHIVE_TERMINAL_SEAMS)
+    run_archive_with_seams(
+        dispatch,
+        journal,
+        selected,
+        &DEFAULT_ARCHIVE_TERMINAL_SEAMS,
+        seams.reindex,
+    )
 }
 
 fn run_archive_with_seams(
@@ -670,6 +678,7 @@ fn run_archive_with_seams(
     journal: &Path,
     selected: &mut Option<String>,
     seams: &ArchiveTerminalSeams<'_>,
+    reindex: &dyn FullReindexRequester,
 ) -> CliRun {
     let options = ArchiveMergeOptions {
         working_root: solstone_core_import_sources::archive::archive_merge_working_root(journal),
@@ -743,14 +752,7 @@ fn run_archive_with_seams(
             facts.generation
         ));
     }
-    let merge_result = merge_journal_archive(
-        &dispatch.media,
-        journal,
-        &options,
-        Some(&SupervisorRescan {
-            journal: journal.to_path_buf(),
-        }),
-    );
+    let merge_result = merge_journal_archive(&dispatch.media, journal, &options, Some(reindex));
     let finished_at_ms = SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
         .unwrap_or_default()
@@ -935,8 +937,9 @@ fn archive_failure(source: RegistrySource, error: ImportSourcesError) -> CliRun 
     failure(format!("{} import failed: {error}\n", source.name()))
 }
 
+#[cfg(test)]
 fn pdf_worker_sibling() -> Result<PathBuf, String> {
-    let current = env::current_exe().map_err(|error| error.to_string())?;
+    let current = std::env::current_exe().map_err(|error| error.to_string())?;
     let parent = current
         .parent()
         .ok_or_else(|| "current executable has no parent".to_owned())?;
@@ -1326,6 +1329,176 @@ fn run_strava_internal(
         raw_retention: Some(STRAVA_RAW_RETENTION.to_owned()),
     };
     render_result(source, result)
+}
+
+#[cfg(test)]
+struct FailingPdf(String);
+
+#[cfg(test)]
+impl document::PdfWorker for FailingPdf {
+    fn prepare(&self) -> Result<(), String> {
+        Err(self.0.clone())
+    }
+
+    fn execute(
+        &self,
+        _request: &document::PdfWorkerRequest,
+    ) -> Result<document::PdfPayload, document::WorkerFailure> {
+        Err(document::WorkerFailure::Process {
+            exit_code: Some(1),
+            error: self.0.clone(),
+            detail: None,
+        })
+    }
+}
+
+#[cfg(test)]
+struct FailingModel(String);
+
+#[cfg(test)]
+impl document::DocumentModelClient for FailingModel {
+    fn prepare(&self) -> Result<(), String> {
+        Err(self.0.clone())
+    }
+
+    fn execute(
+        &self,
+        _request: &solstone_core_generate::GenerateRequest,
+    ) -> Result<solstone_core_generate::GenerateResponse, solstone_core_generate::ClientError> {
+        Err(solstone_core_generate::ClientError::Resolve(self.0.clone()))
+    }
+}
+
+#[cfg(test)]
+enum OwnedPdf {
+    #[cfg(not(windows))]
+    Ready(document::SystemPdfWorker),
+    #[cfg(windows)]
+    Ready(document::WindowsPdfWorker),
+    Missing(FailingPdf),
+}
+
+#[cfg(test)]
+impl document::PdfWorker for OwnedPdf {
+    fn prepare(&self) -> Result<(), String> {
+        match self {
+            Self::Ready(worker) => worker.prepare(),
+            Self::Missing(worker) => worker.prepare(),
+        }
+    }
+
+    fn execute(
+        &self,
+        request: &document::PdfWorkerRequest,
+    ) -> Result<document::PdfPayload, document::WorkerFailure> {
+        match self {
+            Self::Ready(worker) => worker.execute(request),
+            Self::Missing(worker) => worker.execute(request),
+        }
+    }
+}
+
+#[cfg(test)]
+enum OwnedModel {
+    Ready(document::SystemDocumentModelClient),
+    Missing(FailingModel),
+}
+
+#[cfg(test)]
+impl document::DocumentModelClient for OwnedModel {
+    fn prepare(&self) -> Result<(), String> {
+        match self {
+            Self::Ready(model) => model.prepare(),
+            Self::Missing(model) => model.prepare(),
+        }
+    }
+
+    fn execute(
+        &self,
+        request: &solstone_core_generate::GenerateRequest,
+    ) -> Result<solstone_core_generate::GenerateResponse, solstone_core_generate::ClientError> {
+        match self {
+            Self::Ready(model) => model.execute(request),
+            Self::Missing(model) => model.execute(request),
+        }
+    }
+
+    fn finish(&self) {
+        if let Self::Ready(model) = self {
+            model.finish();
+        }
+    }
+}
+
+#[cfg(test)]
+fn owned_pdf() -> OwnedPdf {
+    #[cfg(windows)]
+    {
+        match document::WindowsPdfWorker::from_verified_package(PDF_WORKER_TIMEOUT) {
+            Ok(worker) => OwnedPdf::Ready(worker),
+            Err(error) => OwnedPdf::Missing(FailingPdf(error.to_string())),
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        match pdf_worker_sibling() {
+            Ok(path) => OwnedPdf::Ready(document::SystemPdfWorker::new(path, PDF_WORKER_TIMEOUT)),
+            Err(error) => OwnedPdf::Missing(FailingPdf(error)),
+        }
+    }
+}
+
+#[cfg(test)]
+fn owned_model() -> OwnedModel {
+    match solstone_core_generate::OneShotClient::sibling() {
+        Ok(client) => OwnedModel::Ready(document::SystemDocumentModelClient::new(client)),
+        Err(error) => OwnedModel::Missing(FailingModel(error.to_string())),
+    }
+}
+
+#[cfg(test)]
+pub fn run_bound(dispatch: RegistryDispatch, journal: &Path) -> (CliRun, Option<String>) {
+    let reindex = IndexScan {
+        journal: journal.to_path_buf(),
+    };
+    match dispatch.source {
+        RegistrySource::Document => {
+            let pdf = owned_pdf();
+            let model = owned_model();
+            let image = solstone_core_import_sources::NullWireClient;
+            let seams = SourceSeams {
+                pdf: &pdf,
+                model: &model,
+                image: &image,
+                reindex: &reindex,
+            };
+            run_with_seams(dispatch, journal, &seams)
+        }
+        RegistrySource::Image => {
+            let pdf = solstone_core_import_sources::NullPdfWorker;
+            let model = solstone_core_import_sources::NullDocumentModelClient;
+            let image = image::SystemWireClient;
+            let seams = SourceSeams {
+                pdf: &pdf,
+                model: &model,
+                image: &image,
+                reindex: &reindex,
+            };
+            run_with_seams(dispatch, journal, &seams)
+        }
+        _ => {
+            let pdf = solstone_core_import_sources::NullPdfWorker;
+            let model = solstone_core_import_sources::NullDocumentModelClient;
+            let image = solstone_core_import_sources::NullWireClient;
+            let seams = SourceSeams {
+                pdf: &pdf,
+                model: &model,
+                image: &image,
+                reindex: &reindex,
+            };
+            run_with_seams(dispatch, journal, &seams)
+        }
+    }
 }
 
 #[cfg(test)]
@@ -2099,7 +2272,15 @@ mod tests {
             after_admit: Some(&superseding_hook),
             ..DEFAULT_ARCHIVE_TERMINAL_SEAMS
         };
-        let run1 = run_archive_with_seams(dispatch1, journal.path(), &mut None, &seams);
+        let run1 = run_archive_with_seams(
+            dispatch1,
+            journal.path(),
+            &mut None,
+            &seams,
+            &IndexScan {
+                journal: journal.path().to_path_buf(),
+            },
+        );
         assert_ne!(run1.exit_code, 0, "{}", run1.stderr);
 
         // Verify generation 2 was not overwritten and target data was not mutated
@@ -2347,7 +2528,15 @@ mod tests {
             ..DEFAULT_ARCHIVE_TERMINAL_SEAMS
         };
 
-        let run = run_archive_with_seams(dispatch, journal.path(), &mut None, &seams);
+        let run = run_archive_with_seams(
+            dispatch,
+            journal.path(),
+            &mut None,
+            &seams,
+            &IndexScan {
+                journal: journal.path().to_path_buf(),
+            },
+        );
         assert_ne!(run.exit_code, 0, "{}", run.stderr);
 
         // Content was merged, foreign stream.json bytes unchanged
@@ -2714,7 +2903,15 @@ mod tests {
             ..DEFAULT_ARCHIVE_TERMINAL_SEAMS
         };
 
-        let run = run_archive_with_seams(dispatch, journal.path(), &mut None, &seams);
+        let run = run_archive_with_seams(
+            dispatch,
+            journal.path(),
+            &mut None,
+            &seams,
+            &IndexScan {
+                journal: journal.path().to_path_buf(),
+            },
+        );
         assert_ne!(run.exit_code, 0, "{}", run.stderr);
 
         let meta = solstone_core_import::read_import_metadata(journal.path(), import_id).unwrap();
@@ -3387,18 +3584,12 @@ mod tests {
             "strava".to_string(),
             csv_file.to_str().unwrap().to_string(),
         ];
-        let outcome_strava = solstone_core_import_host::cli_argv::run_cli_with(
-            &strava_args,
-            journal.path(),
-            lookup_env,
-            connectivity,
-        );
+        let outcome_strava =
+            crate::cli_argv::run_cli_with(&strava_args, journal.path(), lookup_env, connectivity);
         let run = match outcome_strava {
-            solstone_core_import_host::cli_argv::CliOutcome::Rendered(run) => run,
-            solstone_core_import_host::cli_argv::CliOutcome::Imported { run, .. } => run,
-            solstone_core_import_host::cli_argv::CliOutcome::Registry(dispatch) => {
-                run(dispatch, journal.path())
-            }
+            crate::cli_argv::CliOutcome::Rendered(run) => run,
+            crate::cli_argv::CliOutcome::Imported { run, .. } => run,
+            crate::cli_argv::CliOutcome::Registry(dispatch) => run(dispatch, journal.path()),
         };
         assert_ne!(run.exit_code, 0);
         assert!(!journal.path().join("imports").exists());
@@ -3410,14 +3601,10 @@ mod tests {
             "ics".to_string(),
             ics_file.to_str().unwrap().to_string(),
         ];
-        let outcome_ics = solstone_core_import_host::cli_argv::run_cli_with(
-            &ics_args,
-            journal.path(),
-            lookup_env,
-            connectivity,
-        );
+        let outcome_ics =
+            crate::cli_argv::run_cli_with(&ics_args, journal.path(), lookup_env, connectivity);
         match outcome_ics {
-            solstone_core_import_host::cli_argv::CliOutcome::Registry(dispatch) => {
+            crate::cli_argv::CliOutcome::Registry(dispatch) => {
                 assert_eq!(dispatch.source, RegistrySource::Ics);
             }
             other => panic!("expected CliOutcome::Registry with Ics, got {:?}", other),

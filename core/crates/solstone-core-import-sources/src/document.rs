@@ -184,10 +184,19 @@ pub enum WorkerFailure {
     ProtocolViolation {
         detail: String,
     },
+    /// The caller stopped the attempt. Distinct from a crashed process, a
+    /// timeout, a corrupt file, and a missing library. Reported only after
+    /// the native call that was already inside the worker has returned.
+    Cancelled,
 }
 
 /// PDF worker boundary. Fakes receive typed input rather than needing to parse argv.
 pub trait PdfWorker {
+    /// Fail before an attempt is claimed when this worker cannot run.
+    fn prepare(&self) -> Result<(), String> {
+        Ok(())
+    }
+
     fn execute(&self, request: &PdfWorkerRequest) -> Result<PdfPayload, WorkerFailure>;
 }
 
@@ -218,6 +227,24 @@ impl SystemPdfWorker {
 }
 
 impl PdfWorker for SystemPdfWorker {
+    fn prepare(&self) -> Result<(), String> {
+        #[cfg(windows)]
+        {
+            Ok(())
+        }
+        #[cfg(not(windows))]
+        {
+            if self.executable.is_file() {
+                Ok(())
+            } else {
+                Err(format!(
+                    "missing sibling executable {}",
+                    self.executable.display()
+                ))
+            }
+        }
+    }
+
     fn execute(&self, request: &PdfWorkerRequest) -> Result<PdfPayload, WorkerFailure> {
         #[cfg(windows)]
         {
@@ -765,7 +792,15 @@ fn validate_worker_payload(payload: &PdfPayload, command: PdfCommand) -> Result<
 
 /// Model boundary for document page calls.
 pub trait DocumentModelClient {
+    /// Fail before an attempt is claimed when this client cannot run.
+    fn prepare(&self) -> Result<(), String> {
+        Ok(())
+    }
+
     fn execute(&self, request: &GenerateRequest) -> Result<GenerateResponse, ClientError>;
+
+    /// Release a sibling session. Injected clients keep the default.
+    fn finish(&self) {}
 }
 
 /// Runtime model client, constructed by the caller with its explicit executable path or journal.
@@ -797,6 +832,10 @@ impl DocumentModelClient for SystemDocumentModelClient {
     fn execute(&self, request: &GenerateRequest) -> Result<GenerateResponse, ClientError> {
         self.adapter.execute(request)
     }
+
+    fn finish(&self) {
+        self.adapter.finish();
+    }
 }
 
 pub struct DocumentPreviewRequest<'a> {
@@ -822,13 +861,28 @@ pub struct DocumentImportRequest<'a> {
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum DocumentFailure {
-    Internal { detail: String },
-    Protocol { detail: String },
-    CallerBug { detail: String },
+    Internal {
+        detail: String,
+    },
+    Protocol {
+        detail: String,
+    },
+    CallerBug {
+        detail: String,
+    },
     PasswordRequired,
-    Corrupt { detail: String },
-    RenderIo { detail: String },
-    TimedOut { timeout: Duration },
+    Corrupt {
+        detail: String,
+    },
+    RenderIo {
+        detail: String,
+    },
+    TimedOut {
+        timeout: Duration,
+    },
+    /// Stopping won before another page or model call. Not a corrupt file,
+    /// a protocol failure, a timeout, or a missing library.
+    Cancelled,
 }
 
 impl fmt::Display for DocumentFailure {
@@ -851,6 +905,7 @@ impl fmt::Display for DocumentFailure {
                 "PDF worker timed out after {}s",
                 timeout.as_secs_f64()
             ),
+            Self::Cancelled => formatter.write_str("PDF extraction cancelled"),
         }
     }
 }
@@ -1056,6 +1111,12 @@ pub fn prepare_document_import(
     let mut occupied = HashMap::new();
 
     for (input_index, source) in pdfs.iter().enumerate() {
+        if !solstone_core_import::work_continues() {
+            let message = format!("{}: {}", display_name(source), DocumentFailure::Cancelled);
+            errors.push(message.clone());
+            hard_failures.push(message);
+            break;
+        }
         let first = match worker.execute(&worker_request(
             PdfCommand::Extract,
             source,
@@ -1246,6 +1307,9 @@ pub fn install_and_publish_document(
     let mut manifest_entries = Vec::new();
 
     for item in &prepared_import.items {
+        if !solstone_core_import::work_continues() {
+            break;
+        }
         match install_artifacts(
             &item.source,
             &item.segment_dir,
@@ -1327,7 +1391,15 @@ pub fn install_and_publish_document(
             }
             Ok(_) => {}
             Err(error) => {
-                let failure = format!("document publication failed ({error})");
+                let failure = if matches!(
+                    error,
+                    solstone_core_import::publish::PublishError::NotAdmitted
+                ) {
+                    "document publication failed (one or more publication operations failed)"
+                        .to_owned()
+                } else {
+                    format!("document publication failed ({error})")
+                };
                 errors.push(failure.clone());
                 hard_failures.push(failure);
             }
@@ -2098,6 +2170,9 @@ fn generate_for_page(
     stats: &mut RenderStats,
     model: &dyn DocumentModelClient,
 ) -> Result<String, String> {
+    if !solstone_core_import::work_continues() {
+        return Err("generate cancelled".to_owned());
+    }
     if stats.model_calls >= MODEL_CALLS_MAX_PER_DOCUMENT {
         return Err("model-call limit reached".to_owned());
     }
@@ -2475,6 +2550,7 @@ fn owner_message(source: &Path, failure: &WorkerFailure) -> String {
 
 fn owner_failure(failure: &WorkerFailure) -> DocumentFailure {
     match failure {
+        WorkerFailure::Cancelled => DocumentFailure::Cancelled,
         WorkerFailure::TimedOut { timeout } => DocumentFailure::TimedOut { timeout: *timeout },
         WorkerFailure::ProtocolViolation { detail } => DocumentFailure::Protocol {
             detail: collapse_line(detail),

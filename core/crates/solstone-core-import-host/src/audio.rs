@@ -335,6 +335,15 @@ where
         } else {
             CHUNK_SECONDS
         };
+        if !solstone_core_import::work_continues() {
+            return Err(ImportError::AudioSliceRejected {
+                path: request.source_media.clone(),
+                chunk_index: index,
+                start_offset_seconds,
+                duration_seconds: chunk_duration_seconds,
+                detail: "import stopped".to_owned(),
+            });
+        }
         let true_start = chunk_start(&request, index)?;
         let day = true_start.format("%Y%m%d").to_string();
         let segment_parent = request

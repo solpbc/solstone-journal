@@ -205,6 +205,9 @@ impl Error for TextImportError {
 /// Model-boundary seam for the topics and setting of each imported segment.
 pub trait WireClient {
     fn execute(&self, request: &GenerateRequest) -> Result<GenerateResponse, ClientError>;
+
+    /// Release a sibling session. Injected clients keep the default.
+    fn finish(&self) {}
 }
 
 /// Production client for the sibling `solstone-core generate` process.
@@ -1136,6 +1139,9 @@ fn tile_context(
         overflow_text: None,
         transport_retries: None,
     };
+    if !crate::work_continues() {
+        return None;
+    }
     match wire.execute(&request) {
         Ok(GenerateResponse::Generated(response)) => parse_context(&response.text),
         Ok(GenerateResponse::Refused(refused)) => {

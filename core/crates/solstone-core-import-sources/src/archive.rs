@@ -743,6 +743,12 @@ fn validate_zip_archive(
     let mut root_candidates = BTreeSet::new();
     let mut expanded_size = 0_u64;
     for (index, name) in proved_names.iter().enumerate() {
+        if !solstone_core_import::work_continues() {
+            return Err(ImportSourcesError::ArchiveInvalid {
+                path: path.to_path_buf(),
+                detail: "import stopped".to_owned(),
+            });
+        }
         let entry =
             archive
                 .by_index(index)
@@ -941,6 +947,17 @@ fn extract_zip_archive(
     };
     let mut copied = 0_u64;
     for (index, name) in proved_names.iter().enumerate() {
+        if !solstone_core_import::work_continues() {
+            return cleanup_extraction(
+                path,
+                run_dir,
+                ImportSourcesError::ExtractionFailed {
+                    archive: path.to_path_buf(),
+                    extraction_dir: run_dir.to_path_buf(),
+                    detail: "import stopped".to_owned(),
+                },
+            );
+        }
         let mut entry = match archive.by_index(index) {
             Ok(entry) => entry,
             Err(error) => {

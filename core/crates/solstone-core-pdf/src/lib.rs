@@ -8,6 +8,7 @@ use std::ffi::{CString, c_char, c_int, c_ulong, c_void};
 use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 #[cfg(windows)]
 use std::sync::OnceLock;
 
@@ -107,10 +108,30 @@ struct Pdfium {
     bitmap_destroy: BitmapDestroy,
 }
 
+/// Byte bound shared with the subprocess stdout reader. The typed payload is
+/// counted as it is built. This is not a page, metadata, or bitmap budget.
+pub const RESPONSE_BYTE_BOUND: usize = 8 * 1024 * 1024;
+
+fn pdfium_gate() -> &'static Mutex<()> {
+    static GATE: Mutex<()> = Mutex::new(());
+    &GATE
+}
+
+fn with_pdfium_serialization<T>(body: impl FnOnce() -> T) -> T {
+    let _guard = pdfium_gate()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    body()
+}
+
 impl Pdfium {
     fn load() -> Result<Self, String> {
         let library_path = pdfium_library_path()?;
-        let library = open_pdfium_library(&library_path)?;
+        Self::load_at(&library_path)
+    }
+
+    fn load_at(library_path: &Path) -> Result<Self, String> {
+        let library = open_pdfium_library(library_path)?;
         macro_rules! symbol {
             ($name:literal, $kind:ty) => {{
                 let symbol = unsafe { library.get::<$kind>(concat!($name, "\0").as_bytes()) }
@@ -545,25 +566,101 @@ fn parse_render_pages(raw: &str) -> Result<BTreeSet<usize>, ContractError> {
 }
 
 fn run(arguments: Arguments) -> Result<SuccessPayload, ContractError> {
-    let pdfium = Pdfium::load().map_err(ContractError::internal)?;
-    pdfium.initialize();
-    let result = extract_document(&pdfium, &arguments);
-    pdfium.destroy();
-    result
+    with_pdfium_serialization(|| {
+        let pdfium = Pdfium::load().map_err(ContractError::internal)?;
+        pdfium.initialize();
+        let result = extract_document(
+            &pdfium,
+            &arguments,
+            &|_| true,
+            &mut PayloadAccount::unlimited(),
+        );
+        pdfium.destroy();
+        match result {
+            Ok(payload) => Ok(payload),
+            Err(ExtractFailure::Contract(error)) => Err(error),
+            Err(ExtractFailure::Cancelled) => Err(ContractError::internal("pdfium call cancelled")),
+            Err(ExtractFailure::ResponseTooLarge) => {
+                Err(ContractError::internal("response exceeds 8 MiB"))
+            }
+        }
+    })
+}
+
+struct PayloadAccount {
+    used: usize,
+    enforced: bool,
+}
+
+impl PayloadAccount {
+    fn unlimited() -> Self {
+        Self {
+            used: 0,
+            enforced: false,
+        }
+    }
+
+    fn bounded() -> Self {
+        Self {
+            used: 0,
+            enforced: true,
+        }
+    }
+
+    fn reserve(&mut self, bytes: usize) -> Result<(), ()> {
+        if !self.enforced {
+            return Ok(());
+        }
+        let next = self.used.checked_add(bytes).ok_or(())?;
+        if next > RESPONSE_BYTE_BOUND {
+            return Err(());
+        }
+        self.used = next;
+        Ok(())
+    }
+}
+
+enum ExtractFailure {
+    Contract(ContractError),
+    Cancelled,
+    ResponseTooLarge,
+}
+
+fn reserve_text(account: &mut PayloadAccount, text: &str) -> Result<(), ExtractFailure> {
+    account
+        .reserve(text.len())
+        .map_err(|()| ExtractFailure::ResponseTooLarge)
+}
+
+/// Cells for a PDFium UTF-16 buffer, including the trailing NUL. Refuses before
+/// allocation when the size overflows or exceeds the response bound.
+fn utf16_buffer_cells(count: i32) -> Result<usize, ()> {
+    let count = usize::try_from(count).map_err(|_| ())?;
+    let cells = count.checked_add(1).ok_or(())?;
+    let bytes = cells.checked_mul(std::mem::size_of::<u16>()).ok_or(())?;
+    if bytes > RESPONSE_BYTE_BOUND {
+        return Err(());
+    }
+    Ok(cells)
 }
 
 fn extract_document(
     pdfium: &Pdfium,
     arguments: &Arguments,
-) -> Result<SuccessPayload, ContractError> {
-    let path = CString::new(arguments.pdf_path.to_string_lossy().as_bytes())
-        .map_err(|_| ContractError::usage("PDF path contains a NUL byte"))?;
+    admit_page: &dyn Fn(usize) -> bool,
+    account: &mut PayloadAccount,
+) -> Result<SuccessPayload, ExtractFailure> {
+    let path = CString::new(arguments.pdf_path.to_string_lossy().as_bytes()).map_err(|_| {
+        ExtractFailure::Contract(ContractError::usage("PDF path contains a NUL byte"))
+    })?;
     let password = arguments
         .password
         .as_deref()
         .map(CString::new)
         .transpose()
-        .map_err(|_| ContractError::usage("password contains a NUL byte"))?;
+        .map_err(|_| {
+            ExtractFailure::Contract(ContractError::usage("password contains a NUL byte"))
+        })?;
     let document = unsafe {
         (pdfium.load_document)(
             path.as_ptr(),
@@ -574,29 +671,38 @@ fn extract_document(
     };
     if document.is_null() {
         let error = unsafe { (pdfium.get_last_error)() };
-        return Err(open_error(error));
+        return Err(ExtractFailure::Contract(open_error(error)));
     }
     let document_guard = DocumentGuard { pdfium, document };
     let page_count = unsafe { (pdfium.get_page_count)(document) };
     if page_count < 0 {
-        return Err(ContractError::internal(
+        return Err(ExtractFailure::Contract(ContractError::internal(
             "PDFium returned a negative page count",
-        ));
+        )));
     }
     let page_count = page_count as usize;
     let include_text = arguments.command == CommandKind::Extract;
     let mut warnings = Vec::new();
-    let mut pages = (0..page_count)
-        .map(|index| {
-            extract_page(
-                pdfium,
-                document_guard.document,
-                index,
-                include_text,
-                &mut warnings,
-            )
-        })
-        .collect::<Vec<_>>();
+    let mut pages = Vec::with_capacity(page_count);
+    for index in 0..page_count {
+        if !admit_page(index) {
+            return Err(ExtractFailure::Cancelled);
+        }
+        let page = extract_page(
+            pdfium,
+            document_guard.document,
+            index,
+            include_text,
+            &mut warnings,
+        )?;
+        if let Some(text) = &page.text {
+            reserve_text(account, text)?;
+        }
+        if let Some(error) = &page.error {
+            reserve_text(account, error)?;
+        }
+        pages.push(page);
+    }
     let render = if arguments.render.requested {
         if arguments
             .render
@@ -604,45 +710,67 @@ fn extract_document(
             .last()
             .is_some_and(|page| *page > page_count)
         {
-            return Err(ContractError::usage(
+            return Err(ExtractFailure::Contract(ContractError::usage(
                 "--render-pages contains a page beyond the document",
-            ));
+            )));
         }
         let directory = arguments
             .render
             .render_dir
             .as_ref()
             .expect("validated render directory");
-        fs::create_dir_all(directory)
-            .map_err(|error| ContractError::render_io(error.to_string()))?;
+        fs::create_dir_all(directory).map_err(|error| {
+            ExtractFailure::Contract(ContractError::render_io(error.to_string()))
+        })?;
         render_selected_pages(
             pdfium,
             document_guard.document,
             &mut pages,
             &arguments.render,
             &mut warnings,
-        )?;
+        )
+        .map_err(ExtractFailure::Contract)?;
+        let dir = directory.display().to_string();
+        reserve_text(account, &dir)?;
         Some(RenderPayload {
             dpi: arguments.render.dpi,
-            dir: directory.display().to_string(),
+            dir,
         })
     } else {
         None
     };
+    let title = metadata_text(pdfium, document_guard.document, "Title");
+    let author = metadata_text(pdfium, document_guard.document, "Author");
+    let creation_date = metadata_text(pdfium, document_guard.document, "CreationDate")
+        .and_then(|value| parse_pdf_date(&value));
+    let mod_date = metadata_text(pdfium, document_guard.document, "ModDate")
+        .and_then(|value| parse_pdf_date(&value));
+    let producer = metadata_text(pdfium, document_guard.document, "Producer");
+    for value in [&title, &author, &creation_date, &mod_date, &producer]
+        .into_iter()
+        .flatten()
+    {
+        reserve_text(account, value)?;
+    }
+    for warning in &warnings {
+        reserve_text(account, warning)?;
+    }
     let metadata = Metadata {
-        title: metadata_text(pdfium, document_guard.document, "Title"),
-        author: metadata_text(pdfium, document_guard.document, "Author"),
-        creation_date: metadata_text(pdfium, document_guard.document, "CreationDate")
-            .and_then(|value| parse_pdf_date(&value)),
-        mod_date: metadata_text(pdfium, document_guard.document, "ModDate")
-            .and_then(|value| parse_pdf_date(&value)),
-        producer: metadata_text(pdfium, document_guard.document, "Producer"),
+        title,
+        author,
+        creation_date,
+        mod_date,
+        producer,
     };
+    let engine = "pdfium 151.0.7920.0 (native)".to_owned();
+    reserve_text(account, &engine)?;
+    let sha256 = sha256_file(&arguments.pdf_path)
+        .map_err(|error| ExtractFailure::Contract(ContractError::internal(error.to_string())))?;
+    reserve_text(account, &sha256)?;
     Ok(SuccessPayload {
         schema: SCHEMA,
-        engine: "pdfium 151.0.7920.0 (native)".to_owned(),
-        sha256: sha256_file(&arguments.pdf_path)
-            .map_err(|error| ContractError::internal(error.to_string()))?,
+        engine,
+        sha256,
         page_count,
         encrypted: unsafe { (pdfium.get_security_handler_revision)(document_guard.document) } != -1,
         metadata,
@@ -698,7 +826,7 @@ fn extract_page(
     index: usize,
     include_text: bool,
     warnings: &mut Vec<String>,
-) -> PageEntry {
+) -> Result<PageEntry, ExtractFailure> {
     let mut entry = PageEntry {
         index: index + 1,
         chars: 0,
@@ -719,41 +847,56 @@ fn extract_page(
                 entry.text = Some(text);
             }
         }
-        Err(error) => {
+        Err(PageValueError::TooLarge) => return Err(ExtractFailure::ResponseTooLarge),
+        Err(PageValueError::Page(error)) => {
             let message = format!("page {}: page extraction failed: {error}", index + 1);
             entry.error = Some(message.clone());
             warnings.push(message);
         }
     }
-    entry
+    Ok(entry)
+}
+
+enum PageValueError {
+    Page(String),
+    TooLarge,
 }
 
 fn extract_page_values(
     pdfium: &Pdfium,
     document: FpdfDocument,
     index: usize,
-) -> Result<(f64, f64, String, f64), String> {
+) -> Result<(f64, f64, String, f64), PageValueError> {
     let page = unsafe { (pdfium.load_page)(document, index as c_int) };
     if page.is_null() {
-        return Err("PDFium could not load page".to_owned());
+        return Err(PageValueError::Page(
+            "PDFium could not load page".to_owned(),
+        ));
     }
     let page = PageGuard { pdfium, page };
     let width_pt = unsafe { (pdfium.get_page_width_f)(page.page) } as f64;
     let height_pt = unsafe { (pdfium.get_page_height_f)(page.page) } as f64;
     let text_page = unsafe { (pdfium.text_load_page)(page.page) };
     if text_page.is_null() {
-        return Err("PDFium could not load text page".to_owned());
+        return Err(PageValueError::Page(
+            "PDFium could not load text page".to_owned(),
+        ));
     }
     let text_page = TextPageGuard { pdfium, text_page };
     let count = unsafe { (pdfium.text_count_chars)(text_page.text_page) };
     if count < 0 {
-        return Err("PDFium returned a negative text character count".to_owned());
+        return Err(PageValueError::Page(
+            "PDFium returned a negative text character count".to_owned(),
+        ));
     }
-    let mut utf16 = vec![0_u16; count as usize + 1];
+    let cells = utf16_buffer_cells(count).map_err(|()| PageValueError::TooLarge)?;
+    let mut utf16 = vec![0_u16; cells];
     let written =
         unsafe { (pdfium.text_get_text)(text_page.text_page, 0, count, utf16.as_mut_ptr()) };
     if written < 0 {
-        return Err("PDFium failed to extract text".to_owned());
+        return Err(PageValueError::Page(
+            "PDFium failed to extract text".to_owned(),
+        ));
     }
     let written = (written as usize).min(utf16.len());
     if written > 0 && utf16[written - 1] == 0 {
@@ -886,17 +1029,38 @@ fn render_page_png(
     };
     let stride = unsafe { (pdfium.bitmap_get_stride)(bitmap.bitmap) };
     let buffer = unsafe { (pdfium.bitmap_get_buffer)(bitmap.bitmap) };
-    if stride < width_i32 * 3 || buffer.is_null() {
+    let min_stride = width_i32
+        .checked_mul(3)
+        .ok_or_else(|| RenderFailure::Pdfium("render stride exceeds PDFium limits".to_owned()))?;
+    if stride < min_stride || buffer.is_null() {
         return Err(RenderFailure::Pdfium(
             "PDFium returned an invalid render bitmap".to_owned(),
         ));
     }
-    let source = unsafe {
-        std::slice::from_raw_parts(buffer.cast::<u8>(), stride as usize * height as usize)
-    };
-    let mut rgb = Vec::with_capacity(width as usize * height as usize * 3);
-    for row in source.chunks_exact(stride as usize).take(height as usize) {
-        for pixel in row[..width as usize * 3].chunks_exact(3) {
+    let stride_len = usize::try_from(stride)
+        .map_err(|_| RenderFailure::Pdfium("render stride exceeds PDFium limits".to_owned()))?;
+    let height_len = usize::try_from(height)
+        .map_err(|_| RenderFailure::Pdfium("render height exceeds PDFium limits".to_owned()))?;
+    let source_len = stride_len.checked_mul(height_len).ok_or_else(|| {
+        RenderFailure::Pdfium("render bitmap size exceeds PDFium limits".to_owned())
+    })?;
+    let rgb_len = usize::try_from(width)
+        .ok()
+        .and_then(|width_len| width_len.checked_mul(height_len))
+        .and_then(|pixels| pixels.checked_mul(3))
+        .ok_or_else(|| {
+            RenderFailure::Pdfium("render bitmap size exceeds PDFium limits".to_owned())
+        })?;
+    let row_bytes = usize::try_from(width)
+        .ok()
+        .and_then(|width_len| width_len.checked_mul(3))
+        .ok_or_else(|| {
+            RenderFailure::Pdfium("render bitmap size exceeds PDFium limits".to_owned())
+        })?;
+    let source = unsafe { std::slice::from_raw_parts(buffer.cast::<u8>(), source_len) };
+    let mut rgb = Vec::with_capacity(rgb_len);
+    for row in source.chunks_exact(stride_len).take(height_len) {
+        for pixel in row[..row_bytes].chunks_exact(3) {
             rgb.extend_from_slice(&[pixel[2], pixel[1], pixel[0]]);
         }
     }
@@ -919,14 +1083,16 @@ fn metadata_text(pdfium: &Pdfium, document: FpdfDocument, tag: &str) -> Option<S
     if bytes < 2 {
         return None;
     }
-    let mut buffer = vec![0_u8; bytes as usize];
+    let len = usize::try_from(bytes).ok()?;
+    let mut buffer = vec![0_u8; len];
     let written = unsafe {
         (pdfium.get_meta_text)(document, tag.as_ptr(), buffer.as_mut_ptr().cast(), bytes)
     };
-    if written < 2 {
+    let written_len = usize::try_from(written).ok()?;
+    if written_len < 2 {
         return None;
     }
-    let values = buffer[..written as usize - 2]
+    let values = buffer[..written_len - 2]
         .chunks_exact(2)
         .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
         .collect::<Vec<_>>();
@@ -1211,6 +1377,181 @@ fn set_limit(kind: RlimitResource, limit: u64) -> Result<(), String> {
     Ok(())
 }
 
+/// Typed in-process PDF request. The caller passes the admitted PDFium
+/// library path to [`execute_in_process`]; this value does not locate it.
+#[derive(Clone, Debug)]
+pub struct InProcessRequest {
+    pub command: InProcessCommand,
+    pub source: PathBuf,
+    pub password: Option<String>,
+    pub render_pages: BTreeSet<usize>,
+    pub render_dir: Option<PathBuf>,
+    pub dpi: i32,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum InProcessCommand {
+    Inspect,
+    Extract,
+}
+
+#[derive(Clone, Debug)]
+pub struct InProcessPage {
+    pub index: usize,
+    pub chars: usize,
+    pub width_pt: f64,
+    pub height_pt: f64,
+    pub image_area_fraction: f64,
+    pub rendered: Option<String>,
+    pub error: Option<String>,
+    pub text: Option<String>,
+}
+
+#[derive(Clone, Debug)]
+pub struct InProcessDocument {
+    pub schema: String,
+    pub engine: String,
+    pub sha256: String,
+    pub page_count: usize,
+    pub encrypted: bool,
+    pub title: Option<String>,
+    pub author: Option<String>,
+    pub creation_date: Option<String>,
+    pub mod_date: Option<String>,
+    pub producer: Option<String>,
+    pub pages: Vec<InProcessPage>,
+    pub render_dpi: Option<i32>,
+    pub render_dir: Option<String>,
+    pub warnings: Vec<String>,
+}
+
+/// Failure of an in-process extraction. `Cancelled` is only returned after the
+/// PDFium call that was already running has returned. It is not a missing
+/// library, a corrupt file, a protocol failure, or a timeout.
+#[derive(Debug)]
+pub enum InProcessError {
+    Library(String),
+    Rejected {
+        error: String,
+        detail: Option<String>,
+    },
+    Cancelled,
+    ResponseTooLarge,
+}
+
+/// Extract one PDF inside this process.
+///
+/// `library` is the admitted PDFium path. This function does not call
+/// [`pdfium_library_path`], does not write stdout, and does not call
+/// `setrlimit`. It does not enforce the helper's 2,048 MiB address-space
+/// budget, 60 CPU seconds, or the 90-second caller timeout. The extractor
+/// still has no page-count, metadata-allocation, or bitmap-byte budget. The
+/// typed payload is counted as it is built against [`RESPONSE_BYTE_BOUND`].
+///
+/// PDFium init, every PDFium call, and destroy share one process-wide lock
+/// with the subprocess helper. A call that is already inside PDFium stays
+/// owned until that call returns. This function cannot kill a wedged native
+/// frame or isolate a crash inside the calling process.
+pub fn execute_in_process(
+    library: &Path,
+    request: &InProcessRequest,
+    admit_page: &dyn Fn(usize) -> bool,
+) -> Result<InProcessDocument, InProcessError> {
+    with_pdfium_serialization(|| {
+        let pdfium = Pdfium::load_at(library).map_err(InProcessError::Library)?;
+        pdfium.initialize();
+        let arguments = match in_process_arguments(request) {
+            Ok(arguments) => arguments,
+            Err(error) => {
+                pdfium.destroy();
+                return Err(error);
+            }
+        };
+        let mut account = PayloadAccount::bounded();
+        let result = extract_document(&pdfium, &arguments, admit_page, &mut account);
+        pdfium.destroy();
+        match result {
+            Ok(payload) => Ok(in_process_document(payload)),
+            Err(ExtractFailure::Cancelled) => Err(InProcessError::Cancelled),
+            Err(ExtractFailure::ResponseTooLarge) => Err(InProcessError::ResponseTooLarge),
+            Err(ExtractFailure::Contract(error)) => Err(InProcessError::Rejected {
+                error: error.error.to_owned(),
+                detail: error.detail,
+            }),
+        }
+    })
+}
+
+fn in_process_arguments(request: &InProcessRequest) -> Result<Arguments, InProcessError> {
+    if !request.source.is_file() {
+        return Err(InProcessError::Rejected {
+            error: "usage".to_owned(),
+            detail: Some(format!("PDF not found: {}", request.source.display())),
+        });
+    }
+    if request.dpi <= 0 {
+        return Err(InProcessError::Rejected {
+            error: "usage".to_owned(),
+            detail: Some("--dpi must be positive".to_owned()),
+        });
+    }
+    let requested = request.render_dir.is_some() || !request.render_pages.is_empty();
+    if requested && request.render_dir.is_none() {
+        return Err(InProcessError::Rejected {
+            error: "usage".to_owned(),
+            detail: Some("--render-dir is required when render selectors are used".to_owned()),
+        });
+    }
+    Ok(Arguments {
+        command: match request.command {
+            InProcessCommand::Inspect => CommandKind::Inspect,
+            InProcessCommand::Extract => CommandKind::Extract,
+        },
+        pdf_path: request.source.clone(),
+        password: request.password.clone(),
+        render: RenderRequest {
+            requested,
+            render_dir: request.render_dir.clone(),
+            dpi: request.dpi,
+            below_chars: None,
+            above_image_fraction: None,
+            pages: request.render_pages.clone(),
+        },
+    })
+}
+
+fn in_process_document(payload: SuccessPayload) -> InProcessDocument {
+    InProcessDocument {
+        schema: payload.schema.to_owned(),
+        engine: payload.engine,
+        sha256: payload.sha256,
+        page_count: payload.page_count,
+        encrypted: payload.encrypted,
+        title: payload.metadata.title,
+        author: payload.metadata.author,
+        creation_date: payload.metadata.creation_date,
+        mod_date: payload.metadata.mod_date,
+        producer: payload.metadata.producer,
+        pages: payload
+            .pages
+            .into_iter()
+            .map(|page| InProcessPage {
+                index: page.index,
+                chars: page.chars,
+                width_pt: page.width_pt,
+                height_pt: page.height_pt,
+                image_area_fraction: page.image_area_fraction,
+                rendered: page.rendered,
+                error: page.error,
+                text: page.text,
+            })
+            .collect(),
+        render_dpi: payload.render.as_ref().map(|render| render.dpi),
+        render_dir: payload.render.map(|render| render.dir),
+        warnings: payload.warnings,
+    }
+}
+
 fn open_error(error: c_ulong) -> ContractError {
     match error {
         FPDF_ERR_PASSWORD | FPDF_ERR_SECURITY => ContractError::encrypted(),
@@ -1224,6 +1565,42 @@ fn open_error(error: c_ulong) -> ContractError {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn utf16_buffer_refuses_before_allocation_at_the_response_bound() {
+        assert_eq!(super::utf16_buffer_cells(0).unwrap(), 1);
+        assert!(super::utf16_buffer_cells(-1).is_err());
+        assert!(super::utf16_buffer_cells(i32::MAX).is_err());
+        let over = i32::try_from(super::RESPONSE_BYTE_BOUND / 2).unwrap();
+        assert!(super::utf16_buffer_cells(over).is_err());
+    }
+
+    #[test]
+    fn payload_account_rejects_the_next_byte_without_growing_past_the_bound() {
+        let mut account = super::PayloadAccount::bounded();
+        assert!(account.reserve(super::RESPONSE_BYTE_BOUND).is_ok());
+        assert!(account.reserve(1).is_err());
+        assert_eq!(account.used, super::RESPONSE_BYTE_BOUND);
+        let mut open = super::PayloadAccount::unlimited();
+        assert!(open.reserve(super::RESPONSE_BYTE_BOUND + 1).is_ok());
+    }
+
+    #[test]
+    fn pdfium_init_calls_and_destroy_share_one_gate() {
+        let (entered_tx, entered_rx) = std::sync::mpsc::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel::<()>();
+        let worker = std::thread::spawn(move || {
+            super::with_pdfium_serialization(|| {
+                entered_tx.send(()).unwrap();
+                release_rx.recv().unwrap();
+            });
+        });
+        entered_rx.recv().unwrap();
+        assert!(super::pdfium_gate().try_lock().is_err());
+        release_tx.send(()).unwrap();
+        worker.join().unwrap();
+        assert!(super::pdfium_gate().try_lock().is_ok());
+    }
+
     #[test]
     fn installed_library_path_has_platform_name_and_no_parent_traversal() {
         let prefix = std::env::temp_dir().join("pdf-prefix");
