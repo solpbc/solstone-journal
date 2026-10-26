@@ -1952,7 +1952,7 @@ fn record_directory(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 pub(crate) fn publish_sidecar(
     journal: &Path,
     segment: &Path,
@@ -1994,7 +1994,7 @@ pub(crate) fn publish_sidecar(
 /// Update the private OCR/Qwen word diagnostic after extraction has completed.
 /// This writes only typed state and counts; the extraction text is never stored.
 #[allow(clippy::too_many_arguments)]
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 pub(crate) fn publish_extraction_diagnostic(
     journal: &Path,
     segment: &Path,
@@ -2045,7 +2045,7 @@ pub(crate) fn publish_extraction_diagnostic(
     install_sidecar_and_folded(journal, segment, path, &sidecar, &sources, &commit, stop)
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 fn install_sidecar_and_folded(
     journal: &Path,
     segment: &Path,
