@@ -20,8 +20,21 @@ import UIKit
   private var ownerStopped = true
   private var choiceSaved = true
   private var servicesPrepared = false
-  private let choice = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-    .appendingPathComponent("owner-run-choice.json")
+  private var choice: URL? {
+    guard let fixture = try? runner.ownerFixture.get() else { return nil }
+    return runner.output.appendingPathComponent(fixture.choiceFileName)
+  }
+
+  private func admitFixture() -> Bool {
+    guard case .success = runner.ownerFixture else {
+      ownerStopped = true
+      choiceSaved = false
+      phase = .unavailable
+      detail = "the test fixture name isn't valid. close the app and check the launch arguments."
+      return false
+    }
+    return true
+  }
 
   var label: String {
     switch phase {
@@ -37,6 +50,7 @@ import UIKit
 
   private struct Choice: Codable { let stopped: Bool }
   private func saveChoice(_ stopped: Bool) throws {
+    guard let choice else { throw OwnerFixture.Refusal.invalidArguments }
     let bytes = try JSONEncoder().encode(Choice(stopped: stopped))
     try bytes.write(to: choice, options: [.atomic])
     let file = Darwin.open(choice.path, O_RDONLY | O_CLOEXEC)
@@ -55,6 +69,7 @@ import UIKit
     pending = Task { await preceding?.value; await action() }
   }
   func open() {
+    guard admitFixture(), let choice else { return }
     guard !loaded else { return }
     loaded = true
     UIDevice.current.isBatteryMonitoringEnabled = true
@@ -74,6 +89,7 @@ import UIKit
     }
   }
   func start(explicit: Bool = true) {
+    guard admitFixture() else { return }
     if explicit && !canStart { return }
     guard !retained, phase != .starting, phase != .stopping else { return }
     if explicit {
@@ -125,6 +141,7 @@ import UIKit
     }
   }
   func stop(restart: Bool = false) {
+    guard admitFixture() else { return }
     phase = .stopping
     detail = "finishing current work. keep this app open."
     UIApplication.shared.isIdleTimerDisabled = foreground && retained
@@ -160,6 +177,7 @@ import UIKit
     } catch { runner.log("owner.drain-failed", ["error": String(describing: error)]) }
   }
   func scene(_ active: Bool) {
+    guard admitFixture() else { return }
     foreground = active
     UIApplication.shared.isIdleTimerDisabled = active && retained
     guard loaded else { return }

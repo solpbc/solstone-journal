@@ -350,6 +350,11 @@
   let displayedRestoreOperation = null;
   let displayedRestoreReport = null;
   let pollTimer = null;
+  let statusRead = null;
+  let statusReadAgain = false;
+  let initialStatusShown = false;
+  let disposed = false;
+  const realtimeCleanup = [];
   let cleanupRequestRunning = false;
   const cleanupEligibility = new WeakMap();
   const cleanupMutationActions = new Set([
@@ -1839,22 +1844,98 @@
     return readJson(await fetch(path, options));
   }
 
-  async function refreshStatus() {
-    try {
-      const payload = await readJson(
-        await fetch('/app/backup/status', { headers: { Accept: 'application/json' } }),
-      );
-      if (payload?.success !== true) {
-        throw new Error('backup status unavailable');
-      }
-      backupStatusCurrent = Boolean(window.BackupStatus.select(payload).snapshot);
-      applyPayload(payload);
-      return payload;
-    } catch (error) {
-      backupStatusCurrent = false;
-      window.BackupStatus.renderSummary(root.querySelector('[data-backup-summary]'), null);
-      throw error;
+  function workspaceCurrent() {
+    return !disposed && root.isConnected !== false;
+  }
+
+  function refreshStatus() {
+    if (!workspaceCurrent()) return Promise.resolve(null);
+    if (statusRead) {
+      statusReadAgain = true;
+      return statusRead;
     }
+    statusRead = (async function () {
+      let payload = null;
+      let failure = null;
+      do {
+        statusReadAgain = false;
+        try {
+          payload = await readJson(
+            await fetch('/app/backup/status', { headers: { Accept: 'application/json' } }),
+          );
+          if (!workspaceCurrent()) return null;
+          if (payload?.success !== true) throw new Error('backup status unavailable');
+          backupStatusCurrent = Boolean(window.BackupStatus.select(payload).snapshot);
+          applyPayload(payload);
+          failure = null;
+        } catch (error) {
+          if (!workspaceCurrent()) return null;
+          backupStatusCurrent = false;
+          window.BackupStatus.renderSummary(root.querySelector('[data-backup-summary]'), null);
+          failure = error;
+        }
+      } while (statusReadAgain && workspaceCurrent());
+      if (failure) throw failure;
+      return payload;
+    })().finally(function () { statusRead = null; });
+    return statusRead;
+  }
+
+  function revealInitialStatus() {
+    if (initialStatusShown || !workspaceCurrent()) return;
+    initialStatusShown = true;
+    root.querySelector('[data-backup-loading]').hidden = true;
+    showPanel(initialPanel());
+    refreshOffloadStatus().catch(function (error) {
+      if (window.logError) window.logError(error, { context: 'backup offload initial status failed' });
+      if (workspaceCurrent()) renderOffloadUnavailable();
+    });
+  }
+
+  function refreshChangedStatus() {
+    return refreshStatus().then(function (payload) {
+      if (!payload || !workspaceCurrent()) return;
+      revealInitialStatus();
+      if (shouldPoll()) pollUntilTerminal();
+    }).catch(function (error) {
+      if (window.logError) window.logError(error, { context: 'backup result refresh failed' });
+    });
+  }
+
+  function disposeRealtime() {
+    if (disposed) return;
+    disposed = true;
+    for (const cleanup of realtimeCleanup) cleanup();
+    if (pollTimer) window.clearTimeout(pollTimer);
+    document.removeEventListener?.('workspace:mounted', workspaceMounted);
+  }
+
+  function workspaceMounted() {
+    if (!workspaceCurrent()) disposeRealtime();
+  }
+
+  function wireRealtime() {
+    if (!window.appEvents) return;
+    realtimeCleanup.push(window.appEvents.listen('supervisor', function (message) {
+      if (!workspaceCurrent()) { disposeRealtime(); return; }
+      if (message.event !== 'stopped') return;
+      const routines = ['backup:run', 'backup:verify', 'backup:prune'];
+      const relevant = message.service === 'backup' && routines.includes(message.routine)
+        || routines.some(function (routine) { return message.service === 'maintenance:' + routine; });
+      if (relevant) refreshChangedStatus();
+    }));
+    let reconnectNeeded = false;
+    if (window.appEvents.onConnectionState) {
+      realtimeCleanup.push(window.appEvents.onConnectionState(function (connection) {
+        if (!workspaceCurrent()) { disposeRealtime(); return; }
+        if (!connection.connected) reconnectNeeded = true;
+        else if (reconnectNeeded) {
+          reconnectNeeded = false;
+          refreshChangedStatus();
+        }
+      }));
+    }
+    document.addEventListener('workspace:mounted', workspaceMounted);
   }
 
   function applyOffloadPayload(payload) {
@@ -1893,7 +1974,7 @@
     const payload = await readJson(
       await fetch('/app/backup/offload/status', { headers: { Accept: 'application/json' } }),
     );
-    applyOffloadPayload(payload);
+    if (workspaceCurrent()) applyOffloadPayload(payload);
     return payload;
   }
 
@@ -1975,10 +2056,12 @@
   }
 
   function pollUntilTerminal() {
+    if (!workspaceCurrent()) return;
     if (pollTimer) window.clearTimeout(pollTimer);
     pollTimer = window.setTimeout(async function () {
       try {
         const payload = await refreshStatus();
+        if (!payload || !workspaceCurrent()) return;
         if (shouldPoll()) {
           pollUntilTerminal();
         } else if (payload.operation && payload.operation.kind === 'teardown') {
@@ -2009,6 +2092,7 @@
           showPanel('display');
         }
       } catch (_err) {
+        if (!workspaceCurrent()) return;
         const current = state.operation || { kind: 'status' };
         if (cleanupRequired() || (Object.hasOwn(state, 'cleanup_admission') && operationActive(current))) {
           renderStatus();
@@ -2094,7 +2178,9 @@
           maybeOpenPortal(payload);
         }
         if (action === 'backup-now') {
-          applyPayload(await postJson('/app/backup/backup-now'));
+          // Acceptance returns an earlier status snapshot, not this run's result.
+          await postJson('/app/backup/backup-now');
+          await refreshChangedStatus();
         }
         if (action === 'view-key') {
           await revealRecoveryKey();
@@ -2365,26 +2451,20 @@
     bindBackendSwitching();
     bindModeSwitching();
     bindRestoreLaneSwitching();
+    wireRealtime();
     try {
       await refreshStatus();
     } catch (err) {
       if (window.logError) {
         window.logError(err, { context: 'backup initial status failed' });
       }
-      const loading = root.querySelector('[data-backup-loading]');
-      loading.textContent = "couldn't load backup settings. reload this page to try again.";
+      if (workspaceCurrent()) {
+        const loading = root.querySelector('[data-backup-loading]');
+        loading.textContent = "couldn't load backup settings. reload this page to try again.";
+      }
       return;
     }
-    root.querySelector('[data-backup-loading]').hidden = true;
-    showPanel(initialPanel());
-    try {
-      await refreshOffloadStatus();
-    } catch (err) {
-      if (window.logError) {
-        window.logError(err, { context: 'backup offload initial status failed' });
-      }
-      renderOffloadUnavailable();
-    }
+    revealInitialStatus();
   }
 
   if (document.readyState === 'loading') {
