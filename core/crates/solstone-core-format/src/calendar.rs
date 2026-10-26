@@ -716,47 +716,118 @@ pub fn listed_days<Tz: TimeZone>(schedule: &Schedule, zone: &Tz) -> Listing {
 }
 
 /// The owner's own email addresses, from their identity in the journal
-/// settings, compared trimmed and ignoring case. An attendee is the owner only
-/// when their email is one of these. A phone's own `you` mark is never read: on
+/// settings, compared trimmed and ignoring case. An attendee with an email is
+/// the owner only when it is one of these. A phone's own `you` mark is never read: on
 /// a calendar shared to the phone, it marks the calendar's owner instead.
+///
+/// A phone can send an invite with no addresses on it, as iOS does once an
+/// invitation is answered. For one event's invites, [`Self::carried_from`]
+/// also knows the names that carried one of the owner's addresses on any of
+/// its notes, so the owner is still found where their address went missing.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct OwnerAddresses(BTreeSet<String>);
+pub struct OwnerAddresses {
+    addresses: BTreeSet<String>,
+    names: BTreeSet<String>,
+}
 
 impl OwnerAddresses {
     /// No addresses: nobody on an invite is the owner.
-    pub const NONE: Self = Self(BTreeSet::new());
+    pub const NONE: Self = Self {
+        addresses: BTreeSet::new(),
+        names: BTreeSet::new(),
+    };
 
     pub fn new<I, S>(addresses: I) -> Self
     where
         I: IntoIterator<Item = S>,
         S: AsRef<str>,
     {
-        Self(
-            addresses
+        Self {
+            addresses: addresses
                 .into_iter()
-                .map(|address| address.as_ref().trim().to_lowercase())
+                .map(|address| folded(address.as_ref()))
                 .filter(|address| !address.is_empty())
                 .collect(),
-        )
+            names: BTreeSet::new(),
+        }
+    }
+
+    /// The owner on one event's invites, given every note recorded for it.
+    /// A name counts as the owner's when it carried one of the owner's
+    /// addresses on one of those notes, and never carried any other address,
+    /// so two people who share a name are both left unmarked.
+    pub fn carried_from<'a, I>(&self, records: I) -> Self
+    where
+        I: IntoIterator<Item = &'a Map<String, Value>>,
+    {
+        let mut owner_names = BTreeSet::new();
+        let mut other_names = BTreeSet::new();
+        for person in records.into_iter().flat_map(people_on_invite) {
+            let (Some(name), Some(email)) =
+                (person_text(person, "name"), person_text(person, "email"))
+            else {
+                continue;
+            };
+            if self.has(&email) {
+                owner_names.insert(folded(&name));
+            } else {
+                other_names.insert(folded(&name));
+            }
+        }
+        Self {
+            addresses: self.addresses.clone(),
+            names: owner_names.difference(&other_names).cloned().collect(),
+        }
     }
 
     /// Whether `email` is one of the owner's addresses.
     pub fn has(&self, email: &str) -> bool {
-        self.0.contains(&email.trim().to_lowercase())
+        self.addresses.contains(&folded(email))
     }
 
-    /// Whether this person on an invite is the owner.
+    /// Whether this person on an invite is the owner: their email is one of
+    /// the owner's addresses, or, with no email, their name carried one on
+    /// another note of the same event.
     pub fn is_owner(&self, person: &Map<String, Value>) -> bool {
-        person
-            .get("email")
-            .and_then(Value::as_str)
-            .is_some_and(|email| self.has(email))
+        match person_text(person, "email") {
+            Some(email) => self.has(&email),
+            None => {
+                person_text(person, "name").is_some_and(|name| self.names.contains(&folded(&name)))
+            }
+        }
     }
 
     /// The addresses as one stable text, so a change can be noticed.
     pub fn stamp(&self) -> String {
-        self.0.iter().cloned().collect::<Vec<_>>().join("\n")
+        self.addresses
+            .iter()
+            .cloned()
+            .collect::<Vec<_>>()
+            .join("\n")
     }
+}
+
+fn folded(text: &str) -> String {
+    text.trim().to_lowercase()
+}
+
+fn person_text(person: &Map<String, Value>, key: &str) -> Option<String> {
+    let value = person.get(key)?.as_str()?.trim();
+    (!value.is_empty()).then(|| value.to_owned())
+}
+
+/// The organizer and the attendees of one note.
+fn people_on_invite(record: &Map<String, Value>) -> impl Iterator<Item = &Map<String, Value>> {
+    let attendees = record
+        .get("attendees")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten();
+    record
+        .get("organizer")
+        .into_iter()
+        .chain(attendees)
+        .filter_map(Value::as_object)
 }
 
 /// Render a note as plain text the owner can read: what changed, the title,

@@ -1476,3 +1476,198 @@ fn a_shared_calendars_marked_owner_is_not_you_and_the_real_owner_is() {
     );
     assert!(text.contains("Calendar: Work (iCloud)"), "{text}");
 }
+
+/// The owner's address in the settings file.
+fn own_address(journal: &Journal) {
+    fs::write(
+        journal.path().join("config/journal.json"),
+        json!({"identity": {"timezone": "America/Denver", "email_addresses": ["owner@example.com"]}})
+            .to_string(),
+    )
+    .unwrap();
+}
+
+/// Every calendar row: (version, path, content).
+fn calendar_rows(journal: &Journal) -> Vec<(String, String, String)> {
+    let conn = journal.conn();
+    let mut statement = conn
+        .prepare(
+            "SELECT h.version, c.path, c.content FROM chunks c JOIN calendar_hits h ON h.rowid=c.rowid \
+             ORDER BY h.version, c.path",
+        )
+        .unwrap();
+    statement
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap()
+}
+
+/// An invitation to the owner, then the same event once they accepted it,
+/// sent as iOS sends an answered invitation: with no address on anyone.
+fn invited_then_accepted() -> (String, String) {
+    let invited = note(
+        0,
+        json!({"attendees": [
+            {"email": "owner@example.com", "name": "Jordan Lee", "status": "unknown", "you": false},
+            {"email": "alex@example.com", "name": "Alex Rivera", "status": "accepted", "you": true},
+        ]}),
+    );
+    let accepted = note(
+        0,
+        json!({
+            "change": "changed", "changed_at": "2026-10-19T10:00:00-06:00",
+            "organizer": {"email": null, "name": "Alex Rivera"},
+            "attendees": [
+                {"email": null, "name": "Jordan Lee", "status": "accepted", "you": false},
+                {"email": null, "name": "Alex Rivera", "status": "accepted", "you": true},
+            ],
+        }),
+    );
+    (invited, accepted)
+}
+
+#[test]
+fn an_accepted_invite_that_lost_every_address_still_names_the_owner_in_either_order() {
+    for invite_first in [true, false] {
+        let journal = Journal::new(None);
+        own_address(&journal);
+        let (invited, accepted) = invited_then_accepted();
+        let invited = journal.save("20261019", "094200_300", &[&invited]);
+        let accepted = journal.save("20261019", "100000_300", &[&accepted]);
+        // Another event with the same name on it and no address.
+        let other = note(
+            0,
+            json!({"event": STANDUP, "title": "standup", "attendees": [
+                {"email": null, "name": "Jordan Lee", "status": "accepted", "you": false},
+            ]}),
+        );
+        let other = journal.save("20261019", "110000_300", &[&other]);
+        let listing_row = |journal: &Journal| -> i64 {
+            journal.count(&format!(
+                "SELECT rowid FROM calendar_hits WHERE version='latest' AND event='{MEETING}'"
+            ))
+        };
+        let (first, second) = if invite_first {
+            (&invited, &accepted)
+        } else {
+            (&accepted, &invited)
+        };
+        journal.index(first);
+        journal.index(&other);
+        let before = listing_row(&journal);
+        journal.index(second);
+        // The accepted note is latest either way, so its listing row stays.
+        if !invite_first {
+            assert_eq!(listing_row(&journal), before);
+        }
+        let rows = calendar_rows(&journal);
+        assert_eq!(rows.len(), 5, "{rows:?}");
+        for (version, path, text) in &rows {
+            if path == &other {
+                assert!(!text.contains(", you"), "{version} {text}");
+            } else {
+                assert!(text.contains("Jordan Lee, you ("), "{version} {text}");
+                assert!(!text.contains("Alex Rivera, you"), "{version} {text}");
+            }
+        }
+        let latest = journal
+            .listing()
+            .into_iter()
+            .find(|row| row.1 == accepted)
+            .unwrap();
+        assert!(
+            latest
+                .4
+                .contains("Invited: Jordan Lee, you (accepted); Alex Rivera (accepted)"),
+            "{}",
+            latest.4
+        );
+        // Without the invitation, nothing on the event carries the address.
+        journal.delete_segment_of(&invited);
+        let rows = calendar_rows(&journal);
+        assert_eq!(rows.len(), 4, "{rows:?}");
+        assert!(rows.iter().all(|row| !row.2.contains(", you")), "{rows:?}");
+    }
+}
+
+#[test]
+fn a_full_rebuild_names_the_owner_where_an_address_went_missing() {
+    let journal = Journal::new(None);
+    own_address(&journal);
+    let (invited, accepted) = invited_then_accepted();
+    journal.save("20261019", "094200_300", &[&invited]);
+    journal.save("20261019", "100000_300", &[&accepted]);
+    scan_journal(journal.path(), true).unwrap();
+    let incremental = calendar_rows(&journal);
+    reset_index(journal.path()).unwrap();
+    scan_journal(journal.path(), true).unwrap();
+    assert_eq!(calendar_rows(&journal), incremental);
+    assert!(
+        incremental
+            .iter()
+            .all(|row| row.2.contains("Jordan Lee, you ("))
+    );
+}
+
+#[test]
+fn an_index_written_under_the_address_only_rule_is_redone_once() {
+    let journal = Journal::new(None);
+    own_address(&journal);
+    let (invited, accepted) = invited_then_accepted();
+    journal.save("20261019", "094200_300", &[&invited]);
+    journal.save("20261019", "100000_300", &[&accepted]);
+    scan_journal(journal.path(), true).unwrap();
+    // The mark as the address-only rule wrote it.
+    journal
+        .conn()
+        .execute(
+            "UPDATE index_meta SET value='owner@example.com' WHERE key='calendar_owner_addresses'",
+            [],
+        )
+        .unwrap();
+    assert!(super::reindex_calendar_if_owner_changed(&journal.conn(), journal.path()).unwrap());
+    assert!(!super::reindex_calendar_if_owner_changed(&journal.conn(), journal.path()).unwrap());
+}
+
+#[test]
+fn a_later_occurrence_sent_without_addresses_still_names_the_owner_in_either_order() {
+    for answered_first in [true, false] {
+        let journal = Journal::new(None);
+        own_address(&journal);
+        let occurrence = |occurrence: &str, changed_at: &str, start: &str, attendees: Value| {
+            note(
+                1,
+                json!({"occurrence": occurrence, "changed_at": changed_at, "start": start, "end": start, "attendees": attendees}),
+            )
+        };
+        let invited = occurrence(
+            "2026-10-21T15:00:00Z",
+            "2026-10-20T09:00:00-06:00",
+            "2026-10-21T09:00:00-06:00",
+            json!([{"email": "owner@example.com", "name": "Jordan Lee", "status": "unknown", "you": false}]),
+        );
+        // A week on, first sent after the owner answered the series.
+        let answered = occurrence(
+            "2026-10-28T15:00:00Z",
+            "2026-10-20T10:00:00-06:00",
+            "2026-10-28T09:00:00-06:00",
+            json!([{"email": null, "name": "Jordan Lee", "status": "accepted", "you": false}]),
+        );
+        let invited = journal.save("20261020", "090000_300", &[&invited]);
+        let answered = journal.save("20261020", "100000_300", &[&answered]);
+        if answered_first {
+            journal.index(&answered);
+            journal.index(&invited);
+        } else {
+            journal.index(&invited);
+            journal.index(&answered);
+        }
+        let rows = calendar_rows(&journal);
+        assert_eq!(rows.len(), 4, "{rows:?}");
+        assert!(
+            rows.iter().all(|row| row.2.contains("Jordan Lee, you (")),
+            "{rows:?}"
+        );
+    }
+}

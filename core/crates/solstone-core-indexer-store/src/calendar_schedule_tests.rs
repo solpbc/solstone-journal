@@ -336,6 +336,37 @@ fn a_declined_or_cancelled_meeting_links_no_one() {
 }
 
 #[test]
+fn a_decline_that_lost_the_owners_address_is_still_the_owners_decline() {
+    let journal = Journal::new();
+    journal.people();
+    journal.save(
+        "20261019",
+        "094200_300",
+        &meeting(json!({"attendees": [
+            attendee(Some("Alex Rivera"), Some("alex@example.com"), "accepted", false),
+            attendee(Some("Jordan Lee"), Some("owner@example.com"), "unknown", false),
+        ]})),
+    );
+    assert!(!scheduled_on_day(journal.path(), "20261027").unwrap()[0].declined);
+    assert!(!journal.links().is_empty());
+    // Answering, the phone sent no address on anyone.
+    journal.save(
+        "20261019",
+        "100000_300",
+        &meeting(json!({
+            "change": "changed", "changed_at": "2026-10-19T10:00:00-06:00",
+            "organizer": {"email": null, "name": "Alex Rivera"},
+            "attendees": [
+                attendee(Some("Alex Rivera"), None, "accepted", true),
+                attendee(Some("Jordan Lee"), None, "declined", false),
+            ],
+        })),
+    );
+    assert!(scheduled_on_day(journal.path(), "20261027").unwrap()[0].declined);
+    assert!(journal.links().is_empty());
+}
+
+#[test]
 fn a_journal_without_its_owner_known_links_no_one_but_still_names_the_invite() {
     let journal = Journal::new();
     journal.person("alex_rivera", "Alex Rivera", &["alex@example.com"], false);
