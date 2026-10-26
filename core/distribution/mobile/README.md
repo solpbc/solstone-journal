@@ -51,6 +51,12 @@ detection file, retaining its portable implementation and the Storj backend.
 Cargo locks, Go module checksums and the Swift resolved input retain their
 respective dependency graphs.
 
+The `sound-ced` component compiles the maintained standalone CED engine with
+isolated C and C++ symbols and the same `media-shared-ggml` binding. For an
+embedded app, add only `libsolstone_sound_ced.a` from that component to the
+canonical Parakeet archive set and RF-DETR library. Parakeet supplies the
+GGML libraries and retains its own CED dependency.
+
 Receipts are under each run's `build/receipts`. `mobile-native-build.json`
 records source identity, input and patch hashes, actual commands and exits,
 artifact hashes, architecture inspection and caller linkage. Target callers

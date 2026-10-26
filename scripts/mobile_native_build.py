@@ -21,7 +21,7 @@ from android_cross_build import acquire, sha256
 
 ROOT = Path(__file__).resolve().parents[1]
 INPUTS = ROOT / "core/distribution/mobile/inputs.json"
-COMPONENTS = ("rust", "llama", "parakeet", "ced", "rfdetr", "restic", "rclone", "nvattest", "pdfium", "swift")
+COMPONENTS = ("rust", "llama", "parakeet", "ced", "rfdetr", "sound-ced", "restic", "rclone", "nvattest", "pdfium", "swift")
 MEDIA_GGML_COMPONENTS = ("parakeet", "rfdetr")
 MEDIA_GGML_SCHEMA = "solstone.mobile-media-ggml.v1"
 
@@ -89,11 +89,11 @@ def require_ios_platform(text):
 def require_current_pins(pins, components=None):
     """Mobile inputs follow the desktop pins. A subset build checks only what it builds."""
     distribution = ROOT / "core/crates/solstone-core-distribution/src"
-    ggml = {"ced", "rfdetr", "parakeet"}
+    ggml = {"ced", "rfdetr", "parakeet", "sound-ced"}
     guards = (("llama", {"llama"}, "llama_windows_source.rs", "LLAMA_COMMIT"),
-              ("ced", {"ced"}, "ced_windows.rs", "CED_CPP_COMMIT"),
+              ("ced", {"ced", "sound-ced"}, "ced_windows.rs", "CED_CPP_COMMIT"),
               ("ggml", ggml, "ced_windows.rs", "GGML_COMMIT"),
-              ("rfdetr", {"rfdetr"}, "rfdetr_windows.rs", "RF_DETR_COMMIT"),
+              ("rfdetr", {"rfdetr", "sound-ced"}, "rfdetr_windows.rs", "RF_DETR_COMMIT"),
               ("ggml", ggml, "rfdetr_windows.rs", "GGML_COMMIT"),
               ("nvattest", {"nvattest"}, "nvattest_windows.rs", "NVATTEST_SDK_REVISION"),
               ("pdfium-android", {"pdfium"}, "pdfium.rs", "RELEASE_TAG"),
@@ -305,7 +305,7 @@ class Build:
     def ggml(self, name, source):
         ggml = self.source("ggml", source / "third_party/ggml")
         self.run(f"{name}-ggml-git", ["git", "init", ggml])
-        if name in MEDIA_GGML_COMPONENTS:
+        if name in (*MEDIA_GGML_COMPONENTS, "sound-ced"):
             sources = {component: self.source(component) for component in MEDIA_GGML_COMPONENTS}
             patches = media_ggml_patches(sources)
             for i, (_, patch, _) in enumerate(patches):
@@ -392,6 +392,30 @@ class Build:
         library = source / "lib" / ("libpdfium.dylib" if self.args.platform == "ios" else "libpdfium.so")
         self.inspect("pdfium-library", library)
         self.link("pdfium", (ROOT / "core/distribution/mobile/probes/pdfium.c").read_text(), [source / "include"], [library])
+
+    def sound_ced(self):
+        # Keep standalone sound tagging at its maintained pin. Parakeet's
+        # newer CED dependency retains its own symbols and loading behavior.
+        source = self.source("ced", self.sources / "sound-ced")
+        self.ggml("sound-ced", source)
+        wrapper = ROOT / "core/distribution/mobile/sound-ced"
+        self.summary["inputs"]["sound-ced-wrapper"] = {
+            "sha256": sha256(wrapper / "CMakeLists.txt"),
+            "source": "ced", "symbol_prefix": "solstone_sound_ced",
+            "ggml_tree_sha256": self.summary["inputs"]["media-shared-ggml"]["tree_sha256"],
+        }
+        build = self.cmake("sound-ced", wrapper,
+                           [f"-DCED_SOURCE={source}", f"-DGGML_SOURCE={source / 'third_party/ggml'}"],
+                           ["solstone_sound_ced"])
+        libraries = [build / "libsolstone_sound_ced.a", *sorted((build / "ggml").rglob("libggml*.a"))]
+        expected = {"libsolstone_sound_ced.a", "libggml.a", "libggml-base.a", "libggml-cpu.a"}
+        if self.args.platform == "ios":
+            expected.update({"libggml-metal.a", "libggml-blas.a"})
+        if {library.name for library in libraries} != expected or len(libraries) != len(expected):
+            raise ValueError("sound CED needs one complete shared GGML family")
+        for index, library in enumerate(libraries):
+            self.inspect(f"sound-ced-archive-{index}", library)
+        self.link("sound-ced", (ROOT / "core/distribution/mobile/probes/sound-ced.c").read_text(), [], libraries)
 
     def go(self, name):
         tool = self.work / "go-toolchain"
@@ -572,6 +596,8 @@ class Build:
         for component in self.args.components:
             if component in ("llama", "parakeet", "ced", "rfdetr"):
                 self.cpp(component)
+            elif component == "sound-ced":
+                self.sound_ced()
             else:
                 getattr(self, component)()
         self.summary["complete"] = self.args.full_run

@@ -5,11 +5,13 @@
 import argparse, hashlib, json, os, pathlib, re, shutil, subprocess, sys, time, zipfile
 import xml.etree.ElementTree as ET
 from provenance import source_manifest
-from audio_package import audio_package
+from audio_package import audio_package, verify_audio_archive
 sys.path.insert(0,str(pathlib.Path(__file__).resolve().parents[2]/'scripts'))
 import package_mobile_pdfium
 import package_mobile_media
-p=argparse.ArgumentParser(); p.add_argument('--root',required=True); p.add_argument('--sdk',required=True); p.add_argument('--java',required=True); p.add_argument('--application-id', default='app.solstone.development.journal'); p.add_argument('--debug-keystore',required=True,type=pathlib.Path); p.add_argument('--owner-app',action='store_true'); p.add_argument('--version-code',type=int,default=1); p.add_argument('--audio-model',type=pathlib.Path); p.add_argument('--asset-catalog',type=pathlib.Path); p.add_argument('--screen-ocr-models',type=pathlib.Path,default=os.environ.get('SCREEN_OCR_MODELS_DIR')); p.add_argument('--detector-model',type=pathlib.Path,default=os.environ.get('RFDETR_MODEL')); args=p.parse_args()
+p=argparse.ArgumentParser(); p.add_argument('--root',required=True); p.add_argument('--sdk',required=True); p.add_argument('--java',required=True); p.add_argument('--application-id', default='app.solstone.development.journal'); p.add_argument('--debug-keystore',required=True,type=pathlib.Path); p.add_argument('--owner-app',action='store_true'); p.add_argument('--version-code',type=int,default=1); p.add_argument('--audio-model',type=pathlib.Path); p.add_argument('--asset-catalog',type=pathlib.Path); p.add_argument('--screen-ocr-models',type=pathlib.Path,default=os.environ.get('SCREEN_OCR_MODELS_DIR')); p.add_argument('--detector-model',type=pathlib.Path,default=os.environ.get('RFDETR_MODEL'))
+p.add_argument('--sound-tag-model',type=pathlib.Path,default=os.environ.get('CED_MODEL'))
+args=p.parse_args()
 if args.version_code < 1: p.error('positive version code required')
 if args.owner_app and (not args.audio_model or not args.asset_catalog): p.error('owner builds require the pinned speech model and current native asset catalog')
 if args.owner_app and not args.screen_ocr_models: p.error('owner builds require the pinned screen OCR model directory')
@@ -19,7 +21,7 @@ if not key.is_file(): p.error('regular retained debug keystore required')
 root=pathlib.Path(args.root).resolve(); sdk=pathlib.Path(args.sdk); java=pathlib.Path(args.java); build=root/'build'; build.mkdir(exist_ok=True)
 (build/'source-manifest.json').write_text(json.dumps(source_manifest(root.parents[1]),indent=2)+'\n')
 tools=sdk/'build-tools/35.0.0'; jar=sdk/'platforms/android-36/android.jar'; commands=[]
-audio_manifest,audio_members=audio_package(root.parents[1],args.audio_model,args.asset_catalog) if args.owner_app else (None,[])
+audio_manifest,audio_members=audio_package(root.parents[1],args.audio_model,args.asset_catalog,args.sound_tag_model) if args.owner_app else (None,[])
 media_manifest,media_members=package_mobile_media.media_package(root.parents[1],args.detector_model or root.parents[1]/'core/models/assets/rfdetr/rfdetr-nano-f16.gguf',args.screen_ocr_models) if args.owner_app else (None,[])
 pdfium=root/'build/pdfium'
 pdfium_members=package_mobile_pdfium.android_members(pdfium,root)
@@ -95,6 +97,7 @@ with zipfile.ZipFile(unsigned,'a',compression=zipfile.ZIP_DEFLATED) as z:
   for asset in sorted((payload/'solstone').rglob('*')):
     if asset.is_file(): z.write(asset,'assets/journal-payload/'+str(asset.relative_to(payload)))
 with zipfile.ZipFile(unsigned) as z:
+  if audio_manifest: verify_audio_archive(z,audio_manifest)
   package_mobile_pdfium.verify_android_archive(pdfium,z)
   if media_manifest: package_mobile_media.verify_archive(z,media_manifest,'assets/journal-payload/')
 aligned=build/'aligned.apk'; run([tools/'zipalign','-P','16','-f','4',unsigned,aligned])
@@ -106,6 +109,7 @@ if len(signers)!=1: raise ValueError('one verified development signer required')
 run([tools/'zipalign','-c','-P','16','-v','4',signed])
 members=[]
 with zipfile.ZipFile(signed) as z:
+  if audio_manifest: verify_audio_archive(z,audio_manifest)
   package_mobile_pdfium.verify_android_archive(pdfium,z)
   if media_manifest: package_mobile_media.verify_archive(z,media_manifest,'assets/journal-payload/')
   for i in z.infolist():

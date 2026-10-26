@@ -9,6 +9,13 @@ import re
 import shutil
 import tomllib
 
+SOUND_TAG_NOTICES = (
+    ('core/distribution/licenses/ced/LICENSE', 'CED-LICENSE.txt'),
+    ('core/distribution/licenses/ced/ggml-LICENSE', 'CED-GGML-LICENSE.txt'),
+    ('core/distribution/licenses/ced/ced-tiny-model-LICENSE', 'CED-model-LICENSE.txt'),
+    ('core/distribution/licenses/ced/ATTRIBUTION.md', 'CED-ATTRIBUTION.md'),
+)
+
 
 def _constant(source, name, kind):
     if kind == 'text':
@@ -28,6 +35,47 @@ def _relative(name):
     if path.is_absolute() or not path.parts or any(part in ('.', '..') for part in path.parts) or '\\' in name or '\x00' in name:
         raise ValueError('contained media resource name required')
     return name
+
+
+def sound_tag_pin(repo):
+    catalog = (Path(repo) / 'core/crates/solstone-core-assets/src/lib.rs').read_text()
+    blocks = [block for block in catalog.split('Artifact {') if 'unit: "ced-model"' in block]
+    if len(blocks) != 1:
+        raise ValueError('one consuming CED model pin required')
+    values = {}
+    for key, pattern in [('filename', r'filename: "([^"]+)"'),
+                         ('sha256', r'sha256: "([0-9a-f]{64})"'),
+                         ('size_bytes', r'size_bytes: ([0-9_]+)')]:
+        matches = re.findall(pattern, blocks[0].split('\n    },', 1)[0])
+        if len(matches) != 1:
+            raise ValueError('one consuming CED field required: ' + key)
+        values[key] = int(matches[0].replace('_', '')) if key == 'size_bytes' else matches[0]
+    if PurePosixPath(_relative(values['filename'])).name != values['filename']:
+        raise ValueError('plain CED model filename required')
+    return values
+
+
+def verify_sound_tag_model(repo, directory):
+    pin = sound_tag_pin(repo)
+    model = Path(directory) / pin['filename']
+    if model.is_symlink() or not model.is_file():
+        raise ValueError('regular CED model required')
+    with model.open('rb') as stream:
+        digest = hashlib.file_digest(stream, 'sha256').hexdigest()
+    if model.stat().st_size != pin['size_bytes'] or digest != pin['sha256']:
+        raise ValueError('CED model differs from consuming runtime pin')
+    return pin
+
+
+def verify_sound_tag_resources(repo, directory):
+    result = {'model': verify_sound_tag_model(repo, directory), 'notices': []}
+    for source, name in SOUND_TAG_NOTICES:
+        expected = (Path(repo) / source).read_bytes()
+        destination = Path(directory) / 'notices' / name
+        if destination.is_symlink() or not destination.is_file() or destination.read_bytes() != expected:
+            raise ValueError('packaged CED notice differs: ' + name)
+        result['notices'].append({'name': name, 'sha256': hashlib.sha256(expected).hexdigest(), 'bytes': len(expected)})
+    return result
 
 
 def media_package(repo, detector_model, ocr_directory):

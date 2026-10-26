@@ -7,7 +7,7 @@ from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
-from prepare import main, verify_audio_pins
+from prepare import main, verify_audio_pins, sound_ced_input, digest, stage_copy
 
 
 def legacy_receipt():
@@ -39,6 +39,69 @@ def shared_receipt():
 
 
 class AudioPins(unittest.TestCase):
+    def test_staging_refuses_links_before_overwriting_their_target(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / 'input'
+            source.write_bytes(b'verified model')
+            victim = root / 'retained'
+            victim.write_bytes(b'preserved input')
+            destination = root / 'model.gguf'
+            destination.symlink_to(victim)
+            with self.assertRaises(ValueError): stage_copy(source, destination)
+            self.assertEqual(victim.read_bytes(), b'preserved input')
+            linked = root / 'models'
+            linked.symlink_to(root, target_is_directory=True)
+            with self.assertRaises(ValueError): stage_copy(source, linked / 'retained')
+            self.assertEqual(victim.read_bytes(), b'preserved input')
+            regular = root / 'model-copy.gguf'
+            stage_copy(source, regular)
+            self.assertEqual(regular.read_bytes(), source.read_bytes())
+
+    def test_isolated_sound_ced_binds_producer_source_wrapper_and_shared_tree(self):
+        repo = Path(__file__).resolve().parents[2]
+        pins = json.loads((repo / 'core/distribution/mobile/inputs.json').read_text())['inputs']
+        captured, _ = shared_receipt()
+        shared = captured['inputs']['media-shared-ggml']
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'receipts').mkdir()
+            library = root / 'libsolstone_sound_ced.a'
+            library.write_bytes(b'archive receipt fixture; not a native proof')
+            artifact = dict(component='sound-ced-archive-0', path=str(library),
+                            sha256=digest(library), size_bytes=library.stat().st_size)
+            receipt = dict(status='passed', exit=0, platform='ios',
+                driver_sha256=digest(repo / 'scripts/mobile_native_build.py'), artifacts=[artifact],
+                inputs={'ced': pins['ced'], 'media-shared-ggml': shared,
+                    'sound-ced-patched-ggml': {'tree_sha256': shared['tree_sha256']},
+                    'sound-ced-wrapper': {
+                        'sha256': digest(repo / 'core/distribution/mobile/sound-ced/CMakeLists.txt'),
+                        'source': 'ced', 'symbol_prefix': 'solstone_sound_ced',
+                        'ggml_tree_sha256': shared['tree_sha256']}})
+            record = root / 'receipts/mobile-native-build.json'
+            record.write_text(json.dumps(receipt))
+            (root / 'retention.json').write_text(json.dumps({'artifacts': [
+                dict(component=artifact['component'], retained_path=str(library), sha256=artifact['sha256'])]}))
+            source, binding = sound_ced_input(root, repo, pins, shared)
+            self.assertEqual(source, library)
+            self.assertEqual(binding['sha256'], artifact['sha256'])
+            mutations = [
+                lambda r: r.update(status='failed'),
+                lambda r: r.update(driver_sha256='0' * 64),
+                lambda r: r['inputs']['ced'].update(revision='changed'),
+                lambda r: r['inputs']['sound-ced-wrapper'].update(symbol_prefix='ced'),
+                lambda r: r['inputs']['media-shared-ggml'].update(tree_sha256='0' * 64),
+                lambda r: r['artifacts'][0].update(sha256='0' * 64),
+            ]
+            for mutate in mutations:
+                changed = copy.deepcopy(receipt)
+                mutate(changed)
+                record.write_text(json.dumps(changed))
+                with self.assertRaises(ValueError): sound_ced_input(root, repo, pins, shared)
+            record.write_text(json.dumps(receipt))
+            library.write_bytes(b'changed bytes')
+            with self.assertRaises(ValueError): sound_ced_input(root, repo, pins, shared)
+
     def test_unrelated_engine_update_does_not_admit_changed_audio(self):
         captured, current = shared_receipt()
         current['llama'] = {'revision': 'unrelated-local-thinking-engine'}

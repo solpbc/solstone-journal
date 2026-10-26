@@ -103,5 +103,24 @@ class MediaPackagingTests(unittest.TestCase):
         runtime.write_text(runtime.read_text().replace(hashlib.sha256(original).hexdigest(), '0' * 64))
         with self.assertRaises(ValueError): media.verify_payload(self.repo, destination)
 
+    def test_sound_tag_model_requires_current_catalog_and_exact_copied_bytes(self):
+        payload = b'maintained sound tag model'
+        model = self.models / 'ced.gguf'
+        model.write_bytes(payload)
+        catalog = self.repo / 'core/crates/solstone-core-assets/src/lib.rs'
+        catalog.parent.mkdir(parents=True)
+        row = ('Artifact {\nunit: "ced-model",\nfilename: "ced.gguf",\nsha256: "' +
+               hashlib.sha256(payload).hexdigest() + '",\nsize_bytes: ' + str(len(payload)) + '\n    },\n')
+        catalog.write_text(row)
+        expected = media.verify_sound_tag_model(self.repo, self.models)
+        self.assertEqual(expected['filename'], 'ced.gguf')
+        model.write_bytes(b'x' * len(payload))
+        with self.assertRaises(ValueError): media.verify_sound_tag_model(self.repo, self.models)
+        model.write_bytes(payload)
+        catalog.write_text(row.replace('ced.gguf', '../ced.gguf'))
+        with self.assertRaises(ValueError): media.verify_sound_tag_model(self.repo, self.models)
+        catalog.write_text(row + row)
+        with self.assertRaises(ValueError): media.verify_sound_tag_model(self.repo, self.models)
+
 
 if __name__ == '__main__': unittest.main()
