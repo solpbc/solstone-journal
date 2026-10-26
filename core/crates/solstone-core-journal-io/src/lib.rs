@@ -59,6 +59,7 @@ pub mod snapshot;
 #[cfg(any(unix, windows))]
 pub mod staged;
 pub mod strict_segment;
+pub mod whole_journal_restore;
 #[cfg(windows)]
 mod windows_disk_space;
 #[cfg(windows)]

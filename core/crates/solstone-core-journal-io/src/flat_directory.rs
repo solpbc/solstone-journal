@@ -30,7 +30,7 @@ const FILE_FLAGS: OFlag = OFlag::O_RDONLY
     .union(OFlag::O_NOFOLLOW);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum FlatDirectoryTestPrimitive {
+pub(crate) enum FlatDirectoryTestPrimitive {
     BeforeDescendantOpen,
     BeforeEntryStat,
     BeforeObservedFileOpen,
@@ -51,7 +51,7 @@ thread_local! {
 }
 
 #[cfg(test)]
-fn run_with_flat_directory_hook<T>(
+pub(crate) fn run_with_flat_directory_hook<T>(
     primitive: FlatDirectoryTestPrimitive,
     callback: impl FnOnce() + 'static,
     op: impl FnOnce() -> T,
