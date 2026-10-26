@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use std::collections::{BTreeSet, VecDeque};
 use std::io::Cursor;
 use std::path::Path;
 
@@ -73,7 +74,7 @@ pub struct DescribeResult {
 }
 
 pub fn process_video(path: &Path, config: WinnowConfig) -> DescribeResult {
-    process_video_inner(path, config, true)
+    collect_video(path, config, true, &|| false)
 }
 
 /// Decode and winnow a video without materializing PNG payloads.
@@ -81,97 +82,333 @@ pub fn process_video(path: &Path, config: WinnowConfig) -> DescribeResult {
 /// The returned frame metadata is complete, but every [`QualifiedFrame::png`]
 /// is empty. Use this when the caller does not cross the generate boundary.
 pub fn process_video_metadata(path: &Path, config: WinnowConfig) -> DescribeResult {
-    process_video_inner(path, config, false)
+    collect_video(path, config, false, &|| false)
 }
 
-fn process_video_inner(path: &Path, config: WinnowConfig, encode_payloads: bool) -> DescribeResult {
-    let mut result = DescribeResult::default();
-    if ffmpeg::init().is_err() {
-        result.decode_failed = true;
-        return result;
-    }
-
-    let mut input = match open_input(path) {
-        Ok(input) => input,
-        Err(_) => {
-            result.decode_failed = true;
-            return result;
-        }
+fn collect_video(
+    path: &Path,
+    config: WinnowConfig,
+    encode_payloads: bool,
+    checkpoint: &dyn Fn() -> bool,
+) -> DescribeResult {
+    let mut pull = match FramePull::open(path, config, encode_payloads) {
+        Ok(pull) => pull,
+        Err(result) => return result,
     };
+    let mut frames = Vec::new();
+    loop {
+        match pull.next(checkpoint) {
+            PullNext::Frame(frame) => frames.push(frame),
+            PullNext::Done => break,
+            PullNext::Cancelled => break,
+        }
+    }
+    pull.finish(frames)
+}
 
-    let (stream_index, time_base, parameters) =
-        match input.streams().best(ffmpeg::media::Type::Video) {
-            Some(stream) => (stream.index(), stream.time_base(), stream.parameters()),
-            None => {
+pub(crate) enum PullNext {
+    Frame(QualifiedFrame),
+    Done,
+    Cancelled,
+}
+
+pub(crate) enum RedecodeFail {
+    Cancelled,
+    Missing,
+}
+
+/// One PNG from a fresh open of the same demuxer and winnow. Earlier frames are dropped.
+pub(crate) fn redecode_frame(
+    path: &Path,
+    config: WinnowConfig,
+    frame_id: u64,
+    timestamp: f64,
+    checkpoint: &dyn Fn() -> bool,
+) -> Result<Vec<u8>, RedecodeFail> {
+    let mut pull = FramePull::open(path, config, true).map_err(|_| RedecodeFail::Missing)?;
+    loop {
+        match pull.next(checkpoint) {
+            PullNext::Cancelled => return Err(RedecodeFail::Cancelled),
+            PullNext::Done => return Err(RedecodeFail::Missing),
+            PullNext::Frame(frame) => {
+                if frame.frame_id == frame_id {
+                    if frame.timestamp.to_bits() != timestamp.to_bits() {
+                        return Err(RedecodeFail::Missing);
+                    }
+                    return Ok(frame.png);
+                }
+                if checkpoint() {
+                    return Err(RedecodeFail::Cancelled);
+                }
+            }
+        }
+    }
+}
+
+pub(crate) struct FramePull {
+    encode: bool,
+    retain_pngs: Option<BTreeSet<u64>>,
+    state: Option<PullState>,
+    result: DescribeResult,
+    pending: VecDeque<QualifiedFrame>,
+    failed: bool,
+    finished: bool,
+    raw: usize,
+    winnow: Option<WinnowState>,
+}
+
+struct PngPlan<'a> {
+    encode: bool,
+    retain: Option<&'a BTreeSet<u64>>,
+}
+
+struct PullState {
+    input: ffmpeg::format::context::Input,
+    decoder: ffmpeg::decoder::Video,
+    scaler: Option<ffmpeg::software::scaling::context::Context>,
+    stream_index: usize,
+    time_base: ffmpeg::Rational,
+    frame_id: u64,
+    input_done: bool,
+    eof_sent: bool,
+}
+
+impl FramePull {
+    #[allow(clippy::result_large_err)]
+    pub(crate) fn open(
+        path: &Path,
+        config: WinnowConfig,
+        encode: bool,
+    ) -> Result<Self, DescribeResult> {
+        let mut result = DescribeResult::default();
+        if ffmpeg::init().is_err() {
+            result.decode_failed = true;
+            return Err(result);
+        }
+        let input = match open_input(path) {
+            Ok(input) => input,
+            Err(_) => {
                 result.decode_failed = true;
-                return result;
+                return Err(result);
             }
         };
-    let context = match ffmpeg::codec::context::Context::from_parameters(parameters) {
-        Ok(context) => context,
-        Err(_) => return decode_failed(result),
-    };
-    let mut decoder = match context.decoder().video() {
-        Ok(decoder) => decoder,
-        Err(_) => return decode_failed(result),
-    };
-
-    result.width = Some(decoder.width());
-    result.height = Some(decoder.height());
-    let mut scaler: Option<ffmpeg::software::scaling::context::Context> = None;
-
-    let mut frame_id = 0_u64;
-    let mut state = WinnowState::new(config);
-    let mut raw = 0_usize;
-
-    loop {
-        let mut packet = ffmpeg::Packet::empty();
-        match packet.read(&mut input) {
-            Ok(()) => {
-                if packet.stream() != stream_index {
-                    continue;
+        let (stream_index, time_base, parameters) =
+            match input.streams().best(ffmpeg::media::Type::Video) {
+                Some(stream) => (stream.index(), stream.time_base(), stream.parameters()),
+                None => {
+                    result.decode_failed = true;
+                    return Err(result);
                 }
-                if decoder.send_packet(&packet).is_err()
-                    || receive_frames(
-                        &mut decoder,
-                        &mut scaler,
-                        time_base,
-                        encode_payloads,
-                        &mut frame_id,
-                        &mut raw,
-                        &mut state,
-                        &mut result,
-                    )
-                    .is_err()
-                {
-                    return decode_failed(result);
-                }
+            };
+        let context = match ffmpeg::codec::context::Context::from_parameters(parameters) {
+            Ok(context) => context,
+            Err(_) => return Err(decode_failed(result)),
+        };
+        let decoder = match context.decoder().video() {
+            Ok(decoder) => decoder,
+            Err(_) => return Err(decode_failed(result)),
+        };
+        result.width = Some(decoder.width());
+        result.height = Some(decoder.height());
+        Ok(Self {
+            encode,
+            state: Some(PullState {
+                input,
+                decoder,
+                scaler: None,
+                stream_index,
+                time_base,
+                frame_id: 0,
+                input_done: false,
+                eof_sent: false,
+            }),
+            result,
+            pending: VecDeque::new(),
+            failed: false,
+            finished: false,
+            raw: 0,
+            winnow: Some(WinnowState::new(config)),
+            retain_pngs: None,
+        })
+    }
+
+    /// Encode and enqueue PNGs only for these qualified ids. Other kept frames stay metadata.
+    pub(crate) fn retain_pngs(&mut self, ids: BTreeSet<u64>) {
+        self.retain_pngs = Some(ids);
+    }
+
+    pub(crate) fn next(&mut self, checkpoint: &dyn Fn() -> bool) -> PullNext {
+        if self.finished && self.pending.is_empty() {
+            return PullNext::Done;
+        }
+        if let Some(frame) = self.pending.pop_front() {
+            return PullNext::Frame(frame);
+        }
+        if self.finished {
+            return PullNext::Done;
+        }
+        let Some(mut state) = self.state.take() else {
+            self.finished = true;
+            return PullNext::Done;
+        };
+        let status = pump(
+            &mut state,
+            &mut self.result,
+            &mut self.pending,
+            &mut self.raw,
+            self.winnow.as_mut().expect("winnow lives until finish"),
+            PngPlan {
+                encode: self.encode,
+                retain: self.retain_pngs.as_ref(),
+            },
+            checkpoint,
+        );
+        match status {
+            PumpStatus::Ready => {
+                self.state = Some(state);
+                self.pending
+                    .pop_front()
+                    .map(PullNext::Frame)
+                    .unwrap_or(PullNext::Done)
             }
-            Err(ffmpeg::Error::Eof) => break,
-            Err(_) => return decode_failed(result),
+            PumpStatus::Eof => {
+                let counters = self
+                    .winnow
+                    .as_ref()
+                    .expect("winnow lives until finish")
+                    .counters();
+                self.result.qualified_count = self.result.qualified_frames.len();
+                self.result.winnow = Some(metrics(self.raw, counters));
+                self.finished = true;
+                self.pending
+                    .pop_front()
+                    .map(PullNext::Frame)
+                    .unwrap_or(PullNext::Done)
+            }
+            PumpStatus::Failed => {
+                self.failed = true;
+                self.result = decode_failed(std::mem::take(&mut self.result));
+                self.finished = true;
+                self.state = None;
+                self.pending
+                    .pop_front()
+                    .map(PullNext::Frame)
+                    .unwrap_or(PullNext::Done)
+            }
+            PumpStatus::Cancelled => {
+                self.finished = true;
+                self.state = None;
+                self.pending.clear();
+                PullNext::Cancelled
+            }
         }
     }
 
-    if decoder.send_eof().is_err()
-        || receive_frames(
-            &mut decoder,
-            &mut scaler,
-            time_base,
-            encode_payloads,
-            &mut frame_id,
-            &mut raw,
-            &mut state,
-            &mut result,
-        )
-        .is_err()
-    {
-        return decode_failed(result);
+    fn finish(mut self, frames: Vec<QualifiedFrame>) -> DescribeResult {
+        if self.failed || self.result.decode_failed {
+            self.result.decode_failed = true;
+            self.result.qualified_count = frames.len();
+            self.result.winnow = None;
+        } else if !self.finished {
+            if let Some(winnow) = self.winnow.as_ref() {
+                self.result.qualified_count = frames.len();
+                self.result.winnow = Some(metrics(self.raw, winnow.counters()));
+            }
+        } else {
+            self.result.qualified_count = frames.len();
+        }
+        self.result.qualified_frames = frames;
+        self.result
     }
 
-    let counters = state.counters();
-    result.qualified_count = result.qualified_frames.len();
-    result.winnow = Some(metrics(raw, counters));
-    result
+    pub(crate) fn metadata(&self) -> DescribeResult {
+        let mut result = self.result.clone();
+        for frame in &mut result.qualified_frames {
+            frame.png.clear();
+        }
+        result
+    }
+}
+
+enum PumpStatus {
+    Ready,
+    Eof,
+    Failed,
+    Cancelled,
+}
+
+fn pump(
+    state: &mut PullState,
+    result: &mut DescribeResult,
+    pending: &mut VecDeque<QualifiedFrame>,
+    raw: &mut usize,
+    winnow: &mut WinnowState,
+    png: PngPlan<'_>,
+    checkpoint: &dyn Fn() -> bool,
+) -> PumpStatus {
+    loop {
+        if checkpoint() {
+            return PumpStatus::Cancelled;
+        }
+        if !pending.is_empty() {
+            return PumpStatus::Ready;
+        }
+        if !state.input_done {
+            let mut packet = ffmpeg::Packet::empty();
+            match packet.read(&mut state.input) {
+                Ok(()) => {
+                    if packet.stream() != state.stream_index {
+                        continue;
+                    }
+                    if state.decoder.send_packet(&packet).is_err()
+                        || receive_frames(
+                            &mut state.decoder,
+                            &mut state.scaler,
+                            state.time_base,
+                            &png,
+                            &mut state.frame_id,
+                            raw,
+                            winnow,
+                            result,
+                            pending,
+                        )
+                        .is_err()
+                    {
+                        return PumpStatus::Failed;
+                    }
+                    if !pending.is_empty() {
+                        return PumpStatus::Ready;
+                    }
+                }
+                Err(ffmpeg::Error::Eof) => state.input_done = true,
+                Err(_) => return PumpStatus::Failed,
+            }
+        } else if !state.eof_sent {
+            state.eof_sent = true;
+            if state.decoder.send_eof().is_err()
+                || receive_frames(
+                    &mut state.decoder,
+                    &mut state.scaler,
+                    state.time_base,
+                    &png,
+                    &mut state.frame_id,
+                    raw,
+                    winnow,
+                    result,
+                    pending,
+                )
+                .is_err()
+            {
+                return PumpStatus::Failed;
+            }
+            if !pending.is_empty() {
+                return PumpStatus::Ready;
+            }
+            return PumpStatus::Eof;
+        } else {
+            return PumpStatus::Eof;
+        }
+    }
 }
 
 fn rgb_scaler_for<'a>(
@@ -203,11 +440,12 @@ fn receive_frames(
     decoder: &mut ffmpeg::decoder::Video,
     scaler: &mut Option<ffmpeg::software::scaling::context::Context>,
     time_base: ffmpeg::Rational,
-    encode_payloads: bool,
+    png: &PngPlan<'_>,
     frame_id: &mut u64,
     raw: &mut usize,
     state: &mut WinnowState,
     result: &mut DescribeResult,
+    pending: &mut VecDeque<QualifiedFrame>,
 ) -> Result<(), ffmpeg::Error> {
     loop {
         let mut decoded = ffmpeg::frame::Video::empty();
@@ -229,15 +467,24 @@ fn receive_frames(
                         result.first_hash = Some(hash);
                     }
                     result.last_hash = Some(hash);
+                    let keep_png = png.retain.is_none_or(|ids| ids.contains(frame_id));
                     result.qualified_frames.push(QualifiedFrame {
                         frame_id: *frame_id,
                         timestamp,
-                        png: if encode_payloads {
+                        png: Vec::new(),
+                    });
+                    if keep_png {
+                        let encoded = if png.encode {
                             encode_png(&frame).ok_or(ffmpeg::Error::InvalidData)?
                         } else {
                             Vec::new()
-                        },
-                    });
+                        };
+                        pending.push_back(QualifiedFrame {
+                            frame_id: *frame_id,
+                            timestamp,
+                            png: encoded,
+                        });
+                    }
                 }
             }
             Err(ffmpeg::Error::Other { errno }) if errno == ffmpeg::error::EAGAIN => break,

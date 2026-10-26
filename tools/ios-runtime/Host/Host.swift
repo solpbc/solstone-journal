@@ -648,13 +648,14 @@ final class PendingReply: @unchecked Sendable {
   var rebuildObservation: RebuildObservation?
   let output = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
   let args = ProcessInfo.processInfo.arguments
+  let ownerFixture = Result { try OwnerFixture.parse(ProcessInfo.processInfo.arguments) }
   func argument(_ name: String, _ fallback: String) -> String {
     guard let i = args.firstIndex(of: name), i + 1 < args.count else { return fallback }
     return args[i + 1]
   }
   var journal: String {
     #if JOURNAL_OWNER_APP
-    return "owner"
+    return (try? ownerFixture.get().suite) ?? ""
     #else
     return argument("--suite", "development")
     #endif

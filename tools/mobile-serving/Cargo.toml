@@ -16,6 +16,7 @@ processing = [
     "dep:solstone-core-sense",
     "dep:solstone-core-think-cli",
     "dep:solstone-core-depict",
+    "dep:solstone-core-describe",
     "dep:solstone-core-system",
     "dep:solstone-core-transcribe",
     "dep:solstone-core-journal-config",
@@ -26,7 +27,11 @@ processing = [
     "dep:solstone-core-facets",
     "dep:solstone-core-speaker-resolve",
     "dep:solstone-core-speakers",
+    "dep:oar-ocr",
+    "dep:image",
 ]
+rfdetr-native = ["dep:solstone-core-local"]
+screen-ocr-native = []
 
 [dependencies]
 axum = { version = "0.8.9", default-features = false }
@@ -42,6 +47,7 @@ solstone-core-mcp-endpoint = { path = "../../core/crates/solstone-core-mcp-endpo
 solstone-core-convey-shell = { path = "../../core/crates/solstone-core-convey-shell" }
 solstone-core-indexer-store = { path = "../../core/crates/solstone-core-indexer-store" }
 solstone-core-journal-io = { path = "../../core/crates/solstone-core-journal-io" }
+solstone-core-local = { path = "../../core/crates/solstone-core-local", optional = true }
 solstone-core-journal-config-write = { path = "../../core/crates/solstone-core-journal-config-write" }
 tokio = { version = "1", features = ["rt-multi-thread", "time", "sync", "macros"] }
 journal-mobile-audio = { path = "../mobile-audio", optional = true, default-features = false }
@@ -54,6 +60,7 @@ sha2 = { version = "0.10", optional = true }
 solstone-core-sense = { path = "../../core/crates/solstone-core-sense", optional = true }
 solstone-core-think-cli = { path = "../../core/crates/solstone-core-think-cli", optional = true }
 solstone-core-depict = { path = "../../core/crates/solstone-core-depict", optional = true }
+solstone-core-describe = { path = "../../core/crates/solstone-core-describe", optional = true }
 solstone-core-system = { path = "../../core/crates/solstone-core-system", optional = true }
 solstone-core-journal-config = { path = "../../core/crates/solstone-core-journal-config", optional = true }
 solstone-core-cortex-client = { path = "../../core/crates/solstone-core-cortex-client", optional = true }
@@ -63,6 +70,8 @@ chrono-tz = { version = "0.10", optional = true }
 solstone-core-facets = { path = "../../core/crates/solstone-core-facets", optional = true }
 solstone-core-speaker-resolve = { path = "../../core/crates/solstone-core-speaker-resolve", optional = true }
 solstone-core-speakers = { path = "../../core/crates/solstone-core-speakers", optional = true }
+oar-ocr = { path = "../../core/vendor/oar-ocr", optional = true, default-features = false, features = ["simd"] }
+image = { version = "0.25.6", optional = true, default-features = false, features = ["png"] }
 ort = { version = "=2.0.0-rc.12", default-features = false, features = ["api-24", "std"] }
 
 # iOS links the pinned static runtime into its app executable.
