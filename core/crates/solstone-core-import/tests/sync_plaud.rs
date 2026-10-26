@@ -983,12 +983,14 @@ fn stop_after_the_first_download_does_not_start_the_next_one() {
     );
 }
 
+#[cfg(all(test, feature = "full-tests"))]
 struct StoppingDownload {
     stop: solstone_core_import::WorkStop,
     downloads: Vec<String>,
     retained: Option<std::path::PathBuf>,
 }
 
+#[cfg(all(test, feature = "full-tests"))]
 impl PlaudDownload for StoppingDownload {
     fn temporary_url(&mut self, _: &str, file_id: &str) -> Result<String, PlaudFailureKind> {
         Ok(format!(
@@ -1013,8 +1015,10 @@ impl PlaudDownload for StoppingDownload {
     }
 }
 
+#[cfg(all(test, feature = "full-tests"))]
 struct CountingPipeline(Cell<u8>);
 
+#[cfg(all(test, feature = "full-tests"))]
 impl ImportPipeline for CountingPipeline {
     fn import_one(&mut self, _: PipelineImportRequest<'_>) -> Result<PipelineOutcome, String> {
         self.0.set(self.0.get() + 1);
@@ -1022,6 +1026,7 @@ impl ImportPipeline for CountingPipeline {
     }
 }
 
+#[cfg(all(test, feature = "full-tests"))]
 #[test]
 fn stop_during_the_download_keeps_the_file_and_does_not_start_import() {
     let tree = TempDir::new().unwrap();

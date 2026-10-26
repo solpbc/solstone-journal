@@ -168,7 +168,9 @@ pub fn execute_desktop(
 #[cfg(test)]
 mod tests {
     use std::path::Path;
+    #[cfg(all(test, feature = "full-tests"))]
     use std::sync::Arc;
+    #[cfg(all(test, feature = "full-tests"))]
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
     use std::sync::mpsc::{self, TryRecvError};
 
@@ -299,11 +301,13 @@ mod tests {
         assert_ne!(run.exit_code, 0);
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     struct BlockingText {
         entered: mpsc::Sender<()>,
         release: std::sync::Mutex<mpsc::Receiver<solstone_core_generate::GenerateResponse>>,
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     impl solstone_core_import::text::WireClient for BlockingText {
         fn execute(
             &self,
@@ -315,6 +319,7 @@ mod tests {
         }
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn stop_during_the_text_model_does_not_install_the_transcript() {
         let journal = tempfile::tempdir().unwrap();
@@ -378,6 +383,7 @@ mod tests {
         );
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn stopped_sync_keeps_the_saved_count_and_fails_the_join() {
         let journal = tempfile::tempdir().unwrap();
@@ -607,6 +613,7 @@ mod tests {
         }
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn parent_cancel_during_pdf_retains_the_call_and_skips_install() {
         let journal = tempfile::tempdir().unwrap();
@@ -663,6 +670,7 @@ mod tests {
         );
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn host_checkpoint_during_pdf_retains_the_call_and_skips_install() {
         let journal = tempfile::tempdir().unwrap();

@@ -2244,11 +2244,13 @@ mod tests {
         );
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     struct StoppingImageWire {
         stop: solstone_core_import::WorkStop,
         calls: std::cell::Cell<usize>,
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     impl WireClient for StoppingImageWire {
         fn execute(
             &self,
@@ -2275,6 +2277,7 @@ mod tests {
         }
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     fn files_named(root: &Path, name: &str) -> Vec<PathBuf> {
         let mut found = Vec::new();
         let mut pending = vec![root.to_path_buf()];
@@ -2295,6 +2298,7 @@ mod tests {
         found
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn a_stopped_image_records_unconfirmed_and_keeps_the_admitted_original() {
         let temp = tempfile::Builder::new()

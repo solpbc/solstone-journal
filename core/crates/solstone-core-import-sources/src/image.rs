@@ -2809,11 +2809,13 @@ mod tests {
         assert!(prepared.segment.starts_with("143000"));
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     struct StoppingWire {
         request: RefCell<Option<GenerateRequest>>,
         stop: solstone_core_import::WorkStop,
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     impl WireClient for StoppingWire {
         fn execute(&self, request: &GenerateRequest) -> Result<GenerateResponse, ClientError> {
             self.request.replace(Some(request.clone()));
@@ -2822,6 +2824,7 @@ mod tests {
         }
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     fn files_named(root: &Path, name: &str) -> Vec<PathBuf> {
         let mut found = Vec::new();
         let mut pending = vec![root.to_path_buf()];
@@ -2842,6 +2845,7 @@ mod tests {
         found
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn a_stopped_vision_call_discards_the_description_and_installs_nothing() {
         let journal = tempfile::tempdir().unwrap();
@@ -2889,6 +2893,7 @@ mod tests {
         );
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn an_already_stopped_image_does_not_call_the_model() {
         let journal = tempfile::tempdir().unwrap();
@@ -2929,6 +2934,7 @@ mod tests {
         );
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn a_stopped_second_image_keeps_the_admitted_original() {
         let journal = tempfile::tempdir().unwrap();

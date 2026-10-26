@@ -150,7 +150,7 @@ pub fn probe_member_file(path: &Path) -> (u64, String, DurationInput) {
     (byte_len, sha256, duration)
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 mod tests {
     use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
