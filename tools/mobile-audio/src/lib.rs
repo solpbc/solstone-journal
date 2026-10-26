@@ -169,64 +169,99 @@ mod ced {
     use serde_json::{Value, json};
 
     unsafe extern "C" {
-        fn ced_capi_abi_version() -> c_int;
-        fn ced_capi_load(path: *const c_char) -> *mut c_void;
-        fn ced_capi_free(ctx: *mut c_void);
-        fn ced_capi_last_error(ctx: *const c_void) -> *const c_char;
-        fn ced_capi_classify_pcm_json(
+        fn solstone_sound_ced_capi_abi_version() -> c_int;
+        fn solstone_sound_ced_capi_load(path: *const c_char) -> *mut c_void;
+        fn solstone_sound_ced_capi_free(ctx: *mut c_void);
+        fn solstone_sound_ced_capi_last_error(ctx: *const c_void) -> *const c_char;
+        fn solstone_sound_ced_capi_classify_pcm_json(
             ctx: *mut c_void,
             samples: *const f32,
             n_samples: c_int,
             sample_rate: c_int,
             top_k: c_int,
         ) -> *mut c_char;
-        fn ced_capi_free_string(value: *mut c_char);
+        fn solstone_sound_ced_capi_free_string(value: *mut c_char);
     }
 
     const ABI: c_int = 1;
     const SAMPLE_RATE: c_int = 16_000;
     const TOP_K: c_int = 0;
 
+    /// One static ggml backend serves every context. Probe and classify take
+    /// this lock for the whole native call, and the wait and window loop both
+    /// observe cancellation. The callback must not re-enter ced.
+    static CED_BACKEND: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     pub(super) fn install() {
         solstone_core_transcribe::install_mobile_ced_engine(probe, classify);
     }
 
-    fn probe(path: &Path) -> Result<(), String> {
-        let context = load(path)?;
-        // SAFETY: this is the sole owner and free is called once before return.
-        unsafe { ced_capi_free(context) };
-        Ok(())
+    fn probe(path: &Path, cancel: &dyn Fn() -> bool) -> Result<(), String> {
+        with_ced_backend(cancel, || {
+            let context = load(path)?;
+            // SAFETY: this is the sole owner and free is called once before return.
+            unsafe { solstone_sound_ced_capi_free(context) };
+            Ok(())
+        })
     }
 
-    fn classify(path: &Path, samples: &[f32], windows: &[(usize, usize)]) -> Result<Value, String> {
-        let context = load(path)?;
-        let mut tagged = Vec::with_capacity(windows.len());
-        let result = (|| {
-            for &(start, end) in windows {
-                if end > samples.len() || start >= end {
-                    return Err("ced window is outside the unit".to_owned());
+    fn classify(
+        path: &Path,
+        samples: &[f32],
+        windows: &[(usize, usize)],
+        cancel: &dyn Fn() -> bool,
+    ) -> Result<Value, String> {
+        with_ced_backend(cancel, || {
+            let context = load(path)?;
+            let mut tagged = Vec::with_capacity(windows.len());
+            let result = (|| {
+                for &(start, end) in windows {
+                    if cancel() {
+                        return Err(solstone_core_transcribe::MOBILE_CED_CANCELLED.to_owned());
+                    }
+                    if end > samples.len() || start >= end {
+                        return Err("ced window is outside the unit".to_owned());
+                    }
+                    let tags = classify_slice(context, &samples[start..end])?;
+                    tagged.push(json!({ "ok": true, "tags": tags }));
                 }
-                let tags = classify_slice(context, &samples[start..end])?;
-                tagged.push(json!({ "ok": true, "tags": tags }));
+                Ok(json!({
+                    "schema": "solstone-ced-response-v1",
+                    "windows": tagged,
+                }))
+            })();
+            // SAFETY: this is the sole owner and free is called once after last use.
+            unsafe { solstone_sound_ced_capi_free(context) };
+            result
+        })
+    }
+
+    fn with_ced_backend<T>(
+        cancel: &dyn Fn() -> bool,
+        body: impl FnOnce() -> Result<T, String>,
+    ) -> Result<T, String> {
+        loop {
+            if cancel() {
+                return Err(solstone_core_transcribe::MOBILE_CED_CANCELLED.to_owned());
             }
-            Ok(json!({
-                "schema": "solstone-ced-response-v1",
-                "windows": tagged,
-            }))
-        })();
-        // SAFETY: this is the sole owner and free is called once after last use.
-        unsafe { ced_capi_free(context) };
-        result
+            match CED_BACKEND.try_lock() {
+                Ok(_guard) => return body(),
+                Err(std::sync::TryLockError::WouldBlock) => std::thread::yield_now(),
+                Err(std::sync::TryLockError::Poisoned(_)) => {
+                    return Err("ced backend lock poisoned".to_owned());
+                }
+            }
+        }
     }
 
     fn load(path: &Path) -> Result<*mut c_void, String> {
         let path = CString::new(path.as_os_str().as_bytes()).map_err(|error| error.to_string())?;
         // SAFETY: path is a live NUL-terminated string. load returns a unique owner or NULL.
         unsafe {
-            if ced_capi_abi_version() != ABI {
+            if solstone_sound_ced_capi_abi_version() != ABI {
                 return Err("ced C API ABI differs from pinned ABI 1".to_owned());
             }
-            let context = ced_capi_load(path.as_ptr());
+            let context = solstone_sound_ced_capi_load(path.as_ptr());
             if context.is_null() {
                 return Err(last_error(std::ptr::null()));
             }
@@ -241,13 +276,18 @@ mod ced {
         let count = c_int::try_from(samples.len()).map_err(|error| error.to_string())?;
         // SAFETY: the slice length is the declared sample count. The result is freed once.
         unsafe {
-            let raw =
-                ced_capi_classify_pcm_json(context, samples.as_ptr(), count, SAMPLE_RATE, TOP_K);
+            let raw = solstone_sound_ced_capi_classify_pcm_json(
+                context,
+                samples.as_ptr(),
+                count,
+                SAMPLE_RATE,
+                TOP_K,
+            );
             if raw.is_null() {
                 return Err(last_error(context));
             }
             let bytes = CStr::from_ptr(raw).to_bytes().to_vec();
-            ced_capi_free_string(raw);
+            solstone_sound_ced_capi_free_string(raw);
             parse_tags(&bytes)
         }
     }
@@ -255,7 +295,7 @@ mod ced {
     fn last_error(context: *const c_void) -> String {
         // SAFETY: last_error returns a borrowed string or NULL for this context.
         unsafe {
-            let raw = ced_capi_last_error(context);
+            let raw = solstone_sound_ced_capi_last_error(context);
             if raw.is_null() {
                 return "ced engine returned no error".to_owned();
             }

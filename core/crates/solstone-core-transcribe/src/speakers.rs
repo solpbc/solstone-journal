@@ -516,12 +516,17 @@ pub(crate) struct UnitStatementEmbedding {
 }
 
 #[cfg(all(test, feature = "full-tests", feature = "embedded", unix))]
+type KeepHook = fn(usize, f64) -> bool;
+
+#[cfg(all(test, feature = "full-tests", feature = "embedded", unix))]
 thread_local! {
     static EMBEDDED_SPEAKER_EMPTY: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    static EMBEDDED_AUDIO_LEN: std::cell::Cell<(usize, Option<usize>)> =
+        const { std::cell::Cell::new((0, None)) };
     static EMBEDDED_SPEAKER_QUEUE: std::cell::RefCell<Vec<(Value, PathBuf)>> =
         const { std::cell::RefCell::new(Vec::new()) };
     static EMBEDDED_SPEAKER_SEEN: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
-    static EMBEDDED_FIRST_PASS_KEEP: std::cell::RefCell<Option<fn(usize, f64) -> bool>> =
+    static EMBEDDED_FIRST_PASS_KEEP: std::cell::RefCell<Option<KeepHook>> =
         const { std::cell::RefCell::new(None) };
 }
 
@@ -529,6 +534,18 @@ thread_local! {
 #[cfg(all(test, feature = "full-tests", feature = "embedded", unix))]
 pub(crate) fn set_embedded_unit_speaker_empty(enabled: bool) {
     EMBEDDED_SPEAKER_EMPTY.with(|cell| cell.set(enabled));
+}
+
+/// Whether the full-tests speaker helper is standing in with an empty result.
+#[cfg(all(test, feature = "full-tests", feature = "embedded", unix))]
+pub(crate) fn embedded_unit_speaker_empty() -> bool {
+    EMBEDDED_SPEAKER_EMPTY.with(|cell| cell.get())
+}
+
+/// Full audio length and reduced length from the latest helper call.
+#[cfg(all(test, feature = "full-tests", feature = "embedded", unix))]
+pub(crate) fn embedded_audio_lengths() -> (usize, Option<usize>) {
+    EMBEDDED_AUDIO_LEN.with(|cell| cell.get())
 }
 
 /// Queue one helper response. `statement_payload` is the path the response names.
@@ -568,7 +585,13 @@ pub(crate) fn collect_unit_speaker_rows(
     scratch: &Path,
     origin_s: f64,
 ) -> Result<UnitSpeakerRows, SpeakerAnalyzeError> {
-    #[cfg(all(test, feature = "full-tests"))]
+    #[cfg(all(test, feature = "full-tests", feature = "embedded", unix))]
+    {
+        EMBEDDED_AUDIO_LEN.with(|cell| {
+            cell.set((full_audio.len(), reduced_audio.map(|audio| audio.len())));
+        });
+    }
+    #[cfg(all(test, feature = "full-tests", feature = "embedded", unix))]
     if EMBEDDED_SPEAKER_EMPTY.with(|cell| cell.get()) {
         return Ok(UnitSpeakerRows::default());
     }

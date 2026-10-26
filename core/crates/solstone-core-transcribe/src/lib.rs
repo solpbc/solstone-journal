@@ -46,7 +46,7 @@ pub use embedded::{
     process_embedded,
 };
 #[cfg(all(feature = "embedded", unix))]
-pub use embedded_units::install_mobile_ced_engine;
+pub use embedded_units::{MOBILE_CED_CANCELLED, install_mobile_ced_engine};
 #[allow(dead_code)]
 mod event;
 mod model_assets;

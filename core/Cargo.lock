@@ -6399,6 +6399,7 @@ version = "2.0.58"
 dependencies = [
  "hdbscan",
  "serde_json",
+ "tempfile",
 ]
 
 [[package]]

@@ -13,11 +13,10 @@
 //! agglomerative clustering uses unclipped `1 - dot`, and silhouette uses
 //! `max(1 - dot, 0)`.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::fs::{self, File};
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::diarization::DiarizationError;
 
@@ -36,11 +35,43 @@ pub const CLUSTER_LINKAGE_RESIDENT_BYTES: usize = {
 
 thread_local! {
     static TILE_WORK_UNITS: Cell<u64> = const { Cell::new(0) };
+    static CLUSTER_PARENT: RefCell<Option<PathBuf>> = const { RefCell::new(None) };
 }
-static WORK_DIR_SEQ: AtomicU64 = AtomicU64::new(0);
+
+/// Binds clustering spill to the caller's private directory for one synchronous call.
+///
+/// Cancellation is a normal argument on each scan. This scope does not store
+/// that callback: the crate forbids `unsafe`, and a thread-local cannot hold
+/// the caller's short-lived closure.
+pub(crate) struct ClusterScope {
+    previous_parent: Option<PathBuf>,
+}
+
+impl ClusterScope {
+    pub(crate) fn enter(parent: &Path) -> Self {
+        let previous_parent =
+            CLUSTER_PARENT.with(|cell| cell.borrow_mut().replace(parent.to_path_buf()));
+        Self { previous_parent }
+    }
+}
+
+impl Drop for ClusterScope {
+    fn drop(&mut self) {
+        let previous_parent = self.previous_parent.take();
+        CLUSTER_PARENT.with(|cell| *cell.borrow_mut() = previous_parent);
+    }
+}
+
+fn cluster_parent() -> Result<PathBuf, DiarizationError> {
+    CLUSTER_PARENT
+        .with(|cell| cell.borrow().clone())
+        .ok_or_else(|| DiarizationError::MatrixStore {
+            detail: "cluster scratch parent is not set".to_owned(),
+        })
+}
 
 /// Bytes of matrix tiles plus the two cached embedding rows.
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 pub fn cluster_matrix_resident_bytes(cols: usize) -> usize {
     let tile =
         CLUSTER_TILE_EDGE * CLUSTER_TILE_EDGE * std::mem::size_of::<f64>() * CLUSTER_RESIDENT_TILES;
@@ -49,7 +80,7 @@ pub fn cluster_matrix_resident_bytes(cols: usize) -> usize {
 }
 
 /// Tile materializations on this thread since the last take.
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 pub fn take_cluster_tile_work_units() -> u64 {
     TILE_WORK_UNITS.with(|cell| cell.replace(0))
 }
@@ -58,63 +89,31 @@ fn note_tile_work_unit() {
     TILE_WORK_UNITS.with(|cell| cell.set(cell.get().saturating_add(1)));
 }
 
-struct WorkDir(PathBuf);
+#[derive(Debug)]
+struct WorkDir(tempfile::TempDir);
 
 impl WorkDir {
-    fn new() -> Result<Self, DiarizationError> {
-        for _ in 0..8 {
-            let seq = WORK_DIR_SEQ.fetch_add(1, Ordering::Relaxed);
-            let path =
-                std::env::temp_dir().join(format!("solstone-cluster-{}-{seq}", std::process::id()));
-            if claim_cluster_dir(&path).is_ok() {
-                return Ok(Self(path));
-            }
+    fn new(parent: &Path) -> Result<Self, DiarizationError> {
+        let meta = fs::symlink_metadata(parent).map_err(store_error)?;
+        if meta.file_type().is_symlink() || !meta.is_dir() {
+            return Err(DiarizationError::MatrixStore {
+                detail: "cluster scratch parent is not a private directory".to_owned(),
+            });
         }
-        Err(DiarizationError::MatrixStore {
-            detail: "could not create a private cluster directory".to_owned(),
-        })
+        let mut builder = tempfile::Builder::new();
+        builder.prefix("solstone-cluster-");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            builder.permissions(fs::Permissions::from_mode(0o700));
+        }
+        let dir = builder.tempdir_in(parent).map_err(store_error)?;
+        Ok(Self(dir))
     }
-}
 
-fn claim_cluster_dir(path: &Path) -> Result<(), std::io::Error> {
-    match fs::symlink_metadata(path) {
-        Ok(meta) if meta.file_type().is_symlink() => {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::AlreadyExists,
-                "cluster scratch symlink",
-            ));
-        }
-        Ok(_) => {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::AlreadyExists,
-                "cluster scratch exists",
-            ));
-        }
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-        Err(error) => return Err(error),
+    fn path(&self) -> &Path {
+        self.0.path()
     }
-    #[cfg(unix)]
-    let builder = {
-        use std::os::unix::fs::DirBuilderExt;
-        let mut builder = fs::DirBuilder::new();
-        builder.mode(0o700);
-        builder
-    };
-    #[cfg(not(unix))]
-    let builder = fs::DirBuilder::new();
-    builder.create(path)?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(path, fs::Permissions::from_mode(0o700))?;
-    }
-    let meta = fs::symlink_metadata(path)?;
-    if meta.file_type().is_symlink() || !meta.is_dir() {
-        return Err(std::io::Error::other(
-            "cluster scratch is not a private directory",
-        ));
-    }
-    Ok(())
 }
 
 fn private_file(path: &Path) -> Result<File, DiarizationError> {
@@ -140,18 +139,6 @@ fn private_file(path: &Path) -> Result<File, DiarizationError> {
             .map_err(store_error)?;
     }
     Ok(file)
-}
-
-impl Drop for WorkDir {
-    fn drop(&mut self) {
-        let Ok(meta) = fs::symlink_metadata(&self.0) else {
-            return;
-        };
-        if meta.file_type().is_symlink() || !meta.is_dir() {
-            return;
-        }
-        let _ = fs::remove_dir_all(&self.0);
-    }
 }
 
 pub(crate) struct BoundRows {
@@ -214,8 +201,8 @@ impl BoundRows {
     }
 
     fn create(rows: usize, cols: usize) -> Result<Self, DiarizationError> {
-        let dir = WorkDir::new()?;
-        let path = dir.0.join("rows.f64le");
+        let dir = WorkDir::new(&cluster_parent()?)?;
+        let path = dir.path().join("rows.f64le");
         let file = private_file(&path)?;
         let bytes = rows
             .checked_mul(cols)
@@ -366,7 +353,7 @@ impl LinkageTiles {
     ///
     /// Cells outside that block stay infinite, matching the linkage matrix the
     /// agglomerative pass used to allocate in one buffer.
-    #[cfg(test)]
+    #[cfg(all(test, feature = "full-tests"))]
     pub(crate) fn from_square(
         distances: &[f64],
         n: usize,
@@ -401,8 +388,8 @@ impl LinkageTiles {
     }
 
     fn allocate(stride: usize) -> Result<Self, DiarizationError> {
-        let dir = WorkDir::new()?;
-        let path = dir.0.join("linkage.f64le");
+        let dir = WorkDir::new(&cluster_parent()?)?;
+        let path = dir.path().join("linkage.f64le");
         let file = private_file(&path)?;
         let per_side = stride.div_ceil(CLUSTER_TILE_EDGE);
         let tile_cells = CLUSTER_TILE_EDGE * CLUSTER_TILE_EDGE;
@@ -443,9 +430,14 @@ impl LinkageTiles {
         Ok(())
     }
 
-    pub(crate) fn get(&mut self, row: usize, col: usize) -> Result<f64, DiarizationError> {
+    pub(crate) fn get(
+        &mut self,
+        row: usize,
+        col: usize,
+        cancel: &dyn Fn() -> bool,
+    ) -> Result<f64, DiarizationError> {
         let id = self.tile_id(row, col);
-        let slot = self.slot_for(id)?;
+        let slot = self.slot_for(id, cancel)?;
         let local = self.local(row, col);
         Ok(self.slots[slot].as_ref().expect("tile").values[local])
     }
@@ -455,9 +447,10 @@ impl LinkageTiles {
         row: usize,
         col: usize,
         value: f64,
+        cancel: &dyn Fn() -> bool,
     ) -> Result<(), DiarizationError> {
         let id = self.tile_id(row, col);
-        let slot = self.slot_for(id)?;
+        let slot = self.slot_for(id, cancel)?;
         let local = self.local(row, col);
         let tile = self.slots[slot].as_mut().expect("tile");
         tile.values[local] = value;
@@ -473,12 +466,17 @@ impl LinkageTiles {
         (row % CLUSTER_TILE_EDGE) * CLUSTER_TILE_EDGE + (col % CLUSTER_TILE_EDGE)
     }
 
-    fn slot_for(&mut self, id: usize) -> Result<usize, DiarizationError> {
+    fn slot_for(
+        &mut self,
+        id: usize,
+        cancel: &dyn Fn() -> bool,
+    ) -> Result<usize, DiarizationError> {
         for index in 0..CLUSTER_RESIDENT_TILES {
             if self.slots[index].as_ref().is_some_and(|slot| slot.id == id) {
                 return Ok(index);
             }
         }
+        stop(cancel)?;
         let index = self.hand % CLUSTER_RESIDENT_TILES;
         self.hand += 1;
         self.evict(index)?;
@@ -591,10 +589,10 @@ pub(crate) struct NodeScratch {
 impl NodeScratch {
     pub(crate) fn new(nodes: usize) -> Result<Self, DiarizationError> {
         let tiles = tile_count(nodes)?;
-        let dir = WorkDir::new()?;
-        let flags_file = create_len(&dir.0, "active.u8", tiles * CLUSTER_TILE_EDGE)?;
+        let dir = WorkDir::new(&cluster_parent()?)?;
+        let flags_file = create_len(dir.path(), "active.u8", tiles * CLUSTER_TILE_EDGE)?;
         let sizes_file = create_len(
-            &dir.0,
+            dir.path(),
             "sizes.u64le",
             tiles * CLUSTER_TILE_EDGE * std::mem::size_of::<u64>(),
         )?;
@@ -623,26 +621,35 @@ impl NodeScratch {
             if index % CLUSTER_TILE_EDGE == 0 && cancel() {
                 return Err(DiarizationError::Cancelled);
             }
-            self.set_active(index, true)?;
-            self.set_size(index, 1)?;
+            self.set_active(index, true, cancel)?;
+            self.set_size(index, 1, cancel)?;
         }
         Ok(())
     }
 
-    pub(crate) fn is_active(&mut self, index: usize) -> Result<bool, DiarizationError> {
-        self.flag(index).map(|value| value != 0)
+    pub(crate) fn is_active(
+        &mut self,
+        index: usize,
+        cancel: &dyn Fn() -> bool,
+    ) -> Result<bool, DiarizationError> {
+        self.flag(index, cancel).map(|value| value != 0)
     }
 
     pub(crate) fn set_active(
         &mut self,
         index: usize,
         active: bool,
+        cancel: &dyn Fn() -> bool,
     ) -> Result<(), DiarizationError> {
-        self.set_flag(index, u8::from(active))
+        self.set_flag(index, u8::from(active), cancel)
     }
 
-    pub(crate) fn size(&mut self, index: usize) -> Result<usize, DiarizationError> {
-        let slot = self.size_slot(index / CLUSTER_TILE_EDGE)?;
+    pub(crate) fn size(
+        &mut self,
+        index: usize,
+        cancel: &dyn Fn() -> bool,
+    ) -> Result<usize, DiarizationError> {
+        let slot = self.size_slot(index / CLUSTER_TILE_EDGE, cancel)?;
         let value = self.sizes[slot].as_ref().expect("size tile").values[index % CLUSTER_TILE_EDGE];
         usize::try_from(value).map_err(|_| DiarizationError::ShapeOverflow {
             rows: self.nodes,
@@ -650,37 +657,52 @@ impl NodeScratch {
         })
     }
 
-    pub(crate) fn set_size(&mut self, index: usize, size: usize) -> Result<(), DiarizationError> {
+    pub(crate) fn set_size(
+        &mut self,
+        index: usize,
+        size: usize,
+        cancel: &dyn Fn() -> bool,
+    ) -> Result<(), DiarizationError> {
         let size = u64::try_from(size).map_err(|_| DiarizationError::ShapeOverflow {
             rows: self.nodes,
             cols: 1,
         })?;
-        let slot = self.size_slot(index / CLUSTER_TILE_EDGE)?;
+        let slot = self.size_slot(index / CLUSTER_TILE_EDGE, cancel)?;
         let tile = self.sizes[slot].as_mut().expect("size tile");
         tile.values[index % CLUSTER_TILE_EDGE] = size;
         tile.dirty = true;
         Ok(())
     }
 
-    fn flag(&mut self, index: usize) -> Result<u8, DiarizationError> {
-        let slot = self.flag_slot(index / CLUSTER_TILE_EDGE)?;
+    fn flag(&mut self, index: usize, cancel: &dyn Fn() -> bool) -> Result<u8, DiarizationError> {
+        let slot = self.flag_slot(index / CLUSTER_TILE_EDGE, cancel)?;
         Ok(self.flags[slot].as_ref().expect("flag tile").values[index % CLUSTER_TILE_EDGE])
     }
 
-    fn set_flag(&mut self, index: usize, value: u8) -> Result<(), DiarizationError> {
-        let slot = self.flag_slot(index / CLUSTER_TILE_EDGE)?;
+    fn set_flag(
+        &mut self,
+        index: usize,
+        value: u8,
+        cancel: &dyn Fn() -> bool,
+    ) -> Result<(), DiarizationError> {
+        let slot = self.flag_slot(index / CLUSTER_TILE_EDGE, cancel)?;
         let tile = self.flags[slot].as_mut().expect("flag tile");
         tile.values[index % CLUSTER_TILE_EDGE] = value;
         tile.dirty = true;
         Ok(())
     }
 
-    fn flag_slot(&mut self, id: usize) -> Result<usize, DiarizationError> {
+    fn flag_slot(
+        &mut self,
+        id: usize,
+        cancel: &dyn Fn() -> bool,
+    ) -> Result<usize, DiarizationError> {
         for index in 0..CLUSTER_RESIDENT_TILES {
             if self.flags[index].as_ref().is_some_and(|tile| tile.id == id) {
                 return Ok(index);
             }
         }
+        stop(cancel)?;
         let index = self.flag_hand % CLUSTER_RESIDENT_TILES;
         self.flag_hand += 1;
         self.evict_flag(index)?;
@@ -711,12 +733,17 @@ impl NodeScratch {
         Ok(())
     }
 
-    fn size_slot(&mut self, id: usize) -> Result<usize, DiarizationError> {
+    fn size_slot(
+        &mut self,
+        id: usize,
+        cancel: &dyn Fn() -> bool,
+    ) -> Result<usize, DiarizationError> {
         for index in 0..CLUSTER_RESIDENT_TILES {
             if self.sizes[index].as_ref().is_some_and(|tile| tile.id == id) {
                 return Ok(index);
             }
         }
+        stop(cancel)?;
         let index = self.size_hand % CLUSTER_RESIDENT_TILES;
         self.size_hand += 1;
         self.evict_size(index)?;
@@ -773,8 +800,8 @@ pub(crate) struct StoredMerge {
 
 impl MergeLog {
     pub(crate) fn new() -> Result<Self, DiarizationError> {
-        let dir = WorkDir::new()?;
-        let file = private_file(&dir.0.join("merges.bin"))?;
+        let dir = WorkDir::new(&cluster_parent()?)?;
+        let file = private_file(&dir.path().join("merges.bin"))?;
         Ok(Self {
             _dir: dir,
             file,
@@ -834,12 +861,19 @@ pub(crate) struct MemberLists {
 }
 
 impl MemberLists {
-    pub(crate) fn singletons(points: usize) -> Result<Self, DiarizationError> {
+    pub(crate) fn singletons(
+        points: usize,
+        cancel: &dyn Fn() -> bool,
+    ) -> Result<Self, DiarizationError> {
         let nodes = points.saturating_mul(2).saturating_sub(1).max(points);
         let tiles = tile_count(nodes.max(1))?;
-        let dir = WorkDir::new()?;
-        let data = private_file(&dir.0.join("members.u64le"))?;
-        let index_file = create_len(&dir.0, "member-index.bin", tiles * CLUSTER_TILE_EDGE * 16)?;
+        let dir = WorkDir::new(&cluster_parent()?)?;
+        let data = private_file(&dir.path().join("members.u64le"))?;
+        let index_file = create_len(
+            dir.path(),
+            "member-index.bin",
+            tiles * CLUSTER_TILE_EDGE * 16,
+        )?;
         let mut lists = Self {
             _dir: dir,
             data,
@@ -851,29 +885,42 @@ impl MemberLists {
         let mut buffer = [0_u64; CLUSTER_TILE_EDGE];
         let mut start = 0_usize;
         while start < points {
+            stop(cancel)?;
             let count = (points - start).min(CLUSTER_TILE_EDGE);
             for (local, slot) in buffer.iter_mut().take(count).enumerate() {
                 *slot = (start + local) as u64;
             }
             let offset = lists.append(&buffer[..count])?;
             for local in 0..count {
-                lists.index_set(start + local, offset + (local as u64) * 8, 1)?;
+                lists.index_set(start + local, offset + (local as u64) * 8, 1, cancel)?;
             }
             start += count;
         }
         Ok(lists)
     }
 
-    pub(crate) fn count(&mut self, node: usize) -> Result<usize, DiarizationError> {
-        Ok(self.index_get(node)?.1)
+    pub(crate) fn count(
+        &mut self,
+        node: usize,
+        cancel: &dyn Fn() -> bool,
+    ) -> Result<usize, DiarizationError> {
+        Ok(self.index_get(node, cancel)?.1)
     }
 
-    pub(crate) fn clear(&mut self, node: usize) -> Result<(), DiarizationError> {
-        self.index_set(node, 0, 0)
+    pub(crate) fn clear(
+        &mut self,
+        node: usize,
+        cancel: &dyn Fn() -> bool,
+    ) -> Result<(), DiarizationError> {
+        self.index_set(node, 0, 0, cancel)
     }
 
-    pub(crate) fn first(&mut self, node: usize) -> Result<u64, DiarizationError> {
-        let (offset, count) = self.index_get(node)?;
+    pub(crate) fn first(
+        &mut self,
+        node: usize,
+        cancel: &dyn Fn() -> bool,
+    ) -> Result<u64, DiarizationError> {
+        let (offset, count) = self.index_get(node, cancel)?;
         if count == 0 {
             return Err(DiarizationError::MatrixStore {
                 detail: "empty cluster has no first member".to_owned(),
@@ -887,12 +934,14 @@ impl MemberLists {
     pub(crate) fn for_each(
         &mut self,
         node: usize,
+        cancel: &dyn Fn() -> bool,
         mut visit: impl FnMut(u64) -> Result<(), DiarizationError>,
     ) -> Result<(), DiarizationError> {
-        let (mut offset, count) = self.index_get(node)?;
+        let (mut offset, count) = self.index_get(node, cancel)?;
         let mut left = count;
         let mut buffer = [0_u64; CLUSTER_TILE_EDGE];
         while left > 0 {
+            stop(cancel)?;
             let take = left.min(CLUSTER_TILE_EDGE);
             self.read_ids(offset, &mut buffer[..take])?;
             for value in buffer.iter().take(take) {
@@ -912,16 +961,16 @@ impl MemberLists {
         dest: usize,
         cancel: &dyn Fn() -> bool,
     ) -> Result<(), DiarizationError> {
-        let (left_offset, left_count) = self.index_get(left)?;
-        let (right_offset, right_count) = self.index_get(right)?;
+        let (left_offset, left_count) = self.index_get(left, cancel)?;
+        let (right_offset, right_count) = self.index_get(right, cancel)?;
         let combined = left_count + right_count;
         let unsorted = self.data_end;
-        self.copy_ids(left_offset, left_count)?;
-        self.copy_ids(right_offset, right_count)?;
+        self.copy_ids(left_offset, left_count, cancel)?;
+        self.copy_ids(right_offset, right_count, cancel)?;
         let sorted = self.sort_ids(unsorted, combined, cancel)?;
-        self.index_set(dest, sorted, combined)?;
-        self.index_set(left, 0, 0)?;
-        self.index_set(right, 0, 0)?;
+        self.index_set(dest, sorted, combined, cancel)?;
+        self.index_set(left, 0, 0, cancel)?;
+        self.index_set(right, 0, 0, cancel)?;
         Ok(())
     }
 
@@ -945,7 +994,7 @@ impl MemberLists {
         let mid = count / 2;
         let left = self.sort_ids(offset, mid, cancel)?;
         let right = self.sort_ids(offset + (mid as u64) * 8, count - mid, cancel)?;
-        self.merge_ids(left, mid, right, count - mid)
+        self.merge_ids(left, mid, right, count - mid, cancel)
     }
 
     fn merge_ids(
@@ -954,6 +1003,7 @@ impl MemberLists {
         left_count: usize,
         right: u64,
         right_count: usize,
+        cancel: &dyn Fn() -> bool,
     ) -> Result<u64, DiarizationError> {
         let output = self.data_end;
         let mut left_index = 0_usize;
@@ -967,6 +1017,9 @@ impl MemberLists {
         let mut pending = [0_u64; CLUSTER_TILE_EDGE];
         let mut filled = 0_usize;
         while left_index < left_count || right_index < right_count {
+            if filled == 0 {
+                stop(cancel)?;
+            }
             if left_pos == left_have && left_index < left_count {
                 let take = (left_count - left_index).min(CLUSTER_TILE_EDGE);
                 self.read_ids(left + (left_index as u64) * 8, &mut left_buffer[..take])?;
@@ -1009,11 +1062,17 @@ impl MemberLists {
         Ok(output)
     }
 
-    fn copy_ids(&mut self, offset: u64, count: usize) -> Result<(), DiarizationError> {
+    fn copy_ids(
+        &mut self,
+        offset: u64,
+        count: usize,
+        cancel: &dyn Fn() -> bool,
+    ) -> Result<(), DiarizationError> {
         let mut left = count;
         let mut cursor = offset;
         let mut buffer = [0_u64; CLUSTER_TILE_EDGE];
         while left > 0 {
+            stop(cancel)?;
             let take = left.min(CLUSTER_TILE_EDGE);
             self.read_ids(cursor, &mut buffer[..take])?;
             self.append(&buffer[..take])?;
@@ -1046,8 +1105,12 @@ impl MemberLists {
         Ok(())
     }
 
-    fn index_get(&mut self, node: usize) -> Result<(u64, usize), DiarizationError> {
-        let slot = self.index_slot(node / CLUSTER_TILE_EDGE)?;
+    fn index_get(
+        &mut self,
+        node: usize,
+        cancel: &dyn Fn() -> bool,
+    ) -> Result<(u64, usize), DiarizationError> {
+        let slot = self.index_slot(node / CLUSTER_TILE_EDGE, cancel)?;
         let local = node % CLUSTER_TILE_EDGE;
         let tile = self.index[slot].as_ref().expect("index tile");
         let count =
@@ -1063,12 +1126,13 @@ impl MemberLists {
         node: usize,
         offset: u64,
         count: usize,
+        cancel: &dyn Fn() -> bool,
     ) -> Result<(), DiarizationError> {
         let count = u64::try_from(count).map_err(|_| DiarizationError::ShapeOverflow {
             rows: node,
             cols: 1,
         })?;
-        let slot = self.index_slot(node / CLUSTER_TILE_EDGE)?;
+        let slot = self.index_slot(node / CLUSTER_TILE_EDGE, cancel)?;
         let local = node % CLUSTER_TILE_EDGE;
         let tile = self.index[slot].as_mut().expect("index tile");
         tile.offset[local] = offset;
@@ -1077,12 +1141,17 @@ impl MemberLists {
         Ok(())
     }
 
-    fn index_slot(&mut self, id: usize) -> Result<usize, DiarizationError> {
+    fn index_slot(
+        &mut self,
+        id: usize,
+        cancel: &dyn Fn() -> bool,
+    ) -> Result<usize, DiarizationError> {
         for index in 0..CLUSTER_RESIDENT_TILES {
             if self.index[index].as_ref().is_some_and(|tile| tile.id == id) {
                 return Ok(index);
             }
         }
+        stop(cancel)?;
         let index = self.index_hand % CLUSTER_RESIDENT_TILES;
         self.index_hand += 1;
         self.evict_index(index)?;
@@ -1147,8 +1216,8 @@ pub(crate) struct LabelFile {
 impl LabelFile {
     pub(crate) fn zeros(len: usize) -> Result<Self, DiarizationError> {
         let tiles = tile_count(len.max(1))?;
-        let dir = WorkDir::new()?;
-        let file = create_len(&dir.0, "labels.u32le", tiles * CLUSTER_TILE_EDGE * 4)?;
+        let dir = WorkDir::new(&cluster_parent()?)?;
+        let file = create_len(dir.path(), "labels.u32le", tiles * CLUSTER_TILE_EDGE * 4)?;
         Ok(Self {
             _dir: dir,
             file,
@@ -1158,10 +1227,16 @@ impl LabelFile {
         })
     }
 
-    pub(crate) fn from_slice(labels: &[usize]) -> Result<Self, DiarizationError> {
+    pub(crate) fn from_slice(
+        labels: &[usize],
+        cancel: &dyn Fn() -> bool,
+    ) -> Result<Self, DiarizationError> {
         let mut file = Self::zeros(labels.len())?;
         for (index, label) in labels.iter().enumerate() {
-            file.set(index, *label)?;
+            if index % CLUSTER_TILE_EDGE == 0 {
+                stop(cancel)?;
+            }
+            file.set(index, *label, cancel)?;
         }
         Ok(file)
     }
@@ -1170,30 +1245,45 @@ impl LabelFile {
         self.len
     }
 
-    pub(crate) fn get(&mut self, index: usize) -> Result<usize, DiarizationError> {
-        let slot = self.slot(index / CLUSTER_TILE_EDGE)?;
+    pub(crate) fn get(
+        &mut self,
+        index: usize,
+        cancel: &dyn Fn() -> bool,
+    ) -> Result<usize, DiarizationError> {
+        let slot = self.slot(index / CLUSTER_TILE_EDGE, cancel)?;
         Ok(
             self.slots[slot].as_ref().expect("label tile").values[index % CLUSTER_TILE_EDGE]
                 as usize,
         )
     }
 
-    pub(crate) fn set(&mut self, index: usize, label: usize) -> Result<(), DiarizationError> {
+    pub(crate) fn set(
+        &mut self,
+        index: usize,
+        label: usize,
+        cancel: &dyn Fn() -> bool,
+    ) -> Result<(), DiarizationError> {
         let label = u32::try_from(label).map_err(|_| DiarizationError::ShapeOverflow {
             rows: self.len,
             cols: 1,
         })?;
-        let slot = self.slot(index / CLUSTER_TILE_EDGE)?;
+        let slot = self.slot(index / CLUSTER_TILE_EDGE, cancel)?;
         let tile = self.slots[slot].as_mut().expect("label tile");
         tile.values[index % CLUSTER_TILE_EDGE] = label;
         tile.dirty = true;
         Ok(())
     }
 
-    pub(crate) fn to_vec(&mut self) -> Result<Vec<usize>, DiarizationError> {
+    pub(crate) fn read_labels(
+        &mut self,
+        cancel: &dyn Fn() -> bool,
+    ) -> Result<Vec<usize>, DiarizationError> {
         let mut labels = Vec::with_capacity(self.len);
         for index in 0..self.len {
-            labels.push(self.get(index)?);
+            if index % CLUSTER_TILE_EDGE == 0 {
+                stop(cancel)?;
+            }
+            labels.push(self.get(index, cancel)?);
         }
         Ok(labels)
     }
@@ -1226,23 +1316,33 @@ impl LabelFile {
         &mut self,
         label: usize,
         except: Option<usize>,
+        cancel: &dyn Fn() -> bool,
     ) -> Result<usize, DiarizationError> {
         let mut count = 0_usize;
         for index in 0..self.len {
+            if index % CLUSTER_TILE_EDGE == 0 {
+                stop(cancel)?;
+            }
             if except == Some(index) {
                 continue;
             }
-            if self.get(index)? == label {
+            if self.get(index, cancel)? == label {
                 count += 1;
             }
         }
         Ok(count)
     }
 
-    pub(crate) fn unique(&mut self) -> Result<Vec<usize>, DiarizationError> {
+    pub(crate) fn unique(
+        &mut self,
+        cancel: &dyn Fn() -> bool,
+    ) -> Result<Vec<usize>, DiarizationError> {
         let mut found = std::collections::BTreeSet::new();
         for index in 0..self.len {
-            found.insert(self.get(index)?);
+            if index % CLUSTER_TILE_EDGE == 0 {
+                stop(cancel)?;
+            }
+            found.insert(self.get(index, cancel)?);
         }
         Ok(found.into_iter().collect())
     }
@@ -1254,12 +1354,13 @@ impl LabelFile {
         Ok(())
     }
 
-    fn slot(&mut self, id: usize) -> Result<usize, DiarizationError> {
+    fn slot(&mut self, id: usize, cancel: &dyn Fn() -> bool) -> Result<usize, DiarizationError> {
         for index in 0..CLUSTER_RESIDENT_TILES {
             if self.slots[index].as_ref().is_some_and(|tile| tile.id == id) {
                 return Ok(index);
             }
         }
+        stop(cancel)?;
         let index = self.hand % CLUSTER_RESIDENT_TILES;
         self.hand += 1;
         self.evict(index)?;
@@ -1355,46 +1456,45 @@ mod linkage_tests {
 
     #[test]
     fn linkage_resident_budget_does_not_mention_the_interval_count() {
-        assert_eq!(CLUSTER_LINKAGE_RESIDENT_BYTES, 2400);
-        assert!(CLUSTER_LINKAGE_RESIDENT_BYTES < 64 * 1024);
+        let budget = std::hint::black_box(CLUSTER_LINKAGE_RESIDENT_BYTES);
+        assert_eq!(budget, 2400);
+        assert!(budget < 64 * 1024);
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn merged_membership_matches_an_in_memory_sort() {
-        let mut lists = MemberLists::singletons(5).unwrap();
+        let scratch = tempfile::tempdir().expect("membership scratch");
+        let _scope = ClusterScope::enter(scratch.path());
+        let mut lists = MemberLists::singletons(5, &|| false).unwrap();
         lists.merge_sorted(0, 2, 5, &|| false).unwrap();
         lists.merge_sorted(3, 4, 6, &|| false).unwrap();
         lists.merge_sorted(5, 6, 7, &|| false).unwrap();
         let mut members = Vec::new();
         lists
-            .for_each(7, |id| {
+            .for_each(7, &|| false, |id| {
                 members.push(id);
                 Ok(())
             })
             .unwrap();
         assert_eq!(members, vec![0, 2, 3, 4]);
-        assert_eq!(lists.first(7).unwrap(), 0);
-        assert_eq!(lists.count(0).unwrap(), 0);
+        assert_eq!(lists.first(7, &|| false).unwrap(), 0);
+        assert_eq!(lists.count(0, &|| false).unwrap(), 0);
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[cfg(unix)]
     #[test]
     fn cluster_scratch_is_owner_only_and_does_not_follow_a_symlink() {
         use std::os::unix::fs::{PermissionsExt, symlink};
-        let root = std::env::temp_dir().join(format!(
-            "solstone-cluster-privacy-{}-{}",
-            std::process::id(),
-            WORK_DIR_SEQ.fetch_add(1, Ordering::Relaxed)
-        ));
-        let _ = fs::remove_dir_all(&root);
-        fs::create_dir(&root).unwrap();
-        let planted = root.join("planted");
-        let target = root.join("target");
-        fs::create_dir(&target).unwrap();
-        symlink(&target, &planted).unwrap();
-        let error = claim_cluster_dir(&planted).unwrap_err();
-        assert_eq!(error.kind(), std::io::ErrorKind::AlreadyExists);
-        assert!(fs::read_dir(&target).unwrap().next().is_none());
+        let parent = tempfile::tempdir().expect("scratch parent");
+        let outside = parent.path().join("outside-target");
+        fs::create_dir(&outside).unwrap();
+        let planted = parent.path().join("planted");
+        symlink(&outside, &planted).unwrap();
+        let error = WorkDir::new(&planted).unwrap_err();
+        assert!(matches!(error, DiarizationError::MatrixStore { .. }));
+        assert!(fs::read_dir(&outside).unwrap().next().is_none());
         assert!(
             fs::symlink_metadata(&planted)
                 .unwrap()
@@ -1402,19 +1502,21 @@ mod linkage_tests {
                 .is_symlink()
         );
 
-        let created = root.join("private");
-        claim_cluster_dir(&created).unwrap();
+        let _scope = ClusterScope::enter(parent.path());
+        let dir = WorkDir::new(&cluster_parent().unwrap()).unwrap();
+        let created = dir.path().to_path_buf();
+        assert!(created.starts_with(parent.path()));
+        assert_ne!(created.parent(), Some(std::env::temp_dir().as_path()));
         let directory = fs::symlink_metadata(&created).unwrap();
         assert!(directory.is_dir());
+        assert!(!directory.file_type().is_symlink());
         assert_eq!(directory.permissions().mode() & 0o077, 0);
         let file_path = created.join("rows.bin");
         let file = private_file(&file_path).unwrap();
         drop(file);
         let file_meta = fs::symlink_metadata(&file_path).unwrap();
         assert_eq!(file_meta.permissions().mode() & 0o077, 0);
-        let work = WorkDir(created);
-        drop(work);
-        assert!(!root.join("private").exists());
-        let _ = fs::remove_dir_all(&root);
+        drop(dir);
+        assert!(!created.exists());
     }
 }

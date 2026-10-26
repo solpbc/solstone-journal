@@ -133,7 +133,7 @@ pub struct ClusterEmbeddingResult {
     pub effective_k: Option<usize>,
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct Merge {
     left: usize,
@@ -247,8 +247,9 @@ pub fn cluster_embeddings(
     rows: usize,
     cols: usize,
     n_speakers: Option<usize>,
+    scratch: &std::path::Path,
 ) -> Result<ClusterEmbeddingResult, DiarizationError> {
-    cluster_embeddings_cancellable(embeddings, rows, cols, n_speakers, &|| false)
+    cluster_embeddings_cancellable(embeddings, rows, cols, n_speakers, scratch, &|| false)
 }
 
 /// Cluster interval rows. Cancellation is checked before each matrix tile and
@@ -263,6 +264,7 @@ pub fn cluster_embeddings_cancellable(
     rows: usize,
     cols: usize,
     n_speakers: Option<usize>,
+    scratch: &std::path::Path,
     cancel: &dyn Fn() -> bool,
 ) -> Result<ClusterEmbeddingResult, DiarizationError> {
     validate_embedding_shape(embeddings, rows, cols)?;
@@ -277,6 +279,7 @@ pub fn cluster_embeddings_cancellable(
         });
     }
     stop_if_cancelled(cancel)?;
+    let _scope = crate::cluster_bound::ClusterScope::enter(scratch);
     let mut stored = crate::cluster_bound::BoundRows::from_f32(embeddings, rows, cols, cancel)?;
     finish_cluster(&mut stored, rows, n_speakers, cancel)
 }
@@ -290,6 +293,7 @@ pub fn cluster_embeddings_f32le(
     rows: usize,
     cols: usize,
     n_speakers: Option<usize>,
+    scratch: &std::path::Path,
     cancel: &dyn Fn() -> bool,
 ) -> Result<ClusterEmbeddingResult, DiarizationError> {
     if rows == 0 {
@@ -300,6 +304,7 @@ pub fn cluster_embeddings_f32le(
         });
     }
     stop_if_cancelled(cancel)?;
+    let _scope = crate::cluster_bound::ClusterScope::enter(scratch);
     let mut stored = crate::cluster_bound::BoundRows::from_f32le(path, rows, cols, cancel)?;
     finish_cluster(&mut stored, rows, n_speakers, cancel)
 }
@@ -315,6 +320,7 @@ pub fn cluster_embeddings_f32le_into(
     cols: usize,
     n_speakers: Option<usize>,
     labels_out: &std::path::Path,
+    scratch: &std::path::Path,
     cancel: &dyn Fn() -> bool,
 ) -> Result<(), DiarizationError> {
     if rows == 0 {
@@ -323,6 +329,7 @@ pub fn cluster_embeddings_f32le_into(
     // Named resident ceiling for flags, sizes, one merge, member buffers, and labels.
     let _linkage_resident_bytes = crate::cluster_bound::CLUSTER_LINKAGE_RESIDENT_BYTES;
     stop_if_cancelled(cancel)?;
+    let _scope = crate::cluster_bound::ClusterScope::enter(scratch);
     let mut stored = crate::cluster_bound::BoundRows::from_f32le(path, rows, cols, cancel)?;
     let (mut labels, _silhouette_k, _effective_k) =
         finish_cluster_labels(&mut stored, rows, n_speakers, cancel)?;
@@ -338,7 +345,7 @@ fn finish_cluster(
     let (mut labels, silhouette_k, effective_k) =
         finish_cluster_labels(stored, rows, n_speakers, cancel)?;
     Ok(ClusterEmbeddingResult {
-        labels: labels.to_vec()?,
+        labels: labels.read_labels(cancel)?,
         silhouette_k,
         effective_k,
     })
@@ -408,7 +415,7 @@ pub fn silhouette_score(
         });
     }
     let mut stored = crate::cluster_bound::BoundRows::from_f32(embeddings, rows, cols, &|| false)?;
-    let mut labels = crate::cluster_bound::LabelFile::from_slice(labels)?;
+    let mut labels = crate::cluster_bound::LabelFile::from_slice(labels, &|| false)?;
     silhouette_score_stored_rows(&mut stored, rows, &mut labels, &|| false)
 }
 
@@ -559,7 +566,7 @@ fn stop_if_cancelled(cancel: &dyn Fn() -> bool) -> Result<(), DiarizationError> 
 // CLUSTER_LINKAGE_RESIDENT_BYTES. Unclipped linkage distance stays 1-dot.
 // Silhouette stays max(1-dot, 0).
 
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 fn average_linkage_tree_from_distances(
     distances: &[f64],
     n: usize,
@@ -568,6 +575,10 @@ fn average_linkage_tree_from_distances(
     if n <= 1 {
         return Ok(Vec::new());
     }
+    let scratch = tempfile::tempdir().map_err(|error| DiarizationError::MatrixStore {
+        detail: error.to_string(),
+    })?;
+    let _scope = crate::cluster_bound::ClusterScope::enter(scratch.path());
     let mut tiles = crate::cluster_bound::LinkageTiles::from_square(distances, n, cancel)?;
     let mut log = average_linkage_tree_from_tiles(&mut tiles, n, cancel)?;
     let mut merges = Vec::with_capacity(log.len());
@@ -599,23 +610,26 @@ fn average_linkage_tree_from_tiles(
         let (left, right, distance) = lowest_active_pair_tiles(tiles, &mut nodes, cancel)?
             .expect("at least two active clusters remain");
         let new_id = n + step;
-        let left_size = nodes.size(left)?;
-        let right_size = nodes.size(right)?;
+        let left_size = nodes.size(left, cancel)?;
+        let right_size = nodes.size(right, cancel)?;
         let new_size = left_size + right_size;
-        nodes.set_active(left, false)?;
-        nodes.set_active(right, false)?;
-        nodes.set_active(new_id, true)?;
-        nodes.set_size(new_id, new_size)?;
+        nodes.set_active(left, false, cancel)?;
+        nodes.set_active(right, false, cancel)?;
+        nodes.set_active(new_id, true, cancel)?;
+        nodes.set_size(new_id, new_size, cancel)?;
 
         for other in 0..new_id {
-            if !nodes.is_active(other)? {
+            if other % crate::cluster_bound::CLUSTER_TILE_EDGE == 0 {
+                stop_if_cancelled(cancel)?;
+            }
+            if !nodes.is_active(other, cancel)? {
                 continue;
             }
-            let merged_distance = (left_size as f64 * tiles.get(left, other)?
-                + right_size as f64 * tiles.get(right, other)?)
+            let merged_distance = (left_size as f64 * tiles.get(left, other, cancel)?
+                + right_size as f64 * tiles.get(right, other, cancel)?)
                 / new_size as f64;
-            tiles.set(new_id, other, merged_distance)?;
-            tiles.set(other, new_id, merged_distance)?;
+            tiles.set(new_id, other, merged_distance, cancel)?;
+            tiles.set(other, new_id, merged_distance, cancel)?;
         }
         merges.push(left, right, distance, new_size)?;
     }
@@ -633,14 +647,17 @@ fn lowest_active_pair_tiles(
         if i % crate::cluster_bound::CLUSTER_TILE_EDGE == 0 {
             stop_if_cancelled(cancel)?;
         }
-        if !nodes.is_active(i)? {
+        if !nodes.is_active(i, cancel)? {
             continue;
         }
         for j in (i + 1)..limit {
-            if !nodes.is_active(j)? {
+            if (j - i) % crate::cluster_bound::CLUSTER_TILE_EDGE == 0 {
+                stop_if_cancelled(cancel)?;
+            }
+            if !nodes.is_active(j, cancel)? {
                 continue;
             }
-            let distance = tiles.get(i, j)?;
+            let distance = tiles.get(i, j, cancel)?;
             let replace = match best {
                 None => true,
                 Some((best_i, best_j, best_distance)) => {
@@ -673,7 +690,7 @@ fn cut_tree_canonical_labels(
         return crate::cluster_bound::LabelFile::zeros(n);
     }
 
-    let mut lists = crate::cluster_bound::MemberLists::singletons(n)?;
+    let mut lists = crate::cluster_bound::MemberLists::singletons(n, cancel)?;
     let taken = n - k;
     if taken > merges.len() {
         return Err(DiarizationError::MatrixStore {
@@ -689,7 +706,7 @@ fn cut_tree_canonical_labels(
             });
         }
         lists.merge_sorted(merge.left, merge.right, n + step, cancel)?;
-        if lists.count(n + step)? != merge.size {
+        if lists.count(n + step, cancel)? != merge.size {
             return Err(DiarizationError::MatrixStore {
                 detail: "merge size does not match membership".to_owned(),
             });
@@ -709,10 +726,10 @@ fn cut_tree_canonical_labels(
             if node % crate::cluster_bound::CLUSTER_TILE_EDGE == 0 {
                 stop_if_cancelled(cancel)?;
             }
-            if lists.count(node)? == 0 {
+            if lists.count(node, cancel)? == 0 {
                 continue;
             }
-            let first = lists.first(node)?;
+            let first = lists.first(node, cancel)?;
             let replace = match best {
                 None => true,
                 Some((best_first, best_node)) => {
@@ -728,12 +745,12 @@ fn cut_tree_canonical_labels(
                 detail: "cut left fewer clusters than requested".to_owned(),
             });
         };
-        lists.for_each(node, |member| {
+        lists.for_each(node, cancel, |member| {
             let index = usize::try_from(member)
                 .map_err(|_| DiarizationError::ShapeOverflow { rows: n, cols: 1 })?;
-            labels.set(index, label)
+            labels.set(index, label, cancel)
         })?;
-        lists.clear(node)?;
+        lists.clear(node, cancel)?;
     }
     Ok(labels)
 }
@@ -747,7 +764,7 @@ fn silhouette_score_stored_rows(
     if rows != labels.len() {
         return Ok(UNDEFINED_SILHOUETTE);
     }
-    let unique = labels.unique()?;
+    let unique = labels.unique(cancel)?;
     if unique.len() < 2 || rows <= unique.len() {
         return Ok(UNDEFINED_SILHOUETTE);
     }
@@ -759,8 +776,8 @@ fn silhouette_score_stored_rows(
         if idx % crate::cluster_bound::CLUSTER_TILE_EDGE == 0 {
             stop_if_cancelled(cancel)?;
         }
-        let own_label = labels.get(idx)?;
-        let own_count = labels.count_label(own_label, Some(idx))?;
+        let own_label = labels.get(idx, cancel)?;
+        let own_count = labels.count_label(own_label, Some(idx), cancel)?;
         if own_count == 0 {
             // sklearn computes the singleton intra-cluster mean as 0/0, then
             // np.nan_to_num maps that sample's silhouette contribution to 0.0.
@@ -769,7 +786,10 @@ fn silhouette_score_stored_rows(
         }
         let mut sum = 0.0_f64;
         for other in 0..rows {
-            if other != idx && labels.get(other)? == own_label {
+            if other % crate::cluster_bound::CLUSTER_TILE_EDGE == 0 {
+                stop_if_cancelled(cancel)?;
+            }
+            if other != idx && labels.get(other, cancel)? == own_label {
                 sum += stored.clipped(idx, other)?;
             }
         }
@@ -783,7 +803,10 @@ fn silhouette_score_stored_rows(
             let mut count = 0_usize;
             let mut other_sum = 0.0_f64;
             for other in 0..rows {
-                if labels.get(other)? == *label {
+                if other % crate::cluster_bound::CLUSTER_TILE_EDGE == 0 {
+                    stop_if_cancelled(cancel)?;
+                }
+                if labels.get(other, cancel)? == *label {
                     count += 1;
                     other_sum += stored.clipped(idx, other)?;
                 }
@@ -1015,6 +1038,7 @@ mod tests {
         assert!(score_comparison_error(actual, expected, CLUSTER_SCORE_ABS_TOLERANCE).is_some());
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn ahc_recovers_well_separated_known_partition_at_k_three() {
         // Fixture cannot supply this because the committed stage fixture has no
@@ -1024,11 +1048,14 @@ mod tests {
             0.01, 0.99,
         ];
 
-        let result = cluster_embeddings(&embeddings, 6, 3, Some(3)).expect("cluster labels");
+        let scratch = tempfile::tempdir().expect("cluster scratch");
+        let result =
+            cluster_embeddings(&embeddings, 6, 3, Some(3), scratch.path()).expect("cluster labels");
 
         assert_same_partition(&result.labels, &[0, 0, 1, 1, 2, 2]);
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn ahc_hand_walked_average_linkage_merge_sequence() {
         // Fixture cannot supply this because the arithmetic oracle is a
@@ -1052,6 +1079,7 @@ mod tests {
         assert_merge(&merges[2], 4, 5, 0.775, 4);
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn ahc_exact_ties_use_lowest_active_pair_index() {
         // Fixture cannot supply this because the tie rule is intentionally
@@ -1072,6 +1100,7 @@ mod tests {
         assert_merge(&merges[2], 4, 5, 1.0, 4);
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn ahc_partition_nesting_across_k_two_through_five_is_property_based() {
         // Fixture cannot supply this because it records nested partitions but
@@ -1085,11 +1114,12 @@ mod tests {
             0.03, 0.97, 0.7, 0.7, 0.0, 0.7, 0.0, 0.7,
         ];
 
-        let mut previous = cluster_embeddings(&embeddings, 8, 3, Some(2))
+        let scratch = tempfile::tempdir().expect("cluster scratch");
+        let mut previous = cluster_embeddings(&embeddings, 8, 3, Some(2), scratch.path())
             .expect("k=2")
             .labels;
         for k in 3..=5 {
-            let current = cluster_embeddings(&embeddings, 8, 3, Some(k))
+            let current = cluster_embeddings(&embeddings, 8, 3, Some(k), scratch.path())
                 .expect("labels")
                 .labels;
             assert!(partition_refines(&current, &previous));
@@ -1134,6 +1164,7 @@ mod tests {
         assert_close(score, 0.64, 1e-6);
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn zero_norm_embedding_row_passes_through_and_clusters_without_error() {
         // Fixture cannot supply this because it has no raw clustering rows and
@@ -1141,59 +1172,80 @@ mod tests {
         let embeddings = [0.0_f32, 0.0, 1.0, 0.0, 0.0, 1.0];
 
         let normalized = normalize_embedding_rows(&embeddings, 3, 2).expect("normalized");
-        let result = cluster_embeddings(&embeddings, 3, 2, Some(2)).expect("labels");
+        let scratch = tempfile::tempdir().expect("cluster scratch");
+        let result =
+            cluster_embeddings(&embeddings, 3, 2, Some(2), scratch.path()).expect("labels");
 
         assert_eq!(&normalized[0..2], &[0.0, 0.0]);
         assert_eq!(result.labels.len(), 3);
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn cluster_embeddings_reports_selection_for_zero_rows() {
         // Fixture cannot supply this because it has only populated clustering
         // curves, not empty or single-row degenerate inputs.
-        let empty = cluster_embeddings(&[], 0, 2, None).expect("empty labels");
+        let scratch = tempfile::tempdir().expect("cluster scratch");
+        let empty = cluster_embeddings(&[], 0, 2, None, scratch.path()).expect("empty labels");
 
         assert_eq!(empty.labels, Vec::<usize>::new());
         assert_eq!(empty.silhouette_k, None);
         assert_eq!(empty.effective_k, None);
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn cluster_embeddings_reports_selection_for_one_row() {
-        let result = cluster_embeddings(&[1.0_f32, 0.0], 1, 2, None).expect("single labels");
+        let scratch = tempfile::tempdir().expect("cluster scratch");
+        let result =
+            cluster_embeddings(&[1.0_f32, 0.0], 1, 2, None, scratch.path()).expect("single labels");
 
         assert_eq!(result.labels, vec![0]);
         assert_eq!(result.silhouette_k, Some(1));
         assert_eq!(result.effective_k, Some(1));
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn cluster_embeddings_reports_selection_for_two_rows() {
-        let result =
-            cluster_embeddings(&[1.0_f32, 0.0, 0.0, 1.0], 2, 2, None).expect("two-row labels");
+        let scratch = tempfile::tempdir().expect("cluster scratch");
+        let result = cluster_embeddings(&[1.0_f32, 0.0, 0.0, 1.0], 2, 2, None, scratch.path())
+            .expect("two-row labels");
 
         assert_eq!(result.labels, vec![0, 0]);
         assert_eq!(result.silhouette_k, Some(1));
         assert_eq!(result.effective_k, Some(1));
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn cluster_embeddings_reports_selection_for_three_rows() {
-        let result = cluster_embeddings(&[1.0_f32, 0.0, 0.0, 1.0, 0.8, 0.2], 3, 2, None)
-            .expect("three-row labels");
+        let scratch = tempfile::tempdir().expect("cluster scratch");
+        let result = cluster_embeddings(
+            &[1.0_f32, 0.0, 0.0, 1.0, 0.8, 0.2],
+            3,
+            2,
+            None,
+            scratch.path(),
+        )
+        .expect("three-row labels");
 
         assert_eq!(result.labels.len(), 3);
         assert_eq!(result.silhouette_k, Some(2));
         assert_eq!(result.effective_k, Some(2));
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn cluster_embeddings_cancellable_matches_an_uninterrupted_call() {
         let never = || false;
+        let scratch = tempfile::tempdir().expect("cluster scratch");
         let compare = |embeddings: &[f32], rows: usize| {
-            let plain = cluster_embeddings(embeddings, rows, 2, None).expect("labels");
+            let plain =
+                cluster_embeddings(embeddings, rows, 2, None, scratch.path()).expect("labels");
             let cancellable =
-                cluster_embeddings_cancellable(embeddings, rows, 2, None, &never).expect("labels");
+                cluster_embeddings_cancellable(embeddings, rows, 2, None, scratch.path(), &never)
+                    .expect("labels");
             assert_eq!(plain.labels, cancellable.labels);
             assert_eq!(plain.silhouette_k, cancellable.silhouette_k);
             assert_eq!(plain.effective_k, cancellable.effective_k);
@@ -1202,19 +1254,23 @@ mod tests {
         compare(&[1.0_f32, 0.0, 0.0, 1.0], 2);
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn cluster_embeddings_cancellable_stops_on_the_first_poll() {
+        let scratch = tempfile::tempdir().expect("cluster scratch");
         let error = cluster_embeddings_cancellable(
             &[1.0_f32, 0.0, 0.0, 1.0, 0.8, 0.2],
             3,
             2,
             None,
+            scratch.path(),
             &|| true,
         )
         .expect_err("first poll cancels");
         assert_eq!(error, DiarizationError::Cancelled);
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn cluster_embeddings_cancellable_stops_on_a_later_poll() {
         let polls = std::cell::Cell::new(0_usize);
@@ -1223,11 +1279,13 @@ mod tests {
             polls.set(seen + 1);
             seen > 0
         };
+        let scratch = tempfile::tempdir().expect("cluster scratch");
         let error = cluster_embeddings_cancellable(
             &[1.0_f32, 0.0, 0.0, 1.0, 0.8, 0.2],
             3,
             2,
             None,
+            scratch.path(),
             &cancel,
         )
         .expect_err("later poll cancels");
@@ -1235,6 +1293,7 @@ mod tests {
         assert!(polls.get() >= 2, "polls={}", polls.get());
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn cluster_embeddings_keeps_labels_inside_the_tiled_resident_cap() {
         let rows = 96;
@@ -1246,7 +1305,9 @@ mod tests {
             embeddings.push(angle.sin());
         }
         let _ = crate::cluster_bound::take_cluster_tile_work_units();
-        let result = cluster_embeddings(&embeddings, rows, cols, Some(3)).expect("labels");
+        let scratch = tempfile::tempdir().expect("cluster scratch");
+        let result =
+            cluster_embeddings(&embeddings, rows, cols, Some(3), scratch.path()).expect("labels");
         let tile_units = crate::cluster_bound::take_cluster_tile_work_units();
 
         assert_eq!(result.labels.len(), rows);
@@ -1257,6 +1318,7 @@ mod tests {
         );
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn cluster_embeddings_cancellable_stops_inside_a_later_tile() {
         let rows = 96;
@@ -1276,21 +1338,38 @@ mod tests {
             seen > 4
         };
 
-        let error = cluster_embeddings_cancellable(&embeddings, rows, cols, Some(3), &cancel)
-            .expect_err("later tile cancels");
+        let scratch = tempfile::tempdir().expect("cluster scratch");
+        let error = cluster_embeddings_cancellable(
+            &embeddings,
+            rows,
+            cols,
+            Some(3),
+            scratch.path(),
+            &cancel,
+        )
+        .expect_err("later tile cancels");
 
         assert_eq!(error, DiarizationError::Cancelled);
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn cluster_embeddings_gives_one_label_to_the_same_speaker_across_units() {
-        let result = cluster_embeddings(&[1.0_f32, 0.0, 0.0, 1.0, 1.0, 0.0], 3, 2, None)
-            .expect("same-speaker labels");
+        let scratch = tempfile::tempdir().expect("cluster scratch");
+        let result = cluster_embeddings(
+            &[1.0_f32, 0.0, 0.0, 1.0, 1.0, 0.0],
+            3,
+            2,
+            None,
+            scratch.path(),
+        )
+        .expect("same-speaker labels");
 
         assert_eq!(result.labels[0], result.labels[2]);
         assert_ne!(result.labels[0], result.labels[1]);
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn cluster_embeddings_reports_requested_speaker_count_without_silhouette() {
         // Fixture cannot supply this because selected fixture k values are
@@ -1300,7 +1379,9 @@ mod tests {
         assert_eq!(clamp_speaker_count(4, 0), 1);
 
         let embeddings = [1.0_f32, 0.0, 0.0, 1.0, 0.8, 0.2];
-        let result = cluster_embeddings(&embeddings, 3, 2, Some(99)).expect("labels");
+        let scratch = tempfile::tempdir().expect("cluster scratch");
+        let result =
+            cluster_embeddings(&embeddings, 3, 2, Some(99), scratch.path()).expect("labels");
 
         assert_eq!(unique_labels(&result.labels).len(), 2);
         assert_eq!(result.silhouette_k, None);
@@ -1498,6 +1579,7 @@ mod tests {
         rows.iter().flat_map(|row| row.iter().copied()).collect()
     }
 
+    #[cfg(feature = "full-tests")]
     fn assert_merge(merge: &Merge, left: usize, right: usize, distance: f64, size: usize) {
         assert_eq!(merge.left, left);
         assert_eq!(merge.right, right);
@@ -1512,6 +1594,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "full-tests")]
     fn assert_same_partition(actual: &[usize], expected: &[usize]) {
         assert_eq!(actual.len(), expected.len());
         for left in 0..actual.len() {
@@ -1525,6 +1608,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "full-tests")]
     fn partition_refines(finer: &[usize], coarser: &[usize]) -> bool {
         if finer.len() != coarser.len() {
             return false;

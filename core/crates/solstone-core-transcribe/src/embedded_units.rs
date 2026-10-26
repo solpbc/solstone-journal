@@ -35,7 +35,7 @@ use solstone_core_sound_tags::{
 };
 use solstone_core_speaker_resolve::owner_centroid::OwnerVoicePrint;
 use solstone_core_speakers::diarization::{DiarizationError, cluster_embeddings_f32le_into};
-use solstone_core_speakers::{SpeakerEvidenceAccum, SpeakerTurnEvidence, SpeakerWindowStats};
+use solstone_core_speakers::{SpeakerEvidenceAccum, SpeakerWindowStats};
 use solstone_core_spp_ratls::AttestationStateStore;
 
 use crate::backend::parakeet_cpp::{ModelInfo, TranscriptionResponse, TranscriptionWord};
@@ -772,8 +772,30 @@ fn recognize_unit(
                 std::io::Error::other("recognize walk has no draft spool"),
             ));
         };
+        let reduced = match (retained.samples.as_deref(), retained.mapping.as_ref()) {
+            (Some(samples), Some(mapping)) => {
+                let spans = mapping
+                    .segments
+                    .iter()
+                    .map(|segment| crate::embedded_spool::StoredSpan {
+                        original_start_s: segment.original_start_s,
+                        original_end_s: segment.original_end_s,
+                        reduced_start_s: segment.reduced_start_s,
+                        reduced_end_s: segment.reduced_end_s,
+                    })
+                    .collect::<Vec<_>>();
+                Some((samples, spans))
+            }
+            _ => None,
+        };
         spool
-            .store_unit_pcm(prepared.origin_samples, &prepared.masked)
+            .store_unit_pcm(
+                prepared.origin_samples,
+                &prepared.masked,
+                reduced
+                    .as_ref()
+                    .map(|(samples, spans)| (*samples, spans.as_slice())),
+            )
             .map_err(|error| spool_stop(scratch, error))?;
         spool
             .append_intervals(&rows.intervals, &rows.interval_embeddings)
@@ -1775,12 +1797,14 @@ fn stage_recording(
             checkpoint()?;
             let embeddings = spool.embeddings_path().to_path_buf();
             let labels_path = spool.directory().join("labels.u32le");
+            let cluster_scratch = spool.directory().to_path_buf();
             cluster_embeddings_f32le_into(
                 &embeddings,
                 rows,
                 EMBEDDING_WIDTH,
                 None,
                 &labels_path,
+                &cluster_scratch,
                 &|| checkpoint().is_err(),
             )
             .map_err(|error| match error {
@@ -1896,13 +1920,10 @@ fn stage_recording(
     let mut word_index = 0_u64;
     let mut statement_count = 0_usize;
     let mut embedding_rows = 0_usize;
-    loop {
-        let Some(span) = spool
-            .next_statement_span(&mut word_index)
-            .map_err(|error| spool_payload(scratch, error))?
-        else {
-            break;
-        };
+    while let Some(span) = spool
+        .next_statement_span(&mut word_index, &|| checkpoint().is_err())
+        .map_err(|error| spool_io(scratch, error))?
+    {
         statement_count += 1;
         let id = i64::try_from(statement_count).unwrap_or(i64::MAX);
         if !(1..=i64::from(i32::MAX)).contains(&id) {
@@ -1916,22 +1937,20 @@ fn stage_recording(
         }
         let start_s = span.start_s;
         let end_s = span.end_s;
-        let speaker = statement_speaker(spool, start_s, end_s)
-            .map_err(|error| spool_payload(scratch, error))?;
-        let turn_evidence = if turns_known {
-            let ranges = spool
-                .overlapping_turns(start_s, end_s)
-                .map_err(|error| spool_payload(scratch, error))?;
-            Some(SpeakerTurnEvidence::new(audio_seconds, ranges))
+        let speaker = statement_speaker(spool, start_s, end_s, &|| checkpoint().is_err())
+            .map_err(|error| spool_io(scratch, error))?;
+        let prepared_turns = if turns_known {
+            Some(
+                spool
+                    .prepare_overlapping_turns(start_s, end_s, &|| checkpoint().is_err())
+                    .map_err(|error| spool_io(scratch, error))?,
+            )
         } else {
             None
         };
-        let turn_boundary_suspect = turn_evidence
-            .as_ref()
-            .is_some_and(|evidence| evidence.flags_sentence(Some(start_s), Some(end_s)));
         if let Some(stored) = spool
-            .find_statement_row(start_s, end_s)
-            .map_err(|error| spool_payload(scratch, error))?
+            .find_statement_row(start_s, end_s, &|| checkpoint().is_err())
+            .map_err(|error| spool_io(scratch, error))?
         {
             write_embedding_row(
                 &mut embeddings,
@@ -1943,8 +1962,8 @@ fn stage_recording(
             )
             .map_err(|error| spool_payload(scratch, error))?;
             embedding_rows += 1;
-        } else if spool.statement_count() > 0
-            && let Some((duration_s, values)) = reembed_statement(job, spool, start_s, end_s)?
+        } else if let Some((duration_s, values)) =
+            reembed_statement(job, spool, start_s, end_s, &|| checkpoint().is_err())?
         {
             write_embedding_row(
                 &mut embeddings,
@@ -1957,6 +1976,18 @@ fn stage_recording(
             .map_err(|error| spool_payload(scratch, error))?;
             embedding_rows += 1;
         }
+        let turn_evidence = if let Some(prepared) = prepared_turns.as_ref() {
+            Some(
+                spool
+                    .load_turn_evidence(audio_seconds, prepared, &|| checkpoint().is_err())
+                    .map_err(|error| spool_io(scratch, error))?,
+            )
+        } else {
+            None
+        };
+        let turn_boundary_suspect = prepared_turns
+            .as_ref()
+            .is_some_and(|prepared| prepared.boundary_suspect);
         text_file
             .set_len(0)
             .map_err(|error| spool_payload(scratch, error))?;
@@ -2022,6 +2053,7 @@ fn stage_recording(
             },
             &mut limited,
             trimmed,
+            &|| checkpoint().is_err(),
             &mut || {
                 if !prepared {
                     spool.seek_words(span.origin).map_err(|error| {
@@ -2139,13 +2171,14 @@ fn statement_speaker(
     spool: &mut DraftSpool,
     start_s: f64,
     end_s: f64,
+    cancel: &dyn Fn() -> bool,
 ) -> Result<Option<i64>, std::io::Error> {
     if !start_s.is_finite() || !end_s.is_finite() || end_s <= start_s {
         return Ok(None);
     }
     let mut best_overlap = 0.0_f64;
     let mut best = None;
-    spool.for_each_labeled_interval(|interval, label| {
+    spool.for_each_labeled_interval(cancel, |interval, label| {
         let overlap = (end_s.min(interval.end_s) - start_s.max(interval.start_s)).max(0.0);
         if overlap > best_overlap {
             best_overlap = overlap;
@@ -2157,34 +2190,53 @@ fn statement_speaker(
 
 fn reembed_statement(
     job: &EmbeddedJob<'_>,
-    spool: &DraftSpool,
+    spool: &mut DraftSpool,
     start_s: f64,
     end_s: f64,
+    cancel: &dyn Fn() -> bool,
 ) -> Result<Option<(f64, Vec<f32>)>, TranscribeError> {
+    #[cfg(all(test, feature = "full-tests"))]
+    if crate::speakers::embedded_unit_speaker_empty() {
+        return Ok(None);
+    }
     let start_sample = (start_s * f64::from(SAMPLE_RATE)).round() as usize;
     let end_sample = (end_s * f64::from(SAMPLE_RATE)).round() as usize;
     if end_sample <= start_sample {
         return Ok(None);
     }
-    let len = end_sample - start_sample;
-    if len > EMBEDDED_AUDIO_MAX_SAMPLES {
-        // speakers-analyze loads the whole statement with read_audio_f32le and
-        // WespeakerEmbedder::embed emits one vector. There is no windowed
-        // statement embedding. Omitting the row, truncating the span, or
-        // averaging capped vectors would change the NPZ contract.
+    let measured = spool
+        .measure_statement_audio(start_sample, end_sample, cancel)
+        .map_err(|error| spool_io(job.embedded.scratch, error))?;
+    let duration_s = measured.samples as f64 / f64::from(SAMPLE_RATE);
+    let min_samples =
+        (solstone_core_speakers::MIN_STATEMENT_DURATION_S * f64::from(SAMPLE_RATE)) as usize;
+    if measured.samples == 0
+        || duration_s < solstone_core_speakers::MIN_STATEMENT_DURATION_S
+        || measured.samples < min_samples
+    {
+        return Ok(None);
+    }
+    if measured.samples > EMBEDDED_AUDIO_MAX_SAMPLES {
+        // admit_statement_features builds one filterbank for the whole statement.
+        // WespeakerEmbedder::embed then copies those frames into one tensor.
+        // No bounded form of that same computation exists. The row is not
+        // omitted, split, truncated, or averaged, and the helper is not called.
+        // `SpeakerAnalyzeError::new` keeps only a hyphenated token. The
+        // sentence is the maintained-algorithm blocker, so it is stored directly.
+        // Event fields sanitize it again before anything is published.
         return Err(TranscribeError::SpeakerAnalysis(
-            crate::speakers::SpeakerAnalyzeError::new(
-                job.audio_path,
-                "payload",
-                "statement span exceeds the single-buffer wespeaker contract; speakers-analyze read_audio_f32le loads the whole span and WespeakerEmbedder::embed emits one vector; no windowed statement embedding exists",
-                None,
-            ),
+            crate::speakers::SpeakerAnalyzeError {
+                path: job.audio_path.to_path_buf(),
+                stage: "payload".to_owned(),
+                reason: "admit_statement_features computes the entire statement filterbank and CMN matrix, and WespeakerEmbedder::embed copies those frames into one dynamic-time tensor for one model invocation; no bounded implementation of that statement computation exists; the span is not omitted, split, truncated, or averaged".to_owned(),
+                native_exit_code: None,
+            },
         ));
     }
-    let pcm = spool
-        .read_pcm_span(start_sample, end_sample)
-        .map_err(|error| spool_payload(job.embedded.scratch, error))?;
-    let duration = end_s - start_s;
+    let audio = spool
+        .read_statement_audio(start_sample, end_sample, cancel)
+        .map_err(|error| spool_io(job.embedded.scratch, error))?;
+    let duration = audio.samples.len() as f64 / f64::from(SAMPLE_RATE);
     let word = TranscriptionWord {
         word: String::new(),
         start: 0.0,
@@ -2192,10 +2244,11 @@ fn reembed_statement(
         probability: None,
     };
     let local = statement_from_words(1, &[&word]);
+    let reduced = audio.reduced.then_some(audio.samples.as_slice());
     let rows = crate::speakers::collect_unit_speaker_rows(
         job.audio_path,
-        &pcm,
-        None,
+        &audio.samples,
+        reduced,
         std::slice::from_ref(&local),
         std::slice::from_ref(&local),
         job.embedded.models,
@@ -2245,6 +2298,14 @@ fn spool_payload(scratch: &Path, error: std::io::Error) -> TranscribeError {
     TranscribeError::TranscriptPayload {
         path: Some(scratch.to_path_buf()),
         detail: error.to_string(),
+    }
+}
+
+fn spool_io(scratch: &Path, error: std::io::Error) -> TranscribeError {
+    if error.kind() == std::io::ErrorKind::Interrupted {
+        TranscribeError::Cancelled
+    } else {
+        spool_payload(scratch, error)
     }
 }
 
@@ -2339,6 +2400,7 @@ enum TagPhase {
 enum SoundTagFailure {
     Prepare(String),
     Run(String),
+    Cancelled,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -2362,21 +2424,34 @@ fn sound_tag_os() -> String {
     std::env::consts::OS.to_owned()
 }
 
-type MobileCedClassify = fn(&Path, &[f32], &[(usize, usize)]) -> Result<Value, String>;
+/// Returned by the in-process ced engine when its cancellation poll fires.
+///
+/// The engine holds one static ggml backend for every context. Callers pass a
+/// poll into probe and classify, and treat this token as cancellation rather
+/// than a missing tagger.
+pub const MOBILE_CED_CANCELLED: &str = "ced-cancelled";
+
+/// Probe accepts a cancel poll that may borrow the caller's job.
+type MobileCedProbe = for<'a> fn(&'a Path, &'a (dyn Fn() -> bool + 'a)) -> Result<(), String>;
+/// Classify accepts the same short-lived poll. A plain `fn` pointer would
+/// demand a `'static` callback and could not see the in-progress job.
+type MobileCedClassify = for<'a> fn(
+    &'a Path,
+    &'a [f32],
+    &'a [(usize, usize)],
+    &'a (dyn Fn() -> bool + 'a),
+) -> Result<Value, String>;
 
 #[derive(Clone, Copy)]
 struct MobileCedFns {
-    probe: fn(&Path) -> Result<(), String>,
+    probe: MobileCedProbe,
     classify: MobileCedClassify,
 }
 
 static MOBILE_CED: Mutex<Option<MobileCedFns>> = Mutex::new(None);
 
 /// Register the in-process Android or iOS ced engine. Host builds leave this empty.
-pub fn install_mobile_ced_engine(
-    probe: fn(&Path) -> Result<(), String>,
-    classify: MobileCedClassify,
-) {
+pub fn install_mobile_ced_engine(probe: MobileCedProbe, classify: MobileCedClassify) {
     *MOBILE_CED.lock().expect("mobile ced engine") = Some(MobileCedFns { probe, classify });
 }
 
@@ -2459,6 +2534,9 @@ impl SoundTagRun {
                 log::warn!("sound tagging failed: {error}");
                 self.finish(None, None);
             }
+            Err(SoundTagFailure::Cancelled) => {
+                // tag_unit returns this before absorb. The arm keeps the match closed.
+            }
             Ok(SoundTagWindows::Rejected) => self.finish(None, None),
             Ok(SoundTagWindows::Accepted(windows)) => {
                 for window in &windows {
@@ -2535,16 +2613,22 @@ fn prepare_mobile_sound_tags(job: &mut EmbeddedJob<'_>) -> Result<(), WalkStop> 
                 );
                 return Ok(());
             };
-            if let Err(error) = (engine.probe)(&path) {
-                log::warn!("{error}");
-                job.sound_tags.finish(
-                    None,
-                    Some(CapabilityStatus::UnloadableOrUnrunnable {
-                        capability: CED_CAPABILITY.to_owned(),
-                        detail: error,
-                    }),
-                );
-                return Ok(());
+            match (engine.probe)(&path, &|| job.embedded.checkpoint().is_err()) {
+                Err(error) if error == MOBILE_CED_CANCELLED => {
+                    return Err(WalkStop::Bare(TranscribeError::Cancelled));
+                }
+                Err(error) => {
+                    log::warn!("{error}");
+                    job.sound_tags.finish(
+                        None,
+                        Some(CapabilityStatus::UnloadableOrUnrunnable {
+                            capability: CED_CAPABILITY.to_owned(),
+                            detail: error,
+                        }),
+                    );
+                    return Ok(());
+                }
+                Ok(()) => {}
             }
             job.sound_tags.model = path;
             job.sound_tags.route = SoundTagRoute::MobileModels;
@@ -2653,6 +2737,9 @@ fn tag_unit(
     }
     job.embedded.checkpoint().map_err(WalkStop::Bare)?;
     let step = classify_sound_tag_unit(job, masked, origin, spans);
+    if matches!(step, Err(SoundTagFailure::Cancelled)) {
+        return Err(WalkStop::Bare(TranscribeError::Cancelled));
+    }
     job.embedded.checkpoint().map_err(WalkStop::Bare)?;
     job.sound_tags.absorb(step);
     Ok(())
@@ -2688,8 +2775,16 @@ fn classify_sound_tag_unit(
                 "ced engine is not installed".to_owned(),
             ));
         };
-        let value = (engine.classify)(&job.sound_tags.model, view.samples, &view.windows)
-            .map_err(SoundTagFailure::Run)?;
+        let value = (engine.classify)(&job.sound_tags.model, view.samples, &view.windows, &|| {
+            job.embedded.checkpoint().is_err()
+        })
+        .map_err(|error| {
+            if error == MOBILE_CED_CANCELLED {
+                SoundTagFailure::Cancelled
+            } else {
+                SoundTagFailure::Run(error)
+            }
+        })?;
         return Ok(read_sound_tag_windows(&value, view.windows.len()));
     }
     let temporary = tempfile::Builder::new()
@@ -2747,8 +2842,11 @@ fn note_commit(record: bool, start: usize, end: usize) {
 }
 
 #[cfg(all(test, feature = "full-tests"))]
+type VadHook = fn(usize) -> VadResult;
+
+#[cfg(all(test, feature = "full-tests"))]
 thread_local! {
-    static EMBEDDED_VAD_STICKY: std::cell::RefCell<Option<fn(usize) -> VadResult>> =
+    static EMBEDDED_VAD_STICKY: std::cell::RefCell<Option<VadHook>> =
         const { std::cell::RefCell::new(None) };
     static EMBEDDED_VAD_REPLAY: std::cell::RefCell<Option<VadResult>> =
         const { std::cell::RefCell::new(None) };
@@ -2784,12 +2882,14 @@ enum TestCedSlot {
 }
 
 #[cfg(test)]
+type CedSeen = Vec<(usize, Vec<(usize, usize)>)>;
+
+#[cfg(test)]
 thread_local! {
     static CED_STUB_ON: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     static CED_PROBES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
     static CED_CLASSIFIES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
-    static CED_SEEN: std::cell::RefCell<Vec<(usize, Vec<(usize, usize)>)>> =
-        const { std::cell::RefCell::new(Vec::new()) };
+    static CED_SEEN: std::cell::RefCell<CedSeen> = const { std::cell::RefCell::new(Vec::new()) };
     static SOUND_TAG_OS: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
     static TEST_CED: std::cell::Cell<TestCedSlot> = const { std::cell::Cell::new(TestCedSlot::Inherit) };
     static CED_MODEL_PATHS: std::cell::RefCell<Vec<String>> = const { std::cell::RefCell::new(Vec::new()) };
@@ -2811,7 +2911,10 @@ fn take_ced_model_paths() -> Vec<String> {
 }
 
 #[cfg(test)]
-fn test_ced_probe(_path: &Path) -> Result<(), String> {
+fn test_ced_probe(_path: &Path, cancel: &dyn Fn() -> bool) -> Result<(), String> {
+    if cancel() {
+        return Err(MOBILE_CED_CANCELLED.to_owned());
+    }
     Ok(())
 }
 
@@ -2820,8 +2923,12 @@ fn test_ced_classify(
     path: &Path,
     samples: &[f32],
     windows: &[(usize, usize)],
+    cancel: &dyn Fn() -> bool,
 ) -> Result<Value, String> {
     let _ = samples;
+    if cancel() {
+        return Err(MOBILE_CED_CANCELLED.to_owned());
+    }
     CED_MODEL_PATHS.with(|cell| cell.borrow_mut().push(path.display().to_string()));
     Ok(json!({
         "schema": solstone_core_ced_analyze::RESPONSE_SCHEMA,
@@ -3778,18 +3885,58 @@ mod tests {
     }
 
     #[cfg(all(unix, feature = "embedded", feature = "full-tests"))]
-    fn push_helper(
-        dir: &Path,
-        tag: &str,
-        audio_len: usize,
+    struct HelperRequest<'a> {
         overlap: f64,
         multi_every: bool,
         multi_index: Option<usize>,
-        intervals: &[(f64, f64, usize)],
-        statement_ids: &[i64],
-        statement_axes: &[usize],
+        intervals: &'a [(f64, f64, usize)],
+        statement_ids: &'a [i64],
+        statement_axes: &'a [usize],
         turns: Option<Vec<(f64, f64)>>,
-    ) {
+    }
+
+    #[cfg(all(unix, feature = "embedded", feature = "full-tests"))]
+    macro_rules! push_helper {
+        (
+            $dir:expr,
+            $tag:expr,
+            $audio_len:expr,
+            $overlap:expr,
+            $multi_every:expr,
+            $multi_index:expr,
+            $intervals:expr,
+            $statement_ids:expr,
+            $statement_axes:expr,
+            $turns:expr $(,)?
+        ) => {
+            enqueue_helper(
+                $dir,
+                $tag,
+                $audio_len,
+                HelperRequest {
+                    overlap: $overlap,
+                    multi_every: $multi_every,
+                    multi_index: $multi_index,
+                    intervals: $intervals,
+                    statement_ids: $statement_ids,
+                    statement_axes: $statement_axes,
+                    turns: $turns,
+                },
+            )
+        };
+    }
+
+    #[cfg(all(unix, feature = "embedded", feature = "full-tests"))]
+    fn enqueue_helper(dir: &Path, tag: &str, audio_len: usize, request: HelperRequest<'_>) {
+        let HelperRequest {
+            overlap,
+            multi_every,
+            multi_index,
+            intervals,
+            statement_ids,
+            statement_axes,
+            turns,
+        } = request;
         let stats_len = crate::speakers::pyannote_window_starts(audio_len).len();
         let stats = (0..stats_len)
             .map(|index| {
@@ -4177,7 +4324,7 @@ mod tests {
         set_embedded_vad_sticky(Some(speech_vad));
         let root = tempfile::TempDir::new_in("/var/tmp").unwrap();
 
-        push_helper(
+        push_helper!(
             root.path(),
             "single",
             1_408_000,
@@ -4211,7 +4358,7 @@ mod tests {
         let body = std::fs::read_to_string(single.with_extension("jsonl")).unwrap();
         assert!(body.contains("speaker_turn_evidence"));
 
-        push_helper(
+        push_helper!(
             root.path(),
             "overlap",
             1_408_000,
@@ -4234,7 +4381,7 @@ mod tests {
         assert_ne!(fraction, 0.0);
         assert_eq!(header["speaker_evidence"], "multi");
 
-        push_helper(
+        push_helper!(
             root.path(),
             "aba-1",
             1_760_000,
@@ -4246,7 +4393,7 @@ mod tests {
             &[0],
             None,
         );
-        push_helper(
+        push_helper!(
             root.path(),
             "aba-2",
             192_000,
@@ -4293,7 +4440,7 @@ mod tests {
             header["interval_embeddings"].is_null() || header.get("interval_embeddings").is_none()
         );
 
-        push_helper(
+        push_helper!(
             root.path(),
             "cross-1",
             1_760_000,
@@ -4305,7 +4452,7 @@ mod tests {
             &[0],
             None,
         );
-        push_helper(
+        push_helper!(
             root.path(),
             "cross-2",
             192_000,
@@ -4317,7 +4464,7 @@ mod tests {
             &[0],
             None,
         );
-        push_helper(
+        push_helper!(
             root.path(),
             "cross-re",
             35_200,
@@ -4356,7 +4503,7 @@ mod tests {
             vec![1]
         );
 
-        push_helper(
+        push_helper!(
             root.path(),
             "drop-1",
             1_760_000,
@@ -4368,7 +4515,7 @@ mod tests {
             &[0],
             None,
         );
-        push_helper(
+        push_helper!(
             root.path(),
             "drop-2",
             192_000,
@@ -4378,18 +4525,6 @@ mod tests {
             &[],
             &[1],
             &[1],
-            None,
-        );
-        push_helper(
-            root.path(),
-            "drop-re",
-            3_200,
-            0.0,
-            false,
-            None,
-            &[],
-            &[1],
-            &[2],
             None,
         );
         let dropped = ScriptAsr {
@@ -4420,7 +4555,7 @@ mod tests {
                 .iter()
                 .map(|(id, _)| *id)
                 .collect::<Vec<_>>(),
-            vec![1, 2]
+            vec![1]
         );
     }
 
@@ -4627,7 +4762,7 @@ mod tests {
         let _hooks = ClearEmbeddedHooks::arm();
         set_embedded_vad_sticky(Some(speech_vad));
         let root = tempfile::TempDir::new_in("/var/tmp").unwrap();
-        push_helper(
+        push_helper!(
             root.path(),
             "cluster-cancel",
             16_000,
@@ -4686,7 +4821,7 @@ mod tests {
         let _hooks = ClearEmbeddedHooks::arm();
         set_embedded_vad_sticky(Some(speech_vad));
         let root = tempfile::TempDir::new_in("/var/tmp").unwrap();
-        push_helper(
+        push_helper!(
             root.path(),
             "cancel",
             16_000,
@@ -4729,7 +4864,7 @@ mod tests {
         set_embedded_vad_sticky(Some(speech_vad));
         crate::speakers::set_embedded_unit_speaker_empty(false);
         let root = tempfile::TempDir::new_in("/var/tmp").unwrap();
-        push_helper(
+        push_helper!(
             root.path(),
             "publish-boundary",
             16_000,
@@ -4844,7 +4979,7 @@ mod tests {
         set_embedded_vad_sticky(Some(speech_vad));
         crate::speakers::set_embedded_unit_speaker_empty(false);
         let root = tempfile::TempDir::new_in("/var/tmp").unwrap();
-        push_helper(
+        push_helper!(
             root.path(),
             "prepare-stop",
             16_000,
@@ -4900,7 +5035,428 @@ mod tests {
                 !name.starts_with(".solstone-private-"),
                 "private publication file remained: {name}"
             );
+            assert!(
+                !name.starts_with(".solstone-stage-"),
+                "stage directory remained: {name}"
+            );
         }
+    }
+
+    #[cfg(all(unix, feature = "embedded", feature = "full-tests"))]
+    #[test]
+    fn final_statement_at_least_0_3s_is_admitted_without_prior_rows() {
+        let _hooks = ClearEmbeddedHooks::arm();
+        set_embedded_vad_sticky(Some(speech_vad));
+        let root = tempfile::TempDir::new_in("/var/tmp").unwrap();
+        push_helper!(
+            root.path(),
+            "admit-unit",
+            16_000,
+            0.0,
+            false,
+            None,
+            &[],
+            &[],
+            &[],
+            None,
+        );
+        push_helper!(
+            root.path(),
+            "admit-re",
+            8_000,
+            0.0,
+            false,
+            None,
+            &[],
+            &[1],
+            &[0],
+            None,
+        );
+        let (audio, _) = write_pcm_wav(root.path(), "120000_254", 16_000);
+        let asr = ScriptAsr {
+            seen: std::cell::RefCell::new(Vec::new()),
+            script: |len| {
+                assert_eq!(len, 16_000);
+                json!({
+                    "text": "hello there.",
+                    "words": [
+                        {"word": "hello", "start": 0.0, "end": 0.2},
+                        {"word": "there.", "start": 0.3, "end": 0.5}
+                    ]
+                })
+            },
+        };
+        let file = run_file(&audio, root.path(), &asr, &|| false).unwrap();
+        assert_eq!(file.outcome, crate::TranscribeOutcome::Transcribed);
+        let npz = solstone_core_speaker_id::embeddings::load_embeddings_file(
+            &audio.with_extension("npz"),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(
+            npz.statements.iter().map(|(id, _)| *id).collect::<Vec<_>>(),
+            vec![1]
+        );
+    }
+
+    #[cfg(all(unix, feature = "embedded", feature = "full-tests"))]
+    #[test]
+    fn unmatched_statement_under_0_3s_is_not_reembedded() {
+        let _hooks = ClearEmbeddedHooks::arm();
+        set_embedded_vad_sticky(Some(speech_vad));
+        let root = tempfile::TempDir::new_in("/var/tmp").unwrap();
+        push_helper!(
+            root.path(),
+            "short-unit",
+            16_000,
+            0.0,
+            false,
+            None,
+            &[],
+            &[1],
+            &[0],
+            None,
+        );
+        let (audio, _) = write_pcm_wav(root.path(), "120000_255", 16_000);
+        let asr = ScriptAsr {
+            seen: std::cell::RefCell::new(Vec::new()),
+            script: |len| {
+                assert_eq!(len, 16_000);
+                json!({
+                    "text": "a. b.",
+                    "words": [
+                        {"word": "a.", "start": 0.0, "end": 0.2},
+                        {"word": "b.", "start": 0.4, "end": 0.6}
+                    ]
+                })
+            },
+        };
+        let file = run_file(&audio, root.path(), &asr, &|| false).unwrap();
+        assert_eq!(file.outcome, crate::TranscribeOutcome::Transcribed);
+        let body = std::fs::read_to_string(audio.with_extension("jsonl")).unwrap();
+        let mut text = Vec::new();
+        for line in body.lines().skip(1) {
+            let value: Value = serde_json::from_str(line).unwrap();
+            text.push(value["text"].as_str().unwrap().to_owned());
+        }
+        assert_eq!(text, vec!["a.".to_owned(), "b.".to_owned()]);
+        let npz = solstone_core_speaker_id::embeddings::load_embeddings_file(
+            &audio.with_extension("npz"),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(
+            npz.statements.iter().map(|(id, _)| *id).collect::<Vec<_>>(),
+            vec![1]
+        );
+    }
+
+    #[cfg(all(unix, feature = "embedded", feature = "full-tests"))]
+    #[test]
+    fn reembed_uses_the_retained_reduced_pcm() {
+        let _hooks = ClearEmbeddedHooks::arm();
+        set_embedded_vad_sticky(Some(|len| timed_vad(len, vec![(0.0, 0.5), (3.5, 4.0)])));
+        let root = tempfile::TempDir::new_in("/var/tmp").unwrap();
+        let probe = vec![0.0_f32; 64_000];
+        let reduced = solstone_core_observe_audio::reduce_audio(
+            &probe,
+            &timed_vad(64_000, vec![(0.0, 0.5), (3.5, 4.0)]),
+        )
+        .expect("gap longer than two seconds reduces");
+        let reduced_len = reduced.0.len();
+        assert!(reduced_len < 64_000);
+        push_helper!(
+            root.path(),
+            "gap-unit",
+            64_000,
+            0.0,
+            false,
+            None,
+            &[],
+            &[],
+            &[],
+            None,
+        );
+        push_helper!(
+            root.path(),
+            "gap-re",
+            reduced_len,
+            0.0,
+            false,
+            None,
+            &[],
+            &[1],
+            &[0],
+            None,
+        );
+        let (audio, _) = write_pcm_wav(root.path(), "120000_256", 64_000);
+        // retain_audio removes the long gap before recognition. Each retained
+        // piece is 1.5s, so the recognizer sees 24_000 samples twice. The two
+        // unpunctuated words join into one statement whose restored span is the
+        // original 4s, and reembed measures the 48_000 retained samples.
+        let asr = ScriptAsr {
+            seen: std::cell::RefCell::new(Vec::new()),
+            script: |len| {
+                assert_eq!(len, 24_000);
+                json!({"text":"hello","words":[{"word":"hello","start":0.0,"end":1.5}]})
+            },
+        };
+        let file = run_file(&audio, root.path(), &asr, &|| false).unwrap();
+        assert_eq!(file.outcome, crate::TranscribeOutcome::Transcribed);
+        assert_eq!(
+            asr.seen
+                .borrow()
+                .iter()
+                .map(|samples| samples.len())
+                .collect::<Vec<_>>(),
+            vec![24_000, 24_000]
+        );
+        assert_eq!(reduced_len, 48_000);
+        assert_eq!(
+            crate::speakers::embedded_audio_lengths(),
+            (reduced_len, Some(reduced_len))
+        );
+        let npz = solstone_core_speaker_id::embeddings::load_embeddings_file(
+            &audio.with_extension("npz"),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(
+            npz.statements.iter().map(|(id, _)| *id).collect::<Vec<_>>(),
+            vec![1]
+        );
+    }
+
+    #[cfg(all(unix, feature = "embedded", feature = "full-tests"))]
+    #[test]
+    fn statement_over_the_single_invocation_names_the_maintained_blocker() {
+        let _hooks = ClearEmbeddedHooks::arm();
+        set_embedded_vad_sticky(Some(speech_vad));
+        let root = tempfile::TempDir::new_in("/var/tmp").unwrap();
+        push_helper!(
+            root.path(),
+            "long-1",
+            1_760_000,
+            0.0,
+            false,
+            None,
+            &[],
+            &[],
+            &[],
+            None,
+        );
+        push_helper!(
+            root.path(),
+            "long-2",
+            480_000,
+            0.0,
+            false,
+            None,
+            &[],
+            &[],
+            &[],
+            None,
+        );
+        let (audio, bytes) = write_pcm_wav(root.path(), "120000_257", 2_080_000);
+        let asr = ScriptAsr {
+            seen: std::cell::RefCell::new(Vec::new()),
+            script: |len| {
+                if len == 1_760_000 {
+                    json!({"text":"hello","words":[{"word":"hello","start":0.0,"end":0.2}]})
+                } else if len == 480_000 {
+                    json!({"text":"there.","words":[{"word":"there.","start":29.5,"end":29.7}]})
+                } else {
+                    panic!("unexpected unit length {len}")
+                }
+            },
+        };
+        let error = run_file(&audio, root.path(), &asr, &|| false).unwrap_err();
+        let rendered = error.to_string();
+        assert!(rendered.contains("admit_statement_features"), "{rendered}");
+        assert!(rendered.contains("WespeakerEmbedder::embed"), "{rendered}");
+        assert!(
+            rendered.contains("not omitted, split, truncated, or averaged"),
+            "{rendered}"
+        );
+        assert_eq!(std::fs::read(&audio).unwrap(), bytes);
+        assert!(!audio.with_extension("npz").exists());
+    }
+
+    #[cfg(all(unix, feature = "embedded", feature = "full-tests"))]
+    #[test]
+    fn stop_after_private_copy_starts_leaves_discovery_and_completion() {
+        use solstone_core_speaker_resolve::discovery_scan::{
+            DiscoveryCandidates, discovery_candidates,
+        };
+        use solstone_core_system::work_retry::{self, RetryContext, raw};
+        let _hooks = ClearEmbeddedHooks::arm();
+        set_embedded_vad_sticky(Some(speech_vad));
+        crate::speakers::set_embedded_first_pass_keep(Some(|len, start| {
+            len == 16_000 && start == 0.0
+        }));
+        let root = tempfile::TempDir::new_in("/var/tmp").unwrap();
+        write_config(root.path(), r#"{"transcribe":{"owner_voice_only":true}}"#);
+        let entity = root.path().join("entities/owner");
+        std::fs::create_dir_all(&entity).unwrap();
+        std::fs::write(
+            entity.join("entity.json"),
+            r#"{"id":"owner","name":"Owner","type":"Person","is_principal":true}"#,
+        )
+        .unwrap();
+        solstone_core_speaker_resolve::owner_centroid::write_owner_centroid(
+            root.path(),
+            "owner",
+            &solstone_core_speaker_resolve::owner_centroid::OwnerCentroidWriteInput {
+                centroid: axis(0),
+                cluster_size: 1,
+                timestamp: "2026-10-12T00:00:00Z".to_owned(),
+                evidence_tier: "test".to_owned(),
+            },
+        )
+        .unwrap();
+        let (audio, bytes) = write_pcm_wav(root.path(), "120000_258", 16_000);
+        let segment = audio.parent().unwrap();
+        let embeddings = root.path().join("decoy-embeddings.f32le");
+        write_f32_rows(&embeddings, &[axis(1)]);
+        let ids = root.path().join("decoy-ids.i32le");
+        std::fs::write(&ids, 1_i32.to_le_bytes()).unwrap();
+        let durations = root.path().join("decoy-durations.f32le");
+        std::fs::write(&durations, 1.0_f32.to_le_bytes()).unwrap();
+        solstone_core_speaker_id::writer::stage_npz_from_files(
+            &segment.join("decoy.npz"),
+            &embeddings,
+            1,
+            &ids,
+            &durations,
+            "wespeaker",
+            &|| false,
+        )
+        .unwrap();
+        let header = json!({
+            "raw": "audio.wav",
+            "_solstone_processing": {
+                "schema": vocab::SCHEMA,
+                "state": "failed",
+                "handler": vocab::HANDLER_TRANSCRIBE,
+                "reason_code": "analysis_failed",
+                "attempts": 3,
+            }
+        });
+        let header_text = format!("{header}\n");
+        let jsonl = audio.with_extension("jsonl");
+        std::fs::write(&jsonl, &header_text).unwrap();
+        let evidence = raw::inspect_output(root.path(), &jsonl).unwrap().unwrap();
+        raw::observe(root.path(), &evidence).unwrap();
+        work_retry::request(root.path(), &evidence.unit).unwrap();
+        let unit_id = evidence.unit.id().unwrap();
+        let attempt = work_retry::read(root.path(), &unit_id)
+            .unwrap()
+            .unwrap()
+            .permission(&evidence.input, &[])
+            .unwrap();
+        let context = RetryContext {
+            unit_id: unit_id.clone(),
+            attempt,
+        };
+        push_helper!(
+            root.path(),
+            "copy-stop",
+            16_000,
+            0.0,
+            false,
+            None,
+            &[],
+            &[1],
+            &[1],
+            None,
+        );
+        let todos = todo_names(root.path());
+        let discovered = std::cell::RefCell::new(Vec::new());
+        let saw_bytes = std::cell::Cell::new(false);
+        let deleted = std::cell::Cell::new(false);
+        let cancel = || {
+            let mut stage_npz = None;
+            for entry in std::fs::read_dir(segment).unwrap().flatten() {
+                let name = entry.file_name();
+                let name = name.to_string_lossy();
+                if name.starts_with(".solstone-stage-") {
+                    let candidate = entry.path().join("transcript.npz");
+                    if candidate.is_file() {
+                        stage_npz = Some(candidate);
+                    }
+                }
+            }
+            let Some(path) = stage_npz else {
+                return false;
+            };
+            if std::fs::metadata(&path).map(|meta| meta.len()).unwrap_or(0) == 0 {
+                return false;
+            }
+            saw_bytes.set(true);
+            let sources = match discovery_candidates(root.path()) {
+                Ok(DiscoveryCandidates::Candidates { rows, .. }) => {
+                    rows.into_iter().map(|row| row.source).collect::<Vec<_>>()
+                }
+                Ok(DiscoveryCandidates::IdentityInvalid) => vec!["identity-invalid".to_owned()],
+                Ok(DiscoveryCandidates::NoConfirmedOwner) => vec!["no-owner".to_owned()],
+                Err(error) => vec![error],
+            };
+            *discovered.borrow_mut() = sources;
+            true
+        };
+        let error = crate::embedded::process_embedded(
+            &audio,
+            root.path(),
+            Path::new("missing-models"),
+            &root.path().join("scratch"),
+            &LengthAsr(std::cell::RefCell::new(Vec::new())),
+            crate::embedded::EmbeddedControl {
+                owner_original_deleted: &|| deleted.set(true),
+                cancelled: &cancel,
+                service_io: &|_| {},
+            },
+            Some(&context),
+        )
+        .expect_err("stop after the private npz copy starts");
+        assert!(matches!(error, TranscribeError::Cancelled), "{error:?}");
+        assert!(saw_bytes.get(), "private npz never received bytes");
+        let sources = discovered.borrow();
+        assert!(
+            sources.iter().any(|source| source == "decoy"),
+            "discovery did not read the direct child: {sources:?}"
+        );
+        assert!(
+            sources
+                .iter()
+                .all(|source| source != "transcript" && !source.starts_with(".solstone")),
+            "staged npz was visible to discovery: {sources:?}"
+        );
+        assert_eq!(std::fs::read(&audio).unwrap(), bytes);
+        assert_eq!(std::fs::read_to_string(&jsonl).unwrap(), header_text);
+        assert!(!audio.with_extension("npz").exists());
+        assert!(!deleted.get());
+        for entry in std::fs::read_dir(segment).unwrap().flatten() {
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            assert!(!name.starts_with(".solstone-stage-"), "{name}");
+            assert!(!name.starts_with(".solstone-private-"), "{name}");
+        }
+        assert!(
+            !root
+                .path()
+                .join("awareness/discovery_clusters.json")
+                .exists()
+        );
+        assert!(
+            !root
+                .path()
+                .join("awareness/discovery_clusters.resolved.json")
+                .exists()
+        );
+        assert_eq!(todo_names(root.path()), todos);
+        let record = work_retry::read(root.path(), &unit_id).unwrap().unwrap();
+        assert!(record.held);
+        assert!(record.attempt.is_some());
     }
 
     #[cfg(all(unix, feature = "embedded", feature = "full-tests"))]
@@ -4940,7 +5496,7 @@ mod tests {
 
     #[cfg(all(unix, feature = "embedded", feature = "full-tests"))]
     fn run_mobile_ced(root: &Path, models: &Path, name: &str) -> (PathBuf, crate::TranscribeFile) {
-        push_helper(root, name, 160_000, 0.0, false, None, &[], &[1], &[0], None);
+        push_helper!(root, name, 160_000, 0.0, false, None, &[], &[1], &[0], None);
         let (audio, _) = write_pcm_wav(root, name, 160_000);
         let asr = LengthAsr(std::cell::RefCell::new(Vec::new()));
         let file = crate::embedded::process_embedded(

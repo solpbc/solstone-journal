@@ -1241,6 +1241,7 @@ pub fn write_staged_statement_line(
     fields: &StagedStatementLine<'_>,
     text: &mut impl Read,
     text_len: u64,
+    cancel: &dyn Fn() -> bool,
     mut next_word: impl FnMut() -> Result<Option<StagedWord>, SpeakerTranscriptWriteError>,
 ) -> Result<(), SpeakerTranscriptWriteError> {
     let start = format_start(fields.base_time_us_of_day, fields.start_offset_us)?;
@@ -1249,7 +1250,7 @@ pub fn write_staged_statement_line(
     write_json_string(output, &start)?;
     write_staged(output, b",")?;
     write_json_key(output, "text")?;
-    write_quoted_reader(output, text, text_len)?;
+    write_quoted_reader(output, text, text_len, cancel)?;
     if let Some(source) = fields.source.filter(|source| !source.is_empty()) {
         write_staged(output, b",")?;
         write_json_key(output, "source")?;
@@ -1300,7 +1301,12 @@ pub fn write_staged_statement_line(
 }
 
 /// Private copies of a staged transcript. Dropping this removes them.
+///
+/// The copies live in an unscanned directory on the destination filesystem.
+/// Speaker discovery reads only direct `.npz` children of a segment, so the
+/// directory is invisible until admission renames the files into public names.
 pub struct PrivatePair {
+    stage: Option<PathBuf>,
     jsonl: Option<PathBuf>,
     npz: Option<PathBuf>,
 }
@@ -1313,13 +1319,80 @@ impl Drop for PrivatePair {
         if let Some(path) = self.npz.take() {
             let _ = fs::remove_file(path);
         }
+        if let Some(path) = self.stage.take() {
+            remove_stage_dir(&path);
+        }
     }
 }
 
-/// Copy and verify the staged pair in the destination directory.
+fn remove_stage_dir(path: &Path) {
+    let Ok(meta) = fs::symlink_metadata(path) else {
+        return;
+    };
+    if meta.file_type().is_symlink() || !meta.is_dir() {
+        return;
+    }
+    let _ = fs::remove_dir(path);
+}
+
+fn create_stage_dir(parent: &Path) -> Result<PathBuf, SpeakerTranscriptWriteError> {
+    let seq = STAGED_COPY_SEQ.fetch_add(1, Ordering::Relaxed);
+    let path = parent.join(format!(".solstone-stage-{}-{seq}", std::process::id()));
+    if let Ok(meta) = fs::symlink_metadata(&path) {
+        let detail = if meta.file_type().is_symlink() {
+            "stage path is a symlink"
+        } else {
+            "stage path already exists"
+        };
+        return Err(SpeakerTranscriptWriteError::OutputUnwritable {
+            path: path.display().to_string(),
+            detail: detail.to_owned(),
+        });
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
+        let mut builder = fs::DirBuilder::new();
+        builder.mode(0o700);
+        builder
+            .create(&path)
+            .map_err(|error| SpeakerTranscriptWriteError::OutputUnwritable {
+                path: path.display().to_string(),
+                detail: error.to_string(),
+            })?;
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o700)).map_err(|error| {
+            SpeakerTranscriptWriteError::OutputUnwritable {
+                path: path.display().to_string(),
+                detail: error.to_string(),
+            }
+        })?;
+    }
+    #[cfg(not(unix))]
+    {
+        fs::create_dir(&path).map_err(|error| SpeakerTranscriptWriteError::OutputUnwritable {
+            path: path.display().to_string(),
+            detail: error.to_string(),
+        })?;
+    }
+    let meta = fs::symlink_metadata(&path).map_err(|error| {
+        SpeakerTranscriptWriteError::OutputUnwritable {
+            path: path.display().to_string(),
+            detail: error.to_string(),
+        }
+    })?;
+    if meta.file_type().is_symlink() || !meta.is_dir() {
+        return Err(SpeakerTranscriptWriteError::OutputUnwritable {
+            path: path.display().to_string(),
+            detail: "stage path is not a private directory".to_owned(),
+        });
+    }
+    Ok(path)
+}
+
+/// Copy and verify the staged pair in an unscanned directory beside the public names.
 ///
 /// Every 64 KiB read polls `cancel`. The public JSONL and NPZ names are not
-/// created. Cancellation removes the private files.
+/// created. Cancellation removes the stage directory.
 pub fn prepare_private_pair(
     staged_jsonl: &Path,
     staged_npz: Option<&Path>,
@@ -1333,23 +1406,18 @@ pub fn prepare_private_pair(
             detail: error.to_string(),
         }
     })?;
-    let seq = STAGED_COPY_SEQ.fetch_add(1, Ordering::Relaxed);
+    let stage = create_stage_dir(destination_dir)?;
     let mut pair = PrivatePair {
+        stage: Some(stage.clone()),
         jsonl: None,
         npz: None,
     };
-    let jsonl = destination_dir.join(format!(
-        ".solstone-private-{}-{seq}.jsonl",
-        std::process::id()
-    ));
+    let jsonl = stage.join("transcript.jsonl");
     pair.jsonl = Some(jsonl.clone());
     copy_cancellable(staged_jsonl, &jsonl, cancel)?;
     compare_private(staged_jsonl, &jsonl, cancel)?;
     if let Some(staged_npz) = staged_npz {
-        let npz = destination_dir.join(format!(
-            ".solstone-private-{}-{seq}.npz",
-            std::process::id()
-        ));
+        let npz = stage.join("transcript.npz");
         pair.npz = Some(npz.clone());
         copy_cancellable(staged_npz, &npz, cancel)?;
         compare_private(staged_npz, &npz, cancel)?;
@@ -1380,11 +1448,9 @@ pub fn admit_private_pair(
     validate_output_paths(jsonl_path, npz_path)?;
     let mut installed_npz = false;
     if let Some(source) = pair.npz.take() {
-        if !redo {
-            if let Err(error) = ensure_absent(npz_path) {
-                let _ = fs::remove_file(&source);
-                return Err(error);
-            }
+        if !redo && let Err(error) = ensure_absent(npz_path) {
+            let _ = fs::remove_file(&source);
+            return Err(error);
         }
         if let Err(error) = install_copied(&source, npz_path) {
             let _ = fs::remove_file(&source);
@@ -1400,14 +1466,12 @@ pub fn admit_private_pair(
             detail: "private transcript jsonl is missing".to_owned(),
         });
     };
-    if !redo {
-        if let Err(error) = ensure_absent(jsonl_path) {
-            let _ = fs::remove_file(&source);
-            if installed_npz {
-                let _ = fs::remove_file(npz_path);
-            }
-            return Err(error);
+    if !redo && let Err(error) = ensure_absent(jsonl_path) {
+        let _ = fs::remove_file(&source);
+        if installed_npz {
+            let _ = fs::remove_file(npz_path);
         }
+        return Err(error);
     }
     if let Err(error) = install_copied(&source, jsonl_path) {
         let _ = fs::remove_file(&source);
@@ -1554,6 +1618,7 @@ fn write_quoted_reader(
     output: &mut impl Write,
     input: &mut impl Read,
     len: u64,
+    cancel: &dyn Fn() -> bool,
 ) -> Result<(), SpeakerTranscriptWriteError> {
     output.write_all(b"\"").map_err(staged_io)?;
     let mut left = len;
@@ -1561,6 +1626,7 @@ fn write_quoted_reader(
     let mut pending_len = 0_usize;
     let mut raw = [0_u8; 64 * 1024 + 3];
     while left > 0 {
+        publication_cancelled(cancel)?;
         raw[..pending_len].copy_from_slice(&pending[..pending_len]);
         let want = std::cmp::min(64 * 1024, left) as usize;
         let read = input
@@ -1681,6 +1747,7 @@ mod staged_line_tests {
             },
             &mut io::Cursor::new(text.as_bytes()),
             text.len() as u64,
+            &|| false,
             &mut || {
                 if index >= words.len() {
                     return Ok(None);
