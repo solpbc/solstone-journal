@@ -1,6 +1,6 @@
 # Synthetic networking qualification client
 
-This development driver uses SPL v0.11.1 pairing, TLS pinning, request framing and response assembly. Platform harnesses send JSON commands on stdin and receive one JSON reply on stdout. Each operation has a 30-second deadline. Run it only against a synthetic journal on the intended local test network.
+This development driver uses SPL v0.12.0 pairing, TLS pinning, request framing and response assembly. Platform harnesses send JSON commands on stdin and receive one JSON reply on stdout. Each operation has a 30-second deadline. Run it only against a synthetic journal on the intended local test network.
 
 ```sh
 cargo build --locked --manifest-path tools/mobile-serving/client/Cargo.toml
