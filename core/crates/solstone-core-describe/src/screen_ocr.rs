@@ -215,8 +215,7 @@ pub trait OcrWorkerFactory {
     }
 }
 
-/// Mobile OCR stays a gap: the pinned helper's ONNX Runtime does not match
-/// the Android or iOS runtime this process links. No recognition bytes are loaded.
+/// This type is a gap double. The production mobile worker is `ScreenOcrFactory`.
 pub struct MobileOcrGap;
 
 const MOBILE_OCR_GAP_DETAIL: &str = "oar-ocr 84817f58 pins ort =2.0.0-rc.13; mobile ort is =2.0.0-rc.12. Compile needs options.set replaced by options.add_config_entry. Android ONNX Runtime is source 7a71bc57; iOS is 1.25.0 static with ort features api-24 and std. No recognition bytes were loaded.";
