@@ -349,8 +349,8 @@ fn structural_single_speaker_and_setting_branches_are_mutually_exclusive() {
     let temporary = TempDir::new();
     write_entity(
         temporary.path(),
-        "speaker",
-        "Speaker",
+        "solo_speaker",
+        "Solo Speaker",
         Some("Person"),
         false,
     );
@@ -361,7 +361,7 @@ fn structural_single_speaker_and_setting_branches_are_mutually_exclusive() {
         Some("Person"),
         false,
     );
-    let speakers = ["Speaker".to_owned()];
+    let speakers = ["Solo Speaker".to_owned()];
     let settings = ["Setting".to_owned()];
     let result = apply(
         &temporary,
@@ -371,7 +371,7 @@ fn structural_single_speaker_and_setting_branches_are_mutually_exclusive() {
         &HashSet::new(),
     )
     .expect("apply layer 2");
-    assert_eq!(result.labels[&1].speaker.as_deref(), Some("speaker"));
+    assert_eq!(result.labels[&1].speaker.as_deref(), Some("solo_speaker"));
     assert_eq!(
         result.labels[&1].method.as_deref(),
         Some("structural_single_speaker")
