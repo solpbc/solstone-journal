@@ -1,0 +1,239 @@
+//! Text Line Orientation Classification Adapter
+//!
+//! This adapter uses the PP-LCNet model to classify text line orientation.
+
+use crate::apply_ort_config;
+use crate::core::OCRError;
+use crate::core::traits::{
+    adapter::{AdapterInfo, ModelAdapter},
+    task::Task,
+};
+use crate::domain::tasks::{
+    Classification, TextLineOrientationConfig, TextLineOrientationOutput, TextLineOrientationTask,
+};
+use crate::impl_adapter_builder;
+use crate::models::classification::{PPLCNetModel, PPLCNetModelBuilder, PPLCNetPostprocessConfig};
+
+/// Text line orientation classification adapter that uses the PP-LCNet model.
+#[derive(Debug)]
+pub struct TextLineOrientationAdapter {
+    /// The underlying PP-LCNet model
+    model: PPLCNetModel,
+    /// Adapter information
+    info: AdapterInfo,
+    /// Task configuration
+    config: TextLineOrientationConfig,
+    /// Postprocessing configuration
+    postprocess_config: PPLCNetPostprocessConfig,
+}
+
+impl TextLineOrientationAdapter {
+    /// Creates a new text line orientation adapter.
+    pub fn new(
+        model: PPLCNetModel,
+        info: AdapterInfo,
+        config: TextLineOrientationConfig,
+        postprocess_config: PPLCNetPostprocessConfig,
+    ) -> Self {
+        Self {
+            model,
+            info,
+            config,
+            postprocess_config,
+        }
+    }
+
+    /// Default input shape for text line orientation classification.
+    /// PP-LCNet text line orientation models expect 80x160 inputs.
+    pub const DEFAULT_INPUT_SHAPE: (u32, u32) = (80, 160);
+
+    /// Class labels for text line orientation.
+    pub fn labels() -> Vec<String> {
+        vec!["0".to_string(), "180".to_string()]
+    }
+}
+
+impl ModelAdapter for TextLineOrientationAdapter {
+    type Task = TextLineOrientationTask;
+
+    fn info(&self) -> AdapterInfo {
+        self.info.clone()
+    }
+
+    fn execute(
+        &self,
+        input: <Self::Task as Task>::Input,
+        config: Option<&<Self::Task as Task>::Config>,
+    ) -> Result<<Self::Task as Task>::Output, OCRError> {
+        let effective_config = config.unwrap_or(&self.config);
+
+        // Update postprocess config with task-specific topk
+        let mut postprocess_config = self.postprocess_config.clone();
+        postprocess_config.topk = effective_config.topk;
+        let image_refs: Vec<_> = input.images.iter().map(AsRef::as_ref).collect();
+
+        // The fixed-size resize owns its output, so borrowing crop pixels avoids
+        // copying every text line while the OCR pipeline retains crop metadata.
+        let model_output = self
+            .model
+            .forward_refs(&image_refs, &postprocess_config)
+            .map_err(|e| {
+                OCRError::adapter_execution_error(
+                    "TextLineOrientationAdapter",
+                    format!(
+                        "failed to classify text line orientation (topk={})",
+                        effective_config.topk
+                    ),
+                    e,
+                )
+            })?;
+
+        // Convert model output to task-specific output with structured classifications
+        let label_names = model_output.label_names.unwrap_or_else(|| {
+            model_output
+                .class_ids
+                .iter()
+                .map(|ids| ids.iter().map(|&id| format!("{}", id * 180)).collect())
+                .collect()
+        });
+
+        // Create structured classifications
+        let classifications = model_output
+            .class_ids
+            .into_iter()
+            .zip(model_output.scores)
+            .zip(label_names)
+            .map(|((class_ids, scores), labels)| {
+                class_ids
+                    .into_iter()
+                    .zip(scores)
+                    .zip(labels)
+                    .map(|((class_id, score), label)| Classification::new(class_id, label, score))
+                    .collect()
+            })
+            .collect();
+
+        Ok(TextLineOrientationOutput { classifications })
+    }
+
+    fn supports_batching(&self) -> bool {
+        true
+    }
+
+    fn recommended_batch_size(&self) -> usize {
+        64
+    }
+}
+
+impl_adapter_builder! {
+    builder_name: TextLineOrientationAdapterBuilder,
+    adapter_name: TextLineOrientationAdapter,
+    config_type: TextLineOrientationConfig,
+    adapter_type: "text_line_orientation",
+    adapter_desc: "Classifies text line orientation (0° or 180°)",
+    task_type: TextLineOrientation,
+
+    fields: {
+        input_shape: (u32, u32) = TextLineOrientationAdapter::DEFAULT_INPUT_SHAPE,
+        model_name_override: Option<String> = None,
+    },
+
+    methods: {
+        pub fn input_shape(mut self, input_shape: (u32, u32)) -> Self {
+            self.input_shape = input_shape;
+            self
+        }
+
+        pub fn model_name(mut self, model_name: impl Into<String>) -> Self {
+            self.model_name_override = Some(model_name.into());
+            self
+        }
+    }
+
+    build: |builder: TextLineOrientationAdapterBuilder, model_source: crate::core::ModelSource| -> Result<TextLineOrientationAdapter, OCRError> {
+        let (task_config, ort_config) = builder.config
+            .into_validated_parts()
+            .map_err(|err| OCRError::ConfigError {
+                message: err.to_string(),
+            })?;
+
+        // Build the PP-LCNet model
+        let mut preprocess_config = super::preprocessing::pp_lcnet_preprocess(builder.input_shape);
+        // Align with standard model configuration:
+        // - Direct resize to 80x160 (no resize_short + crop)
+        // - ImageNet mean/std in RGB order (handled by PPLCNetPreprocessConfig defaults)
+        preprocess_config.resize_short = None;
+
+        let model = apply_ort_config!(
+            PPLCNetModelBuilder::new().preprocess_config(preprocess_config),
+            ort_config
+        )
+        .build(model_source)?;
+
+        // Create postprocessing configuration
+        let postprocess_config = PPLCNetPostprocessConfig {
+            labels: TextLineOrientationAdapter::labels(),
+            topk: 1, // Will be overridden by task config
+        };
+
+        // Create adapter info using the helper
+        let mut info = TextLineOrientationAdapterBuilder::base_adapter_info();
+        if let Some(model_name) = builder.model_name_override {
+            info.model_name = model_name;
+        }
+
+        Ok(TextLineOrientationAdapter::new(
+            model,
+            info,
+            task_config,
+            postprocess_config,
+        ))
+    },
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::traits::adapter::AdapterBuilder;
+
+    #[test]
+    fn test_builder_creation() {
+        let builder = TextLineOrientationAdapterBuilder::new();
+        assert_eq!(builder.adapter_type(), "text_line_orientation");
+    }
+
+    #[test]
+    fn test_builder_with_config() {
+        let config = TextLineOrientationConfig {
+            score_threshold: 0.7,
+            topk: 2,
+        };
+
+        let builder = TextLineOrientationAdapterBuilder::new().with_config(config.clone());
+        assert_eq!(builder.config.task_config().topk, 2);
+        assert_eq!(builder.config.task_config().score_threshold, 0.7);
+    }
+
+    #[test]
+    fn test_builder_fluent_api() {
+        let builder = TextLineOrientationAdapterBuilder::new().input_shape((224, 224));
+
+        assert_eq!(builder.input_shape, (224, 224));
+    }
+
+    #[test]
+    fn test_default_builder() {
+        let builder = TextLineOrientationAdapterBuilder::default();
+        assert_eq!(builder.adapter_type(), "text_line_orientation");
+        assert_eq!(
+            builder.input_shape,
+            TextLineOrientationAdapter::DEFAULT_INPUT_SHAPE
+        );
+    }
+
+    #[test]
+    fn test_labels() {
+        let labels = TextLineOrientationAdapter::labels();
+        assert_eq!(labels, vec!["0", "180"]);
+    }
+}

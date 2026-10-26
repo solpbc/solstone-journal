@@ -1,0 +1,187 @@
+//! Structures and helpers for ONNX Runtime inference.
+//!
+//! This module provides a unified inference interface that is backend-agnostic
+//! and does not make assumptions about input/output semantics.
+
+use crate::core::errors::OCRError;
+use ort::{session::Session, value::ValueType};
+use std::sync::Mutex;
+
+mod environment;
+mod model_source;
+pub mod session;
+mod tensor_output;
+mod thread_pool;
+
+// OrtInfer implementation modules
+#[path = "ort_infer_builders.rs"]
+mod ort_infer_builders;
+#[path = "ort_infer_config.rs"]
+mod ort_infer_config;
+#[path = "ort_infer_execution.rs"]
+mod ort_infer_execution;
+
+pub use environment::initialize_ort_environment;
+pub use model_source::ModelSource;
+pub use ort_infer_builders::ensure_cuda_launch_blocking;
+pub use ort_infer_execution::TensorInput;
+pub use session::load_session;
+pub use tensor_output::TensorOutput;
+pub use thread_pool::OrtGlobalThreadPoolOptions;
+
+/// Core ONNX Runtime inference engine with support for pooling and configurable sessions.
+pub struct OrtInfer {
+    pub(self) sessions: Vec<Mutex<Session>>,
+    pub(self) next_idx: std::sync::atomic::AtomicUsize,
+    pub(self) input_name: String,
+    pub(self) model_path: std::path::PathBuf,
+    pub(self) model_name: String,
+    /// Run options applied to every `session.run`; set when CUDA arena
+    /// shrinkage is enabled.
+    pub(self) run_options: Option<ort::session::RunOptions>,
+}
+
+impl std::fmt::Debug for OrtInfer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("OrtInfer")
+            .field("sessions", &self.sessions.len())
+            .field("input_name", &self.input_name)
+            .field("model_path", &self.model_path)
+            .field("model_name", &self.model_name)
+            .field("arena_shrinkage", &self.run_options.is_some())
+            .finish()
+    }
+}
+
+impl OrtInfer {
+    /// Returns the input tensor name.
+    pub fn input_name(&self) -> &str {
+        &self.input_name
+    }
+
+    /// Gets a session from the pool.
+    pub fn get_session(&self, idx: usize) -> Result<std::sync::MutexGuard<'_, Session>, OCRError> {
+        self.sessions[idx % self.sessions.len()]
+            .lock()
+            .map_err(|_| OCRError::ConfigError {
+                message: "Failed to acquire session lock".to_string(),
+            })
+    }
+
+    /// Returns the declared input names from the model.
+    pub fn input_names_from_model(&self) -> Vec<String> {
+        let Some(session_mutex) = self.sessions.first() else {
+            return Vec::new();
+        };
+        let Ok(session_guard) = session_mutex.lock() else {
+            return Vec::new();
+        };
+        session_guard
+            .inputs()
+            .iter()
+            .map(|i| i.name().to_string())
+            .collect()
+    }
+
+    /// Attempts to retrieve the primary input tensor shape from the first session.
+    ///
+    /// Returns a vector of dimensions if available. Dynamic dimensions (e.g., -1) are returned as-is.
+    pub fn primary_input_shape(&self) -> Option<Vec<i64>> {
+        let session_mutex = self.sessions.first()?;
+        let session_guard = session_mutex.lock().ok()?;
+        let input = session_guard.inputs().first()?;
+        match input.dtype() {
+            ValueType::Tensor { shape, .. } => Some(shape.iter().copied().collect()),
+            _ => None,
+        }
+    }
+
+    /// Returns the run options applied to every inference (set when CUDA
+    /// arena shrinkage is enabled), for callers that run a session from
+    /// [`get_session`](Self::get_session) directly.
+    pub fn run_options(&self) -> Option<&ort::session::RunOptions> {
+        self.run_options.as_ref()
+    }
+
+    /// Returns the declared output names and tensor shapes from the first session.
+    ///
+    /// This is intended for model adapters that need to choose among multiple
+    /// ONNX outputs before interpreting tensors semantically.
+    pub fn output_shapes(&self) -> Vec<(String, Vec<i64>)> {
+        let Some(session_mutex) = self.sessions.first() else {
+            return Vec::new();
+        };
+        let Ok(session_guard) = session_mutex.lock() else {
+            return Vec::new();
+        };
+        session_guard
+            .outputs()
+            .iter()
+            .filter_map(|output| match output.dtype() {
+                ValueType::Tensor { shape, .. } => Some((
+                    output.name().to_string(),
+                    shape.iter().copied().collect::<Vec<_>>(),
+                )),
+                _ => None,
+            })
+            .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::config::ModelInferenceConfig;
+
+    #[test]
+    fn test_from_config_with_ort_session() {
+        let common = ModelInferenceConfig::new();
+        let result = OrtInfer::from_config(&common, "dummy_path.onnx", None);
+        assert!(result.is_err()); // File doesn't exist
+    }
+
+    fn config_with(ort: crate::core::config::OrtSessionConfig) -> ModelInferenceConfig {
+        let mut common = ModelInferenceConfig::new();
+        common.ort_session = Some(ort);
+        common
+    }
+
+    #[test]
+    fn arena_shrinkage_is_off_unless_requested() {
+        use crate::core::config::{OrtExecutionProvider, OrtSessionConfig};
+        assert_eq!(
+            OrtInfer::arena_shrinkage_device(&ModelInferenceConfig::new()),
+            None
+        );
+        let cpu = OrtSessionConfig::new()
+            .with_execution_providers(vec![OrtExecutionProvider::CPU])
+            .with_arena_shrinkage(true);
+        assert_eq!(OrtInfer::arena_shrinkage_device(&config_with(cpu)), None);
+    }
+
+    #[cfg(feature = "cuda")]
+    #[test]
+    fn arena_shrinkage_targets_the_cuda_device() {
+        use crate::core::config::{OrtExecutionProvider, OrtSessionConfig};
+        let cuda = |device_id| OrtExecutionProvider::CUDA {
+            device_id,
+            gpu_mem_limit: None,
+            arena_extend_strategy: None,
+            cudnn_conv_algo_search: None,
+            cudnn_conv_use_max_workspace: None,
+        };
+        let off = OrtSessionConfig::new().with_execution_providers(vec![cuda(Some(1))]);
+        assert_eq!(OrtInfer::arena_shrinkage_device(&config_with(off)), None);
+        let on = OrtSessionConfig::new()
+            .with_execution_providers(vec![cuda(Some(1)), OrtExecutionProvider::CPU])
+            .with_arena_shrinkage(true);
+        assert_eq!(OrtInfer::arena_shrinkage_device(&config_with(on)), Some(1));
+        let default_device = OrtSessionConfig::new()
+            .with_execution_providers(vec![cuda(None)])
+            .with_arena_shrinkage(true);
+        assert_eq!(
+            OrtInfer::arena_shrinkage_device(&config_with(default_device)),
+            Some(0)
+        );
+    }
+}

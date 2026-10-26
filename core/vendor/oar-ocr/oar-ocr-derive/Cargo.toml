@@ -1,0 +1,22 @@
+[package]
+name = "oar-ocr-derive"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Internal procedural derive macros for oar-ocr (implementation detail, not for direct use)"
+readme = "README.md"
+keywords = ["oar-ocr", "internal"]
+categories = ["development-tools::procedural-macro-helpers"]
+
+[lib]
+proc-macro = true
+
+[dependencies]
+darling = "0.24"
+proc-macro2 = "1"
+quote = "1"
+syn = { version = "3", features = ["full", "parsing", "extra-traits"] }

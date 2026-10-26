@@ -1,0 +1,55 @@
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -75,7 +75,7 @@
+ oar-ocr-core.workspace = true
+ oar-ocr-derive.workspace = true
+ # Indra OCR feeds integer and boolean tensors directly; same pin as oar-ocr-core.
+-ort = { version = "=2.0.0-rc.13", default-features = false, features = ["std"] }
++ort = { version = "=2.0.0-rc.12", default-features = false, features = ["std"] }
+ rayon.workspace = true
+ regex.workspace = true
+ serde.workspace = true
+--- a/oar-ocr-bench/Cargo.toml
++++ b/oar-ocr-bench/Cargo.toml
+@@ -26,7 +26,7 @@
+ oar-ocr-vl = { path = "../oar-ocr-vl" }
+ # Same exact pin as oar-ocr-core; used directly to verify that an explicitly
+ # requested execution provider registers.
+-ort = { version = "=2.0.0-rc.13", default-features = false, features = ["std"] }
++ort = { version = "=2.0.0-rc.12", default-features = false, features = ["std"] }
+ rayon.workspace = true
+ serde.workspace = true
+ serde_json.workspace = true
+--- a/oar-ocr-core/Cargo.toml
++++ b/oar-ocr-core/Cargo.toml
+@@ -48,7 +48,7 @@
+ oar-ocr-derive.workspace = true
+ # Pinned exactly because `ort` is pre-release and later release candidates may
+ # make source-incompatible API changes on a fresh resolve.
+-ort = { version = "=2.0.0-rc.13", default-features = false, features = [ "std", "ndarray", "tracing", "copy-dylibs" ] }
++ort = { version = "=2.0.0-rc.12", default-features = false, features = [ "std", "ndarray", "tracing", "copy-dylibs" ] }
+ rayon.workspace = true
+ regex.workspace = true
+ serde.workspace = true
+--- a/oar-ocr-cli/Cargo.toml
++++ b/oar-ocr-cli/Cargo.toml
+@@ -34,7 +34,7 @@
+ oar-ocr = { version = "0.10.0", path = "..", default-features = false }
+ oar-ocr-vl = { version = "0.10.0", path = "../oar-ocr-vl", default-features = false }
+ # Only explicit accelerator registration needs the ORT SDK directly.
+-ort = { version = "=2.0.0-rc.13", optional = true, default-features = false, features = ["std"] }
++ort = { version = "=2.0.0-rc.12", optional = true, default-features = false, features = ["std"] }
+ rayon.workspace = true
+ serde_json.workspace = true
+ tracing.workspace = true
+--- a/oar-ocr-core/src/core/inference/ort_infer_builders.rs
++++ b/oar-ocr-core/src/core/inference/ort_infer_builders.rs
+@@ -99,7 +99,7 @@
+         let device = format!("gpu:{device_id}");
+         let build = || -> ort::Result<ort::session::RunOptions> {
+             let mut options = ort::session::RunOptions::new()?;
+-            options.set("memory.enable_memory_arena_shrinkage", &device)?;
++            options.add_config_entry("memory.enable_memory_arena_shrinkage", &device)?;
+             Ok(options)
+         };
+         build().map(Some).map_err(|e| OCRError::ConfigError {

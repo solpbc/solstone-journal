@@ -1,0 +1,91 @@
+[workspace]
+members = [".", "oar-ocr-derive", "oar-ocr-core", "oar-ocr-vl", "oar-ocr-bench", "oar-ocr-cli"]
+resolver = "2"
+
+[workspace.package]
+version = "0.10.0"
+edition = "2024"
+rust-version = "1.95"
+license = "Apache-2.0"
+authors = ["Wang Xin <xinwang614@gmail.com>"]
+repository = "https://github.com/greatv/oar-ocr"
+homepage = "https://github.com/greatv/oar-ocr"
+
+[workspace.dependencies]
+oar-ocr-core = { version = "0.10.0", path = "oar-ocr-core", default-features = false }
+oar-ocr-derive = { version = "0.10.0", path = "oar-ocr-derive", default-features = false }
+
+# Shared third-party dependencies (kept in sync via workspace inheritance).
+clap = { version = "4.5.42", features = ["derive"] }
+hayro = "0.8"
+image = "0.25.6"
+imageproc = "0.27.0"
+rayon = "1.8"
+regex = "1.11.1"
+serde = { version = "1.0", features = ["derive", "rc"] }
+serde_json = "1.0"
+tempfile = "3.19"
+tokenizers = { version = "0.23", default-features = false, features = ["progressbar", "onig"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3.20", features = ["env-filter"] }
+
+[package]
+name = "oar-ocr"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "An Optical Character Recognition (OCR) and Document Layout Analysis library written in Rust."
+readme = "README.md"
+keywords = [
+    "ocr",
+    "onnx",
+    "computer-vision",
+    "text-recognition",
+    "machine-learning",
+]
+categories = ["computer-vision", "science"]
+
+[features]
+default = ["download-binaries", "simd"]
+# SIMD-accelerate hot CPU pre/post-processing kernels (see oar-ocr-core).
+simd = ["oar-ocr-core/simd"]
+# ONNX Runtime execution provider features
+cuda = ["oar-ocr-core/cuda"]
+tensorrt = ["oar-ocr-core/tensorrt"]
+directml = ["oar-ocr-core/directml"]
+coreml = ["oar-ocr-core/coreml"]
+webgpu = ["oar-ocr-core/webgpu"]
+openvino = ["oar-ocr-core/openvino"]
+# Auto-download ONNX Runtime binaries during build (enabled by default).
+# Set ORT_LIB_LOCATION to use a custom installation (skips download).
+# Use --no-default-features for offline/enterprise environments.
+download-binaries = ["oar-ocr-core/download-binaries"]
+# Auto-download OCR model files at runtime from ModelScope into `$OAR_HOME`
+# (default `~/.oar`). When enabled, builder methods that take a model path
+# accept either a filesystem path or a bare registered file name.
+auto-download = ["oar-ocr-core/auto-download"]
+
+[dependencies]
+image.workspace = true
+imageproc.workspace = true
+oar-ocr-core.workspace = true
+oar-ocr-derive.workspace = true
+# Indra OCR feeds integer and boolean tensors directly; same pin as oar-ocr-core.
+ort = { version = "=2.0.0-rc.12", default-features = false, features = ["std"] }
+rayon.workspace = true
+regex.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+ab_glyph = "0.2"
+clap.workspace = true
+fontdb = "0.24"
+hayro.workspace = true
+tempfile.workspace = true
+tracing-subscriber.workspace = true

@@ -1,0 +1,1039 @@
+//! Document Structure Analysis Example
+//!
+//! This example demonstrates how to run the document structure pipeline built with
+//! `OARStructureBuilder`. It performs layout detection and can optionally add table
+//! analysis, formula recognition, seal detection, and integrated OCR.
+//!
+//! # Usage
+//!
+//! ```bash
+//! cargo run --release --features cuda --example structure -- [OPTIONS] <IMAGES>...
+//! ```
+//!
+//! # Common Options
+//!
+//! * `--layout-model` - Path to the layout detection model (required)
+//! * `--layout-model-name` - Layout model preset name (default: PP-DocLayout_plus-L)
+//! * `--orientation-model` / `--rectification-model` - Optional document preprocessing
+//! * `--region-model` - Optional region detection (PP-DocBlockLayout) for hierarchical ordering
+//! * Table analysis (PP-StructureV3 auto-switch mode):
+//!   - `--table-cls-model` - Table classification model (wired/wireless)
+//!   - `--wired-structure-model` / `--wireless-structure-model` - Table structure models
+//!   - `--wired-structure-model-name` / `--wireless-structure-model-name` - Model names
+//!   - `--wired-cell-model` / `--wireless-cell-model` - Table cell detection models
+//!   - `--wired-cell-model-name` / `--wireless-cell-model-name` - Model names
+//!   - `--table-structure-dict` - Table structure dictionary
+//!   - `--use-wired-table-cells-trans-to-html` / `--use-wireless-table-cells-trans-to-html`
+//!     - PaddleX-compatible table-cells-to-HTML fallback
+//! * Formula recognition:
+//!   - `--formula-model` / `--formula-tokenizer` / `--formula-type` (pp_formulanet or unimernet)
+//! * OCR integration:
+//!   - `--text-det-model`, `--text-det-model-name` - Text detection model
+//!   - `--text-rec-model`, `--text-rec-model-name` - Text recognition model
+//!   - `--text-dict-path` - Character dictionary
+//! * `--device` - Device to use (`auto`, `cpu`, `cuda`, `cuda:0`, etc.) - Default: auto
+//!
+//! # Supported Model Names
+//!
+//! ## Layout Detection Models
+//! - `PP-DocLayout_plus-L` (default, 800x800, 20 classes)
+//! - `PP-DocLayout-L`, `PP-DocLayout-M`, `PP-DocLayout-S` (640x640/480x480, 23 classes)
+//! - `PP-DocBlockLayout` (640x640, region detection)
+//! - `PicoDet-L_layout_17cls`, `PicoDet-S_layout_17cls` (640x640/480x480, 17 classes)
+//! - `PicoDet-L_layout_3cls`, `PicoDet-S_layout_3cls` (640x640/480x480, 3 classes)
+//! - `RT-DETR-H_layout_17cls`, `RT-DETR-H_layout_3cls` (640x640)
+//!
+//! ## Table Structure Models
+//! - `SLANeXt_wired` (wired tables, default for wired)
+//! - `SLANet_plus` (wireless tables, default for wireless)
+//! - `SLANet` (basic)
+//!
+//! ## Table Cell Detection Models
+//! - `RT-DETR-L_wired_table_cell_det` (default for wired)
+//! - `RT-DETR-L_wireless_table_cell_det` (default for wireless)
+//!
+//! ## Text Detection Models
+//! - `PP-OCRv5_server_det` (default, high accuracy)
+//! - `PP-OCRv5_mobile_det` (faster, mobile)
+//! - `PP-OCRv4_server_det`, `PP-OCRv4_mobile_det`
+//!
+//! ## Text Recognition Models
+//! - `PP-OCRv5_server_rec` (default, high accuracy)
+//! - `PP-OCRv5_mobile_rec` (faster, mobile)
+//! - `PP-OCRv4_server_rec`, `PP-OCRv4_mobile_rec`
+//!
+//! # Examples
+//!
+//! ## Minimal Layout Detection
+//!
+//! ```bash
+//! cargo run --release --features cuda --example structure -- \
+//!   --layout-model pp-doclayout_plus-l.onnx \
+//!   --region-model pp-docblocklayout.onnx \
+//!   document.jpg
+//! ```
+//!
+//! ## Layout + OCR
+//!
+//! ```bash
+//! cargo run --release --features cuda --example structure -- \
+//!   --layout-model pp-doclayout_plus-l.onnx \
+//!   --region-model pp-docblocklayout.onnx \
+//!   --text-det-model pp-ocrv5_server_det.onnx \
+//!   --text-rec-model pp-ocrv5_server_rec.onnx \
+//!   --text-dict-path ppocrv5_dict.txt \
+//!   document.jpg
+//! ```
+//!
+//! ## Using PicoDet Layout Model
+//!
+//! ```bash
+//! cargo run --release --features cuda --example structure -- \
+//!   --layout-model picodet-l_layout_17cls.onnx \
+//!   --layout-model-name PicoDet-L_layout_17cls \
+//!   document.jpg
+//! ```
+//!
+//! ## Full PP-StructureV3 Pipeline
+//!
+//! ```bash
+//! cargo run --release --features cuda --example structure -- \
+//!   --layout-model pp-doclayout_plus-l.onnx \
+//!   --region-model pp-docblocklayout.onnx \
+//!   --orientation-model pp-lcnet_x1_0_doc_ori.onnx \
+//!   --rectification-model uvdoc.onnx \
+//!   --table-cls-model pp-lcnet_x1_0_table_cls.onnx \
+//!   --wired-structure-model slanext_wired.onnx \
+//!   --wireless-structure-model slanet_plus.onnx \
+//!   --wired-cell-model rt-detr-l_wired_table_cell_det.onnx \
+//!   --wireless-cell-model rt-detr-l_wireless_table_cell_det.onnx \
+//!   --table-structure-dict table_structure_dict_ch.txt \
+//!   --formula-model pp-formulanet_plus-l.onnx \
+//!   --formula-tokenizer pp-formulanet-tokenizer.json \
+//!   --formula-type pp_formulanet \
+//!   --seal-model pp-ocrv4_server_seal_det.onnx \
+//!   --text-det-model pp-ocrv5_server_det.onnx \
+//!   --text-rec-model pp-ocrv5_server_rec.onnx \
+//!   --text-dict-path ppocrv5_dict.txt \
+//!   --to-json --to-markdown \
+//!   -o output/structure \
+//!   document.jpg
+//! ```
+//!
+//! # PP-StructureV3 Default Model Reference
+//!
+//! | Component | Model Name | Model Path Arg | Model Name Arg |
+//! |-----------|------------|----------------|----------------|
+//! | Layout Detection | PP-DocLayout_plus-L | `--layout-model` | `--layout-model-name` |
+//! | Region Detection | PP-DocBlockLayout | `--region-model` | `--region-model-name` |
+//! | Document Orientation | PP-LCNet_x1_0_doc_ori | `--orientation-model` | - |
+//! | Document Rectification | UVDoc | `--rectification-model` | - |
+//! | Table Classification | PP-LCNet_x1_0_table_cls | `--table-cls-model` | - |
+//! | Wired Table Structure | SLANeXt_wired | `--wired-structure-model` | `--wired-structure-model-name` |
+//! | Wireless Table Structure | SLANet_plus | `--wireless-structure-model` | `--wireless-structure-model-name` |
+//! | Wired Cell Detection | RT-DETR-L_wired_table_cell_det | `--wired-cell-model` | `--wired-cell-model-name` |
+//! | Wireless Cell Detection | RT-DETR-L_wireless_table_cell_det | `--wireless-cell-model` | `--wireless-cell-model-name` |
+//! | Table Structure Dict | table_structure_dict_ch.txt | `--table-structure-dict` | - |
+//! | Formula Recognition | PP-FormulaNet_plus-L | `--formula-model` | `--formula-type` |
+//! | Seal Detection | PP-OCRv4_server_seal_det | `--seal-model` | - |
+//! | Text Detection | PP-OCRv5_server_det | `--text-det-model` | `--text-det-model-name` |
+//! | Text Recognition | PP-OCRv5_server_rec | `--text-rec-model` | `--text-rec-model-name` |
+//! | Character Dict | ppocrv5_dict.txt | `--text-dict-path` | - |
+
+mod utils;
+
+use clap::Parser;
+use image::RgbImage;
+use oar_ocr::core::OrtGlobalThreadPoolOptions;
+use oar_ocr::domain::structure::TableType;
+use oar_ocr::domain::tasks::{
+    FormulaRecognitionConfig, LayoutDetectionConfig, TextDetectionConfig, TextRecognitionConfig,
+};
+use oar_ocr::oarocr::OARStructureBuilder;
+use oar_ocr::processors::LimitType;
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::time::Instant;
+use tracing::{error, info, warn};
+use utils::device_config::{apply_ort_overrides, parse_device_config};
+use utils::pdf::{PdfDocument, is_pdf_file};
+
+/// Command-line arguments for the structure analysis example
+#[derive(Parser)]
+#[command(name = "structure")]
+#[command(about = "Run document structure analysis with optional table/formula/OCR components")]
+struct Args {
+    /// Layout detection model path (required)
+    #[arg(long = "layout-model")]
+    layout_model: PathBuf,
+
+    /// Layout model preset name.
+    ///
+    /// Used to select the correct built-in preprocessing/postprocessing preset.
+    /// Supported values:
+    /// - `PP-DocLayout_plus-L` (default, 800x800, 20 classes)
+    /// - `PP-DocLayout-L`, `PP-DocLayout-M`, `PP-DocLayout-S`
+    /// - `PP-DocBlockLayout` (region detection)
+    /// - `PicoDet-L_layout_17cls`, `PicoDet-S_layout_17cls`
+    /// - `PicoDet-L_layout_3cls`, `PicoDet-S_layout_3cls`
+    /// - `RT-DETR-H_layout_17cls`, `RT-DETR-H_layout_3cls`
+    #[arg(long = "layout-model-name", default_value = "PP-DocLayout_plus-L")]
+    layout_model_name: String,
+
+    /// Input images to analyze
+    #[arg(required = true)]
+    images: Vec<PathBuf>,
+
+    /// Optional document orientation classification model
+    #[arg(long)]
+    orientation_model: Option<PathBuf>,
+
+    /// Optional document rectification model
+    #[arg(long)]
+    rectification_model: Option<PathBuf>,
+
+    /// Optional region detection model (PP-DocBlockLayout) for hierarchical ordering
+    #[arg(long = "region-model")]
+    region_model: Option<PathBuf>,
+
+    /// Region detection model name (default: PP-DocBlockLayout)
+    #[arg(long = "region-model-name", default_value = "PP-DocBlockLayout")]
+    region_model_name: String,
+
+    /// Table classification model (wired vs wireless)
+    #[arg(long = "table-cls-model")]
+    table_cls_model: Option<PathBuf>,
+
+    /// Table orientation detection model (reuses doc orientation model PP-LCNet_x1_0_doc_ori)
+    /// Detects if tables are rotated (0°, 90°, 180°, 270°) before structure recognition
+    #[arg(long = "table-orientation-model")]
+    table_orientation_model: Option<PathBuf>,
+
+    /// Wired table structure recognition model
+    #[arg(long = "wired-structure-model")]
+    wired_structure_model: Option<PathBuf>,
+
+    /// Wired table structure model name (default: SLANeXt_wired)
+    #[arg(long = "wired-structure-model-name", default_value = "SLANeXt_wired")]
+    wired_structure_model_name: String,
+
+    /// Wireless table structure recognition model
+    #[arg(long = "wireless-structure-model")]
+    wireless_structure_model: Option<PathBuf>,
+
+    /// Wireless table structure model name (default: SLANet_plus)
+    #[arg(long = "wireless-structure-model-name", default_value = "SLANet_plus")]
+    wireless_structure_model_name: String,
+
+    /// Wired table cell detection model
+    #[arg(long = "wired-cell-model")]
+    wired_cell_model: Option<PathBuf>,
+
+    /// Wired table cell detection model name (default: RT-DETR-L_wired_table_cell_det)
+    #[arg(
+        long = "wired-cell-model-name",
+        default_value = "RT-DETR-L_wired_table_cell_det"
+    )]
+    wired_cell_model_name: String,
+
+    /// Wireless table cell detection model
+    #[arg(long = "wireless-cell-model")]
+    wireless_cell_model: Option<PathBuf>,
+
+    /// Wireless table cell detection model name (default: RT-DETR-L_wireless_table_cell_det)
+    #[arg(
+        long = "wireless-cell-model-name",
+        default_value = "RT-DETR-L_wireless_table_cell_det"
+    )]
+    wireless_cell_model_name: String,
+
+    /// Table structure dictionary path (required when table models are provided)
+    #[arg(long = "table-structure-dict")]
+    table_structure_dict: Option<PathBuf>,
+
+    /// Use end-to-end mode for wired table recognition (skip cell detection, default: false)
+    #[arg(long, default_value_t = false, action = clap::ArgAction::Set)]
+    use_e2e_wired_table_rec: bool,
+
+    /// Use end-to-end mode for wireless table recognition (skip cell detection, default: true)
+    /// Use --use-e2e-wireless-table-rec=false to disable E2E mode and enable cell detection
+    #[arg(long, default_value_t = true, action = clap::ArgAction::Set)]
+    use_e2e_wireless_table_rec: bool,
+
+    /// Convert wired table cell detections directly into HTML structure (PaddleX-compatible)
+    #[arg(long, default_value_t = false, action = clap::ArgAction::Set)]
+    use_wired_table_cells_trans_to_html: bool,
+
+    /// Convert wireless table cell detections directly into HTML structure (PaddleX-compatible)
+    #[arg(long, default_value_t = false, action = clap::ArgAction::Set)]
+    use_wireless_table_cells_trans_to_html: bool,
+
+    /// Formula recognition model
+    #[arg(long = "formula-model")]
+    formula_model: Option<PathBuf>,
+
+    /// Tokenizer path for formula recognition
+    #[arg(long = "formula-tokenizer")]
+    formula_tokenizer: Option<PathBuf>,
+
+    /// Formula model type: `pp_formulanet` or `unimernet`
+    #[arg(long = "formula-type")]
+    formula_type: Option<String>,
+
+    /// Seal text detection model
+    #[arg(long = "seal-model")]
+    seal_model: Option<PathBuf>,
+
+    /// Text detection model for OCR integration
+    #[arg(long = "text-det-model")]
+    text_det_model: Option<PathBuf>,
+
+    /// Text detection model name (default: PP-OCRv5_server_det)
+    /// Supported: PP-OCRv5_server_det, PP-OCRv5_mobile_det, PP-OCRv4_server_det, PP-OCRv4_mobile_det
+    #[arg(long = "text-det-model-name", default_value = "PP-OCRv5_server_det")]
+    text_det_model_name: String,
+
+    /// Text recognition model for OCR integration
+    #[arg(long = "text-rec-model")]
+    text_rec_model: Option<PathBuf>,
+
+    /// Text recognition model name (default: PP-OCRv5_server_rec)
+    /// Supported: PP-OCRv5_server_rec, PP-OCRv5_mobile_rec, PP-OCRv4_server_rec, PP-OCRv4_mobile_rec
+    #[arg(long = "text-rec-model-name", default_value = "PP-OCRv5_server_rec")]
+    text_rec_model_name: String,
+
+    /// Character dictionary for OCR integration
+    #[arg(long = "text-dict-path")]
+    text_dict_path: Option<PathBuf>,
+
+    /// Optional text line orientation model (PP-LCNet_x1_0_textline_ori).
+    /// When provided, upright/180° text lines are corrected before recognition.
+    #[arg(long = "textline-orientation-model")]
+    textline_orientation_model: Option<PathBuf>,
+
+    /// Device to use for inference (default: auto)
+    /// Supported with matching features: auto, cpu, cuda:N, directml:N.
+    #[arg(long, default_value = "auto")]
+    device: String,
+
+    /// ONNX Runtime intra-op thread count (defaults to the runtime's CPU policy)
+    #[arg(long)]
+    intra_threads: Option<usize>,
+
+    /// Share one ONNX Runtime thread pool across all configured models
+    #[arg(long, default_value_t = false)]
+    global_thread_pool: bool,
+
+    /// Number of pages/images to process per image-level batch
+    #[arg(long = "image-batch-size")]
+    image_batch_size: Option<usize>,
+
+    /// Number of cropped regions to process per recognition batch
+    #[arg(long = "region-batch-size")]
+    region_batch_size: Option<usize>,
+
+    /// Repeat inference to expose warm-up and steady-state latency.
+    #[arg(long, default_value_t = 1, value_parser = clap::value_parser!(u32).range(1..))]
+    repeat: u32,
+
+    /// ONNX Runtime intra-op worker threads (explicit tuning experiment).
+    #[arg(long)]
+    ort_intra_threads: Option<usize>,
+
+    /// ONNX Runtime inter-op worker threads (only useful with parallel execution).
+    #[arg(long)]
+    ort_inter_threads: Option<usize>,
+
+    /// Enable ONNX Runtime parallel graph execution.
+    #[arg(long)]
+    ort_parallel_execution: bool,
+
+    /// Layout detection score threshold (varies by class, 0.3-0.5)
+    #[arg(long, default_value = "0.5")]
+    layout_score_thresh: f32,
+
+    /// Layout detection NMS threshold
+    #[arg(long, default_value = "0.5")]
+    layout_nms_thresh: f32,
+
+    /// Enable NMS for layout detection (default: true)
+    #[arg(long, default_value = "true")]
+    layout_nms: bool,
+
+    /// Formula recognition score threshold
+    #[arg(long, default_value_t = 0.0)]
+    formula_score_thresh: f32,
+
+    /// Maximum formula length in tokens
+    #[arg(long, default_value_t = 1536)]
+    formula_max_length: usize,
+
+    /// Preferred formula recognition batch size
+    #[arg(long, default_value_t = 8)]
+    formula_batch_size: usize,
+
+    /// Text detection score threshold (DB thresh, default: 0.3)
+    #[arg(long, default_value = "0.3")]
+    det_score_thresh: f32,
+
+    /// Text detection box threshold (GeneralOCR: 0.6, Table: 0.4)
+    #[arg(long, default_value = "0.6")]
+    det_box_thresh: f32,
+
+    /// Text detection unclip ratio (default: 1.5)
+    #[arg(long, default_value = "1.5")]
+    det_unclip_ratio: f32,
+
+    /// Max text detection candidates (default: 1000)
+    #[arg(long, default_value = "1000")]
+    det_max_candidates: usize,
+
+    /// Text recognition score threshold (default: 0.0)
+    #[arg(long, default_value = "0.0")]
+    rec_score_thresh: f32,
+
+    /// Seal detection score threshold (default: 0.2, lower than general text)
+    #[arg(long, default_value = "0.2")]
+    seal_det_score_thresh: f32,
+
+    /// Seal detection box threshold (default: 0.6)
+    #[arg(long, default_value = "0.6")]
+    seal_det_box_thresh: f32,
+
+    /// Seal detection unclip ratio (default: 0.5, smaller than general text)
+    #[arg(long, default_value = "0.5")]
+    seal_det_unclip_ratio: f32,
+
+    /// Table text detection box threshold (default: 0.4, lower than general)
+    #[arg(long, default_value = "0.4")]
+    table_det_box_thresh: f32,
+
+    /// Output directory for the exported results
+    #[arg(short, long, default_value = "output/structure_analysis")]
+    output_dir: PathBuf,
+
+    /// Save results as JSON
+    #[arg(long = "to-json", default_value_t = false)]
+    to_json: bool,
+
+    /// Save results as Markdown
+    #[arg(long = "to-markdown", default_value_t = false)]
+    to_markdown: bool,
+
+    /// Save results as HTML
+    #[arg(long = "to-html", default_value_t = false)]
+    to_html: bool,
+
+    /// Enable visualization output with labeled bounding boxes
+    #[arg(long)]
+    vis: bool,
+}
+
+/// Unified input source for processing
+enum InputSource {
+    ImageFile(PathBuf),
+    PdfPage {
+        pdf_path: PathBuf,
+        page_number: usize,
+        image: Arc<RgbImage>,
+    },
+}
+
+impl InputSource {
+    fn path(&self) -> String {
+        match self {
+            Self::ImageFile(p) => p.to_string_lossy().to_string(),
+            Self::PdfPage {
+                pdf_path,
+                page_number,
+                ..
+            } => {
+                format!("{}#{}", pdf_path.to_string_lossy(), page_number)
+            }
+        }
+    }
+
+    fn into_image(self) -> Result<RgbImage, Box<dyn std::error::Error>> {
+        match self {
+            Self::ImageFile(p) => oar_ocr::utils::load_image(&p).map_err(|e| e.into()),
+            Self::PdfPage { image, .. } => {
+                // Try to unwrap the Arc to avoid cloning if we have the only reference
+                Ok(Arc::try_unwrap(image).unwrap_or_else(|arc| (*arc).clone()))
+            }
+        }
+    }
+}
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    utils::init_tracing();
+    let args = Args::parse();
+
+    info!("Running document structure analysis example");
+
+    // Validate required layout model
+    if !args.layout_model.exists() {
+        error!("Layout model not found: {}", args.layout_model.display());
+        return Err("Layout model not found".into());
+    }
+
+    // Validate optional model paths when provided
+    validate_optional_path("orientation model", args.orientation_model.as_ref())?;
+    validate_optional_path("rectification model", args.rectification_model.as_ref())?;
+    validate_optional_path("region model", args.region_model.as_ref())?;
+    validate_optional_path("table classification model", args.table_cls_model.as_ref())?;
+    validate_optional_path("wired structure model", args.wired_structure_model.as_ref())?;
+    validate_optional_path(
+        "wireless structure model",
+        args.wireless_structure_model.as_ref(),
+    )?;
+    validate_optional_path("wired cell model", args.wired_cell_model.as_ref())?;
+    validate_optional_path("wireless cell model", args.wireless_cell_model.as_ref())?;
+    validate_optional_path("table structure dict", args.table_structure_dict.as_ref())?;
+    validate_optional_path("formula model", args.formula_model.as_ref())?;
+    validate_optional_path("formula tokenizer", args.formula_tokenizer.as_ref())?;
+    validate_optional_path("seal model", args.seal_model.as_ref())?;
+    validate_optional_path("text detection model", args.text_det_model.as_ref())?;
+    validate_optional_path("text recognition model", args.text_rec_model.as_ref())?;
+    validate_optional_path("text dict", args.text_dict_path.as_ref())?;
+    validate_optional_path(
+        "text line orientation model",
+        args.textline_orientation_model.as_ref(),
+    )?;
+
+    // Process input files, expanding PDF pages
+    let mut input_sources: Vec<InputSource> = Vec::new();
+
+    for input_path in &args.images {
+        if !input_path.exists() {
+            error!("Input not found: {}", input_path.display());
+            continue;
+        }
+
+        if is_pdf_file(input_path) {
+            info!("Processing PDF file: {}", input_path.display());
+
+            let pdf_doc = match PdfDocument::open(input_path) {
+                Ok(doc) => doc,
+                Err(e) => {
+                    error!("Failed to open PDF {}: {}", input_path.display(), e);
+                    continue;
+                }
+            };
+
+            let page_count = pdf_doc.page_count();
+            info!("PDF has {} page(s)", page_count);
+
+            for page_num in 1..=page_count {
+                match pdf_doc.render_page(page_num, None) {
+                    Ok(rendered) => {
+                        info!(
+                            "  Page {} rendered: {}x{}",
+                            page_num, rendered.width, rendered.height
+                        );
+                        input_sources.push(InputSource::PdfPage {
+                            pdf_path: input_path.clone(),
+                            page_number: page_num,
+                            image: Arc::new(rendered.image),
+                        });
+                    }
+                    Err(e) => {
+                        error!("  Failed to render page {}: {}", page_num, e);
+                    }
+                }
+            }
+        } else {
+            input_sources.push(InputSource::ImageFile(input_path.clone()));
+        }
+    }
+
+    if input_sources.is_empty() {
+        return Err("No valid inputs provided".into());
+    }
+
+    // Validate table recognition: structure models require dictionary
+    let has_table_structure =
+        args.wired_structure_model.is_some() || args.wireless_structure_model.is_some();
+
+    if has_table_structure && args.table_structure_dict.is_none() {
+        return Err("Table structure recognition requires --table-structure-dict".into());
+    }
+
+    if args.formula_model.is_some()
+        && (args.formula_tokenizer.is_none() || args.formula_type.is_none())
+    {
+        return Err("Formula recognition requires --formula-tokenizer and --formula-type".into());
+    }
+
+    let has_partial_ocr = args.text_det_model.is_some()
+        || args.text_rec_model.is_some()
+        || args.text_dict_path.is_some();
+    if has_partial_ocr
+        && (args.text_det_model.is_none()
+            || args.text_rec_model.is_none()
+            || args.text_dict_path.is_none())
+    {
+        warn!(
+            "OCR integration ignored because detection/recognition/dictionary are not all provided"
+        );
+    }
+
+    // Build layout config (PP-StructureV3 defaults + CLI overrides)
+    let mut layout_config = LayoutDetectionConfig::with_pp_structurev3_defaults();
+    layout_config.score_threshold = args.layout_score_thresh;
+    layout_config.layout_nms = args.layout_nms;
+
+    let formula_config = FormulaRecognitionConfig {
+        score_threshold: args.formula_score_thresh,
+        max_length: args.formula_max_length,
+        batch_size: args.formula_batch_size,
+    };
+
+    let text_det_config = TextDetectionConfig {
+        score_threshold: args.det_score_thresh,
+        box_threshold: args.det_box_thresh,
+        unclip_ratio: args.det_unclip_ratio,
+        max_candidates: args.det_max_candidates,
+        // PP-StructureV3 overall OCR defaults
+        limit_side_len: Some(736),
+        limit_type: Some(LimitType::Min),
+        max_side_len: None,
+    };
+
+    let text_rec_config = TextRecognitionConfig {
+        score_threshold: args.rec_score_thresh,
+    };
+
+    if args.global_thread_pool {
+        let mut pool = OrtGlobalThreadPoolOptions::new();
+        if let Some(threads) = args.intra_threads {
+            pool = pool.with_intra_threads(threads);
+        }
+        if !pool.commit()? {
+            return Err("ONNX Runtime was initialized before the global thread pool".into());
+        }
+    }
+
+    // Build structure pipeline
+    let mut builder =
+        OARStructureBuilder::new(&args.layout_model).layout_detection_config(layout_config);
+
+    // Always set layout model name (has default value)
+    builder = builder.layout_model_name(&args.layout_model_name);
+
+    let mut ort_config = parse_device_config(&args.device)?;
+    if let Some(threads) = args.intra_threads
+        && !args.global_thread_pool
+    {
+        ort_config = Some(
+            ort_config
+                .take()
+                .unwrap_or_default()
+                .with_intra_threads(threads),
+        );
+    }
+    let ort_config = apply_ort_overrides(
+        ort_config,
+        args.ort_intra_threads,
+        args.ort_inter_threads,
+        args.ort_parallel_execution,
+    )?;
+    if let Some(config) = ort_config {
+        builder = builder.ort_session(config);
+    }
+
+    if let Some(size) = args.image_batch_size {
+        builder = builder.image_batch_size(size);
+    }
+
+    if let Some(size) = args.region_batch_size {
+        builder = builder.region_batch_size(size);
+    }
+
+    if let Some(path) = args.orientation_model {
+        builder = builder.with_document_orientation(path);
+    }
+
+    if let Some(path) = args.rectification_model {
+        builder = builder.with_document_rectification(path);
+    }
+
+    if let Some(path) = args.region_model {
+        builder = builder
+            .with_region_detection(path)
+            .region_model_name(&args.region_model_name);
+    }
+
+    // Table recognition: auto-switch based on classification when both wired/wireless models are provided
+    if let Some(path) = args.table_cls_model {
+        builder = builder.with_table_classification(path);
+    }
+    if let Some(path) = args.table_orientation_model {
+        builder = builder.with_table_orientation(path);
+    }
+    if let Some(path) = args.wired_structure_model {
+        builder = builder
+            .with_wired_table_structure(path)
+            .wired_table_structure_model_name(&args.wired_structure_model_name);
+    }
+    if let Some(path) = args.wireless_structure_model {
+        builder = builder
+            .with_wireless_table_structure(path)
+            .wireless_table_structure_model_name(&args.wireless_structure_model_name);
+    }
+    if let Some(path) = args.wired_cell_model {
+        builder = builder
+            .with_wired_table_cell_detection(path)
+            .wired_table_cell_model_name(&args.wired_cell_model_name);
+    }
+    if let Some(path) = args.wireless_cell_model {
+        builder = builder
+            .with_wireless_table_cell_detection(path)
+            .wireless_table_cell_model_name(&args.wireless_cell_model_name);
+    }
+    if let Some(path) = args.table_structure_dict {
+        builder = builder.table_structure_dict_path(path);
+    }
+    // E2E mode settings (defaults: wired=false, wireless=true)
+    builder = builder.use_e2e_wired_table_rec(args.use_e2e_wired_table_rec);
+    builder = builder.use_e2e_wireless_table_rec(args.use_e2e_wireless_table_rec);
+    builder = builder.use_wired_table_cells_trans_to_html(args.use_wired_table_cells_trans_to_html);
+    builder =
+        builder.use_wireless_table_cells_trans_to_html(args.use_wireless_table_cells_trans_to_html);
+
+    if let Some(path) = args.formula_model {
+        let Some(tokenizer) = args.formula_tokenizer else {
+            return Err("Formula recognition requires --formula-tokenizer".into());
+        };
+        let Some(model_type) = args.formula_type else {
+            return Err("Formula recognition requires --formula-type".into());
+        };
+
+        builder = builder
+            .with_formula_recognition(path, tokenizer, model_type)
+            .formula_recognition_config(formula_config);
+    }
+
+    if let Some(path) = args.seal_model {
+        builder = builder.with_seal_text_detection(path);
+    }
+
+    if let Some(path) = args.textline_orientation_model {
+        builder = builder.with_text_line_orientation(path);
+    }
+
+    if let (Some(text_det_model), Some(text_rec_model), Some(text_dict_path)) = (
+        &args.text_det_model,
+        &args.text_rec_model,
+        &args.text_dict_path,
+    ) {
+        builder = builder
+            .with_ocr(
+                text_det_model.clone(),
+                text_rec_model.clone(),
+                text_dict_path.clone(),
+            )
+            .text_detection_model_name(&args.text_det_model_name)
+            .text_recognition_model_name(&args.text_rec_model_name)
+            .text_detection_config(text_det_config)
+            .text_recognition_config(text_rec_config);
+    }
+
+    let build_start = Instant::now();
+    let analyzer = builder.build()?;
+    info!(
+        "Structure pipeline built in {:.2}ms",
+        build_start.elapsed().as_secs_f64() * 1000.0
+    );
+
+    // Collect all results for potential concatenation
+    let mut all_results: Vec<oar_ocr::domain::structure::StructureResult> = Vec::new();
+
+    // Collect images and metadata for configured batch processing.
+    let mut images: Vec<image::RgbImage> = Vec::new();
+    let mut source_meta: Vec<(String, String)> = Vec::new(); // (source_path, source_stem)
+
+    for source in std::mem::take(&mut input_sources) {
+        let source_path = source.path();
+        let source_stem = match &source {
+            InputSource::ImageFile(p) => p
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("result")
+                .to_string(),
+            InputSource::PdfPage {
+                pdf_path,
+                page_number,
+                ..
+            } => {
+                format!(
+                    "{}_page_{:03}",
+                    pdf_path
+                        .file_stem()
+                        .and_then(|s| s.to_str())
+                        .unwrap_or("pdf"),
+                    page_number
+                )
+            }
+        };
+        match source.into_image() {
+            Ok(img) => {
+                images.push(img);
+                source_meta.push((source_path, source_stem));
+            }
+            Err(err) => {
+                error!("Failed to load image {}: {}", source_path, err);
+            }
+        }
+    }
+
+    info!(
+        "Batch processing {} image(s) with configured batching",
+        images.len()
+    );
+    // Only the warm-up runs need a cloned image set; the final (or only) run
+    // can move `images` directly, so `--repeat 1` (the default) never pays a
+    // clone.
+    for iteration in 1..args.repeat {
+        let predict_start = Instant::now();
+        analyzer.predict_images(images.clone());
+        info!(
+            "Structure inference completed (run {}/{}) in {:.2}ms",
+            iteration,
+            args.repeat,
+            predict_start.elapsed().as_secs_f64() * 1000.0
+        );
+    }
+    let predict_start = Instant::now();
+    let batch_results = analyzer.predict_images(images);
+    info!(
+        "Structure inference completed (run {}/{}) in {:.2}ms",
+        args.repeat,
+        args.repeat,
+        predict_start.elapsed().as_secs_f64() * 1000.0
+    );
+
+    // Process each result: assign metadata, save, visualize, log
+    for (idx, (page_result, (source_path, source_stem))) in
+        batch_results.into_iter().zip(source_meta).enumerate()
+    {
+        let mut result = match page_result {
+            Ok(res) => res,
+            Err(err) => {
+                error!("Failed to analyze {}: {}", source_path, err);
+                continue;
+            }
+        };
+        info!("\nProcessed input {}: {}", idx + 1, source_path);
+        result.input_path = std::sync::Arc::from(source_path.clone());
+
+        // Always collect results for potential concatenation
+        all_results.push(result.clone());
+
+        // Save individual page results (JSON only, markdown will be concatenated)
+        if let Err(err) = result.save_results(&args.output_dir, args.to_json, args.to_html) {
+            error!("Failed to save results for {}: {}", source_path, err);
+        }
+
+        // Save visualization if --vis is enabled
+        if args.vis {
+            let vis_path = args.output_dir.join(format!("{}.png", source_stem));
+
+            if let Err(err) =
+                utils::visualization::visualize_structure_results(&result, &vis_path, None)
+            {
+                error!("Failed to save visualization: {}", err);
+            } else {
+                info!("  Visualization saved to: {}", vis_path.display());
+            }
+        }
+
+        if let Some(angle) = result.orientation_angle {
+            info!("  Orientation corrected by {:.0} degrees", angle);
+        }
+
+        info!("  Layout elements: {}", result.layout_elements.len());
+        for (elem_idx, elem) in result.layout_elements.iter().enumerate() {
+            let label = elem
+                .label
+                .as_deref()
+                .unwrap_or_else(|| elem.element_type.as_str());
+            info!(
+                "    [{}] {} ({:.1}%) at [{:.1},{:.1}] - [{:.1},{:.1}]",
+                elem_idx + 1,
+                label,
+                elem.confidence * 100.0,
+                elem.bbox.x_min(),
+                elem.bbox.y_min(),
+                elem.bbox.x_max(),
+                elem.bbox.y_max()
+            );
+        }
+
+        if let Some(regions) = &result.region_blocks {
+            info!("  Region blocks: {}", regions.len());
+            for (region_idx, region) in regions.iter().enumerate() {
+                let order = region
+                    .order_index
+                    .map(|v| v.to_string())
+                    .unwrap_or_else(|| "n/a".to_string());
+                info!(
+                    "    [{}] order={} elements={} ({:.1}%) at [{:.1},{:.1}] - [{:.1},{:.1}]",
+                    region_idx + 1,
+                    order,
+                    region.element_indices.len(),
+                    region.confidence * 100.0,
+                    region.bbox.x_min(),
+                    region.bbox.y_min(),
+                    region.bbox.x_max(),
+                    region.bbox.y_max()
+                );
+            }
+        } else {
+            info!("  Region blocks: not enabled");
+        }
+
+        info!("  Tables: {}", result.tables.len());
+        for (table_idx, table) in result.tables.iter().enumerate() {
+            let table_type = match table.table_type {
+                TableType::Wired => "wired",
+                TableType::Wireless => "wireless",
+                TableType::Unknown => "unknown",
+            };
+
+            let cls_conf = table
+                .classification_confidence
+                .map(|c| format!("{:.1}%", c * 100.0))
+                .unwrap_or_else(|| "n/a".to_string());
+
+            let html_info = table
+                .html_structure
+                .as_ref()
+                .map(|html| format!("html len {}", html.len()))
+                .unwrap_or_else(|| "no structure".to_string());
+
+            info!(
+                "    [{}] type={} cls={} cells={} {}",
+                table_idx + 1,
+                table_type,
+                cls_conf,
+                table.cells.len(),
+                html_info
+            );
+        }
+
+        info!("  Formulas: {}", result.formulas.len());
+        for (formula_idx, formula) in result.formulas.iter().enumerate() {
+            info!(
+                "    [{}] {} ({:.1}%)",
+                formula_idx + 1,
+                formula.latex,
+                formula.confidence * 100.0
+            );
+        }
+
+        if let Some(text_regions) = &result.text_regions {
+            info!("  OCR regions: {}", text_regions.len());
+            for (region_idx, region) in text_regions.iter().enumerate() {
+                let text = region
+                    .text
+                    .as_ref()
+                    .map(|t| t.to_string())
+                    .unwrap_or_else(|| "<no text>".to_string());
+                let score = region.confidence.unwrap_or(0.0) * 100.0;
+
+                info!(
+                    "    [{}] \"{}\" ({:.1}%) at [{:.1},{:.1}] - [{:.1},{:.1}]",
+                    region_idx + 1,
+                    text,
+                    score,
+                    region.bounding_box.x_min(),
+                    region.bounding_box.y_min(),
+                    region.bounding_box.x_max(),
+                    region.bounding_box.y_max()
+                );
+            }
+        } else {
+            info!("  OCR regions: not enabled");
+        }
+    }
+
+    // Always concatenate and save merged results
+    if !all_results.is_empty() {
+        // Detect if processing a multi-page PDF (PDF pages have '#' in their input_path)
+        let is_multi_page_pdf =
+            all_results.len() > 1 && all_results.iter().any(|r| r.input_path.contains('#'));
+
+        if is_multi_page_pdf {
+            info!("\nConcatenating {} pages", all_results.len());
+        }
+
+        // Determine base name for output - use original filename (stem) without extension
+        let base_name = {
+            let path_str: &str = &all_results[0].input_path;
+            // PDF pages have format "path/to/file.pdf#page_N", strip the page suffix
+            let path = if let Some(hash_idx) = path_str.rfind('#') {
+                std::path::Path::new(&path_str[..hash_idx])
+            } else {
+                std::path::Path::new(path_str)
+            };
+            path.file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("output")
+                .to_string()
+        };
+
+        // Save concatenated markdown with extracted images
+        if args.to_markdown {
+            match utils::markdown::export_concatenated_markdown_with_images(
+                &all_results,
+                &args.output_dir,
+            ) {
+                Ok(concat_md) => {
+                    let md_path = args.output_dir.join(format!("{}.md", base_name));
+                    if let Err(err) = std::fs::write(&md_path, concat_md) {
+                        error!("Failed to save markdown: {}", err);
+                    } else {
+                        info!("Markdown saved to: {}", md_path.display());
+                    }
+                }
+                Err(err) => {
+                    error!("Failed to generate markdown with images: {}", err);
+                }
+            }
+        }
+
+        // Save concatenated JSON
+        if args.to_json {
+            let json_path = args.output_dir.join(format!("{}.json", base_name));
+            let json_file = match std::fs::File::create(&json_path) {
+                Ok(f) => f,
+                Err(e) => {
+                    return Err(format!("Failed to create JSON file: {}", e).into());
+                }
+            };
+            if let Err(e) = serde_json::to_writer_pretty(json_file, &all_results) {
+                error!("Failed to save JSON: {}", e);
+            } else {
+                info!("JSON saved to: {}", json_path.display());
+            }
+        }
+
+        if is_multi_page_pdf {
+            info!("=== Multi-page PDF processing complete ===");
+        }
+    }
+
+    Ok(())
+}
+
+fn validate_optional_path(
+    label: &str,
+    path: Option<&PathBuf>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if let Some(p) = path
+        && !p.exists()
+    {
+        return Err(format!("{label} not found: {}", p.display()).into());
+    }
+    Ok(())
+}

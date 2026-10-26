@@ -1,0 +1,71 @@
+[package]
+name = "oar-ocr-vl"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Vision-Language models for oar-ocr"
+readme = "README.md"
+keywords = [
+    "ocr",
+    "vlm",
+    "computer-vision",
+    "text-recognition",
+    "machine-learning",
+]
+categories = ["computer-vision", "science"]
+
+[features]
+default = []
+# This crate is Candle-only: layout detection runs through `pp_doclayout`, so
+# there is no ONNX Runtime anywhere in the tree and no feature to turn it on.
+# When enabled, auto-download VL checkpoints by model ID (see api::download).
+auto-download = ["dep:ureq", "dep:sha2", "dep:dirs"]
+# When enabled, turns on Candle's CUDA backend for GPU acceleration.
+cuda = [
+    "candle-core/cuda",
+    "dep:candle-flash-attn",
+    "candle-nn/cuda",
+    "candle-transformers/cuda",
+]
+# When enabled, turns on Candle's Metal backend for GPU acceleration on Apple devices.
+# Cargo features cannot be target-scoped directly, so Linux `--all-features`
+# is intentionally not used for this crate; CI checks Metal on macOS instead.
+metal = [
+    "candle-core/metal",
+    "candle-nn/metal",
+    "candle-transformers/metal",
+]
+
+[dependencies]
+candle-core = "0.11.0"
+candle-flash-attn = { version = "0.11.0", optional = true }
+candle-nn = "0.11.0"
+candle-transformers = "0.11.0"
+# Same download stack as oar-ocr-core's auto-download, so the workspace
+# gains no new dependency versions.
+dirs = { version = "7.0", optional = true }
+html-escape = "0.2"
+half = "2"
+image.workspace = true
+once_cell = "1.19"
+rand = "0.10"
+rayon.workspace = true
+regex.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2 = { version = "0.11", optional = true }
+thiserror = "2.0"
+ureq = { version = "3.0", default-features = false, features = ["rustls", "platform-verifier"], optional = true }
+tokenizers.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+clap.workspace = true
+criterion = { version = "0.8", features = ["html_reports"] }
+hayro.workspace = true
+tempfile.workspace = true
+tracing-subscriber.workspace = true

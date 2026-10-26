@@ -115,7 +115,7 @@ impl DescribeSessionFactory for ScriptedFactory {
         &self,
         _max_in_flight: usize,
         _explicit_journal: Option<&Path>,
-    ) -> Result<Box<dyn DescribeSession>, SessionLaunchError> {
+    ) -> Result<Box<dyn DescribeSession + '_>, SessionLaunchError> {
         if self.fail_launch {
             return Err(SessionLaunchError {
                 reason: SessionLaunchReason::Spawn("scripted launch failure".to_owned()),
@@ -1549,6 +1549,7 @@ fn ocr_saved_record_and_faults_preserve_actual_pipeline_requests_and_verdicts() 
             let observation = (
                 outcome.as_ref().err().map(|error| match error {
                     RunError::Blocked(_) => "blocked",
+                    RunError::Cancelled => "cancelled",
                     RunError::Internal(_) => "internal",
                 }),
                 factory.requests(),
