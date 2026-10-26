@@ -1360,3 +1360,272 @@ fn contains_action(root: &Path, action: &str) -> bool {
                 })
         })
 }
+
+#[cfg(all(unix, feature = "in-process-pdf"))]
+#[test]
+fn authenticated_source_recurrence_executes_saved_connection_and_obeys_edits() {
+    use crate::foreground::ForegroundProcessingHost;
+    use crate::import_route::{
+        ConfiguredSources, SavedFolderProvider, SavedFolderRequest, SourceCopyError,
+        packaged_import_factory_with_sources,
+    };
+    use solstone_core_import::{
+        BackendName, SyncState, WorkStop, begin_folder, write_sync_state_bound,
+    };
+    use solstone_core_maintenance::{
+        registry::routines,
+        schedule_sync::{expected_entry, schedule_name},
+    };
+    use solstone_core_system::schedule::ScheduleNow;
+    use std::sync::atomic::AtomicUsize;
+
+    struct Provider {
+        identity: String,
+        calls: AtomicUsize,
+    }
+    impl SavedFolderProvider for Provider {
+        fn copy(
+            &self,
+            request: SavedFolderRequest<'_>,
+            destination: &Path,
+        ) -> Result<(), SourceCopyError> {
+            assert_eq!(request.backend, BackendName::Obsidian);
+            assert_eq!(request.source_identity, self.identity);
+            assert_eq!(request.access_material, "synthetic-owner-grant");
+            assert!(!request.stop.is_requested());
+            let call = self.calls.fetch_add(1, Ordering::AcqRel) + 1;
+            let note = destination.join("note.md");
+            std::fs::write(
+                &note,
+                format!("# Notes\n\ncobalt scheduled source run {call}\n"),
+            )
+            .unwrap();
+            let modified: chrono::DateTime<chrono::Utc> = "2026-10-14T09:00:00Z".parse().unwrap();
+            std::fs::File::open(note)
+                .unwrap()
+                .set_times(std::fs::FileTimes::new().set_modified(
+                    std::time::SystemTime::UNIX_EPOCH
+                        + Duration::from_secs(modified.timestamp().try_into().unwrap())
+                        + Duration::from_secs(call as u64),
+                ))
+                .unwrap();
+            Ok(())
+        }
+    }
+    fn call(server: &crate::MobileServing, method: &str, body: Value) -> (u16, Value) {
+        let response = server
+            .request_owner(
+                method,
+                "/api/journal/recurrences/source/obsidian",
+                &body.to_string(),
+            )
+            .unwrap();
+        (
+            response.status,
+            serde_json::from_str(&response.body).unwrap(),
+        )
+    }
+    fn completed(host: &ForegroundProcessingHost, name: &str) -> usize {
+        host.queue()
+            .history()
+            .iter()
+            .filter(|record| {
+                record.scheduler_name.as_deref() == Some(name) && record.exit_status == "ok"
+            })
+            .count()
+    }
+    fn wait_completed(host: &ForegroundProcessingHost, name: &str, expected: usize) {
+        let deadline = std::time::Instant::now() + Duration::from_secs(15);
+        while completed(host, name) < expected {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "source did not complete: {:?}",
+                host.queue().history()
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        host.queue().join_callable_workers().unwrap();
+    }
+    let _serial = crate::foreground::TEST_LOCK
+        .lock()
+        .unwrap_or_else(|error| error.into_inner());
+    let journal = fixture("http://127.0.0.1:1");
+    let config_path = journal.path().join("config/journal.json");
+    let mut config: Value = serde_json::from_slice(&std::fs::read(&config_path).unwrap()).unwrap();
+    config["setup"] = json!({"completed_at":1});
+    config["processing"] = json!({"history_confirmed":true});
+    std::fs::write(&config_path, config.to_string()).unwrap();
+    let mut schedules = serde_json::Map::from_iter([
+        ("daily_time".into(), json!("00:15")),
+        ("weekly_time".into(), json!("03:15")),
+    ]);
+    for name in [
+        "heartbeat",
+        "weekly-agents",
+        "cadence",
+        "brain",
+        "facet-candidates",
+        "rebuild-edges",
+        "search-catch-all",
+    ] {
+        schedules.insert(name.into(), json!({"enabled":false}));
+    }
+    for routine in routines() {
+        let mut entry = expected_entry(routine);
+        entry["enabled"] = json!(false);
+        schedules.insert(schedule_name(routine.id), entry);
+    }
+    let custom =
+        json!({"cmd":["owner-custom-command"],"every":"weekly","enabled":false,"extra":"kept"});
+    schedules.insert("custom".into(), custom.clone());
+    write(
+        journal.path(),
+        "config/schedules.json",
+        Value::Object(schedules).to_string(),
+    );
+    let probe = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let std::net::SocketAddr::V4(address) = probe.local_addr().unwrap() else {
+        unreachable!()
+    };
+    drop(probe);
+    let server = Arc::new(
+        crate::MobileServing::start_with_payload(journal.path().to_path_buf(), address, payload())
+            .unwrap(),
+    );
+    let retained = tempfile::tempdir().unwrap();
+    std::fs::write(
+        retained.path().join("note.md"),
+        "# Wrong\n\nwrong retained source\n",
+    )
+    .unwrap();
+    let mut saved = SyncState::empty(BackendName::Obsidian);
+    let identity = begin_folder(&mut saved, "Notes", true, Some("synthetic-owner-grant")).unwrap();
+    saved
+        .root_mut()
+        .insert("source_path".into(), json!(retained.path()));
+    write_sync_state_bound(&server.root, &saved, &WorkStop::new()).unwrap();
+    let provider = Arc::new(Provider {
+        identity,
+        calls: AtomicUsize::new(0),
+    });
+    let cache = tempfile::tempdir().unwrap();
+    // This format never invokes the PDF worker.
+    let library = cache.path().join("unused-pdfium.so");
+    std::fs::write(&library, b"notes do not load PDFium").unwrap();
+    let sources = Arc::new(ConfiguredSources::new(
+        cache.path().to_path_buf(),
+        provider.clone(),
+    ));
+    let host = ForegroundProcessingHost::open_with_imports(
+        Arc::clone(&server.root),
+        &payload(),
+        Arc::new(|| false),
+        Arc::new(AtomicBool::new(false)),
+        server.backup_dependencies(),
+        packaged_import_factory_with_sources(library, sources),
+        false,
+        false,
+    )
+    .unwrap();
+    host.stop_discovery_for_test();
+    let config_before = std::fs::read(&config_path).unwrap();
+    let now = chrono::Utc::now();
+    assert_eq!(call(&server, "GET", json!({})).1["enabled"], false);
+    let (status, created) = call(&server, "PUT", json!({"every":"1m","enabled":true}));
+    assert_eq!(status, 200, "{created}");
+    assert_eq!(created["entries"].as_array().unwrap().len(), 1);
+    let name = created["entries"][0]["name"].as_str().unwrap().to_owned();
+    assert!(
+        created["entries"][0]["entry"]["cmd"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|arg| arg.as_str() != Some("--path"))
+    );
+    let report = host
+        .check_schedule(ScheduleNow::in_zone(
+            now + chrono::Duration::minutes(1),
+            chrono_tz::UTC,
+        ))
+        .unwrap();
+    assert!(report.submitted.iter().any(|submitted| submitted == &name));
+    host.queue().resume_processing();
+    wait_completed(&host, &name, 1);
+    let read = server
+        .request_owner(
+            "GET",
+            "/app/transcripts/api/read/20261014?transcripts=1",
+            "",
+        )
+        .unwrap();
+    assert_eq!(read.status, 200);
+    assert!(
+        read.body.contains("cobalt scheduled source run 1"),
+        "{}",
+        read.body
+    );
+    assert!(!read.body.contains("wrong retained source"));
+    assert_eq!(provider.calls.load(Ordering::Acquire), 1);
+    let (status, changed) = call(&server, "PUT", json!({"every":"5m","enabled":true}));
+    assert_eq!(status, 200, "{changed}");
+    let report = host
+        .check_schedule(ScheduleNow::in_zone(
+            now + chrono::Duration::minutes(2),
+            chrono_tz::UTC,
+        ))
+        .unwrap();
+    assert!(!report.submitted.iter().any(|submitted| submitted == &name));
+    host.queue().join_callable_workers().unwrap();
+    assert_eq!(
+        provider.calls.load(Ordering::Acquire),
+        1,
+        "cadence change prevents the old one-minute invocation"
+    );
+    let report = host
+        .check_schedule(ScheduleNow::in_zone(
+            now + chrono::Duration::minutes(8),
+            chrono_tz::UTC,
+        ))
+        .unwrap();
+    assert!(report.submitted.iter().any(|submitted| submitted == &name));
+    host.queue().resume_processing();
+    wait_completed(&host, &name, 2);
+    let read = server
+        .request_owner(
+            "GET",
+            "/app/transcripts/api/read/20261014?transcripts=1",
+            "",
+        )
+        .unwrap();
+    assert_eq!(read.status, 200);
+    assert!(
+        read.body.contains("cobalt scheduled source run 2"),
+        "{}",
+        read.body
+    );
+    assert_eq!(call(&server, "DELETE", json!({})).0, 200);
+    let report = host
+        .check_schedule(ScheduleNow::in_zone(
+            now + chrono::Duration::minutes(9),
+            chrono_tz::UTC,
+        ))
+        .unwrap();
+    assert!(!report.submitted.iter().any(|submitted| submitted == &name));
+    host.queue().join_callable_workers().unwrap();
+    assert_eq!(
+        provider.calls.load(Ordering::Acquire),
+        2,
+        "removed recurrence cannot invoke the retained source"
+    );
+    let raw: Value = serde_json::from_slice(
+        &std::fs::read(journal.path().join("config/schedules.json")).unwrap(),
+    )
+    .unwrap();
+    assert!(raw.get("owner:source:obsidian").is_none() && raw.get("sync:obsidian").is_none());
+    assert_eq!(raw["custom"], custom);
+    assert_eq!(raw["daily_time"], "00:15");
+    assert_eq!(raw["weekly_time"], "03:15");
+    assert_eq!(std::fs::read(&config_path).unwrap(), config_before);
+    host.shutdown().unwrap();
+    server.shutdown_for_retirement().unwrap();
+}

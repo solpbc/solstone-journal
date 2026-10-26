@@ -14,7 +14,8 @@ public class JournalService extends Service {
     final ExecutorService work=execution.work;
     final ExecutorService thinking=execution.thinking;
     final ThinkingAdmission thinkingAdmission = execution.admission;
-    boolean destroyed;
+    volatile boolean destroyed;
+    OwnerFolderServiceEndpoint folderRequests;
     String serviceToolAdmission;
     Messenger incoming;
     final ExecutorService ownerRequests = new ThreadPoolExecutor(4,4,0L,TimeUnit.MILLISECONDS,
@@ -28,8 +29,11 @@ public class JournalService extends Service {
             serviceToolAdmission = "{\"ok\":false,\"packaged\":true,\"error\":" + JSONObject.quote(error.toString()) + "}";
         }
         evidence("service_tools_admission_finished", Long.toString(SystemClock.elapsedRealtime() - admissionStarted));
+        folderRequests = new OwnerFolderServiceEndpoint(this,ownerRequests,() -> destroyed,
+            (target,id,result) -> respond(target,id,result,0));
         incoming=new Messenger(new Handler(Looper.getMainLooper()) {
             public void handleMessage(Message m) {
+                if (folderRequests.handle(m)) return;
                 final String op=m.getData().getString("op");
                 final String root=m.getData().getString("root");
                 final int count=m.getData().getInt("count",1), id=m.arg1;

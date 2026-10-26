@@ -15,6 +15,8 @@ use std::time::Instant;
 mod callosum_endpoint;
 #[cfg(unix)]
 mod owner_response;
+#[cfg(unix)]
+mod owner_folder;
 mod retirement;
 
 static CANCEL: AtomicBool = AtomicBool::new(false);

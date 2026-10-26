@@ -725,22 +725,23 @@ pub fn write_import_metadata(
     let _lock = hold_import_lock(journal_root, import_id)?;
     let mut merged = metadata.clone();
     match read_provenance(journal_root, import_id) {
-        Ok(Some(existing)) => {
-            if let Some(att) = existing.get("attempt") {
-                merged.insert("attempt".to_owned(), att.clone());
-            } else {
-                merged.remove("attempt");
-            }
-            // The durable task id wins when there is one; a start that has none yet
-            // (the queued path records it here for the first time) keeps the caller's.
-            if let Some(tid) = existing.get("task_id").filter(|tid| !tid.is_null()) {
-                merged.insert("task_id".to_owned(), tid.clone());
-            }
-        }
+        Ok(Some(existing)) => preserve_durable_attempt(&mut merged, &existing),
         Ok(None) => {}
         Err(err) => return Err(err),
     }
     write_import_metadata_unlocked(journal_root, import_id, &merged)
+}
+
+pub(crate) fn preserve_durable_attempt(merged: &mut ImportMetadata, existing: &ImportMetadata) {
+    if let Some(att) = existing.get("attempt") {
+        merged.insert("attempt".to_owned(), att.clone());
+    } else {
+        merged.remove("attempt");
+    }
+    // Keep the same merge rule for path-based and retained-folder writers.
+    if let Some(tid) = existing.get("task_id").filter(|tid| !tid.is_null()) {
+        merged.insert("task_id".to_owned(), tid.clone());
+    }
 }
 
 pub(crate) fn write_import_metadata_unlocked(

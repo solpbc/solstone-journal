@@ -20,6 +20,8 @@ public final class OwnerFolderCopyTest {
     public static void main(String[] args) throws Exception {
         nestedBytesAndMtime();
         fileLargerThanTheBuffer();
+        unknownSizeReadsUntilEofAndKeepsExactBytes();
+        serviceCheckpointStopsBeforeCreatingOutput();
         symlinkEscapeDuplicateAndMissingMtime();
         detachedPathAndBookmark();
         authorityMismatch();
@@ -65,6 +67,39 @@ public final class OwnerFolderCopyTest {
         require(copied.length == body.length);
         require(copied[OwnerFolderCopy.BUFFER_BYTES] == body[OwnerFolderCopy.BUFFER_BYTES]);
         delete(dest);
+    }
+
+    static void unknownSizeReadsUntilEofAndKeepsExactBytes() throws Exception {
+        byte[] body = new byte[OwnerFolderCopy.BUFFER_BYTES * 2 + 19];
+        for (int index = 0; index < body.length; index++) { body[index] = (byte) (index * 17); }
+        MemoryFolder source = new MemoryFolder() {
+            public long size(String relative) { return -1; }
+        };
+        source.dir("");
+        source.file("stream.bin", body, 1_700_000_000_000L);
+        File dest = new File(temp("unknown-provider-size"), "out");
+        OwnerFolderCopy.Result result = OwnerFolderCopy.copy("page", 1, "page", 1, source, dest, new AtomicBoolean());
+        require(OwnerFolderCopy.READY.equals(result.ownerMessage));
+        require(java.util.Arrays.equals(body, Files.readAllBytes(new File(dest, "stream.bin").toPath())));
+        delete(dest.getParentFile());
+    }
+
+    static void serviceCheckpointStopsBeforeCreatingOutput() throws Exception {
+        AtomicBoolean continues = new AtomicBoolean(true);
+        OwnerFolderCopy.LiveAuthority authority = new OwnerFolderCopy.LiveAuthority("page", 1, "page", 1, continues::get);
+        MemoryFolder source = new MemoryFolder() {
+            public InputStream open(String relative) {
+                continues.set(false);
+                return super.open(relative);
+            }
+        };
+        source.dir("");
+        source.file("note.md", new byte[] {1,2,3}, 1_700_000_000_000L);
+        File dest = new File(temp("service-checkpoint"), "out");
+        OwnerFolderCopy.Result result = OwnerFolderCopy.copy(authority, source, dest, new AtomicBoolean());
+        require(!OwnerFolderCopy.READY.equals(result.ownerMessage));
+        require(!new File(dest, "note.md").exists());
+        require(!dest.exists());
     }
 
     static void symlinkEscapeDuplicateAndMissingMtime() {

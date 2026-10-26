@@ -9,6 +9,11 @@ public final class Native {
     static native byte[] pollOwner(long id);
     static native byte[] reclaimBridge(String cache, String journal, String liveJson);
     static native void cancelOwner(long id);
+    static native byte[] copyOwnerFolder(String cache,byte[] request,OwnerFolderServiceCopy copier);
+    static native long issueFolderPage(String root,long admissionGeneration);
+    static native void retireFolderPage(long page);
+    static native boolean folderCopyContinues();
+    static native long folderPageCurrent();
     // Called only by first-party Service startup with app metadata and APK assets.
     static native String admitServiceTools(String nativeDirectory, String resourceRoot,
                                           byte[] manifest, byte[] buildReceipt);

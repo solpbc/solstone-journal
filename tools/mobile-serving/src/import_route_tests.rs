@@ -14,14 +14,17 @@ use std::sync::mpsc;
 use std::time::Duration;
 
 fn in_isolated_child(name: &str) -> bool {
+    in_isolated_child_exact(&format!("import_route::tests::{name}"))
+}
+
+pub(super) fn in_isolated_child_exact(full_name: &str) -> bool {
     const CHILD: &str = "FC2_RUNTIME_IMPORT_CONTROL_CHILD";
-    if std::env::var(CHILD).ok().as_deref() == Some(name) {
+    if std::env::var(CHILD).ok().as_deref() == Some(full_name) {
         return false;
     }
-    let full_name = format!("import_route::tests::{name}");
     let mut child = std::process::Command::new(std::env::current_exe().unwrap())
-        .args(["--exact", &full_name, "--nocapture"])
-        .env(CHILD, name)
+        .args(["--exact", full_name, "--nocapture"])
+        .env(CHILD, full_name)
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .spawn()
@@ -46,7 +49,7 @@ fn in_isolated_child(name: &str) -> bool {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
         output.status.success()
-            && stdout.contains(&full_name)
+            && stdout.contains(full_name)
             && stdout.contains("1 passed; 0 failed"),
         "{}{}",
         stdout,
@@ -55,7 +58,7 @@ fn in_isolated_child(name: &str) -> bool {
     true
 }
 
-fn fixture(
+pub(super) fn fixture(
     factory: Arc<crate::foreground::ImportSeamFactory>,
 ) -> (
     tempfile::TempDir,
