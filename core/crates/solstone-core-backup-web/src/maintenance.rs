@@ -8,7 +8,6 @@ use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
 use solstone_core_backup::archive_admission::ArchiveConfiguration;
-use solstone_core_backup_runtime::resolve_restic_member;
 use solstone_core_journal_io::JournalRoot;
 
 use crate::{BackupWebDeps, archive_worker, operation};
@@ -112,9 +111,20 @@ pub fn run_planned_offload(
         }
         return outcome(PlannedOffloadDisposition::Skipped, Some("offload_off"));
     }
+    #[cfg(target_os = "ios")]
+    if deps
+        .runner
+        .ios_journal_root()
+        .is_none_or(|retained| !Arc::ptr_eq(&root, retained))
+    {
+        return outcome(
+            PlannedOffloadDisposition::Refused,
+            Some("journal_binding_changed"),
+        );
+    }
     // This is static tool selection. The original worker still owns repository,
     // credential, source, budget and actual executor admission.
-    let restic = match resolve_restic_member(&deps.executable) {
+    let tools = match crate::resolve_tools(deps) {
         Ok(restic) => restic,
         Err(_) => {
             return outcome(
@@ -166,7 +176,7 @@ pub fn run_planned_offload(
             &deps.operations,
             begin,
             at.fixed_offset(),
-            &restic,
+            tools.restic.invocation(),
         );
     }));
     let mut result = outcome(PlannedOffloadDisposition::Held, None);

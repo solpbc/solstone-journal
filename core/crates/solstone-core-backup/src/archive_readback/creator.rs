@@ -586,6 +586,12 @@ impl OwnedPreparedArchiveOperation {
     }
 }
 impl OwnedArchiveCreatorAdmission {
+    #[cfg(target_os = "ios")]
+    pub fn with_ios_context(mut self, context: Arc<super::ios::IosReadContext>) -> Self {
+        self.input = self.input.with_ios_context(context);
+        self
+    }
+
     #[cfg(unix)]
     pub fn admit(self) -> Result<OwnedArchiveCreator, OwnedReadbackAdmissionError> {
         let read = self.input.admit()?;

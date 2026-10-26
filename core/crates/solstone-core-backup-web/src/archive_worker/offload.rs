@@ -5,7 +5,6 @@
 
 use std::{
     panic::{AssertUnwindSafe, catch_unwind},
-    path::Path,
     sync::Arc,
 };
 
@@ -399,13 +398,13 @@ impl OffloadReturn {
 }
 
 /// Execute selected creation synchronously on the original reserved worker.
-pub fn create_selected(
+pub fn create_selected<'a>(
     slot: &SharedOperationSlot,
     begin: OwnedArchiveBegin,
     selections: Vec<OffloadOfferSelection>,
     today: NaiveDate,
     now: DateTime<Utc>,
-    restic_path: &Path,
+    restic: impl Into<solstone_core_backup_runtime::ResticInvocation<'a>>,
 ) {
     execute(
         slot,
@@ -415,25 +414,25 @@ pub fn create_selected(
             today,
             now,
         },
-        restic_path,
+        restic.into(),
     );
 }
 
 /// Execute planning synchronously; metadata-only settlement uses the same owner.
-pub fn create_planned(
+pub fn create_planned<'a>(
     slot: &SharedOperationSlot,
     begin: OwnedArchiveBegin,
     at: DateTime<FixedOffset>,
-    restic_path: &Path,
+    restic: impl Into<solstone_core_backup_runtime::ResticInvocation<'a>>,
 ) {
-    execute(slot, begin, Request::Planned(at), restic_path);
+    execute(slot, begin, Request::Planned(at), restic.into());
 }
 
 fn execute(
     slot: &SharedOperationSlot,
     begin: OwnedArchiveBegin,
     request: Request,
-    restic_path: &Path,
+    restic: solstone_core_backup_runtime::ResticInvocation<'_>,
 ) {
     if !start_owned_worker(slot, &begin.ticket) {
         let ticket = ArchiveTicket(Arc::clone(&begin.ticket.0));
@@ -508,14 +507,16 @@ fn execute(
         phase = "admission";
         // An operated writer needs the installed rclone; without it admission
         // refuses before any broker session is issued.
-        let rclone = prepared
-            .configuration()
-            .binding()
-            .and_then(|_| std::env::current_exe().ok())
-            .and_then(|executable| resolve_rclone_member(&executable).ok());
+        let rclone = restic.executable_path().and_then(|_| {
+            prepared
+                .configuration()
+                .binding()
+                .and_then(|_| std::env::current_exe().ok())
+                .and_then(|executable| resolve_rclone_member(&executable).ok())
+        });
         match admit_prepared_archive_owned_creator_installed(
             prepared,
-            restic_path,
+            restic,
             rclone.as_deref(),
             env!("CARGO_PKG_VERSION"),
             &UreqHttpTransport,

@@ -842,23 +842,24 @@ pub struct PreparedArchiveWorker {
 }
 
 /// Consume one original admission; every refusal is parked before returning.
-pub fn prepare_read(
+pub fn prepare_read<'a>(
     slot: &SharedOperationSlot,
     begin: OwnedArchiveBegin,
     repository_id: String,
-    restic_path: &Path,
+    restic: impl Into<solstone_core_backup_runtime::ResticInvocation<'a>>,
 ) -> Option<PreparedArchiveWorker> {
-    prepare_read_in(slot, begin, Some(repository_id), restic_path)
+    prepare_read_in(slot, begin, Some(repository_id), restic)
 }
 
 /// Without an expected identity, the read binds to the configured repository
 /// as observed at admission.
-pub(crate) fn prepare_read_in(
+pub(crate) fn prepare_read_in<'a>(
     slot: &SharedOperationSlot,
     begin: OwnedArchiveBegin,
     repository_id: Option<String>,
-    restic_path: &Path,
+    restic: impl Into<solstone_core_backup_runtime::ResticInvocation<'a>>,
 ) -> Option<PreparedArchiveWorker> {
+    let restic = restic.into();
     if !start_owned_worker(slot, &begin.ticket) {
         let ticket = ArchiveTicket(Arc::clone(&begin.ticket.0));
         return_owned(
@@ -922,13 +923,13 @@ pub(crate) fn prepare_read_in(
             Some(repository_id) => admit_prepared_archive_owned_read_installed(
                 prepared,
                 repository_id,
-                restic_path,
+                restic,
                 env!("CARGO_PKG_VERSION"),
                 &UreqHttpTransport,
             ),
             None => admit_prepared_archive_owned_current_read_installed(
                 prepared,
-                restic_path,
+                restic,
                 env!("CARGO_PKG_VERSION"),
                 &UreqHttpTransport,
             ),
@@ -979,3 +980,51 @@ mod type_tests {
 #[cfg(all(test, feature = "full-tests"))]
 #[cfg(unix)]
 mod tests;
+
+fn retained_archive_root(
+    deps: &crate::BackupWebDeps,
+) -> Result<Arc<JournalRoot>, solstone_core_journal_io::JournalRootError> {
+    #[cfg(target_os = "ios")]
+    {
+        let root = deps
+            .runner
+            .ios_journal_root()
+            .ok_or(solstone_core_journal_io::JournalRootError::Changed)?;
+        clone_bound_archive_root(root, &deps.journal_root)
+    }
+    #[cfg(not(target_os = "ios"))]
+    JournalRoot::open(&deps.journal_root).map(Arc::new)
+}
+
+#[cfg(any(target_os = "ios", all(test, feature = "full-tests")))]
+fn clone_bound_archive_root(
+    root: &Arc<JournalRoot>,
+    journal: &Path,
+) -> Result<Arc<JournalRoot>, solstone_core_journal_io::JournalRootError> {
+    if root.canonical_path() != journal {
+        return Err(solstone_core_journal_io::JournalRootError::Changed);
+    }
+    root.revalidate_canonical_binding()?;
+    Ok(Arc::clone(root))
+}
+
+fn resolve_read_invocation(
+    root: &Arc<JournalRoot>,
+    executable: &Path,
+) -> Result<
+    solstone_core_backup_runtime::ResolvedResticInvocation,
+    solstone_core_backup_runtime::ClosedToolError,
+> {
+    #[cfg(target_os = "ios")]
+    {
+        let _ = executable;
+        solstone_core_backup_runtime::ios_callable::admitted_ios_backup(Arc::clone(root))
+            .map(solstone_core_backup_runtime::ResolvedResticInvocation::Callable)
+    }
+    #[cfg(not(target_os = "ios"))]
+    {
+        let _ = root;
+        solstone_core_backup_runtime::resolve_restic_member(executable)
+            .map(solstone_core_backup_runtime::ResolvedResticInvocation::Executable)
+    }
+}

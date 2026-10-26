@@ -13,8 +13,13 @@ unsafe_code = "deny"
 [features]
 default = []
 full-tests = []
+# The final iOS app supplies the maintained Go archive.
+ios-linked-bridge = []
+# Isolated Linux effect harness only; never part of an owner app.
+native-archive-host-tests = ["full-tests", "ios-linked-bridge"]
 
 [dependencies]
+log.workspace = true
 getrandom.workspace = true
 hmac.workspace = true
 sha2.workspace = true
@@ -37,3 +42,9 @@ solstone-core-journal-io = { workspace = true, features = ["test-hooks"] }
 name = "bounded_child_process"
 path = "tests/bounded_child_process.rs"
 required-features = ["full-tests"]
+
+
+[[test]]
+name = "native_archive_readback"
+path = "tests/native_archive_readback.rs"
+required-features = ["native-archive-host-tests"]

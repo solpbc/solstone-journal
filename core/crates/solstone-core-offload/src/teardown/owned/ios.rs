@@ -4,12 +4,13 @@
 //! Explicit owner-confirmed iOS teardown; routine retention remains refused.
 
 use super::*;
+use solstone_core_backup::ios_repository as repository;
 use solstone_core_backup::teardown_configuration::TeardownConfiguration;
 use solstone_core_backup::teardown_recovery::retained::{Mode, Record, Store};
+use solstone_core_backup_runtime::ios_callable;
 use solstone_core_backup_runtime::ios_callable::teardown::{
     DestinationContext, DestructiveAdmission, LockedDestination,
 };
-use solstone_core_backup_runtime::ios_callable::{self, repository};
 use solstone_core_backup_runtime::teardown_admission::{TeardownReader, admit_ios_configuration};
 use solstone_core_journal_config_write::BoundConfigOutcome;
 use solstone_core_journal_io::media::teardown_preparation::TeardownPreparation;

@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 use std::net::{IpAddr, Ipv6Addr};
 use std::path::{Component, Path};
 
-pub use solstone_core_backup::teardown_recovery::retained::NativeDestination as Destination;
+pub use crate::teardown_recovery::retained::NativeDestination as Destination;
 
 pub enum Repository<'a> {
     Local(&'a str),
