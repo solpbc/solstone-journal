@@ -210,7 +210,7 @@ async fn recovery_drains_lost_client_native_preview_and_reuses_routes_for_real_m
     let root = Arc::new(JournalRoot::open(fixture.path()).unwrap());
     let weak = Arc::downgrade(&root);
     let (stop, stopped) = watch::channel(false);
-    let (router, worker) = routes_and_worker(root, Some(payload()), stopped);
+    let (router, worker, _settings_sync) = routes_and_worker(root, Some(payload()), stopped);
     let worker = tokio::spawn(worker);
     let client_router = router.clone();
     let client = tokio::spawn(async move {
@@ -331,7 +331,7 @@ async fn source_recurrence_controls_legacy_aliases_and_preserves_modified_custom
     let before = std::fs::read(&path).unwrap();
     let root = Arc::new(JournalRoot::open(fixture.path()).unwrap());
     let (stop, stopped) = watch::channel(false);
-    let (router, worker) = routes_and_worker(root, Some(payload()), stopped);
+    let (router, worker, _settings_sync) = routes_and_worker(root, Some(payload()), stopped);
     let worker = tokio::spawn(worker);
     let plaud = "/api/journal/recurrences/source/plaud";
     let (status, observed) = routed_request(&router, "GET", plaud, json!({})).await;
@@ -478,7 +478,7 @@ async fn ordinary_preview_routes_run_all_three_maintained_talents_and_return_sou
     let before = std::fs::read(fixture.path().join("config/journal.json")).unwrap();
     let root = Arc::new(JournalRoot::open(fixture.path()).unwrap());
     let (stop, stopped) = watch::channel(false);
-    let (router, worker) = routes_and_worker(root, Some(payload()), stopped);
+    let (router, worker, _settings_sync) = routes_and_worker(root, Some(payload()), stopped);
     let worker = tokio::spawn(worker);
     let (status, matches) = request(
         &router,
@@ -545,7 +545,7 @@ async fn checked_stop_joins_a_preview_already_inside_the_provider() {
     let fixture = fixture(&endpoint);
     let root = Arc::new(JournalRoot::open(fixture.path()).unwrap());
     let (stop, stopped) = watch::channel(false);
-    let (router, worker) = routes_and_worker(root, Some(payload()), stopped);
+    let (router, worker, _settings_sync) = routes_and_worker(root, Some(payload()), stopped);
     let mut worker = tokio::spawn(worker);
     let request = tokio::spawn(async move {
         request(
@@ -1141,4 +1141,222 @@ impl Drop for CheckedServing {
             }
         }
     }
+}
+
+#[test]
+fn owner_settings_and_source_cards_share_alias_choices_audit_and_root_refusal() {
+    fn call(server: &crate::MobileServing, method: &str, path: &str, body: Value) -> (u16, Value) {
+        let response = server
+            .request_owner(method, path, &body.to_string())
+            .unwrap();
+        (
+            response.status,
+            serde_json::from_str(&response.body).unwrap_or_else(|error| {
+                panic!(
+                    "{method} {path}: status={} body={:?}: {error}",
+                    response.status, response.body
+                )
+            }),
+        )
+    }
+    let _serial = crate::foreground::TEST_LOCK
+        .lock()
+        .unwrap_or_else(|error| error.into_inner());
+    let fixture = fixture("http://127.0.0.1:1");
+    let schedules = fixture.path().join("config/schedules.json");
+    let custom = json!({"cmd":["owner-custom-command"],"every":"weekly","extra":"kept"});
+    let original = json!({
+        "daily_time":"00:15", "weekly_time":"03:15",
+        "sync:plaud":{"cmd":["solstone","journal","importer","--sync","plaud","--save","--dry-run"],"every":"weekly","extra":"kept","max_runtime":"10m"},
+        "owner:source:plaud":{"cmd":["journal","importer","--sync","plaud","--save"],"every":"hourly","enabled":true},
+        "sync:obsidian":custom,
+        "owner:source:obsidian":{"cmd":["journal","importer","--sync","obsidian","--save"],"every":"daily","enabled":true},
+        "custom":custom
+    });
+    std::fs::write(&schedules, original.to_string()).unwrap();
+    let probe = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let std::net::SocketAddr::V4(address) = probe.local_addr().unwrap() else {
+        unreachable!()
+    };
+    drop(probe);
+    let server = crate::MobileServing::start(fixture.path().to_path_buf(), address).unwrap();
+    let (code, proposal) = call(&server, "GET", "/init/mark", json!({}));
+    assert_eq!(code, 200, "{proposal}");
+    assert_eq!(
+        call(
+            &server,
+            "POST",
+            "/init/mark/lock",
+            json!({"proposal_id":proposal["proposal_id"]})
+        )
+        .0,
+        200
+    );
+    let (code, finalized) = call(&server, "POST", "/init/finalize", json!({}));
+    assert_eq!(code, 200, "{finalized}");
+    let settings = "/app/settings/api/sync";
+    let plaud = "/api/journal/recurrences/source/plaud";
+    let (code, legacy) = call(&server, "GET", settings, json!({}));
+    assert_eq!(code, 200, "{legacy}");
+    let (code, source) = call(&server, "GET", plaud, json!({}));
+    assert_eq!(code, 200, "{source}");
+    assert_eq!(legacy["plaud"]["enabled"], source["enabled"]);
+    assert_eq!(
+        legacy["plaud"]["enabled"], true,
+        "missing-enabled legacy entry is active"
+    );
+    assert_eq!(
+        legacy["obsidian"]["enabled"], true,
+        "owner-only alias is visible to Settings"
+    );
+    assert_eq!(
+        legacy["obsidian"]["blocked_names"],
+        json!(["sync:obsidian"])
+    );
+    assert_eq!(
+        call(
+            &server,
+            "PUT",
+            settings,
+            json!({"plaud":{"enabled":"wrong"}})
+        )
+        .0,
+        400
+    );
+    let (code, disabled) = call(
+        &server,
+        "PUT",
+        settings,
+        json!({"plaud":{"enabled":false},"obsidian":{"enabled":false}}),
+    );
+    assert_eq!(code, 200, "{disabled}");
+    assert_eq!(disabled["plaud"]["enabled"], false);
+    assert_eq!(disabled["obsidian"]["enabled"], false);
+    assert_eq!(call(&server, "GET", plaud, json!({})).1["enabled"], false);
+    assert_eq!(
+        call(&server, "PUT", plaud, json!({"every":"5m","enabled":true})).0,
+        200
+    );
+    assert_eq!(
+        call(&server, "GET", settings, json!({})).1["plaud"]["enabled"],
+        true
+    );
+    assert_eq!(
+        call(&server, "PUT", settings, json!({"plaud":{"enabled":false}})).0,
+        200
+    );
+    let (code, enabled) = call(&server, "PUT", settings, json!({"plaud":{"enabled":true}}));
+    assert_eq!(code, 200, "{enabled}");
+    let source = call(&server, "GET", plaud, json!({})).1;
+    assert_eq!(
+        source["entries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|entry| entry["active"] == true)
+            .count(),
+        1
+    );
+    let saved: Value = serde_json::from_slice(&std::fs::read(&schedules).unwrap()).unwrap();
+    assert_eq!(
+        saved["sync:plaud"]["every"], "5m",
+        "Settings preserves cadence selected by source card"
+    );
+    assert_eq!(saved["sync:plaud"]["cmd"], original["sync:plaud"]["cmd"]);
+    assert_eq!(saved["sync:plaud"]["max_runtime"], "10m");
+    assert_eq!(saved["sync:plaud"]["extra"], "kept");
+    assert_eq!(saved["sync:obsidian"], custom);
+    assert_eq!(saved["custom"], custom);
+    assert_eq!(saved["daily_time"], "00:15");
+    assert_eq!(saved["weekly_time"], "03:15");
+    assert!(
+        contains_action(fixture.path(), "sync_update"),
+        "same existing Settings audit is retained"
+    );
+    assert_eq!(call(&server, "DELETE", plaud, json!({})).0, 200);
+    let removed = call(&server, "GET", settings, json!({})).1;
+    assert_eq!(removed["plaud"]["enabled"], false);
+    assert_eq!(removed["plaud"]["configured"], false);
+    assert_eq!(
+        call(&server, "PUT", settings, json!({"plaud":{"enabled":true}})).0,
+        200
+    );
+    let mut saved: Value = serde_json::from_slice(&std::fs::read(&schedules).unwrap()).unwrap();
+    assert_eq!(
+        saved["sync:plaud"]["every"], "hourly",
+        "only explicit enable creates the maintained Settings recurrence"
+    );
+    assert!(saved.get("owner:source:plaud").is_none());
+    saved["sync:plaud"] = custom.clone();
+    saved["owner:source:plaud"] = custom.clone();
+    std::fs::write(&schedules, saved.to_string()).unwrap();
+    let custom_bytes = std::fs::read(&schedules).unwrap();
+    assert_eq!(
+        call(
+            &server,
+            "PUT",
+            settings,
+            json!({"plaud":{"enabled":true},"obsidian":{"enabled":true}})
+        )
+        .0,
+        409
+    );
+    assert_eq!(
+        std::fs::read(&schedules).unwrap(),
+        custom_bytes,
+        "conflicting multi-source update is atomic and custom commands stay unchanged"
+    );
+    let retained = tempfile::tempdir().unwrap();
+    std::fs::rename(fixture.path(), retained.path().join("original")).unwrap();
+    std::fs::create_dir(fixture.path()).unwrap();
+    for path in [settings, plaud] {
+        assert!(server.request_owner("GET", path, "{}").is_err());
+        assert!(server.request_owner("PUT", path, "{}").is_err());
+    }
+    server.shutdown_for_retirement().unwrap();
+    drop(server);
+    let mut entries = Vec::new();
+    let mut pending = vec![fixture.path().to_path_buf()];
+    while let Some(directory) = pending.pop() {
+        for entry in std::fs::read_dir(&directory).unwrap() {
+            let entry = entry.unwrap();
+            let path = entry.path();
+            let metadata = std::fs::symlink_metadata(&path).unwrap();
+            entries.push((
+                path.strip_prefix(fixture.path()).unwrap().to_owned(),
+                metadata.len(),
+                if metadata.is_file() {
+                    std::fs::read_to_string(&path).ok()
+                } else {
+                    None
+                },
+            ));
+            if metadata.is_dir() {
+                pending.push(path);
+            }
+        }
+    }
+    if !entries.is_empty() {
+        let replacement = fixture.keep();
+        let original = retained.keep();
+        panic!(
+            "replacement root receives no schedule, action, lock or producer write: entries={entries:?}; replacement={}; original={}",
+            replacement.display(),
+            original.display()
+        );
+    }
+}
+
+fn contains_action(root: &Path, action: &str) -> bool {
+    std::fs::read_dir(root.join("config/actions"))
+        .unwrap()
+        .any(|entry| {
+            std::fs::read_to_string(entry.unwrap().path())
+                .unwrap()
+                .lines()
+                .any(|line| {
+                    let value: Value = serde_json::from_str(line).unwrap();
+                    value["action"] == action
+                })
+        })
 }

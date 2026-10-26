@@ -24,6 +24,26 @@ pub fn append_journal_action_log_at_root_checked(
     params: Value,
     checkpoint: &dyn Fn() -> Result<(), String>,
 ) -> Result<(), AppendError> {
+    append_journal_action_log_with_hint_boundary(
+        root,
+        source,
+        actor,
+        action,
+        params,
+        checkpoint,
+        &|| {},
+    )
+}
+
+fn append_journal_action_log_with_hint_boundary(
+    root: &Arc<solstone_core_journal_io::JournalRoot>,
+    source: &str,
+    actor: &str,
+    action: &str,
+    params: Value,
+    checkpoint: &dyn Fn() -> Result<(), String>,
+    before_hint: &dyn Fn(),
+) -> Result<(), AppendError> {
     use solstone_core_journal_io::append_text_bound_checked;
     use solstone_core_journal_io::media::MediaDirectory;
     use std::ffi::OsStr;
@@ -120,12 +140,16 @@ pub fn append_journal_action_log_at_root_checked(
         &check,
     )?;
     check_root()?;
-    if let Err(error) = solstone_core_indexer_store::todo::enqueue_path(
-        root.canonical_path(),
+    before_hint();
+    let namespace =
+        solstone_core_journal_io::journal_directory::JournalNamespace::new(root.clone());
+    if let Err(error) = solstone_core_indexer_store::todo::enqueue_path_bound(
+        &namespace,
         &diagnostic.join(format!("{day}.jsonl")),
     ) {
         log::warn!("action log search update could not be queued: {error}");
     }
+    check_root()?;
     Ok(())
 }
 
@@ -335,6 +359,87 @@ mod tests {
     use serde_json::json;
 
     use super::append_action_log;
+
+    #[test]
+    fn bound_action_audit_hint_refuses_replacement_after_the_final_append_check() {
+        let temporary = tempfile::tempdir().unwrap();
+        let journal = temporary.path().join("journal");
+        let retained = temporary.path().join("retained");
+        fs::create_dir_all(journal.join("config")).unwrap();
+        fs::write(
+            journal.join("config/journal.json"),
+            br#"{"identity":{"timezone":"UTC"}}"#,
+        )
+        .unwrap();
+        let root =
+            std::sync::Arc::new(solstone_core_journal_io::JournalRoot::open(&journal).unwrap());
+        let result = super::append_journal_action_log_with_hint_boundary(
+            &root,
+            "app",
+            "settings",
+            "sync_update",
+            json!({}),
+            &|| Ok(()),
+            &|| {
+                fs::rename(&journal, &retained).unwrap();
+                fs::create_dir(&journal).unwrap();
+            },
+        );
+        let entries = fs::read_dir(&journal)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .collect::<Vec<_>>();
+        assert!(
+            entries.is_empty(),
+            "replacement entries after actual audit hint: {entries:?}"
+        );
+        assert!(
+            result.is_err(),
+            "changed root cannot report a complete current-root audit"
+        );
+        let actions = fs::read_dir(retained.join("config/actions"))
+            .unwrap()
+            .collect::<Vec<_>>();
+        assert_eq!(
+            actions.len(),
+            1,
+            "actual audit committed under the original root"
+        );
+        assert!(
+            fs::read_to_string(actions[0].as_ref().unwrap().path())
+                .unwrap()
+                .contains("sync_update")
+        );
+    }
+
+    #[test]
+    fn bound_action_audit_keeps_its_normal_search_hint() {
+        let temporary = tempfile::tempdir().unwrap();
+        fs::create_dir(temporary.path().join("config")).unwrap();
+        fs::write(
+            temporary.path().join("config/journal.json"),
+            br#"{"identity":{"timezone":"UTC"}}"#,
+        )
+        .unwrap();
+        let root = std::sync::Arc::new(
+            solstone_core_journal_io::JournalRoot::open(temporary.path()).unwrap(),
+        );
+        super::append_journal_action_log_at_root_checked(
+            &root,
+            "app",
+            "settings",
+            "sync_update",
+            json!({}),
+            &|| Ok(()),
+        )
+        .unwrap();
+        let hints = solstone_core_indexer_store::todo::inspect(temporary.path())
+            .unwrap()
+            .keys;
+        assert_eq!(hints.len(), 1);
+        assert!(hints[0].starts_with("config/actions/"));
+        assert!(temporary.path().join(&hints[0]).is_file());
+    }
 
     #[test]
     fn both_action_log_destinations_queue_under_a_held_index_writer() {

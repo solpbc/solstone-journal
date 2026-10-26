@@ -275,6 +275,7 @@ pub(super) fn execute(
             )
         }),
         Operation::Source(request) => sources::execute(root, request, cancelled),
+        Operation::SettingsSync(updates) => sources::settings(root, updates, cancelled),
         Operation::Share { .. } => unreachable!("share preview has its own domain owner"),
     }
 }

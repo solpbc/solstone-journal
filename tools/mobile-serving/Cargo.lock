@@ -2215,6 +2215,7 @@ dependencies = [
  "solstone-core-mcp-endpoint",
  "solstone-core-processing-record",
  "solstone-core-sense",
+ "solstone-core-settings-web",
  "solstone-core-speaker-resolve",
  "solstone-core-speakers",
  "solstone-core-spl",

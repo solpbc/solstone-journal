@@ -19,6 +19,7 @@ pub(super) enum SourceAction {
         max_runtime: Option<String>,
     },
     Remove,
+    SetEnabled(bool),
 }
 
 fn names(source: &str) -> Vec<String> {
@@ -78,20 +79,28 @@ pub(super) fn execute(
             json!({"error":"recurrence_invalid"}),
         );
     };
-    schedules::mutate(root, cancelled, move |raw| match &request.action {
-        SourceAction::Status => (StatusCode::OK, status(raw, &source)),
+    schedules::mutate(root, cancelled, move |raw| {
+        apply(raw, &source, &request.action, &command)
+    })
+}
+
+fn apply(
+    raw: &mut serde_json::Map<String, Value>,
+    source: &str,
+    action: &SourceAction,
+    command: &[String],
+) -> (StatusCode, Value) {
+    match action {
+        SourceAction::Status => (StatusCode::OK, status(raw, source)),
         SourceAction::Remove => {
             let mut removed = Vec::new();
-            for name in names(&source) {
-                if raw
-                    .get(&name)
-                    .is_some_and(|entry| is_source(entry, &source))
-                {
+            for name in names(source) {
+                if raw.get(&name).is_some_and(|entry| is_source(entry, source)) {
                     raw.remove(&name);
                     removed.push(name);
                 }
             }
-            let mut result = status(raw, &source);
+            let mut result = status(raw, source);
             result["removed"] = json!(!removed.is_empty());
             result["removed_names"] = json!(removed);
             (StatusCode::OK, result)
@@ -101,13 +110,10 @@ pub(super) fn execute(
             enabled,
             max_runtime,
         } => {
-            let aliases = names(&source);
+            let aliases = names(source);
             let name = aliases
                 .iter()
-                .find(|name| {
-                    raw.get(*name)
-                        .is_some_and(|entry| is_source(entry, &source))
-                })
+                .find(|name| raw.get(*name).is_some_and(|entry| is_source(entry, source)))
                 .or_else(|| aliases.iter().find(|name| !raw.contains_key(*name)));
             let Some(name) = name else {
                 return (StatusCode::CONFLICT, json!({"error":"recurrence_conflict"}));
@@ -131,13 +137,132 @@ pub(super) fn execute(
             for alias in &aliases {
                 if alias != name
                     && let Some(duplicate) = raw.get_mut(alias)
-                    && is_source(duplicate, &source)
+                    && is_source(duplicate, source)
                 {
                     duplicate["enabled"] = json!(false);
                 }
             }
             raw.insert(name.clone(), entry);
-            (StatusCode::OK, status(raw, &source))
+            (StatusCode::OK, status(raw, source))
         }
-    })
+        SourceAction::SetEnabled(false) => {
+            for name in names(source) {
+                if let Some(entry) = raw.get_mut(&name)
+                    && is_source(entry, source)
+                {
+                    entry["enabled"] = json!(false);
+                }
+            }
+            (StatusCode::OK, status(raw, source))
+        }
+        SourceAction::SetEnabled(true) => {
+            let every = names(source)
+                .iter()
+                .find_map(|name| raw.get(name).filter(|entry| is_source(entry, source)))
+                .map(|entry| {
+                    entry
+                        .get("every")
+                        .and_then(Value::as_str)
+                        .map(str::to_owned)
+                });
+            let every = match every {
+                Some(Some(every)) => every,
+                Some(None) => {
+                    return (
+                        StatusCode::BAD_REQUEST,
+                        json!({"error":"recurrence_invalid"}),
+                    );
+                }
+                None => "hourly".into(),
+            };
+            apply(
+                raw,
+                source,
+                &SourceAction::Put {
+                    every,
+                    enabled: true,
+                    max_runtime: None,
+                },
+                command,
+            )
+        }
+    }
+}
+
+pub(super) fn settings(
+    root: &Arc<JournalRoot>,
+    updates: Option<Vec<(&'static str, bool)>>,
+    cancelled: &(dyn Fn() -> bool + Send + Sync),
+) -> (StatusCode, Value) {
+    let config = match solstone_core_journal_config::read_journal_config_bound(root) {
+        Ok(config) => config.config.unwrap_or_default(),
+        Err(error) => {
+            log::warn!("owner sync settings: {error}");
+            return (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                json!({"error":"schedules_unavailable"}),
+            );
+        }
+    };
+    let available = solstone_core_settings_web::source_sync_plaud_available(&config);
+    let mut changed_fields = serde_json::Map::new();
+    let result = schedules::mutate(root, cancelled, |raw| {
+        let mut working = raw.clone();
+        if let Some(updates) = &updates {
+            for (source, enabled) in updates {
+                let before = working.clone();
+                let (code, result) = apply(
+                    &mut working,
+                    source,
+                    &SourceAction::SetEnabled(*enabled),
+                    &schedules::source_command(source).expect("parsed Settings source"),
+                );
+                if !code.is_success() {
+                    return (code, result);
+                }
+                if working != before {
+                    changed_fields.insert(format!("{source}.enabled"), json!(enabled));
+                }
+            }
+        }
+        *raw = working;
+        let mut result = serde_json::Map::new();
+        for source in ["plaud", "obsidian"] {
+            let source_status = status(raw, source);
+            result.insert(
+                source.into(),
+                json!({
+                    "available":source != "plaud" || available,
+                    "enabled":source_status["enabled"],
+                    "configured":!source_status["entries"].as_array().unwrap().is_empty(),
+                    "blocked_names":source_status["blocked_names"],
+                }),
+            );
+        }
+        (StatusCode::OK, Value::Object(result))
+    });
+    if result.0.is_success() && !changed_fields.is_empty() {
+        let checkpoint = || {
+            if cancelled() {
+                Err("execution stopped".to_owned())
+            } else {
+                Ok(())
+            }
+        };
+        if let Err(error) = solstone_core_facets::append_journal_action_log_at_root_checked(
+            root,
+            "app",
+            "settings",
+            "sync_update",
+            json!({"changed_fields":changed_fields}),
+            &checkpoint,
+        ) {
+            log::warn!("owner sync settings audit: {error}");
+            return (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                json!({"error":"schedules_unavailable"}),
+            );
+        }
+    }
+    result
 }

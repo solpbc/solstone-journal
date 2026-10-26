@@ -1061,8 +1061,15 @@ async fn stalled_relay_auth_does_not_block_admission_withdrawal_or_shutdown() {
     )
     .unwrap();
 
-    let mut runtime =
-        crate::byo_door::ByoServiceRuntime::new(&root, &byo_dir, hostname.to_string(), 1).unwrap();
+    let mut runtime = crate::byo_door::ByoServiceRuntime::new(
+        Arc::new(crate::door_state_writer::DoorStateWriter::new(Arc::new(
+            solstone_core_journal_io::JournalRoot::open(&root).unwrap(),
+        ))),
+        &byo_dir,
+        hostname.to_string(),
+        1,
+    )
+    .unwrap();
     let ingress = crate::byo_door::ingress_address(&root);
     runtime
         .tick_service_admission(&root, &byo_dir, &ingress)

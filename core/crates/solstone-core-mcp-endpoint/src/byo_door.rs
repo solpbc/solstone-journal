@@ -8,6 +8,7 @@
 //! directory on desktop Unix, and a loopback TCP port on Windows and mobile.
 //! Forwarders deliver the same TLS stream on every platform.
 
+use crate::door_state_writer::DoorStateWriter;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -265,17 +266,22 @@ pub(super) struct ByoServiceRuntime {
     last_dns_addresses: Vec<String>,
     last_dns_account_uri: Option<String>,
     last_dns_check: tokio::time::Instant,
+    state: Arc<DoorStateWriter>,
     #[cfg(test)]
     pub(crate) relay_test_state: RelayTestState,
 }
 
 impl ByoServiceRuntime {
     pub(super) fn new(
-        journal_root: &Path,
+        state: Arc<DoorStateWriter>,
         byo_dir: &unix::ByoDirectory,
         hostname: String,
         generation: u64,
     ) -> Option<Self> {
+        let journal_root = state.root().canonical_path();
+        if state.root().revalidate_canonical_binding().is_err() {
+            return None;
+        }
         let account_dir = unix::open_byo_account_directory(byo_dir, &hostname).ok()?;
         let cert_dir = unix::open_byo_cert_directory(byo_dir, &hostname, generation).ok()?;
         let tls_service =
@@ -304,6 +310,7 @@ impl ByoServiceRuntime {
             last_dns_addresses: Vec::new(),
             last_dns_account_uri: None,
             last_dns_check: tokio::time::Instant::now() - Duration::from_secs(120),
+            state,
             #[cfg(test)]
             relay_test_state: RelayTestState::ManualForwarding,
         })
@@ -421,28 +428,25 @@ impl ByoServiceRuntime {
 
         if !account_valid {
             self.unbind_ingress(byo_dir).await;
-            write_byo_door_state(
-                journal_root,
-                &ByoDoorState {
-                    hostname: Some(self.hostname.clone()),
-                    enabled: true,
-                    generation: self.generation,
-                    account_uri,
-                    caa: None,
-                    dns_verdict: None,
-                    dns_observed_at: None,
-                    socket_listening: false,
-                    certificate_active: false,
-                    socket_path: None,
-                    socket_blocker: None,
-                    next_action: next_action_account,
-                    relay_state: "none".to_string(),
-                    relay_detail: None,
-                    relay_observed_at: None,
-                    dns_addresses: Vec::new(),
-                    observed_at: Utc::now(),
-                },
-            );
+            self.state.publish_byo(&ByoDoorState {
+                hostname: Some(self.hostname.clone()),
+                enabled: true,
+                generation: self.generation,
+                account_uri,
+                caa: None,
+                dns_verdict: None,
+                dns_observed_at: None,
+                socket_listening: false,
+                certificate_active: false,
+                socket_path: None,
+                socket_blocker: None,
+                next_action: next_action_account,
+                relay_state: "none".to_string(),
+                relay_detail: None,
+                relay_observed_at: None,
+                dns_addresses: Vec::new(),
+                observed_at: Utc::now(),
+            });
             return;
         }
 
@@ -455,28 +459,25 @@ impl ByoServiceRuntime {
             self.last_dns_verdict = None;
             self.last_dns_addresses.clear();
             self.last_dns_account_uri = Some(uri_str.clone());
-            write_byo_door_state(
-                journal_root,
-                &ByoDoorState {
-                    hostname: Some(self.hostname.clone()),
-                    enabled: true,
-                    generation: self.generation,
-                    account_uri: Some(uri_str.clone()),
-                    caa: None,
-                    dns_verdict: None,
-                    dns_observed_at: None,
-                    socket_listening: false,
-                    certificate_active: false,
-                    socket_path: None,
-                    socket_blocker: None,
-                    next_action: Some("publish_caa".to_string()),
-                    relay_state: "none".to_string(),
-                    relay_detail: None,
-                    relay_observed_at: None,
-                    dns_addresses: Vec::new(),
-                    observed_at: Utc::now(),
-                },
-            );
+            self.state.publish_byo(&ByoDoorState {
+                hostname: Some(self.hostname.clone()),
+                enabled: true,
+                generation: self.generation,
+                account_uri: Some(uri_str.clone()),
+                caa: None,
+                dns_verdict: None,
+                dns_observed_at: None,
+                socket_listening: false,
+                certificate_active: false,
+                socket_path: None,
+                socket_blocker: None,
+                next_action: Some("publish_caa".to_string()),
+                relay_state: "none".to_string(),
+                relay_detail: None,
+                relay_observed_at: None,
+                dns_addresses: Vec::new(),
+                observed_at: Utc::now(),
+            });
         }
 
         let target_relay = match read_journal_config(journal_root) {
@@ -520,34 +521,31 @@ impl ByoServiceRuntime {
                     Some("issue_certificate".to_string())
                 };
 
-                write_byo_door_state(
-                    journal_root,
-                    &ByoDoorState {
-                        hostname: Some(self.hostname.clone()),
-                        enabled: true,
-                        generation: self.generation,
-                        account_uri: Some(uri_str.clone()),
-                        caa: self
-                            .last_dns_verdict
-                            .as_ref()
-                            .map(|v| v.code.as_str().to_string()),
-                        dns_verdict: self
-                            .last_dns_verdict
-                            .as_ref()
-                            .map(|v| v.code.as_str().to_string()),
-                        dns_observed_at: self.last_dns_verdict.as_ref().map(|v| v.observed_at),
-                        socket_listening: true,
-                        certificate_active: cert_active,
-                        socket_path: Some(ingress_address.to_string()),
-                        socket_blocker: None,
-                        next_action,
-                        relay_state,
-                        relay_detail,
-                        relay_observed_at,
-                        dns_addresses: self.last_dns_addresses.clone(),
-                        observed_at: Utc::now(),
-                    },
-                );
+                self.state.publish_byo(&ByoDoorState {
+                    hostname: Some(self.hostname.clone()),
+                    enabled: true,
+                    generation: self.generation,
+                    account_uri: Some(uri_str.clone()),
+                    caa: self
+                        .last_dns_verdict
+                        .as_ref()
+                        .map(|v| v.code.as_str().to_string()),
+                    dns_verdict: self
+                        .last_dns_verdict
+                        .as_ref()
+                        .map(|v| v.code.as_str().to_string()),
+                    dns_observed_at: self.last_dns_verdict.as_ref().map(|v| v.observed_at),
+                    socket_listening: true,
+                    certificate_active: cert_active,
+                    socket_path: Some(ingress_address.to_string()),
+                    socket_blocker: None,
+                    next_action,
+                    relay_state,
+                    relay_detail,
+                    relay_observed_at,
+                    dns_addresses: self.last_dns_addresses.clone(),
+                    observed_at: Utc::now(),
+                });
             }
 
             let (verdict, addresses) = resolve_byo_dns(&self.hostname, &uri_str, Utc::now()).await;
@@ -563,28 +561,25 @@ impl ByoServiceRuntime {
 
         if !dns_admitted {
             self.unbind_ingress(byo_dir).await;
-            write_byo_door_state(
-                journal_root,
-                &ByoDoorState {
-                    hostname: Some(self.hostname.clone()),
-                    enabled: true,
-                    generation: self.generation,
-                    account_uri: Some(uri_str),
-                    caa: Some(verdict.code.as_str().to_string()),
-                    dns_verdict: Some(verdict.code.as_str().to_string()),
-                    dns_observed_at: Some(verdict.observed_at),
-                    socket_listening: false,
-                    certificate_active: false,
-                    socket_path: None,
-                    socket_blocker: None,
-                    next_action: Some("publish_caa".to_string()),
-                    relay_state: "none".to_string(),
-                    relay_detail: None,
-                    relay_observed_at: None,
-                    dns_addresses: self.last_dns_addresses.clone(),
-                    observed_at: Utc::now(),
-                },
-            );
+            self.state.publish_byo(&ByoDoorState {
+                hostname: Some(self.hostname.clone()),
+                enabled: true,
+                generation: self.generation,
+                account_uri: Some(uri_str),
+                caa: Some(verdict.code.as_str().to_string()),
+                dns_verdict: Some(verdict.code.as_str().to_string()),
+                dns_observed_at: Some(verdict.observed_at),
+                socket_listening: false,
+                certificate_active: false,
+                socket_path: None,
+                socket_blocker: None,
+                next_action: Some("publish_caa".to_string()),
+                relay_state: "none".to_string(),
+                relay_detail: None,
+                relay_observed_at: None,
+                dns_addresses: self.last_dns_addresses.clone(),
+                observed_at: Utc::now(),
+            });
             return;
         }
 
@@ -593,28 +588,25 @@ impl ByoServiceRuntime {
             let (ingress_listener, ingress_bound) = match ingress::bind(byo_dir, journal_root) {
                 Ok(bound) => bound,
                 Err(blocker) => {
-                    write_byo_door_state(
-                        journal_root,
-                        &ByoDoorState {
-                            hostname: Some(self.hostname.clone()),
-                            enabled: true,
-                            generation: self.generation,
-                            account_uri: Some(uri_str),
-                            caa: None,
-                            dns_verdict: Some(verdict.code.as_str().to_string()),
-                            dns_observed_at: Some(verdict.observed_at),
-                            socket_listening: false,
-                            certificate_active: false,
-                            socket_path: None,
-                            socket_blocker: blocker,
-                            next_action: Some("socket_blocked".to_string()),
-                            relay_state: "none".to_string(),
-                            relay_detail: None,
-                            relay_observed_at: None,
-                            dns_addresses: self.last_dns_addresses.clone(),
-                            observed_at: Utc::now(),
-                        },
-                    );
+                    self.state.publish_byo(&ByoDoorState {
+                        hostname: Some(self.hostname.clone()),
+                        enabled: true,
+                        generation: self.generation,
+                        account_uri: Some(uri_str),
+                        caa: None,
+                        dns_verdict: Some(verdict.code.as_str().to_string()),
+                        dns_observed_at: Some(verdict.observed_at),
+                        socket_listening: false,
+                        certificate_active: false,
+                        socket_path: None,
+                        socket_blocker: blocker,
+                        next_action: Some("socket_blocked".to_string()),
+                        relay_state: "none".to_string(),
+                        relay_detail: None,
+                        relay_observed_at: None,
+                        dns_addresses: self.last_dns_addresses.clone(),
+                        observed_at: Utc::now(),
+                    });
                     return;
                 }
             };
@@ -773,28 +765,25 @@ impl ByoServiceRuntime {
             Some("issue_certificate".to_string())
         };
 
-        write_byo_door_state(
-            journal_root,
-            &ByoDoorState {
-                hostname: Some(self.hostname.clone()),
-                enabled: true,
-                generation: self.generation,
-                account_uri: Some(uri_str),
-                caa: None,
-                dns_verdict: Some(verdict.code.as_str().to_string()),
-                dns_observed_at: Some(verdict.observed_at),
-                socket_listening: true,
-                certificate_active: cert_active,
-                socket_path: Some(ingress_address.to_string()),
-                socket_blocker: None,
-                next_action,
-                relay_state,
-                relay_detail,
-                relay_observed_at,
-                dns_addresses: self.last_dns_addresses.clone(),
-                observed_at: Utc::now(),
-            },
-        );
+        self.state.publish_byo(&ByoDoorState {
+            hostname: Some(self.hostname.clone()),
+            enabled: true,
+            generation: self.generation,
+            account_uri: Some(uri_str),
+            caa: None,
+            dns_verdict: Some(verdict.code.as_str().to_string()),
+            dns_observed_at: Some(verdict.observed_at),
+            socket_listening: true,
+            certificate_active: cert_active,
+            socket_path: Some(ingress_address.to_string()),
+            socket_blocker: None,
+            next_action,
+            relay_state,
+            relay_detail,
+            relay_observed_at,
+            dns_addresses: self.last_dns_addresses.clone(),
+            observed_at: Utc::now(),
+        });
     }
 }
 
@@ -821,11 +810,18 @@ fn disabled_state(hostname: Option<String>, enabled: bool, generation: u64) -> B
 }
 
 async fn tick_byo_admission(
-    journal_root: &Path,
+    state: &Arc<DoorStateWriter>,
     byo_dir: &unix::ByoDirectory,
     runtime: &mut Option<ByoServiceRuntime>,
     ingress_address: &str,
 ) {
+    let journal_root = state.root().canonical_path();
+    if state.root().revalidate_canonical_binding().is_err() {
+        if let Some(mut rt) = runtime.take() {
+            rt.stop(byo_dir).await;
+        }
+        return;
+    }
     let config = match read_journal_config(journal_root) {
         Ok(cfg) => byo_hostname_config(&cfg),
         Err(_) => ByoHostnameConfigStatus::Invalid,
@@ -836,17 +832,14 @@ async fn tick_byo_admission(
             if let Some(mut rt) = runtime.take() {
                 rt.stop(byo_dir).await;
             }
-            write_byo_door_state(journal_root, &disabled_state(None, false, 0));
+            state.publish_byo(&disabled_state(None, false, 0));
         }
         ByoHostnameConfigStatus::Configured(cfg) => {
             if !cfg.enabled {
                 if let Some(mut rt) = runtime.take() {
                     rt.stop(byo_dir).await;
                 }
-                write_byo_door_state(
-                    journal_root,
-                    &disabled_state(cfg.hostname, false, cfg.generation),
-                );
+                state.publish_byo(&disabled_state(cfg.hostname, false, cfg.generation));
             } else {
                 let hostname = match cfg.hostname {
                     Some(h) => h,
@@ -854,10 +847,7 @@ async fn tick_byo_admission(
                         if let Some(mut rt) = runtime.take() {
                             rt.stop(byo_dir).await;
                         }
-                        write_byo_door_state(
-                            journal_root,
-                            &disabled_state(None, true, cfg.generation),
-                        );
+                        state.publish_byo(&disabled_state(None, true, cfg.generation));
                         return;
                     }
                 };
@@ -871,8 +861,12 @@ async fn tick_byo_admission(
                     if let Some(mut rt) = runtime.take() {
                         rt.stop(byo_dir).await;
                     }
-                    *runtime =
-                        ByoServiceRuntime::new(journal_root, byo_dir, hostname, cfg.generation);
+                    *runtime = ByoServiceRuntime::new(
+                        Arc::clone(state),
+                        byo_dir,
+                        hostname,
+                        cfg.generation,
+                    );
                 }
 
                 if let Some(rt) = runtime.as_mut() {
@@ -908,7 +902,7 @@ type CutoverAccept = std::io::Result<(tokio::net::UnixStream, tokio::net::unix::
 #[cfg(all(unix, not(any(target_os = "ios", target_os = "android"))))]
 async fn apply_cutover(
     accepted: CutoverAccept,
-    journal_root: &Path,
+    state: &Arc<DoorStateWriter>,
     byo_dir: &unix::ByoDirectory,
     runtime: &mut Option<ByoServiceRuntime>,
     ingress_address: &str,
@@ -917,7 +911,7 @@ async fn apply_cutover(
         && let Ok(std_stream) = stream.into_std()
         && handle_cutover_stream(&std_stream)
     {
-        tick_byo_admission(journal_root, byo_dir, runtime, ingress_address).await;
+        tick_byo_admission(state, byo_dir, runtime, ingress_address).await;
         reply_cutover_ok(&std_stream);
     }
 }
@@ -929,7 +923,7 @@ enum CutoverAccept {}
 #[cfg(any(windows, target_os = "ios", target_os = "android"))]
 async fn apply_cutover(
     accepted: CutoverAccept,
-    _journal_root: &Path,
+    _state: &Arc<DoorStateWriter>,
     _byo_dir: &unix::ByoDirectory,
     _runtime: &mut Option<ByoServiceRuntime>,
     _ingress_address: &str,
@@ -944,10 +938,19 @@ async fn apply_cutover(
 /// the state written after each change is applied.
 pub async fn run_byo_door_async(
     journal_root: PathBuf,
+    shutdown: watch::Receiver<bool>,
+) -> Result<(), ()> {
+    let root = Arc::new(JournalRoot::open(&journal_root).map_err(|_| ())?);
+    run_byo_door_at_root(Arc::new(DoorStateWriter::new(root)), shutdown).await
+}
+
+pub(crate) async fn run_byo_door_at_root(
+    state: Arc<DoorStateWriter>,
     mut shutdown: watch::Receiver<bool>,
 ) -> Result<(), ()> {
-    let root = JournalRoot::open(&journal_root).map_err(|_| ())?;
-    let byo_dir = unix::open_byo_directory(&root).map_err(|_| ())?;
+    let root = state.root();
+    let journal_root = root.canonical_path().to_path_buf();
+    let byo_dir = unix::open_byo_directory(root).map_err(|_| ())?;
     let ingress_address = ingress_address(&journal_root);
 
     #[cfg(all(unix, not(any(target_os = "ios", target_os = "android"))))]
@@ -999,10 +1002,10 @@ pub async fn run_byo_door_async(
                 if *shutdown.borrow() {
                     break;
                 }
-                tick_byo_admission(&journal_root, &byo_dir, &mut runtime, &ingress_address).await;
+                tick_byo_admission(&state, &byo_dir, &mut runtime, &ingress_address).await;
             }
             accepted = cutover => {
-                apply_cutover(accepted, &journal_root, &byo_dir, &mut runtime, &ingress_address).await;
+                apply_cutover(accepted, &state, &byo_dir, &mut runtime, &ingress_address).await;
             }
         }
     }
@@ -1012,7 +1015,7 @@ pub async fn run_byo_door_async(
     }
     #[cfg(all(unix, not(any(target_os = "ios", target_os = "android"))))]
     unix::unlink_byo_socket_if_inode_matches(&byo_dir, unix::BYO_CUTOVER_SOCKET, cutover_inode);
-    write_byo_door_state(&journal_root, &disabled_state(None, false, 0));
+    state.publish_byo(&disabled_state(None, false, 0));
     Ok(())
 }
 
@@ -1023,7 +1026,7 @@ pub async fn run_single_byo_service(
     mut shutdown: watch::Receiver<bool>,
 ) {
     let root = match JournalRoot::open(&journal_root) {
-        Ok(r) => r,
+        Ok(r) => Arc::new(r),
         Err(_) => return,
     };
 
@@ -1034,7 +1037,8 @@ pub async fn run_single_byo_service(
 
     let ingress_address = ingress_address(&journal_root);
 
-    let mut runtime = match ByoServiceRuntime::new(&journal_root, &byo_dir, hostname, generation) {
+    let state = Arc::new(DoorStateWriter::new(root));
+    let mut runtime = match ByoServiceRuntime::new(state, &byo_dir, hostname, generation) {
         Some(rt) => rt,
         None => return,
     };
@@ -1224,6 +1228,61 @@ mod tests {
 #[cfg(all(test, feature = "full-tests"))]
 #[cfg(all(unix, not(any(target_os = "ios", target_os = "android"))))]
 mod full_tests {
+    #[tokio::test]
+    async fn live_byo_tick_preserves_terminal_state_and_never_writes_a_replacement_root() {
+        for replace in [false, true] {
+            let temporary = tempfile::TempDir::new_in(crate::test_scratch()).unwrap();
+            let journal = temporary.path().join("journal");
+            let retained = temporary.path().join("retained");
+            std::fs::create_dir(&journal).unwrap();
+            let state = Arc::new(DoorStateWriter::new(Arc::new(
+                JournalRoot::open(&journal).unwrap(),
+            )));
+            let (stop, stopped) = watch::channel(false);
+            let service = tokio::spawn(run_byo_door_at_root(state, stopped));
+            let first = tokio::time::timeout(Duration::from_secs(5), async {
+                loop {
+                    if let Some(state) = read_byo_door_state(&journal) {
+                        break state;
+                    }
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+            })
+            .await
+            .unwrap();
+            if replace {
+                std::fs::rename(&journal, &retained).unwrap();
+                std::fs::create_dir(&journal).unwrap();
+            }
+            // Permit the maintained half-second admission tick while still live.
+            tokio::time::sleep(Duration::from_millis(700)).await;
+            if !replace {
+                assert!(read_byo_door_state(&journal).unwrap().observed_at > first.observed_at);
+            }
+            stop.send_replace(true);
+            tokio::time::timeout(Duration::from_secs(5), service)
+                .await
+                .unwrap()
+                .unwrap()
+                .unwrap();
+            if replace {
+                let entries = std::fs::read_dir(&journal)
+                    .unwrap()
+                    .map(|entry| entry.unwrap().file_name())
+                    .collect::<Vec<_>>();
+                assert!(
+                    entries.is_empty(),
+                    "live BYO published into replacement root: {entries:?}"
+                );
+            } else {
+                let stopped = read_byo_door_state(&journal).unwrap();
+                assert!(!stopped.socket_listening);
+                assert!(!stopped.enabled);
+                assert_eq!(stopped.generation, 0);
+            }
+        }
+    }
+
     use std::fs;
     use std::os::unix::fs::PermissionsExt;
     use std::sync::Arc;
@@ -1539,9 +1598,15 @@ mod full_tests {
         let _ = handle.await;
 
         // Stop also owns a peer that connects but never completes TLS.
-        let mut runtime =
-            ByoServiceRuntime::new(&journal_path, &byo_dir, "mcp.example.com".to_string(), 1)
-                .unwrap();
+        let mut runtime = ByoServiceRuntime::new(
+            Arc::new(DoorStateWriter::new(Arc::new(
+                JournalRoot::open(&journal_path).unwrap(),
+            ))),
+            &byo_dir,
+            "mcp.example.com".to_string(),
+            1,
+        )
+        .unwrap();
         runtime
             .tick_service_admission(&journal_path, &byo_dir, &ingress_address(&journal_path))
             .await;
@@ -1722,9 +1787,15 @@ mod full_tests {
         }
 
         {
-            let mut rt =
-                ByoServiceRuntime::new(&journal_path, &byo_dir, host.to_string(), generation)
-                    .expect("runtime");
+            let mut rt = ByoServiceRuntime::new(
+                Arc::new(DoorStateWriter::new(Arc::new(
+                    JournalRoot::open(&journal_path).unwrap(),
+                ))),
+                &byo_dir,
+                host.to_string(),
+                generation,
+            )
+            .expect("runtime");
             assert_eq!(rt.relay_test_state, RelayTestState::ManualForwarding);
             rt.tick_service_admission(&journal_path, &byo_dir, "mcp-endpoint/byo/ingress.sock")
                 .await;
@@ -1737,9 +1808,15 @@ mod full_tests {
         }
 
         {
-            let mut rt =
-                ByoServiceRuntime::new(&journal_path, &byo_dir, host.to_string(), generation)
-                    .expect("runtime");
+            let mut rt = ByoServiceRuntime::new(
+                Arc::new(DoorStateWriter::new(Arc::new(
+                    JournalRoot::open(&journal_path).unwrap(),
+                ))),
+                &byo_dir,
+                host.to_string(),
+                generation,
+            )
+            .expect("runtime");
             rt.set_relay_test_state(RelayTestState::RelayConfiguredNotConnected);
             rt.tick_service_admission(&journal_path, &byo_dir, "mcp-endpoint/byo/ingress.sock")
                 .await;
