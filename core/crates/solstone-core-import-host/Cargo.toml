@@ -17,6 +17,11 @@ path = "tests/import_host.rs"
 [features]
 full-tests = []
 native-remux-corpus = []
+in-process-pdf = ["dep:solstone-core-pdf"]
+
+[[example]]
+name = "embedded_import"
+required-features = ["in-process-pdf"]
 
 [lints]
 workspace = true
@@ -29,14 +34,21 @@ ffmpeg-sys-next = { version = "9.0.0", default-features = false, features = ["bu
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 sha2 = { workspace = true }
+log.workspace = true
 solstone-core-body-ingest.workspace = true
 solstone-core-callosum = { workspace = true, features = ["wire"] }
+solstone-core-facets.workspace = true
 solstone-core-format = { workspace = true }
+solstone-core-generate.workspace = true
+solstone-core-generate-wire.workspace = true
 solstone-core-import.workspace = true
 solstone-core-import-sources.workspace = true
+solstone-core-indexer-store.workspace = true
 solstone-core-journal-config.workspace = true
 solstone-core-journal-io.workspace = true
+solstone-core-pdf = { workspace = true, optional = true }
 solstone-core-processing-record.workspace = true
+solstone-core-retention.workspace = true
 solstone-core-segment.workspace = true
 solstone-core-system-health.workspace = true
 tempfile = "3.24.0"
@@ -45,7 +57,7 @@ ureq = { workspace = true, features = ["rustls"] }
 
 [dev-dependencies]
 axum = { workspace = true, features = ["tokio"] }
-solstone-core-generate.workspace = true
+zip = { version = "=9.0.3", default-features = false, features = ["deflate"] }
 solstone-core-import-web.workspace = true
 tempfile = "3.24.0"
 tokio = { workspace = true, features = ["macros", "rt", "time", "net"] }

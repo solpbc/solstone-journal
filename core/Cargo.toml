@@ -147,7 +147,7 @@ exclude = ["crates/solstone-core-service-legacy-evidence"]
 resolver = "3"
 
 [workspace.package]
-version = "2.0.58"
+version = "2.0.59"
 edition = "2024"
 rust-version = "1.95"
 license = "AGPL-3.0-only"
@@ -283,6 +283,7 @@ solstone-core-npy = { path = "crates/solstone-core-npy" }
 solstone-core-depict = { path = "crates/solstone-core-depict" }
 solstone-core-generate = { path = "crates/solstone-core-generate" }
 solstone-core-generate-wire = { path = "crates/solstone-core-generate-wire" }
+solstone-core-pdf = { path = "crates/solstone-core-pdf" }
 solstone-core-speakers-onnx = { path = "crates/solstone-core-speakers-onnx" }
 solstone-core-local = { path = "crates/solstone-core-local" }
 solstone-core-location = { path = "crates/solstone-core-location" }

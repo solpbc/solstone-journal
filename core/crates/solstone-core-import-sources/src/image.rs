@@ -111,6 +111,7 @@ pub enum ImageImportError {
     CouldNotDetectTimestamp {
         path: PathBuf,
     },
+    Stopped,
 }
 
 impl fmt::Display for ImageImportError {
@@ -170,6 +171,7 @@ impl fmt::Display for ImageImportError {
                 formatter,
                 "image segment collision for {day}/{stream} at {start} after {attempts} attempts; retrying this file fails until its file time changes"
             ),
+            Self::Stopped => formatter.write_str("import stopped"),
         }
     }
 }
@@ -423,7 +425,19 @@ pub fn prepare_image(
         .into_owned();
 
     let description = match vision_png(&image, orientation) {
-        Ok(png) => interpret_generate(wire.execute(&build_generate_request(&png))),
+        Ok(_) if !solstone_core_import::work_continues() => DescriptionOutcome::Unavailable {
+            reason: "generate cancelled".to_owned(),
+        },
+        Ok(png) => {
+            let described = interpret_generate(wire.execute(&build_generate_request(&png)));
+            if solstone_core_import::work_continues() {
+                described
+            } else {
+                DescriptionOutcome::Unavailable {
+                    reason: "generate cancelled".to_owned(),
+                }
+            }
+        }
         Err(error) => DescriptionOutcome::Unavailable {
             reason: format!("cannot prepare image for vision: {error}"),
         },
@@ -714,6 +728,9 @@ pub fn install_and_publish_image(
     publication: &dyn PublicationOperations,
     mut progress: Option<&mut dyn FnMut(&ProgressUpdate)>,
 ) -> Result<ImageImportResult, ImageImportError> {
+    if !solstone_core_import::work_continues() {
+        return Err(ImageImportError::Stopped);
+    }
     let effective_start = solstone_core_import::read_provenance(journal_root, import_id)
         .ok()
         .flatten()
@@ -2790,5 +2807,205 @@ mod tests {
         let prepared = prepare_image(&photo_path, &wire, Tz::UTC, None, None).unwrap();
         assert_eq!(prepared.day, "20260510");
         assert!(prepared.segment.starts_with("143000"));
+    }
+
+    #[cfg(all(test, feature = "full-tests"))]
+    struct StoppingWire {
+        request: RefCell<Option<GenerateRequest>>,
+        stop: solstone_core_import::WorkStop,
+    }
+
+    #[cfg(all(test, feature = "full-tests"))]
+    impl WireClient for StoppingWire {
+        fn execute(&self, request: &GenerateRequest) -> Result<GenerateResponse, ClientError> {
+            self.request.replace(Some(request.clone()));
+            self.stop.request();
+            Ok(generated("secret description"))
+        }
+    }
+
+    #[cfg(all(test, feature = "full-tests"))]
+    fn files_named(root: &Path, name: &str) -> Vec<PathBuf> {
+        let mut found = Vec::new();
+        let mut pending = vec![root.to_path_buf()];
+        while let Some(directory) = pending.pop() {
+            let Ok(entries) = fs::read_dir(&directory) else {
+                continue;
+            };
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    pending.push(path);
+                } else if path.file_name().is_some_and(|item| item == name) {
+                    found.push(path);
+                }
+            }
+        }
+        found.sort();
+        found
+    }
+
+    #[cfg(all(test, feature = "full-tests"))]
+    #[test]
+    fn a_stopped_vision_call_discards_the_description_and_installs_nothing() {
+        let journal = tempfile::tempdir().unwrap();
+        let source_dir = tempfile::tempdir().unwrap();
+        let time = Local
+            .with_ymd_and_hms(2026, 6, 15, 12, 0, 0)
+            .single()
+            .unwrap();
+        let source = source_dir.path().join("photo.png");
+        write_test_png(&source, [10, 20, 30], time);
+        let source_bytes = fs::read(&source).unwrap();
+        let stop = solstone_core_import::WorkStop::new();
+        let _guard = solstone_core_import::WorkStopGuard::install(&stop);
+        let wire = StoppingWire {
+            request: RefCell::new(None),
+            stop: stop.clone(),
+        };
+        let zone = solstone_core_journal_config::owner_zone(journal.path());
+        let selected =
+            DateTime::<chrono::Utc>::from(fs::metadata(&source).unwrap().modified().unwrap())
+                .with_timezone(&zone)
+                .format("%Y%m%d_%H%M%S")
+                .to_string();
+        let prepared = prepare_image(&source, &wire, zone, Some(&selected), None).unwrap();
+        assert!(matches!(
+            prepared.description,
+            DescriptionOutcome::Unavailable { ref reason } if reason == "generate cancelled"
+        ));
+        assert!(wire.request.borrow().is_some());
+        let publication = TestPublication::new();
+        let error =
+            install_and_publish_image(&prepared, journal.path(), "import-1", &publication, None)
+                .unwrap_err();
+        assert!(matches!(error, ImageImportError::Stopped));
+        assert_eq!(error.to_string(), "import stopped");
+        assert!(publication.touched_days.borrow().is_empty());
+        assert_eq!(fs::read(&source).unwrap(), source_bytes);
+        assert!(files_named(journal.path(), "original.png").is_empty());
+        assert!(files_named(journal.path(), "image_transcript.md").is_empty());
+        assert!(
+            !journal
+                .path()
+                .join("imports/import-1/manifest.json")
+                .exists()
+        );
+    }
+
+    #[cfg(all(test, feature = "full-tests"))]
+    #[test]
+    fn an_already_stopped_image_does_not_call_the_model() {
+        let journal = tempfile::tempdir().unwrap();
+        let source_dir = tempfile::tempdir().unwrap();
+        let time = Local
+            .with_ymd_and_hms(2026, 6, 15, 12, 0, 0)
+            .single()
+            .unwrap();
+        let source = source_dir.path().join("photo.png");
+        write_test_png(&source, [10, 20, 30], time);
+        let stop = solstone_core_import::WorkStop::new();
+        stop.request();
+        let _guard = solstone_core_import::WorkStopGuard::install(&stop);
+        let wire = StoppingWire {
+            request: RefCell::new(None),
+            stop: stop.clone(),
+        };
+        let publication = TestPublication::new();
+        let error = import_image(
+            &source,
+            journal.path(),
+            "import-1",
+            None,
+            &publication,
+            &wire,
+        )
+        .unwrap_err();
+        assert!(matches!(error, ImageImportError::Stopped));
+        assert_eq!(error.to_string(), "import stopped");
+        assert!(wire.request.borrow().is_none());
+        assert!(publication.touched_days.borrow().is_empty());
+        assert!(files_named(journal.path(), "original.png").is_empty());
+        assert!(
+            !journal
+                .path()
+                .join("imports/import-1/manifest.json")
+                .exists()
+        );
+    }
+
+    #[cfg(all(test, feature = "full-tests"))]
+    #[test]
+    fn a_stopped_second_image_keeps_the_admitted_original() {
+        let journal = tempfile::tempdir().unwrap();
+        let source_dir = tempfile::tempdir().unwrap();
+        let time = Local
+            .with_ymd_and_hms(2026, 6, 15, 12, 0, 0)
+            .single()
+            .unwrap();
+        let first = source_dir.path().join("first.png");
+        let second = source_dir.path().join("second.png");
+        write_test_png(&first, [10, 20, 30], time);
+        write_test_png(&second, [40, 50, 60], time);
+        let first_bytes = fs::read(&first).unwrap();
+        let publication = TestPublication::new();
+        let wire = RecordingWire {
+            request: RefCell::new(None),
+        };
+        let admitted = import_image(
+            &first,
+            journal.path(),
+            "import-1",
+            None,
+            &publication,
+            &wire,
+        )
+        .unwrap();
+        let original = journal
+            .path()
+            .join("chronicle")
+            .join(&admitted.created_segment.day)
+            .join("import.image")
+            .join(&admitted.created_segment.segment)
+            .join("original.png");
+        let transcript = original.with_file_name("image_transcript.md");
+        let manifest = journal.path().join("imports/import-1/manifest.json");
+        let kept_original = fs::read(&original).unwrap();
+        let kept_transcript = fs::read(&transcript).unwrap();
+        let kept_manifest = fs::read(&manifest).unwrap();
+        assert_eq!(kept_original, first_bytes);
+
+        let stop = solstone_core_import::WorkStop::new();
+        let _guard = solstone_core_import::WorkStopGuard::install(&stop);
+        let stopping = StoppingWire {
+            request: RefCell::new(None),
+            stop: stop.clone(),
+        };
+        let stopped_publication = TestPublication::new();
+        let error = import_image(
+            &second,
+            journal.path(),
+            "import-2",
+            None,
+            &stopped_publication,
+            &stopping,
+        )
+        .unwrap_err();
+        assert!(matches!(error, ImageImportError::Stopped));
+        assert_eq!(error.to_string(), "import stopped");
+        assert!(stopping.request.borrow().is_some());
+        assert!(stopped_publication.touched_days.borrow().is_empty());
+        assert_eq!(fs::read(&original).unwrap(), kept_original);
+        assert_eq!(fs::read(&transcript).unwrap(), kept_transcript);
+        assert_eq!(fs::read(&manifest).unwrap(), kept_manifest);
+        assert_eq!(files_named(journal.path(), "original.png"), vec![original]);
+        assert!(
+            !journal
+                .path()
+                .join("imports/import-2/manifest.json")
+                .exists()
+        );
+        assert!(!transcript.to_string_lossy().contains("secret description"));
+        assert!(!String::from_utf8_lossy(&kept_transcript).contains("secret description"));
     }
 }

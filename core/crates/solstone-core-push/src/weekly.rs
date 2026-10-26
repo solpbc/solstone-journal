@@ -490,6 +490,12 @@ pub(crate) fn scan_with_transport(
             continue;
         };
 
+        // Callable Cortex logs start with the admitted request. Earlier
+        // completed logs have name/day there rather than on the finish row.
+        let request = content
+            .lines()
+            .next()
+            .and_then(|line| serde_json::from_str::<Value>(line).ok());
         for line in content.lines() {
             let line = line.trim();
             if line.is_empty() {
@@ -499,8 +505,15 @@ pub(crate) fn scan_with_transport(
                 continue;
             };
             if json_val.get("event").and_then(Value::as_str) == Some("finish")
-                && json_val.get("name").and_then(Value::as_str) == Some("weekly_reflection")
-                && let Some(day) = json_val.get("day").and_then(Value::as_str)
+                && json_val
+                    .get("name")
+                    .or_else(|| request.as_ref()?.get("name"))
+                    .and_then(Value::as_str)
+                    == Some("weekly_reflection")
+                && let Some(day) = json_val
+                    .get("day")
+                    .or_else(|| request.as_ref()?.get("day"))
+                    .and_then(Value::as_str)
                 && is_eight_digits(day)
             {
                 observe_with_transport(journal, portal, "weekly_reflection", day, now, transport);

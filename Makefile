@@ -611,7 +611,7 @@ check-rust-pdf-test:
 		exit 0; \
 	fi; \
 	$(REQUIRE_PDF_HOST_RUNTIME); \
-	SOLSTONE_CORE_PDF_LIBRARY="$(PDF_RUNTIME_HOST_LINK_DIR)/$(PDF_RUNTIME_HOST_LIBRARY)" cargo test --manifest-path $(RUST_MANIFEST) -p solstone-core-pdf --locked -- --test-threads=1
+	SOLSTONE_CORE_PDF_LIBRARY="$(PDF_RUNTIME_HOST_LINK_DIR)/$(PDF_RUNTIME_HOST_LIBRARY)" cargo test --manifest-path $(RUST_MANIFEST) -p solstone-core-pdf --features full-tests --locked -- --test-threads=1
 
 # Retained name: check-rust-shipped-binaries' recovery message named it for
 # months and it is in muscle memory. It now stages AND runs all three crates.

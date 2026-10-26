@@ -120,11 +120,20 @@ fn payload() -> PathBuf {
 }
 
 async fn request(router: &Router, path: &str, body: Value) -> (StatusCode, Value) {
+    routed_request(router, "POST", path, body).await
+}
+
+async fn routed_request(
+    router: &Router,
+    method: &str,
+    path: &str,
+    body: Value,
+) -> (StatusCode, Value) {
     let response = router
         .clone()
         .oneshot(
             Request::builder()
-                .method("POST")
+                .method(method)
                 .uri(path)
                 .header("content-type", "application/json")
                 .body(Body::from(body.to_string()))
@@ -135,6 +144,162 @@ async fn request(router: &Router, path: &str, body: Value) -> (StatusCode, Value
     let status = response.status();
     let bytes = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
     (status, serde_json::from_slice(&bytes).unwrap())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn accepted_execution_queue_lease_survives_client_loss_until_retirement() {
+    use solstone_core_convey_shell::recovery_drain::{
+        relinquish_admitted_work, resume_after_whole_journal_restore,
+    };
+    let fixture = fixture("http://127.0.0.1:1");
+    let root = Arc::new(JournalRoot::open(fixture.path()).unwrap());
+    let bridge = solstone_core_convey_shell::recovery_watch::RecoveryWatch::new(
+        "execution-queue-proof",
+        Arc::clone(&root),
+    );
+    let (_stop, stopped) = watch::channel(false);
+    let (sender, mut receiver) = mpsc::channel(1);
+    let router = schedules::routes(OwnerIngress {
+        sender,
+        root: Arc::downgrade(&root),
+        stop: stopped,
+    });
+    let client = tokio::spawn(async move {
+        routed_request(
+            &router,
+            "PUT",
+            "/api/journal/recurrences/think/queued",
+            json!({"args":["--help"],"every":"hourly","enabled":false}),
+        )
+        .await
+    });
+    let queued = tokio::time::timeout(Duration::from_secs(5), receiver.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    client.abort();
+    assert!(client.await.unwrap_err().is_cancelled());
+    assert!(queued.cancelled.load(Ordering::Acquire));
+    let target = fixture.path().to_path_buf();
+    let mut drain = tokio::task::spawn_blocking(move || relinquish_admitted_work(&target));
+    assert!(
+        tokio::time::timeout(Duration::from_millis(100), &mut drain)
+            .await
+            .is_err()
+    );
+    drop(queued);
+    tokio::time::timeout(Duration::from_secs(5), drain)
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    assert!(!fixture.path().join("config/schedules.json").exists());
+    resume_after_whole_journal_restore(fixture.path());
+    drop(bridge);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn recovery_drains_lost_client_native_preview_and_reuses_routes_for_real_mutation() {
+    use solstone_core_convey_shell::recovery_drain::{
+        relinquish_admitted_work, resume_after_whole_journal_restore,
+    };
+    let model = Arc::new(Model::default());
+    model.hold.store(true, Ordering::Release);
+    let (endpoint, server) = model_server(Arc::clone(&model)).await;
+    let fixture = fixture(&endpoint);
+    let root = Arc::new(JournalRoot::open(fixture.path()).unwrap());
+    let weak = Arc::downgrade(&root);
+    let (stop, stopped) = watch::channel(false);
+    let (router, worker) = routes_and_worker(root, Some(payload()), stopped);
+    let worker = tokio::spawn(worker);
+    let client_router = router.clone();
+    let client = tokio::spawn(async move {
+        request(
+            &client_router,
+            "/api/journal/share/match",
+            json!({"person":"jane_doe","day":"20261012"}),
+        )
+        .await
+    });
+    tokio::time::timeout(Duration::from_secs(10), model.entered.notified())
+        .await
+        .unwrap();
+    client.abort();
+    assert!(client.await.unwrap_err().is_cancelled());
+    let target = fixture.path().to_path_buf();
+    let mut drain = tokio::task::spawn_blocking(move || relinquish_admitted_work(&target));
+    assert!(
+        tokio::time::timeout(Duration::from_millis(100), &mut drain)
+            .await
+            .is_err()
+    );
+    assert!(whole_journal_restore_blocks(fixture.path()));
+    let mutation = json!({"args":["--help"],"every":"hourly","enabled":false});
+    assert_eq!(
+        routed_request(
+            &router,
+            "PUT",
+            "/api/journal/recurrences/think/resumed",
+            mutation.clone()
+        )
+        .await
+        .0,
+        StatusCode::SERVICE_UNAVAILABLE
+    );
+    assert!(!fixture.path().join("config/schedules.json").exists());
+    model.hold.store(false, Ordering::Release);
+    model.release.notify_one();
+    tokio::time::timeout(Duration::from_secs(5), drain)
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    assert!(
+        !worker.is_finished(),
+        "temporary recovery must preserve the worker"
+    );
+    resume_after_whole_journal_restore(fixture.path());
+    let (status, response) = request(
+        &router,
+        "/api/journal/share/match",
+        json!({"person":"jane_doe","day":"20261012"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{response}");
+    assert_eq!(response["result"][0]["basis"], "spoken_with");
+    let (status, response) = routed_request(
+        &router,
+        "PUT",
+        "/api/journal/recurrences/think/resumed",
+        mutation,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{response}");
+    let saved: Value = serde_json::from_slice(
+        &std::fs::read(fixture.path().join("config/schedules.json")).unwrap(),
+    )
+    .unwrap();
+    assert!(saved.to_string().contains("owner:think:resumed"));
+    stop.send_replace(true);
+    tokio::time::timeout(Duration::from_secs(5), worker)
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(
+        weak.upgrade().is_none(),
+        "retained routes must not retain a stopped root"
+    );
+    assert_eq!(
+        request(
+            &router,
+            "/api/journal/share/match",
+            json!({"person":"jane_doe","day":"20261012"})
+        )
+        .await
+        .0,
+        StatusCode::SERVICE_UNAVAILABLE
+    );
+    server.abort();
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

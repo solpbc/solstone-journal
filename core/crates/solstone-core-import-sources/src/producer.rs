@@ -160,19 +160,13 @@ fn resolve_unbound_import_id(request: &NativeProducerRequest<'_>) -> Result<Stri
     Ok(bound.import_id.as_str().to_owned())
 }
 
-pub fn run_native_producer<W, P, D, Pub>(
+pub fn run_native_producer(
     request: NativeProducerRequest<'_>,
-    wire: &W,
-    pdf_worker: &P,
-    doc_model: &D,
-    publication: &Pub,
-) -> Result<NativeProducerOutcome, NativeProducerError>
-where
-    W: WireClient,
-    P: PdfWorker,
-    D: DocumentModelClient,
-    Pub: PublicationOperations,
-{
+    wire: &dyn WireClient,
+    pdf_worker: &dyn PdfWorker,
+    doc_model: &dyn DocumentModelClient,
+    publication: &dyn PublicationOperations,
+) -> Result<NativeProducerOutcome, NativeProducerError> {
     if request.source != RegistrySource::Image && request.source != RegistrySource::Document {
         return Err(NativeProducerError::UnsupportedSource {
             source: request.source,
@@ -440,26 +434,36 @@ where
                                 .as_millis()
                                 as u64;
                             let duration_ms = finished_at_ms.saturating_sub(started_at_ms);
+                            let stopped = matches!(err, image::ImageImportError::Stopped);
                             let _ = record_unconfirmed_attempt_unlocked(
                                 request.journal_root,
                                 request.import_id,
                                 generation,
                                 finished_at_ms,
-                                Some(IMPORT_FAILED_REASON.to_owned()),
+                                Some(
+                                    if stopped {
+                                        IMPORT_UNCONFIRMED_REASON
+                                    } else {
+                                        IMPORT_FAILED_REASON
+                                    }
+                                    .to_owned(),
+                                ),
                             );
                             return heartbeat.finish_then(|| {
-                                emit_importer_error(
-                                    &emitter,
-                                    &ImporterError {
-                                        import_id: request.import_id.to_owned(),
-                                        stage: "publication".to_owned(),
-                                        error: "import failed".to_owned(),
-                                        duration_ms,
-                                        partial_outputs: vec![],
-                                        generation: Some(generation),
-                                        attempt_id: Some(attempt_id.clone()),
-                                    },
-                                );
+                                if !stopped {
+                                    emit_importer_error(
+                                        &emitter,
+                                        &ImporterError {
+                                            import_id: request.import_id.to_owned(),
+                                            stage: "publication".to_owned(),
+                                            error: "import failed".to_owned(),
+                                            duration_ms,
+                                            partial_outputs: vec![],
+                                            generation: Some(generation),
+                                            attempt_id: Some(attempt_id.clone()),
+                                        },
+                                    );
+                                }
                                 Err(NativeProducerError::PublicationFailed {
                                     detail: err.to_string(),
                                 })
@@ -504,6 +508,23 @@ where
                     };
 
                     match pub_rec_res {
+                        Err(
+                            solstone_core_import::publish::PublishError::NotAdmitted
+                            | solstone_core_import::publish::PublishError::Superseded,
+                        ) => {
+                            let _ = record_unconfirmed_attempt_unlocked(
+                                request.journal_root,
+                                request.import_id,
+                                generation,
+                                finished_at_ms,
+                                Some(IMPORT_UNCONFIRMED_REASON.to_owned()),
+                            );
+                            heartbeat.finish_then(|| {
+                                Err(NativeProducerError::PublicationFailed {
+                                    detail: "one or more publication operations failed".to_owned(),
+                                })
+                            })
+                        }
                         Ok(pub_rec) if pub_rec.status == PublicationStatus::Success => {
                             if let Err(meta_err) = record_completed_attempt_unlocked(
                                 request.journal_root,
@@ -774,6 +795,23 @@ where
                                 unavailable_pages: proj.unavailable_pages,
                                 publication: None,
                                 errors: import_res.errors,
+                            })
+                        })
+                    } else if !solstone_core_import::work_continues() {
+                        let _ = record_unconfirmed_attempt_unlocked(
+                            request.journal_root,
+                            request.import_id,
+                            generation,
+                            finished_at_ms,
+                            Some(IMPORT_UNCONFIRMED_REASON.to_owned()),
+                        );
+                        heartbeat.finish_then(|| {
+                            Err(NativeProducerError::SourceFailed {
+                                detail: if import_res.hard_failures.is_empty() {
+                                    "the document import produced no entries".to_owned()
+                                } else {
+                                    import_res.hard_failures.join("; ")
+                                },
                             })
                         })
                     } else {
@@ -2204,6 +2242,165 @@ mod tests {
             !outcome.errors.is_empty(),
             "per-input warnings must reach NativeProducerOutcome.errors"
         );
+    }
+
+    #[cfg(all(test, feature = "full-tests"))]
+    struct StoppingImageWire {
+        stop: solstone_core_import::WorkStop,
+        calls: std::cell::Cell<usize>,
+    }
+
+    #[cfg(all(test, feature = "full-tests"))]
+    impl WireClient for StoppingImageWire {
+        fn execute(
+            &self,
+            _request: &solstone_core_generate::GenerateRequest,
+        ) -> Result<solstone_core_generate::GenerateResponse, solstone_core_generate::ClientError>
+        {
+            self.calls.set(self.calls.get() + 1);
+            self.stop.request();
+            Ok(solstone_core_generate::GenerateResponse::Generated(
+                Box::new(solstone_core_generate::GeneratedResponse {
+                    id: None,
+                    text: "secret description".to_owned(),
+                    model: "test".to_owned(),
+                    usage: serde_json::json!({}),
+                    finish_reason: "stop".to_owned(),
+                    thinking: None,
+                    schema_validation: None,
+                    input_budget: None,
+                    request_budget: None,
+                    inference: None,
+                    hints_applied: Vec::new(),
+                }),
+            ))
+        }
+    }
+
+    #[cfg(all(test, feature = "full-tests"))]
+    fn files_named(root: &Path, name: &str) -> Vec<PathBuf> {
+        let mut found = Vec::new();
+        let mut pending = vec![root.to_path_buf()];
+        while let Some(directory) = pending.pop() {
+            let Ok(entries) = fs::read_dir(&directory) else {
+                continue;
+            };
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    pending.push(path);
+                } else if path.file_name().is_some_and(|item| item == name) {
+                    found.push(path);
+                }
+            }
+        }
+        found.sort();
+        found
+    }
+
+    #[cfg(all(test, feature = "full-tests"))]
+    #[test]
+    fn a_stopped_image_records_unconfirmed_and_keeps_the_admitted_original() {
+        let temp = tempfile::Builder::new()
+            .prefix("test-image-stop-")
+            .tempdir()
+            .unwrap();
+        let root = temp.path();
+        let first = root.join("first.png");
+        let second = root.join("second.png");
+        fs::write(&first, TINY_PNG).unwrap();
+        fs::write(&second, TINY_PNG).unwrap();
+        let first_id = "20260408_140000";
+        let second_id = "20260408_150000";
+        run_native_producer(
+            NativeProducerRequest {
+                journal_root: root,
+                source_path: &first,
+                import_id: first_id,
+                source: RegistrySource::Image,
+                revision: None,
+                password: None,
+                owner_timestamp: None,
+                fallback_timestamp: Some(first_id),
+                force: false,
+                expected_generation: None,
+                heartbeat_interval: None,
+                before_publication: None,
+            },
+            &NullWireClient,
+            &NullPdfWorker,
+            &crate::NullDocumentModelClient,
+            &solstone_core_import::NativePublicationOperations,
+        )
+        .expect("first image installs");
+        let originals = files_named(root, "original.png");
+        assert_eq!(originals.len(), 1);
+        let kept_original = fs::read(&originals[0]).unwrap();
+        let transcripts = files_named(root, "image_transcript.md");
+        let kept_transcript = fs::read(&transcripts[0]).unwrap();
+
+        let stop = solstone_core_import::WorkStop::new();
+        let _guard = solstone_core_import::WorkStopGuard::install(&stop);
+        let wire = StoppingImageWire {
+            stop: stop.clone(),
+            calls: std::cell::Cell::new(0),
+        };
+        let error = run_native_producer(
+            NativeProducerRequest {
+                journal_root: root,
+                source_path: &second,
+                import_id: second_id,
+                source: RegistrySource::Image,
+                revision: None,
+                password: None,
+                owner_timestamp: None,
+                fallback_timestamp: Some(second_id),
+                force: false,
+                expected_generation: None,
+                heartbeat_interval: None,
+                before_publication: None,
+            },
+            &wire,
+            &NullPdfWorker,
+            &crate::NullDocumentModelClient,
+            &solstone_core_import::NativePublicationOperations,
+        )
+        .expect_err("stopped image does not publish");
+        assert!(matches!(
+            error,
+            NativeProducerError::PublicationFailed { ref detail } if detail == "import stopped"
+        ));
+        assert_eq!(wire.calls.get(), 1);
+        assert_eq!(files_named(root, "original.png"), originals);
+        assert_eq!(fs::read(&originals[0]).unwrap(), kept_original);
+        assert_eq!(fs::read(&transcripts[0]).unwrap(), kept_transcript);
+        assert!(
+            !root
+                .join("imports")
+                .join(second_id)
+                .join("manifest.json")
+                .exists()
+        );
+        assert!(
+            !root
+                .join("imports")
+                .join(second_id)
+                .join("imported.json")
+                .exists()
+        );
+        let projection = solstone_core_import::project_import_result(root, second_id);
+        assert_eq!(
+            projection.status,
+            solstone_core_import::ProjectionStatus::Unconfirmed
+        );
+        assert_eq!(
+            projection.error.as_deref(),
+            Some(solstone_core_import::IMPORT_UNCONFIRMED_REASON)
+        );
+        for path in files_named(root, "image_transcript.md") {
+            let text = fs::read_to_string(&path).unwrap_or_default();
+            assert!(!text.contains("secret description"), "{}", path.display());
+        }
     }
 }
 

@@ -242,6 +242,25 @@ pub fn write_rendered(
     let mut written_segments = std::collections::BTreeSet::new();
 
     for file in &rendered.files {
+        if !solstone_core_import::work_continues() {
+            let path = journal
+                .join("chronicle")
+                .join(&file.day)
+                .join(&stream)
+                .join(&file.segment)
+                .join(&file.name);
+            return WriteOutcome {
+                created,
+                calendar_files,
+                error: Some(SaveError {
+                    path,
+                    detail: "import stopped".to_owned(),
+                }),
+                skipped_deleted,
+                entries: 0,
+                summary: String::new(),
+            };
+        }
         let segment_dir = journal
             .join("chronicle")
             .join(&file.day)

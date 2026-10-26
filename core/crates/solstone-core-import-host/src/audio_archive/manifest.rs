@@ -60,6 +60,9 @@ pub fn read_manifest_members(
 
         let resolved_file = source_root.join(&file_subpath);
 
+        if !solstone_core_import::work_continues() {
+            return Err(AudioArchiveError::Other("import stopped".to_owned()));
+        }
         let (byte_len, sha256, duration) = probe_member_file(&resolved_file);
 
         let file_name = Path::new(&file_subpath)
@@ -101,7 +104,14 @@ pub fn read_manifest_members(
     Ok(members)
 }
 
+#[cfg(test)]
+thread_local! {
+    static MEMBER_PROBES: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+}
+
 pub fn probe_member_file(path: &Path) -> (u64, String, DurationInput) {
+    #[cfg(test)]
+    MEMBER_PROBES.with(|count| count.set(count.get() + 1));
     let bytes = match fs::read(path) {
         Ok(bytes) => bytes,
         Err(_) => {
@@ -138,4 +148,85 @@ pub fn probe_member_file(path: &Path) -> (u64, String, DurationInput) {
         }
     };
     (byte_len, sha256, duration)
+}
+
+#[cfg(all(test, feature = "full-tests"))]
+mod tests {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+
+    use solstone_core_import::{WorkStop, WorkStopGuard};
+
+    use super::MEMBER_PROBES;
+
+    fn admit_one_probe() -> WorkStopGuard {
+        MEMBER_PROBES.with(|count| count.set(0));
+        let checks = AtomicUsize::new(0);
+        let stop =
+            WorkStop::linked_with_checkpoint(Arc::new(AtomicBool::new(false)), None, move || {
+                checks.fetch_add(1, Ordering::AcqRel) > 0
+            });
+        WorkStopGuard::install(&stop)
+    }
+
+    fn probes() -> u32 {
+        MEMBER_PROBES.with(|count| count.get())
+    }
+
+    #[test]
+    fn stop_after_the_first_folder_probe_does_not_read_the_next_member() {
+        let folder = tempfile::tempdir().unwrap();
+        std::fs::write(folder.path().join("a.wav"), b"first").unwrap();
+        std::fs::write(folder.path().join("b.wav"), b"second").unwrap();
+        let _guard = admit_one_probe();
+        let error = super::super::scan_folder_members(folder.path(), "UTC").unwrap_err();
+        assert_eq!(error.to_string(), "import stopped");
+        assert_eq!(probes(), 1);
+    }
+
+    #[test]
+    fn stop_after_the_first_manifest_probe_does_not_read_the_next_member() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(root.path().join("a.wav"), b"first").unwrap();
+        std::fs::write(root.path().join("b.wav"), b"second").unwrap();
+        let manifest = root.path().join("members.json");
+        std::fs::write(
+            &manifest,
+            r#"{"members":[
+                {"path":"a.wav","original_relative_name":"a.wav"},
+                {"path":"b.wav","original_relative_name":"b.wav"}
+            ]}"#,
+        )
+        .unwrap();
+        let _guard = admit_one_probe();
+        let error = super::read_manifest_members(&manifest, root.path(), Some("UTC")).unwrap_err();
+        assert_eq!(error.to_string(), "import stopped");
+        assert_eq!(probes(), 1);
+    }
+
+    #[test]
+    fn stopped_folder_scan_fails_the_archive_before_a_plan() {
+        let journal = tempfile::tempdir().unwrap();
+        let folder = tempfile::tempdir().unwrap();
+        std::fs::write(folder.path().join("a.wav"), b"first").unwrap();
+        std::fs::write(folder.path().join("b.wav"), b"second").unwrap();
+        let _guard = admit_one_probe();
+        let run = super::super::run_audio_archive_with(
+            super::super::AudioArchiveDispatchOptions {
+                path: folder.path().to_path_buf(),
+                source_zone: Some("UTC".to_owned()),
+                resume: None,
+                dry_run: true,
+                json: false,
+            },
+            journal.path(),
+            None,
+            None,
+        );
+        assert_eq!(run.exit_code, 1);
+        assert_eq!(run.stderr, "audio archive failed: import stopped\n");
+        assert_eq!(probes(), 1);
+        assert!(!journal.path().join("chronicle").exists());
+        assert!(!journal.path().join("imports").exists());
+    }
 }

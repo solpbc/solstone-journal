@@ -82,7 +82,10 @@ pub(crate) fn hold_use(
     journal: &Path,
     installed: &Installed,
 ) -> io::Result<solstone_core_journal_io::FileLock> {
-    solstone_core_artifact_download::generation::hold_use(&use_directory(journal, installed))
+    solstone_core_artifact_download::generation::hold_use_with_lock(
+        &use_directory(journal, installed),
+        |path, options| crate::reconcile_io::hold_lock(path, options, true),
+    )
 }
 
 pub(crate) fn remove_legacy(journal: &Path, installed: &Installed) -> io::Result<()> {

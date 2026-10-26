@@ -13,6 +13,9 @@ publish = false
 name = "solstone-core-pdf"
 path = "src/main.rs"
 
+[features]
+full-tests = []
+
 [dependencies]
 image.workspace = true
 libc.workspace = true

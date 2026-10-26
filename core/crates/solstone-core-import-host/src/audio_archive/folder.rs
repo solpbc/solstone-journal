@@ -48,6 +48,9 @@ pub fn scan_folder_members(
             },
         };
 
+        if !solstone_core_import::work_continues() {
+            return Err(AudioArchiveError::Other("import stopped".to_owned()));
+        }
         let (byte_len, sha256, duration) = probe_member_file(&file_path);
 
         members.push(AudioArchiveMemberInput {

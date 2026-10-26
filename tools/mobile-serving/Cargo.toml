@@ -28,6 +28,9 @@ processing = [
     "dep:solstone-core-speakers",
     "dep:solstone-core-linked-share",
     "dep:solstone-core-talent-runtime",
+    "dep:solstone-core-import",
+    "dep:solstone-core-import-host",
+    "dep:solstone-core-import-sources",
 ]
 
 [dependencies]
@@ -68,6 +71,9 @@ solstone-core-speaker-resolve = { path = "../../core/crates/solstone-core-speake
 solstone-core-speakers = { path = "../../core/crates/solstone-core-speakers", optional = true }
 solstone-core-linked-share = { path = "../../core/crates/solstone-core-linked-share", optional = true }
 solstone-core-talent-runtime = { path = "../../core/crates/solstone-core-talent-runtime", optional = true }
+solstone-core-import = { path = "../../core/crates/solstone-core-import", optional = true }
+solstone-core-import-host = { path = "../../core/crates/solstone-core-import-host", optional = true }
+solstone-core-import-sources = { path = "../../core/crates/solstone-core-import-sources", optional = true }
 ort = { version = "=2.0.0-rc.12", default-features = false, features = ["api-24", "std"] }
 
 # iOS links the pinned static runtime into its app executable.

@@ -6,5 +6,9 @@
 pub mod audio;
 pub mod audio_archive;
 pub mod audio_publication;
+pub mod call;
 pub mod cli_argv;
 pub mod import_publication;
+#[cfg(feature = "in-process-pdf")]
+pub mod pdf_in_process;
+pub mod registry;

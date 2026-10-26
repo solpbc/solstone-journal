@@ -34,7 +34,7 @@ struct ThinkRecurrence {
     max_runtime: Option<String>,
 }
 
-pub(super) fn routes(sender: mpsc::Sender<Job>) -> Router {
+pub(super) fn routes(sender: OwnerIngress) -> Router {
     Router::new()
         .route("/api/journal/think", post(think))
         .route("/api/journal/maintenance/{routine}", post(maintenance))
@@ -50,23 +50,17 @@ pub(super) fn routes(sender: mpsc::Sender<Job>) -> Router {
         .with_state(sender)
 }
 
-async fn think(
-    State(sender): State<mpsc::Sender<Job>>,
-    Json(request): Json<ThinkRequest>,
-) -> Response {
+async fn think(State(sender): State<OwnerIngress>, Json(request): Json<ThinkRequest>) -> Response {
     submit_operation(sender, Operation::Think(request.args)).await
 }
-async fn maintenance(
-    State(sender): State<mpsc::Sender<Job>>,
-    Path(routine): Path<String>,
-) -> Response {
+async fn maintenance(State(sender): State<OwnerIngress>, Path(routine): Path<String>) -> Response {
     submit_operation(sender, Operation::Maintenance(routine)).await
 }
-async fn list(State(sender): State<mpsc::Sender<Job>>) -> Response {
+async fn list(State(sender): State<OwnerIngress>) -> Response {
     submit_operation(sender, Operation::ListRecurrences).await
 }
 async fn put_think(
-    State(sender): State<mpsc::Sender<Job>>,
+    State(sender): State<OwnerIngress>,
     Path(name): Path<String>,
     Json(request): Json<ThinkRecurrence>,
 ) -> Response {
@@ -85,17 +79,14 @@ async fn put_think(
     )
     .await
 }
-async fn remove_think(
-    State(sender): State<mpsc::Sender<Job>>,
-    Path(name): Path<String>,
-) -> Response {
+async fn remove_think(State(sender): State<OwnerIngress>, Path(name): Path<String>) -> Response {
     let Some(name) = think_name(&name) else {
         return invalid();
     };
     submit_operation(sender, Operation::RemoveRecurrence(name)).await
 }
 async fn put_source(
-    State(sender): State<mpsc::Sender<Job>>,
+    State(sender): State<OwnerIngress>,
     Path(source): Path<String>,
     Json(request): Json<Recurrence>,
 ) -> Response {
@@ -114,10 +105,7 @@ async fn put_source(
     )
     .await
 }
-async fn remove_source(
-    State(sender): State<mpsc::Sender<Job>>,
-    Path(source): Path<String>,
-) -> Response {
+async fn remove_source(State(sender): State<OwnerIngress>, Path(source): Path<String>) -> Response {
     if source_command(&source).is_none() {
         return invalid();
     }
