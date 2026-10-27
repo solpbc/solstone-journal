@@ -44,6 +44,32 @@ final class OwnerFolderServiceEndpoint {
             Native.retireFolderPage(data.getLong("page_authority"));
             return true;
         }
+        if ("owner-source-change".equals(op)) {
+            if (destroyed.getAsBoolean()) { reply.send(target,id,refused()); return true; }
+            final byte[] request=data.getByteArray("request");
+            final Uri selected=data.getParcelable("tree");
+            final int flags=data.getInt("permission_flags",0);
+            final boolean remember=data.getBoolean("remember",false);
+            final long page=data.getLong("page_authority");
+            if (request == null || request.length == 0 || request.length > 32*1024 || page == 0) {
+                reply.send(target,id,refused());return true;
+            }
+            submit(target,id,() -> {
+                JSONObject fields=new JSONObject(new String(request,StandardCharsets.UTF_8));
+                if (fields.getLong("page_authority") != page) return refused();
+                boolean forget="forget".equals(fields.optString("action"));
+                if (!forget && (selected == null || !DocumentsContract.isTreeUri(selected)
+                        || !remember)) return refused();
+                // The document never chooses the private URI. Overwrite it
+                // from the real native picker result carried by this Service.
+                if (forget) fields.remove("access_material");
+                else fields.put("access_material",selected.toString());
+                SourcePermissionTransition permission=SourcePermissions.forSelection(service.getContentResolver(),selected,flags);
+                byte[] result=Native.changeOwnerSource(fields.toString().getBytes(StandardCharsets.UTF_8),permission);
+                return result == null ? unknown() : new String(result,StandardCharsets.UTF_8);
+            });
+            return true;
+        }
         if (!"owner-folder-page".equals(op) && !"owner-folder-copy".equals(op)) return false;
         if (destroyed.getAsBoolean()) { reply.send(target,id,refused()); return true; }
         if ("owner-folder-page".equals(op)) {

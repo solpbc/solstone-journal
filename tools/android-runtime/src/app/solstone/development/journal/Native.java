@@ -12,6 +12,7 @@ public final class Native {
     static native byte[] copyOwnerFolder(String cache,byte[] request,OwnerFolderServiceCopy copier);
     static native long installSavedFolderProvider(String cache,Object provider);
     static native void retireSavedFolderProvider(long identity);
+    static native byte[] changeOwnerSource(byte[] request, SourcePermissionTransition permissions);
     static native long issueFolderPage(String root,long admissionGeneration);
     static native long allocateFolderPage();
     static native long bindFolderPage(String root,long admissionGeneration,long page);

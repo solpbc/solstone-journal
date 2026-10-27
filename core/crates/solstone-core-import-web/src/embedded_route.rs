@@ -1546,6 +1546,10 @@ mod tests {
         let before = slot.workers.lock().expect("workers").handles.len();
         let second = preview::preview(State(state), Json(data)).await;
         assert_eq!(second.status(), StatusCode::OK);
+        // Returning the HTTP result releases the preview's retained value; it
+        // does not join the worker that still owns its cleanup. Count the
+        // blocked import after that preview has actually returned.
+        spin_until(|| worker_counts(&slot).0 == 1);
         let (running, _) = worker_counts(&slot);
         assert_eq!(running, 1);
         assert_eq!(slot.workers.lock().expect("workers").handles.len(), before);

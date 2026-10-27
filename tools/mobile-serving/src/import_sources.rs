@@ -77,7 +77,8 @@ impl SourceConnectionGuard {
         change: FolderConnectionChange,
     ) -> Result<solstone_core_import::PublicConnection, SourceConnectionError> {
         use solstone_core_import::{
-            SyncState, begin_folder, public_connection, reauthorize, replace_folder,
+            SyncState, begin_folder, public_connection, public_connection_status, reauthorize,
+            replace_folder,
         };
         if stop.is_requested() || root.revalidate_canonical_binding().is_err() {
             return Err(SourceConnectionError::Refused);
@@ -87,7 +88,8 @@ impl SourceConnectionGuard {
             SyncStateRead::Loaded(state) => state,
             SyncStateRead::Unreadable { .. } => return Err(SourceConnectionError::Refused),
         };
-        let current = public_connection(&state);
+        let current =
+            public_connection_status(&state).map_err(|_| SourceConnectionError::Refused)?;
         let expected = match &change {
             FolderConnectionChange::Begin { .. } => None,
             FolderConnectionChange::Reauthorize {

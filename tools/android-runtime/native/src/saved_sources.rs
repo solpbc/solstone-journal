@@ -85,6 +85,9 @@ struct Installation {
 static INSTALLATION: Mutex<Option<Installation>> = Mutex::new(None);
 static NEXT_IDENTITY: AtomicU64 = AtomicU64::new(1);
 
+#[path = "source_connection.rs"]
+mod connection;
+
 /// # Safety
 /// Cache is a live UTF-8 buffer from the private Service. Context and callbacks
 /// satisfy NativeProvider's thread/resource contract. Non-null context with both
@@ -213,7 +216,7 @@ unsafe fn source_status(request: *const u8, length: usize) -> Result<serde_json:
     };
     let connection = match solstone_core_import::read_sync_state_bound(&root, backend) {
         solstone_core_import::SyncStateRead::Absent => serde_json::Value::Null,
-        solstone_core_import::SyncStateRead::Loaded(state) => solstone_core_import::public_connection(&state).map_or(serde_json::Value::Null, |public| serde_json::json!({
+        solstone_core_import::SyncStateRead::Loaded(state) => solstone_core_import::public_connection_status(&state).map_err(|_| ())?.map_or(serde_json::Value::Null, |public| serde_json::json!({
             "source_identity":public.source_identity,"folder_name":public.folder_name,
             "remembered":public.remembered,"access_state":public.access_state.to_string()
         })),
