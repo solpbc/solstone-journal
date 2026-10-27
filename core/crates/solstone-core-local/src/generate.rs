@@ -3263,8 +3263,10 @@ mod tests {
     }
 
     /// Overflow fixtures are sized for a 16,384-token server, so they declare it.
+    #[cfg(target_os = "linux")]
     const SERVED_16K: u32 = 16_384;
 
+    #[cfg(target_os = "linux")]
     fn serve_window(transport: &mut ScriptedTransport, window: u32) {
         transport.props = Some(HttpResponse {
             status: 200,
