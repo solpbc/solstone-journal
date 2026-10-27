@@ -1454,6 +1454,8 @@ mod audio_archive {
             path: manifest_file.clone(),
             source_zone: None,
             resume: None,
+            expected_identity: None,
+            expected_owner_zone: None,
             dry_run: false,
             json: true,
         };
@@ -1495,6 +1497,8 @@ mod audio_archive {
             path: manifest_file.clone(),
             source_zone: None,
             resume: None,
+            expected_identity: None,
+            expected_owner_zone: None,
             dry_run: false,
             json: true,
         };
@@ -1590,6 +1594,8 @@ mod audio_archive {
             path: manifest_file,
             source_zone: None,
             resume: None,
+            expected_identity: None,
+            expected_owner_zone: None,
             dry_run: false,
             json: true,
         };

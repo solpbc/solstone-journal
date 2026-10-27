@@ -322,6 +322,8 @@ fn audio_archive_dry_run_is_not_the_size_schema_and_saved_stays_distinct() {
             path: folder.path().to_path_buf(),
             source_zone: Some("UTC".to_owned()),
             resume: None,
+            expected_identity: None,
+            expected_owner_zone: None,
             dry_run: true,
             json: true,
         },
@@ -350,6 +352,8 @@ fn audio_archive_dry_run_is_not_the_size_schema_and_saved_stays_distinct() {
             path: folder.path().to_path_buf(),
             source_zone: Some("UTC".to_owned()),
             resume: Some("20260616_120000".to_owned()),
+            expected_identity: None,
+            expected_owner_zone: None,
             dry_run: true,
             json: true,
         },
@@ -380,6 +384,57 @@ fn audio_archive_dry_run_is_not_the_size_schema_and_saved_stays_distinct() {
         serde_json::from_str(&serde_json::to_string(&status).unwrap()).unwrap();
     assert_eq!(restored.saved_parts, 1);
     assert_eq!(restored.processed_parts, 0);
+}
+
+#[test]
+fn audio_archive_reviewed_identity_and_owner_zone_refuse_before_admission() {
+    let journal = tempfile::tempdir().unwrap();
+    fs::create_dir(journal.path().join("config")).unwrap();
+    fs::write(
+        journal.path().join("config/journal.json"),
+        br#"{"identity":{"timezone":"UTC"}}"#,
+    )
+    .unwrap();
+    let source = tempfile::tempdir().unwrap();
+    let path = source
+        .path()
+        .join("limitless_pendant_2026-10-14T09-00-00_to_2026-10-14T09-01-00.opus");
+    let bytes = include_bytes!("../../../fixtures/audio_decode_corpus/render.opus");
+    fs::write(&path, bytes).unwrap();
+    let mut options = AudioArchiveDispatchOptions {
+        path: source.path().into(),
+        source_zone: Some("UTC".into()),
+        dry_run: true,
+        json: true,
+        ..Default::default()
+    };
+    let preview = run_audio_archive(options.clone(), journal.path());
+    assert_eq!(preview.exit_code, 0, "{}", preview.stderr);
+    let preview: serde_json::Value = serde_json::from_str(&preview.stdout).unwrap();
+    options.expected_identity = Some(preview["archive_identity"].as_str().unwrap().into());
+    options.expected_owner_zone = Some("UTC".into());
+    options.dry_run = false;
+    fs::write(&path, b"changed after the reviewed preview").unwrap();
+    let changed = run_audio_archive(options.clone(), journal.path());
+    assert_ne!(changed.exit_code, 0);
+    assert!(
+        changed.stderr.contains("archive changed after preview"),
+        "{}",
+        changed.stderr
+    );
+    assert!(!journal.path().join("imports").exists());
+    assert!(!journal.path().join("chronicle").exists());
+    fs::write(&path, bytes).unwrap();
+    options.expected_owner_zone = Some("America/Denver".into());
+    let changed = run_audio_archive(options, journal.path());
+    assert_ne!(changed.exit_code, 0);
+    assert!(
+        changed.stderr.contains("time zone changed after preview"),
+        "{}",
+        changed.stderr
+    );
+    assert!(!journal.path().join("imports").exists());
+    assert!(!journal.path().join("chronicle").exists());
 }
 
 #[test]

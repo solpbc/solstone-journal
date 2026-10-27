@@ -127,6 +127,152 @@ struct TileIntent {
     parts: Vec<TileIntentPart>,
 }
 
+/// Read the producer's durable, pre-publication size/SHA for one owed raw part.
+/// The SQLite row only chooses candidates; authority is read through the
+/// original imports/segment descriptors and matched to the consumed stage and
+/// published placement. No receipt is reconstructed from current raw bytes.
+#[cfg(unix)]
+pub fn read_published_part_receipt_bound(
+    root: &solstone_core_journal_io::JournalRoot,
+    input: &Path,
+    cancelled: &dyn Fn() -> bool,
+) -> Result<Option<(u64, String)>, String> {
+    use solstone_core_journal_io::{FlatDirectory, JournalEntryKind, read_observed_file_bounded};
+    use std::ffi::OsStr;
+    let checkpoint = || -> Result<(), String> {
+        if cancelled() {
+            return Err("custody verification cancelled".into());
+        }
+        root.revalidate_canonical_binding()
+            .map_err(|error| error.to_string())
+    };
+    checkpoint()?;
+    let relative = input
+        .strip_prefix(root.canonical_path().join("chronicle"))
+        .map_err(|error| error.to_string())?;
+    let parts = relative
+        .components()
+        .map(|component| match component {
+            std::path::Component::Normal(value) => {
+                value.to_str().ok_or("non-UTF-8 archive coordinate")
+            }
+            _ => Err("invalid archive coordinate"),
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let [day, stream, key, name] = parts.as_slice() else {
+        return Ok(None);
+    };
+    if !stream.starts_with("import.")
+        || *stream == "import.audio"
+        || super::record::validate_coordinates(day, key).is_err()
+    {
+        return Ok(None);
+    }
+    let imports =
+        FlatDirectory::open(root, Path::new("imports")).map_err(|error| error.to_string())?;
+    let parent = Path::new("chronicle").join(day).join(stream).join(key);
+    let segment = FlatDirectory::open(root, &parent).map_err(|error| error.to_string())?;
+    let verify = || -> Result<(), String> {
+        checkpoint()?;
+        let current_imports =
+            FlatDirectory::open(root, Path::new("imports")).map_err(|error| error.to_string())?;
+        let current_segment =
+            FlatDirectory::open(root, &parent).map_err(|error| error.to_string())?;
+        if current_imports.identity() != imports.identity()
+            || current_segment.identity() != segment.identity()
+        {
+            return Err("archive custody parent changed".into());
+        }
+        Ok(())
+    };
+    let candidates = super::claims::pending_runs_for_coordinate(root.canonical_path(), day, key)?;
+    verify()?;
+    if candidates.is_empty() {
+        return Ok(None);
+    }
+    let placement = read_observed_file_bounded(
+        &segment,
+        OsStr::new(AUDIO_ARCHIVE_PLACEMENT_FILENAME),
+        16 * 1024 * 1024,
+    )
+    .map_err(|error| error.to_string())?
+    .ok_or("archive placement is missing")?;
+    let placement: AudioArchivePlacement =
+        serde_json::from_slice(&placement.bytes).map_err(|_| "archive placement is unreadable")?;
+    let mut matched = None;
+    for id in candidates {
+        verify()?;
+        let run = imports
+            .descend_normal(Path::new(&id))
+            .map_err(|error| error.to_string())?;
+        let intents = run
+            .descend_normal(Path::new("tiles"))
+            .map_err(|error| error.to_string())?;
+        let intent_name = format!("{day}_{key}.intent.json");
+        let Some(observed) =
+            read_observed_file_bounded(&intents, OsStr::new(&intent_name), 16 * 1024 * 1024)
+                .map_err(|error| error.to_string())?
+        else {
+            continue;
+        };
+        let intent: TileIntent =
+            serde_json::from_slice(&observed.bytes).map_err(|_| "archive intent is unreadable")?;
+        if intent.day != *day || intent.segment_key != *key || intent.stream != *stream {
+            continue;
+        }
+        if intent.placement != placement {
+            return Err("published archive placement differs from its intent".into());
+        }
+        let staged = run
+            .descend_normal(Path::new("staged"))
+            .and_then(|staged| staged.descend_normal(Path::new(day)))
+            .map_err(|error| error.to_string())?;
+        if staged
+            .observe(OsStr::new(key))
+            .map_err(|error| error.to_string())?
+            .is_some()
+        {
+            return Err("archive tile stage has not been consumed".into());
+        }
+        let Some(part) = intent.parts.iter().find(|part| part.stored_name == *name) else {
+            continue;
+        };
+        if part.sha256.len() != 64
+            || !part.sha256.bytes().all(|byte| byte.is_ascii_hexdigit())
+            || !placement.parts.iter().any(|part| part.stored_name == *name)
+        {
+            return Err("archive part witness is invalid".into());
+        }
+        let actual = segment
+            .observe(OsStr::new(name))
+            .map_err(|error| error.to_string())?
+            .ok_or("archive raw part is missing")?;
+        if actual.kind != JournalEntryKind::RegularFile || actual.size != part.byte_len {
+            return Err("archive raw part differs from its accepted size".into());
+        }
+        verify()?;
+        if imports
+            .descend_normal(Path::new(&id))
+            .map_err(|error| error.to_string())?
+            .identity()
+            != run.identity()
+            || run
+                .descend_normal(Path::new("tiles"))
+                .map_err(|error| error.to_string())?
+                .identity()
+                != intents.identity()
+        {
+            return Err("archive custody run changed".into());
+        }
+        if matched.is_some() {
+            return Err("archive part has ambiguous custody".into());
+        }
+        matched = Some((part.byte_len, part.sha256.clone()));
+    }
+    verify()?;
+    Ok(matched)
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum PublicationAction {
     Stage,

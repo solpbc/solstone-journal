@@ -289,7 +289,6 @@ pub(crate) mod tests {
         let root = populated_root();
         let (status, body) = json_request(root.path(), "GET", "/app/import/api/sources").await;
         assert_eq!(status, StatusCode::OK);
-        assert_eq!(body["total"], 11);
         let expected = [
             "ics",
             "chatgpt",
@@ -297,12 +296,14 @@ pub(crate) mod tests {
             "gemini",
             "obsidian",
             "journal_archive",
+            "audio_archive",
             "recording",
             "document",
             "image",
             "strava",
             "quick",
         ];
+        assert_eq!(body["total"], expected.len());
         let rows = body["items"].as_array().expect("items array");
         assert_eq!(
             rows.iter()
@@ -324,6 +325,10 @@ pub(crate) mod tests {
         .into_iter()
         .collect();
         assert!(rows.iter().all(|row| {
+            let mut expected_keys = expected_keys.clone();
+            if row["name"] == "audio_archive" {
+                expected_keys.insert("time_zones");
+            }
             row.as_object()
                 .unwrap()
                 .keys()

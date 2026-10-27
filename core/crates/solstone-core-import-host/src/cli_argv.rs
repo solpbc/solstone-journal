@@ -332,6 +332,15 @@ pub(crate) fn library_preview_arguments(
                 .map(|shaped| shaped.unwrap_or_else(|| args.to_vec()))
         }
         ParsedCommand::Sync { options, .. } if options.save => Ok(without_flag(args, "--save")),
+        ParsedCommand::AudioArchive(crate::audio_archive::AudioArchiveDispatchOptions {
+            resume: Some(id),
+            dry_run: false,
+            ..
+        }) => Ok(vec![
+            "--audio-archive-status".to_owned(),
+            id,
+            "--json".to_owned(),
+        ]),
         ParsedCommand::AudioArchive(options) if !options.dry_run => {
             let mut shaped = Vec::with_capacity(args.len() + 1);
             shaped.push("--dry-run".to_owned());
@@ -2115,6 +2124,7 @@ struct Options {
     preview_stamp: Option<String>,
     fallback_timestamp: Option<String>,
     audio_archive: Option<PathBuf>,
+    archive_identity: Option<String>,
     source_zone: Option<String>,
     resume: Option<String>,
     audio_archive_status: Option<String>,
@@ -2201,6 +2211,9 @@ fn parse_arguments(args: &[String]) -> Result<ParsedCommand, String> {
             return Err(format!("unrecognized arguments: {}", extras.join(" ")));
         }
     }
+    if options.archive_identity.is_some() && options.audio_archive.is_none() {
+        return Err("--archive-identity is only valid with --audio-archive".to_owned());
+    }
     if let Some(audio_archive) = options.audio_archive {
         if !positionals.is_empty() {
             return Err(format!("unrecognized arguments: {}", positionals.join(" ")));
@@ -2216,6 +2229,8 @@ fn parse_arguments(args: &[String]) -> Result<ParsedCommand, String> {
                 path: audio_archive,
                 source_zone: options.source_zone,
                 resume: options.resume,
+                expected_identity: options.archive_identity,
+                expected_owner_zone: options.preview_zone,
                 dry_run: options.dry_run,
                 json: options.json,
             },
@@ -2305,6 +2320,7 @@ fn takes_value(argument: &str) -> bool {
             | "--date-from"
             | "--date-to"
             | "--audio-archive"
+            | "--archive-identity"
             | "--source-zone"
             | "--resume"
             | "--audio-archive-status"
@@ -2338,6 +2354,12 @@ fn assign_value(options: &mut Options, name: &str, value: &str) -> Result<(), St
         "--facet" => options.facet = Some(value.to_owned()),
         "--setting" => options.setting = Some(value.to_owned()),
         "--audio-archive" => options.audio_archive = Some(PathBuf::from(value)),
+        "--archive-identity" => {
+            if value.len() != 64 || !value.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+                return Err("--archive-identity must be a SHA-256 identity".to_owned());
+            }
+            options.archive_identity = Some(value.to_ascii_lowercase());
+        }
         "--source-zone" => options.source_zone = Some(value.to_owned()),
         "--resume" => options.resume = Some(value.to_owned()),
         "--audio-archive-status" => options.audio_archive_status = Some(value.to_owned()),

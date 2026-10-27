@@ -26,6 +26,9 @@ pub struct AudioArchiveDispatchOptions {
     pub path: PathBuf,
     pub source_zone: Option<String>,
     pub resume: Option<String>,
+    /// A caller's reviewed member/time/zone identity, checked before admission.
+    pub expected_identity: Option<String>,
+    pub expected_owner_zone: Option<String>,
     pub dry_run: bool,
     pub json: bool,
 }
@@ -95,6 +98,15 @@ fn save(
         path.clone()
     };
     let owner_zone = solstone_core_journal_config::owner_zone(journal);
+    if options
+        .expected_owner_zone
+        .as_deref()
+        .is_some_and(|expected| expected != owner_zone.name())
+    {
+        return Err(AudioArchiveError::Other(
+            "the time zone changed after preview; preview it again".into(),
+        ));
+    }
     // An explicit resume uses the admitted plan, even when the source folder
     // changed. Only unsaved parts reopen their frozen source and verify bytes.
     let (members, settings) = if let Some(id) = &options.resume {
@@ -128,17 +140,27 @@ fn save(
         };
         (members, settings)
     };
+    if options
+        .expected_identity
+        .as_ref()
+        .is_some_and(|identity| identity != &settings.archive_identity)
+    {
+        return Err(AudioArchiveError::Other(
+            "the archive changed after preview; preview it again".into(),
+        ));
+    }
     if options.dry_run {
         if options.resume.is_some() {
             return Err(AudioArchiveError::Other(
                 "use --audio-archive-status to inspect an admitted run".into(),
             ));
         }
+        let archive_identity = settings.archive_identity.clone();
         let plan = prepare_audio_archive_plan(journal, &members, owner_zone, settings)?;
         return Ok(success(if options.json {
             format!(
                 "{}\n",
-                json!({"operation":"dry_run", "size":plan.size,
+                json!({"operation":"dry_run", "archive_identity":archive_identity, "size":plan.size,
                 "members":plan.size.members, "source_bytes":plan.size.source_bytes,
                 "bytes":plan.size.bytes, "days":plan.size.days, "tiles":plan.size.tiles,
                 "span":plan.size.span, "left_out":plan.size.left_out})
@@ -298,7 +320,17 @@ pub fn run_audio_archive_status(run_id: &str, json: bool, journal: &Path) -> Cli
     };
 
     if json {
-        let stdout = format!("{}\n", serde_json::to_string_pretty(&status).unwrap());
+        let settings = match store.settings() {
+            Ok(settings) => settings,
+            Err(error) => {
+                return failure("", &format!("audio archive status failed: {error}\n"), 1);
+            }
+        };
+        let mut value = serde_json::to_value(&status).unwrap();
+        value["operation"] = json!("status");
+        value["run_id"] = json!(run_id);
+        value["archive_identity"] = json!(settings.archive_identity);
+        let stdout = format!("{}\n", serde_json::to_string_pretty(&value).unwrap());
         success(stdout)
     } else {
         let mut out = format!(

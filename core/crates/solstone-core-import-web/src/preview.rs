@@ -131,7 +131,7 @@ fn input(root: &Path, data: &Value) -> Result<Input, PreviewError> {
         .map_err(|error| PreviewError::InvalidRequest(error.to_string()))?;
     contained_import_file(root, &id, "import.json")
         .map_err(|error| PreviewError::NotFound(error.to_string()))?;
-    let metadata = read_import_metadata(root, &id)
+    let mut metadata = read_import_metadata(root, &id)
         .map_err(|error| PreviewError::NotFound(error.to_string()))?;
     if metadata.get("file_path").and_then(Value::as_str) != Some(path) {
         return Err(PreviewError::SourceChanged(
@@ -144,7 +144,7 @@ fn input(root: &Path, data: &Value) -> Result<Input, PreviewError> {
     ) {
         return Err(PreviewError::AlreadyRunning);
     }
-    let options = json!({
+    let mut options = json!({
         "timestamp": timestamp,
         "timestamp_override": crate::lifecycle::owner_timestamp_choice(data, &metadata).is_some(),
         "resolved_timestamp": data.get("resolved_timestamp").and_then(Value::as_str),
@@ -153,6 +153,7 @@ fn input(root: &Path, data: &Value) -> Result<Input, PreviewError> {
         "setting": metadata.get("setting"),
         "zone": solstone_core_journal_config::owner_zone(root).name(),
     });
+    crate::audio_archive::configure_options(root, data, &mut metadata, &mut options)?;
     Ok(Input {
         id,
         source: PathBuf::from(path),
@@ -182,6 +183,9 @@ fn planned_command(
 ) -> Result<Vec<String>, PreviewError> {
     let mut metadata = metadata.clone();
     metadata.remove("preview");
+    if crate::audio_archive::selected(&metadata) {
+        metadata.insert("archive_options".into(), options.clone());
+    }
     if options["timestamp_override"].as_bool().unwrap_or(false) {
         metadata.insert("owner_timestamp".to_owned(), options["timestamp"].clone());
     }
@@ -211,6 +215,17 @@ fn preview_command(
     metadata: &ImportMetadata,
 ) -> Result<Vec<String>, PreviewError> {
     let mut args = planned_command(path, options, metadata)?;
+    if crate::audio_archive::selected(metadata) {
+        // Library preview maps an explicit resume to read-only archive status.
+        if metadata
+            .get("_archive_run_id")
+            .and_then(Value::as_str)
+            .is_none()
+        {
+            args.push("--dry-run".into());
+        }
+        return Ok(args);
+    }
     let zone = options["zone"]
         .as_str()
         .ok_or_else(|| PreviewError::PlanFailed("missing time zone".to_owned()))?;
@@ -258,6 +273,9 @@ fn checked_input(root: &Path, data: &Value) -> Result<Input, PreviewError> {
 }
 
 fn require_size_preview(size: Value) -> Result<Value, PreviewError> {
+    if let Some(size) = crate::audio_archive::size(&size) {
+        return Ok(size);
+    }
     if size.get("schema").and_then(Value::as_str) != Some("solstone.import.size.v1") {
         return Err(PreviewError::PlanFailed(
             "this source does not provide a recording preview".to_owned(),
@@ -595,18 +613,10 @@ async fn plan_using(
     metadata: &ImportMetadata,
     bound: Duration,
 ) -> Result<Value, PreviewError> {
-    let args = planned_command(path, options, metadata)?;
+    let args = preview_command(path, options, metadata)?;
     let mut child = tokio::process::Command::new(program);
     child
         .args(&args[2..])
-        .args([
-            "--dry-run",
-            "--json",
-            "--preview-zone",
-            options["zone"]
-                .as_str()
-                .ok_or_else(|| PreviewError::PlanFailed("missing time zone".to_owned()))?,
-        ])
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -865,6 +875,9 @@ fn accept_record(
 }
 
 fn reject_empty(size: &Value) -> Result<(), PreviewError> {
+    if size["schema"] == crate::audio_archive::SIZE_SCHEMA && size["tiles"].as_u64() == Some(0) {
+        return Err(PreviewError::NothingToImport);
+    }
     if size["recordings"].as_u64() == Some(0) && size["other_units"].is_null() {
         return Err(PreviewError::NothingToImport);
     }

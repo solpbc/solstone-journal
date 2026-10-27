@@ -32,6 +32,8 @@ pub use plan::{
     MemberDisposition, PartOutcome, PlannedMember, PlannedPart, PlannedTile, SimulatedPart,
     SourceRejection, apply_held_members, plan_audio_archive,
 };
+#[cfg(unix)]
+pub use publish::read_published_part_receipt_bound;
 pub use publish::{
     ArchiveFault, ArchiveProgressFn, ArchiveProgressPhase, AudioArchiveMaterializer,
     AudioArchiveProgress, AudioArchivePublishOptions, AudioArchivePublishResult,

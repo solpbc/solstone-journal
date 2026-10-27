@@ -1566,6 +1566,25 @@ fn authenticated_source_recurrence_executes_saved_connection_and_obeys_edits() {
     );
     assert!(!read.body.contains("wrong retained source"));
     assert_eq!(provider.calls.load(Ordering::Acquire), 1);
+    server.index().unwrap(); // Explicit indexing; automatic indexing is not proved.
+    let search = server
+        .request_owner("GET", "/app/search/api/search?q=cobalt", "")
+        .unwrap();
+    assert_eq!(search.status, 200, "{}", search.body);
+    let search: Value = serde_json::from_str(&search.body).unwrap();
+    assert!(
+        search["days"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .flat_map(|day| day["results"].as_array().unwrap())
+            .any(|hit| hit["day"] == "20261014"
+                && hit["text"].as_str().is_some_and(|text| text
+                    .replace("<strong>", "")
+                    .replace("</strong>", "")
+                    .contains("cobalt scheduled source run 1"))),
+        "{search}"
+    );
     let (status, changed) = call(&server, "PUT", json!({"every":"5m","enabled":true}));
     assert_eq!(status, 200, "{changed}");
     let report = host

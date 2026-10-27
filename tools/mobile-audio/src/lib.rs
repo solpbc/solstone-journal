@@ -308,7 +308,7 @@ mod ced {
         let entries = data
             .as_array()
             .ok_or("ced classify JSON must be an array")?;
-        let mut tags = BTreeMap::new();
+        let mut tags: BTreeMap<String, f64> = BTreeMap::new();
         for item in entries {
             let object = item
                 .as_object()

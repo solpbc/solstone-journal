@@ -18,7 +18,7 @@ function scriptFromWorkspace() {
 }
 
 function makeContext(globals) {
-  const context = vm.createContext({ document: { getElementById: () => null, addEventListener: () => {} }, showError: message => { throw new Error(message); }, setTimeout: () => 0, clearTimeout: () => {}, ...globals });
+  const context = vm.createContext({ importEvents: {}, document: { getElementById: () => null, addEventListener: () => {} }, showError: message => { throw new Error(message); }, setTimeout: () => 0, clearTimeout: () => {}, ...globals });
   const source = scriptFromWorkspace();
   vm.runInContext(`
     const importPreviews = { guided: null, quick: null };
@@ -3543,7 +3543,141 @@ async function runNativeFolderSelectionAndReturnRead() {
   }
 }
 
+async function runArchiveReturnRestoresReviewedOptionsWithoutOverwritingEdits() {
+  const fields = Object.fromEntries(['guidedFolderStatus', 'guidedArchiveZone', 'guidedArchiveManifest'].map(id => [id, new Element()]));
+  const context = makeContext({
+    document: {getElementById: id => fields[id] || null},
+    window: {},
+    folderSelection: () => ({client_item_id:'archive-selection'}), folderControls() {},
+    fetch: async url => ({ok:true,json:async()=>url.includes('/list?')
+      ? {imports:[{timestamp:'20261014_090000',client_item_id:'archive-selection'}]}
+      : {import_json:{client_item_id:'archive-selection',source_hint:'audio_archive',file_path:'original/tree',original_filename:'recordings',preview:{options:{source_zone:'UTC',archive_manifest:'members.json'}}}}}),
+  });
+  vm.runInContext("let guidedFolderBusy=false;let currentGuideSource='audio_archive';let currentGuidedSaved=null;",context);
+  vm.runInContext(functionSource(workspace,'reconcileGuidedFolder'),context);
+  await vm.runInContext("reconcileGuidedFolder({name:'audio_archive'})",context);
+  assert.equal(fields.guidedArchiveZone.value,'UTC');
+  assert.equal(fields.guidedArchiveManifest.value,'members.json');
+  fields.guidedArchiveZone.value='';fields.guidedArchiveManifest.value='';
+  await vm.runInContext("reconcileGuidedFolder({name:'audio_archive'})",context);
+  assert.equal(fields.guidedArchiveZone.value,'','a return read preserves an explicit edit on the same selection');
+  vm.runInContext('currentGuidedSaved=null',context);
+  fields.guidedArchiveZone.value='America/Denver';
+  await vm.runInContext("reconcileGuidedFolder({name:'audio_archive'})",context);
+  assert.equal(fields.guidedArchiveZone.value,'America/Denver','an in-flight recovery read cannot overwrite typed options');
+  assert.equal(fields.guidedArchiveManifest.value,'');
+  cases++;
+}
+
+async function runArchivePreviewUsesMemberMetrics() {
+  const panel = new Element();
+  const button = new Element();
+  let reads = 0;
+  const context = makeContext({
+    document: {getElementById: id => id === 'guidedSizePreview' ? panel : button, addEventListener() {}},
+    fetch: async () => { reads++; return {ok:true,json:async()=>({preview_token:'archive-bound-token',size:{schema:'solstone.import.audio-archive.size.v1',members:2,source_bytes:33874,days:1,tiles:1,left_out:{missing_timestamp:1}}})}; },
+  });
+  await vm.runInContext("prepareImportPreview('guided',{source_zone:'UTC'},'',{})",context);
+  assert.equal(vm.runInContext('importPreviews.guided.ready',context),true);
+  assert.match(panel.textContent,/2 source files/);
+  assert.match(panel.textContent,/33874 recording bytes/);
+  assert.match(panel.textContent,/1 left out/);
+  assert.equal(await vm.runInContext("prepareImportPreview('guided',{source_zone:'UTC'},'',{})",context),'archive-bound-token');
+  assert.equal(reads,1,'an unchanged, reviewed archive preview may start without another preview request');
+  await vm.runInContext("prepareImportPreview('guided',{source_zone:'America/Denver'},'',{})",context);
+  assert.equal(reads,2,'a changed source time zone needs its own preview');
+  cases++;
+}
+
+function runArchiveCountsKeepSavedAndProcessedDistinct() {
+  const context=makeContext({});
+  context.escapeHtml=value=>String(value);
+  vm.runInContext(functionSource(workspace,'renderProgressStats'),context);
+  const html=vm.runInContext("renderProgressStats({source_type:'audio_archive',saved_parts:1,processed_parts:0,processing:1,remaining:0,left_out:0})",context);
+  assert.match(html,/1 audio part saved/);
+  assert.match(html,/0 processed/);
+  assert.match(html,/1 waiting for processing/);
+  assert.match(vm.runInContext("renderProgressStats({source_type:'audio_archive'})",context),/— processed/,'unknown is never a fabricated zero');
+  cases++;
+}
+
+async function runArchiveRunReferenceHonorsLaterNavigation() {
+  const context=makeContext({Promise,Set});
+  let release;
+  const navigated=[];
+  const cleared=[];
+  context.window={location:{hash:'#progress/20261014_090000'},apiJson:()=>new Promise(resolve=>{release=resolve;})};
+  context.inFlightReconcile=new Set();
+  context.clearPendingImport=id=>cleared.push(id);
+  context.navigateTo=async view=>navigated.push(view);
+  vm.runInContext(functionSource(workspace,'reconcileImportState'),context);
+  const pending=vm.runInContext("reconcileImportState('20261014_090000')",context);
+  context.window.location.hash='#guide/obsidian';
+  release({archive_run_id:'20261027_043425'});
+  assert.equal(await pending,'20261027_043425');
+  assert.deepEqual(navigated,[],'a late alias read cannot pull the owner off a newer view');
+  context.window.location.hash='#progress/20261014_090000';
+  context.window.apiJson=async()=>({archive_run_id:'20261027_043425'});
+  await vm.runInContext("reconcileImportState('20261014_090000')",context);
+  assert.deepEqual(navigated,['progress/20261027_043425']);
+  assert.deepEqual(cleared,['20261014_090000','20261014_090000']);
+  cases++;
+}
+
+async function runArchiveObservedProgressDoesNotFetchTwice() {
+  const context=makeContext({Promise,Set});
+  const seen=[];
+  const cleared=[];
+  context.window={location:{hash:'#progress/20261027_043425'},apiJson:async()=>{throw new Error('duplicate read');}};
+  context.inFlightReconcile=new Set();
+  context.IMPORT_TERMINAL_EVENTS=new Set(['completed','error']);
+  context.clearPendingImport=id=>cleared.push(id);
+  context.trackPendingImport=()=>{};
+  context.updateImportRow=(id,value)=>seen.push(value);
+  vm.runInContext(functionSource(workspace,'reconcileImportState'),context);
+  context.observed={source_type:'audio_archive',status:'pending',save_complete:true,saved_parts:1,processed_parts:0,processing:1};
+  await vm.runInContext("reconcileImportState('20261027_043425',{quiet:true,observed})",context);
+  assert.equal(seen.length,1);
+  assert.equal(seen[0].processed_parts,0);
+  assert.equal(seen[0].saved_parts,1);
+  assert.equal(seen[0].stage,'processing');
+  context.observed={import_json:{source_hint:'audio_archive'},status:'pending',archive_active:false};
+  await vm.runInContext("reconcileImportState('20261014_090000',{quiet:true,observed})",context);
+  assert.equal(seen[1].status,'unconfirmed','a retired run without a native reference is not success');
+  assert.ok(cleared.includes('20261014_090000'));
+  cases++;
+}
+
+async function runArchiveProgressTimerPausesInBackground() {
+  let callback;
+  let delay;
+  let reads=0;
+  let observed;
+  const context=makeContext({setTimeout(fn,ms){callback=fn;delay=ms;return 1;},clearTimeout(){}});
+  context.document={visibilityState:'visible',querySelector:()=>null};
+  context.importEvents={'20261027_043425':{source_type:'audio_archive',status:'pending'}};
+  const response={source_type:'audio_archive',status:'pending',thinking:{status:'not_published'}};
+  context.window={location:{hash:'#progress/20261027_043425'},apiJson:async()=>{reads++;return response;}};
+  context.reconcileImportState=async(id,options)=>{observed=options.observed;};
+  context.scheduleThinkingProgress();
+  assert.equal(delay,5000);
+  await callback();
+  assert.equal(reads,1);
+  assert.equal(observed,response,'the progress read is reused for status reconciliation');
+  callback=null;
+  context.document.visibilityState='hidden';
+  context.scheduleThinkingProgress();
+  assert.equal(callback,null,'the archive page does not keep polling in background');
+  cases++;
+}
+
 Promise.resolve()
+  .then(runArchivePreviewUsesMemberMetrics)
+  .then(runArchiveCountsKeepSavedAndProcessedDistinct)
+  .then(runArchiveReturnRestoresReviewedOptionsWithoutOverwritingEdits)
+  .then(runArchiveRunReferenceHonorsLaterNavigation)
+  .then(runArchiveObservedProgressDoesNotFetchTwice)
+  .then(runArchiveProgressTimerPausesInBackground)
   .then(async () => { cases += await require('./source_connections_dom.js')(crateDir); })
   .then(runHistoryFilterPaginationRaces)
   .then(runNativeFolderSelectionAndReturnRead)

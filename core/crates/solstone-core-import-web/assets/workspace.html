@@ -826,7 +826,11 @@ async function navigateTo(view, options = {}) {
     const importId = cleanView.split('/')[1];
     showProgressView(importId);
     if (typeof reconcileImportState === 'function') {
-      await reconcileImportState(importId);
+      const resolvedId = await reconcileImportState(importId);
+      if (typeof resolvedId === 'string' && resolvedId !== importId) {
+        if (window.location.hash !== hashAtEntry) return;
+        return navigateTo(`progress/${resolvedId}`, options);
+      }
       scheduleThinkingProgress();
     }
   } else {
@@ -1086,6 +1090,12 @@ function formatProgressStats(eventData) {
 }
 
 function renderProgressStats(eventData) {
+  if (eventData.source_type === 'audio_archive') {
+    const count = value => Number.isSafeInteger(value) && value >= 0 ? String(value) : '—';
+    const stats = [`${count(eventData.saved_parts)} audio ${eventData.saved_parts === 1 ? 'part' : 'parts'} saved`, `${count(eventData.processed_parts)} processed`,
+      `${count(eventData.processing)} waiting for processing`, `${count(eventData.remaining)} still to save`, `${count(eventData.left_out)} left out`];
+    return `<div class="import-progress-stats">${stats.map(stat => `<div class="import-progress-stat">${escapeHtml(stat)}</div>`).join('')}</div>`;
+  }
   const stats = formatProgressStats(eventData);
   if (!stats.length) {
     return '';
@@ -1703,6 +1713,18 @@ async function loadGuidedFlow(sourceName) {
           </div>
           <p class="import-field-hint">the ZIP includes your settings and credentials. processing logs, rebuildable indexes and caches, locks and temporary files are left out. merging keeps the receiving journal's settings and connections.</p>
 
+        ` : source.name === 'audio_archive' ? `
+          <h4>preview your recordings</h4>
+          <div class="confirm-field">
+            <label for="guidedArchiveZone">time zone in recording filenames</label>
+            <select id="guidedArchiveZone" class="import-path-input"><option value="">choose a time zone</option>${(source.time_zones || []).map(zone => `<option value="${escapeHtml(zone)}">${escapeHtml(zone)}</option>`).join('')}</select>
+          </div>
+          <div class="confirm-field">
+            <label for="guidedArchiveManifest">manifest filename <span class="import-field-optional">(optional)</span></label>
+            <input id="guidedArchiveManifest" class="import-path-input" placeholder="manifest.json" autocomplete="off" autocapitalize="none" />
+            <p class="import-field-hint">leave this empty to use recording filenames. a manifest and its recordings must be together in the selected folder. the manifest can specify its own times.</p>
+          </div>
+          <div class="import-action-row"><button id="guidedStartBtn" class="import-primary-btn" type="button">preview import</button></div>
         ` : `
           <h4>configure and start</h4>
           <div class="import-inline-fields">
@@ -2086,6 +2108,15 @@ async function reconcileGuidedFolder(source, duringReply = false) {
     if (!metadata || metadata.client_item_id !== retained.client_item_id || metadata.source_hint !== source.name
         || typeof metadata.file_path !== 'string' || !metadata.file_path) throw new Error('unconfirmed');
     if (!live()) return;
+    if (source.name === 'audio_archive' && currentGuidedSaved?.client_item_id !== retained.client_item_id) {
+      const zone = document.getElementById('guidedArchiveZone');
+      const manifest = document.getElementById('guidedArchiveManifest');
+      const options = metadata.preview?.options;
+      if (zone && manifest && !zone.value && !manifest.value && options) {
+        if (typeof options.source_zone === 'string') zone.value = options.source_zone;
+        if (typeof options.archive_manifest === 'string') manifest.value = options.archive_manifest;
+      }
+    }
     currentGuidedSaved = { path: metadata.file_path, timestamp: rows[0].timestamp,
       source_timestamp: metadata.source_timestamp || rows[0].timestamp, client_item_id: retained.client_item_id };
     window._guidedClientItemId = retained.client_item_id;
@@ -2169,6 +2200,22 @@ async function prepareImportPreview(kind, payload, setting, button) {
   if (!response.ok) throw new Error(importErrorMessage(data, 'could not preview this import'));
   if (revision !== previewRevisions[kind]) return null;
   const size = data.size;
+  if (size?.schema === 'solstone.import.audio-archive.size.v1') {
+    if (!['members', 'source_bytes', 'days', 'tiles'].every(key => Number.isSafeInteger(size[key]) && size[key] >= 0)
+        || !size.left_out || !Object.values(size.left_out).every(value => Number.isSafeInteger(value) && value >= 0) || !data.preview_token) throw new Error('could not read the archive size');
+    const ready = size.tiles > 0;
+    importPreviews[kind] = { key, token: data.preview_token, ready };
+    const panel = document.getElementById(`${kind}SizePreview`);
+    if (panel) {
+      const skipped = Object.values(size.left_out).reduce((total, count) => total + count, 0);
+      panel.textContent = `${size.members} source ${size.members === 1 ? 'file' : 'files'} · ${size.source_bytes} recording bytes · ${size.days} ${size.days === 1 ? 'day' : 'days'}`
+        + (skipped ? ` · ${skipped} left out` : '')
+        + (Number.isSafeInteger(size.saved_parts) ? ` · ${size.saved_parts} audio ${size.saved_parts === 1 ? 'part' : 'parts'} already saved` : '')
+        + (!ready ? ' · nothing to import' : '');
+    }
+    restoreImportButton(kind, button);
+    return null;
+  }
   if (!size || !Number.isInteger(size.recordings) || !Number.isInteger(size.days) || !data.preview_token) {
     throw new Error('could not read the import size');
   }
@@ -2189,7 +2236,7 @@ async function prepareImportPreview(kind, payload, setting, button) {
 document.addEventListener('input', event => {
   const id = event.target?.id;
   if (['guidedPathInput', 'guidedFileInput'].includes(id)) currentGuidedSaved = null;
-  if (['guidedSettingInput', 'guidedPathInput', 'guidedFileInput'].includes(id)) invalidateImportPreview('guided');
+  if (['guidedSettingInput', 'guidedPathInput', 'guidedFileInput', 'guidedArchiveZone', 'guidedArchiveManifest'].includes(id)) invalidateImportPreview('guided');
   if (['timestampInput', 'settingInput', 'fileInput', 'pasteText', 'quickSettingInput'].includes(id)) invalidateImportPreview('quick');
 });
 
@@ -2233,6 +2280,12 @@ async function startGuidedImport(source) {
 
     if (revision !== previewRevisions.guided) return;
     const payload = { path, timestamp: ts, import_id: saved.timestamp };
+    if (source.name === 'audio_archive') {
+      payload.source_zone = document.getElementById('guidedArchiveZone').value;
+      const manifest = document.getElementById('guidedArchiveManifest').value.trim();
+      if (!payload.source_zone && !manifest) throw new Error('choose the time zone in the recording filenames, or enter the manifest filename.');
+      if (manifest) payload.archive_manifest = manifest;
+    }
     const previewToken = await prepareImportPreview('guided', payload, setting, startButton);
     preparedPreview = !previewToken && revision === previewRevisions.guided && Boolean(importPreviews.guided?.ready);
     if (!previewToken || revision !== previewRevisions.guided) return;
@@ -2355,7 +2408,9 @@ function showProgressView(importId, eventData = null) {
           ? 'import status unavailable'
           : isFailed
             ? 'import failed'
-            : humanStageName(currentEvent?.stage || 'initialization', displayName);
+            : currentEvent?.source_type === 'audio_archive' && currentEvent?.save_complete === true
+              ? 'recordings saved; processing continues'
+              : humanStageName(currentEvent?.stage || 'initialization', displayName);
   const progressHtml = currentEvent ? renderProgressStats(currentEvent) : '';
   let completionHtml = '';
 
@@ -2563,14 +2618,17 @@ let thinkingProgressTimer = null;
 function scheduleThinkingProgress() {
   if (thinkingProgressTimer !== null) clearTimeout(thinkingProgressTimer);
   const hash = window.location.hash.slice(1);
-  if (!hash.startsWith('progress/')) { thinkingProgressTimer = null; return; }
+  if (!hash.startsWith('progress/') || document.visibilityState === 'hidden') { thinkingProgressTimer = null; return; }
   const id = hash.split('/')[1];
+  const archive = importEvents[id]?.source_type === 'audio_archive';
+  const activeArchive = archive && !['success', 'failed', 'unavailable', 'unconfirmed'].includes(importEvents[id]?.status);
   thinkingProgressTimer = setTimeout(async () => {
     thinkingProgressTimer = null;
     if (window.location.hash.slice(1) !== `progress/${id}`) return;
     try {
       const res = await window.apiJson(`/app/import/api/${encodeURIComponent(id)}`);
       if (window.location.hash.slice(1) === `progress/${id}`) {
+        if (archive) await reconcileImportState(id, { quiet: true, observed: res });
         if (importEvents[id]) importEvents[id].thinking = res?.thinking;
         const panel = document.querySelector('.import-thinking-progress');
         // Keep controls in place during background refresh so focus stays put.
@@ -2579,7 +2637,7 @@ function scheduleThinkingProgress() {
       }
     } catch (_) { /* The next read can recover without replacing the last known progress. */ }
     scheduleThinkingProgress();
-  }, 30000);
+  }, activeArchive ? 5000 : 30000);
 }
 window.addEventListener('hashchange', scheduleThinkingProgress);
 
@@ -2591,9 +2649,16 @@ async function reconcileImportState(importId, options = {}) {
   const { fromStall = false, quiet = false } = options;
   const activeEl = typeof document !== 'undefined' ? document.activeElement : null;
   try {
-    const res = await window.apiJson(`/app/import/api/${encodeURIComponent(importId)}`);
+    const res = options.observed || await window.apiJson(`/app/import/api/${encodeURIComponent(importId)}`);
     if (!res) return;
-    const canonicalStatus = res.status;
+    const archiveId = res.archive_run_id;
+    if (typeof archiveId === 'string' && /^[0-9]{8}_[0-9]{6}$/.test(archiveId) && archiveId !== importId) {
+      clearPendingImport(importId);
+      if (window.location.hash.slice(1) === `progress/${importId}`) await navigateTo(`progress/${archiveId}`);
+      return archiveId;
+    }
+    const archive = res.source_type === 'audio_archive' || res.import_json?.source_hint === 'audio_archive';
+    const canonicalStatus = archive && (res.archive_lookup_unknown || res.archive_active === false) ? 'unconfirmed' : res.status;
     const eventName = canonicalStatus === 'success'
       ? 'completed'
       : (canonicalStatus === 'failed' || canonicalStatus === 'unconfirmed' || canonicalStatus === 'unavailable')
@@ -2620,6 +2685,14 @@ async function reconcileImportState(importId, options = {}) {
       error_stage: res.error_stage,
       fromStall: fromStall
     };
+    if (archive) {
+      eventData.source_type = 'audio_archive';
+      eventData.source_display = res.source_display || 'audio archive';
+      eventData.stage = res.save_complete === true ? 'processing' : 'saving';
+      for (const key of ['saved_parts', 'saved_tiles', 'remaining', 'left_out', 'processing', 'processed_parts', 'save_complete', 'unavailable_parts', 'rejected_parts']) {
+        if (res[key] !== undefined) eventData[key] = res[key];
+      }
+    }
     if (IMPORT_TERMINAL_EVENTS.has(eventName) || canonicalStatus === 'unconfirmed' || canonicalStatus === 'unavailable') {
       clearPendingImport(importId);
     } else if (canonicalStatus === 'running') {
@@ -2774,9 +2847,12 @@ function bindImportReturnRead() {
     if (window._quickClientItemId || window._guidedClientItemId) loadImports();
     const source = sourceMetadataByName[currentGuideSource];
     if (window.JournalOwnerFolders && source) reconcileGuidedFolder(source);
+    const view = window.location.hash.slice(1);
+    if (view.startsWith('progress/')) reconcileImportState(view.split('/')[1]);
+    scheduleThinkingProgress();
   };
   window.addEventListener('pageshow', returned);
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') returned(); });
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') returned(); else scheduleThinkingProgress(); });
 }
 
 function initImportWorkspace() {

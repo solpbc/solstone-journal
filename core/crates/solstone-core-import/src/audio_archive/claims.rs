@@ -20,6 +20,50 @@ use super::record::ArchiveStore;
 const CLAIM_DB_FILENAME: &str = "audio-archive-claims.sqlite";
 pub const DEFAULT_WRITE_BUSY_TIMEOUT: Duration = Duration::from_millis(2000);
 
+/// Read-only hints. The retained run intent and published segment, never this
+/// accelerator, establish whether a part actually belongs to an archive.
+#[cfg(unix)]
+pub(crate) fn pending_runs_for_coordinate(
+    journal: &Path,
+    day: &str,
+    key: &str,
+) -> Result<Vec<String>, String> {
+    let path = claim_db_path(journal);
+    if !path.try_exists().map_err(|error| error.to_string())? {
+        return Ok(Vec::new());
+    }
+    let connection = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)
+        .map_err(|error| error.to_string())?;
+    connection
+        .busy_timeout(DEFAULT_WRITE_BUSY_TIMEOUT)
+        .map_err(|error| error.to_string())?;
+    let present = connection
+        .query_row(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='audio_archive_pending_tile'",
+            [],
+            |_| Ok(()),
+        )
+        .optional()
+        .map_err(|error| error.to_string())?
+        .is_some();
+    if !present {
+        return Ok(Vec::new());
+    }
+    let mut statement = connection.prepare("SELECT import_id FROM audio_archive_pending_tile WHERE day=?1 AND segment_key=?2 ORDER BY import_id LIMIT 65").map_err(|error| error.to_string())?;
+    let ids = statement
+        .query_map(params![day, key], |row| row.get::<_, String>(0))
+        .map_err(|error| error.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| error.to_string())?;
+    if ids.len() > 64 {
+        return Err("archive coordinate lookup exceeds its bound".into());
+    }
+    for id in &ids {
+        crate::validate_timestamp(id).map_err(|error| error.to_string())?;
+    }
+    Ok(ids)
+}
+
 /// Look up one archive without enumerating previous runs. The run record remains authoritative.
 /// Missing state is read-only; a damaged living run must not silently become a new run.
 pub fn read_matching_archive_run(

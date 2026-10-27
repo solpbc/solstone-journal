@@ -23,7 +23,7 @@ pub(super) fn in_isolated_child_exact(full_name: &str) -> bool {
         return false;
     }
     let mut child = std::process::Command::new(std::env::current_exe().unwrap())
-        .args(["--exact", full_name, "--nocapture"])
+        .args(["--exact", full_name, "--nocapture", "--include-ignored"])
         .env(CHILD, full_name)
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
@@ -318,3 +318,7 @@ mod owner_effects;
 #[cfg(target_os = "linux")]
 #[path = "import_route_model_tests.rs"]
 mod model_effects;
+
+#[cfg(target_os = "linux")]
+#[path = "import_route_archive_tests.rs"]
+mod archive_effects;
