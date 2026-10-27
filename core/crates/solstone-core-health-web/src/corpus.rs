@@ -124,6 +124,12 @@ fn ac3_replays_all_captured_health_cases_through_the_shell() {
                         serde_json::from_slice(&bytes).expect("JSON body")
                     };
                     let mut wanted = expected["body"].clone();
+                    // Captured brains predate the additive diagnostic object.
+                    // Pin its empty value and retain every other body field.
+                    if let Some(brain) = wanted.get_mut("brain").and_then(Value::as_object_mut) {
+                        assert!(!brain.contains_key("diagnostic"));
+                        brain.insert("diagnostic".into(), json!({}));
+                    }
                     // Served presentation follows current assets after the navigation redesign.
                     if expected["status"] == 200 {
                         match case["name"].as_str() {

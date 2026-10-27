@@ -22,6 +22,12 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - screen text now leaves out single characters and words read with low confidence. on a phone these were often status-bar icons read as letters or symbols.
 - when a voice in a transcript sounds only a little like someone you know, and about as much like someone else, the sentence is now left without a name. before, a stranger's voice, or an airport announcement on your phone, could show up as someone you know.
 - when you record your phone's screen during a video call, the phone's own "screen sharing" panel rarely reads as you sharing your screen to the call, and an app open under the small call window rarely reads as something you shared. the call's app is also named wrongly far less often.
+- your activity list no longer shows "debugged the retry handling in the ingest worker" or "sent the invoice to Sam" as something you did. these were example sentences in the instructions your journal follows, and it sometimes copied them into what it wrote about your day. activities written before this change keep them.
+- transcription now keeps more quiet or distant speech, such as people across the table from your watch. to do this, your journal sends a little more of each recording to the speech model. transcripts you already have stay as they are.
+
+### Removed
+
+- the sparkle button ("generate with AI") in an entity's description editor is gone. it has not worked since 2.0. you can still type a description and save it.
 
 ## [2.0.59] - 2026-10-26
 

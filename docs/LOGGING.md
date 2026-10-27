@@ -171,7 +171,7 @@ the 3 `tracing::` sites reached nothing). A large share of the raw-print total i
 correctly a print: Cargo build-script protocol lines, CLI/IPC contract output (`solstone journal doctor`,
 `solstone journal check --json`, every native worker's request/response protocol), and panic-path cleanup text.
 
-**Coordination constraint that shaped this pass's scope:** the unmerged `vpe/w8-deploy` branch (44
+**Coordination constraint that shaped this pass's scope:** an unmerged burn-in branch (44
 commits ahead of `origin/main` at measurement time, still receiving commits — an active burn-in) touches
 47 of this workspace's crates, including the two highest-volume raw-print crates
 (`solstone-core` itself at 374 sites, `solstone-core-distribution` at 34) and most of the
@@ -179,7 +179,7 @@ clearly-diagnostic-heavy ones (`solstone-core-system`, `solstone-core-sense`, `s
 `solstone-core-describe`, `solstone-core-cortex`, `solstone-core-convey-shell`, `solstone-core-spl`,
 `solstone-core-journal-io`). **This pass deliberately scoped to crates that branch does not touch**,
 rather than editing a moving target and creating merge risk for live burn-in work. The highest-value
-remaining conversions are in those excluded crates and are follow-up work once `vpe/w8-deploy` merges;
+remaining conversions are in those excluded crates and are follow-up work once that branch merges;
 `solstone-core-repository-contracts` (30 sites) is additionally excluded on its own merits — a crate
 named for contract fixtures is exactly the class this document says never to convert.
 
@@ -217,7 +217,7 @@ given one):
 
 ## What's next
 
-- Re-run this same audit against the excluded crates once `vpe/w8-deploy` merges — `solstone-core`
+- Re-run this same audit against the excluded crates once the burn-in branch merges — `solstone-core`
   itself is the single biggest opportunity (374 raw-print sites) and the one place `install_logger` and
   the third-party noisy-crate filter directive above actually live.
 - Apply the noisy-crate `RUST_LOG` directive to the live drop-in once someone is deliberately touching

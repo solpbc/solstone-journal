@@ -69,6 +69,7 @@ fn presentation_on(
         "evidence": {"observed_at": view.evidence.observed_at, "age_seconds": view.evidence.age_seconds, "age_text": view.evidence.age_text},
         "components": components,
         "progressing": view.progressing,
+        "diagnostic": current_diagnostic(&inspection),
     });
     let transcription =
         applicable_transcription_verification(journal, config, projection.active_lane.as_deref());
@@ -89,6 +90,42 @@ fn presentation_on(
 /// configured or not; turning it off still works.
 pub fn not_on_platform_attestation() -> Value {
     json!({"state":"not_on_platform","reason":"nvattest_platform_unsupported","observed_at":null,"expires_at":null})
+}
+
+// Inspection carries only a validated record. A configuration/staleness
+// projection can supersede its reason; do not present that old diagnosis as
+// the current failure.
+fn current_diagnostic(inspection: &BrainInspection) -> Value {
+    let Some(reason) = inspection.projection.reason_code.as_deref() else {
+        return json!({});
+    };
+    let Some(record) = inspection
+        .record
+        .as_ref()
+        .filter(|record| record.get("reason_code").and_then(Value::as_str) == Some(reason))
+    else {
+        return json!({});
+    };
+    let named = |value: Option<&Value>| {
+        value
+            .and_then(Value::as_object)
+            .filter(|value| !value.is_empty())
+            .cloned()
+    };
+    // Runtime refusals carry the diagnosis at the top. A completed fenced
+    // refresh keeps it on the causal evidence component instead.
+    if let Some(diagnostic) = named(record.get("diagnostic")) {
+        return Value::Object(diagnostic);
+    }
+    for name in ["configuration", "lane_prerequisites", "generate"] {
+        let component = &record["evidence"][name];
+        if component.get("reason_code").and_then(Value::as_str) == Some(reason)
+            && let Some(diagnostic) = named(component.get("diagnostic"))
+        {
+            return Value::Object(diagnostic);
+        }
+    }
+    json!({})
 }
 
 fn component(record: Option<&Value>, name: &str) -> Value {
@@ -398,11 +435,76 @@ mod tests {
         })
     }
 
+    #[cfg(feature = "full-tests")]
+    #[test]
+    fn fenced_refresh_component_diagnostic_reaches_the_ordinary_owner_payload() {
+        let mut config = configured_confidential();
+        config["services"]["confidential"]["credential_fingerprint_sha256"] =
+            json!("cca56da30e3c8a13a11277193fd3263961e2e3d6d9f98038a91dac05e8fde16a");
+        let (journal, config) = journal_with(&config);
+        solstone_core_brain::generate_fingerprint_key(journal.path()).unwrap();
+        let now = chrono::Utc::now();
+        let permit = solstone_core_brain::begin_refresh(
+            journal.path(),
+            now,
+            Some("diagnostic-refresh".to_owned()),
+            None,
+            false,
+            None,
+        )
+        .unwrap()
+        .unwrap();
+        let cause = solstone_core_brain::evidence_component_for_reason(
+            "lane_prerequisites",
+            "attestation_rejected",
+            solstone_core_brain::spp_reason_diagnostic("tls_handshake_failed"),
+            now,
+        )
+        .unwrap();
+        let outcome = json!({
+            "configuration": {"status":"ok","observed_at":now.to_rfc3339(),"expires_at":(now+chrono::Duration::hours(26)).to_rfc3339()},
+            "lane_prerequisites": cause,
+            "generate": {"status":"not_attempted","reason_code":"attestation_rejected","observed_at":now.to_rfc3339()}
+        });
+        let record =
+            solstone_core_brain::finish_refresh(journal.path(), permit, outcome, now, None)
+                .unwrap();
+        assert_eq!(
+            record["diagnostic"],
+            json!({}),
+            "the normal writer keeps the cause on its component"
+        );
+        let view = presentation(journal.path(), &config, true);
+        assert_eq!(view["brain"]["state"], "unhealthy");
+        assert_eq!(
+            view["brain"]["diagnostic"]["verification_reason"],
+            "tls_handshake_failed"
+        );
+    }
+
+    #[test]
+    fn diagnostic_belongs_to_the_current_validated_failure_not_a_stale_projection() {
+        let mut view = inspection("spp", "unhealthy", Some("attestation_rejected"), None);
+        view.record = Some(json!({
+            "reason_code": "attestation_rejected",
+            "diagnostic": {"verification_reason": "tls_handshake_failed"}
+        }));
+        assert_eq!(
+            current_diagnostic(&view),
+            json!({"verification_reason":"tls_handshake_failed"})
+        );
+        view.projection.reason_code = Some("brain_config_changed".to_owned());
+        assert_eq!(current_diagnostic(&view), json!({}));
+        view.record = None;
+        assert_eq!(current_diagnostic(&view), json!({}));
+    }
+
     #[test]
     fn this_platform_offers_confidential_processing() {
         let (journal, config) = journal_with(&json!({}));
         let view = presentation(journal.path(), &config, false);
         assert_eq!(view["confidential_attestation"]["state"], "off");
+        assert_eq!(view["brain"]["diagnostic"], json!({}));
     }
 
     #[test]

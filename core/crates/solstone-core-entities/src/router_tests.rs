@@ -6679,46 +6679,6 @@ async fn facet_candidate_routes_require_name_key() {
 }
 
 #[tokio::test]
-async fn generate_description_requires_a_request_body() {
-    let j = Journal::new();
-    let (status, response) =
-        post_without_body(j.path(), "/app/entities/api/work/generate-description").await;
-    assert_eq!(status, 400);
-    assert_eq!(response["reason_code"], "missing_request_body");
-}
-
-#[tokio::test]
-async fn generate_description_requires_type_and_name() {
-    let j = Journal::new();
-    let (_, response) = post(
-        j.path(),
-        "/app/entities/api/work/generate-description",
-        json!({"type":"Person","name":"  "}),
-    )
-    .await;
-    assert_eq!(response["reason_code"], "missing_required_field");
-}
-
-#[tokio::test]
-async fn generate_description_reports_talent_not_ported_after_validation() {
-    let j = Journal::new();
-    let (status, response) = post(
-        j.path(),
-        "/app/entities/api/work/generate-description",
-        json!({"type":"Person","name":"Alice","current_description":""}),
-    )
-    .await;
-    assert_eq!(status, 501);
-    assert_eq!(response["reason_code"], "talent_not_ported");
-    let detail = response["detail"].as_str().unwrap();
-    assert!(detail.contains("not ported"), "{detail}");
-    assert!(!detail.contains("agent spawning"), "{detail}");
-    assert!(!detail.contains("unavailable"), "{detail}");
-}
-
-// Refusal-audit note: `_resolve_edge_entity:387` and `api_state:150` remain
-// unresolved; the other route-level omissions are documented structural refusals.
-#[tokio::test]
 async fn refusal_sites_batch_1_validation_are_exact() {
     let journal = Journal::new();
 
@@ -7171,43 +7131,8 @@ async fn refusal_sites_batch_2_read_routes_are_exact() {
 }
 
 #[tokio::test]
-async fn refusal_sites_batch_2_detection_and_generation_are_exact() {
+async fn refusal_sites_batch_2_detection_is_exact() {
     let journal = Journal::new();
-    assert_oracle_refusal(
-        "generate_description:1546",
-        post_without_body(
-            journal.path(),
-            "/app/entities/api/work/generate-description",
-        )
-        .await,
-        "missing_request_body",
-        400,
-    );
-    assert_oracle_refusal(
-        "generate_description:1553",
-        post(
-            journal.path(),
-            "/app/entities/api/work/generate-description",
-            json!({"type":"Person"}),
-        )
-        .await,
-        "missing_required_field",
-        400,
-    );
-    // Historical surface emitted agent_unavailable here. This port emits a
-    // not-ported code because the talent path is not native. The comment dies
-    // when that path lands.
-    assert_oracle_refusal(
-        "generate_description:1578",
-        post(
-            journal.path(),
-            "/app/entities/api/work/generate-description",
-            json!({"type":"Person","name":"Alice"}),
-        )
-        .await,
-        "talent_not_ported",
-        501,
-    );
     assert_oracle_refusal(
         "detect_entity_route:552",
         post(

@@ -1888,6 +1888,14 @@ pub(crate) fn consume_hosted(
     {
         return Terminal::error(reason);
     }
+    let restore_root = if kind == "enable_hosted" {
+        None
+    } else {
+        match deps.retained_root() {
+            Ok(root) => Some(root),
+            Err(_) => return Terminal::error("destination_admission_failed"),
+        }
+    };
     let tools = match resolve_tools(deps) {
         Ok(tools) => tools,
         Err(error) => return Terminal::tool_error(error),
@@ -1955,7 +1963,11 @@ pub(crate) fn consume_hosted(
         },
     );
     if matches!(terminal.phase.as_str(), "done" | "degraded") {
-        let _ = set_mode(&deps.journal_root, "operated");
+        return first_restore::finish_hosted_mode(
+            deps,
+            restore_root.expect("restore root captured before work"),
+            terminal,
+        );
     }
     terminal
 }

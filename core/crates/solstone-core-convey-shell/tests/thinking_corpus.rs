@@ -148,6 +148,16 @@ fn corpus() -> Value {
                     projected |= components.remove("cogitate").is_some();
                 }
             }
+            // These captured brains have no verification diagnosis. Pin the
+            // additive diagnostic object without dropping any recorded field.
+            for pointer in ["/json/brain", "/json/providers/brain"] {
+                if let Some(brain) = case.pointer_mut(pointer).and_then(Value::as_object_mut) {
+                    assert!(!brain.contains_key("diagnostic"));
+                    brain.insert("diagnostic".into(), json!({}));
+                    case["body_sha256_basis"] = json!("normalized-json");
+                    projected = true;
+                }
+            }
             if let Some(fields) = case
                 .get_mut("normalized_fields")
                 .and_then(Value::as_object_mut)

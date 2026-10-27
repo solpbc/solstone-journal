@@ -400,24 +400,31 @@ pub fn valid_spp_reason(raw: &str) -> &'static str {
     }
 }
 
-/// The diagnostic an attestation refusal carries: the one register that did
-/// not match the published build, when that is the refusal. Only a register
-/// the contract names is carried, so the record always validates.
+/// An attestation refusal carries only the closed diagnostic values named by
+/// the contract. The channel reason distinguishes transport and verifier
+/// refusals without copying request, credential, path or provider error text.
 pub fn spp_reason_diagnostic(raw: &str) -> Map<String, Value> {
     let mut diagnostic = Map::new();
-    let Some(register) = raw
-        .strip_prefix("pcr_")
-        .and_then(|rest| rest.strip_suffix("_mismatch"))
-    else {
-        return diagnostic;
-    };
-    let named = local_contract()
+    let schema = local_contract()
         .brain_state
         .diagnostic_metadata_schemas
-        .get(spp_reason(raw))
-        .and_then(|schema| schema.get("register"))
-        .is_some_and(|registers| registers.iter().any(|candidate| candidate == register));
-    if named {
+        .get(valid_spp_reason(raw));
+    if schema
+        .and_then(|schema| schema.get("verification_reason"))
+        .is_some_and(|values| values.iter().any(|value| value == raw))
+    {
+        diagnostic.insert(
+            "verification_reason".to_owned(),
+            Value::String(raw.to_owned()),
+        );
+    }
+    if let Some(register) = raw
+        .strip_prefix("pcr_")
+        .and_then(|rest| rest.strip_suffix("_mismatch"))
+        && schema
+            .and_then(|schema| schema.get("register"))
+            .is_some_and(|values| values.iter().any(|value| value == register))
+    {
         diagnostic.insert("register".to_owned(), Value::String(register.to_owned()));
     }
     diagnostic
@@ -1009,8 +1016,56 @@ mod tests {
             "pcr_selection_mismatch",
             "certificate_invalid",
         ] {
-            assert!(spp_reason_diagnostic(raw).is_empty(), "{raw}");
+            assert!(
+                spp_reason_diagnostic(raw).get("register").is_none(),
+                "{raw}"
+            );
         }
+    }
+
+    #[test]
+    fn spp_verification_diagnostics_keep_closed_channel_causes_without_raw_text() {
+        for raw in [
+            "tls_handshake_failed",
+            "gpu_appraisal_failed",
+            "exporter_proof_invalid",
+        ] {
+            let diagnostic = spp_reason_diagnostic(raw);
+            assert_eq!(valid_spp_reason(raw), "attestation_rejected");
+            assert_eq!(
+                diagnostic
+                    .get("verification_reason")
+                    .and_then(Value::as_str),
+                Some(raw)
+            );
+            let component = evidence_component_for_reason(
+                "lane_prerequisites",
+                "attestation_rejected",
+                diagnostic,
+                chrono::Utc::now(),
+            )
+            .expect("the existing record validator accepts only named diagnostic values");
+            assert_eq!(component["diagnostic"]["verification_reason"], raw);
+        }
+        for raw in [
+            "Bearer private-token",
+            "tls_handshake_failed: private-path",
+            "unrecognized-provider-reason",
+        ] {
+            assert!(spp_reason_diagnostic(raw).is_empty());
+        }
+        assert!(
+            evidence_component_for_reason(
+                "lane_prerequisites",
+                "attestation_rejected",
+                serde_json::json!({"verification_reason":"private-token"})
+                    .as_object()
+                    .unwrap()
+                    .clone(),
+                chrono::Utc::now(),
+            )
+            .is_err()
+        );
     }
 
     #[test]

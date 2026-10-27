@@ -33,6 +33,30 @@ impl crate::PausedRestore for Phase {
     }
 }
 
+struct ReceivingLifecycle(Option<(PathBuf, PathBuf)>);
+struct ReceivingPhase(PausedRecovery, Option<(PathBuf, PathBuf)>);
+
+impl crate::EmbeddedRestoreLifecycle for ReceivingLifecycle {
+    fn drain(&self, root: &Arc<JournalRoot>) -> Result<Box<dyn crate::PausedRestore>, String> {
+        pause_admitted_work(root.clone()).map(|phase| {
+            Box::new(ReceivingPhase(phase, self.0.clone())) as Box<dyn crate::PausedRestore>
+        })
+    }
+}
+
+impl crate::PausedRestore for ReceivingPhase {
+    fn resume(self: Box<Self>, cancelled: &dyn Fn() -> bool) -> Result<(), String> {
+        self.0.resume(cancelled)?;
+        if let Some((original, retired)) = self.1 {
+            fs::rename(&original, retired).map_err(|e| e.to_string())?;
+            fs::create_dir(&original).map_err(|e| e.to_string())?;
+            fs::write(original.join("sentinel"), b"replacement owner")
+                .map_err(|e| e.to_string())?;
+        }
+        Ok(())
+    }
+}
+
 struct Worker {
     release: mpsc::Sender<()>,
     join: Option<std::thread::JoinHandle<()>>,
@@ -641,5 +665,171 @@ async fn recorded_retry_frame_stays_active_until_actual_resume_returns() {
     assert_eq!(
         fs::read(fixture.root.path().join("resumed-read")).unwrap(),
         b"derived bytes"
+    );
+}
+
+#[tokio::test]
+async fn hosted_restore_receiving_mode_write_cannot_touch_a_replacement_root() {
+    let mut observations = Vec::new();
+    for replace_root in [false, true] {
+        let mut fixture = Fixture::new(false, false, 0);
+        fixture.deps.http = Arc::new(HttpScript::with_responses(vec![Ok(credentials_response())]));
+        let retired = fixture.package.path().join("completed-original");
+        fixture
+            .deps
+            .install_restore_lifecycle(Arc::new(ReceivingLifecycle(
+                replace_root.then(|| (fixture.root.path().to_owned(), retired.clone())),
+            )));
+        let generation = crate::operation::begin(
+            &fixture.deps.operations,
+            "restore_hosted",
+            None,
+            None,
+            Some(crate::test_support::RECOVERY_KEY.into()),
+        )
+        .unwrap()
+        .generation;
+        crate::persist_and_consume_hosted(
+            &fixture.deps,
+            generation,
+            "restore_hosted".into(),
+            crate::test_support::hosted_binding(),
+            Some(crate::test_support::RECOVERY_KEY.into()),
+        );
+        let deadline = tokio::time::Instant::now() + FIXTURE_WAIT;
+        let terminal = loop {
+            let view = {
+                let guard = fixture.deps.operations.lock().unwrap();
+                guard
+                    .current
+                    .as_ref()
+                    .filter(|slot| {
+                        !slot.worker_active && crate::operation::is_terminal(&slot.view.phase)
+                    })
+                    .map(|slot| slot.view.clone())
+            };
+            if let Some(view) = view {
+                break view;
+            }
+            fixture_tick(deadline).await.unwrap();
+        };
+        fixture.stop().await;
+        let replacement_entries = if replace_root {
+            assert_eq!(
+                fs::read(retired.join("restored-original")).unwrap(),
+                b"original bytes"
+            );
+            assert_eq!(
+                fs::read(retired.join("resumed-read")).unwrap(),
+                b"derived bytes"
+            );
+            assert_eq!(
+                fs::read(fixture.root.path().join("sentinel")).unwrap(),
+                b"replacement owner"
+            );
+            fs::read_dir(fixture.root.path()).unwrap().count()
+        } else {
+            assert_eq!(
+                solstone_core_backup::get_backup_config(fixture.root.path()).unwrap()["mode"],
+                "operated"
+            );
+            0
+        };
+        assert_eq!(fixture.runner.copies.load(Ordering::SeqCst), 1);
+        observations.push((replace_root, terminal.phase, replacement_entries));
+    }
+    eprintln!("hosted receiving mode observations={observations:?}");
+    assert_eq!(observations[0], (false, "done".into(), 0));
+    assert_eq!(
+        observations[1],
+        (true, "error".into(), 1),
+        "hosted post-restore mode publication escaped the original root"
+    );
+}
+
+#[test]
+fn mode_receiving_preserves_real_restore_and_published_uncertainty() {
+    use solstone_core_backup_runtime::restore::MobileRestoreIdentity;
+    use solstone_core_journal_config_write::BoundConfigOutcome;
+    use solstone_core_journal_io::{BoundPublicationPrimitive, run_with_bound_publication_faults};
+    let fixture = Fixture::new(false, false, 0);
+    let tools = crate::resolve_tools(&fixture.deps).unwrap();
+    let runner = crate::lifetime_runner(&fixture.deps);
+    let destination = solstone_core_backup::get_destination(fixture.root.path())
+        .unwrap()
+        .unwrap();
+    let terminal = crate::first_restore::run(
+        &fixture.deps,
+        &crate::services(&fixture.deps, &runner, &tools),
+        destination,
+        crate::test_support::RECOVERY_KEY,
+        MobileRestoreIdentity::Byo,
+    );
+    assert_eq!(terminal.phase, "done");
+    assert_eq!(fixture.runner.copies.load(Ordering::SeqCst), 1);
+    let before = solstone_core_journal_config::read_journal_config(fixture.root.path())
+        .unwrap()
+        .config
+        .unwrap();
+    let (terminal, faults) =
+        run_with_bound_publication_faults([(BoundPublicationPrimitive::ParentSync, 1, 5)], || {
+            crate::first_restore::finish_hosted_mode(
+                &fixture.deps,
+                fixture.retained.clone(),
+                terminal,
+            )
+        });
+    assert_eq!(faults, 1);
+    assert_eq!(terminal.phase, "error");
+    assert_eq!(
+        terminal.reason_code.as_deref(),
+        Some("configuration_unconfirmed")
+    );
+    let report = terminal.report.unwrap();
+    assert_eq!(report["restore_outcome"]["phase"], "done");
+    assert_eq!(report["configuration_publication"]["state"], "published");
+    assert_eq!(report["configuration_publication"]["confirmed"], false);
+    assert_eq!(
+        report["configuration_publication"]["directory_flush"],
+        "failed"
+    );
+    assert_eq!(
+        report["configuration_publication"]["durability_uncertain"],
+        true
+    );
+    let mut after = solstone_core_journal_config::read_journal_config(fixture.root.path())
+        .unwrap()
+        .config
+        .unwrap();
+    assert_eq!(after["backup"]["mode"], "operated");
+    after
+        .get_mut("backup")
+        .unwrap()
+        .as_object_mut()
+        .unwrap()
+        .insert("mode".into(), before["backup"]["mode"].clone());
+    assert_eq!(
+        after, before,
+        "mode publication changed unrelated restored settings"
+    );
+    let bytes = fs::read(fixture.root.path().join("config/journal.json")).unwrap();
+    assert!(matches!(
+        solstone_core_backup::set_mode_at_root_checked(&fixture.retained, "operated", &|| Ok(()))
+            .unwrap(),
+        BoundConfigOutcome::Unchanged
+    ));
+    assert!(
+        solstone_core_backup::set_mode_at_root_checked(&fixture.retained, "byo", &|| Err(
+            "stopped".into()
+        ))
+        .is_err()
+    );
+    assert_eq!(
+        fs::read(fixture.root.path().join("config/journal.json")).unwrap(),
+        bytes
+    );
+    assert_eq!(
+        fs::read(fixture.root.path().join("restored-original")).unwrap(),
+        b"original bytes"
     );
 }
