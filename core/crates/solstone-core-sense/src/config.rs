@@ -6,7 +6,9 @@ use std::time::Duration;
 
 use serde_json::{Map, Value};
 use solstone_core_journal_config::read_journal_config;
-use solstone_core_local::{LocalEndpointResolution, resolve_local_endpoint};
+use solstone_core_local::{
+    LocalEndpointResolution, bundled_parallel_slots, resolve_local_endpoint,
+};
 
 pub const HANDLERS: [&str; 3] = ["describe", "transcribe", "depict"];
 
@@ -96,7 +98,7 @@ fn active_provider(config: &Map<String, Value>) -> Option<&str> {
         .filter(|v| !v.trim().is_empty())
 }
 
-/// Python's `describe_per_proc_jobs`, limited to the data the dispatcher owns.
+/// Size describe batches to the active endpoint's serving capacity.
 pub fn describe_per_proc_jobs(
     config: &Map<String, Value>,
     effective: usize,
@@ -107,18 +109,7 @@ pub fn describe_per_proc_jobs(
     }
     let slots = match resolve_local_endpoint(config) {
         LocalEndpointResolution::Byo(endpoint) => endpoint.parallel_slots,
-        // Bundled capacity has no generic public reader; local.ctx is its persisted
-        // tier evidence and the reference's fallback is one.
-        LocalEndpointResolution::Bundled => {
-            std::fs::read_to_string(journal.join("health/local.ctx"))
-                .ok()
-                .and_then(|v| match v.trim() {
-                    "16384" => Some(1),
-                    "32768" => Some(2),
-                    _ => None,
-                })
-                .or(Some(1))
-        }
+        LocalEndpointResolution::Bundled => Some(bundled_parallel_slots(journal)),
     };
     slots.map_or(10, |slots| {
         std::cmp::max(1, (2 * slots as usize) / effective.max(1))

@@ -6,16 +6,7 @@ use std::path::Path;
 use solstone_core_local::LocalEndpointResolution;
 
 pub(crate) fn bundled_slots(journal: &Path) -> Option<u32> {
-    Some(
-        std::fs::read_to_string(journal.join("health/local.ctx"))
-            .ok()
-            .and_then(|value| match value.trim() {
-                "16384" => Some(1),
-                "32768" => Some(2),
-                _ => None,
-            })
-            .unwrap_or(1),
-    )
+    Some(solstone_core_local::bundled_parallel_slots(journal))
 }
 
 pub(crate) fn default_segment_workers(

@@ -147,6 +147,65 @@ fn connect_reports_closed_peer_transport_failure() {
 }
 
 #[test]
+fn bundled_capacity_reads_live_props_and_ignores_leftover_context_files() {
+    use solstone_core_local::bundled_parallel_slots;
+    use std::io::Read;
+
+    let root = journal(None);
+    for stale_context in [None, Some("16384"), Some("32768")] {
+        if let Some(context) = stale_context {
+            std::fs::write(root.path().join("health/local.ctx"), context).unwrap();
+        }
+        for (props, expected) in [
+            (r#"{"total_slots":2}"#, 2),
+            (r#"{"total_slots":1}"#, 1),
+            ("{}", 1),
+        ] {
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            let port = listener.local_addr().unwrap().port();
+            std::fs::write(root.path().join("health/local.port"), port.to_string()).unwrap();
+            listener.set_nonblocking(true).unwrap();
+            let peer = thread::spawn(move || {
+                let deadline = std::time::Instant::now() + Duration::from_secs(5);
+                let mut stream = loop {
+                    match listener.accept() {
+                        Ok((stream, _)) => break stream,
+                        Err(error)
+                            if error.kind() == std::io::ErrorKind::WouldBlock
+                                && std::time::Instant::now() < deadline =>
+                        {
+                            thread::sleep(Duration::from_millis(5));
+                        }
+                        Err(error) => panic!("capacity reader did not connect: {error}"),
+                    }
+                };
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(5)))
+                    .unwrap();
+                let mut request = Vec::new();
+                let mut byte = [0];
+                while !request.ends_with(b"\r\n\r\n") {
+                    stream.read_exact(&mut byte).unwrap();
+                    request.push(byte[0]);
+                }
+                assert!(request.starts_with(b"GET /props HTTP/1.1\r\n"));
+                write!(
+                    stream,
+                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{props}",
+                    props.len()
+                )
+                .unwrap();
+            });
+            let slots = bundled_parallel_slots(root.path());
+            peer.join().unwrap();
+            assert_eq!(slots, expected);
+        }
+        std::fs::remove_file(root.path().join("health/local.port")).unwrap();
+        assert_eq!(bundled_parallel_slots(root.path()), 1);
+    }
+}
+
+#[test]
 fn health_response_timeout_is_bounded() {
     let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
     let port = listener.local_addr().expect("address").port();

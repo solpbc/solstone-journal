@@ -386,7 +386,11 @@ where
             .map_err(|message| CliError::InvalidDay { message })?;
         let (uses_local, endpoint) = endpoint();
         let cpu_count = cpu_count();
-        let bundled_slots = bundled_slots();
+        let bundled_slots = if uses_local && matches!(endpoint, LocalEndpointResolution::Bundled) {
+            bundled_slots()
+        } else {
+            None
+        };
         let default_segment_workers = workers::default_segment_workers(
             cpu_count,
             uses_local,
@@ -593,7 +597,11 @@ pub fn run_hosted_command(
         let cpu_count = std::thread::available_parallelism()
             .ok()
             .map(|count| count.get());
-        let bundled_slots = workers::bundled_slots(&context.journal);
+        let bundled_slots = if uses_local && matches!(endpoint, LocalEndpointResolution::Bundled) {
+            workers::bundled_slots(&context.journal)
+        } else {
+            None
+        };
         let default_segment_workers = workers::default_segment_workers(
             cpu_count,
             uses_local,
@@ -3569,12 +3577,12 @@ mod tests {
     }
 
     #[test]
-    fn bundled_slots_matches_the_existing_local_context_precedent() {
+    fn bundled_slots_ignores_leftover_context_files() {
         let journal = tempdir().unwrap();
         assert_eq!(workers::bundled_slots(journal.path()), Some(1));
         fs::create_dir_all(journal.path().join("health")).unwrap();
         fs::write(journal.path().join("health/local.ctx"), "32768\n").unwrap();
-        assert_eq!(workers::bundled_slots(journal.path()), Some(2));
+        assert_eq!(workers::bundled_slots(journal.path()), Some(1));
         fs::write(journal.path().join("health/local.ctx"), "unknown\n").unwrap();
         assert_eq!(workers::bundled_slots(journal.path()), Some(1));
     }

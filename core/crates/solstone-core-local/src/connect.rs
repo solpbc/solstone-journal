@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
@@ -9,12 +9,9 @@ use serde_json::Value;
 
 use crate::LoopbackAddr;
 use crate::plan::Platform;
-use crate::tier::{
-    CAPABLE_CONTEXT_TOKENS, CAPABLE_PARALLEL_SLOTS, FLOOR_CONTEXT_TOKENS, FLOOR_PARALLEL_SLOTS,
-};
+use crate::tier::FLOOR_PARALLEL_SLOTS;
 
 const INPUT_SCHEMA: &str = "solstone-local-connect-input-v1";
-const UNKNOWN_SLOTS: u32 = 1;
 const TIMEOUT: Duration = Duration::from_secs(1);
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -325,7 +322,7 @@ pub(crate) fn connect_with_transport_and_authority(
             Err(reason) => return ConnectOutcome::Failed { reason },
         }
     } else {
-        discover_capacity(transport, &base_url, &health_dir)
+        discover_capacity(transport, &base_url)
     };
 
     ConnectOutcome::Ready {
@@ -341,39 +338,43 @@ pub(crate) fn connect_with_transport_and_authority(
     }
 }
 
-fn discover_capacity(
-    transport: &dyn ConnectTransport,
-    base_url: &str,
-    health_dir: &std::path::Path,
-) -> (u32, String) {
+fn discover_capacity(transport: &dyn ConnectTransport, base_url: &str) -> (u32, String) {
     if let Ok((200, text)) = transport.get(base_url, "/props", None)
         && let Some(slots) = total_slots(&text)
     {
         return (slots, "props".into());
     }
-    let context = std::fs::read_to_string(health_dir.join("local.ctx"))
+    (FLOOR_PARALLEL_SLOTS, "default".into())
+}
+
+/// Read the running bundled server's capacity, or use the single-slot floor.
+pub fn bundled_parallel_slots(journal: &Path) -> u32 {
+    let Some(port) = std::fs::read_to_string(journal.join("health/local.port"))
         .ok()
-        .and_then(|text| text.trim().parse::<u32>().ok());
-    if let Some(slots) = slots_from_launched_tier(context) {
-        return (slots, "local_ctx".into());
-    }
-    (UNKNOWN_SLOTS, "default".into())
+        .and_then(|text| text.trim().parse::<u16>().ok())
+        .filter(|port| *port > 0)
+    else {
+        return FLOOR_PARALLEL_SLOTS;
+    };
+    let transport = UreqConnectTransport {
+        deadline: Instant::now() + TIMEOUT,
+    };
+    discover_capacity(&transport, &format!("http://127.0.0.1:{port}")).0
 }
 
 fn total_slots(props: &str) -> Option<u32> {
     serde_json::from_str::<Value>(props)
         .ok()
-        .and_then(|value| value.get("total_slots")?.as_u64())
-        .and_then(|slots| u32::try_from(slots).ok())
-        .filter(|slots| *slots > 0)
+        .and_then(|value| props_slots(&value))
 }
 
-fn slots_from_launched_tier(context: Option<u32>) -> Option<u32> {
-    match context {
-        Some(FLOOR_CONTEXT_TOKENS) => Some(FLOOR_PARALLEL_SLOTS),
-        Some(CAPABLE_CONTEXT_TOKENS) => Some(CAPABLE_PARALLEL_SLOTS),
-        _ => None,
-    }
+pub(crate) fn props_slots(props: &Value) -> Option<u32> {
+    let value = props.get("total_slots")?;
+    value
+        .as_u64()
+        .and_then(|slots| u32::try_from(slots).ok())
+        .or_else(|| value.as_str()?.parse().ok())
+        .filter(|slots| *slots > 0)
 }
 fn profile_for_slots(platform: Platform, slots: u32) -> &'static str {
     if platform == Platform::Darwin {
@@ -459,29 +460,22 @@ mod tests {
     }
 
     #[test]
-    fn slots_and_profiles_match_python_precedence_rules() {
+    fn slots_and_profiles_follow_advertised_capacity() {
         assert_eq!(total_slots(r#"{"total_slots": 3}"#), Some(3));
-        assert_eq!(
-            slots_from_launched_tier(Some(FLOOR_CONTEXT_TOKENS)),
-            Some(FLOOR_PARALLEL_SLOTS)
-        );
-        assert_eq!(
-            slots_from_launched_tier(Some(CAPABLE_CONTEXT_TOKENS)),
-            Some(CAPABLE_PARALLEL_SLOTS)
-        );
-        assert_eq!(slots_from_launched_tier(None), None);
-        assert_eq!(UNKNOWN_SLOTS, 1);
+        assert_eq!(total_slots(r#"{"total_slots": "2"}"#), Some(2));
+        for value in [
+            "{}",
+            r#"{"total_slots":0}"#,
+            r#"{"total_slots":-1}"#,
+            r#"{"total_slots":4294967296}"#,
+            r#"{"total_slots":"invalid"}"#,
+        ] {
+            assert_eq!(total_slots(value), None);
+        }
         assert_eq!(profile_for_slots(Platform::Darwin, 99), "apple");
         assert_eq!(profile_for_slots(Platform::Linux, 2), "capable");
         assert_eq!(profile_for_slots(Platform::Linux, 1), "floor");
         assert_eq!(profile_for_slots(Platform::Linux, 3), "advertised");
-    }
-
-    #[test]
-    fn context_is_unmultiplied_tier_value() {
-        let context = CAPABLE_CONTEXT_TOKENS;
-        let launched = context * slots_from_launched_tier(Some(context)).expect("capable slots");
-        assert_eq!(launched, context * 2);
     }
 
     #[test]
@@ -501,7 +495,7 @@ mod tests {
     }
 
     #[test]
-    fn connect_uses_served_model_and_context_capacity_fallback() {
+    fn connect_uses_served_model_and_ignores_stale_context_capacity() {
         let transport = scripted(vec![
             Ok((200, r#"{"loaded_model":"served"}"#.into())),
             Ok((200, "{}".into())),
@@ -511,7 +505,7 @@ mod tests {
         assert_eq!(server.served_model_id, "served");
         assert_eq!(
             (server.parallel_slots, server.capacity_source.as_str()),
-            (2, "local_ctx")
+            (1, "default")
         );
     }
 
@@ -572,13 +566,13 @@ mod tests {
     }
 
     #[test]
-    fn connect_uses_default_capacity_when_props_and_context_are_unavailable() {
+    fn connect_uses_default_capacity_when_props_are_unavailable() {
         let transport = scripted(vec![Ok((200, "{}".into())), Ok((500, String::new()))]);
         let root = journal(Some(1), None);
         let server = ready(connect_with(input(root.path()), &transport));
         assert_eq!(
             (server.parallel_slots, server.capacity_source.as_str()),
-            (UNKNOWN_SLOTS, "default")
+            (FLOOR_PARALLEL_SLOTS, "default")
         );
     }
 

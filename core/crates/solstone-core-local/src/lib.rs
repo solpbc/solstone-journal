@@ -19,7 +19,8 @@ pub mod vulkan;
 
 pub use bind::LoopbackAddr;
 pub use connect::{
-    ConnectInput, ConnectOutcome, LocalInferenceAuthority, connect, connect_with_authority,
+    ConnectInput, ConnectOutcome, LocalInferenceAuthority, bundled_parallel_slots, connect,
+    connect_with_authority,
 };
 pub use endpoint::{
     ByoEndpoint, LocalEndpointResolution, resolve_local_endpoint,

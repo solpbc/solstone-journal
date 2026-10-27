@@ -10,12 +10,10 @@ use serde_json::{Map, Value, json};
 
 use crate::LoopbackAddr;
 use crate::admission::{AdmissionError, acquire_local_slot, admission_dir};
-use crate::connect::{ConnectInput, ConnectOutcome, ConnectedServer, connect};
+use crate::connect::{ConnectInput, ConnectOutcome, ConnectedServer, connect, props_slots};
 use crate::fixture::local_generate;
 use crate::plan::Platform;
-use crate::tier::{
-    CAPABLE_CONTEXT_TOKENS, CAPABLE_PARALLEL_SLOTS, FLOOR_CONTEXT_TOKENS, FLOOR_PARALLEL_SLOTS,
-};
+use crate::tier::{FLOOR_CONTEXT_TOKENS, FLOOR_PARALLEL_SLOTS};
 
 const SAFETY_MARGIN_TOKENS: u32 = 256;
 const ESTIMATED_IMAGE_TOKENS: u32 = 2_500;
@@ -405,7 +403,7 @@ fn generate_with_connected_server_at<T: GenerateTransport>(
     let mut auth_token = authority.as_ref().map(|a| a.token.clone());
     let mut base_url = server.base_url.clone();
 
-    let window = resolve_context_window(&input, &server, &mut preflight, auth_token.as_deref());
+    let window = resolve_context_window(&server, &mut preflight, auth_token.as_deref());
     let prepared = if input.platform == Platform::Linux && count_image_parts(&input.contents) == 0 {
         match prepare_exact_text_request(&input, &server, window, |body| {
             count_input_tokens(&mut preflight, &base_url, body, auth_token.as_deref())
@@ -663,7 +661,7 @@ pub fn inspect_exact_text_admission(
             return Err(failure_error("local_endpoint_contract_failed", reason));
         }
     };
-    let context = resolve_context_window(input, &server, &mut transport, None);
+    let context = resolve_context_window(&server, &mut transport, None);
     let body = build_request_body(
         &server.served_model_id,
         build_messages(&input.contents, input.system_instruction.as_deref()),
@@ -1201,17 +1199,22 @@ fn interpret_completion(response: &HttpResponse) -> CompletionInterpretation {
     let server_fields = parsed.as_ref().ok().map(server_inference);
     if !(200..300).contains(&response.status) {
         let body_lower = response.body.to_ascii_lowercase();
-        let reason_code = if contains_context_pattern(&body_lower) {
-            if parsed
+        let error_type = parsed.as_ref().ok().and_then(bundled_error_type);
+        let mlx_overflow = response.status == 400
+            && error_type == Some("invalid_request_error")
+            && parsed
                 .as_ref()
                 .ok()
-                .and_then(bundled_error_type)
-                .is_some_and(|kind| kind == "exceed_context_size_error")
-            {
-                Some("context_server_overflow")
-            } else {
-                Some("capacity_exhausted")
-            }
+                .and_then(|body| body.pointer("/error/message"))
+                .and_then(Value::as_str)
+                == Some("prepared prompt exceeds the context capacity");
+        let reason_code = if mlx_overflow
+            || (contains_context_pattern(&body_lower)
+                && error_type == Some("exceed_context_size_error"))
+        {
+            Some("context_server_overflow")
+        } else if contains_context_pattern(&body_lower) {
+            Some("capacity_exhausted")
         } else {
             None
         };
@@ -1658,7 +1661,6 @@ fn invalid_overflow_text() -> GenerateError {
 }
 
 fn resolve_context_window<T: GenerateTransport>(
-    input: &GenerateInput,
     server: &ConnectedServer,
     transport: &mut T,
     auth_token: Option<&str>,
@@ -1674,27 +1676,16 @@ fn resolve_context_window<T: GenerateTransport>(
         && let Ok(props) = serde_json::from_str::<Value>(&response.body)
         && let Some(context) = props_context(&props)
     {
-        let slots = props_slots(&props).unwrap_or(CAPABLE_PARALLEL_SLOTS);
+        let slots = props_slots(&props).unwrap_or(FLOOR_PARALLEL_SLOTS);
         return ContextWindow {
             window: context / slots,
             slots,
         };
     }
-    if let Some(window) = launched_context_sidecar(std::path::Path::new(&input.journal_path)) {
-        let slots = slots_from_launched_tier(window).unwrap_or(FLOOR_PARALLEL_SLOTS);
-        return ContextWindow { window, slots };
-    }
     ContextWindow {
         window: FLOOR_CONTEXT_TOKENS,
         slots: FLOOR_PARALLEL_SLOTS,
     }
-}
-
-fn launched_context_sidecar(journal_path: &std::path::Path) -> Option<u32> {
-    std::fs::read_to_string(journal_path.join("health/local.ctx"))
-        .ok()
-        .and_then(|text| text.trim().parse::<u32>().ok())
-        .filter(|context| *context > 0)
 }
 
 fn count_tokens<T: GenerateTransport>(
@@ -1809,26 +1800,11 @@ fn props_context(props: &Value) -> Option<u32> {
         .filter(|value| *value > 0)
 }
 
-fn props_slots(props: &Value) -> Option<u32> {
-    props
-        .get("total_slots")
-        .and_then(value_u32)
-        .filter(|value| *value > 0)
-}
-
 fn value_u32(value: &Value) -> Option<u32> {
     value
         .as_u64()
         .and_then(|value| u32::try_from(value).ok())
         .or_else(|| value.as_str().and_then(|value| value.parse().ok()))
-}
-
-fn slots_from_launched_tier(context: u32) -> Option<u32> {
-    match context {
-        FLOOR_CONTEXT_TOKENS => Some(FLOOR_PARALLEL_SLOTS),
-        CAPABLE_CONTEXT_TOKENS => Some(CAPABLE_PARALLEL_SLOTS),
-        _ => None,
-    }
 }
 
 fn model_content_parts(values: &[Value]) -> &[Value] {
@@ -3178,6 +3154,7 @@ mod tests {
     }
 
     struct ScriptedTransport {
+        props: Option<HttpResponse>,
         completions: std::collections::VecDeque<Result<HttpResponse, String>>,
         completion_posts: usize,
         count_posts: usize,
@@ -3194,6 +3171,7 @@ mod tests {
     impl ScriptedTransport {
         fn new(completions: impl IntoIterator<Item = Result<HttpResponse, String>>) -> Self {
             Self {
+                props: None,
                 completions: completions.into_iter().collect(),
                 completion_posts: 0,
                 count_posts: 0,
@@ -3217,7 +3195,9 @@ mod tests {
             _timeout: Duration,
             _auth_token: Option<&str>,
         ) -> Result<HttpResponse, String> {
-            Err("scripted transport has no /props".into())
+            self.props
+                .clone()
+                .ok_or_else(|| "scripted transport has no /props".into())
         }
 
         fn post_json(
@@ -3280,6 +3260,73 @@ mod tests {
             status: 200,
             body: body.to_string(),
         })
+    }
+
+    #[test]
+    fn context_window_uses_live_slots_and_the_same_single_slot_default_as_connect() {
+        let mut transport = ScriptedTransport::new([]);
+        for (props, window, slots) in [
+            (json!({"n_ctx":65536,"total_slots":2}), 32768, 2),
+            (
+                json!({"default_generation_settings":{"n_ctx":16384}}),
+                16384,
+                1,
+            ),
+            (json!({"n_ctx":16384,"total_slots":0}), 16384, 1),
+        ] {
+            transport.props = Some(HttpResponse {
+                status: 200,
+                body: props.to_string(),
+            });
+            let context = resolve_context_window(&server(), &mut transport, None);
+            assert_eq!((context.window, context.slots), (window, slots));
+        }
+        transport.props = None;
+        let context = resolve_context_window(&server(), &mut transport, None);
+        assert_eq!((context.window, context.slots), (16384, 1));
+    }
+
+    #[test]
+    fn mlx_and_llama_context_refusals_share_the_server_overflow_code() {
+        // MLX HelperServer's error envelope and llama-server's overflow envelope.
+        for body in [
+            json!({"error":{"message":"prepared prompt exceeds the context capacity",
+                "type":"invalid_request_error","code":"invalid_request_error"}}),
+            json!({"error":{"message":"request exceeds the available context size",
+                "type":"exceed_context_size_error","n_prompt_tokens":16526,"n_ctx":16384}}),
+        ] {
+            let response = HttpResponse {
+                status: 400,
+                body: body.to_string(),
+            };
+            let CompletionInterpretation::Failed(error) = interpret_completion(&response) else {
+                panic!("expected context refusal");
+            };
+            assert_eq!(
+                error.reason_code.as_deref(),
+                Some("context_server_overflow")
+            );
+        }
+    }
+
+    #[test]
+    fn other_local_errors_keep_their_classification() {
+        for (message, expected) in [
+            ("messages must not be empty", None),
+            ("maximum context length", Some("capacity_exhausted")),
+        ] {
+            let response = HttpResponse {
+                status: 400,
+                body: json!({"error":{
+                    "message":message,"type":"invalid_request_error","code":"invalid_request_error"
+                }})
+                .to_string(),
+            };
+            let CompletionInterpretation::Failed(error) = interpret_completion(&response) else {
+                panic!("expected refusal");
+            };
+            assert_eq!(error.reason_code.as_deref(), expected);
+        }
     }
 
     #[cfg(target_os = "linux")]
