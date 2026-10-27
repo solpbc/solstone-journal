@@ -94,3 +94,61 @@ pub(crate) fn run(
         }
     }
 }
+
+/// Complete hosted mode publication without reopening the restored target.
+pub(crate) fn finish_hosted_mode(
+    deps: &BackupWebDeps,
+    root: Arc<JournalRoot>,
+    mut terminal: Terminal,
+) -> Terminal {
+    use solstone_core_backup_runtime::ToolRunner;
+    use solstone_core_journal_config_write::{BoundConfigOutcome, DirectoryFlush};
+    use solstone_core_journal_io::whole_journal_restore::begin_target_use_bound;
+    let runner = super::lifetime_runner(deps);
+    let checkpoint = || {
+        if runner
+            .cancellation()
+            .is_some_and(|stop| stop.is_cancelled())
+        {
+            return Err("restore stopped".into());
+        }
+        root.revalidate_canonical_binding()
+            .map_err(|e| e.to_string())
+    };
+    let admitted = begin_target_use_bound(root.clone());
+    let publication = match admitted {
+        Ok(_admitted) => {
+            match solstone_core_backup::set_mode_at_root_checked(&root, "operated", &checkpoint) {
+                Ok(BoundConfigOutcome::Unchanged) => {
+                    serde_json::json!({"state":"unchanged","confirmed":true})
+                }
+                Ok(BoundConfigOutcome::Published(p)) => serde_json::json!({
+                    "state":"published",
+                    "confirmed":p.durability_uncertainty.is_none() && p.observation_uncertainty.is_none()
+                        && p.confirmation_refusal.is_none(),
+                    "directory_flush":match p.directory_flush { DirectoryFlush::Synced => "synced", DirectoryFlush::Failed => "failed", DirectoryFlush::Unavailable => "unavailable" },
+                    "durability_uncertain":p.durability_uncertainty.is_some(),
+                    "observation_uncertain":p.observation_uncertainty.is_some(),
+                    "confirmation_refused":p.confirmation_refusal.is_some(),
+                }),
+                Err(_) => serde_json::json!({"state":"refused","confirmed":false}),
+            }
+        }
+        Err(_) => serde_json::json!({"state":"refused","confirmed":false}),
+    };
+    let restore_outcome = serde_json::json!({
+        "phase":terminal.phase,
+        "reason_code":terminal.reason_code,
+        "recording_failure":terminal.recording_failure,
+        "report":terminal.report.take(),
+    });
+    if publication["confirmed"] != true || checkpoint().is_err() {
+        terminal.phase = "error".into();
+        terminal.reason_code = Some("configuration_unconfirmed".into());
+    }
+    terminal.report = Some(serde_json::json!({
+        "restore_outcome":restore_outcome,
+        "configuration_publication":publication,
+    }));
+    terminal
+}
