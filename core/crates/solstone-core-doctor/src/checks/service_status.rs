@@ -133,7 +133,8 @@ impl Unavailable {
 
 /// Is there anything to connect to?
 ///
-/// On Unix the socket file is the listener's own artifact. ⛔ On Windows it is
+/// Embedded Darwin can own a process-local listener with no socket file.
+/// Desktop Unix sockets retain their filesystem observation. On Windows it is
 /// not: the resident serves a named pipe and never creates
 /// `health/callosum.sock`, so testing that path reports "nothing listening" on
 /// every healthy install. The Windows equivalent is the resident itself -- the
@@ -147,6 +148,14 @@ fn endpoint_absent(context: &CheckContext) -> Option<Unavailable> {
             InstanceVerdict::Unverifiable => Some(Unavailable::Unverifiable),
         },
         Platform::Linux | Platform::Darwin => {
+            #[cfg(unix)]
+            match solstone_core_callosum::local_unix_listener_status(&context.callosum_socket_path)
+            {
+                Ok(Some(true)) => return None,
+                Ok(Some(false)) => return Some(Unavailable::NoSocket),
+                Err(_) => return Some(Unavailable::Unverifiable),
+                Ok(None) => {}
+            }
             (!context.callosum_socket_path.exists()).then_some(Unavailable::NoSocket)
         }
     }

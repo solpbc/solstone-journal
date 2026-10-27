@@ -1154,6 +1154,38 @@ async fn ac13_stalled_client_does_not_block_healthy_delivery_and_is_evicted() {
 }
 
 #[tokio::test(flavor = "current_thread")]
+async fn server_stop_joins_an_actual_blocked_client_write() {
+    let socket = TempSocket::new("joined-stop");
+    let hooks = Arc::new(ServerTestHooks::default());
+    let server = CallosumSocketServer::bind_with_test_hooks(&socket.path, Arc::clone(&hooks))
+        .await
+        .unwrap();
+    let _client = raw(&socket.path).await;
+    wait_for_clients(&server, 1).await;
+    hooks.block_client(1);
+    assert!(server.broadcast(
+        serde_json::from_value(json!({"tract":"control","event":"held-write"})).unwrap()
+    ));
+    timeout(Duration::from_secs(1), hooks.wait_for_write())
+        .await
+        .unwrap();
+    assert_eq!(hooks.active_blocked_writes(), 1);
+    assert!(
+        timeout(Duration::from_millis(10), server.stop())
+            .await
+            .is_err(),
+        "the first waiter is cancelled while the actual frame remains owned"
+    );
+    assert_eq!(hooks.active_blocked_writes(), 1);
+    server.stop().await;
+    assert_eq!(
+        hooks.active_blocked_writes(),
+        0,
+        "Stop must join the actual client frame before returning"
+    );
+}
+
+#[tokio::test(flavor = "current_thread")]
 async fn ac14_disconnected_emits_do_not_error_and_reconnect_delivers_later_messages() {
     let socket = TempSocket::new("ac14");
     let mut connection = connection(&socket.path, Map::new());

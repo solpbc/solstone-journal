@@ -415,7 +415,6 @@ mod tests {
             app,
             backup,
             None,
-            None,
         )
         .await
         .unwrap()

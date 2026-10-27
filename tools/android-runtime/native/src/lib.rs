@@ -11,8 +11,6 @@ use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Instant;
 
-#[cfg(any(target_os = "android", all(test, feature = "full-tests")))]
-mod callosum_endpoint;
 #[cfg(unix)]
 mod owner_response;
 mod retirement;
@@ -186,8 +184,11 @@ fn serving(root: &Path, command: &str) -> Result<Value, String> {
         let cancelled = || thinking_cancelled(&THINKING_GENERATION, generation, &binding);
         let cancellation = solstone_core_generate::Cancellation::from_fn(&cancelled);
         let root = binding.canonical_path();
-        let _restore_use = jio::whole_journal_restore::begin_target_use_bound(std::sync::Arc::clone(&binding))
-            .map_err(|_| jio::whole_journal_restore::WHOLE_JOURNAL_RESTORE_NOT_READY.to_owned())?;
+        let _restore_use =
+            jio::whole_journal_restore::begin_target_use_bound(std::sync::Arc::clone(&binding))
+                .map_err(|_| {
+                    jio::whole_journal_restore::WHOLE_JOURNAL_RESTORE_NOT_READY.to_owned()
+                })?;
         let raw = command["payload"]
             .as_str()
             .ok_or("thinking request required")?;
@@ -318,15 +319,13 @@ fn serving(root: &Path, command: &str) -> Result<Value, String> {
             ort::init_from(library).map_err(|e| e.to_string())?.commit();
             let binding =
                 std::sync::Arc::new(jio::JournalRoot::open(root).map_err(|e| e.to_string())?);
-            #[cfg(target_os = "android")]
-            callosum_endpoint::prepare(binding.canonical_path())?;
             let payload_dir = root
                 .parent()
                 .ok_or("app directory missing")?
                 .join("journal-payload");
             let handle =
-                match journal_mobile_serving::MobileServing::start_with_payload_for_retirement_observed(
-                    root.to_path_buf(),
+                match journal_mobile_serving::MobileServing::start_with_root_for_retirement_observed(
+                    std::sync::Arc::clone(&binding),
                     address,
                     root.parent()
                         .ok_or("app directory missing")?
@@ -401,8 +400,7 @@ fn serving(root: &Path, command: &str) -> Result<Value, String> {
                 journal_mobile_serving::import_route::ForegroundImportRoute::new(
                     std::sync::Arc::clone(&host),
                 ),
-            ))
-            {
+            )) {
                 let mut current = ServingInstance {
                     handle: Some(handle),
                     retirement: None,

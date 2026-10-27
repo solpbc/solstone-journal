@@ -76,10 +76,19 @@ pub(crate) struct ServerInner {
     #[cfg(test)]
     skip_endpoint_cleanup: bool,
     pub(crate) socket_path: PathBuf,
+    #[cfg(unix)]
+    local_root: Option<Arc<solstone_core_journal_io::JournalRoot>>,
+    #[cfg(unix)]
+    local_registration: std::sync::OnceLock<crate::unix_endpoint::LocalRegistration>,
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    bound_endpoint: Mutex<Option<solstone_core_journal_io::socket_endpoint::JournalSocketEndpoint>>,
     pub(crate) broadcasts: mpsc::Sender<CallosumEnvelope>,
     pub(crate) clients: Mutex<HashMap<u64, ClientEntry>>,
     pub(crate) shutdown: watch::Sender<bool>,
     pub(crate) tasks: Mutex<Vec<JoinHandle<()>>>,
+    retired_clients: Mutex<Vec<JoinHandle<()>>>,
+    stop_join: tokio::sync::Mutex<()>,
+    stop_complete: AtomicBool,
     pub(crate) next_client_id: AtomicU64,
     pub(crate) stopped: AtomicBool,
     pub(crate) malformed_frame_drops: AtomicU64,
@@ -100,64 +109,236 @@ pub(crate) struct ServerInner {
 pub(crate) struct ClientEntry {
     pub(crate) outbound: mpsc::Sender<Vec<u8>>,
     pub(crate) shutdown: watch::Sender<bool>,
-    // Dropping this detaches a client task that is already exiting after shutdown/removal.
+    // Removal transfers this handle to the server's retained join set.
     pub(crate) _task: JoinHandle<()>,
+}
+
+fn new_server_inner(
+    socket_path: PathBuf,
+    #[cfg(any(target_os = "linux", target_os = "android"))] bound_endpoint: Option<
+        solstone_core_journal_io::socket_endpoint::JournalSocketEndpoint,
+    >,
+    #[cfg(unix)] local_root: Option<Arc<solstone_core_journal_io::JournalRoot>>,
+    #[cfg(windows)] pipe_secret: [u8; crate::windows::PIPE_CHALLENGE_LEN],
+    #[cfg(any(test, feature = "test-hooks"))] hooks: Option<Arc<ServerTestHooks>>,
+) -> (Arc<ServerInner>, mpsc::Receiver<CallosumEnvelope>) {
+    let (broadcasts, broadcast_rx) = mpsc::channel(SERVER_BROADCAST_CAPACITY);
+    let (shutdown, _) = watch::channel(false);
+    let inner = Arc::new(ServerInner {
+        #[cfg(test)]
+        skip_endpoint_cleanup: false,
+        socket_path,
+        #[cfg(unix)]
+        local_root,
+        #[cfg(unix)]
+        local_registration: std::sync::OnceLock::new(),
+        #[cfg(any(target_os = "linux", target_os = "android"))]
+        bound_endpoint: Mutex::new(bound_endpoint),
+        broadcasts,
+        clients: Mutex::new(HashMap::new()),
+        shutdown,
+        tasks: Mutex::new(Vec::new()),
+        retired_clients: Mutex::new(Vec::new()),
+        stop_join: tokio::sync::Mutex::new(()),
+        stop_complete: AtomicBool::new(false),
+        next_client_id: AtomicU64::new(1),
+        stopped: AtomicBool::new(false),
+        malformed_frame_drops: AtomicU64::new(0),
+        broadcast_saturation_drops: AtomicU64::new(0),
+        stalled_client_evictions: AtomicU64::new(0),
+        unauthenticated_connection_drops: AtomicU64::new(0),
+        snapshot_source: Mutex::new(None),
+        #[cfg(all(test, not(windows)))]
+        test_snapshot_secret: Mutex::new(None),
+        #[cfg(windows)]
+        pipe_secret,
+        #[cfg(any(test, feature = "test-hooks"))]
+        hooks,
+    });
+    (inner, broadcast_rx)
 }
 
 impl CallosumSocketServer {
     /// Bind the platform endpoint and begin accepting clients.
     pub async fn bind(socket_path: impl AsRef<Path>) -> Result<Self, CallosumSocketServerError> {
-        Self::bind_inner(socket_path.as_ref().to_path_buf(), None).await
+        Self::bind_inner(
+            socket_path.as_ref().to_path_buf(),
+            #[cfg(any(target_os = "linux", target_os = "android"))]
+            None,
+            None,
+        )
+        .await
+    }
+
+    /// Bind native IPC using the journal already captured by its host.
+    #[cfg(unix)]
+    pub async fn bind_journal(
+        root: Arc<solstone_core_journal_io::JournalRoot>,
+    ) -> Result<Self, CallosumSocketServerError> {
+        #[cfg(any(target_os = "macos", target_os = "ios"))]
+        return Self::bind_in_process(root, None).await;
+        #[cfg(any(target_os = "linux", target_os = "android"))]
+        {
+            #[cfg(target_os = "android")]
+            let private = Some(
+                root.canonical_path()
+                    .parent()
+                    .ok_or_else(|| {
+                        CallosumSocketServerError::Io(std::io::Error::other(
+                            "private socket parent missing",
+                        ))
+                    })?
+                    .join("callosum.sock"),
+            );
+            #[cfg(target_os = "linux")]
+            let private: Option<PathBuf> = None;
+            let endpoint =
+                solstone_core_journal_io::socket_endpoint::JournalSocketEndpoint::prepare(
+                    root,
+                    private.as_deref(),
+                )
+                .map_err(CallosumSocketServerError::Io)?;
+            Self::bind_inner(endpoint.target().to_path_buf(), Some(endpoint), None).await
+        }
+        #[cfg(not(any(
+            target_os = "linux",
+            target_os = "android",
+            target_os = "macos",
+            target_os = "ios"
+        )))]
+        {
+            let _ = root;
+            Err(CallosumSocketServerError::Io(std::io::Error::from(
+                std::io::ErrorKind::Unsupported,
+            )))
+        }
+    }
+
+    #[cfg(all(
+        unix,
+        any(target_os = "macos", target_os = "ios", test, feature = "test-hooks")
+    ))]
+    async fn bind_in_process(
+        root: Arc<solstone_core_journal_io::JournalRoot>,
+        #[cfg(any(test, feature = "test-hooks"))] hooks: Option<Arc<ServerTestHooks>>,
+        #[cfg(not(any(test, feature = "test-hooks")))] _hooks: Option<()>,
+    ) -> Result<Self, CallosumSocketServerError> {
+        root.revalidate_canonical_binding()
+            .map_err(|error| CallosumSocketServerError::Io(std::io::Error::other(error)))?;
+        let path = root.canonical_path().join("health/callosum.sock");
+        let (inner, broadcast_rx) = new_server_inner(
+            path,
+            #[cfg(any(target_os = "linux", target_os = "android"))]
+            None,
+            Some(Arc::clone(&root)),
+            #[cfg(any(test, feature = "test-hooks"))]
+            hooks,
+        );
+        let (incoming, receiver) = mpsc::channel(SERVER_CLIENT_OUTBOUND_CAPACITY);
+        let active_inner = Arc::downgrade(&inner);
+        let active_incoming = incoming.clone();
+        let accepting_inner = Arc::downgrade(&inner);
+        let registration = crate::unix_endpoint::LocalRegistration::register(
+            root,
+            move || {
+                active_inner.upgrade().is_some_and(|owner| {
+                    !owner.stopped.load(Ordering::Acquire) && !active_incoming.is_closed()
+                })
+            },
+            move |stream| {
+                let owner = accepting_inner
+                    .upgrade()
+                    .ok_or_else(|| std::io::Error::from(std::io::ErrorKind::NotConnected))?;
+                if owner.stopped.load(Ordering::Acquire) || !bound_root_valid(&owner) {
+                    return Err(std::io::Error::from(std::io::ErrorKind::NotConnected));
+                }
+                incoming.try_send(stream).map_err(|failure| {
+                    std::io::Error::from(match failure {
+                        mpsc::error::TrySendError::Full(_) => std::io::ErrorKind::WouldBlock,
+                        mpsc::error::TrySendError::Closed(_) => std::io::ErrorKind::NotConnected,
+                    })
+                })
+            },
+        )
+        .map_err(CallosumSocketServerError::Io)?;
+        inner.local_registration.set(registration).map_err(|_| {
+            CallosumSocketServerError::Io(std::io::Error::from(std::io::ErrorKind::AlreadyExists))
+        })?;
+        track_task(
+            &inner,
+            tokio::spawn(run_dispatcher(Arc::clone(&inner), broadcast_rx)),
+        );
+        track_task(
+            &inner,
+            tokio::spawn(run_local_accept_loop(Arc::clone(&inner), receiver)),
+        );
+        Ok(Self { inner })
+    }
+
+    #[cfg(all(unix, any(test, feature = "test-hooks")))]
+    #[doc(hidden)]
+    pub async fn bind_local_with_test_hooks(
+        root: Arc<solstone_core_journal_io::JournalRoot>,
+        hooks: Arc<ServerTestHooks>,
+    ) -> Result<Self, CallosumSocketServerError> {
+        Self::bind_in_process(root, Some(hooks)).await
     }
 
     async fn bind_inner(
         socket_path: PathBuf,
+        #[cfg(any(target_os = "linux", target_os = "android"))] mut bound_endpoint: Option<
+            solstone_core_journal_io::socket_endpoint::JournalSocketEndpoint,
+        >,
         #[cfg(any(test, feature = "test-hooks"))] hooks: Option<Arc<ServerTestHooks>>,
         #[cfg(not(any(test, feature = "test-hooks")))] _hooks: Option<()>,
     ) -> Result<Self, CallosumSocketServerError> {
-        #[cfg(unix)]
+        #[cfg(any(target_os = "linux", target_os = "android"))]
+        let socket_path = match &bound_endpoint {
+            Some(endpoint) => endpoint
+                .prepare_bind()
+                .map_err(CallosumSocketServerError::Io)?,
+            None => crate::endpoint_path(&socket_path)
+                .map_err(CallosumSocketServerError::Io)?
+                .into_owned(),
+        };
+        #[cfg(all(unix, not(any(target_os = "linux", target_os = "android"))))]
         let socket_path = crate::endpoint_path(&socket_path)
             .map_err(CallosumSocketServerError::Io)?
             .into_owned();
         #[cfg(windows)]
         crate::windows::resolve_pipe_namespace(&socket_path)
             .map_err(CallosumSocketServerError::Io)?;
-        if let Some(parent) = socket_path.parent() {
+        #[cfg(any(target_os = "linux", target_os = "android"))]
+        let legacy_endpoint = bound_endpoint.is_none();
+        #[cfg(not(any(target_os = "linux", target_os = "android")))]
+        let legacy_endpoint = true;
+        if legacy_endpoint && let Some(parent) = socket_path.parent() {
             fs::create_dir_all(parent).map_err(CallosumSocketServerError::Io)?;
         }
         #[cfg(unix)]
-        if socket_path.exists() {
+        if legacy_endpoint && socket_path.exists() {
             fs::remove_file(&socket_path).map_err(CallosumSocketServerError::Io)?;
         }
         #[cfg(unix)]
         let listener = UnixListener::bind(&socket_path).map_err(CallosumSocketServerError::Io)?;
+        #[cfg(any(target_os = "linux", target_os = "android"))]
+        if let Some(endpoint) = bound_endpoint.as_mut() {
+            endpoint.bound().map_err(CallosumSocketServerError::Io)?;
+        }
         #[cfg(windows)]
         let (listener, pipe_secret) =
             bind_windows_listener(&socket_path).map_err(CallosumSocketServerError::Io)?;
-        let (broadcasts, broadcast_rx) = mpsc::channel(SERVER_BROADCAST_CAPACITY);
-        let (shutdown, _) = watch::channel(false);
-        let inner = Arc::new(ServerInner {
-            #[cfg(test)]
-            skip_endpoint_cleanup: false,
+        let (inner, broadcast_rx) = new_server_inner(
             socket_path,
-            broadcasts,
-            clients: Mutex::new(HashMap::new()),
-            shutdown,
-            tasks: Mutex::new(Vec::new()),
-            next_client_id: AtomicU64::new(1),
-            stopped: AtomicBool::new(false),
-            malformed_frame_drops: AtomicU64::new(0),
-            broadcast_saturation_drops: AtomicU64::new(0),
-            stalled_client_evictions: AtomicU64::new(0),
-            unauthenticated_connection_drops: AtomicU64::new(0),
-            snapshot_source: Mutex::new(None),
-            #[cfg(all(test, not(windows)))]
-            test_snapshot_secret: Mutex::new(None),
+            #[cfg(any(target_os = "linux", target_os = "android"))]
+            bound_endpoint,
+            #[cfg(unix)]
+            None,
             #[cfg(windows)]
             pipe_secret,
             #[cfg(any(test, feature = "test-hooks"))]
             hooks,
-        });
+        );
         track_task(
             &inner,
             tokio::spawn(run_dispatcher(Arc::clone(&inner), broadcast_rx)),
@@ -171,7 +352,7 @@ impl CallosumSocketServer {
 
     /// Queue an envelope for broadcast. Success means queued, not delivered.
     pub fn broadcast(&self, mut envelope: CallosumEnvelope) -> bool {
-        if self.inner.stopped.load(Ordering::Acquire) {
+        if self.inner.stopped.load(Ordering::Acquire) || !bound_root_valid(&self.inner) {
             return false;
         }
         stamp_timestamp(&mut envelope);
@@ -228,26 +409,39 @@ impl CallosumSocketServer {
 
     /// Stop immediately, dropping undelivered server and client output.
     pub async fn stop(&self) {
-        if self.inner.stopped.swap(true, Ordering::AcqRel) {
+        let _join = self.inner.stop_join.lock().await;
+        if self.inner.stop_complete.load(Ordering::Acquire) {
             return;
+        }
+        self.inner.stopped.store(true, Ordering::Release);
+        #[cfg(unix)]
+        if let Some(registration) = self.inner.local_registration.get() {
+            registration.close();
         }
         // Unlike connection stop, server stop intentionally abandons every queued frame.
         let _ = self.inner.shutdown.send(true);
         let clients = std::mem::take(&mut *lock(&self.inner.clients));
+        let mut tasks = JoiningTasks {
+            owner: &self.inner,
+            tasks: std::mem::take(&mut *lock(&self.inner.tasks)),
+        };
         for entry in clients.into_values() {
             let _ = entry.shutdown.send(true);
+            tasks.tasks.push(entry._task);
         }
+        tasks.tasks.append(&mut *lock(&self.inner.retired_clients));
 
         let deadline = Instant::now() + SERVER_STOP_JOIN_TIMEOUT;
-        let tasks = std::mem::take(&mut *lock(&self.inner.tasks));
-        for mut task in tasks {
+        while let Some(task) = tasks.tasks.last_mut() {
             let remaining = deadline.saturating_duration_since(Instant::now());
-            if timeout(remaining, &mut task).await.is_err() {
+            if timeout(remaining, &mut *task).await.is_err() {
                 task.abort();
                 let _ = task.await;
             }
+            tasks.tasks.pop();
         }
         self.cleanup_endpoint();
+        self.inner.stop_complete.store(true, Ordering::Release);
     }
 
     #[cfg(any(test, feature = "test-hooks"))]
@@ -256,34 +450,27 @@ impl CallosumSocketServer {
         socket_path: impl AsRef<Path>,
         hooks: Arc<ServerTestHooks>,
     ) -> Result<Self, CallosumSocketServerError> {
-        Self::bind_inner(socket_path.as_ref().to_path_buf(), Some(hooks)).await
+        Self::bind_inner(
+            socket_path.as_ref().to_path_buf(),
+            #[cfg(any(target_os = "linux", target_os = "android"))]
+            None,
+            Some(hooks),
+        )
+        .await
     }
 
     #[cfg(all(test, unix))]
     pub(crate) fn new_routing_test() -> (Self, mpsc::Receiver<CallosumEnvelope>) {
-        let (broadcasts, broadcast_rx) = mpsc::channel(SERVER_BROADCAST_CAPACITY);
-        let (shutdown, _) = watch::channel(false);
-        let inner = Arc::new(ServerInner {
-            skip_endpoint_cleanup: true,
-            socket_path: PathBuf::from("test/routing/callosum.sock"),
-            broadcasts,
-            clients: Mutex::new(HashMap::new()),
-            shutdown,
-            tasks: Mutex::new(Vec::new()),
-            next_client_id: AtomicU64::new(1),
-            stopped: AtomicBool::new(false),
-            malformed_frame_drops: AtomicU64::new(0),
-            broadcast_saturation_drops: AtomicU64::new(0),
-            stalled_client_evictions: AtomicU64::new(0),
-            unauthenticated_connection_drops: AtomicU64::new(0),
-            snapshot_source: Mutex::new(None),
-            #[cfg(all(test, not(windows)))]
-            test_snapshot_secret: Mutex::new(None),
-            #[cfg(windows)]
-            pipe_secret: [0_u8; crate::windows::PIPE_CHALLENGE_LEN],
-            #[cfg(any(test, feature = "test-hooks"))]
-            hooks: None,
-        });
+        let (mut inner, broadcast_rx) = new_server_inner(
+            PathBuf::from("test/routing/callosum.sock"),
+            #[cfg(any(target_os = "linux", target_os = "android"))]
+            None,
+            None,
+            None,
+        );
+        Arc::get_mut(&mut inner)
+            .expect("new owner is unique")
+            .skip_endpoint_cleanup = true;
         (Self { inner }, broadcast_rx)
     }
 
@@ -301,6 +488,15 @@ impl CallosumSocketServer {
     }
 
     fn cleanup_endpoint(&self) {
+        #[cfg(unix)]
+        if self.inner.local_registration.get().is_some() {
+            return;
+        }
+        #[cfg(any(target_os = "linux", target_os = "android"))]
+        if let Some(endpoint) = lock(&self.inner.bound_endpoint).as_mut() {
+            endpoint.cleanup();
+            return;
+        }
         #[cfg(test)]
         if self.inner.skip_endpoint_cleanup {
             return;
@@ -320,8 +516,24 @@ impl CallosumSocketServer {
     }
 }
 
+/// A cancelled Stop waiter returns every unjoined handle to the same owner.
+struct JoiningTasks<'a> {
+    owner: &'a ServerInner,
+    tasks: Vec<JoinHandle<()>>,
+}
+
+impl Drop for JoiningTasks<'_> {
+    fn drop(&mut self) {
+        lock(&self.owner.tasks).append(&mut self.tasks);
+    }
+}
+
 impl Drop for CallosumSocketServer {
     fn drop(&mut self) {
+        #[cfg(unix)]
+        if let Some(registration) = self.inner.local_registration.get() {
+            registration.close();
+        }
         if !self.inner.stopped.swap(true, Ordering::AcqRel) {
             let _ = self.inner.shutdown.send(true);
             let clients = std::mem::take(&mut *lock(&self.inner.clients));
@@ -388,7 +600,64 @@ async fn run_accept_loop(inner: Arc<ServerInner>, listener: ServerListener) {
     }
 }
 
+fn bound_root_valid(inner: &ServerInner) -> bool {
+    #[cfg(not(unix))]
+    let _ = inner;
+    #[cfg(unix)]
+    if let Some(root) = &inner.local_root {
+        return root.revalidate_canonical_binding().is_ok();
+    }
+    true
+}
+
+#[cfg(all(
+    unix,
+    any(target_os = "macos", target_os = "ios", test, feature = "test-hooks")
+))]
+async fn run_local_accept_loop(
+    inner: Arc<ServerInner>,
+    mut incoming: mpsc::Receiver<std::os::unix::net::UnixStream>,
+) {
+    #[cfg(any(test, feature = "test-hooks"))]
+    if inner
+        .hooks
+        .as_ref()
+        .is_some_and(|hooks| hooks.close_local_accept.load(Ordering::Acquire))
+    {
+        return;
+    }
+    #[cfg(any(test, feature = "test-hooks"))]
+    if inner
+        .hooks
+        .as_ref()
+        .is_some_and(|hooks| hooks.hold_local_accept.load(Ordering::Acquire))
+    {
+        std::future::pending::<()>().await;
+    }
+    let mut shutdown = inner.shutdown.subscribe();
+    loop {
+        if inner.stopped.load(Ordering::Acquire) {
+            return;
+        }
+        tokio::select! {
+            biased;
+            _ = shutdown.changed() => return,
+            stream = incoming.recv() => {
+                let Some(stream) = stream else { return; };
+                if let Ok(stream) = UnixStream::from_std(stream) {
+                    let id = inner.next_client_id.fetch_add(1, Ordering::Relaxed);
+                    start_client(Arc::clone(&inner), id, stream);
+                }
+            }
+        }
+    }
+}
+
 fn start_client(inner: Arc<ServerInner>, id: u64, stream: ServerStream) {
+    let mut clients = lock(&inner.clients);
+    if inner.stopped.load(Ordering::Acquire) || !bound_root_valid(&inner) {
+        return;
+    }
     let (outbound, outbound_rx) = mpsc::channel(SERVER_CLIENT_OUTBOUND_CAPACITY);
     let (shutdown, shutdown_rx) = watch::channel(false);
     let (registered, registered_rx) = oneshot::channel();
@@ -400,7 +669,7 @@ fn start_client(inner: Arc<ServerInner>, id: u64, stream: ServerStream) {
         shutdown_rx,
         registered_rx,
     ));
-    lock(&inner.clients).insert(
+    clients.insert(
         id,
         ClientEntry {
             outbound,
@@ -484,6 +753,9 @@ async fn run_client(
 }
 
 pub(crate) fn route_client_frame(inner: &Arc<ServerInner>, id: u64, frame: ReadFrame) -> bool {
+    if !bound_root_valid(inner) {
+        return false;
+    }
     match frame {
         ReadFrame::Envelope(mut envelope) => {
             stamp_timestamp(&mut envelope);
@@ -596,6 +868,14 @@ async fn write_client_line(
     if let Some(hooks) = &inner.hooks
         && hooks.blocked_client.load(Ordering::Acquire) == id
     {
+        struct ActiveWrite<'a>(&'a AtomicU64);
+        impl Drop for ActiveWrite<'_> {
+            fn drop(&mut self) {
+                self.0.fetch_sub(1, Ordering::AcqRel);
+            }
+        }
+        hooks.active_blocked_writes.fetch_add(1, Ordering::AcqRel);
+        let _active = ActiveWrite(&hooks.active_blocked_writes);
         hooks.write_started.notify_waiters();
         std::future::pending::<()>().await;
     }
@@ -747,10 +1027,14 @@ fn record_malformed(inner: &ServerInner) {
 }
 
 fn evict_client(inner: &ServerInner, id: u64) {
-    let Some(entry) = lock(&inner.clients).remove(&id) else {
+    let mut clients = lock(&inner.clients);
+    let Some(entry) = clients.remove(&id) else {
         return;
     };
     let _ = entry.shutdown.send(true);
+    let mut retired = lock(&inner.retired_clients);
+    retired.retain(|task| !task.is_finished());
+    retired.push(entry._task);
     if inner
         .stalled_client_evictions
         .fetch_add(1, Ordering::AcqRel)
@@ -761,7 +1045,12 @@ fn evict_client(inner: &ServerInner, id: u64) {
 }
 
 fn remove_client(inner: &ServerInner, id: u64) {
-    let _ = lock(&inner.clients).remove(&id);
+    let mut clients = lock(&inner.clients);
+    if let Some(entry) = clients.remove(&id) {
+        let mut retired = lock(&inner.retired_clients);
+        retired.retain(|task| !task.is_finished());
+        retired.push(entry._task);
+    }
 }
 
 fn track_task(inner: &ServerInner, task: JoinHandle<()>) {
@@ -777,12 +1066,21 @@ fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 #[cfg(any(test, feature = "test-hooks"))]
 #[doc(hidden)]
 pub struct ServerTestHooks {
+    close_local_accept: AtomicBool,
+    hold_local_accept: AtomicBool,
     blocked_client: AtomicU64,
+    active_blocked_writes: AtomicU64,
     write_started: tokio::sync::Notify,
 }
 
 #[cfg(any(test, feature = "test-hooks"))]
 impl ServerTestHooks {
+    pub fn close_local_accept(&self) {
+        self.close_local_accept.store(true, Ordering::Release);
+    }
+    pub fn hold_local_accept(&self) {
+        self.hold_local_accept.store(true, Ordering::Release);
+    }
     pub fn block_client(&self, id: u64) {
         self.blocked_client.store(id, Ordering::Release);
     }
@@ -790,17 +1088,29 @@ impl ServerTestHooks {
     pub async fn wait_for_write(&self) {
         self.write_started.notified().await;
     }
+
+    pub fn active_blocked_writes(&self) -> u64 {
+        self.active_blocked_writes.load(Ordering::Acquire)
+    }
 }
 
 #[cfg(any(test, feature = "test-hooks"))]
 impl Default for ServerTestHooks {
     fn default() -> Self {
         Self {
+            close_local_accept: AtomicBool::new(false),
+            hold_local_accept: AtomicBool::new(false),
             blocked_client: AtomicU64::new(0),
+            active_blocked_writes: AtomicU64::new(0),
             write_started: tokio::sync::Notify::new(),
         }
     }
 }
+
+#[cfg(unix)]
+#[cfg(all(test, feature = "full-tests"))]
+#[path = "local_transport_tests.rs"]
+mod local_transport_tests;
 
 #[cfg(all(test, windows, feature = "full-tests"))]
 mod windows_native_tests {

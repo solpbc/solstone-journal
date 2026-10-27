@@ -74,6 +74,9 @@ fn test_deps(
     runner: Arc<dyn ToolRunner + Send + Sync>,
 ) -> BackupWebDeps {
     BackupWebDeps {
+        root_owner: solstone_core_journal_io::whole_journal_restore::TargetUseOwner::new(
+            &journal_root,
+        ),
         journal_root: journal_root.clone(),
         cache: crate::measurement::new(&journal_root),
         operations: crate::operation::new_slot(),

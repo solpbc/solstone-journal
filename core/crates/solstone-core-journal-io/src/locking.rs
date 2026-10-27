@@ -1240,8 +1240,64 @@ pub fn hold_lock_bound_checked(
     })
 }
 
+/// Hold the ordinary exclusive sidecar while retaining its native parent/name
+/// authority. Existing modes and creation umask match `hold_lock`; nonregular
+/// names refuse without blocking, including substitution immediately at open.
+#[cfg(unix)]
+pub fn hold_exclusive_parent_lock_bound_checked(
+    parent: &impl AsFd,
+    name: &OsStr,
+    diagnostic_parent: &Path,
+    options: LockOptions,
+    checkpoint: &dyn Fn() -> Result<(), String>,
+) -> Result<BoundParentLock, LockError> {
+    if NormalLockName::parse(name).is_none() {
+        return Err(io_error(
+            Path::new(name),
+            io::Error::new(io::ErrorKind::InvalidInput, "invalid protected lock name"),
+        ));
+    }
+    let path = diagnostic_parent.join(name);
+    let sidecar = derive_sidecar_path(Path::new(""), name);
+    let sidecar = NormalLockName::parse(sidecar.as_os_str()).expect("normal name plus lock suffix");
+    let guard = hold_file_lock_unix(
+        &path,
+        options,
+        FlockArg::LockExclusiveNonblock,
+        checkpoint,
+        || {
+            let existing =
+                inspect_lock_entry(parent, &sidecar, &path, false).map_err(io::Error::other)?;
+            run_race_hook(BEFORE_ORDINARY_BOUND_LOCK_OPEN);
+            let file = File::from(openat(
+                parent,
+                sidecar.as_os_str(),
+                OFlag::O_WRONLY
+                    | OFlag::O_CREAT
+                    | OFlag::O_NONBLOCK
+                    | OFlag::O_CLOEXEC
+                    | OFlag::O_NOFOLLOW,
+                Mode::from_bits_truncate(options.mode.unwrap_or(0o666) as nix::libc::mode_t),
+            )?);
+            verify_final_lock_entry(parent, &sidecar, &file, existing, &path, false)
+                .map_err(io::Error::other)?;
+            Ok(file)
+        },
+    )?;
+    // Move the same exclusive native guard. No unlock/reacquire window, chmod,
+    // path reopening or conversion of a shared caller-supplied guard.
+    let lock = BoundParentLock {
+        _guard: guard._guard,
+        require_private_mode: false,
+    };
+    run_race_hook(AFTER_LOCK_FLOCK);
+    lock.revalidate_bound(parent, sidecar.as_os_str())
+        .map_err(|e| io_error(&path, io::Error::other(e)))?;
+    checkpoint().map_err(|e| io_error(&path, io::Error::other(e)))?;
+    Ok(lock)
+}
+
 /// Reports whether another process currently holds `path`'s sidecar lock.
-///
 /// This probe never creates the sidecar; a missing sidecar means no lock is held.
 #[cfg(unix)]
 pub fn lock_is_held(path: impl AsRef<Path>) -> Result<bool, LockError> {
@@ -2242,6 +2298,34 @@ pub fn hold_lock_bound_checked(
     })
 }
 
+/// Ordinary exclusive sidecar with the same retained native guard and parent
+/// capability required by Windows bound atomic replacement.
+#[cfg(windows)]
+pub fn hold_exclusive_parent_lock_bound_checked(
+    parent: &impl AsHandle,
+    name: &OsStr,
+    diagnostic_parent: &Path,
+    options: LockOptions,
+    checkpoint: &dyn Fn() -> Result<(), String>,
+) -> Result<BoundParentLock, LockError> {
+    let path = diagnostic_parent.join(name);
+    validate_parent_handle_windows(parent, &path)
+        .map_err(|e| io_error(&path, io::Error::other(e)))?;
+    let parent_identity =
+        file_identity(parent.as_handle().as_raw_handle()).map_err(|e| io_error(&path, e))?;
+    let guard =
+        hold_lock_bound_checked(parent, name, diagnostic_parent, options, false, checkpoint)?;
+    let lock = BoundParentLock {
+        _guard: guard._guard,
+        parent_identity,
+    };
+    let sidecar = derive_sidecar_path(Path::new(""), name);
+    lock.revalidate_bound(parent, sidecar.as_os_str())
+        .map_err(|e| io_error(&path, io::Error::other(e)))?;
+    checkpoint().map_err(|e| io_error(&path, io::Error::other(e)))?;
+    Ok(lock)
+}
+
 #[cfg(windows)]
 pub fn lock_is_held(path: impl AsRef<Path>) -> Result<bool, LockError> {
     let path = path.as_ref();
@@ -2373,14 +2457,16 @@ fn existing_io(operation: &'static str, path: &Path, source: io::Error) -> Exist
 const AFTER_PARENT_INSPECTION: usize = 0;
 #[cfg(unix)]
 const AFTER_LOCK_FLOCK: usize = 1;
+#[cfg(unix)]
+const BEFORE_ORDINARY_BOUND_LOCK_OPEN: usize = 2;
 
 #[cfg(all(test, unix))]
-type RaceHooks = [Option<fn()>; 2];
+type RaceHooks = [Option<fn()>; 3];
 
 #[cfg(all(test, unix))]
 thread_local! {
     static RACE_HOOKS: std::cell::Cell<RaceHooks> =
-        const { std::cell::Cell::new([None; 2]) };
+        const { std::cell::Cell::new([None; 3]) };
 }
 
 #[cfg(all(test, unix))]
@@ -3115,6 +3201,11 @@ mod tests {
         assert_eq!(snapshot(&entry).mode, 0o600);
     }
 }
+
+#[cfg(unix)]
+#[cfg(all(test, feature = "full-tests"))]
+#[path = "locking_ordinary_bound_tests.rs"]
+mod ordinary_bound_parent_lock_tests;
 
 #[cfg(all(test, unix, feature = "full-tests"))]
 mod shared_sidecar_tests {

@@ -413,6 +413,14 @@ impl std::fmt::Debug for TargetUseOwner {
 }
 
 impl TargetUseOwner {
+    /// Retain an already admitted root without reopening its pathname.
+    pub fn from_root(root: Arc<JournalRoot>) -> Self {
+        Self {
+            journal: root.canonical_path().to_owned(),
+            root: Arc::new(std::sync::OnceLock::from(root)),
+        }
+    }
+
     pub fn new(journal: impl AsRef<Path>) -> Self {
         let journal =
             std::path::absolute(journal.as_ref()).unwrap_or_else(|_| journal.as_ref().to_owned());
@@ -426,7 +434,8 @@ impl TargetUseOwner {
         owner
     }
 
-    fn root(&self) -> Result<Arc<JournalRoot>, TargetUseRefused> {
+    /// Return the original root, refusing a changed binding.
+    pub fn root(&self) -> Result<Arc<JournalRoot>, TargetUseRefused> {
         if self.root.get().is_none() {
             let root = Arc::new(JournalRoot::open(&self.journal).map_err(|_| TargetUseRefused)?);
             let _ = self.root.set(root);

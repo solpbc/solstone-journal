@@ -1849,12 +1849,15 @@ impl ForegroundProcessingHost {
         raw: &[String],
         control: CallableTaskContext,
     ) -> i32 {
-        let _restore_use = match solstone_core_journal_io::whole_journal_restore::begin_target_use(
-            &hosted.journal,
-        ) {
-            Ok(guard) => guard,
+        let root = match hosted.backup.retained_root() {
+            Ok(root) => root,
             Err(_) => return UNCOMPLETED_HOLD_EXIT,
         };
+        let _restore_use =
+            match solstone_core_journal_io::whole_journal_restore::begin_target_use_bound(root) {
+                Ok(guard) => guard,
+                Err(_) => return UNCOMPLETED_HOLD_EXIT,
+            };
         let checkpoint: Arc<dyn Fn() -> Result<(), String> + Send + Sync> = {
             let host = Arc::clone(&hosted.cancelled);
             let control = control.clone();
@@ -4485,6 +4488,11 @@ mod processing_proofs {
                 None,
             )
             .unwrap();
+            // This identity/policy fixture needs a current read, not a race
+            // with discovery's valid nonblocking queue-state refusal.
+            if let Some(mut discovery) = host.discovery.lock().unwrap().take() {
+                discovery.shutdown_checked().unwrap();
+            }
             let value = host.daily_queue_observation().unwrap().unwrap();
             identities.push((value["native_root"].clone(), value["host_instance"].clone()));
             assert_eq!(value["current"]["native_root"], value["native_root"]);

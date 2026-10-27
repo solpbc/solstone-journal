@@ -57,6 +57,8 @@ pub mod read_test_hook;
 pub mod readers;
 pub mod removal;
 pub mod snapshot;
+#[cfg(any(target_os = "linux", target_os = "android"))]
+pub mod socket_endpoint;
 #[cfg(any(unix, windows))]
 pub mod staged;
 pub mod strict_segment;
@@ -213,8 +215,8 @@ pub use locking::lock_is_held;
 #[cfg(any(unix, windows))]
 pub use locking::{
     BoundParentLock, acquire_existing_parent_lock_bound,
-    acquire_existing_parent_lock_bound_checked, hold_lock_bound_checked,
-    open_existing_parent_lock_bound,
+    acquire_existing_parent_lock_bound_checked, hold_exclusive_parent_lock_bound_checked,
+    hold_lock_bound_checked, open_existing_parent_lock_bound,
 };
 #[cfg(any(unix, windows))]
 pub use locking::{

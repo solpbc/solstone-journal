@@ -414,6 +414,8 @@ impl CallosumOutput {
     fn start_with_gate(socket_path: PathBuf, start_gate: Option<Arc<Notify>>) -> Arc<Self> {
         let queue = Arc::new(Mutex::new(CallosumQueue::default()));
         let lifecycle_notify = Arc::new(Notify::new());
+        #[cfg(unix)]
+        let socket_path = solstone_core_callosum::UnixEndpoint::new(socket_path);
         let task = tokio::spawn(run_callosum_output(
             socket_path,
             Arc::clone(&queue),
@@ -724,7 +726,7 @@ fn callosum_line(event: &'static str, payload: Value) -> Option<Vec<u8>> {
 
 #[cfg(unix)]
 async fn run_callosum_output(
-    socket_path: PathBuf,
+    socket_path: solstone_core_callosum::UnixEndpoint,
     queue: Arc<Mutex<CallosumQueue>>,
     lifecycle_notify: Arc<Notify>,
     start_gate: Option<Arc<Notify>>,
@@ -756,22 +758,33 @@ async fn run_callosum_output(
 
 #[cfg(unix)]
 async fn write_callosum_line(
-    socket_path: &Path,
+    socket_path: &solstone_core_callosum::UnixEndpoint,
     connection: &mut Option<tokio::net::UnixStream>,
     line: Vec<u8>,
 ) {
     if connection.is_none() {
-        let Ok(endpoint) = solstone_core_callosum::endpoint_path(socket_path) else {
-            return;
-        };
-        *connection = match timeout(
-            CALLOSUM_IO_TIMEOUT,
-            tokio::net::UnixStream::connect(endpoint.as_ref()),
-        )
-        .await
-        {
-            Ok(Ok(connection)) => Some(connection),
-            Ok(Err(_)) | Err(_) => None,
+        *connection = match socket_path.connect_local() {
+            Ok(Some(connection)) => {
+                if connection.set_nonblocking(true).is_err() {
+                    return;
+                }
+                tokio::net::UnixStream::from_std(connection).ok()
+            }
+            Ok(None) => {
+                let Ok(endpoint) = solstone_core_callosum::endpoint_path(socket_path.path()) else {
+                    return;
+                };
+                match timeout(
+                    CALLOSUM_IO_TIMEOUT,
+                    tokio::net::UnixStream::connect(endpoint.as_ref()),
+                )
+                .await
+                {
+                    Ok(Ok(connection)) => Some(connection),
+                    Ok(Err(_)) | Err(_) => None,
+                }
+            }
+            Err(_) => return,
         };
     }
     if let Some(stream) = connection.as_mut() {

@@ -228,10 +228,17 @@ impl DoorStartParts {
 
 impl DoorLifecycle {
     pub(super) fn new(options: DoorStartOptions) -> Self {
-        let selected_port = AtomicU16::new(options.port);
         let target_use = solstone_core_journal_io::whole_journal_restore::TargetUseOwner::new(
             &options.journal_root,
         );
+        Self::with_target_use(options, target_use)
+    }
+
+    pub(super) fn with_target_use(
+        options: DoorStartOptions,
+        target_use: solstone_core_journal_io::whole_journal_restore::TargetUseOwner,
+    ) -> Self {
+        let selected_port = AtomicU16::new(options.port);
         Self {
             parts: DoorStartParts::from_options(options),
             running: Mutex::new(None),

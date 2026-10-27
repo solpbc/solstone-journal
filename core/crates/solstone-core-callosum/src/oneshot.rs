@@ -3,7 +3,9 @@
 
 use std::error::Error;
 use std::fmt;
-use std::path::{Path, PathBuf};
+use std::path::Path;
+#[cfg(windows)]
+use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use crate::CallosumEnvelope;
@@ -26,7 +28,10 @@ impl Error for CallosumOneShotError {}
 /// Synchronous one-shot writer for an already framed Callosum line.
 #[derive(Clone, Debug)]
 pub struct CallosumOneShotSender {
+    #[cfg(windows)]
     socket_path: PathBuf,
+    #[cfg(unix)]
+    endpoint: crate::UnixEndpoint,
     timeout: Duration,
 }
 
@@ -34,7 +39,10 @@ impl CallosumOneShotSender {
     /// Construct a one-shot sender for `socket_path`.
     pub fn new(socket_path: impl AsRef<Path>, timeout: Duration) -> Self {
         Self {
+            #[cfg(windows)]
             socket_path: socket_path.as_ref().to_path_buf(),
+            #[cfg(unix)]
+            endpoint: crate::UnixEndpoint::new(socket_path),
             timeout,
         }
     }
@@ -66,20 +74,28 @@ impl CallosumOneShotSender {
             use std::io::Write;
             use std::os::unix::net::UnixStream;
 
-            let address_path = crate::endpoint_path(&self.socket_path)
-                .map_err(|_| CallosumOneShotError::Unavailable)?;
-
-            // Unconfirmed status/event sends also run on threads Stop joins.
-            // Bound connection establishment, not only writes after connect.
-            let socket = socket2::Socket::new(socket2::Domain::UNIX, socket2::Type::STREAM, None)
-                .map_err(|_| CallosumOneShotError::Unavailable)?;
-            let address = socket2::SockAddr::unix(&address_path)
-                .map_err(|_| CallosumOneShotError::Unavailable)?;
-            socket
-                .connect_timeout(&address, self.timeout)
-                .map_err(|_| CallosumOneShotError::Unavailable)?;
-            let descriptor: std::os::fd::OwnedFd = socket.into();
-            let mut stream = UnixStream::from(descriptor);
+            let mut stream = match self
+                .endpoint
+                .connect_local()
+                .map_err(|_| CallosumOneShotError::Unavailable)?
+            {
+                Some(stream) => stream,
+                None => {
+                    let address_path = crate::endpoint_path(self.endpoint.path())
+                        .map_err(|_| CallosumOneShotError::Unavailable)?;
+                    // Connection, writes and echo retain the existing one deadline.
+                    let socket =
+                        socket2::Socket::new(socket2::Domain::UNIX, socket2::Type::STREAM, None)
+                            .map_err(|_| CallosumOneShotError::Unavailable)?;
+                    let address = socket2::SockAddr::unix(&address_path)
+                        .map_err(|_| CallosumOneShotError::Unavailable)?;
+                    socket
+                        .connect_timeout(&address, self.timeout)
+                        .map_err(|_| CallosumOneShotError::Unavailable)?;
+                    let descriptor: std::os::fd::OwnedFd = socket.into();
+                    UnixStream::from(descriptor)
+                }
+            };
             stream
                 .set_write_timeout(Some(self.timeout))
                 .map_err(|_| CallosumOneShotError::Unavailable)?;
