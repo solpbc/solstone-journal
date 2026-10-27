@@ -13,8 +13,9 @@ use axum::{
 use serde_json::{Map, Value, json};
 use solstone_core_journal_config::read_journal_config_in_directory;
 use solstone_core_journal_config_write::{
-    BoundConfigOutcome, BoundConfigRefusal, LockOptions, MAX_BOUND_CONFIG_BYTES,
-    conditional_update_journal_config_in_directory_checked,
+    BoundConfigOutcome, BoundConfigRefusal, JournalConfigMutation, LockOptions,
+    MAX_BOUND_CONFIG_BYTES, conditional_update_journal_config_in_directory_checked,
+    mutate_journal_config_at_root_checked,
 };
 use solstone_core_journal_io::{JournalRoot, media::MediaDirectory, whole_journal_restore};
 
@@ -97,7 +98,7 @@ fn partial(reason: &str, publication: Value, verification: Value) -> Response {
     (
         StatusCode::SERVICE_UNAVAILABLE,
         Json(json!({
-            "error":"media offload setup couldn't finish; reload before trying again.",
+            "error":"media offload change couldn't finish; reload before trying again.",
             "reason_code":reason,
             "configuration_publication":publication,
             "verification_request":verification,
@@ -109,6 +110,34 @@ fn partial(reason: &str, publication: Value, verification: Value) -> Response {
 pub(crate) fn admit(
     deps: BackupWebDeps,
 ) -> Result<impl FnOnce() -> Response + Send + 'static, Response> {
+    admit_with(deps, enable)
+}
+
+pub(crate) enum PreferenceChange {
+    Limits { budget: i64, floor: i64 },
+    Disable,
+}
+
+pub(crate) fn admit_preferences(
+    deps: BackupWebDeps,
+    change: PreferenceChange,
+) -> Result<impl FnOnce() -> Response + Send + 'static, Response> {
+    admit_with(deps, move |deps, root, guard, target_use| {
+        update_preferences(deps, root, guard, target_use, change)
+    })
+}
+
+fn admit_with(
+    deps: BackupWebDeps,
+    work: impl FnOnce(
+        BackupWebDeps,
+        Arc<JournalRoot>,
+        crate::WriteGuard,
+        whole_journal_restore::TargetUse,
+    ) -> Response
+    + Send
+    + 'static,
+) -> Result<impl FnOnce() -> Response + Send + 'static, Response> {
     let guard = admit_write(&deps.operations, AdmitWrite::DuringOperation)?;
     let root = deps
         .retained_root()
@@ -117,7 +146,17 @@ pub(crate) fn admit(
         .map_err(|_| crate::invalid_operation_response())?;
     // Admission belongs to the queued frame before the blocking executor can
     // delay it or the HTTP caller can disappear.
-    Ok(move || enable(deps, root, guard, target_use))
+    Ok(move || work(deps, root, guard, target_use))
+}
+
+fn checkpoint(deps: &BackupWebDeps, root: &JournalRoot) -> Result<(), String> {
+    if deps.operations.is_stopping()
+        || whole_journal_restore::whole_journal_restore_blocks(root.canonical_path())
+    {
+        return Err("backup owner unavailable".into());
+    }
+    root.revalidate_canonical_binding()
+        .map_err(|_| "backup root changed".into())
 }
 
 fn enable(
@@ -126,15 +165,7 @@ fn enable(
     guard: crate::WriteGuard,
     _target_use: whole_journal_restore::TargetUse,
 ) -> Response {
-    let checkpoint = || {
-        if deps.operations.is_stopping()
-            || whole_journal_restore::whole_journal_restore_blocks(root.canonical_path())
-        {
-            return Err("backup owner unavailable".into());
-        }
-        root.revalidate_canonical_binding()
-            .map_err(|_| "backup root changed".into())
-    };
+    let checkpoint = || checkpoint(&deps, &root);
     if checkpoint().is_err() {
         return crate::invalid_operation_response();
     }
@@ -163,6 +194,14 @@ fn enable(
             "that action isn't available in the current state.",
             "invalid_operation_for_state",
             "backup keys are missing",
+        );
+    }
+    if let Err(reason) = crate::offload_support::check(&deps, &root) {
+        return response::error(
+            StatusCode::BAD_REQUEST,
+            "that action isn't available in the current state.",
+            reason,
+            "media offload is not available on this device",
         );
     }
     let outcome = match snapshot.commit(&measurement::snapshot(&deps.cache), &checkpoint) {
@@ -206,13 +245,71 @@ fn enable(
     if checkpoint().is_err() {
         return partial("backup_unavailable", published, verification);
     }
-    let Ok(mut status) = crate::status::offload(&deps.journal_root, &deps.cache, &deps.operations)
-    else {
+    let Ok(mut status) = crate::offload_value(&deps) else {
         return partial("backup_unavailable", published, verification);
     };
     if checkpoint().is_err() {
         return partial("backup_unavailable", published, verification);
     }
+    status["configuration_publication"] = published;
+    status["verification_request"] = verification;
+    response::success(status)
+}
+
+fn update_preferences(
+    deps: BackupWebDeps,
+    root: Arc<JournalRoot>,
+    guard: crate::WriteGuard,
+    _target_use: whole_journal_restore::TargetUse,
+    change: PreferenceChange,
+) -> Response {
+    // These actions remain available when a backend is unavailable. Read the
+    // old preferences only inside the retained config owner's locked mutation.
+    let updated = match mutate_journal_config_at_root_checked(
+        &root,
+        LockOptions::default(),
+        &|| checkpoint(&deps, &root),
+        |config| {
+            let backup = config.entry("backup").or_insert_with(|| json!({}));
+            let Some(backup) = backup.as_object_mut() else {
+                return JournalConfigMutation {
+                    changed: false,
+                    value: Err(()),
+                };
+            };
+            let old = backup.get("offload").and_then(Value::as_object);
+            let value = match change {
+                PreferenceChange::Limits { budget, floor } => json!({
+                    "enabled":old.and_then(|v|v.get("enabled")).cloned().unwrap_or(Value::Bool(false)),
+                    "budget_bytes":budget,"floor_bytes":floor,
+                }),
+                PreferenceChange::Disable => json!({
+                    "enabled":false,
+                    "budget_bytes":old.and_then(|v|v.get("budget_bytes")).cloned().unwrap_or(Value::Null),
+                    "floor_bytes":old.and_then(|v|v.get("floor_bytes")).cloned().unwrap_or(Value::Null),
+                }),
+            };
+            let changed = backup.get("offload") != Some(&value);
+            backup.insert("offload".into(), value);
+            JournalConfigMutation {
+                changed,
+                value: Ok(()),
+            }
+        },
+    ) {
+        Ok(updated) if updated.value.is_ok() => updated,
+        _ => return response::invalid_config(""),
+    };
+    let published = publication(&updated.outcome);
+    drop(guard);
+    measurement::invalidate(&deps.cache);
+    let verification = json!({"state":"not_needed"});
+    if published["confirmed"] != true || checkpoint(&deps, &root).is_err() {
+        return partial("configuration_unconfirmed", published, verification);
+    }
+    let Ok(mut status) = crate::offload_value(&deps) else {
+        return partial("backup_unavailable", published, verification);
+    };
     status["configuration_publication"] = published;
     status["verification_request"] = verification;
     response::success(status)

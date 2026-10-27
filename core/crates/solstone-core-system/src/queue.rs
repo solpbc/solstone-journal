@@ -1015,6 +1015,8 @@ impl Drop for LocalAnalysisPause {
 
 #[derive(Clone)]
 pub struct CallableTaskContext {
+    /// Primary admitted reference for this callable frame.
+    pub reference: String,
     pub cancelled: Arc<std::sync::atomic::AtomicBool>,
     pub priority: WorkPriority,
     pub deadline: Instant,
@@ -3913,6 +3915,7 @@ fn start_dispatch_frame(inner: Arc<QueueInner>, mut dispatch: Dispatch) {
                 callable_worker(
                     &worker_dispatch.submission.command,
                     CallableTaskContext {
+                        reference: worker_dispatch.submission.reference.clone(),
                         cancelled: Arc::clone(&worker_stop),
                         priority: worker_dispatch.priority,
                         deadline,

@@ -345,6 +345,7 @@ mod tests {
         let held = lock.lock().unwrap();
         let deadline = Instant::now() + Duration::from_millis(40);
         let control = CallableTaskContext {
+            reference: "completion-deadline-test".into(),
             cancelled: Arc::new(AtomicBool::new(false)),
             priority: Default::default(),
             deadline,

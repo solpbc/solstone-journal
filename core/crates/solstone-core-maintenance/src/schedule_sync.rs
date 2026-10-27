@@ -61,13 +61,15 @@ pub struct SyncSummary {
     pub disabled: Vec<String>,
 }
 
-/// Routines this host never schedules. Offload is unavailable wherever its
-/// installed producer is, so its body can only refuse there.
+/// Routines this host never schedules. Mobile offload uses the embedded owned
+/// leaf; other hosts require the installed producer.
 /// Sync does not add these entries and removes one
 /// already present, so the scheduler never records a daily failure for work
 /// that does not run.
 pub fn host_unscheduled() -> &'static [&'static str] {
-    if solstone_core_offload::cli_run::PRODUCER_SUPPORTED {
+    if cfg!(any(target_os = "android", target_os = "ios"))
+        || solstone_core_offload::cli_run::PRODUCER_SUPPORTED
+    {
         &[]
     } else {
         &["backup:offload"]
@@ -578,10 +580,11 @@ mod tests {
     }
 
     #[test]
-    fn offload_is_scheduled_exactly_where_its_producer_runs() {
+    fn offload_is_scheduled_where_an_owned_producer_runs() {
         assert_eq!(
             host_unscheduled().contains(&OFFLOAD),
-            !solstone_core_offload::cli_run::PRODUCER_SUPPORTED
+            !(cfg!(any(target_os = "android", target_os = "ios"))
+                || solstone_core_offload::cli_run::PRODUCER_SUPPORTED)
         );
         assert_eq!(
             solstone_core_offload::cli_run::PRODUCER_SUPPORTED,

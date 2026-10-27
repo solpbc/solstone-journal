@@ -1197,6 +1197,7 @@ mod publication_fence {
         let held = hold_lock(&path, LockOptions::default()).unwrap();
         let deadline = Instant::now() + Duration::from_millis(40);
         let control = CallableTaskContext {
+            reference: "labels-deadline-test".into(),
             cancelled: Arc::new(AtomicBool::new(false)),
             priority: Default::default(),
             deadline,
@@ -1418,6 +1419,7 @@ mod publication_fence {
         let calls_flag = Arc::clone(&calls);
         let deadline = Instant::now() + Duration::from_millis(1500);
         let control = CallableTaskContext {
+            reference: "voiceprint-deadline-test".into(),
             cancelled: Arc::new(AtomicBool::new(false)),
             priority: Default::default(),
             deadline,

@@ -271,7 +271,7 @@ pub(super) fn owner_source_sync_status(
     Ok(state)
 }
 
-const UNCOMPLETED_HOLD_EXIT: i32 = 4;
+pub(super) const UNCOMPLETED_HOLD_EXIT: i32 = 4;
 
 struct InstalledWorkers {
     generation: u64,
@@ -586,6 +586,7 @@ const MAINTENANCE_ROUTINE_IDS: &[&str] = &[
     "backup:run",
     "backup:verify",
     "backup:prune",
+    "backup:offload",
     "health:mark-raw",
     "health:prune-logs",
     "retention:owner-voice-originals",
@@ -2157,7 +2158,7 @@ impl ForegroundProcessingHost {
             return import_commands::execute(hosted, args, &control, Arc::clone(&checkpoint));
         }
         let Some(args) = admit_argv(raw) else {
-            return scheduled_commands::run(hosted, &command, &checkpoint);
+            return scheduled_commands::run(hosted, &command, &checkpoint, &control.reference);
         };
         let today = Utc::now()
             .with_timezone(&solstone_core_journal_config::owner_zone(&hosted.journal))
@@ -2245,6 +2246,7 @@ impl ForegroundProcessingHost {
         (self.worker)(
             args,
             CallableTaskContext {
+                reference: "manual-test-callable".into(),
                 cancelled: Arc::clone(&self.stop),
                 priority: solstone_core_system::priority::classify(
                     args,
@@ -5708,7 +5710,6 @@ mod processing_proofs {
             ])
         ));
         for args in [
-            &["maintenance", "run", "backup:offload"][..],
             &["describe"][..],
             &["describe", "sample.png"][..],
             &["think", "--day", "20261012", "--from-scratch"][..],
@@ -5768,11 +5769,16 @@ mod processing_proofs {
     }
 
     #[test]
-    fn unsupported_offload_does_not_complete() {
+    fn offload_dispatch_keeps_unsupported_shell_held() {
         let _lock = TEST_LOCK
             .lock()
             .unwrap_or_else(|poison| poison.into_inner());
         let (temp, payload) = journal_fixture();
+        let config_path = temp.path().join("config/journal.json");
+        let mut config = read_json(&config_path);
+        config["backup"] = json!({"enabled":true,"mode":"byo","offload":{"enabled":false}});
+        fs::write(&config_path, config.to_string()).unwrap();
+        let config_before = fs::read(&config_path).unwrap();
         let mut entries = quiet_entries();
         let name = schedule_name("backup:offload");
         entries.get_mut(&name).unwrap()["enabled"] = json!(true);
@@ -5796,22 +5802,31 @@ mod processing_proofs {
             assert!(schedules.get(&name).is_none());
         } else {
             assert_eq!(schedules[&name]["enabled"], json!(true));
+            // This plain iOS fixture has no installed original native runner.
+            // Other supported hosts can execute the actual disabled skip.
+            let expected = if cfg!(target_os = "ios") {
+                "failed"
+            } else {
+                "success"
+            };
             wait_until(|| {
-                scheduler_field(temp.path(), &name, "last_status")
-                    == Some("uncompleted-hold".into())
+                scheduler_field(temp.path(), &name, "last_status").as_deref() == Some(expected)
             });
-            assert_ne!(
-                scheduler_field(temp.path(), &name, "last_status").as_deref(),
-                Some("success")
-            );
-            let hold = host
+            let terminal = host
                 .queue()
                 .history()
                 .into_iter()
                 .find(|record| record.scheduler_name.as_deref() == Some(name.as_str()))
-                .expect("offload hold row");
-            assert_ne!(hold.exit_status, "ok");
-            assert_eq!(hold.scheduler_name.as_deref(), Some(name.as_str()));
+                .expect("actual offload invocation");
+            assert_eq!(
+                terminal.exit_status,
+                if cfg!(target_os = "ios") {
+                    "error"
+                } else {
+                    "ok"
+                }
+            );
+            assert_eq!(terminal.scheduler_name.as_deref(), Some(name.as_str()));
         }
         assert_eq!(
             schedules["custom-shell"]["cmd"],
@@ -5836,7 +5851,50 @@ mod processing_proofs {
             .expect("shell hold row");
         assert_ne!(shell.exit_status, "ok");
         assert_eq!(heartbeat_events(temp.path(), "pass.outcome"), 1);
-        drop(host);
+        host.shutdown().unwrap();
+        assert_eq!(fs::read(&config_path).unwrap(), config_before);
+    }
+
+    #[test]
+    fn offload_with_unavailable_execution_records_failure() {
+        if host_unscheduled().contains(&"backup:offload") {
+            return;
+        }
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let (temp, payload) = journal_fixture();
+        let config_path = temp.path().join("config/journal.json");
+        let mut config = read_json(&config_path);
+        config["backup"] = json!({"enabled":true,"mode":"byo","offload":{"enabled":true}});
+        fs::write(&config_path, config.to_string()).unwrap();
+        let config_before = fs::read(&config_path).unwrap();
+        let name = schedule_name("backup:offload");
+        let mut entries = quiet_entries();
+        entries.get_mut(&name).unwrap()["enabled"] = json!(true);
+        write_schedules(temp.path(), entries);
+        let mut backup = BackupWebDeps::new(temp.path().to_path_buf());
+        backup.executable = temp.path().join("missing-restic-owned-test");
+        let host = ForegroundProcessingHost::open_at(
+            temp.path(),
+            &payload,
+            ScheduleNow::in_zone(
+                Utc.with_ymd_and_hms(2026, 10, 17, 12, 0, 0).unwrap(),
+                chrono_tz::UTC,
+            ),
+            backup,
+        )
+        .unwrap();
+        wait_until(|| {
+            scheduler_field(temp.path(), &name, "last_status").as_deref() == Some("failed")
+        });
+        let terminal = host
+            .queue()
+            .history()
+            .into_iter()
+            .find(|row| row.scheduler_name.as_deref() == Some(name.as_str()))
+            .unwrap();
+        assert_ne!(terminal.exit_status, "ok");
+        host.shutdown().unwrap();
+        assert_eq!(fs::read(&config_path).unwrap(), config_before);
     }
 
     #[test]
@@ -6046,6 +6104,149 @@ mod processing_proofs {
         drop(reopened);
     }
 
+    #[cfg(all(unix, not(target_os = "ios")))]
+    #[test]
+    fn offload_accepted_primary_ref_waits_for_actual_bus_publication() {
+        use solstone_core_backup_web::maintenance::PlannedOffloadDisposition;
+        use solstone_core_callosum::{
+            CallosumConnectionPhase, CallosumReceiveEvent, CallosumSocketConnection,
+            CallosumSocketServer,
+        };
+        struct ClearHook;
+        impl Drop for ClearHook {
+            fn drop(&mut self) {
+                *super::scheduled_commands::OFFLOAD_RECEIVING_HOOK
+                    .lock()
+                    .unwrap_or_else(|p| p.into_inner()) = None;
+            }
+        }
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let (temp, payload) = journal_fixture();
+        let config_path = temp.path().join("config/journal.json");
+        let mut config = read_json(&config_path);
+        config["backup"] = json!({"enabled":true,"mode":"byo","offload":{"enabled":false}});
+        fs::write(&config_path, config.to_string()).unwrap();
+        let config_before = fs::read(&config_path).unwrap();
+        write_schedules(temp.path(), quiet_entries());
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let socket = temp.path().join("health/callosum.sock");
+        let bus = runtime
+            .block_on(CallosumSocketServer::bind(&socket))
+            .unwrap();
+        let mut observer = runtime.block_on(async {
+            let mut observer = CallosumSocketConnection::new(&socket, Map::new());
+            observer.start();
+            tokio::time::timeout(Duration::from_secs(5), async {
+                loop {
+                    match observer.next_event().await {
+                        Some(CallosumReceiveEvent::Continuity {
+                            phase: CallosumConnectionPhase::Connected,
+                            ..
+                        }) => {
+                            assert!(observer.emit(
+                                "supervisor",
+                                "status",
+                                Map::from_iter([("offload_ref_observer".into(), json!(true)),])
+                            ));
+                        }
+                        Some(CallosumReceiveEvent::Envelope { envelope, .. })
+                            if envelope.extra.get("offload_ref_observer") == Some(&json!(true)) =>
+                        {
+                            break;
+                        }
+                        _ => {}
+                    }
+                }
+            })
+            .await
+            .unwrap();
+            observer
+        });
+        let host = open_host(
+            temp.path(),
+            &payload,
+            Utc.with_ymd_and_hms(2030, 1, 1, 12, 0, 0).unwrap(),
+        );
+        let (entered_send, entered) = std::sync::mpsc::channel();
+        let wanted = temp.path().to_path_buf();
+        *super::scheduled_commands::OFFLOAD_RECEIVING_HOOK
+            .lock()
+            .unwrap() = Some(Arc::new(move |root, outcome, reference| {
+            if root.canonical_path() == wanted {
+                entered_send
+                    .send((reference.to_owned(), outcome.disposition()))
+                    .unwrap();
+            }
+        }));
+        let _hook = ClearHook;
+        let reference = submit_owner_maintenance(&host.root, "backup:offload").unwrap();
+        let reached = entered.recv_timeout(Duration::from_secs(5));
+        // The actual leaf has returned, while the real broker cannot run its
+        // accept/publish loop outside block_on on this current-thread runtime.
+        std::thread::sleep(Duration::from_millis(100));
+        let retired_before_publication = host
+            .queue()
+            .history()
+            .iter()
+            .any(|row| row.reference == reference);
+        let (terminal, completed) = runtime.block_on(async {
+            let receive = async {
+                tokio::time::timeout(Duration::from_secs(10), async {
+                    loop {
+                        if let Some(CallosumReceiveEvent::Envelope { envelope, .. }) =
+                            observer.next_event().await
+                            && envelope.tract == "supervisor"
+                            && envelope.event == "stopped"
+                            && envelope.extra.get("service") == Some(&json!("backup"))
+                            && envelope.extra.get("routine") == Some(&json!("backup:offload"))
+                            && envelope.extra.get("ref") == Some(&json!(&reference))
+                        {
+                            return envelope;
+                        }
+                    }
+                })
+                .await
+            };
+            let completed = async {
+                tokio::time::timeout(Duration::from_secs(10), async {
+                    loop {
+                        if let Some(row) = host
+                            .queue()
+                            .history()
+                            .into_iter()
+                            .find(|row| row.reference == reference)
+                        {
+                            return row;
+                        }
+                        tokio::time::sleep(Duration::from_millis(1)).await;
+                    }
+                })
+                .await
+            };
+            tokio::join!(receive, completed)
+        });
+        host.shutdown().unwrap();
+        runtime.block_on(async {
+            observer.stop().await;
+            bus.stop().await;
+        });
+        let reached = reached.expect("actual leaf reached its receiving boundary");
+        assert_eq!(reached.0, reference);
+        assert_eq!(reached.1, PlannedOffloadDisposition::Skipped);
+        assert!(
+            !retired_before_publication,
+            "accepted callable retired before actual publication"
+        );
+        let terminal = terminal.expect("actual broker terminal within unchanged10s bound");
+        assert_eq!(terminal.extra["ref"], reference);
+        assert_eq!(terminal.extra["exit_code"], 0);
+        assert_eq!(completed.unwrap().exit_status, "ok");
+        assert_eq!(fs::read(&config_path).unwrap(), config_before);
+    }
+
     #[test]
     fn scheduled_backup_dispatch_retains_publication_until_the_real_bus_echoes() {
         use solstone_core_callosum::{
@@ -6153,6 +6354,424 @@ mod processing_proofs {
         let terminal = terminal.expect("same10s terminal receipt bound");
         assert_eq!(terminal.extra["exit_code"], 0);
         assert_eq!(terminal.extra["ref"], "scheduled-backup:verify");
+    }
+
+    #[cfg(all(unix, not(target_os = "ios")))]
+    #[test]
+    fn offload_held_receipt_preserves_actual_unused_retirement_custody() {
+        use solstone_core_backup_web::{BackupRouteDrain, maintenance::PlannedOffloadDisposition};
+        use solstone_core_callosum::{
+            CallosumConnectionPhase, CallosumReceiveEvent, CallosumSocketConnection,
+            CallosumSocketServer,
+        };
+        use solstone_core_installed_payload::{
+            COMPILED_VERSION, INSTALLED_PAYLOAD_MANIFEST, PRODUCT, compiled_target,
+            render_installed_payload,
+        };
+        use solstone_core_journal_io::{
+            activity::{ActivityLease, TeardownLease},
+            media::MediaPrimitive,
+        };
+        struct ClearHooks;
+        impl Drop for ClearHooks {
+            fn drop(&mut self) {
+                *super::scheduled_commands::OFFLOAD_RECEIVING_HOOK
+                    .lock()
+                    .unwrap_or_else(|p| p.into_inner()) = None;
+                *super::scheduled_commands::OFFLOAD_RETIREMENT_FAULT
+                    .lock()
+                    .unwrap_or_else(|p| p.into_inner()) = None;
+            }
+        }
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        for primitive in [
+            MediaPrimitive::CarrierRetirementRootSync,
+            MediaPrimitive::CarrierRetirementConfirmation,
+        ] {
+            let (temp, payload) = journal_fixture();
+            let config_path = temp.path().join("config/journal.json");
+            let mut config = read_json(&config_path);
+            config["backup"] = json!({
+                "enabled":true, "mode":"byo", "daily_key":"synthetic-readback-password", "recovery_key":"0".repeat(64),
+                "offload":{"enabled":true,"floor_bytes":null,"budget_bytes":0},
+                "destination":{"backend":"s3","repository":"s3:bucket/prefix","credentials":{"access_key_id":"synthetic-access","secret_access_key":"synthetic-secret"}}
+            });
+            fs::write(&config_path, config.to_string()).unwrap();
+            let config_before = fs::read(&config_path).unwrap();
+            write_schedules(temp.path(), quiet_entries());
+            let package = tempfile::tempdir().unwrap();
+            fs::create_dir_all(package.path().join("bin")).unwrap();
+            fs::create_dir_all(package.path().join("lib/solstone-restic")).unwrap();
+            fs::write(package.path().join("bin/solstone"), b"launcher").unwrap();
+            // The maintained package admission is real; this preflight-only
+            // fixture must retire an unused carrier before any tool invocation.
+            fs::write(
+                package.path().join("lib/solstone-restic/restic"),
+                b"unused preflight tool",
+            )
+            .unwrap();
+            let manifest = render_installed_payload(
+                package.path(),
+                PRODUCT,
+                COMPILED_VERSION,
+                compiled_target(),
+                "fixture-commit",
+            )
+            .unwrap();
+            let manifest_path = package.path().join(INSTALLED_PAYLOAD_MANIFEST);
+            fs::create_dir_all(manifest_path.parent().unwrap()).unwrap();
+            fs::write(manifest_path, manifest).unwrap();
+            let root = Arc::new(JournalRoot::open(temp.path()).unwrap());
+            let mut deps = BackupWebDeps::with_root(Arc::clone(&root)).unwrap();
+            deps.executable = package.path().join("bin/solstone");
+            let lifetime = deps.lifetime();
+            let runtime = tokio::runtime::Builder::new_multi_thread()
+                .worker_threads(2)
+                .enable_all()
+                .build()
+                .unwrap();
+            let socket = temp.path().join("health/callosum.sock");
+            let bus = runtime
+                .block_on(CallosumSocketServer::bind(&socket))
+                .unwrap();
+            let mut observer = runtime.block_on(async {
+                let mut observer = CallosumSocketConnection::new(&socket, Map::new());
+                observer.start();
+                tokio::time::timeout(Duration::from_secs(5), async {
+                    loop {
+                        match observer.next_event().await {
+                            Some(CallosumReceiveEvent::Continuity {
+                                phase: CallosumConnectionPhase::Connected,
+                                ..
+                            }) => {
+                                observer.emit(
+                                    "supervisor",
+                                    "status",
+                                    Map::from_iter([("held_offload_observer".into(), json!(true))]),
+                                );
+                            }
+                            Some(CallosumReceiveEvent::Envelope { envelope, .. })
+                                if envelope.extra.get("held_offload_observer")
+                                    == Some(&json!(true)) =>
+                            {
+                                break;
+                            }
+                            _ => {}
+                        }
+                    }
+                })
+                .await
+                .unwrap();
+                observer
+            });
+            let host = ForegroundProcessingHost::open_bound(
+                Arc::clone(&root),
+                &payload,
+                ScheduleNow::in_zone(
+                    Utc.with_ymd_and_hms(2030, 1, 1, 12, 0, 0).unwrap(),
+                    chrono_tz::UTC,
+                ),
+                None,
+                Arc::new(|| false),
+                Arc::new(AtomicBool::new(false)),
+                deps,
+                false,
+            )
+            .unwrap();
+            let fired = Arc::new(AtomicBool::new(false));
+            *super::scheduled_commands::OFFLOAD_RETIREMENT_FAULT
+                .lock()
+                .unwrap() = Some(super::scheduled_commands::OffloadRetirementFault {
+                root: temp.path().to_path_buf(),
+                primitive,
+                fired: Arc::clone(&fired),
+            });
+            let (entered_send, entered) = std::sync::mpsc::channel();
+            let (release_send, release) = std::sync::mpsc::channel();
+            let release = Mutex::new(release);
+            let wanted = temp.path().to_path_buf();
+            *super::scheduled_commands::OFFLOAD_RECEIVING_HOOK
+                .lock()
+                .unwrap() = Some(Arc::new(move |root, outcome, reference| {
+                if root.canonical_path() == wanted {
+                    entered_send
+                        .send((
+                            reference.to_owned(),
+                            outcome.disposition(),
+                            crate::backup::offload_outcome_exit(outcome),
+                            outcome.report().cloned(),
+                        ))
+                        .unwrap();
+                    release
+                        .lock()
+                        .unwrap()
+                        .recv_timeout(Duration::from_secs(5))
+                        .unwrap();
+                }
+            }));
+            let _hooks = ClearHooks;
+            let reference = submit_owner_maintenance(&root, "backup:offload").unwrap();
+            let reached = entered.recv_timeout(Duration::from_secs(5));
+            let activity_busy = ActivityLease::try_acquire(Arc::clone(&root)).is_err();
+            let teardown_busy = TeardownLease::try_acquire(Arc::clone(&root)).is_err();
+            lifetime.request_stop();
+            let before_receive = lifetime.drain(
+                runtime.handle(),
+                Instant::now() + Duration::from_millis(100),
+            );
+            let _ = release_send.send(());
+            let terminal = runtime.block_on(async {
+                tokio::time::timeout(Duration::from_secs(10), async {
+                    loop {
+                        if let Some(CallosumReceiveEvent::Envelope { envelope, .. }) =
+                            observer.next_event().await
+                            && envelope.event == "stopped"
+                            && envelope.tract == "supervisor"
+                            && envelope.extra.get("ref") == Some(&json!(&reference))
+                            && envelope.extra.get("routine") == Some(&json!("backup:offload"))
+                        {
+                            return envelope;
+                        }
+                    }
+                })
+                .await
+            });
+            let until = Instant::now() + Duration::from_secs(5);
+            while !host
+                .queue()
+                .history()
+                .iter()
+                .any(|row| row.reference == reference)
+                && Instant::now() < until
+            {
+                std::thread::sleep(Duration::from_millis(1));
+            }
+            let history = host
+                .queue()
+                .history()
+                .into_iter()
+                .find(|row| row.reference == reference);
+            host.shutdown().unwrap();
+            let after_receive = lifetime.clone().drain(
+                runtime.handle(),
+                Instant::now() + Duration::from_millis(100),
+            );
+            runtime.block_on(async {
+                observer.stop().await;
+                bus.stop().await;
+            });
+            let reached = reached.expect("actual offload leaf returned its current held outcome");
+            assert!(
+                fired.load(Ordering::Acquire),
+                "the actual unused-carrier retirement primitive must run: {primitive:?}; outcome={reached:?}"
+            );
+            assert_eq!(reached.0, reference);
+            assert_eq!(reached.1, PlannedOffloadDisposition::Held, "{reached:?}");
+            assert_eq!(reached.2, UNCOMPLETED_HOLD_EXIT);
+            assert!(
+                reached.3.is_some(),
+                "current failed preflight report is retained"
+            );
+            assert!(
+                activity_busy && teardown_busy,
+                "actual original-root leases remain held at receiving"
+            );
+            assert_eq!(before_receive, BackupRouteDrain::Pending);
+            assert_eq!(
+                after_receive,
+                BackupRouteDrain::Pending,
+                "receipt and callable join do not settle retained native custody"
+            );
+            let terminal = terminal.expect("actual accepted-reference held receipt");
+            assert_eq!(terminal.extra["service"], "backup");
+            assert_eq!(terminal.extra["ref"], reference);
+            assert_eq!(terminal.extra["exit_code"], UNCOMPLETED_HOLD_EXIT);
+            assert_eq!(
+                history.expect("current invocation history").exit_status,
+                "error"
+            );
+            assert!(ActivityLease::try_acquire(Arc::clone(&root)).is_err());
+            assert!(TeardownLease::try_acquire(Arc::clone(&root)).is_err());
+            assert_eq!(fs::read(&config_path).unwrap(), config_before);
+        }
+    }
+
+    #[cfg(all(unix, not(target_os = "ios")))]
+    #[test]
+    fn offload_stop_joins_the_accepted_publisher_without_a_broker_echo() {
+        use std::io::{BufRead, BufReader, Write};
+        use std::os::unix::net::UnixListener;
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let (temp, payload) = journal_fixture();
+        let config_path = temp.path().join("config/journal.json");
+        let mut config = read_json(&config_path);
+        config["backup"] = json!({"enabled":true,"mode":"byo","offload":{"enabled":false}});
+        fs::write(&config_path, config.to_string()).unwrap();
+        let config_before = fs::read(&config_path).unwrap();
+        write_schedules(temp.path(), quiet_entries());
+        let socket = temp.path().join("health/callosum.sock");
+        fs::create_dir_all(socket.parent().unwrap()).unwrap();
+        let endpoint = solstone_core_callosum::endpoint_path(&socket).unwrap();
+        let listener = UnixListener::bind(endpoint.as_ref()).unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let stopped = Arc::new(AtomicBool::new(false));
+        let peer_stop = Arc::clone(&stopped);
+        let (reached_send, reached) = std::sync::mpsc::channel();
+        let (release_send, release) = std::sync::mpsc::channel();
+        let peer = std::thread::spawn(move || {
+            while !peer_stop.load(Ordering::Acquire) {
+                let (stream, _) = match listener.accept() {
+                    Ok(peer) => peer,
+                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                        std::thread::sleep(Duration::from_millis(1));
+                        continue;
+                    }
+                    Err(error) => panic!("controlled offload broker accept: {error}"),
+                };
+                stream
+                    .set_read_timeout(Some(Duration::from_millis(100)))
+                    .unwrap();
+                let mut reader = BufReader::new(stream);
+                let mut line = String::new();
+                if reader.read_line(&mut line).unwrap_or(0) == 0 {
+                    continue;
+                }
+                let fields: serde_json::Value = serde_json::from_str(&line).unwrap();
+                if fields["service"] == "backup"
+                    && fields["event"] == "stopped"
+                    && fields["routine"] == "backup:offload"
+                {
+                    reached_send.send(fields).unwrap();
+                    let _ = release.recv_timeout(Duration::from_secs(5));
+                    break;
+                }
+                let _ = reader.get_mut().write_all(line.as_bytes());
+            }
+        });
+        let host = Arc::new(open_host(
+            temp.path(),
+            &payload,
+            Utc.with_ymd_and_hms(2030, 1, 1, 12, 0, 0).unwrap(),
+        ));
+        let reference = submit_owner_maintenance(&host.root, "backup:offload").unwrap();
+        let frame = reached.recv_timeout(Duration::from_secs(5));
+        let retired_without_echo = host
+            .queue()
+            .history()
+            .iter()
+            .any(|row| row.reference == reference);
+        host.request_stop();
+        let stopping = Arc::clone(&host);
+        let (joined_send, joined) = std::sync::mpsc::channel();
+        let retirement = std::thread::spawn(move || {
+            joined_send.send(stopping.shutdown()).unwrap();
+        });
+        let stop_result = joined.recv_timeout(Duration::from_secs(3));
+        let _ = release_send.send(());
+        stopped.store(true, Ordering::Release);
+        peer.join().unwrap();
+        retirement.join().unwrap();
+        let frame = frame.expect("accepted offload reached the real withheld broker");
+        assert_eq!(frame["ref"], reference);
+        assert_eq!(
+            frame["exit_code"], 0,
+            "actual disabled skip remains the native outcome"
+        );
+        assert!(
+            !retired_without_echo,
+            "offload returned before confirmation or timeout"
+        );
+        stop_result
+            .expect("Stop joins within the existing2s publication budget")
+            .unwrap();
+        assert!(!host.queue().contains_reference(&reference));
+        assert_eq!(fs::read(&config_path).unwrap(), config_before);
+
+        // The actual disabled leaf can still be distinguished from its failed
+        // receiving boundary. No synthetic success envelope is substituted.
+        let deps = BackupWebDeps::with_root(Arc::clone(&host.root)).unwrap();
+        let outcome = solstone_core_backup_web::maintenance::run_planned_offload(
+            Arc::clone(&host.root),
+            &deps,
+            Arc::new(|| Ok(())),
+        );
+        assert_eq!(
+            outcome.disposition(),
+            solstone_core_backup_web::maintenance::PlannedOffloadDisposition::Skipped
+        );
+        assert!(
+            crate::backup::report_scheduled_offload_terminal(&host.root, &outcome, &reference)
+                .is_err()
+        );
+    }
+
+    #[cfg(all(unix, not(target_os = "ios")))]
+    #[test]
+    fn offload_receiving_refuses_a_replacement_root_without_writing_it() {
+        use solstone_core_backup_web::maintenance::PlannedOffloadDisposition;
+        struct ClearHook;
+        impl Drop for ClearHook {
+            fn drop(&mut self) {
+                *super::scheduled_commands::OFFLOAD_RECEIVING_HOOK
+                    .lock()
+                    .unwrap_or_else(|p| p.into_inner()) = None;
+            }
+        }
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let (temp, payload) = journal_fixture();
+        let mut config = read_json(&temp.path().join("config/journal.json"));
+        config["backup"] = json!({"enabled":true,"mode":"byo","offload":{"enabled":false}});
+        fs::write(temp.path().join("config/journal.json"), config.to_string()).unwrap();
+        write_schedules(temp.path(), quiet_entries());
+        let host = open_host(
+            temp.path(),
+            &payload,
+            Utc.with_ymd_and_hms(2030, 1, 1, 12, 0, 0).unwrap(),
+        );
+        let (entered_send, entered) = std::sync::mpsc::channel();
+        let (release_send, release) = std::sync::mpsc::channel();
+        let release = Mutex::new(release);
+        let wanted = temp.path().to_path_buf();
+        *super::scheduled_commands::OFFLOAD_RECEIVING_HOOK
+            .lock()
+            .unwrap() = Some(Arc::new(move |root, outcome, reference| {
+            if root.canonical_path() == wanted {
+                entered_send
+                    .send((reference.to_owned(), outcome.disposition()))
+                    .unwrap();
+                release
+                    .lock()
+                    .unwrap()
+                    .recv_timeout(Duration::from_secs(5))
+                    .unwrap();
+            }
+        }));
+        let _hook = ClearHook;
+        let reference = submit_owner_maintenance(&host.root, "backup:offload").unwrap();
+        let reached = entered.recv_timeout(Duration::from_secs(5));
+        let parked = tempfile::tempdir().unwrap();
+        fs::rename(temp.path(), parked.path().join("original")).unwrap();
+        fs::create_dir(temp.path()).unwrap();
+        let _ = release_send.send(());
+        let until = Instant::now() + Duration::from_secs(5);
+        while !host
+            .queue()
+            .history()
+            .iter()
+            .any(|row| row.reference == reference)
+            && Instant::now() < until
+        {
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        host.shutdown().unwrap();
+        let reached = reached.expect("actual leaf returned before namespace replacement");
+        assert_eq!(reached, (reference, PlannedOffloadDisposition::Skipped));
+        assert!(host.root.revalidate_canonical_binding().is_err());
+        assert_eq!(
+            fs::read_dir(temp.path()).unwrap().count(),
+            0,
+            "receiving must not create a bus endpoint or other data in a replacement root"
+        );
     }
 
     #[test]

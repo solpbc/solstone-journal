@@ -27,13 +27,39 @@ use solstone_core_speaker_resolve::discovery_scan::{
 
 type StopCheckpoint = Arc<dyn Fn() -> Result<(), String> + Send + Sync>;
 
+#[cfg(all(test, feature = "full-tests"))]
+pub(super) type OffloadReceivingHook = Arc<
+    dyn Fn(&JournalRoot, &solstone_core_backup_web::maintenance::PlannedOffloadOutcome, &str)
+        + Send
+        + Sync,
+>;
+#[cfg(all(test, feature = "full-tests"))]
+pub(super) static OFFLOAD_RECEIVING_HOOK: std::sync::Mutex<Option<OffloadReceivingHook>> =
+    std::sync::Mutex::new(None);
+
+#[cfg(all(test, feature = "full-tests"))]
+#[derive(Clone)]
+pub(super) struct OffloadRetirementFault {
+    pub root: std::path::PathBuf,
+    pub primitive: solstone_core_journal_io::media::MediaPrimitive,
+    pub fired: Arc<std::sync::atomic::AtomicBool>,
+}
+#[cfg(all(test, feature = "full-tests"))]
+pub(super) static OFFLOAD_RETIREMENT_FAULT: std::sync::Mutex<Option<OffloadRetirementFault>> =
+    std::sync::Mutex::new(None);
+
 use super::HostedCommand;
 
 const HEARTBEAT_RECENCY_MS: i64 = 12 * 3_600_000;
 const DISCOVERY_MIN_CLUSTER_SIZE: usize = 5;
 const DISCOVERY_MIN_SAMPLES: usize = 3;
 
-pub(super) fn run(hosted: &HostedCommand, args: &[String], checkpoint: &StopCheckpoint) -> i32 {
+pub(super) fn run(
+    hosted: &HostedCommand,
+    args: &[String],
+    checkpoint: &StopCheckpoint,
+    reference: &str,
+) -> i32 {
     match args {
         [command, verb] if command == "indexer" && verb == "drain" => {
             match solstone_core_indexer_store::todo::drain_with_checkpoint(
@@ -72,7 +98,7 @@ pub(super) fn run(hosted: &HostedCommand, args: &[String], checkpoint: &StopChec
             rebuild_edges(hosted, checkpoint)
         }
         [command, verb, id] if command == "maintenance" && verb == "run" => {
-            maintenance(hosted, id, checkpoint)
+            maintenance(hosted, id, checkpoint, reference)
         }
         _ => 1,
     }
@@ -265,7 +291,12 @@ fn rebuild_edges(hosted: &HostedCommand, checkpoint: &StopCheckpoint) -> i32 {
     }
 }
 
-fn maintenance(hosted: &HostedCommand, id: &str, checkpoint: &StopCheckpoint) -> i32 {
+fn maintenance(
+    hosted: &HostedCommand,
+    id: &str,
+    checkpoint: &StopCheckpoint,
+    reference: &str,
+) -> i32 {
     match id {
         "speakers:discover-voices" => discover_voices(hosted, checkpoint),
         "speakers:candidate-pair-suggestions" => candidate_pairs(hosted, checkpoint),
@@ -275,6 +306,7 @@ fn maintenance(hosted: &HostedCommand, id: &str, checkpoint: &StopCheckpoint) ->
         "backup:run" => backup(hosted, EmbeddedBackupRoutine::Run, checkpoint),
         "backup:verify" => backup(hosted, EmbeddedBackupRoutine::Verify, checkpoint),
         "backup:prune" => backup(hosted, EmbeddedBackupRoutine::Prune, checkpoint),
+        "backup:offload" => offload(hosted, checkpoint, reference),
         "health:mark-raw" | "health:prune-logs" => health(hosted, id, checkpoint),
         "retention:owner-voice-originals" => {
             let services = solstone_core_maintenance::HealthServices {
@@ -472,4 +504,72 @@ fn backup(
     crate::backup::log_backup_outcome(&outcome);
     let _publication = crate::backup::report_scheduled_terminal(&hosted.root, &outcome);
     crate::backup::outcome_exit(&outcome)
+}
+
+fn offload(hosted: &HostedCommand, checkpoint: &StopCheckpoint, reference: &str) -> i32 {
+    if stopped(checkpoint) {
+        return 1;
+    }
+    #[cfg(target_os = "ios")]
+    let Some(root) = hosted.backup.runner.ios_journal_root().map(Arc::clone) else {
+        return 1;
+    };
+    #[cfg(not(target_os = "ios"))]
+    let root = Arc::clone(&hosted.root);
+    let leaf = || {
+        solstone_core_backup_web::maintenance::run_planned_offload(
+            Arc::clone(&root),
+            &hosted.backup,
+            Arc::clone(checkpoint),
+        )
+    };
+    #[cfg(all(test, feature = "full-tests"))]
+    let outcome = {
+        let fault = OFFLOAD_RETIREMENT_FAULT
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .clone()
+            .filter(|fault| fault.root == root.canonical_path());
+        match fault {
+            Some(fault) => {
+                let (outcome, fired) = solstone_core_journal_io::media::run_with_media_hook(
+                    fault.primitive,
+                    || {
+                        Err(std::io::Error::other(
+                            "offload receiving retirement control",
+                        ))
+                    },
+                    leaf,
+                );
+                fault
+                    .fired
+                    .store(fired, std::sync::atomic::Ordering::Release);
+                outcome
+            }
+            None => leaf(),
+        }
+    };
+    #[cfg(not(all(test, feature = "full-tests")))]
+    let outcome = leaf();
+    #[cfg(all(test, feature = "full-tests"))]
+    {
+        let hook = OFFLOAD_RECEIVING_HOOK
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .clone();
+        if let Some(hook) = hook {
+            hook(&root, &outcome, reference);
+        }
+    }
+    let exit_code = crate::backup::offload_outcome_exit(&outcome);
+    log::info!(
+        "event=scheduled_offload disposition={:?} generation={:?} reason={:?} report_present={} exit_code={}",
+        outcome.disposition(),
+        outcome.generation(),
+        outcome.reason(),
+        outcome.report().is_some(),
+        exit_code,
+    );
+    let _publication = crate::backup::report_scheduled_offload_terminal(&root, &outcome, reference);
+    exit_code
 }

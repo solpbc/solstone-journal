@@ -352,6 +352,8 @@
   let pollTimer = null;
   let statusRead = null;
   let statusReadAgain = false;
+  let offloadRead = null;
+  let offloadReadAgain = false;
   let initialStatusShown = false;
   let disposed = false;
   const realtimeCleanup = [];
@@ -1902,6 +1904,13 @@
     });
   }
 
+  function refreshChangedOffloadStatus() {
+    return refreshOffloadStatus().catch(function (error) {
+      if (window.logError) window.logError(error, { context: 'backup offload result refresh failed' });
+      if (workspaceCurrent()) renderOffloadUnavailable();
+    });
+  }
+
   function disposeRealtime() {
     if (disposed) return;
     disposed = true;
@@ -1919,10 +1928,13 @@
     realtimeCleanup.push(window.appEvents.listen('supervisor', function (message) {
       if (!workspaceCurrent()) { disposeRealtime(); return; }
       if (message.event !== 'stopped') return;
-      const routines = ['backup:run', 'backup:verify', 'backup:prune'];
+      const routines = ['backup:run', 'backup:verify', 'backup:prune', 'backup:offload'];
       const relevant = message.service === 'backup' && routines.includes(message.routine)
         || routines.some(function (routine) { return message.service === 'maintenance:' + routine; });
       if (relevant) refreshChangedStatus();
+      const offloadFinished = message.service === 'backup' && message.routine === 'backup:offload'
+        || message.service === 'maintenance:backup:offload';
+      if (offloadFinished) refreshChangedOffloadStatus();
     }));
     let reconnectNeeded = false;
     if (window.appEvents.onConnectionState) {
@@ -1932,6 +1944,7 @@
         else if (reconnectNeeded) {
           reconnectNeeded = false;
           refreshChangedStatus();
+          refreshChangedOffloadStatus();
         }
       }));
     }
@@ -1970,12 +1983,37 @@
     );
   }
 
-  async function refreshOffloadStatus() {
-    const payload = await readJson(
-      await fetch('/app/backup/offload/status', { headers: { Accept: 'application/json' } }),
-    );
-    if (workspaceCurrent()) applyOffloadPayload(payload);
-    return payload;
+  function refreshOffloadStatus() {
+    if (!workspaceCurrent()) return Promise.resolve(null);
+    if (offloadRead) {
+      offloadReadAgain = true;
+      return offloadRead;
+    }
+    offloadRead = Promise.resolve().then(async function () {
+      try {
+        let payload = null;
+        let failure = null;
+        do {
+          offloadReadAgain = false;
+          try {
+            payload = await readJson(
+              await fetch('/app/backup/offload/status', { headers: { Accept: 'application/json' } }),
+            );
+            if (!workspaceCurrent()) return null;
+            applyOffloadPayload(payload);
+            failure = null;
+          } catch (error) {
+            if (!workspaceCurrent()) return null;
+            failure = error;
+          }
+        } while (offloadReadAgain && workspaceCurrent());
+        if (failure) throw failure;
+        return payload;
+      } finally {
+        offloadRead = null;
+      }
+    });
+    return offloadRead;
   }
 
   function renderOffloadUnavailable() {

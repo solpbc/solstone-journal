@@ -362,10 +362,18 @@ fn terminal_fields(outcome: &BackupRequestOutcome) -> Map<String, serde_json::Va
             (reference.as_str(), *routine, 1)
         }
     };
+    backup_terminal_fields(reference, routine_label(routine), exit_code)
+}
+
+fn backup_terminal_fields(
+    reference: &str,
+    routine: &str,
+    exit_code: i32,
+) -> Map<String, serde_json::Value> {
     Map::from_iter([
         ("service".into(), json!("backup")),
         ("ref".into(), json!(reference)),
-        ("routine".into(), json!(routine_label(routine))),
+        ("routine".into(), json!(routine)),
         ("exit_code".into(), json!(exit_code)),
     ])
 }
@@ -375,11 +383,42 @@ pub(crate) fn report_scheduled_terminal(
     root: &JournalRoot,
     outcome: &BackupRequestOutcome,
 ) -> Result<(), solstone_core_callosum::CallosumOneShotError> {
+    report_scheduled_fields(root, terminal_fields(outcome))
+}
+
+#[cfg(feature = "processing")]
+pub(crate) fn offload_outcome_exit(
+    outcome: &solstone_core_backup_web::maintenance::PlannedOffloadOutcome,
+) -> i32 {
+    match outcome.disposition() {
+        solstone_core_backup_web::maintenance::PlannedOffloadDisposition::Held => {
+            crate::foreground::UNCOMPLETED_HOLD_EXIT
+        }
+        _ => outcome.exit_code(),
+    }
+}
+
+#[cfg(feature = "processing")]
+pub(crate) fn report_scheduled_offload_terminal(
+    root: &JournalRoot,
+    outcome: &solstone_core_backup_web::maintenance::PlannedOffloadOutcome,
+    reference: &str,
+) -> Result<(), solstone_core_callosum::CallosumOneShotError> {
+    report_scheduled_fields(
+        root,
+        backup_terminal_fields(reference, "backup:offload", offload_outcome_exit(outcome)),
+    )
+}
+
+#[cfg(feature = "processing")]
+fn report_scheduled_fields(
+    root: &JournalRoot,
+    mut fields: Map<String, serde_json::Value>,
+) -> Result<(), solstone_core_callosum::CallosumOneShotError> {
     if root.revalidate_canonical_binding().is_err() {
         log::warn!("embedded backup terminal report refused a changed root");
         return Err(solstone_core_callosum::CallosumOneShotError::Unavailable);
     }
-    let mut fields = terminal_fields(outcome);
     fields.insert("tract".into(), json!("supervisor"));
     fields.insert("event".into(), json!("stopped"));
     match serde_json::to_string(&fields) {
@@ -1433,6 +1472,7 @@ mod tests {
             entered: Arc::clone(&entered),
         };
         let control = solstone_core_system::queue::CallableTaskContext {
+            reference: "backup-deadline-test".into(),
             cancelled: Arc::new(AtomicBool::new(false)),
             priority: Default::default(),
             deadline: Instant::now() + Duration::from_millis(80),

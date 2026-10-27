@@ -307,6 +307,14 @@ impl MobileServing {
         let handle = runtime.block_on(async {
             let startup = solstone_core_convey_shell::EmbeddedStartup {
                 #[cfg(feature = "processing")]
+                backup_offload_dispatch: Some(verification::offload_dispatch_probe(
+                    &root,
+                    stop.clone(),
+                    Arc::clone(&cancelled),
+                )),
+                #[cfg(not(feature = "processing"))]
+                backup_offload_dispatch: None,
+                #[cfg(feature = "processing")]
                 backup_verification: Some(verification::submitter(
                     &root,
                     stop.clone(),
