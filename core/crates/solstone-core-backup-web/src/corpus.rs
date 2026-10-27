@@ -1422,6 +1422,7 @@ fn engine_deps(
         portal_base: crate::test_support::PORTAL_BASE.into(),
         version: "test",
         handoff_poll_lease: Arc::new(AtomicBool::new(false)),
+        verification_submitter: None,
         restore_prepare: crate::restore_prepare::new_shared(),
     }
 }

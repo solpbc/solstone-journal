@@ -215,6 +215,10 @@ impl OperationShared {
         self.notify_waiters();
     }
 
+    pub(crate) fn is_stopping(&self) -> bool {
+        self.stopping.load(Ordering::Acquire)
+    }
+
     pub(crate) fn begin_join(&self, count: usize) {
         self.joining.fetch_add(count, Ordering::AcqRel);
     }

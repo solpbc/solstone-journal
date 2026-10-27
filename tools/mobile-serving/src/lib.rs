@@ -49,6 +49,8 @@ pub mod import_route;
 mod rfdetr;
 #[cfg(feature = "processing")]
 mod screen_ocr;
+#[cfg(feature = "processing")]
+mod verification;
 
 pub struct OwnerResponse {
     pub status: u16,
@@ -304,6 +306,14 @@ impl MobileServing {
         let early_imports = Arc::downgrade(&import_route);
         let handle = runtime.block_on(async {
             let startup = solstone_core_convey_shell::EmbeddedStartup {
+                #[cfg(feature = "processing")]
+                backup_verification: Some(verification::submitter(
+                    &root,
+                    stop.clone(),
+                    Arc::clone(&cancelled),
+                )),
+                #[cfg(not(feature = "processing"))]
+                backup_verification: None,
                 #[cfg(feature = "processing")]
                 settings_sync: Some(settings_sync),
                 #[cfg(not(feature = "processing"))]
