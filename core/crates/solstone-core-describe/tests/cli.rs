@@ -372,6 +372,11 @@ fn describe_runs_one_session_and_promotes_an_analyzed_artifact() {
     let pid_path = root.join("child.pid");
     let output = describe(&root, &video, "generated")
         .env("SOLSTONE_DESCRIBE_SESSION_STUB_PID_PATH", &pid_path)
+        .env("OBSERVER_NAME", "desktop-cli-owner")
+        .env(
+            "SEGMENT_META",
+            r#"{"platform":"ios","sources":["screencast"]}"#,
+        )
         .output()
         .expect("run describe binary");
     assert!(
@@ -384,6 +389,9 @@ fn describe_runs_one_session_and_promotes_an_analyzed_artifact() {
     assert_eq!(rows[0]["_solstone_processing"]["state"], "analyzed");
     assert_eq!(rows[0]["_solstone_processing"]["reason_code"], "ok");
     assert_eq!(rows[0]["_solstone_thinking"]["model"], "describe-stub");
+    assert_eq!(rows[0]["observer"], "desktop-cli-owner");
+    assert_eq!(rows[0]["platform"], "ios");
+    assert_eq!(rows[0]["sources"], serde_json::json!(["screencast"]));
     assert!(
         rows[1..]
             .iter()

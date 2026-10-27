@@ -1418,7 +1418,7 @@ impl SenseExecutor for HostSenseExecutor {
                 &checkpoint,
                 attempt,
             ),
-            "describe" => self.describe_job(input, attempt, priority, &checkpoint),
+            "describe" => self.describe_job(input, context, attempt, priority, &checkpoint),
             "transcribe" => {
                 #[cfg(feature = "audio")]
                 {
@@ -1454,6 +1454,7 @@ impl HostSenseExecutor {
     fn describe_job(
         &self,
         input: &Path,
+        context: &solstone_core_sense::work::SegmentContext,
         attempt: Option<&solstone_core_system::work_retry::Attempt>,
         priority: WorkPriority,
         checkpoint: &(dyn Fn() -> bool + Send + Sync),
@@ -1487,6 +1488,10 @@ impl HostSenseExecutor {
                 redact_rules: settings.redact_rules,
                 max_extractions: settings.max_extractions,
                 category_overrides: settings.category_overrides,
+                capture: solstone_core_describe::pipeline::CaptureContext {
+                    meta: context.meta.clone(),
+                    observer: None,
+                },
             },
             &factory,
             &detector,
@@ -4184,6 +4189,62 @@ mod tests {
         assert!(!video.with_extension("jsonl").exists());
         assert_no_screen_text(&segment);
         assert_no_index_hint(temp.path());
+    }
+
+    #[test]
+    fn callable_describe_binds_each_jobs_capture_metadata_to_requests_and_header() {
+        let _probes = reset_describe_probes();
+        let (temp, payload) = setup_test_journal();
+        let requests = Arc::new(Mutex::new(Vec::<GenerateRequest>::new()));
+        let seen = Arc::clone(&requests);
+        let host = open_executor(
+            temp.path(),
+            &payload,
+            Arc::new(move |request: &GenerateRequest| {
+                seen.lock().unwrap().push(request.clone());
+                MediaFrameExecutor.execute(request)
+            }),
+        );
+        for (index, meta) in [
+            Some(json!({"platform":"ios","sources":["screencast"],"observer":"phone-one"})),
+            Some(json!({"platform":"android","sources":["screencast","audio"],"observer":"phone-two"})),
+            None,
+        ].into_iter().enumerate() {
+            requests.lock().unwrap().clear();
+            let segment = segment_dir(temp.path(), &format!("capture-context-{index}"));
+            let video = admit_copy(&segment, &probe_mp4());
+            let original = fs::read(&video).unwrap();
+            let mut context = context_for(&video);
+            context.meta = meta.as_ref().map(|meta| meta.as_object().unwrap().clone());
+            assert_eq!(
+                host.executor().execute("describe", &video, &context, None, &AtomicBool::new(false)),
+                SenseJobResult::Finished(0)
+            );
+            assert_eq!(fs::read(&video).unwrap(), original);
+            let rows = jsonl_rows(&video.with_extension("jsonl"));
+            for name in ["platform", "sources", "observer"] {
+                assert_eq!(rows[0].get(name), meta.as_ref().and_then(|meta| meta.get(name)), "job {index} field {name}");
+            }
+            let phone = meta.as_ref().and_then(solstone_core_describe::phone::PhoneScreen::from_segment_meta);
+            let captured = requests.lock().unwrap();
+            let frames = captured.iter().filter(|request| request.context == "observe.describe.frame").collect::<Vec<_>>();
+            assert!(!frames.is_empty());
+            let expected = solstone_core_describe::request::request(0, 0, &[], "", phone);
+            for frame in frames {
+                assert_eq!(frame.contents.first(), expected.contents.first(), "job {index}");
+                if let Some(phone) = phone {
+                    assert!(frame.system_instruction.as_ref().unwrap().contains(&phone.describe_note()));
+                }
+            }
+            let category = solstone_core_describe::categories::CATEGORIES_META.iter().find(|category| category.name == "media").unwrap();
+            let extractions = captured.iter().filter(|request| request.context == category.context).collect::<Vec<_>>();
+            assert!(!extractions.is_empty());
+            let expected = solstone_core_describe::extraction::request(0, category, TINY_PNG, 0, &[], phone).unwrap();
+            for extraction in extractions {
+                assert_eq!(extraction.contents.first(), expected.contents.first(), "job {index}");
+            }
+        }
+        host.shutdown().unwrap();
     }
 
     #[test]

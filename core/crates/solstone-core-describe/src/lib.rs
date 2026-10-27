@@ -12,6 +12,7 @@ pub mod extraction;
 mod hash;
 mod merge;
 mod notify;
+pub mod phone;
 pub mod pipeline;
 mod publication;
 pub mod request;

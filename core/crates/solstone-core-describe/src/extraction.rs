@@ -12,6 +12,7 @@ use solstone_core_generate::{ContentPart, GenerateRequest};
 use crate::bounding::bound_extraction_markdown;
 use crate::categories::{CATEGORIES_META, CategoryMeta, OutputKind};
 use crate::decode::resize_for_vlm_png;
+use crate::phone::PhoneScreen;
 use crate::request::append_redaction;
 use crate::selection::{CategoryOverride, Importance, resolved_importance};
 
@@ -51,9 +52,14 @@ pub fn request(
     png: &[u8],
     attempt: u64,
     redact_rules: &[String],
+    phone: Option<PhoneScreen>,
 ) -> Option<GenerateRequest> {
     let resized = resize_for_vlm_png(png, None)?;
     let mut instruction = category.instruction.clone();
+    if let Some(phone) = phone.filter(|_| category.name == "meeting") {
+        instruction.push_str("\n\n");
+        instruction.push_str(&phone.meeting_note());
+    }
     append_redaction(&mut instruction, redact_rules);
     let json_output = category.output == OutputKind::Json;
     Some(GenerateRequest {
@@ -64,7 +70,10 @@ pub fn request(
         context: category.context.clone(),
         contents: vec![
             ContentPart::Text {
-                text: format!("Analyze this {} screenshot.", category.name),
+                text: phone.map_or_else(
+                    || format!("Analyze this {} screenshot.", category.name),
+                    |phone| phone.extraction_text(category.name),
+                ),
             },
             ContentPart::Image {
                 mime_type: "image/png".to_owned(),

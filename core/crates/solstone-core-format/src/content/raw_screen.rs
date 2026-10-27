@@ -41,7 +41,7 @@ pub(super) fn render(rel: &str, records: &[JsonObject]) -> ProducedChunks {
     ProducedChunks {
         chunks,
         agent_override: Some("screen".to_string()),
-        header: Some(screen_header(rel)),
+        header: Some(screen_header_with_capture(rel, records)),
         error: (skipped > 0)
             .then(|| format!("Skipped {skipped} entries missing 'timestamp' field in {rel}")),
         warnings: Vec::new(),
@@ -164,9 +164,12 @@ pub(super) fn render_for_screen_talent(rel: &str, records: &[JsonObject]) -> Scr
         chunks,
         agent_override: Some("screen".to_string()),
         header: Some(if has_tmux_projection {
-            format!("{}\n\n{TMUX_PROJECTION_GUIDE}", screen_header(rel))
+            format!(
+                "{}\n\n{TMUX_PROJECTION_GUIDE}",
+                screen_header_with_capture(rel, records)
+            )
         } else {
-            screen_header(rel)
+            screen_header_with_capture(rel, records)
         }),
         error: (skipped > 0)
             .then(|| format!("Skipped {skipped} entries missing 'timestamp' field in {rel}")),
@@ -547,6 +550,40 @@ fn timestamp_millis(frame: &JsonObject) -> i64 {
     (timestamp_seconds(frame) * 1_000.0).round() as i64
 }
 
+/// The screen header, with a note on what recorded it when its capture
+/// metadata names a phone or tablet. A phone recording's own "Screen Sharing"
+/// panel and a picture-in-picture call read as sharing to a call otherwise.
+fn screen_header_with_capture(rel: &str, records: &[JsonObject]) -> String {
+    let header = screen_header(rel);
+    let Some(meta) = records
+        .first()
+        .filter(|record| !record.contains_key("timestamp") && record.contains_key("raw"))
+    else {
+        return header;
+    };
+    let device = match meta.get("platform").and_then(Value::as_str) {
+        Some("ios") => "iPhone or iPad",
+        Some("android") => "Android phone or tablet",
+        _ => return header,
+    };
+    let mut note = format!(
+        "{header}\n\nThese frames come from a screen recording the owner made on their own {device}. \
+         A screen-sharing or screen-recording panel in them is that device recording its own screen, \
+         not the owner sharing their screen to a call. An app under a small picture-in-picture call \
+         window is what the owner was looking at, not something shared in the call."
+    );
+    let sources = meta.get("sources").and_then(Value::as_array);
+    if sources.is_some_and(|sources| {
+        !sources.is_empty()
+            && !sources
+                .iter()
+                .any(|source| source.as_str() == Some("audio"))
+    }) {
+        note.push_str(" No sound was recorded with it, so nothing in it was heard.");
+    }
+    note
+}
+
 fn screen_header(rel: &str) -> String {
     let stem = rel
         .rsplit('/')
@@ -779,6 +816,46 @@ mod tests {
                 Some(OccurrenceTimeMs(1_772_614_801_500)),
             ]
         );
+    }
+
+    #[test]
+    fn a_phone_recording_says_what_recorded_it_and_whether_anything_was_heard() {
+        let frame = record(json!(1.0), "a call");
+        let header = |meta: Value| {
+            let records = [meta.as_object().unwrap().clone(), frame.clone()];
+            (
+                render(
+                    "20261026/device_mobile-segment/170248_300/screen.jsonl",
+                    &records,
+                )
+                .header
+                .unwrap(),
+                render_for_screen_talent(
+                    "20261026/device_mobile-segment/170248_300/screen.jsonl",
+                    &records,
+                )
+                .header
+                .unwrap(),
+            )
+        };
+        let (shared, talent) =
+            header(json!({"raw":"screen.mp4","platform":"ios","sources":["screencast"]}));
+        assert_eq!(shared, talent);
+        assert!(
+            talent.starts_with("# Frame Analyses\n\nThese frames come from a screen recording")
+        );
+        assert!(talent.contains("iPhone or iPad"));
+        assert!(talent.contains("not the owner sharing their screen to a call"));
+        assert!(talent.ends_with("nothing in it was heard."));
+
+        let (_, with_sound) = header(
+            json!({"raw":"screen.mp4","platform":"android","sources":["screencast","audio"]}),
+        );
+        assert!(with_sound.contains("Android phone or tablet"));
+        assert!(!with_sound.contains("heard"));
+
+        let (_, desktop) = header(json!({"raw":"screen.mp4","platform":"macos"}));
+        assert_eq!(desktop, "# Frame Analyses");
     }
 
     #[test]

@@ -27,7 +27,7 @@ use solstone_core_generate::{
     SessionSubmitError,
 };
 
-use super::{DescribeOptions, RunError, run_decoded};
+use super::{CaptureContext, DescribeOptions, RunError, run_decoded};
 use crate::decode::{DescribeResult, QualifiedFrame};
 use crate::session::{DescribeSession, DescribeSessionFactory};
 use crate::{
@@ -262,6 +262,7 @@ impl TestRun {
             redact_rules,
             max_extractions: 3,
             category_overrides: BTreeMap::<String, CategoryOverride>::new(),
+            capture: CaptureContext::default(),
         }
     }
 

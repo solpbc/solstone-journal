@@ -23,6 +23,7 @@ use crate::detect;
 use crate::extraction;
 use crate::merge;
 use crate::notify;
+use crate::phone::PhoneScreen;
 use crate::request;
 use crate::screen_ocr::{self, OcrWorkerFactory};
 use crate::selection::{self, CategorizedFrame, CategoryOverride, SelectionError};
@@ -91,6 +92,7 @@ struct Promotion<'a> {
     reason: &'a str,
     previous_attempts: i64,
     carry_forward_observer: Option<&'a str>,
+    capture: &'a CaptureContext,
     existing: Option<&'a merge::ExistingDescribeArtifact>,
     attempt: Option<&'a solstone_core_system::work_retry::Attempt>,
     checkpoint: &'a dyn Fn() -> bool,
@@ -156,6 +158,29 @@ impl Drop for RowTemp {
     }
 }
 
+#[derive(Clone, Debug, Default)]
+pub struct CaptureContext {
+    pub observer: Option<String>,
+    pub meta: Option<Map<String, Value>>,
+}
+
+impl CaptureContext {
+    pub fn from_environment() -> Result<Self, String> {
+        let observer = std::env::var("OBSERVER_NAME")
+            .ok()
+            .filter(|observer| !observer.is_empty());
+        let meta = match std::env::var("SEGMENT_META")
+            .ok()
+            .and_then(|meta| serde_json::from_str::<Value>(&meta).ok())
+        {
+            Some(Value::Object(meta)) => Some(meta),
+            Some(_) => return Err("SEGMENT_META must be an object".to_owned()),
+            None => None,
+        };
+        Ok(Self { observer, meta })
+    }
+}
+
 pub struct DescribeOptions<'a> {
     pub video: &'a Path,
     pub journal: &'a Path,
@@ -166,6 +191,7 @@ pub struct DescribeOptions<'a> {
     pub redact_rules: Vec<String>,
     pub max_extractions: u32,
     pub category_overrides: BTreeMap<String, CategoryOverride>,
+    pub capture: CaptureContext,
 }
 
 pub fn run(options: DescribeOptions<'_>) -> Result<(), RunError> {
@@ -311,6 +337,12 @@ fn run_prepared(
         return Err(RunError::Internal("--jobs must be positive".to_owned()));
     }
     let output = options.video.with_extension("jsonl");
+    // A phone or tablet recording gets a note in its frame prompts.
+    let phone = options
+        .capture
+        .meta
+        .as_ref()
+        .and_then(|meta| PhoneScreen::from_segment_meta(&Value::Object(meta.clone())));
     let claims = OutputClaims::acquire([output.clone()], LockOptions::default())
         .map_err(|error| RunError::Internal(error.to_string()))?;
     let segment = output.parent().unwrap_or_else(|| Path::new(""));
@@ -428,7 +460,12 @@ fn run_prepared(
         .as_deref()
         .and_then(merge::read_existing_describe_artifact);
     let carry_forward_observer = existing_artifact.as_ref().and_then(|artifact| {
-        if std::env::var("OBSERVER_NAME").is_ok_and(|value| !value.is_empty()) {
+        if options
+            .capture
+            .observer
+            .as_deref()
+            .is_some_and(|value| !value.is_empty())
+        {
             return None;
         }
         artifact
@@ -496,6 +533,7 @@ fn run_prepared(
             reason,
             previous_attempts,
             carry_forward_observer: carry_forward_observer.as_deref(),
+            capture: &options.capture,
             existing: existing_artifact.as_ref(),
             attempt,
             checkpoint,
@@ -586,7 +624,7 @@ fn run_prepared(
                 .map_err(|_| blocked(options.journal, work_key, None, None, None))?,
         );
         let session = session.as_deref().expect("spawned describe session");
-        let instruction = request::system_instruction(&options.redact_rules);
+        let instruction = request::system_instruction(&options.redact_rules, phone);
         loop {
             if checkpoint() {
                 return Err(RunError::Cancelled);
@@ -633,8 +671,13 @@ fn run_prepared(
                 let png = resize_for_vlm_png(&pending.frame.png, Some(1024)).ok_or_else(|| {
                     RunError::Internal("failed to resize categorization frame".to_owned())
                 })?;
-                let req =
-                    request::request(pending.frame.frame_id, pending.attempt, &png, &instruction);
+                let req = request::request(
+                    pending.frame.frame_id,
+                    pending.attempt,
+                    &png,
+                    &instruction,
+                    phone,
+                );
                 let id = req.id.clone().expect("describe request ids are present");
                 let submitted_at = Instant::now();
                 if session.submit(req).is_err() {
@@ -860,6 +903,7 @@ fn run_prepared(
             reason: vocab::REASON_ANALYSIS_FAILED,
             previous_attempts,
             carry_forward_observer: carry_forward_observer.as_deref(),
+            capture: &options.capture,
             existing: existing_artifact.as_ref(),
             attempt,
             checkpoint,
@@ -985,6 +1029,7 @@ fn run_prepared(
                 category,
                 &png,
                 &options.redact_rules,
+                phone,
                 checkpoint,
             ) {
                 Ok((value, record)) => {
@@ -1082,6 +1127,7 @@ fn run_prepared(
                     category,
                     &png,
                     &options.redact_rules,
+                    phone,
                     checkpoint,
                 ) {
                     Ok((value, record)) => {
@@ -1173,6 +1219,7 @@ fn run_prepared(
         reason,
         previous_attempts,
         carry_forward_observer: carry_forward_observer.as_deref(),
+        capture: &options.capture,
         existing: existing_artifact.as_ref(),
         attempt,
         checkpoint,
@@ -1406,6 +1453,7 @@ fn extract_category(
     category: &crate::categories::CategoryMeta,
     png: &[u8],
     redact_rules: &[String],
+    phone: Option<PhoneScreen>,
     checkpoint: &dyn Fn() -> bool,
 ) -> Result<(Value, Value), ExtractionError> {
     if checkpoint() {
@@ -1413,7 +1461,7 @@ fn extract_category(
     }
     let mut attempt = 0;
     loop {
-        let request = extraction::request(frame_id, category, png, attempt, redact_rules)
+        let request = extraction::request(frame_id, category, png, attempt, redact_rules, phone)
             .ok_or_else(|| ExtractionError::Failed {
                 error: "failed to resize extraction frame".to_owned(),
                 record: None,
@@ -2340,8 +2388,10 @@ fn ocr_analyses(
 fn send_described(options: &DescribeOptions<'_>, output: &Path, start: Instant) {
     let day = notify::day_for_path(options.video);
     let segment = notify::segment_for_video_path(options.video);
-    let observer = std::env::var("OBSERVER_NAME")
-        .ok()
+    let observer = options
+        .capture
+        .observer
+        .as_deref()
         .filter(|observer| !observer.is_empty());
     notify::described(
         options.journal,
@@ -2350,7 +2400,7 @@ fn send_described(options: &DescribeOptions<'_>, output: &Path, start: Instant) 
         start.elapsed().as_millis() as u64,
         day.as_deref(),
         segment.as_deref(),
-        observer.as_deref(),
+        observer,
     );
 }
 
@@ -2403,23 +2453,14 @@ fn promote(promotion: Promotion<'_>) -> Result<(), RunError> {
                     .unwrap_or_default()
             ),
         );
-        if let Some(observer) = std::env::var("OBSERVER_NAME")
-            .ok()
+        if let Some(observer) = promotion.capture.observer.as_deref()
             .filter(|observer| !observer.is_empty())
-            .or_else(|| promotion.carry_forward_observer.map(str::to_owned))
+            .or(promotion.carry_forward_observer)
         {
             header.insert("observer".to_owned(), json!(observer));
         }
-        if let Ok(meta) = std::env::var("SEGMENT_META") {
-            match serde_json::from_str::<Value>(&meta) {
-                Ok(Value::Object(values)) => header.extend(values),
-                Ok(_) => {
-                    return Err(RunError::Internal(
-                        "SEGMENT_META must be an object".to_owned(),
-                    ));
-                }
-                Err(_) => {}
-            }
+        if let Some(meta) = &promotion.capture.meta {
+            header.extend(meta.clone());
         }
         header.insert(
             "first_hash".to_owned(),

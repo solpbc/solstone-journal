@@ -1674,6 +1674,8 @@ async function loadGuidedFlow(sourceName) {
   }
   const uploadStepNumber = guideStepNumber;
   const configureStepNumber = uploadStepNumber + 1;
+  const folderPicker = window.JournalOwnerFolders && ['obsidian', 'audio_archive', 'gemini', 'document'].includes(source.name)
+    ? '<button id="guidedFolderBtn" class="import-secondary-btn" type="button">choose folder</button><p id="guidedFolderStatus" role="status" aria-live="polite"></p>' : '';
 
   guideSteps.innerHTML = `
     <div>
@@ -1684,9 +1686,8 @@ async function loadGuidedFlow(sourceName) {
     ${guideHtml}
       <li><div class="import-step">
         <div class="import-step-number">step ${uploadStepNumber}</div>
-        ${source.input_type === 'path_input' && window.JournalOwnerFolders ? `
-          <button id="guidedFolderBtn" class="import-secondary-btn" type="button">choose folder</button>
-          <p id="guidedFolderStatus" role="status" aria-live="polite"></p>
+        ${source.input_type === 'path_input' && folderPicker ? `
+          ${folderPicker}
         ` : source.input_type === 'path_input' ? `
           <h4>${escapeHtml(source.upload_prompt || 'paste the full path to your folder')}</h4>
           <input id="guidedPathInput" class="import-path-input" type="text"
@@ -1699,6 +1700,7 @@ async function loadGuidedFlow(sourceName) {
             <input id="guidedFileInput" type="file" accept="${escapeHtml(source.accept || '')}" style="display:none" />
             <div id="guidedFileLabel" class="import-file-label"></div>
           </div>
+          ${folderPicker}
         `}
         <div id="guidedDedupNotice"></div>
       </div></li>
@@ -1744,10 +1746,12 @@ async function loadGuidedFlow(sourceName) {
 
   const folderButton = document.getElementById('guidedFolderBtn');
   if (folderButton) {
+    folderControls(guidedFolderBusy);
     folderButton.addEventListener('click', () => chooseGuidedFolder(source));
     await reconcileGuidedFolder(source);
     if (currentGuideSource !== source.name || document.getElementById('guidedFolderBtn') !== folderButton) return;
-  } else if (source.input_type !== 'path_input') {
+  }
+  if (source.input_type !== 'path_input') {
     setupGuidedUploadArea();
   } else {
     const guidedPathInput = document.getElementById('guidedPathInput');
@@ -1828,11 +1832,18 @@ function setupGuidedUploadArea() {
   }
 
   const setFile = file => {
+    if (!file || guidedFolderBusy || fileInput.disabled) return;
     currentGuidedFile = file || null;
     fileLabel.textContent = file ? file.name : '';
     currentGuidedSaved = null;
-  invalidateImportPreview('guided');
+    invalidateImportPreview('guided');
     window._guidedClientItemId = file ? crypto.randomUUID() : null;
+    if (document.getElementById('guidedFolderBtn')) {
+      folderSelection({name: currentGuideSource}, null);
+      const status = document.getElementById('guidedFolderStatus');
+      if (status) status.textContent = '';
+      folderControls(false);
+    }
   };
 
   dropArea.onclick = () => fileInput.click();
@@ -2039,8 +2050,10 @@ function folderSelection(source, value) {
 function folderControls(busy) {
   const choose = document.getElementById('guidedFolderBtn');
   const start = document.getElementById('guidedStartBtn');
-  if (choose) choose.disabled = busy;
-  if (start) start.disabled = busy || !currentGuidedSaved;
+  const file = document.getElementById('guidedFileInput');
+  if (choose) choose.disabled = busy || guidedFolderBusy;
+  if (file) file.disabled = guidedFolderBusy;
+  if (start) start.disabled = busy || guidedFolderBusy || (!currentGuidedSaved && !file);
 }
 async function chooseGuidedFolder(source) {
   if (guidedFolderBusy || currentGuideSource !== source.name) return;
@@ -2056,6 +2069,11 @@ async function chooseGuidedFolder(source) {
       const retained = folderSelection(source, { client_item_id: reference });
       if (retained?.client_item_id !== reference) return false;
       currentGuidedSaved = null;
+      currentGuidedFile = null;
+      const file = document.getElementById('guidedFileInput');
+      const label = document.getElementById('guidedFileLabel');
+      if (file) file.value = '';
+      if (label) label.textContent = '';
       invalidateImportPreview('guided');
       window._guidedClientItemId = reference;
       status.textContent = 'saving folder… this can take a while for a large folder.';
@@ -2085,7 +2103,11 @@ async function chooseGuidedFolder(source) {
     }
   } finally {
     guidedFolderBusy = false;
-    if (live()) { folderControls(false); choose.focus(); }
+    folderControls(false);
+    if (live()) choose.focus();
+    else if (currentGuideSource && document.getElementById('guidedFolderStatus')) {
+      await reconcileGuidedFolder({name: currentGuideSource});
+    }
   }
 }
 async function reconcileGuidedFolder(source, duringReply = false) {
@@ -2093,7 +2115,10 @@ async function reconcileGuidedFolder(source, duringReply = false) {
   if (!status || (guidedFolderBusy && !duringReply)) return;
   const retained = folderSelection(source);
   if (!retained?.client_item_id) { folderControls(false); return; }
-  const live = () => currentGuideSource === source.name && document.getElementById('guidedFolderStatus') === status;
+  let clientChoice = window._guidedClientItemId;
+  if (clientChoice && clientChoice !== retained.client_item_id) { folderControls(false); return; }
+  const live = () => currentGuideSource === source.name && document.getElementById('guidedFolderStatus') === status
+    && folderSelection(source)?.client_item_id === retained.client_item_id && window._guidedClientItemId === clientChoice;
   folderControls(true);
   status.textContent = 'checking import…';
   try {
@@ -2120,6 +2145,7 @@ async function reconcileGuidedFolder(source, duringReply = false) {
     currentGuidedSaved = { path: metadata.file_path, timestamp: rows[0].timestamp,
       source_timestamp: metadata.source_timestamp || rows[0].timestamp, client_item_id: retained.client_item_id };
     window._guidedClientItemId = retained.client_item_id;
+    clientChoice = retained.client_item_id;
     status.textContent = `${metadata.original_filename}: saved`;
   } catch (error) {
     if (live()) {
