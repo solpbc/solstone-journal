@@ -1796,7 +1796,28 @@ mod tests {
     #[tokio::test]
     async fn local_network_choice_rebinds_the_door_between_loopback_and_the_network() {
         use solstone_core_sol_link::ca::{generate_ca, jid_from_spki};
-        for interface in [None, Some(Ipv4Addr::new(127, 0, 0, 2))] {
+        #[cfg(not(target_vendor = "apple"))]
+        let selected = Ipv4Addr::new(127, 0, 0, 2);
+        // Darwin requires each loopback alias to be assigned. Use a real local
+        // interface so the separate relay-loopback listener is still exercised.
+        #[cfg(target_vendor = "apple")]
+        let selected = {
+            use solstone_core_sol_link::pairing::addresses::{
+                RawInterfaceSource, SystemInterfaceSource,
+            };
+            SystemInterfaceSource
+                .enumerate()
+                .expect("local interfaces")
+                .into_iter()
+                .find_map(|entry| match entry.address {
+                    std::net::IpAddr::V4(ip) if !ip.is_loopback() && !ip.is_unspecified() => {
+                        std::net::TcpListener::bind((ip, 0)).ok().map(|_| ip)
+                    }
+                    _ => None,
+                })
+                .expect("host fixture needs a bindable non-loopback IPv4 interface")
+        };
+        for interface in [None, Some(selected)] {
             let journal = tempfile::TempDir::new_in(std::env::temp_dir()).expect("journal creates");
             let root = journal.path();
             let ca = generate_ca().expect("CA");
@@ -1853,7 +1874,10 @@ mod tests {
                     port
                 )))
             );
-            assert_eq!(lifecycle.listening_on_network(), Some(interface.is_none()));
+            assert_eq!(
+                lifecycle.listening_on_network(),
+                Some(!interface.unwrap_or(Ipv4Addr::UNSPECIFIED).is_loopback())
+            );
             // Both the selected interface and relay forwarding target are live.
             tokio::net::TcpStream::connect((Ipv4Addr::LOCALHOST, port))
                 .await

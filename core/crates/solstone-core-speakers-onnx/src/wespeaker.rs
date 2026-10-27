@@ -43,6 +43,25 @@ impl WespeakerEmbedder {
         model_path: &Path,
         providers: &[SpeakerExecutionProvider],
     ) -> Result<Self, SpeakerOnnxError> {
+        match Self::open_once(model_path, providers) {
+            // CoreML can register successfully yet fail to compile the edited
+            // prefix graph. Honor an explicitly permitted CPU fallback at that
+            // boundary too, rather than losing the statement's embedding.
+            Err(_)
+                if cfg!(target_vendor = "apple")
+                    && providers.contains(&SpeakerExecutionProvider::CoreMl)
+                    && providers.contains(&SpeakerExecutionProvider::Cpu) =>
+            {
+                Self::open_once(model_path, &[SpeakerExecutionProvider::Cpu])
+            }
+            result => result,
+        }
+    }
+
+    fn open_once(
+        model_path: &Path,
+        providers: &[SpeakerExecutionProvider],
+    ) -> Result<Self, SpeakerOnnxError> {
         if providers.is_empty() {
             return Err(SpeakerOnnxError::EmptyProviderPlan);
         }
