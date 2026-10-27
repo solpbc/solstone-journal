@@ -148,39 +148,39 @@ mod tests {
 
     #[test]
     fn a_leading_example_clause_is_removed_and_the_real_summary_kept() {
-        // Shapes copied from Sense records on a real journal.
+        // The shapes Sense writes, with made-up content around the example.
         for (written, kept) in [
             (
-                "Debugged the retry handling in the ingest worker, then reviewed the extro-hub dashboard.",
-                "Reviewed the extro-hub dashboard.",
+                "Debugged the retry handling in the ingest worker, then reviewed the garden planner.",
+                "Reviewed the garden planner.",
             ),
             (
-                "Debugged retry handling in the ingest worker, fixed update steps to fetch crates before make ci.",
-                "Fixed update steps to fetch crates before make ci.",
+                "Debugged retry handling in the ingest worker, fixed the oven times in the bread recipe.",
+                "Fixed the oven times in the bread recipe.",
             ),
             (
-                "Debugged the retry handling in the ingest worker; committed changes to archive-relocation.json.",
-                "Committed changes to archive-relocation.json.",
+                "Debugged the retry handling in the ingest worker; saved changes to the reading list.",
+                "Saved changes to the reading list.",
             ),
             (
-                "Debugged the retry handling in the ingest worker and drafted a response to Bauer.",
-                "Drafted a response to Bauer.",
+                "Debugged the retry handling in the ingest worker and drafted a reply to Avery.",
+                "Drafted a reply to Avery.",
             ),
             (
                 "Debugged the retry handling in the ingest worker; reported that Priya repaired the fence.",
                 "Reported that Priya repaired the fence.",
             ),
             (
-                "Fixed the retry handling in the ingest worker and corrected the import notification bug.",
-                "Corrected the import notification bug.",
+                "Fixed the retry handling in the ingest worker and corrected the calendar reminder.",
+                "Corrected the calendar reminder.",
             ),
             (
-                "Debugged upload retry handling in the ingest worker, fixed the key proxy cache.",
-                "Fixed the key proxy cache.",
+                "Debugged upload retry handling in the ingest worker, fixed the bike lights.",
+                "Fixed the bike lights.",
             ),
             (
-                "Debugged the retry handling in the ingest worker. Launched solstone.app on pro5e.",
-                "Launched solstone.app on pro5e.",
+                "Debugged the retry handling in the ingest worker. Opened the photo album.",
+                "Opened the photo album.",
             ),
         ] {
             assert_eq!(without_examples(written), kept, "{written}");
@@ -191,8 +191,8 @@ mod tests {
     fn a_trailing_or_whole_example_leaves_only_what_else_was_written() {
         for (written, kept) in [
             (
-                "Verified claims in a terminal log against source commits, then sent the invoice to Sam.",
-                "Verified claims in a terminal log against source commits.",
+                "Watered the tomatoes, then sent the invoice to Sam.",
+                "Watered the tomatoes.",
             ),
             (
                 "Sent the invoice to Sam, then opened the launch checklist.",
@@ -216,8 +216,8 @@ mod tests {
                 "",
             ),
             (
-                "Debugged the retry handling in the ingest worker, sent invoices to Sam and opened the launch checklist, triaged Play Store warnings.",
-                "Triaged Play Store warnings.",
+                "Debugged the retry handling in the ingest worker, sent invoices to Sam and opened the launch checklist, sorted the weekend shopping list.",
+                "Sorted the weekend shopping list.",
             ),
         ] {
             assert_eq!(without_examples(written), kept, "{written}");
@@ -227,7 +227,7 @@ mod tests {
     #[test]
     fn real_work_near_the_example_words_is_left_alone() {
         for written in [
-            "Debugged SD-card read failures in the L5 ingest worker by instrumenting logs.",
+            "Debugged read failures in the camera's ingest worker by adding logs.",
             "Added retry handling to the upload queue.",
             "Opened the launch checklist with Sam.",
             "Sent the invoice to Samantha.",
@@ -239,22 +239,22 @@ mod tests {
     #[test]
     fn every_owner_visible_field_is_scrubbed_and_a_clean_record_is_untouched() {
         let mut record = json!({
-            "activity_summary": "Debugged the retry handling in the ingest worker, then reviewed the carrier memo.",
-            "facets": [{"facet": "work", "activity": "Debugged the retry handling in the ingest worker and reviewed the carrier memo.", "level": "high"}],
-            "topics": ["ingest worker retry handling", "carrier memo", "retry handling in ingest worker"],
+            "activity_summary": "Debugged the retry handling in the ingest worker, then reviewed the budget memo.",
+            "facets": [{"facet": "work", "activity": "Debugged the retry handling in the ingest worker and reviewed the budget memo.", "level": "high"}],
+            "topics": ["ingest worker retry handling", "budget memo", "retry handling in ingest worker"],
         });
         assert!(scrub_record(&mut record));
-        assert_eq!(record["activity_summary"], "Reviewed the carrier memo.");
+        assert_eq!(record["activity_summary"], "Reviewed the budget memo.");
         assert_eq!(
             record["facets"][0]["activity"],
-            "Reviewed the carrier memo."
+            "Reviewed the budget memo."
         );
-        assert_eq!(record["topics"], json!(["carrier memo"]));
+        assert_eq!(record["topics"], json!(["budget memo"]));
 
         let mut clean = json!({
-            "activity_summary": "Reviewed the carrier memo.",
-            "facets": [{"facet": "work", "activity": "Reviewed the carrier memo.", "level": "high"}],
-            "topics": ["carrier memo"],
+            "activity_summary": "Reviewed the budget memo.",
+            "facets": [{"facet": "work", "activity": "Reviewed the budget memo.", "level": "high"}],
+            "topics": ["budget memo"],
         });
         assert!(!scrub_record(&mut clean));
     }
