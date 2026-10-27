@@ -301,7 +301,7 @@ fn apply_client_capture_projection_rename(expected: &mut Value) {
         };
         expected["version"] = json!({
             "availability": "unknown",
-            "current": null,
+            "current": env!("CARGO_PKG_VERSION"),
             "platform_version": null,
             "latest": null,
             "latest_platform_version": null,
