@@ -46,6 +46,13 @@ public final class OwnerActivity extends ServingActivity {
     final OwnerFolderPicker folderPicker = new OwnerFolderPicker();
     volatile int folderGeneration;
     volatile FolderOperation folderOperation;
+    final SetupBrowser setupBrowser = new SetupBrowser();
+    final Messenger setupReplies = new Messenger(new Handler(Looper.getMainLooper()) {
+        public void handleMessage(Message message) {
+            Bundle data=message.getData();
+            setupBrowser.acknowledged(data.getString("lease"),data.getBoolean("acquired"));
+        }
+    });
     boolean diagnosticCommands() { return false; }
     boolean bindWhileStopped() { return true; }
     void stoppedConnectionReady() {
@@ -303,11 +310,46 @@ public final class OwnerActivity extends ServingActivity {
             finally { checking.set(false); }
         });
     }
-    protected void onResume() { super.onResume(); if(status != null) { renderBar();refreshStatus(); } }
+    protected void onResume() { super.onResume(); setupBrowser.resume(); if(status != null) { renderBar();refreshStatus(); } }
+    protected void onPause() { setupBrowser.pause(); super.onPause(); }
     void openExternal(String value) {
         try {
             java.net.URI uri=java.net.URI.create(value);
             if (!("https".equals(uri.getScheme()) || "http".equals(uri.getScheme())) || uri.getHost()==null || uri.getRawUserInfo()!=null) return;
+            if (SetupBrowser.protectedUrl(value)) {
+                final Messenger target=worker;
+                final long connectionId=connectionGeneration.get(), servingId=ownerGeneration;
+                setupBrowser.begin(new SetupBrowser.Connection() {
+                    Runnable timeout;
+                    public boolean current() {
+                        return target != null && currentConnection(connectionId,target) && !ownerStopped
+                            && readyConnection == connectionId && servingId >= 0 && ownerGeneration == servingId
+                            && runtimeUp && "running".equals(runState);
+                    }
+                    public void acquire(String lease) {
+                        Message message=Message.obtain(null,1); message.replyTo=setupReplies;
+                        Bundle data=new Bundle(); data.putString("op","owner-setup-begin");
+                        data.putString("lease",lease); data.putLong("generation",servingId); message.setData(data);
+                        try {
+                            target.send(message);
+                            timeout=()->setupBrowser.acquisitionExpired(lease);
+                            ui.postDelayed(timeout,10000);
+                        } catch(RemoteException error) { setupBrowser.acknowledged(lease,false); }
+                    }
+                    public void release(String lease) {
+                        if (timeout != null) ui.removeCallbacks(timeout);
+                        Message message=Message.obtain(null,1); Bundle data=new Bundle();
+                        data.putString("op","owner-setup-end"); data.putString("lease",lease); message.setData(data);
+                        try { target.send(message); } catch(RemoteException ignored) { /* Service death also retires protection. */ }
+                    }
+                    public void launch(String url) {
+                        if (timeout != null) ui.removeCallbacks(timeout);
+                        startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse(url)).addCategory(Intent.CATEGORY_BROWSABLE));
+                    }
+                    public void refused() { pageError("couldn't open setup. try again from your journal."); }
+                },value);
+                return;
+            }
             startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse(value)).addCategory(Intent.CATEGORY_BROWSABLE));
         } catch(Exception error) { pageError("couldn't open your browser"); }
     }
@@ -344,12 +386,18 @@ public final class OwnerActivity extends ServingActivity {
     }
     void connectionLost(WorkerConnection lost) {
         if (destroyed || connection != lost) return;
+        setupBrowser.close();
         final long generation=connectionGeneration.get();
         ui.post(()->{
             if (destroyed || connection != lost || connectionGeneration.get() != generation+1) return;
             closePage(); if(!ownerStopped) {runState="recovering";reason="";renderBar();}
         });
         super.connectionLost(lost);
+    }
+    void requestStop(Messenger target) {
+        super.requestStop(target);
+        // The native cancellation signal is enqueued before protection ends.
+        setupBrowser.close();
     }
     void ownerAction(String action) {
         if ("start".equals(action)) {
@@ -912,6 +960,7 @@ public final class OwnerActivity extends ServingActivity {
         }
     }
     protected void onDestroy() {
+        setupBrowser.close();
         if (connectivity != null && networkCallback != null) connectivity.unregisterNetworkCallback(networkCallback);
         closePage(); requests.shutdownNow(); uploads.shutdownNow(); web.removeJavascriptInterface("JournalOwner"); web.destroy();
         super.onDestroy();

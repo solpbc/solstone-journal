@@ -499,7 +499,7 @@ const REVOKED_GUIDANCE: &str =
     "confidential processing isn't on. turn it on again when you're ready.";
 const EXPIRED_GUIDANCE: &str = "confidential processing isn't on. the link to turn it on expired before you finished in your browser. turn it on again to start over.";
 const MALFORMED_GUIDANCE: &str = "confidential processing isn't on. the services portal sent a reply your journal couldn't read. turn it on again. if it keeps happening, update your journal.";
-const NETWORK_ERROR_GUIDANCE: &str = "confidential processing isn't on. your journal couldn't reach the services portal. check the connection on the computer your journal is on, then turn it on again.";
+const NETWORK_ERROR_GUIDANCE: &str = "confidential processing isn't on. your journal couldn't reach the services portal. check the connection on the device running your journal, then turn it on again.";
 const LOCAL_ERROR_GUIDANCE: &str =
     "confidential processing isn't on. your journal couldn't save the setting. turn it on again.";
 

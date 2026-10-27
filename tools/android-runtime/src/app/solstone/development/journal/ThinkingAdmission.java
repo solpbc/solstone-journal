@@ -14,6 +14,7 @@ final class ThinkingAdmission {
     private boolean open;
 
     synchronized long generation() { return generation; }
+    synchronized boolean isOpen() { return open; }
     synchronized void opened(long expected) {
         if (generation == expected) open = true;
     }

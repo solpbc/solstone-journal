@@ -1,12 +1,14 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android" package="app.solstone.development.journal">
   <uses-permission android:name="android.permission.INTERNET"/>
   <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"/>
   <application android:label="journal runtime development" android:debuggable="true" android:extractNativeLibs="true" android:allowBackup="false" android:theme="@android:style/Theme.Material.Light.NoActionBar">
     <activity android:name=".MainActivity" android:exported="true">
       <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
     </activity>
     <activity android:name=".ServingActivity" android:exported="true"/>
-    <service android:name=".JournalService" android:exported="false" android:process=":journal"/>
+    <service android:name=".JournalService" android:exported="false" android:process=":journal" android:foregroundServiceType="dataSync"/>
     <service android:name=".IsolatedService" android:exported="false" android:process=":isolated" android:isolatedProcess="true"/>
   </application>
 </manifest>
