@@ -29,5 +29,9 @@ solstone-core-spp-attest = { path = "../../../core/crates/solstone-core-spp-atte
 solstone-core-backup-runtime = { path = "../../../core/crates/solstone-core-backup-runtime", features = ["ios-linked-bridge", "test-hooks"] }
 solstone-core-offload = { path = "../../../core/crates/solstone-core-offload", features = ["test-hooks"] }
 
+solstone-core-import = { path = "../../../core/crates/solstone-core-import" }
+solstone-core-import-web = { path = "../../../core/crates/solstone-core-import-web" }
+solstone-core-journal-config = { path = "../../../core/crates/solstone-core-journal-config" }
+
 [patch.crates-io]
 ffmpeg-sys-next = { path = "../../../core/vendor/ffmpeg-sys-next" }

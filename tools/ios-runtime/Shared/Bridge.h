@@ -25,6 +25,9 @@ char *journal_ios_owner_bridge_commit(const char *cache, uint64_t authority, uin
 char *journal_ios_owner_bridge_release(const char *cache, uint64_t authority, uint64_t id, const char *token, int32_t receipt_created);
 char *journal_ios_owner_bridge_disarm(const char *cache, uint64_t authority, uint64_t id, const char *token);
 void journal_ios_owner_cancel(uint64_t id);
+typedef bool (*journal_ios_folder_copy_fn)(void *context, const char *destination);
+char *journal_ios_owner_folder_copy(const char *cache, const uint8_t *request, uintptr_t length, void *context, journal_ios_folder_copy_fn copy);
+bool journal_ios_owner_folder_copy_continues(void);
 char *runtime_resources(void);
 void runtime_resources_free(char *result);
 

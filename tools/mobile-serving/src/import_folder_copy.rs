@@ -43,6 +43,29 @@ impl Drop for BridgeCopy {
 }
 
 impl ImportPreparation {
+    /// Generate a bookkeeping stamp from this preparation's original owner.
+    /// This exposes no root or execution authority and admits no import attempt.
+    pub fn folder_timestamp(&self) -> Result<Timestamp, String> {
+        self.checkpoint()?;
+        let config = solstone_core_journal_config::read_journal_config_bound(&self.root)
+            .map_err(|_| FolderAdmitError::Denied.to_string())?;
+        let zone = config
+            .config
+            .as_ref()
+            .and_then(|config| config.get("identity"))
+            .and_then(|identity| identity.get("timezone"))
+            .and_then(serde_json::Value::as_str)
+            .and_then(solstone_core_journal_config::parse_zone)
+            .unwrap_or_else(solstone_core_journal_config::host_zone);
+        let raw = chrono::Utc::now()
+            .with_timezone(&zone)
+            .format("%Y%m%d_%H%M%S")
+            .to_string();
+        self.checkpoint()?;
+        solstone_core_import::validate_timestamp(&raw)
+            .map_err(|_| FolderAdmitError::Denied.to_string())
+    }
+
     /// Copy from an OS provider, admit that copy, and register it under this
     /// preparation's original root and Stop. Call on the retained service worker.
     ///

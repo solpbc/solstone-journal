@@ -29,16 +29,19 @@ enum OwnerFolderCopy {
         let requested: Authority
         private let lock = NSLock()
         private var current: Authority
+        private let continues: () -> Bool
 
-        init(requested: Authority, live: Authority) {
+        init(requested: Authority, live: Authority, continues: @escaping () -> Bool = { true }) {
             self.requested = requested
             self.current = live
+            self.continues = continues
         }
 
         var matches: Bool {
             lock.lock()
-            defer { lock.unlock() }
-            return requested == current
+            let same = requested == current
+            lock.unlock()
+            return same && continues()
         }
 
         func setLive(_ authority: Authority) {

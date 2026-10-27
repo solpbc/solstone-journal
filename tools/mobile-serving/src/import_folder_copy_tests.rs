@@ -268,3 +268,76 @@ fn disconnected_cancelled_provider_retires_before_recovery_then_owner_resumes() 
     assert_eq!(calls.load(Ordering::Acquire), 0);
     host.shutdown().unwrap();
 }
+
+#[test]
+fn folder_timestamp_reads_bound_owner_zone_and_missing_config_without_admission() {
+    let _serial = TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+    let (root, host, calls) = fixture();
+    let prep = host
+        .import_preparation(WorkStop::new(), Default::default())
+        .unwrap();
+    fs::write(
+        root.path().join("config/journal.json"),
+        r#"{"identity":{"timezone":"Pacific/Auckland"},"processing":{"history_confirmed":true}}"#,
+    )
+    .unwrap();
+    let zone = solstone_core_journal_config::parse_zone("Pacific/Auckland").unwrap();
+    let before = chrono::Utc::now()
+        .with_timezone(&zone)
+        .format("%Y%m%d_%H%M%S")
+        .to_string();
+    let timestamp = prep.folder_timestamp().unwrap();
+    let after = chrono::Utc::now()
+        .with_timezone(&zone)
+        .format("%Y%m%d_%H%M%S")
+        .to_string();
+    assert!(timestamp.as_str() >= before.as_str() && timestamp.as_str() <= after.as_str());
+    fs::remove_file(root.path().join("config/journal.json")).unwrap();
+    let zone = solstone_core_journal_config::host_zone();
+    let before = chrono::Utc::now()
+        .with_timezone(&zone)
+        .format("%Y%m%d_%H%M%S")
+        .to_string();
+    let timestamp = prep.folder_timestamp().unwrap();
+    let after = chrono::Utc::now()
+        .with_timezone(&zone)
+        .format("%Y%m%d_%H%M%S")
+        .to_string();
+    assert!(timestamp.as_str() >= before.as_str() && timestamp.as_str() <= after.as_str());
+    assert_eq!(calls.load(Ordering::Acquire), 0);
+    assert!(!root.path().join("imports").exists());
+    drop(prep);
+    host.shutdown().unwrap();
+}
+
+#[test]
+fn folder_timestamp_refuses_full_stop_and_replacement_without_using_foreign_config() {
+    let _serial = TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+    let (root, host, calls) = fixture();
+    let stop = WorkStop::new();
+    let prep = host
+        .import_preparation(stop.clone(), Default::default())
+        .unwrap();
+    stop.request();
+    assert!(prep.folder_timestamp().is_err());
+    drop(prep);
+    let prep = host
+        .import_preparation(WorkStop::new(), Default::default())
+        .unwrap();
+    let moved = root.path().with_extension("original-owner");
+    fs::rename(root.path(), &moved).unwrap();
+    fs::create_dir_all(root.path().join("config")).unwrap();
+    let sentinel = b"{replacement-config-sentinel";
+    fs::write(root.path().join("config/journal.json"), sentinel).unwrap();
+    assert!(prep.folder_timestamp().is_err());
+    assert_eq!(
+        fs::read(root.path().join("config/journal.json")).unwrap(),
+        sentinel
+    );
+    assert!(!moved.join("imports").exists());
+    assert_eq!(calls.load(Ordering::Acquire), 0);
+    drop(prep);
+    host.request_stop();
+    host.shutdown().unwrap();
+    fs::remove_dir_all(moved).unwrap();
+}
