@@ -6,8 +6,10 @@
 #[cfg(any(
     target_os = "ios",
     all(
-        target_os = "linux",
-        target_arch = "x86_64",
+        any(
+            all(target_os = "linux", target_arch = "x86_64"),
+            all(target_os = "macos", target_arch = "aarch64")
+        ),
         feature = "native-archive-host-tests"
     )
 ))]
@@ -146,8 +148,10 @@ enum AdmittedTool {
     #[cfg(any(
         target_os = "ios",
         all(
-            target_os = "linux",
-            target_arch = "x86_64",
+            any(
+                all(target_os = "linux", target_arch = "x86_64"),
+                all(target_os = "macos", target_arch = "aarch64")
+            ),
             feature = "native-archive-host-tests"
         )
     ))]
@@ -165,8 +169,10 @@ impl AdmittedTool {
             #[cfg(any(
                 target_os = "ios",
                 all(
-                    target_os = "linux",
-                    target_arch = "x86_64",
+                    any(
+                        all(target_os = "linux", target_arch = "x86_64"),
+                        all(target_os = "macos", target_arch = "aarch64")
+                    ),
                     feature = "native-archive-host-tests"
                 )
             ))]
@@ -194,8 +200,10 @@ impl AdmittedTool {
             #[cfg(any(
                 target_os = "ios",
                 all(
-                    target_os = "linux",
-                    target_arch = "x86_64",
+                    any(
+                        all(target_os = "linux", target_arch = "x86_64"),
+                        all(target_os = "macos", target_arch = "aarch64")
+                    ),
                     feature = "native-archive-host-tests"
                 )
             ))]
@@ -217,8 +225,10 @@ pub struct ReadAdmission<'a> {
     #[cfg(any(
         target_os = "ios",
         all(
-            target_os = "linux",
-            target_arch = "x86_64",
+            any(
+                all(target_os = "linux", target_arch = "x86_64"),
+                all(target_os = "macos", target_arch = "aarch64")
+            ),
             feature = "native-archive-host-tests"
         )
     ))]
@@ -242,8 +252,10 @@ impl<'a> ReadAdmission<'a> {
             #[cfg(any(
                 target_os = "ios",
                 all(
-                    target_os = "linux",
-                    target_arch = "x86_64",
+                    any(
+                        all(target_os = "linux", target_arch = "x86_64"),
+                        all(target_os = "macos", target_arch = "aarch64")
+                    ),
                     feature = "native-archive-host-tests"
                 )
             ))]
@@ -266,8 +278,10 @@ impl<'a> ReadAdmission<'a> {
             #[cfg(any(
                 target_os = "ios",
                 all(
-                    target_os = "linux",
-                    target_arch = "x86_64",
+                    any(
+                        all(target_os = "linux", target_arch = "x86_64"),
+                        all(target_os = "macos", target_arch = "aarch64")
+                    ),
                     feature = "native-archive-host-tests"
                 )
             ))]
@@ -400,8 +414,10 @@ enum QueryCompletion {
     #[cfg(any(
         target_os = "ios",
         all(
-            target_os = "linux",
-            target_arch = "x86_64",
+            any(
+                all(target_os = "linux", target_arch = "x86_64"),
+                all(target_os = "macos", target_arch = "aarch64")
+            ),
             feature = "native-archive-host-tests"
         )
     ))]
@@ -415,8 +431,10 @@ impl QueryCompletion {
             #[cfg(any(
                 target_os = "ios",
                 all(
-                    target_os = "linux",
-                    target_arch = "x86_64",
+                    any(
+                        all(target_os = "linux", target_arch = "x86_64"),
+                        all(target_os = "macos", target_arch = "aarch64")
+                    ),
                     feature = "native-archive-host-tests"
                 )
             ))]
@@ -429,8 +447,10 @@ impl QueryCompletion {
             #[cfg(any(
                 target_os = "ios",
                 all(
-                    target_os = "linux",
-                    target_arch = "x86_64",
+                    any(
+                        all(target_os = "linux", target_arch = "x86_64"),
+                        all(target_os = "macos", target_arch = "aarch64")
+                    ),
                     feature = "native-archive-host-tests"
                 )
             ))]
@@ -857,8 +877,10 @@ struct OwnedReadInput {
     #[cfg(any(
         target_os = "ios",
         all(
-            target_os = "linux",
-            target_arch = "x86_64",
+            any(
+                all(target_os = "linux", target_arch = "x86_64"),
+                all(target_os = "macos", target_arch = "aarch64")
+            ),
             feature = "native-archive-host-tests"
         )
     ))]
@@ -980,8 +1002,10 @@ impl ReadbackAdmissionError<'_> {
                     #[cfg(any(
                         target_os = "ios",
                         all(
-                            target_os = "linux",
-                            target_arch = "x86_64",
+                            any(
+                                all(target_os = "linux", target_arch = "x86_64"),
+                                all(target_os = "macos", target_arch = "aarch64")
+                            ),
                             feature = "native-archive-host-tests"
                         )
                     ))]
@@ -1001,8 +1025,10 @@ impl ReadbackAdmissionError<'_> {
                     #[cfg(any(
                         target_os = "ios",
                         all(
-                            target_os = "linux",
-                            target_arch = "x86_64",
+                            any(
+                                all(target_os = "linux", target_arch = "x86_64"),
+                                all(target_os = "macos", target_arch = "aarch64")
+                            ),
                             feature = "native-archive-host-tests"
                         )
                     ))]
@@ -1083,8 +1109,10 @@ impl OwnedReadAdmission {
     #[cfg(any(
         target_os = "ios",
         all(
-            target_os = "linux",
-            target_arch = "x86_64",
+            any(
+                all(target_os = "linux", target_arch = "x86_64"),
+                all(target_os = "macos", target_arch = "aarch64")
+            ),
             feature = "native-archive-host-tests"
         )
     ))]
@@ -1324,8 +1352,10 @@ fn close_owned_admission(
                 #[cfg(any(
                     target_os = "ios",
                     all(
-                        target_os = "linux",
-                        target_arch = "x86_64",
+                        any(
+                            all(target_os = "linux", target_arch = "x86_64"),
+                            all(target_os = "macos", target_arch = "aarch64")
+                        ),
                         feature = "native-archive-host-tests"
                     )
                 ))]
@@ -1341,8 +1371,10 @@ fn close_owned_admission(
                 #[cfg(any(
                     target_os = "ios",
                     all(
-                        target_os = "linux",
-                        target_arch = "x86_64",
+                        any(
+                            all(target_os = "linux", target_arch = "x86_64"),
+                            all(target_os = "macos", target_arch = "aarch64")
+                        ),
                         feature = "native-archive-host-tests"
                     )
                 ))]
@@ -1786,8 +1818,10 @@ impl<'a> ReadOperation<'a> {
                 predecessor.validate_input(&input)?;
             }
             #[cfg(all(
-                target_os = "linux",
-                target_arch = "x86_64",
+                any(
+                    all(target_os = "linux", target_arch = "x86_64"),
+                    all(target_os = "macos", target_arch = "aarch64")
+                ),
                 feature = "native-archive-host-tests"
             ))]
             let native_local_control = input
@@ -1795,8 +1829,10 @@ impl<'a> ReadOperation<'a> {
                 .as_ref()
                 .is_some_and(|context| context.is_local_host_control());
             #[cfg(not(all(
-                target_os = "linux",
-                target_arch = "x86_64",
+                any(
+                    all(target_os = "linux", target_arch = "x86_64"),
+                    all(target_os = "macos", target_arch = "aarch64")
+                ),
                 feature = "native-archive-host-tests"
             )))]
             let native_local_control = false;
@@ -2005,8 +2041,10 @@ impl<'a> ReadOperation<'a> {
         #[cfg(any(
             target_os = "ios",
             all(
-                target_os = "linux",
-                target_arch = "x86_64",
+                any(
+                    all(target_os = "linux", target_arch = "x86_64"),
+                    all(target_os = "macos", target_arch = "aarch64")
+                ),
                 feature = "native-archive-host-tests"
             )
         ))]
@@ -2622,8 +2660,10 @@ impl<'a> ReadOperation<'a> {
             #[cfg(any(
                 target_os = "ios",
                 all(
-                    target_os = "linux",
-                    target_arch = "x86_64",
+                    any(
+                        all(target_os = "linux", target_arch = "x86_64"),
+                        all(target_os = "macos", target_arch = "aarch64")
+                    ),
                     feature = "native-archive-host-tests"
                 )
             ))]
@@ -2637,8 +2677,10 @@ impl<'a> ReadOperation<'a> {
                 #[cfg(any(
                     target_os = "ios",
                     all(
-                        target_os = "linux",
-                        target_arch = "x86_64",
+                        any(
+                            all(target_os = "linux", target_arch = "x86_64"),
+                            all(target_os = "macos", target_arch = "aarch64")
+                        ),
                         feature = "native-archive-host-tests"
                     )
                 ))]
@@ -2763,8 +2805,10 @@ impl<'a> ReadOperation<'a> {
 #[cfg(unix)]
 fn admit_tool(input: &ReadAdmission<'_>) -> Result<AdmittedTool, ReadbackError> {
     #[cfg(all(
-        target_os = "linux",
-        target_arch = "x86_64",
+        any(
+            all(target_os = "linux", target_arch = "x86_64"),
+            all(target_os = "macos", target_arch = "aarch64")
+        ),
         feature = "native-archive-host-tests"
     ))]
     if let Some(context) = &input.native {

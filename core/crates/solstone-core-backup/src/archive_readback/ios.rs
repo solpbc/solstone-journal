@@ -96,8 +96,10 @@ impl IosReadContext {
         Ok(result)
     }
     #[cfg(all(
-        target_os = "linux",
-        target_arch = "x86_64",
+        any(
+            all(target_os = "linux", target_arch = "x86_64"),
+            all(target_os = "macos", target_arch = "aarch64")
+        ),
         feature = "native-archive-host-tests"
     ))]
     pub(super) fn is_local_host_control(&self) -> bool {
