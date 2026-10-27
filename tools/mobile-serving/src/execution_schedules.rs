@@ -144,10 +144,7 @@ fn think_command(args: Vec<String>) -> Vec<String> {
     canonical_journal_command(std::iter::once("think".to_owned()).chain(args))
 }
 pub(super) fn source_command(source: &str) -> Option<Vec<String>> {
-    // Only the maintained auxiliary source connections. Body importers retain
-    // their shared migration/approval prerequisite and receive no new schedule.
-    matches!(source, "plaud" | "obsidian" | "audio")
-        .then(|| canonical_journal_command(["importer", "--sync", source, "--save"]))
+    crate::foreground::source_sync_command(source)
 }
 fn invalid() -> Response {
     (
@@ -275,6 +272,7 @@ pub(super) fn execute(
             )
         }),
         Operation::Source(request) => sources::execute(root, request, cancelled),
+        Operation::SourceRun(request) => source_runs::execute(root, request, cancelled),
         Operation::SettingsSync(updates) => sources::settings(root, updates, cancelled),
         Operation::Share { .. } => unreachable!("share preview has its own domain owner"),
     }

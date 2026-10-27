@@ -49,6 +49,7 @@ mod handoff_poll;
 mod keys;
 pub mod maintenance;
 mod measurement;
+mod offload_enable;
 mod offload_report;
 mod operation;
 mod recovery_owner;
@@ -103,8 +104,13 @@ pub struct BackupWebDeps {
     pub portal_base: String,
     pub version: &'static str,
     pub handoff_poll_lease: Arc<AtomicBool>,
+    /// Fixed native queue admission. An accepted reference is not a completion.
+    pub verification_submitter: Option<VerificationSubmitter>,
     pub(crate) restore_prepare: SharedRestorePrepare,
 }
+
+/// Host-owned admission for the single `backup:verify` routine.
+pub type VerificationSubmitter = Arc<dyn Fn() -> Result<String, &'static str> + Send + Sync>;
 
 struct ProductionClock;
 
@@ -212,6 +218,7 @@ impl BackupWebDeps {
             portal_base: "https://services.solstone.app".into(),
             version: env!("CARGO_PKG_VERSION"),
             handoff_poll_lease: Arc::new(AtomicBool::new(false)),
+            verification_submitter: None,
             restore_prepare: restore_prepare::new_shared(),
         }
     }
@@ -687,45 +694,15 @@ async fn offload_enable(deps: BackupWebDeps) -> axum::response::Response {
             "media offload is not available on this device",
         );
     }
-    let _guard = match admit_write(&deps.operations, AdmitWrite::DuringOperation) {
-        Ok(guard) => guard,
+    let admitted = match offload_enable::admit(deps) {
+        Ok(admitted) => admitted,
         Err(response) => return response,
     };
-    let backup = match config::backup(&deps.journal_root) {
-        Ok(value) => value,
-        Err(_) => return internal_error(),
-    };
-    if backup.get("enabled") != Some(&Value::Bool(true)) {
-        return response::error(
-            axum::http::StatusCode::BAD_REQUEST,
-            "that action isn't available in the current state.",
-            "invalid_operation_for_state",
-            "backup is disabled",
-        );
-    }
-    if backup.get("confirmed_recovery_key") != Some(&Value::Bool(true)) {
-        return response::error(
-            axum::http::StatusCode::BAD_REQUEST,
-            "backup can't be turned on until you confirm your recovery key.",
-            "backup_not_confirmed",
-            "",
-        );
-    }
-    if !matches!(keys::keys(&backup), Ok(Some(_))) {
-        return response::error(
-            axum::http::StatusCode::BAD_REQUEST,
-            "that action isn't available in the current state.",
-            "invalid_operation_for_state",
-            "backup keys are missing",
-        );
-    }
-    let defaults = measurement::snapshot(&deps.cache);
-    if config::mutate(&deps.journal_root, |backup| { let old = backup.get("offload").and_then(Value::as_object); let value = json!({"enabled":true,"budget_bytes":old.and_then(|item| item.get("budget_bytes")).cloned().filter(|value| !value.is_null()).unwrap_or_else(|| defaults["suggested_defaults"]["budget_bytes"].clone()),"floor_bytes":old.and_then(|item| item.get("floor_bytes")).cloned().filter(|value| !value.is_null()).unwrap_or_else(|| defaults["suggested_defaults"]["floor_bytes"].clone())}); let changed = backup.get("offload") != Some(&value); backup.insert("offload".to_owned(), value); (changed, ()) }).is_err() { return response::invalid_config(""); }
-    if backup["last_verification"]["status"].is_null() {
-        let _ = callosum::request(&deps.journal_root, "backup:verify");
-    }
-    measurement::invalidate(&deps.cache);
-    get_offload(deps).await
+    // The admitted owner retains its original-root use and write guard while
+    // queued and through publication, even if the HTTP caller disconnects.
+    tokio::task::spawn_blocking(admitted)
+        .await
+        .unwrap_or_else(|_| internal_error())
 }
 
 async fn offload_disable(deps: BackupWebDeps) -> axum::response::Response {

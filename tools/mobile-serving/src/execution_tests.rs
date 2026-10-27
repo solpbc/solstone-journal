@@ -1629,3 +1629,384 @@ fn authenticated_source_recurrence_executes_saved_connection_and_obeys_edits() {
     host.shutdown().unwrap();
     server.shutdown_for_retirement().unwrap();
 }
+
+#[cfg(all(unix, feature = "in-process-pdf"))]
+#[test]
+fn authenticated_source_read_sync_and_status_use_the_saved_connection() {
+    use crate::foreground::ForegroundProcessingHost;
+    use crate::import_route::{
+        ConfiguredSources, SavedFolderProvider, SavedFolderRequest, SourceCopyError,
+        packaged_import_factory_with_sources,
+    };
+    use solstone_core_import::{
+        BackendName, SyncState, WorkStop, begin_folder, write_sync_state_bound,
+    };
+    use solstone_core_maintenance::{
+        registry::routines,
+        schedule_sync::{expected_entry, schedule_name},
+    };
+    use std::sync::{Condvar, atomic::AtomicUsize};
+
+    struct Provider {
+        identity: String,
+        calls: AtomicUsize,
+        entered: std::sync::mpsc::Sender<()>,
+        gate: Arc<(Mutex<bool>, Condvar)>,
+    }
+    impl SavedFolderProvider for Provider {
+        fn copy(
+            &self,
+            request: SavedFolderRequest<'_>,
+            destination: &Path,
+        ) -> Result<(), SourceCopyError> {
+            assert_eq!(request.backend, BackendName::Obsidian);
+            assert_eq!(request.source_identity, self.identity);
+            assert_eq!(request.access_material, "synthetic-sync-grant");
+            self.calls.fetch_add(1, Ordering::AcqRel);
+            self.entered.send(()).unwrap();
+            let (lock, changed) = &*self.gate;
+            let mut released = lock.lock().unwrap();
+            while !*released {
+                released = changed.wait(released).unwrap();
+            }
+            drop(released);
+            assert!(!request.stop.is_requested());
+            let note = destination.join("note.md");
+            std::fs::write(&note, "# Notes\n\ncobalt explicit source sync\n").unwrap();
+            let modified: chrono::DateTime<chrono::Utc> = "2026-10-14T09:00:00Z".parse().unwrap();
+            std::fs::File::open(note)
+                .unwrap()
+                .set_times(std::fs::FileTimes::new().set_modified(
+                    std::time::SystemTime::UNIX_EPOCH
+                        + Duration::from_secs(modified.timestamp().try_into().unwrap()),
+                ))
+                .unwrap();
+            Ok(())
+        }
+    }
+    struct Release(Arc<(Mutex<bool>, Condvar)>);
+    impl Drop for Release {
+        fn drop(&mut self) {
+            let (lock, changed) = &*self.0;
+            *lock.lock().unwrap() = true;
+            changed.notify_all();
+        }
+    }
+    struct ReleaseRestore(PathBuf);
+    impl Drop for ReleaseRestore {
+        fn drop(&mut self) {
+            solstone_core_journal_io::whole_journal_restore::release_target_for_restore(&self.0);
+        }
+    }
+    fn call(server: &crate::MobileServing, method: &str, path: &str, body: &str) -> (u16, Value) {
+        let response = server.request_owner(method, path, body).unwrap();
+        (
+            response.status,
+            serde_json::from_str(&response.body).unwrap_or_else(|error| {
+                panic!(
+                    "{method} {path} status={} body={:?}: {error}",
+                    response.status, response.body
+                )
+            }),
+        )
+    }
+
+    let _serial = crate::foreground::TEST_LOCK
+        .lock()
+        .unwrap_or_else(|p| p.into_inner());
+    let journal = fixture("http://127.0.0.1:1");
+    let config_path = journal.path().join("config/journal.json");
+    let mut config: Value = serde_json::from_slice(&std::fs::read(&config_path).unwrap()).unwrap();
+    config["setup"] = json!({"completed_at":1});
+    config["processing"] = json!({"history_confirmed":true});
+    config["env"] = json!({"PLAUD_ACCESS_TOKEN":"synthetic-readiness-token"});
+    std::fs::write(&config_path, config.to_string()).unwrap();
+    let mut schedules = serde_json::Map::from_iter([
+        ("daily_time".into(), json!("00:15")),
+        ("weekly_time".into(), json!("03:15")),
+    ]);
+    for name in [
+        "heartbeat",
+        "weekly-agents",
+        "cadence",
+        "brain",
+        "facet-candidates",
+        "rebuild-edges",
+        "search-catch-all",
+    ] {
+        schedules.insert(name.into(), json!({"enabled":false}));
+    }
+    for routine in routines() {
+        let mut entry = expected_entry(routine);
+        entry["enabled"] = json!(false);
+        schedules.insert(schedule_name(routine.id), entry);
+    }
+    write(
+        journal.path(),
+        "config/schedules.json",
+        Value::Object(schedules).to_string(),
+    );
+    let probe = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let std::net::SocketAddr::V4(address) = probe.local_addr().unwrap() else {
+        unreachable!()
+    };
+    drop(probe);
+    let server =
+        crate::MobileServing::start_with_payload(journal.path().to_path_buf(), address, payload())
+            .unwrap();
+    let retained = tempfile::tempdir().unwrap();
+    std::fs::write(retained.path().join("note.md"), "wrong retained source\n").unwrap();
+    let mut saved = SyncState::empty(BackendName::Obsidian);
+    let identity = begin_folder(
+        &mut saved,
+        "Selected notes",
+        true,
+        Some("synthetic-sync-grant"),
+    )
+    .unwrap();
+    saved
+        .root_mut()
+        .insert("source_path".into(), json!(retained.path()));
+    write_sync_state_bound(&server.root, &saved, &WorkStop::new()).unwrap();
+    let gate = Arc::new((Mutex::new(false), Condvar::new()));
+    let (entered_send, entered) = std::sync::mpsc::channel();
+    let provider = Arc::new(Provider {
+        identity: identity.clone(),
+        calls: AtomicUsize::new(0),
+        entered: entered_send,
+        gate: Arc::clone(&gate),
+    });
+    let cache = tempfile::tempdir().unwrap();
+    let library = cache.path().join("unused-pdfium.so");
+    std::fs::write(&library, b"notes never load PDFium").unwrap();
+    let sources = Arc::new(ConfiguredSources::new(
+        cache.path().to_path_buf(),
+        provider.clone(),
+    ));
+    let host = ForegroundProcessingHost::open_with_imports(
+        Arc::clone(&server.root),
+        &payload(),
+        Arc::new(|| false),
+        Arc::new(AtomicBool::new(false)),
+        server.backup_dependencies(),
+        packaged_import_factory_with_sources(library, sources),
+        false,
+        false,
+    )
+    .unwrap();
+    host.stop_discovery_for_test();
+    // This guard is created after the host, so a failed assertion releases the
+    // actual provider before the host's joined shutdown can run.
+    let release = Release(Arc::clone(&gate));
+    let schedule_path = journal.path().join("config/schedules.json");
+    let schedule_before = std::fs::read(&schedule_path).unwrap();
+    let config_before = std::fs::read(&config_path).unwrap();
+    let resource = "/api/journal/sources/obsidian";
+    let run = "/api/journal/sources/obsidian/sync";
+    let (status, connection) = call(&server, "GET", resource, "");
+    assert_eq!(status, 200, "{connection}");
+    assert_eq!(connection["connection"]["source_identity"], identity);
+    assert_eq!(connection["connection"]["folder_name"], "Selected notes");
+    assert_eq!(connection["connection"]["access_state"], "ready");
+    assert!(!connection.to_string().contains("synthetic-sync-grant"));
+    assert!(
+        !connection
+            .to_string()
+            .contains(&retained.path().to_string_lossy().into_owned())
+    );
+    let audio = call(&server, "GET", "/api/journal/sources/audio", "");
+    assert_eq!(audio.0, 200);
+    assert!(audio.1["connection"].is_null());
+    let plaud = call(&server, "GET", "/api/journal/sources/plaud", "");
+    assert_eq!(plaud.0, 200);
+    assert_eq!(plaud.1["available"], true);
+    assert!(!plaud.1.to_string().contains("synthetic-readiness-token"));
+    for source in ["oura", "apple", "shell"] {
+        assert_eq!(
+            call(
+                &server,
+                "GET",
+                &format!("/api/journal/sources/{source}"),
+                ""
+            )
+            .0,
+            400
+        );
+        assert_eq!(
+            call(
+                &server,
+                "POST",
+                &format!("/api/journal/sources/{source}/sync"),
+                ""
+            )
+            .0,
+            400
+        );
+    }
+    assert_eq!(
+        call(&server, "POST", run, r#"{"args":["--path","/unselected"]}"#).0,
+        400
+    );
+    for request_id in ["", "not/a/reference", &"x".repeat(65)] {
+        assert_eq!(
+            call(
+                &server,
+                "POST",
+                run,
+                &json!({"request_id":request_id}).to_string()
+            )
+            .0,
+            400
+        );
+    }
+    let request_id = "fixture-client-sync-01";
+    let status_path = format!("{run}/{request_id}");
+    let run_body = json!({"request_id":request_id}).to_string();
+    let before_post = call(&server, "GET", &status_path, "");
+    assert_eq!(before_post.0, 200);
+    assert_eq!(before_post.1["request_id"], request_id);
+    assert_eq!(before_post.1["state"], "unknown");
+    assert_eq!(
+        provider.calls.load(Ordering::Acquire),
+        0,
+        "status never starts work"
+    );
+    let (lost_response, response_sink) = std::os::unix::net::UnixStream::pair().unwrap();
+    response_sink.set_nonblocking(true).unwrap();
+    let descriptor: std::os::fd::OwnedFd = response_sink.into();
+    let lost_head = server
+        .open_owner_response(
+            crate::next_owner_request_id(),
+            "POST",
+            run,
+            &[("content-type".into(), "application/json".into())],
+            run_body.as_bytes().to_vec(),
+            std::fs::File::from(descriptor),
+        )
+        .unwrap();
+    // Lose both app reply channels before learning any server reference. The
+    // retained owner response task still hands this request to the same worker.
+    drop(lost_head);
+    drop(lost_response);
+    entered.recv_timeout(Duration::from_secs(5)).unwrap();
+    let active = call(&server, "GET", &status_path, "");
+    assert_eq!(active.0, 200);
+    assert_eq!(active.1["terminal"], false);
+    assert!(
+        matches!(active.1["state"].as_str(), Some("accepted" | "running")),
+        "{}",
+        active.1
+    );
+    assert_eq!(active.1["request_id"], request_id);
+    let reference = active.1["reference"].as_str().unwrap().to_owned();
+    assert!(reference.starts_with("owner-source-obsidian-request-"));
+    let duplicate = call(&server, "POST", run, &run_body);
+    assert_eq!(duplicate.0, 202);
+    assert_eq!(duplicate.1["request_id"], request_id);
+    assert_eq!(duplicate.1["reference"], reference);
+    assert_eq!(duplicate.1["reused"], true);
+    assert_eq!(duplicate.1["submitted"], false);
+    drop(release);
+    let deadline = std::time::Instant::now() + Duration::from_secs(15);
+    let terminal = loop {
+        let (status, body) = call(&server, "GET", &status_path, "");
+        assert_eq!(status, 200, "{body}");
+        if body["terminal"] == true {
+            break body;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "sync has no terminal: {body}; {:?}",
+            host.queue().history()
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    };
+    host.queue().join_callable_workers().unwrap();
+    assert_eq!(terminal["exit_status"], "ok");
+    assert_eq!(terminal["request_id"], request_id);
+    let duplicate_completed = call(&server, "POST", run, &run_body);
+    assert_eq!(duplicate_completed.0, 202);
+    assert_eq!(duplicate_completed.1["reused"], true);
+    assert_eq!(duplicate_completed.1["reference"], reference);
+    assert_eq!(provider.calls.load(Ordering::Acquire), 1);
+    let read = server
+        .request_owner(
+            "GET",
+            "/app/transcripts/api/read/20261014?transcripts=1",
+            "",
+        )
+        .unwrap();
+    assert_eq!(read.status, 200);
+    assert!(
+        read.body.contains("cobalt explicit source sync"),
+        "{}",
+        read.body
+    );
+    assert!(!read.body.contains("wrong retained source"));
+    assert_eq!(
+        std::fs::read(&schedule_path).unwrap(),
+        schedule_before,
+        "sync-now creates no recurrence or new default"
+    );
+    assert_eq!(std::fs::read(&config_path).unwrap(), config_before);
+    let unknown = call(
+        &server,
+        "GET",
+        "/api/journal/sources/audio/sync/fixture-client-sync-01",
+        "",
+    );
+    assert_eq!(unknown.0, 200);
+    assert_eq!(unknown.1["state"], "unknown");
+    assert_eq!(unknown.1["terminal"], false);
+    let state_path = journal.path().join("imports/obsidian.json");
+    let valid_state = std::fs::read(&state_path).unwrap();
+    std::fs::write(&state_path, b"{unreadable state").unwrap();
+    assert_eq!(call(&server, "GET", resource, "").0, 422);
+    assert_eq!(std::fs::read(&state_path).unwrap(), b"{unreadable state");
+    std::fs::write(&state_path, valid_state).unwrap();
+    let valid_state = std::fs::read(&state_path).unwrap();
+    let legacy = br#"{"source_path":"/legacy/catalogue-only","files":{"kept.md":{"catalogue_fact":"preserved"}}}"#;
+    std::fs::write(&state_path, legacy).unwrap();
+    let legacy_connection = call(&server, "GET", resource, "");
+    assert_eq!(legacy_connection.0, 200, "{legacy_connection:?}");
+    assert!(legacy_connection.1["connection"].is_null());
+    assert_eq!(std::fs::read(&state_path).unwrap(), legacy);
+    let partial = br#"{"files":{},"remembered":true}"#;
+    std::fs::write(&state_path, partial).unwrap();
+    assert_eq!(call(&server, "GET", resource, "").0, 422);
+    assert_eq!(std::fs::read(&state_path).unwrap(), partial);
+    std::fs::write(&state_path, valid_state).unwrap();
+    solstone_core_journal_io::whole_journal_restore::hold_target_for_restore(journal.path());
+    let hold = ReleaseRestore(journal.path().to_path_buf());
+    for (method, path) in [("GET", resource), ("POST", run)] {
+        let refusal = server.request_owner(method, path, "").unwrap();
+        assert_eq!(refusal.status, 302);
+        assert!(refusal.body.contains("href=\"/init\""), "{}", refusal.body);
+    }
+    assert_eq!(provider.calls.load(Ordering::Acquire), 1);
+    drop(hold);
+    assert_eq!(call(&server, "GET", resource, "").0, 200);
+    host.shutdown().unwrap();
+    assert_eq!(call(&server, "POST", run, &run_body).0, 503);
+    assert_eq!(call(&server, "GET", &status_path, "").0, 503);
+    assert_eq!(
+        host.queue()
+            .history()
+            .iter()
+            .filter(|row| row.reference == reference)
+            .count(),
+        1,
+        "duplicate delivery must create only one queue invocation"
+    );
+    assert_eq!(provider.calls.load(Ordering::Acquire), 1);
+    let original = tempfile::tempdir().unwrap();
+    std::fs::rename(journal.path(), original.path().join("original")).unwrap();
+    std::fs::create_dir(journal.path()).unwrap();
+    assert!(server.request_owner("GET", resource, "").is_err());
+    assert!(server.request_owner("POST", run, "").is_err());
+    server.shutdown_for_retirement().unwrap();
+    assert!(
+        std::fs::read_dir(journal.path()).unwrap().next().is_none(),
+        "replacement root must remain an empty tree"
+    );
+}

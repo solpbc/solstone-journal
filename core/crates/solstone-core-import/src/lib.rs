@@ -109,7 +109,8 @@ pub use sync_state::{
     AccessState, BackendName, FolderIdentityError, PublicConnection, RefreshPermit, RefreshRefusal,
     SYNC_BACKEND_INVENTORY, SyncState, SyncStateRead, SyncStateReadClass, SyncStateWriteError,
     begin_folder, mark_access_lost, permit_remembered_refresh, permit_runtime_refresh,
-    public_connection, read_sync_state, reauthorize, replace_folder, state_path, write_sync_state,
+    public_connection, public_connection_status, read_sync_state, reauthorize, replace_folder,
+    state_path, write_sync_state,
 };
 #[cfg(unix)]
 pub use sync_state::{read_sync_state_bound, write_sync_state_bound};

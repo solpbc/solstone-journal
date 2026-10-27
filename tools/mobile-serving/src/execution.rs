@@ -44,6 +44,8 @@ struct PackageRequest {
 
 #[path = "execution_schedules.rs"]
 mod schedules;
+#[path = "execution_source_runs.rs"]
+mod source_runs;
 #[path = "execution_sources.rs"]
 mod sources;
 
@@ -64,6 +66,7 @@ enum Operation {
     },
     RemoveRecurrence(String),
     Source(sources::SourceOperation),
+    SourceRun(source_runs::Request),
     SettingsSync(Option<Vec<(&'static str, bool)>>),
 }
 
@@ -110,12 +113,14 @@ pub fn routes_and_worker(
         SettingsSync(ingress.clone()),
     ));
     let schedule_routes = schedules::routes(ingress.clone());
+    let source_routes = source_runs::routes(ingress.clone());
     let routes = Router::new()
         .route("/api/journal/share", get(discover))
         .route("/api/journal/share/match", post(match_preview))
         .route("/api/journal/share/package", post(package_preview))
         .with_state(ingress)
-        .merge(schedule_routes);
+        .merge(schedule_routes)
+        .merge(source_routes);
     let worker = async move {
         let bridge = solstone_core_convey_shell::recovery_watch::RecoveryWatch::new(
             "owner-execution",
