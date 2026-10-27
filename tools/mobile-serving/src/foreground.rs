@@ -116,7 +116,9 @@ pub(super) fn submit_owner_maintenance(
         solstone_core_system::partition::canonical_journal_command(["maintenance", "run", routine]),
     )
 }
-fn submit_owner_command(root: &JournalRoot, command: Vec<String>) -> Result<String, &'static str> {
+fn owner_queue(
+    root: &JournalRoot,
+) -> Result<(Arc<JournalRoot>, Arc<TaskQueue>, Checkpoint), &'static str> {
     let (owner, queue, cancelled) = {
         let slot = OWNER_QUEUE.lock().map_err(|_| "queue unavailable")?;
         let owner = slot.as_ref().ok_or("queue unavailable")?;
@@ -133,14 +135,33 @@ fn submit_owner_command(root: &JournalRoot, command: Vec<String>) -> Result<Stri
     {
         return Err("queue unavailable");
     }
+    Ok((owner, queue, cancelled))
+}
+
+fn submit_owner_command(root: &JournalRoot, command: Vec<String>) -> Result<String, &'static str> {
+    let (owner, queue, cancelled) = owner_queue(root)?;
+    submit_bound_owner_command(&owner, &queue, &cancelled, command, None)
+}
+fn submit_bound_owner_command(
+    owner: &JournalRoot,
+    queue: &TaskQueue,
+    cancelled: &Checkpoint,
+    command: Vec<String>,
+    reference: Option<String>,
+) -> Result<String, &'static str> {
+    if cancelled() || owner.revalidate_canonical_binding().is_err() {
+        return Err("queue unavailable");
+    }
     if !admit_command(owner.canonical_path(), &command) {
         return Err("command refused");
     }
-    let reference = format!(
-        "owner-think-{}-{}",
-        now_ms(),
-        OWNER_REQUEST_SERIAL.fetch_add(1, Ordering::Relaxed)
-    );
+    let reference = reference.unwrap_or_else(|| {
+        format!(
+            "owner-think-{}-{}",
+            now_ms(),
+            OWNER_REQUEST_SERIAL.fetch_add(1, Ordering::Relaxed)
+        )
+    });
     let request = BusTaskRequest::decode(
         solstone_core_system::request::WireTaskRequest {
             cmd: Some(command),
@@ -159,6 +180,95 @@ fn submit_owner_command(root: &JournalRoot, command: Vec<String>) -> Result<Stri
         return Err("queue unavailable");
     }
     Ok(reference)
+}
+
+pub(super) fn source_sync_command(source: &str) -> Option<Vec<String>> {
+    // Body sources retain the migration/approval prerequisite. This is the
+    // existing source whitelist and fixed argv, shared by recurrence and run.
+    matches!(source, "plaud" | "obsidian" | "audio").then(|| {
+        solstone_core_system::partition::canonical_journal_command([
+            "importer", "--sync", source, "--save",
+        ])
+    })
+}
+pub(super) fn source_sync_reference(source: &str, request_id: &str) -> Option<String> {
+    source_sync_command(source)?;
+    (!request_id.is_empty()
+        && request_id.len() <= 64
+        && request_id
+            .bytes()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, b'-' | b'_')))
+    .then(|| format!("owner-source-{source}-request-{request_id}"))
+}
+pub(super) fn submit_owner_source_sync(
+    root: &JournalRoot,
+    source: &str,
+    request_id: &str,
+) -> Result<(String, bool), &'static str> {
+    let command = source_sync_command(source).ok_or("command refused")?;
+    let reference = source_sync_reference(source, request_id).ok_or("command refused")?;
+    let (owner, queue, cancelled) = owner_queue(root)?;
+    // Only the existing serial owner worker calls this producer. Retain the
+    // captured owner through lookup and admission; never switch to a successor.
+    // Check live ownership before history so completion between the two reads
+    // cannot turn an immediately repeated request into a new execution.
+    let known = queue.contains_reference(&reference)
+        || queue
+            .history()
+            .iter()
+            .any(|row| row.reference == reference && row.command == command);
+    if cancelled() || owner.revalidate_canonical_binding().is_err() {
+        return Err("queue unavailable");
+    }
+    if known {
+        return Ok((reference, true));
+    }
+    submit_bound_owner_command(&owner, &queue, &cancelled, command, Some(reference))
+        .map(|reference| (reference, false))
+}
+pub(super) fn owner_source_sync_status(
+    root: &JournalRoot,
+    source: &str,
+    request_id: &str,
+) -> Result<Option<Value>, &'static str> {
+    let command = source_sync_command(source).ok_or("command refused")?;
+    let reference = source_sync_reference(source, request_id).ok_or("command refused")?;
+    let (owner, queue, cancelled) = owner_queue(root)?;
+    let snapshot = queue.collect_status_snapshot(Instant::now());
+    let state = if snapshot.held.iter().any(|row| {
+        (row.reference == reference || row.references.iter().any(|r| r == &reference))
+            && row.command == command
+    }) {
+        Some(
+            json!({"source":source,"request_id":request_id,"reference":reference,"state":"held","terminal":false}),
+        )
+    } else if snapshot
+        .tasks
+        .iter()
+        .any(|row| row.reference == reference && row.command == command)
+    {
+        Some(
+            json!({"source":source,"request_id":request_id,"reference":reference,"state":"running","terminal":false}),
+        )
+    } else if let Some(row) = snapshot
+        .recent_tasks
+        .iter()
+        .find(|row| row.reference == reference && row.command == command)
+    {
+        Some(
+            json!({"source":source,"request_id":request_id,"reference":reference,"state":"finished","terminal":true,"exit_status":row.exit_status}),
+        )
+    } else if queue.contains_reference(&reference) {
+        Some(
+            json!({"source":source,"request_id":request_id,"reference":reference,"state":"accepted","terminal":false}),
+        )
+    } else {
+        None
+    };
+    if cancelled() || owner.revalidate_canonical_binding().is_err() {
+        return Err("queue unavailable");
+    }
+    Ok(state)
 }
 
 const UNCOMPLETED_HOLD_EXIT: i32 = 4;

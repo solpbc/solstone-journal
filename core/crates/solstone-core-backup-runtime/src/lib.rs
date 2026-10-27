@@ -17,6 +17,7 @@
 //! use solstone_core_backup_runtime::backup_journal_resolved_hook_armed;
 //! ```
 
+mod archive_support;
 #[cfg(any(
     target_os = "linux",
     target_os = "macos",
@@ -42,6 +43,7 @@ pub mod s3_wipe;
 pub mod schedule;
 pub mod teardown;
 pub mod teardown_admission;
+pub use archive_support::check_archive_creator_support;
 pub use engine::backup_enabled;
 pub use schedule::effective_backup_schedule;
 #[cfg(windows)]

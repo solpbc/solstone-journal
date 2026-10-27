@@ -89,6 +89,7 @@ fn test_deps(
         portal_base: "https://services.solstone.app".into(),
         version: "test",
         handoff_poll_lease: Arc::new(AtomicBool::new(false)),
+        verification_submitter: None,
         restore_prepare: crate::restore_prepare::new_shared(),
     }
 }

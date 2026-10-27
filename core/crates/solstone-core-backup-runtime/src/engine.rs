@@ -3553,6 +3553,12 @@ pub fn admit_prepared_archive_owned_creator_installed<'a>(
             return Err(ArchiveError::NotConfigured);
         }
         let keys = config.keys()?.ok_or(ArchiveError::NotConfigured)?;
+        crate::check_archive_creator_support(
+            operation.carrier().journal_root(),
+            config,
+            invocation,
+            rclone_path,
+        )?;
         #[cfg(not(target_os = "ios"))]
         let restic_owned = invocation
             .executable_path()
@@ -3565,23 +3571,9 @@ pub fn admit_prepared_archive_owned_creator_installed<'a>(
                 (PathBuf::new(), Some(authority))
             }
         };
-        #[cfg(target_os = "android")]
-        {
-            let admitted = crate::resolve::android_archive_restic()
-                .map_err(|_| ArchiveError::ToolUnavailable)?;
-            if restic_owned != admitted {
-                return Err(ArchiveError::Readback(ReadbackError::ToolChanged));
-            }
-        }
         if let Some(binding) = config.binding() {
-            if config.mode() != Some("operated") {
-                return Err(ArchiveError::Readback(ReadbackError::UnsupportedBackend));
-            }
             #[cfg(target_os = "ios")]
             if let Some(authority) = linked {
-                if rclone_path.is_some() {
-                    return Err(ArchiveError::Readback(ReadbackError::UnsupportedBackend));
-                }
                 let (write, read, expiry) = capture_linked_operated_pair(
                     operation.as_prepared(),
                     binding,
@@ -3596,8 +3588,8 @@ pub fn admit_prepared_archive_owned_creator_installed<'a>(
                 operation.revalidate()?;
                 return Ok((restic_owned, write, read, Some(repository_id), true));
             }
-            // No broker session is issued for a writer that has no append-only transport.
-            rclone_path.ok_or(ArchiveError::ToolUnavailable)?;
+            // The shared support check has admitted the append-only transport
+            // before this first broker request.
             let (write, read, expiry) = capture_operated_archive_pair(
                 operation.as_prepared(),
                 binding,
@@ -3611,22 +3603,8 @@ pub fn admit_prepared_archive_owned_creator_installed<'a>(
             operation.revalidate()?;
             return Ok((restic_owned, write, read, None, false));
         }
-        if config.mode() != Some("byo")
-            || !config
-                .destination()
-                .is_some_and(|destination| matches!(destination.backend.as_str(), "s3" | "b2"))
-        {
-            return Err(ArchiveError::Readback(ReadbackError::UnsupportedBackend));
-        }
         #[cfg(target_os = "ios")]
         if let Some(authority) = linked {
-            if rclone_path.is_some()
-                || config
-                    .destination()
-                    .is_none_or(|destination| destination.backend != "s3")
-            {
-                return Err(ArchiveError::Readback(ReadbackError::UnsupportedBackend));
-            }
             let (write, read) = capture_byo_archive_pair(config, keys)?;
             let repository_id = discover_linked_repository_id(authority, &read, &operation)?;
             operation.revalidate()?;

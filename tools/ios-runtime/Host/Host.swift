@@ -749,6 +749,9 @@ final class PendingReply: @unchecked Sendable {
     return try await call(s, request, label)
   }
   func servingCall(_ request: Request, _ label: String) async throws -> [String: Any] {
+    #if JOURNAL_OWNER_APP
+    if request.op == "serve-start" { try OwnerSavedSources.install() }
+    #endif
     var admitted = request
     admitted.admissionGeneration = request.admissionGeneration ?? journal_ios_processing_generation()
     let queuedRequest = admitted

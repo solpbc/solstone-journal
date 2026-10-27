@@ -28,6 +28,11 @@ void journal_ios_owner_cancel(uint64_t id);
 typedef bool (*journal_ios_folder_copy_fn)(void *context, const char *destination);
 char *journal_ios_owner_folder_copy(const char *cache, const uint8_t *request, uintptr_t length, void *context, journal_ios_folder_copy_fn copy);
 bool journal_ios_owner_folder_copy_continues(void);
+typedef int32_t (*journal_ios_saved_source_copy_fn)(const char *material, const char *destination);
+uint64_t journal_ios_owner_sources_install(const char *cache, journal_ios_saved_source_copy_fn copy);
+void journal_ios_owner_sources_retire(uint64_t identity);
+typedef intptr_t (*journal_ios_source_bookmark_fn)(void *context, uint8_t *output, uintptr_t capacity);
+char *journal_ios_owner_source_change(const uint8_t *request, uintptr_t length, void *context, journal_ios_source_bookmark_fn bookmark);
 char *runtime_resources(void);
 void runtime_resources_free(char *result);
 

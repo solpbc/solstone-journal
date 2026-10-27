@@ -145,6 +145,8 @@ async fn backup_and_conditional_verify_are_write_only_newline_requests() {
     let (status, body) = post(best_effort_verify.path(), "/app/backup/offload/enable").await;
     assert_eq!(status, 200, "verify transport remains best-effort");
     assert_eq!(body["success"], true);
+    assert_eq!(body["verification_request"]["state"], "refused");
+    assert_eq!(body["configuration_publication"]["state"], "published");
 
     let unavailable = tempfile::tempdir().expect("unavailable journal");
     write_config(unavailable.path(), json!("ok"));

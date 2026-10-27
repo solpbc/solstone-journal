@@ -1,4 +1,12 @@
 <style>
+#importSyncSources { margin-bottom: 3rem; }
+.import-sync-source { padding: 1.25rem 0; border-bottom: 1px solid var(--hairline); overflow-wrap: anywhere; }
+.import-sync-source h3 { margin: 0 0 0.75rem; }
+.import-sync-source p { line-height: 1.5; }
+.import-sync-source summary { cursor: pointer; min-height: 44px; display: list-item; padding: 0.75rem 0; }
+.import-sync-source select { font: inherit; min-height: 44px; max-width: 100%; color: var(--ink); background: var(--paper); border: 1px solid var(--hairline); border-radius: 4px; }
+.import-sync-source form > label { display: inline-flex; align-items: center; min-height: 44px; gap: 0.5rem; margin: 0.25rem 0.5rem 0.25rem 0; }
+.import-sync-source form .import-action-row { margin-top: 0.75rem; }
 .import-source-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -632,6 +640,7 @@
 <div id="importListView">
 <div class="workspace-content-wide">
   <div id="importGrid" class="import-source-grid"></div>
+  <section id="importSyncSources" hidden></section>
 
   <div id="importGuide" class="import-guided-flow" style="display:none">
     <a href="#" class="import-back-link" onclick="showGrid(); return false;">← back to sources</a>
@@ -794,7 +803,9 @@ async function navigateTo(view, options = {}) {
   const { updateHash = true } = options;
   const grid = document.getElementById('importGrid');
   const guide = document.getElementById('importGuide');
+  const connections = document.getElementById('importSyncSources');
   const cleanView = view ? String(view).replace(/^#/, '') : '';
+  if (connections) connections.hidden = (!!cleanView && cleanView !== 'grid') || !window.JournalOwnerFolders;
   const nextHash = cleanView === 'grid' || !cleanView ? '' : `#${cleanView}`;
   if (!cleanView.startsWith('guide/') && window.JournalOwnerFolders) window.JournalOwnerFolders.cancel();
   // Where the owner was when this navigation started. The hash is written after
@@ -2982,6 +2993,7 @@ if (document.readyState === 'loading') {
 
 </div>
 
+<script src="/app/import/static/source_connections.js"></script>
 <script src="/app/import/static/import_detail.js"></script>
 <script>
 (function() {

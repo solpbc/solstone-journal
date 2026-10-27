@@ -3544,6 +3544,7 @@ async function runNativeFolderSelectionAndReturnRead() {
 }
 
 Promise.resolve()
+  .then(async () => { cases += await require('./source_connections_dom.js')(crateDir); })
   .then(runHistoryFilterPaginationRaces)
   .then(runNativeFolderSelectionAndReturnRead)
   .then(runSourceChangeWhileUploading)

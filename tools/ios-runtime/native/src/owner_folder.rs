@@ -150,4 +150,4 @@ unsafe fn copy_folder(
 
 #[cfg(all(test, feature = "full-tests"))]
 #[path = "owner_folder_tests.rs"]
-mod tests;
+pub(crate) mod tests;

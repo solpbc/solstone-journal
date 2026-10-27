@@ -46,6 +46,10 @@ pub fn backup(root: &Path) -> Result<Map<String, Value>, ()> {
         .map_err(|_| ())?
         .config
         .unwrap_or_default();
+    backup_from_map(&config)
+}
+
+pub(crate) fn backup_from_map(config: &Map<String, Value>) -> Result<Map<String, Value>, ()> {
     // Defaults fill absent configuration, not malformed observations.
     if let Some(source) = config.get("backup") {
         let source = source.as_object().ok_or(())?;
