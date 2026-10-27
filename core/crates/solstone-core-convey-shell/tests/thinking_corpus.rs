@@ -125,6 +125,33 @@ fn corpus() -> Value {
     {
         for case in cases.as_array_mut().expect("phase cases") {
             let mut projected = false;
+            // The frozen corpus was recorded on Linux. Mac's bundled MLX
+            // model has a different memory requirement and pinned download.
+            // Keep all other fields pinned, including readiness and refusals.
+            #[cfg(target_os = "macos")]
+            if case["status"] == 200 {
+                let model_bytes = solstone_core_local::install::pins::MLX_QWEN_PINS
+                    .iter()
+                    .map(|pin| pin.size)
+                    .sum::<u64>();
+                if case["path"] == "/app/thinking/api/local/availability" {
+                    case["json"]["min_ram_gb"] = json!(16);
+                    case["json"]["download_bytes"] = json!(model_bytes);
+                    case["body_sha256_basis"] = json!("normalized-json");
+                    projected = true;
+                }
+                if case["path"] == "/app/thinking/api/local/models"
+                    && let Some(models) = case["json"].as_array_mut()
+                {
+                    for model in models {
+                        assert_eq!(model["name"], solstone_core_thinking::local::DEFAULT_MODEL);
+                        model["min_ram_gb"] = json!(16);
+                        model["size_bytes"] = json!(model_bytes);
+                    }
+                    case["body_sha256_basis"] = json!("normalized-json");
+                    projected = true;
+                }
+            }
             if case["path"] == "/app/thinking/api/local/bootstrap/status"
                 && case["json"]["install_state"] == "idle"
             {

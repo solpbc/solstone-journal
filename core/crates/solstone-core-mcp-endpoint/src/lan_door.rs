@@ -4499,7 +4499,22 @@ mod retained_state_reconciliation_tests {
             read_lan_door_state(&journal).unwrap().reason.as_deref(),
             Some("tls_unavailable")
         );
-        std::fs::rename(&journal, &retained).unwrap();
+        if let Err(error) = std::fs::rename(&journal, &retained) {
+            assert!(
+                cfg!(windows) && matches!(error.raw_os_error(), Some(5 | 32)),
+                "move admitted namespace: {error}"
+            );
+            assert!(!retained.exists());
+            state.root().revalidate_canonical_binding().unwrap();
+            assert_eq!(
+                read_lan_door_state(&journal).unwrap().reason.as_deref(),
+                Some("tls_unavailable")
+            );
+            drop(identity);
+            drop(state);
+            std::fs::rename(&journal, &retained).expect("closed owner releases namespace");
+            return;
+        }
         std::fs::create_dir(&journal).unwrap();
         assert!(
             reconcile_lan_identity_at_root(&state, &ips)

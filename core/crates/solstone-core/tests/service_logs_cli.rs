@@ -19,6 +19,10 @@ use solstone_core_journal_io::{
 
 const BINARY: &str = env!("CARGO_BIN_EXE_solstone-core");
 
+#[path = "support/supervisor_guard.rs"]
+mod supervisor_guard;
+use supervisor_guard::SupervisorGuard as ChildGuard;
+
 struct TestJournal(tempfile::TempDir);
 
 impl TestJournal {
@@ -53,14 +57,38 @@ fn run(journal: &Path, arguments: &[&str]) -> Output {
         .expect("run core")
 }
 
-fn wait_until(deadline: Instant, mut condition: impl FnMut() -> bool) {
+#[track_caller]
+fn wait_for_bytes(
+    phase: &str,
+    timeout: Duration,
+    child: &mut ChildGuard,
+    stdout: &Path,
+    stderr: &Path,
+    expected: &[u8],
+) {
+    let started = Instant::now();
+    let deadline = started + timeout;
     while Instant::now() < deadline {
-        if condition() {
+        if service_output(stdout)
+            .windows(expected.len())
+            .any(|row| row == expected)
+        {
+            eprintln!("{phase} observed after {:?}", started.elapsed());
             return;
         }
+        assert!(
+            child.try_wait().unwrap().is_none(),
+            "follower exited before {phase}; stderr: {}",
+            String::from_utf8_lossy(&service_output(stderr))
+        );
         std::thread::sleep(Duration::from_millis(10));
     }
-    panic!("condition did not become true before the deadline");
+    panic!(
+        "{phase} absent after {:?}; stdout: {:?}; stderr: {}",
+        started.elapsed(),
+        String::from_utf8_lossy(&service_output(stdout)),
+        String::from_utf8_lossy(&service_output(stderr))
+    );
 }
 
 fn service_output(path: &Path) -> Vec<u8> {
@@ -118,29 +146,34 @@ fn follow_keeps_the_core_process_and_handoffs_without_a_gap_or_duplicate() {
     let stderr_path = capture.path().join("stderr");
     let stdout = fs::File::create(&stdout_path).unwrap();
     let stderr = fs::File::create(&stderr_path).unwrap();
-    let mut child = Command::new(BINARY)
-        .args(["service", "logs", "--follow"])
-        .env("SOLSTONE_JOURNAL", journal.path())
-        .stdin(Stdio::null())
-        .stdout(stdout)
-        .stderr(stderr)
-        .spawn()
-        .expect("start in-process follower");
-    let deadline = Instant::now() + Duration::from_secs(5);
-    wait_until(deadline, || {
-        let output = service_output(&stdout_path);
-        output
-            .windows(b"before\n".len())
-            .any(|row| row == b"before\n")
-    });
+    let mut child = ChildGuard::new(
+        Command::new(BINARY)
+            .args(["service", "logs", "--follow"])
+            .env("SOLSTONE_JOURNAL", journal.path())
+            .stdin(Stdio::null())
+            .stdout(stdout)
+            .stderr(stderr)
+            .spawn()
+            .expect("start in-process follower"),
+    );
+    wait_for_bytes(
+        "initial log snapshot",
+        Duration::from_secs(15),
+        &mut child,
+        &stdout_path,
+        &stderr_path,
+        b"before\n",
+    );
     writer.write_all(b"after\n").unwrap();
     writer.flush().unwrap();
-    wait_until(deadline, || {
-        let output = service_output(&stdout_path);
-        output
-            .windows(b"after\n".len())
-            .any(|row| row == b"after\n")
-    });
+    wait_for_bytes(
+        "new log bytes",
+        Duration::from_secs(5),
+        &mut child,
+        &stdout_path,
+        &stderr_path,
+        b"after\n",
+    );
     let pid = Pid::from_raw(i32::try_from(child.id()).unwrap());
     kill(pid, Signal::SIGTERM).unwrap();
     let status = child.wait().unwrap();
@@ -176,29 +209,36 @@ fn follow_renders_unterminated_non_utf8_service_output() {
     let stderr_path = capture.path().join("stderr");
     let stdout = fs::File::create(&stdout_path).unwrap();
     let stderr = fs::File::create(&stderr_path).unwrap();
-    let mut child = Command::new(BINARY)
-        .args(["service", "logs", "--follow"])
-        .env("SOLSTONE_JOURNAL", journal.path())
-        .stdin(Stdio::null())
-        .stdout(stdout)
-        .stderr(stderr)
-        .spawn()
-        .expect("start raw service follower");
-    let deadline = Instant::now() + Duration::from_secs(5);
-    wait_until(deadline, || {
-        service_output(&stdout_path)
-            .windows(7)
-            .any(|row| row == b"before\n")
-    });
+    let mut child = ChildGuard::new(
+        Command::new(BINARY)
+            .args(["service", "logs", "--follow"])
+            .env("SOLSTONE_JOURNAL", journal.path())
+            .stdin(Stdio::null())
+            .stdout(stdout)
+            .stderr(stderr)
+            .spawn()
+            .expect("start raw service follower"),
+    );
+    wait_for_bytes(
+        "initial log snapshot",
+        Duration::from_secs(15),
+        &mut child,
+        &stdout_path,
+        &stderr_path,
+        b"before\n",
+    );
 
     writer.write_all(b"progress:\xff").unwrap();
     writer.flush().unwrap();
     let expected = "progress:\u{fffd}".as_bytes();
-    wait_until(deadline, || {
-        service_output(&stdout_path)
-            .windows(expected.len())
-            .any(|row| row == expected)
-    });
+    wait_for_bytes(
+        "unterminated log bytes",
+        Duration::from_secs(5),
+        &mut child,
+        &stdout_path,
+        &stderr_path,
+        expected,
+    );
     let pid = Pid::from_raw(i32::try_from(child.id()).unwrap());
     kill(pid, Signal::SIGTERM).unwrap();
     let status = child.wait().unwrap();

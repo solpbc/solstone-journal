@@ -128,7 +128,32 @@ mod tests {
                 journal.join("mcp-endpoint")
             };
             let retained = temporary.path().join("retained");
-            std::fs::rename(&slot, &retained).unwrap();
+            if let Err(error) = std::fs::rename(&slot, &retained) {
+                assert!(
+                    cfg!(windows) && matches!(error.raw_os_error(), Some(5 | 32)),
+                    "move admitted namespace: {error}"
+                );
+                // Retained Windows publication ancestors can prevent the
+                // replacement itself. Confirm that stronger native outcome,
+                // including a successful rename after the owner closes.
+                assert!(!retained.exists());
+                writer.root().revalidate_canonical_binding().unwrap();
+                for name in [
+                    "local-door-state.json",
+                    "lan-door-state.json",
+                    "byo-door-state.json",
+                ] {
+                    let state: serde_json::Value = serde_json::from_slice(
+                        &std::fs::read(journal.join("mcp-endpoint").join(name)).unwrap(),
+                    )
+                    .unwrap();
+                    assert_eq!(state["listening"], false);
+                    assert_eq!(state["reason"], "not_running");
+                }
+                drop(writer);
+                std::fs::rename(&slot, &retained).expect("closed owner releases namespace");
+                continue;
+            }
             std::fs::create_dir(&slot).unwrap();
             for name in [
                 "local-door-state.json",

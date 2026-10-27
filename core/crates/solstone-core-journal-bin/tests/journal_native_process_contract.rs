@@ -1435,7 +1435,12 @@ fn native_backup_grammar_never_reaches_a_poisoned_interpreter() {
         }
         if argv == ["off", "--yes"] {
             // This journal has no backup configuration for teardown to admit.
-            let reason = if cfg!(target_os = "linux") {
+            let reason = if cfg!(any(
+                target_os = "linux",
+                target_os = "macos",
+                target_os = "android",
+                windows
+            )) {
                 "admission_refused"
             } else {
                 "platform_unavailable"

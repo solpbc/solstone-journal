@@ -427,12 +427,28 @@ mod tests {
                     }
                     Err(error) => panic!("{error}"),
                 };
-                stream.set_nonblocking(false).unwrap();
-                stream
-                    .set_read_timeout(Some(Duration::from_secs(2)))
-                    .unwrap();
-                let mut bytes = String::new();
-                stream.read_to_string(&mut bytes).unwrap();
+                // Darwin refuses SO_RCVTIMEO once the sender has already closed
+                // its half. Read through EOF with the same bounded wait even
+                // when the whole request was queued before accept.
+                stream.set_nonblocking(true).unwrap();
+                let read_deadline = std::time::Instant::now() + Duration::from_secs(2);
+                let mut received = Vec::new();
+                let mut buffer = [0; 4096];
+                loop {
+                    assert!(
+                        std::time::Instant::now() < read_deadline,
+                        "request EOF not sent"
+                    );
+                    match stream.read(&mut buffer) {
+                        Ok(0) => break,
+                        Ok(count) => received.extend_from_slice(&buffer[..count]),
+                        Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                            std::thread::sleep(Duration::from_millis(5));
+                        }
+                        Err(error) => panic!("{error}"),
+                    }
+                }
+                let bytes = String::from_utf8(received).unwrap();
                 let request: serde_json::Value = serde_json::from_str(&bytes).unwrap();
                 let name = request["name"].as_str().unwrap();
                 let id = request["use_id"].as_str().unwrap();

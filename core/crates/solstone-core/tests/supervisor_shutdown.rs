@@ -92,6 +92,24 @@ fn start(journal: &TempJournal) -> SupervisorGuard {
     speakers_analyze_stub::apply(&mut command);
     SupervisorGuard::new(command.spawn().expect("supervisor starts"))
 }
+
+fn available_stderr(child: &mut SupervisorGuard) -> String {
+    use nix::fcntl::{FcntlArg, OFlag, fcntl};
+    let Some(pipe) = child.stderr.take() else {
+        return String::new();
+    };
+    let flags = match fcntl(&pipe, FcntlArg::F_GETFL) {
+        Ok(flags) => OFlag::from_bits_truncate(flags),
+        Err(error) => return format!("stderr flags unavailable: {error}"),
+    };
+    if let Err(error) = fcntl(&pipe, FcntlArg::F_SETFL(flags | OFlag::O_NONBLOCK)) {
+        return format!("stderr nonblocking capture unavailable: {error}");
+    }
+    let mut bytes = Vec::new();
+    let _ = pipe.take(16 * 1024).read_to_end(&mut bytes);
+    String::from_utf8_lossy(&bytes).into_owned()
+}
+
 fn wait_for(path: &std::path::Path, child: &mut SupervisorGuard) {
     // Parallel full suites can delay fixture-supervisor startup while native
     // test processes are exiting. Keep an eight-second readiness proof on every
@@ -108,10 +126,7 @@ fn wait_for(path: &std::path::Path, child: &mut SupervisorGuard) {
             } else {
                 match child.try_wait() {
                     Ok(Some(status)) => {
-                        let mut stderr = String::new();
-                        if let Some(mut pipe) = child.stderr.take() {
-                            let _ = pipe.read_to_string(&mut stderr);
-                        }
+                        let stderr = available_stderr(child);
                         PollState::HardFail(format!(
                             "supervisor exited: {status}; stderr: {stderr}"
                         ))
@@ -123,7 +138,11 @@ fn wait_for(path: &std::path::Path, child: &mut SupervisorGuard) {
         },
         thread::sleep,
     );
-    panic_for_wait(&format!("{} did not appear", path.display()), outcome);
+    let mut context = format!("{} did not appear", path.display());
+    if !matches!(&outcome, WaitOutcome::Passed(_)) && child.stderr.is_some() {
+        context.push_str(&format!("; stderr: {}", available_stderr(child)));
+    }
+    panic_for_wait(&context, outcome);
 }
 
 async fn receive_started(
