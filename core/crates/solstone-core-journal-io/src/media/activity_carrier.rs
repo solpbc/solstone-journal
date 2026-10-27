@@ -875,7 +875,12 @@ pub fn qualify_android_container(magic: u64, canonical_path: &str, process: &str
     let Some(process) = android_process_label(process) else {
         return false;
     };
-    android_private_path(canonical_path, process)
+    // The maintained journal service runs in its application's private process.
+    let package = process.strip_suffix(":journal").unwrap_or(process);
+    if package.contains(':') {
+        return false;
+    }
+    android_private_path(canonical_path, package)
 }
 
 fn android_process_label(process: &str) -> Option<&str> {
@@ -1076,6 +1081,43 @@ mod qualification {
             EXT4,
             "/data/user/10/journal.app",
             PROCESS
+        ));
+    }
+
+    #[test]
+    fn android_journal_service_uses_its_application_private_container() {
+        for (magic, root) in [
+            (EXT4, "/data/data/journal.app/files/journal"),
+            (F2FS, "/data/user/0/journal.app/files/journal"),
+        ] {
+            assert!(qualify_android_container(
+                magic,
+                root,
+                "journal.app:journal"
+            ));
+        }
+        for process in [
+            "other.app:journal",
+            "journal.app.extra:journal",
+            "journal.app:isolated",
+            "journal.app:journal:journal",
+            "journal.app:",
+        ] {
+            assert!(!qualify_android_container(
+                EXT4,
+                "/data/data/journal.app/files/journal",
+                process
+            ));
+        }
+        assert!(!qualify_android_container(
+            EXT4,
+            "/storage/emulated/0/journal.app/files/journal",
+            "journal.app:journal"
+        ));
+        assert!(!qualify_android_container(
+            0x0102_1994,
+            "/data/data/journal.app/files/journal",
+            "journal.app:journal"
         ));
     }
 
