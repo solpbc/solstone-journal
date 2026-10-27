@@ -197,10 +197,20 @@ fn ordinary_cli_retains_native_metadata_effect_after_cleanup_failure_or_unwind()
             }
         );
         assert_ne!(receipt.cleanup, Cleanup::Complete);
-        let stage_name = &removals[0].stage_observation().unwrap().directory_name;
+        let stage_name = removals[0]
+            .stage_observation()
+            .unwrap()
+            .directory_name
+            .clone();
+        assert_eq!(fs::read(f.raw()).unwrap(), b"abc");
+        assert_eq!(fs::read(f.ledger()).unwrap(), ledger);
+        assert!(ActivityLease::try_acquire(Arc::clone(&f.root)).is_err());
+        // Windows retains exclusive native handles until this owner closes.
+        // Inspect the persisted stage through a fresh reader only afterward.
+        drop(run);
         let health =
             MediaDirectory::open(Arc::clone(&f.root), Path::new("health/offload")).unwrap();
-        let stage = health.open_child(OsStr::new(stage_name)).unwrap().unwrap();
+        let stage = health.open_child(OsStr::new(&stage_name)).unwrap().unwrap();
         let contents = stage.entries(1).unwrap().unwrap();
         if unwinding {
             assert_eq!(contents.len(), 1);
@@ -218,8 +228,6 @@ fn ordinary_cli_retains_native_metadata_effect_after_cleanup_failure_or_unwind()
         drop(health);
         assert_eq!(fs::read(f.raw()).unwrap(), b"abc");
         assert_eq!(fs::read(f.ledger()).unwrap(), ledger);
-        assert!(ActivityLease::try_acquire(Arc::clone(&f.root)).is_err());
-        drop(run);
         // A cold retry must hold an unqualified nonempty claim. A freshly
         // observed empty orphan needs no reconstructed claim authority.
         let retry = run_cli_restore(f.temp.path(), Arc::new(FixedClock), None);

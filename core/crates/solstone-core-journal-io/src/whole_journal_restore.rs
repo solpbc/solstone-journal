@@ -475,7 +475,7 @@ pub fn begin_target_use(journal: &Path) -> Result<TargetUse, TargetUseRefused> {
 pub fn begin_target_use_bound(root: Arc<JournalRoot>) -> Result<TargetUse, TargetUseRefused> {
     root.revalidate_canonical_binding()
         .map_err(|_| TargetUseRefused)?;
-    let key = root.canonical_path().to_owned();
+    let key = hold_key(root.canonical_path());
     {
         let (flights, _) = target_flights();
         *lock_map(flights).entry(key.clone()).or_insert(0) += 1;
@@ -1685,5 +1685,30 @@ mod tests {
         assert!(owner.begin().is_err());
         assert!(owner.revalidate().is_err());
         assert_eq!(fs::read_dir(&path).unwrap().count(), 0);
+    }
+}
+
+#[cfg(all(test, windows, feature = "full-tests"))]
+mod windows_tests {
+    use super::*;
+
+    #[test]
+    fn admitted_use_and_drain_share_the_canonical_windows_key() {
+        let journal = tempfile::tempdir().unwrap();
+        let canonical = journal.path().canonicalize().unwrap();
+        let root = Arc::new(JournalRoot::open(journal.path()).unwrap());
+        let active = begin_target_use_bound(root).unwrap();
+        hold_target_for_restore(&canonical);
+        struct Release(PathBuf);
+        impl Drop for Release {
+            fn drop(&mut self) {
+                release_target_for_restore(&self.0);
+            }
+        }
+        let _release = Release(canonical.clone());
+        assert!(!restore_target_quiescent(&canonical));
+        assert!(begin_target_use(journal.path()).is_err());
+        drop(active);
+        assert!(restore_target_quiescent(&canonical));
     }
 }

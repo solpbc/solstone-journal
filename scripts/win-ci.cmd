@@ -211,6 +211,7 @@ cargo test --manifest-path core\Cargo.toml --locked -p solstone-core --bin solst
 echo === cargo test --locked (portable journal config substrate) ===
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-journal-config --lib || exit /b 1
 echo === cargo test --locked (credential-bound publication and lease controls) ===
+call :run_exact_library "solstone-core-journal-io" "whole_journal_restore::windows_tests::admitted_use_and_drain_share_the_canonical_windows_key" "full-tests" || exit /b 1
 call :run_exact_library "solstone-core-journal-io" "atomic::windows_tests::checked_bound_replace_windows_cancellation_keeps_original_and_normal_publication_works" "full-tests" || exit /b 1
 call :run_exact_library "solstone-core-journal-io" "atomic::windows_tests::checked_bound_replace_windows_root_replacement_receives_no_stage_or_destination" "full-tests" || exit /b 1
 call :run_exact_library "solstone-core-journal-io" "lease::bound_lease_tests::checked_bound_lease_contends_with_the_original_path_lease_and_releases" "full-tests" || exit /b 1
