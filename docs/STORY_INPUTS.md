@@ -8,6 +8,12 @@ topics, plus Screen narratives. Native transcripts, voice labels and private
 memory stay intact. Missing or unusable Screen results leave that segment's raw
 percepts in place. Identity, facet context, history and instructions are unchanged.
 
+That order, the original input first and saved segment results only when it does
+not fit, is the current behavior. The direction is the reverse
+([THINK.md](THINK.md) § Talent inputs): Work reads saved segment results and
+excerpts copied by code from the sources by default, and raw segment data only
+where it is small.
+
 Bundled Linux admission uses the native exact chat-body count. Other local
 admission uses its existing tokenizer, and an endpoint uses its existing token
 estimate and discovered or calibrated window. A provider context refusal refits

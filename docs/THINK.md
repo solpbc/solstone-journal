@@ -26,6 +26,39 @@ solstone journal talent passages <name> --day YYYYMMDD --facet NAME --activity I
 
 `--refresh` overwrites existing generator output.
 
+## Talent inputs
+
+Two principles decide what a talent reads. New talents and new segment sources
+follow them.
+
+**Segment talents sample to fit.** When a segment source can hold more than a
+segment talent's context window, the journal samples it rather than clipping it:
+it chooses what to read and how deeply, so the most important parts of the
+segment are always indexed. Describe is the model. It categorizes every frame,
+then gives detailed extraction to a bounded selection of frames in the
+categories worth extracting ([SCREEN_CATEGORIES.md](SCREEN_CATEGORIES.md) § How
+It Works, [OBSERVE.md](OBSERVE.md) § Vision input sizing). Sampling is enough
+because an agent that finds a segment through what was indexed can still open
+its original media where that is kept, and what matters in a segment usually
+recurs often enough to be picked up. Speech transcripts are exempt: a segment's
+transcript is small and spoken words always matter, so it is read whole.
+Terminal, browsing and every new source need a sampling step, designed with the
+source. Fitting that trims an input is a last-resort guard that records how
+much it left out as `partial_input`. It is never the design.
+
+**Later talents build on segment results.** Activity, daily and cadence talents
+read what segment talents produced, plus excerpts and quotes that code copies
+verbatim from the sources, rather than reading raw segment data again. Small
+segment data can go in directly, such as segment metadata, locations and short
+transcripts. Work's literal screen notes are the pattern for copied excerpts
+([STORY_INPUTS.md](STORY_INPUTS.md)).
+
+Inputs not yet aligned include [Terminal segment Sense](#terminal-segment-sense),
+which trims its timeline rather than sampling it, and the Work, Participation
+and Conversation talents, which read original activity input (Work only while
+it fits, [STORY_INPUTS.md](STORY_INPUTS.md)). The Generate boundary
+does the fitting ([GENERATE.md](GENERATE.md) § `overflow_text`).
+
 ## Daily date coordinates
 
 `--day` selects the analysis day. Daily artifacts, including `morning_briefing.json`,
@@ -118,7 +151,7 @@ Every terminal-only segment reads the timeline. Without typed input, the timelin
 
 Typed input is read from the terminal capture's cursor, not from any application's screen layout. An active pane with a visible cursor, outside a tmux pane mode, takes input on the cursor's row; dim text after the cursor is a placeholder or suggestion and is left out. A row counts as typed once its text changes under the cursor, so an unchanged prompt does not, and when the cursor leaves a row, what that row now shows is taken as what was sent. Frames captured without cursor fields have no typed input. When a segment has typed input, the request is also anchored to the latest: the model chooses complete displayed passages for activity context. Rust copies those passages and the typed input into the existing Sense activity fields, then validates the canonical Sense object. Displayed text is framed as what was on screen; it does not establish authorship, approval or execution. Other fields remain generated assessments.
 
-The timeline takes the ordinary input position, so fitting trims it like any talent's input, keeping the newest whole entries. Every pane and window roster restarts from complete text at the same observation at least every 60 seconds, and each restart begins an entry, so a trimmed timeline starts on complete screens. Within each displayed block, a line already shown since the latest entry is dropped, and each run of dropped lines becomes one `[N earlier lines]` marker; the lossless timeline is checked before that drop. The reading guide, the input cards, the passages and the Sense instructions are preserved, so every passage the model may choose stays visible. A trimmed result records its input budget like any other partial input.
+The timeline takes the ordinary input position, so fitting trims it like any talent's input, keeping the newest whole entries. Every pane and window roster restarts from complete text at the same observation at least every 60 seconds, and each restart begins an entry, so a trimmed timeline starts on complete screens. Within each displayed block, a line already shown since the latest entry is dropped, and each run of dropped lines becomes one `[N earlier lines]` marker; the lossless timeline is checked before that drop. The reading guide, the input cards, the passages and the Sense instructions are preserved, so every passage the model may choose stays visible. A trimmed result records its input budget like any other partial input. This trimming is the last-resort guard, not sampling: a segment longer than the window loses its earliest entries, whatever they held. Choosing entries for importance is the open direction ([Talent inputs](#talent-inputs)).
 
 The talent runtime validates the Sense object (bound, when anchored) before its existing output writer runs. Think then publishes the usual segment projections through its existing writer. An invalid binding or record, or a context-window refusal because even the preserved part does not fit, permits one ordinary native fallback sequence. Cancellation, transport, authentication and attestation failures do not trigger that fallback. Attempt events and usage accounting retain the candidate and fallback calls.
 
