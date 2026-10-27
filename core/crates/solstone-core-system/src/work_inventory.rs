@@ -145,13 +145,69 @@ impl WorkInventory {
         journal: &Path,
         checkpoint: &dyn Fn() -> Result<(), String>,
     ) -> Result<(), String> {
-        checkpoint()?;
-        solstone_core_journal_io::write_json(
-            journal.join(artifact(ArtifactId::WorkInventory).path),
+        // Capture the publication root before invoking caller code. A retained
+        // mobile checkpoint also rejects a root lost before this entry.
+        let root = std::sync::Arc::new(
+            solstone_core_journal_io::JournalRoot::open(journal)
+                .map_err(|error| error.to_string())?,
+        );
+        let namespace = solstone_core_journal_io::journal_directory::JournalNamespace::new(root);
+        let check = || {
+            checkpoint()?;
+            namespace.revalidate().map_err(|error| error.to_string())
+        };
+        check()?;
+        let path = Path::new(artifact(ArtifactId::WorkInventory).path);
+        let bytes = solstone_core_journal_io::atomic::serialize_json_bytes(
             self,
             solstone_core_journal_io::JsonWriteOptions::default(),
         )
-        .map_err(|error| error.to_string())
+        .map_err(|error| error.to_string())?;
+        let parent = namespace
+            .directory(path.parent().expect("fixed inventory parent"), true)
+            .map_err(|error| error.to_string())?
+            .expect("created inventory parent");
+        let name = path.file_name().expect("fixed inventory filename");
+        #[cfg(unix)]
+        match solstone_core_journal_io::atomic_replace_bound_checked(
+            parent.as_ref(),
+            name,
+            &bytes,
+            0o600,
+            &check,
+        )
+        .map_err(|error| error.to_string())?
+        {
+            solstone_core_journal_io::BoundAtomicOutcome::Published { .. } => {}
+            outcome => return Err(format!("work inventory publication uncertain: {outcome:?}")),
+        }
+        #[cfg(windows)]
+        {
+            let lock = solstone_core_journal_io::acquire_existing_parent_lock_bound_checked(
+                parent.as_ref(),
+                std::ffi::OsStr::new(".work-inventory-publication.lock"),
+                solstone_core_journal_io::DEFAULT_LOCK_TIMEOUT,
+                solstone_core_journal_io::DEFAULT_LOCK_POLL_INTERVAL,
+                &check,
+            )
+            .map_err(|error| error.to_string())?;
+            match solstone_core_journal_io::atomic_replace_detailed_bound_checked(
+                parent.as_ref(),
+                &lock,
+                name,
+                &bytes,
+                0o600,
+                &check,
+            )
+            .map_err(|error| error.to_string())?
+            {
+                solstone_core_journal_io::DetailedAtomicOutcome::Published => {}
+                outcome => {
+                    return Err(format!("work inventory publication uncertain: {outcome:?}"));
+                }
+            }
+        }
+        namespace.revalidate().map_err(|error| error.to_string())
     }
 }
 
@@ -172,6 +228,60 @@ pub fn read(journal: &Path) -> Result<Option<WorkInventory>, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn publication_refuses_root_replacement_after_caller_checkpoint() {
+        let directory = tempfile::tempdir().unwrap();
+        let journal = directory.path().join("journal");
+        std::fs::create_dir(&journal).unwrap();
+        let original = solstone_core_journal_io::JournalRoot::open(&journal).unwrap();
+        let retained = directory.path().join("retained");
+        let first = std::cell::Cell::new(true);
+        let report = WorkInventory::default();
+        let result = report.publish_checked(&journal, &|| {
+            original
+                .revalidate_canonical_binding()
+                .map_err(|e| e.to_string())?;
+            if first.replace(false) {
+                std::fs::rename(&journal, &retained).unwrap();
+                std::fs::create_dir(&journal).unwrap();
+            }
+            Ok(())
+        });
+        let replacement_version = read(&journal).unwrap().map(|report| report.version);
+        assert!(
+            result.is_err(),
+            "publication must refuse authority lost after the caller check; actual replacement_snapshot_version={replacement_version:?}"
+        );
+        assert!(
+            std::fs::read_dir(&journal).unwrap().next().is_none(),
+            "replacement root must remain an empty tree"
+        );
+        assert!(!retained.join("health/work-inventory.json").exists());
+    }
+
+    #[test]
+    fn checked_publication_preserves_normal_snapshot_and_stop_refusal() {
+        let journal = tempfile::tempdir().unwrap();
+        let report = WorkInventory {
+            oldest_day: Some("20000101".into()),
+            ..WorkInventory::default()
+        };
+        report.publish_checked(journal.path(), &|| Ok(())).unwrap();
+        let path = journal.path().join("health/work-inventory.json");
+        let original = std::fs::read(&path).unwrap();
+        assert_eq!(
+            read(journal.path()).unwrap().unwrap().oldest_day.as_deref(),
+            Some("20000101")
+        );
+        let changed = WorkInventory::default();
+        assert!(
+            changed
+                .publish_checked(journal.path(), &|| Err("stopped".into()))
+                .is_err()
+        );
+        assert_eq!(std::fs::read(path).unwrap(), original);
+    }
 
     #[test]
     fn history_rate_requires_two_comparable_decreasing_full_passes() {

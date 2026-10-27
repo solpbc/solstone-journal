@@ -84,6 +84,7 @@ static REQUEST_SUBMITTED: Mutex<
 type Checkpoint = Arc<dyn Fn() -> bool + Send + Sync>;
 #[allow(clippy::type_complexity)]
 type ForegroundRestart = Arc<dyn Fn() -> Result<(), String> + Send + Sync>;
+type DiscoveryStarter = Arc<dyn Fn() -> Result<bool, String> + Send + Sync>;
 struct OwnerQueue {
     generation: u64,
     root: Weak<JournalRoot>,
@@ -164,6 +165,9 @@ const UNCOMPLETED_HOLD_EXIT: i32 = 4;
 
 struct InstalledWorkers {
     generation: u64,
+    root: Arc<JournalRoot>,
+    discovery: Arc<Mutex<Option<WorkDiscovery>>>,
+    discovery_start: DiscoveryStarter,
     queue: Weak<TaskQueue>,
     queue_pause: Mutex<Option<CallableQueuePause>>,
     journal: PathBuf,
@@ -213,17 +217,25 @@ fn relinquish_installed_workers(
     if let Some(queue) = installed.queue.upgrade() {
         *pause = Some(queue.pause_callable_work()?);
     }
+    if let Some(discovery) = installed.discovery.lock().unwrap().as_ref() {
+        discovery.stop();
+    }
     for slot in [&installed.sense_handle, &installed.schedule_handle] {
         if let Some(handle) = slot.lock().unwrap().as_ref() {
             handle.thread().unpark();
         }
     }
     for slot in [&installed.sense_handle, &installed.schedule_handle] {
-        if let Some(handle) = slot.lock().unwrap().take() {
+        let handle = slot.lock().unwrap().take();
+        if let Some(handle) = handle {
             handle
                 .join()
                 .map_err(|_| "foreground worker failed to join".to_owned())?;
         }
+    }
+    let discovery = installed.discovery.lock().unwrap().take();
+    if let Some(mut discovery) = discovery {
+        discovery.shutdown_checked()?;
     }
     if let Some(pause) = pause.as_ref() {
         pause.drain()?;
@@ -238,25 +250,38 @@ fn resume_installed_workers(installed: &InstalledWorkers, journal: &Path) -> Res
     if solstone_core_journal_io::whole_journal_restore::whole_journal_restore_blocks(journal) {
         return Ok(());
     }
-    // A token from an older pause cannot reopen a newer queue generation.
-    {
-        let mut paused = installed
-            .queue_pause
-            .lock()
-            .map_err(|_| "queue pause poisoned")?;
-        if let Some(pause) = paused.as_ref() {
-            pause.resume()?;
-            paused.take();
-        }
+    // Keep recreation and publication inside the same transition as pause.
+    // Deliberate Stop signals before joining this transition in shutdown.
+    let mut paused = installed
+        .queue_pause
+        .lock()
+        .map_err(|_| "queue pause poisoned")?;
+    let _resume_use = solstone_core_journal_io::whole_journal_restore::begin_target_use_bound(
+        Arc::clone(&installed.root),
+    )
+    .map_err(|_| {
+        solstone_core_journal_io::whole_journal_restore::WHOLE_JOURNAL_RESTORE_NOT_READY.to_owned()
+    })?;
+    if !(installed.discovery_start)()? {
+        return Ok(());
+    }
+    // resume validates and drains a closed current token. If a producer failed
+    // to restart after reopening, the same token's resume is idempotent.
+    if let Some(pause) = paused.as_ref() {
+        pause.resume()?;
     }
     let restart = installed
         .restart
         .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .unwrap_or_else(|p| p.into_inner())
         .clone();
     if let Some(restart) = restart {
         restart()?;
+    } else if let Some(discovery) = installed.discovery.lock().unwrap().as_ref() {
+        discovery.request();
     }
+    // A failed restart keeps retry custody even if the queue is already open.
+    paused.take();
     Ok(())
 }
 
@@ -274,149 +299,160 @@ struct WorkerParts {
     failed: Arc<AtomicBool>,
 }
 
+#[cfg(all(test, feature = "full-tests"))]
+type ScheduleSpawnFault = Option<fn() -> Result<(), String>>;
+#[cfg(all(test, feature = "full-tests"))]
+thread_local! {
+    static BEFORE_SCHEDULE_SPAWN: std::cell::Cell<ScheduleSpawnFault> = const { std::cell::Cell::new(None) };
+}
+
 #[allow(clippy::too_many_lines)]
 fn spawn_foreground_workers(parts: &WorkerParts) -> Result<(), String> {
-    if parts.sense_handle.lock().unwrap().is_some()
-        || parts.schedule_handle.lock().unwrap().is_some()
-    {
-        return Err("foreground workers already active".into());
+    if (parts.cancelled)() {
+        return Err("thinking cancelled".into());
     }
     if let Some(discovery) = parts.discovery.lock().unwrap().as_ref() {
         discovery.request();
     }
-    let journal = parts.journal.clone();
-    let executor = Arc::clone(&parts.executor);
-    let cancelled = Arc::clone(&parts.cancelled);
-    let sense = std::thread::Builder::new()
-        .name("journal-sense".into())
-        .spawn(move || {
-            while !cancelled() {
-                let restore_use = match solstone_core_journal_io::whole_journal_restore::begin_target_use(
-                    &journal,
-                ) {
-                    Ok(guard) => guard,
-                    Err(_) => break,
-                };
-                if let Err(error) = ForegroundProcessingHost::sense_pass(&journal, executor.clone())
-                {
-                    log::warn!("foreground Sense: {error}");
-                }
-                drop(restore_use);
-                if cancelled()
-                    || solstone_core_journal_io::whole_journal_restore::whole_journal_restore_blocks(
+    if parts.sense_handle.lock().unwrap().is_none() {
+        let journal = parts.journal.clone();
+        let executor = Arc::clone(&parts.executor);
+        let cancelled = Arc::clone(&parts.cancelled);
+        let sense = std::thread::Builder::new()
+            .name("journal-sense".into())
+            .spawn(move || {
+                while !cancelled() {
+                    let restore_use = match solstone_core_journal_io::whole_journal_restore::begin_target_use(
                         &journal,
-                    )
-                {
-                    break;
-                }
-                std::thread::park_timeout(Duration::from_secs(2));
-            }
-        })
-        .map_err(|e| e.to_string())?;
-    *parts.sense_handle.lock().unwrap() = Some(sense);
-    let engine = Arc::clone(&parts.engine);
-    let queue = Arc::clone(&parts.queue);
-    let journal = parts.journal.clone();
-    let cancelled = Arc::clone(&parts.cancelled);
-    let flush = Arc::clone(&parts.flush);
-    let running = parts.running.clone();
-    let failed = Arc::clone(&parts.failed);
-    let schedule = std::thread::Builder::new()
-        .name("journal-schedule".into())
-        .spawn(move || {
-            let started = Instant::now();
-            let mut last_settle_scan = Instant::now();
-            let mut last_index_check = Instant::now() - Duration::from_secs(30);
-            let mut last_status = Instant::now() - STATUS_INTERVAL;
-            while !cancelled() {
-                let restore_use = match solstone_core_journal_io::whole_journal_restore::begin_target_use(
-                    &journal,
-                ) {
-                    Ok(guard) => guard,
-                    Err(_) => break,
-                };
-                let tick = Instant::now();
-                if last_status.elapsed() >= STATUS_INTERVAL
-                    && !failed.load(Ordering::Acquire)
-                    && !queue.callable_workers_failed()
-                {
-                    last_status = tick;
-                    publish_status(&journal, &queue, &engine, &running, started);
-                }
-                queue.resume_processing();
-                let today = Utc::now()
-                    .with_timezone(&solstone_core_journal_config::owner_zone(&journal))
-                    .format("%Y%m%d")
-                    .to_string();
-                if let Ok(mut flush) = flush.lock()
-                    && !cancelled()
-                {
-                    let force = day_still_closing(&journal, &queue, SystemTime::now());
-                    check_segment_flush(&journal, &queue, &mut flush, force.as_deref(), tick);
-                }
-                if !cancelled() {
-                    check_activity_settle(
-                        &journal,
-                        &queue,
-                        &mut last_settle_scan,
-                        tick,
-                        now_ms(),
-                        &today,
-                    );
-                }
-                if last_index_check.elapsed() >= Duration::from_secs(30) {
-                    last_index_check = tick;
-                    match solstone_core_indexer_store::todo::has_due(&journal, now_ms() as u64) {
-                        Ok(true) if !queue.contains_reference("index-todo") => {
-                            let _ = queue.submit(ExecutionRequest::Bus(BusTaskRequest {
-                                cmd: TaskArgv::from_wire(vec![
-                                    "journal".into(),
-                                    "indexer".into(),
-                                    "drain".into(),
-                                ])
-                                .expect("fixed command"),
-                                reference: "index-todo".into(),
-                                day: None,
-                                scheduler_name: None,
-                                queue_if_active_cmd_differs: false,
-                                priority: None,
-                                daily_catchup_provenance: None,
-                            }));
-                        }
-                        Ok(_) => {}
-                        Err(error) => log::warn!("foreground search work list: {error}"),
+                    ) {
+                        Ok(guard) => guard,
+                        Err(_) => break,
+                    };
+                    if let Err(error) = ForegroundProcessingHost::sense_pass(&journal, executor.clone())
+                    {
+                        log::warn!("foreground Sense: {error}");
                     }
-                }
-                if let Ok(mut engine) = engine.lock() {
-                    if cancelled() {
+                    drop(restore_use);
+                    if cancelled()
+                        || solstone_core_journal_io::whole_journal_restore::whole_journal_restore_blocks(
+                            &journal,
+                        )
+                    {
                         break;
                     }
-                    let now = ScheduleNow::in_zone(
-                        Utc::now(),
-                        solstone_core_journal_config::owner_zone(&journal),
-                    );
-                    if let Err(error) = engine.check(
-                        now,
-                        &HostScheduleSink {
-                            queue: queue.clone(),
-                        },
-                    ) {
-                        log::warn!("foreground schedule: {error}");
-                    }
+                    std::thread::park_timeout(Duration::from_secs(2));
                 }
-                drop(restore_use);
-                if cancelled()
-                    || solstone_core_journal_io::whole_journal_restore::whole_journal_restore_blocks(
+            })
+            .map_err(|e| e.to_string())?;
+        *parts.sense_handle.lock().unwrap() = Some(sense);
+    }
+    if parts.schedule_handle.lock().unwrap().is_none() {
+        #[cfg(all(test, feature = "full-tests"))]
+        BEFORE_SCHEDULE_SPAWN.with(|hook| hook.take().map_or(Ok(()), |run| run()))?;
+        let engine = Arc::clone(&parts.engine);
+        let queue = Arc::clone(&parts.queue);
+        let journal = parts.journal.clone();
+        let cancelled = Arc::clone(&parts.cancelled);
+        let flush = Arc::clone(&parts.flush);
+        let running = parts.running.clone();
+        let failed = Arc::clone(&parts.failed);
+        let schedule = std::thread::Builder::new()
+            .name("journal-schedule".into())
+            .spawn(move || {
+                let started = Instant::now();
+                let mut last_settle_scan = Instant::now();
+                let mut last_index_check = Instant::now() - Duration::from_secs(30);
+                let mut last_status = Instant::now() - STATUS_INTERVAL;
+                while !cancelled() {
+                    let restore_use = match solstone_core_journal_io::whole_journal_restore::begin_target_use(
                         &journal,
-                    )
-                {
-                    break;
+                    ) {
+                        Ok(guard) => guard,
+                        Err(_) => break,
+                    };
+                    let tick = Instant::now();
+                    if last_status.elapsed() >= STATUS_INTERVAL
+                        && !failed.load(Ordering::Acquire)
+                        && !queue.callable_workers_failed()
+                    {
+                        last_status = tick;
+                        publish_status(&journal, &queue, &engine, &running, started);
+                    }
+                    queue.resume_processing();
+                    let today = Utc::now()
+                        .with_timezone(&solstone_core_journal_config::owner_zone(&journal))
+                        .format("%Y%m%d")
+                        .to_string();
+                    if let Ok(mut flush) = flush.lock()
+                        && !cancelled()
+                    {
+                        let force = day_still_closing(&journal, &queue, SystemTime::now());
+                        check_segment_flush(&journal, &queue, &mut flush, force.as_deref(), tick);
+                    }
+                    if !cancelled() {
+                        check_activity_settle(
+                            &journal,
+                            &queue,
+                            &mut last_settle_scan,
+                            tick,
+                            now_ms(),
+                            &today,
+                        );
+                    }
+                    if last_index_check.elapsed() >= Duration::from_secs(30) {
+                        last_index_check = tick;
+                        match solstone_core_indexer_store::todo::has_due(&journal, now_ms() as u64) {
+                            Ok(true) if !queue.contains_reference("index-todo") => {
+                                let _ = queue.submit(ExecutionRequest::Bus(BusTaskRequest {
+                                    cmd: TaskArgv::from_wire(vec![
+                                        "journal".into(),
+                                        "indexer".into(),
+                                        "drain".into(),
+                                    ])
+                                    .expect("fixed command"),
+                                    reference: "index-todo".into(),
+                                    day: None,
+                                    scheduler_name: None,
+                                    queue_if_active_cmd_differs: false,
+                                    priority: None,
+                                    daily_catchup_provenance: None,
+                                }));
+                            }
+                            Ok(_) => {}
+                            Err(error) => log::warn!("foreground search work list: {error}"),
+                        }
+                    }
+                    if let Ok(mut engine) = engine.lock() {
+                        if cancelled() {
+                            break;
+                        }
+                        let now = ScheduleNow::in_zone(
+                            Utc::now(),
+                            solstone_core_journal_config::owner_zone(&journal),
+                        );
+                        if let Err(error) = engine.check(
+                            now,
+                            &HostScheduleSink {
+                                queue: queue.clone(),
+                            },
+                        ) {
+                            log::warn!("foreground schedule: {error}");
+                        }
+                    }
+                    drop(restore_use);
+                    if cancelled()
+                        || solstone_core_journal_io::whole_journal_restore::whole_journal_restore_blocks(
+                            &journal,
+                        )
+                    {
+                        break;
+                    }
+                    std::thread::park_timeout(Duration::from_secs(1));
                 }
-                std::thread::park_timeout(Duration::from_secs(1));
-            }
-        })
-        .map_err(|e| e.to_string())?;
-    *parts.schedule_handle.lock().unwrap() = Some(schedule);
+            })
+            .map_err(|e| e.to_string())?;
+        *parts.schedule_handle.lock().unwrap() = Some(schedule);
+    }
     Ok(())
 }
 
@@ -1768,29 +1804,76 @@ impl ForegroundProcessingHost {
             if queue_slot.set(Arc::downgrade(&queue)).is_err() {
                 log::warn!("foreground schedule queue was already installed");
             }
-            let discovery_checkpoint = Arc::clone(&cancelled);
-            let discovery = WorkDiscovery::new_with_talent_roots_and_checkpoint(
-                journal.clone(),
-                queue.as_ref().clone(),
-                true,
-                solstone_core_think_cli::planner::DiscoveryTalentRoots {
-                    rebuild_recovery,
-                    talent: payload.join("solstone/talent"),
-                    apps: payload.join("solstone/apps"),
-                },
+            let discovery = Arc::new(Mutex::new(None::<WorkDiscovery>));
+            let discovery_start: DiscoveryStarter = {
+                let slot = Arc::clone(&discovery);
+                let root = Arc::clone(&root);
+                let queue = Arc::downgrade(&queue);
+                let cancelled = Arc::clone(&cancelled);
+                let stop = Arc::clone(&stop);
+                let talent = payload.join("solstone/talent");
+                let apps = payload.join("solstone/apps");
                 Arc::new(move || {
-                    if discovery_checkpoint() {
-                        Err("thinking cancelled".into())
-                    } else {
-                        Ok(())
+                    if cancelled() {
+                        return Err("thinking cancelled".into());
                     }
-                }),
-            );
-            let discovery = Arc::new(Mutex::new(Some(discovery)));
+                    if slot.lock().unwrap().is_some() {
+                        return Ok(true);
+                    }
+                    let use_guard = match solstone_core_journal_io::whole_journal_restore::begin_target_use_bound(Arc::clone(&root)) {
+                        Ok(guard) => guard,
+                        Err(_) if solstone_core_journal_io::whole_journal_restore::whole_journal_restore_blocks(root.canonical_path()) => return Ok(false),
+                        Err(_) => return Err(solstone_core_journal_io::whole_journal_restore::WHOLE_JOURNAL_RESTORE_NOT_READY.to_owned()),
+                    };
+                    let queue = queue.upgrade().ok_or("queue unavailable")?;
+                    let journal = root.canonical_path().to_path_buf();
+                    let checkpoint = Arc::clone(&cancelled);
+                    let mut worker = WorkDiscovery::new_with_talent_roots_and_checkpoint(
+                        journal,
+                        queue.as_ref().clone(),
+                        true,
+                        solstone_core_think_cli::planner::DiscoveryTalentRoots {
+                            rebuild_recovery,
+                            talent: talent.clone(),
+                            apps: apps.clone(),
+                        },
+                        Arc::new(move || {
+                            // This closure belongs only to the actual background
+                            // thread. Its admission survives until real retirement.
+                            let _owned_use = &use_guard;
+                            // Temporary recovery owns stop+join through the
+                            // registered hook. A marker alone must not leave a
+                            // retired child in this live slot after an aborted retry.
+                            if checkpoint() {
+                                Err("thinking cancelled".into())
+                            } else {
+                                Ok(())
+                            }
+                        }),
+                    );
+                    // Stop publishes before waiting on this slot: never install
+                    // a new generation beyond its completed shutdown.
+                    if cancelled() {
+                        worker.shutdown_checked()?;
+                        return Err("thinking cancelled".into());
+                    }
+                    let mut slot = slot.lock().unwrap();
+                    if stop.load(Ordering::Acquire) {
+                        drop(slot);
+                        worker.shutdown_checked()?;
+                        return Err("thinking cancelled".into());
+                    }
+                    *slot = Some(worker);
+                    Ok(true)
+                })
+            };
             let sense_handle = Arc::new(Mutex::new(None));
             let schedule_handle = Arc::new(Mutex::new(None));
             let installed = Arc::new(InstalledWorkers {
                 generation,
+                root: Arc::clone(&root),
+                discovery: Arc::clone(&discovery),
+                discovery_start,
                 queue: Arc::downgrade(&queue),
                 queue_pause: Mutex::new(None),
                 journal: journal.clone(),
@@ -1844,6 +1927,17 @@ impl ForegroundProcessingHost {
                 #[cfg(feature = "audio")]
                 audio_state,
             };
+            // Register the drain and own Self before any background admission.
+            // Pending restoration keeps the host/router available without a worker.
+            {
+                let paused = installed
+                    .queue_pause
+                    .lock()
+                    .map_err(|_| "queue pause poisoned")?;
+                if paused.is_none() {
+                    (installed.discovery_start)()?;
+                }
+            }
             // Dispatch only after this owner can cancel and join every callable.
             if (host.cancelled)() {
                 return Err("thinking cancelled".into());
@@ -2079,6 +2173,11 @@ impl ForegroundProcessingHost {
         })
     }
     pub fn start_workers(&mut self) -> Result<(), String> {
+        let installed = current_installed(&self.journal)?;
+        let paused = installed
+            .queue_pause
+            .lock()
+            .map_err(|_| "queue pause poisoned")?;
         if self.sense_handle.lock().unwrap().is_some()
             || self.schedule_handle.lock().unwrap().is_some()
             || self.request_handle.lock().unwrap().is_some()
@@ -2099,14 +2198,16 @@ impl ForegroundProcessingHost {
             failed: Arc::clone(&self.failed),
         };
         let restart: ForegroundRestart = Arc::new(move || spawn_foreground_workers(&parts));
-        let installed = current_installed(&self.journal)?;
         *installed
             .restart
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(Arc::clone(&restart));
-        if !solstone_core_journal_io::whole_journal_restore::whole_journal_restore_blocks(
-            &self.journal,
-        ) {
+        if paused.is_none()
+            && !solstone_core_journal_io::whole_journal_restore::whole_journal_restore_blocks(
+                &self.journal,
+            )
+            && (installed.discovery_start)()?
+        {
             restart()?;
         }
         self.spawn_request_subscription()
@@ -2457,8 +2558,20 @@ impl ForegroundProcessingHost {
     }
     pub fn shutdown(&self) -> Result<(), String> {
         self.request_stop();
+        let installed = installed_workers()
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .as_ref()
+            .filter(|owner| owner.generation == self.generation)
+            .cloned();
+        // Signal first, then join any in-flight recreation before taking handles.
+        // A repeated old Stop never locks the successor's transition.
+        let _transition = installed
+            .as_ref()
+            .map(|owner| owner.queue_pause.lock().unwrap_or_else(|p| p.into_inner()));
         let mut failed = false;
-        if let Some(mut discovery) = self.discovery.lock().unwrap().take() {
+        let discovery = self.discovery.lock().unwrap().take();
+        if let Some(mut discovery) = discovery {
             failed |= discovery.shutdown_checked().is_err();
         }
         let _ = self.queue.shutdown();
@@ -2468,7 +2581,8 @@ impl ForegroundProcessingHost {
             &self.schedule_handle,
             &self.request_handle,
         ] {
-            if let Some(handle) = slot.lock().unwrap().take() {
+            let handle = slot.lock().unwrap().take();
+            if let Some(handle) = handle {
                 failed |= handle.join().is_err();
             }
         }
@@ -4304,6 +4418,447 @@ mod processing_proofs {
             BackupWebDeps::new(journal.to_path_buf()),
         )
         .unwrap()
+    }
+
+    #[test]
+    fn recovery_producer_join_does_not_block_the_stop_signal() {
+        use solstone_core_convey_shell::recovery_drain::{
+            relinquish_admitted_work, resume_after_whole_journal_restore,
+        };
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let (journal, payload) = journal_fixture();
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(1)
+            .enable_all()
+            .build()
+            .unwrap();
+        let bus = runtime
+            .block_on(solstone_core_callosum::CallosumSocketServer::bind(
+                journal.path().join("health/callosum.sock"),
+            ))
+            .unwrap();
+        let gate = Arc::new((Mutex::new(false), std::sync::Condvar::new()));
+        let first = Arc::new(AtomicBool::new(true));
+        let (entered_send, entered) = std::sync::mpsc::channel();
+        let external: Checkpoint = {
+            let gate = Arc::clone(&gate);
+            let first = Arc::clone(&first);
+            Arc::new(move || {
+                if std::thread::current().name() == Some("journal-sense")
+                    && first.swap(false, Ordering::AcqRel)
+                {
+                    entered_send.send(()).unwrap();
+                    let (lock, changed) = &*gate;
+                    let mut released = lock.lock().unwrap();
+                    while !*released {
+                        released = changed.wait(released).unwrap();
+                    }
+                }
+                false
+            })
+        };
+        let mut host = ForegroundProcessingHost::open_bound_observed(
+            Arc::new(JournalRoot::open(journal.path()).unwrap()),
+            &payload,
+            ScheduleNow::in_zone(Utc::now(), chrono_tz::UTC),
+            None,
+            external,
+            Arc::new(AtomicBool::new(false)),
+            BackupWebDeps::new(journal.path().to_path_buf()),
+            true,
+            false,
+            None,
+        )
+        .unwrap();
+        let installed = current_installed(journal.path()).unwrap();
+        struct Release(Arc<(Mutex<bool>, std::sync::Condvar)>);
+        impl Drop for Release {
+            fn drop(&mut self) {
+                let (lock, changed) = &*self.0;
+                *lock.lock().unwrap() = true;
+                changed.notify_all();
+            }
+        }
+        struct ReleaseRestore(PathBuf);
+        impl Drop for ReleaseRestore {
+            fn drop(&mut self) {
+                resume_after_whole_journal_restore(&self.0);
+            }
+        }
+        let mut signalled_while_join_waited = false;
+        std::thread::scope(|scope| {
+            let _restore = ReleaseRestore(journal.path().to_path_buf());
+            let release = Release(Arc::clone(&gate));
+            host.start_workers().unwrap();
+            entered.recv_timeout(Duration::from_secs(5)).unwrap();
+            let drain = scope.spawn(|| relinquish_admitted_work(journal.path()));
+            // Observe the actual ownership transfer, not an arbitrary sleep.
+            wait_until(|| {
+                installed.queue_pause.try_lock().is_err()
+                    && match installed.sense_handle.try_lock() {
+                        Ok(slot) => slot.is_none(),
+                        Err(std::sync::TryLockError::WouldBlock) => true,
+                        Err(error) => panic!("sense handle poisoned: {error}"),
+                    }
+            });
+            let (done_send, done) = std::sync::mpsc::channel();
+            let host_ref = &host;
+            let signal = scope.spawn(move || {
+                host_ref.request_stop();
+                done_send.send(()).unwrap();
+            });
+            signalled_while_join_waited = done.recv_timeout(Duration::from_millis(100)).is_ok();
+            drop(release);
+            signal.join().unwrap();
+            drain.join().unwrap().unwrap();
+        });
+        host.shutdown().unwrap();
+        runtime.block_on(bus.stop());
+        assert!(
+            signalled_while_join_waited,
+            "Stop waited on a producer-handle mutex held through the actual recovery join"
+        );
+    }
+
+    #[test]
+    fn recovery_drains_real_discovery_publication_and_rescans_after_retry() {
+        use solstone_core_convey_shell::recovery_drain::{
+            relinquish_admitted_work, resume_after_whole_journal_restore,
+        };
+        use solstone_core_journal_io::whole_journal_restore::{
+            WholeJournalRestoreSource, clear_whole_journal_restore, publish_whole_journal_restore,
+        };
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let (journal, payload) = journal_fixture();
+        let gate = Arc::new((Mutex::new(false), std::sync::Condvar::new()));
+        let first = Arc::new(AtomicBool::new(true));
+        let (entered_send, entered) = std::sync::mpsc::channel();
+        let external: Checkpoint = {
+            let gate = Arc::clone(&gate);
+            let first = Arc::clone(&first);
+            Arc::new(move || {
+                if std::thread::current().name() == Some("journal-work-discovery")
+                    && first.swap(false, Ordering::AcqRel)
+                {
+                    entered_send.send(std::thread::current().id()).unwrap();
+                    let (lock, changed) = &*gate;
+                    let mut released = lock.lock().unwrap();
+                    while !*released {
+                        released = changed.wait(released).unwrap();
+                    }
+                }
+                false
+            })
+        };
+        let host = ForegroundProcessingHost::open_bound_observed(
+            Arc::new(JournalRoot::open(journal.path()).unwrap()),
+            &payload,
+            ScheduleNow::in_zone(Utc::now(), chrono_tz::UTC),
+            None,
+            external,
+            Arc::new(AtomicBool::new(false)),
+            BackupWebDeps::new(journal.path().to_path_buf()),
+            true,
+            false,
+            None,
+        )
+        .unwrap();
+        let inventory = journal.path().join("health/work-inventory.json");
+        struct ReleaseDiscovery(Arc<(Mutex<bool>, std::sync::Condvar)>);
+        impl Drop for ReleaseDiscovery {
+            fn drop(&mut self) {
+                let (lock, changed) = &*self.0;
+                *lock.lock().unwrap() = true;
+                changed.notify_all();
+            }
+        }
+        struct ReleaseRestore(Option<PathBuf>);
+        impl Drop for ReleaseRestore {
+            fn drop(&mut self) {
+                if let Some(path) = self.0.take() {
+                    resume_after_whole_journal_restore(&path);
+                }
+            }
+        }
+        let mut escaped = false;
+        let mut late_publication = false;
+        std::thread::scope(|scope| {
+            let mut restore = ReleaseRestore(Some(journal.path().to_path_buf()));
+            let release = ReleaseDiscovery(Arc::clone(&gate));
+            host.discovery.lock().unwrap().as_ref().unwrap().request();
+            entered.recv_timeout(Duration::from_secs(5)).unwrap();
+            assert!(
+                !inventory.exists(),
+                "fixture must precede the actual discovery publication"
+            );
+            let record = publish_whole_journal_restore(
+                journal.path(),
+                &WholeJournalRestoreSource::Byo {
+                    repository: "repo".into(),
+                    backend: "s3".into(),
+                },
+                "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+                "/journal",
+            )
+            .unwrap();
+            let (done_send, done) = std::sync::mpsc::channel();
+            let path = journal.path().to_path_buf();
+            let drain = scope.spawn(move || {
+                done_send.send(relinquish_admitted_work(&path)).unwrap();
+            });
+            let early = done.recv_timeout(Duration::from_millis(100));
+            escaped = early.is_ok();
+            drop(release);
+            if escaped {
+                early.unwrap().unwrap();
+                // There is no Sense/schedule worker in this fixture. This is
+                // the maintained discovery writer publishing beyond the drain.
+                wait_until(|| inventory.is_file());
+                late_publication = inventory.is_file();
+            } else {
+                done.recv_timeout(Duration::from_secs(5)).unwrap().unwrap();
+            }
+            drain.join().unwrap();
+            assert!(
+                !host.stop.load(Ordering::Acquire),
+                "temporary recovery must not become deliberate Stop"
+            );
+            // An unsuccessful retry keeps the durable obligation and refuses
+            // resumption. The successful retry below installs a new corpus.
+            resume_after_whole_journal_restore(journal.path());
+            assert!(
+                solstone_core_journal_io::whole_journal_restore::whole_journal_restore_blocks(
+                    journal.path()
+                )
+            );
+            if inventory.exists() {
+                fs::remove_file(&inventory).unwrap();
+            }
+            let restored = journal.path().join("chronicle/20000101/notes/120000_1");
+            fs::create_dir_all(&restored).unwrap();
+            fs::write(
+                restored.join("text.jsonl"),
+                "{\"start\":0,\"text\":\"restored owner recording\"}\n",
+            )
+            .unwrap();
+            clear_whole_journal_restore(journal.path(), &record).unwrap();
+            resume_after_whole_journal_restore(journal.path());
+            restore.0.take();
+            // The real pass reads the restored corpus; an old snapshot or a
+            // merely retained queue does not satisfy this observable effect.
+            if !escaped {
+                wait_until(|| {
+                    fs::read(&inventory)
+                        .ok()
+                        .and_then(|b| serde_json::from_slice::<Value>(&b).ok())
+                        .is_some_and(|v| v["oldest_day"] == "20000101")
+                });
+            }
+        });
+        let installed = current_installed(journal.path()).unwrap();
+        host.shutdown().unwrap();
+        assert!(
+            !escaped,
+            "restore drain returned before actual discovery retirement; real publication_after_frontier={late_publication}"
+        );
+        let stopped = fs::read(&inventory).unwrap();
+        assert!(resume_installed_workers(&installed, journal.path()).is_err());
+        assert_eq!(fs::read(&inventory).unwrap(), stopped);
+    }
+
+    #[test]
+    fn discovery_resume_retries_partial_worker_start_without_replacing_live_sense() {
+        use solstone_core_convey_shell::recovery_drain::relinquish_admitted_work;
+        use solstone_core_journal_io::whole_journal_restore::release_target_for_restore;
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let (journal, payload) = journal_fixture();
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(1)
+            .enable_all()
+            .build()
+            .unwrap();
+        let bus = runtime
+            .block_on(solstone_core_callosum::CallosumSocketServer::bind(
+                journal.path().join("health/callosum.sock"),
+            ))
+            .unwrap();
+        let mut host = open_host(journal.path(), &payload, Utc::now());
+        host.start_workers().unwrap();
+        let installed = current_installed(journal.path()).unwrap();
+        relinquish_admitted_work(journal.path()).unwrap();
+        assert!(host.discovery.lock().unwrap().is_none());
+        assert!(host.sense_handle.lock().unwrap().is_none());
+        assert!(host.schedule_handle.lock().unwrap().is_none());
+        release_target_for_restore(journal.path());
+        BEFORE_SCHEDULE_SPAWN.with(|hook| {
+            hook.set(Some(|| Err("injected schedule spawn refusal".into())));
+        });
+        let first = resume_installed_workers(&installed, journal.path()).unwrap_err();
+        assert_eq!(first, "injected schedule spawn refusal");
+        assert!(
+            installed.queue_pause.lock().unwrap().is_some(),
+            "failed restart must retain retry custody"
+        );
+        let sense = host
+            .sense_handle
+            .lock()
+            .unwrap()
+            .as_ref()
+            .unwrap()
+            .thread()
+            .id();
+        assert!(host.schedule_handle.lock().unwrap().is_none());
+        resume_installed_workers(&installed, journal.path()).unwrap();
+        assert!(installed.queue_pause.lock().unwrap().is_none());
+        assert_eq!(
+            host.sense_handle
+                .lock()
+                .unwrap()
+                .as_ref()
+                .unwrap()
+                .thread()
+                .id(),
+            sense
+        );
+        let schedule = host
+            .schedule_handle
+            .lock()
+            .unwrap()
+            .as_ref()
+            .unwrap()
+            .thread()
+            .id();
+        resume_installed_workers(&installed, journal.path()).unwrap();
+        assert_eq!(
+            host.sense_handle
+                .lock()
+                .unwrap()
+                .as_ref()
+                .unwrap()
+                .thread()
+                .id(),
+            sense
+        );
+        assert_eq!(
+            host.schedule_handle
+                .lock()
+                .unwrap()
+                .as_ref()
+                .unwrap()
+                .thread()
+                .id(),
+            schedule
+        );
+        let log = journal.path().join("tokens/20200101.jsonl");
+        fs::create_dir_all(log.parent().unwrap()).unwrap();
+        fs::write(&log, b"only a fresh owner request may prune this log\n").unwrap();
+        let reference = submit_owner_maintenance(&host.root, "health:prune-logs").unwrap();
+        wait_until(|| {
+            host.queue
+                .history()
+                .iter()
+                .any(|row| row.reference == reference)
+        });
+        assert!(!log.exists());
+        assert_eq!(
+            host.queue
+                .history()
+                .iter()
+                .find(|row| row.reference == reference)
+                .unwrap()
+                .exit_status,
+            "ok"
+        );
+        host.shutdown().unwrap();
+        assert!(resume_installed_workers(&installed, journal.path()).is_err());
+        assert!(host.discovery.lock().unwrap().is_none());
+        assert!(host.sense_handle.lock().unwrap().is_none());
+        assert!(host.schedule_handle.lock().unwrap().is_none());
+        runtime.block_on(bus.stop());
+    }
+
+    #[test]
+    fn deliberate_stop_joins_blocked_discovery_recreation_before_returning() {
+        use solstone_core_convey_shell::recovery_drain::relinquish_admitted_work;
+        use solstone_core_journal_io::whole_journal_restore::release_target_for_restore;
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let (journal, payload) = journal_fixture();
+        let gate = Arc::new((Mutex::new(false), std::sync::Condvar::new()));
+        let first = Arc::new(AtomicBool::new(true));
+        let (entered_send, entered) = std::sync::mpsc::channel();
+        let external: Checkpoint = {
+            let gate = Arc::clone(&gate);
+            let first = Arc::clone(&first);
+            Arc::new(move || {
+                if std::thread::current().name() == Some("discovery-resume")
+                    && first.swap(false, Ordering::AcqRel)
+                {
+                    entered_send.send(()).unwrap();
+                    let (lock, changed) = &*gate;
+                    let mut released = lock.lock().unwrap();
+                    while !*released {
+                        released = changed.wait(released).unwrap();
+                    }
+                }
+                false
+            })
+        };
+        let host = ForegroundProcessingHost::open_bound_observed(
+            Arc::new(JournalRoot::open(journal.path()).unwrap()),
+            &payload,
+            ScheduleNow::in_zone(Utc::now(), chrono_tz::UTC),
+            None,
+            external,
+            Arc::new(AtomicBool::new(false)),
+            BackupWebDeps::new(journal.path().to_path_buf()),
+            true,
+            false,
+            None,
+        )
+        .unwrap();
+        let installed = current_installed(journal.path()).unwrap();
+        relinquish_admitted_work(journal.path()).unwrap();
+        release_target_for_restore(journal.path());
+        struct Release(Arc<(Mutex<bool>, std::sync::Condvar)>);
+        impl Drop for Release {
+            fn drop(&mut self) {
+                let (lock, changed) = &*self.0;
+                *lock.lock().unwrap() = true;
+                changed.notify_all();
+            }
+        }
+        std::thread::scope(|scope| {
+            let release = Release(Arc::clone(&gate));
+            let resume = std::thread::Builder::new()
+                .name("discovery-resume".into())
+                .spawn_scoped(scope, || {
+                    resume_installed_workers(&installed, journal.path())
+                })
+                .unwrap();
+            entered.recv_timeout(Duration::from_secs(5)).unwrap();
+            host.request_stop();
+            assert!(host.stop.load(Ordering::Acquire));
+            let (done_send, done) = std::sync::mpsc::channel();
+            let host_ref = &host;
+            let shutdown = scope.spawn(move || {
+                done_send.send(host_ref.shutdown()).unwrap();
+            });
+            assert!(
+                matches!(
+                    done.recv_timeout(Duration::from_millis(100)),
+                    Err(std::sync::mpsc::RecvTimeoutError::Timeout)
+                ),
+                "shutdown must join the in-flight recreation"
+            );
+            drop(release);
+            assert!(resume.join().unwrap().is_err());
+            done.recv_timeout(Duration::from_secs(5)).unwrap().unwrap();
+            shutdown.join().unwrap();
+        });
+        assert!(host.discovery.lock().unwrap().is_none());
+        assert!(host.sense_handle.lock().unwrap().is_none());
+        assert!(host.schedule_handle.lock().unwrap().is_none());
+        assert!(resume_installed_workers(&installed, journal.path()).is_err());
     }
 
     #[test]
