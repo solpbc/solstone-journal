@@ -151,7 +151,7 @@ impl Fixture {
         }
     }
 
-    fn request(&self) -> Value {
+    pub(crate) fn request(&self) -> Value {
         json!({"source":"obsidian","client_item_id":"native-folder-owner",
             "timestamp":"20261014_090000","folder_name":"picked notes",
             "page_authority":self.page,"admission_generation":self.generation})

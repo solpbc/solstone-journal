@@ -18,6 +18,13 @@ const UNBOUND_HOST: u64 = u64::MAX;
 static PAGE_HOST: AtomicU64 = AtomicU64::new(UNBOUND_HOST);
 static PAGE_BINDING: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
+pub(super) fn page_live(page: u64, generation: u64) -> bool {
+    page != 0
+        && page & 1 == 0
+        && PAGE.load(Ordering::SeqCst) == page
+        && PAGE_HOST.load(Ordering::SeqCst) == generation
+}
+
 /// Allocate in service-message order before queued root validation. A late
 /// validation can bind only this nonce and cannot replace a newer document.
 #[unsafe(no_mangle)]

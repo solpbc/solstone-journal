@@ -3,6 +3,7 @@
 //! Development-only iOS helper bridge. Fault operations never enter a release binary.
 mod owner_folder;
 mod owner_response;
+mod saved_sources;
 use chrono::NaiveDate;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -29,6 +30,7 @@ static QUERY: Mutex<Option<OwnerIndex>> = Mutex::new(None);
 struct ServingInstance {
     serving: journal_mobile_serving::MobileServing,
     processing: Option<Arc<journal_mobile_serving::foreground::ForegroundProcessingHost>>,
+    sources: Option<Arc<journal_mobile_serving::import_route::ConfiguredSources>>,
 }
 impl ServingInstance {
     fn status(&self) -> Value {
@@ -440,6 +442,7 @@ fn run(v: Value) -> Result<Value, String> {
                         *serving = owner.map(|owner| ServingInstance {
                             serving: *owner,
                             processing: None,
+                            sources: None,
                         });
                         journal_ios_processing_request_stop();
                         return Err(message);
@@ -449,9 +452,11 @@ fn run(v: Value) -> Result<Value, String> {
             *PROCESSING_STOP.lock().unwrap_or_else(|p| p.into_inner()) =
                 Some(Arc::clone(&processing_stop));
             let backup = runtime.backup_dependencies();
+            let (import_factory, sources) = saved_sources::factory(admitted_library);
             *serving = Some(ServingInstance {
                 serving: runtime,
                 processing: None,
+                sources,
             });
             *STOP_ROOT.lock().unwrap_or_else(|p| p.into_inner()) = Some(Arc::clone(root));
             let host =
@@ -463,7 +468,7 @@ fn run(v: Value) -> Result<Value, String> {
                     }),
                     processing_stop,
                     backup,
-                    journal_mobile_serving::import_route::packaged_import_factory(admitted_library),
+                    import_factory,
                     true,
                     v["mode"].as_str() == Some("observe-daily-queue"),
                 );

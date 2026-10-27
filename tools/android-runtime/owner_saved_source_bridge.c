@@ -12,6 +12,9 @@ typedef int (*saved_copy_fn)(void *,const char *,const char *,const char *);
 typedef void (*saved_release_fn)(void *);
 extern uint64_t journal_owner_sources_install(const char *,void *,saved_copy_fn,saved_release_fn);
 extern void journal_owner_sources_retire(uint64_t);
+extern void journal_free(char *);
+extern char *journal_owner_source_change(const unsigned char *,size_t,void *,
+    int (*)(void *,int,const char *));
 
 struct saved_provider {
     JavaVM *vm;
@@ -109,4 +112,60 @@ JNIEXPORT void JNICALL Java_app_solstone_development_journal_Native_retireSavedF
         JNIEnv *env,jclass ignored,jlong identity) {
     (void)env;(void)ignored;
     journal_owner_sources_retire((uint64_t)identity);
+}
+
+struct source_permission_call {
+    JNIEnv *env;
+    jobject permissions;
+    jmethodID transition;
+};
+
+static int source_permission_callback(void *opaque,int action,const char *material) {
+    struct source_permission_call *call=opaque;
+    JNIEnv *env=call->env;
+    int result=-1;
+    if ((*env)->PushLocalFrame(env,12) == JNI_OK) {
+        jstring value=saved_utf8(env,material);
+        if (value && !(*env)->ExceptionCheck(env))
+            result=(*env)->CallIntMethod(env,call->permissions,call->transition,(jint)action,value);
+        if ((*env)->ExceptionCheck(env)) { (*env)->ExceptionClear(env);result=-1; }
+        (*env)->PopLocalFrame(env,NULL);
+    } else if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+    return result;
+}
+
+JNIEXPORT jbyteArray JNICALL Java_app_solstone_development_journal_Native_changeOwnerSource(
+        JNIEnv *env,jclass ignored,jbyteArray request,jobject permissions) {
+    (void)ignored;
+    jbyte *bytes=NULL;
+    jclass type=NULL;
+    char *out=NULL;
+    jbyteArray result=NULL;
+    if (!request || !permissions) goto cleanup;
+    jsize length=(*env)->GetArrayLength(env,request);
+    if (length <= 0 || length > 32*1024) goto cleanup;
+    type=(*env)->GetObjectClass(env,permissions);
+    if (!type) goto cleanup;
+    jmethodID transition=(*env)->GetMethodID(env,type,"transition","(ILjava/lang/String;)I");
+    if (!transition) {
+        if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+        goto cleanup;
+    }
+    bytes=(*env)->GetByteArrayElements(env,request,NULL);
+    if (!bytes) goto cleanup;
+    // Same original Java worker and local-reference frame for the entire
+    // native configuration, permission return and actual cleanup. No detach.
+    struct source_permission_call call={env,permissions,transition};
+    out=journal_owner_source_change((const unsigned char *)bytes,(size_t)length,
+        &call,source_permission_callback);
+    if (!out) goto cleanup;
+    size_t size=strlen(out);
+    if (size > INT_MAX) goto cleanup;
+    result=(*env)->NewByteArray(env,(jsize)size);
+    if (result) (*env)->SetByteArrayRegion(env,result,0,(jsize)size,(const jbyte *)out);
+cleanup:
+    if (out) journal_free(out);
+    if (bytes) (*env)->ReleaseByteArrayElements(env,request,bytes,JNI_ABORT);
+    if (type) (*env)->DeleteLocalRef(env,type);
+    return result;
 }

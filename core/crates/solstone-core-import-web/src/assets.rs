@@ -10,6 +10,7 @@ use crate::http::{bytes, error, html_not_found};
 
 const WORKSPACE: &[u8] = include_bytes!("../assets/workspace.html");
 const IMPORT_DETAIL_JS: &[u8] = include_bytes!("../assets/import_detail.js");
+const SOURCE_CONNECTIONS_JS: &[u8] = include_bytes!("../assets/source_connections.js");
 const SHELL: &[u8] = include_bytes!("../../solstone-core-convey-shell/assets/static/shell.html");
 const CHATGPT_GUIDE: &[u8] = include_bytes!("../assets/guides/chatgpt.md");
 const CLAUDE_GUIDE: &[u8] = include_bytes!("../assets/guides/claude.md");
@@ -33,6 +34,9 @@ pub(crate) async fn background_not_found() -> Response {
 
 pub(crate) async fn static_asset(Path(path): Path<String>) -> Response {
     match path.as_str() {
+        "source_connections.js" => {
+            bytes(SOURCE_CONNECTIONS_JS, "text/javascript; charset=utf-8").into_response()
+        }
         "import_detail.js" => {
             bytes(IMPORT_DETAIL_JS, "text/javascript; charset=utf-8").into_response()
         }

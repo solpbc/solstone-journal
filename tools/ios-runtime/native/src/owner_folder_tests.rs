@@ -9,13 +9,17 @@ use std::sync::mpsc;
 
 fn isolated(name: &str) -> bool {
     let full = format!("owner_folder::tests::{name}");
+    isolated_full(&full)
+}
+
+pub(crate) fn isolated_full(full: &str) -> bool {
     const CHILD: &str = "FC2_IOS_FOLDER_CHILD";
-    if std::env::var(CHILD).ok().as_deref() == Some(&full) {
+    if std::env::var(CHILD).ok().as_deref() == Some(full) {
         return false;
     }
     let mut child = std::process::Command::new(std::env::current_exe().unwrap())
-        .args(["--exact", &full, "--nocapture"])
-        .env(CHILD, &full)
+        .args(["--exact", full, "--nocapture"])
+        .env(CHILD, full)
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .spawn()
@@ -36,21 +40,21 @@ fn isolated(name: &str) -> bool {
     let output = child.wait_with_output().unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
-        output.status.success() && stdout.contains(&full) && stdout.contains("1 passed; 0 failed"),
+        output.status.success() && stdout.contains(full) && stdout.contains("1 passed; 0 failed"),
         "{stdout}{}",
         String::from_utf8_lossy(&output.stderr)
     );
     true
 }
 
-struct Fixture {
+pub(crate) struct Fixture {
     directory: PathBuf,
-    root: PathBuf,
+    pub(crate) root: PathBuf,
     cache: PathBuf,
-    authority: u64,
+    pub(crate) authority: u64,
 }
 impl Fixture {
-    fn new() -> Self {
+    pub(crate) fn new() -> Self {
         let directory = std::env::temp_dir().join(format!("fc2-ios-folder-{}", std::process::id()));
         let root = directory.join("journal");
         let cache = directory.join("cache");
@@ -70,9 +74,9 @@ impl Fixture {
             payload.clone(),
         )
         .unwrap();
-        let binding = Arc::new(JournalRoot::open(&root).unwrap());
+        let binding = server.backup_dependencies().retained_root().unwrap();
         let stop = Arc::new(AtomicBool::new(false));
-        let factory = journal_mobile_serving::import_route::packaged_import_factory(PathBuf::from(
+        let (factory, sources) = crate::saved_sources::factory(PathBuf::from(
             std::env::var("SOLSTONE_NATIVE_FOLDER_TEST_PDFIUM")
                 .expect("maintained host PDFium input required"),
         ));
@@ -100,6 +104,7 @@ impl Fixture {
         *SERVING.lock().unwrap() = Some(ServingInstance {
             serving: server,
             processing: Some(host),
+            sources,
         });
         Self {
             directory,
@@ -108,10 +113,10 @@ impl Fixture {
             authority: owner_response::journal_ios_owner_authority_issue(),
         }
     }
-    fn request(&self) -> Value {
+    pub(crate) fn request(&self) -> Value {
         json!({"source":"obsidian","folder_name":"Picked notes","client_item_id":"ios-native-folder", "authority":self.authority,"admissionGeneration":0})
     }
-    fn finish(&self) {
+    pub(crate) fn finish(&self) {
         journal_ios_processing_request_stop();
         let mut serving = SERVING.lock().unwrap();
         serving.as_ref().unwrap().drain().unwrap();
@@ -316,16 +321,26 @@ fn original_stop_holds_provider_and_cleanup_until_return_then_releases_root_use(
         solstone_core_journal_io::whole_journal_restore::wait_for_target_use_to_end(&path);
         done.send(()).unwrap();
     });
+    let root = fixture.root.clone();
+    // The real owner service retains this same root too. Retire it through its
+    // actual drain while the provider still owns the original preparation.
+    let (retired, retirement) = mpsc::channel();
+    let owner = std::thread::spawn(move || {
+        fixture.finish();
+        retired.send(()).unwrap();
+        fixture
+    });
     assert!(matches!(
         waited.recv_timeout(Duration::from_millis(100)),
         Err(mpsc::RecvTimeoutError::Timeout)
     ));
     resume.send(()).unwrap();
     assert_eq!(worker.join().unwrap()["state"], "refused");
+    retirement.recv_timeout(Duration::from_secs(10)).unwrap();
+    let fixture = owner.join().unwrap();
     waited.recv_timeout(Duration::from_secs(10)).unwrap();
     drain.join().unwrap();
-    solstone_core_journal_io::whole_journal_restore::release_target_for_restore(&fixture.root);
+    solstone_core_journal_io::whole_journal_restore::release_target_for_restore(&root);
     fixture.empty_cache();
     assert!(!fixture.root.join("imports").exists());
-    fixture.finish();
 }

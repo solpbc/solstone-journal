@@ -3,6 +3,7 @@
 
 use super::*;
 use crate::owner_folder::tests::{Fixture, isolated_full};
+use serde_json::{Value, json};
 use solstone_core_import::{WorkStop, installed_stop};
 use std::fs;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -100,6 +101,241 @@ fn cache() -> PathBuf {
     let path = std::env::temp_dir().join(format!("fc2-native-sources-{}", std::process::id()));
     fs::create_dir(&path).unwrap();
     path
+}
+
+#[derive(Default)]
+struct Permissions {
+    grants: Mutex<std::collections::BTreeSet<String>>,
+    acquired: AtomicUsize,
+    released: AtomicUsize,
+    scope_seen: AtomicUsize,
+    block: Option<(mpsc::Sender<()>, Mutex<mpsc::Receiver<()>>)>,
+}
+
+unsafe extern "C" fn permission(context: *mut c_void, action: i32, material: *const c_char) -> i32 {
+    let context = unsafe { &*context.cast::<Permissions>() };
+    if installed_stop().is_some() {
+        context.scope_seen.fetch_add(1, Ordering::SeqCst);
+    }
+    let Ok(material) = (unsafe { CStr::from_ptr(material) }).to_str() else {
+        return -1;
+    };
+    match action {
+        0 => {
+            if !crate::owner_folder::journal_owner_folder_copy_continues() {
+                return -1;
+            }
+            let new = context.grants.lock().unwrap().insert(material.into());
+            context.acquired.fetch_add(1, Ordering::SeqCst);
+            if let Some((entered, release)) = &context.block
+                && (entered.send(()).is_err()
+                    || release
+                        .lock()
+                        .unwrap()
+                        .recv_timeout(Duration::from_secs(10))
+                        .is_err())
+            {
+                return -1;
+            }
+            if crate::owner_folder::journal_owner_folder_copy_continues() {
+                i32::from(new)
+            } else {
+                -1
+            }
+        }
+        1 | 2 => {
+            context.grants.lock().unwrap().remove(material);
+            context.released.fetch_add(1, Ordering::SeqCst);
+            0
+        }
+        3 => i32::from(context.grants.lock().unwrap().contains(material)),
+        _ => -1,
+    }
+}
+
+fn connection_request(
+    fixture: &Fixture,
+    action: &str,
+    backend: &str,
+    material: &str,
+    expected: Option<&str>,
+) -> Value {
+    let mut request = fixture.request();
+    request["source"] = json!(backend);
+    request["action"] = json!(action);
+    request["access_material"] = json!(material);
+    request["expected_identity"] = json!(expected);
+    request
+}
+
+fn change_connection(request: Value, permissions: &Arc<Permissions>) -> Value {
+    let context = Arc::as_ptr(permissions) as usize;
+    std::thread::spawn(move || {
+        let request = serde_json::to_vec(&request).unwrap();
+        let pointer = unsafe {
+            super::connection::journal_owner_source_change(
+                request.as_ptr(),
+                request.len(),
+                context as *mut c_void,
+                Some(permission),
+            )
+        };
+        let reply = unsafe { CString::from_raw(pointer) };
+        serde_json::from_slice(reply.as_bytes()).unwrap()
+    })
+    .join()
+    .unwrap()
+}
+
+#[test]
+fn native_connection_changes_keep_private_material_and_shared_grants_truthful() {
+    if isolated_full(
+        "saved_sources::tests::native_connection_changes_keep_private_material_and_shared_grants_truthful",
+    ) {
+        return;
+    }
+    let cache = cache();
+    let (identity, _) = install(&cache, "configuration", None);
+    let fixture = Fixture::new();
+    let permissions = Arc::new(Permissions::default());
+    let prior = serde_json::json!({"source_path":"retained-desktop-path","unknown":{"kept":true},"files":{"prior.md":{"status":"imported","extra":7}}});
+    fs::create_dir_all(fixture.root.join("imports")).unwrap();
+    fs::write(
+        fixture.root.join("imports/obsidian.json"),
+        serde_json::to_vec(&prior).unwrap(),
+    )
+    .unwrap();
+    let first = "content://synthetic/tree/first";
+    let second = "content://synthetic/tree/second";
+    let begin = change_connection(
+        connection_request(&fixture, "begin", "obsidian", first, None),
+        &permissions,
+    );
+    assert_eq!(begin["state"], "updated", "{begin}");
+    assert!(!begin.to_string().contains("content://"));
+    let connected: Value =
+        serde_json::from_slice(&fs::read(fixture.root.join("imports/obsidian.json")).unwrap())
+            .unwrap();
+    for key in ["files", "source_path", "unknown"] {
+        assert_eq!(connected[key], prior[key]);
+    }
+
+    let original_id = begin["connection"]["source_identity"].as_str().unwrap();
+    let audio = change_connection(
+        connection_request(&fixture, "begin", "audio", first, None),
+        &permissions,
+    );
+    assert_eq!(audio["state"], "updated");
+    let audio_id = audio["connection"]["source_identity"].as_str().unwrap();
+    let changed = change_connection(
+        connection_request(&fixture, "replace", "obsidian", second, Some(original_id)),
+        &permissions,
+    );
+    assert_eq!(changed["permissions"], "retained_for_another_source");
+    assert_ne!(changed["connection"]["source_identity"], original_id);
+    assert!(permissions.grants.lock().unwrap().contains(first));
+    let forgotten = change_connection(
+        connection_request(&fixture, "forget", "audio", "", Some(audio_id)),
+        &permissions,
+    );
+    assert_eq!(forgotten["connection"]["remembered"], false);
+    assert_eq!(forgotten["permissions"], "released");
+    assert!(!permissions.grants.lock().unwrap().contains(first));
+    assert!(permissions.grants.lock().unwrap().contains(second));
+    let before = permissions.acquired.load(Ordering::SeqCst);
+    let stale = change_connection(
+        connection_request(
+            &fixture,
+            "reauthorize",
+            "obsidian",
+            first,
+            Some(original_id),
+        ),
+        &permissions,
+    );
+    assert_eq!(stale["state"], "refused");
+    assert_eq!(permissions.acquired.load(Ordering::SeqCst), before);
+    let held = change_connection(
+        connection_request(&fixture, "begin", "oura", first, None),
+        &permissions,
+    );
+    assert_eq!(held["state"], "refused");
+    assert_eq!(permissions.acquired.load(Ordering::SeqCst), before);
+    fs::write(
+        fixture.root.join("imports/obsidian.json"),
+        b"unreadable saved state",
+    )
+    .unwrap();
+    let unreadable = change_connection(
+        connection_request(&fixture, "begin", "obsidian", first, None),
+        &permissions,
+    );
+    assert_eq!(unreadable["state"], "refused");
+    assert_eq!(permissions.acquired.load(Ordering::SeqCst), before);
+    assert_eq!(
+        fs::read(fixture.root.join("imports/obsidian.json")).unwrap(),
+        b"unreadable saved state"
+    );
+    let partial = br#"{"source_path":"retained","folder_name":"partial","files":{"prior.md":{"status":"imported"}}}"#;
+    fs::write(fixture.root.join("imports/obsidian.json"), partial).unwrap();
+    let broken = change_connection(
+        connection_request(&fixture, "begin", "obsidian", first, None),
+        &permissions,
+    );
+    assert_eq!(broken["state"], "refused");
+    assert_eq!(permissions.acquired.load(Ordering::SeqCst), before);
+    assert_eq!(
+        fs::read(fixture.root.join("imports/obsidian.json")).unwrap(),
+        partial
+    );
+    assert!(permissions.scope_seen.load(Ordering::SeqCst) > 0);
+    fixture.stop();
+    fixture.stopped();
+    journal_owner_sources_retire(identity);
+    fs::remove_dir_all(cache).unwrap();
+}
+
+#[test]
+fn native_connection_stop_drains_actual_permission_return_and_rollback_before_root_retirement() {
+    if isolated_full(
+        "saved_sources::tests::native_connection_stop_drains_actual_permission_return_and_rollback_before_root_retirement",
+    ) {
+        return;
+    }
+    let cache = cache();
+    let (identity, _) = install(&cache, "configuration-stop", None);
+    let fixture = Fixture::new();
+    let (entered, observed) = mpsc::channel();
+    let (resume, held) = mpsc::channel();
+    let permissions = Arc::new(Permissions {
+        block: Some((entered, Mutex::new(held))),
+        ..Default::default()
+    });
+    let request = connection_request(
+        &fixture,
+        "begin",
+        "obsidian",
+        "content://synthetic/tree/stopped",
+        None,
+    );
+    let retained = Arc::clone(&permissions);
+    let worker = std::thread::spawn(move || change_connection(request, &retained));
+    observed.recv_timeout(Duration::from_secs(10)).unwrap();
+    fixture.stop();
+    assert_eq!(
+        crate::retirement::wait_for_process(Duration::from_millis(100)),
+        crate::retirement::Outcome::Pending
+    );
+    assert_eq!(permissions.released.load(Ordering::SeqCst), 0);
+    resume.send(()).unwrap();
+    let reply = worker.join().unwrap();
+    assert_eq!(reply["state"], "refused", "{reply}");
+    assert!(permissions.grants.lock().unwrap().is_empty());
+    assert!(permissions.released.load(Ordering::SeqCst) > 0);
+    fixture.stopped();
+    assert!(!fixture.root.join("imports/obsidian.json").exists());
+    journal_owner_sources_retire(identity);
+    fs::remove_dir_all(cache).unwrap();
 }
 fn configure() {
     let (root, sources, preparation) = {

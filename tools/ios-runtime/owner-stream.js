@@ -146,19 +146,11 @@
   window.__journalFolderSelected = (authority, id) => {
     const pending = folders.get(id);
     if (!pending || pending.authority !== authority) return false;
-    if (pending.selected?.() === false) return false;
+    try { if (pending.selected?.() !== true) return false; } catch (error) { return false; }
     pending.chosen = true;
     return true;
   };
-  window.JournalOwnerFolders = {
-    cancel() {
-      for (const [id, pending] of folders) {
-        folders.delete(id);
-        if (pending.authority) call({ op: 'cancelFolder', authority: pending.authority, id }).catch(() => {});
-        pending.resolve({ state: pending.dispatched ? 'outcome_unknown' : 'cancelled', client_item_id: pending.reference });
-      }
-    },
-    choose(source, reference, selected) {
+  function folderChoice(op, source, reference, selected, fields = {}) {
       if (folders.size) return Promise.resolve({ state: 'refused', error: lostMessage });
       const id = crypto.randomUUID();
       return new Promise((resolve, reject) => {
@@ -168,7 +160,7 @@
           if (folders.get(id) !== pending) return;
           pending.authority = authority;
           pending.dispatched = true;
-          return call({ op: 'chooseFolder', authority, id, source, client_item_id: reference }).then((reply) => {
+          return call({ op, authority, id, source, ...fields, client_item_id: reference }).then((reply) => {
             if (folders.get(id) !== pending) return;
             folders.delete(id);
             resolve(reply);
@@ -180,7 +172,24 @@
           else reject(error);
         });
       });
+  }
+  window.JournalOwnerFolders = {
+    cancel() {
+      for (const [id, pending] of folders) {
+        folders.delete(id);
+        if (pending.authority) call({ op: 'cancelFolder', authority: pending.authority, id }).catch(() => {});
+        pending.resolve({ state: pending.dispatched ? 'outcome_unknown' : 'cancelled', client_item_id: pending.reference });
+      }
     },
+    choose(source, reference, selected) {
+      return folderChoice('chooseFolder', source, reference, selected);
+    },
+  };
+  window.JournalOwnerSources = {
+    change(source, action, expectedIdentity, reference, selected) {
+      return folderChoice('chooseSource', source, reference, selected, { action, expected_identity: expectedIdentity });
+    },
+    cancel() { window.JournalOwnerFolders.cancel(); },
   };
   window.addEventListener('pagehide', () => {
     window.JournalOwnerFolders.cancel();

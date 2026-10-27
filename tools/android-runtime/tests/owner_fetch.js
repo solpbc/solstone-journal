@@ -67,6 +67,23 @@ async function main() {
   context.JournalOwnerFolders.cancel();
   assert.equal((await cancelUnknown).client_item_id,'cancel-unknown');
   context.JournalOwner.cancelFolder=cancelNormally;
+  const sourceCalls=[];
+  context.JournalOwner.chooseSource=(token,id,encoded) => sourceCalls.push({token,id,fields:JSON.parse(encoded)});
+  const connected=context.JournalOwnerSources.change('obsidian','begin',null,'source-connection',() => true);
+  const sourceCall=sourceCalls[0];
+  assert.deepEqual(Object.keys(sourceCall.fields).sort(),['action','client_item_id','expected_identity','source']);
+  assert.equal(sourceCall.fields.source,'obsidian');
+  assert.equal(sourceCall.fields.action,'begin');
+  assert.equal(sourceCall.fields.client_item_id,'source-connection');
+  assert.equal(context.__journalFolderSelected('current-page',sourceCall.id),true);
+  context.__journalFolderReply('current-page',sourceCall.id,{state:'updated',connection:{folder_name:'Notes',source_identity:'identity',remembered:true,access_state:'ready'}});
+  assert.equal((await connected).connection.folder_name,'Notes');
+  const sourceLost=context.JournalOwnerSources.change('audio','forget','displayed-id','source-forget',() => true);
+  context.JournalOwnerSources.cancel();
+  const sourceUnknown=await sourceLost;
+  assert.equal(sourceUnknown.state,'outcome_unknown');
+  assert.equal(sourceUnknown.client_item_id,'source-forget');
+  assert.equal(cancellations.pop().folder,true);
   const request = (url, options) => {
     const submitted = new Promise(resolve => { nextCall = resolve; });
     const response = context.fetch(url, options);

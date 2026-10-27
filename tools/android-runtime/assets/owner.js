@@ -39,6 +39,26 @@
       });
     },
   };
+  // Only the native picker can supply private URI material. The shared card
+  // supplies a closed source/action and its displayed identity for admission.
+  window.JournalOwnerSources = {
+    change(source, action, expectedIdentity, reference, selected) {
+      if (folders.size) return Promise.resolve({ state: 'refused' });
+      const id=crypto.randomUUID();
+      return new Promise((resolve) => {
+        const waiter={resolve,selected,reference,dispatched:false};
+        folders.set(id,waiter);
+        try {
+          waiter.dispatched=true;
+          JournalOwner.chooseSource(token,id,JSON.stringify({source,action,expected_identity:expectedIdentity,client_item_id:reference}));
+        } catch (error) {
+          folders.delete(id);
+          resolve({state:'outcome_unknown',client_item_id:reference});
+        }
+      });
+    },
+    cancel() { window.JournalOwnerFolders.cancel(); },
+  };
   const pending = new Map();
   let sequence = 0;
   window.__journalOwnerReply = (page, id, reply) => {

@@ -616,6 +616,29 @@ public final class OwnerActivity extends ServingActivity {
             }
             retireFolderPage(operation);
         }
+        @JavascriptInterface public void chooseSource(String token,String id,String encoded) {
+            try {
+                if (encoded == null || encoded.length() > 32*1024 || id == null || id.length() > 128) return;
+                JSONObject fields=new JSONObject(encoded);
+                String source=fields.getString("source"),action=fields.getString("action"),reference=fields.getString("client_item_id");
+                String expected=fields.optString("expected_identity","");
+                if (!("obsidian".equals(source) || "audio".equals(source))
+                        || !("begin".equals(action) || "reauthorize".equals(action) || "replace".equals(action) || "forget".equals(action))
+                        || reference.isEmpty() || reference.length() > 128
+                        || (!"begin".equals(action) && expected.isEmpty())) { refuseFolder(token,id);return; }
+                OwnerTransport selected=transport;
+                final FolderOperation operation;
+                synchronized (folderPicker) {
+                    if (token == null || !token.equals(pageToken)) return;
+                    if (selected == null || !selected.current() || folderOperation != null
+                            || folderPicker.present(token,pageToken,folderGeneration) == null) { refuseFolder(token,id);return; }
+                    operation=new FolderOperation(token,folderGeneration,id,source,reference,selected,action,expected);
+                    folderOperation=operation;
+                }
+                try { requests.execute(() -> prepareFolderPicker(operation)); }
+                catch (RejectedExecutionException busy) { finishFolder(operation,MainActivity.obj("state","refused","error",ownerMessage(busy))); }
+            } catch (JSONException malformed) { refuseFolder(token,id); }
+        }
     }
     protected void onActivityResult(int request,int result,Intent data) {
         if (request == 41) {
@@ -644,6 +667,10 @@ public final class OwnerActivity extends ServingActivity {
                 finishFolder(operation,MainActivity.obj("state","cancelled"));
                 return;
             }
+            if (operation.sourceAction != null) {
+                acknowledgeSource(operation,tree,data == null ? 0 : data.getFlags());
+                return;
+            }
             // The document must retain the reference before native work may save.
             web.evaluateJavascript("window.__journalFolderSelected&&window.__journalFolderSelected("+JSONObject.quote(operation.token)+","+JSONObject.quote(operation.id)+")", acknowledged -> {
                 if (!"true".equals(acknowledged) || !operation.current()) {
@@ -663,8 +690,9 @@ public final class OwnerActivity extends ServingActivity {
     }
     void startFolderPicker(FolderOperation operation) {
         try {
-            startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)
-                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION),42);
+            Intent chooser=new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            if (operation.sourceAction != null) chooser.addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+            startActivityForResult(chooser,42);
         } catch(ActivityNotFoundException error) {
             folderPicker.acceptResult(false,pageToken,folderGeneration);
             finishFolder(operation,MainActivity.obj("state","refused","error","this file couldn't be read. choose it again."));
@@ -675,12 +703,17 @@ public final class OwnerActivity extends ServingActivity {
     }
     final class FolderOperation {
         final String token,id,source,reference;
+        final String sourceAction,expectedIdentity;
         final int generation;
         final OwnerTransport transport;
         volatile long page;
         volatile boolean cancelled;
         FolderOperation(String token,int generation,String id,String source,String reference,OwnerTransport transport) {
+            this(token,generation,id,source,reference,transport,null,null);
+        }
+        FolderOperation(String token,int generation,String id,String source,String reference,OwnerTransport transport,String sourceAction,String expectedIdentity) {
             this.token=token;this.generation=generation;this.id=id;this.source=source;this.reference=reference;this.transport=transport;
+            this.sourceAction=sourceAction;this.expectedIdentity=expectedIdentity;
         }
         boolean current() {
             return !cancelled && folderOperation == this && transport.current()
@@ -726,10 +759,12 @@ public final class OwnerActivity extends ServingActivity {
             }
             ui.post(() -> {
                 synchronized (folderPicker) {
-                    if (!operation.current() || !folderPicker.claimStart(pageToken,folderGeneration)) {
+                    boolean forget="forget".equals(operation.sourceAction);
+                    if (!operation.current() || (!forget && !folderPicker.claimStart(pageToken,folderGeneration))) {
                         retireFolderPage(operation);return;
                     }
-                    startFolderPicker(operation);
+                    if (forget) acknowledgeSource(operation,null,0);
+                    else startFolderPicker(operation);
                 }
             });
         } catch(Exception unavailable) {
@@ -754,6 +789,41 @@ public final class OwnerActivity extends ServingActivity {
             finishFolder(operation,result);
         } catch(Exception unavailable) {
             finishFolder(operation,MainActivity.obj("state","outcome_unknown","error",ownerMessage(unavailable)));
+        }
+    }
+    void acknowledgeSource(FolderOperation operation,Uri selected,int flags) {
+        if (web == null || !operation.current()) { retireFolderPage(operation);return; }
+        web.evaluateJavascript("window.__journalFolderSelected&&window.__journalFolderSelected("+JSONObject.quote(operation.token)+","+JSONObject.quote(operation.id)+")", acknowledged -> {
+            if (!"true".equals(acknowledged) || !operation.current()) {
+                finishFolder(operation,MainActivity.obj("state","cancelled"));return;
+            }
+            try { requests.execute(() -> changeSelectedSource(operation,selected,flags)); }
+            catch (RejectedExecutionException busy) { finishFolder(operation,MainActivity.obj("state","refused","error",ownerMessage(busy))); }
+        });
+    }
+    void changeSelectedSource(FolderOperation operation,Uri selected,int flags) {
+        try {
+            if (!operation.current()) { retireFolderPage(operation);return; }
+            String name="";
+            if (selected != null) {
+                Uri document=DocumentsContract.buildDocumentUriUsingTree(selected,DocumentsContract.getTreeDocumentId(selected));
+                try(Cursor cursor=getContentResolver().query(document,new String[]{DocumentsContract.Document.COLUMN_DISPLAY_NAME},null,null,null)) {
+                    if (cursor != null && cursor.moveToFirst() && cursor.getString(0) != null) name=cursor.getString(0);
+                }
+                if (name.trim().isEmpty()) {
+                    finishFolder(operation,MainActivity.obj("state","refused"));return;
+                }
+            }
+            if (!operation.current()) { retireFolderPage(operation);return; }
+            JSONObject request=MainActivity.obj("source",operation.source,"action",operation.sourceAction,
+                "expected_identity",operation.expectedIdentity,"client_item_id",operation.reference,"folder_name",name,
+                "page_authority",operation.page,"admission_generation",operation.transport.nativeGeneration);
+            Bundle fields=new Bundle();fields.putString("op","owner-source-change");fields.putParcelable("tree",selected);
+            fields.putInt("permission_flags",flags);fields.putBoolean("remember",selected != null);
+            fields.putLong("page_authority",operation.page);fields.putByteArray("request",request.toString().getBytes(StandardCharsets.UTF_8));
+            finishFolder(operation,folderCall(operation,fields));
+        } catch(Exception unavailable) {
+            finishFolder(operation,MainActivity.obj("state","outcome_unknown","client_item_id",operation.reference));
         }
     }
     void retireFolderPicker(FolderOperation operation) {
