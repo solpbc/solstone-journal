@@ -5,8 +5,10 @@
   const token = window.__journalOwnerToken;
   const folders = new Map();
   window.__journalFolderSelected = (page, id) => {
-    if (page !== token) return;
-    folders.get(id)?.selected?.();
+    if (page !== token) return false;
+    const waiter = folders.get(id);
+    if (!waiter) return false;
+    try { return waiter.selected?.() === true; } catch (error) { return false; }
   };
   window.__journalFolderReply = (page, id, reply) => {
     if (page !== token) return;
@@ -18,18 +20,22 @@
   window.JournalOwnerFolders = {
     cancel() {
       for (const [id, waiter] of folders) {
-        JournalOwner.cancelFolder(token, id);
-        waiter.resolve({ state: 'cancelled' });
+        try { JournalOwner.cancelFolder(token, id); } catch (error) { /* Delivery is unconfirmed. */ }
+        waiter.resolve({ state: waiter.dispatched ? 'outcome_unknown' : 'cancelled', client_item_id: waiter.reference });
         folders.delete(id);
       }
     },
     choose(source, reference, selected) {
       if (folders.size) return Promise.resolve({ state: 'refused', error: 'journal controls busy; check health before retrying' });
       const id = crypto.randomUUID();
-      return new Promise((resolve, reject) => {
-        folders.set(id, { resolve, selected });
-        try { JournalOwner.chooseFolder(token, id, JSON.stringify({ source, client_item_id: reference })); }
-        catch (error) { folders.delete(id); reject(error); }
+      return new Promise((resolve) => {
+        const waiter = { resolve, selected, reference, dispatched: false };
+        folders.set(id, waiter);
+        try {
+          waiter.dispatched = true;
+          JournalOwner.chooseFolder(token, id, JSON.stringify({ source, client_item_id: reference }));
+        }
+        catch (error) { folders.delete(id); resolve({ state: 'outcome_unknown', client_item_id: reference }); }
       });
     },
   };

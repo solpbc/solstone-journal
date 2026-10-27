@@ -640,13 +640,19 @@ public final class OwnerActivity extends ServingActivity {
             boolean ok=result == RESULT_OK && tree != null;
             OwnerFolderPicker.Authority origin=folderPicker.acceptResult(ok,pageToken,folderGeneration);
             if (operation == null) return;
-            if (origin == null || tree == null) {
+            if (origin == null || tree == null || web == null || !operation.current()) {
                 finishFolder(operation,MainActivity.obj("state","cancelled"));
                 return;
             }
-            folderEvent(operation,"__journalFolderSelected",MainActivity.obj("selected",true));
-            try { requests.execute(() -> saveSelectedFolder(operation,tree)); }
-            catch(RejectedExecutionException busy) { finishFolder(operation,MainActivity.obj("state","refused","error",ownerMessage(busy))); }
+            // The document must retain the reference before native work may save.
+            web.evaluateJavascript("window.__journalFolderSelected&&window.__journalFolderSelected("+JSONObject.quote(operation.token)+","+JSONObject.quote(operation.id)+")", acknowledged -> {
+                if (!"true".equals(acknowledged) || !operation.current()) {
+                    finishFolder(operation,MainActivity.obj("state","cancelled"));
+                    return;
+                }
+                try { requests.execute(() -> saveSelectedFolder(operation,tree)); }
+                catch(RejectedExecutionException busy) { finishFolder(operation,MainActivity.obj("state","refused","error",ownerMessage(busy))); }
+            });
         }
     }
 
@@ -749,12 +755,6 @@ public final class OwnerActivity extends ServingActivity {
         } catch(Exception unavailable) {
             finishFolder(operation,MainActivity.obj("state","outcome_unknown","error",ownerMessage(unavailable)));
         }
-    }
-    void folderEvent(FolderOperation operation,String callback,JSONObject value) {
-        ui.post(() -> {
-            if (web == null || !operation.current()) return;
-            web.evaluateJavascript("window."+callback+"&&window."+callback+"("+JSONObject.quote(operation.token)+","+JSONObject.quote(operation.id)+","+value+")",null);
-        });
     }
     void retireFolderPicker(FolderOperation operation) {
         synchronized (folderPicker) {
