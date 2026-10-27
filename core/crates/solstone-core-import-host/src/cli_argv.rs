@@ -2487,6 +2487,10 @@ fn failure(stdout: &str, stderr: &str, exit_code: i32) -> CliRun {
     }
 }
 
+#[cfg(all(test, unix, feature = "full-tests"))]
+#[path = "sync_effect_tests.rs"]
+mod sync_effect_tests;
+
 #[cfg(test)]
 mod tests {
     use super::*;
