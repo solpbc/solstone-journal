@@ -134,6 +134,8 @@ fn run(arguments: impl IntoIterator<Item = OsString>) -> Result<(), CliError> {
         Command::Describe(arguments) => {
             let journal = effective_journal(arguments.journal.as_deref())?;
             let config = read_config(&journal)?;
+            let capture =
+                pipeline::CaptureContext::from_environment().map_err(CliError::Internal)?;
             pipeline::run(pipeline::DescribeOptions {
                 video: &arguments.video_path,
                 journal: &journal,
@@ -144,6 +146,7 @@ fn run(arguments: impl IntoIterator<Item = OsString>) -> Result<(), CliError> {
                 redact_rules: config.redact_rules,
                 max_extractions: config.max_extractions,
                 category_overrides: config.category_overrides,
+                capture,
             })
             .map_err(|error| match error {
                 pipeline::RunError::Blocked(reason) => CliError::Blocked(reason),

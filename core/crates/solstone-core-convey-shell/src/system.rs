@@ -59,6 +59,7 @@ pub async fn status(journal_root: PathBuf) -> Response {
             )
         });
 
+        let version_report = with_running_version(version_report);
         return Json(status_body(json!(version_report), json!(capture))).into_response();
     }
 
@@ -74,6 +75,18 @@ pub async fn status(journal_root: PathBuf) -> Response {
         ))
         .into_response();
     }
+}
+
+/// The checker's report, naming the version this journal is running when the
+/// checker could not.
+#[cfg(target_os = "linux")]
+fn with_running_version(
+    mut report: solstone_core_update::UpdateReport,
+) -> solstone_core_update::UpdateReport {
+    report
+        .current
+        .get_or_insert_with(|| env!("CARGO_PKG_VERSION").to_owned());
+    report
 }
 
 #[cfg(target_os = "linux")]
@@ -177,6 +190,29 @@ mod update_tests {
             assert_eq!(status.current, cli.current);
             assert_eq!(status.target, cli.target);
             assert_eq!(status.latest_platform_version, cli.latest_platform_version);
+        }
+    }
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod running_version_tests {
+    use super::*;
+    use solstone_core_update::{Availability, HoldState, UpdateReport};
+
+    #[test]
+    fn linux_status_names_the_running_version_when_the_install_is_not_identified() {
+        // The update checker cannot classify the install, but the journal
+        // still knows what it is running; only the update fields stay unknown.
+        for report in [
+            UpdateReport::not_owned_unknown(HoldState::Unheld),
+            UpdateReport::owner_context_unknown(),
+        ] {
+            let expected_code = report.code.clone();
+            let status = with_running_version(report);
+            assert_eq!(status.current.as_deref(), Some(env!("CARGO_PKG_VERSION")));
+            assert_eq!(status.availability, Availability::Unknown);
+            assert_eq!(status.latest, None);
+            assert_eq!(status.code, expected_code);
         }
     }
 }
