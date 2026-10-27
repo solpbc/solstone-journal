@@ -57,7 +57,7 @@ impl CapturedImport for ObservedImport {
         result
     }
 }
-fn observe_native_result(
+pub(super) fn observe_native_result(
     server: &MobileServing,
     host: &Arc<ForegroundProcessingHost>,
 ) -> mpsc::Receiver<NativeObservation> {
@@ -72,7 +72,7 @@ fn observe_native_result(
     receive
 }
 
-fn owner_json(server: &MobileServing, method: &str, uri: &str, body: Value) -> Value {
+pub(super) fn owner_json(server: &MobileServing, method: &str, uri: &str, body: Value) -> Value {
     let response = server
         .request_owner(method, uri, &body.to_string())
         .unwrap();
@@ -96,7 +96,7 @@ fn recorded_imports(root: &std::path::Path) -> Vec<(String, Option<String>)> {
     records
 }
 
-fn assert_native_success(receive: &mpsc::Receiver<NativeObservation>) {
+pub(super) fn assert_native_success(receive: &mpsc::Receiver<NativeObservation>) {
     let (code, stdout, stderr) = receive
         .recv_timeout(Duration::from_secs(10))
         .expect("retained native worker did not return")
@@ -104,7 +104,7 @@ fn assert_native_success(receive: &mpsc::Receiver<NativeObservation>) {
     assert_eq!(code, 0, "stdout: {stdout}; stderr: {stderr}");
 }
 
-fn assert_only_saved_record(root: &std::path::Path, id: &str) {
+pub(super) fn assert_only_saved_record(root: &std::path::Path, id: &str) {
     let records = recorded_imports(root)
         .into_iter()
         .filter(|(id, _)| solstone_core_import::validate_timestamp(id).is_ok())
@@ -112,7 +112,7 @@ fn assert_only_saved_record(root: &std::path::Path, id: &str) {
     assert_eq!(records, vec![(id.to_owned(), Some("Completed:1".into()))]);
 }
 
-fn upload_file(
+pub(super) fn upload_file(
     server: &MobileServing,
     filename: &str,
     source_hint: &str,
@@ -136,7 +136,11 @@ fn upload_file(
         .unwrap();
     response_write.set_nonblocking(true).unwrap();
     let descriptor: OwnedFd = response_write.into();
-    let mut multipart = format!("--effect\r\nContent-Disposition: form-data; name=\"client_item_id\"\r\n\r\nowner-file-effect\r\n--effect\r\nContent-Disposition: form-data; name=\"source_hint\"\r\n\r\n{source_hint}\r\n--effect\r\nContent-Disposition: form-data; name=\"file\"; filename=\"{filename}\"\r\nContent-Type: {mime}\r\n\r\n").into_bytes();
+    let mut multipart = b"--effect\r\nContent-Disposition: form-data; name=\"client_item_id\"\r\n\r\nowner-file-effect\r\n".to_vec();
+    if !source_hint.is_empty() {
+        multipart.extend_from_slice(format!("--effect\r\nContent-Disposition: form-data; name=\"source_hint\"\r\n\r\n{source_hint}\r\n").as_bytes());
+    }
+    multipart.extend_from_slice(format!("--effect\r\nContent-Disposition: form-data; name=\"file\"; filename=\"{filename}\"\r\nContent-Type: {mime}\r\n\r\n").as_bytes());
     multipart.extend_from_slice(bytes);
     multipart.extend_from_slice(b"\r\n--effect--\r\n");
     let receiver = server

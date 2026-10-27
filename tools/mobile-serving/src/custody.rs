@@ -72,6 +72,8 @@ pub(crate) struct AcceptedInput {
     /// processing-only build has no host checkpoint and does not retain it.
     #[cfg(feature = "audio")]
     digest: String,
+    #[cfg(all(unix, feature = "audio", feature = "processing"))]
+    import_root: Option<std::sync::Arc<solstone_core_journal_io::JournalRoot>>,
 }
 
 #[derive(PartialEq, Eq)]
@@ -107,6 +109,11 @@ impl AcceptedInput {
     /// This does not read or hash the recording.
     #[cfg(feature = "audio")]
     pub(crate) fn receipt_matches(&self, root: &Path, input: &Path) -> Result<bool, String> {
+        #[cfg(all(unix, feature = "processing"))]
+        if let Some(root) = &self.import_root {
+            return Ok(solstone_core_import_host::audio_custody::read(root, input)?
+                .is_some_and(|(size, digest)| size == self.stamp.size && digest == self.digest));
+        }
         let ReceiptFiles::Present(files) = accepted_receipt_files(root, input)? else {
             return Ok(false);
         };
@@ -150,6 +157,34 @@ impl AcceptedInput {
         let ReceiptFiles::Present(files) = accepted_receipt_files(root, input)? else {
             return Ok(None);
         };
+        Self::capture_receipted(input, cancelled, files)
+    }
+
+    #[cfg(all(unix, feature = "audio", feature = "processing"))]
+    pub(crate) fn capture_bound(
+        root: &std::sync::Arc<solstone_core_journal_io::JournalRoot>,
+        input: &Path,
+        cancelled: &dyn Fn() -> bool,
+    ) -> Result<Option<Self>, String> {
+        if let ReceiptFiles::Present(files) = accepted_receipt_files(root.canonical_path(), input)?
+        {
+            return Self::capture_receipted(input, cancelled, files);
+        }
+        if let Some(receipt) = solstone_core_import_host::audio_custody::read(root, input)? {
+            let mut accepted = Self::capture_receipted(input, cancelled, vec![receipt])?;
+            if let Some(accepted) = &mut accepted {
+                accepted.import_root = Some(std::sync::Arc::clone(root));
+            }
+            return Ok(accepted);
+        }
+        Ok(None)
+    }
+
+    fn capture_receipted(
+        input: &Path,
+        cancelled: &dyn Fn() -> bool,
+        files: Vec<(u64, String)>,
+    ) -> Result<Option<Self>, String> {
         let named = fs::symlink_metadata(input).map_err(|e| e.to_string())?;
         if !named.file_type().is_file() {
             return Err("input is not a regular file".into());
@@ -195,6 +230,8 @@ impl AcceptedInput {
             stamp: admitted,
             #[cfg(feature = "audio")]
             digest: digest.clone(),
+            #[cfg(all(unix, feature = "audio", feature = "processing"))]
+            import_root: None,
         };
         if cancelled() || !accepted.still_current(input) {
             return Err("input changed during custody verification".into());
@@ -203,5 +240,88 @@ impl AcceptedInput {
             .iter()
             .any(|file| file.0 == size && file.1 == digest)
             .then_some(accepted))
+    }
+}
+
+#[cfg(all(
+    test,
+    unix,
+    feature = "audio",
+    feature = "processing",
+    feature = "full-tests"
+))]
+mod import_tests {
+    use super::*;
+    use solstone_core_import_host::audio_custody;
+    use solstone_core_journal_io::JournalRoot;
+    use std::sync::Arc;
+
+    #[test]
+    fn imported_audio_requires_exact_published_witness_and_keeps_it_at_checkpoints() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp
+            .path()
+            .join("chronicle/20261026/imported_audio/120000_3");
+        fs::create_dir_all(&path).unwrap();
+        let input = path.join("imported_audio.wav");
+        fs::write(&input, b"accepted original").unwrap();
+        let root = Arc::new(JournalRoot::open(temp.path()).unwrap());
+        assert!(
+            AcceptedInput::capture_bound(&root, &input, &|| false)
+                .unwrap()
+                .is_none()
+        );
+        let segment = JournalRoot::open(&path).unwrap();
+        audio_custody::publish(&segment, "20261026_120000", input.file_name().unwrap()).unwrap();
+        let admitted = AcceptedInput::capture_bound(&root, &input, &|| false)
+            .unwrap()
+            .unwrap();
+        assert!(admitted.receipt_matches(temp.path(), &input).unwrap());
+        assert!(admitted.still_current(&input));
+        fs::write(&input, b"changed original!").unwrap();
+        assert!(!admitted.still_current(&input));
+        assert!(
+            AcceptedInput::capture_bound(&root, &input, &|| false)
+                .unwrap()
+                .is_none()
+        );
+        fs::write(path.join("imported-audio-custody.json"), b"invalid receipt").unwrap();
+        assert!(AcceptedInput::capture_bound(&root, &input, &|| false).is_err());
+        assert!(admitted.receipt_matches(temp.path(), &input).is_err());
+    }
+
+    #[test]
+    fn imported_audio_witness_refuses_stop_and_original_root_replacement() {
+        use solstone_core_import::{WorkStop, WorkStopGuard};
+        let temp = tempfile::tempdir().unwrap();
+        let journal = temp.path().join("journal");
+        let path = journal.join("chronicle/20261026/imported_audio/120000_3");
+        fs::create_dir_all(&path).unwrap();
+        let input = path.join("imported_audio.wav");
+        fs::write(&input, b"accepted original").unwrap();
+        let root = Arc::new(JournalRoot::open(&journal).unwrap());
+        let segment = JournalRoot::open(&path).unwrap();
+        let stop = WorkStop::new();
+        stop.request();
+        {
+            let _installed = WorkStopGuard::install(&stop);
+            assert!(
+                audio_custody::publish(&segment, "20261026_120000", input.file_name().unwrap())
+                    .is_err()
+            );
+        }
+        assert!(!path.join("imported-audio-custody.json").exists());
+        audio_custody::publish(&segment, "20261026_120000", input.file_name().unwrap()).unwrap();
+        assert!(AcceptedInput::capture_bound(&root, &input, &|| true).is_err());
+        fs::rename(&journal, temp.path().join("original")).unwrap();
+        fs::create_dir_all(&path).unwrap();
+        fs::write(&input, b"foreign sentinel").unwrap();
+        assert!(
+            audio_custody::publish(&segment, "20261026_120001", input.file_name().unwrap())
+                .is_err()
+        );
+        assert!(AcceptedInput::capture_bound(&root, &input, &|| false).is_err());
+        assert_eq!(fs::read(&input).unwrap(), b"foreign sentinel");
+        assert!(!path.join("imported-audio-custody.json").exists());
     }
 }

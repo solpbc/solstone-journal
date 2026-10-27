@@ -314,3 +314,7 @@ fn a_panicked_import_worker_keeps_retirement_failure_sticky_and_the_runtime_owne
 #[cfg(target_os = "linux")]
 #[path = "import_route_owner_tests.rs"]
 mod owner_effects;
+
+#[cfg(target_os = "linux")]
+#[path = "import_route_model_tests.rs"]
+mod model_effects;

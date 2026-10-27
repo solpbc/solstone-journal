@@ -5,6 +5,7 @@
 
 pub mod audio;
 pub mod audio_archive;
+pub mod audio_custody;
 pub mod audio_publication;
 pub mod call;
 pub mod cli_argv;
