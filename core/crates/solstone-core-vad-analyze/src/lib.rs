@@ -63,7 +63,7 @@ const INPUT_FEATURES_NAME: &str = "feat";
 #[cfg(feature = "runtime")]
 const OUTPUT_PROBS_NAME: &str = "probs";
 
-const DEFAULT_THRESHOLD: f64 = 0.3;
+const DEFAULT_THRESHOLD: f64 = 0.2;
 const DEFAULT_MIN_SPEECH_DURATION_MS: u32 = 0;
 const DEFAULT_MIN_SILENCE_DURATION_MS: u32 = 1000;
 const DEFAULT_SPEECH_PAD_MS: u32 = 400;

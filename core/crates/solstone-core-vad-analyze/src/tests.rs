@@ -490,7 +490,13 @@ mod full {
                 );
             }
             max_probabilities = max_probabilities.max(delta);
-            let speech = find_speech_timestamps(&actual, audio.len(), &VadOptions::default());
+            // The reference spans come from tests/generate_reference.py's policy, which fixes
+            // threshold 0.3; parity is checked at that policy, not at the product default.
+            let reference_policy = VadOptions {
+                threshold: 0.3,
+                ..VadOptions::default()
+            };
+            let speech = find_speech_timestamps(&actual, audio.len(), &reference_policy);
             assert_eq!(
                 speech
                     .iter()
