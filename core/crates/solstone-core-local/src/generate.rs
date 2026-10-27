@@ -3262,6 +3262,16 @@ mod tests {
         })
     }
 
+    /// Overflow fixtures are sized for a 16,384-token server, so they declare it.
+    const SERVED_16K: u32 = 16_384;
+
+    fn serve_window(transport: &mut ScriptedTransport, window: u32) {
+        transport.props = Some(HttpResponse {
+            status: 200,
+            body: json!({"n_ctx": window, "total_slots": 1}).to_string(),
+        });
+    }
+
     #[test]
     fn context_window_uses_live_slots_and_the_same_single_slot_default_as_connect() {
         let mut transport = ScriptedTransport::new([]);
@@ -3283,7 +3293,7 @@ mod tests {
         }
         transport.props = None;
         let context = resolve_context_window(&server(), &mut transport, None);
-        assert_eq!((context.window, context.slots), (16384, 1));
+        assert_eq!((context.window, context.slots), (32_768, 1));
     }
 
     #[test]
@@ -3335,9 +3345,10 @@ mod tests {
         let mut transport = ScriptedTransport::new([ok_http(json!({
             "choices": [{"message": {"content": "fitted response"}, "finish_reason": "stop"}]
         }))]);
+        serve_window(&mut transport, SERVED_16K);
         transport.input_token_queue = std::collections::VecDeque::from([
-            FLOOR_CONTEXT_TOKENS - 511, // exact count overflows
-            1_000,                      // loud recount of fitted body fits
+            SERVED_16K - 511, // exact count overflows
+            1_000,            // loud recount of fitted body fits
         ]);
         let root = tempfile::tempdir().expect("journal");
         let huge_transcript = format!(
@@ -3411,6 +3422,7 @@ mod tests {
         let mut transport = ScriptedTransport::new([ok_http(json!({
             "choices": [{"message": {"content": "compact response"}, "finish_reason": "stop"}]
         }))]);
+        serve_window(&mut transport, SERVED_16K);
         transport.tokenize_divisor = Some(4);
         transport.input_token_queue = std::collections::VecDeque::from([
             15_384, // Raw cannot retain 1280 reply tokens.
@@ -3454,11 +3466,12 @@ mod tests {
         let mut transport = ScriptedTransport::new([ok_http(json!({
             "choices": [{"message": {"content": "shrunk response"}, "finish_reason": "stop"}]
         }))]);
+        serve_window(&mut transport, SERVED_16K);
         transport.tokenize_divisor = Some(4);
         transport.input_token_queue = std::collections::VecDeque::from([
-            FLOOR_CONTEXT_TOKENS - 511, // exact count overflows
-            FLOOR_CONTEXT_TOKENS - 511, // first fitted loud recount still overflows
-            1_000,                      // second fitted loud recount fits
+            SERVED_16K - 511, // exact count overflows
+            SERVED_16K - 511, // first fitted loud recount still overflows
+            1_000,            // second fitted loud recount fits
         ]);
         let root = tempfile::tempdir().expect("journal");
         let huge_transcript = format!(
@@ -3482,8 +3495,9 @@ mod tests {
     #[test]
     fn linux_text_overflow_shrink_loop_is_bounded() {
         let mut transport = ScriptedTransport::new([]);
+        serve_window(&mut transport, SERVED_16K);
         transport.tokenize_divisor = Some(4);
-        transport.input_tokens = FLOOR_CONTEXT_TOKENS - 511;
+        transport.input_tokens = SERVED_16K - 511;
         let huge_transcript = format!(
             "## Entry 1\n{}\n## Entry 2\n{}",
             "x".repeat(30_000),
@@ -3512,9 +3526,10 @@ mod tests {
         let mut transport = ScriptedTransport::new([ok_http(json!({
             "choices": [{"message": {"content": "fitted response"}, "finish_reason": "stop"}]
         }))]);
+        serve_window(&mut transport, SERVED_16K);
         transport.tokenize_divisor = Some(4);
         transport.input_token_queue = std::collections::VecDeque::from([
-            FLOOR_CONTEXT_TOKENS - 511,
+            SERVED_16K - 511,
             25_000,
             19_000,
             16_500,
@@ -3545,14 +3560,15 @@ mod tests {
             "choices": [{"message": {"content": "response"}, "finish_reason": "stop"}]
         }))]);
         // Tokenizer undercounts so fitted prompt estimate is small, but loud recount is 15_000.
-        // FLOOR_CONTEXT_TOKENS (16_384): 15_000 + 256 + 256 = 15_512 <= 16_384.
+        // A 16_384 served window: 15_000 + 256 + 256 = 15_512 <= 16_384.
         // Available room = 16_384 - 15_000 - 256 = 1_128.
         // Requested max output tokens = 4_096. Clamped max tokens must become 1_128.
+        serve_window(&mut transport, SERVED_16K);
         transport.tokenize_divisor = Some(4);
         transport.input_token_queue = std::collections::VecDeque::from([
-            FLOOR_CONTEXT_TOKENS - 511, // exact count overflows
-            15_000,                     // loud recount of fitted body
-            15_000,                     // count of stabilized body
+            SERVED_16K - 511, // exact count overflows
+            15_000,           // loud recount of fitted body
+            15_000,           // count of stabilized body
         ]);
         let root = tempfile::tempdir().expect("journal");
         let huge_transcript = format!(
@@ -3580,7 +3596,7 @@ mod tests {
             posted_body["max_tokens"].as_u64().unwrap() as u32
         );
         assert_eq!(budget.clamped_max_tokens, 1_128);
-        assert_eq!(budget.window, FLOOR_CONTEXT_TOKENS);
+        assert_eq!(budget.window, SERVED_16K);
         assert_eq!(budget.requested_max_output_tokens, 4_096);
     }
 
@@ -3588,7 +3604,8 @@ mod tests {
     #[test]
     fn linux_text_overflow_preserved_content_is_unfittable() {
         let mut transport = ScriptedTransport::new([]);
-        transport.input_tokens = FLOOR_CONTEXT_TOKENS - 511;
+        serve_window(&mut transport, SERVED_16K);
+        transport.input_tokens = SERVED_16K - 511;
         let huge_preserved = "z".repeat(60_000);
         let outcome = generate_with(
             input(json!(["small transcript", huge_preserved])),

@@ -684,7 +684,7 @@ mod tests {
     #[test]
     fn tier_boundaries_and_cuda_argv() {
         for (memory, context, slots) in [
-            (15_999, 16_384, 1),
+            (15_999, 32_768, 1),
             (16_000, 32_768, 2),
             (16_001, 32_768, 2),
         ] {
@@ -997,7 +997,7 @@ mod tests {
         assert_eq!(plan.binary_path.as_deref(), Some("/path/to/mlx-helper"));
         assert_eq!(plan.model_path, "/path/to/model-dir");
         assert_eq!(plan.mmproj_path, None);
-        assert_eq!(plan.context_tokens, Some(16_384));
+        assert_eq!(plan.context_tokens, Some(32_768));
         assert_eq!(plan.parallel_slots, Some(1));
         assert_eq!(plan.prompt_cache_mib, None);
         assert_eq!(
@@ -1013,7 +1013,7 @@ mod tests {
                 "--alias",
                 "local/qwen3.5-4b",
                 "--ctx",
-                "16384",
+                "32768",
             ]
         );
         assert!(!plan.argv.iter().any(|arg| arg == "--parallel"));
@@ -1158,7 +1158,7 @@ mod tests {
 
         let plan = launch(win_input.clone());
         assert_eq!(plan.backend, PlanBackend::Vulkan);
-        assert_eq!(plan.context_tokens, Some(16_384));
+        assert_eq!(plan.context_tokens, Some(32_768));
         assert_eq!(plan.parallel_slots, Some(1));
         assert_eq!(plan.prompt_cache_mib, Some(0));
         assert!(

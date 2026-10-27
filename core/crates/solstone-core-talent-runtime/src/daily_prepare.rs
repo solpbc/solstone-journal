@@ -1783,7 +1783,7 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         location_journal(root.path(), LOCATION_DAY);
         solstone_core_facets::create_facet(root.path(), "work", "Work", "", "", "", None).unwrap();
-        let description = " a".repeat(14960);
+        let description = " a".repeat(31344);
         let record = json!({
             "id": "act-1",
             "title": "Activity",
@@ -1929,7 +1929,7 @@ mod tests {
         solstone_core_facets::create_facet(root.path(), "a", "A", "", "", "", None).unwrap();
         solstone_core_facets::create_facet(root.path(), "b", "B", "", "", "", None).unwrap();
 
-        let desc_a = " a".repeat(14349);
+        let desc_a = " a".repeat(30733);
         let story_s = " s".repeat(493);
         let story_t = " t".repeat(493);
 
@@ -2003,8 +2003,8 @@ mod tests {
         };
         let unclipped_total = unclipped_text_tokens + unclipped_schema_tokens;
         assert_eq!(
-            unclipped_total, 15585,
-            "unclipped model_text_parts + schema tokens ({unclipped_total}) must be 15585"
+            unclipped_total, 31969,
+            "unclipped model_text_parts + schema tokens ({unclipped_total}) must be 31969"
         );
 
         (stage.prompt_override.unwrap())(&mut probe_talent, &state).unwrap();
@@ -2024,12 +2024,12 @@ mod tests {
             solstone_core_local::plan::LOCAL_MIN_CONTEXT_TOKENS,
         );
         assert_eq!(
-            floor_budget, 15104,
-            "floor budget for 1024 ({floor_budget}) must be 15104"
+            floor_budget, 31488,
+            "floor budget for 1024 ({floor_budget}) must be 31488"
         );
         assert_eq!(
-            ordinary_total, 15104,
-            "ordinary tokens plus schema ({ordinary_total}) must equal 15104"
+            ordinary_total, 31488,
+            "ordinary tokens plus schema ({ordinary_total}) must equal 31488"
         );
         assert_eq!(
             ordinary_total, floor_budget,

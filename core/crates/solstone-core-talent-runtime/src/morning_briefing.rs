@@ -1117,7 +1117,7 @@ mod tests {
         fs::create_dir_all(facet.join("activities")).unwrap();
         fs::write(facet.join("facet.json"), r#"{"title":"Work"}"#).unwrap();
 
-        let huge_story = " a".repeat(25000);
+        let huge_story = " a".repeat(50000);
         let record1 = json!({
             "id": "act_huge",
             "title": "First Huge Activity",

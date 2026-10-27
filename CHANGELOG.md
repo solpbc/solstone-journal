@@ -6,6 +6,10 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- the local model can now read about twice as much in a single request on every mac, and on windows and linux computers with smaller graphics cards (larger ones already could). on those graphics cards it sets aside about half a gigabyte more memory to do it. on computers whose graphics card has 8 GB, speech-to-text now runs on the processor while you use the local model for thinking.
+
 ### Fixed
 
 - security fix: updated a library used by journals on phones to address a memory-safety flaw.
