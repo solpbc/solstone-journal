@@ -35,7 +35,6 @@ mod product_names;
 mod prompt_context;
 pub mod pulse;
 mod screen_batch;
-mod sense_examples;
 mod sense_grounding;
 pub mod source_passages;
 pub mod speaker_attribution;
@@ -1315,7 +1314,6 @@ pub(crate) fn generate_and_write(
     }
     let response =
         sense_grounding::ground(prepared, &context.journal, &response).unwrap_or(response);
-    let response = sense_examples::scrub(prepared, &response).unwrap_or(response);
     if let Some((stage, state)) = stage {
         if stage.unavailable_commit.is_some()
             && prepared
