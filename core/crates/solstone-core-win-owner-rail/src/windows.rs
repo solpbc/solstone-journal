@@ -142,6 +142,13 @@ fn prepare(options: &Options) -> Result<(), String> {
     let worktree = canonical(options.required("--worktree")?)?;
     let worker_path = canonical(options.required("--worker")?)?;
     let worker_sha256 = file_sha256(&worker_path)?;
+    let vcvars_path = options.required("--vcvars")?.to_owned();
+    if !Path::new(&vcvars_path).is_absolute()
+        || vcvars_path.contains(['"', '%', '!', '&', '|', '<', '>', '^', '\r', '\n', '\0'])
+    {
+        return Err("vcvars path must be an absolute batch-safe path".to_owned());
+    }
+    let vcvars_sha256 = file_sha256(&vcvars_path)?;
     let expected_commit = options.required("--expected-commit")?.to_owned();
     let expected_cargo_lock_sha256 = options.required("--expected-lock")?.to_owned();
     let refs_root = refs_root_from_environment(options)?;
@@ -156,6 +163,8 @@ fn prepare(options: &Options) -> Result<(), String> {
         worktree: worktree.clone(),
         worker_path: worker_path.clone(),
         worker_sha256,
+        vcvars_path,
+        vcvars_sha256,
         refs_root,
         created_at_unix_seconds: now_seconds()?,
     };
@@ -444,11 +453,16 @@ fn cargo_test(lease: &LeaseRecord) -> Result<Output, String> {
     // The elevated rail owns core\target, so the limited child deliberately uses its ACL-granted
     // ProgramData target directory through CARGO_TARGET_DIR instead of inheriting that target tree.
     // A scheduled InteractiveToken task does not inherit the elevated runner's
-    // vcvars environment. Establish MSVC in this limited process as well.
+    // vcvars environment or necessarily see its installer discovery metadata.
+    // Use the same setup script admitted and digest-bound by the parent.
+    if file_sha256(&lease.vcvars_path)? != lease.vcvars_sha256 {
+        return Err("ordinary-owner vcvars script changed after prepare".to_owned());
+    }
     Command::new("cmd.exe")
         .current_dir(&lease.worktree)
         .env("CARGO_TARGET_DIR", &lease.target_dir)
         .env(REFS_ROOT_ENV, &lease.refs_root)
+        .env("SOLSTONE_WIN_CI_VCVARS", &lease.vcvars_path)
         .args(["/d", "/c", "scripts\\win-owner-ci.cmd"])
         .output()
         .map_err(|error| format!("run ordinary-owner cargo test: {error}"))

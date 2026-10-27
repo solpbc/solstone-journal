@@ -42,6 +42,10 @@ pub struct LeaseRecord {
     pub worktree: String,
     pub worker_path: String,
     pub worker_sha256: String,
+    #[serde(default)]
+    pub vcvars_path: String,
+    #[serde(default)]
+    pub vcvars_sha256: String,
     pub task_name: String,
     pub task_command: String,
     pub payload_sha256: String,
@@ -70,6 +74,8 @@ impl LeaseRecord {
             &input.expected_owner_sid,
             &input.worktree,
             &input.worker_sha256,
+            &input.vcvars_path,
+            &input.vcvars_sha256,
             &task_name,
             &task_command,
             &result_path,
@@ -90,6 +96,8 @@ impl LeaseRecord {
             worktree: input.worktree,
             worker_path: input.worker_path,
             worker_sha256: input.worker_sha256,
+            vcvars_path: input.vcvars_path,
+            vcvars_sha256: input.vcvars_sha256,
             task_name,
             task_command,
             payload_sha256,
@@ -133,6 +141,8 @@ pub struct LeaseInput {
     pub worktree: String,
     pub worker_path: String,
     pub worker_sha256: String,
+    pub vcvars_path: String,
+    pub vcvars_sha256: String,
     pub refs_root: String,
     pub created_at_unix_seconds: u64,
 }
@@ -1657,8 +1667,8 @@ fn parse_csv_rows(input: &str) -> Result<Vec<Vec<String>>, RailError> {
 mod tests {
     use super::*;
 
-    fn lease() -> LeaseRecord {
-        LeaseRecord::new(LeaseInput {
+    fn lease_input() -> LeaseInput {
+        LeaseInput {
             nonce: "ABCDEFGH23456789ABCDEFGH23456789".to_owned(),
             lease_path: LEASE_PATH.to_owned(),
             expected_commit: "a".repeat(40),
@@ -1670,9 +1680,42 @@ mod tests {
             worker_path: r"C:\sol\solstone\core\target\debug\solstone-core-win-owner-rail.exe"
                 .to_owned(),
             worker_sha256: "c".repeat(64),
+            vcvars_path: r"C:\BuildTools\VC\Auxiliary\Build\vcvarsall.bat".to_owned(),
+            vcvars_sha256: "d".repeat(64),
             refs_root: r"R:\refs".to_owned(),
             created_at_unix_seconds: 1,
-        })
+        }
+    }
+
+    fn lease() -> LeaseRecord {
+        LeaseRecord::new(lease_input())
+    }
+
+    #[test]
+    fn compiler_setup_path_and_digest_are_bound_to_the_result() {
+        let original = lease();
+        let result = passed_result(&original);
+        for change_path in [true, false] {
+            let mut input = lease_input();
+            if change_path {
+                input.vcvars_path.push_str(".other");
+            } else {
+                input.vcvars_sha256 = "e".repeat(64);
+            }
+            let changed = LeaseRecord::new(input);
+            assert_ne!(original.payload_sha256, changed.payload_sha256);
+            assert!(verify_result_binding(&changed, &result).is_err());
+        }
+    }
+
+    #[test]
+    fn older_leases_remain_readable_for_recovery() {
+        let mut old = serde_json::to_value(lease()).unwrap();
+        old.as_object_mut().unwrap().remove("vcvars_path");
+        old.as_object_mut().unwrap().remove("vcvars_sha256");
+        let decoded: LeaseRecord = serde_json::from_value(old).unwrap();
+        assert!(decoded.vcvars_path.is_empty());
+        assert!(decoded.vcvars_sha256.is_empty());
     }
 
     fn attestation() -> TokenAttestation {

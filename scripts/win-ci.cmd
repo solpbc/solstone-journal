@@ -235,7 +235,7 @@ echo === cargo test --locked journal-io ordinary-owner inventory control ===
 set "JOURNAL_WIN_CI_OWNER_RAIL=core\target\x86_64-pc-windows-msvc\debug\solstone-core-win-owner-rail.exe"
 set "JOURNAL_WIN_CI_OWNER_LEASE=C:\ProgramData\solstone\journal-win-owner-rail\ordinary-owner.lease.json"
 "%JOURNAL_WIN_CI_OWNER_RAIL%" recover-held --lease "%JOURNAL_WIN_CI_OWNER_LEASE%" || goto :ordinary_owner_failed
-"%JOURNAL_WIN_CI_OWNER_RAIL%" prepare --lease "%JOURNAL_WIN_CI_OWNER_LEASE%" --worktree "%CD%" --worker "%CD%\%JOURNAL_WIN_CI_OWNER_RAIL%" --expected-commit "%EXPECTED_JOURNAL_COMMIT%" --expected-lock "%EXPECTED_JOURNAL_CARGO_LOCK_SHA256%" --owner-account "%SOLSTONE_JOURNAL_WIN_OWNER_ACCOUNT%" --refs-root-env SOLSTONE_JOURNAL_WIN_REFS_ROOT || goto :ordinary_owner_failed
+"%JOURNAL_WIN_CI_OWNER_RAIL%" prepare --lease "%JOURNAL_WIN_CI_OWNER_LEASE%" --worktree "%CD%" --worker "%CD%\%JOURNAL_WIN_CI_OWNER_RAIL%" --expected-commit "%EXPECTED_JOURNAL_COMMIT%" --expected-lock "%EXPECTED_JOURNAL_CARGO_LOCK_SHA256%" --vcvars "%VSINSTALL%\VC\Auxiliary\Build\vcvarsall.bat" --owner-account "%SOLSTONE_JOURNAL_WIN_OWNER_ACCOUNT%" --refs-root-env SOLSTONE_JOURNAL_WIN_REFS_ROOT || goto :ordinary_owner_failed
 powershell -NoProfile -Command "$lease = Get-Content $env:JOURNAL_WIN_CI_OWNER_LEASE | ConvertFrom-Json; if ([string]::IsNullOrWhiteSpace($lease.nonce)) { exit 1 }; Set-Content -Encoding ascii -Path 'core\target\journal-win-ci-owner-nonce.cmd' -Value ('set JOURNAL_WIN_CI_PREPARED_OWNER_NONCE=' + $lease.nonce)" || goto :ordinary_owner_failed
 call core\target\journal-win-ci-owner-nonce.cmd || goto :ordinary_owner_failed
 del /q core\target\journal-win-ci-owner-nonce.cmd >nul 2>&1
