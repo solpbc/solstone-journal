@@ -298,10 +298,6 @@ fn api_router_from_state(state: Arc<RouterState>) -> Router {
             post(update_description_route),
         )
         .route(
-            "/app/entities/api/{facet_name}/generate-description",
-            post(generate_description_route),
-        )
-        .route(
             "/app/entities/api/{facet_name}/observations",
             get(observations_route),
         )
@@ -2912,44 +2908,6 @@ async fn delete_outcomes_route(
         .map(crate::deferred_delete::status_body)
         .collect::<Vec<_>>();
     Json(json!({ "outcomes": outcomes })).into_response()
-}
-
-async fn generate_description_route(
-    Extension(b): Extension<AccessBasis>,
-    RoutePath(_facet_name): RoutePath<String>,
-    request: Request,
-) -> Response {
-    if let Some(response) = admitted(&b) {
-        return response;
-    }
-    let bytes = match axum::body::to_bytes(request.into_body(), usize::MAX).await {
-        Ok(bytes) if !bytes.is_empty() => bytes,
-        _ => return refusal(ReasonCode::MissingRequestBody, "No data provided"),
-    };
-    let body: Value = match serde_json::from_slice::<Value>(&bytes) {
-        Ok(body) if body.as_object().is_some_and(|body| !body.is_empty()) => body,
-        _ => return refusal(ReasonCode::MissingRequestBody, "No data provided"),
-    };
-    let entity_type = body
-        .get("type")
-        .and_then(Value::as_str)
-        .unwrap_or_default()
-        .trim();
-    let entity_name = body
-        .get("name")
-        .and_then(Value::as_str)
-        .unwrap_or_default()
-        .trim();
-    if entity_type.is_empty() || entity_name.is_empty() {
-        return refusal(
-            ReasonCode::MissingRequiredField,
-            "Type and name are required",
-        );
-    }
-    refusal(
-        ReasonCode::TalentNotPorted,
-        "This entity talent route is not ported yet.",
-    )
 }
 
 async fn update_journal_entity_route(

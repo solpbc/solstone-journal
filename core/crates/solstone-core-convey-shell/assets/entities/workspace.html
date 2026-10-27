@@ -85,7 +85,6 @@
 
 .voiceprint-icon svg,
 .facet-rel-voiceprint svg,
-.btn-icon svg,
 .entity-delete-btn svg {
   width: 1em;
   height: 1em;
@@ -741,33 +740,6 @@
 .btn-sm {
   padding: 0.35em 0.75em;
   font-size: 0.85em;
-}
-
-.btn-icon {
-  background: none;
-  border: none;
-  cursor: pointer;
-  padding: 0.25em;
-  font-size: 1.1em;
-  transition: transform 0.15s;
-}
-
-.btn-icon:hover {
-  transform: scale(1.15);
-}
-
-.btn-icon:focus-visible {
-  outline: 2px solid var(--facet-color, var(--focus));
-  outline-offset: 2px;
-  border-radius: 4px;
-}
-
-.btn-icon:active {
-  transform: scale(0.9);
-}
-
-.btn-icon.generating {
-  animation: spin 1s linear infinite;
 }
 
 /* Detected entities table */
@@ -2415,9 +2387,6 @@ let detailObservationState = {
   defaultDay: null,
 };
 let pendingJournalMergeDone = null;
-const pendingAgentCallbacks = new Map(); // use_id → callback function
-const ENTITIES_CORTEX_STALL_MS = 2 * 60 * 1000;
-let cortexSub = null;
 const _errorTimers = {};
 
 // Standard entity types - fetched from server
@@ -5360,13 +5329,6 @@ function startDescriptionEdit(entity) {
   btnContainer.style.flexDirection = 'column';
   btnContainer.style.gap = '0.25em';
 
-  const generateBtn = document.createElement('button');
-  generateBtn.type = 'button';
-  generateBtn.className = 'btn-icon';
-  generateBtn.title = 'generate with AI';
-  generateBtn.setAttribute('aria-label', generateBtn.title);
-  generateBtn.innerHTML = `<span aria-hidden="true">${(window.ConveyIcons?.svg('sparkles') || '')}</span>`;
-
   const saveBtn = document.createElement('button');
   saveBtn.type = 'button';
   saveBtn.className = 'btn btn-primary btn-sm';
@@ -5377,7 +5339,6 @@ function startDescriptionEdit(entity) {
   cancelBtn.className = 'btn btn-secondary btn-sm';
   cancelBtn.textContent = 'cancel';
 
-  btnContainer.appendChild(generateBtn);
   btnContainer.appendChild(saveBtn);
   btnContainer.appendChild(cancelBtn);
 
@@ -5396,48 +5357,6 @@ function startDescriptionEdit(entity) {
       e.preventDefault();
       renderDescriptionSection(entity);
     }
-  };
-
-  generateBtn.onclick = () => {
-    hideInlineError('description-save-error');
-    textarea.disabled = true;
-    generateBtn.classList.add('generating');
-
-    window.apiJson(`api/${encodeURIComponent(currentFacet)}/generate-description`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        type: entity.type,
-        name: entity.name,
-        current_description: textarea.value
-      })
-    })
-    .then(data => {
-      if (!data?.use_id) {
-        throw new window.ApiError({
-          cause: 'parse',
-          status: 200,
-          serverMessage: 'Malformed server response',
-          url: `api/${encodeURIComponent(currentFacet)}/generate-description`
-        });
-      }
-
-      listenForAgentCompletion(data.use_id, (result) => {
-        if (result.success && result.response) {
-          saveDescription(entity, result.response);
-        } else {
-          textarea.disabled = false;
-          generateBtn.classList.remove('generating');
-          showInlineError('description-save-error', result.error || "Couldn't start description generation");
-        }
-      });
-    })
-    .catch(err => {
-      textarea.disabled = false;
-      generateBtn.classList.remove('generating');
-      showInlineError('description-save-error', entityErrorMessage(err, "Couldn't start description generation"));
-      window.logError(err, { context: 'entities: generateDescription kickoff failed' });
-    });
   };
 }
 
@@ -5723,7 +5642,6 @@ async function initEntities() {
   loadEntities();
   loadTidyGroups();
   reportUnfinishedEntityDeletes();
-  setupCortexListener();
 
   // Entity search
   const entitySearchInput = document.getElementById('entity-search');
@@ -6545,56 +6463,6 @@ function attachDetectedEntity(entity, button) {
     button.disabled = false;
     button.style.opacity = '1';
   });
-}
-
-// Cortex event listener for agent operations
-function setupCortexListener() {
-  if (!window.appEvents) {
-    console.warn('appEvents not available');
-    return;
-  }
-
-  // No schema gate: this listener intentionally accepts mixed cortex traffic —
-  // use-tied frames plus tract-level `status` frames that carry `uses:[...]` and no
-  // top-level `use_id`. The `msg.use_id` guard in the handler is the authoritative filter.
-  cortexSub = window.appEvents.listen('cortex', {
-    correlationKey: 'use_id',
-    timeout: ENTITIES_CORTEX_STALL_MS,
-    onTimeout: (useId) => handleEntitiesTimeout(useId)
-  }, (msg) => {
-    const agentId = msg.use_id;
-    if (!agentId) return;
-
-    // One-off callbacks (description generation)
-    if (pendingAgentCallbacks.has(agentId)) {
-      if (msg.event === 'finish') {
-        const callback = pendingAgentCallbacks.get(agentId);
-        pendingAgentCallbacks.delete(agentId);
-        callback({ success: true, response: msg.result });
-      } else if (msg.event === 'error') {
-        const callback = pendingAgentCallbacks.get(agentId);
-        pendingAgentCallbacks.delete(agentId);
-        callback({ success: false, error: msg.error });
-      }
-    }
-  });
-}
-
-function listenForAgentCompletion(agentId, callback) {
-  if (!window.appEvents) {
-    callback({ success: false, error: 'Events not available' });
-    return;
-  }
-  pendingAgentCallbacks.set(agentId, callback);
-  cortexSub?.pending?.track(agentId);
-}
-
-function handleEntitiesTimeout(useId) {
-  if (pendingAgentCallbacks.has(useId)) {
-    const callback = pendingAgentCallbacks.get(useId);
-    pendingAgentCallbacks.delete(useId);
-    callback({ success: false, error: `Generation timed out. ${window.CONVEY_COPY.RELOAD_HINT}` });
-  }
 }
 
 // Delete detected entity

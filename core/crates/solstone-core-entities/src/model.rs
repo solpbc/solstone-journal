@@ -88,8 +88,6 @@ pub enum ReasonCode {
     ResolvedChoiceEntityAbsent,
     ResolvedChoiceEntityBlocked,
     EntityAmbiguityCorrupt,
-    /// Native talent spawn is not ported; not a transient agent outage.
-    TalentNotPorted,
 }
 
 impl ReasonCode {
@@ -127,7 +125,6 @@ impl ReasonCode {
             Self::ResolvedChoiceEntityAbsent => "resolved_choice_entity_absent",
             Self::ResolvedChoiceEntityBlocked => "resolved_choice_entity_blocked",
             Self::EntityAmbiguityCorrupt => "entity_ambiguity_corrupt",
-            Self::TalentNotPorted => "talent_not_ported",
         }
     }
     pub const fn status(self) -> StatusCode {
@@ -153,7 +150,6 @@ impl ReasonCode {
             | Self::ResolvedChoiceEntityAbsent
             | Self::ResolvedChoiceEntityBlocked => StatusCode::NOT_FOUND,
             Self::EntityAlreadyDeleted | Self::OperationNoLongerAvailable => StatusCode::GONE,
-            Self::TalentNotPorted => StatusCode::NOT_IMPLEMENTED,
             Self::EntityOperationFailed
             | Self::EntityAmbiguityCorrupt
             | Self::EntityDeleteNotCancelled
