@@ -612,7 +612,7 @@
   function renderAgentStepHtml() {
     let commandBlock = '';
     const door = agentsPayload?.local_door;
-    if (door && door.enabled === true && door.listening === true && typeof door.address === 'string') {
+    if (agentsPayload?.local_agent_helpers === true && door && door.enabled === true && door.listening === true && typeof door.address === 'string') {
       const address = door.address;
       const cmd = 'claude mcp add --transport http journal "' + address + '"';
       commandBlock = '<div class="pulse-agent-command" data-agent-command>'

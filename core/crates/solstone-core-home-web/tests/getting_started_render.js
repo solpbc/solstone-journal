@@ -980,12 +980,36 @@ async function runTests() {
     },
     agentsPayload: {
       connections: [],
+      local_agent_helpers: true,
       local_door: { enabled: true, listening: true, address: '127.0.0.1:8000' },
     },
     agentsSettled: true,
   });
   renderPulse(welcomePulse);
   assert(surface.querySelector('[data-agent-command]'), '[data-agent-command] present when door enabled + listening + address string');
+
+  // A mobile host still exposes the generic local door, but has no desktop
+  // helper on that device. Keep the agent step for clients on another device.
+  for (const helpers of [false, undefined]) {
+    setState({
+      firstMinutesPayload: {
+        window_open: true,
+        devices_known: true,
+        devices: [],
+        checks: { phone: true, thinking: true },
+      },
+      agentsPayload: {
+        connections: [],
+        local_agent_helpers: helpers,
+        local_door: { enabled: true, listening: true, address: 'http://127.0.0.1:7659/mcp' },
+      },
+      agentsSettled: true,
+    });
+    renderPulse(welcomePulse);
+    assert(!surface.querySelector('[data-agent-command]'), 'no same-device desktop command without helper capability');
+    const step = surface.querySelector('[data-agent-step]');
+    assert(step && step.querySelector('a[href="/app/agents/"]'), 'keep personal-agent connection guidance on a mobile host');
+  }
 
   // door not enabled or not listening or not string
   setState({
@@ -997,6 +1021,7 @@ async function runTests() {
     },
     agentsPayload: {
       connections: [],
+      local_agent_helpers: true,
       local_door: { enabled: false, listening: true, address: '127.0.0.1:8000' },
     },
     agentsSettled: true,
