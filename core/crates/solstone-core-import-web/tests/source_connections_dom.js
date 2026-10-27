@@ -142,6 +142,32 @@ module.exports = async function sourceConnectionContracts(crateDir) {
   }
   {
     const h = harness(crateDir);
+    h.run("row.schedule={enabled:true,entries:[{name:'sync:obsidian',active:true,entry:{every:'1h'}},{name:'owner:source:obsidian',active:true,entry:{every:'15m'}}],blocked_names:[]};showSchedule(row)");
+    assert.equal(h.select.value, '', 'mixed active aliases require an explicit cadence choice');
+    await h.run("schedule(row,'PUT')");
+    assert.equal(h.calls.length, 0, 'Save cannot silently normalize mixed cadences');
+    h.select.value = '1d';
+    h.input.checked = true;
+    await h.run("schedule(row,'PUT')");
+    const writes = h.calls.filter(call => call.options?.method === 'PUT');
+    assert.equal(writes.length, 1);
+    assert.deepEqual(JSON.parse(writes[0].options.body), { every: '1d', enabled: true });
+    cases++;
+  }
+  {
+    const h = harness(crateDir);
+    for (const active of [true, false]) {
+      h.run(`row.schedule={enabled:${active},entries:[{name:'sync:obsidian',active:${active},entry:{every:'3m'}},{name:'owner:source:obsidian',active:${active},entry:{every:'3m'}}],blocked_names:[]};showSchedule(row)`);
+      assert.equal(h.select.value, '3m', 'one unique maintained cadence is reflected');
+    }
+    h.run("row.schedule={enabled:false,entries:[{name:'sync:obsidian',active:false,entry:{every:'1h'}},{name:'owner:source:obsidian',active:false,entry:{every:'15m'}}],blocked_names:[]};showSchedule(row)");
+    assert.equal(h.select.value, '', 'mixed disabled aliases also have no single cadence');
+    h.run("row.schedule={enabled:true,entries:[{name:'sync:obsidian',active:true,entry:{every:'3m'}},{name:'owner:source:obsidian',active:false,entry:{every:'15m'}}],blocked_names:[]};showSchedule(row)");
+    assert.equal(h.select.value, '3m', 'a disabled duplicate does not override the active cadence');
+    cases++;
+  }
+  {
+    const h = harness(crateDir);
     await h.run('sync(row)');
     assert.equal(h.calls.filter(call => call.options?.method === 'POST').length, 1);
     assert.equal(JSON.parse(h.storage.get('journal-source-operation:obsidian')).sync.reference, 'accepted-sync');

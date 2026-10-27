@@ -76,8 +76,8 @@
     const schedule = row.schedule;
     if (!schedule) return;
     const active = schedule.entries.filter(item => item.active);
-    const maintained = active[0] || schedule.entries[0];
-    const every = typeof maintained?.entry?.every === 'string' ? maintained.entry.every : '';
+    const cadences = [...new Set((active.length ? active : schedule.entries).map(item => item.entry.every))];
+    const every = cadences.length === 1 ? cadences[0] : '';
     const options = [['', 'choose a cadence'], ['15m', 'every 15 minutes'], ['1h', 'every hour'], ['1d', 'every day']];
     if (every && !options.some(([value]) => value === every)) options.push([every, every]);
     form.querySelector('select').innerHTML = options.map(([value, label]) => `<option value="${escape(value)}"${value === every ? ' selected' : ''}>${escape(label)}</option>`).join('');
