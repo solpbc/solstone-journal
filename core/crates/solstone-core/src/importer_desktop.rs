@@ -178,7 +178,7 @@ fn pdf_worker_sibling() -> Result<PathBuf, String> {
 }
 
 enum DesktopModel {
-    Ready(SystemDocumentModelClient),
+    Ready(Box<SystemDocumentModelClient>),
     Missing(String),
 }
 
@@ -211,7 +211,7 @@ impl DocumentModelClient for DesktopModel {
 
 fn desktop_model() -> DesktopModel {
     match OneShotClient::sibling() {
-        Ok(client) => DesktopModel::Ready(SystemDocumentModelClient::new(client)),
+        Ok(client) => DesktopModel::Ready(Box::new(SystemDocumentModelClient::new(client))),
         Err(error) => DesktopModel::Missing(error.to_string()),
     }
 }

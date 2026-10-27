@@ -1400,7 +1400,7 @@ impl document::PdfWorker for OwnedPdf {
 
 #[cfg(test)]
 enum OwnedModel {
-    Ready(document::SystemDocumentModelClient),
+    Ready(Box<document::SystemDocumentModelClient>),
     Missing(FailingModel),
 }
 
@@ -1451,7 +1451,7 @@ fn owned_pdf() -> OwnedPdf {
 #[cfg(test)]
 fn owned_model() -> OwnedModel {
     match solstone_core_generate::OneShotClient::sibling() {
-        Ok(client) => OwnedModel::Ready(document::SystemDocumentModelClient::new(client)),
+        Ok(client) => OwnedModel::Ready(Box::new(document::SystemDocumentModelClient::new(client))),
         Err(error) => OwnedModel::Missing(FailingModel(error.to_string())),
     }
 }
