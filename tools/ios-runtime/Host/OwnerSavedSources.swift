@@ -12,7 +12,7 @@ enum OwnerSavedSources {
         guard let material, let destination,
               let text = String(validatingCString: material),
               let path = String(validatingCString: destination) else { return -1 }
-        return copy(text, to: URL(fileURLWithPath: path, isDirectory: true))
+        return OwnerSavedSources.copy(text, to: URL(fileURLWithPath: path, isDirectory: true))
       })
     }
     guard identity != 0 else { throw NSError(domain: "saved-source-provider-unavailable", code: 1) }
