@@ -322,6 +322,11 @@ const SCANNED_MODULE_SOURCES: &[(&str, &str, &str)] = &[
     ),
     (
         "convey",
+        "embedded_producer_tests",
+        include_str!("../../../solstone-core-convey-shell/src/embedded_producer_tests.rs"),
+    ),
+    (
+        "convey",
         "entities",
         include_str!("../../../solstone-core-convey-shell/src/entities.rs"),
     ),
@@ -382,6 +387,16 @@ const SCANNED_MODULE_SOURCES: &[(&str, &str, &str)] = &[
     ),
     (
         "convey",
+        "recovery_drain",
+        include_str!("../../../solstone-core-convey-shell/src/recovery_drain.rs"),
+    ),
+    (
+        "convey",
+        "recovery_watch",
+        include_str!("../../../solstone-core-convey-shell/src/recovery_watch.rs"),
+    ),
+    (
+        "convey",
         "registry",
         include_str!("../../../solstone-core-convey-shell/src/registry.rs"),
     ),
@@ -394,6 +409,11 @@ const SCANNED_MODULE_SOURCES: &[(&str, &str, &str)] = &[
         "convey",
         "relay_admission",
         include_str!("../../../solstone-core-convey-shell/src/relay_admission.rs"),
+    ),
+    (
+        "convey",
+        "service_handoffs",
+        include_str!("../../../solstone-core-convey-shell/src/service_handoffs.rs"),
     ),
     (
         "convey",
@@ -664,6 +684,11 @@ const SCANNED_MODULE_SOURCES: &[(&str, &str, &str)] = &[
         "spl",
         "service_token_renewal",
         include_str!("../../../solstone-core-spl/src/service_token_renewal.rs"),
+    ),
+    (
+        "spl",
+        "service_token_write",
+        include_str!("../../../solstone-core-spl/src/service_token_write.rs"),
     ),
     (
         "spl",

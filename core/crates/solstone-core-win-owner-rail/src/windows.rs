@@ -65,7 +65,6 @@ use windows_sys::Win32::Storage::FileSystem::{
 };
 use windows_sys::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
 
-pub const ORDINARY_OWNER_CARGO_TEST: &str = "cargo test --manifest-path core\\Cargo.toml --locked -p solstone-core-journal-io --test windows_ordinary_owner_inventory --features test-hooks -- --nocapture";
 const OWNER_ACCOUNT_ENV: &str = "SOLSTONE_JOURNAL_WIN_OWNER_ACCOUNT";
 const REFS_ROOT_ENV: &str = "SOLSTONE_JOURNAL_WIN_REFS_ROOT";
 const POLL_LIMIT: usize = 120;
@@ -444,15 +443,13 @@ fn limited_child(options: &Options) -> Result<(), String> {
 fn cargo_test(lease: &LeaseRecord) -> Result<Output, String> {
     // The elevated rail owns core\target, so the limited child deliberately uses its ACL-granted
     // ProgramData target directory through CARGO_TARGET_DIR instead of inheriting that target tree.
-    let mut command_words = ORDINARY_OWNER_CARGO_TEST.split_ascii_whitespace();
-    let executable = command_words
-        .next()
-        .ok_or_else(|| "ordinary-owner command is empty".to_owned())?;
-    Command::new(executable)
+    // A scheduled InteractiveToken task does not inherit the elevated runner's
+    // vcvars environment. Establish MSVC in this limited process as well.
+    Command::new("cmd.exe")
         .current_dir(&lease.worktree)
         .env("CARGO_TARGET_DIR", &lease.target_dir)
         .env(REFS_ROOT_ENV, &lease.refs_root)
-        .args(command_words)
+        .args(["/d", "/c", "scripts\\win-owner-ci.cmd"])
         .output()
         .map_err(|error| format!("run ordinary-owner cargo test: {error}"))
 }

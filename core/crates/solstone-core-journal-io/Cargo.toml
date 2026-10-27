@@ -30,7 +30,7 @@ test-hooks = []
 tempfile = "3.24.0"
 
 [target.'cfg(unix)'.dev-dependencies]
-nix = { workspace = true, features = ["signal"] }
+nix = { workspace = true, features = ["signal", "resource"] }
 
 # The no-replace platform syscalls have narrowly audited FFI boundaries; keep
 # the workspace prohibition in force elsewhere and allow those functions only.

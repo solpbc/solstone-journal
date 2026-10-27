@@ -30,6 +30,11 @@ struct AllowlistRow {
 
 const ALLOWLIST: &[AllowlistRow] = &[
     AllowlistRow {
+        path: "core/crates/solstone-core-update/src/catalogue.rs",
+        marker: "CATALOGUE_HOST",
+        reason: "signed platform catalogue's expected host for initial URL and every redirect",
+    },
+    AllowlistRow {
         path: "core/crates/solstone-core-update/src/fetch.rs",
         marker: "UPDATE_ORIGIN",
         reason: "native updater version origin",

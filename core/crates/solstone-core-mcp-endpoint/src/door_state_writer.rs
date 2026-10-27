@@ -75,7 +75,8 @@ impl DoorStateWriter {
                 solstone_core_journal_io::DEFAULT_LOCK_TIMEOUT,
                 solstone_core_journal_io::DEFAULT_LOCK_POLL_INTERVAL,
                 &check,
-            )?;
+            )
+            .map_err(io::Error::other)?;
             match solstone_core_journal_io::atomic_replace_detailed_bound_checked(
                 parent.as_ref(),
                 &lock,

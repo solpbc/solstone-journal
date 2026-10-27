@@ -83,11 +83,15 @@ impl Drop for LanPublishStopGuard {
 
 #[cfg(test)]
 pub fn set_lan_publish_stop(journal_root: &Path, step: LanPublishStep) -> LanPublishStopGuard {
+    let journal_root = solstone_core_journal_io::JournalRoot::open(journal_root)
+        .expect("test journal exists")
+        .canonical_path()
+        .to_owned();
     LAN_PUBLISH_STOPS
         .lock()
         .unwrap()
-        .insert(journal_root.to_path_buf(), step);
-    LanPublishStopGuard(journal_root.to_path_buf())
+        .insert(journal_root.clone(), step);
+    LanPublishStopGuard(journal_root)
 }
 
 #[cfg(test)]
@@ -2323,6 +2327,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "full-tests")]
     fn lan_ca_durability_and_issuance_failure_cuts() {
         let temp = tempfile::Builder::new()
             .prefix("lan-door-cuts-")

@@ -4,6 +4,10 @@
 const SCHEDULE_MOD: &str = include_str!("../../../solstone-core-system/src/schedule/mod.rs");
 const SCHEDULE_SOURCES: &[(&str, &str)] = &[
     (
+        "bound",
+        include_str!("../../../solstone-core-system/src/schedule/bound.rs"),
+    ),
+    (
         "caps",
         include_str!("../../../solstone-core-system/src/schedule/caps.rs"),
     ),

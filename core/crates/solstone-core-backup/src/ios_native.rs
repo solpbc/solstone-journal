@@ -264,7 +264,7 @@ unsafe extern "C" {
 }
 
 #[cfg(not(feature = "ios-linked-bridge"))]
-pub(crate) use unlinked::restic_bridge_http_exchange;
+pub use unlinked::restic_bridge_http_exchange;
 #[cfg(not(feature = "ios-linked-bridge"))]
 use unlinked::*;
 

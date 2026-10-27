@@ -4,6 +4,7 @@ core/fixtures/convey_records_journal/**/*.npz binary
 core/fixtures/convey_records_journal/**/*.png binary
 core/crates/solstone-core-distribution/fixtures/pdfium-win-licenses/** binary
 scripts/win-ci.cmd text eol=crlf
+scripts/win-owner-ci.cmd text eol=crlf
 
 # Preserve the exact upstream notice bytes used by the source index.
 core/distribution/*-rust-NOTICES.txt -text -whitespace

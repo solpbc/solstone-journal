@@ -934,7 +934,22 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "full-tests")]
     fn candidate_limit_accepts_exactly_512_and_opens_none_at_513() {
+        #[cfg(unix)]
+        {
+            use nix::sys::resource::{Resource, getrlimit, setrlimit};
+
+            let (soft, hard) = getrlimit(Resource::RLIMIT_NOFILE).unwrap();
+            let required = (OPLOG_CATALOG_MAX_CANDIDATES_PER_DAY * 2) as u64;
+            if soft < required {
+                assert!(
+                    hard >= required,
+                    "catalog fixture needs {required} descriptors"
+                );
+                setrlimit(Resource::RLIMIT_NOFILE, required, hard).unwrap();
+            }
+        }
         let temporary = tempfile::tempdir().unwrap();
         for _ in 0..OPLOG_CATALOG_MAX_CANDIDATES_PER_DAY {
             let _ = create(&temporary);

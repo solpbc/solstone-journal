@@ -1952,7 +1952,7 @@ fn record_directory(
             ));
         }
         Ok(std::sync::Arc::new(
-            JournalRoot::open(directory).map_err(io::Error::other)?,
+            JournalRoot::open(&directory).map_err(io::Error::other)?,
         ))
     }
 }
@@ -3779,11 +3779,11 @@ mod tests {
     fn preparation_write_failure_keeps_the_reserved_policy_withdrawal() {
         const CHILD: &str = "DESCRIBE_PREPARATION_WRITE_LIMIT_CHILD";
         if std::env::var_os(CHILD).is_none() {
-            let program = "import os,resource,signal,sys; signal.signal(signal.SIGXFSZ,signal.SIG_IGN); resource.setrlimit(resource.RLIMIT_FSIZE,(4096,4096)); os.execv(sys.argv[1],sys.argv[1:])";
-            let output = std::process::Command::new("python3").args(["-c", program])
-                .arg(std::env::current_exe().unwrap())
+            let output = std::process::Command::new(std::env::current_exe().unwrap())
                 .args(["--exact", "screen_ocr::tests::preparation_write_failure_keeps_the_reserved_policy_withdrawal", "--nocapture"])
-                .env(CHILD, "1").output().unwrap();
+                .env(CHILD, "1")
+                .output()
+                .unwrap();
             assert!(
                 output.status.success(),
                 "child failed: {:?}\n{}\n{}",
@@ -3793,6 +3793,13 @@ mod tests {
             );
             return;
         }
+        use nix::sys::resource::{Resource, setrlimit};
+        use nix::sys::signal::{SigSet, Signal};
+
+        let mut blocked = SigSet::empty();
+        blocked.add(Signal::SIGXFSZ);
+        blocked.thread_block().unwrap();
+        setrlimit(Resource::RLIMIT_FSIZE, 4096, 4096).unwrap();
         let (journal, segment, claims, input, mut source) = prepared_fixture();
         fs::create_dir(journal.path().join("config")).unwrap();
         fs::write(

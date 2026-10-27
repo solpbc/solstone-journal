@@ -964,23 +964,6 @@ pub(crate) fn prepare_read_in<'a>(
     None
 }
 
-#[cfg(test)]
-mod type_tests {
-    use super::*;
-    #[test]
-    fn closed_archive_custody_is_send_static() {
-        fn check<T: Send + 'static>() {}
-        check::<ArchivePayload>();
-        check::<RejectedArchiveReturn>();
-        check::<OwnedArchiveBegin>();
-        check::<ArchivePreparationCustody>();
-    }
-}
-
-#[cfg(all(test, feature = "full-tests"))]
-#[cfg(unix)]
-mod tests;
-
 fn retained_archive_root(
     deps: &crate::BackupWebDeps,
 ) -> Result<Arc<JournalRoot>, solstone_core_journal_io::JournalRootError> {
@@ -1018,3 +1001,20 @@ fn resolve_read_invocation(
             .map(solstone_core_backup_runtime::ResolvedResticInvocation::Executable)
     }
 }
+
+#[cfg(test)]
+mod type_tests {
+    use super::*;
+    #[test]
+    fn closed_archive_custody_is_send_static() {
+        fn check<T: Send + 'static>() {}
+        check::<ArchivePayload>();
+        check::<RejectedArchiveReturn>();
+        check::<OwnedArchiveBegin>();
+        check::<ArchivePreparationCustody>();
+    }
+}
+
+#[cfg(all(test, feature = "full-tests"))]
+#[cfg(unix)]
+mod tests;

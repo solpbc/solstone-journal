@@ -882,7 +882,8 @@ check-rust-journal-mcp-endpoint:
 
 check-rust-embedded-speech:
 	@$(REQUIRE_CARGO)
-	cargo test --manifest-path $(RUST_MANIFEST) -p solstone-core-transcribe --features full-tests,embedded --lib --locked --offline -- --test-threads=1
+	@$(REQUIRE_ONNX_HOST_RUNTIME)
+	$(VAD_ANALYZE_HOST_ORT_ENV) cargo test --manifest-path $(RUST_MANIFEST) -p solstone-core-transcribe --features full-tests,embedded --lib --locked --offline -- --test-threads=1
 
 check-rust-describe-cli-stubs:
 	@$(REQUIRE_CARGO)

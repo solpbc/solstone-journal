@@ -1634,7 +1634,9 @@ mod tests {
     }
 
     #[test]
-    fn ambiguous_and_non_utf8_retirement_claims_keep_recovery_paused() {
+    #[cfg(feature = "full-tests")]
+    fn ambiguous_and_malformed_retirement_claims_keep_recovery_paused() {
+        #[cfg(not(target_vendor = "apple"))]
         use std::os::unix::ffi::OsStringExt;
         let primary = journal();
         let record =
@@ -1650,9 +1652,13 @@ mod tests {
         ));
         assert!(adopt_whole_journal_restore(primary.path(), &record).is_err());
         fs::remove_file(extra).unwrap();
-        let malformed = health.join(std::ffi::OsString::from_vec(
-            b"!solstone-claim-00000000-\xff".to_vec(),
-        ));
+        #[cfg(not(target_vendor = "apple"))]
+        let malformed_leaf =
+            std::ffi::OsString::from_vec(b"!solstone-claim-00000000-\xff".to_vec());
+        // Apple filesystems reject non-UTF-8 names before the reader sees them.
+        #[cfg(target_vendor = "apple")]
+        let malformed_leaf = "!solstone-claim-00000000-malformed";
+        let malformed = health.join(malformed_leaf);
         fs::write(&malformed, b"unreadable claim").unwrap();
         assert!(matches!(
             read_whole_journal_restore(primary.path()),
