@@ -350,6 +350,14 @@ impl JournalRoot {
         })
     }
 
+    /// Acquire a requested Unix directory without following its final component.
+    #[cfg(unix)]
+    pub fn open_no_follow(root: &Path) -> Result<Self, JournalRootError> {
+        Ok(Self {
+            inner: unix::acquire_no_follow(root)?,
+        })
+    }
+
     /// Return the opaque identity frozen when this root was admitted.
     pub fn identity(&self) -> ObjectIdentity {
         self.inner.identity()

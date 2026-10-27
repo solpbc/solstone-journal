@@ -51,7 +51,7 @@ run([java/'bin/java','-Djava.io.tmpdir='+str(java_tmp),'-cp',host_classes,'app.s
 run([java/'bin/java','-Djava.io.tmpdir='+str(java_tmp),'-cp',host_classes,'app.solstone.development.journal.OwnerUploadBoardTest'])
 run([java/'bin/java','-Djava.io.tmpdir='+str(java_tmp),'-cp',host_classes,'app.solstone.development.journal.OwnerFolderPickerTest'])
 run([java/'bin/java','-Djava.io.tmpdir='+str(java_tmp),'-cp',host_classes,'app.solstone.development.journal.OwnerTransferWaitTest'])
-run([java/'bin/javac','-source','8','-target','8','-cp',jar,'-d',classes,*sorted((root/'src').rglob('*.java'))])
+run([java/'bin/javac','-source','8','-target','8','-cp',jar,'-d',classes,*sorted((root/'src').rglob('*.java')),root/'folder-copy/OwnerFolderCopy.java',root/'folder-copy/OwnerTreeSource.java'])
 env=os.environ.copy(); env['JAVA_HOME']=str(java); env['PATH']=str(java/'bin')+':'+env.get('PATH',''); os.environ.update(env)
 run([tools/'d8','--lib',jar,'--min-api','31','--output',dex,*sorted(classes.rglob('*.class'))])
 manifest=ET.parse(root/'AndroidManifest.xml'); original=manifest.getroot().attrib['package']

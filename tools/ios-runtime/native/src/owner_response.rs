@@ -581,6 +581,10 @@ fn page_id_ok(page_id: &str) -> bool {
     !page_id.is_empty() && page_id.len() < 64
 }
 
+pub(super) fn owner_authority_live(authority: u64) -> bool {
+    outcome_board().authority_live(authority)
+}
+
 fn outcome_board() -> &'static OutcomeBoard {
     static BOARD: std::sync::OnceLock<OutcomeBoard> = std::sync::OnceLock::new();
     BOARD.get_or_init(OutcomeBoard::default)

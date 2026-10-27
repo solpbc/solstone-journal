@@ -29,6 +29,16 @@ use crate::foreground::{
     ForegroundProcessingHost, ImportKeepalive, ImportPreparation, ImportRequest,
 };
 
+#[cfg(all(unix, feature = "in-process-pdf"))]
+#[path = "import_sources.rs"]
+mod sources;
+#[cfg(all(unix, feature = "in-process-pdf"))]
+pub use sources::{
+    ConfiguredSources, FolderConnectionChange, SavedFolderProvider, SavedFolderRequest,
+    SourceConnectionError, SourceConnectionGuard, SourceCopyError,
+    packaged_import_factory_with_sources,
+};
+
 #[cfg(feature = "in-process-pdf")]
 use crate::foreground::{ImportSeamFactory, PreparedImport};
 

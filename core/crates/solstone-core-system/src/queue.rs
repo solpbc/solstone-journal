@@ -882,6 +882,105 @@ pub struct TaskQueue {
     inner: Arc<QueueInner>,
 }
 
+/// A temporary callable-queue withdrawal. Unstarted references are cancelled
+/// when it is acquired. Dropping a token keeps admission closed; only an
+/// explicit, drained resume of the current generation may reopen this queue.
+pub struct CallableQueuePause {
+    queue: TaskQueue,
+    generation: u64,
+}
+
+impl CallableQueuePause {
+    /// Wait for reserved dispatch/preparation frames and actual native thread
+    /// retirement, including thread-local destructors. Safety holds are never
+    /// cleared by a restore pause.
+    pub fn drain(&self) -> Result<(), String> {
+        let _transition = self
+            .queue
+            .inner
+            .callable_transition
+            .lock()
+            .map_err(|_| "callable transition poisoned")?;
+        self.drain_with_transition()
+    }
+
+    // The transition owner covers validation, preparation retirement and the
+    // actual join. No successor or same-token resume may reopen in between.
+    fn drain_with_transition(&self) -> Result<(), String> {
+        {
+            let mut state = self.queue.inner.state.lock().expect("queue state");
+            if state.callable_generation != self.generation || !state.callable_paused {
+                return Err("callable queue pause is no longer current".into());
+            }
+            while state.callable_dispatch_frames != 0 {
+                state = self.queue.inner.reaped.wait(state).expect("queue state");
+            }
+        }
+        #[cfg(test)]
+        {
+            let hook = self
+                .queue
+                .inner
+                .callable_before_drain_join
+                .lock()
+                .unwrap()
+                .take();
+            if let Some(hook) = hook {
+                hook();
+            }
+        }
+        self.queue.join_callable_workers()?;
+        let mut state = self.queue.inner.state.lock().expect("queue state");
+        if !state.held.is_empty() || state.queue_hold.is_some() {
+            return Err("callable queue retains a safety hold".into());
+        }
+        while !state.running.is_empty() || state.callable_dispatch_frames != 0 {
+            state = self.queue.inner.reaped.wait(state).expect("queue state");
+        }
+        if state.callable_generation != self.generation {
+            return Err("callable queue pause was superseded".into());
+        }
+        if !state.held.is_empty() || state.queue_hold.is_some() {
+            return Err("callable queue retains a safety hold".into());
+        }
+        Ok(())
+    }
+
+    /// Reuse the same queue after recovery. An old token cannot reopen a later
+    /// pause, and deliberate shutdown remains permanent.
+    pub fn resume(&self) -> Result<(), String> {
+        let transition = self
+            .queue
+            .inner
+            .callable_transition
+            .lock()
+            .map_err(|_| "callable transition poisoned")?;
+        {
+            let state = self.queue.inner.state.lock().expect("queue state");
+            if state.callable_generation != self.generation {
+                return Err("callable queue pause was superseded".into());
+            }
+            if !state.callable_paused {
+                return Ok(());
+            }
+        }
+        self.drain_with_transition()?;
+        {
+            let mut state = self.queue.inner.state.lock().expect("queue state");
+            if state.callable_generation != self.generation {
+                return Err("callable queue pause was superseded".into());
+            }
+            if state.shutdown {
+                return Ok(());
+            }
+            state.callable_paused = false;
+        }
+        drop(transition);
+        self.queue.resume_processing();
+        Ok(())
+    }
+}
+
 /// One local-runtime transition's queue admission pause. Dropping it resumes
 /// ordinary policy selection; safety holds and shutdown remain authoritative.
 pub struct LocalAnalysisPause {
@@ -965,6 +1064,10 @@ struct QueueInner {
     callable_admission: Option<CallableAdmission>,
     daily_talent_roots: Option<(PathBuf, PathBuf)>,
     callable_workers: Mutex<Vec<CallableTaskHandle>>,
+    callable_join: Mutex<()>,
+    callable_transition: Mutex<()>,
+    #[cfg(test)]
+    callable_before_drain_join: Mutex<Option<Arc<dyn Fn() + Send + Sync>>>,
     callable_join_failed: Arc<std::sync::atomic::AtomicBool>,
     callable_panics: Arc<Mutex<Vec<Box<dyn std::any::Any + Send>>>>,
 }
@@ -1055,6 +1158,9 @@ struct HeldEntry {
 struct QueueState {
     ready: bool,
     shutdown: bool,
+    callable_paused: bool,
+    callable_generation: u64,
+    callable_dispatch_frames: usize,
     local_analysis_pauses: usize,
     running: BTreeMap<Partition, RunningSlot>,
     held: BTreeMap<Partition, HeldEntry>,
@@ -1105,6 +1211,7 @@ struct QueuedEntry {
 
 #[derive(Clone)]
 struct Dispatch {
+    generation: u64,
     sources: Vec<Submission>,
     priority: WorkPriority,
     submission: Submission,
@@ -1160,6 +1267,16 @@ struct WorkerLease {
     reference: String,
 }
 
+struct CallableDispatchFrame(Arc<QueueInner>);
+
+impl Drop for CallableDispatchFrame {
+    fn drop(&mut self) {
+        let mut state = self.0.state.lock().expect("queue state");
+        state.callable_dispatch_frames -= 1;
+        self.0.reaped.notify_all();
+    }
+}
+
 impl Drop for WorkerLease {
     fn drop(&mut self) {
         let dispatch = finish_worker(&self.inner, &self.partition, &self.reference);
@@ -1192,6 +1309,7 @@ fn insert_loaded_record(
         entry.records.push(rec_state);
     } else {
         let dispatch = Dispatch {
+            generation: 0,
             sources: Vec::new(),
             submission: Submission {
                 discovered: false,
@@ -1546,6 +1664,9 @@ impl TaskQueue {
                 state: Mutex::new(QueueState {
                     ready: options.ready,
                     shutdown: false,
+                    callable_paused: false,
+                    callable_generation: 0,
+                    callable_dispatch_frames: 0,
                     local_analysis_pauses: 0,
                     running: BTreeMap::new(),
                     held: held_entries,
@@ -1585,6 +1706,10 @@ impl TaskQueue {
                 daily_talent_roots,
                 callable_admission,
                 callable_workers: Mutex::new(Vec::new()),
+                callable_join: Mutex::new(()),
+                callable_transition: Mutex::new(()),
+                #[cfg(test)]
+                callable_before_drain_join: Mutex::new(None),
                 callable_join_failed: Arc::new(std::sync::atomic::AtomicBool::new(false)),
                 callable_panics: Arc::new(Mutex::new(Vec::new())),
             }),
@@ -1598,7 +1723,17 @@ impl TaskQueue {
             .is_none_or(|admit| admit(command))
     }
 
+    fn admission_generation(&self) -> Option<u64> {
+        let state = self.inner.state.lock().expect("queue state");
+        (!state.shutdown && !state.callable_paused).then_some(state.callable_generation)
+    }
+
     pub fn submit(&self, request: ExecutionRequest) -> SubmitOutcome {
+        // The entry predicate may read policy or wait on a caller-owned seam.
+        // A completed restore must not turn its old result into fresh authority.
+        let Some(generation) = self.admission_generation() else {
+            return SubmitOutcome::Rejected;
+        };
         let selection = Selection::read(&self.inner);
         let submission = normalize_request(request, self.inner.options.cap_resolver.as_ref());
         if self
@@ -1612,11 +1747,11 @@ impl TaskQueue {
         let partition = submission.partition.clone();
         let (outcome, dispatch, event) = {
             let mut state = self.inner.state.lock().expect("queue state lock poisoned");
-            if !state.ready {
+            if state.shutdown || state.callable_paused || state.callable_generation != generation {
+                (SubmitOutcome::Rejected, Vec::new(), None)
+            } else if !state.ready {
                 state.pending.push(submission);
                 (SubmitOutcome::Pending, Vec::new(), None)
-            } else if state.shutdown {
-                (SubmitOutcome::Rejected, Vec::new(), None)
             } else {
                 let reference = submission.reference.clone();
                 let outcome = enqueue_locked(&mut state, submission);
@@ -1645,6 +1780,9 @@ impl TaskQueue {
     /// coalesced into the same command retains its own priority and authority.
     /// Reservation, execution and safety holds are outside this operation.
     pub fn replace_discovered(&self, mut candidates: Vec<DiscoveredTask>) {
+        let Some(generation) = self.admission_generation() else {
+            return;
+        };
         // Admission can inspect disk, so run it before the queue state lock.
         if let Some(admit) = &self.inner.callable_admission {
             candidates.retain(|candidate| admit(candidate.request.cmd.as_wire()));
@@ -1652,7 +1790,7 @@ impl TaskQueue {
         let selection = Selection::read(&self.inner);
         let (dispatches, events) = {
             let mut state = self.inner.state.lock().expect("queue state");
-            if state.shutdown {
+            if state.shutdown || state.callable_paused || state.callable_generation != generation {
                 return;
             }
             state.pending.retain(|source| !source.discovered);
@@ -1805,6 +1943,94 @@ impl TaskQueue {
         LocalAnalysisPause {
             queue: self.clone(),
         }
+    }
+
+    /// Atomically close callable admission/reservation and cancel all unstarted
+    /// references. Already reserved frames retain their old generation and must
+    /// retire through `drain` before a restore can begin writing.
+    pub fn pause_callable_work(&self) -> Result<CallableQueuePause, String> {
+        if self.inner.callable_worker.is_none() {
+            return Err("queue has no callable worker".into());
+        }
+        let _transition = self
+            .inner
+            .callable_transition
+            .lock()
+            .map_err(|_| "callable transition poisoned")?;
+        let (generation, cancelled, events) = {
+            let mut state = self.inner.state.lock().expect("queue state");
+            state.callable_paused = true;
+            state.callable_generation = state
+                .callable_generation
+                .checked_add(1)
+                .ok_or("callable queue generation exhausted")?;
+            let generation = state.callable_generation;
+            let mut cancelled = Vec::new();
+            let mut changed = BTreeSet::new();
+            for submission in std::mem::take(&mut state.pending) {
+                changed.insert(submission.partition.clone());
+                cancelled.push(Dispatch {
+                    generation,
+                    sources: vec![submission.clone()],
+                    references: vec![submission.reference.clone()],
+                    submission,
+                    priority: WorkPriority::default(),
+                    daily_catchup_admission: None,
+                });
+            }
+            for (partition, entries) in std::mem::take(&mut state.queues) {
+                changed.insert(partition.clone());
+                for entry in entries {
+                    cancelled.push(Dispatch {
+                        generation,
+                        sources: entry.sources,
+                        priority: WorkPriority::default(),
+                        submission: Submission {
+                            discovered: false,
+                            partition: partition.clone(),
+                            cap: entry.cap,
+                            reference: entry.references[0].clone(),
+                            command: entry.command,
+                            day: entry.day,
+                            scheduler_name: entry.scheduler_name,
+                            daily_catchup_provenance: entry.daily_catchup_provenance,
+                            priority: entry.priority,
+                        },
+                        references: entry.references,
+                        daily_catchup_admission: None,
+                    });
+                }
+            }
+            for worker in self
+                .inner
+                .callable_workers
+                .lock()
+                .expect("callable workers")
+                .iter()
+            {
+                worker
+                    .stop_flag
+                    .store(true, std::sync::atomic::Ordering::Release);
+            }
+            // Cancellation publications themselves belong to this drain.
+            state.callable_dispatch_frames += 1;
+            let events = changed
+                .iter()
+                .map(|p| queue_changed_event(&state, p))
+                .collect::<Vec<_>>();
+            (generation, cancelled, events)
+        };
+        let _frame = CallableDispatchFrame(Arc::clone(&self.inner));
+        for dispatch in cancelled {
+            record_completion(&self.inner, &dispatch, -15, "cancelled".to_owned());
+        }
+        for event in events {
+            emit_queue_event(&self.inner.options.queue_sink, Some(event));
+        }
+        Ok(CallableQueuePause {
+            queue: self.clone(),
+            generation,
+        })
     }
 
     pub fn enforce_deadlines(&self, now: Instant) {
@@ -2690,6 +2916,13 @@ impl TaskQueue {
     /// Only an actual retirement owner may use this unbounded drain. Ordinary
     /// deadline shutdown retains live handles in the queue and reports pending.
     pub fn join_callable_workers(&self) -> Result<(), String> {
+        // Concurrent Stop/recovery owners must both observe the actual join,
+        // rather than one seeing an emptied registry while another still waits.
+        let _join = self
+            .inner
+            .callable_join
+            .lock()
+            .map_err(|_| "callable join poisoned")?;
         let workers = {
             let mut workers = self
                 .inner
@@ -3358,7 +3591,7 @@ fn take_ready(state: &mut QueueState, selection: Selection) -> Vec<Dispatch> {
         background_slot_open,
     } = selection;
     let mut dispatches = Vec::new();
-    if !state.ready || state.shutdown || state.queue_hold.is_some() {
+    if !state.ready || state.shutdown || state.callable_paused || state.queue_hold.is_some() {
         return dispatches;
     }
     loop {
@@ -3440,6 +3673,7 @@ fn take_ready(state: &mut QueueState, selection: Selection) -> Vec<Dispatch> {
             },
         );
         dispatches.push(Dispatch {
+            generation: state.callable_generation,
             sources: entry.sources,
             priority,
             submission,
@@ -3517,7 +3751,53 @@ fn record_callable_panic(inner: &QueueInner, payload: Box<dyn std::any::Any + Se
         .store(true, std::sync::atomic::Ordering::Release);
 }
 
-fn start_dispatch(inner: Arc<QueueInner>, mut dispatch: Dispatch) {
+fn start_dispatch(inner: Arc<QueueInner>, dispatch: Dispatch) {
+    if inner.callable_worker.is_none() {
+        start_dispatch_frame(inner, dispatch);
+        return;
+    }
+    let mut state = inner.state.lock().expect("queue state");
+    state.callable_dispatch_frames += 1;
+    let withdrawn = state.callable_paused || dispatch.generation != state.callable_generation;
+    let shutdown = state.shutdown;
+    drop(state);
+    let _frame = CallableDispatchFrame(Arc::clone(&inner));
+    if shutdown || withdrawn {
+        let (code, status) = if shutdown {
+            (-1, "shutdown")
+        } else {
+            (-15, "cancelled")
+        };
+        record_completion(&inner, &dispatch, code, status.to_owned());
+        for next in finish_worker(
+            &inner,
+            &dispatch.submission.partition,
+            &dispatch.submission.reference,
+        ) {
+            start_dispatch(Arc::clone(&inner), next);
+        }
+        return;
+    }
+    // Preparation runs on the submitting/resuming caller before a native
+    // handle exists. Its unwind must also retire the reservation and make
+    // the failed drain visible instead of stranding the restore join.
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        start_dispatch_frame(Arc::clone(&inner), dispatch.clone())
+    }));
+    if let Err(payload) = result {
+        record_callable_panic(&inner, payload);
+        record_completion(&inner, &dispatch, -1, "error".to_owned());
+        for next in finish_worker(
+            &inner,
+            &dispatch.submission.partition,
+            &dispatch.submission.reference,
+        ) {
+            start_dispatch(Arc::clone(&inner), next);
+        }
+    }
+}
+
+fn start_dispatch_frame(inner: Arc<QueueInner>, mut dispatch: Dispatch) {
     if is_analysis_command(&dispatch.submission.command)
         && (!crate::processing::processing_allowed(&inner.options.journal_root)
             || !read_work_policy(&inner).permits(dispatch.priority.band))
@@ -3602,9 +3882,17 @@ fn start_dispatch(inner: Arc<QueueInner>, mut dispatch: Dispatch) {
         // Publish the actual handle under the same lock order used by shutdown.
         // Completion cannot acquire state until registration is finished.
         let state = inner.state.lock().expect("queue state lock poisoned");
-        if state.shutdown {
+        if state.shutdown
+            || state.callable_paused
+            || dispatch.generation != state.callable_generation
+        {
+            let (code, status) = if state.shutdown {
+                (-1, "shutdown")
+            } else {
+                (-15, "cancelled")
+            };
             drop(state);
-            record_completion(&inner, &dispatch, -1, "shutdown".to_owned());
+            record_completion(&inner, &dispatch, code, status.to_owned());
             for next in finish_worker(&inner, &partition, &reference) {
                 start_dispatch(Arc::clone(&inner), next);
             }
@@ -4001,8 +4289,24 @@ fn log_proven_warn_if_needed(
     }
 }
 
-fn requeue_dispatch_at_head(inner: &QueueInner, dispatch: Dispatch) {
+fn requeue_dispatch_at_head(inner: &Arc<QueueInner>, dispatch: Dispatch) {
     let mut state = inner.state.lock().expect("queue state lock poisoned");
+    if inner.callable_worker.is_some()
+        && (state.shutdown
+            || state.callable_paused
+            || dispatch.generation != state.callable_generation)
+    {
+        drop(state);
+        record_completion(inner, &dispatch, -15, "cancelled".to_owned());
+        for next in finish_worker(
+            inner,
+            &dispatch.submission.partition,
+            &dispatch.submission.reference,
+        ) {
+            start_dispatch(Arc::clone(inner), next);
+        }
+        return;
+    }
     state
         .queues
         .entry(dispatch.submission.partition.clone())
@@ -4019,6 +4323,7 @@ fn requeue_dispatch_at_head(inner: &QueueInner, dispatch: Dispatch) {
             priority: dispatch.submission.priority,
         });
     state.running.remove(&dispatch.submission.partition);
+    inner.reaped.notify_all();
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -4723,6 +5028,7 @@ fn finish_worker(inner: &QueueInner, partition: &Partition, reference: &str) -> 
         {
             state.background_finished_at = Some(Instant::now());
         }
+        inner.reaped.notify_all();
         let dispatches = take_ready(&mut state, selection);
         let mut changed = BTreeSet::from([partition.clone()]);
         changed.extend(dispatches.iter().map(|d| d.submission.partition.clone()));
@@ -5842,6 +6148,7 @@ mod tests {
 
     fn dispatch(reference: &str) -> Dispatch {
         Dispatch {
+            generation: 0,
             sources: Vec::new(),
             submission: Submission {
                 discovered: false,
@@ -10072,6 +10379,7 @@ mod tests {
             priority: PriorityIntent::default(),
         };
         let dispatch = Dispatch {
+            generation: 0,
             priority: WorkPriority {
                 band: WorkBand::Recent,
                 source_time: 20261012000000,
@@ -10219,6 +10527,408 @@ mod tests {
         );
         *queue.inner.work_policy_override.lock().unwrap() = Some(local_spending());
         queue
+    }
+
+    #[cfg(feature = "full-tests")]
+    #[test]
+    fn callable_pause_cancels_pending_and_owns_generation_resume_and_retry() {
+        let (sent, received) = mpsc::channel();
+        let queue = callable_control_queue(
+            Arc::new(move |_, _| {
+                sent.send(()).unwrap();
+                0
+            }),
+            Duration::from_secs(30),
+            None,
+        );
+        queue.inner.state.lock().unwrap().ready = false;
+        assert_eq!(
+            queue.submit(request("pending-before-restore")),
+            SubmitOutcome::Pending
+        );
+        let first = queue.pause_callable_work().unwrap();
+        queue.set_ready();
+        assert_eq!(
+            queue.submit(request("during-restore")),
+            SubmitOutcome::Rejected
+        );
+        assert_eq!(queue.history()[0].exit_status, "cancelled");
+        assert_eq!(queue.history()[0].reference, "pending-before-restore");
+        assert!(!queue.contains_reference("pending-before-restore"));
+        let current = queue.pause_callable_work().unwrap();
+        assert!(first.resume().is_err());
+        queue.inner.state.lock().unwrap().queue_hold = Some(QueueHoldStatus {
+            reason: QueueHoldReason::RecordsUnavailable,
+            detail: "controlled unresolved hold".into(),
+        });
+        assert!(current.resume().is_err());
+        assert_eq!(
+            queue.submit(request("still-closed")),
+            SubmitOutcome::Rejected
+        );
+        // Only the safety owner may resolve this separate hold. The failed
+        // resume retains the same token and can then actually be retried.
+        queue.inner.state.lock().unwrap().queue_hold = None;
+        current.resume().unwrap();
+        queue.submit(request("fresh-after-restore"));
+        received.recv_timeout(Duration::from_secs(5)).unwrap();
+        current.resume().unwrap();
+        let dropped = queue.pause_callable_work().unwrap();
+        drop(dropped);
+        assert_eq!(
+            queue.submit(request("dropped-token")),
+            SubmitOutcome::Rejected
+        );
+        let stopped = queue.pause_callable_work().unwrap();
+        queue.shutdown();
+        stopped.resume().unwrap();
+        assert_eq!(queue.submit(request("after-stop")), SubmitOutcome::Rejected);
+    }
+
+    #[cfg(feature = "full-tests")]
+    #[test]
+    fn callable_pause_rejects_entry_preludes_that_cross_recovery() {
+        let mut violations = Vec::new();
+        for discovered in [false, true] {
+            let (executed_send, executed) = mpsc::channel();
+            let mut queue = callable_control_queue(
+                Arc::new(move |args, _| {
+                    executed_send.send(args[1].clone()).unwrap();
+                    0
+                }),
+                Duration::from_secs(30),
+                None,
+            );
+            let gate = CallableRetirementGate::default();
+            let release = ReleaseCallableRetirement(gate.clone());
+            let first = std::sync::atomic::AtomicBool::new(true);
+            let (entered_send, entered) = mpsc::channel();
+            Arc::get_mut(&mut queue.inner).unwrap().callable_admission =
+                Some(Arc::new(move |_| {
+                    if first.swap(false, std::sync::atomic::Ordering::AcqRel) {
+                        entered_send.send(()).unwrap();
+                        gate.wait();
+                    }
+                    true
+                }));
+            let old_queue = queue.clone();
+            let old = thread::spawn(move || {
+                let request = command_request(&["svc", "old"], "old-admission", None);
+                if discovered {
+                    let ExecutionRequest::Bus(request) = request else {
+                        unreachable!()
+                    };
+                    old_queue.replace_discovered(vec![DiscoveredTask { request }]);
+                    None
+                } else {
+                    Some(old_queue.submit(request))
+                }
+            });
+            entered.recv_timeout(Duration::from_secs(5)).unwrap();
+            let pause = queue.pause_callable_work().unwrap();
+            pause.drain().unwrap();
+            pause.resume().unwrap();
+            queue.submit(command_request(&["svc", "fresh"], "fresh-admission", None));
+            assert_eq!(
+                executed.recv_timeout(Duration::from_secs(5)).unwrap(),
+                "fresh"
+            );
+            queue.join_callable_workers().unwrap();
+            drop(release);
+            let outcome = old.join().unwrap();
+            queue.join_callable_workers().unwrap();
+            queue.shutdown();
+            let late = executed.try_iter().collect::<Vec<_>>();
+            if !late.is_empty() || (!discovered && outcome != Some(SubmitOutcome::Rejected)) {
+                violations.push(format!(
+                    "discovered={discovered}, stale_outcome={outcome:?}, late_native_calls={late:?}"
+                ));
+            }
+        }
+        assert!(
+            violations.is_empty(),
+            "entry admitted old native work after full pause/resume: {violations:?}"
+        );
+    }
+
+    #[cfg(feature = "full-tests")]
+    #[test]
+    fn callable_pause_old_drainer_cannot_join_a_resumed_generation() {
+        for same_token in [false, true] {
+            let body = CallableRetirementGate::default();
+            let body_release = ReleaseCallableRetirement(body.clone());
+            let (worker_sent, worker_entered) = mpsc::channel();
+            let queue = callable_control_queue(
+                Arc::new(move |_, control| {
+                    worker_sent.send(control.cancelled).unwrap();
+                    body.wait();
+                    0
+                }),
+                Duration::from_secs(30),
+                None,
+            );
+            let old = Arc::new(queue.pause_callable_work().unwrap());
+            let old_gate = CallableRetirementGate::default();
+            let old_release = ReleaseCallableRetirement(old_gate.clone());
+            let (old_sent, old_entered) = mpsc::channel();
+            *queue.inner.callable_before_drain_join.lock().unwrap() = Some(Arc::new(move || {
+                old_sent.send(()).unwrap();
+                old_gate.wait();
+            }));
+            let (old_done_sent, old_done) = mpsc::channel();
+            let old_drain = Arc::clone(&old);
+            let old_owner = thread::spawn(move || {
+                old_done_sent.send(old_drain.drain()).unwrap();
+            });
+            old_entered.recv_timeout(Duration::from_secs(5)).unwrap();
+            let successor_queue = queue.clone();
+            let (resumed_sent, resumed) = mpsc::channel();
+            let successor = thread::spawn(move || {
+                let pause = if same_token {
+                    old
+                } else {
+                    Arc::new(successor_queue.pause_callable_work().unwrap())
+                };
+                pause.resume().unwrap();
+                successor_queue.submit(request("fresh-generation-worker"));
+                resumed_sent.send(()).unwrap();
+            });
+            let early = resumed.recv_timeout(Duration::from_millis(100));
+            drop(old_release);
+            if early.is_err() {
+                resumed.recv_timeout(Duration::from_secs(5)).unwrap();
+            }
+            let cancelled = worker_entered.recv_timeout(Duration::from_secs(5)).unwrap();
+            // With the parent race the old join owns this live fresh worker and
+            // cannot return until we release its body. Capture the actual stop flag
+            // before cleanup. The repaired transition retires old before reopening.
+            if early.is_ok() {
+                let until = Instant::now() + Duration::from_secs(5);
+                while !cancelled.load(std::sync::atomic::Ordering::Acquire)
+                    && Instant::now() < until
+                {
+                    thread::yield_now();
+                }
+            } else {
+                old_done
+                    .recv_timeout(Duration::from_secs(5))
+                    .unwrap()
+                    .unwrap();
+            }
+            let wrongly_cancelled = cancelled.load(std::sync::atomic::Ordering::Acquire);
+            drop(body_release);
+            successor.join().unwrap();
+            old_owner.join().unwrap();
+            queue.shutdown();
+            queue.join_callable_workers().unwrap();
+            assert!(
+                !wrongly_cancelled,
+                "old drainer cancelled an actual fresh-generation worker; successor_resumed_before_old_release={}",
+                early.is_ok()
+            );
+            assert!(
+                matches!(early, Err(mpsc::RecvTimeoutError::Timeout)),
+                "new generation resumed while old retirement ownership was held"
+            );
+        }
+    }
+
+    #[cfg(feature = "full-tests")]
+    #[test]
+    fn callable_pause_cancels_every_coalesced_queued_reference() {
+        let sink = Arc::new(RecordingEventSink(Mutex::new(Vec::new())));
+        let queue = callable_control_queue(
+            Arc::new(|_, _| panic!("old queued work executed")),
+            Duration::from_secs(30),
+            Some(sink.clone()),
+        );
+        let analysis = queue.pause_local_analysis();
+        for reference in ["queued-one", "queued-two"] {
+            queue.submit(command_request(
+                &["journal", "think", "--day", "20261012"],
+                reference,
+                None,
+            ));
+            assert!(queue.contains_reference(reference));
+        }
+        let pause = queue.pause_callable_work().unwrap();
+        pause.drain().unwrap();
+        drop(analysis);
+        for reference in ["queued-one", "queued-two"] {
+            assert!(!queue.contains_reference(reference));
+            let events = sink.0.lock().unwrap();
+            assert_eq!(events.iter().filter(|event| matches!(event, TaskQueueEvent::Stopped { reference: stopped, exit_code: -15, .. } if stopped == reference)).count(), 1);
+        }
+        pause.resume().unwrap();
+        queue.shutdown();
+    }
+
+    #[cfg(feature = "full-tests")]
+    #[test]
+    fn callable_pause_drains_reserved_frames_before_any_worker_can_start() {
+        let queue = callable_control_queue(
+            Arc::new(|_, _| panic!("old reservation executed")),
+            Duration::from_secs(30),
+            None,
+        );
+        let selection = Selection::read(&queue.inner);
+        let dispatch = {
+            let mut state = queue.inner.state.lock().unwrap();
+            enqueue_locked(
+                &mut state,
+                normalize_request(
+                    request("reserved-before-restore"),
+                    queue.inner.options.cap_resolver.as_ref(),
+                ),
+            );
+            take_ready(&mut state, selection).pop().unwrap()
+        };
+        let pause = Arc::new(queue.pause_callable_work().unwrap());
+        let drain_pause = Arc::clone(&pause);
+        let (sent, received) = mpsc::channel();
+        let drainer = thread::spawn(move || {
+            sent.send(drain_pause.drain()).unwrap();
+        });
+        let early = received.recv_timeout(Duration::from_millis(100));
+        start_dispatch(Arc::clone(&queue.inner), dispatch);
+        let result = if early.is_err() {
+            received.recv_timeout(Duration::from_secs(5)).unwrap()
+        } else {
+            early.clone().unwrap()
+        };
+        drainer.join().unwrap();
+        assert!(matches!(early, Err(mpsc::RecvTimeoutError::Timeout)));
+        result.unwrap();
+        assert_eq!(queue.history()[0].exit_status, "cancelled");
+        pause.resume().unwrap();
+        queue.shutdown();
+    }
+
+    #[cfg(feature = "full-tests")]
+    #[test]
+    fn callable_pause_drains_preparation_and_reports_its_unwind() {
+        for unwind in [false, true] {
+            let queue = callable_control_queue(
+                Arc::new(|_, _| panic!("refused preparation executed")),
+                Duration::from_secs(30),
+                None,
+            );
+            let gate = CallableRetirementGate::default();
+            let release = ReleaseCallableRetirement(gate.clone());
+            let (entered_send, entered) = mpsc::channel();
+            queue.set_catchup_admission_capability(Arc::new(move || {
+                entered_send.send(()).unwrap();
+                gate.wait();
+                if unwind {
+                    panic!("controlled preparation unwind");
+                }
+                Err(CatchupError::CapabilityUnavailable)
+            }));
+            let submit_queue = queue.clone();
+            let submitter = thread::spawn(move || {
+                submit_queue.submit(command_request(
+                    &["svc", "catchup"],
+                    "preparing",
+                    Some(DailyCatchupProvenance {
+                        day: "20261012".into(),
+                    }),
+                ))
+            });
+            entered.recv_timeout(Duration::from_secs(5)).unwrap();
+            let pause = Arc::new(queue.pause_callable_work().unwrap());
+            let drain_pause = Arc::clone(&pause);
+            let (sent, received) = mpsc::channel();
+            let drainer = thread::spawn(move || {
+                sent.send(drain_pause.drain()).unwrap();
+            });
+            let early = received.recv_timeout(Duration::from_millis(100));
+            drop(release);
+            submitter.join().unwrap();
+            let outcome = if early.is_err() {
+                received.recv_timeout(Duration::from_secs(5)).unwrap()
+            } else {
+                early.clone().unwrap()
+            };
+            drainer.join().unwrap();
+            assert!(matches!(early, Err(mpsc::RecvTimeoutError::Timeout)));
+            assert_eq!(outcome.is_err(), unwind);
+            assert!(!queue.contains_reference("preparing"));
+            assert_eq!(queue.callable_workers_failed(), unwind);
+            if !unwind {
+                pause.resume().unwrap();
+            }
+            queue.shutdown();
+        }
+    }
+
+    #[cfg(feature = "full-tests")]
+    #[test]
+    fn callable_pause_joins_actual_tls_retirement() {
+        struct ExitWait {
+            entered: mpsc::Sender<()>,
+            gate: CallableRetirementGate,
+        }
+        impl Drop for ExitWait {
+            fn drop(&mut self) {
+                if self.entered.send(()).is_ok() {
+                    self.gate.wait();
+                }
+            }
+        }
+        thread_local! { static EXIT_WAIT: std::cell::RefCell<Option<ExitWait>> = const { std::cell::RefCell::new(None) }; }
+        let body = CallableRetirementGate::default();
+        let tls = CallableRetirementGate::default();
+        let body_release = ReleaseCallableRetirement(body.clone());
+        let tls_release = ReleaseCallableRetirement(tls.clone());
+        let (entered_send, entered) = mpsc::channel();
+        let queue = callable_control_queue(
+            Arc::new(move |_, _| {
+                EXIT_WAIT.with(|s| {
+                    *s.borrow_mut() = Some(ExitWait {
+                        entered: entered_send.clone(),
+                        gate: tls.clone(),
+                    })
+                });
+                body.wait();
+                0
+            }),
+            Duration::from_secs(30),
+            None,
+        );
+        queue.submit(request("actual-tls"));
+        let stop_queue = queue.clone();
+        let stop_join = thread::spawn(move || stop_queue.join_callable_workers());
+        let until = Instant::now() + Duration::from_secs(5);
+        while !queue.inner.callable_workers.lock().unwrap().is_empty() {
+            assert!(
+                Instant::now() < until,
+                "Stop did not take actual retirement ownership"
+            );
+            thread::yield_now();
+        }
+        let pause = Arc::new(queue.pause_callable_work().unwrap());
+        let drain_pause = Arc::clone(&pause);
+        let (sent, received) = mpsc::channel();
+        // Spawn every participant before TLS teardown can own a loader lock.
+        let drainer = thread::spawn(move || {
+            sent.send(drain_pause.drain()).unwrap();
+        });
+        drop(body_release);
+        entered.recv_timeout(Duration::from_secs(5)).unwrap();
+        assert!(!queue.contains_reference("actual-tls"));
+        let early = received.recv_timeout(Duration::from_millis(100));
+        drop(tls_release);
+        let outcome = if early.is_err() {
+            received.recv_timeout(Duration::from_secs(5)).unwrap()
+        } else {
+            early.clone().unwrap()
+        };
+        drainer.join().unwrap();
+        stop_join.join().unwrap().unwrap();
+        assert!(matches!(early, Err(mpsc::RecvTimeoutError::Timeout)));
+        outcome.unwrap();
+        pause.resume().unwrap();
+        queue.shutdown();
     }
 
     #[cfg(feature = "full-tests")]

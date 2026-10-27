@@ -22,6 +22,10 @@ use solstone_core_system::queue::CallableTaskContext;
 
 use super::{Checkpoint, HostGenerator, HostedCommand, ImportFactorySlot, UNCOMPLETED_HOLD_EXIT};
 
+#[path = "import_folder_copy.rs"]
+mod folder_copy;
+pub use folder_copy::{FolderCopyError, FolderCopyResult};
+
 type StopCheckpoint = Arc<dyn Fn() -> Result<(), String> + Send + Sync>;
 
 /// An admitted owner request. Capture it before queue acceptance, then prepare

@@ -22,6 +22,8 @@ final class OwnerUploadBridge: NSObject, WKScriptMessageHandlerWithReply, UIDocu
   private var installed = false
   private var presenting = false
   private var folderAuthority: UInt64 = 0
+  private var folderRequest: FolderRequest?
+  private weak var folderPicker: FolderPickerController?
   private var pumps: [PumpKey: OwnerStreamPump] = [:]
   private let streams: OperationQueue = {
     let queue = OperationQueue()
@@ -84,7 +86,7 @@ final class OwnerUploadBridge: NSObject, WKScriptMessageHandlerWithReply, UIDocu
       }
     }
     lock.unlock()
-    if clearPicker { presenting = false }
+    if clearPicker { retireFolder([retiring]) }
     if retiring != 0 && retiring != next { OwnerOutcome.retire(retiring) }
     for pump in stale { pump.cancel() }
   }
@@ -113,6 +115,7 @@ final class OwnerUploadBridge: NSObject, WKScriptMessageHandlerWithReply, UIDocu
     folderAuthority = 0
     lock.unlock()
     for id in retired { OwnerOutcome.retire(id) }
+    retireFolder(retired)
     for pump in current.values { pump.cancel() }
     streams.cancelAllOperations()
     presenting = false
@@ -160,7 +163,9 @@ final class OwnerUploadBridge: NSObject, WKScriptMessageHandlerWithReply, UIDocu
       cancel(body)
       replyHandler(["ok": true], nil)
     case "chooseFolder":
-      chooseFolder(requestedAuthority(body))
+      chooseFolder(body, reply: replyHandler)
+    case "cancelFolder":
+      cancelFolder(body)
       replyHandler(["ok": true], nil)
     default:
       replyHandler(["ok": false, "error": OwnerUploadCopy.lost], nil)
@@ -374,173 +379,203 @@ final class OwnerUploadBridge: NSObject, WKScriptMessageHandlerWithReply, UIDocu
     return authorityIsLiveLocked(authority)
   }
 
-  private func chooseFolder(_ requested: UInt64?) {
-    guard let requested else { return }
-    lock.lock()
-    let current = bindingAuthorityLocked()
-    if presenting || requested != current || current == 0 {
-      lock.unlock()
-      return
+  private final class FolderRequest {
+    let id: String
+    let authority: UInt64
+    let generation: UInt64
+    let source: String
+    let reference: String
+    let cancelled = AtomicFlag(false)
+    var selected = false
+    var finishing = false
+    var reply: ((Any?, String?) -> Void)?
+    init(id: String, authority: UInt64, generation: UInt64, source: String,
+         reference: String, reply: @escaping (Any?, String?) -> Void) {
+      self.id = id; self.authority = authority; self.generation = generation
+      self.source = source; self.reference = reference; self.reply = reply
     }
+  }
+
+  private final class FolderPickerController: UIDocumentPickerViewController {
+    private var disappeared = false
+    private var completion: (() -> Void)?
+
+    override func viewDidDisappear(_ animated: Bool) {
+      super.viewDidDisappear(animated)
+      guard isBeingDismissed || presentingViewController == nil else { return }
+      disappeared = true
+      let settled = completion
+      completion = nil
+      settled?()
+    }
+
+    func afterDismissal(_ settled: @escaping () -> Void) {
+      if disappeared || presentingViewController == nil { settled(); return }
+      completion = settled
+      if !isBeingDismissed { dismiss(animated: true) }
+    }
+  }
+
+  private func chooseFolder(_ body: [String: Any], reply: @escaping (Any?, String?) -> Void) {
+    guard let requested = requestedAuthority(body), let id = body["id"] as? String,
+          !id.isEmpty, id.utf8.count < 64, let source = body["source"] as? String,
+          ["obsidian", "gemini", "document"].contains(source),
+          let reference = body["client_item_id"] as? String,
+          !reference.isEmpty, reference.utf8.count < 128 else {
+      reply(["state": "refused", "error": OwnerUploadCopy.unreadable], nil); return
+    }
+    lock.lock()
+    guard !presenting, folderRequest == nil, requested == bindingAuthorityLocked() else {
+      lock.unlock(); reply(["state": "refused", "error": OwnerUploadCopy.busy], nil); return
+    }
+    let request = FolderRequest(id: id, authority: requested,
+      generation: journal_ios_processing_generation(), source: source, reference: reference, reply: reply)
     presenting = true
     folderAuthority = requested
+    folderRequest = request
     lock.unlock()
     guard let top = topController() else {
-      presenting = false
-      folderAuthority = 0
-      return
+      finishFolder(request, ["state": "refused", "error": OwnerUploadCopy.unreadable]); return
     }
-    let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.folder])
+    let picker = FolderPickerController(forOpeningContentTypes: [.folder])
     picker.delegate = self
     picker.allowsMultipleSelection = false
+    folderPicker = picker
     top.present(picker, animated: true)
   }
 
+  private func finishFolder(_ request: FolderRequest, _ value: [String: Any]) {
+    // Document handlers and replies remain on main. Only native copy uses copies.
+    DispatchQueue.main.async { [weak self] in
+      guard let self else { return }
+      self.lock.lock()
+      guard self.folderRequest === request, !request.finishing else { self.lock.unlock(); return }
+      request.finishing = true
+      let picker = self.folderPicker
+      self.lock.unlock()
+      let settle = { [weak self] in
+        guard let self else { return }
+        self.lock.lock()
+        guard self.folderRequest === request else { self.lock.unlock(); return }
+        self.folderRequest = nil
+        self.folderPicker = nil
+        self.folderAuthority = 0
+        self.presenting = false
+        let reply = request.reply
+        request.reply = nil
+        self.lock.unlock()
+        reply?(value, nil)
+      }
+      if let picker { picker.afterDismissal(settle) } else { settle() }
+    }
+  }
+
+  private func cancelFolder(_ body: [String: Any]) {
+    guard let authority = requestedAuthority(body), let id = body["id"] as? String else { return }
+    lock.lock()
+    let request = folderRequest
+    guard let request, request.id == id, request.authority == authority else { lock.unlock(); return }
+    request.cancelled.set(true)
+    let selected = request.selected
+    lock.unlock()
+    finishFolder(request, ["state": selected ? "outcome_unknown" : "cancelled"])
+  }
+
   func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
-    presenting = false
-    folderAuthority = 0
+    guard controller === folderPicker else { return }
+    lock.lock(); let request = folderRequest; lock.unlock()
+    guard let request else { return }
+    request.cancelled.set(true)
+    finishFolder(request, ["state": "cancelled"])
   }
 
   func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
+    guard controller === folderPicker else { return }
+    lock.lock()
+    guard let request = folderRequest, !request.selected, !request.cancelled.value,
+          authorityIsLiveLocked(request.authority), let url = urls.first else { lock.unlock(); return }
+    request.selected = true
     presenting = false
-    let authority = folderAuthority
-    folderAuthority = 0
-    guard authority != 0, let url = urls.first else { return }
-    guard url.startAccessingSecurityScopedResource() else {
-      notice(OwnerUploadCopy.unreadable)
-      return
+    lock.unlock()
+    let selected: [Any] = [NSNumber(value: request.authority), request.id]
+    guard let web, let data = try? JSONSerialization.data(withJSONObject: selected),
+          let literal = String(data: data, encoding: .utf8) else {
+      finishFolder(request, ["state": "refused", "error": OwnerUploadCopy.unreadable]); return
     }
-    copies.addOperation { [weak self] in
+    web.evaluateJavaScript("window.__journalFolderSelected?.(..." + literal + ")") { [weak self] answer, error in
+      guard let self else { return }
+      self.lock.lock()
+      let live = self.folderRequest === request && !request.cancelled.value && self.authorityIsLiveLocked(request.authority)
+      self.lock.unlock()
+      guard live, error == nil, answer as? Bool == true else {
+        self.finishFolder(request, ["state": "refused", "error": OwnerUploadCopy.unreadable]); return
+      }
+      self.copies.addOperation { [weak self] in
+        let result = Self.copyPickedFolder(url, request: request)
+        self?.finishFolder(request, result)
+      }
+    }
+  }
+
+  private final class FolderCopyContext {
+    let url: URL
+    let request: FolderRequest
+    init(_ url: URL, _ request: FolderRequest) { self.url = url; self.request = request }
+    func copy(to destination: URL) -> Bool {
+      guard !request.cancelled.value, journal_ios_owner_folder_copy_continues(),
+            url.startAccessingSecurityScopedResource() else { return false }
       defer { url.stopAccessingSecurityScopedResource() }
-      self?.copyFolder(url, authority: authority)
+      let authority = OwnerFolderCopy.Authority(token: request.id, generation: 0)
+      let live = OwnerFolderCopy.LiveAuthority(requested: authority, live: authority,
+        continues: { journal_ios_owner_folder_copy_continues() && !self.request.cancelled.value })
+      var error: NSError?
+      var ready = false
+      NSFileCoordinator().coordinate(readingItemAt: url, options: [], error: &error) { coordinated in
+        guard live.matches, let source = try? OwnerFolderSource(coordinated) else { return }
+        let result = OwnerFolderCopy.copy(requested: authority, live: live,
+          source: source, destination: destination, cancel: request.cancelled)
+        ready = result.authorityMatches && result.ownerMessage == OwnerFolderCopy.ready
+      }
+      return error == nil && ready
     }
   }
 
-  private struct OwnedBridge {
-    let id: UInt64
-    let token: String
-    var receiptCreated = false
-    var directory: URL {
-      FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-        .appendingPathComponent("owner-bridge", isDirectory: true)
-        .appendingPathComponent(String(id), isDirectory: true)
+  private static func copyPickedFolder(_ url: URL, request: FolderRequest) -> [String: Any] {
+    let cache = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+    let body: [String: Any] = ["source": request.source, "client_item_id": request.reference,
+      "folder_name": url.lastPathComponent, "authority": NSNumber(value: request.authority),
+      "admissionGeneration": NSNumber(value: request.generation)]
+    guard let data = try? JSONSerialization.data(withJSONObject: body) else {
+      return ["state": "refused", "error": OwnerUploadCopy.unreadable]
     }
-  }
-
-  private static func bridgeValue(_ invoke: () -> UnsafeMutablePointer<CChar>?) throws -> [String: Any] {
-    guard let pointer = invoke() else { throw CocoaError(.fileReadUnknown) }
+    let context = FolderCopyContext(url, request)
+    let pointer = cache.path.withCString { cachePath in
+      data.withUnsafeBytes { bytes in
+        journal_ios_owner_folder_copy(cachePath, bytes.bindMemory(to: UInt8.self).baseAddress,
+          UInt(data.count), Unmanaged.passUnretained(context).toOpaque(), { opaque, destination in
+            guard let opaque, let destination else { return false }
+            let context = Unmanaged<FolderCopyContext>.fromOpaque(opaque).takeUnretainedValue()
+            return context.copy(to: URL(fileURLWithPath: String(cString: destination), isDirectory: true))
+          })
+      }
+    }
+    // Keep the context, selected URL and cancellation flag through native cleanup.
+    withExtendedLifetime(context) {}
+    guard let pointer else { return ["state": "outcome_unknown"] }
     defer { journal_runtime_free(pointer) }
-    let data = Data(String(cString: pointer).utf8)
-    guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-      throw CocoaError(.fileReadCorruptFile)
+    guard let value = try? JSONSerialization.jsonObject(with: Data(String(cString: pointer).utf8)) as? [String: Any] else {
+      return ["state": "outcome_unknown"]
     }
-    if object["ok"] as? Bool == true, let value = object["value"] as? [String: Any] { return value }
-    let message = object["error"] as? String ?? ""
-    if message.contains("No space") || message.contains("ENOSPC") {
-      throw NSError(domain: NSPOSIXErrorDomain, code: Int(ENOSPC), userInfo: nil)
-    }
-    throw CocoaError(.fileReadUnknown)
+    return value
   }
 
-  private static func allocateBridge(_ authority: UInt64) throws -> OwnedBridge {
-    let cache = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-    let value = try cache.path.withCString { cachePath in
-      try bridgeValue { journal_ios_owner_bridge_allocate(cachePath, authority) }
-    }
-    guard let number = value["id"] as? NSNumber, let token = value["token"] as? String, !token.isEmpty else {
-      throw CocoaError(.fileReadUnknown)
-    }
-    return OwnedBridge(id: number.uint64Value, token: token)
-  }
-
-  private static func commitBridge(_ owned: inout OwnedBridge, authority: UInt64) throws {
-    let cache = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-    let id = owned.id
-    let token = owned.token
-    try cache.path.withCString { cachePath in
-      try token.withCString { tokenPath in
-        _ = try bridgeValue { journal_ios_owner_bridge_commit(cachePath, authority, id, tokenPath) }
-      }
-    }
-    owned.receiptCreated = true
-  }
-
-  private static func releaseBridge(_ owned: OwnedBridge, authority: UInt64) {
-    let cache = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-    let created: Int32 = owned.receiptCreated ? 1 : 0
-    try? cache.path.withCString { cachePath in
-      try owned.token.withCString { tokenPath in
-        _ = try bridgeValue { journal_ios_owner_bridge_release(cachePath, authority, owned.id, tokenPath, created) }
-      }
-    }
-  }
-
-  private static func disarmBridge(_ owned: OwnedBridge, authority: UInt64) {
-    let cache = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-    try? cache.path.withCString { cachePath in
-      try owned.token.withCString { tokenPath in
-        _ = try bridgeValue { journal_ios_owner_bridge_disarm(cachePath, authority, owned.id, tokenPath) }
-      }
-    }
-  }
-
-  private func copyFolder(_ source: URL, authority: UInt64) {
-    var owned: OwnedBridge?
-    do {
-      guard authorityMatches(authority) else { return }
-      // Folder identity is the exclusive claim, not a native request id.
-      let copy = try Self.allocateBridge(authority)
-      owned = copy
-      if try copyChildren(source, to: copy.directory, authority: authority) || !authorityMatches(authority) {
-        Self.releaseBridge(copy, authority: authority)
-        owned = nil
-        return
-      }
-      var published = copy
-      try Self.commitBridge(&published, authority: authority)
-      owned = nil
-      let path = published.directory.path
-      DispatchQueue.main.async { [weak self] in
-        guard let self, self.authorityMatches(authority), let web = self.web else {
-          Self.releaseBridge(published, authority: authority)
-          return
-        }
-        guard let quoted = try? JSONSerialization.data(withJSONObject: path, options: [.fragmentsAllowed]),
-              let literal = String(data: quoted, encoding: .utf8) else {
-          Self.releaseBridge(published, authority: authority)
-          return
-        }
-        web.evaluateJavaScript(
-          "(function(){var input=document.getElementById('guidedPathInput');if(!input)return;input.value=\(literal);input.dispatchEvent(new Event('input',{bubbles:true}));})()",
-          completionHandler: nil)
-        Self.disarmBridge(published, authority: authority)
-      }
-    } catch {
-      if let owned { Self.releaseBridge(owned, authority: authority) }
-      if authorityMatches(authority) {
-        notice(OwnerUploadCopy.disk(error) ? OwnerUploadCopy.diskMessage : OwnerUploadCopy.unreadable)
-      }
-    }
-  }
-
-  private func copyChildren(_ source: URL, to dest: URL, authority: UInt64) throws -> Bool {
-    let children = try FileManager.default.contentsOfDirectory(
-      at: source, includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey])
-    for child in children {
-      if !authorityMatches(authority) { return true }
-      let name = child.lastPathComponent
-      if name.isEmpty || name == "." || name == ".." || name.contains("/") { continue }
-      let values = try child.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
-      if values.isSymbolicLink == true { continue }
-      let target = dest.appendingPathComponent(name, isDirectory: values.isDirectory == true)
-      if values.isDirectory == true {
-        try FileManager.default.createDirectory(at: target, withIntermediateDirectories: true)
-        if try copyChildren(child, to: target, authority: authority) { return true }
-      } else {
-        try OwnerUploadCopy.copyFile(child, to: target)
-      }
-    }
-    return false
+  private func retireFolder(_ authorities: [UInt64]) {
+    lock.lock()
+    guard let request = folderRequest, authorities.contains(request.authority) else { lock.unlock(); return }
+    request.cancelled.set(true)
+    let selected = request.selected
+    lock.unlock()
+    finishFolder(request, ["state": selected ? "outcome_unknown" : "cancelled"])
   }
 
   private func notice(_ message: String) {

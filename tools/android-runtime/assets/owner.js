@@ -3,6 +3,36 @@
 (() => {
   'use strict';
   const token = window.__journalOwnerToken;
+  const folders = new Map();
+  window.__journalFolderSelected = (page, id) => {
+    if (page !== token) return;
+    folders.get(id)?.selected?.();
+  };
+  window.__journalFolderReply = (page, id, reply) => {
+    if (page !== token) return;
+    const waiter = folders.get(id);
+    if (!waiter) return;
+    folders.delete(id);
+    waiter.resolve(reply);
+  };
+  window.JournalOwnerFolders = {
+    cancel() {
+      for (const [id, waiter] of folders) {
+        JournalOwner.cancelFolder(token, id);
+        waiter.resolve({ state: 'cancelled' });
+        folders.delete(id);
+      }
+    },
+    choose(source, reference, selected) {
+      if (folders.size) return Promise.resolve({ state: 'refused', error: 'journal controls busy; check health before retrying' });
+      const id = crypto.randomUUID();
+      return new Promise((resolve, reject) => {
+        folders.set(id, { resolve, selected });
+        try { JournalOwner.chooseFolder(token, id, JSON.stringify({ source, client_item_id: reference })); }
+        catch (error) { folders.delete(id); reject(error); }
+      });
+    },
+  };
   const pending = new Map();
   let sequence = 0;
   window.__journalOwnerReply = (page, id, reply) => {

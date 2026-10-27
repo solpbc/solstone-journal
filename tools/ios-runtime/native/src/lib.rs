@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 //! Development-only iOS helper bridge. Fault operations never enter a release binary.
+mod owner_folder;
 mod owner_response;
 use chrono::NaiveDate;
 use serde_json::{Value, json};

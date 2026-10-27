@@ -11,18 +11,12 @@ use axum::extract::Extension;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use serde_json::{Map, Value, json};
-use solstone_core_handoff_nonce::mint_nonce;
-use solstone_core_journal_config::{
-    McpEndpointCapability, mcp_endpoint_capability, read_journal_config,
-};
+use solstone_core_journal_config::{McpEndpointCapability, mcp_endpoint_capability};
 use solstone_core_journal_config_write::{
     JournalConfigMutation, mutate_journal_config_at_root_checked,
 };
-use solstone_core_thinking::confidential::{
-    HandoffResult, OperationHandle, OperationRegistry, Phase,
-};
+use solstone_core_thinking::confidential::{HandoffResult, OperationRegistry, Phase};
 
-use crate::JournalRoot;
 use crate::assets;
 use crate::service_handoffs::{HandoffRun, ServiceHandoffs, interrupted};
 
@@ -166,11 +160,10 @@ async fn agents_enable(
 ) -> Response {
     let handoffs =
         ServiceHandoffs::for_request(handoffs.map(|Extension(owner)| owner), admitted_root);
-    let journal = JournalRoot(handoffs.root().canonical_path().to_owned());
     let operations = override_operations
         .map(|Extension(value)| value.0)
         .unwrap_or(operations);
-    let config = match read_journal_config(&journal.0) {
+    let config = match handoffs.config() {
         Ok(c) => c,
         Err(_) => {
             return refusal(
@@ -196,80 +189,51 @@ async fn agents_enable(
             poll: value.poll,
         })
         .unwrap_or(runtime);
-    if solstone_core_sol_link::service_identity::load_or_create_service_identity(&journal.0)
-        .is_err()
-    {
-        return refusal(
+    let (ready, result) = tokio::sync::oneshot::channel();
+    let polling_operations = Arc::clone(&operations);
+    let reply_operations = Arc::clone(&operations);
+    let start = handoffs
+        .start(SERVICE, "sme_enable", operations, move |run| async move {
+            let Ok(prepared) = run
+                .prepare_consent(runtime.portal_base_url.clone(), "solstone-me")
+                .await
+            else {
+                return outcome(Phase::Error, "local_error", None);
+            };
+            let Some(operation) = run.publish_portal(prepared.portal_url) else {
+                return interrupted();
+            };
+            let _ = ready.send(operation);
+            run_handoff(run, polling_operations, runtime, prepared.nonce).await
+        })
+        .await;
+    let handle = match start {
+        Err(crate::service_handoffs::StartRefused::Busy) => return busy_refusal(),
+        Err(crate::service_handoffs::StartRefused::Stopped) => {
+            return refusal(
+                "service_operation_failed",
+                &copy("SME_CONSENT_LINK_PREPARE_FAILED_DETAIL"),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            );
+        }
+        Ok(handle) => handle,
+    };
+    let prepared = result.await;
+    if prepared.is_err() {
+        reply_operations.wait_until_closed(SERVICE, handle).await;
+    }
+    match prepared {
+        Ok(operation) => (
+            StatusCode::ACCEPTED,
+            Json(json!({"success":true,"service":SERVICE,"operation":operation})),
+        )
+            .into_response(),
+        Err(_) => refusal(
             "service_operation_failed",
             &copy("SME_CONSENT_LINK_PREPARE_FAILED_DETAIL"),
             StatusCode::INTERNAL_SERVER_ERROR,
-        );
+        ),
     }
-    let committed = match solstone_core_sol_link::committed::load_committed_identity(&journal.0) {
-        Ok(value) => value,
-        Err(_) => {
-            return refusal(
-                "service_operation_failed",
-                &copy("SME_CONSENT_LINK_PREPARE_FAILED_DETAIL"),
-                StatusCode::INTERNAL_SERVER_ERROR,
-            );
-        }
-    };
-    let nonce = match mint_nonce() {
-        Ok(value) => value,
-        Err(_) => {
-            return refusal(
-                "service_operation_failed",
-                &copy("SME_CONSENT_LINK_PREPARE_FAILED_DETAIL"),
-                StatusCode::INTERNAL_SERVER_ERROR,
-            );
-        }
-    };
-    let wall_unix_seconds = match std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
-    {
-        Ok(duration) => duration.as_secs() as i64,
-        Err(_) => {
-            return refusal(
-                "service_operation_failed",
-                &copy("SME_CONSENT_LINK_PREPARE_FAILED_DETAIL"),
-                StatusCode::INTERNAL_SERVER_ERROR,
-            );
-        }
-    };
-    let assertion = match solstone_core_sol_link::home_reach::sign_service_enable_assertion(
-        &committed,
-        "sme",
-        &nonce,
-        wall_unix_seconds,
-    ) {
-        Ok(value) => value,
-        Err(_) => {
-            return refusal(
-                "service_operation_failed",
-                &copy("SME_CONSENT_LINK_PREPARE_FAILED_DETAIL"),
-                StatusCode::INTERNAL_SERVER_ERROR,
-            );
-        }
-    };
-    let portal_url = solstone_core_sol_link::home_reach::service_enable_portal_url(
-        &runtime.portal_base_url,
-        "solstone-me",
-        &nonce,
-        committed.instance_id(),
-        &assertion.compact,
-        &assertion.ca_pubkey_pem,
-    );
-    let (handle, operation) =
-        match operations.start_operation(SERVICE, "sme_enable", Some(portal_url)) {
-            Ok(value) => value,
-            Err(_) => return busy_refusal(),
-        };
-    spawn_handoff(handoffs, operations, handle, runtime, nonce).await;
-    (
-        StatusCode::ACCEPTED,
-        Json(json!({"success":true,"service":SERVICE,"operation":operation})),
-    )
-        .into_response()
 }
 
 fn busy_refusal() -> Response {
@@ -298,63 +262,59 @@ fn refusal(code: &'static str, detail: &str, status: StatusCode) -> Response {
         .into_response()
 }
 
-async fn spawn_handoff(
-    handoffs: Arc<ServiceHandoffs>,
+async fn run_handoff(
+    run: Arc<HandoffRun>,
     operations: Arc<OperationRegistry>,
-    handle: OperationHandle,
     runtime: SmeRuntime,
     nonce: String,
-) {
-    handoffs
-        .spawn(SERVICE, operations.clone(), handle, move |run| async move {
-            if !operations.mark_waiting(SERVICE, handle) {
-                return interrupted();
-            }
-            let deadline = Instant::now() + Duration::from_secs(900);
-            loop {
-                if run.cancelled() {
+) -> HandoffResult {
+    let handle = run.operation();
+    if !operations.mark_waiting(SERVICE, handle) {
+        return interrupted();
+    }
+    let deadline = Instant::now() + Duration::from_secs(900);
+    loop {
+        if run.cancelled() {
+            return interrupted();
+        }
+        let poll = runtime.poll.clone();
+        let base = runtime.portal_base_url.clone();
+        let nonce = nonce.clone();
+        let polled = run.blocking(move || poll.poll(&base, &nonce)).await;
+        if run.cancelled() {
+            return interrupted();
+        }
+        match polled {
+            Ok(SmePollOutcome::Continue) if Instant::now() < deadline => {
+                if !run.sleep(Duration::from_secs(1)).await {
                     return interrupted();
                 }
-                let poll = runtime.poll.clone();
-                let base = runtime.portal_base_url.clone();
-                let nonce = nonce.clone();
-                let polled = run.blocking(move || poll.poll(&base, &nonce)).await;
-                if run.cancelled() {
-                    return interrupted();
-                }
-                match polled {
-                    Ok(SmePollOutcome::Continue) if Instant::now() < deadline => {
-                        if !run.sleep(Duration::from_secs(1)).await {
-                            return interrupted();
-                        }
-                    }
-                    Ok(SmePollOutcome::Continue) => return outcome(Phase::Error, "expired", None),
-                    Ok(SmePollOutcome::Failed { token, detail }) => {
-                        return outcome_for_token(&token, detail);
-                    }
-                    Ok(SmePollOutcome::Success(payload)) => match classify_payload(&payload) {
-                        Ok(("pending", _)) if Instant::now() < deadline => {
-                            if !run.sleep(Duration::from_secs(1)).await {
-                                return interrupted();
-                            }
-                        }
-                        Ok(("revoked", _)) => return outcome(Phase::Revoked, "revoked", None),
-                        // Existing consent may wait on a subscription. The service
-                        // stays on its no-write refusal until that access is active.
-                        Ok(("needs_subscription", url)) | Ok(("approved", url)) => {
-                            let effect = Arc::clone(&run);
-                            return match run.blocking(move || enable_sme(&effect)).await {
-                                Ok(Ok(())) => outcome(Phase::Enabled, "approved", url),
-                                _ => outcome(Phase::Error, "local_error", None),
-                            };
-                        }
-                        _ => return outcome(Phase::Error, "malformed", None),
-                    },
-                    Err(_) => return outcome(Phase::Error, "local_error", None),
-                }
             }
-        })
-        .await;
+            Ok(SmePollOutcome::Continue) => return outcome(Phase::Error, "expired", None),
+            Ok(SmePollOutcome::Failed { token, detail }) => {
+                return outcome_for_token(&token, detail);
+            }
+            Ok(SmePollOutcome::Success(payload)) => match classify_payload(&payload) {
+                Ok(("pending", _)) if Instant::now() < deadline => {
+                    if !run.sleep(Duration::from_secs(1)).await {
+                        return interrupted();
+                    }
+                }
+                Ok(("revoked", _)) => return outcome(Phase::Revoked, "revoked", None),
+                // Existing consent may wait on a subscription. The service
+                // stays on its no-write refusal until that access is active.
+                Ok(("needs_subscription", url)) | Ok(("approved", url)) => {
+                    let effect = Arc::clone(&run);
+                    return match run.blocking(move || enable_sme(&effect)).await {
+                        Ok(Ok(())) => outcome(Phase::Enabled, "approved", url),
+                        _ => outcome(Phase::Error, "local_error", None),
+                    };
+                }
+                _ => return outcome(Phase::Error, "malformed", None),
+            },
+            Err(_) => return outcome(Phase::Error, "local_error", None),
+        }
+    }
 }
 
 fn enable_sme(run: &HandoffRun) -> Result<(), String> {

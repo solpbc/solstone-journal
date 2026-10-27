@@ -453,6 +453,19 @@ pub(crate) fn acquire(root: &Path) -> Result<UnixRoot, JournalRootError> {
     })
 }
 
+pub(crate) fn acquire_no_follow(root: &Path) -> Result<UnixRoot, JournalRootError> {
+    // A trailing slash or /. makes the kernel follow the preceding symlink
+    // before applying O_NOFOLLOW. Normalize those spellings to its actual leaf.
+    let normalized: PathBuf = root.components().collect();
+    let (fd, canonical, identity) =
+        acquire_root(&normalized, REQUESTED_ROOT_FLAGS | OFlag::O_NOFOLLOW)?;
+    Ok(UnixRoot {
+        root: fd,
+        canonical,
+        identity,
+    })
+}
+
 pub(crate) fn acquire_identity(root: &Path) -> Result<UnixRoot, JournalRootError> {
     let (fd, canonical, identity) = acquire_root(root, DIRECTORY_FLAGS)?;
     Ok(UnixRoot {

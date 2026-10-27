@@ -146,3 +146,7 @@ JNIEXPORT jstring JNICALL Java_app_solstone_development_journal_Native_run(JNIEn
     (*e)->ReleaseStringUTFChars(e,r,root); (*e)->ReleaseStringUTFChars(e,o,op);
     return result;
 }
+
+#include "owner_folder_bridge.c"
+
+#include "owner_saved_source_bridge.c"

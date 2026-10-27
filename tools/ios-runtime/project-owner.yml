@@ -8,6 +8,7 @@ settings:
 targets:
   JournalRuntimeDev:
     sources:
+      - folder-copy
       - path: Resources/JournalWebHost.json
         buildPhase: resources
       - path: owner-stream.js

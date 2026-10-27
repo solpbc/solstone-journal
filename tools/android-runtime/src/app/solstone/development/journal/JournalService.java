@@ -14,13 +14,18 @@ public class JournalService extends Service {
     final ExecutorService work=execution.work;
     final ExecutorService thinking=execution.thinking;
     final ThinkingAdmission thinkingAdmission = execution.admission;
-    boolean destroyed;
+    volatile boolean destroyed;
+    OwnerFolderServiceEndpoint folderRequests;
+    SavedFolderServiceProvider savedFolderProvider;
+    long savedFolderProviderIdentity;
     String serviceToolAdmission;
     Messenger incoming;
     final ExecutorService ownerRequests = new ThreadPoolExecutor(4,4,0L,TimeUnit.MILLISECONDS,
         new ArrayBlockingQueue<Runnable>(32),new ThreadPoolExecutor.AbortPolicy());
     public void onCreate() {
         super.onCreate();
+        savedFolderProvider = new SavedFolderServiceProvider(getContentResolver());
+        savedFolderProviderIdentity = Native.installSavedFolderProvider(getCacheDir().getAbsolutePath(),savedFolderProvider);
         long admissionStarted = SystemClock.elapsedRealtime();
         evidence("service_tools_admission_started", "");
         try { serviceToolAdmission = ServiceToolAssets.install(this); }
@@ -28,8 +33,11 @@ public class JournalService extends Service {
             serviceToolAdmission = "{\"ok\":false,\"packaged\":true,\"error\":" + JSONObject.quote(error.toString()) + "}";
         }
         evidence("service_tools_admission_finished", Long.toString(SystemClock.elapsedRealtime() - admissionStarted));
+        folderRequests = new OwnerFolderServiceEndpoint(this,ownerRequests,() -> destroyed,
+            (target,id,result) -> respond(target,id,result,0));
         incoming=new Messenger(new Handler(Looper.getMainLooper()) {
             public void handleMessage(Message m) {
+                if (folderRequests.handle(m)) return;
                 final String op=m.getData().getString("op");
                 final String root=m.getData().getString("root");
                 final int count=m.getData().getInt("count",1), id=m.arg1;
@@ -226,6 +234,7 @@ public class JournalService extends Service {
         ownerRequests.shutdown();
         evidence("service_destroyed","last binding released");
         execution.retire(this::cancelNativeWork, () -> Native.run("", "serve:{\"op\":\"stop\"}", 1));
+        Native.retireSavedFolderProvider(savedFolderProviderIdentity);
         super.onDestroy();
     }
 }

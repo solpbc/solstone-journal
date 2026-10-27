@@ -177,6 +177,36 @@ impl OperationRegistry {
         Ok((OperationHandle { generation }, payload))
     }
 
+    /// Publish preparation's consent URL only for the still-open generation.
+    pub fn publish_portal_url(
+        &self,
+        service: &str,
+        handle: OperationHandle,
+        portal_url: String,
+    ) -> Option<Value> {
+        let mut state = self
+            .state
+            .lock()
+            .expect("operation registry lock is not poisoned");
+        let entry = state.entries.get_mut(service)?;
+        if entry.generation != handle.generation || entry.ended.is_some() {
+            return None;
+        }
+        entry.portal_url = Some(portal_url);
+        Some(payload(entry, Instant::now(), false))
+    }
+
+    /// Snapshot this generation for a preparation response without disclosing
+    /// or altering a successor's consent URL.
+    pub fn operation_for_handle(&self, service: &str, handle: OperationHandle) -> Option<Value> {
+        let state = self
+            .state
+            .lock()
+            .expect("operation registry lock is not poisoned");
+        let entry = state.entries.get(service)?;
+        (entry.generation == handle.generation).then(|| payload(entry, Instant::now(), false))
+    }
+
     pub fn mark_waiting(&self, service: &str, handle: OperationHandle) -> bool {
         let mut state = self
             .state
@@ -1046,6 +1076,25 @@ mod tests {
             .expect("replacement operation starts");
 
         assert!(!registry.mark_waiting(SERVICE_SPP, first));
+        assert!(
+            registry
+                .publish_portal_url(SERVICE_SPP, first, "https://stale.invalid".to_owned())
+                .is_none()
+        );
+        assert!(registry.operation_for_handle(SERVICE_SPP, first).is_none());
+        assert!(
+            registry
+                .publish_portal_url("sme", second, "https://wrong-service.invalid".to_owned())
+                .is_none()
+        );
+        let updated = registry
+            .publish_portal_url(SERVICE_SPP, second, "https://current.invalid".to_owned())
+            .unwrap();
+        assert_eq!(updated["portal_url"], "https://current.invalid");
+        assert_eq!(
+            registry.operation_for_handle(SERVICE_SPP, second).unwrap()["portal_url"],
+            "https://current.invalid"
+        );
         assert!(!registry.finish(
             SERVICE_SPP,
             first,

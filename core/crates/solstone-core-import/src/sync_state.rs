@@ -175,6 +175,108 @@ pub fn read_sync_state(root: &Path, backend: BackendName) -> SyncStateRead {
     }
 }
 
+/// Read a connection from the original native owner's retained root.
+#[cfg(unix)]
+pub fn read_sync_state_bound(
+    root: &solstone_core_journal_io::JournalRoot,
+    backend: BackendName,
+) -> SyncStateRead {
+    use solstone_core_journal_io::{open_flat_directory_bound, read_observed_file};
+    use std::ffi::OsStr;
+    let read = || -> Result<SyncStateRead, ()> {
+        root.revalidate_canonical_binding().map_err(|_| ())?;
+        let Some(imports) =
+            open_flat_directory_bound(root, OsStr::new("imports"), root.canonical_path())
+                .map_err(|_| ())?
+        else {
+            return Ok(SyncStateRead::Absent);
+        };
+        let name = format!("{}.json", backend.as_str());
+        let observed = read_observed_file(&imports, OsStr::new(&name)).map_err(|_| ())?;
+        root.revalidate_canonical_binding().map_err(|_| ())?;
+        let current = solstone_core_journal_io::FlatDirectory::open(root, Path::new("imports"))
+            .map_err(|_| ())?;
+        if current.identity() != imports.identity() {
+            return Err(());
+        }
+        let Some(observed) = observed else {
+            return Ok(SyncStateRead::Absent);
+        };
+        let value = match serde_json::from_slice(&observed.bytes) {
+            Ok(value) => value,
+            Err(_) => {
+                return Ok(SyncStateRead::Unreadable {
+                    class: SyncStateReadClass::MalformedJson,
+                });
+            }
+        };
+        Ok(match SyncState::from_value(backend, value) {
+            Ok(state) => SyncStateRead::Loaded(state),
+            Err(class) => SyncStateRead::Unreadable { class },
+        })
+    };
+    read().unwrap_or(SyncStateRead::Unreadable {
+        class: SyncStateReadClass::Io,
+    })
+}
+
+/// Publish connection changes while the caller retains its source operation.
+#[cfg(unix)]
+pub fn write_sync_state_bound(
+    root: &solstone_core_journal_io::JournalRoot,
+    state: &SyncState,
+    stop: &crate::WorkStop,
+) -> Result<(), SyncStateWriteError> {
+    use solstone_core_journal_io::{
+        BoundAtomicOutcome, FlatDirectory, LockOptions, atomic_replace_bound_checked,
+        create_or_open_flat_directory_bound, hold_lock_bound_checked,
+    };
+    use std::ffi::OsStr;
+    let checkpoint = || -> Result<(), String> {
+        if stop.is_requested() {
+            return Err("import stopped".into());
+        }
+        root.revalidate_canonical_binding()
+            .map_err(|_| "journal binding changed".to_owned())
+    };
+    checkpoint().map_err(path_error)?;
+    let imports = create_or_open_flat_directory_bound(
+        root,
+        OsStr::new("imports"),
+        0o700,
+        root.canonical_path(),
+    )
+    .map_err(path_error)?;
+    let verify = || -> Result<(), String> {
+        checkpoint()?;
+        let current =
+            FlatDirectory::open(root, Path::new("imports")).map_err(|_| "source state changed")?;
+        if current.identity() != imports.identity() {
+            return Err("source state changed".into());
+        }
+        Ok(())
+    };
+    let name = format!("{}.json", state.backend.as_str());
+    let _lock = hold_lock_bound_checked(
+        &imports,
+        OsStr::new(&name),
+        &root.canonical_path().join("imports"),
+        LockOptions::default(),
+        false,
+        &verify,
+    )
+    .map_err(path_error)?;
+    let bytes = serialize_state(&state.root).map_err(|message| SyncStateWriteError { message })?;
+    match atomic_replace_bound_checked(&imports, OsStr::new(&name), &bytes, 0o600, &verify)
+        .map_err(path_error)?
+    {
+        BoundAtomicOutcome::Published { .. } => verify().map_err(path_error),
+        _ => Err(path_error(
+            "source state publication could not be confirmed",
+        )),
+    }
+}
+
 /// Atomically publish state with the reference private modes.
 pub fn write_sync_state(root: &Path, state: &SyncState) -> Result<(), SyncStateWriteError> {
     let imports = root.join("imports");
@@ -438,6 +540,9 @@ pub fn replace_folder(
         .root
         .insert("files".to_owned(), Value::Object(Map::new()));
     store_grant(state, folder_name, remembered, material);
+    // The previous selection belongs to the parked catalogue. The replacement
+    // must be resolved from its new grant before a source-less sync can run.
+    state.root.remove("source_path");
     Ok(identity)
 }
 
@@ -721,6 +826,61 @@ mod tests {
             .get(RETAINED_CATALOGS)
             .and_then(Value::as_object)
             .and_then(|catalogs| catalogs.get(key))
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn bound_state_refuses_a_replacement_root_without_reading_or_mutating_its_twin() {
+        let parent = tempfile::tempdir().unwrap();
+        let path = parent.path().join("journal");
+        let displaced = parent.path().join("original");
+        fs::create_dir(&path).unwrap();
+        let root = solstone_core_journal_io::JournalRoot::open(&path).unwrap();
+        let state = obsidian_with_files();
+        write_sync_state_bound(&root, &state, &crate::WorkStop::new()).unwrap();
+        let original = fs::read(state_path(&path, BackendName::Obsidian)).unwrap();
+        fs::rename(&path, &displaced).unwrap();
+        fs::create_dir_all(path.join("imports")).unwrap();
+        let twin = state_path(&path, BackendName::Obsidian);
+        fs::write(&twin, b"replacement state sentinel").unwrap();
+        assert!(matches!(
+            read_sync_state_bound(&root, BackendName::Obsidian),
+            SyncStateRead::Unreadable {
+                class: SyncStateReadClass::Io
+            }
+        ));
+        assert!(write_sync_state_bound(&root, &state, &crate::WorkStop::new()).is_err());
+        assert_eq!(fs::read(&twin).unwrap(), b"replacement state sentinel");
+        assert_eq!(
+            fs::read(state_path(&displaced, BackendName::Obsidian)).unwrap(),
+            original
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn bound_state_refuses_a_connection_leaf_alias() {
+        let parent = tempfile::tempdir().unwrap();
+        let path = parent.path().join("journal");
+        fs::create_dir_all(path.join("imports")).unwrap();
+        let outside = parent.path().join("outside.json");
+        fs::write(
+            &outside,
+            br#"{"files":{},"access_material":"outside-grant"}"#,
+        )
+        .unwrap();
+        std::os::unix::fs::symlink(&outside, state_path(&path, BackendName::Obsidian)).unwrap();
+        let root = solstone_core_journal_io::JournalRoot::open(&path).unwrap();
+        assert!(matches!(
+            read_sync_state_bound(&root, BackendName::Obsidian),
+            SyncStateRead::Unreadable {
+                class: SyncStateReadClass::Io
+            }
+        ));
+        assert_eq!(
+            fs::read(&outside).unwrap(),
+            br#"{"files":{},"access_material":"outside-grant"}"#
+        );
     }
 
     #[test]

@@ -95,8 +95,6 @@ pub use append::{append_text_bound_checked, append_text_checked};
 pub use atomic::is_publication_candidate_name;
 pub use atomic::serialize_json_bytes;
 #[cfg(any(unix, windows))]
-pub use atomic::write_bytes_exclusive_bound_detailed;
-#[cfg(any(unix, windows))]
 pub use atomic::{
     AtomicWriteOptions, JsonWriteOptions, atomic_replace, atomic_replace_checked, write_json,
     write_json_checked,
@@ -138,6 +136,10 @@ pub use atomic::{
 };
 #[cfg(any(unix, windows))]
 pub use atomic::{write_bytes_exclusive, write_reader_exclusive};
+#[cfg(any(unix, windows))]
+pub use atomic::{
+    write_bytes_exclusive_bound_detailed, write_bytes_exclusive_bound_detailed_checked,
+};
 #[cfg(any(unix, windows))]
 pub use atomic::{write_jsonl, write_text};
 pub use bounded_read::{JournalReadError, MAX_BYTES, resolve_read_path};

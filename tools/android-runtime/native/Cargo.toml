@@ -13,6 +13,9 @@ crate-type = ["cdylib"]
 full-tests = []
 
 [dependencies]
+solstone-core-import = { path = "../../../core/crates/solstone-core-import" }
+solstone-core-import-web = { path = "../../../core/crates/solstone-core-import-web" }
+solstone-core-journal-config = { path = "../../../core/crates/solstone-core-journal-config" }
 journal-mobile-serving = { path = "../../mobile-serving", features = ["audio-native", "processing", "rfdetr-native", "in-process-pdf"] }
 solstone-core-journal-io = { path = "../../../core/crates/solstone-core-journal-io", features = ["test-hooks"] }
 solstone-core-indexer-store = { path = "../../../core/crates/solstone-core-indexer-store" }

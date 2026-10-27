@@ -6,7 +6,6 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.StandardOpenOption;
@@ -14,6 +13,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.BooleanSupplier;
 
 /** Copies a picked folder without taking a page path or an Android permission. */
 final class OwnerFolderCopy {
@@ -50,8 +50,17 @@ final class OwnerFolderCopy {
         final int requestedGeneration;
         private String liveToken;
         private int liveGeneration;
+        private final BooleanSupplier continues;
 
         LiveAuthority(String requestedToken, int requestedGeneration, String liveToken, int liveGeneration) {
+            this(requestedToken, requestedGeneration, liveToken, liveGeneration, new BooleanSupplier() {
+                public boolean getAsBoolean() { return true; }
+            });
+        }
+
+        LiveAuthority(String requestedToken, int requestedGeneration, String liveToken, int liveGeneration,
+                BooleanSupplier continues) {
+            this.continues = continues;
             this.requestedToken = requestedToken;
             this.requestedGeneration = requestedGeneration;
             this.liveToken = liveToken;
@@ -64,7 +73,7 @@ final class OwnerFolderCopy {
         }
 
         synchronized boolean matches() {
-            return requestedToken != null && requestedToken.equals(liveToken) && requestedGeneration == liveGeneration;
+            return continues.getAsBoolean() && requestedToken != null && requestedToken.equals(liveToken) && requestedGeneration == liveGeneration;
         }
     }
 
@@ -74,13 +83,14 @@ final class OwnerFolderCopy {
 
         InputStream open(String relative) throws IOException;
 
+        /** Byte size, or -1 when the provider does not publish it. */
         long size(String relative) throws IOException;
 
-        boolean directory(String relative);
+        boolean directory(String relative) throws IOException;
 
-        boolean symlink(String relative);
+        boolean symlink(String relative) throws IOException;
 
-        Long modifiedMillis(String relative);
+        Long modifiedMillis(String relative) throws IOException;
     }
 
     private static final class Budget {
@@ -145,6 +155,9 @@ final class OwnerFolderCopy {
         }
         if (cancel != null && cancel.get()) {
             return new Result(true, CANCELLED);
+        }
+        if (!safeDirectoryChain(destination)) {
+            return new Result(true, DENIED);
         }
         boolean createdRoot = !destination.exists();
         if (!destination.mkdirs() && !destination.isDirectory()) {
@@ -227,6 +240,13 @@ final class OwnerFolderCopy {
                 }
                 copyTree(authority, source, child, destination, buffer, budget, cancel, seen, created);
             }
+            if (!relative.isEmpty()) {
+                Long modified = source.modifiedMillis(relative);
+                File copiedDirectory = new File(destination, relative);
+                if (created.contains(copiedDirectory) && modified != null && !copiedDirectory.setLastModified(modified)) {
+                    throw new Stop(DENIED);
+                }
+            }
             return;
         }
         ensureCurrent(authority, cancel);
@@ -235,64 +255,41 @@ final class OwnerFolderCopy {
             throw new Stop(NO_MTIME);
         }
         long expected = source.size(relative);
-        budget.acquire();
-        InputStream input;
-        try {
-            input = source.open(relative);
-        } catch (IOException exception) {
-            budget.release();
-            throw exception;
-        }
-        budget.acquire();
         File outputFile = new File(destination, relative);
-        File parent = outputFile.getParentFile();
-        if (parent != null && !parent.isDirectory()) {
-            noteMissing(destination, parent, created);
-            if (!parent.mkdirs()) {
-                input.close();
-                budget.release();
-                budget.release();
-                throw new Stop(DENIED);
-            }
-        }
-        if (Files.exists(outputFile.toPath(), LinkOption.NOFOLLOW_LINKS)) {
-            input.close();
-            budget.release();
-            budget.release();
+        if (!safeDirectoryChain(outputFile.getParentFile())) {
             throw new Stop(DENIED);
         }
-        OutputStream exclusive;
-        try {
-            exclusive = Files.newOutputStream(
-                    outputFile.toPath(), StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE);
-        } catch (FileAlreadyExistsException occupied) {
-            input.close();
-            budget.release();
-            budget.release();
-            throw new Stop(DENIED);
-        }
-        created.add(outputFile);
-        try (InputStream stream = input; OutputStream output = exclusive) {
-            long copied = 0;
-            while (copied < expected) {
-                ensureCurrent(authority, cancel);
-                int asked = (int) Math.min(buffer.length, expected - copied);
-                int read = stream.read(buffer, 0, asked);
-                if (read < 0) {
-                    throw new Stop(TRUNCATED);
+        budget.acquire();
+        try (InputStream stream = source.open(relative)) {
+            ensureCurrent(authority, cancel);
+            budget.acquire();
+            try {
+                OutputStream exclusive = Files.newOutputStream(
+                        outputFile.toPath(), StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE);
+                created.add(outputFile);
+                try (OutputStream output = exclusive) {
+                    long copied = 0;
+                    while (true) {
+                        ensureCurrent(authority, cancel);
+                        int read = stream.read(buffer, 0, buffer.length);
+                        ensureCurrent(authority, cancel);
+                        if (read < 0) { break; }
+                        if (read == 0) { throw new Stop(DENIED); }
+                        if (expected >= 0 && copied + read > expected) { throw new Stop(TRUNCATED); }
+                        output.write(buffer, 0, read);
+                        copied += read;
+                    }
+                    long finalSize = source.size(relative);
+                    if ((expected >= 0 && copied != expected)
+                            || (finalSize >= 0 && copied != finalSize)
+                            || !modified.equals(source.modifiedMillis(relative))) {
+                        throw new Stop(TRUNCATED);
+                    }
                 }
-                output.write(buffer, 0, read);
-                copied += read;
-            }
-            if (copied != expected) {
-                throw new Stop(TRUNCATED);
-            }
-            int extra = stream.read(buffer, 0, 1);
-            if (extra > 0) {
-                throw new Stop(TRUNCATED);
+            } finally {
+                budget.release();
             }
         } finally {
-            budget.release();
             budget.release();
         }
         if (!outputFile.setLastModified(modified)) {
@@ -301,8 +298,9 @@ final class OwnerFolderCopy {
     }
 
     private static void createDirectory(
-            FolderSource source, String relative, File destination, List<File> created) {
+            FolderSource source, String relative, File destination, List<File> created) throws IOException {
         File dir = new File(destination, relative);
+        if (!safeDirectoryChain(dir)) { throw new Stop(DENIED); }
         boolean createdDir = false;
         if (Files.exists(dir.toPath(), LinkOption.NOFOLLOW_LINKS)) {
             if (Files.isSymbolicLink(dir.toPath()) || !dir.isDirectory()) {
@@ -332,6 +330,16 @@ final class OwnerFolderCopy {
         if (!authority.matches()) {
             throw new AuthorityChanged();
         }
+    }
+
+    private static boolean safeDirectoryChain(File directory) {
+        for (File cursor = directory; cursor != null; cursor = cursor.getParentFile()) {
+            if (Files.isSymbolicLink(cursor.toPath())) { return false; }
+            if (Files.exists(cursor.toPath(), LinkOption.NOFOLLOW_LINKS) && !cursor.isDirectory()) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static boolean oneComponent(String name) {

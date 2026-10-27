@@ -256,6 +256,18 @@ pub fn load_committed_identity_bound(
     })
 }
 
+pub(crate) fn from_explicit_material(
+    certificate_path: PathBuf,
+    certificate_pem: Vec<u8>,
+    private_key_pem: String,
+    state_path: PathBuf,
+    state: &str,
+) -> Result<CommittedIdentity, CommittedIdentityError> {
+    finish_committed_identity(certificate_path, certificate_pem, private_key_pem, || {
+        parse_state(state_path, state)
+    })
+}
+
 fn finish_committed_identity(
     certificate_path: PathBuf,
     certificate_pem: Vec<u8>,

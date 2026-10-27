@@ -1383,7 +1383,8 @@ async function runRepeatSourceThenDelayedOldGenCompleted() {
 
 function runShowGridResetsGuidedClientItemId() {
   const context = makeContext({ console });
-  context.window = { _guidedClientItemId: 'client-1' };
+  let cancelled=0;
+  context.window = { _guidedClientItemId: 'client-1', JournalOwnerFolders: { cancel() { cancelled += 1; } } };
   context.currentGuideSource = 'image';
   context.currentGuidedFile = 'file.png';
   context.currentGuidedSaved = {};
@@ -1394,6 +1395,7 @@ function runShowGridResetsGuidedClientItemId() {
 
   assert.strictEqual(context.window._guidedClientItemId, null, 'showGrid resets _guidedClientItemId');
   assert.strictEqual(context.currentGuideSource, null, 'showGrid resets currentGuideSource');
+  assert.strictEqual(cancelled,1,'leaving the source card cancels its picker even before navigation');
   cases += 1;
 }
 
@@ -3452,8 +3454,98 @@ async function runHistoryFilterPaginationRaces() {
   cases += 1;
 }
 
+async function runNativeFolderSelectionAndReturnRead() {
+  const script = scriptFromWorkspace();
+  for (const scenario of ['cancel', 'saved', 'unconfirmed', 'registration_failed', 'other-source', 'unnotified-cancel', 'storage-denied']) {
+    const status = { textContent: 'previous folder: saved' };
+    const choose = { disabled: false, focus() { this.focused = true; } };
+    const start = { disabled: false };
+    const storage = new Map();
+    const calls = [];
+    let selected, resolve;
+    const context = makeContext({ console, Promise,
+      document: { getElementById: id => ({ guidedFolderBtn: choose, guidedFolderStatus: status, guidedStartBtn: start }[id]), addEventListener() {} },
+      crypto: { randomUUID: () => 'selected-reference' },
+      sessionStorage: { getItem: key => storage.get(key), setItem: (key,value) => storage.set(key,value) },
+      loadImports: async () => {},
+      window: { JournalOwnerFolders: { choose(source,reference,phase) {
+        assert.strictEqual(source,'obsidian'); assert.strictEqual(reference,'selected-reference');
+        selected=phase; return new Promise(done => { resolve=done; });
+      } } },
+      fetch: async url => {
+        calls.push(url);
+        if (url.includes('/list?')) return { ok: true, json: async () => ({ imports: [] }) };
+        throw new Error('unexpected request');
+      },
+    });
+    vm.runInContext("let guidedFolderBusy=false; let currentGuideSource='obsidian'; let currentGuidedSaved={path:'prior'};",context);
+    for (const name of ['folderSelectionKey','folderSelection','folderControls','chooseGuidedFolder','reconcileGuidedFolder']) vm.runInContext(functionSource(script,name),context);
+    const pending=vm.runInContext("chooseGuidedFolder({name:'obsidian'})",context);
+    assert.strictEqual(start.disabled,true);
+    assert.strictEqual(vm.runInContext('currentGuidedSaved.path',context),'prior');
+    if (scenario === 'cancel') {
+      resolve({state:'cancelled'});
+    } else if (scenario === 'unnotified-cancel') {
+      resolve({state:'outcome_unknown',client_item_id:'selected-reference'});
+    } else if (scenario === 'storage-denied') {
+      context.sessionStorage.setItem = () => { throw new Error('storage unavailable'); };
+      assert.strictEqual(selected(),false,'native copy requires a retained reconciliation reference');
+      assert.strictEqual(vm.runInContext('currentGuidedSaved.path',context),'prior');
+      resolve({state:'refused'});
+    } else {
+      assert.strictEqual(selected(),true);
+      assert.strictEqual(vm.runInContext('currentGuidedSaved',context),null);
+      assert.match(status.textContent,/saving folder/);
+      assert.strictEqual(JSON.parse([...storage.values()][0]).client_item_id,'selected-reference');
+      if (scenario === 'other-source') vm.runInContext("currentGuideSource='document'",context);
+      resolve(scenario === 'saved' || scenario === 'other-source'
+        ? {ok:true,state:'saved',folder_name:'picked notes',import_id:'20261026_123456',value:{path:'admitted/tree',timestamp:'20261026_123456'}}
+        : {state:scenario,folder_name:'picked notes',import_id:'20261026_123456'});
+    }
+    await pending;
+    if (scenario === 'cancel') {
+      assert.strictEqual(vm.runInContext('currentGuidedSaved.path',context),'prior');
+      assert.strictEqual(status.textContent,'previous folder: saved');
+      assert.strictEqual(storage.size,0);
+    } else if (scenario === 'unnotified-cancel') {
+      assert.strictEqual(JSON.parse([...storage.values()][0]).client_item_id,'selected-reference');
+      assert.strictEqual(calls.length,1,'an unknown dispatched selection is checked even without its selected notification');
+      assert.match(calls[0],/client_item_id=selected-reference/);
+    } else if (scenario === 'storage-denied') {
+      assert.strictEqual(vm.runInContext('currentGuidedSaved.path',context),'prior');
+      assert.strictEqual(storage.size,0);
+    } else if (scenario === 'saved') {
+      assert.strictEqual(vm.runInContext('currentGuidedSaved.path',context),'admitted/tree');
+      assert.strictEqual(status.textContent,'picked notes: saved');
+      context.fetch=async url => {
+        calls.push(url);
+        return {ok:true,json:async () => url.includes('/list?')
+          ? {imports:[{timestamp:'20261026_123456',client_item_id:'selected-reference'}]}
+          : {import_json:{file_path:'original/admitted/tree',client_item_id:'selected-reference',source_hint:'obsidian',original_filename:'picked notes'}}};
+      };
+      vm.runInContext('currentGuidedSaved=null',context);
+      await vm.runInContext("reconcileGuidedFolder({name:'obsidian'})",context);
+      assert.strictEqual(vm.runInContext('currentGuidedSaved.path',context),'original/admitted/tree','a return read restores only the recorded source');
+      assert.strictEqual(calls.length,2,'return recovery reads list and detail without saving again');
+    } else if (scenario === 'registration_failed') {
+      assert.strictEqual(JSON.parse([...storage.values()][0]).custody,'saved');
+      assert.match(status.textContent,/saved, but import setup/);
+      assert.strictEqual(start.disabled,true);
+    } else if (scenario === 'unconfirmed') {
+      assert.strictEqual(calls.length,1);
+      assert.match(calls[0],/client_item_id=selected-reference/);
+      assert.strictEqual(start.disabled,true);
+    } else {
+      assert.strictEqual(vm.runInContext('currentGuidedSaved',context),null,'an old result never populates another source');
+    }
+    if (scenario !== 'other-source') assert.strictEqual(choose.focused,true);
+    cases += 1;
+  }
+}
+
 Promise.resolve()
   .then(runHistoryFilterPaginationRaces)
+  .then(runNativeFolderSelectionAndReturnRead)
   .then(runSourceChangeWhileUploading)
   .then(runPreviewEditRequiresNewPreview)
   .then(runThinkingRefreshKeepsControlsAndFocus)

@@ -12,8 +12,12 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Instant;
 
 #[cfg(unix)]
+mod owner_folder;
+#[cfg(unix)]
 mod owner_response;
 mod retirement;
+#[cfg(unix)]
+mod saved_sources;
 
 static CANCEL: AtomicBool = AtomicBool::new(false);
 struct ServingInstance {
@@ -21,6 +25,7 @@ struct ServingInstance {
     retirement: Option<retirement::Retirement>,
     root: std::sync::Arc<jio::JournalRoot>,
     host: Option<std::sync::Arc<journal_mobile_serving::foreground::ForegroundProcessingHost>>,
+    sources: Option<std::sync::Arc<journal_mobile_serving::import_route::ConfiguredSources>>,
 }
 
 struct RetiringServing {
@@ -352,6 +357,7 @@ fn serving(root: &Path, command: &str) -> Result<Value, String> {
                                 retirement: None,
                                 root: binding,
                                 host: None,
+                                sources: None,
                             };
                             let _ = current.begin_retirement();
                             *server = Some(current);
@@ -364,19 +370,20 @@ fn serving(root: &Path, command: &str) -> Result<Value, String> {
             *PROCESSING_STOP.lock().unwrap_or_else(|p| p.into_inner()) =
                 Some(std::sync::Arc::clone(&processing_stop));
             let backup = handle.backup_dependencies();
+            let (import_factory, sources) = saved_sources::factory(admitted_library);
             let mut host = match journal_mobile_serving::foreground::ForegroundProcessingHost::open_with_imports(
                 std::sync::Arc::clone(&binding), &payload_dir,
                 std::sync::Arc::new(move || THINKING_GENERATION.load(Ordering::SeqCst) & !1 != generation & !1),
                 processing_stop,
                 backup,
-                journal_mobile_serving::import_route::packaged_import_factory(admitted_library),
+                import_factory,
                 false,
                 false,
             ) {
                 Ok(host) => host,
                 Err(error) => {
                     let mut current = ServingInstance {
-                        handle: Some(handle), retirement: None, root: binding, host: None,
+                        handle: Some(handle), retirement: None, root: binding, host: None, sources,
                     };
                     let _ = current.begin_retirement();
                     *server = Some(current);
@@ -390,6 +397,7 @@ fn serving(root: &Path, command: &str) -> Result<Value, String> {
                     retirement: None,
                     root: binding,
                     host: Some(std::sync::Arc::new(host)),
+                    sources,
                 };
                 let _ = current.begin_retirement();
                 *server = Some(current);
@@ -406,6 +414,7 @@ fn serving(root: &Path, command: &str) -> Result<Value, String> {
                     retirement: None,
                     root: binding,
                     host: Some(host),
+                    sources,
                 };
                 let _ = current.begin_retirement();
                 *server = Some(current);
@@ -417,6 +426,7 @@ fn serving(root: &Path, command: &str) -> Result<Value, String> {
                 retirement: None,
                 root: binding,
                 host: Some(host),
+                sources,
             });
             if !open_thinking_admission(&THINKING_GENERATION, generation) {
                 let current = server.as_mut().unwrap();
