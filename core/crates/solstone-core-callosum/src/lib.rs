@@ -10,11 +10,15 @@ mod model;
 mod oneshot;
 mod reader;
 mod registry;
+#[cfg(unix)]
+mod unix_endpoint;
 #[cfg(any(test, windows))]
 pub mod windows;
 #[cfg(feature = "wire")]
 mod wire;
 mod writer;
+#[cfg(unix)]
+pub use unix_endpoint::{UnixEndpoint, local_unix_listener_status};
 
 /// Resolve an app-owned Callosum endpoint before opening a Unix socket.
 /// Mobile app paths can exceed sockaddr_un even when their final symlink

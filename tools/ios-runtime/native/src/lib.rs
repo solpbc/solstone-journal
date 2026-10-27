@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 //! Development-only iOS helper bridge. Fault operations never enter a release binary.
+mod owner_folder;
 mod owner_response;
 use chrono::NaiveDate;
 use serde_json::{Value, json};
@@ -308,7 +309,10 @@ fn wifi_address() -> Result<std::net::Ipv4Addr, String> {
 fn hold_ready_journal(
     root: &std::sync::Arc<solstone_core_journal_io::JournalRoot>,
 ) -> Result<solstone_core_journal_io::whole_journal_restore::TargetUse, String> {
-    solstone_core_journal_io::whole_journal_restore::begin_target_use_bound(std::sync::Arc::clone(root)).map_err(|_| {
+    solstone_core_journal_io::whole_journal_restore::begin_target_use_bound(std::sync::Arc::clone(
+        root,
+    ))
+    .map_err(|_| {
         solstone_core_journal_io::whole_journal_restore::WHOLE_JOURNAL_RESTORE_NOT_READY.to_owned()
     })
 }
@@ -414,66 +418,33 @@ fn run(v: Value) -> Result<Value, String> {
                     .as_str()
                     .ok_or("admitted pdfium library required")?,
             );
-            #[cfg(target_os = "ios")]
-            {
-                let target = std::env::temp_dir().join("callosum.sock");
-                if !target.is_absolute() || target.as_os_str().len() >= 104 {
-                    return Err("app-private Callosum target exceeds Unix socket path bound".into());
-                }
-                let alias = p.join("health/callosum.sock");
-                std::fs::create_dir_all(alias.parent().ok_or("missing health directory")?)
-                    .map_err(|e| e.to_string())?;
-                match std::fs::symlink_metadata(&alias) {
-                    Ok(metadata)
-                        if metadata.file_type().is_symlink()
-                            && std::fs::read_link(&alias).map_err(|e| e.to_string())? == target => {
-                    }
-                    // iOS changes the app container on reinstall. This alias is
-                    // app-owned transient IPC, so replace its link (never its
-                    // old target) with the current app-private endpoint.
-                    Ok(metadata) if metadata.file_type().is_symlink() => {
-                        let temporary = alias.with_file_name(format!(
-                            ".callosum-alias-{}-{}",
-                            std::process::id(),
-                            std::time::SystemTime::now()
-                                .duration_since(std::time::UNIX_EPOCH)
-                                .map_err(|e| e.to_string())?
-                                .as_nanos()
-                        ));
-                        std::os::unix::fs::symlink(&target, &temporary)
-                            .map_err(|e| e.to_string())?;
-                        if let Err(error) = std::fs::rename(&temporary, &alias) {
-                            let _ = std::fs::remove_file(temporary);
-                            return Err(error.to_string());
+            let runtime =
+                match journal_mobile_serving::MobileServing::start_with_root_for_retirement_observed(
+                    Arc::clone(root),
+                    address,
+                    payload.clone(),
+                    Arc::new(move || {
+                        PROCESSING_GENERATION.load(Ordering::SeqCst) & !1 != generation & !1
+                    }),
+                    Arc::new(move |stop| {
+                        *SERVING_STOP.lock().unwrap_or_else(|p| p.into_inner()) =
+                            Some(stop.clone());
+                        if PROCESSING_GENERATION.load(Ordering::SeqCst) & !1 != generation & !1 {
+                            stop.request_stop();
                         }
+                    }),
+                ) {
+                    Ok(runtime) => runtime,
+                    Err(failure) => {
+                        let (message, owner) = failure.into_parts();
+                        *serving = owner.map(|owner| ServingInstance {
+                            serving: *owner,
+                            processing: None,
+                        });
+                        journal_ios_processing_request_stop();
+                        return Err(message);
                     }
-                    Ok(_) => return Err("Callosum endpoint already has another binding".into()),
-                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                        std::os::unix::fs::symlink(&target, &alias).map_err(|e| e.to_string())?
-                    }
-                    Err(error) => return Err(error.to_string()),
-                }
-            }
-            let runtime = match journal_mobile_serving::MobileServing::start_with_payload_for_retirement_observed(
-                p.to_owned(),
-                address,
-                payload.clone(),
-                Arc::new(move || PROCESSING_GENERATION.load(Ordering::SeqCst) & !1 != generation & !1),
-                Arc::new(move |stop| {
-                    *SERVING_STOP.lock().unwrap_or_else(|p| p.into_inner()) = Some(stop.clone());
-                    if PROCESSING_GENERATION.load(Ordering::SeqCst) & !1 != generation & !1 {
-                        stop.request_stop();
-                    }
-                }),
-            ) {
-                Ok(runtime) => runtime,
-                Err(failure) => {
-                    let (message, owner) = failure.into_parts();
-                    *serving = owner.map(|owner| ServingInstance { serving: *owner, processing: None });
-                    journal_ios_processing_request_stop();
-                    return Err(message);
-                }
-            };
+                };
             let processing_stop = Arc::new(AtomicBool::new(false));
             *PROCESSING_STOP.lock().unwrap_or_else(|p| p.into_inner()) =
                 Some(Arc::clone(&processing_stop));
@@ -483,18 +454,19 @@ fn run(v: Value) -> Result<Value, String> {
                 processing: None,
             });
             *STOP_ROOT.lock().unwrap_or_else(|p| p.into_inner()) = Some(Arc::clone(root));
-            let host = journal_mobile_serving::foreground::ForegroundProcessingHost::open_with_imports(
-                Arc::clone(root),
-                &payload,
-                Arc::new(move || {
-                    PROCESSING_GENERATION.load(Ordering::SeqCst) & !1 != generation & !1
-                }),
-                processing_stop,
-                backup,
-                journal_mobile_serving::import_route::packaged_import_factory(admitted_library),
-                true,
-                v["mode"].as_str() == Some("observe-daily-queue"),
-            );
+            let host =
+                journal_mobile_serving::foreground::ForegroundProcessingHost::open_with_imports(
+                    Arc::clone(root),
+                    &payload,
+                    Arc::new(move || {
+                        PROCESSING_GENERATION.load(Ordering::SeqCst) & !1 != generation & !1
+                    }),
+                    processing_stop,
+                    backup,
+                    journal_mobile_serving::import_route::packaged_import_factory(admitted_library),
+                    true,
+                    v["mode"].as_str() == Some("observe-daily-queue"),
+                );
             let mut host = match host {
                 Ok(host) => host,
                 Err(error) => {

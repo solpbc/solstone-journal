@@ -2019,13 +2019,18 @@ async function chooseGuidedFolder(source) {
   folderControls(true);
   try {
     const result = await window.JournalOwnerFolders.choose(source.name, reference, () => {
-      if (!live()) return;
+      if (!live()) return false;
+      const retained = folderSelection(source, { client_item_id: reference });
+      if (retained?.client_item_id !== reference) return false;
       currentGuidedSaved = null;
       invalidateImportPreview('guided');
       window._guidedClientItemId = reference;
-      folderSelection(source, { client_item_id: reference });
       status.textContent = 'saving folder… this can take a while for a large folder.';
+      return true;
     });
+    if (result.state === 'outcome_unknown' && result.client_item_id === reference) {
+      folderSelection(source, { client_item_id: reference });
+    }
     if (!live() || result.state === 'cancelled') return;
     if (result.state === 'saved' && result.ok && result.value?.path) {
       currentGuidedSaved = result.value;

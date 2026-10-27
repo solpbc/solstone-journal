@@ -984,28 +984,18 @@ mod tests;
 fn retained_archive_root(
     deps: &crate::BackupWebDeps,
 ) -> Result<Arc<JournalRoot>, solstone_core_journal_io::JournalRootError> {
+    let root = deps.retained_root()?;
     #[cfg(target_os = "ios")]
     {
-        let root = deps
+        let runner_root = deps
             .runner
             .ios_journal_root()
             .ok_or(solstone_core_journal_io::JournalRootError::Changed)?;
-        clone_bound_archive_root(root, &deps.journal_root)
+        if !Arc::ptr_eq(&root, runner_root) {
+            return Err(solstone_core_journal_io::JournalRootError::Changed);
+        }
     }
-    #[cfg(not(target_os = "ios"))]
-    JournalRoot::open(&deps.journal_root).map(Arc::new)
-}
-
-#[cfg(any(target_os = "ios", all(test, feature = "full-tests")))]
-fn clone_bound_archive_root(
-    root: &Arc<JournalRoot>,
-    journal: &Path,
-) -> Result<Arc<JournalRoot>, solstone_core_journal_io::JournalRootError> {
-    if root.canonical_path() != journal {
-        return Err(solstone_core_journal_io::JournalRootError::Changed);
-    }
-    root.revalidate_canonical_binding()?;
-    Ok(Arc::clone(root))
+    Ok(root)
 }
 
 fn resolve_read_invocation(

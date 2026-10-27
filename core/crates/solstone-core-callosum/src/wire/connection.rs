@@ -2,7 +2,9 @@
 // Copyright (c) 2026 sol pbc
 
 use std::future::Future;
-use std::path::{Path, PathBuf};
+use std::path::Path;
+#[cfg(windows)]
+use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::Arc;
 #[cfg(any(test, feature = "test-hooks"))]
@@ -245,6 +247,9 @@ impl FrameProgress {
 
 /// Long-lived, reconnecting Callosum local-transport client.
 pub struct CallosumSocketConnection {
+    #[cfg(unix)]
+    socket_path: crate::UnixEndpoint,
+    #[cfg(windows)]
     socket_path: PathBuf,
     defaults: Map<String, Value>,
     outbound: mpsc::Sender<CallosumEnvelope>,
@@ -321,6 +326,9 @@ impl CallosumSocketConnection {
         });
         let (shutdown, _) = watch::channel(false);
         Self {
+            #[cfg(unix)]
+            socket_path: crate::UnixEndpoint::new(socket_path.as_ref()),
+            #[cfg(windows)]
             socket_path: socket_path.as_ref().to_path_buf(),
             defaults: std::mem::take(defaults),
             outbound,
@@ -586,6 +594,9 @@ impl ConnectionCounters {
 }
 
 struct ConnectionRun {
+    #[cfg(unix)]
+    socket_path: crate::UnixEndpoint,
+    #[cfg(windows)]
     socket_path: PathBuf,
     outbound: mpsc::Receiver<CallosumEnvelope>,
     queues: Arc<InboundQueues>,
@@ -800,13 +811,16 @@ async fn run_connection(run: ConnectionRun) {
 
 #[cfg(unix)]
 async fn connect_stream(
-    socket_path: &Path,
+    endpoint: &crate::UnixEndpoint,
 ) -> std::io::Result<(ConnectionReadHalf, ConnectionWriteHalf)> {
-    Ok(
-        UnixStream::connect(crate::endpoint_path(socket_path)?.as_ref())
-            .await?
-            .into_split(),
-    )
+    let stream = match endpoint.connect_local()? {
+        Some(stream) => {
+            stream.set_nonblocking(true)?;
+            UnixStream::from_std(stream)?
+        }
+        None => UnixStream::connect(crate::endpoint_path(endpoint.path())?.as_ref()).await?,
+    };
+    Ok(stream.into_split())
 }
 
 #[cfg(windows)]

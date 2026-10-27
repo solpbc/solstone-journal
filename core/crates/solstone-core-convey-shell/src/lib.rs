@@ -535,8 +535,8 @@ pub async fn bind_embedded_device_door_with_routes_and_startup(
     .await
 }
 
-/// Compose iOS backup routes and the door using the app's actual retained root.
-#[cfg(all(feature = "host", target_os = "ios"))]
+/// Compose native backup routes and the door using the app's actual retained root.
+#[cfg(feature = "host")]
 pub async fn bind_embedded_device_door_with_root(
     root: Arc<solstone_core_journal_io::JournalRoot>,
     address: std::net::SocketAddrV4,
@@ -552,7 +552,7 @@ pub async fn bind_embedded_device_door_with_root(
         .map(|payload| thinking_sol_reads::TalentRoots::from_payload_root(&payload))
         .transpose()
         .map_err(ConveyServeError::EmbeddedPayload)?;
-    let backup_deps = solstone_core_backup_web::BackupWebDeps::with_ios_root(root.clone())
+    let backup_deps = solstone_core_backup_web::BackupWebDeps::with_root(root.clone())
         .map_err(ConveyServeError::EmbeddedRoot)?;
     let app = router_with_roots(
         journal_root.clone(),
@@ -564,15 +564,7 @@ pub async fn bind_embedded_device_door_with_root(
     );
     root.revalidate_canonical_binding()
         .map_err(ConveyServeError::EmbeddedRoot)?;
-    bind_embedded_router(
-        journal_root,
-        address,
-        app,
-        backup_deps,
-        Some(root),
-        Some(startup),
-    )
-    .await
+    bind_embedded_router(journal_root, address, app, backup_deps, Some(startup)).await
 }
 
 #[cfg(feature = "host")]
@@ -597,7 +589,7 @@ async fn bind_embedded_with_dependencies(
         Some(backup_deps.clone()),
         import_route,
     );
-    bind_embedded_router(journal_root, address, app, backup_deps, None, startup).await
+    bind_embedded_router(journal_root, address, app, backup_deps, startup).await
 }
 
 #[cfg(feature = "host")]
@@ -606,40 +598,34 @@ async fn bind_embedded_router(
     address: std::net::SocketAddrV4,
     app: Router,
     backup_deps: solstone_core_backup_web::BackupWebDeps,
-    _retained_root: Option<Arc<solstone_core_journal_io::JournalRoot>>,
     startup: Option<EmbeddedStartup>,
 ) -> Result<EmbeddedConveyHandle, ConveyServeError> {
     use solstone_core_sol_link::ledger::AuthorizedClientsRead;
     use tokio::sync::watch;
 
+    let binding = backup_deps
+        .retained_root()
+        .map_err(ConveyServeError::EmbeddedRoot)?;
     let relay_admissions = relay_admission::admission_registry_for(&journal_root);
     relay_admissions.clear();
-    pair_window_manager::cleanup_relay_windows_on_startup(
-        &journal_root,
-        pair_window_manager::unix_seconds(),
-    )
-    .map_err(ConveyServeError::PairingWindowCleanup)?;
+    if !solstone_core_journal_io::whole_journal_restore::whole_journal_restore_blocks(&journal_root)
+    {
+        #[cfg(unix)]
+        solstone_core_sol_link::pairing::nonces::NonceStore::cancel_all_relay_windows_bound(
+            Arc::clone(&binding),
+            pair_window_manager::unix_seconds(),
+        )
+        .map_err(ConveyServeError::PairingWindowCleanup)?;
+        #[cfg(windows)]
+        pair_window_manager::cleanup_relay_windows_on_startup(
+            &journal_root,
+            pair_window_manager::unix_seconds(),
+        )
+        .map_err(ConveyServeError::PairingWindowCleanup)?;
+    }
     let (sender, receiver) = watch::channel(DeviceDoorAuthorization::from(
         AuthorizedClientsRead::Missing,
     ));
-    #[cfg(not(target_os = "ios"))]
-    let binding = Arc::new(
-        solstone_core_journal_io::JournalRoot::open(&journal_root)
-            .map_err(ConveyServeError::EmbeddedRoot)?,
-    );
-    #[cfg(target_os = "ios")]
-    let binding = match _retained_root {
-        Some(binding) => {
-            binding
-                .revalidate_canonical_binding()
-                .map_err(ConveyServeError::EmbeddedRoot)?;
-            binding
-        }
-        None => Arc::new(
-            solstone_core_journal_io::JournalRoot::open(&journal_root)
-                .map_err(ConveyServeError::EmbeddedRoot)?,
-        ),
-    };
     let cache: link_health_cache::RelayHealthCacheStore = Arc::new(std::sync::Mutex::new(None));
     let (renewal_shutdown, renewal_stop) = tokio::sync::watch::channel(false);
     let service_handoffs = Arc::new(service_handoffs::ServiceHandoffs::new(
@@ -674,23 +660,26 @@ async fn bind_embedded_router(
         receiver,
     );
     let service_root = journal_root.clone();
-    let door = Arc::new(door::DoorLifecycle::new(door::DoorStartOptions {
-        journal_root,
-        port: address.port(),
-        network_ipv4: Some(*address.ip()),
-        handshake_timeout: Duration::from_secs(10),
-        stream_stall_timeout: Duration::from_secs(60),
-        router: door_router
-            .into_inner()
-            .layer(axum::middleware::from_fn_with_state(
-                binding.clone(),
-                embedded_root_gate,
-            )),
-        carrier_loop_iterations: Arc::new(AtomicU64::new(0)),
-        handshake_authorization_read_ticks: Arc::new(AtomicU64::new(0)),
-        authorization_sender: sender,
-        relay_admissions,
-    }));
+    let door = Arc::new(door::DoorLifecycle::with_target_use(
+        door::DoorStartOptions {
+            journal_root,
+            port: address.port(),
+            network_ipv4: Some(*address.ip()),
+            handshake_timeout: Duration::from_secs(10),
+            stream_stall_timeout: Duration::from_secs(60),
+            router: door_router
+                .into_inner()
+                .layer(axum::middleware::from_fn_with_state(
+                    binding.clone(),
+                    embedded_root_gate,
+                )),
+            carrier_loop_iterations: Arc::new(AtomicU64::new(0)),
+            handshake_authorization_read_ticks: Arc::new(AtomicU64::new(0)),
+            authorization_sender: sender,
+            relay_admissions,
+        },
+        backup_deps.target_use_owner(),
+    ));
     let pause_door = Arc::clone(&door);
     let resume_door = Arc::clone(&door);
     let pause_runtime = tokio::runtime::Handle::current();
@@ -1341,6 +1330,7 @@ fn router_with_roots(
     ));
     let backup_deps = backup_deps
         .unwrap_or_else(|| solstone_core_backup_web::BackupWebDeps::new(journal_root.clone()));
+    let target_use = backup_deps.target_use_owner();
     let setup_host = Arc::new(setup_host::ConveySetupHost::new(backup_deps.clone()));
     let mut routes = Router::new()
         .route("/", get(root))
@@ -1703,7 +1693,8 @@ fn router_with_roots(
         .layer(Extension(route_journal_root))
         .layer(Extension(agents_consent_cancel))
         .layer(Extension(HostedLaunchContext(hosted_parent)));
-    let routes = session_gate::apply_layer_with_agents(routes, journal_root, include_agents);
+    let routes =
+        session_gate::apply_layer_with_owner(routes, journal_root, include_agents, target_use);
     form_body_guard::apply_layer(routes).fallback(not_found)
 }
 

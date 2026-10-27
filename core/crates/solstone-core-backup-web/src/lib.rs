@@ -91,6 +91,7 @@ pub fn stop_archive_work(timeout: std::time::Duration) -> bool {
 #[derive(Clone)]
 pub struct BackupWebDeps {
     pub journal_root: PathBuf,
+    pub(crate) root_owner: solstone_core_journal_io::whole_journal_restore::TargetUseOwner,
     pub cache: SharedMeasurementCache,
     pub operations: SharedOperationSlot,
     pub runner: Arc<dyn ToolRunner + Send + Sync>,
@@ -132,21 +133,74 @@ impl BackupWebDeps {
         Self::production(journal_root, cache)
     }
 
-    #[cfg(target_os = "ios")]
-    pub fn with_ios_root(
+    /// Bind native backup work to the root captured by its host.
+    pub fn with_root(
         root: Arc<solstone_core_journal_io::JournalRoot>,
     ) -> Result<Self, solstone_core_journal_io::JournalRootError> {
         root.revalidate_canonical_binding()?;
-        let mut deps = Self::new(root.canonical_path().to_path_buf());
-        deps.runner = Arc::new(
-            solstone_core_backup_runtime::ios_callable::IosRootToolRunner::new(root, deps.runner)?,
+        let journal = root.canonical_path().to_path_buf();
+        let deps = Self::production_with_owner(
+            journal.clone(),
+            measurement::new(&journal),
+            solstone_core_journal_io::whole_journal_restore::TargetUseOwner::from_root(Arc::clone(
+                &root,
+            )),
         );
+        #[cfg(target_os = "ios")]
+        let deps = {
+            let mut deps = deps;
+            deps.runner = Arc::new(
+                solstone_core_backup_runtime::ios_callable::IosRootToolRunner::new(
+                    root,
+                    deps.runner,
+                )?,
+            );
+            deps
+        };
         Ok(deps)
     }
 
+    pub fn retained_root(
+        &self,
+    ) -> Result<
+        Arc<solstone_core_journal_io::JournalRoot>,
+        solstone_core_journal_io::JournalRootError,
+    > {
+        use solstone_core_journal_io::JournalRootError;
+        let root = self
+            .root_owner
+            .root()
+            .map_err(|_| JournalRootError::Changed)?;
+        // The public path may be relative or an alias at a desktop entry, but
+        // it cannot redirect this dependency owner to another journal.
+        let path =
+            std::fs::canonicalize(&self.journal_root).map_err(|_| JournalRootError::Changed)?;
+        if path != root.canonical_path() {
+            return Err(JournalRootError::Changed);
+        }
+        Ok(root)
+    }
+
+    pub fn target_use_owner(
+        &self,
+    ) -> solstone_core_journal_io::whole_journal_restore::TargetUseOwner {
+        self.root_owner.clone()
+    }
+
     fn production(journal_root: PathBuf, cache: SharedMeasurementCache) -> Self {
+        let root_owner =
+            solstone_core_journal_io::whole_journal_restore::TargetUseOwner::new(&journal_root);
+        Self::production_with_owner(journal_root, cache, root_owner)
+    }
+
+    fn production_with_owner(
+        journal_root: PathBuf,
+        cache: SharedMeasurementCache,
+        root_owner: solstone_core_journal_io::whole_journal_restore::TargetUseOwner,
+    ) -> Self {
         Self {
             journal_root,
+            root_owner,
             cache,
             operations: operation::new_slot(),
             runner: Arc::new(SystemToolRunner),

@@ -47,9 +47,19 @@ pub fn apply_layer_with_agents(
     journal_root: PathBuf,
     include_agents: bool,
 ) -> axum::Router {
+    let target_use = TargetUseOwner::new(&journal_root);
+    apply_layer_with_owner(router, journal_root, include_agents, target_use)
+}
+
+pub(crate) fn apply_layer_with_owner(
+    router: axum::Router,
+    journal_root: PathBuf,
+    include_agents: bool,
+    target_use: TargetUseOwner,
+) -> axum::Router {
     router.route_layer(middleware::from_fn_with_state(
         SessionGateState {
-            target_use: TargetUseOwner::new(&journal_root),
+            target_use,
             journal_root,
             include_agents,
         },

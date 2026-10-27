@@ -1407,6 +1407,9 @@ fn engine_deps(
         None => PathBuf::from(""),
     };
     crate::BackupWebDeps {
+        root_owner: solstone_core_journal_io::whole_journal_restore::TargetUseOwner::new(
+            &journal_root,
+        ),
         journal_root,
         cache: corpus_cache(),
         operations: crate::operation::new_slot(),

@@ -11,13 +11,13 @@ use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Instant;
 
-#[cfg(any(target_os = "android", all(test, feature = "full-tests")))]
-mod callosum_endpoint;
-#[cfg(unix)]
-mod owner_response;
 #[cfg(unix)]
 mod owner_folder;
+#[cfg(unix)]
+mod owner_response;
 mod retirement;
+#[cfg(unix)]
+mod saved_sources;
 
 static CANCEL: AtomicBool = AtomicBool::new(false);
 struct ServingInstance {
@@ -25,6 +25,7 @@ struct ServingInstance {
     retirement: Option<retirement::Retirement>,
     root: std::sync::Arc<jio::JournalRoot>,
     host: Option<std::sync::Arc<journal_mobile_serving::foreground::ForegroundProcessingHost>>,
+    sources: Option<std::sync::Arc<journal_mobile_serving::import_route::ConfiguredSources>>,
 }
 
 struct RetiringServing {
@@ -188,8 +189,11 @@ fn serving(root: &Path, command: &str) -> Result<Value, String> {
         let cancelled = || thinking_cancelled(&THINKING_GENERATION, generation, &binding);
         let cancellation = solstone_core_generate::Cancellation::from_fn(&cancelled);
         let root = binding.canonical_path();
-        let _restore_use = jio::whole_journal_restore::begin_target_use_bound(std::sync::Arc::clone(&binding))
-            .map_err(|_| jio::whole_journal_restore::WHOLE_JOURNAL_RESTORE_NOT_READY.to_owned())?;
+        let _restore_use =
+            jio::whole_journal_restore::begin_target_use_bound(std::sync::Arc::clone(&binding))
+                .map_err(|_| {
+                    jio::whole_journal_restore::WHOLE_JOURNAL_RESTORE_NOT_READY.to_owned()
+                })?;
         let raw = command["payload"]
             .as_str()
             .ok_or("thinking request required")?;
@@ -320,15 +324,13 @@ fn serving(root: &Path, command: &str) -> Result<Value, String> {
             ort::init_from(library).map_err(|e| e.to_string())?.commit();
             let binding =
                 std::sync::Arc::new(jio::JournalRoot::open(root).map_err(|e| e.to_string())?);
-            #[cfg(target_os = "android")]
-            callosum_endpoint::prepare(binding.canonical_path())?;
             let payload_dir = root
                 .parent()
                 .ok_or("app directory missing")?
                 .join("journal-payload");
             let handle =
-                match journal_mobile_serving::MobileServing::start_with_payload_for_retirement_observed(
-                    root.to_path_buf(),
+                match journal_mobile_serving::MobileServing::start_with_root_for_retirement_observed(
+                    std::sync::Arc::clone(&binding),
                     address,
                     root.parent()
                         .ok_or("app directory missing")?
@@ -355,6 +357,7 @@ fn serving(root: &Path, command: &str) -> Result<Value, String> {
                                 retirement: None,
                                 root: binding,
                                 host: None,
+                                sources: None,
                             };
                             let _ = current.begin_retirement();
                             *server = Some(current);
@@ -367,19 +370,20 @@ fn serving(root: &Path, command: &str) -> Result<Value, String> {
             *PROCESSING_STOP.lock().unwrap_or_else(|p| p.into_inner()) =
                 Some(std::sync::Arc::clone(&processing_stop));
             let backup = handle.backup_dependencies();
+            let (import_factory, sources) = saved_sources::factory(admitted_library);
             let mut host = match journal_mobile_serving::foreground::ForegroundProcessingHost::open_with_imports(
                 std::sync::Arc::clone(&binding), &payload_dir,
                 std::sync::Arc::new(move || THINKING_GENERATION.load(Ordering::SeqCst) & !1 != generation & !1),
                 processing_stop,
                 backup,
-                journal_mobile_serving::import_route::packaged_import_factory(admitted_library),
+                import_factory,
                 false,
                 false,
             ) {
                 Ok(host) => host,
                 Err(error) => {
                     let mut current = ServingInstance {
-                        handle: Some(handle), retirement: None, root: binding, host: None,
+                        handle: Some(handle), retirement: None, root: binding, host: None, sources,
                     };
                     let _ = current.begin_retirement();
                     *server = Some(current);
@@ -393,6 +397,7 @@ fn serving(root: &Path, command: &str) -> Result<Value, String> {
                     retirement: None,
                     root: binding,
                     host: Some(std::sync::Arc::new(host)),
+                    sources,
                 };
                 let _ = current.begin_retirement();
                 *server = Some(current);
@@ -403,13 +408,13 @@ fn serving(root: &Path, command: &str) -> Result<Value, String> {
                 journal_mobile_serving::import_route::ForegroundImportRoute::new(
                     std::sync::Arc::clone(&host),
                 ),
-            ))
-            {
+            )) {
                 let mut current = ServingInstance {
                     handle: Some(handle),
                     retirement: None,
                     root: binding,
                     host: Some(host),
+                    sources,
                 };
                 let _ = current.begin_retirement();
                 *server = Some(current);
@@ -421,6 +426,7 @@ fn serving(root: &Path, command: &str) -> Result<Value, String> {
                 retirement: None,
                 root: binding,
                 host: Some(host),
+                sources,
             });
             if !open_thinking_admission(&THINKING_GENERATION, generation) {
                 let current = server.as_mut().unwrap();

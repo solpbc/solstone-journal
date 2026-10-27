@@ -3,6 +3,10 @@
 
 //! Real-boundary Callosum JSONL delivery tests that bind a Unix socket.
 
+#[cfg(unix)]
+#[path = "spl_callosum_socket/local_transport.rs"]
+mod local_transport;
+
 use std::{
     fs,
     path::{Path, PathBuf},

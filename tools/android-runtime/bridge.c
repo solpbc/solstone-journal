@@ -148,3 +148,5 @@ JNIEXPORT jstring JNICALL Java_app_solstone_development_journal_Native_run(JNIEn
 }
 
 #include "owner_folder_bridge.c"
+
+#include "owner_saved_source_bridge.c"

@@ -29,7 +29,11 @@ tokio-tungstenite = { version = "0.26.2", default-features = false, features = [
 ureq = { workspace = true, features = ["rustls"] }
 
 [features]
-test-hooks = ["solstone-core-journal-io/test-hooks"]
+test-hooks = [
+    "solstone-core-journal-io/test-hooks",
+    "solstone-core-callosum/wire",
+    "solstone-core-callosum/test-hooks",
+]
 
 [dev-dependencies]
 bytes = { workspace = true }

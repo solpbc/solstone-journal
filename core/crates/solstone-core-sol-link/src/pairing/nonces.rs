@@ -63,6 +63,7 @@ impl fmt::Debug for Nonce {
 pub enum NonceStoreError {
     Lock(solstone_core_journal_io::LockError),
     Write(solstone_core_journal_io::AtomicWriteError),
+    Bound(std::io::Error),
 }
 
 impl fmt::Display for NonceStoreError {
@@ -70,6 +71,7 @@ impl fmt::Display for NonceStoreError {
         match self {
             Self::Lock(error) => error.fmt(formatter),
             Self::Write(error) => error.fmt(formatter),
+            Self::Bound(error) => error.fmt(formatter),
         }
     }
 }
@@ -79,6 +81,7 @@ impl std::error::Error for NonceStoreError {
         match self {
             Self::Lock(error) => Some(error),
             Self::Write(error) => Some(error),
+            Self::Bound(error) => Some(error),
         }
     }
 }
@@ -233,6 +236,70 @@ impl NonceStore {
         Ok(removed)
     }
 
+    /// Retire startup relay authority through the native host's original root.
+    #[cfg(unix)]
+    pub fn cancel_all_relay_windows_bound(
+        root: std::sync::Arc<solstone_core_journal_io::JournalRoot>,
+        now: i64,
+    ) -> Result<usize, NonceStoreError> {
+        use solstone_core_journal_io::{
+            atomic::BoundAtomicOutcome, atomic_replace_bound_checked,
+            journal_directory::JournalNamespace, whole_journal_restore::begin_target_use_bound,
+        };
+        use std::{ffi::OsStr, io};
+        fn failure(error: impl Into<Box<dyn std::error::Error + Send + Sync>>) -> NonceStoreError {
+            NonceStoreError::Bound(io::Error::other(error))
+        }
+        let _target_use = begin_target_use_bound(std::sync::Arc::clone(&root)).map_err(failure)?;
+        let namespace = JournalNamespace::new(root);
+        let Some(parent) = namespace
+            .directory(Path::new("link"), false)
+            .map_err(failure)?
+        else {
+            return Ok(0);
+        };
+        let check = || namespace.revalidate().map_err(|error| error.to_string());
+        let _lock = solstone_core_journal_io::hold_exclusive_parent_lock_bound_checked(
+            parent.as_ref(),
+            OsStr::new("nonces.json"),
+            &namespace.root().canonical_path().join("link"),
+            LockOptions::default(),
+            &check,
+        )
+        .map_err(NonceStoreError::Lock)?;
+        let bytes =
+            solstone_core_journal_io::read_bytes_bound(parent.as_ref(), OsStr::new("nonces.json"))
+                .map_err(failure)?;
+        let mut entries = bytes.as_deref().map(entries_from_bytes).unwrap_or_default();
+        let before = entries.len();
+        entries.retain(|_, entry| {
+            entry.kind != NonceKind::RelayV06 || entry.used || entry.expires_at <= now
+        });
+        let removed = before - entries.len();
+        if removed != 0 {
+            let mut bytes = serde_json::to_vec_pretty(&entries.values().collect::<Vec<_>>())
+                .map_err(failure)?;
+            bytes.push(b'\n');
+            let outcome = atomic_replace_bound_checked(
+                parent.as_ref(),
+                OsStr::new("nonces.json"),
+                &bytes,
+                0o600,
+                &check,
+            )
+            .map_err(failure)?;
+            match outcome {
+                BoundAtomicOutcome::Published { .. } => {}
+                BoundAtomicOutcome::PublishedDurabilityUncertain { source, .. }
+                | BoundAtomicOutcome::PublishedObservationUncertain { source, .. } => {
+                    return Err(NonceStoreError::Bound(source));
+                }
+            }
+        }
+        namespace.revalidate().map_err(failure)?;
+        Ok(removed)
+    }
+
     /// Cancel one live relay-v06 window without altering any other authority.
     ///
     /// A consumed, expired, direct, or missing entry is retained and returns
@@ -256,23 +323,27 @@ impl NonceStore {
         let Ok(bytes) = fs::read(&self.path) else {
             return BTreeMap::new();
         };
-        let Ok(raw) = serde_json::from_slice::<serde_json::Value>(&bytes) else {
-            return BTreeMap::new();
-        };
-        let Some(items) = raw.as_array() else {
-            return BTreeMap::new();
-        };
-        items
-            .iter()
-            .filter_map(nonce_from_json)
-            .map(|entry| (entry.value.clone(), entry))
-            .collect()
+        entries_from_bytes(&bytes)
     }
 
     fn write_entries(&self, entries: &BTreeMap<String, Nonce>) -> Result<(), NonceStoreError> {
         let values = entries.values().collect::<Vec<_>>();
         write_json(&self.path, &values, JsonWriteOptions::default()).map_err(NonceStoreError::Write)
     }
+}
+
+fn entries_from_bytes(bytes: &[u8]) -> BTreeMap<String, Nonce> {
+    let Ok(raw) = serde_json::from_slice::<serde_json::Value>(bytes) else {
+        return BTreeMap::new();
+    };
+    let Some(items) = raw.as_array() else {
+        return BTreeMap::new();
+    };
+    items
+        .iter()
+        .filter_map(nonce_from_json)
+        .map(|entry| (entry.value.clone(), entry))
+        .collect()
 }
 
 /// Whether any direct pairing nonce is live.
@@ -621,6 +692,52 @@ mod tests {
             .expect("relay nonce");
 
         assert!(!format!("{relay:?}").contains(value));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn native_startup_cleanup_uses_original_root_and_preserves_direct_authority() {
+        use solstone_core_journal_io::JournalRoot;
+        use std::sync::Arc;
+        let (temporary, store) = store();
+        store
+            .add(
+                "direct".into(),
+                "phone".into(),
+                "observer".into(),
+                false,
+                10,
+            )
+            .unwrap();
+        store
+            .add_relay("relay".into(), "phone".into(), "observer".into(), 10)
+            .unwrap();
+        let root = Arc::new(JournalRoot::open(temporary.path()).unwrap());
+        assert_eq!(
+            NonceStore::cancel_all_relay_windows_bound(Arc::clone(&root), 11).unwrap(),
+            1
+        );
+        assert!(store.peek("direct").is_some());
+        assert!(store.peek("relay").is_none());
+        let path = temporary.path().join("link");
+        fs::rename(&path, temporary.path().join("original-link")).unwrap();
+        std::os::unix::fs::symlink(temporary.path().join("original-link"), &path).unwrap();
+        assert!(NonceStore::cancel_all_relay_windows_bound(root, 11).is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn native_startup_cleanup_refuses_root_replacement_without_creating_a_sidecar() {
+        use solstone_core_journal_io::JournalRoot;
+        use std::sync::Arc;
+        let parent = tempfile::tempdir().unwrap();
+        let journal = parent.path().join("journal");
+        fs::create_dir(&journal).unwrap();
+        let root = Arc::new(JournalRoot::open(&journal).unwrap());
+        fs::rename(&journal, parent.path().join("original")).unwrap();
+        fs::create_dir(&journal).unwrap();
+        assert!(NonceStore::cancel_all_relay_windows_bound(root, 11).is_err());
+        assert!(fs::read_dir(&journal).unwrap().next().is_none());
     }
 
     #[test]

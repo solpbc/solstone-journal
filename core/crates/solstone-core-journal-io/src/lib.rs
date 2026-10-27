@@ -57,6 +57,8 @@ pub mod read_test_hook;
 pub mod readers;
 pub mod removal;
 pub mod snapshot;
+#[cfg(any(target_os = "linux", target_os = "android"))]
+pub mod socket_endpoint;
 #[cfg(any(unix, windows))]
 pub mod staged;
 pub mod strict_segment;

@@ -3456,7 +3456,7 @@ async function runHistoryFilterPaginationRaces() {
 
 async function runNativeFolderSelectionAndReturnRead() {
   const script = scriptFromWorkspace();
-  for (const scenario of ['cancel', 'saved', 'unconfirmed', 'registration_failed', 'other-source']) {
+  for (const scenario of ['cancel', 'saved', 'unconfirmed', 'registration_failed', 'other-source', 'unnotified-cancel', 'storage-denied']) {
     const status = { textContent: 'previous folder: saved' };
     const choose = { disabled: false, focus() { this.focused = true; } };
     const start = { disabled: false };
@@ -3485,8 +3485,15 @@ async function runNativeFolderSelectionAndReturnRead() {
     assert.strictEqual(vm.runInContext('currentGuidedSaved.path',context),'prior');
     if (scenario === 'cancel') {
       resolve({state:'cancelled'});
+    } else if (scenario === 'unnotified-cancel') {
+      resolve({state:'outcome_unknown',client_item_id:'selected-reference'});
+    } else if (scenario === 'storage-denied') {
+      context.sessionStorage.setItem = () => { throw new Error('storage unavailable'); };
+      assert.strictEqual(selected(),false,'native copy requires a retained reconciliation reference');
+      assert.strictEqual(vm.runInContext('currentGuidedSaved.path',context),'prior');
+      resolve({state:'refused'});
     } else {
-      selected();
+      assert.strictEqual(selected(),true);
       assert.strictEqual(vm.runInContext('currentGuidedSaved',context),null);
       assert.match(status.textContent,/saving folder/);
       assert.strictEqual(JSON.parse([...storage.values()][0]).client_item_id,'selected-reference');
@@ -3499,6 +3506,13 @@ async function runNativeFolderSelectionAndReturnRead() {
     if (scenario === 'cancel') {
       assert.strictEqual(vm.runInContext('currentGuidedSaved.path',context),'prior');
       assert.strictEqual(status.textContent,'previous folder: saved');
+      assert.strictEqual(storage.size,0);
+    } else if (scenario === 'unnotified-cancel') {
+      assert.strictEqual(JSON.parse([...storage.values()][0]).client_item_id,'selected-reference');
+      assert.strictEqual(calls.length,1,'an unknown dispatched selection is checked even without its selected notification');
+      assert.match(calls[0],/client_item_id=selected-reference/);
+    } else if (scenario === 'storage-denied') {
+      assert.strictEqual(vm.runInContext('currentGuidedSaved.path',context),'prior');
       assert.strictEqual(storage.size,0);
     } else if (scenario === 'saved') {
       assert.strictEqual(vm.runInContext('currentGuidedSaved.path',context),'admitted/tree');

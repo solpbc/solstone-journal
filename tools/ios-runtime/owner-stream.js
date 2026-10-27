@@ -142,15 +142,48 @@
     if (!sameJournal(url)) throw new TypeError('private journal address required');
     return streamBody(request, url);
   };
-  const owner = window.JournalOwner || (window.JournalOwner = {});
-  if (typeof owner.chooseFolder !== 'function') {
-    owner.chooseFolder = () => {
-      bindAuthority()
-        .then((documentAuthority) => call({ op: 'chooseFolder', authority: documentAuthority }))
-        .catch(() => {});
-    };
-  }
+  const folders = new Map();
+  window.__journalFolderSelected = (authority, id) => {
+    const pending = folders.get(id);
+    if (!pending || pending.authority !== authority) return false;
+    if (pending.selected?.() === false) return false;
+    pending.chosen = true;
+    return true;
+  };
+  window.JournalOwnerFolders = {
+    cancel() {
+      for (const [id, pending] of folders) {
+        folders.delete(id);
+        if (pending.authority) call({ op: 'cancelFolder', authority: pending.authority, id }).catch(() => {});
+        pending.resolve({ state: pending.dispatched ? 'outcome_unknown' : 'cancelled', client_item_id: pending.reference });
+      }
+    },
+    choose(source, reference, selected) {
+      if (folders.size) return Promise.resolve({ state: 'refused', error: lostMessage });
+      const id = crypto.randomUUID();
+      return new Promise((resolve, reject) => {
+        const pending = { resolve, reject, selected, reference, authority: 0, chosen: false, dispatched: false };
+        folders.set(id, pending);
+        bindAuthority().then((authority) => {
+          if (folders.get(id) !== pending) return;
+          pending.authority = authority;
+          pending.dispatched = true;
+          return call({ op: 'chooseFolder', authority, id, source, client_item_id: reference }).then((reply) => {
+            if (folders.get(id) !== pending) return;
+            folders.delete(id);
+            resolve(reply);
+          });
+        }).catch((error) => {
+          if (folders.get(id) !== pending) return;
+          folders.delete(id);
+          if (pending.dispatched) resolve({ state: 'outcome_unknown', client_item_id: reference });
+          else reject(error);
+        });
+      });
+    },
+  };
   window.addEventListener('pagehide', () => {
+    window.JournalOwnerFolders.cancel();
     for (const abort of Array.from(pending.values())) abort();
   });
 })();

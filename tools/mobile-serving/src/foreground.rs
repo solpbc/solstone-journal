@@ -1886,12 +1886,15 @@ impl ForegroundProcessingHost {
         raw: &[String],
         control: CallableTaskContext,
     ) -> i32 {
-        let _restore_use = match solstone_core_journal_io::whole_journal_restore::begin_target_use(
-            &hosted.journal,
-        ) {
-            Ok(guard) => guard,
+        let root = match hosted.backup.retained_root() {
+            Ok(root) => root,
             Err(_) => return UNCOMPLETED_HOLD_EXIT,
         };
+        let _restore_use =
+            match solstone_core_journal_io::whole_journal_restore::begin_target_use_bound(root) {
+                Ok(guard) => guard,
+                Err(_) => return UNCOMPLETED_HOLD_EXIT,
+            };
         let checkpoint: Arc<dyn Fn() -> Result<(), String> + Send + Sync> = {
             let host = Arc::clone(&hosted.cancelled);
             let control = control.clone();

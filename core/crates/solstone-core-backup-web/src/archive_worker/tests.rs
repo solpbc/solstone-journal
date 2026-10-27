@@ -11,14 +11,44 @@ fn retained_archive_root_keeps_original_custody_and_refuses_replacement() {
     let journal = parent.path().join("journal");
     std::fs::create_dir(&journal).unwrap();
     let root = Arc::new(JournalRoot::open(&journal).unwrap());
-    let retained = clone_bound_archive_root(&root, &journal).unwrap();
+    let deps = crate::BackupWebDeps::with_root(Arc::clone(&root)).unwrap();
+    let retained = retained_archive_root(&deps).unwrap();
     assert!(Arc::ptr_eq(&root, &retained));
     let original = parent.path().join("original");
     std::fs::rename(&journal, &original).unwrap();
     std::fs::create_dir(&journal).unwrap();
-    assert!(clone_bound_archive_root(&root, &journal).is_err());
+    assert!(retained_archive_root(&deps).is_err());
     assert!(std::fs::read_dir(&journal).unwrap().next().is_none());
     assert!(std::fs::read_dir(&original).unwrap().next().is_none());
+}
+
+#[test]
+fn deferred_backup_owner_does_not_rebind_before_its_first_worker() {
+    let parent = tempfile::tempdir().unwrap();
+    let journal = parent.path().join("journal");
+    std::fs::create_dir(&journal).unwrap();
+    let deps = crate::BackupWebDeps::new(journal.clone());
+    std::fs::rename(&journal, parent.path().join("original")).unwrap();
+    std::fs::create_dir(&journal).unwrap();
+    assert!(retained_archive_root(&deps).is_err());
+    assert!(std::fs::read_dir(&journal).unwrap().next().is_none());
+}
+
+#[test]
+fn backup_path_alias_is_checked_without_changing_the_root_owner() {
+    let parent = tempfile::tempdir().unwrap();
+    let journal = parent.path().join("journal");
+    std::fs::create_dir(&journal).unwrap();
+    let alias = parent.path().join("alias");
+    std::os::unix::fs::symlink(&journal, &alias).unwrap();
+    let root = Arc::new(JournalRoot::open(&journal).unwrap());
+    let mut deps = crate::BackupWebDeps::with_root(Arc::clone(&root)).unwrap();
+    deps.journal_root = alias;
+    assert!(Arc::ptr_eq(&root, &retained_archive_root(&deps).unwrap()));
+    let other = parent.path().join("other");
+    std::fs::create_dir(&other).unwrap();
+    deps.journal_root = other;
+    assert!(retained_archive_root(&deps).is_err());
 }
 
 struct FixedClock;

@@ -9,10 +9,7 @@ use axum::{
 };
 use serde_json::{Value, json};
 use solstone_core_convey_shell::EmbeddedConveyHandle;
-#[cfg(target_os = "ios")]
 use solstone_core_convey_shell::bind_embedded_device_door_with_root;
-#[cfg(not(target_os = "ios"))]
-use solstone_core_convey_shell::bind_embedded_device_door_with_routes_and_startup;
 use solstone_core_import_web::ImportRouteSlot;
 use solstone_core_journal_io::JournalRoot;
 use std::{
@@ -227,10 +224,38 @@ impl MobileServing {
         payload_root: Option<PathBuf>,
         startup: Option<ServingStartup>,
     ) -> Result<Self, StartupFailure> {
+        let root = Arc::new(JournalRoot::open(&root).map_err(|e| e.to_string())?);
+        Self::start_with_root_owned(root, address, payload_root, startup)
+    }
+
+    /// Start with the exact root already captured by the native host.
+    pub fn start_with_root_for_retirement_observed(
+        root: Arc<JournalRoot>,
+        address: SocketAddrV4,
+        payload_root: PathBuf,
+        cancelled: Arc<dyn Fn() -> bool + Send + Sync>,
+        stop_ready: Arc<dyn Fn(MobileServingStop) + Send + Sync>,
+    ) -> Result<Self, StartupFailure> {
+        Self::start_with_root_owned(
+            root,
+            address,
+            Some(payload_root),
+            Some(ServingStartup {
+                cancelled,
+                stop_ready,
+            }),
+        )
+    }
+
+    fn start_with_root_owned(
+        root: Arc<JournalRoot>,
+        address: SocketAddrV4,
+        payload_root: Option<PathBuf>,
+        startup: Option<ServingStartup>,
+    ) -> Result<Self, StartupFailure> {
         if address.ip().is_unspecified() || address.ip().is_multicast() || address.port() == 0 {
             return Err("an explicit interface address and nonzero port are required".into());
         }
-        let root = Arc::new(JournalRoot::open(&root).map_err(|e| e.to_string())?);
         root.revalidate_canonical_binding()
             .map_err(|e| e.to_string())?;
         // A pending restore must stay reachable without materializing config.
@@ -247,11 +272,15 @@ impl MobileServing {
             .map_err(|e| e.to_string())?;
         // Keep the production ingest notification boundary live. Durable receipt
         // discovery provides restart recovery independently of this transient bus.
-        let bus = runtime
-            .block_on(solstone_core_callosum::CallosumSocketServer::bind(
-                root.canonical_path().join("health/callosum.sock"),
-            ))
-            .map_err(|e| e.to_string())?;
+        #[cfg(unix)]
+        let bus = runtime.block_on(solstone_core_callosum::CallosumSocketServer::bind_journal(
+            Arc::clone(&root),
+        ));
+        #[cfg(windows)]
+        let bus = runtime.block_on(solstone_core_callosum::CallosumSocketServer::bind(
+            root.canonical_path().join("health/callosum.sock"),
+        ));
+        let bus = bus.map_err(|e| e.to_string())?;
         let (shutdown, stop) = watch::channel(false);
         let early_shutdown = shutdown.clone();
         let cancelled = startup
@@ -273,48 +302,45 @@ impl MobileServing {
         let import_route = Arc::new(ImportRouteSlot::new());
         let route_for_bind = Arc::clone(&import_route);
         let early_imports = Arc::downgrade(&import_route);
-        let handle = runtime
-            .block_on(async {
-                let startup = solstone_core_convey_shell::EmbeddedStartup {
-                    #[cfg(feature = "processing")]
-                    settings_sync: Some(settings_sync),
-                    #[cfg(not(feature = "processing"))]
-                    settings_sync: None,
-                    cancelled: Arc::clone(&cancelled),
-                    stop_ready: Arc::new(move |convey, backup| {
-                        let signal = MobileServingStop {
-                            convey,
-                            services: early_shutdown.clone(),
-                            backup,
-                            imports: early_imports.clone(),
-                        };
-                        stop_ready(signal.clone());
-                        if early_cancelled() {
-                            signal.request_stop();
-                        }
-                    }),
-                };
-                #[cfg(target_os = "ios")]
-                let binding = bind_embedded_device_door_with_root(
-                    Arc::clone(&root),
-                    address,
-                    payload_root,
-                    owner_routes,
-                    startup,
-                    Some(Arc::clone(&route_for_bind)),
-                );
-                #[cfg(not(target_os = "ios"))]
-                let binding = bind_embedded_device_door_with_routes_and_startup(
-                    root.canonical_path().to_path_buf(),
-                    address,
-                    payload_root,
-                    owner_routes,
-                    startup,
-                    Some(Arc::clone(&route_for_bind)),
-                );
-                binding.await
-            })
-            .map_err(|e| e.to_string())?;
+        let handle = runtime.block_on(async {
+            let startup = solstone_core_convey_shell::EmbeddedStartup {
+                #[cfg(feature = "processing")]
+                settings_sync: Some(settings_sync),
+                #[cfg(not(feature = "processing"))]
+                settings_sync: None,
+                cancelled: Arc::clone(&cancelled),
+                stop_ready: Arc::new(move |convey, backup| {
+                    let signal = MobileServingStop {
+                        convey,
+                        services: early_shutdown.clone(),
+                        backup,
+                        imports: early_imports.clone(),
+                    };
+                    stop_ready(signal.clone());
+                    if early_cancelled() {
+                        signal.request_stop();
+                    }
+                }),
+            };
+            let binding = bind_embedded_device_door_with_root(
+                Arc::clone(&root),
+                address,
+                payload_root,
+                owner_routes,
+                startup,
+                Some(Arc::clone(&route_for_bind)),
+            );
+            binding.await
+        });
+        let handle = match handle {
+            Ok(handle) => handle,
+            Err(error) => {
+                // No full serving owner exists yet. Join the live bus before
+                // releasing this partial startup's runtime and original root.
+                runtime.block_on(bus.stop());
+                return Err(error.to_string().into());
+            }
+        };
         #[cfg(feature = "processing")]
         let execution_task = runtime.spawn(execution_worker);
         let (ready, registered) = oneshot::channel();
@@ -1246,6 +1272,75 @@ mod tests {
         )
         .unwrap();
         (server, directory)
+    }
+
+    #[test]
+    fn native_startup_keeps_original_root_before_config_or_ipc_effects() {
+        let parent = tempfile::tempdir().unwrap();
+        let journal = parent.path().join("journal");
+        std::fs::create_dir(&journal).unwrap();
+        let root = Arc::new(JournalRoot::open(&journal).unwrap());
+        std::fs::rename(&journal, parent.path().join("original")).unwrap();
+        std::fs::create_dir(&journal).unwrap();
+        let result = MobileServing::start_with_root_owned(
+            root,
+            SocketAddrV4::new(std::net::Ipv4Addr::LOCALHOST, 42420),
+            None,
+            None,
+        );
+        assert!(result.is_err());
+        assert!(std::fs::read_dir(&journal).unwrap().next().is_none());
+    }
+
+    #[test]
+    fn native_serving_and_deferred_backup_share_the_original_root() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = Arc::new(JournalRoot::open(directory.path()).unwrap());
+        let probe = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let std::net::SocketAddr::V4(address) = probe.local_addr().unwrap() else {
+            unreachable!()
+        };
+        drop(probe);
+        let server = MobileServing::start_with_root_owned(
+            Arc::clone(&root),
+            address,
+            Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../core/payload")),
+            None,
+        )
+        .unwrap_or_else(|_| panic!("ordinary bound startup"));
+        let backup_root = server.backup_dependencies().retained_root().unwrap();
+        assert!(Arc::ptr_eq(&root, &backup_root));
+        assert!(Arc::ptr_eq(&root, &server.root));
+        server.shutdown_for_retirement().unwrap();
+    }
+
+    #[test]
+    fn convey_startup_failure_retires_its_live_bus_before_returning() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = Arc::new(JournalRoot::open(directory.path()).unwrap());
+        let result = MobileServing::start_with_root_owned(
+            Arc::clone(&root),
+            SocketAddrV4::new(std::net::Ipv4Addr::LOCALHOST, 42420),
+            Some(directory.path().join("missing-payload")),
+            None,
+        );
+        let failure = match result {
+            Ok(_) => panic!("missing payload must refuse"),
+            Err(failure) => failure,
+        };
+        let (_, owner) = failure.into_parts();
+        assert!(
+            owner.is_none(),
+            "partial startup has completed its joined cleanup"
+        );
+        assert!(!directory.path().join("health/callosum.sock").exists());
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let bus = runtime
+            .block_on(solstone_core_callosum::CallosumSocketServer::bind_journal(
+                root,
+            ))
+            .unwrap();
+        runtime.block_on(bus.stop());
     }
 
     #[test]
