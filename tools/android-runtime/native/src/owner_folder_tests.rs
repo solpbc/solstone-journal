@@ -24,14 +24,17 @@ pub(super) fn before_registration(
 }
 
 fn isolated(name: &str) -> bool {
+    isolated_full(&format!("owner_folder::tests::{name}"))
+}
+
+pub(crate) fn isolated_full(full: &str) -> bool {
     const CHILD: &str = "FC2_NATIVE_FOLDER_CHILD";
-    if std::env::var(CHILD).ok().as_deref() == Some(name) {
+    if std::env::var(CHILD).ok().as_deref() == Some(full) {
         return false;
     }
-    let full = format!("owner_folder::tests::{name}");
     let mut child = std::process::Command::new(std::env::current_exe().unwrap())
-        .args(["--exact", &full, "--nocapture"])
-        .env(CHILD, name)
+        .args(["--exact", full, "--nocapture"])
+        .env(CHILD, full)
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .spawn()
@@ -55,16 +58,16 @@ fn isolated(name: &str) -> bool {
     let output = child.wait_with_output().unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
-        output.status.success() && stdout.contains(&full) && stdout.contains("1 passed; 0 failed"),
+        output.status.success() && stdout.contains(full) && stdout.contains("1 passed; 0 failed"),
         "{stdout}{}",
         String::from_utf8_lossy(&output.stderr)
     );
     true
 }
 
-struct Fixture {
+pub(crate) struct Fixture {
     directory: PathBuf,
-    root: PathBuf,
+    pub(crate) root: PathBuf,
     cache: PathBuf,
     page: u64,
     generation: u64,
@@ -72,7 +75,7 @@ struct Fixture {
 }
 
 impl Fixture {
-    fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self::with_generation(2)
     }
 
@@ -101,6 +104,10 @@ impl Fixture {
         .unwrap();
         let binding = Arc::new(jio::JournalRoot::open(&root).unwrap());
         let processing = Arc::new(AtomicBool::new(false));
+        let (factory, sources) = crate::saved_sources::factory(PathBuf::from(
+            std::env::var("SOLSTONE_NATIVE_FOLDER_TEST_PDFIUM")
+                .expect("maintained host PDFium input required"),
+        ));
         let host = Arc::new(
             ForegroundProcessingHost::open_with_imports(
                 Arc::clone(&binding),
@@ -108,10 +115,7 @@ impl Fixture {
                 Arc::new(move || THINKING_GENERATION.load(Ordering::SeqCst) != generation),
                 Arc::clone(&processing),
                 server.backup_dependencies(),
-                journal_mobile_serving::import_route::packaged_import_factory(PathBuf::from(
-                    std::env::var("SOLSTONE_NATIVE_FOLDER_TEST_PDFIUM")
-                        .expect("maintained host PDFium input required"),
-                )),
+                factory,
                 false,
                 false,
             )
@@ -131,6 +135,7 @@ impl Fixture {
             retirement: None,
             root: binding,
             host: Some(host),
+            sources,
         });
         let root_c = CString::new(root.to_str().unwrap()).unwrap();
         let page = unsafe { journal_owner_folder_page_issue(root_c.as_ptr(), generation) };
@@ -152,7 +157,7 @@ impl Fixture {
             "page_authority":self.page,"admission_generation":self.generation})
     }
 
-    fn stop(&self) {
+    pub(crate) fn stop(&self) {
         request_serving_stop();
         SERVING
             .lock()
@@ -163,7 +168,7 @@ impl Fixture {
             .unwrap();
     }
 
-    fn stopped(&self) {
+    pub(crate) fn stopped(&self) {
         assert_eq!(
             retirement::wait_for_process(Duration::from_secs(10)),
             retirement::Outcome::Stopped

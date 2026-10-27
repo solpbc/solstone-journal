@@ -27,6 +27,113 @@ pub enum SourceCopyError {
     Unavailable,
 }
 
+/// Native connection changes contain private grant material and are never
+/// serialized to the owner document. OS permission ownership stays with the
+/// native caller, under its original preparation and keepalive.
+pub enum FolderConnectionChange {
+    Begin {
+        folder_name: String,
+        access_material: String,
+    },
+    Reauthorize {
+        expected_identity: String,
+        folder_name: String,
+        access_material: String,
+    },
+    Replace {
+        expected_identity: String,
+        folder_name: String,
+        access_material: String,
+    },
+    Forget {
+        expected_identity: String,
+    },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SourceConnectionError {
+    Busy,
+    Refused,
+    /// Publication was attempted. Retain native grants until the real state
+    /// can be read; this outcome does not authorize releasing either grant.
+    Unconfirmed,
+}
+
+/// Shares the very same source exclusion used by the callable importer.
+/// Keep this guard through native grant retirement as well as state mutation.
+pub struct SourceConnectionGuard {
+    backend: BackendName,
+    _active: OwnedMutexGuard<()>,
+}
+
+impl SourceConnectionGuard {
+    /// Called only by the native owner, with the original root supplied by its
+    /// retained preparation. No attempt, factory, schedule or provider runs.
+    /// Unreadable state refuses a configuration write instead of erasing it.
+    pub fn update(
+        &mut self,
+        root: &solstone_core_journal_io::JournalRoot,
+        stop: &WorkStop,
+        change: FolderConnectionChange,
+    ) -> Result<solstone_core_import::PublicConnection, SourceConnectionError> {
+        use solstone_core_import::{
+            SyncState, begin_folder, public_connection, reauthorize, replace_folder,
+        };
+        if stop.is_requested() || root.revalidate_canonical_binding().is_err() {
+            return Err(SourceConnectionError::Refused);
+        }
+        let mut state = match read_sync_state_bound(root, self.backend) {
+            SyncStateRead::Absent => SyncState::empty(self.backend),
+            SyncStateRead::Loaded(state) => state,
+            SyncStateRead::Unreadable { .. } => return Err(SourceConnectionError::Refused),
+        };
+        let current = public_connection(&state);
+        let expected = match &change {
+            FolderConnectionChange::Begin { .. } => None,
+            FolderConnectionChange::Reauthorize {
+                expected_identity, ..
+            }
+            | FolderConnectionChange::Replace {
+                expected_identity, ..
+            }
+            | FolderConnectionChange::Forget { expected_identity } => Some(expected_identity),
+        };
+        if expected.is_some_and(|expected| {
+            current.as_ref().map(|value| &value.source_identity) != Some(expected)
+        }) {
+            return Err(SourceConnectionError::Refused);
+        }
+        let updated = match change {
+            FolderConnectionChange::Begin {
+                folder_name,
+                access_material,
+            } => begin_folder(&mut state, &folder_name, true, Some(&access_material)).map(|_| ()),
+            FolderConnectionChange::Reauthorize {
+                folder_name,
+                access_material,
+                ..
+            } => reauthorize(&mut state, &folder_name, true, Some(&access_material)),
+            FolderConnectionChange::Replace {
+                folder_name,
+                access_material,
+                ..
+            } => replace_folder(&mut state, &folder_name, true, Some(&access_material)).map(|_| ()),
+            FolderConnectionChange::Forget { .. } => {
+                let folder = current.as_ref().ok_or(SourceConnectionError::Refused)?;
+                reauthorize(&mut state, &folder.folder_name, false, None)
+            }
+        };
+        updated.map_err(|_| SourceConnectionError::Refused)?;
+        if stop.is_requested() {
+            return Err(SourceConnectionError::Refused);
+        }
+        let public = public_connection(&state).ok_or(SourceConnectionError::Refused)?;
+        write_sync_state_bound(root, &state, stop)
+            .map_err(|_| SourceConnectionError::Unconfirmed)?;
+        Ok(public)
+    }
+}
+
 /// Copy synchronously on the retained worker; close all provider resources
 /// before returning, including on Stop. The destination is exclusively owned.
 pub trait SavedFolderProvider: Send + Sync {
@@ -56,6 +163,27 @@ impl ConfiguredSources {
             audio: Arc::new(Mutex::new(())),
             plaud: Arc::new(Mutex::new(())),
         }
+    }
+
+    /// Folder configuration does not admit Plaud or the held Body connection.
+    /// The guard is shared with source execution, so a busy sync refuses an
+    /// owner mutation before reading or changing its catalogue.
+    pub fn connection_guard(
+        &self,
+        backend: BackendName,
+    ) -> Result<SourceConnectionGuard, SourceConnectionError> {
+        let lock = match backend {
+            BackendName::Obsidian => &self.obsidian,
+            BackendName::Audio => &self.audio,
+            BackendName::Plaud | BackendName::Oura => return Err(SourceConnectionError::Refused),
+        };
+        let active = Arc::clone(lock)
+            .try_lock_owned()
+            .map_err(|_| SourceConnectionError::Busy)?;
+        Ok(SourceConnectionGuard {
+            backend,
+            _active: active,
+        })
     }
 
     fn acquire(&self, source: &str) -> Result<OwnedMutexGuard<()>, String> {
