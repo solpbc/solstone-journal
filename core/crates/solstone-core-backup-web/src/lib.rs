@@ -51,6 +51,7 @@ pub mod maintenance;
 mod measurement;
 mod offload_enable;
 mod offload_report;
+mod offload_support;
 mod operation;
 mod recovery_owner;
 pub mod removal_report;
@@ -106,11 +107,14 @@ pub struct BackupWebDeps {
     pub handoff_poll_lease: Arc<AtomicBool>,
     /// Fixed native queue admission. An accepted reference is not a completion.
     pub verification_submitter: Option<VerificationSubmitter>,
+    /// Current fixed-routine admission for this serving lifetime; no submission.
+    pub offload_dispatch_probe: Option<OffloadDispatchProbe>,
     pub(crate) restore_prepare: SharedRestorePrepare,
 }
 
 /// Host-owned admission for the single `backup:verify` routine.
 pub type VerificationSubmitter = Arc<dyn Fn() -> Result<String, &'static str> + Send + Sync>;
+pub type OffloadDispatchProbe = Arc<dyn Fn() -> bool + Send + Sync>;
 
 struct ProductionClock;
 
@@ -219,6 +223,7 @@ impl BackupWebDeps {
             version: env!("CARGO_PKG_VERSION"),
             handoff_poll_lease: Arc::new(AtomicBool::new(false)),
             verification_submitter: None,
+            offload_dispatch_probe: None,
             restore_prepare: restore_prepare::new_shared(),
         }
     }
@@ -396,9 +401,24 @@ fn status_response(deps: &BackupWebDeps) -> axum::response::Response {
 }
 
 fn offload_response(deps: &BackupWebDeps) -> axum::response::Response {
-    status::offload(&deps.journal_root, &deps.cache, &deps.operations)
+    offload_value(deps)
         .map(response::success)
         .unwrap_or_else(|_| internal_error())
+}
+
+fn offload_value(deps: &BackupWebDeps) -> Result<Value, ()> {
+    let root = deps.retained_root().map_err(|_| ())?;
+    let _target_use =
+        solstone_core_journal_io::whole_journal_restore::begin_target_use_bound(Arc::clone(&root))
+            .map_err(|_| ())?;
+    let mut value = status::offload(root.canonical_path(), &deps.cache, &deps.operations)?;
+    let support = offload_support::check(deps, &root);
+    value["enable_supported"] = Value::Bool(support.is_ok());
+    if let Err(reason) = support {
+        value["enable_unavailable_reason"] = json!(reason);
+    }
+    root.revalidate_canonical_binding().map_err(|_| ())?;
+    Ok(value)
 }
 
 async fn get_status(deps: BackupWebDeps) -> axum::response::Response {
@@ -651,10 +671,6 @@ async fn retention(deps: BackupWebDeps, body: Bytes) -> axum::response::Response
 }
 
 async fn offload_config(deps: BackupWebDeps, body: Bytes) -> axum::response::Response {
-    let _guard = match admit_write(&deps.operations, AdmitWrite::DuringOperation) {
-        Ok(guard) => guard,
-        Err(response) => return response,
-    };
     let payload = match validation::object(&body, response::invalid_config) {
         Ok(value) => value,
         Err(error) => return error,
@@ -663,37 +679,19 @@ async fn offload_config(deps: BackupWebDeps, body: Bytes) -> axum::response::Res
         Ok(value) => value,
         Err(error) => return error,
     };
-    if config::mutate(&deps.journal_root, |backup| {
-        let enabled = backup
-            .get("offload")
-            .and_then(Value::as_object)
-            .and_then(|value| value.get("enabled"))
-            .cloned()
-            .unwrap_or(Value::Bool(false));
-        let value = json!({"enabled":enabled,"budget_bytes":budget,"floor_bytes":floor});
-        let changed = backup.get("offload") != Some(&value);
-        backup.insert("offload".to_owned(), value);
-        (changed, ())
-    })
-    .is_err()
-    {
-        return internal_error();
-    }
-    measurement::invalidate(&deps.cache);
-    get_offload(deps).await
+    let admitted = match offload_enable::admit_preferences(
+        deps,
+        offload_enable::PreferenceChange::Limits { budget, floor },
+    ) {
+        Ok(admitted) => admitted,
+        Err(response) => return response,
+    };
+    tokio::task::spawn_blocking(admitted)
+        .await
+        .unwrap_or_else(|_| internal_error())
 }
 
 async fn offload_enable(deps: BackupWebDeps) -> axum::response::Response {
-    // Mobile hosts do not schedule archive production or restore offloaded days.
-    // Refuse before any setting changes so the device never shows it as on.
-    if cfg!(any(target_os = "ios", target_os = "android")) {
-        return response::error(
-            axum::http::StatusCode::BAD_REQUEST,
-            "that action isn't available in the current state.",
-            "unsupported_platform",
-            "media offload is not available on this device",
-        );
-    }
     let admitted = match offload_enable::admit(deps) {
         Ok(admitted) => admitted,
         Err(response) => return response,
@@ -706,13 +704,14 @@ async fn offload_enable(deps: BackupWebDeps) -> axum::response::Response {
 }
 
 async fn offload_disable(deps: BackupWebDeps) -> axum::response::Response {
-    let _guard = match admit_write(&deps.operations, AdmitWrite::DuringOperation) {
-        Ok(guard) => guard,
-        Err(response) => return response,
-    };
-    if config::mutate(&deps.journal_root, |backup| { let old = backup.get("offload").and_then(Value::as_object); let value = json!({"enabled":false,"budget_bytes":old.and_then(|item| item.get("budget_bytes")).cloned().unwrap_or(Value::Null),"floor_bytes":old.and_then(|item| item.get("floor_bytes")).cloned().unwrap_or(Value::Null)}); let changed = backup.get("offload") != Some(&value); backup.insert("offload".to_owned(), value); (changed, ()) }).is_err() { return response::invalid_config(""); }
-    measurement::invalidate(&deps.cache);
-    get_offload(deps).await
+    let admitted =
+        match offload_enable::admit_preferences(deps, offload_enable::PreferenceChange::Disable) {
+            Ok(admitted) => admitted,
+            Err(response) => return response,
+        };
+    tokio::task::spawn_blocking(admitted)
+        .await
+        .unwrap_or_else(|_| internal_error())
 }
 
 async fn backup_now(deps: BackupWebDeps) -> axum::response::Response {

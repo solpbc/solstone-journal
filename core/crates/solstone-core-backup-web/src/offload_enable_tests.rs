@@ -267,3 +267,91 @@ fn queued_enable_retains_admission_after_http_future_is_dropped() {
         "restore drained while the accepted native frame was still queued after HTTP loss"
     );
 }
+
+#[tokio::test]
+async fn offload_preference_setters_refuse_a_replaced_dependency_root_before_effects() {
+    for disable in [false, true] {
+        let parent = tempfile::tempdir().unwrap();
+        let root = parent.path().join("owner");
+        let original = parent.path().join("original");
+        std::fs::create_dir(&root).unwrap();
+        let (seed, _) = fixture();
+        std::fs::rename(seed.path().join("config"), root.join("config")).unwrap();
+        let before = std::fs::read(root.join("config/journal.json")).unwrap();
+        let deps = BackupWebDeps::with_root(Arc::new(JournalRoot::open(&root).unwrap())).unwrap();
+        std::fs::rename(&root, &original).unwrap();
+        std::fs::create_dir(&root).unwrap();
+        let response = if disable {
+            crate::offload_disable(deps).await
+        } else {
+            crate::offload_config(
+                deps,
+                axum::body::Bytes::from_static(br#"{"budget_bytes":2000,"floor_bytes":200}"#),
+            )
+            .await
+        };
+        let entries: Vec<_> = std::fs::read_dir(&root)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .collect();
+        assert!(
+            entries.is_empty(),
+            "disable={disable} wrote successor entries {entries:?}; status={}",
+            response.status()
+        );
+        assert_eq!(
+            std::fs::read(original.join("config/journal.json")).unwrap(),
+            before
+        );
+    }
+}
+
+#[tokio::test]
+async fn limits_and_disable_preserve_choices_without_submitting_verification() {
+    let (dir, mut deps) = fixture();
+    deps.verification_submitter =
+        Some(Arc::new(|| panic!("preference edits must not submit work")));
+    let before = config_at(dir.path());
+    let response = crate::offload_config(
+        deps.clone(),
+        axum::body::Bytes::from_static(br#"{"budget_bytes":2000,"floor_bytes":200}"#),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        config_at(dir.path())["backup"]["offload"],
+        json!({"enabled":false,"budget_bytes":2000,"floor_bytes":200})
+    );
+    let response = crate::offload_disable(deps).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let after = config_at(dir.path());
+    assert_eq!(after["owner_choice"], before["owner_choice"]);
+    assert_eq!(
+        after["backup"]["last_backup"],
+        before["backup"]["last_backup"]
+    );
+    assert_eq!(
+        after["backup"]["last_offload"],
+        before["backup"]["last_offload"]
+    );
+    assert_eq!(
+        after["backup"]["offload"],
+        json!({"enabled":false,"budget_bytes":2000,"floor_bytes":200})
+    );
+}
+
+#[tokio::test]
+async fn first_use_limits_use_the_existing_bound_default_writer() {
+    let dir = tempfile::tempdir().unwrap();
+    let deps = BackupWebDeps::with_root(Arc::new(JournalRoot::open(dir.path()).unwrap())).unwrap();
+    let response = crate::offload_config(
+        deps,
+        axum::body::Bytes::from_static(br#"{"budget_bytes":2000,"floor_bytes":200}"#),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        config_at(dir.path())["backup"]["offload"],
+        json!({"enabled":false,"budget_bytes":2000,"floor_bytes":200})
+    );
+}

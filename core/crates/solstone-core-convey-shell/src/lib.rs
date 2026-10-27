@@ -375,6 +375,7 @@ pub struct EmbeddedConveyStop {
 /// receives signals only; the constructor retains the actual serving owner.
 #[cfg(feature = "host")]
 pub struct EmbeddedStartup {
+    pub backup_offload_dispatch: Option<solstone_core_backup_web::OffloadDispatchProbe>,
     pub backup_verification: Option<solstone_core_backup_web::VerificationSubmitter>,
     pub settings_sync: Option<solstone_core_settings_web::SourceSyncDelegate>,
     pub cancelled: Arc<dyn Fn() -> bool + Send + Sync>,
@@ -556,6 +557,7 @@ pub async fn bind_embedded_device_door_with_root(
     let mut backup_deps = solstone_core_backup_web::BackupWebDeps::with_root(root.clone())
         .map_err(ConveyServeError::EmbeddedRoot)?;
     backup_deps.verification_submitter = startup.backup_verification.clone();
+    backup_deps.offload_dispatch_probe = startup.backup_offload_dispatch.clone();
     let app = router_with_roots(
         journal_root.clone(),
         None,
@@ -585,6 +587,9 @@ async fn bind_embedded_with_dependencies(
     let mut backup_deps = solstone_core_backup_web::BackupWebDeps::new(journal_root.clone());
     backup_deps.verification_submitter =
         startup.as_ref().and_then(|s| s.backup_verification.clone());
+    backup_deps.offload_dispatch_probe = startup
+        .as_ref()
+        .and_then(|s| s.backup_offload_dispatch.clone());
     let app = router_with_roots(
         journal_root.clone(),
         None,

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use solstone_core_backup_web::VerificationSubmitter;
+use solstone_core_backup_web::{OffloadDispatchProbe, VerificationSubmitter};
 use solstone_core_journal_io::JournalRoot;
 use std::sync::Arc;
 use tokio::sync::watch;
@@ -22,12 +22,71 @@ pub(super) fn submitter(
     })
 }
 
+/// Observe the existing command admission without enqueueing work. Missing
+/// compiled offload dispatch stays unavailable even with valid native tools.
+pub(super) fn offload_dispatch_probe(
+    root: &Arc<JournalRoot>,
+    stop: watch::Receiver<bool>,
+    cancelled: Arc<dyn Fn() -> bool + Send + Sync>,
+) -> OffloadDispatchProbe {
+    dispatch_probe(root, stop, cancelled, "backup:offload")
+}
+
+fn dispatch_probe(
+    root: &Arc<JournalRoot>,
+    stop: watch::Receiver<bool>,
+    cancelled: Arc<dyn Fn() -> bool + Send + Sync>,
+    routine: &'static str,
+) -> OffloadDispatchProbe {
+    let root = Arc::downgrade(root);
+    let command =
+        solstone_core_system::partition::canonical_journal_command(["maintenance", "run", routine]);
+    Arc::new(move || {
+        if *stop.borrow() || stop.has_changed().is_err() || cancelled() {
+            return false;
+        }
+        let Some(root) = root.upgrade() else {
+            return false;
+        };
+        root.revalidate_canonical_binding().is_ok()
+            && super::foreground::admit_command(root.canonical_path(), &command)
+            && !cancelled()
+            && root.revalidate_canonical_binding().is_ok()
+    })
+}
+
 #[cfg(all(test, feature = "full-tests"))]
 mod tests {
     use super::*;
     use crate::foreground::{ForegroundProcessingHost, TEST_LOCK};
     use solstone_core_backup_web::BackupWebDeps;
     use std::sync::atomic::{AtomicBool, Ordering};
+
+    #[test]
+    fn dispatch_observation_does_not_submit_and_preserves_restore_stop_and_lifetime_refusal() {
+        let _serial = TEST_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let temp = tempfile::tempdir().unwrap();
+        let root = Arc::new(JournalRoot::open(temp.path()).unwrap());
+        let (stop, watch) = watch::channel(false);
+        let probe = dispatch_probe(&root, watch, Arc::new(|| false), "backup:verify");
+        // No foreground queue is installed for this root. A probe that submits
+        // instead of observing the admitted command would fail this twin.
+        assert!(
+            super::super::foreground::submit_owner_maintenance(&root, "backup:verify").is_err()
+        );
+        assert!(probe());
+        assert!(std::fs::read_dir(temp.path()).unwrap().next().is_none());
+        solstone_core_journal_io::whole_journal_restore::hold_target_for_restore(temp.path());
+        assert!(!probe());
+        solstone_core_journal_io::whole_journal_restore::release_target_for_restore(temp.path());
+        assert!(probe());
+        stop.send_replace(true);
+        assert!(!probe());
+        let (gone, receiver) = watch::channel(false);
+        let lost = dispatch_probe(&root, receiver, Arc::new(|| false), "backup:verify");
+        drop(gone);
+        assert!(!lost());
+    }
 
     #[test]
     fn original_serving_stop_revokes_callback_after_foreground_reopens() {

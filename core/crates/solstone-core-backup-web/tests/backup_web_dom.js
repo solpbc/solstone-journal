@@ -519,7 +519,7 @@ async function settle(rounds = 16) {
 }
 
 async function ready(harness) {
-  await settle();
+  await settle(32);
   harness.clearCalls();
 }
 
@@ -2086,6 +2086,74 @@ for (const routine of ['run', 'verify', 'prune']) {
   }
 }
 
+for (const mobile of [false, true]) {
+  for (const exitCode of [0, 4]) {
+    asyncCase(`offload ${mobile ? 'embedded' : 'desktop'} exit ${exitCode} refreshes history without completing a newer operation`, async () => {
+      const earlier = 1760000000;
+      const current = 1770000000;
+      const operation = offloadRestoreOperation({ files_restored: 1, bytes_restored: 1024 }, 'restoring');
+      const retained = { status: 'ok', time: earlier, error_reason: 'incomplete', setup_fingerprint: 'previous-setup' };
+      const backup = { ...status(operation), enabled: true, recovery_key_confirmed: true,
+        last_backup: { status: 'error', time: current, error_reason: 'timeout', last_success: retained } };
+      let offload = { success: true, offload: { enabled: true }, days: [],
+        last_offload: { status: 'ok', time: earlier, last_ok_time: earlier } };
+      const harness = createHarness({ realtime: true, respond(call) {
+        if (call.url === '/app/backup/status') return response(backup);
+        if (call.url === '/app/backup/offload/status') return response(offload);
+      } });
+      await ready(harness);
+      const phase = harness.root.getAttribute('data-state');
+      const result = restoreReportNodes(harness).summary.textContent;
+      const success = harness.root.querySelector('[data-last-successful-backup]').title;
+      const caveat = harness.root.querySelector('[data-last-successful-backup-reason]').textContent;
+      offload = { ...offload, last_offload: { status: 'stalled', time: current,
+        reason: 'confirm_failed', last_ok_time: earlier } };
+      harness.emit({ event: 'started', service: 'backup', routine: 'backup:offload' });
+      assert.strictEqual(harness.calls.length, 0);
+      harness.emit(mobile
+        ? { event: 'stopped', service: 'backup', routine: 'backup:offload', ref: 'older-offload', exit_code: exitCode }
+        : { event: 'stopped', service: 'maintenance:backup:offload', ref: 'older-offload', exit_code: exitCode });
+      await settle(32);
+      assert.deepStrictEqual(harness.calls.map((call) => call.url).sort(), ['/app/backup/offload/status', '/app/backup/status']);
+      assert.strictEqual(harness.lastOffload.getAttribute('data-result-status'), 'stalled');
+      assert.strictEqual(harness.lastOffload.title, new Date(current * 1000).toLocaleString());
+      assert.strictEqual(harness.runSuccessTime.title, new Date(earlier * 1000).toLocaleString());
+      assert.strictEqual(harness.root.getAttribute('data-state'), phase);
+      assert.strictEqual(phase, 'restoring');
+      assert.strictEqual(restoreReportNodes(harness).summary.textContent, result);
+      assert.strictEqual(harness.root.querySelector('[data-last-successful-backup]').title, success);
+      assert.strictEqual(harness.root.querySelector('[data-last-successful-backup-reason]').textContent, caveat);
+      assert.ok(/incomplete/.test(caveat));
+    });
+  }
+}
+
+asyncCase('offload completion during an older pending read follows it once with current history', async () => {
+  let release;
+  let reads = 0;
+  const previous = { success: true, offload: { enabled: true }, days: [],
+    last_offload: { status: 'ok', time: 1760000000, last_ok_time: 1760000000 } };
+  const latest = { ...previous, last_offload: { status: 'stalled', time: 1770000000,
+    reason: 'confirm_failed', last_ok_time: 1760000000 } };
+  const harness = createHarness({ realtime: true, respond(call) {
+    if (call.url === '/app/backup/offload/status') {
+      reads += 1;
+      return reads === 1 ? new Promise((resolve) => { release = resolve; }) : response(latest);
+    }
+  } });
+  await ready(harness);
+  harness.emit({ event: 'stopped', service: 'backup', routine: 'backup:offload', exit_code: 4 });
+  harness.emit({ event: 'stopped', service: 'backup', routine: 'backup:offload', exit_code: 4 });
+  await settle();
+  assert.strictEqual(reads, 1, 'the older read owns the outstanding request');
+  release(response(previous));
+  await settle(32);
+  assert.strictEqual(reads, 2, 'one trailing read observes the current result');
+  assert.strictEqual(harness.lastOffload.getAttribute('data-result-status'), 'stalled');
+  assert.strictEqual(harness.lastOffload.title, new Date(1770000000 * 1000).toLocaleString());
+  assert.strictEqual(harness.runSuccessTime.title, new Date(1760000000 * 1000).toLocaleString());
+});
+
 asyncCase('completion during a pending initial read follows it once and recovers an initial failure', async () => {
   let release;
   let reads = 0;
@@ -2155,8 +2223,11 @@ asyncCase('late backup acceptance does not overwrite a newer completion read', a
 
 asyncCase('reconnect recovers a missed result and preserves incomplete success history', async () => {
   let current = { ...status(), enabled: true, last_backup: { status: 'error', time: 1770000000 } };
+  let offload = { success: true, offload: { enabled: true }, days: [],
+    last_offload: { status: 'ok', time: 1760000000, last_ok_time: 1760000000 } };
   const harness = createHarness({ realtime: true, respond(call) {
     if (call.url === '/app/backup/status') return response(current);
+    if (call.url === '/app/backup/offload/status') return response(offload);
     return undefined;
   } });
   await ready(harness);
@@ -2164,9 +2235,13 @@ asyncCase('reconnect recovers a missed result and preserves incomplete success h
   current = { ...status(), enabled: true, last_backup: {
     status: 'ok', time: 1770000500, error_reason: 'incomplete', setup_fingerprint: 'previous-setup',
   } };
+  offload = { ...offload, last_offload: { status: 'stalled', time: 1770000500,
+    reason: 'confirm_failed', last_ok_time: 1760000000 } };
   harness.connection(true);
-  await settle();
-  assert.deepStrictEqual(harness.calls.map((call) => call.url), ['/app/backup/status']);
+  await settle(32);
+  assert.deepStrictEqual(harness.calls.map((call) => call.url).sort(), ['/app/backup/offload/status', '/app/backup/status']);
+  assert.strictEqual(harness.lastOffload.getAttribute('data-result-status'), 'stalled');
+  assert.strictEqual(harness.runSuccessTime.title, new Date(1760000000 * 1000).toLocaleString());
   assert.strictEqual(harness.root.querySelector('[data-last-successful-backup-reason]').hidden, false);
   const summary = harness.root.querySelector('[data-backup-summary]');
   const expected = harness.window.BackupStatus.select(current);

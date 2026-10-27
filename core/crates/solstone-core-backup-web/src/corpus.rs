@@ -1423,6 +1423,7 @@ fn engine_deps(
         version: "test",
         handoff_poll_lease: Arc::new(AtomicBool::new(false)),
         verification_submitter: None,
+        offload_dispatch_probe: None,
         restore_prepare: crate::restore_prepare::new_shared(),
     }
 }
