@@ -174,17 +174,30 @@ pub async fn approve(
         Err((status, state)) => return uncached(request_response(status, state)),
     };
     let count = context.marks().len();
-    #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+    #[cfg(not(any(
+        target_os = "linux",
+        target_os = "macos",
+        target_os = "windows",
+        target_os = "android",
+        target_os = "ios"
+    )))]
     {
         let _ = (deps, clock);
         uncached(write_response(count, refused_before_start()))
     }
-    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+    #[cfg(any(
+        target_os = "linux",
+        target_os = "macos",
+        target_os = "windows",
+        target_os = "android",
+        target_os = "ios"
+    ))]
     {
         let Some(Extension(deps)) = deps else {
             return uncached(write_response(count, refused_before_start()));
         };
         #[cfg(all(test, feature = "full-tests"))]
+        #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
         let after_start = approval_tests::take_public_start_hook();
         let result = tokio::task::spawn_blocking(move || {
             let now = clock.now();
@@ -195,6 +208,7 @@ pub async fn approve(
                 now,
             );
             #[cfg(all(test, feature = "full-tests"))]
+            #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
             if let (Ok(started), Some(after_start)) = (&started, after_start) {
                 after_start(started.generation());
             }
