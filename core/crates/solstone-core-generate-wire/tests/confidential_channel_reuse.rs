@@ -1546,7 +1546,7 @@ fn oracle_5_epoch_drops_idle_channels() {
         &runtime1,
         &AcceptingCompositeVerifier,
     );
-    assert_eq!(reason_code(&res_fail1), Some("proof_http_failed"));
+    assert_eq!(reason_code(&res_fail1), Some("proof_http_status"));
     let epoch_after1 = runtime1.confidential_channel_pool().epoch();
     assert!(epoch_after1 > epoch_before1);
 
@@ -1810,7 +1810,7 @@ fn oracle_5_epoch_drops_idle_channels() {
         &runtime5,
         &AcceptingCompositeVerifier,
     );
-    assert_eq!(reason_code(&res_b), Some("proof_http_failed"));
+    assert_eq!(reason_code(&res_b), Some("proof_http_status"));
     assert!(runtime5.confidential_channel_pool().epoch() > epoch_before_b);
 
     // Release A
@@ -1883,7 +1883,7 @@ fn oracle_5_epoch_drops_idle_channels() {
         &runtime6,
         &AcceptingCompositeVerifier,
     );
-    assert_eq!(reason_code(&res_b6), Some("proof_http_failed"));
+    assert_eq!(reason_code(&res_b6), Some("proof_http_status"));
     assert!(runtime6.confidential_channel_pool().epoch() > epoch_before_b6);
 
     server6.release_handshake();
@@ -2627,7 +2627,7 @@ fn oracle_12_proof_surplus_fails_establishment() {
         &runtime1,
         &AcceptingCompositeVerifier,
     );
-    assert_eq!(reason_code(&res1), Some("proof_http_failed"));
+    assert_eq!(reason_code(&res1), Some("proof_http_framing"));
     assert_eq!(
         server_surplus
             .stats
@@ -2657,7 +2657,7 @@ fn oracle_12_proof_surplus_fails_establishment() {
         &runtime2,
         &AcceptingCompositeVerifier,
     );
-    assert_eq!(reason_code(&res2), Some("proof_http_failed"));
+    assert_eq!(reason_code(&res2), Some("proof_http_eof"));
     assert_eq!(
         server_bare.stats.app_requests_read.load(Ordering::SeqCst),
         0

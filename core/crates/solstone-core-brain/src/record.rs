@@ -1029,6 +1029,14 @@ mod tests {
             "tls_handshake_failed",
             "gpu_appraisal_failed",
             "exporter_proof_invalid",
+            "proof_http_timeout",
+            "proof_http_eof",
+            "proof_http_transport",
+            "proof_http_framing",
+            "proof_http_status",
+            "proof_http_content_type",
+            "proof_http_trailing",
+            "proof_http_channel_state",
         ] {
             let diagnostic = spp_reason_diagnostic(raw);
             assert_eq!(valid_spp_reason(raw), "attestation_rejected");
@@ -1050,6 +1058,7 @@ mod tests {
         for raw in [
             "Bearer private-token",
             "tls_handshake_failed: private-path",
+            "proof_http_timeout: private-path",
             "unrecognized-provider-reason",
         ] {
             assert!(spp_reason_diagnostic(raw).is_empty());

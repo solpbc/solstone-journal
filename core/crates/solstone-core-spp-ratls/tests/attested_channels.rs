@@ -771,7 +771,7 @@ fn proof_headers_cannot_overshoot_the_cap() {
     );
     assert_eq!(
         rejected(establish(gateway.port, &AcceptingCompositeVerifier)).reason_code,
-        "proof_http_failed"
+        "proof_http_framing"
     );
     let observation = gateway.finish();
     assert_eq!(observation.exporter_request, exact_exporter_request());
@@ -795,7 +795,7 @@ fn proof_body_length_cannot_exceed_the_cap() {
     );
     assert_eq!(
         rejected(establish(gateway.port, &AcceptingCompositeVerifier)).reason_code,
-        "proof_http_failed"
+        "proof_http_framing"
     );
     let observation = gateway.finish();
     assert_eq!(observation.exporter_request, exact_exporter_request());
@@ -814,7 +814,7 @@ fn proof_headers_require_crlf_framing() {
     );
     assert_eq!(
         rejected(establish(gateway.port, &AcceptingCompositeVerifier)).reason_code,
-        "proof_http_failed"
+        "proof_http_framing"
     );
     let observation = gateway.finish();
     assert_eq!(observation.exporter_request, exact_exporter_request());
@@ -833,7 +833,7 @@ fn non_200_exporter_proof_is_rejected() {
     );
     assert_eq!(
         rejected(establish(gateway.port, &AcceptingCompositeVerifier)).reason_code,
-        "proof_http_failed"
+        "proof_http_status"
     );
     let observation = gateway.finish();
     assert_eq!(observation.exporter_request, exact_exporter_request());
