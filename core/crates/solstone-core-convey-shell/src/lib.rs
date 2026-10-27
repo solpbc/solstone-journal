@@ -558,6 +558,7 @@ pub async fn bind_embedded_device_door_with_root(
         .map_err(ConveyServeError::EmbeddedRoot)?;
     backup_deps.verification_submitter = startup.backup_verification.clone();
     backup_deps.offload_dispatch_probe = startup.backup_offload_dispatch.clone();
+    backup_deps.install_restore_lifecycle(Arc::new(recovery_drain::EmbeddedRestoreLifecycle));
     let app = router_with_roots(
         journal_root.clone(),
         None,
@@ -590,6 +591,7 @@ async fn bind_embedded_with_dependencies(
     backup_deps.offload_dispatch_probe = startup
         .as_ref()
         .and_then(|s| s.backup_offload_dispatch.clone());
+    backup_deps.install_restore_lifecycle(Arc::new(recovery_drain::EmbeddedRestoreLifecycle));
     let app = router_with_roots(
         journal_root.clone(),
         None,

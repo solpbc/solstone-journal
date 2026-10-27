@@ -209,6 +209,40 @@ fn ac13_acoustic_tiers_and_margin_follow_calibration() {
 }
 
 #[test]
+fn medium_sentence_match_needs_the_margin_over_the_runner_up() {
+    let temporary = TempDir::new();
+    for (id, x) in [("gamma", 0.3_f32), ("delta", 0.28), ("epsilon", 0.24)] {
+        write_entity(temporary.path(), id, Some("Person"), false);
+        write_voiceprint(temporary.path(), id, embedding(x, (1.0 - x.powi(2)).sqrt()));
+    }
+    let loaded_entities = entities(temporary.path());
+
+    let close = run(
+        &temporary,
+        labels(&[1]),
+        &[1],
+        &BTreeSet::from(["gamma".to_owned(), "delta".to_owned()]),
+        &loaded_entities,
+        &[(1, embedding(1.0, 0.0))],
+        &HashMap::new(),
+    );
+    assert_eq!(close.labels[&1].speaker, None);
+    assert_eq!(close.labels[&1].confidence, None);
+
+    let clear = run(
+        &temporary,
+        labels(&[1]),
+        &[1],
+        &BTreeSet::from(["gamma".to_owned(), "epsilon".to_owned()]),
+        &loaded_entities,
+        &[(1, embedding(1.0, 0.0))],
+        &HashMap::new(),
+    );
+    assert_eq!(clear.labels[&1].speaker.as_deref(), Some("gamma"));
+    assert_eq!(clear.labels[&1].confidence.as_deref(), Some("medium"));
+}
+
+#[test]
 fn ac14_cluster_coverage_and_confidence_gates_defer_to_sentence_matching() {
     let temporary = TempDir::new();
     write_entity(temporary.path(), "alpha", Some("Person"), false);

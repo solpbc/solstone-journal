@@ -202,7 +202,7 @@ mod tests {
             request_cancellation(&slot, 1),
             ArchiveCancellationRequest::Refused
         );
-        let ordinary = operation::begin(&slot, "restore", None, None, None)
+        let ordinary = operation::begin(&slot, "enable", None, None, None)
             .unwrap()
             .generation;
         let original = operation::current(&slot);

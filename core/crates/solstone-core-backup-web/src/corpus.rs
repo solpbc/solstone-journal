@@ -34,6 +34,11 @@ use std::{
 use tower::ServiceExt;
 
 #[cfg(all(test, feature = "full-tests"))]
+#[cfg(target_os = "linux")]
+#[path = "first_restore_tests.rs"]
+mod first_restore_tests;
+
+#[cfg(all(test, feature = "full-tests"))]
 #[cfg(not(windows))]
 #[path = "handoff_poll_owned_tests.rs"]
 mod owned_poll_tests;
@@ -1425,6 +1430,7 @@ fn engine_deps(
         verification_submitter: None,
         offload_dispatch_probe: None,
         restore_prepare: crate::restore_prepare::new_shared(),
+        restore_host: crate::first_restore::RestoreHost::Desktop,
     }
 }
 
@@ -1906,6 +1912,90 @@ async fn restore_success_records_snapshots_then_restore() {
     assert_eq!(done["last_restore"]["files_expected"], files);
     assert_eq!(done["last_restore"]["files_restored"], files);
     assert_eq!(done["last_restore"]["bytes_restored"], 12);
+}
+
+#[cfg(all(test, feature = "full-tests"))]
+#[cfg(unix)]
+#[tokio::test]
+async fn embedded_first_restore_without_drain_cannot_copy_into_a_live_target() {
+    struct CopyRunner(ScriptRunner);
+    impl ToolRunner for CopyRunner {
+        fn run(&self, request: &ToolRequest<'_>) -> io::Result<ToolOutput> {
+            if request.argv.first().is_some_and(|arg| arg == "restore") {
+                let target = request
+                    .argv
+                    .windows(2)
+                    .find(|pair| pair[0] == "--target")
+                    .expect("restore target")[1]
+                    .clone();
+                fs::write(Path::new(&target).join("restored-copy-witness"), b"copied")?;
+            }
+            self.0.run(request)
+        }
+
+        fn run_cancellable(
+            &self,
+            request: &ToolRequest<'_>,
+            cancellation: &solstone_core_backup::archive_admission::ArchiveCancellation,
+        ) -> io::Result<ToolOutput> {
+            if cancellation.is_cancelled() {
+                return Err(io::Error::new(
+                    io::ErrorKind::Interrupted,
+                    "fixture stopped",
+                ));
+            }
+            self.run(request)
+        }
+    }
+
+    for held in [false, true] {
+        let journal = crate::test_support::root("healthy");
+        let root = Arc::new(solstone_core_journal_io::JournalRoot::open(journal.path()).unwrap());
+        let admitted = held.then(|| {
+            solstone_core_journal_io::whole_journal_restore::begin_target_use_bound(root.clone())
+                .unwrap()
+        });
+        let runner = Arc::new(CopyRunner(ScriptRunner::with_outputs(restore_outputs())));
+        let (prepared, _package) = prepared(journal.path().to_owned(), runner.clone());
+        let mut deps = if held {
+            crate::BackupWebDeps::with_root(root).unwrap()
+        } else {
+            crate::BackupWebDeps::new(journal.path().to_owned())
+        };
+        deps.runner = runner;
+        deps.executable = prepared.executable;
+        deps.clock = prepared.clock;
+        deps.journal_maintenance = Arc::new(OkMaintenance);
+
+        let (status, _) = post_json(&deps, "/app/backup/restore", Some(restore_body())).await;
+        assert_eq!(status, 200);
+        let terminal = wait_terminal(&deps).await;
+        let copied_while_admitted = journal.path().join("restored-copy-witness").exists();
+        drop(admitted);
+        let lifetime = deps.lifetime();
+        lifetime.request_stop();
+        let runtime = tokio::runtime::Handle::current();
+        let drained = tokio::task::spawn_blocking(move || {
+            lifetime.drain(&runtime, Instant::now() + FIXTURE_WAIT)
+        })
+        .await
+        .unwrap();
+        assert_eq!(drained, crate::BackupRouteDrain::Drained);
+        eprintln!("held={held} copied={copied_while_admitted} terminal={terminal}");
+        if !held {
+            assert!(
+                copied_while_admitted,
+                "unheld copy control did not run: {terminal}"
+            );
+            assert_eq!(terminal["operation"]["phase"], "done");
+            continue;
+        }
+        assert!(
+            !copied_while_admitted,
+            "first restore copied into an admitted target: {terminal}"
+        );
+        assert_eq!(terminal["operation"]["phase"], "error");
+    }
 }
 
 #[cfg(feature = "full-tests")]

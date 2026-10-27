@@ -92,6 +92,7 @@ fn test_deps(
         verification_submitter: None,
         offload_dispatch_probe: None,
         restore_prepare: crate::restore_prepare::new_shared(),
+        restore_host: crate::first_restore::RestoreHost::Desktop,
     }
 }
 
