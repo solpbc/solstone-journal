@@ -295,11 +295,10 @@ fn same(a: &Metadata, b: &Metadata) -> bool {
 fn remove_owned_stage(parent: &JournalRoot, stage: &OsStr, file: &File) {
     #[cfg(unix)]
     {
-        use std::os::unix::fs::MetadataExt;
         if let (Ok(named), Ok(opened)) = (
             nix::sys::stat::fstatat(parent, stage, nix::fcntl::AtFlags::AT_SYMLINK_NOFOLLOW),
-            file.metadata(),
-        ) && (named.st_dev, named.st_ino) == (opened.dev(), opened.ino())
+            nix::sys::stat::fstat(file),
+        ) && (named.st_dev, named.st_ino) == (opened.st_dev, opened.st_ino)
         {
             let _ = nix::unistd::unlinkat(parent, stage, nix::unistd::UnlinkatFlags::NoRemoveDir);
         }
