@@ -6,6 +6,10 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- browser pages in your journal now show their context: whether the tab was in front and its window focused, whether audio or video was playing, whether the solstone app was paused, how long the tab had been open, the page's language and which browser it was. agents reading your journal see the same line. pages from earlier versions of the solstone extension look as before.
+
 ### Changed
 
 - the local model can now read about twice as much in a single request on every mac, and on windows and linux computers with smaller graphics cards (larger ones already could). on those graphics cards it sets aside about half a gigabyte more memory to do it. on computers whose graphics card has 8 GB, speech-to-text now runs on the processor while you use the local model for thinking.
