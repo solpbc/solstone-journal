@@ -175,6 +175,145 @@ pub fn resume_after_whole_journal_restore(journal: &Path) {
     }
 }
 
+struct CapturedHook {
+    key: (PathBuf, String),
+    generation: u64,
+    pause: Hook,
+    resume: Hook,
+}
+
+impl CapturedHook {
+    fn current(&self, root: &Arc<JournalRoot>) -> Result<(), String> {
+        root.revalidate_canonical_binding()
+            .map_err(|e| e.to_string())?;
+        let registry = lock_registry();
+        let slot = registry
+            .slots
+            .get(&self.key)
+            .ok_or("restore can't resume from this attempt")?;
+        if slot.generation != self.generation || slot.root.identity() != root.identity() {
+            return Err("restore can't resume because its running state changed".into());
+        }
+        slot.root
+            .revalidate_canonical_binding()
+            .map_err(|e| e.to_string())
+    }
+}
+
+/// A paused native attempt, retaining its original root, hooks and process hold.
+/// Drop releases only this hold; it never resumes or removes the durable record.
+pub struct PausedRecovery {
+    root: Arc<JournalRoot>,
+    hold: Option<solstone_core_journal_io::whole_journal_restore::TargetRestoreHold>,
+    hooks: Vec<CapturedHook>,
+}
+
+/// Drain the owners registered for this exact root without reopening its path.
+pub fn pause_admitted_work(root: Arc<JournalRoot>) -> Result<PausedRecovery, String> {
+    use solstone_core_journal_io::whole_journal_restore::TargetRestoreHold;
+    let hold = TargetRestoreHold::acquire(Arc::clone(&root)).map_err(|e| e.to_string())?;
+    let hooks = {
+        let registry = lock_registry();
+        let mut hooks = Vec::new();
+        for (key, slot) in &registry.slots {
+            if key.0 != root.canonical_path() {
+                continue;
+            }
+            if slot.root.identity() != root.identity() {
+                return Err("restore couldn't confirm this is the same journal".into());
+            }
+            slot.root
+                .revalidate_canonical_binding()
+                .map_err(|e| e.to_string())?;
+            hooks.push(CapturedHook {
+                key: key.clone(),
+                generation: slot.generation,
+                pause: Arc::clone(&slot.pause),
+                resume: Arc::clone(&slot.resume),
+            });
+        }
+        hooks
+    };
+    if hooks.is_empty() {
+        return Err("couldn't pause your journal for restore".into());
+    }
+    let paused = PausedRecovery {
+        root,
+        hold: Some(hold),
+        hooks,
+    };
+    for hook in &paused.hooks {
+        hook.current(&paused.root)?;
+        (hook.pause)(paused.root.canonical_path())?;
+    }
+    paused
+        .hold
+        .as_ref()
+        .expect("owned hold")
+        .wait_for_admitted_use()
+        .map_err(|e| e.to_string())?;
+    Ok(paused)
+}
+
+impl PausedRecovery {
+    pub fn resume(mut self, cancelled: &dyn Fn() -> bool) -> Result<(), String> {
+        self.hold
+            .as_ref()
+            .expect("owned hold")
+            .revalidate()
+            .map_err(|e| e.to_string())?;
+        if cancelled()
+            || whole_journal_restore_admission(self.root.canonical_path())
+                != WholeJournalRestoreAdmission::Open
+        {
+            return Err("restore is not ready to resume".into());
+        }
+        // Validate the complete original census before releasing admission.
+        for hook in &self.hooks {
+            hook.current(&self.root)?;
+        }
+        self.root
+            .revalidate_canonical_binding()
+            .map_err(|e| e.to_string())?;
+        drop(self.hold.take());
+        let mut failure = None;
+        for hook in &self.hooks {
+            if cancelled() {
+                return Err("restore was stopped".into());
+            }
+            let result = hook
+                .current(&self.root)
+                .and_then(|()| (hook.resume)(self.root.canonical_path()));
+            if let Err(error) = result {
+                log::warn!("whole-journal restore resume: {error}");
+                failure.get_or_insert(error);
+            }
+        }
+        if cancelled() {
+            return Err("restore was stopped".into());
+        }
+        failure.map_or(Ok(()), Err)
+    }
+}
+
+impl solstone_core_backup_web::PausedRestore for PausedRecovery {
+    fn resume(self: Box<Self>, cancelled: &dyn Fn() -> bool) -> Result<(), String> {
+        PausedRecovery::resume(*self, cancelled)
+    }
+}
+
+pub struct EmbeddedRestoreLifecycle;
+
+impl solstone_core_backup_web::EmbeddedRestoreLifecycle for EmbeddedRestoreLifecycle {
+    fn drain(
+        &self,
+        root: &Arc<JournalRoot>,
+    ) -> Result<Box<dyn solstone_core_backup_web::PausedRestore>, String> {
+        pause_admitted_work(Arc::clone(root))
+            .map(|paused| Box::new(paused) as Box<dyn solstone_core_backup_web::PausedRestore>)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -341,5 +480,118 @@ mod tests {
         release_target_for_restore(&journal);
         drop(hooks);
         clear_for_test();
+    }
+
+    #[cfg(all(test, feature = "full-tests"))]
+    #[cfg(unix)]
+    #[test]
+    fn owned_phase_root_loss_drops_only_its_hold_and_fresh_owner_can_resume() {
+        let _tests = lock_tests();
+        let temporary = tempfile::tempdir().unwrap();
+        let path = temporary.path().join("journal");
+        std::fs::create_dir(&path).unwrap();
+        let original = Arc::new(JournalRoot::open(&path).unwrap());
+        let old = register_recovery_hooks("phase-root", original.clone(), |_| Ok(()), |_| Ok(()));
+        let paused = pause_admitted_work(original).unwrap();
+        std::fs::rename(&path, temporary.path().join("original")).unwrap();
+        std::fs::create_dir(&path).unwrap();
+        std::fs::write(path.join("sentinel"), b"fresh owner").unwrap();
+        let successor = Arc::new(JournalRoot::open(&path).unwrap());
+        let resumed = Arc::new(AtomicUsize::new(0));
+        let counter = resumed.clone();
+        let fresh = register_recovery_hooks(
+            "phase-root",
+            successor.clone(),
+            |_| Ok(()),
+            move |_| {
+                counter.fetch_add(1, Ordering::SeqCst);
+                Ok(())
+            },
+        );
+        assert!(paused.resume(&|| false).is_err());
+        assert_eq!(resumed.load(Ordering::SeqCst), 0);
+        drop(old);
+        let next = pause_admitted_work(successor.clone()).unwrap();
+        next.resume(&|| false).unwrap();
+        assert_eq!(resumed.load(Ordering::SeqCst), 1);
+        assert!(
+            solstone_core_journal_io::whole_journal_restore::begin_target_use_bound(successor)
+                .is_ok()
+        );
+        assert_eq!(
+            std::fs::read(path.join("sentinel")).unwrap(),
+            b"fresh owner"
+        );
+        drop(fresh);
+    }
+
+    #[cfg(all(test, feature = "full-tests"))]
+    #[test]
+    fn owned_phase_cannot_resume_a_successor_registration_on_the_same_root() {
+        let _tests = lock_tests();
+        let temporary = tempfile::tempdir().unwrap();
+        let root = Arc::new(JournalRoot::open(temporary.path()).unwrap());
+        let old = register_recovery_hooks("phase-generation", root.clone(), |_| Ok(()), |_| Ok(()));
+        let paused = pause_admitted_work(root.clone()).unwrap();
+        let resumed = Arc::new(AtomicUsize::new(0));
+        let counter = resumed.clone();
+        let current = register_recovery_hooks(
+            "phase-generation",
+            root.clone(),
+            |_| Ok(()),
+            move |_| {
+                counter.fetch_add(1, Ordering::SeqCst);
+                Ok(())
+            },
+        );
+        assert!(paused.resume(&|| false).is_err());
+        assert_eq!(resumed.load(Ordering::SeqCst), 0);
+        drop(old);
+        pause_admitted_work(root.clone())
+            .unwrap()
+            .resume(&|| false)
+            .unwrap();
+        assert_eq!(resumed.load(Ordering::SeqCst), 1);
+        assert!(
+            solstone_core_journal_io::whole_journal_restore::begin_target_use_bound(root).is_ok()
+        );
+        drop(current);
+    }
+
+    #[cfg(all(test, feature = "full-tests"))]
+    #[test]
+    fn owned_phase_unwind_releases_hold_without_resuming() {
+        let _tests = lock_tests();
+        let temporary = tempfile::tempdir().unwrap();
+        let root = Arc::new(JournalRoot::open(temporary.path()).unwrap());
+        let resumed = Arc::new(AtomicUsize::new(0));
+        let counter = resumed.clone();
+        let _hook = register_recovery_hooks(
+            "phase-unwind",
+            root.clone(),
+            |_| Ok(()),
+            move |_| {
+                counter.fetch_add(1, Ordering::SeqCst);
+                Ok(())
+            },
+        );
+        let paused = pause_admitted_work(root.clone()).unwrap();
+        assert!(
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
+                let _paused = paused;
+                panic!("native frame unwound");
+            }))
+            .is_err()
+        );
+        assert_eq!(resumed.load(Ordering::SeqCst), 0);
+        assert!(
+            solstone_core_journal_io::whole_journal_restore::begin_target_use_bound(root.clone())
+                .is_ok()
+        );
+        pause_admitted_work(root)
+            .unwrap()
+            .resume(&|| false)
+            .unwrap();
+        assert_eq!(resumed.load(Ordering::SeqCst), 1);
     }
 }

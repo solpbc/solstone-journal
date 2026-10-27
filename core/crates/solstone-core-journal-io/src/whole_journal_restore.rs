@@ -8,7 +8,7 @@
 //! A missing file is ordinary startup. An unreadable, malformed, or
 //! substituted file stays pending and is not cleared from this reader.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::fs;
 use std::io;
 #[cfg(not(unix))]
@@ -315,8 +315,14 @@ pub fn wait_whole_journal_restore_generation(journal: &Path, observed: u64) {
     }
 }
 
-fn held_roots() -> &'static Mutex<BTreeSet<PathBuf>> {
-    static HELD: Mutex<BTreeSet<PathBuf>> = Mutex::new(BTreeSet::new());
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum TargetHold {
+    Legacy,
+    Owned(u64),
+}
+
+fn held_roots() -> &'static Mutex<BTreeMap<PathBuf, TargetHold>> {
+    static HELD: Mutex<BTreeMap<PathBuf, TargetHold>> = Mutex::new(BTreeMap::new());
     &HELD
 }
 
@@ -341,17 +347,80 @@ fn hold_key(journal: &Path) -> PathBuf {
 /// Mark the target so a new publication that races the restore observes the hold
 /// even before it re-reads the obligation file.
 pub fn hold_target_for_restore(journal: &Path) {
-    lock_map(held_roots()).insert(hold_key(journal));
+    lock_map(held_roots())
+        .entry(hold_key(journal))
+        .or_insert(TargetHold::Legacy);
 }
 
 /// Drop the in-process hold. This does not remove the obligation file.
+/// An owned native hold can be released only by its token.
 pub fn release_target_for_restore(journal: &Path) {
-    lock_map(held_roots()).remove(&hold_key(journal));
+    let key = hold_key(journal);
+    let mut held = lock_map(held_roots());
+    if held.get(&key) == Some(&TargetHold::Legacy) {
+        held.remove(&key);
+    }
 }
 
 /// Whether this process is inside a restore drain or copy for `journal`.
 pub fn target_held_for_restore(journal: &Path) -> bool {
-    lock_map(held_roots()).contains(&hold_key(journal))
+    lock_map(held_roots()).contains_key(&hold_key(journal))
+}
+
+/// One native restore attempt's ownership of the existing process hold.
+/// Drop releases only this token, using the original key even after root loss.
+#[must_use]
+pub struct TargetRestoreHold {
+    root: Arc<JournalRoot>,
+    key: PathBuf,
+    token: u64,
+}
+
+impl TargetRestoreHold {
+    pub fn acquire(root: Arc<JournalRoot>) -> Result<Self, TargetUseRefused> {
+        root.revalidate_canonical_binding()
+            .map_err(|_| TargetUseRefused)?;
+        static NEXT: AtomicU64 = AtomicU64::new(1);
+        let token = NEXT.fetch_add(1, Ordering::Relaxed);
+        let key = root.canonical_path().to_owned();
+        {
+            let mut held = lock_map(held_roots());
+            match held.entry(key.clone()) {
+                std::collections::btree_map::Entry::Vacant(entry) => {
+                    entry.insert(TargetHold::Owned(token));
+                }
+                std::collections::btree_map::Entry::Occupied(_) => return Err(TargetUseRefused),
+            }
+        }
+        let hold = Self { root, key, token };
+        hold.revalidate()?;
+        Ok(hold)
+    }
+
+    pub fn revalidate(&self) -> Result<(), TargetUseRefused> {
+        self.root
+            .revalidate_canonical_binding()
+            .map_err(|_| TargetUseRefused)?;
+        if lock_map(held_roots()).get(&self.key) != Some(&TargetHold::Owned(self.token)) {
+            return Err(TargetUseRefused);
+        }
+        Ok(())
+    }
+
+    pub fn wait_for_admitted_use(&self) -> Result<(), TargetUseRefused> {
+        self.revalidate()?;
+        wait_for_use_key(&self.key);
+        self.revalidate()
+    }
+}
+
+impl Drop for TargetRestoreHold {
+    fn drop(&mut self) {
+        let mut held = lock_map(held_roots());
+        if held.get(&self.key) == Some(&TargetHold::Owned(self.token)) {
+            held.remove(&self.key);
+        }
+    }
 }
 
 /// `true` when ordinary use and publication must not proceed.
@@ -496,12 +565,79 @@ pub fn begin_target_use_bound(root: Arc<JournalRoot>) -> Result<TargetUse, Targe
 /// Block until every `begin_target_use` guard for this journal has been dropped.
 pub fn wait_for_target_use_to_end(journal: &Path) {
     let key = hold_key(journal);
+    wait_for_use_key(&key);
+}
+
+fn wait_for_use_key(key: &Path) {
     let (flights, wake) = target_flights();
     let mut flights = lock_map(flights);
-    while flights.get(&key).copied().unwrap_or(0) > 0 {
+    while flights.get(key).copied().unwrap_or(0) > 0 {
         flights = wake
             .wait(flights)
             .unwrap_or_else(|poisoned| poisoned.into_inner());
+    }
+}
+
+#[cfg(all(test, feature = "full-tests"))]
+#[cfg(unix)]
+mod owned_hold_tests {
+    use super::*;
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    #[test]
+    fn owned_hold_drains_actual_use_and_legacy_cleanup_cannot_release_it() {
+        let temporary = tempfile::tempdir().unwrap();
+        let root = Arc::new(JournalRoot::open(temporary.path()).unwrap());
+        let admitted = begin_target_use_bound(root.clone()).unwrap();
+        let hold = TargetRestoreHold::acquire(root.clone()).unwrap();
+        release_target_for_restore(temporary.path());
+        assert!(target_held_for_restore(temporary.path()));
+        let (entered, observing) = mpsc::channel();
+        let (done, completed) = mpsc::channel();
+        let (release, released) = mpsc::channel();
+        let thread = std::thread::spawn(move || {
+            entered.send(()).unwrap();
+            let result = hold.wait_for_admitted_use();
+            done.send(result).unwrap();
+            released.recv_timeout(Duration::from_secs(5)).unwrap();
+            drop(hold);
+        });
+        observing.recv_timeout(Duration::from_secs(5)).unwrap();
+        let pending = completed.recv_timeout(Duration::from_millis(30)).is_err();
+        drop(admitted);
+        completed
+            .recv_timeout(Duration::from_secs(5))
+            .unwrap()
+            .unwrap();
+        let closed_until_phase_drop = begin_target_use_bound(root.clone()).is_err();
+        release.send(()).unwrap();
+        thread.join().unwrap();
+        assert!(pending && closed_until_phase_drop);
+        assert!(begin_target_use_bound(root).is_ok());
+    }
+
+    #[test]
+    fn lost_root_cleanup_releases_original_token_and_cannot_clear_successor_hold() {
+        let temporary = tempfile::tempdir().unwrap();
+        let path = temporary.path().join("journal");
+        fs::create_dir(&path).unwrap();
+        let original = Arc::new(JournalRoot::open(&path).unwrap());
+        let old = TargetRestoreHold::acquire(original).unwrap();
+        fs::rename(&path, temporary.path().join("original")).unwrap();
+        fs::create_dir(&path).unwrap();
+        fs::write(path.join("sentinel"), b"successor").unwrap();
+        let successor = Arc::new(JournalRoot::open(&path).unwrap());
+        assert!(old.revalidate().is_err());
+        assert!(TargetRestoreHold::acquire(successor.clone()).is_err());
+        drop(old);
+        let fresh = TargetRestoreHold::acquire(successor.clone()).unwrap();
+        release_target_for_restore(&path);
+        assert!(fresh.revalidate().is_ok());
+        assert!(begin_target_use_bound(successor.clone()).is_err());
+        drop(fresh);
+        assert!(begin_target_use_bound(successor).is_ok());
+        assert_eq!(fs::read(path.join("sentinel")).unwrap(), b"successor");
     }
 }
 

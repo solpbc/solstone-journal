@@ -15,11 +15,15 @@ use solstone_core_thinking_copy::{
 
 pub(crate) struct ConveySetupHost {
     backup: solstone_core_backup_web::BackupWebDeps,
+    executor: Option<tokio::runtime::Handle>,
 }
 
 impl ConveySetupHost {
     pub(crate) fn new(backup: solstone_core_backup_web::BackupWebDeps) -> Self {
-        Self { backup }
+        Self {
+            backup,
+            executor: tokio::runtime::Handle::try_current().ok(),
+        }
     }
 }
 
@@ -86,50 +90,46 @@ impl SetupHost for ConveySetupHost {
     }
 
     fn recover_whole_journal(&self, journal_root: &Path, body: &[u8]) -> Result<(), String> {
-        let journal = journal_root.to_path_buf();
-        let mut drain = {
-            let journal = journal.clone();
-            move || crate::recovery_drain::relinquish_admitted_work(&journal)
-        };
-        if journal != self.backup.journal_root {
+        if journal_root != self.backup.journal_root {
             return Err("recovery host is bound to a different journal".into());
         }
-        match solstone_core_backup_web::recover_recorded_journal_with(
-            &self.backup,
-            body,
-            &mut drain,
-        ) {
-            Ok(()) => {
-                crate::recovery_drain::resume_after_whole_journal_restore(&journal);
-                Ok(())
-            }
-            Err(error) => {
-                solstone_core_journal_io::whole_journal_restore::release_target_for_restore(
-                    &journal,
-                );
-                Err(error)
-            }
+        let executor = self
+            .executor
+            .as_ref()
+            .ok_or("restore controls are unavailable")?;
+        if solstone_core_backup_web::recorded_journal_recovery_active(&self.backup, executor)? {
+            return Err("restore is still stopping".into());
         }
+        let root = self.backup.retained_root().map_err(|e| e.to_string())?;
+        solstone_core_backup_web::recover_recorded_journal_with(&self.backup, body, &mut || {
+            crate::recovery_drain::pause_admitted_work(std::sync::Arc::clone(&root))
+                .map(|paused| Box::new(paused) as Box<dyn solstone_core_backup_web::PausedRestore>)
+        })
     }
 
     fn stop_for_recovery(&self, journal_root: &Path) -> Result<(), String> {
         if journal_root != self.backup.journal_root {
             return Err("recovery host is bound to a different journal".into());
         }
-        solstone_core_backup_web::stop_recorded_journal(&self.backup)?;
-        let result = crate::recovery_drain::stop_admitted_work(journal_root);
-        if result.is_err() {
-            solstone_core_journal_io::whole_journal_restore::release_target_for_restore(
-                journal_root,
-            );
-        }
-        result
+        let executor = self
+            .executor
+            .as_ref()
+            .ok_or("restore controls are unavailable")?;
+        solstone_core_backup_web::stop_recorded_journal(&self.backup, executor)?;
+        let root = self.backup.retained_root().map_err(|e| e.to_string())?;
+        let paused = crate::recovery_drain::pause_admitted_work(root)?;
+        drop(paused);
+        Ok(())
     }
 
     fn recovery_in_progress(&self, journal_root: &Path) -> Option<bool> {
-        (journal_root == self.backup.journal_root)
-            .then(|| solstone_core_backup_web::recorded_journal_recovery_active(&self.backup).ok())
-            .flatten()
+        self.executor
+            .as_ref()
+            .filter(|_| journal_root == self.backup.journal_root)
+            .and_then(|executor| {
+                solstone_core_backup_web::recorded_journal_recovery_active(&self.backup, executor)
+                    .ok()
+            })
     }
 }
 
@@ -391,6 +391,83 @@ fn persist_speech_refusal(
 mod tests {
     use super::*;
     use tempfile::TempDir;
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn recovery_stop_drains_original_admitted_writer_before_lost_root_refusal() {
+        use std::io::Write;
+        use std::sync::Arc;
+        use std::time::Duration;
+
+        let mut observations = Vec::new();
+        for replace_root in [false, true] {
+            let temp = TempDir::new().unwrap();
+            let path = temp.path().join("journal");
+            std::fs::create_dir(&path).unwrap();
+            let root = Arc::new(solstone_core_journal_io::JournalRoot::open(&path).unwrap());
+            let deps = solstone_core_backup_web::BackupWebDeps::with_root(root).unwrap();
+            let host = ConveySetupHost::new(deps.clone());
+            let admitted = solstone_core_backup_web::admit_write(
+                &deps.operations,
+                solstone_core_backup_web::AdmitWrite::DuringOperation,
+            )
+            .unwrap();
+            let mut output = std::fs::File::create(path.join("native-writer-finished")).unwrap();
+            let (release, released) = std::sync::mpsc::channel();
+            let (entered, observing) = tokio::sync::oneshot::channel();
+            let writer = std::thread::spawn(move || {
+                let _admitted = admitted;
+                entered.send(()).unwrap();
+                released.recv_timeout(Duration::from_secs(5)).unwrap();
+                output
+                    .write_all(b"original admitted writer joined")
+                    .unwrap();
+                output.sync_all().unwrap();
+            });
+            observing.await.unwrap();
+            let original = if replace_root {
+                let original = temp.path().join("original");
+                std::fs::rename(&path, &original).unwrap();
+                std::fs::create_dir(&path).unwrap();
+                std::fs::write(path.join("sentinel"), b"replacement owner").unwrap();
+                original
+            } else {
+                path.clone()
+            };
+            let stopped_path = path.clone();
+            let mut stopping =
+                tokio::task::spawn_blocking(move || host.stop_for_recovery(&stopped_path));
+            let early = tokio::time::timeout(Duration::from_millis(30), &mut stopping).await;
+            let returned_early = early.is_ok();
+            release.send(()).unwrap();
+            writer.join().unwrap();
+            let result = match early {
+                Ok(result) => result.unwrap(),
+                Err(_) => tokio::time::timeout(Duration::from_secs(5), stopping)
+                    .await
+                    .unwrap()
+                    .unwrap(),
+            };
+            assert!(result.is_err(), "fixture has no resumable owner hooks");
+            assert_eq!(
+                std::fs::read(original.join("native-writer-finished")).unwrap(),
+                b"original admitted writer joined"
+            );
+            if replace_root {
+                assert_eq!(
+                    std::fs::read(path.join("sentinel")).unwrap(),
+                    b"replacement owner"
+                );
+                assert_eq!(std::fs::read_dir(&path).unwrap().count(), 1);
+            }
+            observations.push((replace_root, returned_early));
+        }
+        eprintln!("setup host Stop original-writer observations={observations:?}");
+        assert!(
+            observations.iter().all(|(_, early)| !early),
+            "root refusal bypassed original admitted writer drain: {observations:?}"
+        );
+    }
 
     #[test]
     fn held_fetch_retry_returns_after_admit_and_second_retry_observes_same_attempt() {

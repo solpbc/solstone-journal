@@ -113,6 +113,7 @@ pub struct OperationState {
     pub(crate) closed: bool,
     pub writes_in_flight: usize,
     maintenance_in_flight: usize,
+    pub(crate) recovery_controls_in_flight: usize,
     pub(crate) threads: Vec<thread::JoinHandle<()>>,
     pub(crate) settlement_worker: Option<thread::JoinHandle<()>>,
     pub(crate) join_batches: Vec<JoinBatch>,
@@ -134,6 +135,7 @@ impl OperationState {
             closed: false,
             writes_in_flight: 0,
             maintenance_in_flight: 0,
+            recovery_controls_in_flight: 0,
             threads: Vec::new(),
             settlement_worker: None,
             join_batches: Vec::new(),
@@ -397,6 +399,10 @@ pub(crate) fn start_worker_locked(guard: &mut OperationState, generation: u64) -
     };
     if current.generation != generation
         || is_terminal(&current.view.phase)
+        || current
+            .archive_cancellation
+            .as_ref()
+            .is_some_and(|stop| stop.is_cancelled())
         || current.worker_active
         || current.pending_handoff_terminal.is_some()
     {
@@ -605,13 +611,15 @@ pub fn begin(
     restore_key: Option<String>,
 ) -> Result<Begin, Response> {
     let mut guard = lock_for_begin(slot).map_err(|()| busy_response())?;
+    let cancellation = crate::recovery_owner::owns_recovery(kind)
+        .then(|| ArchiveCancellation::new_child(&guard.cancellation));
     Ok(install_slot(
         &mut guard.current,
         kind,
         portal_url,
         nonce,
         restore_key,
-        None,
+        cancellation,
     ))
 }
 
@@ -657,6 +665,9 @@ pub(crate) fn lock_for_begin(
     #[cfg(windows)]
     crate::archive_worker::observe_retained(&mut guard);
     if guard.closed
+        || slot.joining()
+        || slot.join_failed()
+        || !guard.join_batches.is_empty()
         || guard.writes_in_flight != 0
         || guard.archive.is_busy()
         || observe(&mut guard.current).is_some_and(|slot| !is_terminal(&slot.view.phase))
@@ -900,11 +911,20 @@ pub enum AdmitWrite {
     DuringOperation,
     IdleOnly,
     Maintenance,
+    /// Logical recovery control; blocks new operation admission while joining.
+    RecoveryControl,
 }
 
 pub struct WriteGuard {
     slot: SharedOperationSlot,
     maintenance: bool,
+    recovery_control: bool,
+}
+
+impl WriteGuard {
+    pub(crate) fn controls_recovery_of(&self, slot: &SharedOperationSlot) -> bool {
+        self.recovery_control && Arc::ptr_eq(&self.slot, slot)
+    }
 }
 
 impl Drop for WriteGuard {
@@ -917,6 +937,9 @@ impl Drop for WriteGuard {
         if self.maintenance {
             guard.maintenance_in_flight = guard.maintenance_in_flight.saturating_sub(1);
         }
+        if self.recovery_control {
+            guard.recovery_controls_in_flight = guard.recovery_controls_in_flight.saturating_sub(1);
+        }
         drop(guard);
         self.slot.notify_waiters();
     }
@@ -924,7 +947,10 @@ impl Drop for WriteGuard {
 
 pub fn admit_write(slot: &SharedOperationSlot, mode: AdmitWrite) -> Result<WriteGuard, Response> {
     #[cfg(windows)]
-    if mode != AdmitWrite::DuringOperation {
+    if !matches!(
+        mode,
+        AdmitWrite::DuringOperation | AdmitWrite::RecoveryControl
+    ) {
         use solstone_core_system::process::{
             HelperAdmissionStatus, observe_bounded_helper_admission,
         };
@@ -942,13 +968,16 @@ pub fn admit_write(slot: &SharedOperationSlot, mode: AdmitWrite) -> Result<Write
     if guard.closed {
         return Err(busy_response());
     }
-    if mode != AdmitWrite::DuringOperation {
+    if !matches!(
+        mode,
+        AdmitWrite::DuringOperation | AdmitWrite::RecoveryControl
+    ) {
         #[cfg(windows)]
         crate::archive_worker::observe_retained(&mut guard);
         let conflicting_write = match mode {
             AdmitWrite::IdleOnly => guard.writes_in_flight != 0,
             AdmitWrite::Maintenance => guard.writes_in_flight != guard.maintenance_in_flight,
-            AdmitWrite::DuringOperation => false,
+            AdmitWrite::DuringOperation | AdmitWrite::RecoveryControl => false,
         };
         if conflicting_write
             || guard.archive.is_busy()
@@ -961,9 +990,13 @@ pub fn admit_write(slot: &SharedOperationSlot, mode: AdmitWrite) -> Result<Write
     if mode == AdmitWrite::Maintenance {
         guard.maintenance_in_flight = guard.maintenance_in_flight.saturating_add(1);
     }
+    if mode == AdmitWrite::RecoveryControl {
+        guard.recovery_controls_in_flight = guard.recovery_controls_in_flight.saturating_add(1);
+    }
     Ok(WriteGuard {
         slot: Arc::clone(slot),
         maintenance: mode == AdmitWrite::Maintenance,
+        recovery_control: mode == AdmitWrite::RecoveryControl,
     })
 }
 
