@@ -305,7 +305,10 @@ fn apply_sentence_matches(
                 margin_declined_sids.contains(sentence_id),
                 acoustic_margin_declined,
             );
-        } else if best_score >= ACOUSTIC_MEDIUM {
+        } else if best_score >= ACOUSTIC_MEDIUM
+            && passes_acoustic_margin(best_score, &runner_up_scores)
+        {
+            // A medium-band match that barely leads another voice is left unnamed.
             replace_label(
                 labels,
                 *sentence_id,

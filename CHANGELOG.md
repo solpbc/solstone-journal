@@ -20,6 +20,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - an activity no longer ends holding a stretch from another part of your life. before, the stretch right after an activity could be added to it even when your journal filed that stretch elsewhere, and the activity's story mixed the two. for example, a phone recording of an airport announcement pulled in the video call you recorded right after it.
 - when a video call is on your screen with no sound, the people on the call now show as "appeared on screen". before, they could show as "heard them speak in this meeting".
 - screen text now leaves out single characters and words read with low confidence. on a phone these were often status-bar icons read as letters or symbols.
+- when a voice in a transcript sounds only a little like someone you know, and about as much like someone else, the sentence is now left without a name. before, a stranger's voice, or an airport announcement on your phone, could show up as someone you know.
 - when you record your phone's screen during a video call, the phone's own "screen sharing" panel rarely reads as you sharing your screen to the call, and an app open under the small call window rarely reads as something you shared. the call's app is also named wrongly far less often.
 
 ## [2.0.59] - 2026-10-26
