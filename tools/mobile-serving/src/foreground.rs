@@ -30,8 +30,8 @@ use solstone_core_sense::{SenseExecutor, SenseJobResult};
 use solstone_core_system::cap::DefaultCapResolver;
 use solstone_core_system::process::ChildLaunchContext;
 use solstone_core_system::queue::{
-    CallableQueueWorker, CallableTaskContext, ProcessState, ProcessStateProbe, TaskQueue,
-    TaskQueueEvent, TaskQueueEventSink, TaskQueueOptions,
+    CallableQueuePause, CallableQueueWorker, CallableTaskContext, ProcessState, ProcessStateProbe,
+    TaskQueue, TaskQueueEvent, TaskQueueEventSink, TaskQueueOptions,
 };
 
 use solstone_core_system::request::{BusTaskRequest, ExecutionRequest, ScheduledRequest, TaskArgv};
@@ -75,6 +75,12 @@ static TEST_DEPICT_DETECTION: Mutex<Option<Value>> = Mutex::new(None);
 type StartupCatchUpHook = Box<dyn FnOnce() -> Result<(), String> + Send>;
 #[cfg(all(test, feature = "full-tests"))]
 static STARTUP_AFTER_CATCH_UP: Mutex<Option<StartupCatchUpHook>> = Mutex::new(None);
+#[cfg(all(test, feature = "full-tests"))]
+static STARTUP_BEFORE_QUEUE_READY: Mutex<Option<StartupCatchUpHook>> = Mutex::new(None);
+#[cfg(all(test, feature = "full-tests"))]
+static REQUEST_SUBMITTED: Mutex<
+    Option<std::sync::mpsc::Sender<(String, solstone_core_system::queue::SubmitOutcome)>>,
+> = Mutex::new(None);
 type Checkpoint = Arc<dyn Fn() -> bool + Send + Sync>;
 #[allow(clippy::type_complexity)]
 type ForegroundRestart = Arc<dyn Fn() -> Result<(), String> + Send + Sync>;
@@ -158,6 +164,8 @@ const UNCOMPLETED_HOLD_EXIT: i32 = 4;
 
 struct InstalledWorkers {
     generation: u64,
+    queue: Weak<TaskQueue>,
+    queue_pause: Mutex<Option<CallableQueuePause>>,
     journal: PathBuf,
     sense_handle: Arc<Mutex<Option<std::thread::JoinHandle<()>>>>,
     schedule_handle: Arc<Mutex<Option<std::thread::JoinHandle<()>>>>,
@@ -196,6 +204,15 @@ fn relinquish_installed_workers(
     if !same_bound_journal(&installed.journal, journal) {
         return Err("foreground host is bound to a different journal".into());
     }
+    // Close every callable ingress/reservation and invalidate old queued
+    // references before waiting for any producer or native frame.
+    let mut pause = installed
+        .queue_pause
+        .lock()
+        .map_err(|_| "queue pause poisoned")?;
+    if let Some(queue) = installed.queue.upgrade() {
+        *pause = Some(queue.pause_callable_work()?);
+    }
     for slot in [&installed.sense_handle, &installed.schedule_handle] {
         if let Some(handle) = slot.lock().unwrap().as_ref() {
             handle.thread().unpark();
@@ -208,6 +225,9 @@ fn relinquish_installed_workers(
                 .map_err(|_| "foreground worker failed to join".to_owned())?;
         }
     }
+    if let Some(pause) = pause.as_ref() {
+        pause.drain()?;
+    }
     Ok(())
 }
 
@@ -217,6 +237,17 @@ fn resume_installed_workers(installed: &InstalledWorkers, journal: &Path) -> Res
     }
     if solstone_core_journal_io::whole_journal_restore::whole_journal_restore_blocks(journal) {
         return Ok(());
+    }
+    // A token from an older pause cannot reopen a newer queue generation.
+    {
+        let mut paused = installed
+            .queue_pause
+            .lock()
+            .map_err(|_| "queue pause poisoned")?;
+        if let Some(pause) = paused.as_ref() {
+            pause.resume()?;
+            paused.take();
+        }
     }
     let restart = installed
         .restart
@@ -395,9 +426,8 @@ mod scheduled_commands;
 #[path = "import_commands.rs"]
 mod import_commands;
 pub use import_commands::{
-    FolderCopyError, FolderCopyResult,
-    ImportContext, ImportKeepalive, ImportPreparation, ImportRequest, ImportSeamFactory,
-    PreparedImport,
+    FolderCopyError, FolderCopyResult, ImportContext, ImportKeepalive, ImportPreparation,
+    ImportRequest, ImportSeamFactory, PreparedImport,
 };
 type ImportFactorySlot = Arc<Mutex<Option<Arc<ImportSeamFactory>>>>;
 
@@ -1761,6 +1791,8 @@ impl ForegroundProcessingHost {
             let schedule_handle = Arc::new(Mutex::new(None));
             let installed = Arc::new(InstalledWorkers {
                 generation,
+                queue: Arc::downgrade(&queue),
+                queue_pause: Mutex::new(None),
                 journal: journal.clone(),
                 sense_handle: Arc::clone(&sense_handle),
                 schedule_handle: Arc::clone(&schedule_handle),
@@ -1815,6 +1847,10 @@ impl ForegroundProcessingHost {
             // Dispatch only after this owner can cancel and join every callable.
             if (host.cancelled)() {
                 return Err("thinking cancelled".into());
+            }
+            #[cfg(all(test, feature = "full-tests"))]
+            if let Some(hook) = STARTUP_BEFORE_QUEUE_READY.lock().unwrap().take() {
+                hook()?;
             }
             host.queue.set_ready();
             if let Ok(mut engine) = host.schedule_engine.lock() {
@@ -2093,18 +2129,7 @@ impl ForegroundProcessingHost {
                     connection.start();
                     let mut serial = 0_u64;
                     let mut registered = Some(registered);
-                    let mut held_requests = std::collections::VecDeque::new();
                     while !cancelled() {
-                        if !solstone_core_journal_io::whole_journal_restore::whole_journal_restore_blocks(
-                            &journal,
-                        ) {
-                            while let Some(request) = held_requests.pop_front() {
-                                if cancelled() {
-                                    break;
-                                }
-                                let _ = queue.submit(ExecutionRequest::Bus(request));
-                            }
-                        }
                         tokio::select! {
                             _ = tokio::time::sleep(Duration::from_millis(100)) => {}
                             event = connection.next_event() => {
@@ -2193,16 +2218,17 @@ impl ForegroundProcessingHost {
                                 if !general || cancelled() {
                                     continue;
                                 }
-                                // Keep the accepted request until this restore is open again.
-                                // Stop still observes `cancelled` on the next loop. The queue
-                                // and the command filter stay the subscriber's own dispatch.
-                                if solstone_core_journal_io::whole_journal_restore::whole_journal_restore_blocks(
-                                    &journal,
-                                ) {
-                                    held_requests.push_back(request);
-                                    continue;
+                                // The queue owns admission. A restore refusal must not
+                                // leave a second subscriber-owned backlog to run later.
+                                #[cfg(all(test, feature = "full-tests"))]
+                                let reference = request.reference.clone();
+                                let outcome = queue.submit(ExecutionRequest::Bus(request));
+                                #[cfg(all(test, feature = "full-tests"))]
+                                if let Some(observed) = REQUEST_SUBMITTED.lock().unwrap().as_ref() {
+                                    let _ = observed.send((reference, outcome));
                                 }
-                                let _ = queue.submit(ExecutionRequest::Bus(request));
+                                #[cfg(not(all(test, feature = "full-tests")))]
+                                let _ = outcome;
                             }
                         }
                     }
@@ -4278,6 +4304,92 @@ mod processing_proofs {
     }
 
     #[test]
+    fn recovery_cancels_pending_owner_maintenance_and_reuses_the_same_queue() {
+        use solstone_core_convey_shell::recovery_drain::{
+            relinquish_admitted_work, resume_after_whole_journal_restore,
+        };
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let (journal, payload) = journal_fixture();
+        let old_log = journal.path().join("tokens/20200101.jsonl");
+        fs::create_dir_all(old_log.parent().unwrap()).unwrap();
+        fs::write(&old_log, b"retained log until fresh post-restore request\n").unwrap();
+        let root = Arc::new(JournalRoot::open(journal.path()).unwrap());
+        let pending = Arc::new(Mutex::new(String::new()));
+        let accepted = Arc::clone(&pending);
+        let held_root = Arc::clone(&root);
+        *STARTUP_BEFORE_QUEUE_READY.lock().unwrap() = Some(Box::new(move || {
+            let reference = submit_owner_maintenance(&held_root, "health:prune-logs")?;
+            *accepted.lock().unwrap() = reference;
+            relinquish_admitted_work(held_root.canonical_path())?;
+            assert!(submit_owner_maintenance(&held_root, "health:prune-logs").is_err());
+            resume_after_whole_journal_restore(held_root.canonical_path());
+            Ok(())
+        }));
+        let host = open_host(journal.path(), &payload, Utc::now());
+        let reference = pending.lock().unwrap().clone();
+        wait_until(|| {
+            host.queue
+                .history()
+                .iter()
+                .any(|row| row.reference == reference)
+        });
+        let old = host
+            .queue
+            .history()
+            .into_iter()
+            .find(|row| row.reference == reference)
+            .unwrap();
+        assert!(
+            old_log.is_file(),
+            "old accepted request executed after restore: {old:?}"
+        );
+        assert_eq!(old.exit_status, "cancelled");
+        assert!(!host.queue.contains_reference(&reference));
+        let fresh = submit_owner_maintenance(&root, "health:prune-logs").unwrap();
+        wait_until(|| {
+            host.queue
+                .history()
+                .iter()
+                .any(|row| row.reference == fresh)
+        });
+        assert!(
+            !old_log.exists(),
+            "fresh owner request must run actual log pruning"
+        );
+        assert_eq!(
+            host.queue
+                .history()
+                .iter()
+                .find(|row| row.reference == fresh)
+                .unwrap()
+                .exit_status,
+            "ok"
+        );
+        // A failed resume retains its actual token. Superseding that token
+        // cannot be mistaken for a successful reopen on a later hook call.
+        let installed = current_installed(journal.path()).unwrap();
+        relinquish_installed_workers(&installed, journal.path()).unwrap();
+        let newer = host.queue.pause_callable_work().unwrap();
+        assert!(resume_installed_workers(&installed, journal.path()).is_err());
+        assert!(installed.queue_pause.lock().unwrap().is_some());
+        assert!(submit_owner_maintenance(&root, "health:prune-logs").is_err());
+        drop(newer);
+        relinquish_installed_workers(&installed, journal.path()).unwrap();
+        resume_installed_workers(&installed, journal.path()).unwrap();
+        assert!(installed.queue_pause.lock().unwrap().is_none());
+        fs::write(&old_log, b"fresh retry log\n").unwrap();
+        let retried = submit_owner_maintenance(&root, "health:prune-logs").unwrap();
+        wait_until(|| {
+            host.queue
+                .history()
+                .iter()
+                .any(|row| row.reference == retried)
+        });
+        assert!(!old_log.exists());
+        host.shutdown().unwrap();
+    }
+
+    #[test]
     fn repeated_old_shutdown_preserves_the_reopened_recovery_owner() {
         let _lock = TEST_LOCK
             .lock()
@@ -4486,6 +4598,11 @@ mod processing_proofs {
                 None,
             )
             .unwrap();
+            // This identity/policy fixture needs a current read, not a race
+            // with discovery's valid nonblocking queue-state refusal.
+            if let Some(mut discovery) = host.discovery.lock().unwrap().take() {
+                discovery.shutdown_checked().unwrap();
+            }
             let value = host.daily_queue_observation().unwrap().unwrap();
             identities.push((value["native_root"].clone(), value["host_instance"].clone()));
             assert_eq!(value["current"]["native_root"], value["native_root"]);
@@ -5574,6 +5691,73 @@ mod processing_proofs {
             "general subscriber must not duplicate existing service owners"
         );
         assert_eq!(heartbeat_events(temp.path(), "pass.outcome"), 1);
+        // Observe the subscriber's real admission result before clearing the
+        // hold, so buffering or a delayed client cannot masquerade as refusal.
+        let old_log = temp.path().join("tokens/20200101.jsonl");
+        fs::create_dir_all(old_log.parent().unwrap()).unwrap();
+        fs::write(&old_log, b"keep until a fresh post-restore request\n").unwrap();
+        let (submitted, receipts) = std::sync::mpsc::channel();
+        *REQUEST_SUBMITTED.lock().unwrap() = Some(submitted);
+        struct ClearRequestReceipt;
+        impl Drop for ClearRequestReceipt {
+            fn drop(&mut self) {
+                REQUEST_SUBMITTED.lock().unwrap().take();
+            }
+        }
+        let _receipt = ClearRequestReceipt;
+        solstone_core_convey_shell::recovery_drain::relinquish_admitted_work(temp.path()).unwrap();
+        let command = canonical_journal_command(["maintenance", "run", "health:prune-logs"]);
+        assert!(observer.emit(
+            "supervisor",
+            "request",
+            Map::from_iter([
+                ("cmd".into(), json!(command)),
+                ("ref".into(), json!("restore-refused-subscriber")),
+            ])
+        ));
+        let refused = receipts.recv_timeout(Duration::from_secs(5));
+        // Release even a failed control before asserting its receipt.
+        solstone_core_convey_shell::recovery_drain::resume_after_whole_journal_restore(temp.path());
+        assert_eq!(
+            refused.unwrap(),
+            (
+                "restore-refused-subscriber".to_owned(),
+                solstone_core_system::queue::SubmitOutcome::Rejected
+            )
+        );
+        assert!(old_log.is_file());
+        assert!(observer.emit(
+            "supervisor",
+            "request",
+            Map::from_iter([
+                ("cmd".into(), json!(command)),
+                ("ref".into(), json!("restore-fresh-subscriber")),
+            ])
+        ));
+        let (reference, admitted) = receipts.recv_timeout(Duration::from_secs(5)).unwrap();
+        assert_eq!(reference, "restore-fresh-subscriber");
+        assert_ne!(
+            admitted,
+            solstone_core_system::queue::SubmitOutcome::Rejected
+        );
+        wait_until(|| {
+            host.queue
+                .history()
+                .iter()
+                .any(|row| row.reference == reference && row.exit_status == "ok")
+        });
+        assert!(
+            !old_log.exists(),
+            "fresh subscriber request must perform real pruning"
+        );
+        assert!(!host.queue.contains_reference("restore-refused-subscriber"));
+        assert!(
+            !host
+                .queue
+                .history()
+                .iter()
+                .any(|row| row.reference == "restore-refused-subscriber")
+        );
         host.shutdown().unwrap();
         assert!(host.request_handle.lock().unwrap().is_none());
         runtime.block_on(observer.stop());
