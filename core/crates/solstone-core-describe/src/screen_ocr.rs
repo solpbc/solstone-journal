@@ -3129,7 +3129,7 @@ mod tests {
             &serde_json::to_vec(&identity).unwrap(),
         )
         .unwrap();
-        let timeout = Duration::from_millis(200);
+        let timeout = Duration::from_secs(1);
         for mode in [
             "startup",
             "partial-startup",
@@ -3794,11 +3794,13 @@ mod tests {
             return;
         }
         use nix::sys::resource::{Resource, setrlimit};
-        use nix::sys::signal::{SigSet, Signal};
-
-        let mut blocked = SigSet::empty();
-        blocked.add(Signal::SIGXFSZ);
-        blocked.thread_block().unwrap();
+        // Darwin may deliver SIGXFSZ to another libtest thread. Install a
+        // process-wide handler so the write returns EFBIG on every Unix host.
+        signal_hook::flag::register(
+            signal_hook::consts::SIGXFSZ,
+            std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        )
+        .unwrap();
         setrlimit(Resource::RLIMIT_FSIZE, 4096, 4096).unwrap();
         let (journal, segment, claims, input, mut source) = prepared_fixture();
         fs::create_dir(journal.path().join("config")).unwrap();

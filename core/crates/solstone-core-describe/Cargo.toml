@@ -74,7 +74,8 @@ workspace = true
 nix.workspace = true
 
 [target.'cfg(unix)'.dev-dependencies]
-nix = { workspace = true, features = ["resource", "signal"] }
+nix = { workspace = true, features = ["resource"] }
+signal-hook = "0.3.18"
 
 [target.'cfg(windows)'.dev-dependencies]
 solstone-core-depict.workspace = true

@@ -4827,6 +4827,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
+ "signal-hook",
  "solstone-core-assets",
  "solstone-core-callosum",
  "solstone-core-cli-boundary",
