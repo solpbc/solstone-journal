@@ -1505,6 +1505,10 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn pending_restore_serves_recovery_without_indexing_and_clearing_it_indexes() {
+        #[cfg(all(feature = "processing", feature = "audio"))]
+        let _foreground_lock = foreground::TEST_LOCK
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
         let directory = tempfile::tempdir().unwrap();
         let record =
             solstone_core_journal_io::whole_journal_restore::publish_whole_journal_restore(
@@ -1528,6 +1532,50 @@ mod tests {
             PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../core/payload"),
         )
         .unwrap();
+        // This is the native owner's startup order: the recovery router and
+        // paused foreground host exist before its audio readiness handshake.
+        #[cfg(all(feature = "processing", feature = "audio"))]
+        let foreground = {
+            let payload = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../core/payload");
+            let mut host = foreground::ForegroundProcessingHost::open_with_cancellation(
+                Arc::clone(&server.root),
+                &payload,
+                Arc::new(|| false),
+                Arc::new(std::sync::atomic::AtomicBool::new(false)),
+                server.backup_dependencies(),
+            )
+            .unwrap();
+            host.start_workers().unwrap();
+            let pending = directory
+                .path()
+                .join(solstone_core_journal_io::whole_journal_restore::WHOLE_JOURNAL_RESTORE_FILE);
+            let before = std::fs::read(&pending).unwrap();
+            let models = directory.path().join("unprepared-models");
+            let scratch = directory.path().join("unused-audio-scratch");
+            let configured = host.enable_audio(
+                models.clone(),
+                models.join("model-does-not-exist.gguf"),
+                scratch.clone(),
+            );
+            assert!(
+                configured.is_ok(),
+                "cold recovery handshake refused: {configured:?}"
+            );
+            assert_eq!(std::fs::read(&pending).unwrap(), before);
+            assert!(!models.exists() && !scratch.exists());
+            assert_eq!(host.audio_status()["generation"], 0);
+            assert!(host.resume_audio().is_err(), "ordinary audio stays fenced");
+            assert!(
+                foreground::submit_owner_maintenance(&server.root, "health:prune-logs").is_err()
+            );
+            assert!(
+                solstone_core_journal_io::whole_journal_restore::begin_target_use_bound(
+                    Arc::clone(&server.root)
+                )
+                .is_err()
+            );
+            host
+        };
         let config = directory.path().join("config/journal.json");
         assert!(!config.exists());
         let db = solstone_core_indexer_store::db::db_path(directory.path());
@@ -1574,9 +1622,32 @@ mod tests {
             &record,
         )
         .unwrap();
+        #[cfg(all(feature = "processing", feature = "audio"))]
+        {
+            solstone_core_convey_shell::recovery_drain::resume_after_whole_journal_restore(
+                directory.path(),
+            );
+            foreground.resume_audio().unwrap();
+            // The same configured worker advances its ordinary resume epoch.
+            assert_eq!(foreground.audio_status()["generation"], 1);
+        }
         let indexed = server.index().unwrap();
         assert_eq!(indexed["failed"], 0);
         assert!(db.is_file());
+        #[cfg(all(feature = "processing", feature = "audio"))]
+        {
+            foreground.shutdown().unwrap();
+            assert!(
+                foreground
+                    .enable_audio(
+                        directory.path().join("unprepared-models"),
+                        directory.path().join("missing-model.gguf"),
+                        directory.path().join("unused-audio-scratch"),
+                    )
+                    .is_err(),
+                "joined Stop cannot be reopened by audio configuration"
+            );
+        }
         server.shutdown_for_retirement().unwrap();
     }
 

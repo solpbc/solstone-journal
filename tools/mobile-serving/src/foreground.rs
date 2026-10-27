@@ -2550,14 +2550,6 @@ impl ForegroundProcessingHost {
         model: PathBuf,
         scratch: PathBuf,
     ) -> Result<(), String> {
-        if solstone_core_journal_io::whole_journal_restore::whole_journal_restore_blocks(
-            &self.journal,
-        ) {
-            return Err(
-                solstone_core_journal_io::whole_journal_restore::WHOLE_JOURNAL_RESTORE_NOT_READY
-                    .into(),
-            );
-        }
         if (self.cancelled)() {
             return Err("thinking cancelled".into());
         }
@@ -2566,6 +2558,10 @@ impl ForegroundProcessingHost {
             return Err("thinking cancelled".into());
         }
         if state.is_none() {
+            // Native startup must finish this configuration handshake before
+            // showing recovery. for_host only retains configuration: it opens
+            // no model/file and starts no thread. The paused Sense/queue
+            // owners still fence all processing until restore completes.
             *state = Some(AudioConfig {
                 worker: Arc::new(crate::audio::AudioWorker::for_host(
                     Arc::clone(&self.root),
@@ -2576,7 +2572,10 @@ impl ForegroundProcessingHost {
                 )),
             });
         }
-        if let Some(handle) = self.sense_handle.lock().unwrap().as_ref() {
+        if !solstone_core_journal_io::whole_journal_restore::whole_journal_restore_blocks(
+            &self.journal,
+        ) && let Some(handle) = self.sense_handle.lock().unwrap().as_ref()
+        {
             handle.thread().unpark();
         }
         Ok(())
