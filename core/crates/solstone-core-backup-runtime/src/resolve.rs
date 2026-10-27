@@ -469,13 +469,7 @@ pub fn resolve_restic_member(executable: &Path) -> Result<PathBuf, ClosedToolErr
 pub fn resolve_rclone_member(executable: &Path) -> Result<PathBuf, ClosedToolError> {
     #[cfg(not(windows))]
     {
-        let package = admit_package(executable, true)?;
-        package
-            .member(RCLONE_MEMBER)
-            .map_err(|refusal| ClosedToolError::RcloneUnavailable {
-                detail: refusal.code.to_owned(),
-                guidance: refusal.guidance.to_owned(),
-            })
+        resolve_rclone_member_for_platform(executable, host_tool_platform(), &LiveAndroidAuthority)
     }
 
     #[cfg(windows)]
@@ -492,6 +486,38 @@ pub fn resolve_rclone_member(executable: &Path) -> Result<PathBuf, ClosedToolErr
             }
         })
     }
+}
+
+#[cfg(not(windows))]
+fn resolve_rclone_member_for_platform(
+    executable: &Path,
+    platform: ToolPlatform,
+    android_authority: &dyn AndroidAuthority,
+) -> Result<PathBuf, ClosedToolError> {
+    match platform {
+        #[cfg(target_os = "ios")]
+        ToolPlatform::IosCallable => resolve_packaged_rclone_member(executable),
+        ToolPlatform::Desktop => resolve_packaged_rclone_member(executable),
+        ToolPlatform::AndroidAarch64 => {
+            android_authority
+                .revalidate()
+                .map_err(|refusal| map_android_refusal(&refusal, true))?;
+            android_authority
+                .resolve_tool(AndroidServiceToolRole::Rclone)
+                .map_err(|refusal| map_android_refusal(&refusal, true))
+        }
+    }
+}
+
+#[cfg(not(windows))]
+fn resolve_packaged_rclone_member(executable: &Path) -> Result<PathBuf, ClosedToolError> {
+    let package = admit_package(executable, true)?;
+    package
+        .member(RCLONE_MEMBER)
+        .map_err(|refusal| ClosedToolError::RcloneUnavailable {
+            detail: refusal.code.to_owned(),
+            guidance: refusal.guidance.to_owned(),
+        })
 }
 
 #[cfg(not(windows))]
@@ -892,6 +918,64 @@ mod tests {
                 Ok(())
             }
         }
+    }
+
+    #[test]
+    fn android_rclone_resolution_uses_admitted_service_member() {
+        let expected = PathBuf::from("/data/app/lib/arm64/librclone.so");
+        let auth = MockAndroidAuthority {
+            restic: Ok(PathBuf::from("/data/app/lib/arm64/librestic.so")),
+            rclone: Ok(expected.clone()),
+            revalidate_err: None,
+        };
+        let actual = resolve_rclone_member_for_platform(
+            Path::new("/system/bin/app_process64"),
+            ToolPlatform::AndroidAarch64,
+            &auth,
+        )
+        .unwrap();
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn android_rclone_resolution_refuses_missing_service_member() {
+        let auth = MockAndroidAuthority {
+            restic: Ok(PathBuf::from("/data/app/lib/arm64/librestic.so")),
+            rclone: Err(AndroidServiceToolsRefusal::MemberMissing {
+                path: "librclone.so".into(),
+                role: Some(AndroidServiceToolRole::Rclone),
+            }),
+            revalidate_err: None,
+        };
+        let err = resolve_rclone_member_for_platform(
+            Path::new("/system/bin/app_process64"),
+            ToolPlatform::AndroidAarch64,
+            &auth,
+        )
+        .unwrap_err();
+        assert_eq!(err.to_string(), "rclone_unavailable");
+        assert_eq!(err.detail(), code::MEMBER_MISSING);
+        assert_eq!(err.guidance(), guidance::PACKAGE_MISMATCH);
+    }
+
+    #[test]
+    fn android_rclone_resolution_refuses_changed_service_authority() {
+        let auth = MockAndroidAuthority {
+            restic: Ok(PathBuf::from("/data/app/lib/arm64/librestic.so")),
+            rclone: Ok(PathBuf::from("/data/app/lib/arm64/librclone.so")),
+            revalidate_err: Some(AndroidServiceToolsRefusal::MemberChanged {
+                path: "librclone.so".into(),
+                role: Some(AndroidServiceToolRole::Rclone),
+            }),
+        };
+        let err = resolve_rclone_member_for_platform(
+            Path::new("/system/bin/app_process64"),
+            ToolPlatform::AndroidAarch64,
+            &auth,
+        )
+        .unwrap_err();
+        assert_eq!(err.to_string(), "rclone_unavailable");
+        assert_eq!(err.detail(), code::MEMBER_CHANGED);
     }
 
     #[cfg(not(windows))]
