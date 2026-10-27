@@ -40,6 +40,7 @@ use solstone_core_backup_runtime::{
 pub mod archive_operation;
 pub mod archive_worker;
 mod assets;
+pub mod creator_recovery;
 mod first_restore;
 pub use first_restore::{EmbeddedRestoreLifecycle, PausedRestore};
 mod callosum;

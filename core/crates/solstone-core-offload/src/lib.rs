@@ -5,6 +5,7 @@
 
 pub mod cli_restore;
 pub mod cli_run;
+pub mod creator_recovery;
 pub mod ledger;
 pub mod marks;
 pub mod measurement;

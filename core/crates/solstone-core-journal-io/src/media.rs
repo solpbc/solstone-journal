@@ -40,6 +40,8 @@ pub use activity_carrier::{
 };
 mod observation;
 pub use observation::{MediaEntry, MediaRead};
+mod retained_read;
+pub use retained_read::RetainedMediaFile;
 mod removal;
 pub use removal::{
     InterruptedRemovalRecord, InterruptedRemovalResolution, MediaRemoval, OriginalName,

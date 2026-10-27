@@ -153,7 +153,10 @@ fn serving(root: &Path, command: &str) -> Result<Value, String> {
         request_serving_stop();
     }
     // Capture before any wait, so a request cannot adopt a later lifetime.
-    let generation = if matches!(operation, "generate" | "talent" | "start" | "audio-enable") {
+    let generation = if matches!(
+        operation,
+        "generate" | "talent" | "start" | "audio-enable" | "creator-recovery"
+    ) {
         admitted_generation(&command, &THINKING_GENERATION)?
     } else {
         THINKING_GENERATION.load(Ordering::SeqCst)
@@ -258,8 +261,34 @@ fn serving(root: &Path, command: &str) -> Result<Value, String> {
         return Ok(json!({"outcome":format!("{outcome:?}"),
             "events":String::from_utf8(events).map_err(|e|e.to_string())?}));
     }
+    #[cfg(all(test, feature = "full-tests", target_os = "linux"))]
+    creator_recovery_tests::before_serving_wait(operation);
     let mut server = SERVING.lock().map_err(|_| "serving lock poisoned")?;
     match operation {
+        "creator-recovery" => {
+            if generation & 1 == 0 || server.is_some() {
+                return Err("creator recovery requires the stopped journal".into());
+            }
+            match retirement::admission() {
+                retirement::Outcome::Stopped => {}
+                retirement::Outcome::Pending => return Err("server stop pending".into()),
+                retirement::Outcome::Failed => {
+                    return Err("server stop failed; journal retained".into());
+                }
+            }
+            admitted_generation(&command, &THINKING_GENERATION)?;
+            let binding = std::sync::Arc::new(
+                jio::JournalRoot::open(root).map_err(|error| error.to_string())?,
+            );
+            let checkpoint_root = std::sync::Arc::clone(&binding);
+            journal_mobile_serving::creator_recovery::run_stopped(binding, &command, &|| {
+                if thinking_cancelled(&THINKING_GENERATION, generation, &checkpoint_root) {
+                    Err("creator recovery was stopped".into())
+                } else {
+                    Ok(())
+                }
+            })
+        }
         "start" => {
             match retirement::admission() {
                 retirement::Outcome::Stopped => {}
@@ -1483,3 +1512,7 @@ mod retirement_start_tests {
         fs::remove_dir_all(&directory).unwrap();
     }
 }
+
+#[cfg(all(test, feature = "full-tests"))]
+#[cfg(target_os = "linux")]
+mod creator_recovery_tests;

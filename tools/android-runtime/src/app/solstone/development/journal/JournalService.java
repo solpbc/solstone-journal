@@ -23,6 +23,7 @@ public class JournalService extends Service {
     final ThinkingAdmission thinkingAdmission = execution.admission;
     volatile boolean destroyed;
     OwnerFolderServiceEndpoint folderRequests;
+    CreatorRecoveryEndpoint creatorRecovery;
     SavedFolderServiceProvider savedFolderProvider;
     long savedFolderProviderIdentity;
     String serviceToolAdmission;
@@ -44,8 +45,10 @@ public class JournalService extends Service {
         evidence("service_tools_admission_finished", Long.toString(SystemClock.elapsedRealtime() - admissionStarted));
         folderRequests = new OwnerFolderServiceEndpoint(this,ownerRequests,() -> destroyed,
             (target,id,result) -> respond(target,id,result,0));
+        creatorRecovery=new CreatorRecoveryEndpoint(this);
         incoming=new Messenger(new Handler(Looper.getMainLooper()) {
             public void handleMessage(Message m) {
+                if (creatorRecovery.handle(m)) return;
                 if (folderRequests.handle(m)) return;
                 final String op=m.getData().getString("op");
                 final String root=m.getData().getString("root");
@@ -155,11 +158,17 @@ public class JournalService extends Service {
                     try { operation = new JSONObject(op.substring(6)).optString("op"); }
                     catch (JSONException e) { /* Native boundary returns the parse refusal. */ }
                 }
+                if (!CreatorRecoveryState.genericAllowed(operation)) {
+                    respond(reply,id,"{\"ok\":false,\"error\":\"use the stopped-owner recovery control\"}",0);return;
+                }
                 final boolean isThinking = operation.equals("generate") || operation.equals("talent");
                 final boolean isToolStatus = operation.equals("service-tools");
                 final boolean isStop = operation.equals("stop"), isStart = operation.equals("start");
+                if (isStart && !creatorRecovery.ordinaryStartAllowed()) {
+                    respond(reply,id,"{\"ok\":false,\"error\":\"storage recovery outcome is unresolved\"}",0);return;
+                }
                 String admitted = op;
-                if (isThinking || isStart || operation.equals("audio-enable")) {
+                if (isThinking || isStart || operation.equals("audio-enable") || operation.equals("creator-recovery")) {
                     try {
                         JSONObject nativeGeneration = new JSONObject(Native.run("", "thinking-generation", 1));
                         if (!nativeGeneration.optBoolean("ok")) throw new JSONException("native admission unavailable");
@@ -190,7 +199,9 @@ public class JournalService extends Service {
                                 thinkingAdmission.awaitIdle();
                             }
                             String result;
-                            if (ticket != null && !ticket.current()) {
+                            if (isStart && !creatorRecovery.ordinaryStartAllowed()) {
+                                result="{\"ok\":false,\"error\":\"storage recovery outcome is unresolved\"}";
+                            } else if (ticket != null && !ticket.current()) {
                                 result="{\"ok\":false,\"error\":\"server stopped\"}";
                             } else {
                                 result=Native.run(root,admittedOp,count);
@@ -312,6 +323,7 @@ public class JournalService extends Service {
     public IBinder onBind(Intent i) { return incoming.getBinder(); }
     public void onDestroy() {
         destroyed = true;
+        if (creatorRecovery != null) creatorRecovery.close();
         ownerRequests.shutdown();
         evidence("service_destroyed","last binding released");
         execution.retire(this::cancelNativeWork, () -> Native.run("", "serve:{\"op\":\"stop\"}", 1));
