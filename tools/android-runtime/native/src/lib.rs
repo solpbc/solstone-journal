@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use journal_mobile_serving::stop_diagnostics;
 use serde_json::{Value, json};
 use solstone_core_indexer_query::{OwnerBoundary, SearchRequest};
 use solstone_core_journal_io as jio;

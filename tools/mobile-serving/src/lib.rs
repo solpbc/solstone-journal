@@ -28,6 +28,7 @@ mod brain;
 mod direct_restore;
 #[cfg(unix)]
 mod owner_response;
+pub mod stop_diagnostics;
 #[cfg(unix)]
 pub use owner_response::{OwnerResponseHead, next_owner_request_id};
 pub mod owner_bridge;
@@ -721,6 +722,7 @@ impl MobileServing {
     /// On failure the caller must retain this value, including its Runtime.
     pub fn shutdown_for_retirement(&self) -> Result<(), ShutdownFailure> {
         use std::sync::atomic::Ordering;
+        use stop_diagnostics::Phase;
         if self.shutdown_failed.load(Ordering::Acquire) {
             return Err(ShutdownFailure);
         }
@@ -732,7 +734,8 @@ impl MobileServing {
         if let Some(audio) = &self.audio {
             audio.stop();
         }
-        let mut service_owner = self.services.lock().unwrap_or_else(|p| p.into_inner());
+        let mut service_owner =
+            Phase::ServiceOwnerLock.run(|| self.services.lock().unwrap_or_else(|p| p.into_inner()));
         if self.shutdown_failed.load(Ordering::Acquire) {
             return Err(ShutdownFailure);
         }
@@ -744,7 +747,10 @@ impl MobileServing {
         );
         let lifetime = self.handle.backup_dependencies().lifetime();
         lifetime.request_stop();
-        if self.import_route.retire().is_err() {
+        if Phase::ImportRetire
+            .run(|| self.import_route.retire())
+            .is_err()
+        {
             self.shutdown_failed.store(true, Ordering::Release);
             return Err(ShutdownFailure);
         }
@@ -757,12 +763,16 @@ impl MobileServing {
         }
         self.handle.shutdown();
         #[cfg(unix)]
-        if self.runtime.block_on(self.owner_responses.drain()).is_err() {
+        if Phase::OwnerResponseDrain
+            .run(|| self.runtime.block_on(self.owner_responses.drain()))
+            .is_err()
+        {
             self.shutdown_failed.store(true, Ordering::Release);
             return Err(ShutdownFailure);
         }
         if let Some(services) = service_owner.take() {
             let _ = services.shutdown.send(true);
+            Phase::ServiceTasksJoin.entered();
             self.runtime.block_on(async {
                 for task in services.tasks {
                     if let Err(failure) = task.await {
@@ -785,11 +795,13 @@ impl MobileServing {
                     self.shutdown_failed.store(true, Ordering::Release);
                 }
             });
+            Phase::ServiceTasksJoin.returned();
             if self.shutdown_failed.load(Ordering::Acquire) {
                 return Err(ShutdownFailure);
             }
         }
-        self.runtime.block_on(self.handle.shutdown_and_wait());
+        Phase::ShellDrain.run(|| self.runtime.block_on(self.handle.shutdown_and_wait()));
+        Phase::BackupLifetimeDrain.entered();
         loop {
             match lifetime.drain(
                 self.runtime.handle(),
@@ -803,10 +815,13 @@ impl MobileServing {
                 }
             }
         }
-        solstone_core_journal_io::whole_journal_restore::wait_for_target_use_to_end(
-            self.root.canonical_path(),
-        );
-        self.runtime.block_on(self.bus.stop());
+        Phase::BackupLifetimeDrain.returned();
+        Phase::TargetUseDrain.run(|| {
+            solstone_core_journal_io::whole_journal_restore::wait_for_target_use_to_end(
+                self.root.canonical_path(),
+            );
+        });
+        Phase::BusStop.run(|| self.runtime.block_on(self.bus.stop()));
         self.recovery_hooks.clear();
         solstone_core_journal_io::whole_journal_restore::release_target_for_restore(
             self.root.canonical_path(),
@@ -1009,6 +1024,47 @@ mod tests {
             "non-reading views must not hold retirement"
         );
         drop(readers);
+    }
+
+    #[test]
+    fn stop_phase_distinguishes_retained_backup_custody_from_returned_shutdown() {
+        use crate::stop_diagnostics::Phase;
+        let (server, _directory) = fixture();
+        let lifetime = server.handle.backup_dependencies().lifetime();
+        let permit = lifetime.admit_maintenance().unwrap();
+        let (events, observed) = std::sync::mpsc::channel();
+        let stopping = std::thread::spawn(move || {
+            let result =
+                crate::stop_diagnostics::observe(events, || server.shutdown_for_retirement());
+            (server, result)
+        });
+        let mut phases = Vec::new();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            let event = observed
+                .recv_timeout(deadline.saturating_duration_since(Instant::now()))
+                .expect("actual service shutdown reached its retained backup lifetime");
+            phases.push(event);
+            if event == (Phase::BackupLifetimeDrain, false) {
+                break;
+            }
+        }
+        assert!(
+            !stopping.is_finished(),
+            "retained write must prevent completion"
+        );
+        assert!(!phases.contains(&(Phase::BackupLifetimeDrain, true)));
+        drop(permit);
+        let (server, result) = stopping.join().unwrap();
+        result.unwrap();
+        phases.extend(observed.try_iter());
+        assert!(phases.contains(&(Phase::BackupLifetimeDrain, true)));
+        assert!(phases.contains(&(Phase::TargetUseDrain, true)));
+        assert!(
+            server
+                .shutdown_complete
+                .load(std::sync::atomic::Ordering::Acquire)
+        );
     }
 
     #[cfg(target_os = "linux")]
