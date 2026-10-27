@@ -425,7 +425,7 @@ final class OwnerUploadBridge: NSObject, WKScriptMessageHandlerWithReply, UIDocu
   private func chooseFolder(_ body: [String: Any], reply: @escaping (Any?, String?) -> Void, sourceChange: Bool = false) {
     guard let requested = requestedAuthority(body), let id = body["id"] as? String,
           !id.isEmpty, id.utf8.count < 64, let source = body["source"] as? String,
-          (sourceChange ? ["obsidian", "audio"] : ["obsidian", "gemini", "document"]).contains(source),
+          (sourceChange ? ["obsidian", "audio"] : ["obsidian", "gemini", "document", "audio_archive"]).contains(source),
           let reference = body["client_item_id"] as? String,
           !reference.isEmpty, reference.utf8.count < 128 else {
       reply(["state": "refused", "error": OwnerUploadCopy.unreadable], nil); return

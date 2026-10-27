@@ -588,7 +588,7 @@ public final class OwnerActivity extends ServingActivity {
             try {
                 JSONObject fields = new JSONObject(encoded);
                 String source = fields.getString("source"), reference = fields.getString("client_item_id");
-                if (!("obsidian".equals(source) || "gemini".equals(source) || "document".equals(source))
+                if (!("obsidian".equals(source) || "gemini".equals(source) || "document".equals(source) || "audio_archive".equals(source))
                         || id == null || id.length() > 128 || reference.isEmpty() || reference.length() > 128) return;
                 OwnerTransport selected = transport;
                 final FolderOperation operation;

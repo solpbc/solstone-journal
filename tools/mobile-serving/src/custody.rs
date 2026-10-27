@@ -170,7 +170,9 @@ impl AcceptedInput {
         {
             return Self::capture_receipted(input, cancelled, files);
         }
-        if let Some(receipt) = solstone_core_import_host::audio_custody::read(root, input)? {
+        if let Some(receipt) =
+            solstone_core_import_host::audio_custody::read_checked(root, input, cancelled)?
+        {
             let mut accepted = Self::capture_receipted(input, cancelled, vec![receipt])?;
             if let Some(accepted) = &mut accepted {
                 accepted.import_root = Some(std::sync::Arc::clone(root));
@@ -266,6 +268,21 @@ mod import_tests {
         let input = path.join("imported_audio.wav");
         fs::write(&input, b"accepted original").unwrap();
         let root = Arc::new(JournalRoot::open(temp.path()).unwrap());
+        for (stream, key) in [("import.audio", "120000_300"), ("import.text", "120000_3")] {
+            let other = temp
+                .path()
+                .join("chronicle/20261026")
+                .join(stream)
+                .join(key);
+            fs::create_dir_all(&other).unwrap();
+            let unwitnessed = other.join("original.wav");
+            fs::write(&unwitnessed, b"not accepted by current bytes").unwrap();
+            assert!(
+                AcceptedInput::capture_bound(&root, &unwitnessed, &|| false)
+                    .unwrap()
+                    .is_none()
+            );
+        }
         assert!(
             AcceptedInput::capture_bound(&root, &input, &|| false)
                 .unwrap()

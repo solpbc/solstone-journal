@@ -13,6 +13,7 @@ use axum::{
 };
 
 mod assets;
+mod audio_archive;
 mod callosum;
 mod content;
 mod embedded_route;

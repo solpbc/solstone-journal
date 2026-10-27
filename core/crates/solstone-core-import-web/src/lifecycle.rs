@@ -1240,6 +1240,9 @@ pub(crate) fn command(
     metadata: &ImportMetadata,
     force: bool,
 ) -> Vec<String> {
+    if crate::audio_archive::selected(metadata) {
+        return crate::audio_archive::command(path, metadata);
+    }
     // This request path is an intentionally unvalidated trust boundary: iOS echoes metadata.file_path.
     let mut cmd = vec![
         "solstone".to_owned(),
@@ -1357,6 +1360,19 @@ pub(crate) async fn run_start(
         return replay_body(root, id);
     }
     if !force && let Some(id) = resolved_id.as_deref() {
+        if let Ok(metadata) = read_import_metadata(root, id) {
+            match crate::audio_archive::completed_run(root, &data, &metadata) {
+                Ok(Some(run_id)) => return replay_body(root, &run_id),
+                Ok(None) => (),
+                Err(error) => {
+                    return crate::preview::preview_error_response(
+                        StatusCode::BAD_REQUEST,
+                        "import_preview_failed",
+                        &error,
+                    );
+                }
+            }
+        }
         let projection = solstone_core_import::project_import_result(root, id);
         let should_replay = match projection.status {
             solstone_core_import::ProjectionStatus::Running
@@ -1843,6 +1859,15 @@ where
         let mut command_metadata = plan.metadata.clone();
         if let Some(pending) = pending_preview.as_ref() {
             command_metadata.insert("preview".to_owned(), pending.record.clone());
+        }
+        if crate::audio_archive::selected(&command_metadata)
+            && let Err(error) = crate::audio_archive::resume_hint(root, &mut command_metadata)
+        {
+            return crate::preview::preview_error_response(
+                StatusCode::BAD_REQUEST,
+                "import_preview_failed",
+                &error,
+            );
         }
         let cmd = command(&plan.command_path, timestamp, &command_metadata, force);
         // Admit the planned command before relocating or writing the owner date.

@@ -10,6 +10,10 @@ use solstone_core_generate::{
 };
 use std::path::Path;
 
+#[cfg(feature = "audio")]
+#[path = "import_route_archive_model_tests.rs"]
+mod archive_model_effects;
+
 #[derive(Default)]
 struct RecordedGenerate {
     calls: Mutex<Vec<String>>,

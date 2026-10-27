@@ -99,6 +99,17 @@ mod native {
     /// Read only a complete receipt beneath the original retained journal root.
     /// The consumer still hashes its retained input and compares this witness.
     pub fn read(root: &JournalRoot, input: &Path) -> Result<Option<(u64, String)>, String> {
+        read_checked(root, input, &|| !solstone_core_import::work_continues())
+    }
+
+    pub fn read_checked(
+        root: &JournalRoot,
+        input: &Path,
+        cancelled: &dyn Fn() -> bool,
+    ) -> Result<Option<(u64, String)>, String> {
+        if cancelled() {
+            return Err("custody verification cancelled".into());
+        }
         root.revalidate_canonical_binding()
             .map_err(|e| e.to_string())?;
         let relative = input
@@ -121,7 +132,9 @@ mod native {
             return Err("imported audio parent changed".into());
         }
         let Some(receipt) = receipt else {
-            return Ok(None);
+            return solstone_core_import::audio_archive::read_published_part_receipt_bound(
+                root, input, cancelled,
+            );
         };
         let receipt: Receipt = serde_json::from_slice(&receipt.bytes)
             .map_err(|_| "unreadable imported audio custody")?;
@@ -138,4 +151,4 @@ mod native {
 }
 
 #[cfg(unix)]
-pub use native::{publish, read};
+pub use native::{publish, read, read_checked};

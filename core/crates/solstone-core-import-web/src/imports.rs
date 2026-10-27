@@ -96,6 +96,16 @@ const SOURCES: &[SourceMetadata] = &[
         accept: ".zip",
     },
     SourceMetadata {
+        name: "audio_archive",
+        display_name: "audio archive",
+        icon: "archive",
+        description: "bring in Ogg Opus recordings with their original recording times",
+        input_type: "path_input",
+        upload_prompt: "paste the full path to your recordings folder",
+        has_guide: false,
+        accept: "",
+    },
+    SourceMetadata {
         name: "recording",
         display_name: "meeting audio",
         icon: "mic",
@@ -225,6 +235,17 @@ pub(crate) fn load_import_info(root: &Path, timestamp: &str) -> Result<ImportInf
     let mut imported_at = created_at;
     // Reference parity: a malformed optional import.json is swallowed and contributes no ten fields.
     if let Ok(metadata) = object_from_file(&directory.join("import.json")) {
+        if crate::audio_archive::selected(&metadata) {
+            match crate::audio_archive::run_id(root, &metadata) {
+                Ok(Some(id)) => {
+                    values.insert("archive_run_id".into(), json!(id));
+                }
+                Ok(None) => (),
+                Err(_) => {
+                    values.insert("archive_lookup_unknown".into(), json!(true));
+                }
+            }
+        }
         for key in [
             "original_filename",
             "file_size",
@@ -333,11 +354,17 @@ pub(crate) fn source_display(name: &str) -> Option<String> {
 }
 
 pub(crate) async fn sources() -> Response {
-    let items: Vec<Value> = SOURCES.iter().map(|item| json!({
+    let items: Vec<Value> = SOURCES.iter().map(|item| {
+        let mut value = json!({
         "name": item.name, "display_name": item.display_name, "icon": item.icon,
         "description": item.description, "input_type": item.input_type, "upload_prompt": item.upload_prompt,
         "has_guide": item.has_guide, "accept": item.accept, "icon_svg": ICONS.get(item.icon),
-    })).collect();
+        });
+        if item.name == "audio_archive" {
+            value["time_zones"] = json!(chrono_tz::TZ_VARIANTS.iter().map(|zone| zone.name()).collect::<Vec<_>>());
+        }
+        value
+    }).collect();
     json_response(
         StatusCode::OK,
         json!({"items": items, "total": SOURCES.len()}),
@@ -372,6 +399,17 @@ pub(crate) async fn list(
         let Ok(mut info) = load_import_info(&state.root, &timestamp) else {
             continue;
         };
+        // Keep the selected-source row for reference recovery, and show its
+        // indexed run once in ordinary history after native admission.
+        if client_item.is_none()
+            && info
+                .values
+                .get("archive_run_id")
+                .and_then(Value::as_str)
+                .is_some()
+        {
+            continue;
+        }
         let source_type = info
             .values
             .get("source_type")
@@ -491,6 +529,26 @@ fn detail_sync(state: AppState, timestamp: String) -> Response {
             .map(Value::Object)
             .unwrap_or(Value::Null),
     );
+    if body
+        .get("import_json")
+        .and_then(Value::as_object)
+        .is_some_and(crate::audio_archive::selected)
+    {
+        body.insert(
+            "archive_active".into(),
+            json!(
+                state
+                    .route
+                    .as_ref()
+                    .is_some_and(|slot| slot.retains(&timestamp))
+            ),
+        );
+        for key in ["archive_run_id", "archive_lookup_unknown"] {
+            if let Some(value) = info.values.get(key) {
+                body.insert(key.into(), value.clone());
+            }
+        }
+    }
     if let Ok(segments) = value_from_file(&directory.join("segments.json")) {
         body.insert("segments_json".into(), segments);
     }
