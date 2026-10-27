@@ -1213,6 +1213,63 @@ mod tests {
     }
 
     #[test]
+    fn prepare_segment_browser_rich_and_legacy_page_context() {
+        let expected = "context: background tab · media playing · solstone app paused · tab open at least 3h 5m · language en-US · safari 18.1";
+
+        let temp_rich = tempfile::tempdir().unwrap();
+        let root_rich = temp_rich.path();
+        let seg_dir_rich = root_rich.join("chronicle/20260101/default/120000_60");
+        std::fs::create_dir_all(&seg_dir_rich).unwrap();
+        std::fs::write(
+            seg_dir_rich.join("browser_events.jsonl"),
+            r#"{"t":"segment_start","ts":1,"title":"Inbox","adapter":"gmail","site":"mail.google.com","ext":"EXT-SECRET-99","tab":{"id":"TAB-ID-77","front":false,"focused":true,"age_ms":11100000},"media":{"playing":true},"solstone_paused":true,"lang":"en-US","browser":{"vendor":"safari","version":"18.1"},"blocks":[{"type":"text","text":"Hello"}]}"#,
+        )
+        .unwrap();
+
+        let value_rich =
+            prepare_segment(root_rich, "20260101", "default", "120000_60", Utc::now()).unwrap();
+        let browser_chunks_rich: Vec<&serde_json::Value> = value_rich["chunks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|chunk| chunk["type"] == "browser")
+            .collect();
+        assert!(!browser_chunks_rich.is_empty());
+        assert!(browser_chunks_rich.iter().any(|chunk| {
+            chunk["markdown"]
+                .as_str()
+                .unwrap_or_default()
+                .contains(expected)
+        }));
+
+        let temp_legacy = tempfile::tempdir().unwrap();
+        let root_legacy = temp_legacy.path();
+        let seg_dir_legacy = root_legacy.join("chronicle/20260101/default/120000_60");
+        std::fs::create_dir_all(&seg_dir_legacy).unwrap();
+        std::fs::write(
+            seg_dir_legacy.join("browser_events.jsonl"),
+            r#"{"t":"segment_start","ts":1,"title":"Inbox","blocks":[{"text":"Hello"}]}"#,
+        )
+        .unwrap();
+
+        let value_legacy =
+            prepare_segment(root_legacy, "20260101", "default", "120000_60", Utc::now()).unwrap();
+        let browser_chunks_legacy: Vec<&serde_json::Value> = value_legacy["chunks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|chunk| chunk["type"] == "browser")
+            .collect();
+        assert!(!browser_chunks_legacy.is_empty());
+        assert!(!browser_chunks_legacy.iter().any(|chunk| {
+            chunk["markdown"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("context:")
+        }));
+    }
+
+    #[test]
     fn md_files_includes_screen_text_and_neighbor_stem() {
         let temp = tempfile::tempdir().unwrap();
         let root = temp.path();

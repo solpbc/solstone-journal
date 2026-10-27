@@ -2018,6 +2018,43 @@ mod tests {
     }
 
     #[test]
+    fn browser_percept_rich_and_legacy_page_context() {
+        let expected = "context: background tab · media playing · solstone app paused · tab open at least 3h 5m · language en-US · safari 18.1";
+
+        let root_rich = TempDir::new().unwrap();
+        let segment_rich = segment(&root_rich);
+        fs::write(
+            segment_rich.join("browser_events.jsonl"),
+            r#"{"t":"segment_start","ts":1,"title":"Inbox","adapter":"gmail","site":"mail.google.com","ext":"EXT-SECRET-99","tab":{"id":"TAB-ID-77","front":false,"focused":true,"age_ms":11100000},"media":{"playing":true},"solstone_paused":true,"lang":"en-US","browser":{"vendor":"safari","version":"18.1"},"blocks":[{"type":"text","text":"Hello"}]}"#,
+        )
+        .unwrap();
+
+        let (markdown_rich, _) = cluster(
+            root_rich.path(),
+            DAY,
+            &sources(false, true, TalentSource::Disabled),
+        );
+        assert!(markdown_rich.contains("### Browser Content"));
+        assert!(markdown_rich.contains(expected));
+
+        let root_legacy = TempDir::new().unwrap();
+        let segment_legacy = segment(&root_legacy);
+        fs::write(
+            segment_legacy.join("browser_events.jsonl"),
+            r#"{"t":"segment_start","ts":1,"title":"Inbox","blocks":[{"text":"Hello"}]}"#,
+        )
+        .unwrap();
+
+        let (markdown_legacy, _) = cluster(
+            root_legacy.path(),
+            DAY,
+            &sources(false, true, TalentSource::Disabled),
+        );
+        assert!(markdown_legacy.contains("### Browser Content"));
+        assert!(!markdown_legacy.contains("context:"));
+    }
+
+    #[test]
     fn screen_talent_projection_is_private_to_its_explicit_reader() {
         let root = TempDir::new().unwrap();
         let segment = segment(&root);
