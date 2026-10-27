@@ -98,6 +98,20 @@ pub struct HandoffResult {
     pub subscribe_url: Option<String>,
 }
 
+/// Transport facts for the owner's diagnostic readback. These contain no URL,
+/// request body, credential, server text or arbitrary error message.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(tag = "category", rename_all = "snake_case")]
+pub enum TransportFailure {
+    Io { kind: String, os_error: Option<i32> },
+    Dns,
+    Tls,
+    Protocol,
+    Redirect,
+    Configuration,
+    Other,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct OperationHandle {
     generation: u64,
@@ -115,6 +129,7 @@ struct OperationEntry {
     ended: Option<Instant>,
     generation: u64,
     closed_waiters: Vec<Waker>,
+    transport_failure: Option<TransportFailure>,
 }
 
 #[derive(Default)]
@@ -171,6 +186,7 @@ impl OperationRegistry {
             ended: None,
             generation,
             closed_waiters: Vec::new(),
+            transport_failure: None,
         };
         let payload = payload(&entry, now, false);
         state.entries.insert(service.to_owned(), entry);
@@ -243,6 +259,28 @@ impl OperationRegistry {
         true
     }
 
+    /// Attach only locally classified transport facts to the still-open attempt.
+    /// A cancelled, closed or replaced generation cannot publish diagnostics.
+    pub fn record_transport_failure(
+        &self,
+        service: &str,
+        handle: OperationHandle,
+        failure: TransportFailure,
+    ) -> bool {
+        let mut state = self
+            .state
+            .lock()
+            .expect("operation registry lock is not poisoned");
+        let Some(entry) = state.entries.get_mut(service) else {
+            return false;
+        };
+        if entry.generation != handle.generation || entry.ended.is_some() {
+            return false;
+        }
+        entry.transport_failure = Some(failure);
+        true
+    }
+
     pub fn finish(&self, service: &str, handle: OperationHandle, result: HandoffResult) -> bool {
         let mut state = self
             .state
@@ -253,6 +291,9 @@ impl OperationRegistry {
         };
         if entry.generation != handle.generation || entry.ended.is_some() {
             return false;
+        }
+        if result.phase != Phase::Error {
+            entry.transport_failure = None;
         }
         entry.phase = result.phase;
         entry.guidance = result.guidance;
@@ -279,6 +320,7 @@ impl OperationRegistry {
         if entry.ended.is_some() {
             return false;
         }
+        entry.transport_failure = None;
         entry.phase = result.phase;
         entry.guidance = result.guidance;
         entry.retryable = result.retryable;
@@ -380,11 +422,10 @@ fn sweep(entries: &mut HashMap<String, OperationEntry>, now: Instant) {
     });
 }
 
-/// A confidential turn-on that failed stays readable until the owner starts
-/// another one. The owner is usually in their browser when it fails, so a
-/// message that lived only for the grace window was gone before they got back.
+/// A failed service turn-on stays readable until the owner starts another one.
+/// A browser consent visit can outlast the normal terminal grace window.
 fn held_until_next_start(service: &str, entry: &OperationEntry) -> bool {
-    service == SERVICE_SPP
+    matches!(service, SERVICE_SPP | "spl" | "sme")
         && entry.ended.is_some()
         && (entry.phase == Phase::Error || entry.phase == Phase::JournalLimit)
 }
@@ -399,6 +440,7 @@ fn payload(entry: &OperationEntry, now: Instant, remap: bool) -> Value {
         "kind": entry.kind,
         "phase": phase,
         "guidance": entry.guidance,
+        "transport_failure": entry.transport_failure,
         "retryable": entry.retryable,
         "portal_url": if entry.phase.terminal() { Value::Null } else { entry.portal_url.clone().map(Value::String).unwrap_or(Value::Null) },
         "subscribe_url": entry.subscribe_url.clone().map(Value::String).unwrap_or(Value::Null),
@@ -1110,7 +1152,7 @@ mod tests {
     }
 
     #[test]
-    fn a_failed_confidential_turn_on_outlives_the_grace_window() {
+    fn failed_service_turn_ons_outlive_the_grace_window() {
         let now = Instant::now();
         let long_ago = now
             .checked_sub(std::time::Duration::from_secs(OPERATION_GRACE_SECONDS * 10))
@@ -1126,14 +1168,19 @@ mod tests {
             ended: Some(long_ago),
             generation: 1,
             closed_waiters: Vec::new(),
+            transport_failure: None,
         };
         let mut entries = HashMap::from([
             (SERVICE_SPP.to_owned(), ended(Phase::Error, None)),
             ("spl".to_owned(), ended(Phase::Error, None)),
+            ("sme".to_owned(), ended(Phase::Error, None)),
+            ("other".to_owned(), ended(Phase::Error, None)),
         ]);
         sweep(&mut entries, now);
         assert!(entries.contains_key(SERVICE_SPP));
-        assert!(!entries.contains_key("spl"));
+        assert!(entries.contains_key("spl"));
+        assert!(entries.contains_key("sme"));
+        assert!(!entries.contains_key("other"));
 
         let mut entries = HashMap::from([(
             SERVICE_SPP.to_owned(),
@@ -1169,6 +1216,34 @@ mod tests {
             .expect("a held failure is replaced by the next start");
         assert_eq!(registry.operation(SERVICE_SPP)["phase"], "starting");
         assert!(registry.operation(SERVICE_SPP)["guidance"].is_null());
+    }
+
+    #[test]
+    fn transport_diagnostics_stay_with_the_open_generation() {
+        for service in [SERVICE_SPP, "spl", "sme"] {
+            let registry = OperationRegistry::default();
+            let (first, _) = registry.start_operation(service, "enable", None).unwrap();
+            let failure = TransportFailure::Io {
+                kind: "PermissionDenied".to_owned(),
+                os_error: Some(13),
+            };
+            assert!(registry.record_transport_failure(service, first, failure.clone()));
+            assert!(registry.finish(service, first, handoff_result(HandoffCode::NetworkError)));
+            assert_eq!(
+                registry.operation_raw(service)["transport_failure"]["os_error"],
+                13
+            );
+            let (second, _) = registry.start_operation(service, "enable", None).unwrap();
+            assert!(registry.operation_raw(service)["transport_failure"].is_null());
+            assert!(!registry.record_transport_failure(service, first, failure.clone()));
+            assert!(registry.record_transport_failure(service, second, failure));
+            assert!(registry.cancel(service, handoff_result(HandoffCode::Revoked)));
+            assert!(registry.operation_raw(service)["transport_failure"].is_null());
+            let (third, _) = registry.start_operation(service, "enable", None).unwrap();
+            assert!(registry.record_transport_failure(service, third, TransportFailure::Dns));
+            assert!(registry.finish(service, third, handoff_result(HandoffCode::Approved)));
+            assert!(registry.operation_raw(service)["transport_failure"].is_null());
+        }
     }
 
     #[test]

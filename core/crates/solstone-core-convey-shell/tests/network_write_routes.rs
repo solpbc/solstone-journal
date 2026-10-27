@@ -160,11 +160,12 @@ fn plant_committed_identity(root: &Path) -> String {
 
 fn operation_keys(value: &Value) {
     let object = value.as_object().expect("operation object");
-    assert_eq!(object.len(), 7);
+    assert_eq!(object.len(), 8);
     for key in [
         "kind",
         "phase",
         "guidance",
+        "transport_failure",
         "retryable",
         "portal_url",
         "subscribe_url",
@@ -173,6 +174,7 @@ fn operation_keys(value: &Value) {
         assert!(object.contains_key(key), "operation has {key}");
     }
     assert!(object["elapsed_ms"].is_u64());
+    assert!(object["transport_failure"].is_null());
 }
 
 struct StaticPoll {

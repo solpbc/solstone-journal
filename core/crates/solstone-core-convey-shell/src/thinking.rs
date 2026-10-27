@@ -20,9 +20,9 @@ use solstone_core_callosum::{CallosumEnvelope, CallosumOneShotSender};
 use solstone_core_convey_http::envelope::error_envelope;
 use solstone_core_sol_link::ca::{jid_from_spki, load_ca};
 use solstone_core_thinking::confidential::{
-    HandoffCode, HandoffResult, OperationRegistry, Phase, SERVICE_SPP, disable_confidential,
-    handoff_error, handoff_result, provision_confidential_handoff, provision_error_handoff,
-    record_confidential_attempt,
+    HandoffCode, HandoffResult, OperationRegistry, Phase, SERVICE_SPP, TransportFailure,
+    disable_confidential, handoff_error, handoff_result, provision_confidential_handoff,
+    provision_error_handoff, record_confidential_attempt,
 };
 use solstone_core_thinking::providers::{ManagedKeyValidator, UnavailableValidator};
 
@@ -44,6 +44,7 @@ const NOT_VERIFIED_GUIDANCE: &str =
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PollOutcome {
     Continue,
+    TransportFailed(TransportFailure),
     Failed {
         token: String,
         detail: Option<String>,
@@ -312,10 +313,25 @@ impl ConfidentialPoll for PortalPoll {
 fn classify_portal_call_error(error: ureq::Error) -> PollOutcome {
     match error {
         ureq::Error::Timeout(_) => PollOutcome::Continue,
-        error => PollOutcome::Failed {
-            token: "portal_unreachable".to_owned(),
-            detail: Some(error.to_string()),
-        },
+        error => PollOutcome::TransportFailed(match error {
+            ureq::Error::Io(error) => TransportFailure::Io {
+                kind: format!("{:?}", error.kind()),
+                os_error: error.raw_os_error(),
+            },
+            ureq::Error::HostNotFound => TransportFailure::Dns,
+            ureq::Error::Tls(_) | ureq::Error::Rustls(_) | ureq::Error::Pem(_) => {
+                TransportFailure::Tls
+            }
+            ureq::Error::Protocol(_) => TransportFailure::Protocol,
+            ureq::Error::RedirectFailed | ureq::Error::TooManyRedirects => {
+                TransportFailure::Redirect
+            }
+            ureq::Error::BadUri(_)
+            | ureq::Error::InvalidProxyUrl
+            | ureq::Error::RequireHttpsOnly(_)
+            | ureq::Error::TlsRequired => TransportFailure::Configuration,
+            _ => TransportFailure::Other,
+        }),
     }
 }
 
@@ -1220,6 +1236,10 @@ async fn run_confidential_handoff(
                 }
             }
             Ok(PollOutcome::Continue) => return handoff_error("consent_timeout", None),
+            Ok(PollOutcome::TransportFailed(failure)) => {
+                operations.record_transport_failure(SERVICE_SPP, handle, failure);
+                return handoff_error("portal_unreachable", None);
+            }
             Ok(PollOutcome::Failed { token, detail }) => {
                 return handoff_error(&token, detail);
             }
@@ -2499,6 +2519,29 @@ mod tests {
         ));
     }
 
+    #[test]
+    fn portal_transport_diagnostics_exclude_request_and_error_text() {
+        let failed = classify_portal_call_error(ureq::Error::Io(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            "https://user:secret@example.test/handoff?nonce=secret",
+        )));
+        let PollOutcome::TransportFailed(failure) = failed else {
+            panic!("transport failure expected");
+        };
+        let value = serde_json::to_value(failure).unwrap();
+        assert_eq!(
+            value,
+            json!({"category":"io","kind":"PermissionDenied","os_error":null})
+        );
+        assert!(!value.to_string().contains("secret"));
+        assert_eq!(
+            classify_portal_call_error(ureq::Error::BadUri(
+                "https://user:secret@example.test/?nonce=secret".to_owned()
+            )),
+            PollOutcome::TransportFailed(super::TransportFailure::Configuration)
+        );
+    }
+
     #[tokio::test]
     async fn write_routes_register_the_reference_methods() {
         let root = temporary_journal("write-methods");
@@ -3125,6 +3168,57 @@ mod tests {
                 .and_then(|l| l.get("credential"))
                 .is_none()
         );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[tokio::test]
+    async fn confidential_transport_failure_is_readable_after_the_owned_handoff_settles() {
+        let root = temporary_journal("transport-diagnostic");
+        let operations = Arc::new(super::OperationRegistry::default());
+        let (handle, _) = operations
+            .start_operation(super::SERVICE_SPP, "enable", None)
+            .unwrap();
+        let handoffs = Arc::new(super::ServiceHandoffs::new(
+            Arc::new(solstone_core_journal_io::JournalRoot::open(&root).unwrap()),
+            None,
+        ));
+        super::spawn_confidential_handoff(
+            handoffs.clone(),
+            operations.clone(),
+            handle,
+            "https://services.solstone.app".to_owned(),
+            "unissued-test-nonce".to_owned(),
+            Arc::new(ManualPoll(|_: &str, _: &str| {
+                PollOutcome::TransportFailed(super::TransportFailure::Io {
+                    kind: "PermissionDenied".to_owned(),
+                    os_error: Some(13),
+                })
+            })),
+            Arc::new(std::time::Instant::now),
+            None,
+        )
+        .await;
+        tokio::time::timeout(std::time::Duration::from_secs(60), handoffs.join())
+            .await
+            .unwrap();
+        assert!(!operations.is_open(super::SERVICE_SPP, handle));
+        let config_bytes = fs::read(root.join("config/journal.json")).unwrap();
+        let config: serde_json::Map<String, Value> = serde_json::from_slice(&config_bytes).unwrap();
+        let value = solstone_core_thinking::providers::payload(
+            &root,
+            &config,
+            solstone_core_thinking::local::default_model(),
+            operations.operation(super::SERVICE_SPP),
+        );
+        assert_eq!(
+            value["active_lane"]["confidential_operation"]["phase"],
+            "repair_needed"
+        );
+        assert_eq!(
+            value["active_lane"]["confidential_operation"]["transport_failure"],
+            json!({"category":"io","kind":"PermissionDenied","os_error":13})
+        );
+        assert_eq!(value["active_lane"]["confidential_enabled"], false);
         let _ = fs::remove_dir_all(root);
     }
 
