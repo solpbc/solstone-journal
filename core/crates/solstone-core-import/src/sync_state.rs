@@ -585,6 +585,37 @@ pub fn public_connection(state: &SyncState) -> Option<PublicConnection> {
     })
 }
 
+/// Read folder connection metadata without confusing a legacy catalogue with
+/// an incomplete connection. This never changes state or exposes grant material.
+/// A legacy document remains eligible for begin_folder, which keeps its files.
+pub fn public_connection_status(
+    state: &SyncState,
+) -> Result<Option<PublicConnection>, FolderIdentityError> {
+    folder_backend(state.backend)?;
+    if ![
+        SOURCE_IDENTITY,
+        FOLDER_NAME,
+        REMEMBERED,
+        ACCESS_STATE,
+        ACCESS_MATERIAL,
+        RETAINED_CATALOGS,
+    ]
+    .iter()
+    .any(|key| state.root.contains_key(*key))
+    {
+        return Ok(None);
+    }
+    let connection = public_connection(state).ok_or(FolderIdentityError::MissingIdentity)?;
+    let material = state.root.get(ACCESS_MATERIAL).and_then(Value::as_str);
+    match (connection.remembered, connection.access_state) {
+        (true, AccessState::Ready) if material_text(material).is_some() => {}
+        (true, AccessState::Lost) | (false, AccessState::Absent)
+            if !state.root.contains_key(ACCESS_MATERIAL) => {}
+        _ => return Err(FolderIdentityError::MaterialRequired),
+    }
+    Ok(Some(connection))
+}
+
 /// Decide whether a remembered grant may refresh. This does not mutate state,
 /// read a directory, or return access material.
 pub fn permit_remembered_refresh(
@@ -1028,6 +1059,66 @@ mod tests {
             FolderIdentityError::IdentityPresent
         );
         assert_eq!(state, present);
+    }
+
+    #[test]
+    fn public_connection_status_preserves_legacy_catalogues_and_refuses_partial_grants() {
+        let mut legacy = obsidian_with_files();
+        legacy.root_mut().insert(
+            "source_path".into(),
+            Value::String("retained-desktop-path".into()),
+        );
+        legacy
+            .root_mut()
+            .insert("unknown".into(), serde_json::json!({"kept":true}));
+        legacy.files_mut().insert(
+            "notes/prior.md".into(),
+            serde_json::json!({"status":"imported","extra":7}),
+        );
+        let before = legacy.clone();
+        assert_eq!(public_connection_status(&legacy).unwrap(), None);
+        assert_eq!(legacy, before);
+        for key in [
+            SOURCE_IDENTITY,
+            FOLDER_NAME,
+            REMEMBERED,
+            ACCESS_STATE,
+            ACCESS_MATERIAL,
+            RETAINED_CATALOGS,
+        ] {
+            let mut partial = before.clone();
+            partial.root_mut().insert(key.into(), Value::Null);
+            let unchanged = partial.clone();
+            assert!(public_connection_status(&partial).is_err(), "{key}");
+            assert_eq!(partial, unchanged);
+        }
+        let identity = begin_folder(&mut legacy, "Notes", true, Some(SECRET)).unwrap();
+        let connected = public_connection_status(&legacy).unwrap().unwrap();
+        assert_eq!(connected.source_identity, identity);
+        for key in ["files", "source_path", "unknown"] {
+            assert_eq!(legacy.root().get(key), before.root().get(key));
+        }
+        let connected_before = legacy.clone();
+        legacy.root_mut().remove(ACCESS_MATERIAL);
+        assert!(public_connection_status(&legacy).is_err());
+        legacy = connected_before;
+        mark_access_lost(&mut legacy).unwrap();
+        assert_eq!(
+            public_connection_status(&legacy)
+                .unwrap()
+                .unwrap()
+                .access_state,
+            AccessState::Lost
+        );
+        reauthorize(&mut legacy, "Notes", false, None).unwrap();
+        assert_eq!(
+            public_connection_status(&legacy)
+                .unwrap()
+                .unwrap()
+                .access_state,
+            AccessState::Absent
+        );
+        assert!(public_connection_status(&SyncState::empty(BackendName::Oura)).is_err());
     }
 
     #[test]
