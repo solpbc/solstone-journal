@@ -52,7 +52,7 @@ fn unpublished_recorded_restore_releases_stage_and_intent_on_windows() {
     let path = intents.join(format!("{}.json", intent.event.operation_id));
     fs::write(&path, intent.encode().unwrap()).unwrap();
     let activity = ActivityLease::try_acquire(Arc::clone(&root)).unwrap();
-    let recovered = recover_abandoned_restores(&activity).expect("local recovery");
+    let recovered = recover_abandoned_restores(&activity).unwrap();
     assert_eq!(recovered.len(), 1, "{recovered:?}");
     assert_eq!(recovered[0].outcome, Ok(AbandonedRestoreRelease::Undone));
     assert!(!stage_path.exists());
