@@ -18,7 +18,7 @@ function scriptFromWorkspace() {
 }
 
 function makeContext(globals) {
-  const context = vm.createContext({ importEvents: {}, document: { getElementById: () => null, addEventListener: () => {} }, showError: message => { throw new Error(message); }, setTimeout: () => 0, clearTimeout: () => {}, ...globals });
+  const context = vm.createContext({ importEvents: {}, guidedFolderBusy: false, document: { getElementById: () => null, addEventListener: () => {} }, showError: message => { throw new Error(message); }, setTimeout: () => 0, clearTimeout: () => {}, ...globals });
   const source = scriptFromWorkspace();
   vm.runInContext(`
     const importPreviews = { guided: null, quick: null };
@@ -3454,6 +3454,175 @@ async function runHistoryFilterPaginationRaces() {
   cases += 1;
 }
 
+async function runFileAndFolderChoicesUseTheSameSourceCard() {
+  for (const source of ['gemini', 'document']) for (const native of [true, false]) {
+    const nodes = {};
+    const guide = new Element();
+    let html = '';
+    Object.defineProperty(guide,'innerHTML',{get:()=>html,set:value=>{
+      html=value;
+      for (const key of Object.keys(nodes)) delete nodes[key];
+      for (const match of value.matchAll(/\bid="([^"]+)"/g)) nodes[match[1]]=new Element();
+    }});
+    let uploads=0;
+    const selected=[];
+    const context=makeContext({
+      document:{getElementById:id=>id==='guideSteps'?guide:nodes[id]||null},
+      window:{JournalOwnerFolders:native?{cancel(){}}:null},
+      loadSourceGrid:async()=>{},sourceMetadataByName:{[source]:{name:source,input_type:'file',has_guide:false,display_name:source,accept:'.zip,.pdf'}},
+      currentGuideSource:null,currentGuidedFile:null,currentGuidedSaved:null,
+      setupGuidedUploadArea(){uploads++;},reconcileGuidedFolder:async()=>{},chooseGuidedFolder(value){selected.push(value.name);},
+    });
+    installRealEscapeHtml(context);
+    vm.runInContext(functionSource(workspace,'folderControls'),context);
+    vm.runInContext(functionSource(workspace,'loadGuidedFlow'),context);
+    await vm.runInContext(`loadGuidedFlow('${source}')`,context);
+    assert.ok(nodes.guidedFileInput,'existing file entry stays available');
+    assert.equal(uploads,1,'the file control remains wired alongside a folder choice');
+    if (native) {
+      assert.ok(nodes.guidedFolderBtn,`${source} must expose its supported native folder entry`);
+      nodes.guidedFolderBtn.listeners.click[0]();
+      assert.deepEqual(selected,[source],'the existing picker receives the same source family');
+    } else assert.ok(!nodes.guidedFolderBtn,'a browser without the native adapter keeps its file entry');
+    cases++;
+  }
+}
+
+function dualInputHarness() {
+  const fields=Object.fromEntries(['guidedDropArea','guidedFileInput','guidedFileLabel','guidedFolderBtn','guidedFolderStatus','guidedStartBtn'].map(id=>[id,new Element()]));
+  const storage=new Map();
+  let sequence=0;
+  const context=makeContext({
+    document:{getElementById:id=>fields[id]||null},
+    window:{_guidedClientItemId:'prior-file'},
+    crypto:{randomUUID:()=>`choice-${++sequence}`},
+    sessionStorage:{getItem:key=>storage.get(key),setItem:(key,value)=>storage.set(key,value)},
+    loadImports:async()=>{},
+  });
+  vm.runInContext("let currentGuideSource='gemini';let currentGuidedSaved={path:'prior-tree'};let currentGuidedFile={name:'prior.zip'};let guidedFolderBusy=false;",context);
+  for (const name of ['setupGuidedUploadArea','folderSelectionKey','folderSelection','folderControls','chooseGuidedFolder','reconcileGuidedFolder']) vm.runInContext(functionSource(workspace,name),context);
+  fields.guidedFileLabel.textContent='prior.zip';
+  fields.guidedFolderStatus.textContent='prior folder: saved';
+  vm.runInContext("folderSelection({name:'gemini'},{client_item_id:'prior-folder'});setupGuidedUploadArea()",context);
+  return {fields,context,run:code=>vm.runInContext(code,context)};
+}
+
+function runFileChoicePreservesCancelAndRetiresFolderSelection() {
+  const h=dualInputHarness();
+  h.fields.guidedFileInput.onchange({target:{files:[]}});
+  assert.equal(h.run('currentGuidedSaved.path'),'prior-tree','a dismissed file picker preserves the existing source');
+  assert.equal(h.run("folderSelection({name:'gemini'}).client_item_id"),'prior-folder');
+  h.run('guidedFolderBusy=true;folderControls(true)');
+  h.fields.guidedFileInput.onchange({target:{files:[{name:'blocked.zip'}]}});
+  assert.equal(h.run('currentGuidedFile.name'),'prior.zip','file selection cannot overlap native folder ownership');
+  h.run('guidedFolderBusy=false;folderControls(false)');
+  h.fields.guidedFileInput.onchange({target:{files:[{name:'new.zip'}]}});
+  assert.equal(h.run('currentGuidedFile.name'),'new.zip');
+  assert.equal(h.run('currentGuidedSaved'),null);
+  assert.equal(h.run("folderSelection({name:'gemini'})"),null,'an explicit file selection supersedes the active folder reference');
+  assert.equal(h.fields.guidedFolderStatus.textContent,'');
+  assert.equal(h.fields.guidedStartBtn.disabled,false,'the file remains previewable without a saved folder');
+  cases++;
+}
+
+async function runFolderChoicePreservesFileUntilAcknowledged() {
+  const h=dualInputHarness();
+  let acknowledge,reply;
+  h.context.window.JournalOwnerFolders={choose(_source,_reference,phase){acknowledge=phase;return new Promise(resolve=>{reply=resolve;});}};
+  let pending=h.run("chooseGuidedFolder({name:'gemini'})");
+  assert.equal(h.run('currentGuidedFile.name'),'prior.zip');
+  reply({state:'cancelled'});await pending;
+  assert.equal(h.run('currentGuidedFile.name'),'prior.zip','folder picker dismissal preserves the chosen file');
+  pending=h.run("chooseGuidedFolder({name:'gemini'})");
+  assert.equal(acknowledge(),true,'reference retention still precedes folder copy');
+  assert.equal(h.run('currentGuidedFile'),null);
+  assert.equal(h.fields.guidedFileLabel.textContent,'');
+  assert.equal(h.fields.guidedFileInput.disabled,true);
+  reply({state:'saved',ok:true,folder_name:'Picked export',import_id:'20261014_090000',value:{path:'saved/tree',timestamp:'20261014_090000'}});
+  await pending;
+  assert.equal(h.run('currentGuidedSaved.path'),'saved/tree');
+  assert.equal(h.fields.guidedFileInput.disabled,false,'both choices reopen after actual native result');
+  cases++;
+}
+
+async function runLateFolderReadCannotReplaceANewerFileChoice() {
+  for (const succeeds of [true, false]) for (const writable of [true, false]) {
+  const h=dualInputHarness();
+  h.context.window._guidedClientItemId='prior-folder';
+  h.run('currentGuidedFile=null');
+  let finish;
+  const calls=[];
+  h.context.fetch=async url=>{
+    calls.push(url);
+    if (url.includes('/list?')) return {ok:true,json:async()=>({imports:[{timestamp:'20261014_090000',client_item_id:'prior-folder'}]})};
+    return {ok:true,json:()=>new Promise(resolve=>{finish=resolve;})};
+  };
+  const pending=h.run("reconcileGuidedFolder({name:'gemini'})");
+  await new Promise(resolve=>setImmediate(resolve));
+  if (!writable) h.context.sessionStorage.setItem=()=>{throw Error('storage write refused');};
+  h.fields.guidedFileInput.onchange({target:{files:[{name:'newer.zip'}]}});
+  h.run("currentGuidedSaved={path:'new-file/saved'}");
+  finish(succeeds ? {import_json:{client_item_id:'prior-folder',source_hint:'gemini',file_path:'older/tree',original_filename:'older folder'}} : {});
+  await pending;
+  assert.equal(h.run('currentGuidedSaved.path'),'new-file/saved','late success or error cannot replace a newer saved file');
+  assert.equal(h.run('currentGuidedFile.name'),'newer.zip');
+  assert.equal(h.fields.guidedFolderStatus.textContent,'');
+  assert.equal(calls.length,2,'reconciliation stays read-only');
+  await h.run("reconcileGuidedFolder({name:'gemini'})");
+  assert.equal(calls.length,2,'a fresh pageshow/status read also respects the current explicit file');
+  assert.equal(h.run('currentGuidedSaved.path'),'new-file/saved');
+  cases++;
+  }
+}
+
+async function runNativeFolderBusyStateSurvivesGuideRemount() {
+  for (const nextSource of ['gemini','document']) {
+    const h=dualInputHarness();
+    let acknowledge,reply,reference;
+    h.context.window.JournalOwnerFolders={cancel(){},choose(_source,ref,phase){reference=ref;acknowledge=phase;return new Promise(resolve=>{reply=resolve;});}};
+    const pending=h.run("chooseGuidedFolder({name:'gemini'})");
+    assert.equal(acknowledge(),true);
+    const guide=new Element();let html='';
+    Object.defineProperty(guide,'innerHTML',{get:()=>html,set:value=>{
+      html=value;
+      for (const key of Object.keys(h.fields)) delete h.fields[key];
+      for (const match of value.matchAll(/\bid="([^"]+)"/g)) h.fields[match[1]]=new Element();
+    }});
+    h.context.document.getElementById=id=>id==='guideSteps'?guide:h.fields[id]||null;
+    h.context.loadSourceGrid=async()=>{};
+    h.context.sourceMetadataByName={[nextSource]:{name:nextSource,input_type:'file',has_guide:false,display_name:nextSource,accept:nextSource==='gemini'?'.zip':'.pdf'}};
+    const reads=[];
+    h.context.fetch=async url=>{reads.push(url);return {ok:true,json:async()=>url.includes('/list?')
+      ? {imports:[{timestamp:'20261014_090000',client_item_id:reference}]}
+      : {import_json:{client_item_id:reference,source_hint:'gemini',file_path:'saved/tree',original_filename:'export'}}};};
+    installRealEscapeHtml(h.context);
+    vm.runInContext(functionSource(workspace,'loadGuidedFlow'),h.context);
+    await h.run(`loadGuidedFlow('${nextSource}')`);
+    assert.equal(h.run('guidedFolderBusy'),true);
+    assert.equal(h.fields.guidedFileInput.disabled,true,'replacement view inherits actual native ownership');
+    assert.equal(h.fields.guidedStartBtn.disabled,true);
+    h.fields.guidedFileInput.onchange({target:{files:[{name:'too-early.zip'}]}});
+    assert.equal(h.run('currentGuidedFile'),null,'remount cannot admit a conflicting file before native return');
+    reply({state:'saved',ok:true,folder_name:'export',import_id:'20261014_090000',value:{path:'saved/tree'}});
+    await pending;
+    assert.equal(h.run('guidedFolderBusy'),false);
+    assert.equal(h.fields.guidedFileInput.disabled,false,'actual return reopens the current controls');
+    assert.equal(h.fields.guidedFolderBtn.disabled,false);
+    assert.equal(h.fields.guidedStartBtn.disabled,false);
+    if (nextSource==='gemini') {
+      assert.equal(h.run('currentGuidedSaved.path'),'saved/tree','same-source remount re-reads the admitted matching reference');
+      assert.equal(reads.length,2);
+    } else {
+      assert.equal(h.run('currentGuidedSaved'),null,'old terminal cannot inject another source into the new card');
+      assert.equal(reads.length,0);
+    }
+    const name=nextSource==='gemini'?'after-return.zip':'after-return.pdf';
+    h.fields.guidedFileInput.onchange({target:{files:[{name}]}});
+    assert.equal(h.run('currentGuidedFile.name'),name,'owner can select a file after actual return');
+    cases++;
+  }
+}
+
 async function runNativeFolderSelectionAndReturnRead() {
   const script = scriptFromWorkspace();
   for (const scenario of ['cancel', 'saved', 'unconfirmed', 'registration_failed', 'other-source', 'unnotified-cancel', 'storage-denied']) {
@@ -3681,6 +3850,11 @@ Promise.resolve()
   .then(async () => { cases += await require('./source_connections_dom.js')(crateDir); })
   .then(runHistoryFilterPaginationRaces)
   .then(runNativeFolderSelectionAndReturnRead)
+  .then(runFileAndFolderChoicesUseTheSameSourceCard)
+  .then(runFileChoicePreservesCancelAndRetiresFolderSelection)
+  .then(runFolderChoicePreservesFileUntilAcknowledged)
+  .then(runLateFolderReadCannotReplaceANewerFileChoice)
+  .then(runNativeFolderBusyStateSurvivesGuideRemount)
   .then(runSourceChangeWhileUploading)
   .then(runPreviewEditRequiresNewPreview)
   .then(runThinkingRefreshKeepsControlsAndFocus)
