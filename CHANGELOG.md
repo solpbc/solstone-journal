@@ -25,6 +25,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - when a voice in a transcript sounds only a little like someone you know, and about as much like someone else, the sentence is now left without a name. before, a stranger's voice, or an airport announcement on your phone, could show up as someone you know.
 - when you record your phone's screen during a video call, the phone's own "screen sharing" panel rarely reads as you sharing your screen to the call, and an app open under the small call window rarely reads as something you shared. the call's app is also named wrongly far less often.
 - transcription now keeps more quiet or distant speech, such as people across the table from your watch. to do this, your journal sends a little more of each recording to the speech model. transcripts you already have stay as they are.
+- your daily briefing is now less likely to say you did something your agent did. it now takes who did the work from the activity's story instead of its title.
 
 ### Removed
 

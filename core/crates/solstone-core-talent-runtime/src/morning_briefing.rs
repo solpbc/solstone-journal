@@ -531,12 +531,41 @@ fn describe_scheduled(event: &Value) -> String {
     text
 }
 
+/// A Story's first sentence when it opens on who acted, the owner ("You ...")
+/// or the owner's agent ("Your agent ..."). An activity's title and description
+/// leave the actor out, and the briefing copied them as the owner's own acts,
+/// so this sentence heads the activity in their place. `None` for any other
+/// opening, such as a transcript-style Story, which keeps the title.
+fn story_opening(body: &str) -> Option<&str> {
+    let body = body.trim_start();
+    if !(body.starts_with("You ") || body.starts_with("Your ")) {
+        return None;
+    }
+    let end = body
+        .char_indices()
+        .find(|&(i, c)| {
+            c.is_control()
+                || (matches!(c, '.' | '!' | '?')
+                    && body[i + c.len_utf8()..]
+                        .chars()
+                        .next()
+                        .is_none_or(char::is_whitespace))
+        })
+        .map_or(body.len(), |(i, c)| i + c.len_utf8());
+    Some(body[..end].trim()).filter(|first| !first.is_empty())
+}
+
 fn render_digest_activity(act: &DigestActivity, include_story: bool) -> String {
     let mut lines = Vec::new();
-    let title_line = if let Some(ref title) = act.title {
-        format!("### {title}")
-    } else {
-        "### Untitled activity".to_string()
+    let story_lead = act
+        .story_body
+        .as_deref()
+        .filter(|_| include_story)
+        .and_then(story_opening);
+    let title_line = match (story_lead, &act.title) {
+        (Some(lead), _) => format!("### {lead}"),
+        (None, Some(title)) => format!("### {title}"),
+        (None, None) => "### Untitled activity".to_string(),
     };
     lines.push(title_line);
     lines.push(format!("- id: {}", act.id));
@@ -556,7 +585,9 @@ fn render_digest_activity(act: &DigestActivity, include_story: bool) -> String {
     if let Some(ref dur) = act.duration {
         lines.push(format!("- duration: {dur}"));
     }
-    if let Some(ref desc) = act.description {
+    if let Some(ref desc) = act.description
+        && story_lead.is_none()
+    {
         lines.push(format!("- description: {desc}"));
     }
     if let Some(ref det) = act.details {
@@ -1204,6 +1235,66 @@ mod tests {
         }
         // Invitees are never offered as people who took part.
         assert!(!rendered.contains("participants"));
+    }
+
+    #[test]
+    fn a_story_that_opens_on_who_acted_heads_the_activity_in_place_of_its_title() {
+        let act = |story: &str| DigestActivity {
+            facet: "work".into(),
+            day: "20261019".into(),
+            id: "act".into(),
+            start: None,
+            end: None,
+            target_date: None,
+            duration: None,
+            title: Some("Fixed the build".into()),
+            description: Some("Fixed the build".into()),
+            details: None,
+            participants: vec![],
+            entities: vec![],
+            source_limitation: false,
+            story_body: Some(story.into()),
+            scheduled: vec![],
+        };
+
+        let agent = act("Your agent fixed the build on v2.0.1. You reviewed it.");
+        let rendered = render_digest_activity(&agent, true);
+        assert!(
+            rendered.starts_with("### Your agent fixed the build on v2.0.1.\n"),
+            "{rendered}"
+        );
+        assert!(!rendered.contains("### Fixed the build"), "{rendered}");
+        assert!(!rendered.contains("- description:"), "{rendered}");
+        assert!(rendered.contains("You reviewed it."), "{rendered}");
+
+        // A Story the budget dropped can't head the activity: the title stays.
+        let dropped = render_digest_activity(&agent, false);
+        assert!(dropped.starts_with("### Fixed the build\n"), "{dropped}");
+        assert!(
+            dropped.contains("- description: Fixed the build"),
+            "{dropped}"
+        );
+
+        // A transcript-style Story doesn't say who acted, so the title stays.
+        let transcript = render_digest_activity(&act("Alice said: \"ship it\"."), true);
+        assert!(
+            transcript.starts_with("### Fixed the build\n"),
+            "{transcript}"
+        );
+        assert!(
+            transcript.contains("- description: Fixed the build"),
+            "{transcript}"
+        );
+
+        assert_eq!(
+            story_opening("You asked your agent to merge.\nThen it did."),
+            Some("You asked your agent to merge.")
+        );
+        assert_eq!(
+            story_opening("You reviewed v2.0.1 notes"),
+            Some("You reviewed v2.0.1 notes")
+        );
+        assert_eq!(story_opening("Yours truly"), None);
     }
 
     #[test]
