@@ -182,6 +182,11 @@ pub(crate) fn android_archive_restic() -> Result<PathBuf, ClosedToolError> {
     resolve_android_restic_member(&LiveAndroidAuthority)
 }
 
+#[cfg(target_os = "android")]
+pub(crate) fn android_archive_tools(needs_rclone: bool) -> Result<ResolvedTools, ClosedToolError> {
+    resolve_android_tools(&LiveAndroidAuthority, needs_rclone)
+}
+
 #[cfg(not(windows))]
 fn resolve_android_restic_member(
     authority: &dyn AndroidAuthority,
