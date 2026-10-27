@@ -15,7 +15,7 @@ default = []
 full-tests = []
 # The final iOS app supplies the maintained Go archive.
 ios-linked-bridge = []
-# Isolated Linux effect harness only; never part of an owner app.
+# Isolated Linux/macOS effect harness only; never part of an owner app.
 native-archive-host-tests = ["full-tests", "ios-linked-bridge"]
 
 [dependencies]

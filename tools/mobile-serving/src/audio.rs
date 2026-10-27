@@ -254,7 +254,12 @@ impl AudioWorker {
             return Ok(false);
         }
         // Hash the accepted recording once. Later checkpoints keep this witness.
-        let admitted = match crate::custody::AcceptedInput::capture(root, input, &interrupted) {
+        #[cfg(unix)]
+        let admission =
+            crate::custody::AcceptedInput::capture_bound(&config.root, input, &interrupted);
+        #[cfg(not(unix))]
+        let admission = crate::custody::AcceptedInput::capture(root, input, &interrupted);
+        let admitted = match admission {
             Ok(Some(admitted)) => admitted,
             Ok(None) => return Ok(false),
             Err(error) => {

@@ -1561,6 +1561,40 @@ impl ForegroundProcessingHost {
         )
     }
 
+    #[cfg(all(test, feature = "full-tests", target_os = "linux"))]
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "Test-only composition of the existing import and Generate constructor inputs."
+    )]
+    pub(crate) fn open_with_imports_and_executor_for_test(
+        root: Arc<JournalRoot>,
+        payload: &Path,
+        external: Checkpoint,
+        stop: Arc<AtomicBool>,
+        backup: BackupWebDeps,
+        imports: Arc<ImportSeamFactory>,
+        executor: Arc<dyn GenerateExecutor + Send + Sync>,
+        rebuild_recovery: bool,
+        observe_daily: bool,
+    ) -> Result<Self, String> {
+        let now = ScheduleNow::in_zone(
+            Utc::now(),
+            solstone_core_journal_config::owner_zone(root.canonical_path()),
+        );
+        Self::open_bound_observed(
+            root,
+            payload,
+            now,
+            Some(executor),
+            external,
+            stop,
+            backup,
+            rebuild_recovery,
+            observe_daily,
+            Some(imports),
+        )
+    }
+
     /// Historical emissions and a separate current owner read, never a reservation.
     pub fn daily_queue_observation(&self) -> Result<Option<Value>, &'static str> {
         let Some(tap) = &self.daily_observation else {

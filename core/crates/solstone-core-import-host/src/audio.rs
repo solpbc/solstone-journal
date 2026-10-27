@@ -412,6 +412,30 @@ where
                         AudioProcessingState::NotRequested
                     },
                 });
+                // The mobile shared worker admits these exact completed slice
+                // bytes, rather than fabricating a device-ingest receipt.
+                #[cfg(unix)]
+                if let Err(error) = crate::audio_custody::publish(
+                    &admitted,
+                    &request.import_id,
+                    output.file_name().expect("allocated audio filename"),
+                ) {
+                    write_aborted_audio_import_record(
+                        &request,
+                        created_records,
+                        dropped_chunks,
+                        AudioImportAbort {
+                            chunk_index: Some(index),
+                            start_offset_seconds: Some(start_offset_seconds),
+                            duration_seconds: Some(chunk_duration_seconds),
+                            reason: error.clone(),
+                        },
+                    )?;
+                    return Err(ImportError::AudioSegmentDirectory {
+                        path: segment_dir,
+                        message: error,
+                    });
+                }
                 observing.push(ObservingSegment {
                     segment,
                     day: day.clone(),

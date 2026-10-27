@@ -18,8 +18,10 @@ mod hosted;
 #[cfg(any(
     target_os = "ios",
     all(
-        target_os = "linux",
-        target_arch = "x86_64",
+        any(
+            all(target_os = "linux", target_arch = "x86_64"),
+            all(target_os = "macos", target_arch = "aarch64")
+        ),
         feature = "native-archive-host-tests"
     )
 ))]
@@ -28,8 +30,10 @@ pub mod ios_native;
 #[cfg(any(
     target_os = "ios",
     all(
-        target_os = "linux",
-        target_arch = "x86_64",
+        any(
+            all(target_os = "linux", target_arch = "x86_64"),
+            all(target_os = "macos", target_arch = "aarch64")
+        ),
         feature = "native-archive-host-tests"
     )
 ))]

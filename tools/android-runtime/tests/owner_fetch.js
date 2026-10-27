@@ -3,7 +3,7 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
-const source = fs.readFileSync(require('node:path').join(__dirname, '../assets/owner.js'), 'utf8');
+const source = fs.readFileSync(process.argv[2] || require('node:path').join(__dirname, '../assets/owner.js'), 'utf8');
 
 async function main() {
   const calls = [], cancellations = [];
@@ -22,7 +22,7 @@ async function main() {
   context.JournalOwner.chooseFolder=(token,id,encoded) => folderCalls.push({token,id,fields:JSON.parse(encoded)});
   context.JournalOwner.cancelFolder=(token,id) => cancellations.push({token,id,folder:true});
   let selections=0;
-  const folder=context.JournalOwnerFolders.choose('obsidian','reference',() => { selections += 1; });
+  const folder=context.JournalOwnerFolders.choose('obsidian','reference',() => { selections += 1; return true; });
   const folderCall=folderCalls[0];
   assert.equal(folderCall.token,'current-page');
   assert.equal(folderCall.fields.client_item_id,'reference');
@@ -36,8 +36,37 @@ async function main() {
   assert.equal((await folder).state,'cancelled');
   const abandoned=context.JournalOwnerFolders.choose('obsidian','abandoned');
   context.JournalOwnerFolders.cancel();
-  assert.equal((await abandoned).state,'cancelled');
+  const lostFolder=await abandoned;
+  assert.equal(lostFolder.state,'outcome_unknown');
+  assert.equal(lostFolder.client_item_id,'abandoned');
+  assert.equal(context.__journalFolderSelected('current-page',folderCalls.at(-1).id),false);
   assert.equal(cancellations.pop().folder,true);
+  const refusedAck=context.JournalOwnerFolders.choose('obsidian','storage-failed',() => false);
+  const refusedCall=folderCalls.at(-1);
+  assert.equal(context.__journalFolderSelected('current-page',refusedCall.id),false,'storage refusal must not admit native copying');
+  context.__journalFolderReply('current-page',refusedCall.id,{state:'cancelled'});
+  assert.equal((await refusedAck).state,'cancelled');
+  const selectedThenLost=context.JournalOwnerFolders.choose('obsidian','selected-lost',() => true);
+  const selectedLostCall=folderCalls.at(-1);
+  assert.equal(context.__journalFolderSelected('current-page',selectedLostCall.id),true);
+  context.JournalOwnerFolders.cancel();
+  const selectedUnknown=await selectedThenLost;
+  assert.equal(selectedUnknown.state,'outcome_unknown');
+  assert.equal(selectedUnknown.client_item_id,'selected-lost');
+  assert.equal(cancellations.pop().folder,true);
+  context.__journalFolderReply('current-page',selectedLostCall.id,{state:'saved'});
+  const chooseNormally=context.JournalOwner.chooseFolder;
+  context.JournalOwner.chooseFolder=() => { throw new Error('delivery failed'); };
+  const dispatchUnknown=await context.JournalOwnerFolders.choose('obsidian','dispatch-unknown',() => true);
+  assert.equal(dispatchUnknown.state,'outcome_unknown');
+  assert.equal(dispatchUnknown.client_item_id,'dispatch-unknown');
+  context.JournalOwner.chooseFolder=chooseNormally;
+  const cancelNormally=context.JournalOwner.cancelFolder;
+  context.JournalOwner.cancelFolder=() => { throw new Error('cancellation delivery failed'); };
+  const cancelUnknown=context.JournalOwnerFolders.choose('obsidian','cancel-unknown',() => true);
+  context.JournalOwnerFolders.cancel();
+  assert.equal((await cancelUnknown).client_item_id,'cancel-unknown');
+  context.JournalOwner.cancelFolder=cancelNormally;
   const request = (url, options) => {
     const submitted = new Promise(resolve => { nextCall = resolve; });
     const response = context.fetch(url, options);
