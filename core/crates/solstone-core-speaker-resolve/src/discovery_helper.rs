@@ -211,6 +211,17 @@ fn run_with_budget(
     budget: InvocationBudget,
     hosted_parent: Option<Arc<HostedServiceParentRuntime>>,
 ) -> Result<Vec<i64>, DiscoveryHelperError> {
+    run_with_budget_after_launch(helper, embeddings, budget, hosted_parent, || Ok(()))
+}
+
+#[cfg(not(windows))]
+fn run_with_budget_after_launch(
+    helper: &Path,
+    embeddings: &[Vec<f32>],
+    budget: InvocationBudget,
+    hosted_parent: Option<Arc<HostedServiceParentRuntime>>,
+    ready: impl FnOnce() -> Result<(), DiscoveryHelperError>,
+) -> Result<Vec<i64>, DiscoveryHelperError> {
     let width = embeddings.first().map(Vec::len).unwrap_or(0);
     if width == 0 || embeddings.iter().any(|row| row.len() != width) {
         return Err(invoke("invalid-shape"));
@@ -271,6 +282,12 @@ fn run_with_budget(
         let (capture_tx, capture_rx) = mpsc::channel();
         let stdout_reader = drain(stdout, budget.stdout_limit, "stdout", capture_tx.clone());
         let stderr_reader = drain(stderr, budget.stderr_limit, "stderr", capture_tx);
+        if let Err(error) = ready() {
+            terminate_and_reap(&mut child, budget.terminate_grace);
+            let _ = stdout_reader.join();
+            let _ = stderr_reader.join();
+            return Err(error);
+        }
         let deadline = Instant::now() + budget.timeout;
         loop {
             if let Ok(error) = capture_rx.try_recv() {
@@ -468,6 +485,31 @@ pub fn drive_discovery_cluster_helper(
         None,
         #[cfg(windows)]
         &solstone_core_system::process::ChildLaunchContext::default(),
+    )
+    .map_err(|error| (error.stage.to_owned(), error.reason))
+}
+
+/// Exercise the real driver after a fixture has installed its protocol handlers.
+#[cfg(all(not(windows), any(test, feature = "test-hooks")))]
+#[doc(hidden)]
+pub fn drive_discovery_cluster_helper_after_ready(
+    helper: &Path,
+    timeout: Duration,
+    terminate_grace: Duration,
+    stdout_limit: usize,
+    ready: impl FnOnce() -> Result<(), String>,
+) -> Result<Vec<i64>, (String, String)> {
+    run_with_budget_after_launch(
+        helper,
+        &[vec![1.0]],
+        InvocationBudget {
+            timeout,
+            terminate_grace,
+            stdout_limit,
+            stderr_limit: 1024,
+        },
+        None,
+        || ready().map_err(invoke),
     )
     .map_err(|error| (error.stage.to_owned(), error.reason))
 }

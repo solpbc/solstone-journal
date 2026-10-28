@@ -5,7 +5,7 @@ use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::time::{Duration, Instant};
 
-use solstone_core_speaker_resolve::discovery_helper::drive_discovery_cluster_helper;
+use solstone_core_speaker_resolve::discovery_helper::drive_discovery_cluster_helper_after_ready;
 
 const TIMEOUT: Duration = Duration::from_millis(500);
 const TERMINATE_GRACE: Duration = Duration::from_millis(1500);
@@ -36,15 +36,47 @@ fn start_pid(receipt: &str) -> i32 {
         .expect("start pid")
 }
 
+fn wait_ready(receipt: &std::path::Path) -> Result<Instant, String> {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        if fs::read_to_string(receipt).is_ok_and(|text| text.lines().any(|line| line == "ready")) {
+            return Ok(Instant::now());
+        }
+        if Instant::now() >= deadline {
+            return Err("helper did not become ready".into());
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    }
+}
+
+fn drive_ready(
+    helper: &std::path::Path,
+    receipt: &std::path::Path,
+    timeout: Duration,
+    grace: Duration,
+    limit: usize,
+) -> (Result<Vec<i64>, (String, String)>, Duration) {
+    let mut ready_at = None;
+    let result = drive_discovery_cluster_helper_after_ready(helper, timeout, grace, limit, || {
+        ready_at = Some(wait_ready(receipt)?);
+        Ok(())
+    });
+    (result, ready_at.expect("helper readiness").elapsed())
+}
+
 #[test]
 fn oversized_stdout_is_rejected_while_the_helper_is_running() {
-    let (_guard, helper, _receipt) =
-        HelperGuard::script("cat >/dev/null\nhead -c 1048577 /dev/zero\nwhile :; do :; done");
+    let (_guard, helper, receipt) = HelperGuard::script(
+        "cat >/dev/null\nhead -c 1048577 /dev/zero\nprintf 'ready\\n' >> \"$RECEIPT\"\nwhile :; do :; done",
+    );
     let timeout = Duration::from_secs(5);
-    let started = Instant::now();
-    let result =
-        drive_discovery_cluster_helper(&helper, timeout, Duration::from_millis(20), 1024 * 1024);
-    let elapsed = started.elapsed();
+    let (result, elapsed) = drive_ready(
+        &helper,
+        &receipt,
+        timeout,
+        Duration::from_millis(20),
+        1024 * 1024,
+    );
     assert_eq!(result.unwrap_err().1, "stdout-too-large");
     assert!(
         elapsed < Duration::from_secs(1),
@@ -55,11 +87,9 @@ fn oversized_stdout_is_rejected_while_the_helper_is_running() {
 #[test]
 fn timeout_terminates_a_responsive_helper() {
     let (_guard, helper, receipt) = HelperGuard::script(
-        "trap 'printf \"term %s\\n\" \"$$\" >> \"$RECEIPT\"; exit 0' TERM\ncat >/dev/null\nwhile :; do :; done",
+        "trap 'printf \"term %s\\n\" \"$$\" >> \"$RECEIPT\"; exit 0' TERM\ncat >/dev/null\nprintf 'ready\\n' >> \"$RECEIPT\"\nwhile :; do :; done",
     );
-    let started = Instant::now();
-    let result = drive_discovery_cluster_helper(&helper, TIMEOUT, TERMINATE_GRACE, 1024);
-    let elapsed = started.elapsed();
+    let (result, elapsed) = drive_ready(&helper, &receipt, TIMEOUT, TERMINATE_GRACE, 1024);
     assert_eq!(result.unwrap_err().1, "timeout");
     let text = fs::read_to_string(receipt).expect("receipt");
     assert!(text.contains("term "), "{text}");
@@ -75,11 +105,9 @@ fn timeout_terminates_a_responsive_helper() {
 #[test]
 fn timeout_kills_after_grace_when_term_is_ignored() {
     let (_guard, helper, receipt) = HelperGuard::script(
-        "trap 'printf \"term %s\\n\" \"$$\" >> \"$RECEIPT\"' TERM\ncat >/dev/null\nwhile :; do :; done",
+        "trap 'printf \"term %s\\n\" \"$$\" >> \"$RECEIPT\"' TERM\ncat >/dev/null\nprintf 'ready\\n' >> \"$RECEIPT\"\nwhile :; do :; done",
     );
-    let started = Instant::now();
-    let result = drive_discovery_cluster_helper(&helper, TIMEOUT, TERMINATE_GRACE, 1024);
-    let elapsed = started.elapsed();
+    let (result, elapsed) = drive_ready(&helper, &receipt, TIMEOUT, TERMINATE_GRACE, 1024);
     assert_eq!(result.unwrap_err().1, "timeout");
     let text = fs::read_to_string(receipt).expect("receipt");
     assert!(text.contains("start "), "{text}");
