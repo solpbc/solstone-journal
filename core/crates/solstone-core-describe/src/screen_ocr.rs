@@ -436,6 +436,16 @@ impl ProcessWorker {
         startup_timeout: Duration,
         inference_timeout: Duration,
     ) -> Result<Self, OcrFailure> {
+        let child = Self::spawn_child(&helper)?;
+        Self::from_child(
+            child,
+            helper.expected_ready,
+            startup_timeout,
+            inference_timeout,
+        )
+    }
+
+    fn spawn_child(helper: &ResolvedHelper) -> Result<Child, OcrFailure> {
         if !helper.executable.is_absolute()
             || !helper.asset_dir.is_absolute()
             || !helper.runtime_root.is_absolute()
@@ -444,7 +454,7 @@ impl ProcessWorker {
         {
             return Err(OcrFailure::Unavailable);
         }
-        let mut child = Command::new(&helper.executable)
+        Command::new(&helper.executable)
             .arg("--asset-dir")
             .arg(&helper.asset_dir)
             .arg("--runtime-root")
@@ -456,7 +466,15 @@ impl ProcessWorker {
             .stderr(Stdio::piped())
             .env_clear()
             .spawn()
-            .map_err(|_| OcrFailure::Unavailable)?;
+            .map_err(|_| OcrFailure::Unavailable)
+    }
+
+    fn from_child(
+        mut child: Child,
+        expected_ready: HelperReadyIdentity,
+        startup_timeout: Duration,
+        inference_timeout: Duration,
+    ) -> Result<Self, OcrFailure> {
         let stdin = child.stdin.take().ok_or_else(|| {
             terminate_child(&mut child);
             OcrFailure::Unavailable
@@ -519,7 +537,7 @@ impl ProcessWorker {
         }
         let identity = serde_json::from_slice::<HelperReadyIdentity>(&ready.1)
             .map_err(|_| OcrFailure::Protocol)?;
-        if !valid_ready_identity(&identity) || identity != helper.expected_ready {
+        if !valid_ready_identity(&identity) || identity != expected_ready {
             return worker.fail(OcrFailure::Protocol);
         }
         Ok(worker)
@@ -3139,7 +3157,7 @@ mod tests {
             "drop",
         ] {
             let root = tempfile::tempdir().unwrap();
-            let pid_path = root.path().join("pid");
+            let sent_path = root.path().join("sent");
             let executable = root.path().join("helper");
             let mut output = match mode {
                 "startup" => Vec::new(),
@@ -3151,11 +3169,15 @@ mod tests {
             }
             let escaped: String = output.iter().map(|byte| format!("\\{byte:03o}")).collect();
             // tempfile paths contain no shell quote; assert before embedding.
-            assert!(!pid_path.as_os_str().as_encoded_bytes().contains(&b'\''));
-            fs::write(&executable, format!(
-                "#!/bin/sh\nprintf '%s' \"$$\" > '{}'\nprintf '{escaped}'\nexec /bin/sleep 30\n",
-                pid_path.display(),
-            )).unwrap();
+            assert!(!sent_path.as_os_str().as_encoded_bytes().contains(&b'\''));
+            fs::write(
+                &executable,
+                format!(
+                    "#!/bin/sh\nprintf '{escaped}'\nprintf sent > '{}'\nexec /bin/sleep 30\n",
+                    sent_path.display(),
+                ),
+            )
+            .unwrap();
             fs::set_permissions(&executable, fs::Permissions::from_mode(0o700)).unwrap();
             let helper = ResolvedHelper {
                 executable,
@@ -3164,8 +3186,22 @@ mod tests {
                 runtime_library: root.path().join("unused-runtime"),
                 expected_ready: identity.clone(),
             };
+            let mut child = ProcessWorker::spawn_child(&helper).unwrap();
+            let pid = child.id();
+            if mode != "startup" {
+                // Establish the fixture's intended framing before measuring a
+                // partial-frame, inference, backpressure, or drop deadline.
+                let deadline = Instant::now() + Duration::from_secs(10);
+                while !fs::read(&sent_path).is_ok_and(|bytes| bytes == b"sent") {
+                    if Instant::now() >= deadline {
+                        terminate_child(&mut child);
+                        panic!("{mode}: fixture did not emit its authored bytes");
+                    }
+                    std::thread::sleep(Duration::from_millis(5));
+                }
+            }
             let started = Instant::now();
-            let result = ProcessWorker::launch_with_timeouts(helper, timeout, timeout);
+            let result = ProcessWorker::from_child(child, identity.clone(), timeout, timeout);
             if matches!(mode, "startup" | "partial-startup") {
                 assert!(matches!(result, Err(OcrFailure::Timeout)), "{mode}");
             } else {
@@ -3186,10 +3222,6 @@ mod tests {
                 started.elapsed() < Duration::from_secs(5),
                 "unbounded {mode}"
             );
-            let pid = fs::read_to_string(pid_path)
-                .unwrap()
-                .parse::<u32>()
-                .unwrap();
             // kill -0 also succeeds for zombies. Its failure after the
             // controller joins proves the helper was killed and reaped.
             let live = Command::new("/bin/kill")
