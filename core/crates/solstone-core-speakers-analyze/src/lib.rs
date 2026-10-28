@@ -26,12 +26,11 @@ use std::io::Write;
 use std::path::Path;
 
 use serde_json::{Map, Value, json};
-use solstone_core_speakers::diarization::{
-    DiarizationError, SentenceTiming, SpeakerInterval, assign_sentences,
-    cluster_embeddings as cluster_diarization_embeddings,
-};
 #[cfg(feature = "runtime")]
-use solstone_core_speakers::diarization::{FrameLogProbs, MIN_INTERVAL_S, find_intervals};
+use solstone_core_speakers::diarization::{
+    DiarizationError, FrameLogProbs, MIN_INTERVAL_S, SentenceTiming, SpeakerInterval,
+    assign_sentences, cluster_embeddings as cluster_diarization_embeddings, find_intervals,
+};
 use solstone_core_speakers::discovery::{
     DiscoveryClusteringError, cluster_embeddings as cluster_discovery_embeddings,
 };
@@ -1073,6 +1072,7 @@ fn no_intervals_diarization_value() -> Value {
     })
 }
 
+#[cfg(feature = "runtime")]
 fn diarization_with_interval_embeddings(
     intervals: &[SpeakerInterval],
     valid_intervals: &[SpeakerInterval],
@@ -1203,6 +1203,7 @@ fn option_f64_value(value: Option<f64>) -> Value {
     value.map_or(Value::Null, |value| json!(value))
 }
 
+#[cfg(feature = "runtime")]
 fn option_usize_vec_value(values: &[Option<usize>]) -> Value {
     Value::Array(
         values
@@ -1212,6 +1213,7 @@ fn option_usize_vec_value(values: &[Option<usize>]) -> Value {
     )
 }
 
+#[cfg(feature = "runtime")]
 fn intervals_value(intervals: &[SpeakerInterval]) -> Value {
     Value::Array(
         intervals
@@ -1304,6 +1306,7 @@ fn map_segmentation_error(
     }
 }
 
+#[cfg(feature = "runtime")]
 fn map_diarization_error(error: DiarizationError) -> AnalyzeError {
     AnalyzeError::Internal {
         detail: error.to_string(),
