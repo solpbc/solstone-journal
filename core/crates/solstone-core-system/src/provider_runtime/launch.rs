@@ -591,10 +591,12 @@ pub(crate) enum LinuxLocalClass {
 }
 
 impl LinuxLocalClass {
+    #[cfg(not(windows))]
     pub(crate) fn is_launchable(&self) -> bool {
         matches!(self, Self::Ready | Self::InstallInProgress)
     }
 
+    #[cfg(not(windows))]
     pub(crate) fn reason_str(&self) -> &'static str {
         match self {
             Self::Unreadable => "unreadable",

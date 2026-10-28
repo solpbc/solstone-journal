@@ -2022,7 +2022,7 @@ pub(crate) async fn boot_and_tick(
     // including for a journal that never installed a model. This tick still does not
     // hash artifact bytes or probe the binary. It reads install status and the
     // lease only to decide whether to start the installer. Those remaining gaps
-    // degrade placement quality; they do not leave the provider unmanaged.
+    // do not leave the provider unmanaged.
     let parakeet_fixture = std::env::var(PARAKEET_FIXTURE_ENV).as_deref() == Ok("1");
     let parakeet_truth = if parakeet_fixture {
         ParakeetTruthSeam::with_config(

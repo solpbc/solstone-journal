@@ -49,6 +49,7 @@ use super::parakeet_truth::{
     admission_blocked_observation, admission_not_desired_observation, parakeet_platform_can_host,
     platform_cannot_host_not_desired,
 };
+#[cfg(not(windows))]
 use super::placement::{ParakeetPlacementDecision, parakeet_placement_for_devices};
 use super::seams::{RuntimeStoreError, TruthObservationSeam};
 
@@ -188,6 +189,7 @@ pub fn resolve_parakeet_backend(
     ("vulkan".to_owned(), env_updates, Some(gpu.index))
 }
 
+#[cfg(not(windows))]
 fn parakeet_backend_plan(
     config_device: &str,
     selected_gpu: Option<&VulkanDevice>,
