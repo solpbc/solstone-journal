@@ -774,32 +774,43 @@ mod tests {
         use std::os::unix::fs::PermissionsExt;
         let journal = tempfile::tempdir().unwrap();
         let script = journal.path().join("installer");
-        let pid_path = journal.path().join("installer.pid");
-        std::fs::write(
-            &script,
-            format!(
-                "#!/bin/sh\necho $$ > '{}'\nexec sleep 30\n",
-                pid_path.display()
-            ),
+        std::fs::write(&script, "#!/bin/sh\nexec sleep 30\n").unwrap();
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let child = launch_managed_request(
+            Disposition::IndependentBoundedHelper {
+                timeout: STOP_TIMEOUT,
+            },
+            installer_request(journal.path(), &script),
         )
         .unwrap();
-        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o700)).unwrap();
-        let result = launch_installer(
-            journal.path(),
-            "local/qwen3.5-4b",
-            installer_request(journal.path(), &script),
-            Duration::from_millis(250),
+        // The launch authority already owns the child's identity. A short
+        // admission timeout can expire before the script writes a PID file.
+        let pid = child.pid();
+        let (admitted, admission) = std::sync::mpsc::sync_channel(1);
+        let root = journal.path().to_owned();
+        let owner = std::thread::spawn(move || {
+            admit_portable(
+                child,
+                &root,
+                "local/qwen3.5-4b",
+                Duration::from_millis(250),
+                &admitted,
+                None,
+                0,
+            );
+        });
+        assert_eq!(
+            admission
+                .recv_timeout(Duration::from_secs(5))
+                .unwrap()
+                .unwrap_err(),
+            "installer admission timed out"
         );
-        assert_eq!(result.unwrap_err(), "installer admission timed out");
-        let pid: u32 = std::fs::read_to_string(pid_path)
-            .unwrap()
-            .trim()
-            .parse()
-            .unwrap();
         assert_eq!(
             SystemProcessInstanceSource.inspect(pid),
             InspectResult::Absent
         );
+        owner.join().unwrap();
     }
 
     #[cfg(all(test, feature = "full-tests"))]
