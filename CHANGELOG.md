@@ -21,6 +21,8 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [2.0.60] - 2026-10-28
 
+2.0.60 isn't available on windows. on windows, your journal stays on 2.0.59 and gets these changes in a later version.
+
 ### Changed
 
 - the local model can now read about twice as much in a single request on every mac and windows computer, and on linux computers with smaller graphics cards (larger ones already could).
