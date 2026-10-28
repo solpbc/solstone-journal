@@ -14,7 +14,8 @@ use solstone_core_system::provider_runtime::{
     LaunchOutcomeStatus, LifecycleSeam, LocalHost, LocalLaunchCommon, LocalLaunchConfig,
     LocalLifecycleSeam, LocalRuntimeShared, LocalTruthConfig, LocalTruthSeam, ManagedProcess,
     ProviderFence, ProviderName, ProviderRuntimeState, ProviderStopCleanupRequest, ReasonCode,
-    ReservedPort, RuntimeClock, RuntimePhase, StopCleanupStatus, TruthObservationSeam,
+    ReservedPort, RuntimeClock, RuntimePhase, StopCleanupStatus, SystemRuntimeClock,
+    TruthObservationSeam,
 };
 use solstone_core_system::vulkan_observe::VulkanObservation;
 
@@ -95,11 +96,23 @@ fn lifecycle(
     tempfile::TempDir,
     crate::fixture_binary::TestGeneration,
 ) {
+    lifecycle_with_clock(shared, termination_timeout, clock())
+}
+
+fn lifecycle_with_clock(
+    shared: Arc<LocalRuntimeShared>,
+    termination_timeout: Duration,
+    lifecycle_clock: Arc<dyn RuntimeClock>,
+) -> (
+    LocalLifecycleSeam,
+    tempfile::TempDir,
+    crate::fixture_binary::TestGeneration,
+) {
     let journal = tempfile::tempdir().expect("temporary journal");
     let generation = crate::fixture_binary::TestGeneration::admit(journal.path());
     let lifecycle = LocalLifecycleSeam::with_timeouts(
         shared,
-        clock(),
+        lifecycle_clock,
         Duration::from_secs(10),
         Duration::from_millis(1),
         termination_timeout,
@@ -289,7 +302,7 @@ fn missing_launch_request_maps_to_launch_failed() {
 }
 
 #[test]
-fn warmup_reports_ready_exited_and_timeout_without_wall_clock_waits() {
+fn warmup_reports_ready_exited_and_timeout() {
     let cases = [
         ("test-ready", LaunchOutcomeStatus::Ready, "probe-ready"),
         ("test-exit", LaunchOutcomeStatus::Exited, "process-exited"),
@@ -301,8 +314,16 @@ fn warmup_reports_ready_exited_and_timeout_without_wall_clock_waits() {
     ];
     for (attempt, (model_path, status, reason)) in cases.into_iter().enumerate() {
         let shared = Arc::new(LocalRuntimeShared::default());
+        // Real child readiness and exit need the OS clock. Only the timeout
+        // case advances virtual time without waiting for a process event.
+        let lifecycle_clock: Arc<dyn RuntimeClock> = if status == LaunchOutcomeStatus::WarmupTimeout
+        {
+            clock()
+        } else {
+            Arc::new(SystemRuntimeClock::default())
+        };
         let (mut lifecycle, journal, _generation) =
-            lifecycle(shared.clone(), Duration::from_secs(1));
+            lifecycle_with_clock(shared.clone(), Duration::from_secs(1), lifecycle_clock);
         let start_fence = fence(u32::try_from(attempt).unwrap());
         let launch = installed_vulkan(journal.path(), model_path);
         let outcome = start(&mut lifecycle, &shared, launch, &start_fence);
