@@ -16,7 +16,6 @@ use std::time::{Duration, Instant};
 use serde_json::{Map, Value, json};
 use solstone_core_brain::bundled_runtime_desired_fingerprint;
 use solstone_core_installed_payload::WindowsArchitecture;
-use solstone_core_local::endpoint::{LocalEndpointResolution, resolve_local_endpoint};
 #[cfg(all(test, feature = "full-tests"))]
 use solstone_core_local::install::pins;
 use solstone_core_local::install::{
@@ -590,23 +589,6 @@ pub(crate) enum LinuxLocalClass {
     Ready,
 }
 
-impl LinuxLocalClass {
-    #[cfg(not(windows))]
-    pub(crate) fn is_launchable(&self) -> bool {
-        matches!(self, Self::Ready | Self::InstallInProgress)
-    }
-
-    #[cfg(not(windows))]
-    pub(crate) fn reason_str(&self) -> &'static str {
-        match self {
-            Self::Unreadable => "unreadable",
-            Self::InstallInProgress => "install-in-progress",
-            Self::NotReady { reason_code, .. } => reason_code,
-            Self::Ready => "ready",
-        }
-    }
-}
-
 #[derive(Debug, Clone)]
 pub(crate) struct LinuxLocalPresentVerdict {
     pub(crate) readiness: Value,
@@ -723,10 +705,7 @@ fn observe_truth_with_mlx(
             }
             Err(_) => return truth_unavailable(),
         };
-    if matches!(
-        resolve_local_endpoint(&journal_config),
-        LocalEndpointResolution::Byo(_)
-    ) {
+    if !solstone_core_local::bundled_local_model_holds_gpu(&journal_config) {
         return truth(
             super::model::RuntimePhase::NotDesired,
             "provider-not-needed",
@@ -2166,6 +2145,8 @@ mod tests {
     use crate::process::{LaunchAuthority, ProcessObservation};
     #[cfg(feature = "full-tests")]
     use crate::provider_runtime::ProviderName;
+    #[cfg(feature = "full-tests")]
+    use crate::provider_runtime::model::ProviderTruthObservation;
     use crate::provider_runtime::model::{ProviderFence, ProviderStopCleanupRequest, RuntimePhase};
     use crate::provider_runtime::store::ReadyProcessLookup;
     #[cfg(feature = "full-tests")]
@@ -2897,7 +2878,11 @@ mod tests {
     fn windows_host_reports_gpu_unavailable_for_empty_vulkan_or_package_unavailable() {
         let root = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(root.path().join("config")).unwrap();
-        std::fs::write(root.path().join("config/journal.json"), b"{}").unwrap();
+        std::fs::write(
+            root.path().join("config/journal.json"),
+            br#"{"providers":{"active":{"provider":"local"}}}"#,
+        )
+        .unwrap();
 
         let hardware = solstone_core_local::VulkanDevice {
             index: 0,
@@ -3187,7 +3172,7 @@ mod tests {
         std::fs::create_dir_all(root.path().join("config")).unwrap();
         std::fs::write(
             root.path().join("config/journal.json"),
-            json!({"providers": {"local": {"vulkan_device_index": 1}}}).to_string(),
+            json!({"providers": {"active": {"provider": "local"}, "local": {"vulkan_device_index": 1}}}).to_string(),
         )
         .unwrap();
 
@@ -3296,7 +3281,7 @@ mod tests {
         // 1. vulkan_device_index: 99 (no such device), devices include eligible discrete
         std::fs::write(
             root.path().join("config/journal.json"),
-            json!({"providers": {"local": {"vulkan_device_index": 99}}}).to_string(),
+            json!({"providers": {"active": {"provider": "local"}, "local": {"vulkan_device_index": 99}}}).to_string(),
         )
         .unwrap();
         let shared = LocalRuntimeShared::default();
@@ -3332,7 +3317,7 @@ mod tests {
         // 2. vulkan_device_index: 0 where index 0 is llvmpipe and index 1 is discrete
         std::fs::write(
             root.path().join("config/journal.json"),
-            json!({"providers": {"local": {"vulkan_device_index": 0}}}).to_string(),
+            json!({"providers": {"active": {"provider": "local"}, "local": {"vulkan_device_index": 0}}}).to_string(),
         )
         .unwrap();
         let shared = LocalRuntimeShared::default();
@@ -3380,7 +3365,11 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         write_linux_runtime_tree_in_module(root.path());
         std::fs::create_dir_all(root.path().join("config")).unwrap();
-        std::fs::write(root.path().join("config/journal.json"), b"{}").unwrap();
+        std::fs::write(
+            root.path().join("config/journal.json"),
+            br#"{"providers":{"active":{"provider":"local"}}}"#,
+        )
+        .unwrap();
 
         let rejection_probe = solstone_core_local::nvidia::NvidiaProbe {
             schema: "solstone-local-nvidia-probe-v1".into(),
@@ -3440,6 +3429,224 @@ mod tests {
     }
 
     #[test]
+    #[cfg(all(test, feature = "full-tests"))]
+    fn selection_gate_is_not_desired_before_host_or_artifact_refusal() {
+        fn assert_not_desired(shared: &LocalRuntimeShared, observation: &ProviderTruthObservation) {
+            assert_eq!(observation.phase, RuntimePhase::NotDesired);
+            assert_eq!(
+                observation.reason_code.as_ref().map(ReasonCode::as_str),
+                Some("provider-not-needed")
+            );
+            assert!(!observation.has_plan);
+            assert!(!observation.boot_required);
+            assert!(
+                shared
+                    .launch_request_for(&observation.desired_fingerprint)
+                    .is_none()
+            );
+        }
+        let hardware = solstone_core_local::VulkanDevice {
+            index: 0,
+            name: "discrete".into(),
+            device_type: Some(2),
+            vram_mib: 8192,
+        };
+        let absent = solstone_core_local::nvidia::NvidiaProbe::absent();
+        let selected = br#"{"providers":{"active":{"provider":"local"}}}"#;
+        let cloud = br#"{"providers":{"active":{"provider":"google"}}}"#;
+
+        let linux_root = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(linux_root.path().join("config")).unwrap();
+        std::fs::write(linux_root.path().join("config/journal.json"), selected).unwrap();
+        let shared = LocalRuntimeShared::default();
+        let linux_selected = observe_truth_with_mlx(
+            &shared,
+            &LocalTruthConfig {
+                journal_path: linux_root.path().to_path_buf(),
+                platform: LocalHost::Linux,
+                arch: "x86_64",
+                nvidia_probe: Some(absent.clone()),
+                vulkan: crate::vulkan_observe::VulkanObservation {
+                    devices: vec![hardware.clone()],
+                    succeeded: true,
+                },
+                windows_package: None,
+            },
+            None,
+            || panic!("linux selection must not inspect mlx"),
+        );
+        assert_eq!(linux_selected.phase, RuntimePhase::ArtifactNotReady);
+        assert!(
+            shared
+                .launch_request_for(&linux_selected.desired_fingerprint)
+                .is_none()
+        );
+
+        for bytes in [Some(cloud.as_slice()), None] {
+            let root = tempfile::tempdir().unwrap();
+            if let Some(bytes) = bytes {
+                std::fs::create_dir_all(root.path().join("config")).unwrap();
+                std::fs::write(root.path().join("config/journal.json"), bytes).unwrap();
+            }
+            let shared = LocalRuntimeShared::default();
+            let observation = observe_truth_with_mlx(
+                &shared,
+                &LocalTruthConfig {
+                    journal_path: root.path().to_path_buf(),
+                    platform: LocalHost::Linux,
+                    arch: "x86_64",
+                    nvidia_probe: Some(absent.clone()),
+                    vulkan: crate::vulkan_observe::VulkanObservation {
+                        devices: vec![hardware.clone()],
+                        succeeded: true,
+                    },
+                    windows_package: None,
+                },
+                None,
+                || panic!("linux gate must not inspect mlx"),
+            );
+            assert_not_desired(&shared, &observation);
+        }
+
+        let windows_root = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(windows_root.path().join("config")).unwrap();
+        std::fs::write(windows_root.path().join("config/journal.json"), selected).unwrap();
+        let shared = LocalRuntimeShared::default();
+        let windows_selected = observe_truth_with_mlx(
+            &shared,
+            &LocalTruthConfig {
+                journal_path: windows_root.path().to_path_buf(),
+                platform: LocalHost::Windows,
+                arch: "x86_64",
+                nvidia_probe: Some(absent.clone()),
+                vulkan: crate::vulkan_observe::VulkanObservation {
+                    devices: vec![hardware.clone()],
+                    succeeded: true,
+                },
+                windows_package: None,
+            },
+            None,
+            || panic!("windows selection must not inspect mlx"),
+        );
+        assert_eq!(windows_selected.phase, RuntimePhase::HostBlocked);
+        assert!(
+            shared
+                .launch_request_for(&windows_selected.desired_fingerprint)
+                .is_none()
+        );
+
+        for bytes in [Some(cloud.as_slice()), None] {
+            let root = tempfile::tempdir().unwrap();
+            if let Some(bytes) = bytes {
+                std::fs::create_dir_all(root.path().join("config")).unwrap();
+                std::fs::write(root.path().join("config/journal.json"), bytes).unwrap();
+            }
+            let shared = LocalRuntimeShared::default();
+            let observation = observe_truth_with_mlx(
+                &shared,
+                &LocalTruthConfig {
+                    journal_path: root.path().to_path_buf(),
+                    platform: LocalHost::Windows,
+                    arch: "x86_64",
+                    nvidia_probe: Some(absent.clone()),
+                    vulkan: crate::vulkan_observe::VulkanObservation {
+                        devices: vec![hardware.clone()],
+                        succeeded: true,
+                    },
+                    windows_package: None,
+                },
+                None,
+                || panic!("windows gate must not inspect mlx"),
+            );
+            assert_not_desired(&shared, &observation);
+        }
+
+        let darwin_root = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(darwin_root.path().join("config")).unwrap();
+        std::fs::write(darwin_root.path().join("config/journal.json"), selected).unwrap();
+        let shared = LocalRuntimeShared::default();
+        let mut inspected = false;
+        let darwin_selected = observe_truth_with_mlx(
+            &shared,
+            &LocalTruthConfig {
+                journal_path: darwin_root.path().to_path_buf(),
+                platform: LocalHost::Darwin,
+                arch: "aarch64",
+                nvidia_probe: Some(absent.clone()),
+                vulkan: crate::vulkan_observe::VulkanObservation {
+                    devices: vec![hardware.clone()],
+                    succeeded: true,
+                },
+                windows_package: None,
+            },
+            None,
+            || {
+                inspected = true;
+                json!({"ready": false, "detail": "missing fixture"})
+            },
+        );
+        assert!(inspected);
+        assert_eq!(darwin_selected.phase, RuntimePhase::ArtifactNotReady);
+        assert!(
+            shared
+                .launch_request_for(&darwin_selected.desired_fingerprint)
+                .is_none()
+        );
+
+        for bytes in [Some(cloud.as_slice()), None] {
+            let root = tempfile::tempdir().unwrap();
+            if let Some(bytes) = bytes {
+                std::fs::create_dir_all(root.path().join("config")).unwrap();
+                std::fs::write(root.path().join("config/journal.json"), bytes).unwrap();
+            }
+            let shared = LocalRuntimeShared::default();
+            let observation = observe_truth_with_mlx(
+                &shared,
+                &LocalTruthConfig {
+                    journal_path: root.path().to_path_buf(),
+                    platform: LocalHost::Darwin,
+                    arch: "aarch64",
+                    nvidia_probe: Some(absent.clone()),
+                    vulkan: crate::vulkan_observe::VulkanObservation {
+                        devices: vec![hardware.clone()],
+                        succeeded: true,
+                    },
+                    windows_package: None,
+                },
+                None,
+                || panic!("darwin gate must not inspect mlx"),
+            );
+            assert_not_desired(&shared, &observation);
+        }
+
+        let corrupt = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(corrupt.path().join("config")).unwrap();
+        std::fs::write(corrupt.path().join("config/journal.json"), b"not-json").unwrap();
+        let shared = LocalRuntimeShared::default();
+        let observation = observe_truth_with_mlx(
+            &shared,
+            &LocalTruthConfig {
+                journal_path: corrupt.path().to_path_buf(),
+                platform: LocalHost::Linux,
+                arch: "x86_64",
+                nvidia_probe: Some(absent),
+                vulkan: crate::vulkan_observe::VulkanObservation {
+                    devices: vec![hardware],
+                    succeeded: true,
+                },
+                windows_package: None,
+            },
+            None,
+            || panic!("corrupt config must not inspect mlx"),
+        );
+        assert_eq!(observation.phase, RuntimePhase::StateUnavailable);
+        assert_eq!(
+            observation.reason_code.as_ref().map(ReasonCode::as_str),
+            Some("truth-observation-failed")
+        );
+    }
+
+    #[test]
     #[cfg(all(target_os = "linux", feature = "full-tests"))]
     fn linux_cuda_launch_ignores_configured_vulkan_device_index() {
         let root = tempfile::tempdir().unwrap();
@@ -3447,7 +3654,7 @@ mod tests {
         std::fs::create_dir_all(root.path().join("config")).unwrap();
         std::fs::write(
             root.path().join("config/journal.json"),
-            json!({"providers": {"local": {"vulkan_device_index": 1}}}).to_string(),
+            json!({"providers": {"active": {"provider": "local"}, "local": {"vulkan_device_index": 1}}}).to_string(),
         )
         .unwrap();
 
@@ -3536,7 +3743,7 @@ mod tests {
         // 1. vulkan.succeeded: false plus an override that would also be unusable -> gpu-probe-failed
         std::fs::write(
             root.path().join("config/journal.json"),
-            json!({"providers": {"local": {"vulkan_device_index": 99}}}).to_string(),
+            json!({"providers": {"active": {"provider": "local"}, "local": {"vulkan_device_index": 99}}}).to_string(),
         )
         .unwrap();
         let shared = LocalRuntimeShared::default();
@@ -3596,7 +3803,7 @@ mod tests {
         // 3. Below-bar on the override device (4096) -> gpu-memory-insufficient
         std::fs::write(
             root.path().join("config/journal.json"),
-            json!({"providers": {"local": {"vulkan_device_index": 1}}}).to_string(),
+            json!({"providers": {"active": {"provider": "local"}, "local": {"vulkan_device_index": 1}}}).to_string(),
         )
         .unwrap();
         let shared = LocalRuntimeShared::default();
@@ -3645,7 +3852,7 @@ mod tests {
         std::fs::create_dir_all(root.path().join("config")).unwrap();
         std::fs::write(
             root.path().join("config/journal.json"),
-            json!({"providers": {"local": {"vulkan_device_index": 1}}}).to_string(),
+            json!({"providers": {"active": {"provider": "local"}, "local": {"vulkan_device_index": 1}}}).to_string(),
         )
         .unwrap();
 

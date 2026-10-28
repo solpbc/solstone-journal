@@ -5,7 +5,6 @@ use serde_json::json;
 use solstone_core_local::VulkanDevice;
 use solstone_core_local::install::{archive, manifest, pins};
 use solstone_core_local::nvidia::NvidiaProbe;
-use solstone_core_local::plan::{PlanOutcome, plan};
 use solstone_core_system::provider_runtime::{
     LocalHost, LocalLaunchConfig, LocalRuntimeShared, LocalTruthConfig, LocalTruthSeam,
     ProviderFence, ProviderName, ProviderRuntimeState, ReasonCode, RuntimePhase,
@@ -145,7 +144,7 @@ fn ac11_truth_unavailable_on_missing_journal() {
 }
 
 #[test]
-fn ac1_linux_cloud_model_starts_local_vulkan_and_sets_ld_library_path() {
+fn ac1_linux_cloud_provider_is_not_desired() {
     let root = var_tmp("ac1-linux-cloud-model");
     write_linux_runtime_tree(&root, true);
     std::fs::create_dir_all(root.join("config")).expect("config directory");
@@ -161,7 +160,7 @@ fn ac1_linux_cloud_model_starts_local_vulkan_and_sets_ld_library_path() {
         device_type: Some(1),
         vram_mib: 8_192,
     };
-    let (observation, shared, state) = observe_with(
+    let (observation, shared, _) = observe_with(
         &root,
         LocalHost::Linux,
         Some(undetected_probe()),
@@ -171,33 +170,17 @@ fn ac1_linux_cloud_model_starts_local_vulkan_and_sets_ld_library_path() {
         },
         1,
     );
+    assert_eq!(observation.phase, RuntimePhase::NotDesired);
     assert_eq!(
-        (
-            observation.phase,
-            observation.reason_code.as_ref().map(ReasonCode::as_str)
-        ),
-        (RuntimePhase::Starting, Some("launch-requested"))
+        observation.reason_code.as_ref().map(ReasonCode::as_str),
+        Some("provider-not-needed")
     );
-    let launch = shared
-        .launch_request_for(&observation.desired_fingerprint)
-        .expect("linux vulkan launch request");
-    let LocalLaunchConfig::Vulkan { common, .. } = &launch else {
-        panic!("Linux Vulkan hardware must request a Vulkan launch");
-    };
-    assert_eq!(common.model_id, "local/qwen3.5-4b");
-    let input = launch.assemble_plan_input(&state, 4010);
-    assert!(input.lib_dir.is_none(), "AC1 plans with lib_dir unset");
-    let planned = match plan(input) {
-        PlanOutcome::Launch(plan) => *plan,
-        PlanOutcome::Rejected { reason } => panic!("expected launch plan: {reason}"),
-    };
-    let ld_library_path = planned
-        .extra_env
-        .get("LD_LIBRARY_PATH")
-        .expect("unflattened Vulkan tree must set LD_LIBRARY_PATH");
+    assert!(!observation.has_plan);
+    assert!(!observation.boot_required);
     assert!(
-        ld_library_path.contains("llama-b10068"),
-        "LD_LIBRARY_PATH={ld_library_path} must contain the nested llama-b10068 dir"
+        shared
+            .launch_request_for(&observation.desired_fingerprint)
+            .is_none()
     );
     let _ = std::fs::remove_dir_all(root);
 }
@@ -206,6 +189,7 @@ fn ac1_linux_cloud_model_starts_local_vulkan_and_sets_ld_library_path() {
 fn ac4_software_first_prefers_intel_over_llvmpipe() {
     let root = var_tmp("ac4-software-first");
     write_linux_runtime_tree(&root, false);
+    write_config(&root, json!({"providers":{"active":{"provider":"local"}}}));
     let devices = vec![
         VulkanDevice {
             index: 0,
@@ -256,6 +240,7 @@ fn ac4_software_first_prefers_intel_over_llvmpipe() {
 #[test]
 fn ac9_manifest_missing_maps_to_manifest_missing_reason() {
     let root = var_tmp("ac9-manifest-missing");
+    write_config(&root, json!({"providers":{"active":{"provider":"local"}}}));
     let (observation, _, _) = observe_with(
         &root,
         LocalHost::Linux,
@@ -278,6 +263,7 @@ fn ac9_manifest_missing_maps_to_manifest_missing_reason() {
 #[test]
 fn windows_host_reports_gpu_or_package_status() {
     let root = var_tmp("windows-host-tag-blocks");
+    write_config(&root, json!({"providers":{"active":{"provider":"local"}}}));
     let hardware = VulkanDevice {
         index: 0,
         name: "NVIDIA RTX".into(),

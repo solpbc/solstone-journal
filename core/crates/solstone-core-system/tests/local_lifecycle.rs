@@ -123,6 +123,12 @@ fn lifecycle_with_clock(
 
 fn installed_vulkan(journal: &Path, model_marker: &str) -> LocalLaunchConfig {
     crate::local_installed_fixture::install(journal, model_marker);
+    std::fs::create_dir_all(journal.join("config")).unwrap();
+    std::fs::write(
+        journal.join("config/journal.json"),
+        br#"{"providers":{"active":{"provider":"local"}}}"#,
+    )
+    .unwrap();
     let shared = Arc::new(LocalRuntimeShared::default());
     let mut truth = LocalTruthSeam::with_config(
         shared.clone(),

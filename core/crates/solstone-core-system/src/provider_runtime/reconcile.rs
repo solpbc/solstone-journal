@@ -154,7 +154,7 @@ impl ProviderRuntimeCoordinator {
     }
 
     #[cfg(test)]
-    fn with_incarnation(incarnation: &str) -> Self {
+    pub(super) fn with_incarnation(incarnation: &str) -> Self {
         Self {
             incarnation: incarnation.to_owned(),
         }
@@ -2338,6 +2338,57 @@ mod tests {
         assert_eq!(PROVIDER_PROBE_INTERVAL_SECONDS, GATE_TICK_INTERVAL_SECONDS);
     }
 
+    fn reconcile_recorded(
+        coordinator: &ProviderRuntimeCoordinator,
+        seconds: f64,
+        state: &mut ProviderRuntimeState,
+        processes: &mut Vec<ManagedProcess>,
+        workers: &RecordingWorkers,
+        store: &mut InMemoryRuntimeStore,
+    ) {
+        let mut truth_worker = workers.clone();
+        let mut lifecycle = workers.clone();
+        let mut probe_worker = workers.clone();
+        let mut sink = VecEventSink::default();
+        coordinator.reconcile(
+            now(seconds),
+            state,
+            processes,
+            &mut ReconcileContext {
+                truth: &mut truth_worker,
+                lifecycle: &mut lifecycle,
+                probe: &mut probe_worker,
+                store,
+                sink: &mut sink,
+                gate: None,
+            },
+        );
+    }
+
+    fn selection_observation(
+        phase: RuntimePhase,
+        reason: &'static str,
+        has_plan: bool,
+    ) -> ProviderTruthObservation {
+        ProviderTruthObservation {
+            provider: ProviderName::Local,
+            phase,
+            reason_code: Some(ReasonCode::known(reason)),
+            desired_fingerprint: has_plan.then(|| "desired-a".to_owned()),
+            has_plan,
+            boot_required: false,
+            detail: None,
+        }
+    }
+
+    fn ready_launch(id: &str) -> ProviderLaunchOutcome {
+        ProviderLaunchOutcome {
+            status: LaunchOutcomeStatus::Ready,
+            reason_code: ReasonCode::known("launch-requested"),
+            managed: Some(managed(id)),
+        }
+    }
+
     fn truth(
         provider: ProviderName,
         phase: RuntimePhase,
@@ -2641,6 +2692,206 @@ mod tests {
                 .admission_exclusive
         );
         assert_eq!(state.pending_stop_target_phase, RuntimePhase::NotDesired);
+    }
+
+    #[test]
+    fn ready_not_desired_stops_bundled_local_and_does_not_start() {
+        let coordinator = ProviderRuntimeCoordinator::with_incarnation("test");
+        let mut state = state_for(ProviderName::Local);
+        state.latest_phase = RuntimePhase::Ready;
+        state.next_truth_at = 1_000.0;
+        state.next_probe_at = 1_000.0;
+        let fence = coordinator.fence(&state, 0);
+        state.truth = Some(InFlight {
+            fence,
+            result: Some(selection_observation(
+                RuntimePhase::NotDesired,
+                "provider-not-needed",
+                false,
+            )),
+        });
+        let workers = RecordingWorkers::default();
+        let mut store = InMemoryRuntimeStore::default();
+        let mut processes = vec![managed("bundled-local")];
+        reconcile_recorded(
+            &coordinator,
+            1.0,
+            &mut state,
+            &mut processes,
+            &workers,
+            &mut store,
+        );
+        assert_ne!(state.latest_phase, RuntimePhase::Ready);
+        assert!(
+            store
+                .published
+                .iter()
+                .any(|(_, phase)| *phase == RuntimePhase::StopDeferred)
+        );
+        assert!(
+            store
+                .published
+                .iter()
+                .any(|(_, phase)| *phase == RuntimePhase::Stopping)
+        );
+        assert!(
+            store
+                .published
+                .iter()
+                .all(|(_, phase)| *phase != RuntimePhase::Ready)
+        );
+        assert_eq!(
+            state.pending_stop_request.as_ref().unwrap().managed.id,
+            "bundled-local"
+        );
+        assert_eq!(*workers.calls.borrow(), ["stop-dispatch"]);
+
+        let fence = coordinator.fence(&state, state.retry.attempt_count);
+        state.truth = Some(InFlight {
+            fence,
+            result: Some(selection_observation(
+                RuntimePhase::NotDesired,
+                "provider-not-needed",
+                false,
+            )),
+        });
+        reconcile_recorded(
+            &coordinator,
+            2.0,
+            &mut state,
+            &mut processes,
+            &workers,
+            &mut store,
+        );
+        assert!(!workers.calls.borrow().contains(&"start-dispatch"));
+    }
+
+    #[test]
+    fn cancelled_bundled_local_start_is_not_admitted_ready() {
+        let coordinator = ProviderRuntimeCoordinator::with_incarnation("test");
+        let mut state = state_for(ProviderName::Local);
+        state.latest_phase = RuntimePhase::Starting;
+        state.next_truth_at = 1_000.0;
+        state.next_probe_at = 1_000.0;
+        let start_fence = coordinator.fence(&state, state.retry.attempt_count);
+        state.start = Some(InFlight {
+            fence: start_fence,
+            result: None,
+        });
+        let truth_fence = coordinator.fence(&state, state.retry.attempt_count);
+        state.truth = Some(InFlight {
+            fence: truth_fence,
+            result: Some(selection_observation(
+                RuntimePhase::NotDesired,
+                "provider-not-needed",
+                false,
+            )),
+        });
+        let workers = RecordingWorkers::default();
+        let mut store = InMemoryRuntimeStore::default();
+        let mut processes = Vec::new();
+        reconcile_recorded(
+            &coordinator,
+            1.0,
+            &mut state,
+            &mut processes,
+            &workers,
+            &mut store,
+        );
+        assert!(state.start.as_ref().unwrap().result.is_none());
+        assert!(!workers.calls.borrow().contains(&"start-dispatch"));
+        state.start.as_mut().unwrap().result = Some(ready_launch("bundled-local"));
+        reconcile_recorded(
+            &coordinator,
+            2.0,
+            &mut state,
+            &mut processes,
+            &workers,
+            &mut store,
+        );
+        assert_ne!(state.latest_phase, RuntimePhase::Ready);
+        assert!(
+            store
+                .published
+                .iter()
+                .all(|(_, phase)| *phase != RuntimePhase::Ready)
+        );
+        assert_eq!(
+            state.pending_stop_request.as_ref().unwrap().managed.id,
+            "bundled-local"
+        );
+        assert!(workers.calls.borrow().contains(&"stop-dispatch"));
+        assert!(!workers.calls.borrow().contains(&"start-dispatch"));
+    }
+
+    #[test]
+    fn bundled_local_start_waits_until_orphaned_cleanup_then_starting_truth() {
+        let coordinator = ProviderRuntimeCoordinator::with_incarnation("test");
+        let mut state = state_for(ProviderName::Local);
+        state.latest_phase = RuntimePhase::Starting;
+        state.next_truth_at = 1_000.0;
+        state.next_probe_at = 1_000.0;
+        let start_fence = coordinator.fence(&state, state.retry.attempt_count);
+        state.start = Some(InFlight {
+            fence: start_fence,
+            result: Some(ready_launch("bundled-local")),
+        });
+        let truth_fence = coordinator.fence(&state, state.retry.attempt_count);
+        state.truth = Some(InFlight {
+            fence: truth_fence,
+            result: Some(selection_observation(
+                RuntimePhase::NotDesired,
+                "provider-not-needed",
+                false,
+            )),
+        });
+        let workers = RecordingWorkers::default();
+        let mut store = InMemoryRuntimeStore::default();
+        let mut processes = Vec::new();
+        reconcile_recorded(
+            &coordinator,
+            1.0,
+            &mut state,
+            &mut processes,
+            &workers,
+            &mut store,
+        );
+        assert_eq!(
+            state.pending_stop_request.as_ref().unwrap().managed.id,
+            "bundled-local"
+        );
+        assert!(!workers.calls.borrow().contains(&"start-dispatch"));
+
+        state.stop_cleanup.as_mut().unwrap().result = Some(stop(StopCleanupStatus::Stopped));
+        reconcile_recorded(
+            &coordinator,
+            2.0,
+            &mut state,
+            &mut processes,
+            &workers,
+            &mut store,
+        );
+        assert_eq!(state.latest_phase, RuntimePhase::NotDesired);
+        assert_eq!(*workers.calls.borrow(), ["stop-dispatch"]);
+
+        let fence = coordinator.fence(&state, state.retry.attempt_count);
+        state.truth = Some(InFlight {
+            fence,
+            result: Some(selection_observation(
+                RuntimePhase::Starting,
+                "launch-requested",
+                true,
+            )),
+        });
+        reconcile_recorded(
+            &coordinator,
+            3.0,
+            &mut state,
+            &mut processes,
+            &workers,
+            &mut store,
+        );
+        assert_eq!(*workers.calls.borrow(), ["stop-dispatch", "start-dispatch"]);
     }
 
     #[test]

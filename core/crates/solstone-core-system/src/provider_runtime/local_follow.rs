@@ -257,14 +257,7 @@ fn pins_moved(readiness: &Value) -> Option<&'static str> {
 }
 
 pub(super) fn local_is_active(config: &Map<String, Value>) -> bool {
-    config
-        .get("providers")
-        .and_then(Value::as_object)
-        .and_then(|providers| providers.get("active"))
-        .and_then(Value::as_object)
-        .and_then(|active| active.get("provider"))
-        .and_then(Value::as_str)
-        == Some("local")
+    solstone_core_local::active_provider_is_local(config)
 }
 
 /// The owner installed local thinking at some pin: a model manifest exists.

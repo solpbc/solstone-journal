@@ -24,7 +24,8 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - on windows, changes to your journal's schedule can be saved again.
 - you can choose a file on the import screen in the android and ios owner apps and save it.
 - journals running on a phone now start their local agent connections and close them when you stop the journal. the agents page already offered these connections, but they did not start on phones.
-- on linux computers with one graphics card of 8 GB or less, speech-to-text now runs on the processor when the local thinking model is set up. before, both used the graphics card, which doesn't have room for both.
+- on linux computers with one graphics card of 8 GB or less, speech-to-text now uses the processor by default when local thinking is selected. before, both used the graphics card, which doesn't have room for both.
+- the local thinking model now unloads when you switch to a cloud provider, freeing memory for other work.
 
 ## [2.0.60] - 2026-10-28
 

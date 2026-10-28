@@ -2542,6 +2542,7 @@ mod tests {
             8,
         )
         .unwrap();
+        fs::create_dir_all(journal_path.parent().unwrap()).unwrap();
         fs::write(&journal_path, &journal_before).unwrap();
 
         let (mut stdout, mut stderr) = (Vec::new(), Vec::new());

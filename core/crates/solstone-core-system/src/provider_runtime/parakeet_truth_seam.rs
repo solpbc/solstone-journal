@@ -12,8 +12,8 @@
 //! checks do not hash artifact bytes or probe the binary. The seam runs the
 //! shared decision when `auto` has a selected GPU. `placement_decision`
 //! describes that decision. `placement` is the final backend, still `cpu`
-//! when the Vulkan binary is missing. The detail describes the next launch
-//! because the fingerprint does not include the backend. File checks
+//! when the Vulkan binary is missing. Resolved backend, device and environment
+//! join the desired fingerprint so placement changes replace a Ready process. File checks
 //! and the CPU fallback stay the runtime-readiness decision. Starting the
 //! installer does not mark the runtime ready.
 
@@ -371,27 +371,15 @@ fn observe_parakeet_truth(
         let (decision, placement_decision_json) = if config_device == "auto"
             && let Some(selected_dev) = selected_gpu
         {
-            let bundled = matches!(
-                resolve_local_endpoint(&journal_config),
-                LocalEndpointResolution::Bundled
-            );
-            let active_local = journal_config
-                .get("providers")
-                .and_then(Value::as_object)
-                .and_then(|providers| providers.get("active"))
-                .and_then(Value::as_object)
-                .and_then(|active| active.get("provider"))
-                .and_then(Value::as_str)
-                == Some("local");
-
-            let (dec, launchable_val) = if !bundled {
-                let dec = parakeet_placement_for_devices(
+            let active_local = solstone_core_local::active_provider_is_local(&journal_config);
+            let brain = solstone_core_local::bundled_local_model_holds_gpu(&journal_config);
+            let dec = if !brain {
+                parakeet_placement_for_devices(
                     &config.vulkan_devices,
                     Some(selected_dev),
                     false,
                     false,
-                );
-                (dec, json!({ "read": false }))
+                )
             } else {
                 let provisional = parakeet_placement_for_devices(
                     &config.vulkan_devices,
@@ -400,22 +388,7 @@ fn observe_parakeet_truth(
                     true,
                 );
                 if !provisional.force_cpu {
-                    (provisional, json!({ "read": false }))
-                } else if active_local {
-                    let probe = if let Some(injected) = &config.nvidia_probe {
-                        injected()
-                    } else {
-                        solstone_core_local::nvidia::probe_nvidia_gpu()
-                    };
-                    let unified =
-                        probe.memory_source() == solstone_core_local::MemorySource::SystemAvailable;
-                    let dec = parakeet_placement_for_devices(
-                        &config.vulkan_devices,
-                        Some(selected_dev),
-                        unified,
-                        true,
-                    );
-                    (dec, json!({ "read": false }))
+                    provisional
                 } else {
                     let probe = if let Some(injected) = &config.nvidia_probe {
                         injected()
@@ -424,28 +397,12 @@ fn observe_parakeet_truth(
                     };
                     let unified =
                         probe.memory_source() == solstone_core_local::MemorySource::SystemAvailable;
-                    let verdict = crate::provider_runtime::launch::linux_local_prelaunch_verdict(
-                        &config.journal_path,
-                        &journal_config,
-                        &probe,
-                    );
-                    let launchable = verdict.class.is_launchable();
-                    let brain = solstone_core_local::bundled_local_model_holds_gpu(
-                        &journal_config,
-                        launchable,
-                    );
-                    let dec = parakeet_placement_for_devices(
+                    parakeet_placement_for_devices(
                         &config.vulkan_devices,
                         Some(selected_dev),
                         unified,
-                        brain,
-                    );
-                    let launchable_json = json!({
-                        "read": true,
-                        "launchable": launchable,
-                        "reason": verdict.class.reason_str(),
-                    });
-                    (dec, launchable_json)
+                        true,
+                    )
                 }
             };
 
@@ -454,7 +411,6 @@ fn observe_parakeet_truth(
                 "vram_mib": dec.vram_mib,
                 "required_mib": dec.required_mib,
                 "active_provider_local": active_local,
-                "launchable": launchable_val,
             });
             (Some(dec), Some(decision_json))
         } else {
@@ -493,6 +449,16 @@ fn observe_parakeet_truth(
             Err(_) => return attach_pin_follow(unavailable_observation("record-unavailable")),
         }
 
+        let Ok(launch_fingerprint_json) = canonical_json(&CanonicalInput::Json(json!({
+            "target_fingerprint_sha256": fingerprint_sha256,
+            "binary_backend": backend,
+            "gpu_index": gpu_index,
+            "launch_env": env_updates,
+        }))) else {
+            return attach_pin_follow(unavailable_observation("truth-observation-failed"));
+        };
+        let launch_fingerprint_sha256 =
+            solstone_core_brain::fingerprint_sha256(&launch_fingerprint_json);
         let launch = build_parakeet_launch_config(
             backend.clone(),
             env_updates,
@@ -501,11 +467,11 @@ fn observe_parakeet_truth(
             ParakeetLaunchMetadata {
                 journal_path: config.journal_path.clone(),
                 threads: parakeet_physical_thread_count(),
-                desired_fingerprint_json: fingerprint_json.clone(),
-                desired_fingerprint_sha256: fingerprint_sha256.clone(),
+                desired_fingerprint_json: launch_fingerprint_json,
+                desired_fingerprint_sha256: launch_fingerprint_sha256.clone(),
             },
         );
-        shared.record_launch_request(Some(fingerprint_sha256.clone()), launch);
+        shared.record_launch_request(Some(launch_fingerprint_sha256.clone()), launch);
         let Some((after_json, after_sha256)) =
             parakeet_target_fingerprint(&config.journal_path, &artifact_key)
         else {
@@ -535,7 +501,7 @@ fn observe_parakeet_truth(
             provider: ProviderName::Parakeet,
             phase: RuntimePhase::Starting,
             reason_code: Some(ReasonCode::known("launch-requested")),
-            desired_fingerprint: Some(after_sha256),
+            desired_fingerprint: Some(launch_fingerprint_sha256),
             has_plan: true,
             boot_required: true,
             detail: Some(launch_detail),
@@ -1338,7 +1304,7 @@ mod tests {
         // -> HostBlocked / gpu-unavailable / has_plan: false / no launch request
         std::fs::write(
             journal.join("config/journal.json"),
-            br#"{"transcribe": {"backend": "parakeet", "parakeet-cpp": {"device": "auto"}}, "providers": {"local": {"vulkan_device_index": 99}}}"#,
+            br#"{"transcribe": {"backend": "parakeet", "parakeet-cpp": {"device": "auto"}}, "providers": {"active": {"provider": "local"}, "local": {"vulkan_device_index": 99}}}"#,
         )
         .unwrap();
         let shared = Arc::new(ParakeetRuntimeShared::default());
@@ -1365,7 +1331,7 @@ mod tests {
         // 2. device: "auto", override index of an llvmpipe device while another device is discrete hardware
         std::fs::write(
             journal.join("config/journal.json"),
-            br#"{"transcribe": {"backend": "parakeet", "parakeet-cpp": {"device": "auto"}}, "providers": {"local": {"vulkan_device_index": 0}}}"#,
+            br#"{"transcribe": {"backend": "parakeet", "parakeet-cpp": {"device": "auto"}}, "providers": {"active": {"provider": "local"}, "local": {"vulkan_device_index": 0}}}"#,
         )
         .unwrap();
         let shared = Arc::new(ParakeetRuntimeShared::default());
@@ -1393,7 +1359,7 @@ mod tests {
         // Explicit CPU ignores override; with no CPU binary this is artifact-missing (not gpu-unavailable)
         std::fs::write(
             journal.join("config/journal.json"),
-            br#"{"transcribe": {"backend": "parakeet", "parakeet-cpp": {"device": "cpu"}}, "providers": {"local": {"vulkan_device_index": 99}}}"#,
+            br#"{"transcribe": {"backend": "parakeet", "parakeet-cpp": {"device": "cpu"}}, "providers": {"active": {"provider": "local"}, "local": {"vulkan_device_index": 99}}}"#,
         )
         .unwrap();
         let shared = Arc::new(ParakeetRuntimeShared::default());
@@ -1415,7 +1381,7 @@ mod tests {
         // Fallback to CPU ran, missing CPU binary is artifact-missing (not gpu-unavailable)
         std::fs::write(
             journal.join("config/journal.json"),
-            br#"{"transcribe": {"backend": "parakeet", "parakeet-cpp": {"device": "auto"}}}"#,
+            br#"{"transcribe": {"backend": "parakeet", "parakeet-cpp": {"device": "auto"}}, "providers": {"active": {"provider": "local"}}}"#,
         )
         .unwrap();
         let shared = Arc::new(ParakeetRuntimeShared::default());
@@ -2071,7 +2037,7 @@ mod composition_tests {
         std::fs::create_dir_all(journal.join("config")).unwrap();
         std::fs::write(
             journal.join("config/journal.json"),
-            br#"{"transcribe": {"backend": "parakeet", "parakeet-cpp": {"device": "auto"}}, "providers": {"local": {"vulkan_device_index": 1}}}"#,
+            br#"{"transcribe": {"backend": "parakeet", "parakeet-cpp": {"device": "auto"}}, "providers": {"active": {"provider": "local"}, "local": {"vulkan_device_index": 1}}}"#,
         )
         .unwrap();
 
@@ -2124,7 +2090,7 @@ mod composition_tests {
         std::fs::create_dir_all(journal.join("config")).unwrap();
         std::fs::write(
             journal.join("config/journal.json"),
-            br#"{"transcribe": {"backend": "parakeet", "parakeet-cpp": {"device": "cpu"}}, "providers": {"local": {"vulkan_device_index": 99}}}"#,
+            br#"{"transcribe": {"backend": "parakeet", "parakeet-cpp": {"device": "cpu"}}, "providers": {"active": {"provider": "local"}, "local": {"vulkan_device_index": 99}}}"#,
         )
         .unwrap();
 
@@ -2166,7 +2132,7 @@ mod composition_tests {
         std::fs::create_dir_all(journal.join("config")).unwrap();
         std::fs::write(
             journal.join("config/journal.json"),
-            br#"{"transcribe": {"backend": "parakeet", "parakeet-cpp": {"device": "auto"}}}"#,
+            br#"{"transcribe": {"backend": "parakeet", "parakeet-cpp": {"device": "auto"}}, "providers": {"active": {"provider": "local"}}}"#,
         )
         .unwrap();
 
@@ -2296,11 +2262,109 @@ mod composition_tests {
             detail["placement_decision"]["reason_code"],
             "co_location_requires_cpu"
         );
-        assert_eq!(detail["placement_decision"]["launchable"]["read"], false);
     }
 
     #[test]
-    fn case_active_cloud_no_local_model_tree_uses_vulkan_and_counts_probe_once() {
+    fn provider_switch_replaces_ready_transcription_when_placement_changes() {
+        use crate::provider_runtime::{
+            InFlight, InMemoryRuntimeStore, ManagedProcess, NoopWorkers, ProviderFence,
+            ProviderRuntimeCoordinator, ProviderRuntimeNow, ReconcileContext, VecEventSink,
+        };
+        let dir = setup_journal_with_config(true);
+        let journal = dir.path();
+        write_parakeet_model_and_binaries(journal, true, true);
+        let shared = Arc::new(ParakeetRuntimeShared::default());
+        let config = ParakeetTruthConfig {
+            journal_path: journal.to_path_buf(),
+            platform: "linux".into(),
+            machine: "x86_64".into(),
+            vulkan_devices: vec![discrete_device(2, 8192)],
+            nvidia_probe: Some(Arc::new(cuda_eligible_probe)),
+        };
+        let mut observations = Vec::new();
+        for (provider, expected) in [
+            ("google", ParakeetPlacement::Gpu),
+            ("local", ParakeetPlacement::Cpu),
+            ("google", ParakeetPlacement::Gpu),
+        ] {
+            fs::write(
+                journal.join("config/journal.json"),
+                json!({
+                    "transcribe":{"backend":"parakeet","parakeet-cpp":{"device":"auto"}},
+                    "providers":{"active":{"provider":provider}}
+                })
+                .to_string(),
+            )
+            .unwrap();
+            let observed = observe_parakeet_truth(&shared, &config, None);
+            assert_eq!(observed.phase, RuntimePhase::Starting);
+            assert_eq!(
+                shared
+                    .launch_request_for(&observed.desired_fingerprint)
+                    .unwrap()
+                    .placement,
+                expected
+            );
+            observations.push(observed);
+        }
+        assert_eq!(
+            observations[0].desired_fingerprint,
+            observations[2].desired_fingerprint
+        );
+        for pair in observations.windows(2) {
+            assert_ne!(pair[0].desired_fingerprint, pair[1].desired_fingerprint);
+            let coordinator = ProviderRuntimeCoordinator::with_incarnation("placement-test");
+            let mut state = ProviderRuntimeState::new(ProviderName::Parakeet);
+            state.latest_phase = RuntimePhase::Ready;
+            state.has_plan = true;
+            state.desired_fingerprint = pair[0].desired_fingerprint.clone();
+            state.next_truth_at = 1000.0;
+            state.next_probe_at = 1000.0;
+            let fence = ProviderFence {
+                incarnation: "placement-test".into(),
+                generation: state.generation,
+                fingerprint: state.desired_fingerprint.clone(),
+                attempt: 0,
+            };
+            let mut processes = vec![ManagedProcess {
+                id: "old-transcription".into(),
+                pid: 9999,
+                name: super::super::parakeet::PARAKEET_SERVER_PROCESS_NAME.into(),
+                running: true,
+                fence: Some(fence.clone()),
+            }];
+            state.truth = Some(InFlight {
+                fence,
+                result: Some(pair[1].clone()),
+            });
+            coordinator.reconcile(
+                ProviderRuntimeNow {
+                    monotonic_seconds: 1.0,
+                },
+                &mut state,
+                &mut processes,
+                &mut ReconcileContext {
+                    truth: &mut NoopWorkers,
+                    lifecycle: &mut NoopWorkers,
+                    probe: &mut NoopWorkers,
+                    store: &mut InMemoryRuntimeStore::default(),
+                    sink: &mut VecEventSink::default(),
+                    gate: None,
+                },
+            );
+            assert_ne!(state.latest_phase, RuntimePhase::Ready);
+            assert_eq!(state.desired_fingerprint, pair[1].desired_fingerprint);
+            assert_eq!(
+                state.pending_stop_request.as_ref().unwrap().managed.id,
+                "old-transcription"
+            );
+            assert_eq!(state.pending_stop_target_phase, RuntimePhase::Starting);
+            assert!(state.stop_cleanup.is_some());
+        }
+    }
+
+    #[test]
+    fn case_active_cloud_no_local_model_tree_stays_on_gpu_without_nvidia_probes() {
         let dir = setup_journal_with_config(true);
         let journal = dir.path();
         std::fs::write(
@@ -2342,12 +2406,12 @@ mod composition_tests {
         assert_eq!(launch.gpu_index, Some(2));
         let detail = obs.detail.expect("detail");
         assert_eq!(detail["placement"], "gpu");
-        assert_eq!(probe_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(probe_calls.load(Ordering::SeqCst), 0);
     }
 
     #[test]
     #[cfg(target_os = "linux")]
-    fn case_active_cloud_with_local_model_tree_forces_cpu_when_local_launchable() {
+    fn case_active_cloud_with_local_model_tree_stays_on_gpu_and_local_is_not_desired() {
         let dir = setup_journal_with_config(true);
         let journal = dir.path();
         std::fs::write(
@@ -2382,10 +2446,10 @@ mod composition_tests {
         let launch = shared
             .launch_request_for(&obs.desired_fingerprint)
             .expect("launch recorded");
-        assert_eq!(launch.placement, ParakeetPlacement::Cpu);
-        assert_eq!(launch.gpu_index, None);
+        assert_eq!(launch.placement, ParakeetPlacement::Gpu);
+        assert_eq!(launch.gpu_index, Some(2));
 
-        // Verify LocalTruthSeam over same journal reports launch-requested
+        // Verify LocalTruthSeam over same journal is not desired
         let local_shared = Arc::new(crate::provider_runtime::LocalRuntimeShared::default());
         let mut local_seam = crate::provider_runtime::LocalTruthSeam::with_config(
             local_shared.clone(),
@@ -2410,9 +2474,17 @@ mod composition_tests {
         let local_state = ProviderRuntimeState::new(ProviderName::Local);
         local_seam.dispatch_truth(&local_state, &fence);
         let local_obs = local_shared.wait_for_truth_result(&fence);
+        assert_eq!(local_obs.phase, RuntimePhase::NotDesired);
         assert_eq!(
             local_obs.reason_code.as_ref().map(ReasonCode::as_str),
-            Some("launch-requested")
+            Some("provider-not-needed")
+        );
+        assert!(!local_obs.has_plan);
+        assert!(!local_obs.boot_required);
+        assert!(
+            local_shared
+                .launch_request_for(&local_obs.desired_fingerprint)
+                .is_none()
         );
     }
 

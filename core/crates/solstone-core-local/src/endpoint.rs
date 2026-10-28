@@ -83,22 +83,23 @@ pub fn resolve_local_endpoint(config: &Map<String, Value>) -> LocalEndpointResol
     })
 }
 
-pub fn bundled_local_model_holds_gpu(config: &Map<String, Value>, launchable: bool) -> bool {
-    if !matches!(
-        resolve_local_endpoint(config),
-        LocalEndpointResolution::Bundled
-    ) {
-        return false;
-    }
-    let is_local = config
+pub fn active_provider_is_local(config: &Map<String, Value>) -> bool {
+    config
         .get("providers")
         .and_then(Value::as_object)
         .and_then(|providers| providers.get("active"))
         .and_then(Value::as_object)
         .and_then(|active| active.get("provider"))
         .and_then(Value::as_str)
-        == Some("local");
-    is_local || launchable
+        == Some("local")
+}
+
+pub fn bundled_local_model_holds_gpu(config: &Map<String, Value>) -> bool {
+    active_provider_is_local(config)
+        && matches!(
+            resolve_local_endpoint(config),
+            LocalEndpointResolution::Bundled
+        )
 }
 
 pub fn served_window_from_models_response(data: &Value, served_model_id: &str) -> Option<u32> {
@@ -385,18 +386,14 @@ mod tests {
 
     #[test]
     fn bundled_local_model_holds_gpu_cases() {
-        // provider: local, no endpoint -> active even when launchable is false
         let config_local_no_endpoint = config(json!({
             "providers": {
                 "active": {"provider": "local"}
             }
         }));
-        assert!(bundled_local_model_holds_gpu(
-            &config_local_no_endpoint,
-            false
-        ));
+        assert!(active_provider_is_local(&config_local_no_endpoint));
+        assert!(bundled_local_model_holds_gpu(&config_local_no_endpoint));
 
-        // provider: local plus both endpoint_url and served_model_id set -> inactive
         let config_local_byo = config(json!({
             "providers": {
                 "active": {"provider": "local"},
@@ -406,22 +403,61 @@ mod tests {
                 }
             }
         }));
-        assert!(!bundled_local_model_holds_gpu(&config_local_byo, true));
-        assert!(!bundled_local_model_holds_gpu(&config_local_byo, false));
+        assert!(active_provider_is_local(&config_local_byo));
+        assert!(!bundled_local_model_holds_gpu(&config_local_byo));
 
-        // cloud provider, bundled (no endpoint), launchable true -> active
         let config_cloud_bundled = config(json!({
             "providers": {
                 "active": {"provider": "google"}
             }
         }));
-        assert!(bundled_local_model_holds_gpu(&config_cloud_bundled, true));
+        assert!(!active_provider_is_local(&config_cloud_bundled));
+        assert!(!bundled_local_model_holds_gpu(&config_cloud_bundled));
 
-        // cloud provider, bundled, launchable false -> inactive
-        assert!(!bundled_local_model_holds_gpu(&config_cloud_bundled, false));
-
-        // no providers key, launchable false -> inactive
         let config_empty = Map::new();
-        assert!(!bundled_local_model_holds_gpu(&config_empty, false));
+        assert!(!active_provider_is_local(&config_empty));
+        assert!(!bundled_local_model_holds_gpu(&config_empty));
+
+        let confidential_bundled = config(json!({
+            "providers": { "active": {"provider": "local"} },
+            "services": { "confidential": {} }
+        }));
+        assert!(bundled_local_model_holds_gpu(&confidential_bundled));
+        let confidential_byo = config(json!({
+            "providers": {
+                "active": {"provider": "local"},
+                "local": {
+                    "endpoint_url": "http://127.0.0.1:8080",
+                    "served_model_id": "custom-model"
+                }
+            },
+            "services": { "confidential": {} }
+        }));
+        assert!(!bundled_local_model_holds_gpu(&confidential_byo));
+    }
+
+    #[test]
+    fn bundled_local_model_holds_gpu_cloud_provider_launchable_does_not_hold() {
+        let config_cloud_bundled = config(json!({
+            "providers": {
+                "active": {"provider": "google"}
+            }
+        }));
+        assert!(!bundled_local_model_holds_gpu(&config_cloud_bundled));
+    }
+
+    #[test]
+    fn bundled_local_model_holds_gpu_present_config_without_active_provider_does_not_hold() {
+        let config_present_no_provider = config(json!({
+            "providers": {
+                "active": {}
+            }
+        }));
+        assert_eq!(
+            resolve_local_endpoint(&config_present_no_provider),
+            LocalEndpointResolution::Bundled
+        );
+        assert!(!active_provider_is_local(&config_present_no_provider));
+        assert!(!bundled_local_model_holds_gpu(&config_present_no_provider));
     }
 }

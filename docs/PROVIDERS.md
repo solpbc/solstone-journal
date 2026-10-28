@@ -102,9 +102,11 @@ require:
 - confidential egress/attestation gates;
 - stable local error classification.
 
-Bundled local posts to the supervisor-owned loopback server. Its install status
-lives under `health/providers/`. Artifact readiness comes from the installed
-manifests and model generations.
+Bundled local posts to the supervisor-owned loopback server. it runs while
+bundled local thinking is selected, and a switch to a cloud provider unloads
+it on the normal observation rather than at the moment settings are saved. Its
+install status lives under `health/providers/`. Artifact readiness comes from
+the installed manifests and model generations.
 
 On macOS, signed release packages include `mlx-helper` and its Metal resource
 bundle. MLX is the bundled backend from startup. The local installer downloads

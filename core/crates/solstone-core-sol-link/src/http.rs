@@ -2009,6 +2009,7 @@ mod local_capability_tests {
             rfdetr: RfdetrCheckInput::Omit,
             vulkan_device_index: None,
             local_backend: None,
+            bundled_local_selected_or_planned: true,
         }
     }
 
