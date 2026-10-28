@@ -18,7 +18,7 @@ use std::path::Path;
 type Result<T> = std::result::Result<T, String>;
 const SHADER_DIR: &str =
     "engine-build/ggml/src/ggml-vulkan/vulkan-shaders-gen-prefix/src/vulkan-shaders-gen-build";
-const DRIVER_SHA: &str = "dd12eea695b9904f894ef8eb608a6002c4b86d560ad2d734176209f4cfd61998";
+const DRIVER_SHA: &str = "0833e123cbc79ed5411c530d450ab38a2c01cd0ec5aed495c79e4139c49b3d3e";
 const HELPER_SHA: &str = "a4959a5aca1b346a915e87c4019e64169a153f27af2a724012eb01dca13fe605";
 
 #[derive(Deserialize)]
