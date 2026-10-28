@@ -443,8 +443,11 @@ mod tests {
     #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn unexpected_exit_is_contract() {
-        let (_root, path) = write_stub("#!/bin/sh\necho ok\nexit 0\n", 0o755);
-        let status = probe_vad_runtime(&path, Duration::from_secs(2));
+        // This case needs a native exit status, without shell/staging startup.
+        let status = probe_vad_runtime(
+            std::path::Path::new("/usr/bin/true"),
+            Duration::from_secs(2),
+        );
         assert!(
             matches!(
                 status,
