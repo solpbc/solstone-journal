@@ -12,6 +12,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- when everything that went into your journal for a stretch came from your terminal, that stretch's description is now written from what you typed (with an up-to-date solstone app for tmux) and the lines that appeared on screen, each read once, sized to fit even the local model. before, much of a long terminal stretch went unread.
 - the `journal` command is gone on every platform; use `solstone journal` instead.
 
 ### Fixed

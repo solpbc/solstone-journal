@@ -53,10 +53,9 @@ segment data can go in directly, such as segment metadata, locations and short
 transcripts. Work's literal screen notes are the pattern for copied excerpts
 ([STORY_INPUTS.md](STORY_INPUTS.md)).
 
-Inputs not yet aligned include [Terminal segment Sense](#terminal-segment-sense),
-which trims its timeline rather than sampling it, and the Work, Participation
-and Conversation talents, which read original activity input (Work only while
-it fits, [STORY_INPUTS.md](STORY_INPUTS.md)). The Generate boundary
+Inputs not yet aligned include the Work, Participation and Conversation
+talents, which read original activity input (Work only while it fits,
+[STORY_INPUTS.md](STORY_INPUTS.md)). The Generate boundary
 does the fitting ([GENERATE.md](GENERATE.md) § `overflow_text`).
 
 ## Daily date coordinates
@@ -145,15 +144,17 @@ Generate or writing anything.
 
 ## Terminal segment Sense
 
-Sense encodes complete terminal-only segments as a reversible state timeline. Pane text, styles, links, identities, observation times and retained analysis remain reconstructible. Segments with other inputs keep the ordinary native request. Eligibility depends only on the segment's inputs, never on the provider, model, endpoint or context window.
+A terminal-only segment is sampled to fit the floor window, the way Describe samples frames ([Talent inputs](#talent-inputs)). Eligibility depends only on the segment's inputs: no transcripts, no talent outputs, and every percept a tmux capture or the capture's desktop activity, each bound to the producer bytes it was rendered from. It never depends on the provider, model, endpoint or context window. Any other segment keeps the ordinary request.
 
-Every terminal-only segment reads the timeline. Without typed input, the timeline goes to Sense's own task and schema with its reading guide as the system instruction, and the record publishes like any Sense output.
+Each tmux session's reading opens with what was typed at the keyboard, in order, then its entries in time order:
 
-Typed input is read from the terminal capture's cursor, not from any application's screen layout. An active pane with a visible cursor, outside a tmux pane mode, takes input on the cursor's row; dim text after the cursor is a placeholder or suggestion and is left out. A row counts as typed once its text changes under the cursor, so an unchanged prompt does not, and when the cursor leaves a row, what that row now shows is taken as what was sent. Frames captured without cursor fields have no typed input. When a segment has typed input, the request is also anchored to the latest: the model chooses complete displayed passages for activity context. Rust copies those passages and the typed input into the existing Sense activity fields, then validates the canonical Sense object. Displayed text is framed as what was on screen; it does not establish authorship, approval or execution. Other fields remain generated assessments.
+- **Already on screen:** a pane's whole screen at its first capture in the segment, labelled as earlier work: it shows what was there before the segment's own activity.
+- **New text:** the lines that appeared on a pane since its previous capture. A line is shown once, at its first appearance, so a screen redrawn every few seconds costs only what changed. A line rewritten in place (a spinner, a timer, a progress count, an input being typed) keeps one entry showing its latest version.
+- **Typed:** keyboard input read from the terminal capture's cursor, not from any application's screen layout. An active pane with a visible cursor, outside a tmux pane mode, takes input on the cursor's row; dim text after the cursor is a placeholder or suggestion and is left out. A row counts as typed once its text changes under the cursor, so an unchanged prompt does not, and when the cursor leaves a row, what that row now shows is taken as what was sent. Frames captured without cursor fields have no typed input. The pane's echo of a typed line is dropped from its new text, so the owner's words are not repeated as the pane's output. Typed input is kept newest first, up to a fixed byte budget shared evenly across the segment's tmux sessions.
 
-The timeline takes the ordinary input position, so fitting trims it like any talent's input, keeping the newest whole entries. Every pane and window roster restarts from complete text at the same observation at least every 60 seconds, and each restart begins an entry, so a trimmed timeline starts on complete screens. Within each displayed block, a line already shown since the latest entry is dropped, and each run of dropped lines becomes one `[N earlier lines]` marker; the lossless timeline is checked before that drop. The reading guide, the input cards, the passages and the Sense instructions are preserved, so every passage the model may choose stays visible. A trimmed result records its input budget like any other partial input. This trimming is the last-resort guard, not sampling: a segment longer than the window loses its earliest entries, whatever they held. Choosing entries for importance is the open direction ([Talent inputs](#talent-inputs)).
+Styling is dropped except strikethrough, which agent task lists use for finished steps. The capture's desktop activity (the focused pane's title, working directory, program and window) is listed once per distinct context, with how often it was seen, up to the most frequent 30. A short reading guide says what each kind of entry is, and that an assistant's or agent's text is that program's work.
 
-The talent runtime validates the Sense object (bound, when anchored) before its existing output writer runs. Think then publishes the usual segment projections through its existing writer. An invalid binding or record, or a context-window refusal because even the preserved part does not fit, permits one ordinary native fallback sequence. Cancellation, transport, authentication and attestation failures do not trigger that fallback. Attempt events and usage accounting retain the candidate and fallback calls.
+The entries are then fitted to a budget fixed by design: the floor window's input budget for Sense (`compute_input_budget` of its `max_output_tokens` at `LOCAL_MIN_CONTEXT_TOKENS`) less everything else in the request, counted with the journal's tokenizer. Typed input is always kept. If the entries do not fit whole, one line cap applies to every other entry, the largest that fits: short entries stay whole, and a long one keeps its start and end with the number of lines left out (a first-seen screen keeps its end). Below the smallest cap, new-text entries are chosen by time spread (the last, the first, then each the farthest in time from those kept), and each run left out is named with its time span and size. The reading takes the place of the screen captures in the ordinary request, which runs, validates and publishes like any Sense output; a `terminal_sense` event records what was read and left out. Generic fitting stays behind it as the disclosed last-resort guard.
 
 ## Architecture
 

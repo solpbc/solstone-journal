@@ -74,7 +74,7 @@ fn setup(
 /// with no such row is captured once, with no cursor fields.
 fn typing_frames(screen: &str) -> String {
     let frame = |time: f64, content: &str, cursor: Option<(usize, usize)>| {
-        let mut pane = json!({"id":"%0","index":0,"active":true,"content":content});
+        let mut pane = json!({"id":"%0","index":0,"active":true,"content":content,"width":80});
         if let Some((x, y)) = cursor {
             for (key, value) in [
                 ("cursor_x", json!(x)),
@@ -99,6 +99,7 @@ fn typing_frames(screen: &str) -> String {
     prompt[y] = "❯ ";
     frame(0.001, &prompt.join("\n"), Some((2, y))) + &frame(5.001, screen, Some((x, y)))
 }
+
 fn display() -> String {
     format!(
         "A complete displayed briefing explains the earlier investigation.\n\n{}\n❯ Is the implementation ready?\n{}\n permissions: shift+tab to cycle\n",
@@ -106,137 +107,103 @@ fn display() -> String {
         "─".repeat(40)
     )
 }
+
+/// The request as preparation built it before terminal sampling.
+fn unsampled(
+    request: &serde_json::Map<String, Value>,
+    paths: &crate::prepare::RuntimePaths,
+    context: &ExecutionContext,
+) -> PreparedTalent {
+    SKIP.with(|skip| skip.set(true));
+    let prepared = crate::prepare::prepare(
+        request.clone(),
+        paths,
+        context,
+        crate::prepare::PrepareMode::Preview,
+    );
+    SKIP.with(|skip| skip.set(false));
+    prepared.unwrap()
+}
+
+fn source_text(prepared: &PreparedTalent) -> String {
+    let request = crate::native_generate_request(prepared).unwrap();
+    let solstone_core_generate::ContentPart::Text { text } = &request.contents[0] else {
+        panic!("source part");
+    };
+    text.clone()
+}
+
 #[test]
-fn native_loaded_source_bytes_and_identities_qualify_only_when_they_match() {
-    let (_root, paths, context, request) = setup(&display());
-    let mut prepared = crate::prepare::prepare(
+fn the_request_cortex_sends_reads_the_sampled_terminal() {
+    let (_root, paths, context, mut request) = setup(&display());
+    // Cortex sends every segment talent an empty prompt.
+    request.insert("prompt".into(), json!(""));
+    let prepared = crate::prepare::prepare(
         request,
         &paths,
         &context,
         crate::prepare::PrepareMode::Preview,
     )
     .unwrap();
+    let event = prepared
+        .terminal_sense
+        .as_ref()
+        .expect("a terminal-only segment is sampled");
+    assert_eq!(event["branch"], "sampled");
+    assert_eq!(event["typed"], 1);
+    let text = source_text(&prepared);
+    assert!(text.contains(sample::GUIDE));
     assert!(
-        prepared.terminal_sense.is_some(),
-        "matching native input must take the candidate: {}",
-        inspect(&prepared, None).unwrap()["diagnostic"]
+        text.contains("· typed\n❯ Is the implementation ready?"),
+        "{text}"
     );
-    prepared.terminal_sense = None;
-    assert!(prepare(&prepared, &context).is_some());
-    let mut wrong = prepared.clone();
+    assert!(text.contains("already on screen at its first capture (earlier work)"));
+    assert!(text.contains("Typed at the keyboard in this segment, in order:\n- 10:00:05 · window \"work\": ❯ Is the implementation ready?\n"));
+    assert!(
+        !text.contains("\"panes\""),
+        "the raw capture is replaced: {text}"
+    );
+}
+
+#[test]
+fn only_terminal_only_sources_bound_to_their_bytes_are_sampled() {
+    let (_root, paths, context, request) = setup(&display());
+    let raw = unsampled(&request, &paths, &context);
+    assert!(prepare(&mut raw.clone(), &context).is_some());
+    let mut wrong = raw.clone();
     wrong.entry_sources[0].as_mut().unwrap().records[0]["content"]["tmux"]["panes"][0]["content"] =
         json!("different bytes");
-    assert!(prepare(&wrong, &context).is_none());
-    let mut wrong = prepared.clone();
-    wrong.entry_sources[0].as_mut().unwrap().path = PathBuf::from("different identity");
-    assert!(prepare(&wrong, &context).is_none());
-    let mut wrong = prepared.clone();
-    wrong.entry_sources[0] = None;
-    assert!(prepare(&wrong, &context).is_none());
-    let mut wrong = prepared.clone();
-    wrong.config["source_counts"]["transcripts"] = json!(1);
-    assert!(prepare(&wrong, &context).is_none());
-    let mut wrong = prepared;
-    wrong.config.insert("_memory_sources".into(), json!([{}]));
-    assert!(prepare(&wrong, &context).is_none());
-}
-#[test]
-fn the_anchored_schema_is_one_every_structured_output_provider_accepts() {
-    let (_root, paths, context, request) = setup(&display());
-    let p = crate::prepare::prepare(
-        request,
-        &paths,
-        &context,
-        crate::prepare::PrepareMode::Preview,
-    )
-    .unwrap();
-    let candidate = p.terminal_sense.expect("anchored candidate");
-    assert!(candidate.anchored());
-    let schema = candidate.request.json_schema.as_ref().unwrap();
-    assert_eq!(
-        solstone_core_generate_wire::anthropic_schema_violations(schema),
-        Vec::<String>::new()
-    );
-}
-#[test]
-fn unsupported_ui_styles_read_the_timeline_without_an_anchor() {
-    for text in [
-        // Only dim suggestion text after the prompt: nothing was typed.
-        display().replace("❯ Is", "❯ \x1b[2mIs"),
-        display().replace("❯ Is", "❯ \x1b[2JIs"),
-        "plain terminal without a known field".to_owned(),
-    ] {
-        let (_root, paths, context, mut request) = setup(&text);
-        request.insert("_terminal_sense_binding".into(), json!({"current":"spoof"}));
-        let p = crate::prepare::prepare(
-            request,
-            &paths,
-            &context,
-            crate::prepare::PrepareMode::Preview,
-        )
-        .unwrap();
-        let native = crate::native_generate_request(&p).unwrap();
-        let candidate = p
-            .terminal_sense
-            .expect("every terminal segment reads the timeline");
-        assert!(!candidate.anchored(), "{text:?}");
-        // Sense's own task and schema, reading the timeline through its guide.
-        assert_eq!(candidate.request.json_schema, native.json_schema);
-        assert_eq!(candidate.request.contents.len(), native.contents.len());
-        assert_eq!(candidate.request.contents[1], native.contents[1]);
-        let guide = candidate.request.system_instruction.as_deref().unwrap();
-        assert!(guide.starts_with(raw_changes::INTRO), "{text:?}");
-        let ContentPart::Text { text: timeline } = &candidate.request.contents[0] else {
-            panic!("timeline part");
-        };
-        assert!(timeline.contains("End observation.\n"));
-        assert!(!timeline.contains(raw_changes::INTRO));
+    let mut wrong_path = raw.clone();
+    wrong_path.entry_sources[0].as_mut().unwrap().path = PathBuf::from("different identity");
+    let mut missing = raw.clone();
+    missing.entry_sources[0] = None;
+    let mut spoken = raw.clone();
+    spoken.config["source_counts"]["transcripts"] = json!(1);
+    let mut remembered = raw.clone();
+    remembered
+        .config
+        .insert("_memory_sources".into(), json!([{}]));
+    for mut prepared in [wrong, wrong_path, missing, spoken, remembered] {
+        let before = prepared.config["transcript"].clone();
+        assert!(prepare(&mut prepared, &context).is_none());
+        assert_eq!(
+            prepared.config["transcript"], before,
+            "an ineligible segment keeps the ordinary request"
+        );
     }
 }
+
 #[test]
-fn every_thinking_backend_prepares_the_same_candidate() {
-    let (_root, paths, context, request) = setup(&display());
-    let mut candidates = Vec::new();
-    for config in [
-        json!({"providers":{"active":{"provider":"test","model":"test-model"}}}),
-        json!({"providers":{"active":{"provider":"local","model":"local/qwen3.5-4b"}}}),
-        json!({"providers":{"active":{"provider":"local","model":"local/qwen3.5-4b"},"local":{"endpoint_url":"https://example.test","served_model_id":"Qwen/Qwen3.5-4B"}},"services":{"confidential":{}}}),
-        json!({"providers":{"active":{"provider":"local","model":"local/other"},"local":{"endpoint_url":"https://example.test","served_model_id":"other","served_context_window":16384}}}),
-        json!({"providers":{"active":{"provider":"openai","model":"openai-model"}}}),
-        json!({"providers":{"active":{"provider":"anthropic","model":"anthropic-model"}}}),
-        json!({"providers":{"active":{"provider":"google","model":"google-model"}}}),
-    ] {
-        fs::write(
-            context.journal.join("config/journal.json"),
-            config.to_string(),
-        )
-        .unwrap();
-        let p = crate::prepare::prepare(
-            request.clone(),
-            &paths,
-            &context,
-            crate::prepare::PrepareMode::Preview,
-        )
-        .unwrap();
-        let candidate = p
-            .terminal_sense
-            .expect("terminal input takes the candidate");
-        candidates
-            .push(solstone_core_generate::encode_one_shot_request(&candidate.request).unwrap());
-    }
-    assert!(candidates.windows(2).all(|pair| pair[0] == pair[1]));
-}
-#[test]
-fn ordinary_fitting_trims_the_timeline_from_complete_screens() {
-    use solstone_core_local::generate::fit_contents;
-    let (_root, paths, context, request) = setup(&display());
+fn a_segment_larger_than_the_floor_window_is_sampled_to_fit_it() {
+    // Sixty captures, each adding a hundred new lines: far over the floor window.
     let frames: String = (0..60)
-        .map(|i| {
-            let log: String = (0..=i).map(|j| format!("build step {j} finished\n")).collect();
-            let raw = json!({"timestamp":0.001 + 5.0 * f64::from(i),"analysis":{"primary":"tmux","visual_description":"A terminal"},"content":{"tmux":{"session":"main","window":{"id":"@0","index":0,"name":"work"},"windows":[{"id":"@0","index":0,"name":"work","active":true}],"panes":[{"id":"%0","index":0,"active":true,"content":format!("{log}{}", display())}]}}});
+        .map(|n| {
+            let content: String = (0..100).map(|l| format!("build step {n} wrote output line {l} for module {}\n", n * 100 + l)).collect();
+            let raw = json!({"timestamp":f64::from(n) * 5.0,"analysis":{"primary":"tmux"},"content":{"tmux":{"session":"main","window":{"id":"@0","name":"work"},"panes":[{"id":"%0","active":true,"content":content}]}}});
             format!("{raw}\n")
         })
         .collect();
+    let (_root, paths, context, request) = setup("");
     fs::write(
         context
             .journal
@@ -244,180 +211,39 @@ fn ordinary_fitting_trims_the_timeline_from_complete_screens() {
         frames,
     )
     .unwrap();
-    let p = crate::prepare::prepare(
-        request,
-        &paths,
-        &context,
-        crate::prepare::PrepareMode::Preview,
-    )
-    .unwrap();
-    let request = p
-        .terminal_sense
-        .expect("terminal input takes the candidate")
-        .request;
-    let contents = Value::Array(
-        request
-            .contents
-            .iter()
-            .map(|part| match part {
-                ContentPart::Text { text } => json!(text),
-                ContentPart::Image { .. } => panic!("terminal Sense sends text"),
-            })
-            .collect(),
-    );
-    let system = request.system_instruction.as_deref();
-    let max_output_tokens = u32::try_from(request.max_output_tokens).unwrap();
-    let (mut refused, mut whole, mut from_complete_screens) = (false, false, 0);
-    for window in (1024..=262_144).step_by(512) {
-        let mut count = solstone_core_tokens::count;
-        match fit_contents(&contents, system, max_output_tokens, window, &mut count) {
-            Err(error) => {
-                assert_eq!(error.reason_code, "context_preserved_overflow");
-                assert!(!whole && from_complete_screens == 0);
-                refused = true;
-            }
-            Ok((fitted, None)) => {
-                assert_eq!(fitted, contents);
-                whole = true;
-                break;
-            }
-            Ok((fitted, Some(budget))) => {
-                assert!(budget.clipped);
-                // Only the timeline is trimmed; instructions, cards and passages stay whole.
-                assert_eq!(
-                    fitted.as_array().unwrap()[1..],
-                    contents.as_array().unwrap()[1..]
-                );
-                let kept = fitted[0].as_str().unwrap();
-                let kept = &kept[kept.find("\n\n").unwrap() + 2..];
-                if !kept.starts_with("## ") {
-                    continue;
-                }
-                from_complete_screens += 1;
-                let first = &kept[..kept.find("End observation.\n").unwrap()];
-                let observation = first
-                    .lines()
-                    .find_map(|line| line.strip_prefix("Observation: "))
-                    .unwrap();
-                let observation: Value = serde_json::from_str(observation).unwrap();
-                assert_eq!(observation["roster_update"]["mode"], "full");
-                assert!(observation.get("restart").is_none());
-                let panes = first
-                    .lines()
-                    .filter(|line| line.starts_with("Pane change: "))
-                    .collect::<Vec<_>>();
-                assert!(!panes.is_empty());
-                assert!(panes.iter().all(|line| line.contains(r#""mode":"full""#)));
-            }
-        }
-    }
-    assert!(refused && whole && from_complete_screens > 1);
-}
-
-#[test]
-fn only_a_usable_cursor_anchors_and_cursor_fields_never_change_the_timeline() {
-    for text in [display(), "ordinary shell prompt> text".to_owned()] {
-        let (_root, paths, context, request) = setup(&text);
-        let old = crate::prepare::prepare(
-            request.clone(),
-            &paths,
-            &context,
-            crate::prepare::PrepareMode::Preview,
-        )
-        .unwrap();
-        let path = context
-            .journal
-            .join("chronicle/20261021/device/100000_300/tmux_main_screen.jsonl");
-        let hidden: String = fs::read_to_string(&path)
-            .unwrap()
-            .lines()
-            .map(|line| {
-                let mut raw: Value = serde_json::from_str(line).unwrap();
-                let pane = &mut raw["content"]["tmux"]["panes"][0];
-                pane["cursor_x"] = json!(7);
-                pane["cursor_y"] = json!(3);
-                pane["cursor_visible"] = json!(false);
-                pane["alternate_on"] = json!(true);
-                pane["pane_in_mode"] = json!(true);
-                format!("{raw}\n")
-            })
-            .collect();
-        fs::write(&path, hidden).unwrap();
-        let new = crate::prepare::prepare(
-            request,
-            &paths,
-            &context,
-            crate::prepare::PrepareMode::Preview,
-        )
-        .unwrap();
-        let (old, new) = (old.terminal_sense.unwrap(), new.terminal_sense.unwrap());
-        // A hidden cursor in a pane mode is no typed input.
-        assert!(!new.anchored());
-        assert_eq!(old.anchored(), text == display());
-        // The timeline itself never reads the cursor fields.
-        assert_eq!(old.request.contents[0], new.request.contents[0]);
-    }
-}
-
-#[test]
-fn tmux_executable_points_do_not_disable_the_native_timeline() {
-    let (_root, paths, context, request) = setup(&display());
-    let activity = context
-        .journal
-        .join("chronicle/20261021/device/100000_300/100000_desktop_activity.jsonl");
-    fs::write(&activity, format!("{}\n", json!({"v":1,"t":"desktop_activity","kind":"terminal","method":"tmux","ts":1792576800000_i64,"end_ts":1792576800000_i64,"session":"main","window":"work","exe":"bash"}))).unwrap();
     let prepared = crate::prepare::prepare(
-        request.clone(),
-        &paths,
-        &context,
-        crate::prepare::PrepareMode::Preview,
-    )
-    .unwrap();
-    assert_eq!(prepared.config["source_counts"]["percepts"], 2);
-    assert!(
-        prepared.terminal_sense.is_some(),
-        "executable points must not disable TC"
-    );
-    let encoded = solstone_core_generate::encode_one_shot_request(
-        &crate::generate_request(&prepared).unwrap(),
-    )
-    .unwrap();
-    let activity_source = prepared
-        .entry_sources
-        .iter()
-        .flatten()
-        .find(|s| s.file.ends_with("_desktop_activity.jsonl"))
-        .unwrap();
-    let activity_text = activity_source
-        .chunks
-        .iter()
-        .map(|(chunk, _)| chunk.as_str())
-        .collect::<Vec<_>>()
-        .join("\n\n");
-    assert!(encoded.contains("bash"));
-    let ContentPart::Text {
-        text: candidate_text,
-    } = &prepared.terminal_sense.as_ref().unwrap().request.contents[0]
-    else {
-        panic!("text input")
-    };
-    assert!(candidate_text.contains(activity_text.trim()));
-    let native = solstone_core_generate::encode_one_shot_request(
-        &crate::native_generate_request(&prepared).unwrap(),
-    )
-    .unwrap();
-    assert_ne!(encoded, native);
-    // A non-tmux activity source must retain the conservative native fallback.
-    let text = fs::read_to_string(&activity)
-        .unwrap()
-        .replace("\"tmux\"", "\"other\"");
-    fs::write(&activity, text).unwrap();
-    let other = crate::prepare::prepare(
         request,
         &paths,
         &context,
         crate::prepare::PrepareMode::Preview,
     )
     .unwrap();
-    assert!(other.terminal_sense.is_none());
+    let event = prepared.terminal_sense.as_ref().expect("sampled");
+    assert!(
+        event["line_cap"].is_u64() || event["entries_left_out"].as_u64() > Some(0),
+        "{event}"
+    );
+    let request = crate::native_generate_request(&prepared).unwrap();
+    let used: u32 = request
+        .contents
+        .iter()
+        .map(|part| match part {
+            solstone_core_generate::ContentPart::Text { text } => solstone_core_tokens::count(text),
+            _ => 0,
+        })
+        .sum();
+    let floor = solstone_core_local::generate::compute_input_budget(
+        u32::try_from(request.max_output_tokens).unwrap(),
+        solstone_core_local::plan::LOCAL_MIN_CONTEXT_TOKENS,
+    );
+    assert!(used <= floor, "{used} tokens over the floor budget {floor}");
+    let text = source_text(&prepared);
+    assert!(
+        text.contains("build step 59 wrote output line 0 "),
+        "the segment's end is read"
+    );
+    assert!(
+        text.contains("build step 0 wrote output line 99 "),
+        "and its first screen's end"
+    );
 }

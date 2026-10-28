@@ -67,7 +67,6 @@ pub fn prepare(
     // Only native source admission below may supply this runtime-owned body.
     composed.remove(crate::story::SOURCE_BODY_KEY);
     let talent_schema = composed.get("json_schema").cloned();
-    let talent_prompt = composed.get("prompt").cloned();
     for (key, value) in request {
         if !value.is_null()
             && !matches!(
@@ -310,43 +309,9 @@ pub fn prepare(
             crate::story_messages::Candidate::prepare(&prepared.entry_sources, &prepared.config);
     }
     if prepared.name == "sense" {
-        // The packaged talent as installed, before any owner override.
-        let stock_file = std::fs::read_to_string(paths.talent_root.join("sense.md")).ok();
-        let stock_body = stock_file
-            .as_deref()
-            .and_then(|file| file.split_once("\n}\n"))
-            .map(|(_, body)| body.trim());
-        let stock_schema = std::fs::read_to_string(paths.talent_root.join("sense.schema.json"))
-            .ok()
-            .and_then(|schema| serde_json::from_str::<Value>(&schema).ok());
-        let mut normalized_schema = prepared.config.get("json_schema").cloned();
-        if let Some(schema) = &mut normalized_schema
-            && let Some(facets) =
-                schema.pointer_mut("/properties/facets/items/properties/facet/enum")
-        {
-            *facets = serde_json::json!(["__RUNTIME_FACETS__"]);
-        }
-        let stock = prepared.config.get("json_schema") == talent_schema.as_ref()
-            && prepared.config.get("prompt") == talent_prompt.as_ref()
-            && Some(config.body.trim()) == stock_body
-            && normalized_schema == stock_schema;
         prepared.entry_sources = entry_sources;
-        if stock {
-            prepared.stock_task = Some(crate::StockTask {
-                user_instruction: prepared
-                    .config
-                    .get("user_instruction")
-                    .and_then(Value::as_str)
-                    .map(str::to_owned),
-                prompt: prepared
-                    .config
-                    .get("prompt")
-                    .and_then(Value::as_str)
-                    .map(str::to_owned),
-                json_schema: talent_schema,
-            });
-        }
-        prepared.terminal_sense = crate::terminal_sense::prepare(&prepared, context);
+        let report = crate::terminal_sense::prepare(&mut prepared, context);
+        prepared.terminal_sense = report;
     }
     Ok(prepared)
 }

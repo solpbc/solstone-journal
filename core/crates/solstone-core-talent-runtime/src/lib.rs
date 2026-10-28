@@ -46,11 +46,6 @@ mod story_source_conformance;
 mod terminal_sense;
 mod transcript;
 mod usage;
-#[cfg(feature = "test-hooks")]
-#[doc(hidden)]
-pub use terminal_sense::{
-    inspect as inspect_terminal_sense, inspect_codec as inspect_terminal_codec,
-};
 pub mod weekly_reflection;
 
 #[cfg(test)]
@@ -72,13 +67,6 @@ pub struct ExecutionContext {
     pub journal: PathBuf,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct StockTask {
-    pub user_instruction: Option<String>,
-    pub prompt: Option<String>,
-    pub json_schema: Option<Value>,
-}
-
 /// A request a stage frames itself: its instruction as the system
 /// instruction and one text as the only content.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -92,8 +80,8 @@ pub struct PreparedTalent {
     pub name: String,
     pub config: Map<String, Value>,
     pub(crate) entry_sources: Vec<Option<solstone_core_transcripts::EntrySource>>,
-    pub(crate) stock_task: Option<StockTask>,
-    pub(crate) terminal_sense: Option<terminal_sense::Candidate>,
+    /// What terminal sampling read and left out, emitted once with the run.
+    pub(crate) terminal_sense: Option<Value>,
     pub(crate) story_input: Option<story_input::Candidate>,
     pub(crate) story_messages: Option<story_messages::Candidate>,
     pub(crate) story_input_used: bool,
@@ -107,7 +95,6 @@ impl PreparedTalent {
             name,
             config,
             entry_sources: Vec::new(),
-            stock_task: None,
             terminal_sense: None,
             story_input: None,
             story_messages: None,
@@ -1084,13 +1071,12 @@ fn generate_response(
     prepared: &mut PreparedTalent,
     generate: &dyn solstone_core_generate::GenerateExecutor,
     writer: &mut impl Write,
-    cancellation: &solstone_core_generate::Cancellation,
 ) -> Result<GeneratedTalentResponse, RuntimeOutcome> {
     // These receipts belong to this execution, never to a caller-supplied value.
     prepared.config.remove(INPUT_BUDGET_KEY);
     prepared.config.remove(story::INPUT_WHOLE_KEY);
-    if let Some(candidate) = prepared.terminal_sense.take() {
-        return terminal_sense::execute(candidate, prepared, generate, writer, cancellation);
+    if let Some(event) = prepared.terminal_sense.take() {
+        emit(writer, event);
     }
     native_generate_response(prepared, generate, writer)
 }
@@ -1251,64 +1237,63 @@ pub(crate) fn generate_and_write(
     stage: Option<(&'static contract::StageSpec, PrePostState)>,
     cancellation: &solstone_core_generate::Cancellation,
 ) -> RuntimeOutcome {
-    let (response, usage, degraded) =
-        match generate_response(prepared, generate, writer, cancellation) {
-            Ok(response) => {
-                if cancellation.is_cancelled() {
-                    return RuntimeOutcome::Cancelled;
-                }
-                response
+    let (response, usage, degraded) = match generate_response(prepared, generate, writer) {
+        Ok(response) => {
+            if cancellation.is_cancelled() {
+                return RuntimeOutcome::Cancelled;
             }
-            Err(outcome) => {
-                if cancellation.is_cancelled() {
-                    return RuntimeOutcome::Cancelled;
-                }
-                if let Some((stage, state)) = stage
-                    && stage.unavailable_commit.is_some()
-                {
-                    let mapped_reason = match &outcome {
-                        RuntimeOutcome::SchemaValidationFailed { .. } => {
-                            Some(("schema_exhausted".to_owned(), None, None))
-                        }
-                        RuntimeOutcome::GenerateRefused { error, response } => {
-                            let wire = response
-                                .reason_code
-                                .as_ref()
-                                .map(ReasonCodeValue::as_wire)
-                                .unwrap_or("");
-                            Some((
-                                format!("refused:{wire}"),
-                                error.usage.clone(),
-                                error.degraded.clone(),
-                            ))
-                        }
-                        RuntimeOutcome::StageFailed(err)
-                            if err.phase == "generate" && err.stage == "runtime" =>
-                        {
-                            Some((
-                                "transport".to_owned(),
-                                err.usage.clone(),
-                                err.degraded.clone(),
-                            ))
-                        }
-                        _ => None,
-                    };
-                    if let Some((reason, u, d)) = mapped_reason {
-                        return finish_unavailable(
-                            &reason,
-                            prepared,
-                            (stage, &state),
-                            context,
-                            writer,
-                            u,
-                            d,
-                            cancellation,
-                        );
+            response
+        }
+        Err(outcome) => {
+            if cancellation.is_cancelled() {
+                return RuntimeOutcome::Cancelled;
+            }
+            if let Some((stage, state)) = stage
+                && stage.unavailable_commit.is_some()
+            {
+                let mapped_reason = match &outcome {
+                    RuntimeOutcome::SchemaValidationFailed { .. } => {
+                        Some(("schema_exhausted".to_owned(), None, None))
                     }
+                    RuntimeOutcome::GenerateRefused { error, response } => {
+                        let wire = response
+                            .reason_code
+                            .as_ref()
+                            .map(ReasonCodeValue::as_wire)
+                            .unwrap_or("");
+                        Some((
+                            format!("refused:{wire}"),
+                            error.usage.clone(),
+                            error.degraded.clone(),
+                        ))
+                    }
+                    RuntimeOutcome::StageFailed(err)
+                        if err.phase == "generate" && err.stage == "runtime" =>
+                    {
+                        Some((
+                            "transport".to_owned(),
+                            err.usage.clone(),
+                            err.degraded.clone(),
+                        ))
+                    }
+                    _ => None,
+                };
+                if let Some((reason, u, d)) = mapped_reason {
+                    return finish_unavailable(
+                        &reason,
+                        prepared,
+                        (stage, &state),
+                        context,
+                        writer,
+                        u,
+                        d,
+                        cancellation,
+                    );
                 }
-                return outcome;
             }
-        };
+            return outcome;
+        }
+    };
     if cancellation.is_cancelled() {
         return RuntimeOutcome::Cancelled;
     }
@@ -1624,9 +1609,6 @@ fn emit_generate_input(writer: &mut impl Write, request: &GenerateRequest) {
 /// declared `max_output_tokens`, which config validation requires; there is no
 /// default to fall back on.
 fn generate_request(prepared: &PreparedTalent) -> Result<GenerateRequest, String> {
-    if let Some(candidate) = &prepared.terminal_sense {
-        return Ok(candidate.request.clone());
-    }
     native_generate_request(prepared)
 }
 
@@ -4367,13 +4349,8 @@ mod tests {
             ],
         );
         let mut output = Vec::new();
-        let response = generate_response(
-            &mut prepared,
-            &OneShotClient::at_path(&stub),
-            &mut output,
-            &solstone_core_generate::Cancellation::never(),
-        )
-        .unwrap();
+        let response =
+            generate_response(&mut prepared, &OneShotClient::at_path(&stub), &mut output).unwrap();
         assert!(response.0.contains("tests passed"));
         let read_request = |ordinal| {
             solstone_core_generate::decode_one_shot_request(

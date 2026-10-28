@@ -10,61 +10,94 @@
 //! dim style is a placeholder or a suggestion, not typing, and is left out.
 //! A row counts as typed input only once it changes under the cursor, so an
 //! empty prompt is not mistaken for one; a command typed and sent between two
-//! captures is read from the row the cursor just left.
+//! captures is read from the row the cursor just left. Text changed in the
+//! middle keeps its start, so a row that keeps a long common start with the
+//! input before it is that input edited. An input longer than its field wraps:
+//! when the cursor moves down one row while the row above it, now mostly full,
+//! still holds what was being typed, both rows are one input.
 
-use super::{digest, readable_terminal, state_codec::split_lines_keepends};
-use regex::Regex;
-use serde_json::{Value, json};
-use std::sync::LazyLock;
+use super::screen::display_line;
+use serde_json::Value;
 
-pub(super) static CSI: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"\x1b\[[0-?]*[ -/]*[@-~]").unwrap());
-static SGR: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\x1b\[([0-9;:]*)m").unwrap());
-static OSC: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"\x1b\]8;([^;]*);([^\x07\x1b]*)(?:\x07|\x1b\\)").unwrap());
-
-/// Inputs whose total text exceeds this keep only the newest that fit.
-const INPUT_BUDGET_BYTES: usize = 6000;
 /// A longer cursor row is screen output the cursor happens to sit on.
 const INPUT_MAX_BYTES: usize = 600;
+/// A wrapped row fills at least this share of the pane's width, in tenths: an
+/// input field has margins and wraps at a word.
+const WRAP_TENTHS: usize = 7;
+/// An edit keeps at least this much of the input's start, and half of it.
+const EDIT_COMMON_START: usize = 12;
 
-pub(super) fn plain(text: &str) -> Result<String, &'static str> {
-    readable_terminal::render(text)?;
-    let value = OSC.replace_all(text, "");
-    let value = SGR.replace_all(&value, "").into_owned();
-    if value.contains('\x1b') {
-        return Err("unknown terminal control");
-    }
-    Ok(value)
-}
-
-#[derive(Clone, Debug)]
-pub(super) struct Bound {
-    pub kind: &'static str,
-    pub current: String,
-    pub current_sha: String,
-    pub screen_sha: String,
-    pub timestamp: Value,
-    pub scope: Value,
-    pub screen: String,
-    pub start: usize,
+fn edited(before: &str, after: &str) -> bool {
+    let common = before
+        .chars()
+        .zip(after.chars())
+        .take_while(|(a, b)| a == b)
+        .count();
+    let shorter = before.chars().count().min(after.chars().count());
+    common >= EDIT_COMMON_START && common * 2 >= shorter
 }
 
 /// One typed input: the longest text the cursor row held while each reading
 /// only extended or shortened the one before it.
 #[derive(Clone, Debug)]
-struct Typed {
-    timestamp: Value,
-    scope: Value,
+pub(super) struct Typed {
+    pub timestamp: f64,
+    pub window: String,
+    pub pane: String,
+    /// The input's earlier wrapped rows, joined.
+    head: String,
+    /// The row the cursor is on.
     text: String,
-    screen: String,
-    start: usize,
     row: usize,
     changed: bool,
 }
 
-/// The cursor row's typed text and the row's byte offset in the pane text.
-fn typed(pane: &Value) -> Option<(String, usize)> {
+impl Typed {
+    /// The whole input, wrapped rows joined.
+    pub(super) fn text(&self) -> String {
+        if self.head.is_empty() {
+            self.text.clone()
+        } else {
+            format!("{} {}", self.head, self.text)
+        }
+    }
+}
+
+/// Lines as a terminal splits them, each keeping its line break.
+pub(super) fn split_lines(text: &str) -> Vec<&str> {
+    let mut lines = Vec::new();
+    let mut start = 0;
+    let mut chars = text.char_indices().peekable();
+    while let Some((i, c)) = chars.next() {
+        if matches!(
+            c,
+            '\n' | '\r'
+                | '\u{b}'
+                | '\u{c}'
+                | '\u{1c}'
+                | '\u{1d}'
+                | '\u{1e}'
+                | '\u{85}'
+                | '\u{2028}'
+                | '\u{2029}'
+        ) {
+            let mut end = i + c.len_utf8();
+            if c == '\r' && chars.peek().is_some_and(|(_, c)| *c == '\n') {
+                let (j, c) = chars.next().unwrap();
+                end = j + c.len_utf8();
+            }
+            lines.push(&text[start..end]);
+            start = end;
+        }
+    }
+    if start < text.len() {
+        lines.push(&text[start..]);
+    }
+    lines
+}
+
+/// The cursor row's typed text.
+fn typed_row(pane: &Value) -> Option<String> {
     if pane["cursor_visible"] != true || pane["pane_in_mode"] != false {
         return None;
     }
@@ -74,61 +107,16 @@ fn typed(pane: &Value) -> Option<(String, usize)> {
 }
 
 /// A row's text, leaving out concealed text and dim text from column `x` on.
-fn row_text(pane: &Value, y: usize, x: usize) -> Option<(String, usize)> {
-    let content = pane["content"].as_str()?;
-    let lines = split_lines_keepends(content);
-    let row = lines.get(y)?;
-    let start: usize = lines[..y].iter().map(String::len).sum();
-    let row = OSC.replace_all(row.trim_end_matches(['\r', '\n']), "");
-    let mut text = String::new();
-    let (mut column, mut cursor, mut dim, mut conceal) = (0, 0, false, false);
-    while cursor < row.len() {
-        let rest = &row[cursor..];
-        if let Some(m) = SGR.find(rest).filter(|m| m.start() == 0) {
-            let params = &rest[2..m.end() - 1];
-            let mut codes = params
-                .split([';', ':'])
-                .map(|p| p.parse::<u32>().unwrap_or(0));
-            while let Some(code) = codes.next() {
-                match code {
-                    0 => (dim, conceal) = (false, false),
-                    2 => dim = true,
-                    8 => conceal = true,
-                    22 => dim = false,
-                    28 => conceal = false,
-                    38 | 48 | 58 => match codes.next() {
-                        Some(5) => {
-                            codes.next();
-                        }
-                        Some(2) => {
-                            codes.nth(2);
-                        }
-                        _ => {}
-                    },
-                    _ => {}
-                }
-            }
-            cursor += m.end();
-            continue;
-        }
-        if rest.starts_with('\x1b') {
-            return None;
-        }
-        let c = rest.chars().next()?;
-        if !conceal && !(dim && column >= x) {
-            text.push(c);
-        }
-        column += 1;
-        cursor += c.len_utf8();
-    }
-    let text = text.trim().to_owned();
-    if text.is_empty() || text.len() > INPUT_MAX_BYTES {
-        return None;
-    }
-    Some((text, start))
+fn row_text(pane: &Value, y: usize, x: usize) -> Option<String> {
+    let row = *split_lines(pane["content"].as_str()?).get(y)?;
+    let text = display_line(row.trim_end_matches(['\r', '\n']), Some(x), false)
+        .trim()
+        .to_owned();
+    (!text.is_empty() && text.len() <= INPUT_MAX_BYTES).then_some(text)
 }
 
-fn history(frames: &[Value]) -> Vec<Typed> {
+/// Every typed input in the frames, oldest first.
+pub(super) fn typed(frames: &[Value]) -> Vec<Typed> {
     let mut ordered: Vec<&Value> = frames.iter().collect();
     ordered.sort_by(|a, b| {
         a["timestamp"]
@@ -139,49 +127,75 @@ fn history(frames: &[Value]) -> Vec<Typed> {
     let mut out: Vec<Typed> = Vec::new();
     for frame in ordered {
         let tmux = &frame["content"]["tmux"];
+        let timestamp = frame["timestamp"].as_f64().unwrap_or(0.0);
+        let window = tmux["window"]["id"].as_str().unwrap_or("").to_owned();
         let Some(panes) = tmux["panes"].as_array() else {
             continue;
         };
         for pane in panes.iter().filter(|p| p["active"] == true) {
-            let Some((text, start)) = typed(pane) else {
+            let Some(text) = typed_row(pane) else {
                 continue;
             };
-            let scope = json!([tmux["session"], tmux["window"]["id"], pane["id"]]);
+            let id = pane["id"].as_str().unwrap_or("").to_owned();
             let row = usize::try_from(pane["cursor_y"].as_u64().unwrap_or(0)).unwrap_or(0);
-            let screen = pane["content"].as_str().unwrap_or("").to_owned();
-            let last = out.iter().rposition(|t| t.scope == scope);
+            let last = out.iter().rposition(|t| t.window == window && t.pane == id);
             // The cursor left a row: what that row shows now is what was sent.
             if let Some(i) = last.filter(|&i| out[i].row != row)
-                && let Some((sent, sent_start)) = row_text(pane, out[i].row, usize::MAX)
+                && let Some(sent) = row_text(pane, out[i].row, usize::MAX)
                 && sent.len() > out[i].text.len()
                 && sent.starts_with(&out[i].text)
             {
                 out[i].text = sent;
-                out[i].start = sent_start;
-                out[i].screen.clone_from(&screen);
-                out[i].timestamp = frame["timestamp"].clone();
+                out[i].timestamp = timestamp;
                 out[i].changed = true;
             }
             let reading = Typed {
-                timestamp: frame["timestamp"].clone(),
-                scope,
+                timestamp,
+                window: window.clone(),
+                pane: id,
+                head: String::new(),
                 text,
-                screen,
-                start,
                 row,
                 changed: false,
             };
             let same = last.filter(|&i| {
                 let t = &out[i];
                 t.row == reading.row
-                    && (t.text.starts_with(&reading.text) || reading.text.starts_with(&t.text))
+                    && (t.text.starts_with(&reading.text)
+                        || reading.text.starts_with(&t.text)
+                        || edited(&t.text, &reading.text))
             });
+            // The input wrapped: the row above the cursor now holds what was being
+            // typed, mostly full, whether the cursor moved down or the field grew up.
+            let width = usize::try_from(pane["width"].as_u64().unwrap_or(0)).unwrap_or(0);
+            if same.is_none()
+                && let Some(i) = last
+                && let Some(above) = row
+                    .checked_sub(1)
+                    .and_then(|y| row_text(pane, y, usize::MAX))
+                && above.chars().count() * 10 >= width * WRAP_TENTHS
+                && (above.starts_with(&out[i].text) || out[i].text.starts_with(&above))
+            {
+                let mut input = out.remove(i);
+                input.head = if input.head.is_empty() {
+                    above
+                } else {
+                    format!("{} {above}", input.head)
+                };
+                input.text = reading.text;
+                input.row = row;
+                input.timestamp = timestamp;
+                input.changed = true;
+                out.push(input);
+                continue;
+            }
             match same {
                 Some(i) if out[i].text == reading.text => {}
-                Some(i) if out[i].text.len() > reading.text.len() => out[i].changed = true,
+                Some(i) if out[i].text.starts_with(&reading.text) => out[i].changed = true,
                 Some(i) => {
                     let mut grown = reading;
                     grown.changed = true;
+                    grown.head = std::mem::take(&mut out[i].head);
                     out.remove(i);
                     out.push(grown);
                 }
@@ -194,47 +208,15 @@ fn history(frames: &[Value]) -> Vec<Typed> {
             }
         }
     }
-    out.retain(|t| t.changed);
+    // A prompt glyph left alone is an emptied input line, not typing.
+    out.retain(|t| t.changed && t.text.chars().any(char::is_alphanumeric));
     out
-}
-
-/// The latest typed input, and every typed input as issued cards, newest last.
-pub(super) fn choose(frames: &[Value]) -> Option<(Bound, Vec<Value>)> {
-    let mut inputs = history(frames);
-    let latest = inputs.last()?.clone();
-    let mut total = 0;
-    let keep = inputs
-        .iter()
-        .rev()
-        .take_while(|t| {
-            total += t.text.len();
-            total <= INPUT_BUDGET_BYTES
-        })
-        .count();
-    inputs.drain(..inputs.len() - keep);
-    let cards = inputs
-        .iter()
-        .map(|t| json!({"timestamp":t.timestamp,"scope":t.scope,"text":t.text}))
-        .collect();
-    let current = format!("Composed this input: “{}”", latest.text);
-    Some((
-        Bound {
-            kind: "cursor_input_line",
-            current_sha: digest(&current),
-            current,
-            screen_sha: digest(&latest.screen),
-            timestamp: latest.timestamp,
-            scope: latest.scope,
-            screen: latest.screen,
-            start: latest.start,
-        },
-        cards,
-    ))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     fn pane(content: &str, x: u64, y: u64, visible: bool, mode: bool) -> Value {
         json!({"id":"%0","active":true,"content":content,"cursor_x":x,"cursor_y":y,"cursor_visible":visible,"alternate_on":true,"pane_in_mode":mode})
@@ -242,29 +224,35 @@ mod tests {
     fn frame(time: f64, pane: Value) -> Value {
         json!({"timestamp":time,"content":{"tmux":{"session":"s","window":{"id":"@0"},"panes":[pane]}}})
     }
+    fn texts(frames: &[Value]) -> Vec<String> {
+        typed(frames).iter().map(Typed::text).collect()
+    }
 
     #[test]
     fn the_cursor_row_is_the_input_and_dim_text_after_it_is_not() {
         let screen = "output line\n> fix the bu\x1b[2mg in parser\x1b[0m\nstatus bar\n";
-        let (text, start) = typed(&pane(screen, 11, 1, true, false)).unwrap();
-        assert_eq!(text, "> fix the bu");
-        assert_eq!(start, "output line\n".len());
+        assert_eq!(
+            typed_row(&pane(screen, 11, 1, true, false)).unwrap(),
+            "> fix the bu"
+        );
         // Dim text before the cursor was typed in a dim style, so it stays.
-        let (text, _) = typed(&pane("\x1b[2m$ ls\x1b[0m\n", 4, 0, true, false)).unwrap();
-        assert_eq!(text, "$ ls");
+        assert_eq!(
+            typed_row(&pane("\x1b[2m$ ls\x1b[0m\n", 4, 0, true, false)).unwrap(),
+            "$ ls"
+        );
     }
 
     #[test]
     fn a_hidden_cursor_a_mode_a_blank_row_or_only_a_placeholder_is_no_input() {
-        assert!(typed(&pane("\x1b[2mTry a command\x1b[0m\n", 0, 0, true, false)).is_none());
-        assert!(typed(&pane("> typed\n", 7, 0, false, false)).is_none());
-        assert!(typed(&pane("> typed\n", 7, 0, true, true)).is_none());
-        assert!(typed(&pane("log line\n\n", 0, 1, true, false)).is_none());
-        assert!(typed(&pane("> typed\n", 7, 5, true, false)).is_none());
+        assert!(typed_row(&pane("\x1b[2mTry a command\x1b[0m\n", 0, 0, true, false)).is_none());
+        assert!(typed_row(&pane("> typed\n", 7, 0, false, false)).is_none());
+        assert!(typed_row(&pane("> typed\n", 7, 0, true, true)).is_none());
+        assert!(typed_row(&pane("log line\n\n", 0, 1, true, false)).is_none());
+        assert!(typed_row(&pane("> typed\n", 7, 5, true, false)).is_none());
         let mut old = pane("> typed\n", 7, 0, true, false);
         old.as_object_mut().unwrap().remove("cursor_x");
-        assert!(typed(&old).is_none());
-        assert!(typed(&pane("\x1b[8m> secret\x1b[0m\n", 8, 0, true, false)).is_none());
+        assert!(typed_row(&old).is_none());
+        assert!(typed_row(&pane("\x1b[8m> secret\x1b[0m\n", 8, 0, true, false)).is_none());
     }
 
     #[test]
@@ -276,12 +264,21 @@ mod tests {
             frame(4.0, pane("working\n", 0, 0, false, false)),
             frame(5.0, pane("> now run tests\n", 15, 0, true, false)),
         ];
-        let (bound, cards) = choose(&frames).unwrap();
-        let texts: Vec<_> = cards.iter().map(|c| c["text"].as_str().unwrap()).collect();
-        assert_eq!(texts, ["> fix the bug", "> now run tests"]);
-        assert_eq!(bound.current, "Composed this input: “> now run tests”");
-        assert_eq!(bound.kind, "cursor_input_line");
-        assert_eq!(bound.timestamp, json!(5.0));
+        assert_eq!(texts(&frames), ["> fix the bug", "> now run tests"]);
+        // Text changed in the middle is the same input, edited.
+        let edit = vec![
+            frame(1.0, pane("> \n", 2, 0, true, false)),
+            frame(
+                2.0,
+                pane("> why is the build missing\n", 26, 0, true, false),
+            ),
+            frame(
+                3.0,
+                pane("> why is the exact build missing\n", 32, 0, true, false),
+            ),
+        ];
+        assert_eq!(texts(&edit), ["> why is the exact build missing"]);
+        assert_eq!(typed(&frames).last().unwrap().timestamp, 5.0);
     }
 
     #[test]
@@ -296,7 +293,7 @@ mod tests {
                 pane("~/proj > \x1b[2mTry a command\x1b[0m\n", 9, 0, true, false),
             ),
         ];
-        assert!(choose(&idle).is_none());
+        assert!(typed(&idle).is_empty());
         let sent = vec![
             frame(1.0, pane("~/proj >\n", 8, 0, true, false)),
             frame(
@@ -304,40 +301,51 @@ mod tests {
                 pane("~/proj > cargo test\nok\n~/proj >\n", 8, 2, true, false),
             ),
         ];
-        let (bound, cards) = choose(&sent).unwrap();
-        assert_eq!(cards.len(), 1);
-        assert_eq!(bound.current, "Composed this input: “~/proj > cargo test”");
-        assert_eq!(bound.start, 0);
+        assert_eq!(texts(&sent), ["~/proj > cargo test"]);
+    }
+
+    #[test]
+    fn an_input_that_wraps_onto_the_next_row_is_one_input() {
+        let wide = |time: f64, content: &str, x: u64, y: u64| {
+            let mut p = pane(content, x, y, true, false);
+            p["width"] = json!(30);
+            frame(time, p)
+        };
+        let frames = vec![
+            wide(1.0, "> \n", 2, 0),
+            wide(2.0, "> please look at the parser\n", 27, 0),
+            wide(3.0, "> please look at the parser\n  and fix it\n", 12, 1),
+            wide(
+                4.0,
+                "> please look at the parser\n  and fix its tests\n",
+                18,
+                1,
+            ),
+        ];
+        assert_eq!(
+            texts(&frames),
+            ["> please look at the parser and fix its tests"]
+        );
+        // An input field that grows upward keeps the cursor on its last row.
+        let up = vec![
+            wide(1.0, "───\n> \n", 2, 1),
+            wide(2.0, "───\n> please look at the parser\n", 27, 1),
+            wide(3.0, "> please look at the parser\n  and fix it\n", 12, 1),
+        ];
+        assert_eq!(texts(&up), ["> please look at the parser and fix it"]);
+        // A short command and a new prompt on the next row are not one input.
+        let shell = vec![
+            wide(1.0, "~ >\n", 4, 0),
+            wide(2.0, "~ > cd x\n", 8, 0),
+            wide(3.0, "~ > cd x\nx > l\n", 5, 1),
+            wide(4.0, "~ > cd x\nx > ls\n", 6, 1),
+        ];
+        assert_eq!(texts(&shell), ["~ > cd x", "x > ls"]);
     }
 
     #[test]
     fn segments_without_cursor_fields_have_no_input() {
         let old = json!({"id":"%0","active":true,"content":"> fix the bug\n"});
-        assert!(choose(&[frame(1.0, old)]).is_none());
-    }
-
-    #[test]
-    fn inputs_past_the_budget_keep_the_newest() {
-        let frames: Vec<_> = (0..20)
-            .map(|i| {
-                let text = format!("> {i:02} {}", "x".repeat(500));
-                frame(
-                    f64::from(i),
-                    pane(&format!("{text}\n"), 510, 0, true, false),
-                )
-            })
-            .collect();
-        let (_, cards) = choose(&frames).unwrap();
-        let total: usize = cards
-            .iter()
-            .map(|c| c["text"].as_str().unwrap().len())
-            .sum();
-        assert!(total <= INPUT_BUDGET_BYTES);
-        assert!(
-            cards.last().unwrap()["text"]
-                .as_str()
-                .unwrap()
-                .starts_with("> 19")
-        );
+        assert!(typed(&[frame(1.0, old)]).is_empty());
     }
 }
