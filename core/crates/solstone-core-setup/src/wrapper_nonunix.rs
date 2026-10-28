@@ -139,10 +139,36 @@ pub fn render_wrapper(
             "wrapper journal does not match its installation identity guard".into(),
         ));
     }
+    render_wrapper_version(command, journal, sol_bin, Some(guard), WRAPPER_VERSION)
+}
+
+/// Render a wrapper in a given managed format, including the historical
+/// journal wrapper that `render_wrapper` no longer publishes, so the shared
+/// wrapper API reads the same files on every platform.
+pub fn render_wrapper_version(
+    command: WrapperCommand,
+    journal: &Path,
+    sol_bin: &Path,
+    guard: Option<&GuardFields>,
+    version: u8,
+) -> Result<String, WrapperError> {
+    if command == WrapperCommand::Sol && version == WRAPPER_VERSION {
+        return Err(WrapperError(
+            "the current wrapper format does not publish the retired sol command".into(),
+        ));
+    }
+    let guard_lines = match (version, guard) {
+        (7, _) => String::new(),
+        (8, Some(guard)) => wrapper_guard_lines(guard),
+        _ => {
+            return Err(WrapperError(format!(
+                "unsupported managed wrapper version {version}"
+            )));
+        }
+    };
     Ok(format!(
-        "#!/bin/bash\n# {} — managed by 'solstone journal config'. Edits will be overwritten.\n{WRAPPER_MARKER}\n{}: \"${{SOLSTONE_JOURNAL:={}}}\"\nexport SOLSTONE_JOURNAL\nSOL_BIN='{}'\nexec \"$SOL_BIN\" \"$@\"\n",
+        "#!/bin/bash\n# {} — managed by 'solstone journal config'. Edits will be overwritten.\n# managed-version: {version}\n{guard_lines}: \"${{SOLSTONE_JOURNAL:={}}}\"\nexport SOLSTONE_JOURNAL\nSOL_BIN='{}'\nexec \"$SOL_BIN\" \"$@\"\n",
         command.as_str(),
-        wrapper_guard_lines(guard),
         journal.to_string_lossy(),
         sol_bin.to_string_lossy().replace('\'', "'\\''"),
     ))
