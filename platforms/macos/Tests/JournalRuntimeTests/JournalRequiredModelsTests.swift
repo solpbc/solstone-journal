@@ -23,7 +23,7 @@ struct JournalRequiredModelsTests {
         [ "$#" = 3 ] && [ "$1" = journal ] && [ "$2" = install-models ] && [ "$3" = --required-only ] || exit 41
         [ -z "${SOLSTONE_JOURNAL+x}" ] || exit 42
         [ "$0" = "\(runtime.layout.solstoneBinary.path)" ] || exit 43
-        [ "$(command -v journal)" = "\(runtime.layout.journalBinary.path)" ] || exit 44
+        [ "$(command -v solstone)" = "\(runtime.layout.solstoneBinary.path)" ] || exit 44
         [ "$(cat engine-sha)" = previous-signed-archive ] || exit 45
         printf 'current-signed-archive\\n' > engine-sha
         """

@@ -150,11 +150,11 @@ snapshot:
 integration-native:
 	@RUNTIME="$${SOLSTONE_NATIVE_RUNTIME_DIR:-}"; \
 		if [ -z "$$RUNTIME" ]; then \
-			if [ -x "$(JOURNAL_NATIVE_RUNTIME_DIR)/bin/journal" ]; then RUNTIME="$(JOURNAL_NATIVE_RUNTIME_DIR)"; \
-			elif [ -x "$(INSTALLED_JOURNAL_RUNTIME)/bin/journal" ]; then RUNTIME="$(INSTALLED_JOURNAL_RUNTIME)"; \
+			if [ -x "$(JOURNAL_NATIVE_RUNTIME_DIR)/bin/solstone" ]; then RUNTIME="$(JOURNAL_NATIVE_RUNTIME_DIR)"; \
+			elif [ -x "$(INSTALLED_JOURNAL_RUNTIME)/bin/solstone" ]; then RUNTIME="$(INSTALLED_JOURNAL_RUNTIME)"; \
 			else echo "error: no native journal runtime: stage one, install journal.app, or set SOLSTONE_NATIVE_RUNTIME_DIR"; exit 1; fi; \
 		fi; \
-		test -x "$$RUNTIME/bin/journal" || { echo "error: no journal binary at $$RUNTIME/bin/journal"; exit 1; }; \
+		test -x "$$RUNTIME/bin/solstone" || { echo "error: no solstone binary at $$RUNTIME/bin/solstone"; exit 1; }; \
 		echo "integration-native: runtime $$("$$RUNTIME/bin/solstone" journal --version) tree-sha256=$$(cd "$$RUNTIME" && find bin lib share -type f | sort | xargs shasum -a 256 | shasum -a 256 | cut -d' ' -f1) at $$RUNTIME"; \
 		SOLSTONE_NATIVE_INTEGRATION=1 SOLSTONE_NATIVE_RUNTIME_DIR="$$RUNTIME" swift test --no-parallel --filter NativeIntegration
 
@@ -186,7 +186,6 @@ journal-native-runtime:
 	@set -- "$(JOURNAL_NATIVE_OUTPUT_DIR)"/*.tar.gz; \
 		test "$$#" -eq 1 && test -f "$$1" || { echo "error: expected exactly one native journal tarball in $(JOURNAL_NATIVE_OUTPUT_DIR)"; exit 1; }; \
 		tar -xzf "$$1" -C "$(JOURNAL_NATIVE_RUNTIME_DIR)"
-	@test -x "$(JOURNAL_NATIVE_RUNTIME_DIR)/bin/journal" || { echo "error: native journal runtime is missing bin/journal"; exit 1; }
 	@test -x "$(JOURNAL_NATIVE_RUNTIME_DIR)/bin/solstone" || { echo "error: native journal runtime is missing bin/solstone"; exit 1; }
 	@python3 scripts/journal_native_provenance.py write-receipt \
 		--source-dir "$(abspath $(JOURNAL_NATIVE_SOURCE_DIR))" \
@@ -417,7 +416,6 @@ verify-notarization-journal:
 	@codesign -dvvv journal.app/Contents/MacOS/solstone-watchdog 2>&1 | grep -q 'flags=0x10000(runtime)' || { echo "journal watchdog missing hardened runtime flag"; exit 1; }
 	@codesign -dvvv journal.app/Contents/MacOS/solstone-watchdog 2>&1 | grep -q 'Identifier=app.solstone.journal.watchdog' || { echo "journal watchdog identifier mismatch"; exit 1; }
 	@lipo -archs journal.app/Contents/MacOS/solstone-watchdog | grep -q 'arm64' || { echo "journal watchdog missing arm64 slice"; exit 1; }
-	@test -x journal.app/Contents/Resources/solstone-runtime/bin/journal || { echo "error: journal native runtime missing bin/journal"; exit 1; }
 	@test -x journal.app/Contents/Resources/solstone-runtime/bin/solstone || { echo "error: journal native runtime missing bin/solstone"; exit 1; }
 	@codesign --verify --strict --verbose=2 journal.app/Contents/Resources/solstone-runtime/bin/solstone-core-journal
 	@codesign --verify --strict --verbose=2 journal.app/Contents/Resources/solstone-runtime/bin/solstone-core-sol
@@ -441,7 +439,6 @@ release-dmg-smoke-journal:
 	    trap "hdiutil detach \"$$MOUNT\" -quiet -force >/dev/null 2>&1 || true; rm -rf \"$$MOUNT\"" EXIT; \
 	    hdiutil attach "$(JOURNAL_DMG_NAME)" -mountpoint "$$MOUNT" -nobrowse -quiet || { echo "error: journal hdiutil attach failed"; exit 1; }; \
 	    codesign --verify --strict --deep --verbose=2 "$$MOUNT/journal.app" || { echo "error: journal dmg .app codesign verify failed"; exit 1; }; \
-	    test -x "$$MOUNT/journal.app/Contents/Resources/solstone-runtime/bin/journal" || { echo "error: journal native runtime missing bin/journal"; exit 1; }; \
 	    test -x "$$MOUNT/journal.app/Contents/Resources/solstone-runtime/bin/solstone" || { echo "error: journal native runtime missing bin/solstone"; exit 1; }; \
 	    UNREADABLE="$$(find "$$MOUNT/journal.app" \( -type d ! -perm -005 \) -o \( -type f ! -perm -004 \))"; \
 	    test -z "$$UNREADABLE" || { echo "error: journal.app has entries other accounts on the Mac cannot read:"; echo "$$UNREADABLE"; exit 1; }; \

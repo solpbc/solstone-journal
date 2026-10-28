@@ -465,7 +465,7 @@ def verify_candidate_provenance(args: argparse.Namespace) -> None:
 
 def runtime_entries(runtime_dir: pathlib.Path) -> dict[str, dict[str, str]]:
     entries = {}
-    for name in ("journal", "solstone"):
+    for name in ("solstone",):
         entry = runtime_dir / "bin" / name
         if not entry.is_file() or not os.access(entry, os.X_OK):
             die(f"native journal runtime is missing executable bin/{name}")

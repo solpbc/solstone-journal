@@ -50,9 +50,7 @@ class JournalNativeProvenanceTest(unittest.TestCase):
         (self.runtime / "bin").mkdir(parents=True)
         self.output.mkdir()
         (self.output / "journal-macos-arm64.tar.gz").write_bytes(b"archive")
-        (self.runtime / "bin/journal").write_bytes(b"journal")
         (self.runtime / "bin/solstone").write_bytes(b"solstone")
-        (self.runtime / "bin/journal").chmod(0o755)
         (self.runtime / "bin/solstone").chmod(0o755)
         self.receipt = self.runtime / "journal-native-provenance.json"
 
@@ -74,7 +72,7 @@ class JournalNativeProvenanceTest(unittest.TestCase):
         fixture_root.mkdir()
         payload = fixture_root / "candidate-payload"
         (payload / "bin").mkdir(parents=True)
-        for name, contents in (("journal", b"candidate-journal"), ("solstone", b"candidate-solstone")):
+        for name, contents in (("solstone", b"candidate-solstone"), ("solstone-core-journal", b"candidate-core")):
             path = payload / "bin" / name
             path.write_bytes(contents)
             path.chmod(0o755)
@@ -133,8 +131,8 @@ class JournalNativeProvenanceTest(unittest.TestCase):
                             "sha256": hashlib.sha256(contents).hexdigest(),
                         }
                         for name, contents in (
-                            ("journal", b"candidate-journal"),
                             ("solstone", b"candidate-solstone"),
+                            ("solstone-core-journal", b"candidate-core"),
                         )
                     ]
                 }
@@ -302,12 +300,8 @@ class JournalNativeProvenanceTest(unittest.TestCase):
             receipt["archive"]["sha256"], hashlib.sha256(b"archive").hexdigest()
         )
         self.assertEqual(
-            receipt["entries"]["journal"]["sha256"],
-            hashlib.sha256(b"journal").hexdigest(),
-        )
-        self.assertEqual(
-            receipt["entries"]["solstone"]["sha256"],
-            hashlib.sha256(b"solstone").hexdigest(),
+            receipt["entries"],
+            {"solstone": {"path": "bin/solstone", "sha256": hashlib.sha256(b"solstone").hexdigest()}},
         )
 
     def test_makefile_requires_commit_and_embeds_receipt_with_runtime(self):
@@ -616,7 +610,7 @@ class JournalNativeProvenanceTest(unittest.TestCase):
         self.assertEqual(fixture["output"].read_bytes(), original_output)
 
         fixture = self.candidate_fixture()
-        (fixture["runtime"] / "bin/journal").write_bytes(b"substituted")
+        (fixture["runtime"] / "bin/solstone").write_bytes(b"substituted")
         runtime_refusal = self.run_script("write-candidate", *fixture["arguments"])
         self.assertNotEqual(runtime_refusal.returncode, 0)
         self.assertIn("differs from accepted archive", runtime_refusal.stderr)
@@ -871,7 +865,7 @@ class JournalNativeProvenanceTest(unittest.TestCase):
             directory.type = tarfile.DIRTYPE
             directory.mode = 0
             bundle.addfile(directory)
-            for name in ("journal", "solstone"):
+            for name in ("solstone", "solstone-core-journal"):
                 payload = name.encode("utf-8")
                 member = tarfile.TarInfo(f"bin/{name}")
                 member.mode = 0o555
@@ -899,7 +893,7 @@ class JournalNativeProvenanceTest(unittest.TestCase):
             str(staged / "journal-native-provenance.json"),
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertTrue((staged / "bin/journal").stat().st_mode & 0o100)
+        self.assertTrue((staged / "bin/solstone-core-journal").stat().st_mode & 0o100)
         self.assertTrue((staged / "bin/solstone").stat().st_mode & 0o100)
 
 

@@ -6,7 +6,7 @@ import Foundation
 import os
 
 /// "open admin terminal": a Terminal window in the owner's own login shell, where
-/// `journal` and `solstone` resolve first to this running app's bundled command line.
+/// `solstone` resolves first to this running app's bundled command line.
 ///
 /// Nothing is installed. The app writes a small `.command` script and its shell startup
 /// shims into a private temporary directory and hands the script to Terminal through
@@ -94,7 +94,7 @@ enum JournalAdminTerminal {
     /// The script Terminal runs. It starts the owner's login shell (`$SHELL` in Terminal's
     /// own session) with the startup shim for zsh or bash, so the bundled directory goes on
     /// PATH after the owner's startup files. fish takes it after its config through `-C`. Any other
-    /// shell gets it before its startup files, so those may still put another `journal` first.
+    /// shell gets it before its startup files, so those may still put another `solstone` first.
     static func commandScript(binDirectory: String) -> String {
         """
         #!/bin/sh

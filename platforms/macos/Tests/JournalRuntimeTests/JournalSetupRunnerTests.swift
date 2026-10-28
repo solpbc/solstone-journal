@@ -45,7 +45,7 @@ struct JournalSetupRunnerTests {
         let runtimeRoot = try makeNativeRuntimeBundle(in: workspace)
         let ambientBin = workspace.appendingPathComponent("other installation/bin", isDirectory: true)
         try FileManager.default.createDirectory(at: ambientBin, withIntermediateDirectories: true)
-        for name in ["journal", "solstone"] {
+        for name in ["solstone"] {
             for (directory, status) in [(runtimeRoot.appendingPathComponent("bin"), 0), (ambientBin, 91)] {
                 let executable = directory.appendingPathComponent(name)
                 try Data("#!/bin/sh\nexit \(status)\n".utf8).write(to: executable)
@@ -77,7 +77,7 @@ struct JournalSetupRunnerTests {
         #expect(setupEnvironment["HOME"] == workspace.path)
         #expect(setupEnvironment["SETUP_TEST_SENTINEL"] == "preserved")
         let processRunner = SubprocessRunner()
-        for command in ["journal", "solstone"] {
+        for command in ["solstone"] {
             let control = try await processRunner.run(
                 executable: URL(fileURLWithPath: "/usr/bin/env"), arguments: [command],
                 environment: ["PATH": ambientPath], timeout: .seconds(5),
@@ -429,7 +429,7 @@ struct JournalSetupRunnerTests {
         ]
         let infoData = try PropertyListSerialization.data(fromPropertyList: info, format: .xml, options: 0)
         try infoData.write(to: contentsURL.appendingPathComponent("Info.plist"))
-        for name in ["journal", "solstone"] {
+        for name in ["solstone"] {
             let executable = binURL.appendingPathComponent(name)
             try Data("#!/bin/sh\\nexit 0\\n".utf8).write(to: executable)
             try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: executable.path)

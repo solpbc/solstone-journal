@@ -5,7 +5,6 @@ import Foundation
 
 public enum NativeJournalRuntimeMaterializerError: LocalizedError, Sendable, Equatable {
     case missingRuntimeRoot(String)
-    case missingJournalExecutable(String)
     case missingSolstoneExecutable(String)
     case invalidBundleVersion
 
@@ -13,8 +12,6 @@ public enum NativeJournalRuntimeMaterializerError: LocalizedError, Sendable, Equ
         switch self {
         case .missingRuntimeRoot(let path):
             return "bundled native journal runtime is missing at \(path)"
-        case .missingJournalExecutable(let path):
-            return "bundled native journal executable is missing at \(path)"
         case .missingSolstoneExecutable(let path):
             return "bundled native solstone executable is missing at \(path)"
         case .invalidBundleVersion:
@@ -49,9 +46,6 @@ public final class NativeJournalRuntimeMaterializer: RuntimeMaterializing, @unch
         }
 
         let layout = SolstoneRuntimeLayout(rootURL: runtimeRoot)
-        guard fileManager.isExecutableFile(atPath: layout.journalBinary.path) else {
-            throw NativeJournalRuntimeMaterializerError.missingJournalExecutable(layout.journalBinary.path)
-        }
         guard fileManager.isExecutableFile(atPath: layout.solstoneBinary.path) else {
             throw NativeJournalRuntimeMaterializerError.missingSolstoneExecutable(layout.solstoneBinary.path)
         }

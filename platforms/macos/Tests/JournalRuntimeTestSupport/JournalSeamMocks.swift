@@ -164,8 +164,6 @@ public func makeRuntime() throws -> MaterializedRuntime {
     let root = try makeTemporaryDirectory()
     let layout = SolstoneRuntimeLayout(rootURL: root)
     try FileManager.default.createDirectory(at: layout.binDir, withIntermediateDirectories: true)
-    try Data("#!/bin/sh\nexit 0\n".utf8).write(to: layout.journalBinary)
-    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: layout.journalBinary.path)
     try Data("#!/bin/sh\nexit 0\n".utf8).write(to: layout.solstoneBinary)
     try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: layout.solstoneBinary.path)
     return MaterializedRuntime(key: "test-key", layout: layout)
