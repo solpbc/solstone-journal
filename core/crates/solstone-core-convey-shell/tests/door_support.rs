@@ -137,14 +137,17 @@ pub struct Client {
 impl Fixture {
     pub fn established(client_count: usize) -> Self {
         let sequence = SEQUENCE.fetch_add(1, Ordering::Relaxed);
-        let root = std::env::temp_dir().join(format!(
-            "solstone-convey-door-{}-{}-{sequence}",
-            std::process::id(),
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .expect("clock")
-                .as_nanos()
-        ));
+        // Callosum's Unix socket must also fit macOS's shorter path limit.
+        let root = fs::canonicalize("/var/tmp")
+            .expect("short fixture parent")
+            .join(format!(
+                "solstone-convey-door-{}-{}-{sequence}",
+                std::process::id(),
+                SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .expect("clock")
+                    .as_nanos()
+            ));
         fs::create_dir_all(root.join("config")).expect("config directory");
         fs::create_dir_all(root.join("link/ca")).expect("CA directory");
         fs::write(

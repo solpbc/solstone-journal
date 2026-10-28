@@ -1588,6 +1588,31 @@ async fn two_pair_requests_on_one_carrier(
     nonce: &str,
 ) -> Vec<spl_core::http::HttpResponse> {
     let mut decoder = FrameDecoder::new();
+    // Admit both streams before either ceremony consumes the nonce. A response
+    // on the following stream acknowledges their preceding OPEN frames.
+    for stream_id in [1, 3] {
+        carrier
+            .write_all(
+                &Frame::new(stream_id, FLAG_OPEN, Vec::new())
+                    .encode()
+                    .expect("admitted stream"),
+            )
+            .await
+            .expect("stream opens");
+    }
+    let probe = exchange_over_carrier(
+        carrier,
+        &mut decoder,
+        5,
+        "GET",
+        spl_core::PAIR_PATH,
+        &[],
+        &[],
+    )
+    .await
+    .expect("stream admission probe");
+    assert_eq!(probe.status, 403);
+    assert_eq!(probe.body, b"pairing tunnel may only use /app/network/pair");
     for stream_id in [1, 3] {
         let body = serde_json::to_vec(&serde_json::json!({
             "csr": csr_pem("concurrent"),
@@ -1602,7 +1627,7 @@ async fn two_pair_requests_on_one_carrier(
         );
         carrier
             .write_all(
-                &Frame::new(stream_id, FLAG_OPEN | FLAG_DATA, request.to_vec())
+                &Frame::new(stream_id, FLAG_DATA, request.to_vec())
                     .encode()
                     .expect("open frame"),
             )
@@ -3659,7 +3684,12 @@ async fn concurrent_pair_requests_on_one_carrier_leave_one_ledger_entry_and_one_
     let mut carrier = live_certless_carrier(door_port(handle.door_outcome()))
         .await
         .expect("certless carrier");
-    let responses = two_pair_requests_on_one_carrier(&mut carrier, nonce).await;
+    let responses = tokio::time::timeout(
+        Duration::from_secs(30),
+        two_pair_requests_on_one_carrier(&mut carrier, nonce),
+    )
+    .await
+    .expect("both concurrent pairing responses complete");
     let statuses = responses
         .iter()
         .map(|response| response.status)

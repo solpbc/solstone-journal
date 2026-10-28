@@ -267,10 +267,13 @@ fn native_sibling_is_selected_and_lands_finish() {
 }
 
 fn run_cwd_case(name: &str, frontmatter: &str) -> (PathBuf, PathBuf, String) {
+    // Allow both native fixture launches to start before checking the directory.
+    let fixture_timeout = Duration::from_secs(30);
     let directory = tempdir().unwrap();
     let root = directory.path();
     let fixture = root.join("fixture");
     fs::create_dir(&fixture).unwrap();
+    let fixture = fs::canonicalize(&fixture).unwrap();
     let journal = fixture.join("journal");
     fs::create_dir(&journal).unwrap();
     let executable_dir = root.join("bin");
@@ -283,7 +286,7 @@ fn run_cwd_case(name: &str, frontmatter: &str) -> (PathBuf, PathBuf, String) {
     let request = serde_json::json!({
         "use_id":"one",
         "name":name,
-        "timeout_seconds": 2,
+        "timeout_seconds": fixture_timeout.as_secs(),
         "env":{
             "CORTEX_WORKER_MODE":"pwd",
             "CORTEX_CWD":cwd_receipt,
@@ -302,10 +305,13 @@ fn run_cwd_case(name: &str, frontmatter: &str) -> (PathBuf, PathBuf, String) {
         .env("CORTEX_STATUS_PATH", &status_path)
         .env("CORTEX_RECEIPT_PATH", &cwd_receipt);
     let mut controller = ChildGuard::spawn(command);
-    let cwd = poll_file(&cwd_receipt, Duration::from_secs(2));
-    let status = poll_file(&status_path, Duration::from_secs(2));
+    let cwd = poll_file(&cwd_receipt, fixture_timeout);
+    let status = poll_file(&status_path, fixture_timeout);
     assert_eq!(status.trim(), "ok");
-    let _ = controller.wait_bounded(Duration::from_secs(2));
+    assert!(
+        controller.wait_bounded(fixture_timeout).success(),
+        "cwd controller must exit successfully"
+    );
     controller.disarm();
     (fixture, journal, cwd.trim().to_owned())
 }

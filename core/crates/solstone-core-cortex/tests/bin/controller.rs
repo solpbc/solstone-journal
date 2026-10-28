@@ -56,7 +56,7 @@ fn main() {
         Err(error) => fs::write(&status_path, format!("err:{error}")).expect("status"),
     }
     if let Ok(receipt) = env::var("CORTEX_RECEIPT_PATH") {
-        poll_until_exists(Path::new(&receipt), Duration::from_secs(2));
+        poll_until_exists(Path::new(&receipt), Duration::from_secs(30));
     }
 }
 
