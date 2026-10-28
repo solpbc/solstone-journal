@@ -319,6 +319,11 @@ impl Drop for HelperChild {
 mod tests {
     use super::*;
 
+    // Response and argv checks allow shell startup under parallel test load.
+    // The dedicated timeout test below retains its 100 ms deadline.
+    #[cfg(all(test, feature = "full-tests"))]
+    const RESPONSE_TIMEOUT: Duration = Duration::from_secs(60);
+
     #[cfg(all(test, feature = "full-tests"))]
     fn write_stub(body: &str) -> (tempfile::TempDir, PathBuf) {
         let root = tempfile::tempdir().unwrap();
@@ -361,7 +366,7 @@ mod tests {
         let response = invoke_ced_analyze(
             &CedAnalyzeProgram::SiblingHelper,
             &Value::Null,
-            Duration::from_secs(2),
+            RESPONSE_TIMEOUT,
         )
         .expect("resolved sibling helper responds");
         assert_eq!(response["ok"], Value::Bool(true));
@@ -373,7 +378,7 @@ mod tests {
         let (_root, path) = write_stub(
             "#!/bin/sh\ncat >/dev/null\nprintf '%s\\n' '{\"schema\":\"solstone-ced-probe-response-v1\",\"ok\":true}'\n",
         );
-        let response = invoke_ced_analyze(&explicit(path), &Value::Null, Duration::from_secs(2))
+        let response = invoke_ced_analyze(&explicit(path), &Value::Null, RESPONSE_TIMEOUT)
             .expect("stub response parses");
         assert_eq!(response["ok"], Value::Bool(true));
     }
@@ -399,14 +404,14 @@ printf '%s\\n' '{\"schema\":\"solstone-ced-error-v1\",\"reason\":\"unknown-schem
             &explicit(path.clone()),
             &[CED_PROBE_COMMAND],
             &Value::Null,
-            Duration::from_secs(5),
+            RESPONSE_TIMEOUT,
         )
         .expect("probe token must reach the helper");
         assert_eq!(with_token.get("ok"), Some(&Value::Bool(true)));
 
         // Control: the same stub, same request, no token -> the failure an
         // owner's machine actually reported.
-        let without = invoke_ced_analyze(&explicit(path), &Value::Null, Duration::from_secs(5))
+        let without = invoke_ced_analyze(&explicit(path), &Value::Null, RESPONSE_TIMEOUT)
             .expect_err("a bare invocation must not satisfy the probe");
         match without {
             CedAnalyzeError::Exit { code, stderr } => {
@@ -429,7 +434,7 @@ printf '%s\\n' '{\"schema\":\"solstone-ced-error-v1\",\"reason\":\"unknown-schem
                 args: vec![path.into_os_string()],
             },
             &Value::Null,
-            Duration::from_secs(2),
+            RESPONSE_TIMEOUT,
         )
         .unwrap();
         assert_eq!(response["padding"].as_str().unwrap().len(), 1048576);
@@ -442,7 +447,7 @@ printf '%s\\n' '{\"schema\":\"solstone-ced-error-v1\",\"reason\":\"unknown-schem
             "#!/bin/sh\ncat >/dev/null\nprintf '%s\\n' '{\"schema\":\"solstone-ced-error-v1\",\"reason\":\"library-unloadable\",\"detail\":\"boom\"}' >&2\nexit 69\n",
         );
         let error =
-            invoke_ced_analyze(&explicit(path), &Value::Null, Duration::from_secs(2)).unwrap_err();
+            invoke_ced_analyze(&explicit(path), &Value::Null, RESPONSE_TIMEOUT).unwrap_err();
         match error {
             CedAnalyzeError::Exit { code, stderr } => {
                 assert_eq!(code, Some(69));
@@ -456,12 +461,8 @@ printf '%s\\n' '{\"schema\":\"solstone-ced-error-v1\",\"reason\":\"unknown-schem
     #[test]
     fn malformed_stdout_is_malformed_response() {
         let (_root, path) = write_stub("#!/bin/sh\ncat >/dev/null\nprintf 'not json'\n");
-        // The subject here is response *parsing*, not timing. A tight wall-clock made
-        // this flaky: under parallel test load, spawning the shell stub alone could
-        // exceed the budget and the call returned `Timeout` instead of the malformed
-        // response it exists to check. `timeout_kills_the_helper` covers the deadline.
         let error =
-            invoke_ced_analyze(&explicit(path), &Value::Null, Duration::from_secs(60)).unwrap_err();
+            invoke_ced_analyze(&explicit(path), &Value::Null, RESPONSE_TIMEOUT).unwrap_err();
         assert!(matches!(error, CedAnalyzeError::MalformedResponse { .. }));
     }
 
