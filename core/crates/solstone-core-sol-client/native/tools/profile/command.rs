@@ -31,8 +31,9 @@ pub fn brief(ctx: CommandContext<'_>) -> CommandOutput {
         Err(error) => return profile_error(error, name),
     };
     if parsed.has_flag("--json") {
-        return stdout_compact_json(&profile);
+        return crate::agent_output::literal_output(stdout_compact_json(&profile));
     }
+    let profile = crate::agent_output::literal_body(profile);
     stdout(vec![
         format!("entity_id: {}", field(&profile, "entity_id")),
         format!("name: {}", field(&profile, "name")),
@@ -101,9 +102,9 @@ pub fn full(ctx: CommandContext<'_>) -> CommandOutput {
         Err(error) => return profile_error(error, name),
     };
     if parsed.has_flag("--json") {
-        return stdout_compact_json(&profile);
+        return crate::agent_output::literal_output(stdout_compact_json(&profile));
     }
-    stdout(render_full(&profile))
+    stdout(render_full(&crate::agent_output::literal_body(profile)))
 }
 
 #[must_use]

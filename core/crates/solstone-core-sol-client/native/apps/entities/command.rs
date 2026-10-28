@@ -440,7 +440,7 @@ pub fn merge_candidates(ctx: CommandContext<'_>) -> CommandOutput {
     };
     let rows = array_field(&body, "items");
     if parsed.bool_value("--json").unwrap_or(false) {
-        return stdout_json(&Value::Array(rows));
+        return crate::agent_output::literal_output(stdout_json(&Value::Array(rows)));
     }
     if rows.is_empty() {
         return stdout_line("No merge candidates found.");
@@ -450,8 +450,8 @@ pub fn merge_candidates(ctx: CommandContext<'_>) -> CommandOutput {
         let evidence = row.get("evidence").and_then(Value::as_object);
         lines.push(format!(
             "{} -> {}  [{}]  facet={}  detections={}  needs={}  last={}",
-            value_or_default(row.get("source"), ""),
-            value_or_default(row.get("target"), ""),
+            crate::agent_output::literal_links(&value_or_default(row.get("source"), "")),
+            crate::agent_output::literal_links(&value_or_default(row.get("target"), "")),
             value_or_default(row.get("status"), ""),
             value_or_default(row.get("facet"), ""),
             display_value(evidence.and_then(|item| item.get("detection_count"))),
@@ -596,14 +596,15 @@ pub fn merge(ctx: CommandContext<'_>) -> CommandOutput {
         Err(error) => return merge_json_error(error),
     };
     let output = format!("{}\n", json_pretty_ascii(&result));
-    if result.get("error").is_some() {
-        return CommandOutput {
+    crate::agent_output::literal_output(if result.get("error").is_some() {
+        CommandOutput {
             stdout: String::new(),
             stderr: output,
             exit: 1,
-        };
-    }
-    CommandOutput::success(output)
+        }
+    } else {
+        CommandOutput::success(output)
+    })
 }
 
 #[must_use]
@@ -629,7 +630,7 @@ pub fn ambiguities(ctx: CommandContext<'_>) -> CommandOutput {
     };
     let rows = array_field(&body, "items");
     if parsed.bool_value("--json").unwrap_or(false) {
-        return stdout_json(&body);
+        return crate::agent_output::literal_output(stdout_json(&body));
     }
     render_ambiguities(&rows)
 }
@@ -788,6 +789,10 @@ pub fn restore_review(ctx: CommandContext<'_>) -> CommandOutput {
 
 #[must_use]
 pub fn review(ctx: CommandContext<'_>) -> CommandOutput {
+    crate::agent_output::literal_output(review_output(ctx))
+}
+
+fn review_output(ctx: CommandContext<'_>) -> CommandOutput {
     let parsed = match parse_args(ctx.args, &[], &[("--json", None)]) {
         Ok(parsed) => parsed,
         Err(error) => return stderr(error),
@@ -845,6 +850,10 @@ pub fn sweep_review(ctx: CommandContext<'_>) -> CommandOutput {
 
 #[must_use]
 pub fn entity_history(ctx: CommandContext<'_>) -> CommandOutput {
+    crate::agent_output::literal_output(entity_history_output(ctx))
+}
+
+fn entity_history_output(ctx: CommandContext<'_>) -> CommandOutput {
     let parsed = match parse_args(ctx.args, &[], &[("--json", None)]) {
         Ok(parsed) => parsed,
         Err(error) => return stderr(error),
@@ -908,10 +917,6 @@ pub fn restore_version(ctx: CommandContext<'_>) -> CommandOutput {
 
 #[must_use]
 pub fn network(ctx: CommandContext<'_>) -> CommandOutput {
-    crate::agent_output::literal_output(network_output(ctx))
-}
-
-fn network_output(ctx: CommandContext<'_>) -> CommandOutput {
     let parsed = match parse_args(
         ctx.args,
         &[
@@ -958,17 +963,13 @@ fn network_output(ctx: CommandContext<'_>) -> CommandOutput {
         Err(output) => return output,
     };
     if parsed.bool_value("--json").unwrap_or(false) {
-        return stdout_json(&body);
+        return crate::agent_output::literal_output(stdout_json(&body));
     }
-    render_network(&body)
+    render_network(&crate::agent_output::literal_body(body))
 }
 
 #[must_use]
 pub fn history(ctx: CommandContext<'_>) -> CommandOutput {
-    crate::agent_output::literal_output(history_output(ctx))
-}
-
-fn history_output(ctx: CommandContext<'_>) -> CommandOutput {
     let parsed = match parse_args(
         ctx.args,
         &[
@@ -1012,9 +1013,9 @@ fn history_output(ctx: CommandContext<'_>) -> CommandOutput {
         Err(output) => return output,
     };
     if parsed.bool_value("--json").unwrap_or(false) {
-        return stdout_json(&body);
+        return crate::agent_output::literal_output(stdout_json(&body));
     }
-    render_history(&body)
+    render_history(&crate::agent_output::literal_body(body))
 }
 
 #[must_use]
@@ -1048,9 +1049,9 @@ pub fn overview(ctx: CommandContext<'_>) -> CommandOutput {
         Err(output) => return output,
     };
     if parsed.bool_value("--json").unwrap_or(false) {
-        return stdout_json(&body);
+        return crate::agent_output::literal_output(stdout_json(&body));
     }
-    render_overview(&body)
+    render_overview(&crate::agent_output::literal_body(body))
 }
 
 #[must_use]
@@ -1568,7 +1569,15 @@ fn edge_body_or_exit(
         && body.get("query").is_some()
         && body.get("candidates").is_some()
     {
-        return Err(render_edge_resolution_error(&body, json_output));
+        return Err(if json_output {
+            crate::agent_output::literal_output(render_edge_resolution_error(&body, true))
+        } else {
+            let mut shown = body;
+            if let Some(candidates) = shown.get_mut("candidates") {
+                *candidates = crate::agent_output::literal_body(candidates.take());
+            }
+            render_edge_resolution_error(&shown, false)
+        });
     }
     Ok(body)
 }
@@ -1796,7 +1805,7 @@ fn render_ambiguities(rows: &[Value]) -> CommandOutput {
         lines.push(format!(
             "{}  {}  [{}]  scope={}  tier={}",
             display_value(row.get("ambiguity_id")),
-            display_value(row.get("original_query")),
+            crate::agent_output::literal_links(&display_value(row.get("original_query"))),
             display_value(row.get("status")),
             scope_label,
             display_value(row.get("observed_tier"))
@@ -1814,9 +1823,13 @@ fn render_ambiguities(rows: &[Value]) -> CommandOutput {
             lines.push(format!("  from: {}", lanes.join(", ")));
         }
         for candidate in array_field(row, "ranked_candidates") {
+            let name = candidate
+                .get("name")
+                .and_then(Value::as_str)
+                .map(|name| Value::String(crate::agent_output::literal_links(name)));
             lines.push(format!(
                 "  - {} score={}",
-                display_entity(candidate.get("id"), candidate.get("name")),
+                display_entity(candidate.get("id"), name.as_ref().or(candidate.get("name"))),
                 display_value(candidate.get("score"))
             ));
         }

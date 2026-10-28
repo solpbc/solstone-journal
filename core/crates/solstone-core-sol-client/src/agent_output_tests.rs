@@ -408,3 +408,427 @@ fn json_syntax_escaping_preserves_quoted_references_and_numeric_values() {
     assert_eq!(body["bool"], true);
     inert(body["title"].as_str().unwrap(), LEGACY);
 }
+
+#[test]
+fn full_reads_of_protected_results_are_literal() {
+    for (args, body) in [
+        (
+            vec!["--path", "20250205/import-one/A&B[one].md"],
+            json!({"path":"20250205/import-one/A&B[one].md","content":LEGACY}),
+        ),
+        (
+            vec![
+                "--path",
+                "20250205/import-one/A&B[one].md",
+                "--idx",
+                "0",
+                "--entry-id",
+                "12",
+            ],
+            json!({"content":LEGACY}),
+        ),
+    ] {
+        let output = run(
+            &["journal", "read"],
+            &args,
+            vec![("/app/search/api/read", body)],
+        );
+        assert_eq!(output.exit, 0);
+        assert!(!active(&output.stdout), "{}", output.stdout);
+        let body: Value = serde_json::from_str(&output.stdout).unwrap();
+        inert(body["content"].as_str().unwrap(), LEGACY);
+        if body.get("path").is_some() {
+            assert_eq!(body["path"], "20250205/import-one/A&B[one].md");
+        }
+    }
+
+    let record = json!({"markdown":LEGACY,"record":{"id":"meeting-one","day":"20250205","title":LEGACY,"description":LEGACY,"details":{"notes":[LEGACY]}}});
+    for (command, route) in [
+        ("get", "/app/activities/api/day/20250205/record/meeting-one"),
+        (
+            "mute",
+            "/app/activities/api/day/20250205/record/meeting-one/mute",
+        ),
+    ] {
+        for json_mode in [false, true] {
+            let mut args = vec!["meeting-one", "--facet", "work", "--day", "20250205"];
+            if json_mode {
+                args.push("--json");
+            }
+            let output = run(
+                &["activities", command],
+                &args,
+                vec![(route, record.clone())],
+            );
+            assert_eq!(output.exit, 0);
+            assert!(!active(&output.stdout), "{}", output.stdout);
+            if json_mode {
+                let body: Value = serde_json::from_str(&output.stdout).unwrap();
+                inert(body["title"].as_str().unwrap(), LEGACY);
+                inert(body["details"]["notes"][0].as_str().unwrap(), LEGACY);
+                assert_eq!(body["id"], "meeting-one");
+            } else {
+                inert(&output.stdout, LEGACY);
+            }
+        }
+    }
+
+    for flags in [vec![], vec!["--json"]] {
+        let output = run(
+            &["entities", "overview"],
+            &flags,
+            vec![(
+                "/app/entities/api/overview",
+                json!({"totals":{"edges":1,"entities":1},"kinds":{"met":1},
+                    "entities":[{"entity_id":"person-one","name":LEGACY,"type":"person","score":1.0,"count":1}]}),
+            )],
+        );
+        assert_eq!(output.exit, 0);
+        assert!(!active(&output.stdout), "{}", output.stdout);
+        if flags.contains(&"--json") {
+            let body: Value = serde_json::from_str(&output.stdout).unwrap();
+            inert(body["entities"][0]["name"].as_str().unwrap(), LEGACY);
+            assert_eq!(body["entities"][0]["entity_id"], "person-one");
+        } else {
+            assert!(visible(&output.stdout).contains(LEGACY));
+        }
+    }
+}
+
+type Case = (
+    &'static [&'static str],
+    Vec<&'static str>,
+    &'static str,
+    Value,
+    bool,
+);
+
+/// Agent reads whose output carries journal text, each fed `text` wherever
+/// the journal would supply it. The flag says whether text mode prints it.
+fn journal_text_reads(text: &str) -> Vec<Case> {
+    vec![
+        (
+            &["transcripts", "speakers"],
+            vec!["20250205", "import-one", "120000_300"],
+            "/app/transcripts/api/segment/20250205/import-one/120000_300",
+            json!({"chunks":[{"type":"audio","sentence_id":1,"speaker_source":"audio","time":"12:00:00",
+                "markdown":text,"speaker_label":{"name":text,"confidence_state":"high"}}]}),
+            true,
+        ),
+        (
+            &["speakers", "sentences"],
+            vec!["20250205", "import-one", "120000_300", "audio"],
+            "/app/speakers/api/review-cli/20250205/import-one/120000_300/audio",
+            json!({"sentences":[{"sentence_id":1,"text":text,"has_embedding":true}]}),
+            true,
+        ),
+        (
+            &["speakers", "discover"],
+            vec![],
+            "/app/speakers/api/discovery/scan",
+            json!({"clusters":[{"cluster_id":1,"size":1,"segment_count":1,
+                "samples":[{"day":"20250205","stream":"import-one","segment_key":"120000_300","sentence_id":1,"text":text}]}]}),
+            false,
+        ),
+        (
+            &["speakers", "presence"],
+            vec!["1"],
+            "/app/speakers/api/discovery/cluster/1/presence",
+            json!({"cluster_id":1,"facts":{},"evidence_complete":true,
+                "candidates":{"co_presence":[{"name":text,"entity_id":"person-one"}],"mention":[]}}),
+            true,
+        ),
+        (
+            &["speakers", "suggest"],
+            vec![],
+            "/app/speakers/api/suggest",
+            json!({"status":"ok","items":[{"type":"import_linkable","name":text}],"markdown":text}),
+            true,
+        ),
+        (
+            &["speakers", "resolve-names"],
+            vec![],
+            "/app/speakers/api/resolve-names",
+            json!({"matches_found":[],"auto_merged":[{"alias":text,"canonical":"person-one","similarity":0.9}]}),
+            true,
+        ),
+        (
+            &["profile", "brief"],
+            vec!["needle"],
+            "/api/profile/needle/brief",
+            json!({"entity_id":"person-one","name":text,"type":"person","description":text}),
+            true,
+        ),
+        (
+            &["profile", "full"],
+            vec!["needle"],
+            "/api/profile/needle",
+            json!({"entity_id":"person-one","name":text,"type":"person","description":text,
+                "aka":[text],"facets":["work"],"cadence":{}}),
+            true,
+        ),
+        (
+            &["entities", "ambiguities"],
+            vec![],
+            "/app/entities/api/ambiguities",
+            json!({"items":[{"ambiguity_id":"a1","original_query":text,"status":"open",
+                "ranked_candidates":[{"id":"person-one","name":text,"score":1}]}]}),
+            true,
+        ),
+        (
+            &["entities", "review"],
+            vec![],
+            "/app/entities/api/review",
+            json!({"ambiguity_cards":[{"original_query":text}],"set_aside_ambiguities":[],"set_aside_merge_candidates":[]}),
+            false,
+        ),
+        (
+            &["entities", "merge-candidates"],
+            vec![],
+            "/app/entities/api/merge-candidates",
+            json!({"items":[{"source":text,"target":text,"status":"open","facet":"work"}]}),
+            true,
+        ),
+        (
+            &["entities", "entity-history"],
+            vec!["person-one"],
+            "/app/entities/api/journal/entity/person-one/history",
+            json!({"entity_id":"person-one","items":[{"seq":1,"kind":"update","ts":1,"version_id":"v1",
+                "snapshot":{"name":text,"description":text}}]}),
+            false,
+        ),
+        (
+            &["facets", "list-candidates"],
+            vec![],
+            "/app/curation/api/facet/candidates",
+            json!({"items":[{"name":text,"name_key":text.to_lowercase(),"status":"open","count":1}]}),
+            true,
+        ),
+        (
+            &["entities", "network"],
+            vec!["needle"],
+            "/app/entities/api/network",
+            edge_body(text),
+            true,
+        ),
+        (
+            &["entities", "history"],
+            vec!["needle"],
+            "/app/entities/api/history",
+            edge_body(text),
+            true,
+        ),
+        (
+            &["entities", "overview"],
+            vec![],
+            "/app/entities/api/overview",
+            json!({"totals":{"edges":1,"entities":1},
+                "entities":[{"entity_id":"person-one","name":text,"type":"person","score":1.0,"count":1}]}),
+            true,
+        ),
+    ]
+}
+
+fn edge_body(text: &str) -> Value {
+    json!({"entity_id":"person-one","peer_id":"person-two","peer_name":text,
+        "total":1,"total_neighbors":1,"offset":0,
+        "neighbors":[{"entity_id":"person-two","name":text,"evidence":[{"label":text}]}],
+        "evidence":[{"label":text,"path":"20250205/import-one/A&B[one].jsonl"}]})
+}
+
+/// Reads whose only output is the server's JSON.
+fn journal_json_reads(text: &str) -> Vec<Case> {
+    vec![
+        (
+            &["journal", "facet", "show"],
+            vec!["work"],
+            "/app/settings/api/facet/work",
+            json!({"name":"work","title":text,"description":text}),
+            true,
+        ),
+        (
+            &["journal", "import"],
+            vec!["20250205_120000"],
+            "/app/import/api/20250205_120000",
+            json!({"id":"20250205_120000","original_filename":text,"summary":text}),
+            true,
+        ),
+        (
+            &["journal", "imports"],
+            vec![],
+            "/app/import/api/list",
+            json!({"items":[{"id":"20250205_120000","original_filename":text,"summary":text}]}),
+            true,
+        ),
+    ]
+}
+
+fn modes(cases: Vec<Case>, json_only: bool) -> Vec<(Case, bool)> {
+    cases
+        .into_iter()
+        .flat_map(|case| {
+            let modes: &[bool] = if json_only { &[true] } else { &[false, true] };
+            modes.iter().map(move |&json| (case.clone(), json))
+        })
+        .collect()
+}
+
+fn all_reads(text: &str) -> Vec<(Case, bool)> {
+    let mut reads = modes(journal_text_reads(text), false);
+    reads.extend(modes(journal_json_reads(text), true));
+    reads
+}
+
+fn run_read(((path, args, route, body, _), json_mode): &(Case, bool)) -> CommandOutput {
+    let mut args = args.clone();
+    if *json_mode && path[0] != "journal" {
+        args.push("--json");
+    }
+    run(path, &args, vec![(route, body.clone())])
+}
+
+#[test]
+fn other_reads_of_journal_text_are_literal() {
+    for read in all_reads(LEGACY) {
+        let ((path, _, _, _, text_shows), json_mode) = &read;
+        let output = run_read(&read);
+        assert_eq!(output.exit, 0, "{path:?}: {}", output.stderr);
+        // `transcripts speakers` ends with usage lines naming arguments as
+        // `<day>`; everything before them comes from the journal.
+        let journal_text = output.stdout.split("\n\n* actionable").next().unwrap();
+        assert!(!active(journal_text), "{path:?}: {}", output.stdout);
+        if *json_mode {
+            let value: Value = serde_json::from_str(&output.stdout).unwrap();
+            let mut texts = Vec::new();
+            collect_strings(&value, &mut texts);
+            assert!(
+                texts.iter().any(|text| visible(text) == LEGACY),
+                "{path:?}: {}",
+                output.stdout
+            );
+        } else if *text_shows {
+            assert!(
+                visible(&output.stdout).contains(LEGACY),
+                "{path:?}: {}",
+                output.stdout
+            );
+        }
+    }
+}
+
+#[test]
+fn reads_of_plain_journal_text_are_left_as_they_were() {
+    for read in all_reads("plain words - two_three. done") {
+        let ((path, _, _, _, _), json_mode) = &read;
+        let output = run_read(&read);
+        assert_eq!(output.exit, 0, "{path:?}: {}", output.stderr);
+        if *json_mode {
+            let value: Value = serde_json::from_str(&output.stdout).unwrap();
+            let mut texts = Vec::new();
+            collect_strings(&value, &mut texts);
+            assert!(
+                texts.iter().all(|text| !text.contains('\\')),
+                "{path:?}: {}",
+                output.stdout
+            );
+            if path[0] == "profile" {
+                assert_eq!(output.stdout.trim_end().lines().count(), 1, "{path:?}");
+            }
+        } else {
+            assert!(!output.stdout.contains('\\'), "{path:?}: {}", output.stdout);
+        }
+    }
+}
+
+fn collect_strings(value: &Value, out: &mut Vec<String>) {
+    match value {
+        Value::String(text) => out.push(text.clone()),
+        Value::Array(items) => items.iter().for_each(|item| collect_strings(item, out)),
+        Value::Object(object) => object.values().for_each(|item| collect_strings(item, out)),
+        _ => {}
+    }
+}
+
+#[test]
+fn references_stay_usable_when_journal_text_is_escaped() {
+    let references = [
+        "person-one",
+        "120000_300",
+        "20250205/import-one/A&B[one].jsonl",
+        "20250205",
+        "import-one",
+        "a1",
+        "v1",
+    ];
+    for (plain, escaped) in all_reads("plain").iter().zip(all_reads("AT&T")) {
+        let ((path, _, _, _, _), json_mode) = &escaped;
+        let before = run_read(plain).stdout;
+        let after = run_read(&escaped).stdout;
+        for reference in references {
+            assert_eq!(
+                before.contains(reference),
+                after.contains(reference),
+                "{path:?} json={json_mode}: {reference} in {after}"
+            );
+        }
+        if path == &["facets", "list-candidates"] && *json_mode {
+            let body: Value = serde_json::from_str(&after).unwrap();
+            assert_eq!(body[0]["name_key"], "at&t");
+        }
+    }
+}
+
+#[test]
+fn usage_errors_are_left_as_written() {
+    for path in [["profile", "brief"], ["profile", "full"]] {
+        let output = run(&path, &[], vec![]);
+        assert_ne!(output.exit, 0);
+        assert!(output.stderr.contains("[OPTIONS]"), "{}", output.stderr);
+    }
+}
+
+#[test]
+fn transcript_truncation_notice_is_left_as_written() {
+    let output = run(
+        &["transcripts", "read"],
+        &["20250205", "--max", "4"],
+        vec![(
+            "/app/transcripts/api/read/20250205",
+            json!({"markdown":"plain words"}),
+        )],
+    );
+    assert_eq!(output.exit, 0);
+    assert!(!output.stderr.is_empty());
+    assert!(!output.stderr.contains('\\'), "{}", output.stderr);
+}
+
+#[test]
+fn an_agents_own_query_is_left_as_written_in_a_resolution_error() {
+    let output = run(
+        &["entities", "history"],
+        &["AT&T"],
+        vec![(
+            "/app/entities/api/history",
+            json!({"resolved":null,"query":"AT&T","candidates":[]}),
+        )],
+    );
+    assert_eq!(output.exit, 1);
+    assert!(output.stderr.contains("AT&T"), "{}", output.stderr);
+}
+
+#[test]
+fn merge_previews_are_literal() {
+    let output = run(
+        &["entities", "merge"],
+        &["person-one", "person-two"],
+        vec![(
+            "/app/entities/api/merge",
+            json!({"status":"preview","target_identity":{"id":"person-two","name":LEGACY,"aka":[LEGACY]}}),
+        )],
+    );
+    assert_eq!(output.exit, 0);
+    assert!(!active(&output.stdout), "{}", output.stdout);
+    let body: Value = serde_json::from_str(&output.stdout).unwrap();
+    inert(body["target_identity"]["name"].as_str().unwrap(), LEGACY);
+    assert_eq!(body["target_identity"]["id"], "person-two");
+}

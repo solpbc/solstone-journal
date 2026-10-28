@@ -14,7 +14,12 @@ const DEFAULT_MAX_BYTES: usize = 16_384;
 
 #[must_use]
 pub fn read(ctx: CommandContext<'_>) -> CommandOutput {
-    crate::agent_output::literal_output(read_output(ctx))
+    // The page is journal text; the truncation notice on stderr is not.
+    let mut output = read_output(ctx);
+    let notice = std::mem::take(&mut output.stderr);
+    let mut output = crate::agent_output::literal_output(output);
+    output.stderr = notice;
+    output
 }
 
 fn read_output(ctx: CommandContext<'_>) -> CommandOutput {
@@ -308,7 +313,7 @@ pub fn speakers(ctx: CommandContext<'_>) -> CommandOutput {
     let rows = speaker_rows(&payload);
     let result = speaker_result(day, stream, segment, &payload, &rows);
     if parsed.has_flag("--json") {
-        return stdout_line(json_pretty_ascii(&result));
+        return crate::agent_output::literal_output(stdout_line(json_pretty_ascii(&result)));
     }
 
     let mut lines = vec![format!("Speakers for {day}/{stream}/{segment}:")];
@@ -327,9 +332,9 @@ pub fn speakers(ctx: CommandContext<'_>) -> CommandOutput {
                 display_value(row.get("sentence_id")),
                 field(row, "speaker_source"),
                 field(row, "time"),
-                speaker_name,
+                crate::agent_output::literal_links(&speaker_name),
                 confidence,
-                field(row, "text")
+                crate::agent_output::literal_links(&field(row, "text"))
             ));
         }
     }

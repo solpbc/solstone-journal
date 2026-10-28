@@ -780,11 +780,11 @@ fn is_reason(error: &ClientError, reason: &str) -> bool {
 }
 
 fn render_record_body(body: &Value, json_output: bool) -> CommandOutput {
-    if json_output {
+    crate::agent_output::literal_output(if json_output {
         stdout_json(body.get("record").unwrap_or(&Value::Null))
     } else {
         stdout_line(body.get("markdown").and_then(Value::as_str).unwrap_or(""))
-    }
+    })
 }
 
 fn stdout_json(value: &Value) -> CommandOutput {

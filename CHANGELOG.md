@@ -18,6 +18,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - security fix: updated a library used by journals on phones to address a memory-safety flaw.
 - security fix: image markup in older memories could load outside images when an agent read them through the command-line tools. those results now keep image and link markup as text. thanks @dvanduzer. Related to #401.
+- security fix: an agent reading your journal through the command-line tools could still get live image and link markup from a full search result, a single activity, a profile, a transcript's sentences or the entity overview. if someone got that markup into your journal, an app that showed the agent's reply could load an image from their server, telling them when it was read and passing along anything placed in the image's address. these results now keep the markup as text. this changes only what the command-line tools return. (#401)
 - security fix on linux: your journal now checks for updates using only release information signed by sol pbc.
 
 - on windows, backup controls no longer reject a journal because of how its folder path is written.

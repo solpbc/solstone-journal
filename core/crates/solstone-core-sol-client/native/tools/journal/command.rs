@@ -105,6 +105,10 @@ pub fn facet_rename(ctx: CommandContext<'_>) -> CommandOutput {
 
 #[must_use]
 pub fn facet_show(ctx: CommandContext<'_>) -> CommandOutput {
+    crate::agent_output::literal_output(facet_show_output(ctx))
+}
+
+fn facet_show_output(ctx: CommandContext<'_>) -> CommandOutput {
     let parsed = match parse_args(ctx.args, &[], &[]) {
         Ok(value) => value,
         Err(error) => return stderr(error),
@@ -171,6 +175,10 @@ fn facets_output(ctx: CommandContext<'_>) -> CommandOutput {
 
 #[must_use]
 pub fn import(ctx: CommandContext<'_>) -> CommandOutput {
+    crate::agent_output::literal_output(import_output(ctx))
+}
+
+fn import_output(ctx: CommandContext<'_>) -> CommandOutput {
     let parsed = match parse_args(ctx.args, &[], &[]) {
         Ok(value) => value,
         Err(error) => return stderr(error),
@@ -183,6 +191,10 @@ pub fn import(ctx: CommandContext<'_>) -> CommandOutput {
 
 #[must_use]
 pub fn imports(ctx: CommandContext<'_>) -> CommandOutput {
+    crate::agent_output::literal_output(imports_output(ctx))
+}
+
+fn imports_output(ctx: CommandContext<'_>) -> CommandOutput {
     let parsed = match parse_args(ctx.args, &["--limit", "-n", "--source", "-s"], &["--json"]) {
         Ok(value) => value,
         Err(error) => return stderr(error),
@@ -204,6 +216,10 @@ pub fn imports(ctx: CommandContext<'_>) -> CommandOutput {
 
 #[must_use]
 pub fn read(ctx: CommandContext<'_>) -> CommandOutput {
+    crate::agent_output::literal_output(read_output(ctx))
+}
+
+fn read_output(ctx: CommandContext<'_>) -> CommandOutput {
     let parsed = match parse_args(
         ctx.args,
         &[

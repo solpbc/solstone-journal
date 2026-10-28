@@ -142,8 +142,9 @@ pub fn resolve_names(ctx: CommandContext<'_>) -> CommandOutput {
         Err(error) => return speaker_error_preserving_stdout(out, error),
     };
     if json_output {
-        return stdout_json(&stats);
+        return crate::agent_output::literal_output(stdout_json(&stats));
     }
+    let stats = crate::agent_output::literal_body(stats);
     render_resolve_names(&mut out, &stats);
     CommandOutput::success(out)
 }
@@ -989,8 +990,9 @@ pub fn discover(ctx: CommandContext<'_>) -> CommandOutput {
         Err(error) => return discovery_error(error, json_output),
     };
     if json_output {
-        return stdout_json(&result);
+        return crate::agent_output::literal_output(stdout_json(&result));
     }
+    let result = crate::agent_output::literal_body(result);
     let clusters = array_field(&result, "clusters");
     let mut out = String::new();
     if clusters.is_empty() {
@@ -1060,8 +1062,9 @@ pub fn presence(ctx: CommandContext<'_>) -> CommandOutput {
         Err(error) => return speaker_error(error),
     };
     if parsed.flag("--json") {
-        return stdout_json(&result);
+        return crate::agent_output::literal_output(stdout_json(&result));
     }
+    let result = crate::agent_output::literal_body(result);
     let mut out = String::new();
     render_presence(&mut out, &result);
     CommandOutput::success(out)
@@ -1318,6 +1321,10 @@ pub fn seed_from_imports(ctx: CommandContext<'_>) -> CommandOutput {
 
 #[must_use]
 pub fn suggest(ctx: CommandContext<'_>) -> CommandOutput {
+    crate::agent_output::literal_output(suggest_output(ctx))
+}
+
+fn suggest_output(ctx: CommandContext<'_>) -> CommandOutput {
     let parsed = match parse_args(
         ctx.args,
         &[("--limit", Some("-n"))],
@@ -1513,8 +1520,9 @@ pub fn sentences(ctx: CommandContext<'_>) -> CommandOutput {
         Err(error) => return speaker_error(error),
     };
     if parsed.flag("--json") {
-        return stdout_json(&body);
+        return crate::agent_output::literal_output(stdout_json(&body));
     }
+    let body = crate::agent_output::literal_body(body);
     let mut out = String::new();
     emit(
         &mut out,

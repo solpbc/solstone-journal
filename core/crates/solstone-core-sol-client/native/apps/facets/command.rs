@@ -34,7 +34,7 @@ pub fn list_candidates(ctx: CommandContext<'_>) -> CommandOutput {
         rows.retain(|row| row.get("status").and_then(Value::as_str) == Some(status));
     }
     if parsed.has_flag("--json") {
-        return stdout_json(&Value::Array(rows));
+        return crate::agent_output::literal_output(stdout_json(&Value::Array(rows)));
     }
     if rows.is_empty() {
         return stdout_line("No facet candidates found.");
@@ -43,7 +43,7 @@ pub fn list_candidates(ctx: CommandContext<'_>) -> CommandOutput {
     for row in &rows {
         lines.push(format!(
             "{}  [{}]  count={}  last={}",
-            display_or(row.get("name"), ""),
+            crate::agent_output::literal_links(&display_or(row.get("name"), "")),
             display_or(row.get("status"), ""),
             display_value(row.get("count")),
             display_or(row.get("last_surfaced"), ""),
