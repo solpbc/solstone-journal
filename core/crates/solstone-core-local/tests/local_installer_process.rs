@@ -26,6 +26,7 @@ use solstone_core_local::install::{
 use tar::{Builder, EntryType, Header};
 
 const RECEIVE_TIMEOUT: Duration = Duration::from_secs(2);
+const LEASE_STARTUP_TIMEOUT: Duration = Duration::from_secs(30);
 const RFDETR_RECEIVE_TIMEOUT: Duration = Duration::from_secs(30);
 const PARAKEET_TEST_KEY: &str = "x86_64-unknown-linux-gnu";
 const COMPILED_EXPECTATION_ENV: &str = "SOLSTONE_RFDETR_COMPILED_EXPECTATION_RS";
@@ -79,7 +80,21 @@ impl LeaseCase {
             .stderr(Stdio::null())
             .spawn()
             .expect("run lease child probe");
-        ReapedChild(Some(child))
+        let child = ReapedChild(Some(child));
+        // Loading the native test binary is separate from the lease operation.
+        // Keep the two-second lease-result bound after the child is ready.
+        self.socket
+            .set_read_timeout(Some(LEASE_STARTUP_TIMEOUT))
+            .expect("set lease probe startup timeout");
+        assert_eq!(
+            self.receive(),
+            "ready",
+            "lease probe starts before acquisition"
+        );
+        self.socket
+            .set_read_timeout(Some(RECEIVE_TIMEOUT))
+            .expect("restore lease probe result timeout");
+        child
     }
 
     fn receive(&self) -> String {
@@ -596,8 +611,11 @@ fn lease_child_probe() {
     let socket_path = std::env::var("SOLSTONE_LOCAL_LEASE_HELPER_SOCKET")
         .map_err(|_| "SOLSTONE_LOCAL_LEASE_HELPER_SOCKET must name the case socket")
         .unwrap();
-    let result = child_result(&root).unwrap();
     let sender = UnixDatagram::unbound().unwrap();
+    sender
+        .send_to(b"ready", &socket_path)
+        .expect("announce lease probe readiness");
+    let result = child_result(&root).unwrap();
     sender
         .send_to(result.as_bytes(), socket_path)
         .map(|_| ())
