@@ -82,6 +82,8 @@ final class CreatorRecoveryEndpoint {
         // The UID is supplied by Binder, never by the Bundle. Refuse before parse/register.
         if(service.destroyed||message.sendingUid!=Process.myUid()||message.replyTo==null)return true;
         final Messenger reply=message.replyTo;final IBinder endpoint=reply.getBinder();
+        // The Message may be recycled before deferred native work returns.
+        final int replyId=message.arg1;
         try {
             byte[] bytes=message.getData().getByteArray("request");
             if(bytes==null||bytes.length>CreatorRecoveryState.LIMIT)throw new IOException("request bound");
@@ -110,7 +112,7 @@ final class CreatorRecoveryEndpoint {
                 public void refused(CreatorRecoveryState.Request subject){send(subject,CreatorRecoveryState.Result.refused(subject),true,false,true);}
                 void send(CreatorRecoveryState.Request subject,CreatorRecoveryState.Result result,boolean saved,boolean pending,boolean refused) {
                     try {
-                        Message response=Message.obtain(null,1);response.arg1=message.arg1;response.replyTo=service.incoming;
+                        Message response=Message.obtain(null,1);response.arg1=replyId;response.replyTo=service.incoming;
                         Bundle data=new Bundle();data.putString("query",request.id);data.putString("nonce",request.nonce);
                         data.putLong("connection",request.connection);data.putString("root",request.root);
                         byte[] subjectBytes=subject.encoded(),resultBytes=result==null?null:result.encoded();

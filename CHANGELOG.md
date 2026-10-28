@@ -8,6 +8,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- reviewing storage recovery on android could get stuck waiting for your journal to stop, even after it had stopped.
 - security fix: updated a library used by journals on phones to address a memory-safety flaw.
 - security fix: image markup in older memories could load outside images when an agent read them through the command-line tools. those results now keep image and link markup as text. thanks @dvanduzer. Related to #401.
 - security fix on linux: your journal now checks for updates using only release information signed by sol pbc.
