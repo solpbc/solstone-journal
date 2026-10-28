@@ -22,9 +22,9 @@ use solstone_core_local::install::rfdetr_readiness::{
 use solstone_core_local::{
     APPLE_SILICON_TOTAL_MEMORY_MIN_BYTES, AppleTotalMemoryVerdict, GPU_DEVICE_LOCAL_MIN_BYTES,
     GpuDeviceLocalVerdict, VulkanDevice, apple_total_memory_verdict, cpu_placement_suffix,
-    discrete_hardware_gpu_count, gpu_device_local_verdict, is_discrete, select_device,
+    gpu_device_local_verdict, select_device,
 };
-use solstone_core_system::provider_runtime::decide_parakeet_auto_placement;
+use solstone_core_system::provider_runtime::parakeet_placement_for_devices;
 
 const GIB: u64 = 1024 * 1024 * 1024;
 const DISK_MIN: u64 = 20 * GIB;
@@ -535,17 +535,10 @@ fn label(bytes: u64) -> String {
 fn placement_suffix(
     devices: &[VulkanDevice],
     selected: Option<&VulkanDevice>,
-    vram_mib: Option<u64>,
     unified_memory: bool,
 ) -> String {
-    let decision = decide_parakeet_auto_placement(
-        vram_mib.and_then(|value| value.try_into().ok()),
-        selected.is_some_and(is_discrete),
-        discrete_hardware_gpu_count(devices),
-        unified_memory,
-        // `solstone journal check` runs before install and cannot rely on journal config.
-        true,
-    );
+    // `solstone journal check` runs before install and cannot rely on journal config.
+    let decision = parakeet_placement_for_devices(devices, selected, unified_memory, true);
     cpu_placement_suffix(selected, decision.force_cpu)
 }
 /// Whether this host runs any of the bundled local capabilities.
@@ -777,7 +770,7 @@ fn windows_vulkan_verdict_check(
                     "Vulkan GPU {} with {} GB{}",
                     selected.name,
                     label(available_bytes),
-                    placement_suffix(devices, Some(selected), Some(selected.vram_mib), false)
+                    placement_suffix(devices, Some(selected), false)
                 ),
                 Some(GPU_DEVICE_LOCAL_MIN_BYTES),
                 Some(available_bytes),
@@ -887,12 +880,7 @@ fn gpu(inputs: &CheckInputs) -> Check {
                 "Vulkan GPU {} with {} GB{}",
                 selected.name,
                 label(bytes),
-                placement_suffix(
-                    &inputs.vulkan.devices,
-                    Some(&selected),
-                    Some(selected.vram_mib),
-                    false
-                )
+                placement_suffix(&inputs.vulkan.devices, Some(&selected), false)
             ),
             Some(GPU_DEVICE_LOCAL_MIN_BYTES),
             Some(bytes),
@@ -937,7 +925,6 @@ fn gpu(inputs: &CheckInputs) -> Check {
     detail.push_str(&placement_suffix(
         &inputs.vulkan.devices,
         selected.as_ref(),
-        Some(mib),
         unified,
     ));
     check(

@@ -50,7 +50,7 @@ pub use parakeet_truth_seam::{
 };
 pub use placement::{
     CO_FIT_MARGIN_MIB, PARAKEET_WORST_CASE_MIB, ParakeetPlacementDecision,
-    decide_parakeet_auto_placement,
+    decide_parakeet_auto_placement, parakeet_placement_for_devices,
 };
 pub use readiness::{
     PARAKEET_CPP_PROBE_TIMEOUT, ParakeetCppArtifacts, ParakeetCppReadiness,

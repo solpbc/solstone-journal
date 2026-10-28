@@ -2020,11 +2020,9 @@ pub(crate) async fn boot_and_tick(
     // current CPU server, Vulkan server, and model manifests, and starts
     // `install-provider parakeet` when a pin is missing or mismatched,
     // including for a journal that never installed a model. This tick still does not
-    // hash artifact bytes, probe the binary, or run
-    // `decide_parakeet_auto_placement` / `is_local_provider_needed`
-    // co-location. It reads install status and the lease only to decide
-    // whether to start the installer. Those remaining gaps degrade placement
-    // quality; they do not leave the provider unmanaged.
+    // hash artifact bytes or probe the binary. It reads install status and the
+    // lease only to decide whether to start the installer. Those remaining gaps
+    // degrade placement quality; they do not leave the provider unmanaged.
     let parakeet_fixture = std::env::var(PARAKEET_FIXTURE_ENV).as_deref() == Ok("1");
     let parakeet_truth = if parakeet_fixture {
         ParakeetTruthSeam::with_config(
@@ -2034,6 +2032,8 @@ pub(crate) async fn boot_and_tick(
                 platform: "linux".to_owned(),
                 machine: "x86_64".to_owned(),
                 vulkan_devices: Vec::new(),
+                #[cfg(not(windows))]
+                nvidia_probe: None,
             },
         )
     } else {

@@ -3,19 +3,12 @@
 
 //! Parakeet GPU auto-placement decision.
 //!
-//! A faithful, complete port of `parakeet_placement.py`'s
-//! `decide_parakeet_auto_placement`: whether co-locating parakeet.cpp on the
-//! same discrete GPU the local brain lane already occupies is safe, or
-//! whether it must fall back to CPU. `decide_parakeet_auto_placement` has
-//! exactly one production caller outside its own module (the supervisor's
-//! truth observation) and is not forked across languages the way
-//! [`crate::stt_backend_choice`] is, so unlike that decision this one needs
-//! no cross-language differential -- it is ported directly and completely.
+//! Whether co-locating parakeet.cpp on the same discrete GPU the local brain
+//! lane already occupies is safe, or whether it must fall back to CPU. Callers
+//! are `solstone journal check`, the setup local fit report, and the Linux
+//! parakeet runtime.
 //!
-//! Device enumeration, discrete-GPU classification, and CPU placement suffixes
-//! live in `solstone-core-local`; this module owns only the pure arithmetic its
-//! supervisor caller needs. The caller classifies devices and counts discrete
-//! GPUs before calling in.
+//! The module derives the device facts and does the arithmetic.
 
 /// 2947 MiB is the measured peak ordinary segment residency under
 /// local-128 attention, not full attention. The 1024 MiB margin covers
@@ -161,9 +154,102 @@ pub fn decide_parakeet_auto_placement(
     }
 }
 
+pub fn parakeet_placement_for_devices(
+    devices: &[solstone_core_local::VulkanDevice],
+    selected: Option<&solstone_core_local::VulkanDevice>,
+    unified_memory: bool,
+    brain_lane_active: bool,
+) -> ParakeetPlacementDecision {
+    let vram_mib = selected.and_then(|device| {
+        if device.vram_mib == 0 {
+            None
+        } else {
+            u32::try_from(device.vram_mib).ok()
+        }
+    });
+    decide_parakeet_auto_placement(
+        vram_mib,
+        selected.is_some_and(solstone_core_local::is_discrete),
+        solstone_core_local::discrete_hardware_gpu_count(devices),
+        unified_memory,
+        brain_lane_active,
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parakeet_placement_for_devices_forces_cpu_on_single_discrete_8192_with_brain_active() {
+        let dev = solstone_core_local::VulkanDevice {
+            index: 0,
+            name: "Discrete GPU".into(),
+            device_type: Some(2),
+            vram_mib: 8192,
+        };
+        let devices = vec![dev.clone()];
+        let decision = parakeet_placement_for_devices(&devices, Some(&dev), false, true);
+        assert!(decision.force_cpu);
+        assert_eq!(decision.reason_code, "co_location_requires_cpu");
+    }
+
+    #[test]
+    fn parakeet_placement_for_devices_fits_gpu_on_single_discrete_24576_with_brain_active() {
+        let dev = solstone_core_local::VulkanDevice {
+            index: 0,
+            name: "Big Discrete GPU".into(),
+            device_type: Some(2),
+            vram_mib: 24576,
+        };
+        let devices = vec![dev.clone()];
+        let decision = parakeet_placement_for_devices(&devices, Some(&dev), false, true);
+        assert!(!decision.force_cpu);
+        assert_eq!(decision.vram_mib, Some(24576));
+    }
+
+    #[test]
+    fn parakeet_placement_for_devices_keeps_gpu_when_brain_inactive() {
+        let dev = solstone_core_local::VulkanDevice {
+            index: 0,
+            name: "Discrete GPU".into(),
+            device_type: Some(2),
+            vram_mib: 8192,
+        };
+        let devices = vec![dev.clone()];
+        let decision = parakeet_placement_for_devices(&devices, Some(&dev), false, false);
+        assert!(!decision.force_cpu);
+        assert_eq!(decision.reason_code, "brain_lane_inactive");
+    }
+
+    #[test]
+    fn parakeet_placement_for_devices_keeps_gpu_on_unified_memory() {
+        let dev = solstone_core_local::VulkanDevice {
+            index: 0,
+            name: "Discrete GPU".into(),
+            device_type: Some(2),
+            vram_mib: 8192,
+        };
+        let devices = vec![dev.clone()];
+        let decision = parakeet_placement_for_devices(&devices, Some(&dev), true, true);
+        assert!(!decision.force_cpu);
+        assert_eq!(decision.reason_code, "unified_memory");
+    }
+
+    #[test]
+    fn parakeet_placement_for_devices_clears_zero_vram_and_keeps_gpu() {
+        let dev = solstone_core_local::VulkanDevice {
+            index: 0,
+            name: "Zero VRAM GPU".into(),
+            device_type: Some(2),
+            vram_mib: 0,
+        };
+        let devices = vec![dev.clone()];
+        let decision = parakeet_placement_for_devices(&devices, Some(&dev), false, true);
+        assert!(!decision.force_cpu);
+        assert_eq!(decision.reason_code, "vram_unknown");
+        assert_eq!(decision.vram_mib, None);
+    }
 
     #[test]
     fn brain_lane_inactive_never_forces_cpu_regardless_of_other_facts() {

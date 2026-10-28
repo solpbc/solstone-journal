@@ -77,6 +77,8 @@ pub(super) fn stopped_providers(journal: &Path) -> (LocalProvider, ParakeetProvi
                 platform: std::env::consts::OS.to_owned(),
                 machine: std::env::consts::ARCH.to_owned(),
                 vulkan_devices: Vec::new(),
+                #[cfg(not(windows))]
+                nvidia_probe: None,
             },
         ),
         lifecycle: ParakeetLifecycleSeam::new(parakeet_shared.clone(), clock.clone())

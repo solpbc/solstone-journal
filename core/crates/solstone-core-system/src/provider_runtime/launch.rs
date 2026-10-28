@@ -6,7 +6,7 @@
 use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::net::{SocketAddr, TcpStream};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 use std::process::{Child, Command};
 use std::sync::Arc;
@@ -17,8 +17,10 @@ use serde_json::{Map, Value, json};
 use solstone_core_brain::bundled_runtime_desired_fingerprint;
 use solstone_core_installed_payload::WindowsArchitecture;
 use solstone_core_local::endpoint::{LocalEndpointResolution, resolve_local_endpoint};
+#[cfg(all(test, feature = "full-tests"))]
+use solstone_core_local::install::pins;
 use solstone_core_local::install::{
-    mlx_candidate, pins,
+    mlx_candidate,
     readiness::{inspect_local, inspect_local_present, inspect_local_present_with_package},
 };
 use solstone_core_local::nvidia::{
@@ -577,6 +579,131 @@ fn observe_truth(
     })
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum LinuxLocalClass {
+    Unreadable,
+    InstallInProgress,
+    NotReady {
+        phase: super::model::RuntimePhase,
+        reason_code: &'static str,
+    },
+    Ready,
+}
+
+impl LinuxLocalClass {
+    pub(crate) fn is_launchable(&self) -> bool {
+        matches!(self, Self::Ready | Self::InstallInProgress)
+    }
+
+    pub(crate) fn reason_str(&self) -> &'static str {
+        match self {
+            Self::Unreadable => "unreadable",
+            Self::InstallInProgress => "install-in-progress",
+            Self::NotReady { reason_code, .. } => reason_code,
+            Self::Ready => "ready",
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct LinuxLocalPresentVerdict {
+    pub(crate) readiness: Value,
+    pub(crate) model_id: String,
+    pub(crate) class: LinuxLocalClass,
+}
+
+pub(crate) fn linux_local_prelaunch_verdict(
+    journal: &Path,
+    journal_config: &Map<String, Value>,
+    probe: &NvidiaProbe,
+) -> LinuxLocalPresentVerdict {
+    let configured_model_id = journal_config
+        .get("providers")
+        .and_then(Value::as_object)
+        .and_then(|providers| providers.get("active"))
+        .and_then(Value::as_object)
+        .and_then(|active| active.get("model"))
+        .and_then(Value::as_str)
+        .filter(|model| !model.trim().is_empty())
+        .unwrap_or("local/qwen3.5-4b");
+    let model_id =
+        solstone_core_local::install::resolve_bundled_model_id(configured_model_id, false);
+    let readiness = inspect_local_present(Map::from_iter([
+        (
+            "journal".into(),
+            Value::String(journal.display().to_string()),
+        ),
+        ("model_id".into(), Value::String(model_id.clone())),
+        (
+            "nvidia_probe".into(),
+            serde_json::to_value(probe).expect("NvidiaProbe serialization"),
+        ),
+    ]));
+    let class = if let Some(object) = readiness.as_object() {
+        if object
+            .get("install")
+            .and_then(Value::as_object)
+            .and_then(|install| install.get("install_state"))
+            .and_then(Value::as_str)
+            .is_some_and(|state| {
+                matches!(
+                    state,
+                    "resolving" | "downloading" | "verifying" | "installing"
+                )
+            })
+        {
+            LinuxLocalClass::InstallInProgress
+        } else if object.get("ready").and_then(Value::as_bool) != Some(true) {
+            let reason = object
+                .get("reason_code")
+                .and_then(Value::as_str)
+                .unwrap_or("");
+            let (phase, code) = match reason {
+                "platform_unsupported" | "unsupported_platform" => (
+                    super::model::RuntimePhase::HostBlocked,
+                    "platform-unsupported",
+                ),
+                "package_unavailable" => (
+                    super::model::RuntimePhase::HostBlocked,
+                    "package-unavailable",
+                ),
+                "manifest_pin_mismatch"
+                | "sha256_mismatch"
+                | "inventory_member_missing"
+                | "inventory_size_mismatch" => (
+                    super::model::RuntimePhase::ArtifactNotReady,
+                    "artifact-stale",
+                ),
+                "manifest_missing" => (
+                    super::model::RuntimePhase::ArtifactNotReady,
+                    "manifest-missing",
+                ),
+                _ if object.get("status").and_then(Value::as_str) == Some("proof-unavailable") => (
+                    super::model::RuntimePhase::ArtifactNotReady,
+                    "artifact-proof-failed",
+                ),
+                _ => (
+                    super::model::RuntimePhase::ArtifactNotReady,
+                    "artifact-missing",
+                ),
+            };
+            LinuxLocalClass::NotReady {
+                phase,
+                reason_code: code,
+            }
+        } else {
+            LinuxLocalClass::Ready
+        }
+    } else {
+        LinuxLocalClass::Unreadable
+    };
+    LinuxLocalPresentVerdict {
+        readiness,
+        model_id,
+        class,
+    }
+}
+
 fn observe_truth_with_mlx(
     shared: &LocalRuntimeShared,
     config: &LocalTruthConfig,
@@ -623,16 +750,10 @@ fn observe_truth_with_mlx(
         .and_then(Value::as_object)
         .and_then(|local| local.get("vulkan_device_index"))
         .and_then(solstone_core_local::vulkan::local_vulkan_device_index);
-    // Bundled macOS inference has one shipped model. Read journals written by
-    // the retired MLX runtime, but never let their old selection relabel the
-    // native 4B artifacts or desired fingerprint.
-    let model_id = if config.platform == LocalHost::Darwin {
-        "local/qwen3.5-4b".to_owned()
-    } else if pins::model_identity(&configured_model_id).is_some() {
-        configured_model_id
-    } else {
-        "local/qwen3.5-4b".to_owned()
-    };
+    let model_id = solstone_core_local::install::resolve_bundled_model_id(
+        &configured_model_id,
+        config.platform == LocalHost::Darwin,
+    );
     if config.platform == LocalHost::Windows {
         if WindowsArchitecture::from_architecture(config.arch).is_none() {
             return truth(
@@ -867,83 +988,33 @@ fn observe_truth_with_mlx(
         return observe_mlx_readiness(shared, mlx);
     }
     let probe = config.nvidia_probe.clone().unwrap_or_else(probe_nvidia_gpu);
-    let readiness = inspect_local_present(Map::from_iter([
-        (
-            "journal".into(),
-            Value::String(config.journal_path.display().to_string()),
-        ),
-        ("model_id".into(), Value::String(model_id.clone())),
-        (
-            "nvidia_probe".into(),
-            serde_json::to_value(&probe).expect("NvidiaProbe serialization"),
-        ),
-    ]));
+    let verdict = linux_local_prelaunch_verdict(&config.journal_path, &journal_config, &probe);
     if let Some(follow) = follow {
         follow.observe(
             &config.journal_path,
             config_present.then_some(&journal_config),
-            &readiness,
+            &verdict.readiness,
         );
     }
-    let Some(object) = readiness.as_object() else {
+    match verdict.class {
+        LinuxLocalClass::Unreadable => return truth_unavailable(),
+        LinuxLocalClass::InstallInProgress => {
+            return truth(
+                super::model::RuntimePhase::ArtifactNotReady,
+                "install-in-progress",
+                None,
+                false,
+                false,
+            );
+        }
+        LinuxLocalClass::NotReady { phase, reason_code } => {
+            return truth(phase, reason_code, None, false, false);
+        }
+        LinuxLocalClass::Ready => {}
+    }
+    let Some(object) = verdict.readiness.as_object() else {
         return truth_unavailable();
     };
-    if object
-        .get("install")
-        .and_then(Value::as_object)
-        .and_then(|install| install.get("install_state"))
-        .and_then(Value::as_str)
-        .is_some_and(|state| {
-            matches!(
-                state,
-                "resolving" | "downloading" | "verifying" | "installing"
-            )
-        })
-    {
-        return truth(
-            super::model::RuntimePhase::ArtifactNotReady,
-            "install-in-progress",
-            None,
-            false,
-            false,
-        );
-    }
-    if object.get("ready").and_then(Value::as_bool) != Some(true) {
-        let reason = object
-            .get("reason_code")
-            .and_then(Value::as_str)
-            .unwrap_or("");
-        let (phase, code) = match reason {
-            "platform_unsupported" | "unsupported_platform" => (
-                super::model::RuntimePhase::HostBlocked,
-                "platform-unsupported",
-            ),
-            "package_unavailable" => (
-                super::model::RuntimePhase::HostBlocked,
-                "package-unavailable",
-            ),
-            "manifest_pin_mismatch"
-            | "sha256_mismatch"
-            | "inventory_member_missing"
-            | "inventory_size_mismatch" => (
-                super::model::RuntimePhase::ArtifactNotReady,
-                "artifact-stale",
-            ),
-            "manifest_missing" => (
-                super::model::RuntimePhase::ArtifactNotReady,
-                "manifest-missing",
-            ),
-            _ if object.get("status").and_then(Value::as_str) == Some("proof-unavailable") => (
-                super::model::RuntimePhase::ArtifactNotReady,
-                "artifact-proof-failed",
-            ),
-            _ => (
-                super::model::RuntimePhase::ArtifactNotReady,
-                "artifact-missing",
-            ),
-        };
-        return truth(phase, code, None, false, false);
-    }
     let artifacts = object.get("artifacts").and_then(Value::as_object);
     let Some(model_path) = artifacts
         .and_then(|artifacts| artifacts.get("model_path"))
@@ -973,7 +1044,7 @@ fn observe_truth_with_mlx(
         .unwrap_or("");
     let Ok(desired) = bundled_runtime_desired_fingerprint(
         backend,
-        &model_id,
+        &verdict.model_id,
         artifact_target_fingerprint,
         binary_path.as_deref(),
         model_path,
@@ -985,7 +1056,7 @@ fn observe_truth_with_mlx(
     let common = LocalLaunchCommon {
         desired_fingerprint_json: desired.json,
         desired_fingerprint_sha256: fingerprint.clone(),
-        model_id,
+        model_id: verdict.model_id,
         model_path: model_path.into(),
         mmproj_path: projector_path,
     };
@@ -2968,7 +3039,7 @@ mod tests {
     }
 
     #[cfg(all(target_os = "linux", feature = "full-tests"))]
-    fn write_linux_runtime_tree_in_module(root: &Path) {
+    pub(crate) fn write_linux_runtime_tree_in_module(root: &Path) {
         use solstone_core_local::install::manifest;
         use solstone_core_local::install::pins;
         let key = pins::platform_key();
@@ -4093,3 +4164,6 @@ mod tests {
         assert_eq!(spawn_count.load(std::sync::atomic::Ordering::SeqCst), 0);
     }
 }
+
+#[cfg(all(test, target_os = "linux", feature = "full-tests"))]
+pub(crate) use tests::write_linux_runtime_tree_in_module;

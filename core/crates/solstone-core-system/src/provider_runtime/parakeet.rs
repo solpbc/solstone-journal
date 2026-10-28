@@ -6,11 +6,9 @@
 //! Mirrors `launch.rs`'s Local seam shapes (spawn a subprocess, warmup-poll
 //! its `/health` endpoint, record readiness) but for parakeet-server's
 //! single-binary launch instead of Local's Cuda/Vulkan/Mlx backend
-//! selection. Deliberately does not yet decide *whether* to launch --
-//! that decision depends on the admission latch (a process-wide fail-closed
-//! read of the runtime-health record) and GPU auto-placement, both ported
-//! separately. This module is the seam machinery a truth decision hands a
-//! plan to, not the decision itself.
+//! selection. The truth seam runs the admission latch and the placement
+//! decision, then hands this module a plan. This module is the launch
+//! machinery.
 
 #[cfg(any(unix, windows))]
 use std::io::{Read, Write};
@@ -140,7 +138,7 @@ pub fn parakeet_auth_headers(_: u16) -> Option<(String, String)> {
 }
 
 /// Mirrors Python's `ParakeetServerLaunchPlan` field-for-field. `env_updates`
-/// and `gpu_index` are populated by GPU auto-placement (ported separately);
+/// and `gpu_index` are what the truth seam's placement decision already chose;
 /// this struct only carries what a plan already decided.
 #[derive(Debug, Clone)]
 pub struct ParakeetLaunchConfig {

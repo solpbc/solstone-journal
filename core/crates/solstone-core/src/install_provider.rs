@@ -16,11 +16,12 @@ use solstone_core_local::install::{
     lease, local_backend_choice, mlx_candidate, pins, readiness, status,
 };
 use solstone_core_local::{
-    LocalEndpointResolution, MemorySource, discrete_hardware_gpu_count, is_discrete,
-    probe_nvidia_gpu, resolve_local_endpoint, select_device,
+    MemorySource, bundled_local_model_holds_gpu, probe_nvidia_gpu, select_device,
 };
 use solstone_core_segment::{SupervisorRefusal, is_solstone_up, require_solstone_with};
+#[cfg(test)]
 use solstone_core_system::provider_runtime::decide_parakeet_auto_placement;
+use solstone_core_system::provider_runtime::parakeet_placement_for_devices;
 
 use crate::{EXIT_TEMPFAIL, eprint_journal_path_error, resolve_process_journal_path};
 
@@ -610,12 +611,9 @@ where
         local_override_and_brain_lane(journal).map_err(|error| error.to_string())?;
     let selected = select_device(&devices, override_index);
     let unified_memory = nvidia_probe.memory_source() == MemorySource::SystemAvailable;
-    let force_cpu = decide_parakeet_auto_placement(
-        selected
-            .as_ref()
-            .and_then(|device| u32::try_from(device.vram_mib).ok()),
-        selected.as_ref().is_some_and(is_discrete),
-        discrete_hardware_gpu_count(&devices),
+    let force_cpu = parakeet_placement_for_devices(
+        &devices,
+        selected.as_ref(),
         unified_memory,
         brain_lane_active,
     )
@@ -673,29 +671,6 @@ where
 fn local_override_and_brain_lane(
     journal: &Path,
 ) -> Result<(Option<u32>, bool), solstone_core_journal_config::ConfigLoadError> {
-    let brain_lane_active = match read_journal_config(journal) {
-        Ok(read) => {
-            let config = read.config.unwrap_or_default();
-            let local_needed = config
-                .get("providers")
-                .and_then(Value::as_object)
-                .and_then(|providers| providers.get("active"))
-                .and_then(Value::as_object)
-                .and_then(|active| active.get("provider"))
-                .and_then(Value::as_str)
-                == Some("local");
-            let bundled = matches!(
-                resolve_local_endpoint(&config),
-                LocalEndpointResolution::Bundled
-            );
-            local_needed && bundled
-        }
-        Err(_) => {
-            // Python's `brain_lane_active` predicate uses `except Exception:
-            // True`; keep that parity fallback only for this predicate.
-            true
-        }
-    };
     let config = read_journal_config(journal)?.config.unwrap_or_default();
     let override_index = config
         .get("providers")
@@ -704,6 +679,7 @@ fn local_override_and_brain_lane(
         .and_then(Value::as_object)
         .and_then(|local| local.get("vulkan_device_index"))
         .and_then(local_vulkan_device_index);
+    let brain_lane_active = bundled_local_model_holds_gpu(&config, true);
     Ok((override_index, brain_lane_active))
 }
 
@@ -2969,5 +2945,93 @@ mod tests {
             "x86_64",
         );
         assert!(TEST_FETCH_RUNTIME_MEMBER_COUNT.with(std::cell::Cell::get) > 0);
+    }
+
+    #[test]
+    #[cfg(all(test, feature = "full-tests"))]
+    fn fit_report_parakeet_auto_placement_gpu_detail_respects_bundled_vs_byo() {
+        let discrete_dev = solstone_core_local::VulkanDevice {
+            index: 0,
+            name: "RTX 4070".into(),
+            device_type: Some(2),
+            vram_mib: 8192,
+        };
+        let probe = solstone_core_local::NvidiaProbe {
+            schema: "test".to_owned(),
+            detected: true,
+            gpu_index: Some(0),
+            gpu_name: Some("RTX 4070".into()),
+            compute_cap: Some("8.9".into()),
+            arch: Some("sm_89".into()),
+            driver_cuda_major: Some(13),
+            vram_mib: Some(8192),
+            unified_memory_mib: None,
+            probe_error: None,
+        };
+
+        // First install: temp journal, providers.active unset, no endpoint (bundled), no model
+        let journal_bundled = tempfile::tempdir().unwrap();
+        let (report_bundled, _) = build_local_report_with(
+            journal_bundled.path(),
+            "linux",
+            "x86_64",
+            || probe.clone(),
+            || solstone_core_system::vulkan_observe::VulkanObservation {
+                devices: vec![discrete_dev.clone()],
+                succeeded: true,
+            },
+            || None,
+        )
+        .unwrap();
+        let gpu_check_bundled = report_bundled
+            .checks
+            .iter()
+            .find(|check| check.name == "gpu")
+            .expect("gpu check");
+        assert!(
+            gpu_check_bundled
+                .detail
+                .contains(solstone_core_local::CPU_PLACEMENT_COPY)
+        );
+
+        // Twin on the same devices with both endpoint_url and served_model_id set (BYO)
+        let journal_byo = tempfile::tempdir().unwrap();
+        let config_dir = journal_byo.path().join("config");
+        fs::create_dir_all(&config_dir).unwrap();
+        fs::write(
+            config_dir.join("journal.json"),
+            json!({
+                "providers": {
+                    "local": {
+                        "endpoint_url": "http://127.0.0.1:8080",
+                        "served_model_id": "custom-model"
+                    }
+                }
+            })
+            .to_string(),
+        )
+        .unwrap();
+        let (report_byo, _) = build_local_report_with(
+            journal_byo.path(),
+            "linux",
+            "x86_64",
+            || probe.clone(),
+            || solstone_core_system::vulkan_observe::VulkanObservation {
+                devices: vec![discrete_dev.clone()],
+                succeeded: true,
+            },
+            || None,
+        )
+        .unwrap();
+        let gpu_check_byo = report_byo
+            .checks
+            .iter()
+            .find(|check| check.name == "gpu")
+            .expect("gpu check");
+        assert!(
+            !gpu_check_byo
+                .detail
+                .contains(solstone_core_local::CPU_PLACEMENT_COPY)
+        );
     }
 }
