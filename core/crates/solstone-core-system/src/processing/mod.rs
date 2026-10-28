@@ -109,6 +109,7 @@ mod tests {
                 repository: "repo".into(),
                 backend: "s3".into(),
             };
+        #[cfg(unix)]
         let record =
             solstone_core_journal_io::whole_journal_restore::publish_whole_journal_restore(
                 root.path(),
@@ -117,12 +118,50 @@ mod tests {
                 "/journal",
             )
             .expect("obligation");
+        #[cfg(windows)]
+        {
+            // Seed reader state independently of the Unix mobile writer.
+            use solstone_core_journal_io::whole_journal_restore::{
+                WholeJournalRestore, WholeJournalRestoreReadiness, read_whole_journal_restore,
+            };
+            let bound = solstone_core_journal_io::JournalRoot::open(root.path()).unwrap();
+            let record = WholeJournalRestore {
+                v: 1,
+                attempt: 1,
+                root: bound.canonical_path().to_string_lossy().into_owned(),
+                root_identity: bound.identity().observation_id(),
+                source: source,
+                snapshot_id: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+                    .into(),
+                subtree: "/journal".into(),
+            };
+            std::fs::create_dir_all(root.path().join("health")).unwrap();
+            std::fs::write(
+                root.path()
+                    .join("health")
+                    .join("whole-journal-restore.json"),
+                serde_json::to_vec(&record).unwrap(),
+            )
+            .unwrap();
+            assert!(matches!(
+                read_whole_journal_restore(root.path()),
+                WholeJournalRestoreReadiness::Pending(_)
+            ));
+        }
         assert!(!processing_allowed(root.path()));
+        #[cfg(unix)]
         solstone_core_journal_io::whole_journal_restore::clear_whole_journal_restore(
             root.path(),
             &record,
         )
         .expect("clear");
+        #[cfg(windows)]
+        std::fs::remove_file(
+            root.path()
+                .join("health")
+                .join("whole-journal-restore.json"),
+        )
+        .unwrap();
         assert_eq!(processing_allowed(root.path()), before);
     }
 }

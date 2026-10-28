@@ -1671,7 +1671,12 @@ impl crate::screen_ocr::OcrWorkerFactory for LiteralOcr {
 
 fn ocr_test_run(name: &str) -> TestRun {
     let mut test = TestRun::new(name);
-    let segment = test.journal.join("chronicle/20261020/desktop/090000_300");
+    let segment = test
+        .journal
+        .join("chronicle")
+        .join("20261020")
+        .join("desktop")
+        .join("090000_300");
     fs::create_dir_all(&segment).unwrap();
     test.video = segment.join("screen.mp4");
     fs::write(&test.video, b"authored raw input").unwrap();

@@ -373,6 +373,7 @@ mod tests {
         .unwrap();
         let root =
             std::sync::Arc::new(solstone_core_journal_io::JournalRoot::open(&journal).unwrap());
+        let prevented = std::cell::Cell::new(false);
         let result = super::append_journal_action_log_with_hint_boundary(
             &root,
             "app",
@@ -381,10 +382,31 @@ mod tests {
             json!({}),
             &|| Ok(()),
             &|| {
-                fs::rename(&journal, &retained).unwrap();
+                if let Err(error) = fs::rename(&journal, &retained) {
+                    assert!(
+                        cfg!(windows) && matches!(error.raw_os_error(), Some(5 | 32)),
+                        "{error}"
+                    );
+                    prevented.set(true);
+                    return;
+                }
                 fs::create_dir(&journal).unwrap();
             },
         );
+        if prevented.get() {
+            assert!(result.is_ok(), "{result:?}");
+            root.revalidate_canonical_binding().unwrap();
+            assert!(!retained.exists());
+            assert_eq!(
+                fs::read_dir(journal.join("config/actions"))
+                    .unwrap()
+                    .count(),
+                1
+            );
+            drop(root);
+            fs::rename(&journal, &retained).expect("closed owner releases the namespace");
+            return;
+        }
         let entries = fs::read_dir(&journal)
             .unwrap()
             .map(|entry| entry.unwrap().file_name())

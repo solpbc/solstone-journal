@@ -1077,6 +1077,20 @@ fn copy_directory(
     }
     {
         let _ticket = budget.take()?;
+        #[cfg(windows)]
+        let directory = {
+            use std::os::windows::fs::OpenOptionsExt;
+            // A directory handle needs backup semantics. Open the entry itself
+            // if it became a reparse point, rather than following it for metadata.
+            const BACKUP_SEMANTICS: u32 = 0x0200_0000;
+            const OPEN_REPARSE_POINT: u32 = 0x0020_0000;
+            std::fs::OpenOptions::new()
+                .write(true)
+                .custom_flags(BACKUP_SEMANTICS | OPEN_REPARSE_POINT)
+                .open(destination)
+                .map_err(classify_io)?
+        };
+        #[cfg(not(windows))]
         let directory = File::open(destination).map_err(classify_io)?;
         directory
             .set_times(FileTimes::new().set_modified(modified))

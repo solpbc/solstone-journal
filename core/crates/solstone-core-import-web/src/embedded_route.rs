@@ -1208,7 +1208,13 @@ mod tests {
             .find(|seen| !seen.request.args.iter().any(|arg| arg == "--dry-run"))
             .expect("execution capture");
         assert!(
-            execution.request.args[0].contains(&format!("imports/{CHOSEN}/")),
+            std::path::Path::new(&execution.request.args[0]).starts_with(
+                root.path()
+                    .canonicalize()
+                    .unwrap()
+                    .join("imports")
+                    .join(CHOSEN)
+            ),
             "{}",
             execution.request.args[0]
         );
@@ -1991,7 +1997,13 @@ mod tests {
                 .request
                 .args
                 .iter()
-                .any(|arg| arg.contains(&format!("imports/{CHOSEN}/"))),
+                .any(|arg| std::path::Path::new(arg).starts_with(
+                    root.path()
+                        .canonicalize()
+                        .unwrap()
+                        .join("imports")
+                        .join(CHOSEN)
+                )),
             "{:?}",
             execution.request.args
         );

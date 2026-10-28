@@ -77,7 +77,11 @@ mod tests {
 
     impl TempDir {
         fn new() -> Self {
-            Self(tempfile::TempDir::new_in("/var/tmp").expect("temporary root creates"))
+            #[cfg(unix)]
+            let root = tempfile::TempDir::new_in("/var/tmp");
+            #[cfg(not(unix))]
+            let root = tempfile::TempDir::new();
+            Self(root.expect("temporary root creates"))
         }
 
         fn write(&self, bytes: &[u8]) {
@@ -143,11 +147,12 @@ mod tests {
 
     #[test]
     fn pending_restore_does_not_promote_a_completed_config() {
-        use solstone_core_journal_io::whole_journal_restore::{
-            WholeJournalRestoreSource, publish_whole_journal_restore,
-        };
+        use solstone_core_journal_io::whole_journal_restore::WholeJournalRestoreSource;
+        #[cfg(unix)]
+        use solstone_core_journal_io::whole_journal_restore::publish_whole_journal_restore;
         let temporary = TempDir::new();
         temporary.write(br#"{"setup":{"completed_at":1}}"#);
+        #[cfg(unix)]
         publish_whole_journal_restore(
             temporary.0.path(),
             &WholeJournalRestoreSource::Byo {
@@ -158,6 +163,41 @@ mod tests {
             "/journal",
         )
         .expect("obligation");
+        #[cfg(windows)]
+        {
+            // Seed reader state independently of the Unix mobile writer.
+            use solstone_core_journal_io::whole_journal_restore::{
+                WholeJournalRestore, WholeJournalRestoreReadiness, read_whole_journal_restore,
+            };
+            let bound = solstone_core_journal_io::JournalRoot::open(temporary.0.path()).unwrap();
+            let record = WholeJournalRestore {
+                v: 1,
+                attempt: 1,
+                root: bound.canonical_path().to_string_lossy().into_owned(),
+                root_identity: bound.identity().observation_id(),
+                source: WholeJournalRestoreSource::Byo {
+                    repository: "repo".into(),
+                    backend: "s3".into(),
+                },
+                snapshot_id: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+                    .into(),
+                subtree: "/journal".into(),
+            };
+            std::fs::create_dir_all(temporary.0.path().join("health")).unwrap();
+            std::fs::write(
+                temporary
+                    .0
+                    .path()
+                    .join("health")
+                    .join("whole-journal-restore.json"),
+                serde_json::to_vec(&record).unwrap(),
+            )
+            .unwrap();
+            assert!(matches!(
+                read_whole_journal_restore(temporary.0.path()),
+                WholeJournalRestoreReadiness::Pending(_)
+            ));
+        }
         assert_eq!(
             classify_session(temporary.0.path()),
             SessionState::Unestablished

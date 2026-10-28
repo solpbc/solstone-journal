@@ -1875,18 +1875,33 @@ mod tests {
     }
 
     fn journal_family_snapshot(root: &Path) -> std::collections::BTreeMap<String, Vec<u8>> {
+        journal_family_snapshot_except(root, None)
+    }
+
+    fn journal_family_snapshot_except(
+        root: &Path,
+        attempt: Option<&str>,
+    ) -> std::collections::BTreeMap<String, Vec<u8>> {
         let mut snapshot = std::collections::BTreeMap::new();
+        // Merge evidence is operational state, not a mutation of target content.
+        let mut excluded = vec![root.join("imports").join("archive-merge-work")];
+        if let Some(attempt) = attempt {
+            excluded.push(root.join("imports").join(attempt));
+        }
         for family in ["chronicle", "entities", "facets", "imports"] {
             let path = root.join(family);
             if !path.exists() {
                 continue;
             }
-            fn walk(dir: &Path, files: &mut Vec<PathBuf>) {
+            fn walk(dir: &Path, files: &mut Vec<PathBuf>, excluded: &[PathBuf]) {
                 if let Ok(entries) = fs::read_dir(dir) {
                     for entry in entries.filter_map(Result::ok) {
                         let path = entry.path();
+                        if excluded.iter().any(|excluded| path.starts_with(excluded)) {
+                            continue;
+                        }
                         if path.is_dir() {
-                            walk(&path, files);
+                            walk(&path, files, excluded);
                         } else if path.is_file() {
                             files.push(path);
                         }
@@ -1894,7 +1909,7 @@ mod tests {
                 }
             }
             let mut files = Vec::new();
-            walk(&path, &mut files);
+            walk(&path, &mut files, &excluded);
             for entry in files {
                 let relative = entry
                     .strip_prefix(root)
@@ -2289,14 +2304,10 @@ mod tests {
         let facts1 = solstone_core_import::get_attempt_facts(&meta1).unwrap();
         assert_eq!(facts1.generation, 2);
 
-        let after_snapshot = journal_family_snapshot(journal.path());
-        assert_eq!(
-            after_snapshot
-                .into_iter()
-                .filter(|(k, _)| !k.starts_with("imports/20260809_090000"))
-                .collect::<std::collections::BTreeMap<_, _>>(),
-            before_snapshot
-        );
+        let after_snapshot =
+            journal_family_snapshot_except(journal.path(), Some("20260809_090000"));
+        assert_eq!(after_snapshot, before_snapshot);
+        solstone_core_import::metadata::release_attempt(journal.path(), "20260809_090000");
 
         // Run 2: control run without supersession hook mutates the target
         let dispatch2 = archive_dispatch(&archive, "20260809_090001");

@@ -113,12 +113,17 @@ fn hooks_for(journal: &Path, pause: bool) -> Result<Vec<Hook>, String> {
     let registry = lock_registry();
     let mut hooks = Vec::new();
     for ((path, _), slot) in &registry.slots {
-        if path != current.canonical_path() {
+        let same_path = path == current.canonical_path();
+        let same_object = slot.root.identity() == current.identity();
+        if !same_path && !same_object {
             continue;
         }
         slot.root
             .revalidate_canonical_binding()
             .map_err(|_| "restore drain root changed")?;
+        if !same_object {
+            return Err("restore drain root changed".into());
+        }
         hooks.push(Arc::clone(if pause { &slot.pause } else { &slot.resume }));
     }
     Ok(hooks)
@@ -189,6 +194,36 @@ mod tests {
     fn clear_for_test() {
         let mut registry = lock_registry();
         registry.slots.clear();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn canonical_windows_spelling_runs_the_retained_owner_hooks() {
+        let _tests = lock_tests();
+        clear_for_test();
+        let journal = tempfile::tempdir().unwrap();
+        let canonical = journal.path().canonicalize().unwrap();
+        let calls = Arc::new(AtomicUsize::new(0));
+        let pauses = Arc::clone(&calls);
+        let resumes = Arc::clone(&calls);
+        let hooks = register_recovery_hooks(
+            "native-owner",
+            Arc::new(JournalRoot::open(journal.path()).unwrap()),
+            move |_| {
+                pauses.fetch_add(1, Ordering::SeqCst);
+                Ok(())
+            },
+            move |_| {
+                resumes.fetch_add(1, Ordering::SeqCst);
+                Ok(())
+            },
+        );
+        relinquish_admitted_work(&canonical).unwrap();
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        resume_after_whole_journal_restore(&canonical);
+        assert_eq!(calls.load(Ordering::SeqCst), 2);
+        drop(hooks);
+        clear_for_test();
     }
 
     #[test]

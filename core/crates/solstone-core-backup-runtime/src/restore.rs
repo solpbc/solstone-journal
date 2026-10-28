@@ -1063,14 +1063,19 @@ mod tests {
     use crate::runner::{ToolOutput, ToolRequest, ToolRunner};
     use crate::test_support::RestoreRecorderSpy;
     use solstone_core_journal_io::whole_journal_restore::{
-        WholeJournalRestoreReadiness, WholeJournalRestoreSource, begin_target_use,
-        publish_whole_journal_restore, read_whole_journal_restore, wait_for_target_use_to_end,
+        WholeJournalRestoreReadiness, WholeJournalRestoreSource, read_whole_journal_restore,
+    };
+    #[cfg(unix)]
+    use solstone_core_journal_io::whole_journal_restore::{
+        begin_target_use, publish_whole_journal_restore, wait_for_target_use_to_end,
     };
     use std::cell::RefCell;
     use std::collections::VecDeque;
     use std::fs;
     use std::io;
+    #[cfg(unix)]
     use std::sync::mpsc;
+    #[cfg(unix)]
     use std::thread;
 
     const SNAPSHOT_ID: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
@@ -1748,6 +1753,7 @@ mod tests {
     }
 
     fn publish_byo(journal: &Path, snapshot: &str, subtree: &str) {
+        #[cfg(unix)]
         publish_whole_journal_restore(
             journal,
             &WholeJournalRestoreSource::Byo {
@@ -1758,6 +1764,33 @@ mod tests {
             subtree,
         )
         .expect("obligation");
+        #[cfg(windows)]
+        {
+            // Exercise the consumer independently of the Unix mobile writer.
+            let root = solstone_core_journal_io::JournalRoot::open(journal).unwrap();
+            let record = solstone_core_journal_io::whole_journal_restore::WholeJournalRestore {
+                v: 1,
+                attempt: 1,
+                root: root.canonical_path().to_string_lossy().into_owned(),
+                root_identity: root.identity().observation_id(),
+                source: WholeJournalRestoreSource::Byo {
+                    repository: "repo".into(),
+                    backend: "s3".into(),
+                },
+                snapshot_id: snapshot.into(),
+                subtree: subtree.into(),
+            };
+            fs::create_dir_all(journal.join("health")).unwrap();
+            fs::write(
+                obligation_path(journal),
+                serde_json::to_vec(&record).unwrap(),
+            )
+            .unwrap();
+            assert!(matches!(
+                read_whole_journal_restore(journal),
+                WholeJournalRestoreReadiness::Pending(_)
+            ));
+        }
     }
 
     fn two_snapshot_catalog() -> String {
@@ -1772,6 +1805,45 @@ mod tests {
             output(0, RESTORE_SUMMARY),
             output(0, ""),
         ])
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn mobile_writer_refusal_precedes_copy_drain_maintenance_and_outcome() {
+        struct ForbiddenMaintenance;
+        impl JournalMaintenance for ForbiddenMaintenance {
+            fn rebuild_body_history(&self, _: &Path) -> Result<(), JournalMaintenanceError> {
+                panic!("unsupported mobile writer must not rebuild")
+            }
+            fn full_scan(&self, _: &Path) -> Result<(), JournalMaintenanceError> {
+                panic!("unsupported mobile writer must not scan")
+            }
+        }
+        let journal = tempfile::tempdir().unwrap();
+        let stored = solstone_core_backup::generate_and_store_keys(journal.path()).unwrap();
+        let config = journal.path().join("config").join("journal.json");
+        let original = fs::read(&config).unwrap();
+        let runner = success_script(&catalog());
+        let recorder = Recorder::new();
+        let outcome = mobile_with(
+            journal.path(),
+            &runner,
+            &recorder,
+            &ForbiddenMaintenance,
+            &stored.recovery_key,
+            SNAPSHOT_ID,
+            "/recorded",
+            &mut || panic!("unsupported writer must not drain"),
+        );
+        assert_eq!(
+            outcome.reason_code.as_deref(),
+            Some(RESTORE_REASON_RESTORE_IO_FAILED)
+        );
+        assert_eq!(outcome.recording_failure, None);
+        assert!(restore_argv(&runner).is_none());
+        assert!(recorder.calls.borrow().is_empty());
+        assert_eq!(fs::read(config).unwrap(), original);
+        assert!(!obligation_path(journal.path()).exists());
     }
 
     fn restore_argv(runner: &Script) -> Option<Vec<String>> {
@@ -1810,7 +1882,9 @@ mod tests {
         )
     }
 
+    #[cfg(unix)]
     struct FailingRebuild;
+    #[cfg(unix)]
     impl JournalMaintenance for FailingRebuild {
         fn rebuild_body_history(&self, _: &Path) -> Result<(), JournalMaintenanceError> {
             Err(JournalMaintenanceError)
@@ -1821,6 +1895,7 @@ mod tests {
         }
     }
 
+    #[cfg(unix)]
     #[test]
     fn mobile_restore_publishes_before_copy_and_clears_after_postwork() {
         let journal = tempfile::tempdir().expect("journal");
@@ -1864,6 +1939,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     #[test]
     fn admitted_use_finishes_before_the_restore_command() {
         let journal = tempfile::tempdir().expect("journal");
@@ -1878,11 +1954,15 @@ mod tests {
         let owner = thread::spawn(move || {
             let guard = begin_target_use(&path).expect("use");
             started_tx.send(()).expect("started");
-            published_rx.recv().expect("published");
+            published_rx
+                .recv_timeout(Duration::from_secs(5))
+                .expect("published");
             fs::write(&marker_for_owner, b"using").expect("marker");
             drop(guard);
         });
-        started_rx.recv().expect("owner holds the target");
+        started_rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("owner holds the target");
         let mut drain = || {
             assert!(obligation_path(journal.path()).is_file());
             assert!(restore_argv(&runner).is_none());
@@ -2024,6 +2104,7 @@ mod tests {
         ));
     }
 
+    #[cfg(unix)]
     #[test]
     fn mobile_retry_uses_the_recorded_snapshot_instead_of_the_newest() {
         let journal = tempfile::tempdir().expect("journal");
@@ -2132,6 +2213,7 @@ mod tests {
         assert_eq!(fs::read(obligation_path(journal.path())).unwrap(), b"{");
     }
 
+    #[cfg(unix)]
     #[test]
     fn pretty_obligation_stays_pending_and_is_not_copied() {
         let journal = tempfile::tempdir().expect("journal");
@@ -2165,6 +2247,7 @@ mod tests {
         ));
     }
 
+    #[cfg(unix)]
     #[test]
     fn unreadable_config_does_not_publish_and_an_adopted_retry_does_not_materialize_it() {
         let journal = tempfile::tempdir().expect("journal");
@@ -2220,6 +2303,7 @@ mod tests {
         ));
     }
 
+    #[cfg(unix)]
     #[test]
     fn drain_failure_and_copy_failure_keep_the_obligation() {
         let journal = tempfile::tempdir().expect("journal");
@@ -2268,6 +2352,7 @@ mod tests {
         ));
     }
 
+    #[cfg(unix)]
     #[test]
     fn a_stale_attempt_cannot_clear_the_renewed_obligation() {
         let journal = tempfile::tempdir().expect("journal");
@@ -2312,6 +2397,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     #[test]
     fn postwork_and_outcome_failures_do_not_clear_and_degraded_completion_does() {
         let journal = tempfile::tempdir().expect("journal");

@@ -12,7 +12,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::UnixDatagram;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitStatus, Stdio};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use flate2::{Compression, write::GzEncoder};
 use sha2::{Digest, Sha256};
@@ -57,7 +57,7 @@ impl LeaseCase {
     fn new() -> Self {
         let root = tempfile::Builder::new()
             .prefix("solstone-local-installer-process-")
-            .tempdir()
+            .tempdir_in("/var/tmp")
             .expect("create lease journal root");
         let socket = UnixDatagram::bind(root.path().join("lease-probe.sock"))
             .expect("bind case-bound lease probe socket");
@@ -198,8 +198,8 @@ impl RfdetrCase {
             "checked-in model pin"
         );
         socket
-            .set_read_timeout(Some(RFDETR_RECEIVE_TIMEOUT))
-            .expect("set fixture package probe timeout");
+            .set_nonblocking(true)
+            .expect("make fixture package probe bounded");
         Self {
             socket,
             root,
@@ -260,6 +260,7 @@ impl RfdetrCase {
             .join(format!("journal-{}", self.journal_index));
         self.journal_index += 1;
         fs::create_dir_all(&journal).expect("create fixture journal");
+        let diagnostics = journal.join("probe.stderr");
         let child = Command::new(probe)
             .args(["--exact", "--ignored", "rfdetr_install_probe"])
             .current_dir(self.root.path())
@@ -269,15 +270,44 @@ impl RfdetrCase {
                 self.root.path().join("rfdetr-probe.sock"),
             )
             .stdout(Stdio::null())
-            .stderr(Stdio::null())
+            .stderr(fs::File::create(&diagnostics).expect("capture probe diagnostics"))
             .spawn()
             .expect("run freshly compiled rfdetr probe");
-        let child = ReapedChild(Some(child));
+        let mut child = ReapedChild(Some(child));
         let mut message = [0_u8; 128];
-        let length = self
-            .socket
-            .recv(&mut message)
-            .expect("receive rfdetr probe result");
+        let deadline = Instant::now() + RFDETR_RECEIVE_TIMEOUT;
+        let length = loop {
+            match self.socket.recv(&mut message) {
+                Ok(length) => break length,
+                Err(error)
+                    if matches!(error.kind(), ErrorKind::WouldBlock | ErrorKind::Interrupted) =>
+                {
+                    let status = child
+                        .0
+                        .as_mut()
+                        .expect("child is present")
+                        .try_wait()
+                        .expect("inspect probe");
+                    // An exited child can still have a datagram queued, so give
+                    // the receive one final turn before diagnosing its exit.
+                    if let Some(status) = status {
+                        break self.socket.recv(&mut message).unwrap_or_else(|error| {
+                            panic!(
+                                "probe exited {status} without a result: {error}; {}",
+                                fs::read_to_string(&diagnostics).unwrap_or_default()
+                            )
+                        });
+                    }
+                    assert!(
+                        Instant::now() < deadline,
+                        "receive rfdetr probe result: {error}; {}",
+                        fs::read_to_string(&diagnostics).unwrap_or_default()
+                    );
+                    std::thread::sleep(Duration::from_millis(5));
+                }
+                Err(error) => panic!("receive rfdetr probe result: {error}"),
+            }
+        };
         assert!(child.reap().success(), "rfdetr probe exits cleanly");
         (
             std::str::from_utf8(&message[..length])

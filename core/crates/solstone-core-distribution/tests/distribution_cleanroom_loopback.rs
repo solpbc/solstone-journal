@@ -3,7 +3,7 @@
 
 use std::io;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use solstone_core_distribution::cleanroom::bind_loopback;
 
@@ -24,10 +24,19 @@ fn returned_loopback_port_is_owned_and_reachable_without_rebinding() {
         .expect("connect to the exact reported address");
     assert_eq!(client.peer_addr().expect("client peer address"), owned);
 
-    listener
-        .set_nonblocking(true)
-        .expect("make the already-ready accept bounded");
-    let (accepted, peer) = listener.accept().expect("accept exact client");
+    listener.set_nonblocking(true).expect("make accept bounded");
+    // A completed connect can precede delivery to Darwin's accept queue.
+    let deadline = Instant::now() + CONNECT_DEADLINE;
+    let (accepted, peer) = loop {
+        match listener.accept() {
+            Ok(connection) => break connection,
+            Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+                assert!(Instant::now() < deadline, "accept exact client: {error}");
+                std::thread::sleep(Duration::from_millis(1));
+            }
+            Err(error) => panic!("accept exact client: {error}"),
+        }
+    };
     assert_eq!(
         accepted.local_addr().expect("accepted local address"),
         owned

@@ -185,9 +185,13 @@ impl BackupWebDeps {
         // it cannot redirect this dependency owner to another journal.
         let path =
             std::fs::canonicalize(&self.journal_root).map_err(|_| JournalRootError::Changed)?;
-        if path != root.canonical_path() {
+        let observed = solstone_core_journal_io::JournalRoot::open(&path)
+            .map_err(|_| JournalRootError::Changed)?;
+        if observed.identity() != root.identity() {
             return Err(JournalRootError::Changed);
         }
+        observed.revalidate_canonical_binding()?;
+        root.revalidate_canonical_binding()?;
         Ok(root)
     }
 

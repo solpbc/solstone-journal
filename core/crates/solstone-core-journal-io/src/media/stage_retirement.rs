@@ -298,6 +298,8 @@ mod tests {
             .unwrap_or_else(|failure| panic!("{}", failure.error));
         let name = stage.name.clone();
         let path = temp.path().join("segment").join(&name);
+        // Seed the ended producer's bytes after its exclusive stage closes.
+        drop(stage);
         fs::write(path.join("copy"), b"redundant").unwrap();
         let directory = parent.open_child(&name).unwrap().unwrap();
         let leaf = directory.observe_file(OsStr::new("copy")).unwrap().unwrap();
@@ -309,7 +311,6 @@ mod tests {
             "copy".into(),
             leaf.identity,
         );
-        drop(stage);
         Fixture {
             temp,
             root,

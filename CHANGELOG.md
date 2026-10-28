@@ -20,6 +20,8 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - security fix: image markup in older memories could load outside images when an agent read them through the command-line tools. those results now keep image and link markup as text. thanks @dvanduzer. Related to #401.
 - security fix on linux: your journal now checks for updates using only release information signed by sol pbc.
 
+- on windows, backup controls no longer reject a journal because of how its folder path is written.
+- on windows, changes to your journal's schedule can be saved again.
 - on windows, restoring a whole journal from backup now waits for active journal work to finish.
 - on mac, voice analysis can recover when its voice model fails to load.
 - on computers that can run two local thinking requests at once, your journal now uses both. before, it could do one at a time even when the model was ready for two.

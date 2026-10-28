@@ -34,6 +34,31 @@ fn config_at(root: &Path) -> Value {
     serde_json::from_slice(&std::fs::read(root.join("config/journal.json")).unwrap()).unwrap()
 }
 
+#[test]
+fn retained_backup_root_accepts_canonical_spelling_and_refuses_another_journal() {
+    let (journal, mut deps) = fixture();
+    let original = deps.retained_root().expect("admitted spelling");
+    deps.journal_root = std::fs::canonicalize(journal.path()).unwrap();
+    let observed = deps
+        .retained_root()
+        .expect("canonical spelling of the same object");
+    assert_eq!(observed.identity(), original.identity());
+
+    let other = tempfile::tempdir().unwrap();
+    std::fs::create_dir(other.path().join("config")).unwrap();
+    std::fs::copy(
+        journal.path().join("config/journal.json"),
+        other.path().join("config/journal.json"),
+    )
+    .unwrap();
+    deps.journal_root = other.path().to_owned();
+    assert!(matches!(
+        deps.retained_root(),
+        Err(solstone_core_journal_io::JournalRootError::Changed)
+    ));
+    original.revalidate_canonical_binding().unwrap();
+}
+
 async fn payload(response: Response) -> Value {
     serde_json::from_slice(&to_bytes(response.into_body(), 1024 * 1024).await.unwrap()).unwrap()
 }
@@ -147,11 +172,29 @@ fn replacing_config_parent_after_read_cannot_redirect_the_commit() {
     let (dir, deps) = fixture();
     let snapshot = EnableSnapshot::read(deps.retained_root().unwrap()).unwrap();
     let original = config_at(dir.path());
-    std::fs::rename(
+    if let Err(error) = std::fs::rename(
         dir.path().join("config"),
         dir.path().join("original-config"),
-    )
-    .unwrap();
+    ) {
+        assert!(
+            cfg!(windows) && matches!(error.raw_os_error(), Some(5 | 32)),
+            "{error}"
+        );
+        assert_eq!(config_at(dir.path()), original);
+        deps.retained_root()
+            .unwrap()
+            .revalidate_canonical_binding()
+            .unwrap();
+        assert!(!dir.path().join("original-config").exists());
+        drop(snapshot);
+        drop(deps);
+        std::fs::rename(
+            dir.path().join("config"),
+            dir.path().join("original-config"),
+        )
+        .unwrap();
+        return;
+    }
     std::fs::create_dir(dir.path().join("config")).unwrap();
     std::fs::write(
         dir.path().join("config/journal.json"),
@@ -177,7 +220,17 @@ fn replacing_root_after_read_cannot_redirect_the_commit() {
     let root = Arc::new(JournalRoot::open(&root_path).unwrap());
     let snapshot = EnableSnapshot::read(root).unwrap();
     let original = config_at(&root_path);
-    std::fs::rename(&root_path, parent.path().join("original")).unwrap();
+    if let Err(error) = std::fs::rename(&root_path, parent.path().join("original")) {
+        assert!(
+            cfg!(windows) && matches!(error.raw_os_error(), Some(5 | 32)),
+            "{error}"
+        );
+        assert_eq!(config_at(&root_path), original);
+        assert!(!parent.path().join("original").exists());
+        drop(snapshot);
+        std::fs::rename(&root_path, parent.path().join("original")).unwrap();
+        return;
+    }
     std::fs::create_dir(&root_path).unwrap();
     assert!(snapshot.commit(&Value::Null, &|| Ok(())).is_err());
     assert!(std::fs::read_dir(&root_path).unwrap().next().is_none());

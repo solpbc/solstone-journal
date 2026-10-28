@@ -18,8 +18,8 @@ use solstone_core_import::sync_plaud::{
     PlaudStateWriter, PlaudSyncRequest, SyncClock, sync_plaud_preview,
 };
 use solstone_core_import::{
-    BackendName, SyncState, SyncStateRead, admit_folder, begin_folder, hash_source,
-    read_sync_state, reauthorize, replace_folder, validate_timestamp, write_sync_state,
+    BackendName, SyncState, SyncStateRead, begin_folder, hash_source, read_sync_state, reauthorize,
+    replace_folder, write_sync_state,
 };
 use solstone_core_import_sources::document::{self, DocumentPreviewRequest};
 use solstone_core_import_sources::gemini;
@@ -186,19 +186,16 @@ fn obsidian_force_reads_the_new_note_and_leaves_the_admitted_bytes() {
     let vault = tempfile::tempdir().unwrap();
     fs::create_dir(vault.path().join(".obsidian")).unwrap();
     fs::write(vault.path().join("note.md"), b"original-bytes").unwrap();
-    let admitted = admit_folder(
-        journal.path(),
-        vault.path(),
-        "vault-attempt",
-        &validate_timestamp("20260616_120000").unwrap(),
-    )
-    .unwrap();
+    // This is a prior imported snapshot, independent of the host's directory
+    // admission backend. The operation under test is force-sync of the source.
     let admitted_note = journal
         .path()
         .join("imports")
-        .join(admitted.import_id.as_str())
+        .join("20260616_120000")
         .join("tree")
         .join("note.md");
+    fs::create_dir_all(admitted_note.parent().unwrap()).unwrap();
+    fs::write(&admitted_note, b"original-bytes").unwrap();
     let original = fs::read(&admitted_note).unwrap();
     fs::write(vault.path().join("note.md"), b"changed-bytes!").unwrap();
     let args = vec![

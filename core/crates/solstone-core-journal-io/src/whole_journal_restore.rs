@@ -1693,6 +1693,31 @@ mod windows_tests {
     use super::*;
 
     #[test]
+    fn mobile_publication_refuses_without_creating_state() {
+        let journal = tempfile::tempdir().unwrap();
+        let result = publish_whole_journal_restore(
+            journal.path(),
+            &WholeJournalRestoreSource::Byo {
+                repository: "repo".into(),
+                backend: "s3".into(),
+            },
+            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+            "/journal",
+        );
+        assert!(matches!(
+            result,
+            Err(WholeJournalRestoreWriteError::Invalid(
+                "bound restore obligation writes are unavailable"
+            ))
+        ));
+        assert_eq!(fs::read_dir(journal.path()).unwrap().count(), 0);
+        assert_eq!(
+            whole_journal_restore_admission(journal.path()),
+            WholeJournalRestoreAdmission::Open
+        );
+    }
+
+    #[test]
     fn admitted_use_and_drain_share_the_canonical_windows_key() {
         let journal = tempfile::tempdir().unwrap();
         let canonical = journal.path().canonicalize().unwrap();

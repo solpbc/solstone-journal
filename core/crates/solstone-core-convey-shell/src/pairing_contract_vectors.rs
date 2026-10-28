@@ -61,7 +61,11 @@ struct TempDir(tempfile::TempDir);
 
 impl TempDir {
     fn new() -> Self {
-        Self(tempfile::TempDir::new_in("/var/tmp").expect("temporary root"))
+        #[cfg(unix)]
+        let root = tempfile::TempDir::new_in("/var/tmp");
+        #[cfg(not(unix))]
+        let root = tempfile::TempDir::new();
+        Self(root.expect("temporary root"))
     }
 
     fn path(&self) -> &Path {

@@ -71,6 +71,9 @@ pub fn mutate_schedule_entries_at_root_checked<T>(
     if let Some(file) = &mut file {
         file.read_to_end(&mut bytes).map_err(io_error)?;
     }
+    // Legacy Windows replacement can refuse while the old leaf is open.
+    // Root, parent and sidecar ownership remain retained through publication.
+    drop(file);
     let mut raw = if bytes.trim_ascii().is_empty() {
         Map::new()
     } else {
@@ -240,15 +243,39 @@ mod tests {
                 journal.join("config")
             };
             let retained = temporary.path().join("retained");
-            let result = mutate_schedule_entries_at_root_checked(root, &|| Ok(()), |raw| {
-                fs::rename(&slot, &retained).unwrap();
-                fs::create_dir(&slot).unwrap();
-                raw.insert("daily_time".into(), json!("04:00"));
-                ScheduleMutation {
-                    changed: true,
-                    value: (),
-                }
-            });
+            let prevented = std::cell::Cell::new(false);
+            let result =
+                mutate_schedule_entries_at_root_checked(Arc::clone(&root), &|| Ok(()), |raw| {
+                    if let Err(error) = fs::rename(&slot, &retained) {
+                        assert!(
+                            cfg!(windows) && matches!(error.raw_os_error(), Some(5 | 32)),
+                            "{error}"
+                        );
+                        prevented.set(true);
+                        return ScheduleMutation {
+                            changed: false,
+                            value: (),
+                        };
+                    }
+                    fs::create_dir(&slot).unwrap();
+                    raw.insert("daily_time".into(), json!("04:00"));
+                    ScheduleMutation {
+                        changed: true,
+                        value: (),
+                    }
+                });
+            if prevented.get() {
+                assert!(result.is_ok(), "{result:?}");
+                assert!(!retained.exists());
+                root.revalidate_canonical_binding().unwrap();
+                assert_eq!(
+                    fs::read(journal.join("config/schedules.json")).unwrap(),
+                    original
+                );
+                drop(root);
+                fs::rename(&slot, &retained).expect("closed owner releases the namespace");
+                continue;
+            }
             assert!(result.is_err());
             assert_eq!(fs::read_dir(&slot).unwrap().count(), 0);
             let saved = if replace_root {

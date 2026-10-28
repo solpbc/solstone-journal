@@ -188,11 +188,12 @@ mod tests {
 
     #[test]
     fn changed_retry_selection_is_refused_before_tools_or_drain() {
-        use solstone_core_journal_io::whole_journal_restore::{
-            WholeJournalRestoreSource, publish_whole_journal_restore,
-        };
+        use solstone_core_journal_io::whole_journal_restore::WholeJournalRestoreSource;
+        #[cfg(unix)]
+        use solstone_core_journal_io::whole_journal_restore::publish_whole_journal_restore;
         let journal = tempfile::tempdir().unwrap();
         let snapshot = "a".repeat(64);
+        #[cfg(unix)]
         publish_whole_journal_restore(
             journal.path(),
             &WholeJournalRestoreSource::Byo {
@@ -203,6 +204,39 @@ mod tests {
             "/journal",
         )
         .unwrap();
+        #[cfg(windows)]
+        {
+            // Seed reader state independently of the Unix mobile writer.
+            use solstone_core_journal_io::whole_journal_restore::{
+                WholeJournalRestore, WholeJournalRestoreReadiness, read_whole_journal_restore,
+            };
+            let bound = solstone_core_journal_io::JournalRoot::open(journal.path()).unwrap();
+            let record = WholeJournalRestore {
+                v: 1,
+                attempt: 1,
+                root: bound.canonical_path().to_string_lossy().into_owned(),
+                root_identity: bound.identity().observation_id(),
+                source: WholeJournalRestoreSource::Byo {
+                    repository: "s3:synthetic/original".into(),
+                    backend: "s3".into(),
+                },
+                snapshot_id: snapshot.clone().into(),
+                subtree: "/journal".into(),
+            };
+            std::fs::create_dir_all(journal.path().join("health")).unwrap();
+            std::fs::write(
+                journal
+                    .path()
+                    .join("health")
+                    .join("whole-journal-restore.json"),
+                serde_json::to_vec(&record).unwrap(),
+            )
+            .unwrap();
+            assert!(matches!(
+                read_whole_journal_restore(journal.path()),
+                WholeJournalRestoreReadiness::Pending(_)
+            ));
+        }
         let record = journal.path().join("health/whole-journal-restore.json");
         let original = std::fs::read(&record).unwrap();
         let deps = crate::BackupWebDeps::new(journal.path().to_owned());

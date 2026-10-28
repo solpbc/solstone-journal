@@ -465,7 +465,21 @@ mod outcome_fence {
         }
         assert!(entered.load(Ordering::Acquire));
         let parked = parent.path().join("parked");
-        std::fs::rename(&journal, &parked).unwrap();
+        if let Err(error) = std::fs::rename(&journal, &parked) {
+            release.store(true, Ordering::Release);
+            let result = worker.join().unwrap();
+            assert!(
+                cfg!(windows) && matches!(error.raw_os_error(), Some(5 | 32)),
+                "{error}"
+            );
+            result.unwrap();
+            assert!(!parked.exists());
+            let mut expected = before;
+            expected.extend_from_slice(b"{\"event\":\"pass.outcome\"}\n");
+            assert_eq!(std::fs::read(&path).unwrap(), expected);
+            std::fs::rename(&journal, &parked).expect("closed writer releases the namespace");
+            return;
+        }
         std::fs::create_dir(&journal).unwrap();
         release.store(true, Ordering::Release);
         let error = worker.join().unwrap().unwrap_err();

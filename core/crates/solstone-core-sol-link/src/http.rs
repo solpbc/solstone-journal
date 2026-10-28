@@ -2133,8 +2133,7 @@ mod recovery_route_tests {
     use serde_json::{Value, json};
     use solstone_core_convey_http::identity::{AccessBasis, Carrier};
     use solstone_core_journal_io::whole_journal_restore::{
-        WholeJournalRestoreReadiness, WholeJournalRestoreSource, publish_whole_journal_restore,
-        read_whole_journal_restore,
+        WholeJournalRestoreReadiness, WholeJournalRestoreSource, read_whole_journal_restore,
     };
     use tower::ServiceExt;
 
@@ -2142,6 +2141,9 @@ mod recovery_route_tests {
         NoopSetupHost, SetupDownloads, SetupHost, SetupProgressError, SetupRetryError,
         init_router_with_host,
     };
+
+    #[cfg(unix)]
+    use solstone_core_journal_io::whole_journal_restore::publish_whole_journal_restore;
 
     const SNAPSHOT: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
@@ -2188,6 +2190,7 @@ mod recovery_route_tests {
     }
 
     fn publish(journal: &Path) {
+        #[cfg(unix)]
         publish_whole_journal_restore(
             journal,
             &WholeJournalRestoreSource::Byo {
@@ -2198,6 +2201,36 @@ mod recovery_route_tests {
             "/journal",
         )
         .expect("obligation");
+        #[cfg(windows)]
+        {
+            // Seed reader state independently of the Unix mobile writer.
+            use solstone_core_journal_io::whole_journal_restore::{
+                WholeJournalRestore, WholeJournalRestoreReadiness, read_whole_journal_restore,
+            };
+            let bound = solstone_core_journal_io::JournalRoot::open(journal).unwrap();
+            let record = WholeJournalRestore {
+                v: 1,
+                attempt: 1,
+                root: bound.canonical_path().to_string_lossy().into_owned(),
+                root_identity: bound.identity().observation_id(),
+                source: WholeJournalRestoreSource::Byo {
+                    repository: "repo".into(),
+                    backend: "s3".into(),
+                },
+                snapshot_id: SNAPSHOT.into(),
+                subtree: "/journal".into(),
+            };
+            std::fs::create_dir_all(journal.join("health")).unwrap();
+            std::fs::write(
+                journal.join("health").join("whole-journal-restore.json"),
+                serde_json::to_vec(&record).unwrap(),
+            )
+            .unwrap();
+            assert!(matches!(
+                read_whole_journal_restore(journal),
+                WholeJournalRestoreReadiness::Pending(_)
+            ));
+        }
     }
 
     fn config_bytes(journal: &Path) -> Option<Vec<u8>> {

@@ -3691,7 +3691,12 @@ mod tests {
         PrivateSidecar,
     ) {
         let journal = tempfile::tempdir().unwrap();
-        let segment = journal.path().join("chronicle/20261020/desktop/090000_300");
+        let segment = journal
+            .path()
+            .join("chronicle")
+            .join("20261020")
+            .join("desktop")
+            .join("090000_300");
         fs::create_dir_all(segment.join("talents")).unwrap();
         let raw = segment.join("a_screen.webm");
         fs::write(&raw, b"authored current source").unwrap();
@@ -3725,7 +3730,16 @@ mod tests {
         let prepared =
             PreparedPublication::prepare(journal.path(), &segment, &source, &|| false).unwrap();
         assert_eq!(prepared.siblings.len(), 1);
-        fs::write(&raw, b"changed sibling").unwrap();
+        if let Err(error) = fs::write(&raw, b"changed sibling") {
+            assert!(cfg!(windows) && error.raw_os_error() == Some(32), "{error}");
+            assert_eq!(fs::read(&raw).unwrap(), b"original sibling");
+            let _commit = input.commit(&claims).unwrap();
+            prepared.validate_authority().unwrap();
+            assert!(!segment.join("talents/screen_text.md").exists());
+            drop(prepared);
+            fs::write(&raw, b"changed sibling").expect("closed observation releases the file");
+            return;
+        }
         let _commit = input.commit(&claims).unwrap();
         assert!(prepared.validate_authority().is_err());
         assert!(!segment.join("talents/screen_text.md").exists());

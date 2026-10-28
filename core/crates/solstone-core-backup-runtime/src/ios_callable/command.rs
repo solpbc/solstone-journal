@@ -467,6 +467,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn literal_source_globs_and_exclude_file_dollars_are_preserved() {
         let source = Path::new(r"/owner [a]*?/$HOME\notes");
         let direct = r"/owner [[]a][*][?]/$HOME\\notes/imports/body.sqlite";

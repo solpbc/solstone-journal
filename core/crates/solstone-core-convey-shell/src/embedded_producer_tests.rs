@@ -232,11 +232,12 @@ async fn embedded_weekly_catches_up_resumes_pending_and_retry_and_obeys_current_
             "version":1,"week":day,"state":status,"due":"2026-01-01T00:00:00Z","reselect":true,"failed":[]
         }).to_string());
     }
-    let bus = solstone_core_callosum::CallosumSocketServer::bind(
-        root.path().join("health/callosum.sock"),
-    )
-    .await
-    .unwrap();
+    let socket = root.path().join("health").join("callosum.sock");
+    #[cfg(windows)]
+    let _namespace = solstone_core_callosum::test_fixture::WindowsPipeNamespace::register(&socket);
+    let bus = solstone_core_callosum::CallosumSocketServer::bind(&socket)
+        .await
+        .unwrap();
     let (stop, stopped) = tokio::sync::watch::channel(false);
     let task = tokio::spawn(weekly_heads_up::subscribe_weekly_heads_up_until_stopped(
         Arc::new(solstone_core_journal_io::JournalRoot::open(root.path()).unwrap()),
@@ -307,11 +308,12 @@ async fn weekly_completion_during_startup_delivery_is_not_lost() {
     let (root, portal, receiver, server) = weekly_fixture().await;
     week(root.path(), "20260802", true);
     receiver.hold.store(true, Ordering::Release);
-    let bus = solstone_core_callosum::CallosumSocketServer::bind(
-        root.path().join("health/callosum.sock"),
-    )
-    .await
-    .unwrap();
+    let socket = root.path().join("health").join("callosum.sock");
+    #[cfg(windows)]
+    let _namespace = solstone_core_callosum::test_fixture::WindowsPipeNamespace::register(&socket);
+    let bus = solstone_core_callosum::CallosumSocketServer::bind(&socket)
+        .await
+        .unwrap();
     let (stop, stopped) = tokio::sync::watch::channel(false);
     let task = tokio::spawn(weekly_heads_up::subscribe_weekly_heads_up_until_stopped(
         Arc::new(solstone_core_journal_io::JournalRoot::open(root.path()).unwrap()),

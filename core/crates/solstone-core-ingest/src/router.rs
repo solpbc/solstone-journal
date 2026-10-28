@@ -2039,11 +2039,39 @@ mod tests {
         assert_eq!(absent.status(), StatusCode::OK);
         assert!(chronicle_has(&journal, "audio-a.flac"));
 
+        #[cfg(unix)]
         let record =
             solstone_core_journal_io::whole_journal_restore::publish_whole_journal_restore(
                 &journal, &source, snapshot, "/journal",
             )
             .expect("obligation");
+        #[cfg(windows)]
+        {
+            // Seed reader state independently of the Unix mobile writer.
+            use solstone_core_journal_io::whole_journal_restore::{
+                WholeJournalRestore, WholeJournalRestoreReadiness, read_whole_journal_restore,
+            };
+            let bound = solstone_core_journal_io::JournalRoot::open(&journal).unwrap();
+            let record = WholeJournalRestore {
+                v: 1,
+                attempt: 1,
+                root: bound.canonical_path().to_string_lossy().into_owned(),
+                root_identity: bound.identity().observation_id(),
+                source: source,
+                snapshot_id: snapshot.into(),
+                subtree: "/journal".into(),
+            };
+            std::fs::create_dir_all((&journal).join("health")).unwrap();
+            std::fs::write(
+                (&journal).join("health").join("whole-journal-restore.json"),
+                serde_json::to_vec(&record).unwrap(),
+            )
+            .unwrap();
+            assert!(matches!(
+                read_whole_journal_restore(&journal),
+                WholeJournalRestoreReadiness::Pending(_)
+            ));
+        }
         let pending = write_envelope(
             &direct_state(&journal),
             CID_A,
@@ -2052,10 +2080,13 @@ mod tests {
         assert_eq!(pending.status(), StatusCode::CONFLICT);
         assert!(!chronicle_has(&journal, "audio-b.flac"));
 
+        #[cfg(unix)]
         solstone_core_journal_io::whole_journal_restore::clear_whole_journal_restore(
             &journal, &record,
         )
         .expect("clear");
+        #[cfg(windows)]
+        std::fs::remove_file((&journal).join("health").join("whole-journal-restore.json")).unwrap();
         let resumed = write_envelope(
             &direct_state(&journal),
             CID_A,
@@ -2656,7 +2687,7 @@ mod tests {
 
     #[tokio::test]
     async fn tombstone_presence_refuses_resend_across_all_tombstone_shapes() {
-        let dir = TempDir::new_in("/var/tmp").unwrap();
+        let dir = TempDir::new().unwrap();
         seed_authorized_client(dir.path(), CID_A);
         seed_authorized_client(dir.path(), CID_B);
         let root = dir.path().to_path_buf();
@@ -2706,7 +2737,7 @@ mod tests {
 
     #[tokio::test]
     async fn duplicate_upload_retains_media_without_tombstone() {
-        let dir = TempDir::new_in("/var/tmp").unwrap();
+        let dir = TempDir::new().unwrap();
         seed_authorized_client(dir.path(), CID_A);
         seed_authorized_client(dir.path(), CID_B);
         let root = dir.path().to_path_buf();
