@@ -10,35 +10,38 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - browser pages in your journal now show their context: whether the tab was in front and its window focused, whether audio or video was playing, whether the solstone app was paused, how long the tab had been open, the page's language and which browser it was. agents reading your journal see the same line. pages from earlier versions of the solstone extension look as before.
 
-### Changed
-
-- the local model can now read about twice as much in a single request on every mac, and on windows and linux computers with smaller graphics cards (larger ones already could). on those graphics cards it sets aside about half a gigabyte more memory to do it. on computers whose graphics card has 8 GB, speech-to-text now runs on the processor while you use the local model for thinking.
-
 ### Fixed
 
 - security fix: updated a library used by journals on phones to address a memory-safety flaw.
-- security fix: image markup in older memories could load outside images when an agent read them through the command-line tools. those results now keep image and link markup as text. thanks @dvanduzer. Related to #401.
 - security fix: an agent reading your journal through the command-line tools could still get live image and link markup from a full search result, a single activity, a profile, a transcript's sentences or the entity overview. if someone got that markup into your journal, an app that showed the agent's reply could load an image from their server, telling them when it was read and passing along anything placed in the image's address. these results now keep the markup as text. this changes only what the command-line tools return. (#401)
-- security fix on linux: your journal now checks for updates using only release information signed by sol pbc.
-
 - on windows, backup controls no longer reject a journal because of how its folder path is written.
 - on windows, changes to your journal's schedule can be saved again.
-- on windows, restoring a whole journal from backup now waits for active journal work to finish.
-- on mac, voice analysis can recover when its voice model fails to load.
+- you can choose a file on the import screen in the android and ios owner apps and save it.
+- journals running on a phone now start their local agent connections and close them when you stop the journal. the agents page already offered these connections, but they did not start on phones.
+
+## [2.0.60] - 2026-10-28
+
+### Changed
+
+- the local model can now read about twice as much in a single request on every mac and windows computer, and on linux computers with smaller graphics cards (larger ones already could).
+
+### Fixed
+
+- security fix: image markup in your journal could load outside images when an agent read it through the command-line tools. search, transcript, activity list and entity list results now keep image and link markup as text. thanks @dvanduzer for the report (#401).
+- security fix on linux: your journal now checks for updates using only release information signed by sol pbc. before, every update check downloaded the installer and ran it without checking it first, even when you hadn't asked to update, so a tampered download could have run on your computer. the check now runs nothing it downloads.
+- restoring a whole journal from backup now waits for active journal work to finish.
 - on computers that can run two local thinking requests at once, your journal now uses both. before, it could do one at a time even when the model was ready for two.
 - on mac, when a local thinking request is too large for the model, your journal now reports that limit instead of a generic server error.
-- you can choose a file on the import screen in the android and ios owner apps and save it.
 - in a segment's screen tab, pictures of an android phone's screen now show the moment each one was taken. before, most of them showed the recording's last moment.
 - the backup page now updates after a backup finishes, so you no longer have to leave and reopen it to see the result.
-- journals running on a phone now start their local agent connections and close them when you stop the journal. the agents page already offered these connections, but they did not start on phones.
-- after you answer a calendar invitation on your iphone, your journal still marks you on it, and still knows when you declined, as long as your journal holds a copy of that invitation with one of your email addresses on it, from any of your phones. events already in your journal are updated the next time your journal checks them. thanks @dvanduzer for the report.
+- after you answer a calendar invitation on your iphone, your journal still marks you on it, and still knows when you declined, as long as another copy of that event in your journal lists you under the same name with one of your email addresses, from any device. events already in your journal are updated once after this update. thanks @dvanduzer for the report.
 - an activity no longer ends holding a stretch from another part of your life. before, the stretch right after an activity could be added to it even when your journal filed that stretch elsewhere, and the activity's story mixed the two. for example, a phone recording of an airport announcement pulled in the video call you recorded right after it.
 - when a video call is on your screen with no sound, the people on the call now show as "appeared on screen". before, they could show as "heard them speak in this meeting".
 - screen text now leaves out single characters and words read with low confidence. on a phone these were often status-bar icons read as letters or symbols.
 - when a voice in a transcript sounds only a little like someone you know, and about as much like someone else, the sentence is now left without a name. before, a stranger's voice, or an airport announcement on your phone, could show up as someone you know.
 - when you record your phone's screen during a video call, the phone's own "screen sharing" panel rarely reads as you sharing your screen to the call, and an app open under the small call window rarely reads as something you shared. the call's app is also named wrongly far less often.
 - transcription now keeps more quiet or distant speech, such as people across the table from your watch. to do this, your journal sends a little more of each recording to the speech model. transcripts you already have stay as they are.
-- your daily briefing is now less likely to say you did something your agent did. it now takes who did the work from the activity's story instead of its title.
+- your daily briefing is now less likely to say you did something your agent did. when an activity's story starts with what you did, the briefing now leads with that sentence instead of the activity's title.
 
 ### Removed
 
