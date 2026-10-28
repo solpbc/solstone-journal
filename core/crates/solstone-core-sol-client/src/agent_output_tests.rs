@@ -832,3 +832,209 @@ fn merge_previews_are_literal() {
     inert(body["target_identity"]["name"].as_str().unwrap(), LEGACY);
     assert_eq!(body["target_identity"]["id"], "person-two");
 }
+
+#[test]
+fn a_merge_candidate_preview_reports_how_many_aliases_it_would_add() {
+    let output = run(
+        &["entities", "accept-merge-candidate"],
+        &["person-one", "person-two", "--facet", "work"],
+        vec![(
+            "/app/entities/api/accept-merge-candidate",
+            json!({"status":"preview","kind":"entity_merge","key":"k","fields":{
+                "akas_added":2,"emails_added_count":1,"other_changes_not_previewed":true}}),
+        )],
+    );
+    assert_eq!(output.exit, 0, "{}", output.stderr);
+    let aliases = output
+        .stdout
+        .lines()
+        .find(|line| line.contains("aliases"))
+        .unwrap_or_else(|| panic!("{}", output.stdout));
+    assert!(aliases.contains('2'), "{}", output.stdout);
+}
+
+type Write = (
+    &'static [&'static str],
+    Vec<&'static str>,
+    Vec<(&'static str, Value)>,
+);
+
+/// Commands that change the journal and echo journal text back: stored names
+/// they resolved, rows and records the server returns.
+fn journal_text_echoes(text: &str) -> Vec<Write> {
+    let resolved = json!({"facet_exists":true,"resolved":{"id":"person-one","name":text,"aka":[]}});
+    let counts = json!({"segments_scanned":1,"speakers_found":{text:2},
+        "speakers_unmatched":[text],"errors":[text]});
+    vec![
+        (
+            &["speakers", "bootstrap"],
+            vec![],
+            vec![("/app/speakers/api/bootstrap", counts.clone())],
+        ),
+        (
+            &["speakers", "bootstrap"],
+            vec!["--json"],
+            vec![("/app/speakers/api/bootstrap", counts.clone())],
+        ),
+        (
+            &["speakers", "seed-from-imports"],
+            vec![],
+            vec![("/app/speakers/api/seed-from-imports", counts.clone())],
+        ),
+        (
+            &["speakers", "seed-from-imports"],
+            vec!["--json"],
+            vec![("/app/speakers/api/seed-from-imports", counts)],
+        ),
+        (
+            &["speakers", "attribute-segment"],
+            vec!["20250205", "import-one", "120000_300", "--json"],
+            vec![(
+                "/app/speakers/api/attribute-segment",
+                json!({"result":{"labels":[{"speaker":"person-one","method":"voice"}],"unmatched_texts":[text]}}),
+            )],
+        ),
+        (
+            &["speakers", "status"],
+            vec![],
+            vec![(
+                "/app/speakers/api/status",
+                json!({"speakers":[{"name":text}]}),
+            )],
+        ),
+        (
+            &["speakers", "identify-operations"],
+            vec![],
+            vec![(
+                "/app/speakers/api/discovery/identify/operations",
+                json!({"operations":[{"result":{"entity_name":text}}]}),
+            )],
+        ),
+        (
+            &["speakers", "merge-names"],
+            vec!["alias-one", "person-one", "--yes"],
+            vec![(
+                "/app/speakers/api/merge-names",
+                json!({"canonical_name":text,"akas_added":[text]}),
+            )],
+        ),
+        (
+            &["speakers", "detect"],
+            vec![],
+            vec![(
+                "/app/speakers/api/owner/detect",
+                json!({"samples":[{"text":text}]}),
+            )],
+        ),
+        (
+            &["entities", "aka"],
+            vec!["needle", "alias-one", "--facet", "work"],
+            vec![
+                ("/app/entities/api/work/resolve", resolved.clone()),
+                ("/app/entities/api/work/aka", json!({})),
+            ],
+        ),
+        (
+            &["entities", "update"],
+            vec!["needle", "a new description", "--facet", "work"],
+            vec![
+                ("/app/entities/api/work/resolve", resolved.clone()),
+                ("/app/entities/api/work/update-description", json!({})),
+            ],
+        ),
+        (
+            &["entities", "move"],
+            vec!["needle", "--from", "work", "--to", "home"],
+            vec![
+                ("/app/entities/api/work/resolve", resolved.clone()),
+                (
+                    "/app/entities/api/home/resolve",
+                    json!({"facet_exists":true}),
+                ),
+                ("/app/entities/api/move", json!({})),
+            ],
+        ),
+        (
+            &["entities", "observe"],
+            vec!["needle", "met for coffee", "--facet", "work"],
+            vec![
+                ("/app/entities/api/work/resolve", resolved),
+                (
+                    "/app/entities/api/work/observe",
+                    json!({"result":{"count":1}}),
+                ),
+            ],
+        ),
+        (
+            &["entities", "detect"],
+            vec![
+                "person",
+                "needle",
+                "a description",
+                "--facet",
+                "work",
+                "--day",
+                "20250205",
+            ],
+            vec![("/app/entities/api/work/detected", json!({"name":text}))],
+        ),
+        (
+            &["entities", "restore-version"],
+            vec!["person-one", "v1", "--yes", "--json"],
+            vec![(
+                "/app/entities/api/journal/entity/person-one/restore",
+                json!({"entity":{"id":"person-one","name":text,"aka":[text]}}),
+            )],
+        ),
+        (
+            &["entities", "resolve-ambiguity"],
+            vec!["a1", "person-one", "--yes", "--json"],
+            vec![(
+                "/app/entities/api/ambiguities/a1/resolve",
+                json!({"ambiguity":{"original_query":text},"entity":{"name":text}}),
+            )],
+        ),
+        (
+            &["journal", "facet", "mute"],
+            vec!["work"],
+            vec![(
+                "/app/settings/api/facet/work",
+                json!({"config":{"title":text,"description":text}}),
+            )],
+        ),
+        (
+            &["journal", "facet", "update"],
+            vec!["work", "--emoji", "x"],
+            vec![(
+                "/app/settings/api/facet/work",
+                json!({"config":{"title":text,"description":text}}),
+            )],
+        ),
+        (
+            &["body", "status"],
+            vec!["--json"],
+            vec![("/app/body/api/status", json!({"sources":[{"name":text}]}))],
+        ),
+    ]
+}
+
+#[test]
+fn journal_text_echoed_by_commands_that_change_the_journal_is_literal() {
+    let mut live = Vec::new();
+    for (path, args, responses) in journal_text_echoes(LEGACY) {
+        let output = run(path, &args, responses);
+        assert_eq!(output.exit, 0, "{path:?} {args:?}: {}", output.stderr);
+        let shown = match serde_json::from_str::<Value>(&output.stdout) {
+            Ok(value) => {
+                let mut texts = Vec::new();
+                collect_strings(&value, &mut texts);
+                texts.iter().any(|text| visible(text) == LEGACY)
+            }
+            Err(_) => visible(&output.stdout).contains(LEGACY),
+        };
+        if active(&output.stdout) || active(&output.stderr) || !shown {
+            live.push(format!("{path:?} {args:?}: {}", output.stdout));
+        }
+    }
+    assert!(live.is_empty(), "{live:#?}");
+}

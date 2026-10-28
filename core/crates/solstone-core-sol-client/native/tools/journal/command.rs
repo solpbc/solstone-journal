@@ -78,11 +78,11 @@ pub fn facet_delete(ctx: CommandContext<'_>) -> CommandOutput {
 
 #[must_use]
 pub fn facet_mute(ctx: CommandContext<'_>) -> CommandOutput {
-    facet_muted(ctx, true)
+    crate::agent_output::literal_output(facet_muted(ctx, true))
 }
 #[must_use]
 pub fn facet_unmute(ctx: CommandContext<'_>) -> CommandOutput {
-    facet_muted(ctx, false)
+    crate::agent_output::literal_output(facet_muted(ctx, false))
 }
 
 #[must_use]
@@ -121,6 +121,11 @@ fn facet_show_output(ctx: CommandContext<'_>) -> CommandOutput {
 
 #[must_use]
 pub fn facet_update(ctx: CommandContext<'_>) -> CommandOutput {
+    // The response carries the facet's stored fields, not only those passed.
+    crate::agent_output::literal_output(facet_update_output(ctx))
+}
+
+fn facet_update_output(ctx: CommandContext<'_>) -> CommandOutput {
     let parsed = match parse_args(
         ctx.args,
         &["--title", "--description", "--emoji", "--color", "--icon"],

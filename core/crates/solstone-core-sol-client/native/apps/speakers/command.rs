@@ -56,7 +56,7 @@ pub fn status(ctx: CommandContext<'_>) -> CommandOutput {
     } else {
         body
     };
-    stdout_json(&result)
+    crate::agent_output::literal_output(stdout_json(&result))
 }
 
 #[must_use]
@@ -96,8 +96,9 @@ pub fn bootstrap(ctx: CommandContext<'_>) -> CommandOutput {
         Err(error) => return speaker_error_preserving_stdout(out, error),
     };
     if json_output {
-        return stdout_json(&stats);
+        return crate::agent_output::literal_output(stdout_json(&stats));
     }
+    let stats = crate::agent_output::literal_body(stats);
     render_bootstrap_stats(&mut out, &stats);
     CommandOutput::success(out)
 }
@@ -216,7 +217,7 @@ pub fn attribute_segment(ctx: CommandContext<'_>) -> CommandOutput {
     }
     let result = wrap.get("result").cloned().unwrap_or(Value::Null);
     if json_output {
-        return stdout_json(&result);
+        return crate::agent_output::literal_output(stdout_json(&result));
     }
     render_attribute_segment(&mut out, &wrap, &result, commit, save, accumulate);
     CommandOutput::success(out)
@@ -1132,7 +1133,7 @@ pub fn identify(ctx: CommandContext<'_>) -> CommandOutput {
         }
         Err(error) => return speaker_error(error),
     };
-    stdout_json(&result)
+    crate::agent_output::literal_output(stdout_json(&result))
 }
 
 #[must_use]
@@ -1179,7 +1180,7 @@ pub fn identify_operation(ctx: CommandContext<'_>) -> CommandOutput {
         vec![],
         None,
     ) {
-        Ok(result) => stdout_json(&result),
+        Ok(result) => crate::agent_output::literal_output(stdout_json(&result)),
         Err(error) if is_identify_failure(&error) => identify_error(error, None),
         Err(error) => speaker_error(error),
     }
@@ -1249,7 +1250,7 @@ pub fn merge_names(ctx: CommandContext<'_>) -> CommandOutput {
         vec![],
         Some(json!({"alias": alias, "canonical": canonical})),
     ) {
-        Ok(result) => stdout_json(&result),
+        Ok(result) => crate::agent_output::literal_output(stdout_json(&result)),
         Err(error) if error.reason_code() == Some("speaker_command_failed") => detail_error(error),
         Err(error) => speaker_error(error),
     }
@@ -1313,8 +1314,9 @@ pub fn seed_from_imports(ctx: CommandContext<'_>) -> CommandOutput {
         Err(error) => return speaker_error_preserving_stdout(out, error),
     };
     if json_output {
-        return stdout_json(&stats);
+        return crate::agent_output::literal_output(stdout_json(&stats));
     }
+    let stats = crate::agent_output::literal_body(stats);
     render_seed_from_imports(&mut out, &stats);
     CommandOutput::success(out)
 }
@@ -1807,7 +1809,7 @@ fn canonical_flag<'a>(token: &str, flags: &'a [FlagSpec]) -> Option<(&'a str, bo
 
 fn request_pretty_get(ctx: CommandContext<'_>, path: &str) -> CommandOutput {
     match request_json(ctx, HttpMethod::Get, path, vec![], None) {
-        Ok(value) => stdout_json(&value),
+        Ok(value) => crate::agent_output::literal_output(stdout_json(&value)),
         Err(error) => speaker_error(error),
     }
 }
@@ -1815,7 +1817,7 @@ fn request_pretty_get(ctx: CommandContext<'_>, path: &str) -> CommandOutput {
 fn post_json(ctx: CommandContext<'_>, path: &str, body: Value) -> CommandOutput {
     let json = if body.is_null() { None } else { Some(body) };
     match request_json(ctx, HttpMethod::Post, path, vec![], json) {
-        Ok(value) => stdout_json(&value),
+        Ok(value) => crate::agent_output::literal_output(stdout_json(&value)),
         Err(error) => speaker_error(error),
     }
 }
@@ -1881,7 +1883,10 @@ fn speaker_error_preserving_stdout(stdout: String, error: ClientError) -> Comman
 }
 
 fn detail_error(error: ClientError) -> CommandOutput {
-    stderr(error.detail().unwrap_or(error.message()))
+    // A server detail can name a speaker.
+    stderr(crate::agent_output::literal_links(
+        error.detail().unwrap_or(error.message()),
+    ))
 }
 
 fn identify_error(error: ClientError, request_id: Option<&str>) -> CommandOutput {
@@ -1894,7 +1899,10 @@ fn identify_error(error: ClientError, request_id: Option<&str>) -> CommandOutput
         .map(str::to_string)
         .or_else(|| string_field(payload, "request_id"));
     let mut err = String::new();
-    emit(&mut err, error.detail().unwrap_or(error.message()));
+    emit(
+        &mut err,
+        crate::agent_output::literal_links(error.detail().unwrap_or(error.message())),
+    );
     if let Some(request_id) = retry_request_id {
         emit(
             &mut err,
@@ -2636,6 +2644,8 @@ fn render_speaker_counts(out: &mut String, value: Option<&Value>, title: &str) {
         let mut pairs = items.iter().collect::<Vec<_>>();
         pairs.sort_by_key(|item| Reverse(item.1.as_i64()));
         for (name, count) in pairs.into_iter().take(15) {
+            // The keys are speaker names, which the body's escaping leaves alone.
+            let name = crate::agent_output::literal_links(name);
             emit(out, format!("  {name}: {}", value_to_string(Some(count))));
         }
     }

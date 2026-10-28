@@ -95,6 +95,10 @@ fn list_output(ctx: CommandContext<'_>) -> CommandOutput {
 
 #[must_use]
 pub fn move_entity(ctx: CommandContext<'_>) -> CommandOutput {
+    crate::agent_output::literal_output(move_entity_output(ctx))
+}
+
+fn move_entity_output(ctx: CommandContext<'_>) -> CommandOutput {
     let parsed = match parse_args(
         ctx.args,
         &[("--from", None), ("--to", None)],
@@ -157,6 +161,10 @@ pub fn move_entity(ctx: CommandContext<'_>) -> CommandOutput {
 
 #[must_use]
 pub fn detect(ctx: CommandContext<'_>) -> CommandOutput {
+    crate::agent_output::literal_output(detect_output(ctx))
+}
+
+fn detect_output(ctx: CommandContext<'_>) -> CommandOutput {
     let parsed = match parse_args(
         ctx.args,
         &[("--facet", Some("-f")), ("--day", Some("-d"))],
@@ -238,6 +246,10 @@ pub fn attach(ctx: CommandContext<'_>) -> CommandOutput {
 
 #[must_use]
 pub fn update(ctx: CommandContext<'_>) -> CommandOutput {
+    crate::agent_output::literal_output(update_output(ctx))
+}
+
+fn update_output(ctx: CommandContext<'_>) -> CommandOutput {
     let parsed = match parse_args(
         ctx.args,
         &[("--facet", Some("-f")), ("--day", Some("-d"))],
@@ -293,6 +305,10 @@ pub fn update(ctx: CommandContext<'_>) -> CommandOutput {
 
 #[must_use]
 pub fn aka(ctx: CommandContext<'_>) -> CommandOutput {
+    crate::agent_output::literal_output(aka_output(ctx))
+}
+
+fn aka_output(ctx: CommandContext<'_>) -> CommandOutput {
     let parsed = match parse_args(ctx.args, &[("--facet", Some("-f"))], &[]) {
         Ok(parsed) => parsed,
         Err(error) => return stderr(error),
@@ -348,6 +364,10 @@ pub fn aka(ctx: CommandContext<'_>) -> CommandOutput {
 
 #[must_use]
 pub fn record_merge_candidate(ctx: CommandContext<'_>) -> CommandOutput {
+    crate::agent_output::literal_output(record_merge_candidate_output(ctx))
+}
+
+fn record_merge_candidate_output(ctx: CommandContext<'_>) -> CommandOutput {
     let parsed = match parse_args(
         ctx.args,
         &[
@@ -464,6 +484,10 @@ pub fn merge_candidates(ctx: CommandContext<'_>) -> CommandOutput {
 
 #[must_use]
 pub fn accept_merge_candidate(ctx: CommandContext<'_>) -> CommandOutput {
+    crate::agent_output::literal_output(accept_merge_candidate_output(ctx))
+}
+
+fn accept_merge_candidate_output(ctx: CommandContext<'_>) -> CommandOutput {
     let parsed = match parse_args(
         ctx.args,
         &[("--facet", Some("-f"))],
@@ -637,6 +661,10 @@ pub fn ambiguities(ctx: CommandContext<'_>) -> CommandOutput {
 
 #[must_use]
 pub fn resolve_ambiguity(ctx: CommandContext<'_>) -> CommandOutput {
+    crate::agent_output::literal_output(resolve_ambiguity_output(ctx))
+}
+
+fn resolve_ambiguity_output(ctx: CommandContext<'_>) -> CommandOutput {
     let parsed = match parse_args(ctx.args, &[], &[("--yes", None), ("--json", None)]) {
         Ok(parsed) => parsed,
         Err(error) => return stderr(error),
@@ -675,6 +703,10 @@ pub fn resolve_ambiguity(ctx: CommandContext<'_>) -> CommandOutput {
 
 #[must_use]
 pub fn resolve_ambiguity_group(ctx: CommandContext<'_>) -> CommandOutput {
+    crate::agent_output::literal_output(resolve_ambiguity_group_output(ctx))
+}
+
+fn resolve_ambiguity_group_output(ctx: CommandContext<'_>) -> CommandOutput {
     let parsed = match parse_args(
         ctx.args,
         &[("--member-id", None), ("--revision", None)],
@@ -721,6 +753,10 @@ pub fn resolve_ambiguity_group(ctx: CommandContext<'_>) -> CommandOutput {
 
 #[must_use]
 pub fn restore_review(ctx: CommandContext<'_>) -> CommandOutput {
+    crate::agent_output::literal_output(restore_review_output(ctx))
+}
+
+fn restore_review_output(ctx: CommandContext<'_>) -> CommandOutput {
     let parsed = match parse_args(
         ctx.args,
         &[
@@ -879,6 +915,10 @@ fn entity_history_output(ctx: CommandContext<'_>) -> CommandOutput {
 
 #[must_use]
 pub fn restore_version(ctx: CommandContext<'_>) -> CommandOutput {
+    crate::agent_output::literal_output(restore_version_output(ctx))
+}
+
+fn restore_version_output(ctx: CommandContext<'_>) -> CommandOutput {
     let parsed = match parse_args(ctx.args, &[], &[("--yes", None), ("--json", None)]) {
         Ok(parsed) => parsed,
         Err(error) => return stderr(error),
@@ -1220,6 +1260,10 @@ fn observations_output(ctx: CommandContext<'_>) -> CommandOutput {
 
 #[must_use]
 pub fn observe(ctx: CommandContext<'_>) -> CommandOutput {
+    crate::agent_output::literal_output(observe_output(ctx))
+}
+
+fn observe_output(ctx: CommandContext<'_>) -> CommandOutput {
     let parsed = match parse_args(
         ctx.args,
         &[("--facet", Some("-f")), ("--source-day", None)],
@@ -1697,11 +1741,11 @@ fn merge_json_error(error: ClientError) -> CommandOutput {
         "error".to_string(),
         Value::String(error.detail().unwrap_or(error.message()).to_string()),
     );
-    CommandOutput {
+    crate::agent_output::literal_output(CommandOutput {
         stdout: String::new(),
         stderr: format!("{}\n", json_pretty_utf8(&Value::Object(payload))),
         exit: 1,
-    }
+    })
 }
 
 fn merge_candidate_error(result: &Value) -> CommandOutput {
@@ -1740,16 +1784,11 @@ fn render_accept_merge_candidate(
 
 fn render_merge_preview(fields: &Value) -> CommandOutput {
     let mut lines = vec!["Merge preview:".to_string()];
-    let akas = array_field(fields, "akas_added")
-        .iter()
-        .filter_map(Value::as_str)
-        .map(str::to_string)
-        .collect::<Vec<_>>();
-    if akas.is_empty() {
-        lines.push("  aliases added: none".to_string());
-    } else {
-        lines.push(format!("  aliases added: {}", akas.join(", ")));
-    }
+    // The server measures how many aliases the merge would add, not which.
+    lines.push(format!(
+        "  aliases added: {}",
+        display_value(fields.get("akas_added"))
+    ));
     lines.push(format!(
         "  emails added: {}",
         display_value(fields.get("emails_added_count"))

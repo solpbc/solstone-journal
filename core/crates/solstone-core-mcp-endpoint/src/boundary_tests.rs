@@ -1003,6 +1003,64 @@ fn legacy_image_markup_is_literal_in_search_and_every_transcript_page() {
 }
 
 #[test]
+fn fetched_documents_and_activity_records_keep_journal_markup_literal() {
+    let payload = "![legacycover](https://example.test/cover.png) <img src=x> 日本語";
+    let journal = fixture();
+    let index = solstone_core_indexer_store::db::open_index(journal.path()).unwrap();
+    index
+        .execute(
+            "UPDATE chunks SET content = ?1 WHERE path = ?2",
+            params![payload, PATH],
+        )
+        .unwrap();
+    drop(index);
+    let hit =
+        probe(&journal, "search", json!({"query":"legacycover"})).unwrap()["results"][0].clone();
+    let document = probe(&journal, "fetch", json!({"reference": hit["reference"]})).unwrap();
+    assert_eq!(
+        literal_display_text(document["text"].as_str().unwrap()),
+        payload
+    );
+    let served = crate::jsonrpc::literal_tool_result(document, None);
+    literal_display_text(served["content"][0]["text"].as_str().unwrap());
+
+    let journal = tempfile::Builder::new()
+        .prefix("activity-literal-")
+        .tempdir_in(crate::test_scratch())
+        .unwrap();
+    setup_facets(journal.path());
+    write_activity(
+        journal.path(),
+        "facets/alpha/activities/20261010.jsonl",
+        &format!(
+            "{}\n",
+            json!({"id":"one","title":payload,"story":{"body":"literalstoryneedle"}})
+        ),
+    );
+    solstone_core_indexer_store::scan::scan_journal(journal.path(), true).unwrap();
+    grant_whole_journal(journal.path());
+    let hits = activity_hits_for(&journal, "literalstoryneedle");
+    assert_eq!(hits.len(), 1);
+    let record = probe(
+        &journal,
+        "fetch",
+        json!({"reference": hits[0]["reference"]}),
+    )
+    .unwrap();
+    let text = record["text"].as_str().unwrap();
+    // The record stays JSON an agent can parse, and inert if shown whole.
+    literal_display_text(text);
+    let parsed: Value = serde_json::from_str(text).unwrap();
+    assert_eq!(parsed["id"], "one");
+    assert_eq!(
+        literal_display_text(parsed["title"].as_str().unwrap()),
+        payload
+    );
+    let served = crate::jsonrpc::literal_tool_result(record, None);
+    literal_display_text(served["content"][0]["text"].as_str().unwrap());
+}
+
+#[test]
 fn transcript_local_names_page_under_a_transcripts_only_facet_grant() {
     let journal = fixture();
     let segment = journal
@@ -10282,7 +10340,7 @@ fn get_activity_sources_names_speakers_only_through_the_voice_gate() {
         json!({"reference": reference}),
     )
     .unwrap();
-    let text = sources["units"][0]["text"].as_str().unwrap();
+    let text = literal_display_text(sources["units"][0]["text"].as_str().unwrap());
     // The owner's own line says so; a person is named by voice; a guess is not a name.
     assert!(text.contains("Olu (owner): ownerline"), "{text}");
     assert!(text.contains("Mina: acousticline"), "{text}");
@@ -10328,7 +10386,7 @@ fn get_activity_sources_returns_verbatim_long_unit() {
     assert_no_leaked_keys(&sources_res);
     let units = sources_res["units"].as_array().unwrap();
     assert_eq!(units.len(), 1);
-    let text = units[0]["text"].as_str().unwrap();
+    let text = literal_display_text(units[0]["text"].as_str().unwrap());
     assert!(text.contains("startlongneedle"));
     assert!(text.contains("endlongneedle"));
     assert!(text.len() > 3840);
@@ -10625,7 +10683,7 @@ fn get_activity_sources_keeps_family_and_omits_untimed_clocks() {
     assert_eq!(chat_unit["kind"], "import");
     assert_eq!(chat_unit["untimed"], true);
     assert!(chat_unit.get("timestamp").is_none());
-    let chat_text = chat_unit["text"].as_str().unwrap();
+    let chat_text = literal_display_text(chat_unit["text"].as_str().unwrap());
     assert!(chat_text.contains("[00:00:00] **Ana:** untimedchatneedle"));
     assert!(chat_text.contains("ChatGPT Conversation"));
     assert!(!chat_text.contains("### Transcript"));
@@ -10640,7 +10698,7 @@ fn get_activity_sources_keeps_family_and_omits_untimed_clocks() {
     assert_eq!(audio_unit["kind"], "audio");
     assert!(audio_unit.get("untimed").is_none());
     assert_eq!(audio_unit["timestamp"], "2026-03-08 10:00:00 - 10:05:00");
-    let audio_text = audio_unit["text"].as_str().unwrap();
+    let audio_text = literal_display_text(audio_unit["text"].as_str().unwrap());
     assert!(audio_text.contains("spokenaudioneedle"));
     assert!(audio_text.contains("### Transcript"));
 
@@ -10775,7 +10833,7 @@ fn assert_untimed_source_page(page: &serde_json::Value, needle: &str) {
         assert_eq!(unit["untimed"], true);
         assert!(unit.get("timestamp").is_none());
         assert_eq!(unit["kind"], "import");
-        let text = unit["text"].as_str().unwrap();
+        let text = literal_display_text(unit["text"].as_str().unwrap());
         assert!(text.contains("[00:00:00]"));
         saw_needle |= text.contains(needle);
     }
@@ -10790,7 +10848,7 @@ fn assert_timed_speech_page(page: &serde_json::Value, needle: &str) {
         assert!(unit.get("untimed").is_none());
         assert_eq!(unit["kind"], "audio");
         assert_eq!(unit["timestamp"], "2026-03-08 10:00:00 - 10:05:00");
-        saw_needle |= unit["text"].as_str().unwrap().contains(needle);
+        saw_needle |= literal_display_text(unit["text"].as_str().unwrap()).contains(needle);
     }
     assert!(saw_needle);
 }
@@ -11685,7 +11743,7 @@ fn assert_source_words(
     assert_no_leaked_keys(&sources);
     let units = sources["units"].as_array().unwrap();
     assert_eq!(units.len(), 1);
-    let text = units[0]["text"].as_str().unwrap();
+    let text = literal_display_text(units[0]["text"].as_str().unwrap());
     assert!(text.contains(kept), "{text}");
     for needle in excluded {
         assert!(!text.contains(needle), "{text}");

@@ -13,7 +13,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed
 
 - security fix: updated a library used by journals on phones to address a memory-safety flaw.
-- security fix: an agent reading your journal through the command-line tools could still get live image and link markup from a full search result, a single activity, a profile, a transcript's sentences or the entity overview. if someone got that markup into your journal, an app that showed the agent's reply could load an image from their server, telling them when it was read and passing along anything placed in the image's address. these results now keep the markup as text. this changes only what the command-line tools return. (#401)
+- security fix: through the command-line tools, an agent reading your journal could still get live image and link markup from a full search result, a single activity, a profile, a transcript's sentences, the entity overview or the names or records a command shows back. a connected agent got it from most of what it reads, such as activities, the week, entities and fetched entries. if someone got that markup into your journal, an app that showed the agent's reply could load an image from their server, telling them when it was read and passing along anything placed in the image's address. these results now keep the markup as text. this changes only what agents are given. (#401)
 - on windows, backup controls no longer reject a journal because of how its folder path is written.
 - on windows, changes to your journal's schedule can be saved again.
 - you can choose a file on the import screen in the android and ios owner apps and save it.

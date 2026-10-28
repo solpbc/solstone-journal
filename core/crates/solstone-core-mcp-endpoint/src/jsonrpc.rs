@@ -256,6 +256,16 @@ pub(crate) fn tool_result(value: Value, empty_note: Option<&str>) -> Value {
     })
 }
 
+/// A read tool's result. Its text channel is the whole response as JSON, so
+/// markup in journal text stays inert there too; parsed values are unchanged.
+pub(crate) fn literal_tool_result(value: Value, empty_note: Option<&str>) -> Value {
+    let mut result = tool_result(value, empty_note);
+    if let Some(Value::String(text)) = result.pointer_mut("/content/0/text") {
+        *text = solstone_core_format::markdown::literal_json_syntax(text);
+    }
+    result
+}
+
 fn classify_tool_call(request: &JsonRpcRequest) -> Result<McpMethod, JsonRpcFailure> {
     let Some(Value::Object(params)) = request.params.as_ref() else {
         return Err(Box::new(JsonRpcResponse::invalid_params(

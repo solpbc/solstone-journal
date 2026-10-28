@@ -2,7 +2,10 @@
 // Copyright (c) 2026 sol pbc
 
 use serde_json::Value;
-use solstone_core_format::{ensure_ascii, markdown::literal_text};
+use solstone_core_format::{
+    ensure_ascii,
+    markdown::{literal_json_syntax, literal_markup},
+};
 
 use crate::command::CommandOutput;
 use crate::json_format::{json_compact_ascii, json_compact_utf8};
@@ -37,13 +40,7 @@ fn literal_stream(text: String) -> String {
 /// Escape one journal value inside a text rendering whose own layout uses
 /// Markdown delimiters, so the layout itself is left as written.
 pub(crate) fn literal_links(text: &str) -> String {
-    // Markdown links/images and HTML require at least one of these delimiters.
-    // Leave ordinary text, paths, IDs and URLs unchanged.
-    if text.contains(['[', '<', '&']) {
-        literal_text(text)
-    } else {
-        text.to_owned()
-    }
+    literal_markup(text)
 }
 
 /// The response with each journal value made literal and its references kept,
@@ -88,25 +85,4 @@ fn literal_values(value: &mut Value) {
         }
         _ => {}
     }
-}
-
-/// JSON doubles Markdown's protective backslashes. Escape string delimiters in
-/// JSON's own syntax too, so raw stdout cannot join a link across two fields.
-fn literal_json_syntax(json: &str) -> String {
-    let mut output = String::with_capacity(json.len());
-    let mut in_string = false;
-    let mut escaped = false;
-    for ch in json.chars() {
-        if ch == '"' && !escaped {
-            in_string = !in_string;
-        }
-        if in_string && matches!(ch, '[' | ']' | '(' | ')' | '!' | '<' | '>' | '&' | '`') {
-            use std::fmt::Write;
-            write!(output, "\\u{:04x}", u32::from(ch)).expect("string write");
-        } else {
-            output.push(ch);
-        }
-        escaped = ch == '\\' && !escaped;
-    }
-    output
 }

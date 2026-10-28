@@ -23,7 +23,7 @@ pub fn status(ctx: CommandContext<'_>) -> CommandOutput {
         Err(error) => return body_error(error),
     };
     if parsed.has_flag("--json") {
-        return stdout_json(&payload);
+        return crate::agent_output::literal_output(stdout_json(&payload));
     }
     let Some(object) = payload.as_object() else {
         return stderr(BODY_RESPONSE_ERROR);
@@ -62,7 +62,7 @@ pub fn day(ctx: CommandContext<'_>) -> CommandOutput {
         Err(error) => return body_error(error),
     };
     if parsed.has_flag("--json") {
-        return stdout_json(&payload);
+        return crate::agent_output::literal_output(stdout_json(&payload));
     }
     let Some(object) = payload.as_object() else {
         return stderr(BODY_RESPONSE_ERROR);
@@ -105,7 +105,7 @@ pub fn window(ctx: CommandContext<'_>) -> CommandOutput {
         Err(error) => return body_error(error),
     };
     if parsed.has_flag("--json") {
-        return stdout_json(&payload);
+        return crate::agent_output::literal_output(stdout_json(&payload));
     }
     let Some(object) = payload.as_object() else {
         return stderr(BODY_RESPONSE_ERROR);

@@ -91,6 +91,7 @@ pub(crate) struct Prepared {
     count: usize,
     targets: Vec<String>,
     empty_note: Option<String>,
+    served_as_is: &'static [&'static str],
 }
 
 impl Prepared {
@@ -100,7 +101,15 @@ impl Prepared {
             count,
             targets,
             empty_note: None,
+            served_as_is: &[],
         }
+    }
+
+    /// Name the fields release must not escape: text the tool already made
+    /// literal itself, or a reference the agent passes back unchanged.
+    pub(crate) fn served_as_is(mut self, keys: &'static [&'static str]) -> Self {
+        self.served_as_is = keys;
+        self
     }
 
     /// Attach the plain-words reading of an empty result. Ignored when the
@@ -247,7 +256,7 @@ pub(crate) fn dispatch_authenticated_tool_call(
         || execute_validated(journal_root, principal, &snapshot, validated),
     )?;
 
-    let prepared = match executed {
+    let mut prepared = match executed {
         Ok(prepared) => prepared,
         Err(error) => {
             record_outcome(
@@ -276,6 +285,8 @@ pub(crate) fn dispatch_authenticated_tool_call(
         return Err(DispatchError::PermissionDenied("no_permission"));
     }
 
+    literal_journal_values(&mut prepared.value, prepared.served_as_is);
+
     // 🔑 The digest is what makes replay a checkable claim rather than an
     // assumed one: re-fetch the named targets, compare, and a difference means
     // the journal actually moved. See `content_digest` for why it cannot be
@@ -300,6 +311,46 @@ pub(crate) fn dispatch_authenticated_tool_call(
         value: prepared.value,
         empty_note: prepared.empty_note,
     })
+}
+
+/// Serve journal text literally, so markup in it cannot become a live link,
+/// image or HTML when an agent's reply is displayed.
+///
+/// 🔑 Every read tool's response passes through here, so a field a tool adds
+/// later is covered without the tool remembering to escape it. A value that
+/// cannot carry markup keeps its bytes, which leaves references, ids, days and
+/// counts as they were. Object keys are escaped too, because some responses
+/// key a map by a journal name.
+fn literal_journal_values(value: &mut Value, served_as_is: &[&str]) {
+    match value {
+        Value::String(text) => *text = solstone_core_format::markdown::literal_markup(text),
+        Value::Array(items) => items
+            .iter_mut()
+            .for_each(|item| literal_journal_values(item, served_as_is)),
+        Value::Object(object) => {
+            *object = std::mem::take(object)
+                .into_iter()
+                .map(|(key, mut value)| {
+                    if served_as_is.contains(&key.as_str()) {
+                        return (key, value);
+                    }
+                    literal_journal_values(&mut value, served_as_is);
+                    (solstone_core_format::markdown::literal_markup(&key), value)
+                })
+                .collect();
+        }
+        _ => {}
+    }
+}
+
+/// An activity record served as JSON text: each value literal, and the JSON
+/// itself inert if the text is displayed whole.
+fn literal_record_text(record: Map<String, Value>) -> Result<String, DispatchError> {
+    let mut record = Value::Object(record);
+    literal_journal_values(&mut record, &[]);
+    serde_json::to_string(&record)
+        .map(|json| solstone_core_format::markdown::literal_json_syntax(&json))
+        .map_err(|_| DispatchError::Tool(ToolError::ReferenceNotFound))
 }
 
 /// Record a terminal outcome for a call that is already failing.
@@ -682,7 +733,9 @@ fn get_week(
     let read =
         crate::tools::week::read_week(journal_root, request.week.as_deref(), principal, snapshot)
             .map_err(DispatchError::Tool)?;
+    // A said entry's `uri` locates its source; it is not prose.
     Ok(Prepared::new(read.value, read.count, read.targets)
+        .served_as_is(&["uri"])
         .when_empty("no week to read. this is a complete answer, not an error."))
 }
 
@@ -1558,7 +1611,9 @@ fn search(
     if resolution.status == EntityResolutionStatus::Incomplete {
         response_val["entity_context_incomplete"] = Value::Bool(true);
     }
-    let mut prepared = Prepared::new(response_val, count, targets);
+    // Each snippet is made literal where it is cut.
+    let mut prepared =
+        Prepared::new(response_val, count, targets).served_as_is(&["snippet", "query"]);
     if count == 0 && resolution.status != EntityResolutionStatus::Incomplete {
         prepared = prepared.when_empty(if complete {
             SEARCH_EMPTY
@@ -1791,7 +1846,8 @@ fn fetch(
                     return Err(DispatchError::Tool(ToolError::ReferenceNotFound));
                 }
                 let target = format!("{}#{}", entry.path, entry.idx);
-                return Ok(Prepared::new(value, 1, vec![target]));
+                // Screen text is written literal when it is recorded.
+                return Ok(Prepared::new(value, 1, vec![target]).served_as_is(&["text"]));
             }
             let (text, hidden, record) = match admit_activity(
                 journal_root,
@@ -1810,8 +1866,7 @@ fn fetch(
                 ActivityAdmit::Admitted(a) => {
                     let cleaned =
                         crate::tools::activities::clean_activity_record_for_wire(a.record.clone());
-                    let cleaned_text = serde_json::to_string(&cleaned)
-                        .map_err(|_| DispatchError::Tool(ToolError::ReferenceNotFound))?;
+                    let cleaned_text = literal_record_text(cleaned)?;
                     // Links resolve from the admitted record. Cleaning drops
                     // `stream`, and the resolver would then cross streams.
                     (cleaned_text, Some(a.hidden), Some(a.record))
@@ -1880,6 +1935,10 @@ fn fetch(
                 return Err(DispatchError::Tool(ToolError::ReferenceNotFound));
             }
 
+            // An activity record arrives as literal JSON text; any other text
+            // is made literal at release.
+            let served_as_is: &'static [&'static str] =
+                if record.is_some() { &["text"] } else { &[] };
             let mut value =
                 json!({"title": entry_title(&entry.day), "date": entry.day, "text": text});
             if let Some(hidden) = hidden {
@@ -1897,7 +1956,7 @@ fn fetch(
                 value["more_segments"] = Value::Bool(true);
             }
             let target = format!("{}#{}", entry.path, entry.idx);
-            Ok(Prepared::new(value, 1, vec![target]))
+            Ok(Prepared::new(value, 1, vec![target]).served_as_is(served_as_is))
         }
         ReferenceTarget::Activity(act_ref) => {
             let rel_path = act_ref.relative_path().map_err(DispatchError::Tool)?;
@@ -1926,8 +1985,7 @@ fn fetch(
                 .get("hidden")
                 .is_some_and(solstone_core_facets::activity_value_truthy);
             let cleaned = crate::tools::activities::clean_activity_record_for_wire(record.clone());
-            let text = serde_json::to_string(&cleaned)
-                .map_err(|_| DispatchError::Tool(ToolError::ReferenceNotFound))?;
+            let text = literal_record_text(cleaned)?;
 
             #[cfg(feature = "test-hooks")]
             crate::source_freeze_barrier::checkpoint(
@@ -1982,7 +2040,7 @@ fn fetch(
                 value["more_segments"] = Value::Bool(true);
             }
             let target = format!("{rel_path}#{}", act_ref.record_identity);
-            Ok(Prepared::new(value, 1, vec![target]))
+            Ok(Prepared::new(value, 1, vec![target]).served_as_is(&["text"]))
         }
         _ => Err(DispatchError::Tool(ToolError::ReferenceNotFound)),
     }
@@ -2813,7 +2871,10 @@ fn get_transcript(
     ) {
         response_val["capture_zone"] = zone;
     }
-    Ok(Prepared::new(response_val, count, vec![target]).when_empty(GET_TRANSCRIPT_EMPTY))
+    // Each transcript entry is made literal after paging.
+    Ok(Prepared::new(response_val, count, vec![target])
+        .served_as_is(&["entries"])
+        .when_empty(GET_TRANSCRIPT_EMPTY))
 }
 
 pub(crate) fn differing_capture_zone(

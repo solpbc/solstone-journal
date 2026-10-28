@@ -22,6 +22,43 @@ pub fn literal_text(text: &str) -> String {
     escaped
 }
 
+/// Render one untrusted value literally, leaving it as written when it cannot
+/// carry a link, image or HTML.
+///
+/// Markdown links and images and HTML need at least one of these delimiters,
+/// so ordinary text, ids, paths and URLs keep their bytes.
+pub fn literal_markup(text: &str) -> String {
+    if text.contains(['[', '<', '&']) {
+        literal_text(text)
+    } else {
+        text.to_owned()
+    }
+}
+
+/// Keep JSON text inert when it is itself displayed as Markdown.
+///
+/// JSON doubles the backslashes [`literal_text`] adds, so two escaped values
+/// could still meet as a link in the raw text. Escape the delimiters inside
+/// every JSON string as `\u` sequences; parsed values are unchanged.
+pub fn literal_json_syntax(json: &str) -> String {
+    let mut output = String::with_capacity(json.len());
+    let mut in_string = false;
+    let mut escaped = false;
+    for ch in json.chars() {
+        if ch == '"' && !escaped {
+            in_string = !in_string;
+        }
+        if in_string && matches!(ch, '[' | ']' | '(' | ')' | '!' | '<' | '>' | '&' | '`') {
+            use std::fmt::Write;
+            write!(output, "\\u{:04x}", u32::from(ch)).expect("string write");
+        } else {
+            output.push(ch);
+        }
+        escaped = ch == '\\' && !escaped;
+    }
+    output
+}
+
 #[cfg(test)]
 mod tests {
     use pulldown_cmark::{Event, Options, Parser, Tag};

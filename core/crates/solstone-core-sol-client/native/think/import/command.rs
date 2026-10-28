@@ -553,7 +553,7 @@ fn print_success(
         .and_then(Value::as_bool)
         .unwrap_or(false);
     if json_out {
-        return CommandOutput::success(format!(
+        return crate::agent_output::literal_output(CommandOutput::success(format!(
             "{}\n",
             sorted_json_compact_ascii(&json!({
                 "status": if is_replay { "replay" } else { "queued" },
@@ -562,7 +562,7 @@ fn print_success(
                 "save": Value::Object(save_response.clone()),
                 "start": Value::Object(start_response.clone()),
             }))
-        ));
+        )));
     }
     let mut stdout = String::new();
     stdout.push_str(&format!("staged {}\n", display_value(&path)));
@@ -589,10 +589,10 @@ fn print_success(
 
 fn print_duplicate(save_response: &Map<String, Value>, json_out: bool) -> CommandOutput {
     if json_out {
-        return CommandOutput::success(format!(
+        return crate::agent_output::literal_output(CommandOutput::success(format!(
             "{}\n",
             sorted_json_compact_ascii(&Value::Object(save_response.clone()))
-        ));
+        )));
     }
     let duplicate = save_response.get("duplicate").and_then(Value::as_object);
     let Some(duplicate) = duplicate else {

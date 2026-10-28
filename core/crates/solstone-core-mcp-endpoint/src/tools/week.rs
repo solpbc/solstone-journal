@@ -1125,6 +1125,94 @@ mod tests {
         );
     }
 
+    fn active_markup(text: &str) -> bool {
+        use pulldown_cmark::{Event, Options, Parser, Tag};
+        Parser::new_ext(text, Options::all()).any(|event| {
+            matches!(
+                event,
+                Event::Start(Tag::Image { .. } | Tag::Link { .. })
+                    | Event::Html(_)
+                    | Event::InlineHtml(_)
+            )
+        })
+    }
+
+    #[test]
+    fn journal_text_in_a_week_read_stays_inert_in_both_channels() {
+        let sunday = "20260308";
+        let uri = "sol://facets/work/activities/20260308#meeting_1";
+        // An unclosed bracket in one value and a link tail in another: escaped
+        // one value at a time, they could still meet in the JSON text channel.
+        let title = "open [here ![cover](https://example.test/cover.png) <img src=x>";
+        let quote = "](https://example.test/joined)";
+        let root = journal("solstone-week-literal-");
+        whole(root.path());
+        let facet_dir = root.path().join("facets/work");
+        fs::create_dir_all(facet_dir.join("activities")).unwrap();
+        fs::write(
+            facet_dir.join("facet.json"),
+            json!({"id": "123e4567-e89b-42d3-a456-426614174000", "title": "Work", "description": "Work"}).to_string(),
+        )
+        .unwrap();
+        fs::write(
+            facet_dir.join("activities/20260308.jsonl"),
+            json!({"id": "meeting_1", "title": title, "created_at": 100}).to_string() + "\n",
+        )
+        .unwrap();
+        let memory = Memory {
+            id: "m0",
+            key: "memory-key",
+            day_offset: 0,
+            text: "KEPT_MEMORY",
+            uri,
+            refs: &[],
+        };
+        let said = said_item(
+            "quote-1",
+            &said_key(sunday, "work", "meeting_1", quote),
+            sunday,
+            quote,
+            uri,
+        );
+        write_raw(
+            root.path(),
+            "reflections/weekly/20260308.json",
+            &document(sunday, &[memory], &format!("[{said}]")),
+        );
+        assert!(active_markup(title), "positive control");
+
+        let week = probe(root.path(), json!({"week": sunday})).unwrap();
+        let shown = week["activities"][0]["title"].as_str().unwrap();
+        assert!(!active_markup(shown), "{shown}");
+        assert_eq!(
+            pulldown_cmark::Parser::new(shown)
+                .filter_map(|event| match event {
+                    pulldown_cmark::Event::Text(text) => Some(text.into_string()),
+                    _ => None,
+                })
+                .collect::<String>(),
+            title
+        );
+        let memory_text = week["memories"][0]["text"].as_str().unwrap();
+        assert!(!active_markup(memory_text), "{memory_text}");
+        assert_eq!(week["said"][0]["quote"], quote);
+        assert_eq!(
+            week["said"][0]["uri"], uri,
+            "a source location keeps its bytes"
+        );
+
+        let plain = tool_result(week.clone(), None);
+        assert!(
+            active_markup(plain["content"][0]["text"].as_str().unwrap()),
+            "the two values meet in plain JSON text"
+        );
+        let served = crate::jsonrpc::literal_tool_result(week.clone(), None);
+        let text = served["content"][0]["text"].as_str().unwrap();
+        assert!(!active_markup(text), "{text}");
+        assert_eq!(serde_json::from_str::<Value>(text).unwrap(), week);
+        assert_eq!(served["structuredContent"], week);
+    }
+
     #[test]
     fn memory_and_quote_leave_outs_are_independent() {
         let sunday = "20260308";
