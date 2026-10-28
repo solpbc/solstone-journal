@@ -43,7 +43,7 @@ mod story_input;
 mod story_messages;
 #[cfg(test)]
 mod story_source_conformance;
-mod terminal_sense;
+mod terminal_reading;
 mod transcript;
 mod usage;
 pub mod weekly_reflection;
@@ -81,7 +81,7 @@ pub struct PreparedTalent {
     pub config: Map<String, Value>,
     pub(crate) entry_sources: Vec<Option<solstone_core_transcripts::EntrySource>>,
     /// What terminal sampling read and left out, emitted once with the run.
-    pub(crate) terminal_sense: Option<Value>,
+    pub(crate) terminal_reading: Option<Value>,
     pub(crate) story_input: Option<story_input::Candidate>,
     pub(crate) story_messages: Option<story_messages::Candidate>,
     pub(crate) story_input_used: bool,
@@ -95,7 +95,7 @@ impl PreparedTalent {
             name,
             config,
             entry_sources: Vec::new(),
-            terminal_sense: None,
+            terminal_reading: None,
             story_input: None,
             story_messages: None,
             story_input_used: false,
@@ -1075,7 +1075,7 @@ fn generate_response(
     // These receipts belong to this execution, never to a caller-supplied value.
     prepared.config.remove(INPUT_BUDGET_KEY);
     prepared.config.remove(story::INPUT_WHOLE_KEY);
-    if let Some(event) = prepared.terminal_sense.take() {
+    if let Some(event) = prepared.terminal_reading.take() {
         emit(writer, event);
     }
     native_generate_response(prepared, generate, writer)

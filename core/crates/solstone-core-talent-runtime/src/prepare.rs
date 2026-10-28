@@ -308,10 +308,10 @@ pub fn prepare(
         prepared.story_messages =
             crate::story_messages::Candidate::prepare(&prepared.entry_sources, &prepared.config);
     }
-    if prepared.name == "sense" {
+    if matches!(prepared.name.as_str(), "sense" | "screen") {
         prepared.entry_sources = entry_sources;
-        let report = crate::terminal_sense::prepare(&mut prepared, context);
-        prepared.terminal_sense = report;
+        let report = crate::terminal_reading::prepare(&mut prepared, context);
+        prepared.terminal_reading = report;
     }
     Ok(prepared)
 }

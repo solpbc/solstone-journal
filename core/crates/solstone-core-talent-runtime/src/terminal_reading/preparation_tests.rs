@@ -31,6 +31,11 @@ fn setup(
             "talent/sense.schema.json",
             talent_root.join("sense.schema.json"),
         ),
+        ("talent/screen.md", talent_root.join("screen.md")),
+        (
+            "talent/screen.schema.json",
+            talent_root.join("screen.schema.json"),
+        ),
         (
             "think/templates/segment_preamble.md",
             templates_dir.join("segment_preamble.md"),
@@ -74,7 +79,7 @@ fn setup(
 /// with no such row is captured once, with no cursor fields.
 fn typing_frames(screen: &str) -> String {
     let frame = |time: f64, content: &str, cursor: Option<(usize, usize)>| {
-        let mut pane = json!({"id":"%0","index":0,"active":true,"content":content,"width":80});
+        let mut pane = json!({"id":"%0","index":0,"left":0,"top":0,"width":80,"height":24,"active":true,"content":content});
         if let Some((x, y)) = cursor {
             for (key, value) in [
                 ("cursor_x", json!(x)),
@@ -146,7 +151,7 @@ fn the_request_cortex_sends_reads_the_sampled_terminal() {
     )
     .unwrap();
     let event = prepared
-        .terminal_sense
+        .terminal_reading
         .as_ref()
         .expect("a terminal-only segment is sampled");
     assert_eq!(event["branch"], "sampled");
@@ -218,7 +223,7 @@ fn a_segment_larger_than_the_floor_window_is_sampled_to_fit_it() {
         crate::prepare::PrepareMode::Preview,
     )
     .unwrap();
-    let event = prepared.terminal_sense.as_ref().expect("sampled");
+    let event = prepared.terminal_reading.as_ref().expect("sampled");
     assert!(
         event["line_cap"].is_u64() || event["entries_left_out"].as_u64() > Some(0),
         "{event}"
@@ -245,5 +250,35 @@ fn a_segment_larger_than_the_floor_window_is_sampled_to_fit_it() {
     assert!(
         text.contains("build step 0 wrote output line 99 "),
         "and its first screen's end"
+    );
+}
+
+#[test]
+fn screen_reads_the_same_sampled_terminal_in_one_request() {
+    let (_root, paths, context, mut request) = setup(&display());
+    request.insert("name".into(), json!("screen"));
+    request.insert("prompt".into(), json!(""));
+    let prepared = crate::prepare::prepare(
+        request,
+        &paths,
+        &context,
+        crate::prepare::PrepareMode::Preview,
+    )
+    .unwrap();
+    let event = prepared
+        .terminal_reading
+        .as_ref()
+        .expect("a terminal-only Screen segment is sampled");
+    assert_eq!(event["talent"], "screen");
+    assert!(!prepared.config.contains_key("_screen_batch_cuts"));
+    let text = source_text(&prepared);
+    assert!(text.contains(sample::GUIDE));
+    assert!(
+        text.contains("· typed\n❯ Is the implementation ready?"),
+        "{text}"
+    );
+    assert!(
+        !text.contains("**Tmux window:**"),
+        "the Screen projection is replaced: {text}"
     );
 }

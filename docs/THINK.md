@@ -142,9 +142,9 @@ nothing. The talent never gates publication (`SEGMENT_NONGATING_TALENTS`).
 exact prompt, packet, schema and candidates a run would send, without calling
 Generate or writing anything.
 
-## Terminal segment Sense
+## Terminal segments
 
-A terminal-only segment is sampled to fit the floor window, the way Describe samples frames ([Talent inputs](#talent-inputs)). Eligibility depends only on the segment's inputs: no transcripts, no talent outputs, and every percept a tmux capture or the capture's desktop activity, each bound to the producer bytes it was rendered from. It never depends on the provider, model, endpoint or context window. Any other segment keeps the ordinary request.
+A terminal-only segment is sampled to fit the floor window, the way Describe samples frames ([Talent inputs](#talent-inputs)), for both talents that read it: Sense and Screen. Eligibility depends only on the segment's inputs: no transcripts, no talent outputs, and every percept a tmux capture or the capture's desktop activity, each bound to the producer bytes it was rendered from. It never depends on the provider, model, endpoint or context window. Any other segment keeps the ordinary request.
 
 Each tmux session's reading opens with what was typed at the keyboard, in order, then its entries in time order:
 
@@ -154,7 +154,7 @@ Each tmux session's reading opens with what was typed at the keyboard, in order,
 
 Styling is dropped except strikethrough, which agent task lists use for finished steps. The capture's desktop activity (the focused pane's title, working directory, program and window) is listed once per distinct context, with how often it was seen, up to the most frequent 30. A short reading guide says what each kind of entry is, and that an assistant's or agent's text is that program's work.
 
-The entries are then fitted to a budget fixed by design: the floor window's input budget for Sense (`compute_input_budget` of its `max_output_tokens` at `LOCAL_MIN_CONTEXT_TOKENS`) less everything else in the request, counted with the journal's tokenizer. Typed input is always kept. If the entries do not fit whole, one line cap applies to every other entry, the largest that fits: short entries stay whole, and a long one keeps its start and end with the number of lines left out (a first-seen screen keeps its end). Below the smallest cap, new-text entries are chosen by time spread (the last, the first, then each the farthest in time from those kept), and each run left out is named with its time span and size. The reading takes the place of the screen captures in the ordinary request, which runs, validates and publishes like any Sense output; a `terminal_sense` event records what was read and left out. Generic fitting stays behind it as the disclosed last-resort guard.
+The entries are then fitted to a budget fixed by design: the floor window's input budget for the talent (`compute_input_budget` of its `max_output_tokens` at `LOCAL_MIN_CONTEXT_TOKENS`) less everything else in the request, counted with the journal's tokenizer. Typed input is always kept. If the entries do not fit whole, one line cap applies to every other entry, the largest that fits: short entries stay whole, and a long one keeps its start and end with the number of lines left out (a first-seen screen keeps its end). Below the smallest cap, new-text entries are chosen by time spread (the last, the first, then each the farthest in time from those kept), and each run left out is named with its time span and size. The reading takes the place of the screen captures in the talent's ordinary request, which runs, validates and publishes like any output of that talent; a `terminal_reading` event records what was read and left out. For Screen it replaces batching: a terminal-only segment is one request with Screen's whole output budget. Generic fitting stays behind it as the disclosed last-resort guard.
 
 ## Architecture
 

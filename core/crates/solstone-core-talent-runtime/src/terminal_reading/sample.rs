@@ -311,7 +311,7 @@ pub(super) fn fit(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::terminal_sense::screen::Pane;
+    use crate::terminal_reading::screen::Pane;
 
     fn session(items: Vec<(Kind, f64, usize)>) -> Session {
         Session {

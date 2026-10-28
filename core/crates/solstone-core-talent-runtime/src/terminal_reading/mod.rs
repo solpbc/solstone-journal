@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! Terminal-only Sense segments, sampled to fit the floor window
-//! (docs/THINK.md § Terminal segment Sense).
+//! Terminal-only segments, sampled to fit the floor window for the talents that
+//! read them, Sense and Screen (docs/THINK.md § Terminal segments).
 //!
 //! Each tmux session's captures become entries: each pane's screen when first
 //! seen, the lines that later appeared on it, each line once, and the input the
 //! owner typed. The entries are then fitted to the budget the floor window
 //! leaves after everything else in the request, so the source is bounded by
 //! design and reads the same on every backend. The result takes the place of
-//! the screen captures in the ordinary Sense request, which runs, validates and
+//! the screen captures in the talent's ordinary request, which runs, validates and
 //! publishes like any other.
 mod cursor;
 mod diff_matcher;
@@ -104,7 +104,7 @@ pub(crate) fn prepare(prepared: &mut PreparedTalent, context: &ExecutionContext)
     if SKIP.with(std::cell::Cell::get) {
         return None;
     }
-    if prepared.name != "sense"
+    if !matches!(prepared.name.as_str(), "sense" | "screen")
         || prepared.config.contains_key("messages")
         || prepared.config.contains_key("hook")
         || prepared.config.contains_key("span")
@@ -258,8 +258,11 @@ pub(crate) fn prepare(prepared: &mut PreparedTalent, context: &ExecutionContext)
         .insert("transcript".to_owned(), Value::String(text));
     // Spelling views bind speech; a terminal-only segment has none.
     prepared.config.remove(crate::product_names::VIEW_KEY);
+    // The reading fits one request, so Screen no longer splits the segment.
+    prepared.config.remove("_screen_batch_cuts");
     Some(json!({
-        "event": "terminal_sense",
+        "event": "terminal_reading",
+        "talent": prepared.name,
         "branch": "sampled",
         "sessions": sessions.len(),
         "contexts": contexts.len(),
