@@ -2252,6 +2252,7 @@ function loadFrameCaptureClass(seeks) {
         addEventListener(type, fn) { (listeners[type] ||= []).push(fn); },
         removeEventListener(type, fn) { listeners[type] = (listeners[type] || []).filter((l) => l !== fn); },
         set src(_url) { setTimeout(() => video.onloadedmetadata(), 0); },
+        load() {},
         set currentTime(value) {
           seeks.push(value);
           setTimeout(() => (listeners.seeked || []).forEach((fn) => fn()), 0);
@@ -2277,6 +2278,16 @@ test('a screen frame is drawn from the time it was recorded, not its frame numbe
   capture.noteFrameTime('/screen.mp4', 6, null);
   await capture.captureFullFrame('/screen.mp4', 6);
   assert.deepStrictEqual(seeks, [20, 4, 5]);
+});
+
+test('leaving a segment forgets its frame times', async () => {
+  const seeks = [];
+  const FrameCapture = loadFrameCaptureClass(seeks);
+  const capture = new FrameCapture();
+  capture.noteFrameTime('/screen.mp4', 300, 20);
+  capture.clear();
+  await capture.captureFullFrame('/screen.mp4', 300);
+  assert.deepStrictEqual(seeks, [299]);
 });
 
 async function run() {
