@@ -157,8 +157,8 @@ const LEADING_AUXILIARIES: [&str; 6] = ["has been", "have been", "is", "are", "w
 
 /// Remove a leading subject phrase from a talent-written activity description.
 ///
-/// `sense.md` asks for a plain statement of what was done with no subject
-/// ("Debugged the retry handling"), because the string is rendered verbatim in
+/// `sense.md` asks for a plain statement of what was done that opens with a
+/// past-tense verb and no subject, because the string is rendered verbatim in
 /// the owner's recent activity list. A small local model slips back into "The
 /// user navigated between…" often enough that the prompt alone does not hold,
 /// so this is the deterministic guard at the one boundary where talent output
