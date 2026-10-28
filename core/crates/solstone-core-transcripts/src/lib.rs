@@ -139,6 +139,11 @@ impl ScreenTranscript {
 /// every record twice.
 pub const ENTRY_SOURCE_MAX_BYTES: usize = 64 * 1024;
 
+/// A terminal capture this large still keeps its records, so the talents that
+/// read terminal segments (Sense and Screen) can sample it from the very bytes
+/// the entry was rendered from.
+const TERMINAL_SOURCE_MAX_BYTES: usize = 8 * 1024 * 1024;
+
 /// The producer file behind one transcript entry, from the same bytes the
 /// entry was rendered from.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -1035,10 +1040,12 @@ fn process_segment(
                             stream.clone(),
                             None,
                         );
-                        // Terminal preparation may preserve this context beside its screen
-                        // timeline only when it can bind it to these same producer bytes.
-                        if projection == PerceptProjection::TerminalSense
-                            && text.len() <= ENTRY_SOURCE_MAX_BYTES
+                        // Terminal reading may preserve this context beside its screen
+                        // reading only when it can bind it to these same producer bytes.
+                        if matches!(
+                            projection,
+                            PerceptProjection::TerminalSense | PerceptProjection::ScreenTalent
+                        ) && text.len() <= ENTRY_SOURCE_MAX_BYTES
                         {
                             let (records, unparsed_lines) = parse_raw_percept_records(&text);
                             let mut offset = 0;
@@ -1161,6 +1168,26 @@ fn raw_content_with_speakers(
     let (header, chunks, error, tmux_chunk_indices) = match (family, projection) {
         (RawPerceptFamily::RawScreen, PerceptProjection::ScreenTalent) => {
             let produced = produce_screen_talent_raw_screen_chunks(&rel, &text);
+            // A tmux capture keeps its records for Screen's terminal reading.
+            if !produced.tmux_chunk_indices.is_empty() && text.len() <= TERMINAL_SOURCE_MAX_BYTES {
+                let (records, unparsed_lines) = parse_raw_percept_records(&text);
+                source = Some(EntrySource {
+                    path: path.to_owned(),
+                    sha256: source_sha256.clone(),
+                    rendered_range: 0..0,
+                    stream: segment.record_stream().map(str::to_owned),
+                    file: name.to_owned(),
+                    chunks: produced
+                        .chunks
+                        .iter()
+                        .filter_map(|chunk| Some((chunk.content.clone(), chunk.source.clone()?)))
+                        .collect(),
+                    chunk_offsets: Vec::new(),
+                    records,
+                    unparsed_lines,
+                    voice_named: BTreeSet::new(),
+                });
+            }
             (
                 produced.header,
                 produced.chunks,
@@ -1172,7 +1199,7 @@ fn raw_content_with_speakers(
             let (records, unparsed_lines) = parse_raw_percept_records(&text);
             let produced = produce_raw_percept_chunks_by_shape(family, Some(&rel), &records);
             let source_limit = if projection == PerceptProjection::TerminalSense {
-                8 * 1024 * 1024
+                TERMINAL_SOURCE_MAX_BYTES
             } else {
                 ENTRY_SOURCE_MAX_BYTES
             };

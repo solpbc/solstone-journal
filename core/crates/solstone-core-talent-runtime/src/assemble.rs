@@ -81,22 +81,7 @@ pub fn assemble_prompt_preview(
             },
         ]
     });
-    let parts = prepared
-        .terminal_sense
-        .as_ref()
-        .map(|candidate| {
-            let mut parts = candidate.request.contents.clone();
-            if let Some(system) = &candidate.request.system_instruction {
-                parts.insert(
-                    0,
-                    ContentPart::Text {
-                        text: system.clone(),
-                    },
-                );
-            }
-            parts
-        })
-        .or(framed)
+    let parts = framed
         .unwrap_or_else(|| generate_contents(&prepared))
         .into_iter()
         .filter_map(|part| match part {

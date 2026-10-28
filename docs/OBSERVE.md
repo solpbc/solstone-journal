@@ -177,6 +177,6 @@ The [producer's frame format](https://github.com/solpbc/solstone-tmux/blob/main/
 defines `content.tmux.panes`. Alongside screen text and geometry, new frames may
 include `cursor_x`, `cursor_y`, `cursor_visible`, `alternate_on`, and
 `pane_in_mode`. Older frames omit them. These fields remain in stored originals;
-the native screen-talent projection and the terminal Sense timeline ignore them, and terminal Sense reads the cursor and pane mode to find typed input ([THINK.md](THINK.md) § Terminal segment Sense).
+the native screen-talent projection ignores them, and terminal Sense reads the cursor and pane mode to find typed input ([THINK.md](THINK.md) § Terminal segments).
 The raw frame codec remains lossless. Cursor and mode changes alone do not make
 the producer save another screen.

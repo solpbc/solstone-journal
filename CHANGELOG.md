@@ -12,6 +12,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- when everything that went into your journal for a stretch came from your terminal, that stretch's description and its screen description are now written from what you typed at the prompt (with an up-to-date solstone for tmux) and the new lines on screen, with repeats read once, sized to fit even the local model. before, much of a long terminal stretch went unread, and its screen description came in several pieces joined together.
 - the `journal` command is gone on every platform; use `solstone journal` instead.
 
 ### Fixed
@@ -65,8 +66,6 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - work stories use the original material when it fits. when your journal thinks on your computer, with a model at your own URL, or with confidential processing, and the original is too long, they use saved screen descriptions and topics to leave more room for the activity. spoken words and other context stay alongside them.
 - work stories can quote up to five messages shown on screen. the quotes are labelled unverified, with the time they entered your journal kept separate from the message date.
 - on mac, local thinking now starts directly in the runtime included with your journal. leftovers from the 2.0.58 switch can no longer stop it. if that runtime's model is still downloading, local thinking waits for it. files from the older runtime stay on your mac.
-- when everything that went into your journal for a stretch came from your terminal, the description of that stretch is now written from a compact timeline of what changed on screen, so far less of a long stretch is cut to fit.
-- when a stretch came only from your terminal and you typed in it, its description now follows what you typed in your shell or another program in your terminal, using where your cursor sits on the screen. this needs an up-to-date solstone app for tmux. before, only typing in one AI assistant's input box counted.
 
 ### Fixed
 

@@ -316,7 +316,7 @@ pub(crate) fn execute_with_paths(
                 format!("unsupported talent type: {talent_type}"),
             ));
         }
-        match crate::generate_response(&mut prepared, generate, writer, cancellation) {
+        match crate::generate_response(&mut prepared, generate, writer) {
             Ok((response, usage, degraded)) => (response, usage, degraded),
             Err(_) if cancellation.is_cancelled() => return RuntimeOutcome::Cancelled,
             Err(outcome) => return outcome,
