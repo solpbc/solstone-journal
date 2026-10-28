@@ -400,12 +400,12 @@ static ARTIFACTS: &[Artifact] = &[
     },
     Artifact {
         unit: "llama-server-cuda",
-        version: "b11669",
-        filename: "llama-b11669-bin-linux-cuda13-amd64-sol1.tar.gz",
-        sha256: "2288ff1960305206f11495c3407caf9f196bc8510ca9016c9bc3b5054f9db80d",
-        size_bytes: 592895506,
-        upstream_url: "https://updates.solstone.app/runtimes/llama-cuda13/b11669/llama-b11669-bin-linux-cuda13-amd64-sol1.tar.gz",
-        origin_key: "runtimes/llama-cuda13/b11669/llama-b11669-bin-linux-cuda13-amd64-sol1.tar.gz",
+        version: "b11960",
+        filename: "llama-b11960-bin-linux-cuda13-amd64-sol1.tar.gz",
+        sha256: "3ccec5a44eaad84cce4320eca17289d112c27f71ad906b69dceeb451d5fba25e",
+        size_bytes: 598930370,
+        upstream_url: "https://updates.solstone.app/runtimes/llama-cuda13/b11960/llama-b11960-bin-linux-cuda13-amd64-sol1.tar.gz",
+        origin_key: "runtimes/llama-cuda13/b11960/llama-b11960-bin-linux-cuda13-amd64-sol1.tar.gz",
         artifact_key: Some("x86_64-unknown-linux-gnu"),
         platform: Some(Platform::LinuxX64),
         backend: None,
@@ -413,12 +413,12 @@ static ARTIFACTS: &[Artifact] = &[
     },
     Artifact {
         unit: "llama-server-cuda",
-        version: "b11669",
-        filename: "llama-b11669-bin-linux-cuda13-arm64-sol1.tar.gz",
-        sha256: "e7cee5a124adb5d93f2ada5bb26ddab123f07ae0d4cef5ec8fb922d63e939509",
-        size_bytes: 700854480,
-        upstream_url: "https://updates.solstone.app/runtimes/llama-cuda13/b11669/llama-b11669-bin-linux-cuda13-arm64-sol1.tar.gz",
-        origin_key: "runtimes/llama-cuda13/b11669/llama-b11669-bin-linux-cuda13-arm64-sol1.tar.gz",
+        version: "b11960",
+        filename: "llama-b11960-bin-linux-cuda13-arm64-sol1.tar.gz",
+        sha256: "b80a4a657c6f06ded0ae1bef4b1ff32553529d3a0efa57a0b682753ff43e0532",
+        size_bytes: 706647607,
+        upstream_url: "https://updates.solstone.app/runtimes/llama-cuda13/b11960/llama-b11960-bin-linux-cuda13-arm64-sol1.tar.gz",
+        origin_key: "runtimes/llama-cuda13/b11960/llama-b11960-bin-linux-cuda13-arm64-sol1.tar.gz",
         artifact_key: Some("aarch64-unknown-linux-gnu"),
         platform: Some(Platform::LinuxArm64),
         backend: None,
@@ -1635,14 +1635,15 @@ mod tests {
             );
         }
 
-        assert!(exceptions.iter().any(|artifact| {
-            artifact.origin_key
-                == "runtimes/llama-cuda13/b11669/llama-b11669-bin-linux-cuda13-amd64-sol1.tar.gz"
-        }));
-        assert!(exceptions.iter().any(|artifact| {
-            artifact.origin_key
-                == "runtimes/llama-cuda13/b11669/llama-b11669-bin-linux-cuda13-arm64-sol1.tar.gz"
-        }));
+        for artifact in exceptions {
+            assert_eq!(
+                artifact.origin_key,
+                format!(
+                    "runtimes/llama-cuda13/{}/{}",
+                    artifact.version, artifact.filename
+                )
+            );
+        }
     }
 
     #[test]

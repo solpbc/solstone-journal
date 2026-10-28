@@ -2152,6 +2152,9 @@ fn warmup_health_probe(port: u16) -> WarmupHealth {
     WarmupHealth::Failed
 }
 
+#[cfg(all(test, target_os = "linux", feature = "full-tests"))]
+pub(crate) use tests::write_linux_runtime_tree_in_module;
+
 #[cfg(test)]
 mod tests {
     #[cfg(all(unix, feature = "full-tests"))]
@@ -4164,6 +4167,3 @@ mod tests {
         assert_eq!(spawn_count.load(std::sync::atomic::Ordering::SeqCst), 0);
     }
 }
-
-#[cfg(all(test, target_os = "linux", feature = "full-tests"))]
-pub(crate) use tests::write_linux_runtime_tree_in_module;

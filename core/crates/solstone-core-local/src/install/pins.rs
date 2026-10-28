@@ -35,15 +35,15 @@ pub const LLAMA_SERVER_PINS: &[(&str, &str, &str, &str, &str)] = &[
 pub const CUDA_ARTIFACTS: &[(&str, &str, &str, u64)] = &[
     (
         "x86_64-unknown-linux-gnu",
-        "https://updates.solstone.app/runtimes/llama-cuda13/b11669/llama-b11669-bin-linux-cuda13-amd64-sol1.tar.gz",
-        "2288ff1960305206f11495c3407caf9f196bc8510ca9016c9bc3b5054f9db80d",
-        592895506,
+        "https://updates.solstone.app/runtimes/llama-cuda13/b11960/llama-b11960-bin-linux-cuda13-amd64-sol1.tar.gz",
+        "3ccec5a44eaad84cce4320eca17289d112c27f71ad906b69dceeb451d5fba25e",
+        598930370,
     ),
     (
         "aarch64-unknown-linux-gnu",
-        "https://updates.solstone.app/runtimes/llama-cuda13/b11669/llama-b11669-bin-linux-cuda13-arm64-sol1.tar.gz",
-        "e7cee5a124adb5d93f2ada5bb26ddab123f07ae0d4cef5ec8fb922d63e939509",
-        700854480,
+        "https://updates.solstone.app/runtimes/llama-cuda13/b11960/llama-b11960-bin-linux-cuda13-arm64-sol1.tar.gz",
+        "b80a4a657c6f06ded0ae1bef4b1ff32553529d3a0efa57a0b682753ff43e0532",
+        706647607,
     ),
 ];
 
@@ -630,6 +630,7 @@ pub fn vulkan_identity(key: &str) -> Option<Value> {
 pub const CUDA_RELEASE_REVISIONS: &[(&str, &str)] = &[
     ("b11429", "d81235049384534c167caea52b85a694f6103d14"),
     ("b11669", "620d2225cc436ab0b001e3200e590e3b286ef9ab"),
+    ("b11960", "8642541b255bfb5dc39cd351a178be09013a55d6"),
 ];
 
 pub fn cuda_identity(key: &str) -> Option<Value> {
@@ -645,33 +646,33 @@ pub fn cuda_identity(key: &str) -> Option<Value> {
         "amd64" => json!([
             {
                 "role": "engine",
-                "filename": "llama-b11669-bin-ubuntu-cuda-13.4-x64.tar.gz",
-                "sha256": "80878473d27278dbe9c38fb7e704f292a51e889d3c28a1e863137cdee1e2ba4e",
-                "size_bytes": 153679828,
-                "url_prefix": "https://github.com/ggml-org/llama.cpp/releases/download/b11669/"
+                "filename": "llama-b11960-bin-ubuntu-cuda-13.4-x64.tar.gz",
+                "sha256": "0cf758b28483593a5a15e0d2c9b686c40840d1f8be9b5bb2417f04a053113907",
+                "size_bytes": 163957335,
+                "url_prefix": "https://github.com/ggml-org/llama.cpp/releases/download/b11960/"
             },
             {
                 "role": "cudart",
-                "filename": "cudart-llama-b11669-bin-ubuntu-cuda-13.4-x64.tar.gz",
-                "sha256": "1108bd9300a281e8eabb18d3fa028d4240ecd983f9f90dbbbc3297671016d697",
-                "size_bytes": 440236547,
-                "url_prefix": "https://github.com/ggml-org/llama.cpp/releases/download/b11669/"
+                "filename": "cudart-llama-b11960-bin-ubuntu-cuda-13.4-x64.tar.gz",
+                "sha256": "756e14988abb5daa60d25f27a9766a9a78f04c88647c4b92a88fb749488d72f7",
+                "size_bytes": 440232534,
+                "url_prefix": "https://github.com/ggml-org/llama.cpp/releases/download/b11960/"
             }
         ]),
         "arm64" => json!([
             {
                 "role": "engine",
-                "filename": "llama-b11669-bin-ubuntu-cuda-13.4-arm64.tar.gz",
-                "sha256": "19902edd0c02942ac736c2dea5e104ff219a196a5cd07f125a7adcd44c103e6b",
-                "size_bytes": 149286186,
-                "url_prefix": "https://github.com/ggml-org/llama.cpp/releases/download/b11669/"
+                "filename": "llama-b11960-bin-ubuntu-cuda-13.4-arm64.tar.gz",
+                "sha256": "a66743e250e2975d7181b9f51048bfbea7903106035b711bea5c552360323452",
+                "size_bytes": 159059972,
+                "url_prefix": "https://github.com/ggml-org/llama.cpp/releases/download/b11960/"
             },
             {
                 "role": "cudart",
-                "filename": "cudart-llama-b11669-bin-ubuntu-cuda-13.4-arm64.tar.gz",
-                "sha256": "6c81453d16a574eef3273662a7a8ceafa3537699a5b2ffec3fc853eb1a08f67c",
-                "size_bytes": 552521396,
-                "url_prefix": "https://github.com/ggml-org/llama.cpp/releases/download/b11669/"
+                "filename": "cudart-llama-b11960-bin-ubuntu-cuda-13.4-arm64.tar.gz",
+                "sha256": "4b20f8c8dab2eb49c9f46ab93e11858877f1c031696f665ed5584b045187d0a0",
+                "size_bytes": 552521522,
+                "url_prefix": "https://github.com/ggml-org/llama.cpp/releases/download/b11960/"
             }
         ]),
         _ => return None,

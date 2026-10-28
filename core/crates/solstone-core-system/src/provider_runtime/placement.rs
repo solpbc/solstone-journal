@@ -33,8 +33,10 @@ const CAPABLE_TIER: ServerTier = ServerTier {
 const FLOOR_TIER: ServerTier = ServerTier {
     name: "floor",
     // Measured peak device memory of the bundled model and projector at the
-    // 32,768-token floor window after a full-window request.
-    resident_mib: Some(4668),
+    // 32,768-token floor window after a full-window request. The 2026-10-28
+    // high-resolution image comparison peaked at 5,312 MiB (GB10 CUDA);
+    // round up to 5.5 GiB across the selected floor backends.
+    resident_mib: Some(5632),
 };
 
 fn select_server_tier(vram_mib: u32) -> ServerTier {
@@ -304,21 +306,24 @@ mod tests {
 
     #[test]
     fn floor_tier_with_ample_vram_fits_gpu() {
-        // required = 4668 + 2947 + 1024 = 8639
-        let decision = decide_parakeet_auto_placement(Some(8639), true, 1, false, true);
+        let required =
+            FLOOR_TIER.resident_mib.unwrap() + PARAKEET_WORST_CASE_MIB + CO_FIT_MARGIN_MIB;
+        let decision = decide_parakeet_auto_placement(Some(required), true, 1, false, true);
         assert!(!decision.force_cpu);
         assert_eq!(decision.reason_code, "co_location_fits_gpu");
         assert_eq!(decision.tier_name, Some("floor"));
-        assert_eq!(decision.required_mib, Some(8639));
+        assert_eq!(decision.required_mib, Some(required));
     }
 
     #[test]
     fn floor_tier_one_mib_short_of_required_forces_cpu() {
-        let decision = decide_parakeet_auto_placement(Some(8638), true, 1, false, true);
+        let required =
+            FLOOR_TIER.resident_mib.unwrap() + PARAKEET_WORST_CASE_MIB + CO_FIT_MARGIN_MIB;
+        let decision = decide_parakeet_auto_placement(Some(required - 1), true, 1, false, true);
         assert!(decision.force_cpu);
         assert_eq!(decision.reason_code, "co_location_requires_cpu");
-        assert_eq!(decision.required_mib, Some(8639));
-        assert_eq!(decision.vram_mib, Some(8638));
+        assert_eq!(decision.required_mib, Some(required));
+        assert_eq!(decision.vram_mib, Some(required - 1));
     }
 
     #[test]

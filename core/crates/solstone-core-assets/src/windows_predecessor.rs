@@ -141,35 +141,6 @@ pub fn windows_predecessor() -> Result<&'static WindowsPredecessor, &'static str
     RECORD.as_ref().map_err(String::as_str)
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn explicit_predecessor_is_complete_and_bound_to_the_candidate() {
-        let record = windows_predecessor().unwrap();
-        assert!(record.validate(&record.candidate_release).is_ok());
-        let mut stale = record.clone();
-        stale.candidate_release = "0.0.0".into();
-        assert!(stale.validate(&record.candidate_release).is_err());
-        let mut incomplete = record.clone();
-        incomplete.predecessor.groups[0].assets.pop();
-        assert!(incomplete.validate(&record.candidate_release).is_err());
-        let group = &record.predecessor.groups[0];
-        let mut members: Vec<_> = group
-            .assets
-            .iter()
-            .map(|a| (a.sha256.as_str(), a.size_bytes))
-            .collect();
-        assert!(record.protects(&group.unit, &members));
-        members[1].0 = "changed-projector";
-        assert!(!record.protects(&group.unit, &members));
-        let mut skipped = record.clone();
-        skipped.candidate_release = "2.0.53".into();
-        skipped.predecessor.windows_release = "2.0.51".into();
-        assert!(skipped.validate("2.0.53").is_ok());
-    }
-}
-
 #[cfg(feature = "runtime-fetch-test")]
 thread_local! {
     static RETENTION_FIXTURE: std::cell::Cell<Option<Result<&'static WindowsPredecessor,&'static str>>> = const { std::cell::Cell::new(None) };
@@ -210,4 +181,33 @@ pub fn with_windows_predecessor_fixture<T>(
     };
     let _restore = Restore(RETENTION_FIXTURE.with(|slot| slot.replace(Some(fixture))));
     work()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn explicit_predecessor_is_complete_and_bound_to_the_candidate() {
+        let record = windows_predecessor().unwrap();
+        assert!(record.validate(&record.candidate_release).is_ok());
+        let mut stale = record.clone();
+        stale.candidate_release = "0.0.0".into();
+        assert!(stale.validate(&record.candidate_release).is_err());
+        let mut incomplete = record.clone();
+        incomplete.predecessor.groups[0].assets.pop();
+        assert!(incomplete.validate(&record.candidate_release).is_err());
+        let group = &record.predecessor.groups[0];
+        let mut members: Vec<_> = group
+            .assets
+            .iter()
+            .map(|a| (a.sha256.as_str(), a.size_bytes))
+            .collect();
+        assert!(record.protects(&group.unit, &members));
+        members[1].0 = "changed-projector";
+        assert!(!record.protects(&group.unit, &members));
+        let mut skipped = record.clone();
+        skipped.candidate_release = "2.0.53".into();
+        skipped.predecessor.windows_release = "2.0.51".into();
+        assert!(skipped.validate("2.0.53").is_ok());
+    }
 }

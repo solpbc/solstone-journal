@@ -525,7 +525,8 @@ fn guard_outgoing_vulkan_keys_pinned_by_historical_releases_not_head() {
 }
 
 #[test]
-fn guard_selected_b11669_keys_are_pinned_by_head_and_any_release_owners() {
+fn guard_b11669_keys_keep_release_owners_and_head_when_selected() {
+    let head = crate::pins::head_origin_pins().unwrap();
     // 2.0.48 shipped these two and 2.0.49 all five. Their snapshots are closed,
     // so their ownership is required here rather than derived from the
     // snapshot under test.
@@ -556,7 +557,9 @@ fn guard_selected_b11669_keys_are_pinned_by_head_and_any_release_owners() {
             owners.contains(&PinOwner::Release("2.0.49".to_owned())),
             "2.0.49 must retain its b11669 key: {key}"
         );
-        owners.push(PinOwner::HeadUnreleased);
+        if head.iter().any(|pin| pin.origin_key == key) {
+            owners.push(PinOwner::HeadUnreleased);
+        }
         assert_eq!(
             assess_prune_with_current_support(key).unwrap(),
             PruneAssessment::PinnedBy { owners }

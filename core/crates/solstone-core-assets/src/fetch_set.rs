@@ -170,6 +170,18 @@ pub fn cmp_utf16_code_units(a: &str, b: &str) -> Ordering {
     a.encode_utf16().cmp(b.encode_utf16())
 }
 
+fn find_runtime_catalog_row(unit: &str, artifact_key: &str) -> &'static Artifact {
+    let mut rows = catalog()
+        .iter()
+        .filter(|row| row.unit == unit && row.artifact_key == Some(artifact_key));
+    let row = rows.next().expect("runtime artifact is cataloged");
+    assert!(
+        rows.next().is_none(),
+        "runtime artifact selection is unique"
+    );
+    row
+}
+
 fn find_catalog_row(unit: &str, filename: &str, artifact_key: Option<&str>) -> &'static Artifact {
     catalog()
         .iter()
@@ -243,11 +255,7 @@ pub(crate) fn candidates(target: &str) -> Result<Vec<RuntimeFetch>, FetchSetErro
             });
 
             // llama-server-vulkan x86_64
-            let a = find_catalog_row(
-                "llama-server-vulkan",
-                "llama-b11669-bin-ubuntu-vulkan-x64.tar.gz",
-                Some("x86_64-unknown-linux-gnu"),
-            );
+            let a = find_runtime_catalog_row("llama-server-vulkan", "x86_64-unknown-linux-gnu");
             rows.push(RuntimeFetch {
                 unit: a.unit,
                 origin_key: a.origin_key,
@@ -334,11 +342,7 @@ pub(crate) fn candidates(target: &str) -> Result<Vec<RuntimeFetch>, FetchSetErro
             rows.push(nvattest_row("linux-x86_64"));
 
             // llama-server-cuda x86_64
-            let a = find_catalog_row(
-                "llama-server-cuda",
-                "llama-b11669-bin-linux-cuda13-amd64-sol1.tar.gz",
-                Some("x86_64-unknown-linux-gnu"),
-            );
+            let a = find_runtime_catalog_row("llama-server-cuda", "x86_64-unknown-linux-gnu");
             rows.push(RuntimeFetch {
                 unit: a.unit,
                 origin_key: a.origin_key,
@@ -370,11 +374,7 @@ pub(crate) fn candidates(target: &str) -> Result<Vec<RuntimeFetch>, FetchSetErro
             });
 
             // llama-server-vulkan arm64
-            let a = find_catalog_row(
-                "llama-server-vulkan",
-                "llama-b11669-bin-ubuntu-vulkan-arm64.tar.gz",
-                Some("aarch64-unknown-linux-gnu"),
-            );
+            let a = find_runtime_catalog_row("llama-server-vulkan", "aarch64-unknown-linux-gnu");
             rows.push(RuntimeFetch {
                 unit: a.unit,
                 origin_key: a.origin_key,
@@ -461,11 +461,7 @@ pub(crate) fn candidates(target: &str) -> Result<Vec<RuntimeFetch>, FetchSetErro
             rows.push(nvattest_row("linux-aarch64"));
 
             // llama-server-cuda arm64
-            let a = find_catalog_row(
-                "llama-server-cuda",
-                "llama-b11669-bin-linux-cuda13-arm64-sol1.tar.gz",
-                Some("aarch64-unknown-linux-gnu"),
-            );
+            let a = find_runtime_catalog_row("llama-server-cuda", "aarch64-unknown-linux-gnu");
             rows.push(RuntimeFetch {
                 unit: a.unit,
                 origin_key: a.origin_key,
@@ -625,7 +621,6 @@ mod tests {
     use super::*;
 
     const ORACLE_LINUX_X86_64: &[&str] = &[
-        "assets/llama-server-vulkan/b11669/llama-b11669-bin-ubuntu-vulkan-x64.tar.gz",
         "assets/local-model/e87f176479d0855a907a41277aca2f8ee7a09523/Qwen3.5-4B-Q4_K_M.gguf",
         "assets/local-model/e87f176479d0855a907a41277aca2f8ee7a09523/mmproj-F16.gguf",
         "assets/location-accuracy/overture-2026-09-23.1-r2/containment.slpk",
@@ -633,11 +628,9 @@ mod tests {
         "assets/parakeet-model/bf0af9f425fa01809cadec671b3cb672709d13e9/tdt-0.6b-v3-q8_0.gguf",
         "assets/parakeet-server/v0.6.1/parakeet-v0.6.1-bin-linux-cpu-x64.tar.gz",
         "assets/parakeet-server/v0.6.1/parakeet-v0.6.1-bin-linux-vulkan-x64.tar.gz",
-        "runtimes/llama-cuda13/b11669/llama-b11669-bin-linux-cuda13-amd64-sol1.tar.gz",
     ];
 
     const ORACLE_LINUX_AARCH64: &[&str] = &[
-        "assets/llama-server-vulkan/b11669/llama-b11669-bin-ubuntu-vulkan-arm64.tar.gz",
         "assets/local-model/e87f176479d0855a907a41277aca2f8ee7a09523/Qwen3.5-4B-Q4_K_M.gguf",
         "assets/local-model/e87f176479d0855a907a41277aca2f8ee7a09523/mmproj-F16.gguf",
         "assets/location-accuracy/overture-2026-09-23.1-r2/containment.slpk",
@@ -645,7 +638,6 @@ mod tests {
         "assets/parakeet-model/bf0af9f425fa01809cadec671b3cb672709d13e9/tdt-0.6b-v3-q8_0.gguf",
         "assets/parakeet-server/v0.6.1/parakeet-v0.6.1-bin-linux-cpu-arm64.tar.gz",
         "assets/parakeet-server/v0.6.1/parakeet-v0.6.1-bin-linux-vulkan-arm64.tar.gz",
-        "runtimes/llama-cuda13/b11669/llama-b11669-bin-linux-cuda13-arm64-sol1.tar.gz",
     ];
 
     const ORACLE_MACOS_ARM64: &[&str] = &[
@@ -698,7 +690,21 @@ mod tests {
                 .filter(|f| f.unit() != "local-model-mlx")
                 .map(RuntimeFetch::origin_key)
                 .collect();
-            assert_eq!(keys, oracle, "mismatch for {target}");
+            let mut expected = oracle.to_vec();
+            let platform = match target {
+                "linux-x86_64" => Some(crate::Platform::LinuxX64),
+                "linux-aarch64" => Some(crate::Platform::LinuxArm64),
+                _ => None,
+            };
+            if let Some(platform) = platform {
+                for unit in ["llama-server-vulkan", "llama-server-cuda"] {
+                    for artifact in crate::resolve(unit, Some(platform), None) {
+                        expected.push(artifact.origin_key);
+                    }
+                }
+            }
+            expected.sort_by(|a, b| cmp_utf16_code_units(a, b));
+            assert_eq!(keys, expected, "mismatch for {target}");
         }
     }
 
