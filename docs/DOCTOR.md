@@ -313,6 +313,7 @@ solstone journal backup run
     <key>ProgramArguments</key>
     <array>
         <string>/Users/YOU/.local/bin/solstone</string>
+        <string>journal</string>
         <string>spl</string>
     </array>
     <key>EnvironmentVariables</key>
@@ -338,6 +339,7 @@ solstone journal backup run
     <key>ProgramArguments</key>
     <array>
         <string>/Users/YOU/.local/bin/solstone</string>
+        <string>journal</string>
         <string>backup</string>
         <string>run</string>
     </array>
