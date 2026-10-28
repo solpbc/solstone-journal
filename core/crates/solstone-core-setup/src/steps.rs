@@ -441,7 +441,7 @@ impl<'a> SetupContext<'a> {
 /// macOS currently implements the app-owned-child signal; native supervisor conflict
 /// state has no reusable typed seam yet and deliberately remains a conservative false.
 pub fn native_already_keeps_journal_probe(context: &SetupContext<'_>) -> Result<bool, String> {
-    let journal = wrapper_paths(&context.home_dir).journal;
+    let journal = wrapper_paths(&context.home_dir).legacy_journal;
     // solstone-macos still writes the app-owned-child marker at this path.
     // Do not derive it from WrapperPaths; this repo only reads that file.
     let macos_app_owned_sol = context.home_dir.join(".local/bin/sol");
@@ -1284,7 +1284,7 @@ fn narrate_success(context: &SetupContext<'_>, manifest: &SetupManifest) {
     let installer_owns_handoff =
         std::env::var("SOLSTONE_INSTALLER_NO_HANDOFF").as_deref() == Ok("1");
     let close = determine_setup_close(context.args.skip_service, installer_owns_handoff, complete);
-    let url = journal_url(&context.journal_path, context.args.port);
+    let url = journal_url(&context.journal_path, effective_port(context));
     match close {
         SetupClose::SkipService => {
             println!();
@@ -1302,7 +1302,56 @@ fn narrate_success(context: &SetupContext<'_>, manifest: &SetupManifest) {
     }
 }
 
-/// The port the running journal published, else the one setup was asked to use.
+/// The port a service install should publish when `--port` was omitted.
+///
+/// Reads the unit `service_artifact_path` returns. An absent or unreadable
+/// unit uses 5015. This does not mark the flag as supplied.
+pub(crate) fn installed_service_port(home: &Path) -> u16 {
+    const DEFAULT_PORT: u16 = 5015;
+    let Ok(Some(path)) = service_artifact_path(home) else {
+        return DEFAULT_PORT;
+    };
+    read_installed_service_port(&path).unwrap_or(DEFAULT_PORT)
+}
+
+fn read_installed_service_port(path: &Path) -> Option<u16> {
+    #[cfg(target_os = "linux")]
+    {
+        let text = fs::read_to_string(path).ok()?;
+        solstone_core_service_unit::systemd_unit_port(&text)?
+            .parse()
+            .ok()
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let bytes = fs::read(path).ok()?;
+        solstone_core_service_unit::launchd_plist_port(&bytes)?
+            .parse()
+            .ok()
+    }
+    #[cfg(windows)]
+    {
+        let bytes = fs::read(path).ok()?;
+        let xml = solstone_core_service_unit::decode_windows_task_xml(&bytes).ok()?;
+        let definition = solstone_core_service_unit::parse_windows_task_xml(&xml).ok()?;
+        Some(definition.action.port)
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
+    {
+        let _ = path;
+        None
+    }
+}
+
+fn effective_port(context: &SetupContext<'_>) -> u16 {
+    if context.args.port_supplied() {
+        context.args.port
+    } else {
+        installed_service_port(&context.home_dir)
+    }
+}
+
+/// The port the running journal published, else the one setup resolved.
 fn journal_url(journal: &Path, configured_port: u16) -> String {
     let published = fs::read_to_string(journal.join("health/convey.port"))
         .ok()
@@ -1350,7 +1399,7 @@ fn command_for_step(context: &SetupContext<'_>, name: StepName) -> Option<Vec<St
             "--readiness".into(),
             if context.jsonl() { "--jsonl" } else { "--json" }.into(),
             "--port".into(),
-            context.args.port.to_string(),
+            effective_port(context).to_string(),
         ])),
         StepName::InstallModels => Some(journal(vec![
             "install-models".into(),
@@ -1372,12 +1421,11 @@ fn command_for_step(context: &SetupContext<'_>, name: StepName) -> Option<Vec<St
             "all".into(),
         ])),
         StepName::Service if !context.sol_already_keeps_journal() || context.args.skip_service => {
-            let mut args = vec![
-                "service".into(),
-                "install".into(),
-                "--port".into(),
-                context.args.port.to_string(),
-            ];
+            let mut args = vec!["service".into(), "install".into()];
+            if context.args.port_supplied() {
+                args.push("--port".into());
+                args.push(context.args.port.to_string());
+            }
             append_initial_start_at_sign_in(&mut args, context.args.initial_start_at_sign_in);
             Some(journal(args))
         }
@@ -1461,7 +1509,7 @@ fn step_doctor(context: &mut SetupContext<'_>) -> Result<StepResult, StepExecuti
                 "--json".into()
             },
             "--port".into(),
-            context.args.port.to_string(),
+            effective_port(context).to_string(),
         ],
         timeout_seconds: Some(DOCTOR_CEILING_SECONDS),
         idle_timeout_seconds: Some(DOCTOR_SILENCE_SECONDS),
@@ -1934,7 +1982,7 @@ fn step_wrapper(context: &mut SetupContext<'_>) -> Result<StepResult, StepExecut
                 .expect("setup identity admission precedes mutating wrapper step")
                 .binding(),
         ) {
-            Ok(_) => {
+            Ok(provision) => {
                 if context.args.skip_path {
                     narrate(
                         context,
@@ -1943,12 +1991,23 @@ fn step_wrapper(context: &mut SetupContext<'_>) -> Result<StepResult, StepExecut
                 } else {
                     narrate(context, &ensure_user_bin_on_path(&context.home_dir));
                 }
-                Ok(StepResult::new(
+                let mut result = StepResult::new(
                     StepName::Wrapper,
-                    StepStatus::Ok,
-                    vec![paths.solstone, paths.journal],
+                    if provision.legacy_journal_kept_for_service {
+                        StepStatus::Warning
+                    } else {
+                        StepStatus::Ok
+                    },
+                    vec![paths.solstone],
                     (context.now)(),
-                ))
+                );
+                if provision.legacy_journal_kept_for_service {
+                    result.error = Some(StepErrorPayload::WrapperWarning(WrapperWarning {
+                        message: "the service still starts through ~/.local/bin/journal".into(),
+                        fix_hint: "setup removes that wrapper after the service starts through ~/.local/bin/solstone.".into(),
+                    }));
+                }
+                Ok(result)
             }
             Err(error) => Ok(StepResult::failed(
                 StepName::Wrapper,
@@ -1957,14 +2016,14 @@ fn step_wrapper(context: &mut SetupContext<'_>) -> Result<StepResult, StepExecut
                 StepError {
                     code: ErrorCode::WrapperProvisionFailed,
                     message: format!(
-                        "could not provision the solstone/journal wrappers at {} ({}: {error})",
+                        "could not provision the solstone wrapper at {} ({}: {error})",
                         context.home_dir.join(".local/bin").display(),
                         std::any::type_name::<WrapperError>()
                             .rsplit("::")
                             .next()
                             .unwrap_or("WrapperError")
                     ),
-                    details: "fix permissions on ~/.local/bin and re-run `solstone journal setup`, or invoke solstone/journal directly from the runtime".into(),
+                    details: "fix permissions on ~/.local/bin and re-run `solstone journal setup`, or invoke solstone directly from the runtime".into(),
                     exit_code: 1,
                 },
             )),
@@ -2093,12 +2152,12 @@ fn step_service_with_guard(
     // Save all guards before releasing those locks and waiting for the child.
     #[cfg(windows)]
     drop(context.installation_admission.take());
-    let mut args = vec![
-        "journal".into(),
-        "service".into(),
-        "install".into(),
-        "--port".into(),
-        context.args.port.to_string(),
+    let mut args = vec!["journal".into(), "service".into(), "install".into()];
+    if context.args.port_supplied() {
+        args.push("--port".into());
+        args.push(context.args.port.to_string());
+    }
+    args.extend([
         "--installation-namespace".into(),
         service_guard["SOLSTONE_INSTALLATION_NAMESPACE"].clone(),
         "--installation-id".into(),
@@ -2107,7 +2166,7 @@ fn step_service_with_guard(
         service_guard["SOLSTONE_INSTALLATION_GENERATION"].clone(),
         "--installation-journal-token".into(),
         service_guard["SOLSTONE_INSTALLATION_JOURNAL_TOKEN"].clone(),
-    ];
+    ]);
     append_initial_start_at_sign_in(&mut args, context.args.initial_start_at_sign_in);
     let output = context
         .runner
@@ -2839,9 +2898,11 @@ mod tests {
     use crate::events::{EventSink, EventType};
     use crate::manifest::manifest_path;
     use crate::user_config::config_path;
+    use crate::wrapper::{WrapperCommand, render_wrapper_version};
     use solstone_core_installation_identity::{
-        ArtifactBindingEvidence, LegacyManifestEvidence, OwnerBase, PlatformTag,
-        SetupAdmissionRequest, admit_setup, journal_token_from_path, root_token_from_path,
+        ArtifactBindingEvidence, Generation, InstallationId, LegacyManifestEvidence, OwnerBase,
+        PlatformTag, SetupAdmissionRequest, admit_setup, journal_token_from_path,
+        root_token_from_path,
     };
     use std::cell::RefCell;
     use std::collections::VecDeque;
@@ -2853,18 +2914,71 @@ mod tests {
     struct FakeRunner {
         outputs: VecDeque<Result<CommandOutput, String>>,
         requests: Vec<CommandRequest>,
+        /// When set, a service-install argv rewrites that home's unit. Default
+        /// off, so existing tests stay record-only.
+        rewrite_service_unit: Option<PathBuf>,
     }
     impl FakeRunner {
         fn new(outputs: Vec<Result<CommandOutput, String>>) -> Self {
             Self {
                 outputs: outputs.into(),
                 requests: Vec::new(),
+                rewrite_service_unit: None,
+            }
+        }
+
+        fn rewrite_service_units(mut self, home: PathBuf) -> Self {
+            self.rewrite_service_unit = Some(home);
+            self
+        }
+
+        fn maybe_rewrite_unit(&self, request: &CommandRequest) {
+            let Some(home) = &self.rewrite_service_unit else {
+                return;
+            };
+            let args = &request.args;
+            if args.first().map(String::as_str) != Some("journal")
+                || args.get(1).map(String::as_str) != Some("service")
+                || args.get(2).map(String::as_str) != Some("install")
+            {
+                return;
+            }
+            #[cfg(target_os = "linux")]
+            {
+                let supplied = args
+                    .windows(2)
+                    .find_map(|pair| (pair[0] == "--port").then(|| pair[1].clone()));
+                let Ok(Some(path)) = service_artifact_path(home) else {
+                    return;
+                };
+                let port = supplied.unwrap_or_else(|| {
+                    fs::read_to_string(&path)
+                        .ok()
+                        .as_deref()
+                        .and_then(solstone_core_service_unit::systemd_unit_port)
+                        .unwrap_or_else(|| "5015".to_owned())
+                });
+                if let Some(parent) = path.parent() {
+                    let _ = fs::create_dir_all(parent);
+                }
+                let launcher = home.join(".local/bin/solstone");
+                let unit = solstone_core_service_unit::render_systemd_unit(
+                    &std::collections::BTreeMap::new(),
+                    &launcher.to_string_lossy(),
+                    &port,
+                );
+                let _ = fs::write(path, unit);
+            }
+            #[cfg(not(target_os = "linux"))]
+            {
+                let _ = home;
             }
         }
     }
     impl CommandRunner for FakeRunner {
         fn run(&mut self, request: &CommandRequest) -> Result<CommandOutput, String> {
             self.requests.push(request.clone());
+            self.maybe_rewrite_unit(request);
             self.outputs.pop_front().unwrap_or_else(|| {
                 Ok(CommandOutput {
                     exit_code: 0,
@@ -4481,11 +4595,11 @@ mod tests {
             json!({
                 "code": "wrapper_provision_failed",
                 "message": format!(
-                    "could not provision the solstone/journal wrappers at {} (WrapperError: journal path contains shell-active character '$': {:?})",
+                    "could not provision the solstone wrapper at {} (WrapperError: journal path contains shell-active character '$': {:?})",
                     home.join(".local/bin").display(),
                     root.join("bad$journal").to_string_lossy(),
                 ),
-                "details": "fix permissions on ~/.local/bin and re-run `solstone journal setup`, or invoke solstone/journal directly from the runtime",
+                "details": "fix permissions on ~/.local/bin and re-run `solstone journal setup`, or invoke solstone directly from the runtime",
                 "exit_code": 1,
             })
         );
@@ -4522,7 +4636,7 @@ mod tests {
         ))
         .unwrap();
         assert_eq!(result.status, StepStatus::Ok);
-        assert!(home.join(".local/bin/journal").exists());
+        assert!(!home.join(".local/bin/journal").exists());
         assert!(home.join(".local/bin/solstone").exists());
         for login_file in [".profile", ".bashrc", ".zshrc", ".config/fish/config.fish"] {
             assert!(
@@ -5662,6 +5776,732 @@ mod tests {
         );
         assert!(native_already_keeps_journal_probe(&setup).unwrap());
         assert!(!home.join(".local/bin/solstone").exists());
+    }
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    fn guard_of(setup: &SetupContext<'_>) -> GuardFields {
+        GuardFields::from_binding(
+            setup
+                .installation_admission
+                .as_ref()
+                .expect("admission")
+                .binding(),
+        )
+    }
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    fn plant_legacy_journal(
+        home: &Path,
+        journal: &Path,
+        sol_bin: &Path,
+        guard: Option<&GuardFields>,
+        version: u8,
+    ) -> String {
+        let path = home.join(".local/bin/journal");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let body = render_wrapper_version(
+            WrapperCommand::LegacyJournal,
+            journal,
+            sol_bin,
+            guard,
+            version,
+        )
+        .unwrap();
+        fs::write(&path, &body).unwrap();
+        body
+    }
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    fn versioned_install_bin(root: &Path) -> (PathBuf, PathBuf) {
+        let prefix = root.join("prefix");
+        let version = prefix.join("versions/1.0.0-aaaaaaaaaaaa");
+        fs::create_dir_all(version.join("bin")).unwrap();
+        symlink("versions/1.0.0-aaaaaaaaaaaa", prefix.join("current")).unwrap();
+        let current = prefix.join("current/bin");
+        (prefix, current)
+    }
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    fn journal_backup_matches(root: &Path, body: &str) -> bool {
+        let Ok(entries) = fs::read_dir(root.join("wrapper-backups")) else {
+            return false;
+        };
+        entries.filter_map(Result::ok).any(|entry| {
+            entry.file_name().to_string_lossy().contains("journal")
+                && fs::read(entry.path()).ok().as_deref() == Some(body.as_bytes())
+        })
+    }
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    fn wrapper_and_service_specs() -> [StepSpec; 2] {
+        let specs = step_specs();
+        [specs[5], specs[6]]
+    }
+
+    #[cfg(target_os = "linux")]
+    fn write_unit(home: &Path, body: &str) -> PathBuf {
+        let path = home.join(".config/systemd/user/solstone.service");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(&path, body).unwrap();
+        path
+    }
+
+    /// (a) A fresh setup writes the solstone wrapper and no journal wrapper.
+    #[cfg(all(unix, not(target_os = "macos")))]
+    #[test]
+    fn fresh_setup_writes_the_solstone_wrapper_and_no_journal_wrapper() {
+        let (args, resolved, root, home) = fixture("fresh-solstone-wrapper", &[]);
+        fs::create_dir_all(root.join("bin")).unwrap();
+        let mut runner = FakeRunner::new(Vec::new());
+        let mut prompt = Prompt(false);
+        let result = step_wrapper(&mut context(
+            &args,
+            &resolved,
+            &root,
+            &home,
+            &mut runner,
+            &mut prompt,
+            None,
+        ))
+        .unwrap();
+        assert_eq!(result.status, StepStatus::Ok);
+        assert!(home.join(".local/bin/solstone").is_file());
+        assert!(!home.join(".local/bin/journal").exists());
+        assert_eq!(
+            result.paths,
+            vec![home.join(".local/bin/solstone").display().to_string()]
+        );
+    }
+
+    /// (b) Setup removes this installation's journal wrapper, and leaves a
+    /// different installation's file byte-identical.
+    #[cfg(all(unix, not(target_os = "macos")))]
+    #[test]
+    fn setup_retires_this_installations_journal_wrapper_and_backs_it_up() {
+        let removed = [
+            "guarded-previous",
+            "guarded-pruned",
+            "stale-token",
+            "unguarded-v7",
+        ];
+        for name in removed {
+            let (args, resolved, root, home) = fixture(name, &[]);
+            fs::create_dir_all(root.join("bin")).unwrap();
+            let mut runner = FakeRunner::new(Vec::new());
+            let mut prompt = Prompt(false);
+            let mut setup = context(
+                &args,
+                &resolved,
+                &root,
+                &home,
+                &mut runner,
+                &mut prompt,
+                None,
+            );
+            let guard = guard_of(&setup);
+            let (journal, sol_bin, planted_guard, version) = match name {
+                "guarded-previous" | "guarded-pruned" => (
+                    resolved.journal_path.clone(),
+                    root.join("old-version/bin/journal"),
+                    Some(guard.clone()),
+                    8,
+                ),
+                "stale-token" => {
+                    let other = root.join("other-journal");
+                    fs::create_dir_all(&other).unwrap();
+                    let mut stale = guard.clone();
+                    stale.journal_token = journal_token_from_path(&other).unwrap();
+                    (other, root.join("old-version/bin/journal"), Some(stale), 8)
+                }
+                "unguarded-v7" => {
+                    let (prefix, install_bin) = versioned_install_bin(&root);
+                    setup.install_bin_dir = install_bin;
+                    (
+                        resolved.journal_path.clone(),
+                        prefix.join("versions/0.9.0-bbbbbbbbbbbb/bin/journal"),
+                        None,
+                        7,
+                    )
+                }
+                _ => unreachable!(),
+            };
+            let body =
+                plant_legacy_journal(&home, &journal, &sol_bin, planted_guard.as_ref(), version);
+            let result = step_wrapper(&mut setup).unwrap();
+            assert_eq!(result.status, StepStatus::Ok, "{name}");
+            assert!(!home.join(".local/bin/journal").exists(), "{name}");
+            assert!(journal_backup_matches(&root, &body), "{name}");
+            assert!(home.join(".local/bin/solstone").is_file(), "{name}");
+        }
+
+        for name in ["different-id", "different-generation"] {
+            let (args, resolved, root, home) = fixture(name, &[]);
+            fs::create_dir_all(root.join("bin")).unwrap();
+            let mut runner = FakeRunner::new(Vec::new());
+            let mut prompt = Prompt(false);
+            let mut setup = context(
+                &args,
+                &resolved,
+                &root,
+                &home,
+                &mut runner,
+                &mut prompt,
+                None,
+            );
+            let guard = guard_of(&setup);
+            let (prefix, install_bin) = versioned_install_bin(&root);
+            setup.install_bin_dir = install_bin;
+            let mut other = guard.clone();
+            if name == "different-id" {
+                other.id = InstallationId::parse("ffeeddccbbaa99887766554433221100").unwrap();
+            } else {
+                other.generation = Generation::new(guard.generation.get() + 1).unwrap();
+            }
+            let sol_bin = prefix.join("versions/0.9.0-bbbbbbbbbbbb/bin/journal");
+            let body =
+                plant_legacy_journal(&home, &resolved.journal_path, &sol_bin, Some(&other), 8);
+            let result = step_wrapper(&mut setup).unwrap();
+            assert_eq!(result.status, StepStatus::Ok, "{name}");
+            assert_eq!(
+                fs::read_to_string(home.join(".local/bin/journal")).unwrap(),
+                body,
+                "{name}"
+            );
+            assert!(!journal_backup_matches(&root, &body), "{name}");
+        }
+    }
+
+    /// (c) `--skip-service` still retires an owned journal wrapper.
+    #[cfg(all(unix, not(target_os = "macos")))]
+    #[test]
+    fn skip_service_still_retires_an_owned_journal_wrapper() {
+        let (args, resolved, root, home) = fixture("skip-service-retire", &["--skip-service"]);
+        fs::create_dir_all(root.join("bin")).unwrap();
+        let mut runner = FakeRunner::new(Vec::new());
+        let mut prompt = Prompt(false);
+        let mut setup = context(
+            &args,
+            &resolved,
+            &root,
+            &home,
+            &mut runner,
+            &mut prompt,
+            None,
+        );
+        let guard = guard_of(&setup);
+        let body = plant_legacy_journal(
+            &home,
+            &resolved.journal_path,
+            &root.join("missing-version/bin/journal"),
+            Some(&guard),
+            8,
+        );
+        let result = step_wrapper(&mut setup).unwrap();
+        assert_eq!(result.status, StepStatus::Ok);
+        assert!(!home.join(".local/bin/journal").exists());
+        assert!(journal_backup_matches(&root, &body));
+    }
+
+    /// (d) A unit that still execs `~/.local/bin/journal` keeps that wrapper
+    /// until a later run sees a solstone start program.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn legacy_unit_keeps_the_journal_wrapper_until_the_service_moves() {
+        let (args, resolved, root, home) = fixture("legacy-unit-keep", &["--jsonl"]);
+        fs::create_dir_all(root.join("bin")).unwrap();
+        let legacy = format!(
+            "[Service]\nExecStart={} start 6123\n",
+            home.join(".local/bin/journal").display()
+        );
+        write_unit(&home, &legacy);
+        let mut runner = FakeRunner::new(Vec::new()).rewrite_service_units(home.clone());
+        let mut prompt = Prompt(false);
+        let mut recorder = FieldRecorder::default();
+        let mut setup = context(
+            &args,
+            &resolved,
+            &root,
+            &home,
+            &mut runner,
+            &mut prompt,
+            Some(&mut recorder),
+        );
+        let guard = guard_of(&setup);
+        let body = plant_legacy_journal(
+            &home,
+            &resolved.journal_path,
+            &root.join("bin/journal"),
+            Some(&guard),
+            8,
+        );
+        let outcome = run_setup(&mut setup, &wrapper_and_service_specs());
+        assert_eq!(outcome.exit_code, 0);
+        let manifest = read_manifest(&setup.manifest_path).unwrap();
+        let wrapper = manifest
+            .steps
+            .iter()
+            .find(|step| step["name"] == "wrapper")
+            .unwrap();
+        assert_eq!(wrapper["status"], "warning");
+        assert_eq!(
+            wrapper["error"]["message"],
+            "the service still starts through ~/.local/bin/journal"
+        );
+        assert_eq!(
+            wrapper["paths"],
+            json!([home.join(".local/bin/solstone").display().to_string()])
+        );
+        assert_eq!(
+            fs::read_to_string(home.join(".local/bin/journal")).unwrap(),
+            body
+        );
+        drop(setup);
+        let install = runner
+            .requests
+            .iter()
+            .find(|request| {
+                request.args.get(1).map(String::as_str) == Some("service")
+                    && request.args.get(2).map(String::as_str) == Some("install")
+            })
+            .unwrap();
+        assert!(!install.args.iter().any(|arg| arg == "--port"));
+        let unit = fs::read_to_string(home.join(".config/systemd/user/solstone.service")).unwrap();
+        assert!(unit.contains(&home.join(".local/bin/solstone").display().to_string()));
+        assert!(!unit.contains(&home.join(".local/bin/journal").display().to_string()));
+        assert!(unit.contains("6123"));
+        assert!(recorder.0.borrow().iter().any(|(event, fields)| {
+            *event == EventType::SetupCompleted && fields["status"] == "ok"
+        }));
+
+        let mut prompt = Prompt(false);
+        let mut recorder = FieldRecorder::default();
+        let mut setup = context(
+            &args,
+            &resolved,
+            &root,
+            &home,
+            &mut runner,
+            &mut prompt,
+            Some(&mut recorder),
+        );
+        let outcome = run_setup(&mut setup, &wrapper_and_service_specs());
+        assert_eq!(outcome.exit_code, 0);
+        assert!(!home.join(".local/bin/journal").exists());
+        assert!(journal_backup_matches(&root, &body));
+        let manifest = read_manifest(&setup.manifest_path).unwrap();
+        let wrapper = manifest
+            .steps
+            .iter()
+            .find(|step| step["name"] == "wrapper")
+            .unwrap();
+        assert_eq!(wrapper["status"], "ok");
+        assert!(wrapper.get("error").is_none() || wrapper["error"].is_null());
+        assert!(
+            !wrapper["paths"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|path| path.as_str().unwrap().ends_with("/journal"))
+        );
+
+        let (args, resolved, root, home) =
+            fixture("legacy-unit-skip-service", &["--jsonl", "--skip-service"]);
+        fs::create_dir_all(root.join("bin")).unwrap();
+        write_unit(
+            &home,
+            &format!(
+                "[Service]\nExecStart={} start 6123\n",
+                home.join(".local/bin/journal").display()
+            ),
+        );
+        let mut runner = FakeRunner::new(Vec::new()).rewrite_service_units(home.clone());
+        let mut prompt = Prompt(false);
+        let setup = context(
+            &args,
+            &resolved,
+            &root,
+            &home,
+            &mut runner,
+            &mut prompt,
+            None,
+        );
+        let guard = guard_of(&setup);
+        let body = plant_legacy_journal(
+            &home,
+            &resolved.journal_path,
+            &root.join("bin/journal"),
+            Some(&guard),
+            8,
+        );
+        drop(setup);
+        for _ in 0..2 {
+            let mut prompt = Prompt(false);
+            let mut recorder = FieldRecorder::default();
+            let mut setup = context(
+                &args,
+                &resolved,
+                &root,
+                &home,
+                &mut runner,
+                &mut prompt,
+                Some(&mut recorder),
+            );
+            let outcome = run_setup(&mut setup, &wrapper_and_service_specs());
+            assert_eq!(outcome.exit_code, 0);
+            assert_eq!(
+                fs::read_to_string(home.join(".local/bin/journal")).unwrap(),
+                body
+            );
+            let manifest_path = setup.manifest_path.clone();
+            drop(setup);
+            let manifest = read_manifest(&manifest_path).unwrap();
+            assert_eq!(manifest.steps[0]["status"], "warning");
+            assert!(recorder.0.borrow().iter().any(|(event, fields)| {
+                *event == EventType::SetupCompleted && fields["status"] == "ok"
+            }));
+        }
+        assert!(
+            runner
+                .requests
+                .iter()
+                .all(|request| request.args.get(2).map(String::as_str) != Some("install"))
+        );
+        assert_eq!(
+            fs::read_to_string(home.join(".config/systemd/user/solstone.service")).unwrap(),
+            format!(
+                "[Service]\nExecStart={} start 6123\n",
+                home.join(".local/bin/journal").display()
+            )
+        );
+    }
+
+    /// (e) A foreign, malformed, other-installation, or symlink journal file
+    /// stays byte-identical and setup still succeeds.
+    #[cfg(all(unix, not(target_os = "macos")))]
+    #[test]
+    fn unrecognized_journal_files_stay_byte_identical() {
+        for name in ["foreign", "malformed", "other-installation", "symlink"] {
+            let (args, resolved, root, home) = fixture(name, &[]);
+            fs::create_dir_all(root.join("bin")).unwrap();
+            let mut runner = FakeRunner::new(Vec::new());
+            let mut prompt = Prompt(false);
+            let mut setup = context(
+                &args,
+                &resolved,
+                &root,
+                &home,
+                &mut runner,
+                &mut prompt,
+                None,
+            );
+            let path = home.join(".local/bin/journal");
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            let guard = guard_of(&setup);
+            match name {
+                "foreign" => fs::write(&path, "foreign wrapper\n").unwrap(),
+                "malformed" => {
+                    fs::write(&path, "#!/bin/sh\n# managed-version: 8\nnot a wrapper\n").unwrap()
+                }
+                "other-installation" => {
+                    let mut other = guard.clone();
+                    other.id = InstallationId::parse("ffeeddccbbaa99887766554433221100").unwrap();
+                    plant_legacy_journal(
+                        &home,
+                        &resolved.journal_path,
+                        &root.join("elsewhere/bin/journal"),
+                        Some(&other),
+                        8,
+                    );
+                }
+                "symlink" => {
+                    let target = root.join("elsewhere-journal");
+                    fs::write(&target, "target bytes\n").unwrap();
+                    symlink(&target, &path).unwrap();
+                }
+                _ => unreachable!(),
+            }
+            let before = fs::read(&path).unwrap();
+            let symlink_before = path.symlink_metadata().unwrap().file_type().is_symlink();
+            let result = step_wrapper(&mut setup).unwrap();
+            assert_eq!(result.status, StepStatus::Ok, "{name}");
+            assert!(home.join(".local/bin/solstone").is_file(), "{name}");
+            if name == "symlink" {
+                assert!(path.symlink_metadata().unwrap().file_type().is_symlink());
+                assert_eq!(
+                    fs::read(root.join("elsewhere-journal")).unwrap(),
+                    b"target bytes\n"
+                );
+                assert!(symlink_before);
+            } else {
+                assert_eq!(fs::read(&path).unwrap(), before, "{name}");
+            }
+        }
+    }
+
+    /// (f) A second run over an unrecognized or already-retired journal file
+    /// does not run the service step when the canonical unit is healthy.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn second_run_skips_service_when_the_canonical_unit_is_healthy() {
+        for name in [
+            "foreign",
+            "malformed",
+            "other-installation",
+            "symlink",
+            "owned",
+        ] {
+            let (args, resolved, root, home) = fixture(&format!("second-{name}"), &[]);
+            fs::create_dir_all(root.join("bin")).unwrap();
+            let unit = format!(
+                "[Service]\nExecStart={} journal start 6123\n",
+                home.join(".local/bin/solstone").display()
+            );
+            write_unit(&home, &unit);
+            let mut runner = FakeRunner::new(Vec::new());
+            let mut prompt = Prompt(false);
+            let mut setup = context(
+                &args,
+                &resolved,
+                &root,
+                &home,
+                &mut runner,
+                &mut prompt,
+                None,
+            );
+            let path = home.join(".local/bin/journal");
+            let guard = guard_of(&setup);
+            let owned_body = if name == "owned" {
+                Some(plant_legacy_journal(
+                    &home,
+                    &resolved.journal_path,
+                    &root.join("old/bin/journal"),
+                    Some(&guard),
+                    8,
+                ))
+            } else {
+                fs::create_dir_all(path.parent().unwrap()).unwrap();
+                match name {
+                    "foreign" => fs::write(&path, "foreign wrapper\n").unwrap(),
+                    "malformed" => {
+                        fs::write(&path, "#!/bin/sh\n# managed-version: 8\nnot a wrapper\n")
+                            .unwrap()
+                    }
+                    "other-installation" => {
+                        let mut other = guard.clone();
+                        other.id =
+                            InstallationId::parse("ffeeddccbbaa99887766554433221100").unwrap();
+                        plant_legacy_journal(
+                            &home,
+                            &resolved.journal_path,
+                            &root.join("elsewhere/bin/journal"),
+                            Some(&other),
+                            8,
+                        );
+                    }
+                    "symlink" => {
+                        let target = root.join("elsewhere-journal");
+                        fs::write(&target, "target bytes\n").unwrap();
+                        symlink(&target, &path).unwrap();
+                    }
+                    _ => unreachable!(),
+                }
+                None
+            };
+            let before = if name == "symlink" {
+                None
+            } else if path.is_file() {
+                Some(fs::read(&path).unwrap())
+            } else {
+                None
+            };
+            run_setup(&mut setup, &wrapper_and_service_specs());
+            drop(setup);
+            let installs = |runner: &FakeRunner| {
+                runner
+                    .requests
+                    .iter()
+                    .filter(|request| {
+                        request.args.get(1).map(String::as_str) == Some("service")
+                            && request.args.get(2).map(String::as_str) == Some("install")
+                    })
+                    .count()
+            };
+            assert_eq!(installs(&runner), 1, "{name}");
+            if let Some(body) = &owned_body {
+                assert!(!path.exists(), "{name}");
+                assert!(journal_backup_matches(&root, body), "{name}");
+            }
+
+            let mut ops = SequenceServiceOps {
+                installed: VecDeque::from([true]),
+                healthy: VecDeque::from([true]),
+                restarts: 0,
+                up: 0,
+            };
+            let mut prompt = Prompt(false);
+            let mut setup = context(
+                &args,
+                &resolved,
+                &root,
+                &home,
+                &mut runner,
+                &mut prompt,
+                None,
+            );
+            setup.service_ops = &mut ops;
+            run_setup(&mut setup, &wrapper_and_service_specs());
+            let manifest_path = setup.manifest_path.clone();
+            drop(setup);
+            assert_eq!(installs(&runner), 1, "{name}");
+            let manifest = read_manifest(&manifest_path).unwrap();
+            let service = manifest
+                .steps
+                .iter()
+                .find(|step| step["name"] == "service")
+                .unwrap();
+            assert_eq!(service["status"], "skipped", "{name}");
+            assert_eq!(service["reason"], SkipReason::PriorRunOk.as_str(), "{name}");
+            assert_eq!(
+                fs::read_to_string(home.join(".config/systemd/user/solstone.service")).unwrap(),
+                unit,
+                "{name}"
+            );
+            if name == "owned" {
+                assert!(!path.exists());
+            } else if name == "symlink" {
+                assert!(path.symlink_metadata().unwrap().file_type().is_symlink());
+                assert_eq!(
+                    fs::read(root.join("elsewhere-journal")).unwrap(),
+                    b"target bytes\n"
+                );
+            } else {
+                assert_eq!(fs::read(&path).unwrap(), before.unwrap(), "{name}");
+            }
+        }
+    }
+
+    /// Port (1): an exact legacy unit on a non-default port is republished
+    /// through solstone with that port, and the install argv omits `--port`.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn legacy_unit_republish_keeps_its_port_without_passing_port() {
+        let (args, resolved, root, home) = fixture("legacy-port", &[]);
+        fs::create_dir_all(root.join("bin")).unwrap();
+        write_unit(
+            &home,
+            &format!(
+                "[Service]\nExecStart={} start 6123\n",
+                home.join(".local/bin/journal").display()
+            ),
+        );
+        let mut runner = FakeRunner::new(Vec::new()).rewrite_service_units(home.clone());
+        let mut prompt = Prompt(false);
+        let mut setup = context(
+            &args,
+            &resolved,
+            &root,
+            &home,
+            &mut runner,
+            &mut prompt,
+            None,
+        );
+        let result = step_service(&mut setup).unwrap();
+        assert_eq!(result.status, StepStatus::Ok);
+        drop(setup);
+        let install = &runner.requests[0];
+        assert!(!install.args.iter().any(|arg| arg == "--port"));
+        let unit = fs::read_to_string(home.join(".config/systemd/user/solstone.service")).unwrap();
+        assert!(unit.contains(&format!(
+            "ExecStart={} journal start 6123",
+            home.join(".local/bin/solstone").display()
+        )));
+        assert!(!unit.contains(&home.join(".local/bin/journal").display().to_string()));
+    }
+
+    /// Port (2): an omitted `--port` keeps the installed port for the unit,
+    /// doctor, and handed-off URL. An explicit `--port` wins.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn omitted_port_keeps_the_installed_port_and_an_explicit_port_wins() {
+        let (args, _, root, home) = fixture("installed-port", &[]);
+        write_unit(
+            &home,
+            &format!(
+                "[Service]\nExecStart={} journal start 6123\n",
+                home.join(".local/bin/solstone").display()
+            ),
+        );
+        let resolution = ResolutionContext {
+            home_dir: home.clone(),
+            current_dir: root.join("cwd"),
+            journal_env: Some(root.join("journal").to_string_lossy().into_owned()),
+            journal_variant_env: None,
+            is_source_checkout: false,
+        };
+        let resolved = resolve_setup(&args, &resolution);
+        assert_eq!(resolved.args_resolved["port"]["value"], 6123);
+        assert_eq!(resolved.args_resolved["port"]["source"], "default");
+        let mut runner = FakeRunner::new(Vec::new());
+        let mut prompt = Prompt(false);
+        let setup = context(
+            &args,
+            &resolved,
+            &root,
+            &home,
+            &mut runner,
+            &mut prompt,
+            None,
+        );
+        assert_eq!(effective_port(&setup), 6123);
+        let doctor = command_for_step(&setup, StepName::Doctor).unwrap();
+        assert_eq!(doctor[doctor.len() - 2], "--port");
+        assert_eq!(doctor.last().map(String::as_str), Some("6123"));
+        let service = command_for_step(&setup, StepName::Service).unwrap();
+        assert!(!service.iter().any(|arg| arg == "--port"));
+        assert_eq!(
+            journal_url(&resolved.journal_path, effective_port(&setup)),
+            "http://localhost:6123"
+        );
+        fs::create_dir_all(resolved.journal_path.join("health")).unwrap();
+        fs::write(resolved.journal_path.join("health/convey.port"), "7001\n").unwrap();
+        assert_eq!(
+            journal_url(&resolved.journal_path, effective_port(&setup)),
+            "http://localhost:7001"
+        );
+
+        let (explicit, _, root, home) = fixture("explicit-port", &["--port", "5016"]);
+        write_unit(
+            &home,
+            &format!(
+                "[Service]\nExecStart={} journal start 6123\n",
+                home.join(".local/bin/solstone").display()
+            ),
+        );
+        let resolution = ResolutionContext {
+            home_dir: home.clone(),
+            current_dir: root.join("cwd"),
+            journal_env: Some(root.join("journal").to_string_lossy().into_owned()),
+            journal_variant_env: None,
+            is_source_checkout: false,
+        };
+        let resolved = resolve_setup(&explicit, &resolution);
+        assert_eq!(resolved.args_resolved["port"]["value"], 5016);
+        assert_eq!(resolved.args_resolved["port"]["source"], "cli");
+        let mut runner = FakeRunner::new(Vec::new());
+        let mut prompt = Prompt(false);
+        let setup = context(
+            &explicit,
+            &resolved,
+            &root,
+            &home,
+            &mut runner,
+            &mut prompt,
+            None,
+        );
+        assert_eq!(effective_port(&setup), 5016);
+        let service = command_for_step(&setup, StepName::Service).unwrap();
+        let port_at = service.iter().position(|arg| arg == "--port").unwrap();
+        assert_eq!(service[port_at + 1], "5016");
     }
 }
 

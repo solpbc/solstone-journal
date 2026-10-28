@@ -23,7 +23,7 @@ use solstone_core_installation_identity::{
     root_token_from_path,
 };
 use solstone_core_service_unit::{build_service_environment, render_systemd_unit};
-use solstone_core_setup::wrapper::{WrapperCommand, render_wrapper};
+use solstone_core_setup::wrapper::{WrapperCommand, render_wrapper, render_wrapper_version};
 
 use support::locate_workspace_binary;
 
@@ -108,28 +108,35 @@ impl Fixture {
 
     fn write_wrappers(&self, guard: &GuardFields, version: &Path) {
         let bin = self.home.join(".local/bin");
-        for (command, wrapper_command) in [
-            ("journal", WrapperCommand::Journal),
-            ("solstone", WrapperCommand::Solstone),
-        ] {
-            fs::write(
-                bin.join(command),
-                render_wrapper(
-                    wrapper_command,
-                    &self.journal,
-                    &version.join("bin").join(command),
-                    guard,
-                )
-                .unwrap(),
+        fs::write(
+            bin.join("journal"),
+            render_wrapper_version(
+                WrapperCommand::LegacyJournal,
+                &self.journal,
+                &version.join("bin/journal"),
+                Some(guard),
+                8,
             )
-            .expect("write managed wrapper");
-        }
+            .unwrap(),
+        )
+        .expect("write historical journal wrapper");
+        fs::write(
+            bin.join("solstone"),
+            render_wrapper(
+                WrapperCommand::Solstone,
+                &self.journal,
+                &version.join("bin/solstone"),
+                guard,
+            )
+            .unwrap(),
+        )
+        .expect("write managed wrapper");
     }
 
     fn write_service(&self, guard: &GuardFields) {
         let path = self.service_path();
         fs::create_dir_all(path.parent().expect("service parent")).expect("create service parent");
-        let launcher = self.home.join(".local/bin/journal");
+        let launcher = self.home.join(".local/bin/solstone");
         let environment = build_service_environment(
             self.home.to_str().expect("utf8 home"),
             Some("/usr/bin:/bin"),
@@ -260,7 +267,7 @@ fn inspection_reports_each_route_artifact_independently() {
     );
     assert_eq!(
         decode_path_hex(&fields["service_launcher_hex"]),
-        aligned.home.join(".local/bin/journal")
+        aligned.home.join(".local/bin/solstone")
     );
 
     let drifted = Fixture::new("drifted");
@@ -332,11 +339,12 @@ fn inspection_reports_each_route_artifact_independently() {
     let unguarded = Fixture::new("unguarded");
     let guard = unguarded.install_owned_tuple();
     let wrapper = unguarded.home.join(".local/bin/journal");
-    let unguarded_wrapper = render_wrapper(
-        WrapperCommand::Journal,
+    let unguarded_wrapper = render_wrapper_version(
+        WrapperCommand::LegacyJournal,
         &unguarded.journal,
         &unguarded.first_version.join("bin/journal"),
-        &guard,
+        Some(&guard),
+        8,
     )
     .unwrap()
     .lines()
@@ -363,10 +371,10 @@ fn inspection_reports_each_route_artifact_independently() {
 
     let dangling = Fixture::new("dangling");
     dangling.install_owned_tuple();
-    fs::remove_file(dangling.home.join(".local/bin/journal"))
+    fs::remove_file(dangling.home.join(".local/bin/solstone"))
         .expect("remove service launcher wrapper");
     let fields = assert_success(dangling.run());
-    assert_eq!(fields["journal_wrapper_state"], "missing");
+    assert_eq!(fields["solstone_wrapper_state"], "missing");
     assert_eq!(fields["service_state"], "dangling");
 }
 

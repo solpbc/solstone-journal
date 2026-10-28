@@ -21,7 +21,7 @@ use solstone_core_installation_identity::{
     root_token_from_path,
 };
 use solstone_core_service_unit::{build_service_environment, render_systemd_unit};
-use solstone_core_setup::wrapper::{WrapperCommand, render_wrapper};
+use solstone_core_setup::wrapper::{WrapperCommand, render_wrapper, render_wrapper_version};
 
 use support::locate_workspace_binary;
 
@@ -117,11 +117,12 @@ impl Fixture {
         let (journal, solstone) = self.wrappers();
         fs::write(
             &journal,
-            render_wrapper(
-                WrapperCommand::Journal,
+            render_wrapper_version(
+                WrapperCommand::LegacyJournal,
                 &self.journal,
                 &version.join("bin/journal"),
-                guard,
+                Some(guard),
+                8,
             )
             .unwrap(),
         )
@@ -161,7 +162,7 @@ impl Fixture {
             render_systemd_unit(
                 &environment,
                 self.home
-                    .join(".local/bin/journal")
+                    .join(".local/bin/solstone")
                     .to_str()
                     .expect("utf8 launcher"),
                 "5015",
@@ -303,14 +304,12 @@ fn repair_repoints_owned_drift_and_is_idempotent() {
     assert_eq!(fields["repair_service"], "rewritten");
     assert_eq!(fields["terminal_identity_state"], "matched");
     let (journal, solstone) = fixture.wrappers();
-    assert!(
-        fs::read_to_string(&journal)
-            .expect("journal wrapper")
-            .contains(&format!(
-                "SOL_BIN='{}'",
-                selected.join("bin/journal").display()
-            ))
-    );
+    let journal_body = fs::read_to_string(&journal).expect("journal wrapper");
+    assert!(journal_body.contains(&format!(
+        "SOL_BIN='{}'",
+        fixture.first_version.join("bin/journal").display()
+    )));
+    assert!(!journal_body.contains(&selected.join("bin/journal").display().to_string()));
     assert!(
         fs::read_to_string(&solstone)
             .expect("solstone wrapper")
@@ -407,24 +406,34 @@ fn repair_handles_the_named_partial_route_shapes_without_creating_artifacts() {
     assert_eq!(fields["repair_wrapper"], "rewritten");
     assert_eq!(fields["repair_service"], "not-run");
     assert!(!wrappers_only.service_path().exists());
+    let (journal, solstone) = wrappers_only.wrappers();
+    let journal_body = fs::read_to_string(&journal).expect("journal wrapper");
+    assert!(journal_body.contains(&format!(
+        "SOL_BIN='{}'",
+        wrappers_only.first_version.join("bin/journal").display()
+    )));
+    assert!(!journal_body.contains(&selected.join("bin/journal").display().to_string()));
     assert!(
-        fs::read_to_string(wrappers_only.wrappers().0)
-            .expect("rewritten wrapper")
+        fs::read_to_string(&solstone)
+            .expect("solstone wrapper")
             .contains(&format!(
                 "SOL_BIN='{}'",
-                selected.join("bin/journal").display()
+                selected.join("bin/solstone").display()
             ))
     );
 
     let dangling = Fixture::new("dangling");
     dangling.install_owned_tuple();
     let (journal, solstone) = dangling.wrappers();
-    fs::remove_file(&journal).expect("remove journal wrapper");
+    let journal_before = fs::read(&journal).expect("journal wrapper");
     fs::remove_file(&solstone).expect("remove solstone wrapper");
     dangling.acquire_route_lock(TOKEN);
     let fields = parse_record(dangling.run_repair(TOKEN), 2);
     assert_eq!(fields["refusal"], "tuple-not-repair-eligible");
-    assert!(!journal.exists());
+    assert_eq!(
+        fs::read(&journal).expect("journal wrapper unchanged"),
+        journal_before
+    );
     assert!(!solstone.exists());
 
     let not_current = Fixture::new("not-current");
@@ -456,12 +465,12 @@ fn repair_refuses_foreign_malformed_unguarded_ambiguous_and_exact_v1_without_mut
 
     let malformed = Fixture::new("malformed");
     malformed.install_owned_tuple();
-    let malformed_journal = malformed.wrappers().0;
+    let malformed_solstone = malformed.wrappers().1;
     fs::write(
-        &malformed_journal,
+        &malformed_solstone,
         format!(
             "{}# solstone-installation-id: duplicate\n",
-            fs::read_to_string(&malformed_journal).expect("read wrapper")
+            fs::read_to_string(&malformed_solstone).expect("read wrapper")
         ),
     )
     .expect("corrupt wrapper guard");
@@ -470,20 +479,21 @@ fn repair_refuses_foreign_malformed_unguarded_ambiguous_and_exact_v1_without_mut
 
     let unguarded = Fixture::new("unguarded");
     let guard = unguarded.install_owned_tuple();
-    let unguarded_journal = unguarded.wrappers().0;
-    let wrapper = render_wrapper(
-        WrapperCommand::Journal,
+    let unguarded_solstone = unguarded.wrappers().1;
+    let wrapper = render_wrapper_version(
+        WrapperCommand::Solstone,
         &unguarded.journal,
-        &unguarded.first_version.join("bin/journal"),
-        &guard,
+        &unguarded.first_version.join("bin/solstone"),
+        Some(&guard),
+        8,
     )
     .unwrap()
     .lines()
     .filter(|line| !line.starts_with("# solstone-installation-"))
     .collect::<Vec<_>>()
     .join("\n");
-    fs::write(&unguarded_journal, format!("{wrapper}\n")).expect("write unguarded wrapper");
-    fs::set_permissions(&unguarded_journal, fs::Permissions::from_mode(0o755))
+    fs::write(&unguarded_solstone, format!("{wrapper}\n")).expect("write unguarded wrapper");
+    fs::set_permissions(&unguarded_solstone, fs::Permissions::from_mode(0o755))
         .expect("make wrapper executable");
     unguarded.acquire_route_lock(TOKEN);
     assert_repair_refusal_preserves_artifacts(&unguarded, "artifact-unguarded");

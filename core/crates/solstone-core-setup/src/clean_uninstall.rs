@@ -282,6 +282,14 @@ pub fn clean_uninstall_refusal(args: &SetupArgs) -> Option<String> {
 fn present(path: &Path) -> bool {
     path.exists() || path.is_symlink()
 }
+
+fn recognized_legacy_journal(context: &CleanUninstallContext<'_>) -> bool {
+    crate::legacy_journal_belongs_to_this_installation(
+        &context.home_dir,
+        &context.executable_dir,
+        Some(&context.plan.binding),
+    )
+}
 /// Owner-facing inventory shown before destructive confirmation.
 #[must_use]
 pub fn clean_uninstall_confirmation_lines(context: &CleanUninstallContext<'_>) -> Vec<String> {
@@ -302,7 +310,11 @@ pub fn clean_uninstall_confirmation_lines(context: &CleanUninstallContext<'_>) -
             path.display()
         ));
     }
-    for path in [&wrappers.solstone, &wrappers.journal] {
+    let mut wrapper_paths = vec![wrappers.solstone];
+    if recognized_legacy_journal(context) {
+        wrapper_paths.push(wrappers.legacy_journal);
+    }
+    for path in &wrapper_paths {
         lines.push(format!(
             "  [{:<7}] wrapper: {}",
             marker(path),
@@ -385,9 +397,15 @@ pub fn clean_uninstall_has_managed_paths(context: &CleanUninstallContext<'_>) ->
         present(path)
             && artifact_evidence_matches_plan(context)
             && policy(path, CleanupTargetKind::PerInstall, false)
-    }) || [wrappers.solstone, wrappers.journal]
-        .iter()
-        .any(|path| present(path) && policy(path, CleanupTargetKind::PerInstall, false))
+    }) || present(&wrappers.solstone)
+        && policy(&wrappers.solstone, CleanupTargetKind::PerInstall, false)
+        || (recognized_legacy_journal(context)
+            && present(&wrappers.legacy_journal)
+            && policy(
+                &wrappers.legacy_journal,
+                CleanupTargetKind::PerInstall,
+                false,
+            ))
         || (context.plan.remove_owner_config
             && present(&context.config_path)
             && policy(&context.config_path, CleanupTargetKind::Shared, true))
@@ -617,9 +635,13 @@ fn remove_wrappers(
         &context.artifact_evidence,
         ArtifactBindingEvidence::Guarded(_)
     ) {
-        let existed = present(&paths.0) || present(&paths.1);
+        let journal_recognized = recognized_legacy_journal(context);
+        let existed = present(&paths.0) || (journal_recognized && present(&paths.1));
         let mut protected = None;
         for path in [&paths.0, &paths.1] {
+            if path == &paths.1 && !journal_recognized {
+                continue;
+            }
             let decision = may_remove_cleanup_target(
                 path,
                 CleanupTargetKind::PerInstall,
@@ -664,8 +686,13 @@ fn remove_wrappers(
         backup_dir: None,
         legacy_replacement: false,
     };
-    let existed = present(&paths.0) || present(&paths.1);
-    let protected = [&paths.0, &paths.1]
+    let journal_recognized = recognized_legacy_journal(context);
+    let existed = present(&paths.0) || (journal_recognized && present(&paths.1));
+    let mut candidates = vec![&paths.0];
+    if journal_recognized {
+        candidates.push(&paths.1);
+    }
+    let protected = candidates
         .iter()
         .find(|path| {
             may_remove_cleanup_target(
@@ -680,30 +707,51 @@ fn remove_wrappers(
         .copied()
         .cloned();
     match uninstall_wrappers(&environment, &context.protected_journals) {
-        Ok(()) => match protected {
-            Some(path) => preserve_for_decision(
-                "wrapper",
-                path.clone(),
-                may_remove_cleanup_target(
-                    &path,
+        Ok(()) => {
+            if journal_recognized
+                && present(&paths.1)
+                && may_remove_cleanup_target(
+                    &paths.1,
                     CleanupTargetKind::PerInstall,
                     false,
                     context.registry_known,
                     &context.protected_journals,
                     context.platform,
+                ) == CleanupTargetDecision::Remove
+                && let Err(error) = fs::remove_file(&paths.1)
+            {
+                return result(
+                    "wrapper",
+                    CleanUninstallState::Failed,
+                    Some(paths.1.clone()),
+                    Some(error.to_string()),
+                );
+            }
+            match protected {
+                Some(path) => preserve_for_decision(
+                    "wrapper",
+                    path.clone(),
+                    may_remove_cleanup_target(
+                        &path,
+                        CleanupTargetKind::PerInstall,
+                        false,
+                        context.registry_known,
+                        &context.protected_journals,
+                        context.platform,
+                    ),
                 ),
-            ),
-            None => result(
-                "wrapper",
-                if existed {
-                    CleanUninstallState::Removed
-                } else {
-                    CleanUninstallState::AlreadyAbsent
-                },
-                Some(paths.0.clone()),
-                None,
-            ),
-        },
+                None => result(
+                    "wrapper",
+                    if existed {
+                        CleanUninstallState::Removed
+                    } else {
+                        CleanUninstallState::AlreadyAbsent
+                    },
+                    Some(paths.0.clone()),
+                    None,
+                ),
+            }
+        }
         Err((AliasState::Worktree, _)) => result(
             "wrapper",
             CleanUninstallState::Skipped,
@@ -1136,7 +1184,7 @@ pub fn run_clean_uninstall(context: &mut CleanUninstallContext<'_>) -> CleanUnin
     }
     let wrapper_result = remove_wrappers(
         context,
-        &(wrappers.solstone.clone(), wrappers.journal.clone()),
+        &(wrappers.solstone.clone(), wrappers.legacy_journal.clone()),
     );
     let wrapper_failed = wrapper_result.state == CleanUninstallState::Failed;
     results.push(wrapper_result);
@@ -1674,19 +1722,26 @@ mod tests {
         let guard = GuardFields::from_binding(&plan().binding);
         for (binary, command) in [
             ("solstone", WrapperCommand::Solstone),
-            ("journal", WrapperCommand::Journal),
+            ("journal", WrapperCommand::LegacyJournal),
         ] {
-            fs::write(
-                home.join(".local/bin").join(binary),
+            let rendered = if command == WrapperCommand::LegacyJournal {
+                crate::wrapper::render_wrapper_version(
+                    command,
+                    &guard.journal_token.to_path_buf(),
+                    &runtime.join(binary),
+                    Some(&guard),
+                    8,
+                )
+            } else {
                 crate::wrapper::render_wrapper(
                     command,
                     &guard.journal_token.to_path_buf(),
                     &runtime.join(binary),
                     &guard,
                 )
-                .unwrap(),
-            )
+            }
             .unwrap();
+            fs::write(home.join(".local/bin").join(binary), rendered).unwrap();
         }
         let config = root.join("config.toml");
         let manifest = root.join("journal/health/setup-state.json");
@@ -1857,19 +1912,26 @@ mod tests {
         let guard = GuardFields::from_binding(&plan().binding);
         for (binary, command) in [
             ("solstone", WrapperCommand::Solstone),
-            ("journal", WrapperCommand::Journal),
+            ("journal", WrapperCommand::LegacyJournal),
         ] {
-            fs::write(
-                home.join(".local/bin").join(binary),
+            let rendered = if command == WrapperCommand::LegacyJournal {
+                crate::wrapper::render_wrapper_version(
+                    command,
+                    Path::new("/journal"),
+                    &root.join("old-bin").join(binary),
+                    Some(&guard),
+                    8,
+                )
+            } else {
                 crate::wrapper::render_wrapper(
                     command,
                     Path::new("/journal"),
                     &root.join("old-bin").join(binary),
                     &guard,
                 )
-                .unwrap(),
-            )
+            }
             .unwrap();
+            fs::write(home.join(".local/bin").join(binary), rendered).unwrap();
         }
         let mut runner = Runner(VecDeque::from([0]));
         let mut confirm = || true;
@@ -2010,15 +2072,16 @@ mod tests {
                 &second_guard,
             )
             .unwrap();
-            let second_journal = render_wrapper(
-                WrapperCommand::Journal,
+            let second_journal = crate::wrapper::render_wrapper_version(
+                WrapperCommand::LegacyJournal,
                 &second.journal_token.to_path_buf(),
                 &root.join("bin/journal"),
-                &second_guard,
+                Some(&second_guard),
+                8,
             )
             .unwrap();
             fs::write(&paths.solstone, &second_solstone).unwrap();
-            fs::write(&paths.journal, &second_journal).unwrap();
+            fs::write(&paths.legacy_journal, &second_journal).unwrap();
 
             let first_evidence = gather_artifact_evidence(&home, &first.namespace);
             assert_eq!(first_evidence, ArtifactBindingEvidence::Foreign);
@@ -2048,7 +2111,10 @@ mod tests {
                 fs::read_to_string(&paths.solstone).unwrap(),
                 second_solstone
             );
-            assert_eq!(fs::read_to_string(&paths.journal).unwrap(), second_journal);
+            assert_eq!(
+                fs::read_to_string(&paths.legacy_journal).unwrap(),
+                second_journal
+            );
             assert!(config_path(&home).exists());
             assert!(
                 second_manifest.exists(),
@@ -2083,7 +2149,7 @@ mod tests {
             second_session.commit_tombstone().unwrap();
 
             assert!(!paths.solstone.exists());
-            assert!(!paths.journal.exists());
+            assert!(!paths.legacy_journal.exists());
             assert!(!config_path(&home).exists());
             assert!(manifest_b.exists());
             assert!(manifest_a.exists());
@@ -2236,6 +2302,161 @@ mod tests {
                         }
                     );
                 }
+            }
+        }
+    }
+
+    /// (g) Clean uninstall removes this installation's leftover journal wrapper,
+    /// including when that file is the only artifact and its target directory
+    /// is gone. A foreign, malformed, other-installation, or symlink file stays
+    /// byte-identical and is not eligible.
+    #[cfg(unix)]
+    #[test]
+    fn clean_uninstall_removes_only_this_installations_journal_wrapper() {
+        {
+            let root = root("recognized-journal-only");
+            let home = root.join("home");
+            let installed = plan();
+            let guard = GuardFields::from_binding(&installed.binding);
+            let path = home.join(".local/bin/journal");
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            let body = crate::wrapper::render_wrapper_version(
+                WrapperCommand::LegacyJournal,
+                Path::new("/journal"),
+                &root.join("missing-version/bin/journal"),
+                Some(&guard),
+                8,
+            )
+            .unwrap();
+            fs::write(&path, &body).unwrap();
+            let mut runner = Runner(VecDeque::new());
+            let mut confirm = || true;
+            let mut context = clean_context(
+                &home,
+                &root,
+                installed,
+                ArtifactBindingEvidence::Guarded(guard),
+                &mut runner,
+                &mut confirm,
+            );
+            let lines = clean_uninstall_confirmation_lines(&context);
+            assert!(
+                lines.iter().any(|line| line.contains(".local/bin/journal")),
+                "{lines:?}"
+            );
+            let outcome = run_clean_uninstall(&mut context);
+            assert_eq!(outcome.exit_code, 0, "{outcome:?}");
+            assert!(!path.exists());
+        }
+
+        for name in [
+            "foreign",
+            "malformed",
+            "other-installation",
+            "symlink",
+            "different-id",
+            "different-generation",
+        ] {
+            let root = root(name);
+            let home = root.join("home");
+            let installed = plan();
+            let path = home.join(".local/bin/journal");
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            let before = match name {
+                "foreign" => {
+                    fs::write(&path, "foreign wrapper\n").unwrap();
+                    None
+                }
+                "malformed" => {
+                    fs::write(&path, "#!/bin/sh\n# managed-version: 8\nnot a wrapper\n").unwrap();
+                    None
+                }
+                "other-installation" | "different-id" | "different-generation" => {
+                    let mut guard = GuardFields::from_binding(&installed.binding);
+                    if name == "different-generation" {
+                        guard.generation =
+                            solstone_core_installation_identity::Generation::new(2).unwrap();
+                    } else {
+                        guard.id = solstone_core_installation_identity::InstallationId::parse(
+                            "ffeeddccbbaa99887766554433221100",
+                        )
+                        .unwrap();
+                    }
+                    let prefix = root.join("prefix");
+                    let live = prefix.join("versions/1.0.0-aaaaaaaaaaaa/bin");
+                    fs::create_dir_all(&live).unwrap();
+                    std::os::unix::fs::symlink(
+                        "versions/1.0.0-aaaaaaaaaaaa",
+                        prefix.join("current"),
+                    )
+                    .unwrap();
+                    let body = crate::wrapper::render_wrapper_version(
+                        WrapperCommand::LegacyJournal,
+                        Path::new("/journal"),
+                        &prefix.join("versions/0.9.0-bbbbbbbbbbbb/bin/journal"),
+                        Some(&guard),
+                        8,
+                    )
+                    .unwrap();
+                    fs::write(&path, &body).unwrap();
+                    Some(body)
+                }
+                "symlink" => {
+                    let target = root.join("elsewhere-journal");
+                    fs::write(&target, "target bytes\n").unwrap();
+                    std::os::unix::fs::symlink(&target, &path).unwrap();
+                    None
+                }
+                _ => unreachable!(),
+            };
+            let mut runner = Runner(VecDeque::new());
+            let mut confirm = || true;
+            let mut context = clean_context(
+                &home,
+                &root,
+                installed,
+                ArtifactBindingEvidence::Fresh,
+                &mut runner,
+                &mut confirm,
+            );
+            if matches!(
+                name,
+                "other-installation" | "different-id" | "different-generation"
+            ) {
+                context.executable_dir = root.join("prefix/current/bin");
+            }
+            let lines = clean_uninstall_confirmation_lines(&context);
+            assert!(
+                lines
+                    .iter()
+                    .all(|line| !line.contains(".local/bin/journal")),
+                "{name}: {lines:?}"
+            );
+            assert!(!clean_uninstall_has_managed_paths(&context), "{name}");
+            let outcome = run_clean_uninstall(&mut context);
+            assert_eq!(
+                outcome.message, "no eligible setup files to remove",
+                "{name}"
+            );
+            assert_eq!(outcome.exit_code, 0, "{name}");
+            match name {
+                "symlink" => {
+                    assert!(path.symlink_metadata().unwrap().file_type().is_symlink());
+                    assert_eq!(
+                        fs::read(root.join("elsewhere-journal")).unwrap(),
+                        b"target bytes\n"
+                    );
+                }
+                "foreign" => assert_eq!(fs::read(&path).unwrap(), b"foreign wrapper\n"),
+                "malformed" => assert_eq!(
+                    fs::read(&path).unwrap(),
+                    b"#!/bin/sh\n# managed-version: 8\nnot a wrapper\n"
+                ),
+                _ => assert_eq!(
+                    fs::read_to_string(&path).unwrap(),
+                    before.unwrap(),
+                    "{name}"
+                ),
             }
         }
     }

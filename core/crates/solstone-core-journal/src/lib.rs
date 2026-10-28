@@ -278,7 +278,7 @@ pub fn resolve_installation_root_from_executable_dir(executable_dir: &Path) -> O
 /// `<prefix>/versions/<ver>-<digest>/bin` that a real running process
 /// actually reports. `std::env::current_exe()` on Linux reads
 /// `/proc/self/exe`, and the kernel keeps that target fully dereferenced, so
-/// a binary launched through `current/bin/journal` never sees `"current"` in
+/// a binary launched through `current/bin/solstone` never sees `"current"` in
 /// its own executable dir -- it sees the versioned directory `current`
 /// points at. Missing that shape made the identity root -- and so the
 /// installation namespace -- change on every version swap, which is what
@@ -825,7 +825,7 @@ mod tests {
 
     /// `std::env::current_exe()` on Linux reads `/proc/self/exe`, which the
     /// kernel keeps fully dereferenced -- a binary launched through
-    /// `current/bin/journal` is reported at its resolved
+    /// `current/bin/solstone` is reported at its resolved
     /// `versions/<ver>-<digest>/bin` location, never at the literal
     /// `current/bin` the test above feeds the resolver directly. Before this
     /// was recognised, that meant the identity root (and so the installation

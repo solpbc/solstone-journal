@@ -8,6 +8,7 @@
 //! installs. This module nevertheless preserves the shared wrapper API so the
 //! read-only setup identity flow compiles on every supported platform.
 
+use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
@@ -25,7 +26,8 @@ const UNSUPPORTED: &str = "POSIX wrapper provisioning is unsupported on this pla
 pub enum WrapperCommand {
     Sol,
     Solstone,
-    Journal,
+    /// Historical managed wrapper. Parsing still accepts it. Rendering does not.
+    LegacyJournal,
 }
 
 impl WrapperCommand {
@@ -34,7 +36,7 @@ impl WrapperCommand {
         match self {
             Self::Sol => "sol",
             Self::Solstone => "solstone",
-            Self::Journal => "journal",
+            Self::LegacyJournal => "journal",
         }
     }
 }
@@ -95,7 +97,16 @@ impl WrapperEnvironment {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WrapperPaths {
     pub solstone: PathBuf,
-    pub journal: PathBuf,
+    /// `~/.local/bin/journal`. Nothing in the current format publishes this path.
+    pub legacy_journal: PathBuf,
+}
+
+/// What `provision_wrappers` wrote, plus whether a historical journal wrapper
+/// had to stay because the service unit still starts through it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WrapperProvision {
+    pub paths: WrapperPaths,
+    pub legacy_journal_kept_for_service: bool,
 }
 
 #[must_use]
@@ -103,7 +114,7 @@ pub fn wrapper_paths(home_dir: &Path) -> WrapperPaths {
     let bin_dir = home_dir.join(".local/bin");
     WrapperPaths {
         solstone: bin_dir.join("solstone"),
-        journal: bin_dir.join("journal"),
+        legacy_journal: bin_dir.join("journal"),
     }
 }
 
@@ -116,6 +127,11 @@ pub fn render_wrapper(
     if command == WrapperCommand::Sol {
         return Err(WrapperError(
             "the current wrapper format does not publish the retired sol command".into(),
+        ));
+    }
+    if command == WrapperCommand::LegacyJournal {
+        return Err(WrapperError(
+            "the current wrapper format does not publish the retired journal command".into(),
         ));
     }
     if guard.journal_token.to_path_buf() != journal {
@@ -188,7 +204,7 @@ pub fn check_alias(
     let path = if binary == "solstone" {
         paths.solstone
     } else {
-        paths.journal
+        paths.legacy_journal
     };
     if !path.exists() && !path.is_symlink() {
         Ok((AliasState::Absent, None))
@@ -259,10 +275,11 @@ pub fn validate_wrapper_inputs(
 /// Keep the shared setup preflight validation intact; the Windows wrapper step
 /// itself still skips all POSIX wrapper provisioning.
 pub fn validate_wrapper_pair(journal: &Path, executable_dir: &Path) -> Result<(), WrapperError> {
-    for command in [WrapperCommand::Solstone, WrapperCommand::Journal] {
-        validate_wrapper_inputs(command, journal, &executable_dir.join(command.as_str()))?;
-    }
-    Ok(())
+    validate_wrapper_inputs(
+        WrapperCommand::Solstone,
+        journal,
+        &executable_dir.join("solstone"),
+    )
 }
 
 pub fn retire_legacy_launchers(
@@ -275,7 +292,7 @@ pub fn provision_wrappers(
     _environment: &WrapperEnvironment,
     _journal: &Path,
     _binding: &InstallationBinding,
-) -> Result<WrapperPaths, WrapperError> {
+) -> Result<WrapperProvision, WrapperError> {
     Err(WrapperError(UNSUPPORTED.into()))
 }
 
@@ -284,20 +301,22 @@ pub fn uninstall_wrappers(
     protected_journals: &ProtectedJournals,
 ) -> Result<(), (AliasState, Option<PathBuf>)> {
     let paths = wrapper_paths(&environment.home_dir);
-    if [&paths.solstone, &paths.journal]
-        .iter()
-        .all(|path| protected_journals.overlaps(path))
-    {
+    if protected_journals.overlaps(&paths.solstone) {
         return Ok(());
     }
-    if [&paths.solstone, &paths.journal]
-        .iter()
-        .any(|path| path.exists() || path.is_symlink())
-    {
-        Err((AliasState::Foreign, None))
-    } else {
-        Ok(())
+    if paths.solstone.exists() || paths.solstone.is_symlink() {
+        return Err((AliasState::Foreign, None));
     }
+    if crate::legacy_journal_belongs_to_this_installation(
+        &environment.home_dir,
+        &environment.executable_dir,
+        None,
+    ) && !protected_journals.overlaps(&paths.legacy_journal)
+        && (paths.legacy_journal.exists() || paths.legacy_journal.is_symlink())
+    {
+        fs::remove_file(&paths.legacy_journal).map_err(|_| (AliasState::Foreign, None))?;
+    }
+    Ok(())
 }
 
 #[must_use]
@@ -306,6 +325,5 @@ pub fn is_live_app_owned_child_launcher(_path: &Path) -> bool {
 }
 
 pub fn ensure_user_bin_on_path(_home_dir: &Path) -> String {
-    "Windows packages expose solstone and journal directly; no POSIX PATH wrapper was installed."
-        .into()
+    "Windows packages expose solstone directly; no POSIX PATH wrapper was installed.".into()
 }

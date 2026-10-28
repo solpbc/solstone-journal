@@ -61,6 +61,15 @@ pub fn scratch(label: &str) -> PathBuf {
     path
 }
 
+fn ships_public_journal_launcher(version: &str) -> bool {
+    let numeric = version.split('-').next().unwrap_or(version);
+    let mut parts = numeric.split('.');
+    let major: u64 = parts.next().unwrap_or("0").parse().unwrap_or(0);
+    let minor: u64 = parts.next().unwrap_or("0").parse().unwrap_or(0);
+    let patch: u64 = parts.next().unwrap_or("0").parse().unwrap_or(0);
+    major < 2 || (major == 2 && minor == 0 && patch < 30)
+}
+
 pub fn linux_produce_dir(root: &Path, version: &str) -> (PathBuf, String) {
     let basename = format!("solstone-journal-{version}-linux-x86_64");
     let dest = root.join("artifacts");
@@ -68,17 +77,29 @@ pub fn linux_produce_dir(root: &Path, version: &str) -> (PathBuf, String) {
     let journal_script = format!(
         "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then printf 'journal (solstone) %s\\n' \"{version}\"; exit 0; fi\nexit 0\n"
     );
-    let solstone_script = format!(
-        "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then printf 'solstone %s\\n' \"{version}\"; exit 0; fi\nexit 0\n"
-    );
+    let solstone_script = if ships_public_journal_launcher(version) {
+        format!(
+            "#!/bin/sh\nif [ \"$1\" = \"journal\" ]; then shift; exec \"$(dirname \"$0\")/journal\" \"$@\"; fi\nif [ \"$1\" = \"--version\" ]; then printf 'solstone %s\\n' \"{version}\"; exit 0; fi\nexit 0\n"
+        )
+    } else {
+        format!(
+            "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then printf 'solstone %s\\n' \"{version}\"; exit 0; fi\nif [ \"$1\" = \"journal\" ]; then shift; if [ \"$1\" = \"--version\" ]; then printf 'journal (solstone) %s\\n' \"{version}\"; exit 0; fi; exit 0; fi\nexit 0\n"
+        )
+    };
+    let mut tree = vec![
+        ("bin/solstone-core".into(), b"core".to_vec(), 0o755),
+        ("bin/solstone".into(), solstone_script.into_bytes(), 0o755),
+    ];
+    if ships_public_journal_launcher(version) {
+        tree.insert(
+            1,
+            ("bin/journal".into(), journal_script.into_bytes(), 0o755),
+        );
+    }
     promote(&PromoteRequest {
         dest: dest.clone(),
         work,
-        tree: vec![
-            ("bin/solstone-core".into(), b"core".to_vec(), 0o755),
-            ("bin/journal".into(), journal_script.into_bytes(), 0o755),
-            ("bin/solstone".into(), solstone_script.into_bytes(), 0o755),
-        ],
+        tree,
         version: version.to_owned(),
         basename: basename.clone(),
         os: "linux".into(),

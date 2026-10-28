@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! Managed `solstone` and `journal` wrapper provisioning.
+//! Managed `solstone` wrapper provisioning.
+//!
+//! Historical `journal` wrappers are recognized and retired. The current
+//! wrapper format does not publish one.
 
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
@@ -71,7 +74,8 @@ exec "$SOL_BIN" "$@"
 pub enum WrapperCommand {
     Sol,
     Solstone,
-    Journal,
+    /// Historical managed wrapper. Parsing still accepts it. Rendering does not.
+    LegacyJournal,
 }
 
 impl WrapperCommand {
@@ -80,7 +84,7 @@ impl WrapperCommand {
         match self {
             Self::Sol => "sol",
             Self::Solstone => "solstone",
-            Self::Journal => "journal",
+            Self::LegacyJournal => "journal",
         }
     }
 }
@@ -143,7 +147,16 @@ impl WrapperEnvironment {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WrapperPaths {
     pub solstone: PathBuf,
-    pub journal: PathBuf,
+    /// `~/.local/bin/journal`. Nothing in the current format publishes this path.
+    pub legacy_journal: PathBuf,
+}
+
+/// What `provision_wrappers` wrote, plus whether a historical journal wrapper
+/// had to stay because the service unit still starts through it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WrapperProvision {
+    pub paths: WrapperPaths,
+    pub legacy_journal_kept_for_service: bool,
 }
 
 #[must_use]
@@ -151,7 +164,7 @@ pub fn wrapper_paths(home_dir: &Path) -> WrapperPaths {
     let bin_dir = home_dir.join(".local/bin");
     WrapperPaths {
         solstone: bin_dir.join("solstone"),
-        journal: bin_dir.join("journal"),
+        legacy_journal: bin_dir.join("journal"),
     }
 }
 
@@ -164,6 +177,11 @@ pub fn render_wrapper(
     if command == WrapperCommand::Sol {
         return Err(WrapperError(
             "the current wrapper format does not publish the retired sol command".into(),
+        ));
+    }
+    if command == WrapperCommand::LegacyJournal {
+        return Err(WrapperError(
+            "the current wrapper format does not publish the retired journal command".into(),
         ));
     }
     if guard.journal_token.to_path_buf() != journal {
@@ -245,7 +263,7 @@ pub fn parse_wrapper(command: WrapperCommand, content: &str) -> Option<ParsedWra
     })
 }
 
-pub(crate) fn render_wrapper_version(
+pub fn render_wrapper_version(
     command: WrapperCommand,
     journal: &Path,
     sol_bin: &Path,
@@ -337,10 +355,11 @@ pub fn validate_wrapper_inputs(
 }
 
 pub fn validate_wrapper_pair(journal: &Path, executable_dir: &Path) -> Result<(), WrapperError> {
-    for command in [WrapperCommand::Solstone, WrapperCommand::Journal] {
-        validate_wrapper_inputs(command, journal, &executable_dir.join(command.as_str()))?;
-    }
-    Ok(())
+    validate_wrapper_inputs(
+        WrapperCommand::Solstone,
+        journal,
+        &executable_dir.join("solstone"),
+    )
 }
 
 fn resolved(path: &Path) -> PathBuf {
@@ -399,7 +418,7 @@ pub fn check_alias(
     let alias = if binary == "solstone" {
         aliases.solstone
     } else {
-        aliases.journal
+        aliases.legacy_journal
     };
     if !alias.exists() && !alias.is_symlink() {
         return Ok((AliasState::Absent, None));
@@ -429,7 +448,7 @@ pub fn check_alias(
     };
     let command = match binary {
         "solstone" => WrapperCommand::Solstone,
-        "journal" => WrapperCommand::Journal,
+        "journal" => WrapperCommand::LegacyJournal,
         _ => return Ok((AliasState::Foreign, None)),
     };
     let Some(wrapper) = parse_wrapper(command, &content) else {
@@ -807,7 +826,10 @@ pub fn retire_legacy_launchers(
 ) -> Result<Vec<PathBuf>, WrapperError> {
     let paths = wrapper_paths(&environment.home_dir);
     let _lock = wrapper_lock(&environment.home_dir)?;
-    let main_paths = [("solstone", paths.solstone), ("journal", paths.journal)];
+    let main_paths = [
+        ("solstone", paths.solstone),
+        ("journal", paths.legacy_journal),
+    ];
     let legacy_mains = main_paths
         .iter()
         .map(|(command, path)| {
@@ -851,25 +873,22 @@ pub fn provision_wrappers(
     environment: &WrapperEnvironment,
     journal: &Path,
     binding: &InstallationBinding,
-) -> Result<WrapperPaths, WrapperError> {
+) -> Result<WrapperProvision, WrapperError> {
     validate_wrapper_pair(journal, &environment.executable_dir)?;
     let paths = wrapper_paths(&environment.home_dir);
     let guard = GuardFields::from_binding(binding);
     let _lock = wrapper_lock(&environment.home_dir)?;
-    let states = [
-        ("solstone", check_alias(environment, "solstone")?),
-        ("journal", check_alias(environment, "journal")?),
-    ];
-    if states
-        .iter()
-        .any(|(_, (state, _))| *state == AliasState::Worktree)
-    {
-        return Ok(paths);
+    let (solstone_state, _) = check_alias(environment, "solstone")?;
+    if solstone_state == AliasState::Worktree {
+        return Ok(WrapperProvision {
+            paths,
+            legacy_journal_kept_for_service: false,
+        });
     }
 
     let main_paths = [
         ("solstone", paths.solstone.clone()),
-        ("journal", paths.journal.clone()),
+        ("journal", paths.legacy_journal.clone()),
     ];
     let legacy_mains = main_paths
         .iter()
@@ -883,20 +902,28 @@ pub fn provision_wrappers(
         })
         .collect::<Result<Vec<_>, _>>()
         .map_err(WrapperError)?;
-    let mut legacy_expectations = legacy_main_expectations(environment, &main_paths, &legacy_mains);
-    for ((command, (state, _)), (_, legacy)) in states.iter().zip(&legacy_mains) {
-        if matches!(
-            state,
-            AliasState::CrossRepo | AliasState::Dangling | AliasState::Foreign
-        ) && legacy.is_none()
-        {
-            return Err(WrapperError(format!(
-                "refusing to replace unrecognized {command} wrapper"
-            )));
-        }
+    let solstone_legacy = legacy_mains
+        .iter()
+        .find(|(command, _)| command == "solstone")
+        .and_then(|(_, launcher)| launcher.as_ref());
+    if matches!(
+        solstone_state,
+        AliasState::CrossRepo | AliasState::Dangling | AliasState::Foreign
+    ) && solstone_legacy.is_none()
+    {
+        return Err(WrapperError(
+            "refusing to replace unrecognized solstone wrapper".into(),
+        ));
     }
+    let mut legacy_expectations = legacy_main_expectations(environment, &main_paths, &legacy_mains);
 
     let mut removals = Vec::new();
+    if legacy_mains
+        .iter()
+        .any(|(command, launcher)| command == "journal" && launcher.is_some())
+    {
+        removals.push(paths.legacy_journal.clone());
+    }
     let (companions, inspected) = legacy_companions(environment, &legacy_mains);
     inspected.map_err(WrapperError)?;
     for companion in companions {
@@ -904,10 +931,7 @@ pub fn provision_wrappers(
         legacy_expectations.push(companion);
     }
 
-    let mut snapshot_paths = main_paths
-        .iter()
-        .map(|(_, path)| path.clone())
-        .collect::<Vec<_>>();
+    let mut snapshot_paths = vec![paths.solstone.clone()];
     snapshot_paths.extend(removals.iter().cloned());
     let snapshots = snapshot_paths
         .iter()
@@ -922,26 +946,15 @@ pub fn provision_wrappers(
         backup_snapshot(snapshot, name, &backup_directory)?;
     }
 
-    let contents = [
-        (
-            paths.solstone.clone(),
-            render_wrapper(
-                WrapperCommand::Solstone,
-                journal,
-                &environment.executable_dir.join("solstone"),
-                &guard,
-            )?,
-        ),
-        (
-            paths.journal.clone(),
-            render_wrapper(
-                WrapperCommand::Journal,
-                journal,
-                &environment.executable_dir.join("journal"),
-                &guard,
-            )?,
-        ),
-    ];
+    let contents = [(
+        paths.solstone.clone(),
+        render_wrapper(
+            WrapperCommand::Solstone,
+            journal,
+            &environment.executable_dir.join("solstone"),
+            &guard,
+        )?,
+    )];
     write_wrappers_and_remove_with(
         &contents,
         &removals,
@@ -949,7 +962,61 @@ pub fn provision_wrappers(
         &legacy_expectations,
         &mut |from, to| fs::rename(from, to),
     )?;
-    Ok(paths)
+    let legacy_journal_kept_for_service = retire_recognized_journal_wrapper(environment, binding)?;
+    Ok(WrapperProvision {
+        paths,
+        legacy_journal_kept_for_service,
+    })
+}
+
+/// Back up and remove this installation's historical journal wrapper.
+///
+/// Returns true when the file has to stay because the service unit still
+/// starts through `~/.local/bin/journal`. The caller already holds `wrapper_lock`.
+fn retire_recognized_journal_wrapper(
+    environment: &WrapperEnvironment,
+    binding: &InstallationBinding,
+) -> Result<bool, WrapperError> {
+    if !crate::legacy_journal_belongs_to_this_installation(
+        &environment.home_dir,
+        &environment.executable_dir,
+        Some(binding),
+    ) {
+        return Ok(false);
+    }
+    if service_execs_legacy_journal(&environment.home_dir) {
+        return Ok(true);
+    }
+    let path = wrapper_paths(&environment.home_dir).legacy_journal;
+    let snapshot = snapshot_path(&path)?;
+    let backup_directory = prepare_backup_directory(environment)?;
+    backup_snapshot(&snapshot, "journal", &backup_directory)?;
+    unlink_any(&path)?;
+    Ok(false)
+}
+
+/// Whether the unit file `service_artifact_path` returns starts through
+/// `~/.local/bin/journal`. Drop-ins are not read. An absent or unreadable
+/// unit does not count as that launcher.
+fn service_execs_legacy_journal(home: &Path) -> bool {
+    let Ok(Some(path)) = crate::steps::service_artifact_path(home) else {
+        return false;
+    };
+    let expected = home.join(".local/bin/journal");
+    let token = if cfg!(target_os = "linux") {
+        let Ok(text) = fs::read_to_string(&path) else {
+            return false;
+        };
+        solstone_core_service_unit::systemd_unit_start_program(&text)
+    } else if cfg!(target_os = "macos") {
+        let Ok(bytes) = fs::read(&path) else {
+            return false;
+        };
+        solstone_core_service_unit::launchd_plist_start_program(&bytes)
+    } else {
+        None
+    };
+    token.is_some_and(|token| Path::new(&token) == expected)
 }
 
 /// Remove only aliases this runtime owns.  Refusal state is returned intact for callers.
@@ -957,43 +1024,45 @@ pub fn uninstall_wrappers(
     environment: &WrapperEnvironment,
     protected_journals: &ProtectedJournals,
 ) -> Result<(), (AliasState, Option<PathBuf>)> {
-    let states = [
-        check_alias(environment, "solstone").map_err(|_| (AliasState::Foreign, None))?,
-        check_alias(environment, "journal").map_err(|_| (AliasState::Foreign, None))?,
-    ];
-    if let Some(blocked) = states
-        .iter()
-        .find(|(state, _)| !matches!(state, AliasState::Absent | AliasState::Owned))
-    {
-        return Err(blocked.clone());
+    let state = check_alias(environment, "solstone").map_err(|_| (AliasState::Foreign, None))?;
+    if !matches!(state.0, AliasState::Absent | AliasState::Owned) {
+        return Err(state);
     }
     let _lock = wrapper_lock(&environment.home_dir).map_err(|_| (AliasState::Foreign, None))?;
-    let states = [
-        check_alias(environment, "solstone").map_err(|_| (AliasState::Foreign, None))?,
-        check_alias(environment, "journal").map_err(|_| (AliasState::Foreign, None))?,
-    ];
-    if let Some(blocked) = states
-        .iter()
-        .find(|(state, _)| !matches!(state, AliasState::Absent | AliasState::Owned))
-    {
-        return Err(blocked.clone());
+    let state = check_alias(environment, "solstone").map_err(|_| (AliasState::Foreign, None))?;
+    if !matches!(state.0, AliasState::Absent | AliasState::Owned) {
+        return Err(state);
     }
     let paths = wrapper_paths(&environment.home_dir);
-    for path in [&paths.solstone, &paths.journal] {
-        if may_remove_cleanup_target(
-            path,
-            CleanupTargetKind::PerInstall,
-            false,
-            true,
-            protected_journals,
-            protected_journals.platform(),
-        ) != CleanupTargetDecision::Remove
-        {
-            continue;
-        }
-        if path.exists() || path.is_symlink() {
-            fs::remove_file(path).map_err(|_| (AliasState::Foreign, None))?;
-        }
+    if may_remove_cleanup_target(
+        &paths.solstone,
+        CleanupTargetKind::PerInstall,
+        false,
+        true,
+        protected_journals,
+        protected_journals.platform(),
+    ) == CleanupTargetDecision::Remove
+        && (paths.solstone.exists() || paths.solstone.is_symlink())
+    {
+        fs::remove_file(&paths.solstone).map_err(|_| (AliasState::Foreign, None))?;
+    }
+    // Branch 2 only: this helper has no installation binding. Clean uninstall
+    // passes the binding on its own removal path.
+    if crate::legacy_journal_belongs_to_this_installation(
+        &environment.home_dir,
+        &environment.executable_dir,
+        None,
+    ) && may_remove_cleanup_target(
+        &paths.legacy_journal,
+        CleanupTargetKind::PerInstall,
+        false,
+        true,
+        protected_journals,
+        protected_journals.platform(),
+    ) == CleanupTargetDecision::Remove
+        && (paths.legacy_journal.exists() || paths.legacy_journal.is_symlink())
+    {
+        fs::remove_file(&paths.legacy_journal).map_err(|_| (AliasState::Foreign, None))?;
     }
     Ok(())
 }
@@ -1252,18 +1321,19 @@ mod tests {
 
     #[test]
     fn canonical_parser_rejects_slot_and_effective_shell_overrides() {
-        let rendered = render_wrapper(
-            WrapperCommand::Journal,
+        let rendered = render_wrapper_version(
+            WrapperCommand::LegacyJournal,
             Path::new("/journal"),
             Path::new("/install/versions/2/bin/journal"),
-            &guard(),
+            Some(&guard()),
+            WRAPPER_VERSION,
         )
         .unwrap();
-        assert!(parse_wrapper(WrapperCommand::Journal, &rendered).is_some());
+        assert!(parse_wrapper(WrapperCommand::LegacyJournal, &rendered).is_some());
         assert!(parse_wrapper(WrapperCommand::Solstone, &rendered).is_none());
         assert!(
             parse_wrapper(
-                WrapperCommand::Journal,
+                WrapperCommand::LegacyJournal,
                 &rendered.replace(
                     "/install/versions/2/bin/journal",
                     "/install/versions/2/bin/solstone"
@@ -1273,28 +1343,28 @@ mod tests {
         );
         assert!(
             parse_wrapper(
-                WrapperCommand::Journal,
+                WrapperCommand::LegacyJournal,
                 &format!("{rendered}SOL_BIN='/foreign/journal'\n")
             )
             .is_none()
         );
         assert!(
             parse_wrapper(
-                WrapperCommand::Journal,
+                WrapperCommand::LegacyJournal,
                 &rendered.replace("exec \"$SOL_BIN\" \"$@\"", "exec /foreign/journal \"$@\"")
             )
             .is_none()
         );
         assert!(
             parse_wrapper(
-                WrapperCommand::Journal,
+                WrapperCommand::LegacyJournal,
                 &rendered.replace("# managed-version: 8\n", "# managed-version: 6\n")
             )
             .is_none()
         );
         assert!(
             parse_wrapper(
-                WrapperCommand::Journal,
+                WrapperCommand::LegacyJournal,
                 &rendered.replace(
                     "${SOLSTONE_JOURNAL:=/journal}",
                     "${SOLSTONE_JOURNAL:=/different/journal}"
@@ -1306,11 +1376,16 @@ mod tests {
 
     #[test]
     fn published_guarded_v8_wrappers_keep_their_checked_identity() {
-        for command in [WrapperCommand::Solstone, WrapperCommand::Journal] {
+        for command in [WrapperCommand::Solstone, WrapperCommand::LegacyJournal] {
             let journal = Path::new("/journal");
             let target = Path::new("/install/bin").join(command.as_str());
             let fields = guard_for(journal);
-            let current = render_wrapper(command, journal, &target, &fields).unwrap();
+            let current = if command == WrapperCommand::LegacyJournal {
+                render_wrapper_version(command, journal, &target, Some(&fields), WRAPPER_VERSION)
+                    .unwrap()
+            } else {
+                render_wrapper(command, journal, &target, &fields).unwrap()
+            };
             let published = current.replacen(
                 "managed by 'solstone journal config'.",
                 "managed by 'journal config'.",
@@ -1337,14 +1412,15 @@ mod tests {
     fn checked_renderer_preserves_utf8_and_refuses_unrepresentable_inputs() {
         let journal = Path::new("/owner/é/e\u{301} journal=it's");
         let target = Path::new("/install/版本/it's/bin/journal");
-        let rendered = render_wrapper(
-            WrapperCommand::Journal,
+        let rendered = render_wrapper_version(
+            WrapperCommand::LegacyJournal,
             journal,
             target,
-            &guard_for(journal),
+            Some(&guard_for(journal)),
+            WRAPPER_VERSION,
         )
         .unwrap();
-        let parsed = parse_wrapper(WrapperCommand::Journal, &rendered).unwrap();
+        let parsed = parse_wrapper(WrapperCommand::LegacyJournal, &rendered).unwrap();
         assert_eq!(parsed.journal, journal.to_str().unwrap());
         assert_eq!(parsed.sol_bin, target);
 
@@ -1357,7 +1433,7 @@ mod tests {
         ] {
             assert!(
                 render_wrapper(
-                    WrapperCommand::Journal,
+                    WrapperCommand::LegacyJournal,
                     Path::new(unsafe_journal),
                     target,
                     &guard_for(Path::new(unsafe_journal)),
@@ -1368,7 +1444,7 @@ mod tests {
         }
         assert!(
             render_wrapper(
-                WrapperCommand::Journal,
+                WrapperCommand::LegacyJournal,
                 Path::new("relative"),
                 target,
                 &guard(),
@@ -1377,7 +1453,7 @@ mod tests {
         );
         assert!(
             render_wrapper(
-                WrapperCommand::Journal,
+                WrapperCommand::LegacyJournal,
                 journal,
                 Path::new("relative"),
                 &guard(),
@@ -1386,7 +1462,7 @@ mod tests {
         );
         assert!(
             render_wrapper(
-                WrapperCommand::Journal,
+                WrapperCommand::LegacyJournal,
                 journal,
                 Path::new("/target\nother"),
                 &guard(),
@@ -1394,10 +1470,12 @@ mod tests {
             .is_err()
         );
         let non_utf8 = PathBuf::from(OsString::from_vec(vec![b'/', 0xff]));
-        assert!(render_wrapper(WrapperCommand::Journal, &non_utf8, target, &guard()).is_err());
+        assert!(
+            render_wrapper(WrapperCommand::LegacyJournal, &non_utf8, target, &guard()).is_err()
+        );
         assert!(
             render_wrapper(
-                WrapperCommand::Journal,
+                WrapperCommand::LegacyJournal,
                 journal,
                 &non_utf8,
                 &guard_for(journal)
@@ -1409,14 +1487,14 @@ mod tests {
     #[test]
     fn canonical_unguarded_v8_is_syntax_evidence_not_a_guard() {
         let content = render_wrapper_version(
-            WrapperCommand::Journal,
+            WrapperCommand::LegacyJournal,
             Path::new("/journal"),
             Path::new("/install/bin/journal"),
             None,
             8,
         )
         .unwrap();
-        let parsed = parse_wrapper(WrapperCommand::Journal, &content).unwrap();
+        let parsed = parse_wrapper(WrapperCommand::LegacyJournal, &content).unwrap();
         assert_eq!(parsed.version, 8);
         assert_eq!(parsed.guard, None);
     }
@@ -1555,12 +1633,13 @@ mod tests {
         };
 
         fs::write(
-            wrapper_paths(&home).journal,
-            render_wrapper(
-                WrapperCommand::Journal,
+            wrapper_paths(&home).legacy_journal,
+            render_wrapper_version(
+                WrapperCommand::LegacyJournal,
                 Path::new("/journal"),
                 &old_bin.join("journal"),
-                &guard(),
+                Some(&guard()),
+                WRAPPER_VERSION,
             )
             .unwrap(),
         )
@@ -1593,12 +1672,13 @@ mod tests {
         )
         .unwrap();
         fs::write(
-            wrapper_paths(&env.home_dir).journal,
-            render_wrapper(
-                WrapperCommand::Journal,
+            wrapper_paths(&env.home_dir).legacy_journal,
+            render_wrapper_version(
+                WrapperCommand::LegacyJournal,
                 Path::new("/old"),
                 &env.executable_dir.join("journal"),
-                &guard_for(Path::new("/old")),
+                Some(&guard_for(Path::new("/old"))),
+                WRAPPER_VERSION,
             )
             .unwrap(),
         )
@@ -1626,9 +1706,8 @@ mod tests {
                 .contains(WRAPPER_MARKER)
         );
         assert!(
-            fs::read_to_string(wrapper_paths(&env.home_dir).journal)
-                .unwrap()
-                .contains(WRAPPER_MARKER)
+            !wrapper_paths(&env.home_dir).legacy_journal.exists(),
+            "a recognized journal wrapper is retired when no unit execs it"
         );
         let absent_home = root.join("absent-home");
         let absent = WrapperEnvironment {
@@ -1663,7 +1742,7 @@ mod tests {
             fs::read_to_string(wrapper_paths(&env.home_dir).solstone).unwrap(),
             old
         );
-        assert!(!wrapper_paths(&env.home_dir).journal.exists());
+        assert!(!wrapper_paths(&env.home_dir).legacy_journal.exists());
     }
     #[test]
     fn worktree_leaves_aliases_unwritten() {
@@ -1671,8 +1750,10 @@ mod tests {
         let env = environment(&root);
         fs::create_dir_all(&env.curdir).unwrap();
         fs::write(env.curdir.join(".git"), "gitdir: x").unwrap();
-        let paths = provision_wrappers(&env, Path::new("/journal"), &binding()).unwrap();
-        assert!(!paths.solstone.exists() && !paths.journal.exists());
+        let paths = provision_wrappers(&env, Path::new("/journal"), &binding())
+            .unwrap()
+            .paths;
+        assert!(!paths.solstone.exists() && !paths.legacy_journal.exists());
     }
     #[test]
     fn provision_and_uninstall_leave_a_foreign_file_at_local_bin_sol() {
@@ -1720,11 +1801,7 @@ mod tests {
                 .unwrap()
                 .contains(WRAPPER_MARKER)
         );
-        assert!(
-            fs::read_to_string(public_bin.join("journal"))
-                .unwrap()
-                .contains(WRAPPER_MARKER)
-        );
+        assert!(!public_bin.join("journal").exists());
         assert!(!public_bin.join("sol").exists());
         let backups = fs::read_dir(env.backup_dir())
             .unwrap()
@@ -1783,11 +1860,7 @@ mod tests {
                 .unwrap()
                 .contains(WRAPPER_MARKER)
         );
-        assert!(
-            fs::read_to_string(public_bin.join("journal"))
-                .unwrap()
-                .contains(WRAPPER_MARKER)
-        );
+        assert!(!public_bin.join("journal").exists());
         assert!(!public_bin.join("sol").exists());
         let backups = fs::read_dir(env.backup_dir())
             .unwrap()
@@ -2074,7 +2147,7 @@ mod tests {
         let paths = wrapper_paths(&home);
         fs::create_dir_all(paths.solstone.parent().unwrap()).unwrap();
         fs::write(&paths.solstone, "old-solstone").unwrap();
-        fs::write(&paths.journal, "old-journal").unwrap();
+        fs::write(&paths.legacy_journal, "old-journal").unwrap();
 
         let first_lock = wrapper_lock(&home).expect("first distinct file descriptor lock");
         let rendezvous = Arc::new(Barrier::new(2));
@@ -2091,7 +2164,7 @@ mod tests {
             let _second_lock = wrapper_lock(&worker_home).expect("second descriptor lock");
             write_wrappers_atomically(&[
                 (worker_paths.solstone, "new-solstone".into()),
-                (worker_paths.journal, "new-journal".into()),
+                (worker_paths.legacy_journal, "new-journal".into()),
             ])
             .expect("write after lock release");
             done_tx.send(()).expect("tell owner about completed write");
@@ -2103,7 +2176,10 @@ mod tests {
             .expect("worker reached its lock attempt");
         assert!(matches!(done_rx.try_recv(), Err(mpsc::TryRecvError::Empty)));
         assert_eq!(fs::read_to_string(&paths.solstone).unwrap(), "old-solstone");
-        assert_eq!(fs::read_to_string(&paths.journal).unwrap(), "old-journal");
+        assert_eq!(
+            fs::read_to_string(&paths.legacy_journal).unwrap(),
+            "old-journal"
+        );
 
         drop(first_lock);
         done_rx
@@ -2111,7 +2187,10 @@ mod tests {
             .expect("second writer completed after release");
         worker.join().expect("worker thread");
         assert_eq!(fs::read_to_string(&paths.solstone).unwrap(), "new-solstone");
-        assert_eq!(fs::read_to_string(&paths.journal).unwrap(), "new-journal");
+        assert_eq!(
+            fs::read_to_string(&paths.legacy_journal).unwrap(),
+            "new-journal"
+        );
         assert!(
             fs::read_dir(paths.solstone.parent().unwrap())
                 .unwrap()

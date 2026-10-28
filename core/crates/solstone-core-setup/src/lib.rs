@@ -46,7 +46,7 @@ use identity_evidence::{
 use manifest::{legacy_manifest_evidence, manifest_path};
 use solstone_core_installation_identity::{
     ArtifactBindingEvidence, CleanUninstallRequest, CleanUninstallSession,
-    FOREIGN_ARTIFACTS_REFUSAL, IdentityError, JournalToken, OwnerBase,
+    FOREIGN_ARTIFACTS_REFUSAL, IdentityError, InstallationBinding, JournalToken, OwnerBase,
     PROGRAM_FOLDER_JOURNAL_REFUSAL, PlatformTag, SetupAdmission, SetupAdmissionRequest,
     UNCERTAIN_ARTIFACTS_REFUSAL, admit_clean_uninstall,
     admit_setup_with_effective_journal_validator, journal_token_from_path,
@@ -133,7 +133,7 @@ fn package_database_owns_journal(executable_dir: &std::path::Path) -> bool {
     if executable_dir != std::path::Path::new("/usr/bin") {
         return false;
     }
-    let journal = "/usr/bin/journal";
+    let journal = "/usr/bin/solstone";
     if let Ok(output) = Command::new("/usr/bin/dpkg-query")
         .args(["-S", journal])
         .output()
@@ -243,6 +243,50 @@ fn identity_error_code(error: &IdentityError) -> events::ErrorCode {
     }
 }
 
+/// Whether `~/.local/bin/journal` is a managed wrapper from this installation.
+///
+/// A symlink is never followed. A guard is compared with `same_identity`, so a
+/// stale journal token still matches and a different generation does not.
+/// Branch 2, used when `binding` is `None` or the file has no guard, requires
+/// the recorded target to sit lexically under this installation's `versions/`
+/// directory. The target and that directory do not need to exist. A file that
+/// carries a guard never takes branch 2.
+pub fn legacy_journal_belongs_to_this_installation(
+    home_dir: &std::path::Path,
+    executable_dir: &std::path::Path,
+    binding: Option<&InstallationBinding>,
+) -> bool {
+    let path = wrapper::wrapper_paths(home_dir).legacy_journal;
+    let metadata = match fs::symlink_metadata(&path) {
+        Ok(metadata) => metadata,
+        Err(_) => return false,
+    };
+    if metadata.file_type().is_symlink() || !metadata.is_file() {
+        return false;
+    }
+    let Ok(content) = fs::read_to_string(&path) else {
+        return false;
+    };
+    let Some(parsed) = wrapper::parse_wrapper(wrapper::WrapperCommand::LegacyJournal, &content)
+    else {
+        return false;
+    };
+    if parsed.sol_bin.file_name().and_then(|name| name.to_str()) != Some("journal") {
+        return false;
+    }
+    if let Some(guard) = parsed.guard.as_ref() {
+        return binding.is_some_and(|binding| {
+            guard.same_identity(
+                &solstone_core_installation_identity::GuardFields::from_binding(binding),
+            )
+        });
+    }
+    let Some(root) = resolve_identity_root_from_executable_dir(executable_dir) else {
+        return false;
+    };
+    parsed.sol_bin.starts_with(root.join("versions"))
+}
+
 /// The setup artifacts an owner must clear to recover from a refused admission.
 ///
 /// ⚠ Every path here is created by `solstone journal setup` and rebuilt by it. 🔒 None of
@@ -258,13 +302,18 @@ fn identity_error_code(error: &IdentityError) -> events::ErrorCode {
 /// than widened -- an incomplete remedy is recoverable, a destructive one is not.
 fn identity_recovery_paths(
     home_dir: &std::path::Path,
+    executable_dir: &std::path::Path,
     namespace: Option<&str>,
+    binding: Option<&InstallationBinding>,
 ) -> Result<Vec<(PathBuf, &'static str)>, IdentityError> {
     let wrappers = wrapper::wrapper_paths(home_dir);
     // The `rm` flag is fixed per entry rather than probed from the filesystem, so
     // the printed remedy is the same on every host and cannot change under us
     // between rendering the message and the owner running it.
-    let mut paths = vec![(wrappers.journal, "-f"), (wrappers.solstone, "-f")];
+    let mut paths = vec![(wrappers.solstone, "-f")];
+    if legacy_journal_belongs_to_this_installation(home_dir, executable_dir, binding) {
+        paths.insert(0, (wrappers.legacy_journal, "-f"));
+    }
     // A V1 `sol` is never a V2 wrapper, so setup would leave it answering the old
     // line; list it only when the exact V1 recognizer says the file is V1's.
     let sol = home_dir.join(".local/bin/sol");
@@ -334,6 +383,7 @@ fn report_identity_failure<W: Write>(
     stderr: &mut impl Write,
     error: &IdentityError,
     home_dir: &std::path::Path,
+    executable_dir: &std::path::Path,
     namespace: Option<&str>,
 ) -> ExitCode {
     let code = identity_error_code(error);
@@ -354,7 +404,7 @@ fn report_identity_failure<W: Write>(
     let (recovery, recovery_error) = if foreign || uncertain || program_folder {
         (Vec::new(), None)
     } else {
-        match identity_recovery_paths(home_dir, namespace) {
+        match identity_recovery_paths(home_dir, executable_dir, namespace, None) {
             Ok(paths) => (paths, None),
             Err(error) => (Vec::new(), Some(error)),
         }
@@ -739,6 +789,7 @@ fn run_owner_setup_with_io_with_resolution_env<W: Write, E: Write>(
                     stderr,
                     &error,
                     &home_dir,
+                    &executable_dir,
                     setup_identity_namespace(&executable_dir, &project_root).as_deref(),
                 );
             }
@@ -795,7 +846,7 @@ fn run_owner_setup_with_io_with_resolution_env<W: Write, E: Write>(
             bundled_user_skill: project_root.join("solstone/talent/solstone"),
             artifact_evidence,
             curdir: current_dir,
-            executable_dir,
+            executable_dir: executable_dir.clone(),
             yes: args.yes,
             stdin_is_tty,
             confirm: seams.confirm_clean_uninstall.as_mut(),
@@ -861,6 +912,7 @@ fn run_owner_setup_with_io_with_resolution_env<W: Write, E: Write>(
                 stderr,
                 &error,
                 &home_dir,
+                &executable_dir,
                 clean_namespace.as_deref(),
             );
         }
@@ -907,6 +959,7 @@ fn run_owner_setup_with_io_with_resolution_env<W: Write, E: Write>(
                     stderr,
                     &error,
                     &home_dir,
+                    &executable_dir,
                     setup_identity_namespace(&executable_dir, &project_root).as_deref(),
                 );
             }
@@ -948,6 +1001,7 @@ fn run_owner_setup_with_io_with_resolution_env<W: Write, E: Write>(
             stderr,
             &error,
             &home_dir,
+            &executable_dir,
             setup_identity_namespace(&executable_dir, &project_root).as_deref(),
         );
     }
@@ -1768,11 +1822,16 @@ mod tests {
             &mut stderr,
             &IdentityError::AdmissionRefused("existing artifacts have no valid bootstrap evidence"),
             home,
+            home,
             Some(namespace.as_str()),
         );
         let text = String::from_utf8(stderr).expect("stderr");
-        for (path, flag) in
-            identity_recovery_paths(home, Some(namespace.as_str())).expect("resolve recovery paths")
+        assert!(
+            !text.contains(".local/bin/journal"),
+            "a refusal with no loaded binding must not name the journal wrapper unless branch 2 matches: {text}"
+        );
+        for (path, flag) in identity_recovery_paths(home, home, Some(namespace.as_str()), None)
+            .expect("resolve recovery paths")
         {
             let command = if cfg!(windows) {
                 let quoted = path.to_string_lossy().replace('\'', "''");
@@ -1819,6 +1878,118 @@ mod tests {
         assert_eq!(format!("{exit:?}"), format!("{:?}", ExitCode::from(2)));
     }
 
+    /// (l) Recovery names `~/.local/bin/journal` only for an unguarded wrapper
+    /// whose target sits under this installation's `versions/` directory.
+    #[cfg(unix)]
+    #[test]
+    fn identity_recovery_lists_an_unguarded_versioned_journal_wrapper() {
+        let root = root("recovery-branch-2");
+        let home = root.join("home");
+        let journal = root.join("journal");
+        fs::create_dir_all(&journal).unwrap();
+        let prefix = root.join("prefix");
+        let live = prefix.join("versions/1.0.0-aaaaaaaaaaaa/bin");
+        fs::create_dir_all(&live).unwrap();
+        std::os::unix::fs::symlink("versions/1.0.0-aaaaaaaaaaaa", prefix.join("current")).unwrap();
+        let executable_dir = prefix.join("current/bin");
+        let path = home.join(".local/bin/journal");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let body = crate::wrapper::render_wrapper_version(
+            crate::wrapper::WrapperCommand::LegacyJournal,
+            &journal,
+            &prefix.join("versions/0.9.0-bbbbbbbbbbbb/bin/journal"),
+            None,
+            7,
+        )
+        .unwrap();
+        fs::write(&path, &body).unwrap();
+        let listed = identity_recovery_paths(&home, &executable_dir, None, None)
+            .expect("resolve recovery paths");
+        assert_eq!(listed[0].0, path);
+
+        let guard = GuardFields {
+            namespace: solstone_core_installation_identity::NamespaceName::parse(
+                "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+            )
+            .unwrap(),
+            id: solstone_core_installation_identity::InstallationId::parse(
+                "00112233445566778899aabbccddeeff",
+            )
+            .unwrap(),
+            generation: solstone_core_installation_identity::Generation::new(1).unwrap(),
+            journal_token: journal_token_from_path(&journal).unwrap(),
+        };
+        let guarded = crate::wrapper::render_wrapper_version(
+            crate::wrapper::WrapperCommand::LegacyJournal,
+            &journal,
+            &prefix.join("versions/0.9.0-bbbbbbbbbbbb/bin/journal"),
+            Some(&guard),
+            8,
+        )
+        .unwrap();
+        fs::write(&path, guarded).unwrap();
+        let listed = identity_recovery_paths(&home, &executable_dir, None, None)
+            .expect("resolve recovery paths");
+        assert!(listed.iter().all(|(listed_path, _)| listed_path != &path));
+    }
+
+    /// (k) Setup is admitted after an owned journal wrapper has been retired.
+    /// The PATH probe is the direct check: `~/.local/bin` then a directory
+    /// whose only command is an unrelated `journal`.
+    #[cfg(unix)]
+    #[test]
+    fn setup_is_admitted_after_an_owned_journal_wrapper_is_retired() {
+        let root = root("admit-retired-journal");
+        let home = root.join("home");
+        let executable_dir = root.join("bin");
+        let journal = root.join("journal");
+        fs::create_dir_all(&executable_dir).unwrap();
+        fs::create_dir_all(&home).unwrap();
+        fs::create_dir_all(&journal).unwrap();
+        let args = parsed(
+            &[
+                "--yes".into(),
+                "--journal".into(),
+                journal.display().to_string(),
+            ],
+            &root,
+        );
+        let resolution = ResolutionContext {
+            home_dir: home.clone(),
+            current_dir: root.to_path_buf(),
+            journal_env: None,
+            journal_variant_env: None,
+            is_source_checkout: false,
+        };
+        let resolved = resolve_setup(&args, &resolution);
+        let first =
+            admit_setup_identity(&home, &executable_dir, &root, &resolved, true, false).unwrap();
+        let binding = first.admission.binding().clone();
+        drop(first);
+        let guard = GuardFields::from_binding(&binding);
+        let path = home.join(".local/bin/journal");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(
+            &path,
+            crate::wrapper::render_wrapper_version(
+                crate::wrapper::WrapperCommand::LegacyJournal,
+                &journal,
+                &executable_dir.join("journal"),
+                Some(&guard),
+                8,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert!(legacy_journal_belongs_to_this_installation(
+            &home,
+            &executable_dir,
+            Some(&binding),
+        ));
+        fs::remove_file(&path).unwrap();
+        admit_setup_identity(&home, &executable_dir, &root, &resolved, true, false).unwrap();
+    }
+
     /// 🔴 The remedy must never tell an owner to remove the owner-wide registry.
     ///
     /// `installation-identity/v1/namespaces/` holds one entry per installation
@@ -1830,7 +2001,7 @@ mod tests {
         let namespace = "b".repeat(64);
         let registry = installation_identity_dir(home).expect("resolve identity location");
 
-        let scoped = identity_recovery_paths(home, Some(namespace.as_str()))
+        let scoped = identity_recovery_paths(home, home, Some(namespace.as_str()), None)
             .expect("resolve recovery paths");
         let identity: Vec<_> = scoped
             .iter()
@@ -1850,7 +2021,8 @@ mod tests {
         }
 
         // ...and when the namespace cannot be resolved, omit rather than widen.
-        let unscoped = identity_recovery_paths(home, None).expect("resolve recovery paths");
+        let unscoped =
+            identity_recovery_paths(home, home, None, None).expect("resolve recovery paths");
         assert!(
             !unscoped.iter().any(|(path, _)| path.starts_with(&registry)),
             "an unresolvable namespace must drop the identity path, not broaden it"
@@ -2229,11 +2401,11 @@ mod tests {
             generation: solstone_core_installation_identity::Generation::new(1).unwrap(),
             journal_token: journal_token_from_path(&root.join("journal")).unwrap(),
         };
-        let wrapper_path = home.join(".local/bin/journal");
+        let wrapper_path = home.join(".local/bin/solstone");
         let wrapper_before = crate::wrapper::render_wrapper(
-            crate::wrapper::WrapperCommand::Journal,
+            crate::wrapper::WrapperCommand::Solstone,
             &root.join("journal"),
-            &executable_dir.join("journal"),
+            &executable_dir.join("solstone"),
             &foreign_guard,
         )
         .unwrap();
@@ -2307,26 +2479,53 @@ mod tests {
     // Requires Unix managed shell wrappers or service artifacts.
     #[cfg(unix)]
     #[test]
-    fn conflicting_wrapper_guards_refuse_without_cleanup_instructions() {
-        let root = root("identity-conflicting-guards");
+    fn a_foreign_journal_wrapper_does_not_refuse_an_admitted_setup() {
+        let root = root("identity-foreign-journal");
         let home = root.join("home");
         let executable_dir = root.join("bin");
         let journal = root.join("journal");
-        fs::create_dir_all(home.join(".local/bin")).unwrap();
         fs::create_dir_all(&executable_dir).unwrap();
+        let run = |stdout: &mut Vec<u8>, stderr: &mut Vec<u8>| {
+            let args = parsed(
+                &[
+                    "--yes".into(),
+                    "--journal".into(),
+                    journal.display().to_string(),
+                    "--skip-models".into(),
+                    "--skip-skills".into(),
+                    "--skip-service".into(),
+                    "--skip-brain".into(),
+                ],
+                &root,
+            );
+            let doctor = CommandOutput {
+                exit_code: 0,
+                stdout: "{}".into(),
+                stderr: String::new(),
+                timed_out: false,
+            };
+            run_owner_setup_with_io(
+                args,
+                home.clone(),
+                executable_dir.clone(),
+                root.to_path_buf(),
+                false,
+                false,
+                seams(vec![doctor]),
+                stdout,
+                stderr,
+            )
+        };
+        let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
+        assert_eq!(run(&mut stdout, &mut stderr), ExitCode::SUCCESS);
 
         let foreign_root = root.join("another-installation");
         fs::create_dir_all(&foreign_root).unwrap();
-        let local_namespace = namespace_name(
-            PlatformTag::current(),
-            &root_token_from_path(&root).unwrap(),
-        );
-        let foreign_namespace = namespace_name(
-            PlatformTag::current(),
-            &root_token_from_path(&foreign_root).unwrap(),
-        );
-        let guard_for = |namespace| GuardFields {
-            namespace,
+        let foreign_guard = GuardFields {
+            namespace: namespace_name(
+                PlatformTag::current(),
+                &root_token_from_path(&foreign_root).unwrap(),
+            ),
             id: solstone_core_installation_identity::InstallationId::parse(
                 "00112233445566778899aabbccddeeff",
             )
@@ -2334,71 +2533,25 @@ mod tests {
             generation: solstone_core_installation_identity::Generation::new(1).unwrap(),
             journal_token: journal_token_from_path(&journal).unwrap(),
         };
-        let wrappers = [
-            (
-                crate::wrapper::WrapperCommand::Solstone,
-                "solstone",
-                guard_for(local_namespace),
-            ),
-            (
-                crate::wrapper::WrapperCommand::Journal,
-                "journal",
-                guard_for(foreign_namespace),
-            ),
-        ]
-        .map(|(command, name, guard)| {
-            let path = home.join(".local/bin").join(name);
-            let contents = crate::wrapper::render_wrapper(
-                command,
-                &journal,
-                &executable_dir.join(name),
-                &guard,
-            )
-            .unwrap();
-            fs::write(&path, &contents).unwrap();
-            (path, contents)
-        });
+        let journal_path = home.join(".local/bin/journal");
+        let journal_before = crate::wrapper::render_wrapper_version(
+            crate::wrapper::WrapperCommand::LegacyJournal,
+            &journal,
+            &foreign_root.join("journal"),
+            Some(&foreign_guard),
+            8,
+        )
+        .unwrap();
+        fs::write(&journal_path, &journal_before).unwrap();
 
-        let calls = Arc::new(AtomicUsize::new(0));
-        let args = parsed(
-            &[
-                "--yes".into(),
-                "--journal".into(),
-                journal.display().to_string(),
-            ],
-            &root,
-        );
         let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
-        let exit = run_owner_setup_with_io(
-            args,
-            home,
-            executable_dir,
-            root.to_path_buf(),
-            false,
-            false,
-            Seams {
-                runner: Box::new(CountingRunner(calls.clone())),
-                service_ops: Box::new(Service),
-                check_report_builder: Box::new(Check),
-                already_keeps_journal_probe: no_probe,
-                prompt: Box::new(Prompt),
-                confirm_clean_uninstall: Box::new(|| true),
-            },
-            &mut stdout,
-            &mut stderr,
+        assert_eq!(
+            run(&mut stdout, &mut stderr),
+            ExitCode::SUCCESS,
+            "{}",
+            String::from_utf8_lossy(&stderr)
         );
-        assert_eq!(exit, ExitCode::from(2));
-        assert_eq!(calls.load(Ordering::Relaxed), 0);
-        assert!(stdout.is_empty());
-        let stderr = String::from_utf8(stderr).unwrap();
-        assert!(stderr.contains(UNCERTAIN_ARTIFACTS_REFUSAL), "{stderr}");
-        assert!(stderr.contains("leave them in place"), "{stderr}");
-        for command in ["rm ", "launchctl", "systemctl", "Remove-Item"] {
-            assert!(!stderr.contains(command), "found {command:?}: {stderr}");
-        }
-        for (path, contents) in wrappers {
-            assert_eq!(fs::read_to_string(path).unwrap(), contents);
-        }
+        assert_eq!(fs::read_to_string(&journal_path).unwrap(), journal_before);
     }
 
     /// The same refusal reached by a root that setup already admitted: it must not
@@ -2464,19 +2617,23 @@ mod tests {
             generation: solstone_core_installation_identity::Generation::new(1).unwrap(),
             journal_token: journal_token_from_path(&journal).unwrap(),
         };
-        for (command, name) in [
-            (crate::wrapper::WrapperCommand::Solstone, "solstone"),
-            (crate::wrapper::WrapperCommand::Journal, "journal"),
-        ] {
-            let foreign = crate::wrapper::render_wrapper(
-                command,
-                &journal,
-                &foreign_root.join(name),
-                &foreign_guard,
-            )
-            .unwrap();
-            fs::write(home.join(".local/bin").join(name), foreign).unwrap();
-        }
+        let foreign_solstone = crate::wrapper::render_wrapper(
+            crate::wrapper::WrapperCommand::Solstone,
+            &journal,
+            &foreign_root.join("solstone"),
+            &foreign_guard,
+        )
+        .unwrap();
+        fs::write(home.join(".local/bin/solstone"), &foreign_solstone).unwrap();
+        let foreign_journal = crate::wrapper::render_wrapper_version(
+            crate::wrapper::WrapperCommand::LegacyJournal,
+            &journal,
+            &foreign_root.join("journal"),
+            Some(&foreign_guard),
+            8,
+        )
+        .unwrap();
+        fs::write(home.join(".local/bin/journal"), &foreign_journal).unwrap();
 
         let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
         assert_eq!(run(&mut stdout, &mut stderr), ExitCode::from(2));
@@ -2501,6 +2658,7 @@ mod tests {
             &mut stdout,
             &mut stderr,
             &IdentityError::AdmissionRefused(FOREIGN_ARTIFACTS_REFUSAL),
+            &home,
             &home,
             Some(namespace.as_str()),
         );
@@ -2529,6 +2687,7 @@ mod tests {
             &mut stderr,
             &IdentityError::AdmissionRefused(UNCERTAIN_ARTIFACTS_REFUSAL),
             &home,
+            &home,
             Some(namespace.as_str()),
         );
         assert_eq!(exit, ExitCode::from(2));
@@ -2556,6 +2715,7 @@ mod tests {
             &mut stdout,
             &mut stderr,
             &IdentityError::AdmissionRefused(PROGRAM_FOLDER_JOURNAL_REFUSAL),
+            &home,
             &home,
             Some(namespace.as_str()),
         );
@@ -2617,7 +2777,8 @@ mod tests {
         fs::create_dir_all(root.join("owner's home/Library/Application Support")).unwrap();
         let home = fs::canonicalize(root.join("owner's home")).unwrap();
         let namespace = "d".repeat(64);
-        let recovery = identity_recovery_paths(&home, Some(namespace.as_str())).unwrap();
+        let recovery =
+            identity_recovery_paths(&home, &home, Some(namespace.as_str()), None).unwrap();
         let mut stdout: Vec<u8> = Vec::new();
         let mut stderr: Vec<u8> = Vec::new();
         report_identity_failure(
@@ -2625,6 +2786,7 @@ mod tests {
             &mut stdout,
             &mut stderr,
             &IdentityError::AdmissionRefused("existing artifacts have no valid bootstrap evidence"),
+            &home,
             &home,
             Some(namespace.as_str()),
         );
@@ -2659,7 +2821,7 @@ mod tests {
         let home = fs::canonicalize(root.join("home")).unwrap();
         let sol = home.join(".local/bin/sol");
         let listed = |home: &Path| {
-            identity_recovery_paths(home, None)
+            identity_recovery_paths(home, home, None, None)
                 .unwrap()
                 .iter()
                 .any(|(path, flag)| path.ends_with(".local/bin/sol") && *flag == "-f")
@@ -2693,6 +2855,7 @@ mod tests {
             &mut stdout,
             &mut stderr,
             &IdentityError::AdmissionRefused("existing artifacts have no valid bootstrap evidence"),
+            &home,
             &home,
             None,
         );
@@ -3002,7 +3165,7 @@ mod tests {
         prior.completed_at = Some("2026-01-01T00:00:01Z".into());
         #[cfg(unix)]
         prior.steps.push(serde_json::json!({
-            "name":"wrapper", "status":"ok", "paths":[paths.solstone.clone(), paths.journal.clone()],
+            "name":"wrapper", "status":"ok", "paths":[paths.solstone.clone()],
         }));
         prior.steps.push(serde_json::json!({
             "name":"service", "status":"ok", "paths":[service_path.clone()],
@@ -3106,28 +3269,16 @@ mod tests {
         let _lock = wrapper_lock(&home).expect("wrapper lock");
         assert!(
             write_wrappers_atomically_with(
-                &[
-                    (
-                        paths.solstone.clone(),
-                        crate::wrapper::render_wrapper(
-                            crate::wrapper::WrapperCommand::Solstone,
-                            &journal_two,
-                            &executable_dir.join("solstone"),
-                            &updated_guard,
-                        )
-                        .unwrap(),
-                    ),
-                    (
-                        paths.journal.clone(),
-                        crate::wrapper::render_wrapper(
-                            crate::wrapper::WrapperCommand::Journal,
-                            &journal_two,
-                            &executable_dir.join("journal"),
-                            &updated_guard,
-                        )
-                        .unwrap(),
-                    ),
-                ],
+                &[(
+                    paths.solstone.clone(),
+                    crate::wrapper::render_wrapper(
+                        crate::wrapper::WrapperCommand::Solstone,
+                        &journal_two,
+                        &executable_dir.join("solstone"),
+                        &updated_guard,
+                    )
+                    .unwrap(),
+                ),],
                 |_from, _to| Err(io::Error::other("injected wrapper replacement failure")),
             )
             .is_err()
@@ -3229,20 +3380,15 @@ mod tests {
             "the post-flip setup must not classify its own old sibling wrappers as Foreign: {}",
             String::from_utf8_lossy(&upgraded_stderr)
         );
-        for (path, command) in [
-            (
-                wrapper_paths(&home).journal,
-                crate::wrapper::WrapperCommand::Journal,
-            ),
-            (
-                wrapper_paths(&home).solstone,
-                crate::wrapper::WrapperCommand::Solstone,
-            ),
-        ] {
-            let content = fs::read_to_string(path).unwrap();
-            let parsed = crate::wrapper::parse_wrapper(command, &content).unwrap();
-            assert_eq!(parsed.sol_bin.parent(), Some(new_bin.as_path()));
-        }
+        assert!(
+            !wrapper_paths(&home).legacy_journal.exists(),
+            "setup does not publish a journal wrapper"
+        );
+        let content = fs::read_to_string(wrapper_paths(&home).solstone).unwrap();
+        let parsed =
+            crate::wrapper::parse_wrapper(crate::wrapper::WrapperCommand::Solstone, &content)
+                .unwrap();
+        assert_eq!(parsed.sol_bin.parent(), Some(new_bin.as_path()));
     }
 
     #[test]
@@ -3292,20 +3438,20 @@ mod tests {
     #[test]
     fn package_database_output_requires_the_exact_journal_package_and_path() {
         assert!(dpkg_query_names_journal_package(
-            "solstone-journal: /usr/bin/journal\n",
-            "/usr/bin/journal"
+            "solstone-journal: /usr/bin/solstone\n",
+            "/usr/bin/solstone"
         ));
         assert!(dpkg_query_names_journal_package(
-            "solstone-journal:amd64: /usr/bin/journal\n",
-            "/usr/bin/journal"
+            "solstone-journal:amd64: /usr/bin/solstone\n",
+            "/usr/bin/solstone"
         ));
         assert!(!dpkg_query_names_journal_package(
-            "another-package: /usr/bin/journal\n",
-            "/usr/bin/journal"
+            "another-package: /usr/bin/solstone\n",
+            "/usr/bin/solstone"
         ));
         assert!(!dpkg_query_names_journal_package(
-            "solstone-journal: /opt/journal\n",
-            "/usr/bin/journal"
+            "solstone-journal: /opt/solstone\n",
+            "/usr/bin/solstone"
         ));
     }
 

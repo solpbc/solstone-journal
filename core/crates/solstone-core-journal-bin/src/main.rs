@@ -3,8 +3,7 @@
 
 use std::process::ExitCode;
 
-/// The same program as `solstone`: invoked as `journal`, it enters
-/// `solstone journal`.
+/// Private journal entry. The public command is `solstone journal`.
 fn main() -> ExitCode {
     solstone_core_sol::process_main()
 }

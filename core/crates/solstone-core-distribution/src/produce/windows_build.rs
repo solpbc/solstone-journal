@@ -883,13 +883,15 @@ mod tests {
                 }
             }
             let argv = cargo_argv(&inventory, architecture).unwrap();
-            for command in [
-                "solstone-core-journal",
-                "solstone-core-sol",
-                "solstone-core-ced-analyze",
-            ] {
+            for command in ["solstone-core-sol", "solstone-core-ced-analyze"] {
                 assert!(argv.windows(2).any(|pair| pair == ["--bin", command]));
             }
+            assert!(
+                !argv
+                    .windows(2)
+                    .any(|pair| pair == ["--bin", "solstone-core-journal"]),
+                "Windows cargo argv builds solstone.exe, not a journal.exe binary"
+            );
             assert!(!argv.iter().any(|s| s == "solstone-core-llama"));
             assert!(
                 argv.windows(2)

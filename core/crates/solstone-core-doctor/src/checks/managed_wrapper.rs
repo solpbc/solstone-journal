@@ -12,7 +12,7 @@ use solstone_core_setup::wrapper::{WrapperCommand, parse_wrapper};
 ///
 pub(crate) fn parse_sol_bin(content: &str) -> Option<PathBuf> {
     parse_wrapper(WrapperCommand::Solstone, content)
-        .or_else(|| parse_wrapper(WrapperCommand::Journal, content))
+        .or_else(|| parse_wrapper(WrapperCommand::LegacyJournal, content))
         .map(|wrapper| wrapper.sol_bin)
 }
 

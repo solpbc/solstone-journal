@@ -48,6 +48,17 @@ pub fn systemd_unit_port(unit: &str) -> Option<String> {
     unquote_exec_token(exec.split_whitespace().next_back()?)
 }
 
+/// The first `ExecStart` program token, using the same tokenizer as the
+/// legacy-unit recognizer. `None` means the unit does not name a start program.
+#[must_use]
+pub fn systemd_unit_start_program(unit: &str) -> Option<String> {
+    let exec = unit
+        .lines()
+        .map(str::trim)
+        .find_map(|line| line.strip_prefix("ExecStart="))?;
+    tokenize_exec_line(exec)?.into_iter().next()
+}
+
 /// Returns true only if the unit's ExecStart command matches the historical
 /// launcher start command at d32d7dae6^.
 #[must_use]

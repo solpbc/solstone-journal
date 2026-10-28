@@ -128,23 +128,31 @@ fn v2_self_upgrade_repoints_wrapper_after_a_same_version_respin() {
     if cfg!(target_os = "macos") {
         assert!(
             fs::symlink_metadata(home.join(".local/bin/journal")).is_err(),
-            "setup wrote a PATH wrapper on a mac"
+            "setup wrote a journal PATH wrapper on a mac"
+        );
+        assert!(
+            fs::symlink_metadata(home.join(".local/bin/solstone")).is_err(),
+            "setup wrote a solstone PATH wrapper on a mac"
         );
         let _ = fs::remove_dir_all(&root);
         return;
     }
 
-    let wrapper = fs::read_to_string(home.join(".local/bin/journal")).expect("read wrapper");
+    assert!(
+        fs::symlink_metadata(home.join(".local/bin/journal")).is_err(),
+        "setup wrote a journal PATH wrapper"
+    );
+    let wrapper = fs::read_to_string(home.join(".local/bin/solstone")).expect("read wrapper");
     let sol_bin_line = wrapper
         .lines()
         .find(|line| line.starts_with("SOL_BIN="))
         .expect("wrapper carries SOL_BIN");
     assert!(
-        sol_bin_line.contains(second.join("bin/journal").to_str().expect("utf8 path")),
+        sol_bin_line.contains(second.join("bin/solstone").to_str().expect("utf8 path")),
         "wrapper was not repointed at the newly installed build: {sol_bin_line}"
     );
     assert!(
-        !sol_bin_line.contains(first.join("bin/journal").to_str().expect("utf8 path")),
+        !sol_bin_line.contains(first.join("bin/solstone").to_str().expect("utf8 path")),
         "wrapper still names the old build: {sol_bin_line}"
     );
 

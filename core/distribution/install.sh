@@ -70,7 +70,7 @@ SUPPORTED_STATE_READER_MIN=1.0.0
 # BOOTSTRAP_REVISION of the installer live at https://solstone.app/install.sh
 # at promotion time (solstone-core-distribution's inspect.rs::MIN_BOOTSTRAP_REVISION
 # mirrors this floor).
-BOOTSTRAP_REVISION=3
+BOOTSTRAP_REVISION=4
 BOOTSTRAP_CONTRACT_VERSION=2
 
 refuse() {
@@ -1201,7 +1201,6 @@ check_journal_to_cli_transition() {
 verify_candidate_launchers() {
 	_dest=$1
 	_ver=$2
-	[ -x "$_dest/bin/journal" ] || refuse candidate-invalid "missing or non-executable bin/journal"
 	[ -x "$_dest/bin/solstone" ] || refuse candidate-invalid "missing or non-executable bin/solstone"
 	_j_out=$(run_journal_at "$_dest" "$_ver" --version 2>&1) || refuse candidate-invalid "journal version command failed"
 	[ "$_j_out" = "journal (solstone) ${_ver}" ] || refuse candidate-invalid "journal version mismatch: expected 'journal (solstone) ${_ver}', got '${_j_out}'"

@@ -85,7 +85,7 @@ fixture_bootstrap_owned() {
         cat "$FIX_ROOT/setup.stderr" >&2
         fail "$FIX_NAME real setup bootstrap"
     fi
-    [ -f "$FIX_HOME/.local/bin/journal" ] || fail "$FIX_NAME setup journal wrapper"
+    [ ! -e "$FIX_HOME/.local/bin/journal" ] || fail "$FIX_NAME setup wrote a journal wrapper"
     [ -f "$FIX_HOME/.local/bin/solstone" ] || fail "$FIX_NAME setup solstone wrapper"
 }
 
@@ -154,6 +154,22 @@ strip_wrapper_guards() {
     chmod 755 "$STRIP_WRAPPER"
 }
 
+# Setup no longer publishes a journal wrapper. Copy the solstone wrapper and
+# retarget the executable lines so inspect and repair can still classify a
+# historical file. The service comment keeps `solstone journal config`.
+plant_historical_journal() {
+    cp "$FIX_HOME/.local/bin/solstone" "$FIX_HOME/.local/bin/journal"
+    sed \
+        -e 's/^# solstone — managed/# journal — managed/' \
+        -e "s|^SOL_BIN='\\(.*\\)/solstone'\$|SOL_BIN='\\1/journal'|" \
+        -e 's|/.venv/bin/solstone|/.venv/bin/journal|' \
+        -e 's|echo "solstone: WARNING|echo "journal: WARNING|' \
+        -e "s|printf 'solstone: venv|printf 'journal: venv|" \
+        "$FIX_HOME/.local/bin/journal" > "$FIX_HOME/.local/bin/journal.tmp"
+    mv "$FIX_HOME/.local/bin/journal.tmp" "$FIX_HOME/.local/bin/journal"
+    chmod 755 "$FIX_HOME/.local/bin/journal"
+}
+
 make_route_lock() {
     LOCK_OWNER_INPUT=$1
     LOCK_PATH="$FIX_PREFIX/.solstone-route.lock"
@@ -192,14 +208,15 @@ test_inspection_classifications() {
     fixture_bootstrap_owned
     run_inspect
     [ "$ROUTE_STATUS" -eq 0 ] || fail "aligned inspect status"
-    expect_value journal_wrapper_state aligned
+    expect_value journal_wrapper_state missing
     expect_value solstone_wrapper_state aligned
     expect_value service_state missing
     cp "$FIX_ROOT/record" "$BASE/valid-inspect-record"
-    pass "inspection reports setup-owned wrappers independently"
+    pass "inspection reports a setup-owned solstone wrapper and an absent journal slot"
 
     fixture_new inspect-drifted
     fixture_bootstrap_owned
+    plant_historical_journal
     fixture_make_version 1.0.0-bbbbbbbbbbbb
     fixture_select_version 1.0.0-bbbbbbbbbbbb
     run_inspect
@@ -209,6 +226,7 @@ test_inspection_classifications() {
 
     fixture_new inspect-foreign
     fixture_bootstrap_owned
+    plant_historical_journal
     replace_wrapper_id "$FIX_HOME/.local/bin/journal"
     replace_wrapper_id "$FIX_HOME/.local/bin/solstone"
     run_inspect
@@ -217,6 +235,7 @@ test_inspection_classifications() {
 
     fixture_new inspect-malformed
     fixture_bootstrap_owned
+    plant_historical_journal
     corrupt_wrapper_guard "$FIX_HOME/.local/bin/journal"
     run_inspect
     expect_value journal_wrapper_state malformed
@@ -244,6 +263,7 @@ test_inspection_classifications() {
 
     fixture_new inspect-unguarded
     fixture_bootstrap_owned
+    plant_historical_journal
     strip_wrapper_guards "$FIX_HOME/.local/bin/journal"
     run_inspect
     expect_value journal_wrapper_state unguarded
@@ -251,6 +271,7 @@ test_inspection_classifications() {
 
     fixture_new inspect-mixed
     fixture_bootstrap_owned
+    plant_historical_journal
     rm -f "$FIX_HOME/.local/bin/solstone"
     run_inspect
     expect_value journal_wrapper_state aligned
@@ -324,7 +345,7 @@ test_hex_round_trip() {
     mkdir -p "$FIX_HOME"
     fixture_bootstrap_owned
     run_inspect
-    expect_value journal_wrapper_state aligned
+    expect_value journal_wrapper_state missing
     printf '%s/.local/bin/journal' "$FIX_HOME" > "$FIX_ROOT/expected-path-bytes"
     route_record_hex_decode "$(record_value journal_wrapper_path_hex)" > "$FIX_ROOT/decoded-path-bytes"
     cmp "$FIX_ROOT/expected-path-bytes" "$FIX_ROOT/decoded-path-bytes" || fail "hex decoder exact path bytes"
@@ -334,6 +355,7 @@ test_hex_round_trip() {
 test_lock_join_protocol() {
     fixture_new lock-join
     fixture_bootstrap_owned
+    plant_historical_journal
     fixture_make_version 1.0.0-bbbbbbbbbbbb
     fixture_select_version 1.0.0-bbbbbbbbbbbb
     JOURNAL_WRAPPER="$FIX_HOME/.local/bin/journal"
@@ -350,7 +372,10 @@ test_lock_join_protocol() {
     expect_value route_lock_state validated
     expect_value repair_wrapper rewritten
     expect_value repair_service not-run
-    grep -F "$FIX_PREFIX/versions/1.0.0-bbbbbbbbbbbb/bin/journal" "$JOURNAL_WRAPPER" > /dev/null || fail "repair journal target"
+    grep -F "$FIX_PREFIX/versions/$FIX_FIRST_VERSION/bin/journal" "$JOURNAL_WRAPPER" > /dev/null || fail "repair left the historical journal target"
+    if grep -F "$FIX_PREFIX/versions/1.0.0-bbbbbbbbbbbb/bin/journal" "$JOURNAL_WRAPPER" > /dev/null; then
+        fail "repair retargeted the journal wrapper"
+    fi
     grep -F "$FIX_PREFIX/versions/1.0.0-bbbbbbbbbbbb/bin/solstone" "$SOLSTONE_WRAPPER" > /dev/null || fail "repair solstone target"
     cmp "$FIX_ROOT/owner-before" "$FIX_PREFIX/.solstone-route.lock/owner" || fail "repair modified route lock owner"
     [ -d "$FIX_PREFIX/.solstone-route.lock" ] || fail "repair removed route lock"
@@ -406,6 +431,7 @@ test_lock_join_protocol() {
 test_repair_refusal_classes() {
     fixture_new repair-not-current
     fixture_bootstrap_owned
+    plant_historical_journal
     fixture_make_version 1.0.0-bbbbbbbbbbbb
     fixture_select_version 1.0.0-bbbbbbbbbbbb
     cp "$FIX_HOME/.local/bin/journal" "$FIX_ROOT/journal-before"
@@ -420,6 +446,7 @@ test_repair_refusal_classes() {
 
     fixture_new repair-foreign
     fixture_bootstrap_owned
+    plant_historical_journal
     replace_wrapper_id "$FIX_HOME/.local/bin/journal"
     replace_wrapper_id "$FIX_HOME/.local/bin/solstone"
     new_lock_token
@@ -436,7 +463,8 @@ test_repair_refusal_classes() {
 
     fixture_new repair-malformed
     fixture_bootstrap_owned
-    corrupt_wrapper_guard "$FIX_HOME/.local/bin/journal"
+    plant_historical_journal
+    corrupt_wrapper_guard "$FIX_HOME/.local/bin/solstone"
     new_lock_token
     make_route_lock "$LOCK_TOKEN"
     cp "$FIX_HOME/.local/bin/journal" "$FIX_ROOT/journal-before"

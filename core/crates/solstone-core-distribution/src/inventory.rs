@@ -2012,9 +2012,9 @@ mod tests {
                 .contains("invalid Windows native entry")
         );
         let mut collision = original;
-        let mut bin = collision.entry.iter().find(|entry| matches!(entry, super::Entry::Bin { dest, .. } if dest == "bin/journal.exe")).unwrap().clone();
+        let mut bin = collision.entry.iter().find(|entry| matches!(entry, super::Entry::Bin { dest, .. } if dest == "bin/journal-app.exe")).unwrap().clone();
         if let super::Entry::Bin { dest, .. } = &mut bin {
-            *dest = "bin/JOURNAL.exe".into();
+            *dest = "bin/JOURNAL-APP.exe".into();
         }
         collision.entry.push(bin);
         assert!(
@@ -2105,12 +2105,14 @@ mod tests {
             })
             .collect::<Vec<_>>();
         for (public, binary) in [
-            ("bin/journal.exe", "solstone-core-journal"),
+            ("bin/journal-app.exe", "journal-app"),
             ("bin/solstone.exe", "solstone-core-sol"),
         ] {
             assert!(entries.iter().any(|entry| matches!(entry,
                 Entry::Bin { dest, bin, .. } if dest == public && bin == binary)));
         }
+        assert!(!entries.iter().any(|entry| matches!(entry,
+                Entry::Bin { dest, .. } if dest == "bin/journal.exe")));
         assert!(
             !entries
                 .iter()

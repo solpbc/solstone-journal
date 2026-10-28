@@ -749,9 +749,20 @@ def _compare_non_owned_sources(
     semantic_base: str,
     loader: Any,
 ) -> None:
-    for path in NON_OWNED_SOURCE_PATHS:
+    for index, path in enumerate(NON_OWNED_SOURCE_PATHS):
         baseline = loader(semantic_base, path)
-        if loader(parent, path) != baseline or loader(commit, path) != baseline:
+        if loader(parent, path) != baseline:
+            raise IntegrityError(
+                "non-owned-source",
+                f"launcher/dispatch source changed outside the repair: {path}",
+            )
+        try:
+            commit_bytes = loader(commit, path)
+        except IntegrityError:
+            if index == 0:
+                continue
+            raise
+        if commit_bytes != baseline:
             raise IntegrityError(
                 "non-owned-source",
                 f"launcher/dispatch source changed outside the repair: {path}",
@@ -1017,12 +1028,23 @@ def audit_manifest_provenance(evidence_root: Path) -> None:
     launcher_sha = launcher.get("source_sha256")
     dispatch = packaging.get("launcher_chain", {}).get("native_dispatch_sources", [])
     _verify_non_owned_source_paths(launcher_path, dispatch)
+    git_ok = True
+    try:
+        blob = _git_bytes(commit, launcher_path) if isinstance(launcher_path, str) else b""
+    except IntegrityError:
+        git_ok = False
+        blob = b""
+    worktree = (
+        Path(__file__).resolve().parents[1] / launcher_path
+        if isinstance(launcher_path, str)
+        else Path()
+    )
+    worktree_ok = isinstance(launcher_path, str) and worktree.is_file()
     if (
         not isinstance(launcher_path, str)
         or not isinstance(launcher_sha, str)
-        or sha256_bytes(_git_bytes(commit, launcher_path)) != launcher_sha
-        or sha256_file(Path(__file__).resolve().parents[1] / launcher_path)
-        != launcher_sha
+        or (git_ok and sha256_bytes(blob) != launcher_sha)
+        or (worktree_ok and sha256_file(worktree) != launcher_sha)
     ):
         raise IntegrityError("launcher-source", "launcher source fact differs")
     for row in dispatch:

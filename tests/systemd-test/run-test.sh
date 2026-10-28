@@ -18,8 +18,10 @@
 #                                          #   than the older shape legacy-upgrade covers.
 #                                          #   Exercises the documented absolute V2
 #                                          #   command because a real v1.0.22
-#                                          #   ~/.local/bin/journal shadows the .deb's
-#                                          #   /usr/bin/journal on PATH.
+#                                          #   ~/.local/bin/journal is still first on
+#                                          #   PATH before setup. A package from this
+#                                          #   tree writes /usr/bin/solstone and does
+#                                          #   not write /usr/bin/journal.
 #   ./run-test.sh shell                    # leave container up + drop into a user shell
 #
 # Environment overrides:
@@ -591,7 +593,8 @@ UNIT
             test "$new_pid" != "$old_pid"
 
             grep -q "^# managed-version:" ~/.local/bin/solstone
-            grep -q "^# managed-version:" ~/.local/bin/journal
+            test ! -e ~/.local/bin/journal
+            test ! -L ~/.local/bin/journal
             test ! -e ~/.local/bin/sol
             test ! -L ~/.local/bin/sol
             test -x ~/.local/share/uv/tools/solstone/bin/solstone
@@ -801,13 +804,14 @@ MANIFEST
         # Real v1.0.22 owners had a real ~/.local/bin/journal from uv tool /
         # pipx / pip --user (that path is exactly _managed_wrapper("journal")
         # in v1.0.22's solstone/think/service.py). The .deb/.rpm route is a
-        # dumb file-drop with no maintainer scripts (by operator decision) and
-        # only ever writes /usr/bin/journal -- it cannot touch a per-owner
-        # ~/.local/bin. A typical login shell's default PATH puts
-        # ~/.local/bin ahead of /usr/bin, so the seeded v1 ~/.local/bin/
-        # journal SHADOWS /usr/bin/journal for the bare `journal` command a
-        # real owner would type. The supported package crossover invokes the
-        # installed V2 command at its absolute path, without rewriting PATH.
+        # dumb file-drop with no maintainer scripts and cannot touch a
+        # per-owner ~/.local/bin. A package from this tree writes
+        # /usr/bin/solstone and does not write /usr/bin/journal. A typical
+        # login shell's default PATH puts ~/.local/bin ahead of /usr/bin, so
+        # the seeded v1 ~/.local/bin/journal is what bare `journal` runs
+        # before setup. The supported package crossover invokes
+        # /usr/bin/solstone journal setup at its absolute path, without
+        # rewriting PATH.
         resolved_journal=$(docker exec -u "$TEST_USER" "$CONTAINER" \
             bash -lc 'readlink -f "$(command -v journal)"')
         if [ "$resolved_journal" = "/usr/bin/journal" ]; then
@@ -844,7 +848,8 @@ MANIFEST
             test "$new_pid" != "$old_pid"
 
             grep -q "^# managed-version:" ~/.local/bin/solstone
-            grep -q "^# managed-version:" ~/.local/bin/journal
+            test ! -e ~/.local/bin/journal
+            test ! -L ~/.local/bin/journal
             test ! -e ~/.local/bin/sol
             test ! -L ~/.local/bin/sol
             test -x ~/.local/share/uv/tools/solstone/bin/solstone

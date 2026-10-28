@@ -301,7 +301,7 @@ solstone journal spl --help
 solstone journal backup run
 ```
 
-**Fix — schedule them yourself, alongside the convey-only service.** The supervisor's own generated launchd plist (`core/crates/solstone-core-service-unit/src/plist.rs`) only launches `solstone journal start <port>`; it does not cover `spl` or `backup run`, so a convey-only setup needs its own separate `launchd` agents. Adjust the `journal` path and journal-path env value to match your install:
+**Fix — schedule them yourself, alongside the convey-only service.** The supervisor's own generated launchd plist (`core/crates/solstone-core-service-unit/src/plist.rs`) only launches `solstone journal start <port>`; it does not cover `spl` or `backup run`, so a convey-only setup needs its own separate `launchd` agents. Adjust the `solstone` path and journal-path env value to match your install:
 
 ```xml
 <!-- ~/Library/LaunchAgents/org.solpbc.solstone.spl.plist — keep SPL dialed continuously -->
@@ -312,7 +312,7 @@ solstone journal backup run
     <key>Label</key><string>org.solpbc.solstone.spl</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/Users/YOU/.local/bin/journal</string>
+        <string>/Users/YOU/.local/bin/solstone</string>
         <string>spl</string>
     </array>
     <key>EnvironmentVariables</key>
@@ -337,7 +337,7 @@ solstone journal backup run
     <key>Label</key><string>org.solpbc.solstone.backup</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/Users/YOU/.local/bin/journal</string>
+        <string>/Users/YOU/.local/bin/solstone</string>
         <string>backup</string>
         <string>run</string>
     </array>

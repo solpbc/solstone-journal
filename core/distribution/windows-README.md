@@ -2,7 +2,7 @@
 
 The installed folder contains:
 
-- `bin`: `journal.exe`, `solstone.exe` and their bundled helpers.
+- `bin`: `solstone.exe` and its bundled helpers.
 - `lib`: bundled libraries and model files.
 - `share/licenses`: component licenses and model attribution.
 - `share/provenance`: recorded build and input identities.

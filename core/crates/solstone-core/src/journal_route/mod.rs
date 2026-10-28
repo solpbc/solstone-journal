@@ -19,6 +19,7 @@ use solstone_core_journal::{
 };
 use solstone_core_setup::identity_evidence::{
     ArtifactSlotEvidence, ServiceSlotEvidence, WrapperSlotEvidence, gather_setup_artifact_evidence,
+    route_journal_wrapper_slot,
 };
 use solstone_core_setup::wrapper::{
     WrapperCommand, render_wrapper, wrapper_lock, wrapper_paths, write_wrappers_atomically,
@@ -124,8 +125,8 @@ pub fn inspect() -> ExitCode {
     record_wrapper_observation(
         &mut record,
         "journal_wrapper",
-        evidence.journal_wrapper(),
-        &paths.journal,
+        &route_journal_wrapper_slot(&paths.legacy_journal),
+        &paths.legacy_journal,
         &binding,
         &prefix,
         &executable_dir,
@@ -145,7 +146,7 @@ pub fn inspect() -> ExitCode {
         &mut record,
         evidence.service(),
         &service_path,
-        &paths.journal,
+        &paths.solstone,
         platform,
         &binding,
         &executable_dir,
@@ -154,7 +155,6 @@ pub fn inspect() -> ExitCode {
         "tuple_state",
         tuple_state(
             binding.is_some(),
-            record.get("journal_wrapper_state").unwrap_or("malformed"),
             record.get("solstone_wrapper_state").unwrap_or("malformed"),
             record.get("service_state").unwrap_or("malformed"),
         ),
@@ -242,8 +242,8 @@ pub fn repair(lock_owner: &str) -> ExitCode {
     record_wrapper_observation(
         &mut record,
         "journal_wrapper",
-        evidence.journal_wrapper(),
-        &paths.journal,
+        &route_journal_wrapper_slot(&paths.legacy_journal),
+        &paths.legacy_journal,
         &binding,
         &prefix,
         &executable_dir,
@@ -262,15 +262,11 @@ pub fn repair(lock_owner: &str) -> ExitCode {
         &mut record,
         evidence.service(),
         &service_path,
-        &paths.journal,
+        &paths.solstone,
         platform,
         &binding,
         &executable_dir,
     );
-    let journal_state = record
-        .get("journal_wrapper_state")
-        .expect("wrapper record state")
-        .to_owned();
     let solstone_state = record
         .get("solstone_wrapper_state")
         .expect("wrapper record state")
@@ -281,29 +277,22 @@ pub fn repair(lock_owner: &str) -> ExitCode {
         .to_owned();
     record.set(
         "tuple_state",
-        tuple_state(
-            binding.is_some(),
-            &journal_state,
-            &solstone_state,
-            &service_state,
-        ),
+        tuple_state(binding.is_some(), &solstone_state, &service_state),
     );
 
     let Some(initial_binding) = binding else {
         return emit_repair_refusal(record, "missing-identity");
     };
-    if all_artifacts_missing(&journal_state, &solstone_state, &service_state) {
+    if all_artifacts_missing(&solstone_state, &service_state) {
         record.set("tuple_state", "not-applicable");
         record.set("terminal_identity_state", "matched");
         return emit_repair(record, ExitCode::SUCCESS);
     }
-    if let Some(refusal) =
-        repair_eligibility_refusal(&journal_state, &solstone_state, &service_state)
-    {
+    if let Some(refusal) = repair_eligibility_refusal(&solstone_state, &service_state) {
         return emit_repair_refusal(record, refusal);
     }
 
-    let repair_wrappers = journal_state == "drifted" || solstone_state == "drifted";
+    let repair_wrappers = solstone_state == "drifted";
     // Runtime drift may leave the selected route pointing at an old process,
     // so it must refresh the manager even if the static unit is aligned.
     let repair_service = service_state == "drifted"
@@ -342,7 +331,6 @@ pub fn repair(lock_owner: &str) -> ExitCode {
                 &paths,
                 &initial_binding,
                 &executable_dir,
-                &journal_state,
                 &solstone_state,
             )
             .is_err()
@@ -414,38 +402,25 @@ fn rewrite_drifted_wrappers(
     paths: &solstone_core_setup::wrapper::WrapperPaths,
     binding: &InstallationBinding,
     executable_dir: &Path,
-    journal_state: &str,
     solstone_state: &str,
 ) -> Result<(), String> {
+    if solstone_state != "drifted" {
+        return Ok(());
+    }
     let journal = crate::resolve_process_journal_path()
         .map_err(|_| "route repair could not resolve journal".to_owned())?
         .path;
     let guard = GuardFields::from_binding(binding);
-    let mut contents = Vec::new();
-    if journal_state == "drifted" {
-        contents.push((
-            paths.journal.clone(),
-            render_wrapper(
-                WrapperCommand::Journal,
-                &journal,
-                &executable_dir.join("journal"),
-                &guard,
-            )
-            .map_err(|error| error.to_string())?,
-        ));
-    }
-    if solstone_state == "drifted" {
-        contents.push((
-            paths.solstone.clone(),
-            render_wrapper(
-                WrapperCommand::Solstone,
-                &journal,
-                &executable_dir.join("solstone"),
-                &guard,
-            )
-            .map_err(|error| error.to_string())?,
-        ));
-    }
+    let contents = [(
+        paths.solstone.clone(),
+        render_wrapper(
+            WrapperCommand::Solstone,
+            &journal,
+            &executable_dir.join("solstone"),
+            &guard,
+        )
+        .map_err(|error| error.to_string())?,
+    )];
     let _lock = wrapper_lock(home).map_err(|error| error.to_string())?;
     write_wrappers_atomically(&contents).map_err(|error| error.to_string())
 }
@@ -466,18 +441,12 @@ fn route_prefix_for_unselected_version(executable_dir: &Path) -> Option<std::pat
         .then(|| prefix.to_path_buf())
 }
 
-fn all_artifacts_missing(journal: &str, solstone: &str, service: &str) -> bool {
-    [journal, solstone, service]
-        .iter()
-        .all(|state| *state == "missing")
+fn all_artifacts_missing(solstone: &str, service: &str) -> bool {
+    [solstone, service].iter().all(|state| *state == "missing")
 }
 
-fn repair_eligibility_refusal(
-    journal: &str,
-    solstone: &str,
-    service: &str,
-) -> Option<&'static str> {
-    for state in [journal, solstone, service] {
+fn repair_eligibility_refusal(solstone: &str, service: &str) -> Option<&'static str> {
+    for state in [solstone, service] {
         match state {
             "foreign" => return Some("artifact-foreign"),
             "malformed" => return Some("artifact-malformed"),
@@ -487,11 +456,10 @@ fn repair_eligibility_refusal(
             _ => {}
         }
     }
-    if matches!(journal, "missing") || matches!(solstone, "missing") {
+    if matches!(solstone, "missing") {
         return Some("tuple-not-repair-eligible");
     }
-    if !matches!(journal, "aligned" | "drifted")
-        || !matches!(solstone, "aligned" | "drifted")
+    if !matches!(solstone, "aligned" | "drifted")
         || !matches!(
             service,
             "aligned" | "drifted" | "runtime-drifted" | "missing"
@@ -782,34 +750,29 @@ fn service_state(
     }
 }
 
-fn tuple_state(
-    binding_present: bool,
-    journal: &str,
-    solstone: &str,
-    service: &str,
-) -> &'static str {
+fn tuple_state(binding_present: bool, solstone: &str, service: &str) -> &'static str {
     if !binding_present {
         return "missing-identity";
     }
-    if [journal, solstone, service].contains(&"malformed") {
+    if [solstone, service].contains(&"malformed") {
         return "malformed";
     }
-    if [journal, solstone, service].contains(&"ambiguous") {
+    if [solstone, service].contains(&"ambiguous") {
         return "ambiguous";
     }
-    if [journal, solstone, service].contains(&"foreign") {
+    if [solstone, service].contains(&"foreign") {
         return "foreign";
     }
-    if [journal, solstone, service].contains(&"unguarded") {
+    if [solstone, service].contains(&"unguarded") {
         return "unguarded";
     }
-    if [journal, solstone, service].contains(&"exact-v1") {
+    if [solstone, service].contains(&"exact-v1") {
         return "exact-v1";
     }
-    if [journal, solstone, service].contains(&"missing") {
+    if [solstone, service].contains(&"missing") {
         return "missing";
     }
-    if [journal, solstone, service].iter().any(|state| {
+    if [solstone, service].iter().any(|state| {
         matches!(
             *state,
             "drifted" | "cross-prefix" | "dangling" | "runtime-drifted"
@@ -818,4 +781,236 @@ fn tuple_state(
         return "drifted";
     }
     "aligned"
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+
+    use solstone_core_installation_identity::{
+        ArtifactBindingEvidence, GuardFields, InstallationId, LegacyManifestEvidence, OwnerBase,
+        PlatformTag, SetupAdmissionRequest, admit_setup, journal_token_from_path, lower_hex,
+        root_token_from_path,
+    };
+    use solstone_core_service_unit::{build_service_environment, render_systemd_unit};
+    use solstone_core_setup::identity_evidence::{
+        gather_setup_artifact_evidence, route_journal_wrapper_slot,
+    };
+    use solstone_core_setup::wrapper::{WrapperCommand, render_wrapper_version, wrapper_paths};
+
+    use super::{
+        all_artifacts_missing, record_service_observation, repair_eligibility_refusal,
+        rewrite_drifted_wrappers, service_state, tuple_state, wrapper_state,
+    };
+
+    #[test]
+    fn tuple_eligibility_ignores_the_journal_slot() {
+        assert_eq!(tuple_state(true, "aligned", "aligned"), "aligned");
+        assert!(!all_artifacts_missing("aligned", "aligned"));
+        assert_eq!(repair_eligibility_refusal("aligned", "aligned"), None);
+        assert_eq!(
+            repair_eligibility_refusal("missing", "aligned"),
+            Some("tuple-not-repair-eligible")
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn aligned_rewrite_does_not_touch_the_journal_slot() {
+        let root = std::env::temp_dir().join(format!(
+            "solstone-route-rewrite-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        let home = root.join("home");
+        let journal = root.join("journal");
+        fs::create_dir_all(&home).unwrap();
+        fs::create_dir_all(&journal).unwrap();
+        let prefix = root.join("prefix");
+        fs::create_dir_all(&prefix).unwrap();
+        let owner = OwnerBase::at_home(home.clone(), PlatformTag::current()).unwrap();
+        let admission = admit_setup(SetupAdmissionRequest {
+            owner,
+            root_token: root_token_from_path(&prefix).unwrap(),
+            journal_token: journal_token_from_path(&journal).unwrap(),
+            journal_is_explicit: true,
+            accept_prepared_retarget: false,
+            legacy_manifest: LegacyManifestEvidence::Absent,
+            artifacts: ArtifactBindingEvidence::Fresh,
+        })
+        .unwrap();
+        let binding = admission.binding().clone();
+        drop(admission);
+        let paths = wrapper_paths(&home);
+        fs::create_dir_all(paths.legacy_journal.parent().unwrap()).unwrap();
+        let foreign = b"foreign wrapper\n".to_vec();
+        fs::write(&paths.legacy_journal, &foreign).unwrap();
+        rewrite_drifted_wrappers(&home, &paths, &binding, &root.join("bin"), "aligned").unwrap();
+        assert_eq!(fs::read(&paths.legacy_journal).unwrap(), foreign);
+        assert!(!paths.solstone.exists());
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn service_observation_uses_the_solstone_launcher() {
+        let root = std::env::temp_dir().join(format!(
+            "solstone-route-service-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        let home = root.join("home");
+        let journal = root.join("journal");
+        let prefix = root.join("prefix");
+        fs::create_dir_all(&journal).unwrap();
+        fs::create_dir_all(prefix.join("current/bin")).unwrap();
+        fs::create_dir_all(&home).unwrap();
+        let owner = OwnerBase::at_home(home.clone(), PlatformTag::current()).unwrap();
+        let admission = admit_setup(SetupAdmissionRequest {
+            owner,
+            root_token: root_token_from_path(&prefix).unwrap(),
+            journal_token: journal_token_from_path(&journal).unwrap(),
+            journal_is_explicit: true,
+            accept_prepared_retarget: false,
+            legacy_manifest: LegacyManifestEvidence::Absent,
+            artifacts: ArtifactBindingEvidence::Fresh,
+        })
+        .unwrap();
+        let binding = admission.binding().clone();
+        drop(admission);
+        let guard = GuardFields::from_binding(&binding);
+        let launcher = home.join(".local/bin/solstone");
+        let environment = build_service_environment(
+            home.to_str().expect("utf8 home"),
+            Some("/usr/bin:/bin"),
+            prefix.join("current/bin").to_str().expect("utf8 runtime"),
+            &guard,
+        );
+        let unit = crate::service::unit_path(crate::service::Platform::Linux, &home);
+        fs::create_dir_all(unit.parent().unwrap()).unwrap();
+        fs::write(
+            &unit,
+            render_systemd_unit(
+                &environment,
+                launcher.to_str().expect("utf8 launcher"),
+                "5015",
+            ),
+        )
+        .unwrap();
+        let paths = wrapper_paths(&home);
+        let executable_dir = prefix.join("current/bin");
+        for name in [
+            "absent",
+            "foreign",
+            "malformed",
+            "other-installation",
+            "symlink",
+        ] {
+            let _ = fs::remove_file(&paths.legacy_journal);
+            match name {
+                "absent" => {}
+                "foreign" => {
+                    fs::create_dir_all(paths.legacy_journal.parent().unwrap()).unwrap();
+                    fs::write(&paths.legacy_journal, "foreign wrapper\n").unwrap();
+                }
+                "malformed" => {
+                    fs::create_dir_all(paths.legacy_journal.parent().unwrap()).unwrap();
+                    fs::write(&paths.legacy_journal, "#!/bin/sh\nnot a wrapper\n").unwrap();
+                }
+                "other-installation" => {
+                    let other_journal = root.join(format!("other-{name}"));
+                    fs::create_dir_all(&other_journal).unwrap();
+                    let mut other = guard.clone();
+                    other.id = InstallationId::parse("ffeeddccbbaa99887766554433221100").unwrap();
+                    other.journal_token = journal_token_from_path(&other_journal).unwrap();
+                    fs::create_dir_all(paths.legacy_journal.parent().unwrap()).unwrap();
+                    fs::write(
+                        &paths.legacy_journal,
+                        render_wrapper_version(
+                            WrapperCommand::LegacyJournal,
+                            &other_journal,
+                            &root.join("old/bin/journal"),
+                            Some(&other),
+                            8,
+                        )
+                        .unwrap(),
+                    )
+                    .unwrap();
+                }
+                "symlink" => {
+                    let target = root.join("elsewhere-journal");
+                    fs::write(&target, "target bytes\n").unwrap();
+                    fs::create_dir_all(paths.legacy_journal.parent().unwrap()).unwrap();
+                    std::os::unix::fs::symlink(&target, &paths.legacy_journal).unwrap();
+                }
+                _ => unreachable!(),
+            }
+            let slot = route_journal_wrapper_slot(&paths.legacy_journal);
+            let expected_journal = match name {
+                "absent" => "missing",
+                "foreign" | "malformed" => "malformed",
+                "other-installation" | "symlink" => "foreign",
+                _ => unreachable!(),
+            };
+            assert_eq!(
+                wrapper_state(&slot, Some(&binding), &prefix, &executable_dir),
+                expected_journal,
+                "{name}"
+            );
+            let evidence = gather_setup_artifact_evidence(&home, &binding.namespace, false);
+            assert_eq!(
+                service_state(
+                    evidence.service(),
+                    &unit,
+                    &launcher,
+                    crate::service::Platform::Linux,
+                    Some(&binding),
+                ),
+                "dangling",
+                "{name}"
+            );
+            let mut record = super::record::InspectRecord::success();
+            record_service_observation(
+                &mut record,
+                evidence.service(),
+                &unit,
+                &launcher,
+                crate::service::Platform::Linux,
+                &Some(binding.clone()),
+                &executable_dir,
+            );
+            let hex = lower_hex(std::os::unix::ffi::OsStrExt::as_bytes(launcher.as_os_str()));
+            assert_eq!(
+                record.get("service_launcher_hex"),
+                Some(hex.as_str()),
+                "{name}"
+            );
+            assert_eq!(record.get("service_state"), Some("dangling"), "{name}");
+            assert_eq!(tuple_state(true, "aligned", "dangling"), "drifted");
+            assert_eq!(
+                repair_eligibility_refusal("aligned", "dangling"),
+                Some("tuple-not-repair-eligible")
+            );
+            assert_eq!(tuple_state(true, "aligned", "aligned"), "aligned");
+            assert_eq!(repair_eligibility_refusal("aligned", "aligned"), None);
+            if name == "symlink" {
+                assert_eq!(
+                    fs::read(root.join("elsewhere-journal")).unwrap(),
+                    b"target bytes\n"
+                );
+            }
+        }
+        assert!(!launcher.exists());
+        let _ = fs::remove_dir_all(&root);
+    }
 }

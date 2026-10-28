@@ -96,8 +96,8 @@ pub use solstone_core_system::owner_path::{
 ///
 /// 🔴 Velopack stops every process under the install root to apply an update,
 /// and a Setup run over an installed build does the same; nothing started the
-/// resident again, so it stayed down until the owner ran `journal service
-/// start`. Velopack runs this hook from the *new* build, inside a bounded hook
+/// resident again, so it stayed down until the owner ran `solstone journal
+/// service start`. Velopack runs this hook from the *new* build, inside a bounded hook
 /// window, and then sweeps the install root once more: a child started from
 /// the root is killed with it (measured on Windows 11, `Update.exe apply`). So
 /// the hook starts Windows PowerShell, which lives outside the root, to wait
@@ -113,8 +113,8 @@ pub fn resume_service_after_update() {
     let Ok(executable) = std::env::current_exe() else {
         return;
     };
-    // Both entry names live in <root>\current\bin. Resume through the
-    // canonical sibling even when the updater entered the journal alias.
+    // The canonical entry lives in <root>\current\bin. Resume through
+    // solstone.exe.
     let Some(root) = executable.ancestors().nth(3) else {
         return;
     };

@@ -55,9 +55,8 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
     };
     let raw = &parts[0];
     let resolved = resolve_service_target(raw);
-    let expected_journal = resolve_non_strict(&context.install_bin_dir.join("journal"));
     let expected_solstone = resolve_non_strict(&context.install_bin_dir.join("solstone"));
-    if resolved == expected_journal || resolved == expected_solstone {
+    if resolved == expected_solstone {
         return Ok(make_result(
             check,
             Status::Ok,
@@ -240,8 +239,10 @@ mod tests {
     fn resolves_linux_managed_wrappers_and_reports_malformed_units() {
         let staged = context();
         let journal = staged.install_bin_dir.join("journal");
+        let solstone = staged.install_bin_dir.join("solstone");
         fs::create_dir_all(&staged.install_bin_dir).expect("create install bin");
         executable(&journal);
+        executable(&solstone);
         let wrapper = staged.home_dir.join(".local/bin/journal");
         fs::create_dir_all(wrapper.parent().expect("wrapper parent"))
             .expect("create wrapper parent");
@@ -257,6 +258,12 @@ mod tests {
         )
         .expect("write service unit");
         let check = check("service_identity", Severity::Blocker);
+        assert_eq!(run(&staged, check).unwrap().status, Status::Fail);
+        fs::write(
+            &unit,
+            format!("ExecStart={} journal start 5015\n", solstone.display()),
+        )
+        .expect("write solstone unit");
         assert_eq!(run(&staged, check).unwrap().status, Status::Ok);
 
         fs::write(&unit, "ExecStart='unterminated\n").expect("write malformed unit");
@@ -284,7 +291,8 @@ mod tests {
             .expect("journal"),
         };
         let check = check("service_identity", Severity::Blocker);
-        for command in [WrapperCommand::Solstone, WrapperCommand::Journal] {
+        {
+            let command = WrapperCommand::Solstone;
             let target = staged.install_bin_dir.join(command.as_str());
             executable(&target);
             let wrapper = staged.home_dir.join(".local/bin").join(command.as_str());
@@ -293,14 +301,9 @@ mod tests {
             let content = render_wrapper(command, &staged.journal_path, &target, &guard)
                 .expect("render current managed wrapper");
             fs::write(&wrapper, &content).expect("write wrapper");
-            let namespace = if command == WrapperCommand::Solstone {
-                " journal"
-            } else {
-                ""
-            };
             fs::write(
                 &unit,
-                format!("ExecStart={}{namespace} start 5015\n", wrapper.display()),
+                format!("ExecStart={} journal start 5015\n", wrapper.display()),
             )
             .expect("write unit");
             assert_eq!(run(&staged, check).unwrap().status, Status::Ok);
@@ -330,9 +333,9 @@ mod tests {
     fn reads_full_launchd_program_arguments() {
         let mut staged = context();
         staged.context.platform = Platform::Darwin;
-        let journal = staged.install_bin_dir.join("journal");
+        let solstone = staged.install_bin_dir.join("solstone");
         fs::create_dir_all(&staged.install_bin_dir).expect("create install bin");
-        executable(&journal);
+        executable(&solstone);
         let path = staged
             .home_dir
             .join("Library/LaunchAgents/org.solpbc.solstone.plist");
@@ -341,7 +344,7 @@ mod tests {
         dictionary.insert(
             "ProgramArguments".into(),
             plist::Value::Array(vec![
-                plist::Value::String(journal.display().to_string()),
+                plist::Value::String(solstone.display().to_string()),
                 plist::Value::String("start".into()),
                 plist::Value::String("5015".into()),
             ]),

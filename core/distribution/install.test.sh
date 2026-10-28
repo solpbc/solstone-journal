@@ -71,7 +71,7 @@ make_release() {
 		"lock_sha256=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" \
 		"upgrade_epoch=journal-v2" \
 		"retention_window=3" \
-		"min_bootstrap_revision=3" \
+		"min_bootstrap_revision=4" \
 		"bootstrap_contract_version=2" \
 		"bootstrap_filename=solstone-journal-${_version}-install.sh" \
 		"state_reader_min=${_min}" \
@@ -99,8 +99,14 @@ make_tree_tar() {
 	_dest=$1
 	_stage=$2
 	_setup_script=${3:-"exit 0"}
+	_tree_version=${4:-1.0.22}
+	case $_tree_version in
+	''|0.*|1.*|2.0.[0-9]|2.0.[12][0-9]) _ship_journal=1 ;;
+	*) _ship_journal=0 ;;
+	esac
 	mkdir -p "$_stage/bin"
-	cat <<EOF >"$_stage/bin/journal"
+	if [ "$_ship_journal" = 1 ]; then
+		cat <<EOF >"$_stage/bin/journal"
 #!/bin/sh
 # fixture-build: ok
 if [ "\${1:-}" = "--version" ]; then
@@ -121,7 +127,7 @@ fi
 [ -z "\${SOLSTONE_SETUP_PATH_LOG:-}" ] || printf "%s\n" "\$PATH" >"\$SOLSTONE_SETUP_PATH_LOG"
 ${_setup_script}
 EOF
-	cat <<EOF >"$_stage/bin/solstone"
+		cat <<EOF >"$_stage/bin/solstone"
 #!/bin/sh
 # fixture-build: ok
 if [ "\${1:-}" = "--version" ]; then
@@ -140,7 +146,46 @@ if [ "\${1:-}" = journal ]; then
 fi
 exit 0
 EOF
-	chmod 755 "$_stage/bin/journal" "$_stage/bin/solstone"
+		chmod 755 "$_stage/bin/journal" "$_stage/bin/solstone"
+	else
+		cat <<EOF >"$_stage/bin/solstone"
+#!/bin/sh
+# fixture-build: ok
+if [ "\${1:-}" = "--version" ]; then
+	_dir=\$(CDPATH= cd -- "\$(dirname "\$0")/.." && pwd)
+	_ver=1.0.22
+	if [ -f "\$_dir/.release" ]; then
+		_ver=\$(awk -F= '\$1=="version"{print \$2}' "\$_dir/.release")
+	fi
+	printf 'solstone %s\n' "\$_ver"
+	exit 0
+fi
+if [ "\${1:-}" = journal ]; then
+    [ -z "\${SOLSTONE_ROOT_ARGS_LOG:-}" ] || printf "%s\n" "\$@" >"\$SOLSTONE_ROOT_ARGS_LOG"
+    shift
+    if [ "\${1:-}" = "--version" ]; then
+	_dir=\$(CDPATH= cd -- "\$(dirname "\$0")/.." && pwd)
+	_ver=1.0.22
+	if [ -f "\$_dir/.release" ]; then
+		_ver=\$(awk -F= '\$1=="version"{print \$2}' "\$_dir/.release")
+	fi
+	printf 'journal (solstone) %s\n' "\$_ver"
+	exit 0
+    fi
+    if [ "\${1:-}" = settings ]; then
+	printf '{\n  "dashboard_url": "http://localhost:%s"\n}\n' "\${SOLSTONE_FIXTURE_PORT:-6123}"
+	exit 0
+    fi
+    [ -z "\${SOLSTONE_HANDOFF_FLAG_LOG:-}" ] || printf "%s\n" "\${SOLSTONE_INSTALLER_NO_HANDOFF:-}" >"\$SOLSTONE_HANDOFF_FLAG_LOG"
+    [ -z "\${SOLSTONE_SETUP_ARGS_LOG:-}" ] || printf "%s\n" "\$@" >"\$SOLSTONE_SETUP_ARGS_LOG"
+    [ -z "\${SOLSTONE_SETUP_PATH_LOG:-}" ] || printf "%s\n" "\$PATH" >"\$SOLSTONE_SETUP_PATH_LOG"
+${_setup_script}
+    exit 0
+fi
+exit 0
+EOF
+		chmod 755 "$_stage/bin/solstone"
+	fi
 	tar -C "$_stage" -czf "$_dest" bin
 }
 
@@ -399,7 +444,7 @@ CANONICAL_ARCHIVE=$BASE/canonical.tar.gz
 CANONICAL_SHA=$BASE/canonical.sha256
 CANONICAL_REL=$BASE/canonical.release
 CANONICAL_ARGS=$BASE/canonical-args
-make_tree_tar "$CANONICAL_ARCHIVE" "$BASE/canonical-stage"
+make_tree_tar "$CANONICAL_ARCHIVE" "$BASE/canonical-stage" "exit 0" "2.0.30"
 sha_sidecar "$CANONICAL_ARCHIVE" "$CANONICAL_SHA"
 make_release "$CANONICAL_REL" 2.0.30 "$TARGET"
 if env HOME="$BASE/canonical-home" SOLSTONE_ROOT_ARGS_LOG="$CANONICAL_ARGS" \
@@ -408,7 +453,9 @@ if env HOME="$BASE/canonical-home" SOLSTONE_ROOT_ARGS_LOG="$CANONICAL_ARGS" \
     >"$BASE/canonical.out" 2>&1; then
     printf '%s\n' journal setup --yes --installer-transaction --skip-service --skip-path >"$BASE/canonical-expected"
     if cmp "$CANONICAL_ARGS" "$BASE/canonical-expected" \
-        && grep -F 'then: solstone journal --version' "$BASE/canonical.out" >/dev/null; then
+        && grep -F 'then: solstone journal --version' "$BASE/canonical.out" >/dev/null \
+        && [ -x "$BASE/canonical prefix/current/bin/solstone" ] \
+        && [ ! -e "$BASE/canonical prefix/current/bin/journal" ]; then
         pass "current installer invokes canonical setup with separate namespace and option arguments"
     else
         fail "canonical setup arguments or next command changed"
@@ -483,7 +530,7 @@ if grep -F 'schema_version=1' "$PREFIX/install-receipt" >/dev/null \
 	&& grep -F 'origin=local' "$PREFIX/install-receipt" >/dev/null \
 	&& grep -F "architecture=$TARGET" "$PREFIX/install-receipt" >/dev/null \
 	&& grep -F 'installer_revision=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' "$PREFIX/install-receipt" >/dev/null \
-	&& grep -F 'bootstrap_revision=3' "$PREFIX/install-receipt" >/dev/null \
+	&& grep -F 'bootstrap_revision=4' "$PREFIX/install-receipt" >/dev/null \
 	&& grep -F 'route=tree' "$PREFIX/install-receipt" >/dev/null \
 	&& grep -F 'signature_verification=skipped' "$PREFIX/install-receipt" >/dev/null \
 	&& grep -F 'role=journal' "$PREFIX/install-receipt" >/dev/null \
@@ -922,7 +969,7 @@ OUTDATED_DIGEST=0000000000000000000000000000000000000000000000000000000000000000
 mkdir -p "$OUTDATED_PREFIX/versions/1.0.22-000000000000/bin"
 printf '%s\n' "$OUTDATED_DIGEST" >"$OUTDATED_PREFIX/versions/1.0.22-000000000000/.archive-sha256"
 make_release "$BASE/outdated-owned-base.release" 1.0.22 "$TARGET"
-sed 's/^min_bootstrap_revision=3$/min_bootstrap_revision=99/' "$BASE/outdated-owned-base.release" >"$OUTDATED_PREFIX/versions/1.0.22-000000000000/.release"
+sed 's/^min_bootstrap_revision=4$/min_bootstrap_revision=99/' "$BASE/outdated-owned-base.release" >"$OUTDATED_PREFIX/versions/1.0.22-000000000000/.release"
 printf '%s\n' '#!/bin/sh' 'exit 0' >"$OUTDATED_PREFIX/versions/1.0.22-000000000000/bin/journal"
 chmod 755 "$OUTDATED_PREFIX/versions/1.0.22-000000000000/bin/journal"
 ln -s versions/1.0.22-000000000000 "$OUTDATED_PREFIX/current"
@@ -1018,6 +1065,14 @@ if [ -L "$PREFIX/current" ] && [ -x "$PREFIX/current/bin/journal" ]; then
 	pass "current symlink and bin"
 else
 	fail "current symlink and bin"
+fi
+
+if [ -x "$PREFIX/current/bin/journal" ] \
+	&& [ -x "$BASE/canonical prefix/current/bin/solstone" ] \
+	&& [ ! -e "$BASE/canonical prefix/current/bin/journal" ]; then
+	pass "current candidate without bin/journal is accepted and an older candidate with bin/journal still is"
+else
+	fail "launcher generation by release age"
 fi
 
 if [ "$(cat "$PREFIX/unrelated")" = "keep" ]; then
@@ -1334,7 +1389,7 @@ expect_refuse version-mismatch version-other \
 
 # installer-outdated (fresh-fetch route)
 make_release "$BASE/outdated-fetch-base.release" 1.0.22 "$TARGET"
-sed 's/^min_bootstrap_revision=3$/min_bootstrap_revision=99/' "$BASE/outdated-fetch-base.release" >"$BASE/outdated-fetch.release"
+sed 's/^min_bootstrap_revision=4$/min_bootstrap_revision=99/' "$BASE/outdated-fetch-base.release" >"$BASE/outdated-fetch.release"
 expect_refuse installer-outdated installer-outdated-fresh-fetch \
 	env HOME="$HOME" \
 	"$INSTALL" --prefix "$BASE/other" --archive "$ARCHIVE" --sha256 "$SHA" --release "$BASE/outdated-fetch.release"
@@ -1483,7 +1538,7 @@ for _huge_version in 2.0.9007199254740993 2.0.9007199254740992; do
 	_huge_archive=$BASE/huge-${_huge_version}.tar.gz
 	_huge_sha=$BASE/huge-${_huge_version}.sha256
 	_huge_release=$BASE/huge-${_huge_version}.release
-	make_tree_tar "$_huge_archive" "$_huge_stage"
+	make_tree_tar "$_huge_archive" "$_huge_stage" "exit 0" "$_huge_version"
 	sha_sidecar "$_huge_archive" "$_huge_sha"
 	make_release "$_huge_release" "$_huge_version" "$TARGET"
 done

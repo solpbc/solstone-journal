@@ -98,16 +98,6 @@ targets = ["windows-x86_64", "windows-aarch64"]
 [[entry]]
 kind = "bin"
 class = "first-party"
-package = "solstone-core-journal-bin"
-bin = "solstone-core-journal"
-dest = "bin/journal.exe"
-mode = 0o755
-lane = "msvc-native"
-targets = ["windows-x86_64", "windows-aarch64"]
-
-[[entry]]
-kind = "bin"
-class = "first-party"
 package = "solstone-core-journal-app"
 bin = "journal-app"
 dest = "bin/journal-app.exe"
@@ -385,14 +375,6 @@ kind = "launcher"
 class = "first-party"
 source = "scripts/root-launchers/solstone"
 dest = "bin/solstone"
-mode = 0o755
-targets = ["linux-x86_64", "linux-aarch64", "macos-arm64"]
-
-[[entry]]
-kind = "launcher"
-class = "first-party"
-source = "scripts/root-launchers/journal"
-dest = "bin/journal"
 mode = 0o755
 targets = ["linux-x86_64", "linux-aarch64", "macos-arm64"]
 

@@ -22,13 +22,13 @@ pub(crate) fn validate_effective_path(
     validate_path_value(home, current_dir, executable_dir, &path)
 }
 
-fn validate_path_value(
+pub(crate) fn validate_path_value(
     home: &Path,
     current_dir: &Path,
     executable_dir: &Path,
     path: &std::ffi::OsStr,
 ) -> Result<(), String> {
-    for command in ["solstone", "journal"] {
+    for command in ["solstone"] {
         for component in std::env::split_paths(path) {
             let directory = if component.as_os_str().is_empty() {
                 current_dir.to_path_buf()
@@ -276,7 +276,7 @@ fn managed_v1_wrapper(
     let text = std::str::from_utf8(bytes).ok()?;
     let wrapper_command = match command {
         "sol" => WrapperCommand::Sol,
-        "journal" => WrapperCommand::Journal,
+        "journal" => WrapperCommand::LegacyJournal,
         _ => return None,
     };
     let parsed = parse_wrapper(wrapper_command, text)?;
@@ -587,7 +587,7 @@ mod tests {
         write_executable(
             &public,
             &crate::wrapper::render_wrapper_version(
-                WrapperCommand::Journal,
+                WrapperCommand::LegacyJournal,
                 Path::new("/home/owner/journal"),
                 &target,
                 None,
@@ -692,9 +692,7 @@ mod tests {
         )
         .unwrap();
 
-        for command in ["solstone", "journal"] {
-            write_executable(&runtime.join(command), "#!/bin/sh\nexit 0\n");
-        }
+        write_executable(&runtime.join("solstone"), "#!/bin/sh\nexit 0\n");
         validate_path_value(
             &home,
             &root,
@@ -704,6 +702,24 @@ mod tests {
         .unwrap();
 
         write_executable(&foreign.join("journal"), "#!/bin/sh\nexit 0\n");
+        validate_path_value(
+            &home,
+            &root,
+            &runtime,
+            std::ffi::OsStr::new(&format!(
+                "{}:{}:/usr/bin",
+                foreign.display(),
+                runtime.display()
+            )),
+        )
+        .unwrap();
+        let local_bin = home.join(".local/bin");
+        fs::create_dir_all(&local_bin).unwrap();
+        let unrelated = root.join("unrelated");
+        write_executable(&unrelated.join("journal"), "#!/bin/sh\nexit 0\n");
+        let path = std::env::join_paths([&local_bin, &unrelated]).unwrap();
+        validate_path_value(&home, &root, &runtime, path.as_os_str()).unwrap();
+        write_executable(&foreign.join("solstone"), "#!/bin/sh\nexit 0\n");
         assert!(
             validate_path_value(
                 &home,

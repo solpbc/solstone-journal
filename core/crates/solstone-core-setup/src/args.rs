@@ -376,10 +376,12 @@ pub fn resolve_setup(args: &SetupArgs, context: &ResolutionContext) -> ResolvedS
         "journal",
         resolved(json!(journal_path), journal_source.clone()),
     );
-    values.insert(
-        "port",
-        resolved(json!(args.port), source(args.supplied.port)),
-    );
+    let port = if args.port_supplied() {
+        args.port
+    } else {
+        crate::steps::installed_service_port(&context.home_dir)
+    };
+    values.insert("port", resolved(json!(port), source(args.supplied.port)));
     values.insert(
         "step_timeout_seconds",
         resolved(

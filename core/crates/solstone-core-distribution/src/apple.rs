@@ -655,7 +655,7 @@ mod tests {
         // A shell launcher and a model asset are not code and must not appear.
         write(
             stage,
-            "bin/journal",
+            "bin/solstone",
             b"#!/bin/sh\nexec solstone-core \"$@\"\n",
         );
         write(

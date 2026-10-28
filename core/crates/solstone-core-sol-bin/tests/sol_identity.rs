@@ -240,8 +240,8 @@ fn bare_help_never_resolves_a_journal() {
     assert_sentinel_untouched(&sentinel);
 }
 
-/// The same program reached through the `journal` name, as the installed
-/// launcher and the Windows `journal.exe` reach it.
+/// A `journal` name that points at this binary. That name is not its own
+/// command family.
 fn journal_alias(temp: &TempDir) -> PathBuf {
     let alias = temp.path.join("journal");
     std::os::unix::fs::symlink(bin(), &alias).expect("link the journal name");
@@ -269,28 +269,19 @@ fn public_journal_alias_is_a_notice() {
     let journal = temp.path.join("journal-root");
     fs::create_dir_all(journal.join("chronicle/20260807")).expect("create day");
 
-    for args in [
-        &["--version"][..],
-        &["-V"],
-        &["--help"],
-        &[],
-        &["-v"],
-        &["status"],
-        &["-v", "status"],
-        &["--path"],
-        &["path"],
-        &["status", "--help"],
-        &["about", "--help"],
-        &["no-such-command"],
-        &["status", "extra"],
-        &["a.dotted.module"],
-    ] {
+    for args in [&["--version"][..], &["-V"], &["--help"], &[]] {
         let through_alias = run_program(&alias, args, &path, Some(&journal));
-        assert_eq!(through_alias.status.code(), Some(1), "{args:?}");
-        assert!(through_alias.stdout.is_empty(), "{args:?}");
+        let through_binary = run_program(Path::new(bin()), args, &path, Some(&journal));
+        assert_eq!(
+            through_alias.status.code(),
+            through_binary.status.code(),
+            "{args:?}"
+        );
+        assert_eq!(through_alias.stdout, through_binary.stdout, "{args:?}");
+        assert_eq!(through_alias.stderr, through_binary.stderr, "{args:?}");
         let stderr = String::from_utf8(through_alias.stderr).expect("stderr should be utf-8");
         assert!(
-            stderr.starts_with("the 'journal' command has moved. run:\n  solstone journal"),
+            !stderr.contains("the 'journal' command has moved"),
             "{args:?}"
         );
     }

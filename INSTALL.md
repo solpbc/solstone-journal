@@ -113,7 +113,7 @@ On Fedora or RHEL:
 sudo dnf install ./solstone-journal-<version>-linux-<arch>.rpm
 ```
 
-Either one puts `solstone` and `journal` on PATH for every account on the machine and installs the OpenMP runtime dependency. `journal <args>` has moved to `solstone journal <args>`; update any commands or scripts that use the old name. Run `solstone journal setup`; that owner-scoped step writes `~/.local/share/solstone/package-install-receipt` because the packages intentionally have no maintainer scripts.
+Either one puts `solstone` on PATH for every account on the machine and installs the OpenMP runtime dependency. `journal <args>` has moved to `solstone journal <args>`; update any commands or scripts that use the old name. Run `solstone journal setup`; that owner-scoped step writes `~/.local/share/solstone/package-install-receipt` because the packages intentionally have no maintainer scripts.
 
 On linux, `solstone update` updates copies recorded by the solstone installer. `solstone update --check` reports whether an update is available. If the installation cannot be identified, use its original installer.
 

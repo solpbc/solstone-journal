@@ -21,9 +21,9 @@ The CLI has two tiers with distinct purposes:
 
 ### One program, two names
 
-`solstone journal` is canonical. Public `journal` / `journal.exe` prints the notice and exits. `journal <args>` has moved to `solstone journal <args>`; update any commands or scripts that use the old name. Unix managed work uses `solstone-core-journal`; Windows managed work uses `solstone.exe journal`.
+`solstone journal` is canonical. `journal <args>` has moved to `solstone journal <args>`; update any commands or scripts that use the old name. Unix managed work uses `solstone-core-journal`; Windows managed work uses `solstone.exe journal`.
 
-Both files still ship. On Linux and macOS, `bin/solstone` still execs `solstone-core-sol`, while `bin/journal` is the notice and does not exec `solstone-core-journal`; on Windows, `solstone.exe` and `journal.exe` are the binaries themselves. Process commands in the journal family (`think`, `service`, `supervisor`, and the rest) exec sibling native binaries such as `solstone-core`; local commands run in process. There is no CUDA package.
+On Linux and macOS, `bin/solstone` execs `solstone-core-sol`, and Unix keeps `bin/solstone-core-journal`. On Windows, `solstone.exe` is the binary. Process commands in the journal family (`think`, `service`, `supervisor`, and the rest) exec sibling native binaries such as `solstone-core`; local commands run in process. There is no CUDA package.
 
 Managed work treats the two spellings as one operation. The supervisor's queue, partition, and caps still treat stored `journal <args>` and stored `solstone journal <args>` as one form via `journal_alias_form`, and launch uses the private or canonical entry.
 

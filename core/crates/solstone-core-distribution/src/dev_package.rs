@@ -410,7 +410,7 @@ mod tests {
             targets: vec![TARGET_LINUX_X86_64.into()],
         };
         fs::create_dir_all(tmp.path().join("scripts")).unwrap();
-        fs::write(tmp.path().join("scripts/journal"), b"#!/bin/sh\n").unwrap();
+        fs::write(tmp.path().join("scripts/solstone"), b"#!/bin/sh\n").unwrap();
         let entries = [
             bin("solstone-core", "solstone-core"),
             bin("solstone-core-journal-bin", "solstone-core-journal"),
@@ -430,8 +430,8 @@ mod tests {
             },
             Entry::Launcher {
                 class: None,
-                source: "scripts/journal".into(),
-                dest: "bin/journal".into(),
+                source: "scripts/solstone".into(),
+                dest: "bin/solstone".into(),
                 mode: 0o755,
                 targets: vec![TARGET_LINUX_X86_64.into()],
             },
@@ -470,7 +470,7 @@ mod tests {
             b"screen OCR helper"
         );
         assert!(!out.join("bin/unlisted-tool").exists());
-        assert_eq!(fs::read(out.join("bin/journal")).unwrap(), b"#!/bin/sh\n");
+        assert_eq!(fs::read(out.join("bin/solstone")).unwrap(), b"#!/bin/sh\n");
         assert_eq!(
             fs::read(out.join("lib/onnx-helper/libort.so")).unwrap(),
             b"ort"

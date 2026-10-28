@@ -83,7 +83,10 @@ inspect_and_install_candidate() {
     case "$package_format" in
         deb)
             dpkg-deb --fsys-tarfile "$package" | tar -tf - | sort > /tmp/deb-data-members
-            grep -Eq '^(\./)?usr/bin/journal$' /tmp/deb-data-members
+            grep -Eq '^(\./)?usr/bin/solstone$' /tmp/deb-data-members
+            if grep -Eq '^(\./)?usr/bin/journal$' /tmp/deb-data-members; then
+                fail "deb contains usr/bin/journal"
+            fi
             rm -rf /tmp/deb-control
             mkdir /tmp/deb-control
             dpkg-deb -e "$package" /tmp/deb-control
@@ -108,7 +111,10 @@ inspect_and_install_candidate() {
             # and the bundled licence trees make the listing longer than a pipe
             # buffer, so rpm would die of SIGPIPE under pipefail.
             rpm -qpl "$package" > /tmp/rpm-members
-            grep -Fxq '/usr/bin/journal' /tmp/rpm-members
+            grep -Fxq '/usr/bin/solstone' /tmp/rpm-members
+            if grep -Fxq '/usr/bin/journal' /tmp/rpm-members; then
+                fail "rpm contains /usr/bin/journal"
+            fi
             [ -z "$(rpm -qp --scripts "$package")" ] || fail "rpm contains prohibited scriptlets"
             if rpm -qp --qf '%{SIGPGP:pgpsig}\n%{SIGGPG:pgpsig}\n%{RSAHEADER:pgpsig}\n%{DSAHEADER:pgpsig}\n' "$package" \
                 | grep -Fv '(none)' | grep -q .; then
@@ -120,7 +126,8 @@ inspect_and_install_candidate() {
             ;;
         *) fail "unknown package format: $package_format" ;;
     esac
-    test -x /usr/bin/journal
+    test -x /usr/bin/solstone
+    test ! -e /usr/bin/journal
 }
 
 case "$phase" in
@@ -241,7 +248,8 @@ case "$phase" in
         ! kill -0 "$old_child" 2>/dev/null || fail "v1 descendant PID survived crossover"
         ! awk -v inode="$old_listener" '$10 == inode { found=1 } END { exit found ? 0 : 1 }' \
             /proc/net/tcp /proc/net/tcp6 || fail "v1 listener inode survived crossover"
-        grep -Fq '# managed-version: 8' "$HOME/.local/bin/journal"
+        [ ! -e "$HOME/.local/bin/journal" ] || fail "setup published a journal wrapper"
+        [ ! -L "$HOME/.local/bin/journal" ] || fail "setup published a journal wrapper"
         grep -Fq '# managed-version: 8' "$HOME/.local/bin/solstone"
         [ ! -e "$HOME/.local/bin/sol" ] || fail "v1 sol authority survived crossover"
         assert_candidate_version solstone

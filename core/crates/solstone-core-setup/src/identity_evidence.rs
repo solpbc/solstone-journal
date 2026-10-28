@@ -140,14 +140,15 @@ impl SetupArtifactEvidence {
     pub fn repair_steps(&self, binding: &InstallationBinding) -> Vec<StepName> {
         let expected = GuardFields::from_binding(binding);
         let mut steps = Vec::new();
-        if [&self.solstone_wrapper, &self.journal_wrapper]
-            .into_iter()
-            .any(|slot| {
-                matches!(slot.evidence, ArtifactSlotEvidence::LegacyUnguarded)
-                    || slot
-                        .guard()
-                        .is_some_and(|guard| guard.same_identity(&expected) && guard != &expected)
-            })
+        // The retired journal slot cannot schedule a wrapper repair. An exact
+        // V1 launcher still sets `legacy_transition`, which repairs the service.
+        if matches!(
+            self.solstone_wrapper.evidence,
+            ArtifactSlotEvidence::LegacyUnguarded
+        ) || self
+            .solstone_wrapper
+            .guard()
+            .is_some_and(|guard| guard.same_identity(&expected) && guard != &expected)
         {
             steps.push(StepName::Wrapper);
         }
@@ -177,7 +178,11 @@ pub fn gather_wrapper_artifact_evidence(
 ) -> ArtifactBindingEvidence {
     let paths = wrapper_paths(home_dir);
     let mut solstone = wrapper_slot(read_wrapper(&paths.solstone, WrapperCommand::Solstone));
-    let mut journal = wrapper_slot(read_wrapper(&paths.journal, WrapperCommand::Journal));
+    let mut journal = wrapper_slot(journal_admission_read(
+        home_dir,
+        &paths.legacy_journal,
+        false,
+    ));
     let mut service = service_slot(Ok(None));
     classify_slots(
         &mut solstone,
@@ -210,7 +215,7 @@ pub fn gather_setup_artifact_evidence(
     );
     let journal = read_setup_wrapper(
         home_dir,
-        &wrapper_paths.journal,
+        &wrapper_paths.legacy_journal,
         "journal",
         allow_legacy_launchers,
     );
@@ -264,18 +269,72 @@ pub fn gather_setup_artifact_evidence(
 #[must_use]
 pub fn wrapper_targets_drifted(home_dir: &Path, executable_dir: &Path) -> bool {
     let paths = wrapper_paths(home_dir);
-    [
-        (paths.solstone, WrapperCommand::Solstone),
-        (paths.journal, WrapperCommand::Journal),
-    ]
-    .into_iter()
-    .any(|(path, command)| {
-        fs::read_to_string(&path)
-            .ok()
-            .as_deref()
-            .and_then(|content| parse_wrapper(command, content))
-            .is_some_and(|wrapper| wrapper.sol_bin.parent() != Some(executable_dir))
-    })
+    fs::read_to_string(&paths.solstone)
+        .ok()
+        .as_deref()
+        .and_then(|content| parse_wrapper(WrapperCommand::Solstone, content))
+        .is_some_and(|wrapper| wrapper.sol_bin.parent() != Some(executable_dir))
+}
+
+const APP_OWNED_CHILD_PREFIX: &[u8] = b"#!/bin/sh\n# managed-version: app-owned-child\n";
+
+/// Admission for the retired `~/.local/bin/journal` slot.
+///
+/// An exact V1 launcher is still the legacy transition. A classify error on a
+/// regular file, and a regular file that starts like an app-owned child but
+/// was not accepted, stay malformed. A symlink is fresh and is not followed.
+/// Every other V2 state is fresh: it cannot make admission malformed, cannot
+/// be drift, and cannot schedule repair.
+fn journal_admission_read(
+    home_dir: &Path,
+    path: &Path,
+    allow_legacy_launchers: bool,
+) -> Result<Option<ReadWrapper>, ()> {
+    if allow_legacy_launchers {
+        match legacy_launcher::classify(home_dir, path, "journal") {
+            Ok(Some(_)) => {
+                return Ok(Some(ReadWrapper {
+                    artifact: PresentArtifact::LegacyLauncher,
+                    target: None,
+                    setup_rejected: false,
+                }));
+            }
+            Err(_) if regular_file(path) => return Err(()),
+            Err(_) | Ok(None) => {}
+        }
+    }
+    match fs::symlink_metadata(path) {
+        Err(_) => return Ok(None),
+        Ok(metadata) if metadata.file_type().is_symlink() || !metadata.is_file() => {
+            return Ok(None);
+        }
+        Ok(_) => {}
+    }
+    if fs::read(path).is_ok_and(|bytes| bytes.starts_with(APP_OWNED_CHILD_PREFIX)) {
+        return Err(());
+    }
+    Ok(None)
+}
+
+fn regular_file(path: &Path) -> bool {
+    fs::symlink_metadata(path)
+        .is_ok_and(|metadata| metadata.file_type().is_file() && !metadata.file_type().is_symlink())
+}
+
+/// Route inspection of the retired journal slot. A symlink is `foreign` and is
+/// not followed. This classification is not fed back into setup admission.
+#[must_use]
+pub fn route_journal_wrapper_slot(path: &Path) -> WrapperSlotEvidence {
+    match fs::symlink_metadata(path) {
+        Ok(metadata) if metadata.file_type().is_symlink() => WrapperSlotEvidence {
+            evidence: ArtifactSlotEvidence::Foreign,
+            guard: None,
+            target: None,
+            exact_v1: false,
+            setup_rejected: false,
+        },
+        _ => wrapper_slot(read_wrapper(path, WrapperCommand::LegacyJournal)),
+    }
 }
 
 fn read_setup_wrapper(
@@ -284,6 +343,9 @@ fn read_setup_wrapper(
     command: &str,
     allow_legacy_launchers: bool,
 ) -> Result<Option<ReadWrapper>, ()> {
+    if command == "journal" {
+        return journal_admission_read(home_dir, path, allow_legacy_launchers);
+    }
     if allow_legacy_launchers {
         let classified = legacy_launcher::classify(home_dir, path, command).map_err(|_| ())?;
         if classified.is_some() {
@@ -296,7 +358,7 @@ fn read_setup_wrapper(
     }
     let command = match command {
         "solstone" => WrapperCommand::Solstone,
-        "journal" => WrapperCommand::Journal,
+        "journal" => WrapperCommand::LegacyJournal,
         _ => return Err(()),
     };
     let mut wrapper = read_wrapper(path, command)?;
@@ -663,17 +725,6 @@ mod tests {
 
         let guard = fields();
         fs::write(
-            bin.join("journal"),
-            crate::wrapper::render_wrapper(
-                WrapperCommand::Journal,
-                &absolute_test_path("journal"),
-                &old_executable_dir.join("journal"),
-                &guard,
-            )
-            .unwrap(),
-        )
-        .unwrap();
-        fs::write(
             bin.join("solstone"),
             crate::wrapper::render_wrapper(
                 WrapperCommand::Solstone,
@@ -752,8 +803,15 @@ mod tests {
         .unwrap();
         fs::set_permissions(&near_twin, fs::Permissions::from_mode(0o755)).unwrap();
         let refused = gather_setup_artifact_evidence(&home, &namespace, true);
-        assert_eq!(refused.artifacts(), &ArtifactBindingEvidence::Malformed);
-        assert!(!refused.legacy_transition());
+        assert!(matches!(
+            refused.journal_wrapper().evidence(),
+            ArtifactSlotEvidence::Fresh
+        ));
+        assert_eq!(
+            refused.artifacts(),
+            &ArtifactBindingEvidence::LegacyUnguarded
+        );
+        assert!(refused.legacy_transition());
         let _ = fs::remove_dir_all(root);
     }
 
@@ -823,18 +881,19 @@ mod tests {
         let path = wrapper_dir.join("journal");
         fs::write(
             &path,
-            crate::wrapper::render_wrapper(
-                WrapperCommand::Journal,
+            crate::wrapper::render_wrapper_version(
+                WrapperCommand::LegacyJournal,
                 &absolute_test_path("journal"),
                 &absolute_test_path("owner-authored/journal"),
-                &fields(),
+                Some(&fields()),
+                8,
             )
             .unwrap(),
         )
         .unwrap();
 
         assert!(matches!(
-            read_wrapper(&path, WrapperCommand::Journal),
+            read_wrapper(&path, WrapperCommand::LegacyJournal),
             Ok(Some(wrapper)) if matches!(wrapper.artifact, PresentArtifact::Guarded(_))
         ));
         assert!(matches!(
@@ -859,15 +918,25 @@ mod tests {
         let next = root.join("versions/2.0.31-next/bin");
         fs::create_dir_all(&bin).unwrap();
         let guard = fields();
-        for command in [WrapperCommand::Solstone, WrapperCommand::Journal] {
-            let published = crate::wrapper::render_wrapper(
-                command,
-                &absolute_test_path("journal"),
-                &prior.join(command.as_str()),
-                &guard,
-            )
-            .unwrap()
-            .replacen(
+        for command in [WrapperCommand::Solstone, WrapperCommand::LegacyJournal] {
+            let rendered = if command == WrapperCommand::LegacyJournal {
+                crate::wrapper::render_wrapper_version(
+                    command,
+                    &absolute_test_path("journal"),
+                    &prior.join(command.as_str()),
+                    Some(&guard),
+                    8,
+                )
+            } else {
+                crate::wrapper::render_wrapper(
+                    command,
+                    &absolute_test_path("journal"),
+                    &prior.join(command.as_str()),
+                    &guard,
+                )
+            }
+            .unwrap();
+            let published = rendered.replacen(
                 "managed by 'solstone journal config'.",
                 "managed by 'journal config'.",
                 1,
@@ -889,9 +958,14 @@ mod tests {
             original.replace("exec \"$SOL_BIN\" \"$@\"", "exec /foreign/journal \"$@\""),
         )
         .unwrap();
+        let corrupted = gather_setup_artifact_evidence(&home, &guard.namespace, true);
+        assert!(matches!(
+            corrupted.journal_wrapper().evidence(),
+            ArtifactSlotEvidence::Fresh
+        ));
         assert_eq!(
-            gather_setup_artifact_evidence(&home, &guard.namespace, true).artifacts(),
-            &ArtifactBindingEvidence::Malformed
+            corrupted.artifacts(),
+            &ArtifactBindingEvidence::Guarded(guard.clone())
         );
         let _ = fs::remove_dir_all(root);
     }
@@ -909,18 +983,25 @@ mod tests {
         fs::create_dir_all(&bin).unwrap();
         fs::create_dir_all(&runtime).unwrap();
         let guard = fields();
-        for command in [WrapperCommand::Journal, WrapperCommand::Solstone] {
-            fs::write(
-                bin.join(command.as_str()),
+        for command in [WrapperCommand::LegacyJournal, WrapperCommand::Solstone] {
+            let rendered = if command == WrapperCommand::LegacyJournal {
+                crate::wrapper::render_wrapper_version(
+                    command,
+                    &absolute_test_path("journal"),
+                    &runtime.join(command.as_str()),
+                    Some(&guard),
+                    8,
+                )
+            } else {
                 crate::wrapper::render_wrapper(
                     command,
                     &absolute_test_path("journal"),
                     &runtime.join(command.as_str()),
                     &guard,
                 )
-                .unwrap(),
-            )
+            }
             .unwrap();
+            fs::write(bin.join(command.as_str()), rendered).unwrap();
         }
         let service_path = service_artifact_path(&home)
             .expect("resolve service artifact")
@@ -936,13 +1017,9 @@ mod tests {
         let evidence = gather_setup_artifact_evidence(&home, &guard.namespace, false);
         assert!(matches!(
             evidence.journal_wrapper().evidence(),
-            ArtifactSlotEvidence::Guarded(_)
+            ArtifactSlotEvidence::Fresh
         ));
-        let journal_target = runtime.join("journal");
-        assert_eq!(
-            evidence.journal_wrapper().target(),
-            Some(journal_target.as_path())
-        );
+        assert_eq!(evidence.journal_wrapper().target(), None);
         assert!(matches!(
             evidence.solstone_wrapper().evidence(),
             ArtifactSlotEvidence::Guarded(_)
@@ -956,7 +1033,7 @@ mod tests {
         let missing = gather_setup_artifact_evidence(&home, &guard.namespace, false);
         assert!(matches!(
             missing.journal_wrapper().evidence(),
-            ArtifactSlotEvidence::Guarded(_)
+            ArtifactSlotEvidence::Fresh
         ));
         assert!(matches!(
             missing.solstone_wrapper().evidence(),
@@ -973,11 +1050,12 @@ mod tests {
         };
         fs::write(
             bin.join("journal"),
-            crate::wrapper::render_wrapper(
-                WrapperCommand::Journal,
+            crate::wrapper::render_wrapper_version(
+                WrapperCommand::LegacyJournal,
                 &absolute_test_path("journal"),
                 &runtime.join("journal"),
-                &foreign_guard,
+                Some(&foreign_guard),
+                8,
             )
             .unwrap(),
         )
@@ -985,7 +1063,7 @@ mod tests {
         let foreign = gather_setup_artifact_evidence(&home, &guard.namespace, false);
         assert!(matches!(
             foreign.journal_wrapper().evidence(),
-            ArtifactSlotEvidence::Foreign
+            ArtifactSlotEvidence::Fresh
         ));
         assert!(matches!(
             foreign.solstone_wrapper().evidence(),
@@ -1005,11 +1083,12 @@ mod tests {
         .unwrap();
         fs::write(
             bin.join("journal"),
-            crate::wrapper::render_wrapper(
-                WrapperCommand::Journal,
+            crate::wrapper::render_wrapper_version(
+                WrapperCommand::LegacyJournal,
                 &absolute_test_path("journal"),
                 &runtime.join("journal"),
-                &guard,
+                Some(&guard),
+                8,
             )
             .unwrap(),
         )
@@ -1033,7 +1112,7 @@ mod tests {
         ));
         assert!(matches!(
             ambiguous.journal_wrapper().evidence(),
-            ArtifactSlotEvidence::Ambiguous
+            ArtifactSlotEvidence::Fresh
         ));
 
         let _ = fs::remove_dir_all(root);

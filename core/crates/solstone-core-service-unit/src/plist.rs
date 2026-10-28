@@ -32,6 +32,15 @@ pub fn launchd_plist_port(bytes: &[u8]) -> Option<String> {
     (!port.is_empty()).then(|| port.to_owned())
 }
 
+/// The first `ProgramArguments` string, which is the start program. `None`
+/// means the plist does not name one. The remaining arguments are not parsed.
+#[must_use]
+pub fn launchd_plist_start_program(bytes: &[u8]) -> Option<String> {
+    let value = Value::from_reader(std::io::Cursor::new(bytes)).ok()?;
+    let arguments = value.as_dictionary()?.get("ProgramArguments")?.as_array()?;
+    arguments.first()?.as_string().map(str::to_owned)
+}
+
 /// Returns true only when ProgramArguments is exactly three strings:
 /// home.join(".local/bin/journal"), "start", and a non-empty port.
 #[must_use]

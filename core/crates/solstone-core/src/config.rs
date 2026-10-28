@@ -69,7 +69,6 @@ pub(crate) struct JournalChange {
     pub yes: bool,
     pub dry_run: bool,
     pub sol_bin: PathBuf,
-    pub service_bin: PathBuf,
     pub alias: PathBuf,
     pub home_dir: PathBuf,
     pub identity_root: PathBuf,
@@ -472,7 +471,6 @@ enum RewriteError {
 
 struct WrapperTargets {
     solstone: PathBuf,
-    journal: PathBuf,
 }
 
 fn legacy_manifest_for_rewrite(
@@ -490,7 +488,6 @@ fn legacy_manifest_for_rewrite(
 
 fn read_wrapper_targets(change: &JournalChange) -> Result<WrapperTargets, RewriteError> {
     let sol_alias = change.alias.clone();
-    let journal_alias = sol_alias.with_file_name("journal");
     let sol_content = fs::read_to_string(&sol_alias).map_err(|e| {
         RewriteError::Refusal(format!(
             "solstone journal config: refused: cannot read {}: {e}",
@@ -500,33 +497,14 @@ fn read_wrapper_targets(change: &JournalChange) -> Result<WrapperTargets, Rewrit
     let Some(sol_wrapper) = parse_wrapper(WrapperCommand::Solstone, &sol_content) else {
         return Err(RewriteError::Refusal(wrapper_refusal(&sol_alias)));
     };
-    let solstone = sol_wrapper.sol_bin;
-    let journal_bin = if !journal_alias.exists() && !journal_alias.is_symlink() {
-        solstone.with_file_name("journal")
-    } else if journal_alias.is_symlink() {
-        return Err(RewriteError::Refusal(wrapper_refusal(&journal_alias)));
-    } else {
-        let content = fs::read_to_string(&journal_alias).map_err(|e| {
-            RewriteError::Refusal(format!(
-                "solstone journal config: refused: cannot read {}: {e}",
-                journal_alias.display()
-            ))
-        })?;
-        match parse_wrapper(WrapperCommand::Journal, &content) {
-            Some(wrapper) => wrapper.sol_bin,
-            None => return Err(RewriteError::Refusal(wrapper_refusal(&journal_alias))),
-        }
-    };
-    for (command, target) in [
-        (WrapperCommand::Solstone, solstone.as_path()),
-        (WrapperCommand::Journal, journal_bin.as_path()),
-    ] {
-        validate_wrapper_inputs(command, &change.target_path, target)
-            .map_err(|error| RewriteError::Refusal(error.to_string()))?;
-    }
+    validate_wrapper_inputs(
+        WrapperCommand::Solstone,
+        &change.target_path,
+        &sol_wrapper.sol_bin,
+    )
+    .map_err(|error| RewriteError::Refusal(error.to_string()))?;
     Ok(WrapperTargets {
-        solstone,
-        journal: journal_bin,
+        solstone: sol_wrapper.sol_bin,
     })
 }
 
@@ -535,7 +513,6 @@ fn rewrite_preflighted(
     targets: &WrapperTargets,
 ) -> Result<PathBuf, RewriteError> {
     let sol_alias = change.alias.clone();
-    let journal_alias = sol_alias.with_file_name("journal");
     let root_token = root_token_from_path(&change.identity_root).map_err(|error| {
         RewriteError::Refusal(format!(
             "solstone journal config: identity root refused: {error}"
@@ -570,28 +547,16 @@ fn rewrite_preflighted(
         ))
     })?;
     let guard = solstone_core_installation_identity::GuardFields::from_binding(admission.binding());
-    write_wrappers_atomically(&[
-        (
-            sol_alias,
-            render_wrapper(
-                WrapperCommand::Solstone,
-                &change.target_path,
-                &targets.solstone,
-                &guard,
-            )
-            .map_err(|error| RewriteError::Refusal(error.to_string()))?,
-        ),
-        (
-            journal_alias,
-            render_wrapper(
-                WrapperCommand::Journal,
-                &change.target_path,
-                &targets.journal,
-                &guard,
-            )
-            .map_err(|error| RewriteError::Refusal(error.to_string()))?,
-        ),
-    ])
+    write_wrappers_atomically(&[(
+        sol_alias,
+        render_wrapper(
+            WrapperCommand::Solstone,
+            &change.target_path,
+            &targets.solstone,
+            &guard,
+        )
+        .map_err(|error| RewriteError::Refusal(error.to_string()))?,
+    )])
     .map_err(|error| RewriteError::Install(error.to_string()))?;
     Ok(targets.solstone.clone())
 }
@@ -604,14 +569,11 @@ fn rewrite(change: &JournalChange) -> Result<PathBuf, RewriteError> {
     rewrite_preflighted(change, &targets)
 }
 fn execute(c: &JournalChange, d: &Decision, service: &dyn ServiceCommandRunner) -> u8 {
-    for (command, target) in [
-        (WrapperCommand::Solstone, c.sol_bin.as_path()),
-        (WrapperCommand::Journal, c.service_bin.as_path()),
-    ] {
-        if let Err(error) = validate_wrapper_inputs(command, &c.target_path, target) {
-            eprintln!("solstone journal config: refused before mutation: {error}");
-            return 1;
-        }
+    if let Err(error) =
+        validate_wrapper_inputs(WrapperCommand::Solstone, &c.target_path, &c.sol_bin)
+    {
+        eprintln!("solstone journal config: refused before mutation: {error}");
+        return 1;
     }
     if c.action == Some(RequestedAction::Force) {
         eprintln!(
@@ -995,7 +957,6 @@ fn journal(o: ConfigJournalOptions) -> ExitCode {
         action: o.action.map(Into::into),
         yes: o.yes,
         dry_run: o.dry_run,
-        service_bin: wrapper.sol_bin.with_file_name("journal"),
         sol_bin: wrapper.sol_bin,
         alias,
         home_dir: owner_home,
@@ -1104,7 +1065,6 @@ mod tests {
         c.target_path = target;
         c.alias = alias;
         c.sol_bin = PathBuf::from("/service/solstone");
-        c.service_bin = PathBuf::from("/service/journal");
         c.home_dir = root.to_path_buf();
         c.identity_root = root.to_path_buf();
         c.yes = true;
@@ -1138,7 +1098,6 @@ mod tests {
             yes: false,
             dry_run: false,
             sol_bin: PathBuf::from("/bin/solstone"),
-            service_bin: PathBuf::from("/bin/journal"),
             alias: PathBuf::from("/home/.local/bin/solstone"),
             home_dir: PathBuf::from("/home"),
             identity_root: PathBuf::from("/identity-root"),
@@ -1423,15 +1382,19 @@ mod tests {
         let root = test_root("move-restart-refusal");
         let mut c = move_change(&root);
         c.service_running = true;
-        fs::write(c.alias.with_file_name("journal"), "foreign wrapper").unwrap();
+        let journal_alias = c.alias.with_file_name("journal");
+        fs::write(&journal_alias, "foreign wrapper").unwrap();
         let service = FakeServiceRunner::new([
             ServiceCommandResult::Exited { code: 0 },
             ServiceCommandResult::Exited { code: 0 },
         ]);
-        assert_eq!(run_move(&c, &service), 1);
-        assert!(service.calls.lock().unwrap().is_empty());
-        assert!(c.current_path.exists());
-        assert!(!c.target_path.exists());
+        assert_eq!(run_move(&c, &service), 0);
+        assert_eq!(
+            fs::read_to_string(&journal_alias).unwrap(),
+            "foreign wrapper"
+        );
+        assert!(!c.current_path.exists());
+        assert!(c.target_path.exists());
     }
 
     #[test]
@@ -1515,50 +1478,157 @@ mod tests {
     }
 
     #[test]
-    fn switch_refuses_a_foreign_journal_wrapper_before_creating_the_target() {
+    fn switch_leaves_a_foreign_journal_wrapper_byte_identical() {
         let root = test_root("switch-wrapper-preflight");
         let mut c = move_change(&root);
         c.action = Some(RequestedAction::Switch);
+        c.service_installed = true;
         c.service_running = true;
-        fs::write(c.alias.with_file_name("journal"), "foreign wrapper").unwrap();
-        let service = FakeServiceRunner::new([]);
-        assert_eq!(run_switch(&c, &service), 1);
-        assert!(!c.target_path.exists());
-        assert!(service.calls.lock().unwrap().is_empty());
+        let journal_alias = c.alias.with_file_name("journal");
+        fs::write(&journal_alias, "foreign wrapper").unwrap();
+        let service = FakeServiceRunner::new([ServiceCommandResult::Exited { code: 0 }]);
+        assert_eq!(run_switch(&c, &service), 0);
+        assert_eq!(
+            fs::read_to_string(&journal_alias).unwrap(),
+            "foreign wrapper"
+        );
+        assert!(c.target_path.exists());
     }
 
     #[cfg(unix)]
     #[test]
-    fn rewrite_reports_the_failing_journal_alias() {
+    fn rewrite_leaves_an_unmanaged_journal_alias_byte_identical() {
         let root = test_root("rewrite-journal-alias");
         let c = move_change(&root);
         let journal_alias = c.alias.with_file_name("journal");
         for kind in ["foreign", "symlink", "unreadable"] {
             let _ = fs::remove_file(&journal_alias);
             let _ = fs::remove_dir(&journal_alias);
+            let before = match kind {
+                "foreign" => {
+                    fs::write(&journal_alias, "foreign wrapper").unwrap();
+                    Some(fs::read(&journal_alias).unwrap())
+                }
+                "symlink" => {
+                    std::os::unix::fs::symlink("old-journal", &journal_alias).unwrap();
+                    None
+                }
+                "unreadable" => {
+                    fs::create_dir(&journal_alias).unwrap();
+                    None
+                }
+                _ => unreachable!(),
+            };
+            assert!(rewrite(&c).is_ok(), "{kind}");
             match kind {
-                "foreign" => fs::write(&journal_alias, "foreign wrapper").unwrap(),
-                "symlink" => std::os::unix::fs::symlink("old-journal", &journal_alias).unwrap(),
-                "unreadable" => fs::create_dir(&journal_alias).unwrap(),
+                "foreign" => assert_eq!(fs::read(&journal_alias).unwrap(), before.unwrap()),
+                "symlink" => assert!(
+                    journal_alias
+                        .symlink_metadata()
+                        .unwrap()
+                        .file_type()
+                        .is_symlink()
+                ),
+                "unreadable" => assert!(journal_alias.is_dir()),
                 _ => unreachable!(),
             }
-            let error = rewrite(&c).unwrap_err();
-            let message = match error {
-                RewriteError::Refusal(message) => message,
-                RewriteError::Install(_) => panic!("journal alias must be rejected before install"),
-            };
-            assert!(
-                message.contains(&journal_alias.display().to_string()),
-                "{kind}: {message}"
-            );
-            assert!(
-                !message.contains(&c.alias.display().to_string()),
-                "{kind}: {message}"
-            );
-            if kind == "unreadable" {
-                assert!(message.starts_with("solstone journal config: refused: cannot read"));
-            } else {
-                assert!(message.contains("is not a managed wrapper"));
+        }
+    }
+
+    /// (h) `journal config` switch, move, and rewrite succeed with no journal
+    /// wrapper and with a file this installation does not own. The file is
+    /// left byte-identical and no journal wrapper is written.
+    #[cfg(unix)]
+    #[test]
+    fn config_leaves_an_unowned_journal_slot_byte_identical() {
+        for kind in [
+            "absent",
+            "foreign",
+            "malformed",
+            "other-installation",
+            "symlink",
+        ] {
+            for action in ["switch", "move", "rewrite"] {
+                let root = test_root(&format!("{action}-{kind}"));
+                let c = move_change(&root);
+                let journal_alias = c.alias.with_file_name("journal");
+                let before = match kind {
+                    "absent" => {
+                        fs::remove_file(&journal_alias).unwrap();
+                        None
+                    }
+                    "foreign" => {
+                        fs::write(&journal_alias, "foreign wrapper\n").unwrap();
+                        Some(fs::read(&journal_alias).unwrap())
+                    }
+                    "malformed" => {
+                        let body = b"#!/bin/sh\nnot a wrapper\n".to_vec();
+                        fs::write(&journal_alias, &body).unwrap();
+                        Some(body)
+                    }
+                    "other-installation" => {
+                        let guard = solstone_core_installation_identity::GuardFields {
+                            namespace: solstone_core_installation_identity::NamespaceName::parse(
+                                "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+                            )
+                            .unwrap(),
+                            id: solstone_core_installation_identity::InstallationId::parse(
+                                "ffeeddccbbaa99887766554433221100",
+                            )
+                            .unwrap(),
+                            generation: solstone_core_installation_identity::Generation::new(1)
+                                .unwrap(),
+                            journal_token:
+                                solstone_core_installation_identity::journal_token_from_path(
+                                    &c.current_path,
+                                )
+                                .unwrap(),
+                        };
+                        let body = solstone_core_setup::wrapper::render_wrapper_version(
+                            WrapperCommand::LegacyJournal,
+                            &c.current_path,
+                            Path::new("/other/bin/journal"),
+                            Some(&guard),
+                            8,
+                        )
+                        .unwrap();
+                        fs::write(&journal_alias, &body).unwrap();
+                        Some(body.into_bytes())
+                    }
+                    "symlink" => {
+                        fs::remove_file(&journal_alias).unwrap();
+                        std::os::unix::fs::symlink("old-journal", &journal_alias).unwrap();
+                        None
+                    }
+                    _ => unreachable!(),
+                };
+                let service = FakeServiceRunner::new([]);
+                match action {
+                    "switch" => {
+                        let mut switched = c.clone();
+                        switched.action = Some(RequestedAction::Switch);
+                        assert_eq!(run_switch(&switched, &service), 0, "{action} {kind}");
+                    }
+                    "move" => assert_eq!(run_move(&c, &service), 0, "{action} {kind}"),
+                    "rewrite" => assert!(rewrite(&c).is_ok(), "{action} {kind}"),
+                    _ => unreachable!(),
+                }
+                match kind {
+                    "absent" => assert!(!journal_alias.exists(), "{action}"),
+                    "symlink" => assert!(
+                        journal_alias
+                            .symlink_metadata()
+                            .unwrap()
+                            .file_type()
+                            .is_symlink(),
+                        "{action}"
+                    ),
+                    _ => assert_eq!(
+                        fs::read(&journal_alias).unwrap(),
+                        before.unwrap(),
+                        "{action} {kind}"
+                    ),
+                }
             }
         }
     }
@@ -1758,7 +1828,7 @@ mod tests {
         assert_eq!(wrapper.journal, "/journal");
         assert_eq!(wrapper.sol_bin, PathBuf::from("/bin/it's/solstone"));
         assert_eq!(wrapper.version, 7);
-        assert!(parse_wrapper(WrapperCommand::Journal, &content).is_none());
+        assert!(parse_wrapper(WrapperCommand::LegacyJournal, &content).is_none());
         assert!(
             parse_wrapper(
                 WrapperCommand::Solstone,

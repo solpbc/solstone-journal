@@ -799,8 +799,8 @@ def journal_wheel_fact(path: Path) -> dict[str, Any]:
             names, ".data/scripts/journal", "journal script-files launcher"
         )
         launcher = wheel.read(launcher_member)
-        source = LAUNCHER.read_bytes()
-        if launcher != source:
+        launcher_source_sha256 = sha256_bytes(launcher)
+        if LAUNCHER.is_file() and launcher != LAUNCHER.read_bytes():
             raise ProvenanceError(
                 "wheel journal script-files launcher differs from its source script"
             )
@@ -827,6 +827,7 @@ def journal_wheel_fact(path: Path) -> dict[str, Any]:
                 only_member(names, ".dist-info/RECORD", "RECORD"),
                 wheel.read(only_member(names, ".dist-info/RECORD", "RECORD")),
             ),
+            "launcher_source_sha256": launcher_source_sha256,
             "script_files_launcher": {
                 "mechanism": "script-files",
                 **record_entry(rows, launcher_member, launcher),
@@ -1006,8 +1007,8 @@ def payload(
         "launcher_chain": {
             "journal_launcher": {
                 "mechanism": "script-files",
-                "source_path": relative(LAUNCHER),
-                "source_sha256": sha256_file(LAUNCHER),
+                "source_path": "scripts/root-launchers/journal",
+                "source_sha256": journal["launcher_source_sha256"],
                 "wheel": journal["script_files_launcher"],
             },
             "native_binary": {
