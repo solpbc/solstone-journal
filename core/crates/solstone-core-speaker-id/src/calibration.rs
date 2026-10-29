@@ -10,6 +10,13 @@ pub const OWNER_MARGIN_MIN: f32 = 0.05;
 pub const ACOUSTIC_HIGH: f32 = 0.36;
 pub const ACOUSTIC_MEDIUM: f32 = 0.22;
 pub const ACOUSTIC_MARGIN_MIN: f32 = 0.05;
+/// Lead a match against every voiceprint needs before it names anyone.
+///
+/// A segment that named no one is matched against the whole library, where a
+/// voice the journal does not know still lands on its nearest voiceprint. Such
+/// a match names a person only at this lead over the runner-up, and only at
+/// medium confidence, so it never grows a voiceprint (journal #403).
+pub const ACOUSTIC_OPEN_MARGIN_MIN: f32 = 0.20;
 pub const CC_COVERAGE_GATE: f32 = 0.45;
 pub const CC_CONFIDENCE_GATE: f32 = 0.28;
 pub const VP_DECAY_LAMBDA: f64 = std::f64::consts::LN_2 / 120.0;

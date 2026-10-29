@@ -11,7 +11,8 @@ use solstone_core_entity::{JournalEntity, is_admissible_person, normalize_embedd
 use crate::layer1::Label;
 use crate::voiceprint_centroid::{VoiceprintCentroidCache, VoiceprintLoadGap};
 use solstone_core_speaker_id::calibration::{
-    ACOUSTIC_HIGH, ACOUSTIC_MARGIN_MIN, ACOUSTIC_MEDIUM, CC_CONFIDENCE_GATE, CC_COVERAGE_GATE,
+    ACOUSTIC_HIGH, ACOUSTIC_MARGIN_MIN, ACOUSTIC_MEDIUM, ACOUSTIC_OPEN_MARGIN_MIN,
+    CC_CONFIDENCE_GATE, CC_COVERAGE_GATE,
 };
 
 /// Inputs loaded once by the attribution orchestrator for acoustic attribution.
@@ -59,7 +60,9 @@ pub fn apply_acoustic_matching(
         };
     }
 
-    let vp_entity_ids = if inputs.candidate_entity_ids.is_empty() {
+    // Nothing in the segment named anyone, so every voiceprint competes.
+    let open_library = inputs.candidate_entity_ids.is_empty();
+    let vp_entity_ids = if open_library {
         inputs
             .entities
             .iter()
@@ -102,6 +105,7 @@ pub fn apply_acoustic_matching(
         inputs.integer_speakers,
         &matching_centroids,
         inputs.margin_declined_sids,
+        open_library,
     );
     apply_sentence_matches(
         &mut labels,
@@ -110,6 +114,7 @@ pub fn apply_acoustic_matching(
         inputs.statements,
         &matching_centroids,
         inputs.margin_declined_sids,
+        open_library,
     );
 
     Layer3Result {
@@ -126,6 +131,7 @@ fn apply_cluster_matches(
     integer_speakers: &HashMap<i64, i64>,
     matching_centroids: &BTreeMap<String, Vec<f32>>,
     margin_declined_sids: &HashSet<i64>,
+    open_library: bool,
 ) {
     let labeled = unresolved
         .iter()
@@ -210,20 +216,23 @@ fn apply_cluster_matches(
         if score < ACOUSTIC_MEDIUM {
             continue;
         }
-        let mut confidence = if score >= ACOUSTIC_HIGH {
+        let other_scores = pairs
+            .iter()
+            .filter(|(_, pair_cluster_id, pair_entity_id)| {
+                *pair_cluster_id == cluster_id && pair_entity_id != &entity_id
+            })
+            .map(|(pair_score, _, _)| *pair_score)
+            .collect::<Vec<_>>();
+        if open_library && !passes_open_margin(score, &other_scores) {
+            continue;
+        }
+        let mut confidence = if score >= ACOUSTIC_HIGH && !open_library {
             "high"
         } else {
             "medium"
         };
         let mut acoustic_margin_declined = false;
         if confidence == "high" {
-            let other_scores = pairs
-                .iter()
-                .filter(|(_, pair_cluster_id, pair_entity_id)| {
-                    *pair_cluster_id == cluster_id && pair_entity_id != &entity_id
-                })
-                .map(|(pair_score, _, _)| *pair_score)
-                .collect::<Vec<_>>();
             acoustic_margin_declined = !passes_acoustic_margin(score, &other_scores);
             if acoustic_margin_declined {
                 confidence = "medium";
@@ -256,6 +265,7 @@ fn apply_sentence_matches(
     statements: &[(i64, Vec<f32>)],
     matching_centroids: &BTreeMap<String, Vec<f32>>,
     margin_declined_sids: &HashSet<i64>,
+    open_library: bool,
 ) {
     for sentence_id in unresolved {
         if labels
@@ -288,6 +298,20 @@ fn apply_sentence_matches(
         let Some(entity_id) = best_entity_id else {
             continue;
         };
+        if open_library {
+            if best_score >= ACOUSTIC_MEDIUM && passes_open_margin(best_score, &runner_up_scores) {
+                replace_label(
+                    labels,
+                    *sentence_id,
+                    entity_id,
+                    "medium",
+                    "acoustic",
+                    margin_declined_sids.contains(sentence_id),
+                    false,
+                );
+            }
+            continue;
+        }
         if best_score >= ACOUSTIC_HIGH {
             let acoustic_margin_declined = !passes_acoustic_margin(best_score, &runner_up_scores);
             let confidence =
@@ -371,14 +395,27 @@ fn passes_acoustic_margin(matched_score: f32, other_scores: &[f32]) -> bool {
     matched_score - runner_up >= ACOUSTIC_MARGIN_MIN
 }
 
+fn passes_open_margin(matched_score: f32, other_scores: &[f32]) -> bool {
+    let runner_up = other_scores.iter().copied().fold(0.0_f32, f32::max);
+    matched_score - runner_up >= ACOUSTIC_OPEN_MARGIN_MIN
+}
+
 #[cfg(test)]
 mod tests {
-    use super::passes_acoustic_margin;
-    use solstone_core_speaker_id::calibration::ACOUSTIC_MARGIN_MIN;
+    use super::{passes_acoustic_margin, passes_open_margin};
+    use solstone_core_speaker_id::calibration::{ACOUSTIC_MARGIN_MIN, ACOUSTIC_OPEN_MARGIN_MIN};
 
     #[test]
     fn ac15_acoustic_margin_uses_zero_floor() {
         assert!(passes_acoustic_margin(ACOUSTIC_MARGIN_MIN, &[]));
         assert!(!passes_acoustic_margin(ACOUSTIC_MARGIN_MIN - 0.001, &[]));
+    }
+
+    #[test]
+    fn open_library_margin_is_the_wider_lead() {
+        assert!(passes_open_margin(ACOUSTIC_OPEN_MARGIN_MIN, &[]));
+        assert!(!passes_open_margin(ACOUSTIC_OPEN_MARGIN_MIN - 0.001, &[]));
+        assert!(!passes_open_margin(0.7, &[0.55]));
+        assert!(passes_open_margin(0.7, &[0.45]));
     }
 }

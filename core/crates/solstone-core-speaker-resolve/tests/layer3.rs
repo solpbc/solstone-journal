@@ -389,3 +389,97 @@ fn empty_unresolved_short_circuits_before_voiceprint_loading() {
     );
     assert!(result.voiceprint_versions.is_empty());
 }
+
+#[test]
+fn a_segment_that_named_no_one_names_only_a_clear_match_and_never_at_high() {
+    let temporary = TempDir::new();
+    write_entity(temporary.path(), "alpha", Some("Person"), false);
+    write_entity(temporary.path(), "beta", Some("Person"), false);
+    write_voiceprint(temporary.path(), "alpha", embedding(1.0, 0.0));
+    write_voiceprint(
+        temporary.path(),
+        "beta",
+        embedding(0.5, (1.0 - 0.5_f32.powi(2)).sqrt()),
+    );
+    let loaded_entities = entities(temporary.path());
+
+    let clear = run(
+        &temporary,
+        labels(&[1]),
+        &[1],
+        &BTreeSet::new(),
+        &loaded_entities,
+        &[(1, embedding(1.0, 0.0))],
+        &HashMap::new(),
+    );
+    assert_eq!(clear.labels[&1].speaker.as_deref(), Some("alpha"));
+    assert_eq!(clear.labels[&1].confidence.as_deref(), Some("medium"));
+
+    // 0.92 to alpha against 0.80 to beta: a lead that names someone when the
+    // segment named them, but not against the whole library.
+    let thin = embedding(0.92, (1.0 - 0.92_f32.powi(2)).sqrt());
+    let unnamed = run(
+        &temporary,
+        labels(&[1]),
+        &[1],
+        &BTreeSet::new(),
+        &loaded_entities,
+        &[(1, thin.clone())],
+        &HashMap::new(),
+    );
+    assert_eq!(unnamed.labels[&1].speaker, None);
+
+    let named = run(
+        &temporary,
+        labels(&[1]),
+        &[1],
+        &BTreeSet::from(["alpha".to_owned(), "beta".to_owned()]),
+        &loaded_entities,
+        &[(1, thin)],
+        &HashMap::new(),
+    );
+    assert_eq!(named.labels[&1].speaker.as_deref(), Some("alpha"));
+    assert_eq!(named.labels[&1].confidence.as_deref(), Some("high"));
+}
+
+#[test]
+fn a_cluster_in_a_segment_that_named_no_one_needs_the_wider_lead() {
+    let temporary = TempDir::new();
+    write_entity(temporary.path(), "alpha", Some("Person"), false);
+    write_entity(temporary.path(), "beta", Some("Person"), false);
+    write_voiceprint(temporary.path(), "alpha", embedding(1.0, 0.0));
+    write_voiceprint(
+        temporary.path(),
+        "beta",
+        embedding(0.5, (1.0 - 0.5_f32.powi(2)).sqrt()),
+    );
+    let loaded_entities = entities(temporary.path());
+    let thin = embedding(0.92, (1.0 - 0.92_f32.powi(2)).sqrt());
+    let statements = [(1, thin.clone()), (2, thin)];
+    let clusters = HashMap::from([(1, 4), (2, 4)]);
+
+    let unnamed = run(
+        &temporary,
+        labels(&[1, 2]),
+        &[1, 2],
+        &BTreeSet::new(),
+        &loaded_entities,
+        &statements,
+        &clusters,
+    );
+    assert_eq!(unnamed.labels[&1].speaker, None);
+    assert_eq!(unnamed.labels[&2].speaker, None);
+
+    let clear = run(
+        &temporary,
+        labels(&[1, 2]),
+        &[1, 2],
+        &BTreeSet::new(),
+        &loaded_entities,
+        &[(1, embedding(1.0, 0.0)), (2, embedding(1.0, 0.0))],
+        &clusters,
+    );
+    assert_eq!(clear.labels[&1].speaker.as_deref(), Some("alpha"));
+    assert_eq!(clear.labels[&1].method.as_deref(), Some("acoustic_cluster"));
+    assert_eq!(clear.labels[&1].confidence.as_deref(), Some("medium"));
+}
