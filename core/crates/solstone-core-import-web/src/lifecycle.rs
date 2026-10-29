@@ -1376,7 +1376,7 @@ pub(crate) async fn run_start(
     let first_only = match data.get("first_start_only") {
         None => false,
         Some(Value::Bool(value)) => *value,
-        Some(_) => return invalid_state("invalid first Start permission", None),
+        Some(_) => return invalid_state("invalid first start permission", None),
     };
     if first_only {
         let eligible = resolved_id.as_deref().is_some_and(|id| {
@@ -1387,7 +1387,7 @@ pub(crate) async fn run_start(
                 })
         });
         if !eligible || data.get("force").and_then(Value::as_bool) == Some(true) {
-            return invalid_state("saved import first Start is not available", None);
+            return invalid_state("saved import first start is not available", None);
         }
     }
 
@@ -1458,7 +1458,7 @@ pub(crate) async fn run_start(
     };
 
     let Some(import_id) = resolved_id.as_deref() else {
-        return invalid_state("saved import first Start is not available", None);
+        return invalid_state("saved import first start is not available", None);
     };
     let consumed = if let Some(consume) = &seams.consume {
         (*consume.lock().unwrap())(root, import_id, first_only)
@@ -1467,7 +1467,7 @@ pub(crate) async fn run_start(
     };
     if let Err(error) = consumed {
         if matches!(error, ImportError::InvalidAttemptState { .. }) {
-            return invalid_state("saved import first Start is not available", None);
+            return invalid_state("saved import first start is not available", None);
         }
         return metadata_failed(error.to_string());
     }

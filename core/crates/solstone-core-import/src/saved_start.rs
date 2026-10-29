@@ -36,7 +36,7 @@ pub enum SavedStartState {
 
 fn unavailable() -> ImportError {
     ImportError::InvalidAttemptState {
-        message: "saved import Start permission could not be confirmed".to_owned(),
+        message: "saved import start permission could not be confirmed".to_owned(),
     }
 }
 
