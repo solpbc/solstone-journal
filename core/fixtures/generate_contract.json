@@ -156,7 +156,7 @@
       },
       "response": {
         "blocking": true,
-        "detail": "fixture attestation-stale",
+        "detail": "the verification of confidential processing is out of date",
         "id": "fixture-request",
         "outcome": "refused",
         "provider": "local",
@@ -198,7 +198,7 @@
       },
       "response": {
         "blocking": true,
-        "detail": "fixture no-engine-configured",
+        "detail": "nothing is chosen for thinking yet",
         "id": "fixture-request",
         "outcome": "refused",
         "provider": "none",
@@ -240,7 +240,7 @@
       },
       "response": {
         "blocking": false,
-        "detail": "fixture incomplete-json",
+        "detail": "the model reached its output ceiling before its JSON answer was complete",
         "id": "fixture-request",
         "outcome": "refused",
         "provider": "local",
@@ -714,6 +714,12 @@
     {
       "blocking": false,
       "code": "local_queue_timeout",
+      "overrides_live_taxonomy": false,
+      "retryable": true
+    },
+    {
+      "blocking": false,
+      "code": "local_request_timeout",
       "overrides_live_taxonomy": false,
       "retryable": true
     },

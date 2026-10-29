@@ -23,6 +23,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- when the local model takes too long to answer, your journal no longer says it couldn't connect to the provider. a few error messages, including the one for an answer the model didn't finish, no longer show test wording.
 - security fix for the private network: your journal now proves it holds its own private key each time it renews its place on the relay, and once it has, the relay refuses anyone who only knows your journal's public key. before, someone holding that public key, such as a device you had removed, could take your journal's place, keep your devices from reaching it and see when they tried to reach it, but never anything in your journal. your journal also no longer puts its relay credential in the web address it connects to.
 - the development phone apps can now recover an explicit media offload request after a lost reply, using the request ID saved before sending it. repeating that request does not start another offload; an unknown result stays unknown.
 - your journal no longer treats a placeholder such as "Speaker 2" as a person it can recognize by voice. lines it had matched to one now show an unnamed speaker.

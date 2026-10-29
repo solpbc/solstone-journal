@@ -118,6 +118,7 @@ fn category(reason: Option<&str>) -> &'static str {
             | "pipeline_unavailable"
             | "brain_refresh_timeout"
             | "local_queue_timeout"
+            | "local_request_timeout"
             | "local_capacity_exhausted"
             | "context_window_exceeded"
             | "context_budget_exceeded"

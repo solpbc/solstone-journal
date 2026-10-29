@@ -502,6 +502,18 @@ fn generate_with_connected_server_at<T: GenerateTransport>(
             None,
             None,
         ),
+        // A request that used its whole deadline ran out of time; it did not
+        // lose its connection, whatever the transport called the error.
+        RemainingTimeout::PostError(detail) if remaining_timeout(started, timeout).is_err() => {
+            failure_with_inference(
+                Some("local_request_timeout"),
+                format!("Local inference request exceeded its deadline: {detail}"),
+                context_for(Some(admission_slot), queue_wait_ms, true),
+                "error",
+                None,
+                None,
+            )
+        }
         RemainingTimeout::PostError(detail) => failure_with_inference(
             Some("network_unreachable"),
             detail,
@@ -3143,6 +3155,76 @@ mod tests {
             matches!(parse_response(&json!({"choices":"bad"})), Err((reason, _)) if reason == "response_invalid")
         );
         assert!(serde_json::from_str::<Value>("not json").is_err());
+    }
+
+    /// Answers preflight, then holds the completion until its deadline passes
+    /// and fails it the way the HTTP client does.
+    #[cfg(feature = "full-tests")]
+    struct DeadlineTransport {
+        completion_error: String,
+    }
+
+    #[cfg(feature = "full-tests")]
+    impl GenerateTransport for DeadlineTransport {
+        fn get(
+            &mut self,
+            _: &str,
+            _: &str,
+            _: Duration,
+            _: Option<&str>,
+        ) -> Result<HttpResponse, String> {
+            ok_http(json!({"default_generation_settings":{"n_ctx":16384},"total_slots":1}))
+        }
+
+        fn post_json(
+            &mut self,
+            _: &str,
+            path: &str,
+            _: &Value,
+            timeout: Duration,
+            _: Option<&str>,
+        ) -> Result<HttpResponse, String> {
+            match path {
+                "/tokenize" => ok_http(json!({"tokens": [1]})),
+                "/v1/chat/completions/input_tokens" => ok_http(json!({
+                    "object": "response.input_tokens",
+                    "input_tokens": 1,
+                })),
+                "/v1/chat/completions" => {
+                    std::thread::sleep(timeout);
+                    Err(self.completion_error.clone())
+                }
+                other => panic!("unexpected generate POST {other}"),
+            }
+        }
+    }
+
+    #[cfg(feature = "full-tests")]
+    #[test]
+    fn completion_that_outlives_its_deadline_is_a_timeout_not_unreachable() {
+        let root = tempfile::tempdir().expect("journal");
+        let mut request = input(json!("long reply"));
+        request.journal_path = root.path().display().to_string();
+        request.timeout_s = Some(0.2);
+        let mut transport = DeadlineTransport {
+            completion_error: "timeout: global".into(),
+        };
+        let result = generate_with(request, &mut transport, |_| ConnectOutcome::Ready {
+            server: server(),
+        });
+        let GenerateResult::Failure(failure) = result else {
+            panic!("expected a timed-out request, got {result:?}");
+        };
+        assert_eq!(
+            failure.reason_code.as_deref(),
+            Some("local_request_timeout")
+        );
+        let inference = failure.inference.expect("inference record");
+        assert_eq!(
+            inference.reason_code.as_deref(),
+            Some("local_request_timeout")
+        );
+        assert!(inference.timed_out);
     }
 
     #[test]
