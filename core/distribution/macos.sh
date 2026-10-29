@@ -161,14 +161,12 @@ install_tar() {
 }
 
 assert_launchers() {
-	for launcher in journal solstone; do
-		path=$(command -v "$launcher") || refuse "launcher missing: $launcher"
-		case $path in
-		*site-packages* | *.venv/* | *'/venv/'* | *Python.framework*)
-			refuse "launcher resolved through Python layout: $path"
-			;;
-		esac
-	done
+	path=$(command -v solstone) || refuse "launcher missing: solstone"
+	case $path in
+	*site-packages* | *.venv/* | *'/venv/'* | *Python.framework*)
+		refuse "launcher resolved through Python layout: $path"
+		;;
+	esac
 	printf 'launchers ok\n'
 }
 
