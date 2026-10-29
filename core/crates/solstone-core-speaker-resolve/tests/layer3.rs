@@ -155,23 +155,15 @@ fn ac3_empty_candidate_fallback_only_loads_person_voiceprints() {
 
 #[test]
 fn ac13_acoustic_tiers_and_margin_follow_calibration() {
+    let close = (1.0 - 0.99_f32.powi(2)).sqrt();
+    let far = (1.0 - 0.3_f32.powi(2)).sqrt();
+
     let temporary = TempDir::new();
     write_entity(temporary.path(), "alpha", Some("Person"), false);
-    write_entity(temporary.path(), "beta", Some("Person"), false);
     write_entity(temporary.path(), "gamma", Some("Person"), false);
     write_voiceprint(temporary.path(), "alpha", embedding(1.0, 0.0));
-    write_voiceprint(
-        temporary.path(),
-        "beta",
-        embedding(0.99, (1.0 - 0.99_f32.powi(2)).sqrt()),
-    );
-    write_voiceprint(
-        temporary.path(),
-        "gamma",
-        embedding(0.3, (1.0 - 0.3_f32.powi(2)).sqrt()),
-    );
+    write_voiceprint(temporary.path(), "gamma", embedding(0.3, far));
     let loaded_entities = entities(temporary.path());
-
     let clear = run(
         &temporary,
         labels(&[1]),
@@ -183,6 +175,12 @@ fn ac13_acoustic_tiers_and_margin_follow_calibration() {
     );
     assert_eq!(clear.labels[&1].confidence.as_deref(), Some("high"));
 
+    let temporary = TempDir::new();
+    write_entity(temporary.path(), "alpha", Some("Person"), false);
+    write_entity(temporary.path(), "beta", Some("Person"), false);
+    write_voiceprint(temporary.path(), "alpha", embedding(1.0, 0.0));
+    write_voiceprint(temporary.path(), "beta", embedding(0.99, close));
+    let loaded_entities = entities(temporary.path());
     let thin = run(
         &temporary,
         labels(&[1]),
@@ -195,6 +193,10 @@ fn ac13_acoustic_tiers_and_margin_follow_calibration() {
     assert_eq!(thin.labels[&1].confidence.as_deref(), Some("medium"));
     assert_eq!(thin.labels[&1].acoustic_margin_declined, Some(true));
 
+    let temporary = TempDir::new();
+    write_entity(temporary.path(), "gamma", Some("Person"), false);
+    write_voiceprint(temporary.path(), "gamma", embedding(0.3, far));
+    let loaded_entities = entities(temporary.path());
     let medium = run(
         &temporary,
         labels(&[1]),
@@ -229,6 +231,12 @@ fn medium_sentence_match_needs_the_margin_over_the_runner_up() {
     assert_eq!(close.labels[&1].speaker, None);
     assert_eq!(close.labels[&1].confidence, None);
 
+    let temporary = TempDir::new();
+    for (id, x) in [("gamma", 0.3_f32), ("epsilon", 0.24)] {
+        write_entity(temporary.path(), id, Some("Person"), false);
+        write_voiceprint(temporary.path(), id, embedding(x, (1.0 - x.powi(2)).sqrt()));
+    }
+    let loaded_entities = entities(temporary.path());
     let clear = run(
         &temporary,
         labels(&[1]),
@@ -270,6 +278,14 @@ fn ac14_cluster_coverage_and_confidence_gates_defer_to_sentence_matching() {
     );
     assert_eq!(coverage.labels[&1].method.as_deref(), Some("acoustic"));
 
+    let temporary = TempDir::new();
+    write_entity(temporary.path(), "beta", Some("Person"), false);
+    write_voiceprint(
+        temporary.path(),
+        "beta",
+        embedding(0.25, (1.0 - 0.25_f32.powi(2)).sqrt()),
+    );
+    let loaded_entities = entities(temporary.path());
     let confidence = run(
         &temporary,
         labels(&[1]),
@@ -482,4 +498,157 @@ fn a_cluster_in_a_segment_that_named_no_one_needs_the_wider_lead() {
     assert_eq!(clear.labels[&1].speaker.as_deref(), Some("alpha"));
     assert_eq!(clear.labels[&1].method.as_deref(), Some("acoustic_cluster"));
     assert_eq!(clear.labels[&1].confidence.as_deref(), Some("medium"));
+}
+
+fn structural(sentence_ids: &[i64], entity_id: &str) -> BTreeMap<i64, Label> {
+    let mut out = labels(sentence_ids);
+    for label in out.values_mut() {
+        label.speaker = Some(entity_id.to_owned());
+        label.confidence = Some("high".to_owned());
+        label.method = Some("structural_single_speaker".to_owned());
+    }
+    out
+}
+
+#[test]
+fn a_named_person_does_not_get_a_voice_that_sounds_more_like_someone_unnamed() {
+    let temporary = TempDir::new();
+    write_entity(temporary.path(), "alpha", Some("Person"), false);
+    write_entity(temporary.path(), "beta", Some("Person"), false);
+    write_voiceprint(temporary.path(), "alpha", embedding(1.0, 0.0));
+    write_voiceprint(temporary.path(), "beta", embedding(0.0, 1.0));
+    let loaded_entities = entities(temporary.path());
+    let near_beta = embedding(0.5, (1.0 - 0.5_f32.powi(2)).sqrt());
+
+    let sentence = run(
+        &temporary,
+        labels(&[1]),
+        &[1],
+        &BTreeSet::from(["alpha".to_owned()]),
+        &loaded_entities,
+        &[(1, near_beta.clone())],
+        &HashMap::new(),
+    );
+    assert_eq!(sentence.labels[&1].speaker, None);
+
+    let cluster = run(
+        &temporary,
+        labels(&[1, 2]),
+        &[1, 2],
+        &BTreeSet::from(["alpha".to_owned()]),
+        &loaded_entities,
+        &[(1, near_beta.clone()), (2, near_beta)],
+        &HashMap::from([(1, 3), (2, 3)]),
+    );
+    assert_eq!(cluster.labels[&1].speaker, None);
+    assert_eq!(cluster.labels[&2].speaker, None);
+}
+
+#[test]
+fn a_lone_named_person_stays_high_only_with_a_lead_over_unnamed_voices() {
+    let temporary = TempDir::new();
+    write_entity(temporary.path(), "alpha", Some("Person"), false);
+    write_entity(temporary.path(), "beta", Some("Person"), false);
+    write_voiceprint(temporary.path(), "alpha", embedding(1.0, 0.0));
+    write_voiceprint(
+        temporary.path(),
+        "beta",
+        embedding(0.97, (1.0 - 0.97_f32.powi(2)).sqrt()),
+    );
+    let loaded_entities = entities(temporary.path());
+    let result = run(
+        &temporary,
+        labels(&[1]),
+        &[1],
+        &BTreeSet::from(["alpha".to_owned()]),
+        &loaded_entities,
+        &[(1, embedding(1.0, 0.0))],
+        &HashMap::new(),
+    );
+    assert_eq!(result.labels[&1].speaker.as_deref(), Some("alpha"));
+    assert_eq!(result.labels[&1].confidence.as_deref(), Some("medium"));
+}
+
+#[test]
+fn a_single_named_speaker_keeps_the_name_only_on_lines_that_sound_like_them() {
+    let temporary = TempDir::new();
+    write_entity(temporary.path(), "alpha", Some("Person"), false);
+    write_entity(temporary.path(), "beta", Some("Person"), false);
+    write_voiceprint(temporary.path(), "alpha", embedding(1.0, 0.0));
+    write_voiceprint(temporary.path(), "beta", embedding(0.0, 1.0));
+    let loaded_entities = entities(temporary.path());
+    let mut far = vec![0.0; 256];
+    far[2] = 1.0;
+    let result = run(
+        &temporary,
+        structural(&[1, 2, 3], "alpha"),
+        &[1, 2, 3],
+        &BTreeSet::from(["alpha".to_owned()]),
+        &loaded_entities,
+        &[
+            (1, embedding(1.0, 0.0)),
+            (2, embedding(0.3, (1.0 - 0.3_f32.powi(2)).sqrt())),
+            (3, far),
+        ],
+        &HashMap::new(),
+    );
+    assert_eq!(result.labels[&1].speaker.as_deref(), Some("alpha"));
+    assert_eq!(result.labels[&1].confidence.as_deref(), Some("high"));
+    assert_eq!(
+        result.labels[&1].method.as_deref(),
+        Some("structural_single_speaker")
+    );
+    // Sounds more like beta, who was not named: no name.
+    assert_eq!(result.labels[&2].speaker, None);
+    // Sounds like no one the journal knows: no name.
+    assert_eq!(result.labels[&3].speaker, None);
+}
+
+#[test]
+fn a_single_named_speaker_without_a_voiceprint_names_only_the_largest_voice() {
+    let temporary = TempDir::new();
+    write_entity(temporary.path(), "newcomer", Some("Person"), false);
+    let loaded_entities = entities(temporary.path());
+    let statements = [
+        (1, embedding(1.0, 0.0)),
+        (2, embedding(1.0, 0.0)),
+        (3, embedding(0.0, 1.0)),
+    ];
+
+    let clustered = run(
+        &temporary,
+        structural(&[1, 2, 3], "newcomer"),
+        &[1, 2, 3],
+        &BTreeSet::from(["newcomer".to_owned()]),
+        &loaded_entities,
+        &statements,
+        &HashMap::from([(1, 0), (2, 0), (3, 1)]),
+    );
+    assert_eq!(clustered.labels[&1].speaker.as_deref(), Some("newcomer"));
+    assert_eq!(clustered.labels[&2].speaker.as_deref(), Some("newcomer"));
+    assert_eq!(clustered.labels[&3].speaker, None);
+
+    let tied = run(
+        &temporary,
+        structural(&[1, 3], "newcomer"),
+        &[1, 3],
+        &BTreeSet::from(["newcomer".to_owned()]),
+        &loaded_entities,
+        &statements,
+        &HashMap::from([(1, 0), (3, 1)]),
+    );
+    assert_eq!(tied.labels[&1].speaker, None);
+    assert_eq!(tied.labels[&3].speaker, None);
+
+    let undiarized = run(
+        &temporary,
+        structural(&[1, 2], "newcomer"),
+        &[1, 2],
+        &BTreeSet::from(["newcomer".to_owned()]),
+        &loaded_entities,
+        &statements,
+        &HashMap::new(),
+    );
+    assert_eq!(undiarized.labels[&1].speaker.as_deref(), Some("newcomer"));
+    assert_eq!(undiarized.labels[&1].confidence.as_deref(), Some("medium"));
 }
