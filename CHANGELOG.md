@@ -12,7 +12,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
-- screen descriptions stay closer to what is on your screen. they no longer include the journal's own placeholder titles, instruction headings or sample values, and a screen with little text on it is described in a paragraph far less often.
+- what your journal writes about each screen frame stays closer to what is on your screen. it no longer includes the journal's own placeholder titles, instruction headings or sample values, and a blank or nearly empty screen frame gets a paragraph about it far less often.
 - each stretch's screen description now sticks closer to what your journal holds: it invents fewer details, and in your terminal it more often credits an agent's work to the agent rather than to you.
 
 ### Fixed
