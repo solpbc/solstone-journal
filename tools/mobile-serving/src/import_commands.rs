@@ -114,6 +114,13 @@ impl ImportPreparation {
 }
 
 impl ImportRequest {
+    /// Recheck saved custody before execution-capable factory preparation.
+    /// Preview uses `prepare` directly and never revokes first-Start state.
+    pub fn prepare_run(self) -> Result<PreparedImport, String> {
+        call::revoke_saved_first_start(&self.context.args, self.context.root.canonical_path())?;
+        self.prepare()
+    }
+
     /// Capture before moving the request to its retained worker. Drop after
     /// that worker and the request's outer metadata work have both retired.
     pub fn keepalive(&self) -> ImportKeepalive {
@@ -420,7 +427,7 @@ pub(super) fn execute(
         stop.clone(),
         control.priority,
     )
-    .and_then(ImportRequest::prepare)
+    .and_then(ImportRequest::prepare_run)
     {
         Ok(prepared) => prepared,
         Err(error) => {

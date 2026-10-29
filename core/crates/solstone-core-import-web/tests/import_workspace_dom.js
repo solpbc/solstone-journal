@@ -2757,6 +2757,7 @@ function runLoadErrorsAreShown() {
     createElement: () => new Element(),
   };
   context.importDetailPathSegment = 'import-1';
+  context.importDetailRequest = 0;
   installRealEscapeHtml(context);
   assertEscaperIsReal(context);
   vm.runInContext(functionSource(workspace, 'renderLoadMoreError'), context);
@@ -2769,15 +2770,44 @@ function runLoadErrorsAreShown() {
 
   const importMeta = new Element();
   const overview = new Element();
+  let headingFocused = false;
+  const heading = { setAttribute() {}, focus() { headingFocused = true; } };
+  overview.querySelector = () => null;
   context.document.getElementById = (id) => {
     if (id === 'importMeta') return importMeta;
     if (id === 'overviewContent') return overview;
+    if (id === 'importDetailHeading') return heading;
     return null;
   };
   vm.runInContext('loadImportDetail()', context);
-  return new Promise((resolve) => setImmediate(resolve)).then(() => {
+  return new Promise((resolve) => setImmediate(resolve)).then(async () => {
     assert.ok(importMeta.innerHTML.includes('surface-state-refresh-error'), 'the detail failure renders an error state');
     assert.ok(importMeta.innerHTML.includes('network unavailable'), 'the detail failure carries the error message');
+    cases += 1;
+
+    const retained = '<div>read-only status recovery</div>';
+    overview.innerHTML = retained;
+    overview.querySelector = () => ({ contains: () => false });
+    await assert.rejects(vm.runInContext('loadImportDetail(true)', context));
+    assert.strictEqual(overview.innerHTML, retained, 'failed status reads keep the recovery surface');
+    cases += 1;
+
+    const replies = [];
+    const applied = [];
+    context.window.apiJson = () => new Promise(resolve => replies.push(resolve));
+    context.window.ImportDetail = {
+      renderMeta: () => '', renderDetail: data => {
+        applied.push(data.state); overview.querySelector = () => null; return '';
+      },
+      mountSavedStart: () => {},
+    };
+    overview.querySelector = () => ({ contains: () => true });
+    const earlier = vm.runInContext('loadImportDetail()', context);
+    const newer = vm.runInContext('loadImportDetail()', context);
+    replies[1]({ state: 'consumed' }); await newer;
+    replies[0]({ state: 'eligible' }); await earlier;
+    assert.deepStrictEqual(applied, ['consumed'], 'out-of-order reads cannot restore earlier eligibility');
+    assert.ok(headingFocused, 'accepted Start places focus at the detail heading when actions disappear');
     cases += 1;
   });
 }
@@ -3848,6 +3878,7 @@ Promise.resolve()
   .then(runArchiveObservedProgressDoesNotFetchTwice)
   .then(runArchiveProgressTimerPausesInBackground)
   .then(async () => { cases += await require('./source_connections_dom.js')(crateDir); })
+  .then(async () => { cases += await require('./saved_start_dom.js')(crateDir); })
   .then(runHistoryFilterPaginationRaces)
   .then(runNativeFolderSelectionAndReturnRead)
   .then(runFileAndFolderChoicesUseTheSameSourceCard)

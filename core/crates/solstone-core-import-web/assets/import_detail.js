@@ -57,6 +57,20 @@
     status_unavailable: 'import status unavailable',
     image_description_gap_detail: 'image saved without visual description',
     processing: 'processing…',
+    saved: 'saved',
+    not_started: 'not started',
+    start_unknown: 'start status unknown',
+    start_unknown_detail: "this file is saved, but its history doesn't confirm whether the import started.",
+    starting: 'starting…',
+    preview_import: 'preview import',
+    preparing_preview: 'preparing preview…',
+    start_import: 'start import',
+    check_status: 'check status',
+    checking_status: 'checking status…',
+    nothing_to_import: 'nothing to import',
+    preview_failed: "couldn't prepare a preview. try again.",
+    status_failed: "couldn't load the import's status. check again.",
+    start_unconfirmed: "couldn't confirm whether the import started. check status before doing anything else.",
     failed_line: 'failed while processing',
     completed_in: 'completed in',
     files_created: 'files created',
@@ -276,12 +290,25 @@
     if (canonicalStatus === 'running') {
       return { status: strings.running, chipText: '', chipTone: '', open: false };
     }
+    if (data?.saved_start?.state === 'eligible' && !savedFlows.get(data?.timestamp)?.revoked) {
+      return { status: strings.saved, chipText: strings.not_started, chipTone: '', open: false };
+    }
+    if (data?.saved_start?.active === true) {
+      return { status: strings.running, chipText: strings.starting, chipTone: '', open: false };
+    }
+    if (data?.saved_start) {
+      return { status: strings.start_unknown, chipText: strings.start_unknown, chipTone: 'warn', open: true };
+    }
     return { status: strings.pending, chipText: '', chipTone: '', open: false };
   }
 
   function composeDrawerLine(data) {
     const importJson = asObject(data?.import_json) || {};
     const derived = deriveStatus(data);
+
+    if (derived.status === strings.saved) return strings.not_started;
+    if (derived.status === strings.start_unknown) return strings.start_unknown_detail;
+    if (data?.saved_start?.active === true && data?.status !== 'running') return strings.starting;
 
     if (derived.status === strings.failed) return strings.failed_line;
     if (derived.status === strings.unconfirmed) return strings.unconfirmed_explanation;
@@ -693,6 +720,156 @@
     ].join('');
   }
 
+  const savedFlows = new Map();
+
+  function savedBinding(data) {
+    const metadata = data?.import_json || {};
+    return JSON.stringify([data?.timestamp, metadata.import_id, metadata.file_path,
+      metadata.source_hash, metadata.file_size, metadata.source_timestamp, metadata.setting]);
+  }
+
+  function savedEligible(data) {
+    const metadata = data?.import_json;
+    return !savedFlows.get(data?.timestamp)?.revoked
+      && data?.status === 'pending' && data?.saved_start?.state === 'eligible'
+      && metadata?.import_id === data.timestamp && typeof metadata.file_path === 'string'
+      && typeof metadata.source_timestamp === 'string' && !metadata.is_local_path
+      && Number.isSafeInteger(metadata.file_size) && metadata.file_size > 0;
+  }
+
+  function hasSavedFlow(data) {
+    const flow = savedFlows.get(data?.timestamp);
+    return savedEligible(data) || (flow && ['starting', 'unknown'].includes(flow.phase)
+      && !['running', 'success', 'failed', 'unconfirmed', 'unavailable'].includes(data?.status));
+  }
+
+  function previewSummary(size) {
+    if (!size || !Number.isSafeInteger(size.recordings) || size.recordings < 0
+        || !Number.isSafeInteger(size.days) || size.days < 0) throw new Error('invalid Preview');
+    const other = size.other_units;
+    if (other !== null && other !== undefined
+        && (!Array.isArray(other) || typeof other[0] !== 'string'
+          || !Number.isSafeInteger(other[1]) || other[1] < 0)) throw new Error('invalid Preview');
+    const ready = size.recordings > 0 || (other && other[1] > 0);
+    const summary = `${size.recordings} ${plural(size.recordings, 'recording', 'recordings')} across ${size.days} ${plural(size.days, 'day', 'days')}`
+      + (other ? ` · ${other[1]} ${other[0]}` : '');
+    return { ready: Boolean(ready), summary: ready ? summary : strings.nothing_to_import };
+  }
+
+  function mountSavedStart(root, data, refresh, restoreFocus = false) {
+    const slot = root.querySelector('[data-saved-start-slot]');
+    const id = data.timestamp;
+    let flow = savedFlows.get(id);
+    const binding = savedBinding(data);
+    if (!flow) {
+      if (!slot) return;
+      flow = { id, binding, phase: 'idle', token: null, summary: '', error: '', revision: 0, revoked: false, inFlight: false };
+      savedFlows.set(id, flow);
+    } else if (flow.binding !== binding || (!savedEligible(data) && ['idle', 'ready', 'previewing'].includes(flow.phase))) {
+      flow.revision += 1;
+      flow.binding = binding;
+      flow.token = null;
+      flow.summary = '';
+      if (!['starting', 'unknown'].includes(flow.phase)) flow.phase = 'idle';
+    }
+    if (!savedEligible(data)) {
+      flow.revoked = true;
+      flow.token = null;
+      flow.summary = '';
+      flow.phase = 'unknown';
+    }
+    flow.data = data;
+    if (!slot) { flow.revision += 1; return; }
+    flow.root = root;
+    flow.slot = slot;
+    flow.refresh = refresh;
+
+    function current() {
+      return flow.root.isConnected !== false && flow.slot.isConnected !== false
+        && savedFlows.get(id) === flow;
+    }
+    function draw() {
+      if (!current()) return;
+      const focused = restoreFocus || flow.slot.contains(document.activeElement);
+      restoreFocus = false;
+      const busy = flow.inFlight || ['previewing', 'starting', 'checking'].includes(flow.phase);
+      const unknown = flow.phase === 'unknown';
+      if (!savedEligible(flow.data) && !unknown && !busy) {
+        flow.slot.innerHTML = '';
+        return;
+      }
+      const label = unknown ? strings.check_status : flow.phase === 'previewing' || (flow.inFlight && flow.phase === 'idle')
+        ? strings.preparing_preview : flow.phase === 'starting' ? strings.starting
+          : flow.phase === 'checking' ? strings.checking_status
+            : flow.phase === 'ready' ? strings.start_import : strings.preview_import;
+      if (!flow.slot.querySelector('[data-saved-start-status]')) {
+        flow.slot.innerHTML = '<section class="import-saved-start"><p role="status" aria-live="polite" data-saved-start-status></p>'
+          + '<div class="import-action-row" data-saved-start-actions></div>'
+          + '<div role="alert" data-saved-start-error></div></section>';
+      }
+      flow.slot.querySelector('[data-saved-start-actions]').innerHTML = '<button type="button" class="import-primary-btn" data-saved-start-action></button>';
+      const button = flow.slot.querySelector('[data-saved-start-action]');
+      button.textContent = label;
+      button.setAttribute('aria-disabled', String(busy));
+      flow.slot.querySelector('[data-saved-start-status]').textContent = busy ? label : flow.summary;
+      flow.slot.querySelector('[data-saved-start-error]').textContent = flow.error;
+      button.onclick = () => act(button);
+      if (focused) button.focus();
+    }
+    async function act(button) {
+      if (!current() || flow.slot.querySelector('button') !== button
+          || flow.inFlight || ['previewing', 'starting', 'checking'].includes(flow.phase)) return;
+      if (flow.phase === 'unknown') {
+        flow.phase = 'checking';
+        draw();
+        flow.error = '';
+        try { await flow.refresh(); }
+        catch (_) { flow.error = strings.status_failed; }
+        finally { flow.phase = 'unknown'; draw(); }
+        return;
+      }
+      if (!savedEligible(flow.data)) return;
+      const metadata = flow.data.import_json;
+      const payload = { import_id: id, path: metadata.file_path,
+        timestamp: metadata.source_timestamp, setting: metadata.setting || '' };
+      const revision = flow.revision;
+      const starting = flow.phase === 'ready';
+      flow.inFlight = true;
+      flow.phase = starting ? 'starting' : 'previewing';
+      flow.error = '';
+      draw();
+      try {
+        const reply = await window.apiJson(`/app/import/api/${starting ? 'start' : 'preview'}`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(starting ? { ...payload, preview_token: flow.token, first_start_only: true } : payload),
+        });
+        if (revision !== flow.revision || !current()) return;
+        if (starting) {
+          flow.token = null;
+          flow.phase = 'unknown';
+          if (reply.import_id !== id) flow.error = strings.start_unconfirmed;
+          await flow.refresh();
+        } else {
+          const preview = previewSummary(reply.size);
+          if (typeof reply.preview_token !== 'string' || !reply.preview_token) throw new Error('invalid Preview');
+          flow.summary = preview.summary;
+          flow.token = preview.ready ? reply.preview_token : null;
+          flow.phase = preview.ready ? 'ready' : 'idle';
+        }
+      } catch (_) {
+        if (revision !== flow.revision || !current()) return;
+        flow.token = null;
+        flow.phase = starting ? 'unknown' : 'idle';
+        flow.error = starting ? strings.start_unconfirmed : strings.preview_failed;
+      } finally {
+        flow.inFlight = false;
+        if (starting && flow.phase === 'starting') flow.phase = 'unknown';
+        draw();
+      }
+    }
+    draw();
+  }
+
   function renderDetail(data) {
     if (!window.Drawer || typeof window.Drawer.render !== 'function') {
       throw new Error(strings.drawer_unavailable);
@@ -708,11 +885,13 @@
       bodyHtml: renderDrawerBody(data)
     });
     const leads = derived.status === strings.completed ? renderLeadsCard(data) : '';
-    return leads + drawer + renderStravaDelete(data);
+    const continuation = hasSavedFlow(data) ? '<div data-saved-start-slot></div>' : '';
+    return continuation + leads + drawer + renderStravaDelete(data);
   }
 
   window.ImportDetail = Object.freeze({
     renderDetail,
+    mountSavedStart,
     renderMeta,
     deriveStatus,
     formatDuration,

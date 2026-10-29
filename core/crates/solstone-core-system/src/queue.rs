@@ -1064,6 +1064,7 @@ struct QueueInner {
     held_persist_hook: Mutex<Option<Arc<dyn Fn() + Send + Sync>>>,
     callable_worker: Option<CallableQueueWorker>,
     callable_admission: Option<CallableAdmission>,
+    submission_admission: std::sync::OnceLock<CallableAdmission>,
     daily_talent_roots: Option<(PathBuf, PathBuf)>,
     callable_workers: Mutex<Vec<CallableTaskHandle>>,
     callable_join: Mutex<()>,
@@ -1707,6 +1708,7 @@ impl TaskQueue {
                 callable_worker,
                 daily_talent_roots,
                 callable_admission,
+                submission_admission: std::sync::OnceLock::new(),
                 callable_workers: Mutex::new(Vec::new()),
                 callable_join: Mutex::new(()),
                 callable_transition: Mutex::new(()),
@@ -1723,6 +1725,19 @@ impl TaskQueue {
             .callable_admission
             .as_ref()
             .is_none_or(|admit| admit(command))
+    }
+
+    /// Install once before exposing this queue. Unlike the read-only callable
+    /// predicate, this hook may persist admission facts. Only real submissions
+    /// invoke it, before retaining pending work or handing off execution.
+    pub fn install_submission_admission(
+        &self,
+        admission: CallableAdmission,
+    ) -> Result<(), &'static str> {
+        self.inner
+            .submission_admission
+            .set(admission)
+            .map_err(|_| "submission admission already installed")
     }
 
     fn admission_generation(&self) -> Option<u64> {
@@ -1747,6 +1762,14 @@ impl TaskQueue {
             return SubmitOutcome::Rejected;
         }
         let partition = submission.partition.clone();
+        if self
+            .inner
+            .submission_admission
+            .get()
+            .is_some_and(|admit| !admit(&submission.command))
+        {
+            return SubmitOutcome::Rejected;
+        }
         let (outcome, dispatch, event) = {
             let mut state = self.inner.state.lock().expect("queue state lock poisoned");
             if state.shutdown || state.callable_paused || state.callable_generation != generation {

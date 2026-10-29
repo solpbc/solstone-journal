@@ -1932,6 +1932,28 @@ pub(crate) async fn boot_and_tick(
     let queue = TaskQueue::with_parakeet_runtime(queue_options, Arc::clone(&parakeet_shared));
     #[cfg(not(windows))]
     let queue = TaskQueue::new(queue_options);
+    let admission_root = match solstone_core_journal_io::JournalRoot::open(&journal) {
+        Ok(root) => Arc::new(root),
+        Err(error) => {
+            connection.stop().await;
+            server.stop().await;
+            return Err(abort_pre_ready(&lifecycle, error));
+        }
+    };
+    queue
+        .install_submission_admission(Arc::new(move |command| {
+            let Ok(_use) = solstone_core_journal_io::whole_journal_restore::begin_target_use_bound(
+                Arc::clone(&admission_root),
+            ) else {
+                return false;
+            };
+            solstone_core_import_host::call::revoke_saved_first_start_command(
+                command,
+                admission_root.canonical_path(),
+            )
+            .is_ok()
+        }))
+        .expect("new queue has no submission hook");
     let clock: Arc<dyn solstone_core_system::provider_runtime::RuntimeClock> =
         Arc::new(SystemRuntimeClock::default());
     let local_shared = Arc::new(LocalRuntimeShared::default());

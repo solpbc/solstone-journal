@@ -738,7 +738,10 @@ mod tests {
         std::fs::create_dir_all(&directory).expect("import directory");
         let source = directory.join("notes.txt");
         std::fs::write(&source, "a note").expect("source");
-        let metadata = json!({
+        let mut metadata = json!({
+            "import_id": ID,
+            "source_timestamp": ID,
+            "file_size": 6,
             "file_path": source,
             "setting": "office",
             "source_hash": solstone_core_import::hash_source(&source).expect("hash").as_str(),
@@ -746,6 +749,8 @@ mod tests {
         .as_object()
         .expect("metadata object")
         .clone();
+        solstone_core_import::saved_start::initialize_saved_start(&mut metadata, ID)
+            .expect("new save");
         write_import_metadata(root.path(), ID, &metadata).expect("metadata");
         (
             root,
@@ -960,7 +965,7 @@ mod tests {
         );
         assert!(slot.retains(ID));
 
-        let replay = lifecycle::start(State(state), Json(data)).await;
+        let replay = lifecycle::start(State(state), Json(data.clone())).await;
         assert_eq!(replay.status(), StatusCode::OK);
         let body = body_of(replay).await;
         assert_eq!(body["replay"], true);
@@ -969,6 +974,180 @@ mod tests {
         assert!(!kept.lock().expect("kept")[0].stop.is_requested());
         release(&fake);
         slot.retire().expect("checked import retirement");
+        assert_eq!(
+            solstone_core_import::saved_start::saved_start_state(
+                &read_import_metadata(root.path(), ID).unwrap(),
+                ID
+            ),
+            solstone_core_import::saved_start::SavedStartState::Consumed
+        );
+        // The worker returned without an attempt. A new authority over the same
+        // record must still refuse a stale first-Start request.
+        let restarted = Fake::new(root.path().to_path_buf());
+        let restarted_slot = installed(&restarted);
+        let mut stale = data;
+        stale["first_start_only"] = json!(true);
+        let response = lifecycle::start(
+            State(AppState {
+                root: root.path().to_path_buf(),
+                route: Some(restarted_slot.clone()),
+            }),
+            Json(stale),
+        )
+        .await;
+        assert_ne!(response.status(), StatusCode::OK);
+        assert_eq!(restarted.runs.load(Ordering::Acquire), 0);
+        restarted_slot.retire().unwrap();
+    }
+
+    #[tokio::test]
+    async fn recreated_unconsumed_record_can_preview_and_start_but_legacy_cannot() {
+        let (root, mut data, mut metadata) = fixture();
+        let source_time = "20250101_090000";
+        metadata.insert("source_timestamp".into(), json!(source_time));
+        metadata.insert("user_timestamp".into(), json!(source_time));
+        metadata.insert("setting".into(), json!("planning"));
+        write_import_metadata(root.path(), ID, &metadata).unwrap();
+        data["timestamp"] = json!(source_time);
+        data["setting"] = json!("planning");
+        let fake = Fake::new(root.path().to_path_buf());
+        let old_slot = installed(&fake);
+        old_slot.retire().unwrap();
+        let slot = installed(&fake);
+        let state = AppState {
+            root: root.path().to_path_buf(),
+            route: Some(slot.clone()),
+        };
+        let before = std::fs::read(root.path().join(format!("imports/{ID}/import.json"))).unwrap();
+        let detail =
+            crate::imports::detail(State(state.clone()), axum::extract::Path(ID.to_owned())).await;
+        assert_eq!(body_of(detail).await["saved_start"]["state"], "eligible");
+        assert_eq!(
+            before,
+            std::fs::read(root.path().join(format!("imports/{ID}/import.json"))).unwrap()
+        );
+        assert_eq!(fake.runs.load(Ordering::Acquire), 0);
+        let previewed =
+            body_of(preview::preview(State(state.clone()), Json(data.clone())).await).await;
+        data["preview_token"] = previewed["preview_token"].clone();
+        data["first_start_only"] = json!(true);
+        assert_eq!(
+            lifecycle::start(State(state), Json(data)).await.status(),
+            StatusCode::OK
+        );
+        wait_until(&fake.entered);
+        assert_eq!(fake.runs.load(Ordering::Acquire), 1);
+        slot.retire().unwrap();
+        assert!(!root.path().join("imports").join(source_time).exists());
+        let metadata = read_import_metadata(root.path(), ID).unwrap();
+        assert_eq!(metadata["source_timestamp"], source_time);
+        assert_eq!(metadata["setting"], "planning");
+
+        let (legacy_root, mut legacy_data, mut metadata) = fixture();
+        metadata.remove(solstone_core_import::saved_start::SAVED_START_KEY);
+        // Construct an old record, rather than asking a metadata update to erase
+        // a durable witness (which the writer deliberately prevents).
+        std::fs::write(
+            legacy_root.path().join(format!("imports/{ID}/import.json")),
+            serde_json::to_vec(&metadata).unwrap(),
+        )
+        .unwrap();
+        let legacy_fake = Fake::new(legacy_root.path().to_path_buf());
+        let legacy_slot = installed(&legacy_fake);
+        let state = AppState {
+            root: legacy_root.path().to_path_buf(),
+            route: Some(legacy_slot.clone()),
+        };
+        let detail =
+            crate::imports::detail(State(state.clone()), axum::extract::Path(ID.to_owned())).await;
+        assert_eq!(body_of(detail).await["saved_start"]["state"], "unknown");
+        let _ = preview::preview(State(state.clone()), Json(legacy_data.clone())).await;
+        assert!(
+            !read_import_metadata(legacy_root.path(), ID)
+                .unwrap()
+                .contains_key(solstone_core_import::saved_start::SAVED_START_KEY)
+        );
+        legacy_data["first_start_only"] = json!(true);
+        assert_ne!(
+            lifecycle::start(State(state), Json(legacy_data))
+                .await
+                .status(),
+            StatusCode::OK
+        );
+        assert_eq!(legacy_fake.runs.load(Ordering::Acquire), 0);
+        legacy_slot.retire().unwrap();
+    }
+
+    #[tokio::test]
+    async fn concurrent_first_starts_and_early_run_refusal_do_not_restore_permission() {
+        let (root, mut data, _) = fixture();
+        data["first_start_only"] = json!(true);
+        let fake = Fake::new(root.path().to_path_buf());
+        *fake.run_error.lock().unwrap() = Some("early preparation refusal".to_owned());
+        let slot = installed(&fake);
+        let state = AppState {
+            root: root.path().to_path_buf(),
+            route: Some(slot.clone()),
+        };
+        let (left, right) = tokio::join!(
+            lifecycle::start(State(state.clone()), Json(data.clone())),
+            lifecycle::start(State(state), Json(data.clone())),
+        );
+        assert_eq!(
+            usize::from(left.status() == StatusCode::OK)
+                + usize::from(right.status() == StatusCode::OK),
+            1
+        );
+        wait_until(&fake.entered);
+        slot.retire().unwrap();
+        assert_eq!(fake.runs.load(Ordering::Acquire), 1);
+        assert!(
+            read_import_metadata(root.path(), ID)
+                .unwrap()
+                .get("attempt")
+                .is_none()
+        );
+        let restarted = Fake::new(root.path().to_path_buf());
+        let restarted_slot = installed(&restarted);
+        let response = lifecycle::start(
+            State(AppState {
+                root: root.path().to_path_buf(),
+                route: Some(restarted_slot.clone()),
+            }),
+            Json(data),
+        )
+        .await;
+        assert_ne!(response.status(), StatusCode::OK);
+        assert_eq!(restarted.runs.load(Ordering::Acquire), 0);
+        restarted_slot.retire().unwrap();
+    }
+
+    #[tokio::test]
+    async fn failed_consumption_refuses_execution_and_accepted_response() {
+        let (root, mut data, _) = fixture();
+        data["first_start_only"] = json!(true);
+        let fake = Fake::new(root.path().to_path_buf());
+        let slot = installed(&fake);
+        let seams = lifecycle::StartSeams {
+            consume: Some(Arc::new(Mutex::new(Box::new(|_, _, _| {
+                Err(solstone_core_import::ImportError::MetadataWriteFailed {
+                    path: std::path::PathBuf::from("import.json"),
+                    message: "controlled persistence failure".to_owned(),
+                })
+            })))),
+            ..Default::default()
+        };
+        let response = lifecycle::run_start(
+            root.path(),
+            data,
+            preview::PreviewPlan::Embedded(slot.clone()),
+            seams,
+        )
+        .await;
+        assert_ne!(response.status(), StatusCode::OK);
+        assert_eq!(fake.runs.load(Ordering::Acquire), 0);
+        assert!(!slot.retains(ID));
+        slot.retire().unwrap();
     }
 
     #[tokio::test]

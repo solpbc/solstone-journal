@@ -501,7 +501,13 @@ pub(crate) async fn detail(
     if solstone_core_import::validate_timestamp(&timestamp).is_err() {
         return import_not_found("Import not found");
     }
-    match tokio::task::spawn_blocking(move || detail_sync(state, timestamp)).await {
+    let guard = crate::start_lock::acquire(&state.root, &timestamp).await;
+    match tokio::task::spawn_blocking(move || {
+        let _guard = guard;
+        detail_sync(state, timestamp)
+    })
+    .await
+    {
         Ok(response) => response,
         Err(_) => json_response(
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -529,6 +535,15 @@ fn detail_sync(state: AppState, timestamp: String) -> Response {
             .map(Value::Object)
             .unwrap_or(Value::Null),
     );
+    let mut saved_start = body
+        .get("import_json")
+        .and_then(|value| {
+            serde_json::from_value::<solstone_core_import::ImportMetadata>(value.clone()).ok()
+        })
+        .map_or(
+            solstone_core_import::saved_start::SavedStartState::Unknown,
+            |metadata| solstone_core_import::saved_start::saved_start_state(&metadata, &timestamp),
+        );
     if body
         .get("import_json")
         .and_then(Value::as_object)
@@ -556,6 +571,24 @@ fn detail_sync(state: AppState, timestamp: String) -> Response {
         body.insert("untimed_transcript".into(), json!(true));
     }
     let projection = solstone_core_import::project_import_result(&state.root, &timestamp);
+    let active = state
+        .route
+        .as_ref()
+        .is_some_and(|slot| slot.retains(&timestamp));
+    if saved_start == solstone_core_import::saved_start::SavedStartState::Eligible
+        && (active
+            || projection.status != solstone_core_import::ProjectionStatus::Pending
+            || projection.raw_publication.is_some()
+            || body
+                .get("imported_json")
+                .is_some_and(|value| !value.is_null()))
+    {
+        saved_start = solstone_core_import::saved_start::SavedStartState::Unknown;
+    }
+    body.insert(
+        "saved_start".into(),
+        json!({"state": saved_start, "active": active}),
+    );
     // A journal-archive merge records its results in import.json; imports from earlier
     // builds carry them in imported.json.
     let records = ["imported_json", "import_json"].map(|record| body.get(record).cloned());

@@ -116,6 +116,12 @@ pub fn bind_import_record(
     requested: &Timestamp,
     source: Option<&Path>,
 ) -> Result<BoundImport, ImportError> {
+    let _target_use = solstone_core_journal_io::whole_journal_restore::begin_target_use(
+        journal_root,
+    )
+    .map_err(|_| ImportError::InvalidAttemptState {
+        message: "import target is unavailable".to_owned(),
+    })?;
     let source_hash = match source {
         Some(path) => Some(hash_source(path)?),
         None => None,
@@ -123,6 +129,9 @@ pub fn bind_import_record(
     if let Some(hash) = &source_hash
         && let Some(import_id) = matching_record_id(journal_root, requested, hash)?
     {
+        // A saved record may have appeared or changed while an independently
+        // admitted request waited. Revoke at the final binding as well.
+        crate::saved_start::revoke_saved_start(journal_root, import_id.as_str())?;
         let source_timestamp =
             carry_source_instant(source_timestamp_of(journal_root, &import_id)?, requested);
         return Ok(BoundImport {
@@ -136,6 +145,16 @@ pub fn bind_import_record(
         import_id: allocated.import_id,
         source_timestamp: allocated.source_timestamp,
     })
+}
+
+/// Read the existing record a normal binding of these bytes would reuse.
+/// Unlike `bind_import_record`, this never allocates or writes a record.
+pub fn existing_import_record(
+    journal_root: &Path,
+    requested: &Timestamp,
+    source: &Path,
+) -> Result<Option<Timestamp>, ImportError> {
+    matching_record_id(journal_root, requested, &hash_source(source)?)
 }
 
 /// Read the semantic time that a later binding of these bytes will use.
