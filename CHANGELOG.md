@@ -21,6 +21,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - what your journal writes about each screen frame stays closer to what is on your screen. it no longer includes the journal's own placeholder titles, instruction headings or sample values, and a blank or nearly empty screen frame gets a paragraph about it far less often.
 - each stretch's screen description now sticks closer to what your journal holds: it invents fewer details, and in your terminal it more often credits an agent's work to the agent rather than to you.
 - the list of people for new activities is more accurate, and it rarely lists the tools, projects and companies an activity names as people. people you talked with in a conversation that wasn't a meeting, when their voice matches someone your journal remembers, are now listed among the activity's people instead of as mentioned.
+- in each new stretch, your journal less often lists AI agents, numbered voices such as "Speaker 2", names that never came up, or you yourself as people, and more often gets right whether each person spoke or was only mentioned.
 
 ### Fixed
 
