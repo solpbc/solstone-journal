@@ -400,21 +400,29 @@ pub fn valid_spp_reason(raw: &str) -> &'static str {
     }
 }
 
-/// The diagnostic an attestation refusal carries: the one register that did
-/// not match the published build, when that is the refusal. Only a register
-/// the contract names is carried, so the record always validates.
+/// Closed diagnostic details admitted by the brain-state contract.
 pub fn spp_reason_diagnostic(raw: &str) -> Map<String, Value> {
     let mut diagnostic = Map::new();
+    let schema = local_contract()
+        .brain_state
+        .diagnostic_metadata_schemas
+        .get(spp_reason(raw));
+    if schema
+        .and_then(|schema| schema.get("verification_reason"))
+        .is_some_and(|reasons| reasons.iter().any(|reason| reason == raw))
+    {
+        diagnostic.insert(
+            "verification_reason".to_owned(),
+            Value::String(raw.to_owned()),
+        );
+    }
     let Some(register) = raw
         .strip_prefix("pcr_")
         .and_then(|rest| rest.strip_suffix("_mismatch"))
     else {
         return diagnostic;
     };
-    let named = local_contract()
-        .brain_state
-        .diagnostic_metadata_schemas
-        .get(spp_reason(raw))
+    let named = schema
         .and_then(|schema| schema.get("register"))
         .is_some_and(|registers| registers.iter().any(|candidate| candidate == register));
     if named {

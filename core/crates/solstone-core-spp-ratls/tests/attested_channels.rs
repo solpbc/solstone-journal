@@ -394,6 +394,27 @@ fn start_gateway(config: ServerConfig, plan: GatewayPlan) -> Gateway {
 fn start_gateway_with_writer(
     config: ServerConfig,
     plan: GatewayPlan,
+    write_application: impl FnMut(
+        &mut StreamOwned<ServerConnection, TcpStream>,
+        &[u8],
+    ) -> io::Result<()>
+    + Send
+    + 'static,
+) -> Gateway {
+    start_gateway_with_proof_writer(
+        config,
+        plan,
+        |stream, response| stream.write_all(response),
+        write_application,
+    )
+}
+
+fn start_gateway_with_proof_writer(
+    config: ServerConfig,
+    plan: GatewayPlan,
+    mut write_proof: impl FnMut(&mut StreamOwned<ServerConnection, TcpStream>, &[u8]) -> io::Result<()>
+    + Send
+    + 'static,
     mut write_application: impl FnMut(
         &mut StreamOwned<ServerConnection, TcpStream>,
         &[u8],
@@ -487,7 +508,7 @@ fn start_gateway_with_writer(
             }
         };
         if let Some(response) = response {
-            stream.write_all(&response).expect("proof response");
+            write_proof(&mut stream, &response).expect("proof response");
         }
         for response in plan.application_responses {
             let request = read_http_request(&mut stream).expect("bounded application request");
@@ -730,7 +751,7 @@ fn exporter_mismatch_rejects_after_a_verified_certificate() {
         GatewayPlan {
             proof: GatewayResponse::Static(response),
             application_responses: vec![],
-            capture_unanswered_application: false,
+            capture_unanswered_application: true,
         },
     );
     assert_eq!(
@@ -740,6 +761,7 @@ fn exporter_mismatch_rejects_after_a_verified_certificate() {
     let observation = gateway.finish();
     assert_preface(&observation);
     assert_eq!(observation.exporter_request, exact_exporter_request());
+    assert!(observation.application_requests.is_empty());
 }
 
 #[test]
@@ -766,15 +788,16 @@ fn proof_headers_cannot_overshoot_the_cap() {
         GatewayPlan {
             proof: GatewayResponse::Static(response),
             application_responses: vec![],
-            capture_unanswered_application: false,
+            capture_unanswered_application: true,
         },
     );
     assert_eq!(
         rejected(establish(gateway.port, &AcceptingCompositeVerifier)).reason_code,
-        "proof_http_failed"
+        "proof_http_framing"
     );
     let observation = gateway.finish();
     assert_eq!(observation.exporter_request, exact_exporter_request());
+    assert!(observation.application_requests.is_empty());
 }
 
 #[test]
@@ -790,15 +813,16 @@ fn proof_body_length_cannot_exceed_the_cap() {
         GatewayPlan {
             proof: GatewayResponse::Static(response),
             application_responses: vec![],
-            capture_unanswered_application: false,
+            capture_unanswered_application: true,
         },
     );
     assert_eq!(
         rejected(establish(gateway.port, &AcceptingCompositeVerifier)).reason_code,
-        "proof_http_failed"
+        "proof_http_framing"
     );
     let observation = gateway.finish();
     assert_eq!(observation.exporter_request, exact_exporter_request());
+    assert!(observation.application_requests.is_empty());
 }
 
 #[test]
@@ -809,15 +833,16 @@ fn proof_headers_require_crlf_framing() {
         GatewayPlan {
             proof: GatewayResponse::Static(b"HTTP/1.1 200 OK\nContent-Length: 0\r\n\r\n".to_vec()),
             application_responses: vec![],
-            capture_unanswered_application: false,
+            capture_unanswered_application: true,
         },
     );
     assert_eq!(
         rejected(establish(gateway.port, &AcceptingCompositeVerifier)).reason_code,
-        "proof_http_failed"
+        "proof_http_framing"
     );
     let observation = gateway.finish();
     assert_eq!(observation.exporter_request, exact_exporter_request());
+    assert!(observation.application_requests.is_empty());
 }
 
 #[test]
@@ -828,15 +853,63 @@ fn non_200_exporter_proof_is_rejected() {
         GatewayPlan {
             proof: GatewayResponse::Static(static_response(503, b"unavailable")),
             application_responses: vec![],
-            capture_unanswered_application: false,
+            capture_unanswered_application: true,
         },
     );
     assert_eq!(
         rejected(establish(gateway.port, &AcceptingCompositeVerifier)).reason_code,
-        "proof_http_failed"
+        "proof_http_status"
     );
     let observation = gateway.finish();
     assert_eq!(observation.exporter_request, exact_exporter_request());
+    assert!(observation.application_requests.is_empty());
+}
+
+#[test]
+fn exporter_proof_with_wrong_content_type_is_rejected() {
+    let (config, _) = certificate_with_evidence(&[7; 32], true, false);
+    let gateway = start_gateway(
+        config,
+        GatewayPlan {
+            proof: GatewayResponse::Static(
+                b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nContent-Type: private\r\n\r\n".to_vec(),
+            ),
+            application_responses: vec![],
+            capture_unanswered_application: true,
+        },
+    );
+    assert_eq!(
+        rejected(establish(gateway.port, &AcceptingCompositeVerifier)).reason_code,
+        "proof_http_content_type"
+    );
+    let observation = gateway.finish();
+    assert_eq!(observation.exporter_request, exact_exporter_request());
+    assert!(observation.application_requests.is_empty());
+}
+
+#[test]
+fn exporter_proof_with_trailing_tls_plaintext_is_rejected() {
+    let (config, _) = certificate_with_evidence(&[7; 32], true, false);
+    // The bounded body read ends before the final plaintext byte, so this
+    // exercises the channel's trailing check rather than header-read surplus.
+    let length = MAX_PROOF_RESPONSE_HEADERS;
+    let mut response = format!("HTTP/1.1 200 OK\r\nContent-Length: {length}\r\n\r\n").into_bytes();
+    response.extend(std::iter::repeat_n(b'x', length + 1));
+    let gateway = start_gateway(
+        config,
+        GatewayPlan {
+            proof: GatewayResponse::Static(response),
+            application_responses: vec![],
+            capture_unanswered_application: true,
+        },
+    );
+    assert_eq!(
+        rejected(establish(gateway.port, &AcceptingCompositeVerifier)).reason_code,
+        "proof_http_trailing"
+    );
+    let observation = gateway.finish();
+    assert_eq!(observation.exporter_request, exact_exporter_request());
+    assert!(observation.application_requests.is_empty());
 }
 
 #[test]
@@ -2638,5 +2711,84 @@ mod windows_payload {
             appraise(&real_helper_dir(), &evidence()).unwrap_err(),
             GpuAppraisalReason::NvattestUnavailable
         );
+    }
+}
+
+#[test]
+fn proof_boundary_complete_fragmented_and_cut_controls() {
+    for mode in [
+        "complete_fragmented",
+        "cut_header",
+        "cut_body",
+        "cut_tls_record",
+    ] {
+        let (config, evidence) = certificate_with_evidence(&[7; 32], true, false);
+        let gateway = start_gateway_with_proof_writer(
+            config,
+            GatewayPlan {
+                proof: GatewayResponse::ValidProof(Box::new(evidence)),
+                application_responses: vec![],
+                capture_unanswered_application: mode != "complete_fragmented",
+            },
+            move |stream, response| {
+                let head_end = response.windows(4).position(|w| w == b"\r\n\r\n").unwrap() + 4;
+                let end = match mode {
+                    "cut_header" => head_end - 1,
+                    "cut_body" => response.len() - 1,
+                    _ => response.len(),
+                };
+                // Each write becomes a distinct TLS application record. Both the
+                // HTTP header terminator and DER proof cross record boundaries.
+                let mut encrypted = Vec::new();
+                let mut records = 0;
+                for part in response[..end].chunks(7) {
+                    stream.conn.writer().write_all(part)?;
+                    while stream.conn.wants_write() {
+                        stream.conn.write_tls(&mut encrypted)?;
+                    }
+                    records += 1;
+                }
+                assert!(records > 2);
+                if mode == "cut_tls_record" {
+                    encrypted.pop().expect("last encrypted byte");
+                }
+                // TCP may coalesce these writes; the TLS record cuts above are
+                // deterministic regardless of how the socket delivers bytes.
+                for part in encrypted.chunks(11) {
+                    stream.sock.write_all(part)?;
+                }
+                eprintln!(
+                    "proof_boundary sent mode={mode} plaintext={end}/{} ciphertext={} records={records}",
+                    response.len(),
+                    encrypted.len()
+                );
+                stream.sock.shutdown(std::net::Shutdown::Write)?;
+                Ok(())
+            },
+            |stream, response| stream.write_all(response),
+        );
+        let result = establish(gateway.port, &AcceptingCompositeVerifier);
+        match mode {
+            "complete_fragmented" => {
+                assert!(
+                    result.is_ok(),
+                    "complete valid proof rejected: {:?}",
+                    result.err()
+                );
+                eprintln!("proof_boundary result mode={mode} admitted=true");
+            }
+            _ => {
+                let error = rejected(result);
+                assert_eq!(error.reason_code, "proof_http_eof", "{mode}");
+                eprintln!(
+                    "proof_boundary result mode={mode} reason={}",
+                    error.reason_code
+                );
+            }
+        }
+        let observation = gateway.finish();
+        assert_preface(&observation);
+        assert_eq!(observation.exporter_request, exact_exporter_request());
+        assert!(observation.application_requests.is_empty());
     }
 }

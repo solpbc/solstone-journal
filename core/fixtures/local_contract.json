@@ -34,6 +34,17 @@
       "attestation_expired": {},
       "attestation_not_verified": {},
       "attestation_rejected": {
+        "verification_reason": [
+          "proof_http_failed",
+          "proof_http_timeout",
+          "proof_http_eof",
+          "proof_http_transport",
+          "proof_http_framing",
+          "proof_http_status",
+          "proof_http_content_type",
+          "proof_http_trailing",
+          "proof_http_channel_state"
+        ],
         "register": [
           "4",
           "7",

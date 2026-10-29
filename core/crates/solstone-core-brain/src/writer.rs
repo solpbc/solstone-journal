@@ -6423,6 +6423,47 @@ mod tests {
             unnamed,
             crate::brain_reason_text(Some("attestation_rejected"))
         );
+
+        // Closed HTTP categories survive the real writer and record reader,
+        // while the owner-facing reason and register behavior stay unchanged.
+        for raw in [
+            "proof_http_failed",
+            "proof_http_timeout",
+            "proof_http_eof",
+            "proof_http_transport",
+            "proof_http_framing",
+            "proof_http_status",
+            "proof_http_content_type",
+            "proof_http_trailing",
+            "proof_http_channel_state",
+        ] {
+            let (record, text) = shown(raw);
+            assert_eq!(
+                record["evidence"]["lane_prerequisites"]["diagnostic"],
+                json!({"verification_reason": raw})
+            );
+            assert_eq!(text, unnamed);
+            let mut unknown = record.clone();
+            unknown["evidence"]["lane_prerequisites"]["diagnostic"]["verification_reason"] =
+                json!("proof_http_unknown");
+            assert!(validate_brain_state_record(&unknown, Utc::now()).is_err());
+        }
+        for raw in [
+            "proof_http_unknown",
+            "proof_http_timeout: private-path",
+            "Bearer private-token",
+        ] {
+            let (record, _) = shown(raw);
+            assert_eq!(
+                record["evidence"]["lane_prerequisites"]["diagnostic"],
+                json!({})
+            );
+        }
+        let (record, _) = shown("pcr_9_mismatch");
+        assert_eq!(
+            record["evidence"]["lane_prerequisites"]["diagnostic"],
+            json!({"register": "9"})
+        );
     }
 
     #[test]

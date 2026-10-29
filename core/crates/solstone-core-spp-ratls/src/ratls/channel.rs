@@ -794,7 +794,16 @@ fn is_local_failure(reason_code: &str) -> bool {
 fn refusal_rank(reason_code: &str) -> u8 {
     match reason_code {
         "gateway_unreachable" => 0,
-        "tls_handshake_failed" | "proof_http_failed" => 1,
+        "tls_handshake_failed"
+        | "proof_http_failed"
+        | "proof_http_timeout"
+        | "proof_http_eof"
+        | "proof_http_transport"
+        | "proof_http_framing"
+        | "proof_http_status"
+        | "proof_http_content_type"
+        | "proof_http_trailing"
+        | "proof_http_channel_state" => 1,
         _ => 2,
     }
 }
@@ -1015,17 +1024,44 @@ fn establish_at_address(
 }
 
 fn recv_proof_response(channel: &mut AttestedChannel) -> Result<Vec<u8>, RatlsChannelError> {
-    let response = recv_bounded_http_response(
-        channel,
-        MAX_PROOF_RESPONSE_HEADERS,
-        MAX_PROOF_RESPONSE_BYTES,
-    )
-    .map_err(|_| RatlsChannelError {
-        reason_code: "proof_http_failed",
-    })?;
+    let body = recv_proof_body(channel)?;
+    match channel.trailing_after_body() {
+        Ok(Trailing::None) if channel.clean_to_reuse() => Ok(body),
+        // A close right after the proof is not a bad proof. The ended channel
+        // fails its first request and is never pooled.
+        Ok(Trailing::Eof) => Ok(body),
+        Ok(Trailing::None) => Err(RatlsChannelError {
+            reason_code: "proof_http_channel_state",
+        }),
+        _ => Err(RatlsChannelError {
+            reason_code: "proof_http_trailing",
+        }),
+    }
+}
+
+// These are closed diagnostic categories, not remote status, header or error
+// text. They preserve the same refusal and address-walk rank as the former
+// proof_http_failed bucket.
+fn proof_http_error(error: BoundedHttpError) -> RatlsChannelError {
+    let reason_code = match error {
+        BoundedHttpError::Transport(error) => match error.kind() {
+            ErrorKind::TimedOut | ErrorKind::WouldBlock => "proof_http_timeout",
+            ErrorKind::UnexpectedEof => "proof_http_eof",
+            _ => "proof_http_transport",
+        },
+        BoundedHttpError::Protocol("response_eof" | "response_body_eof") => "proof_http_eof",
+        BoundedHttpError::Protocol(_) => "proof_http_framing",
+    };
+    RatlsChannelError { reason_code }
+}
+
+fn recv_proof_body(stream: &mut impl Read) -> Result<Vec<u8>, RatlsChannelError> {
+    let response =
+        recv_bounded_http_response(stream, MAX_PROOF_RESPONSE_HEADERS, MAX_PROOF_RESPONSE_BYTES)
+            .map_err(proof_http_error)?;
     if response.status_line.as_slice() != b"HTTP/1.1 200 OK" {
         return Err(RatlsChannelError {
-            reason_code: "proof_http_failed",
+            reason_code: "proof_http_status",
         });
     }
     for (name, value) in &response.headers {
@@ -1033,19 +1069,11 @@ fn recv_proof_response(channel: &mut AttestedChannel) -> Result<Vec<u8>, RatlsCh
             && std::str::from_utf8(value).ok().map(str::trim) != Some(EXPORTER_PROOF_MEDIA_TYPE)
         {
             return Err(RatlsChannelError {
-                reason_code: "proof_http_failed",
+                reason_code: "proof_http_content_type",
             });
         }
     }
-    match channel.trailing_after_body() {
-        Ok(Trailing::None) if channel.clean_to_reuse() => Ok(response.body),
-        // A close right after the proof is not a bad proof. The ended channel
-        // fails its first request and is never pooled.
-        Ok(Trailing::Eof) => Ok(response.body),
-        _ => Err(RatlsChannelError {
-            reason_code: "proof_http_failed",
-        }),
-    }
+    Ok(response.body)
 }
 
 fn http_error(error: BoundedHttpError) -> AttestedHttpError {
@@ -1542,6 +1570,72 @@ mod tests {
             |_address, _nonce| Err(refused(reasons.next().unwrap())),
         );
         assert_eq!(result, Err(refused("pcr_pin_mismatch")));
+    }
+
+    #[test]
+    fn proof_http_details_keep_protocol_rank() {
+        for reason in [
+            "proof_http_timeout",
+            "proof_http_eof",
+            "proof_http_transport",
+            "proof_http_framing",
+            "proof_http_status",
+            "proof_http_content_type",
+            "proof_http_trailing",
+            "proof_http_channel_state",
+        ] {
+            assert_eq!(
+                refusal_rank(reason),
+                refusal_rank("proof_http_failed"),
+                "{reason}"
+            );
+        }
+    }
+
+    #[test]
+    fn proof_response_categories_do_not_include_peer_text() {
+        for (bytes, reason) in [
+            (
+                &b"HTTP/1.1 503 Private\r\nContent-Length: 0\r\n\r\n"[..],
+                "proof_http_status",
+            ),
+            (
+                b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nContent-Type: private\r\n\r\n",
+                "proof_http_content_type",
+            ),
+            (
+                b"HTTP/1.1 200 OK\r\nContent-Length: private\r\n\r\n",
+                "proof_http_framing",
+            ),
+            (
+                b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nx",
+                "proof_http_eof",
+            ),
+        ] {
+            assert_eq!(
+                recv_proof_body(&mut Cursor::new(bytes)),
+                Err(refused(reason))
+            );
+        }
+        assert_eq!(
+            recv_proof_body(&mut Cursor::new(
+                b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nxx"
+            )),
+            Ok(b"xx".to_vec())
+        );
+        for (kind, expected) in [
+            (ErrorKind::TimedOut, "proof_http_timeout"),
+            (ErrorKind::WouldBlock, "proof_http_timeout"),
+            (ErrorKind::UnexpectedEof, "proof_http_eof"),
+            (ErrorKind::ConnectionReset, "proof_http_transport"),
+            (ErrorKind::Other, "proof_http_transport"),
+        ] {
+            let error = std::io::Error::new(kind, "private peer, path or credential");
+            assert_eq!(
+                proof_http_error(BoundedHttpError::Transport(error)),
+                refused(expected)
+            );
+        }
     }
 
     #[test]
