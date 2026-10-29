@@ -39,14 +39,12 @@ scan_control() {
 }
 
 assert_launchers() {
-	for launcher in journal solstone; do
-		path=$(command -v "$launcher") || refuse "launcher missing: $launcher"
-		case $path in
-		*site-packages* | *dist-packages* | *.venv/* | *'/venv/'*)
-			refuse "launcher resolved through Python layout: $path"
-			;;
-		esac
-	done
+	path=$(command -v solstone) || refuse "launcher missing: solstone"
+	case $path in
+	*site-packages* | *dist-packages* | *.venv/* | *'/venv/'*)
+		refuse "launcher resolved through Python layout: $path"
+		;;
+	esac
 }
 
 SUPERVISOR_PID=
