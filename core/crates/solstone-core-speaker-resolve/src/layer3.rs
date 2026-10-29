@@ -43,17 +43,17 @@ pub fn apply_acoustic_matching(
     voiceprint_gaps: &mut Vec<VoiceprintLoadGap>,
 ) -> Layer3Result {
     let mut labels = inputs.labels;
-    let unresolved = inputs
-        .non_owner_sids
-        .iter()
-        .copied()
-        .filter(|sentence_id| {
-            labels
-                .get(sentence_id)
-                .is_some_and(|label| label.speaker.is_none())
+    let structural = labels
+        .values()
+        .filter(|label| {
+            matches!(
+                label.method.as_deref(),
+                Some("structural_single_speaker" | "structural_setting")
+            )
         })
+        .filter_map(|label| Some((label.sentence_id, label.speaker.clone()?)))
         .collect::<Vec<_>>();
-    if unresolved.is_empty() {
+    if structural.is_empty() && !has_unresolved(&labels, inputs.non_owner_sids) {
         return Layer3Result {
             labels,
             voiceprint_versions: HashMap::new(),
@@ -62,13 +62,14 @@ pub fn apply_acoustic_matching(
 
     // Nothing in the segment named anyone, so every voiceprint competes.
     let open_library = inputs.candidate_entity_ids.is_empty();
+    let library_ids = inputs
+        .entities
+        .iter()
+        .filter(|entity| !entity.is_principal() && is_admissible_person(entity))
+        .map(|entity| entity.id.clone())
+        .collect::<BTreeSet<_>>();
     let vp_entity_ids = if open_library {
-        inputs
-            .entities
-            .iter()
-            .filter(|entity| !entity.is_principal() && is_admissible_person(entity))
-            .map(|entity| entity.id.clone())
-            .collect::<BTreeSet<_>>()
+        library_ids.clone()
     } else {
         inputs.candidate_entity_ids.clone()
     };
@@ -90,6 +91,24 @@ pub fn apply_acoustic_matching(
             matching_centroids.insert(entity_id, centroid);
         }
     }
+    // Known voices nobody named. A named person must sound more like
+    // themselves than like any of them.
+    let mut rivals = BTreeMap::new();
+    for entity_id in library_ids {
+        if matching_centroids.contains_key(&entity_id) {
+            continue;
+        }
+        let entry = cache.entry_for(
+            inputs.journal_root,
+            &entity_id,
+            inputs.stream,
+            inputs.now_ms,
+            voiceprint_gaps,
+        );
+        if let Some(centroid) = entry.centroid.filter(|_| entry.usable) {
+            rivals.insert(entity_id, centroid);
+        }
+    }
 
     let sid_to_idx = inputs
         .statements
@@ -97,6 +116,31 @@ pub fn apply_acoustic_matching(
         .enumerate()
         .map(|(index, (sentence_id, _))| (*sentence_id, index))
         .collect::<HashMap<_, _>>();
+    confirm_structural_labels(
+        &mut labels,
+        &structural,
+        &sid_to_idx,
+        inputs.statements,
+        inputs.integer_speakers,
+        &matching_centroids,
+        &rivals,
+    );
+    let unresolved = inputs
+        .non_owner_sids
+        .iter()
+        .copied()
+        .filter(|sentence_id| {
+            labels
+                .get(sentence_id)
+                .is_some_and(|label| label.speaker.is_none())
+        })
+        .collect::<Vec<_>>();
+    if unresolved.is_empty() {
+        return Layer3Result {
+            labels,
+            voiceprint_versions,
+        };
+    }
     apply_cluster_matches(
         &mut labels,
         &unresolved,
@@ -104,6 +148,7 @@ pub fn apply_acoustic_matching(
         inputs.statements,
         inputs.integer_speakers,
         &matching_centroids,
+        &rivals,
         inputs.margin_declined_sids,
         open_library,
     );
@@ -113,6 +158,7 @@ pub fn apply_acoustic_matching(
         &sid_to_idx,
         inputs.statements,
         &matching_centroids,
+        &rivals,
         inputs.margin_declined_sids,
         open_library,
     );
@@ -131,6 +177,7 @@ fn apply_cluster_matches(
     statements: &[(i64, Vec<f32>)],
     integer_speakers: &HashMap<i64, i64>,
     matching_centroids: &BTreeMap<String, Vec<f32>>,
+    rivals: &BTreeMap<String, Vec<f32>>,
     margin_declined_sids: &HashSet<i64>,
     open_library: bool,
 ) {
@@ -217,13 +264,19 @@ fn apply_cluster_matches(
         if score < ACOUSTIC_MEDIUM {
             continue;
         }
-        let other_scores = pairs
+        let mut other_scores = pairs
             .iter()
             .filter(|(_, pair_cluster_id, pair_entity_id)| {
                 *pair_cluster_id == cluster_id && pair_entity_id != &entity_id
             })
             .map(|(pair_score, _, _)| *pair_score)
             .collect::<Vec<_>>();
+        if let Some(rival) = best_rival_score(&cluster_centroids[&cluster_id], rivals) {
+            if rival >= score {
+                continue;
+            }
+            other_scores.push(rival);
+        }
         if open_library && !passes_open_margin(score, &other_scores) {
             continue;
         }
@@ -259,12 +312,14 @@ fn apply_cluster_matches(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn apply_sentence_matches(
     labels: &mut BTreeMap<i64, Label>,
     unresolved: &[i64],
     sid_to_idx: &HashMap<i64, usize>,
     statements: &[(i64, Vec<f32>)],
     matching_centroids: &BTreeMap<String, Vec<f32>>,
+    rivals: &BTreeMap<String, Vec<f32>>,
     margin_declined_sids: &HashSet<i64>,
     open_library: bool,
 ) {
@@ -299,6 +354,12 @@ fn apply_sentence_matches(
         let Some(entity_id) = best_entity_id else {
             continue;
         };
+        if let Some(rival) = best_rival_score(&embedding, rivals) {
+            if rival >= best_score {
+                continue;
+            }
+            runner_up_scores.push(rival);
+        }
         if open_library {
             if best_score >= ACOUSTIC_MEDIUM && passes_open_margin(best_score, &runner_up_scores) {
                 replace_label(
@@ -389,6 +450,111 @@ fn dot(left: &[f32], right: &[f32]) -> f32 {
         .zip(right)
         .map(|(left, right)| left * right)
         .sum()
+}
+
+/// Keep a structural name only on the lines that sound like the person named.
+///
+/// A segment whose evidence named one speaker labels every line the owner layer
+/// left open with that name. Where the person has a voiceprint, a line keeps the
+/// name only when it matches them better than every other known voice, and stays
+/// high only with the acoustic lead. Where they have none yet, only the largest
+/// diarization cluster among those lines keeps it; without diarization the name
+/// stays at medium. Lines that lose the name go on to acoustic matching.
+fn confirm_structural_labels(
+    labels: &mut BTreeMap<i64, Label>,
+    structural: &[(i64, String)],
+    sid_to_idx: &HashMap<i64, usize>,
+    statements: &[(i64, Vec<f32>)],
+    integer_speakers: &HashMap<i64, i64>,
+    matching_centroids: &BTreeMap<String, Vec<f32>>,
+    rivals: &BTreeMap<String, Vec<f32>>,
+) {
+    let mut by_entity = BTreeMap::<&str, Vec<i64>>::new();
+    for (sentence_id, entity_id) in structural {
+        by_entity.entry(entity_id).or_default().push(*sentence_id);
+    }
+    for (entity_id, sentence_ids) in by_entity {
+        if let Some(centroid) = matching_centroids
+            .get(entity_id)
+            .or_else(|| rivals.get(entity_id))
+        {
+            for sentence_id in sentence_ids {
+                let embedding = sid_to_idx
+                    .get(&sentence_id)
+                    .and_then(|index| normalize_embedding(&statements[*index].1));
+                let Some(embedding) = embedding else {
+                    clear_label(labels, sentence_id);
+                    continue;
+                };
+                let score = dot(&embedding, centroid);
+                let others = matching_centroids
+                    .iter()
+                    .chain(rivals.iter())
+                    .filter(|(other_id, _)| other_id.as_str() != entity_id)
+                    .map(|(_, other)| dot(&embedding, other))
+                    .fold(0.0_f32, f32::max);
+                if score < ACOUSTIC_MEDIUM || others >= score {
+                    clear_label(labels, sentence_id);
+                } else if score < ACOUSTIC_HIGH || score - others < ACOUSTIC_MARGIN_MIN {
+                    set_confidence(labels, sentence_id, "medium");
+                }
+            }
+            continue;
+        }
+        let mut cluster_sizes = BTreeMap::<i64, usize>::new();
+        for sentence_id in &sentence_ids {
+            if let Some(cluster_id) = integer_speakers.get(sentence_id) {
+                *cluster_sizes.entry(*cluster_id).or_default() += 1;
+            }
+        }
+        if cluster_sizes.is_empty() {
+            for sentence_id in sentence_ids {
+                set_confidence(labels, sentence_id, "medium");
+            }
+            continue;
+        }
+        let largest = cluster_sizes.values().copied().max().unwrap_or(0);
+        let leaders = cluster_sizes
+            .iter()
+            .filter(|(_, size)| **size == largest)
+            .map(|(cluster_id, _)| *cluster_id)
+            .collect::<Vec<_>>();
+        let kept = (leaders.len() == 1).then(|| leaders[0]);
+        for sentence_id in sentence_ids {
+            if kept.is_none() || integer_speakers.get(&sentence_id) != kept.as_ref() {
+                clear_label(labels, sentence_id);
+            }
+        }
+    }
+}
+
+fn clear_label(labels: &mut BTreeMap<i64, Label>, sentence_id: i64) {
+    if let Some(label) = labels.get_mut(&sentence_id) {
+        label.speaker = None;
+        label.confidence = None;
+        label.method = None;
+    }
+}
+
+fn set_confidence(labels: &mut BTreeMap<i64, Label>, sentence_id: i64, confidence: &str) {
+    if let Some(label) = labels.get_mut(&sentence_id) {
+        label.confidence = Some(confidence.to_owned());
+    }
+}
+
+fn has_unresolved(labels: &BTreeMap<i64, Label>, non_owner_sids: &[i64]) -> bool {
+    non_owner_sids.iter().any(|sentence_id| {
+        labels
+            .get(sentence_id)
+            .is_some_and(|label| label.speaker.is_none())
+    })
+}
+
+fn best_rival_score(embedding: &[f32], centroids: &BTreeMap<String, Vec<f32>>) -> Option<f32> {
+    centroids
+        .values()
+        .map(|centroid| dot(embedding, centroid))
+        .reduce(f32::max)
 }
 
 fn passes_acoustic_margin(matched_score: f32, other_scores: &[f32]) -> bool {
