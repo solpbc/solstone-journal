@@ -375,28 +375,30 @@ fn run(v: Value) -> Result<Value, String> {
         *STOP_ROOT.lock().unwrap_or_else(|p| p.into_inner()) = Some(Arc::clone(root));
     }
     let p = root.canonical_path();
-    let _restore_use = if matches!(
-        op,
-        "audio-enable"
-            | "audio-resume"
-            | "serve-generate"
-            | "serve-talent"
-            | "serve-index"
-            | "serve-inventory"
-            | "audio-inventory"
-            | "seed"
-            | "index"
-            | "query"
-            | "inventory"
-            | "create"
-            | "recover"
-            | "mixed"
-            | "active"
-            | "control"
-            | "crash-write"
-            | "commit-disconnect"
-            | "binding-control"
-    ) {
+    // Ordinary audio configuration only retains paths so startup can show
+    // recovery. The corrupt-model diagnostic writes scratch and stays fenced.
+    let _restore_use = if (op == "audio-enable" && v["mode"].as_str() == Some("corrupt-model"))
+        || matches!(
+            op,
+            "audio-resume"
+                | "serve-generate"
+                | "serve-talent"
+                | "serve-index"
+                | "serve-inventory"
+                | "audio-inventory"
+                | "seed"
+                | "index"
+                | "query"
+                | "inventory"
+                | "create"
+                | "recover"
+                | "mixed"
+                | "active"
+                | "control"
+                | "crash-write"
+                | "commit-disconnect"
+                | "binding-control"
+        ) {
         Some(hold_ready_journal(root)?)
     } else {
         None

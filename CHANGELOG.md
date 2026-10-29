@@ -17,6 +17,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- reopening the android or ios development app during a journal restore now opens recovery instead of failing during startup.
 - archive recovery in the android development app could be refused even with files in its own storage. this corrects that storage check.
 - android and ios no longer reject requests to retrieve offloaded media solely because of the platform.
 - a first restore on a phone or tablet now waits for work in your journal to finish before copying. if restore is interrupted, you can retry the same backup.

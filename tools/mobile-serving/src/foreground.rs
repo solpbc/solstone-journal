@@ -2550,14 +2550,6 @@ impl ForegroundProcessingHost {
         model: PathBuf,
         scratch: PathBuf,
     ) -> Result<(), String> {
-        if solstone_core_journal_io::whole_journal_restore::whole_journal_restore_blocks(
-            &self.journal,
-        ) {
-            return Err(
-                solstone_core_journal_io::whole_journal_restore::WHOLE_JOURNAL_RESTORE_NOT_READY
-                    .into(),
-            );
-        }
         if (self.cancelled)() {
             return Err("thinking cancelled".into());
         }
@@ -2566,6 +2558,8 @@ impl ForegroundProcessingHost {
             return Err("thinking cancelled".into());
         }
         if state.is_none() {
+            // Startup needs this inert handshake before it can show recovery.
+            // for_host retains paths without opening a model or starting work.
             *state = Some(AudioConfig {
                 worker: Arc::new(crate::audio::AudioWorker::for_host(
                     Arc::clone(&self.root),
@@ -2576,7 +2570,10 @@ impl ForegroundProcessingHost {
                 )),
             });
         }
-        if let Some(handle) = self.sense_handle.lock().unwrap().as_ref() {
+        if !solstone_core_journal_io::whole_journal_restore::whole_journal_restore_blocks(
+            &self.journal,
+        ) && let Some(handle) = self.sense_handle.lock().unwrap().as_ref()
+        {
             handle.thread().unpark();
         }
         Ok(())
@@ -4625,6 +4622,85 @@ mod processing_proofs {
             BackupWebDeps::new(journal.to_path_buf()),
         )
         .unwrap()
+    }
+
+    #[cfg(feature = "audio")]
+    #[test]
+    fn audio_configuration_keeps_cancellation_root_and_final_stop_fences() {
+        use std::sync::atomic::AtomicUsize;
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        for checkpoint in [1, 2] {
+            let (journal, payload) = journal_fixture();
+            let armed = Arc::new(AtomicBool::new(false));
+            let checks = Arc::new(AtomicUsize::new(0));
+            let external = {
+                let armed = Arc::clone(&armed);
+                let checks = Arc::clone(&checks);
+                Arc::new(move || {
+                    armed.load(Ordering::Acquire)
+                        && checks.fetch_add(1, Ordering::AcqRel) + 1 >= checkpoint
+                })
+            };
+            let host = ForegroundProcessingHost::open_with_cancellation(
+                Arc::new(JournalRoot::open(journal.path()).unwrap()),
+                &payload,
+                external,
+                Arc::new(AtomicBool::new(false)),
+                BackupWebDeps::new(journal.path().to_path_buf()),
+            )
+            .unwrap();
+            armed.store(true, Ordering::Release);
+            let scratch = journal.path().join("uncreated-scratch");
+            assert!(
+                host.enable_audio(
+                    payload.clone(),
+                    payload.join("missing.gguf"),
+                    scratch.clone()
+                )
+                .is_err()
+            );
+            assert!(host.audio_state.lock().unwrap().is_none());
+            assert!(!scratch.exists());
+            host.shutdown().unwrap();
+        }
+
+        let (journal, payload) = journal_fixture();
+        let host = open_host(journal.path(), &payload, Utc::now());
+        let scratch = journal.path().join("uncreated-scratch");
+        // A ready journal configures without touching the model or scratch.
+        host.enable_audio(
+            payload.clone(),
+            payload.join("missing.gguf"),
+            scratch.clone(),
+        )
+        .unwrap();
+        assert_eq!(host.audio_status()["generation"], 0);
+        host.resume_audio().unwrap();
+        assert_eq!(host.audio_status()["generation"], 1);
+        assert!(!scratch.exists());
+        host.shutdown().unwrap();
+        assert!(
+            host.enable_audio(payload.clone(), payload.join("missing.gguf"), scratch)
+                .is_err()
+        );
+        drop(host);
+
+        let (journal, payload) = journal_fixture();
+        let host = open_host(journal.path(), &payload, Utc::now());
+        let parked = tempfile::tempdir().unwrap();
+        fs::rename(journal.path(), parked.path().join("original")).unwrap();
+        fs::create_dir(journal.path()).unwrap();
+        assert!(
+            host.enable_audio(
+                payload.clone(),
+                payload.join("missing.gguf"),
+                journal.path().join("scratch")
+            )
+            .is_err()
+        );
+        assert!(host.audio_state.lock().unwrap().is_none());
+        assert_eq!(fs::read_dir(journal.path()).unwrap().count(), 0);
+        host.shutdown().unwrap();
     }
 
     #[test]
