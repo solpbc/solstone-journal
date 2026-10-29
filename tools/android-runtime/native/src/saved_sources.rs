@@ -119,6 +119,12 @@ pub unsafe extern "C" fn journal_owner_sources_install(
         if !cache.is_absolute() {
             return None;
         }
+        // Resolve Android's trusted private-cache aliases before allocating any
+        // owner-bridge descendants. The copier still rejects symlinks below it.
+        let cache = cache.canonicalize().ok()?;
+        if !cache.is_dir() {
+            return None;
+        }
         let identity = NEXT_IDENTITY
             .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |old| old.checked_add(1))
             .ok()?;

@@ -103,6 +103,54 @@ fn cache() -> PathBuf {
     path
 }
 
+#[test]
+fn registered_private_cache_resolves_platform_ancestor_alias() {
+    if isolated_full(
+        "saved_sources::tests::registered_private_cache_resolves_platform_ancestor_alias",
+    ) {
+        return;
+    }
+    let cache = cache();
+    let alias = cache.with_extension("alias");
+    std::os::unix::fs::symlink(&cache, &alias).unwrap();
+    let (identity, counts) = install(&alias, "cache-alias", None);
+    assert_eq!(
+        INSTALLATION.lock().unwrap().as_ref().unwrap().cache,
+        cache.canonicalize().unwrap()
+    );
+    assert_eq!(counts.calls.load(Ordering::SeqCst), 0);
+    journal_owner_sources_retire(identity);
+    assert_eq!(counts.released.load(Ordering::SeqCst), 1);
+    let file = cache.join("not-a-directory");
+    fs::write(&file, b"retained").unwrap();
+    for refused in [cache.join("missing"), file.clone()] {
+        let counts = Arc::new(Counts::default());
+        let context = Box::new(Context {
+            name: "refused-cache",
+            main: std::thread::current().id(),
+            counts: Arc::clone(&counts),
+            block: None,
+        });
+        let refused = CString::new(refused.to_str().unwrap()).unwrap();
+        let identity = unsafe {
+            journal_owner_sources_install(
+                refused.as_ptr(),
+                Box::into_raw(context).cast(),
+                Some(copy),
+                Some(release),
+            )
+        };
+        assert_eq!(identity, 0);
+        assert!(INSTALLATION.lock().unwrap().is_none());
+        assert_eq!(counts.calls.load(Ordering::SeqCst), 0);
+        assert_eq!(counts.released.load(Ordering::SeqCst), 1);
+    }
+    assert_eq!(fs::read(&file).unwrap(), b"retained");
+    fs::remove_file(file).unwrap();
+    fs::remove_file(alias).unwrap();
+    fs::remove_dir(cache).unwrap();
+}
+
 #[derive(Default)]
 struct Permissions {
     grants: Mutex<std::collections::BTreeSet<String>>,

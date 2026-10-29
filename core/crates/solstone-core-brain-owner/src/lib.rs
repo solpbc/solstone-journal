@@ -1263,10 +1263,12 @@ fn generated_response_has_reasoning(response: &GeneratedResponse) -> bool {
 
 fn map_provider_reason(component: &str, reason: Option<&str>) -> String {
     // The local endpoint wire names its two failures with a `local_` prefix;
-    // the brain contract knows them without it.
+    // the brain contract knows them without it. A local request that used its
+    // whole deadline is a check that didn't finish.
     let reason = reason.map(|reason| match reason {
         "local_endpoint_unreachable" => "endpoint_unreachable",
         "local_endpoint_contract_failed" => "endpoint_contract_failed",
+        "local_request_timeout" => "brain_refresh_timeout",
         other => other,
     });
     match reason {
@@ -1846,6 +1848,10 @@ mod tests {
         assert_eq!(
             map_provider_reason("generate", Some("probe_output_starved")),
             "probe_output_starved"
+        );
+        assert_eq!(
+            map_provider_reason("generate", Some("local_request_timeout")),
+            "brain_refresh_timeout"
         );
     }
 
