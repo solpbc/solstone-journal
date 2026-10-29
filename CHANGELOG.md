@@ -17,6 +17,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- android and ios no longer reject requests to retrieve offloaded media solely because of the platform.
 - a first restore on a phone or tablet now waits for work in your journal to finish before copying. if restore is interrupted, you can retry the same backup.
 
 - security fix: updated a library used by journals on phones to address a memory-safety flaw.

@@ -1687,7 +1687,13 @@ async fn offload_restore_route(deps: BackupWebDeps, body: Bytes) -> axum::respon
     if let Err(error) = validation::restore_day(&payload) {
         return error;
     }
-    #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+    #[cfg(not(any(
+        target_os = "linux",
+        target_os = "macos",
+        target_os = "windows",
+        target_os = "android",
+        target_os = "ios"
+    )))]
     {
         let _ = deps;
         response::error(
@@ -1697,7 +1703,13 @@ async fn offload_restore_route(deps: BackupWebDeps, body: Bytes) -> axum::respon
             "",
         )
     }
-    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+    #[cfg(any(
+        target_os = "linux",
+        target_os = "macos",
+        target_os = "windows",
+        target_os = "android",
+        target_os = "ios"
+    ))]
     {
         let day = payload
             .get("day")
