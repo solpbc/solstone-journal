@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use super::stop_diagnostics::Phase;
 use std::any::Any;
 use std::future::Future;
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -315,13 +316,14 @@ impl Retirement {
                 // Borrow the original MobileServing for pre-Drained shutdown.
                 // An error/panic leaves its actual Runtime/routes in this cell.
                 let result = catch_unwind(AssertUnwindSafe(|| {
-                    shutdown(owner.as_ref().expect("registered retirement owner"))
+                    Phase::RetirementCallback
+                        .run(|| shutdown(owner.as_ref().expect("registered retirement owner")))
                 }));
                 match result {
                     Ok(Ok(())) => {
                         let value = owner.take().expect("quiescent retirement owner");
                         drop(owner);
-                        drop(value);
+                        Phase::OwnerDrop.run(|| drop(value));
                         work_record.owner_retired.store(true, Ordering::Release);
                     }
                     Ok(Err(())) => work_record.failed.store(true, Ordering::Release),
@@ -362,7 +364,7 @@ impl Retirement {
                     .unwrap_or_else(|p| p.into_inner())
                     .take();
                 if let Some(worker) = worker {
-                    if let Err(payload) = worker.join() {
+                    if let Err(payload) = Phase::NativeJoin.run(|| worker.join()) {
                         join_record
                             .panics
                             .lock()

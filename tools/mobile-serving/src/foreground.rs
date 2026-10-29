@@ -2705,6 +2705,7 @@ impl ForegroundProcessingHost {
         }
     }
     pub fn shutdown(&self) -> Result<(), String> {
+        use crate::stop_diagnostics::Phase;
         self.request_stop();
         let installed = installed_workers()
             .lock()
@@ -2714,24 +2715,30 @@ impl ForegroundProcessingHost {
             .cloned();
         // Signal first, then join any in-flight recreation before taking handles.
         // A repeated old Stop never locks the successor's transition.
-        let _transition = installed
-            .as_ref()
-            .map(|owner| owner.queue_pause.lock().unwrap_or_else(|p| p.into_inner()));
+        let _transition = Phase::ForegroundTransition.run(|| {
+            installed
+                .as_ref()
+                .map(|owner| owner.queue_pause.lock().unwrap_or_else(|p| p.into_inner()))
+        });
         let mut failed = false;
         let discovery = self.discovery.lock().unwrap().take();
         if let Some(mut discovery) = discovery {
-            failed |= discovery.shutdown_checked().is_err();
+            failed |= Phase::DiscoveryJoin
+                .run(|| discovery.shutdown_checked())
+                .is_err();
         }
-        let _ = self.queue.shutdown();
-        failed |= self.queue.join_callable_workers().is_err();
-        for slot in [
-            &self.sense_handle,
-            &self.schedule_handle,
-            &self.request_handle,
+        let _ = Phase::QueueShutdown.run(|| self.queue.shutdown());
+        failed |= Phase::CallableJoin
+            .run(|| self.queue.join_callable_workers())
+            .is_err();
+        for (slot, phase) in [
+            (&self.sense_handle, Phase::SenseJoin),
+            (&self.schedule_handle, Phase::ScheduleJoin),
+            (&self.request_handle, Phase::RequestJoin),
         ] {
             let handle = slot.lock().unwrap().take();
             if let Some(handle) = handle {
-                failed |= handle.join().is_err();
+                failed |= phase.run(|| handle.join()).is_err();
             }
         }
         if failed || self.failed() {
