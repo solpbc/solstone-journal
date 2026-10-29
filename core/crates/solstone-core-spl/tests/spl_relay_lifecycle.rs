@@ -130,7 +130,12 @@ async fn enroll_home_accepts_a_legacy_account_token() -> Result<(), String> {
     timeout(TEST_TIMEOUT, async {
         let (relay, worker) = relay_response(200, r#"{"account_token":"legacy-token"}"#).await?;
         let result = tokio::task::spawn_blocking(move || {
-            enroll_home(&relay, "instance", "ca", "home", EnrollMode::Establish)
+            enroll_home(
+                &relay,
+                "instance",
+                &solstone_core_sol_link::ca::generate_ca().expect("ca"),
+                EnrollMode::Establish,
+            )
         })
         .await
         .map_err(|_| "enrollment task failed".to_owned())?;
@@ -151,7 +156,12 @@ async fn enroll_home_rejects_non_json_http_error_bodies() -> Result<(), String> 
     timeout(TEST_TIMEOUT, async {
         let (relay, worker) = relay_response(503, "temporarily unavailable").await?;
         let result = tokio::task::spawn_blocking(move || {
-            enroll_home(&relay, "instance", "ca", "home", EnrollMode::Establish)
+            enroll_home(
+                &relay,
+                "instance",
+                &solstone_core_sol_link::ca::generate_ca().expect("ca"),
+                EnrollMode::Establish,
+            )
         })
         .await
         .map_err(|_| "enrollment task failed".to_owned())?;
@@ -212,7 +222,7 @@ async fn split_adapter_preserves_binary_and_text_source_bytes() -> Result<(), St
 
         let token = token()?;
         let endpoint = format!("ws://{address}");
-        let url = relay_tunnel_url(&endpoint, "/session/listen", "home-a", token.as_str());
+        let url = relay_tunnel_url(&endpoint, "/session/listen", "home-a");
         let websocket = RelayWebSocket::connect(&url, &token)
             .await
             .map_err(|error| error.to_string())?;
@@ -1583,23 +1593,13 @@ async fn rotated_service_token_is_presented_on_the_next_listen() -> Result<(), S
             .await
             .map_err(|_| "first request not received".to_owned())?;
         assert_eq!(first_auth.as_deref(), Some("Bearer token-1"));
-        assert!(
-            first_query
-                .as_deref()
-                .unwrap_or("")
-                .contains("token=token-1")
-        );
+        assert!(!first_query.as_deref().unwrap_or("").contains("token"));
 
         let (second_auth, second_query) = second_seen_recv
             .await
             .map_err(|_| "second request not received".to_owned())?;
         assert_eq!(second_auth.as_deref(), Some("Bearer test-service-token"));
-        assert!(
-            second_query
-                .as_deref()
-                .unwrap_or("")
-                .contains("token=test-service-token")
-        );
+        assert!(!second_query.as_deref().unwrap_or("").contains("token"));
 
         stop_relay_run(&mut client, run_task)
             .await
@@ -1703,6 +1703,7 @@ fn make_unsigned_jwt(
         "iat": iat,
         "exp": exp,
         "jti": "jwt-test",
+        "pop": true,
     });
     let payload_b64 = base64_url_encode(serde_json::to_string(&payload).unwrap().as_bytes());
     format!("{header}.{payload_b64}.sig")
@@ -2528,7 +2529,13 @@ mod embedded_restore {
                         url, relay,
                         "test enrollment must stay on its loopback endpoint"
                     );
-                    enroll_home(url, id, pem, "", mode)
+                    let _ = pem;
+                    enroll_home(
+                        url,
+                        id,
+                        &solstone_core_sol_link::ca::generate_ca().unwrap(),
+                        mode,
+                    )
                 });
                 let before = f.bytes();
                 let (shutdown, task) = f.spawn();

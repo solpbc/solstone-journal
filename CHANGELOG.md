@@ -21,6 +21,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- security fix for the private network: your journal now proves it holds its own private key each time it renews its place on the relay, and once it has, the relay refuses anyone who only knows your journal's public key. before, someone holding that public key, such as a device you had removed, could take your journal's place, keep your devices from reaching it and see when they tried to reach it, but never anything in your journal. your journal also no longer puts its relay credential in the web address it connects to.
 - stretches set aside because their thinking kept coming back unfinished get one more try with this version, so the daily outputs waiting on them can be made.
 - reviewing interrupted storage work in the android development app could fail before showing the temporary copies.
 - reviewing storage recovery on android could get stuck waiting for your journal to stop, even after it had stopped.

@@ -16,20 +16,21 @@ pub fn websocket_endpoint(endpoint: &str) -> String {
     endpoint.to_owned()
 }
 
-/// Builds a relay tunnel or listen URL, with the required token query field.
+/// Builds a relay tunnel or listen URL.
 ///
-/// Call [`bearer_authorization_value`] separately when opening the WebSocket.
-pub fn relay_tunnel_url(endpoint: &str, path: &str, instance_id: &str, token: &str) -> String {
+/// The URL never carries the service token: URLs are what edge logs and error
+/// reports keep. Send it with [`bearer_authorization_value`] when opening the
+/// WebSocket.
+pub fn relay_tunnel_url(endpoint: &str, path: &str, instance_id: &str) -> String {
     let websocket_endpoint = websocket_endpoint(endpoint);
     let endpoint_without_slash = websocket_endpoint.trim_end_matches('/');
     format!(
-        "{endpoint_without_slash}{path}?instance={}&token={}",
+        "{endpoint_without_slash}{path}?instance={}",
         encode_query_component(instance_id),
-        encode_query_component(token),
     )
 }
 
-/// Builds the authorization value required in addition to the token query field.
+/// Builds the authorization header value that carries the service token.
 pub fn bearer_authorization_value(token: &str) -> String {
     format!("Bearer {token}")
 }
@@ -124,18 +125,10 @@ mod tests {
 
     #[test]
     fn builds_a_url_and_header_through_separate_apis() {
-        let url = relay_tunnel_url(
-            "https://relay.test/",
-            "/session/listen",
-            "home/a b",
-            "token +/?",
-        );
+        let url = relay_tunnel_url("https://relay.test/", "/session/listen", "home/a b");
         let authorization = bearer_authorization_value("token +/?");
 
-        assert_eq!(
-            url,
-            "wss://relay.test/session/listen?instance=home%2Fa+b&token=token+%2B%2F%3F"
-        );
+        assert_eq!(url, "wss://relay.test/session/listen?instance=home%2Fa+b");
         assert_eq!(authorization, "Bearer token +/?");
     }
 

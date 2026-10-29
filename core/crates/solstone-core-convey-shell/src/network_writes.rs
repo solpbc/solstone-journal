@@ -151,13 +151,12 @@ impl SplEnrollment for RelayEnrollment {
         &self,
         journal: &std::path::Path,
         identity: &ServiceIdentity,
-        ca_pubkey: &str,
+        _ca_pubkey: &str,
     ) -> Result<String, EnrollError> {
         enroll_home(
             &solstone_core_spl::relay_url(journal),
             &identity.instance_id,
-            ca_pubkey,
-            &identity.home_label,
+            &solstone_core_spl::enrollment_ca(journal)?,
             EnrollMode::Establish,
         )
     }
@@ -597,7 +596,9 @@ fn outcome_from_enroll(error: EnrollError) -> HandoffResult {
             outcome_with_status(Phase::Error, "relay_rejected", None, Some(status))
         }
         EnrollError::Unreachable(_) => outcome(Phase::Error, "network_error", None),
-        EnrollError::Response(_) => outcome(Phase::Error, "local_error", None),
+        EnrollError::Response(_) | EnrollError::Proof(_) => {
+            outcome(Phase::Error, "local_error", None)
+        }
     }
 }
 fn outcome(phase: Phase, code: &str, subscribe_url: Option<String>) -> HandoffResult {

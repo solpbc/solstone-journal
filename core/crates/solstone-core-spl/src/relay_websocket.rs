@@ -3,10 +3,10 @@
 
 //! Authenticated relay WebSocket transport split into independent byte halves.
 //!
-//! The caller provides a fully constructed relay URL, including its required
-//! `instance` and `token` query fields.  This adapter adds the matching bearer
-//! header without exposing either the request or upstream transport details to
-//! callers. The stream is split exactly once so the TLS loopback pipe can own
+//! The caller provides a fully constructed relay URL with its `instance`
+//! query field. This adapter carries the service token in the bearer header,
+//! never the URL, without exposing either the request or upstream transport
+//! details to callers. The stream is split exactly once so the TLS loopback pipe can own
 //! independent reader and writer halves for concurrent tunnel forwarding.
 
 use bytes::Bytes;
@@ -197,20 +197,13 @@ mod tests {
     }
 
     #[test]
-    fn request_keeps_query_token_and_adds_matching_bearer_header() -> Result<(), String> {
+    fn request_carries_the_token_only_in_the_bearer_header() -> Result<(), String> {
         let token = token()?;
-        let url = relay_tunnel_url(
-            "wss://relay.test",
-            "/session/listen",
-            "home-a",
-            token.as_str(),
-        );
+        let url = relay_tunnel_url("wss://relay.test", "/session/listen", "home-a");
         let request = relay_request(&url, &token).map_err(|error| error.to_string())?;
 
-        assert_eq!(
-            request.uri().query(),
-            Some("instance=home-a&token=service-token")
-        );
+        assert_eq!(request.uri().query(), Some("instance=home-a"));
+        assert!(!request.uri().to_string().contains(token.as_str()));
         assert_eq!(
             request
                 .headers()

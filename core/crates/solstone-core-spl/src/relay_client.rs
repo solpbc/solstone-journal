@@ -372,7 +372,6 @@ impl RelayClient {
             &self.inner.config.relay_endpoint,
             "/session/listen",
             &self.inner.config.instance_id,
-            service_token.as_str(),
         );
         let (mut reader, mut writer) = match self
             .inner
@@ -505,7 +504,6 @@ impl RelayClient {
             &self.inner.config.relay_endpoint,
             &format!("/tunnel/{tunnel_id}"),
             &self.inner.config.instance_id,
-            service_token.as_str(),
         );
         let websocket = self.inner.connector.connect(&url, &service_token).await;
         let (reader, mut writer) = match websocket {
@@ -2333,9 +2331,9 @@ mod tests {
 
         let obs = connector.observations();
         assert_eq!(obs.len(), 2);
-        assert!(obs[0].0.contains("token=token-1"));
+        assert!(!obs[0].0.contains("token-1"));
         assert_eq!(obs[0].1, "token-1");
-        assert!(obs[1].0.contains("token=token-2"));
+        assert!(!obs[1].0.contains("token-2"));
         assert_eq!(obs[1].1, "token-2");
         assert_eq!(calls.load(Ordering::SeqCst), 2);
         Ok(())
@@ -2387,10 +2385,10 @@ mod tests {
         let obs = connector.observations();
         assert_eq!(obs.len(), 2);
         assert!(obs[0].0.contains("/session/listen"));
-        assert!(obs[0].0.contains("token=token-1"));
+        assert!(!obs[0].0.contains("token-1"));
         assert_eq!(obs[0].1, "token-1");
         assert!(obs[1].0.contains("/tunnel/tls"));
-        assert!(obs[1].0.contains("token=token-2"));
+        assert!(!obs[1].0.contains("token-2"));
         assert_eq!(obs[1].1, "token-2");
         Ok(())
     }

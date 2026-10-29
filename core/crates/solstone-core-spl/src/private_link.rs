@@ -17,6 +17,8 @@ use solstone_core_journal_config_write::{
     mutate_journal_config, mutate_journal_config_at_root_checked,
 };
 use solstone_core_journal_io::JournalRoot;
+use solstone_core_sol_link::ca::LocalCa;
+use solstone_core_sol_link::pairing::attestation::mint_home_enroll_proof;
 use solstone_core_sol_link::service_identity::{
     ServiceIdentity, ServiceIdentityError, load_or_create_service_identity,
     load_service_identity_ca,
@@ -33,6 +35,8 @@ pub enum EnrollError {
     Unreachable(String),
     #[error("relay response was invalid: {0}")]
     Response(String),
+    #[error("could not sign the enrollment proof: {0}")]
+    Proof(String),
 }
 
 #[derive(Debug, Error)]
@@ -93,24 +97,24 @@ pub enum EnrollMode {
     Renew,
 }
 
+/// Enroll or renew at the relay, proving possession of the CA private key.
+///
+/// The CA public key is not a secret, so every call carries a fresh proof
+/// signed with the CA; a relay that has recorded one refuses unsigned calls.
 pub fn enroll_home(
     relay_base_url: &str,
     instance_id: &str,
-    ca_pubkey: &str,
-    _home_label: &str,
+    ca: &LocalCa,
     mode: EnrollMode,
 ) -> Result<String, EnrollError> {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|error| EnrollError::Proof(error.to_string()))?
+        .as_secs() as i64;
+    let proof = mint_home_enroll_proof(ca, instance_id, &relay_audience(relay_base_url), now)
+        .map_err(|error| EnrollError::Proof(error.to_string()))?;
+    let payload = enroll_payload(instance_id, &ca.public_key_spki_pem(), &proof, mode);
     let agent = crate::relay_access::build_isolated_ureq_agent(Duration::from_secs(30));
-    let payload = match mode {
-        EnrollMode::Establish => {
-            serde_json::to_string(&json!({"instance_id": instance_id, "ca_pubkey": ca_pubkey}))
-                .expect("enrollment payload serializes")
-        }
-        EnrollMode::Renew => serde_json::to_string(
-            &json!({"instance_id": instance_id, "ca_pubkey": ca_pubkey, "mode": "renew"}),
-        )
-        .expect("enrollment payload serializes"),
-    };
     let response = agent
         .post(&format!(
             "{}/enroll/home",
@@ -136,6 +140,40 @@ pub fn enroll_home(
         }
     })?;
     map_enroll_response(status, &body)
+}
+
+/// The relay's host as it sees itself in a request URL: the authority without
+/// credentials, lowercased, with the scheme's default port omitted.
+fn relay_audience(relay_base_url: &str) -> String {
+    let (scheme, rest) = relay_base_url
+        .split_once("://")
+        .unwrap_or(("", relay_base_url));
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or_default();
+    let authority = authority
+        .rsplit_once('@')
+        .map_or(authority, |(_, host)| host)
+        .to_ascii_lowercase();
+    let default_port = match scheme.to_ascii_lowercase().as_str() {
+        "https" | "wss" => ":443",
+        "http" | "ws" => ":80",
+        _ => return authority,
+    };
+    authority
+        .strip_suffix(default_port)
+        .map_or(authority.clone(), str::to_owned)
+}
+
+fn enroll_payload(instance_id: &str, ca_pubkey: &str, proof: &str, mode: EnrollMode) -> String {
+    let mut body = json!({"instance_id": instance_id, "ca_pubkey": ca_pubkey, "proof": proof});
+    if mode == EnrollMode::Renew {
+        body["mode"] = Value::String("renew".to_owned());
+    }
+    serde_json::to_string(&body).expect("enrollment payload serializes")
+}
+
+/// Load the committed CA for a relay call made on behalf of `journal_root`.
+pub fn enrollment_ca(journal_root: &Path) -> Result<LocalCa, EnrollError> {
+    load_service_identity_ca(journal_root).map_err(|error| EnrollError::Proof(error.to_string()))
 }
 
 fn map_enroll_response(status: u16, body: &str) -> Result<String, EnrollError> {
@@ -197,12 +235,11 @@ fn config_confirmed(outcome: &BoundConfigOutcome) -> bool {
 pub fn enable_spl(journal_root: &Path) -> Result<SplEnablePublication, EnableSplError> {
     enable_spl_with(
         journal_root,
-        |identity, ca_pubkey| {
+        |identity, _ca_pubkey| {
             enroll_home(
                 &relay_url(journal_root),
                 &identity.instance_id,
-                ca_pubkey,
-                &identity.home_label,
+                &enrollment_ca(journal_root)?,
                 EnrollMode::Establish,
             )
         },
@@ -341,6 +378,20 @@ fn object_at<'a>(parent: &'a mut Map<String, Value>, key: &str) -> &'a mut Map<S
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_proof_names_the_relay_host_the_call_goes_to() {
+        for (url, host) in [
+            ("https://link.solstone.app", "link.solstone.app"),
+            ("https://Link.Solstone.App/", "link.solstone.app"),
+            ("https://link.solstone.app:443/x", "link.solstone.app"),
+            ("https://relay.example:8443", "relay.example:8443"),
+            ("http://127.0.0.1:8787", "127.0.0.1:8787"),
+            ("http://u:p@relay.example:80/", "relay.example"),
+        ] {
+            assert_eq!(relay_audience(url), host, "{url}");
+        }
+    }
     use std::{
         fs,
         path::PathBuf,

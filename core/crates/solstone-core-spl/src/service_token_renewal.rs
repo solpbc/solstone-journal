@@ -21,7 +21,7 @@ use crate::health::{ServiceTokenHealth, service_token_health_is_refused};
 use crate::link_state_files::{
     LinkServiceTokenRead, LinkStateRead, load_link_service_token, load_link_state,
 };
-use crate::private_link::{EnrollError, EnrollMode, enroll_home, relay_url};
+use crate::private_link::{EnrollError, EnrollMode, enroll_home, enrollment_ca, relay_url};
 use crate::relay_access::{decode_base64url, mutate_service_configuration};
 use crate::service_token_write::save_service_token_at_root_unlocked;
 
@@ -66,6 +66,12 @@ pub enum Trigger {
     Expired,
     Undecodable,
     UnknownKey,
+    /// The token carries no `pop` claim: the relay has no proof of
+    /// possession on record for this home yet.
+    Unproven,
+    /// The relay refused a proven token whose key it still publishes, so a
+    /// newer token exists that this home does not hold.
+    Refused,
 }
 
 impl Trigger {
@@ -75,6 +81,8 @@ impl Trigger {
             Self::Expired => "expired",
             Self::Undecodable => "undecodable",
             Self::UnknownKey => "unknown_key",
+            Self::Unproven => "unproven",
+            Self::Refused => "refused",
         }
     }
 }
@@ -88,6 +96,7 @@ pub enum Outcome {
     NotEnrolled,
     InvalidResponse,
     WriteFailed,
+    ProofUnavailable,
     Superseded,
 }
 
@@ -101,6 +110,7 @@ impl Outcome {
             Self::NotEnrolled => "not_enrolled".to_owned(),
             Self::InvalidResponse => "invalid_response".to_owned(),
             Self::WriteFailed => "write_failed".to_owned(),
+            Self::ProofUnavailable => "proof_unavailable".to_owned(),
             Self::Superseded => "superseded".to_owned(),
         }
     }
@@ -161,9 +171,12 @@ impl RenewalConfig {
         journal_root: PathBuf,
         health_read: Arc<dyn Fn() -> ServiceTokenHealth + Send + Sync>,
     ) -> Self {
+        let ca_root = journal_root.clone();
         Self {
             journal_root,
-            enroll: Arc::new(|url, id, pem, mode| enroll_home(url, id, pem, "", mode)),
+            enroll: Arc::new(move |url, id, _pem, mode| {
+                enroll_home(url, id, &enrollment_ca(&ca_root)?, mode)
+            }),
             jwks_fetch: Arc::new(fetch_jwks_production),
             health_read,
             clock: RenewalClock::production(),
@@ -276,6 +289,8 @@ struct TokenMetadata {
     instance_id: Option<String>,
     sub: Option<String>,
     scope: Option<String>,
+    /// Minted on a proof of possession the relay verified.
+    pop: bool,
 }
 
 fn parse_token_metadata(token: &str) -> TokenMetadata {
@@ -289,6 +304,7 @@ fn parse_token_metadata(token: &str) -> TokenMetadata {
             instance_id: None,
             sub: None,
             scope: None,
+            pop: false,
         };
     }
     let kid = header_b64
@@ -296,7 +312,7 @@ fn parse_token_metadata(token: &str) -> TokenMetadata {
         .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
         .and_then(|val| val.get("kid").and_then(Value::as_str).map(str::to_owned));
 
-    let (instance_id, sub, scope) = payload_b64
+    let (instance_id, sub, scope, pop) = payload_b64
         .and_then(decode_base64url)
         .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
         .map(|val| {
@@ -306,15 +322,17 @@ fn parse_token_metadata(token: &str) -> TokenMetadata {
                 .map(str::to_owned);
             let sub = val.get("sub").and_then(Value::as_str).map(str::to_owned);
             let scope = val.get("scope").and_then(Value::as_str).map(str::to_owned);
-            (instance_id, sub, scope)
+            let pop = val.get("pop").and_then(Value::as_bool) == Some(true);
+            (instance_id, sub, scope, pop)
         })
-        .unwrap_or((None, None, None));
+        .unwrap_or((None, None, None, false));
 
     TokenMetadata {
         kid,
         instance_id,
         sub,
         scope,
+        pop,
     }
 }
 
@@ -441,19 +459,24 @@ fn evaluate_once_unless_cancelled(
                 Some(Trigger::Expired)
             } else {
                 let share = share_bp(&identity.instance_id);
+                let meta = parse_token_metadata(token.as_str());
                 if age_reached(claims.iat, claims.exp, share, now_unix) {
                     Some(Trigger::Age)
                 } else {
                     let health = (config.health_read)();
-                    if service_token_health_is_refused(&health) {
-                        let meta = parse_token_metadata(token.as_str());
-                        if let Some(token_kid) = meta.kid {
+                    let refused = if service_token_health_is_refused(&health) {
+                        if let Some(token_kid) = meta.kid.as_deref() {
                             let relay_base = relay_url(&config.journal_root);
                             let jwks = (config.jwks_fetch)(&relay_base);
                             match jwks {
                                 JwksSet::Healthy { kids } => {
-                                    if !kids.iter().any(|k| k == &token_kid) {
+                                    if !kids.iter().any(|k| k == token_kid) {
                                         Some(Trigger::UnknownKey)
+                                    } else if meta.pop {
+                                        // A proven home's refused token was
+                                        // replaced by a newer one it never
+                                        // stored; only a signed call recovers.
+                                        Some(Trigger::Refused)
                                     } else {
                                         None
                                     }
@@ -465,7 +488,11 @@ fn evaluate_once_unless_cancelled(
                         }
                     } else {
                         None
-                    }
+                    };
+                    // Otherwise prove possession once. Against a relay that
+                    // records no proofs the renewed token still lacks `pop`,
+                    // and the post-success floor bounds this to a call a day.
+                    refused.or((!meta.pop).then_some(Trigger::Unproven))
                 }
             }
         }
@@ -495,6 +522,7 @@ fn evaluate_once_unless_cancelled(
         Err(EnrollError::Rejected { status, .. }) => Outcome::Rejected { status },
         Err(EnrollError::Unreachable(_)) => Outcome::Unreachable,
         Err(EnrollError::Response(_)) => Outcome::InvalidResponse,
+        Err(EnrollError::Proof(_)) => Outcome::ProofUnavailable,
         Ok(new_token) => {
             let is_valid = validate_new_token(
                 &new_token,
@@ -621,7 +649,8 @@ fn record_attempt(
         Outcome::Unreachable
         | Outcome::Rejected { .. }
         | Outcome::InvalidResponse
-        | Outcome::WriteFailed => {
+        | Outcome::WriteFailed
+        | Outcome::ProofUnavailable => {
             state.consecutive_ordinary_failures += 1;
             let k = state.consecutive_ordinary_failures;
             let base_mins = if k <= 1 {
@@ -843,9 +872,22 @@ mod tests {
             "iat": iat,
             "exp": exp,
             "jti": "jwt-1",
+            "pop": true,
         });
         let payload_b64 = base64_url_encode(serde_json::to_string(&payload).unwrap().as_bytes());
         format!("{header}.{payload_b64}.sig")
+    }
+
+    /// A token from before this home proved possession: no `pop` claim.
+    fn make_unproven_test_jwt(kid: &str, instance_id: &str, iat: i64, exp: i64) -> String {
+        let proven = make_test_jwt(Some(kid), instance_id, iat, exp, "session.listen", None);
+        let (header, rest) = proven.split_once('.').unwrap();
+        let (payload, signature) = rest.split_once('.').unwrap();
+        let mut claims: serde_json::Value =
+            serde_json::from_slice(&decode_base64url(payload).unwrap()).unwrap();
+        claims.as_object_mut().unwrap().remove("pop");
+        let payload = base64_url_encode(serde_json::to_string(&claims).unwrap().as_bytes());
+        format!("{header}.{payload}.{signature}")
     }
 
     fn write_test_journal_config(journal_path: &Path, posture: &str, relay_url: Option<&str>) {
@@ -1159,13 +1201,17 @@ mod tests {
             evaluate_once(&cfg, &mut state)
         };
 
-        // 200 with the kid (no renew) -> Current
-        assert_eq!(
+        // 200 with the kid: a proven token the relay refuses was replaced by
+        // one this home never stored, so it renews with a signed call.
+        assert!(matches!(
             test_with_jwks(JwksSet::Healthy {
                 kids: vec!["kid-test-1".into()]
             }),
-            RenewalStep::Current
-        );
+            RenewalStep::Attempted {
+                trigger: Trigger::Refused,
+                ..
+            }
+        ));
 
         // 200 with other kid (renew) -> Attempted
         assert!(matches!(
@@ -1293,7 +1339,8 @@ mod tests {
         assert_eq!(f, 0);
         assert_eq!(e, 0);
 
-        // Fresh current service_token_rejected whose set contains kid: exactly 1 fetch, 0 enrolls
+        // Fresh current service_token_rejected of a proven token whose set
+        // contains kid: exactly 1 fetch, then a signed renewal.
         let (step, f, e) = run_case(ServiceTokenHealth {
             event_at_ms: Some(100_000),
             now_ms: 100_000,
@@ -1301,9 +1348,15 @@ mod tests {
             tunnel_error_at_ms: Some(100),
             tunnel_success_at_ms: Some(50),
         });
-        assert_eq!(step, RenewalStep::Current);
+        assert!(matches!(
+            step,
+            RenewalStep::Attempted {
+                trigger: Trigger::Refused,
+                ..
+            }
+        ));
         assert_eq!(f, 1);
-        assert_eq!(e, 0);
+        assert_eq!(e, 1);
 
         // Future event_at_ms counts as fresh
         let (step, f, e) = run_case(ServiceTokenHealth {
@@ -1313,9 +1366,78 @@ mod tests {
             tunnel_error_at_ms: Some(100),
             tunnel_success_at_ms: Some(50),
         });
-        assert_eq!(step, RenewalStep::Current);
+        assert!(matches!(
+            step,
+            RenewalStep::Attempted {
+                trigger: Trigger::Refused,
+                ..
+            }
+        ));
         assert_eq!(f, 1);
-        assert_eq!(e, 0);
+        assert_eq!(e, 1);
+    }
+
+    #[test]
+    fn an_unproven_token_renews_once_with_a_signed_call_and_then_waits_a_day() {
+        let journal = TempJournal::new();
+        let iat = 1_000_000i64;
+        let exp = iat + 365 * 86_400;
+        let dummy = make_unproven_test_jwt("kid-test-1", "inst-1", iat, exp);
+        let inst_id = setup_test_journal(&journal, &dummy);
+        save_service_token(
+            journal.path(),
+            &make_unproven_test_jwt("kid-test-1", &inst_id, iat, exp),
+        )
+        .unwrap();
+        // A relay that records no proofs answers with another unproven token.
+        let renewed = make_unproven_test_jwt("kid-test-1", &inst_id, iat + 100, exp + 100);
+        let modes = Arc::new(Mutex::new(Vec::new()));
+        let mono = Arc::new(Mutex::new(Duration::from_secs(1000)));
+        let cfg = RenewalConfig {
+            journal_root: journal.path().to_path_buf(),
+            enroll: Arc::new({
+                let renewed = renewed.clone();
+                let modes = modes.clone();
+                move |_, _, _, mode| {
+                    modes.lock().unwrap().push(mode);
+                    Ok(renewed.clone())
+                }
+            }),
+            jwks_fetch: Arc::new(|_| JwksSet::Healthy {
+                kids: vec!["kid-test-1".into()],
+            }),
+            health_read: Arc::new(ServiceTokenHealth::default),
+            clock: RenewalClock {
+                now_unix: Arc::new(move || iat + 100),
+                now_mono: Arc::new({
+                    let mono = mono.clone();
+                    move || *mono.lock().unwrap()
+                }),
+            },
+            tick: Duration::from_secs(60),
+            jitter: Arc::new(|d| d),
+            before_commit: Arc::new(|| {}),
+        };
+        let mut state = RenewalState::default();
+        assert_eq!(
+            evaluate_once(&cfg, &mut state),
+            RenewalStep::Attempted {
+                trigger: Trigger::Unproven,
+                outcome: Outcome::Renewed
+            }
+        );
+        assert_eq!(*modes.lock().unwrap(), vec![EnrollMode::Renew]);
+        *mono.lock().unwrap() += Duration::from_secs(23 * 3600);
+        assert_eq!(evaluate_once(&cfg, &mut state), RenewalStep::Blocked);
+        *mono.lock().unwrap() += Duration::from_secs(2 * 3600);
+        assert!(matches!(
+            evaluate_once(&cfg, &mut state),
+            RenewalStep::Attempted {
+                trigger: Trigger::Unproven,
+                ..
+            }
+        ));
+        assert_eq!(modes.lock().unwrap().len(), 2);
     }
 
     #[test]

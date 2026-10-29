@@ -589,11 +589,11 @@ fn test_enroll_home_payload_has_no_home_label() {
         }
     });
 
+    let ca = solstone_core_sol_link::ca::generate_ca().unwrap();
     let res = enroll_home(
         &format!("http://127.0.0.1:{port}"),
         "inst-test",
-        "ca-pubkey-abc",
-        "my home label",
+        &ca,
         EnrollMode::Establish,
     );
     assert!(res.is_ok());
@@ -604,7 +604,11 @@ fn test_enroll_home_payload_has_no_home_label() {
     let body_val: Value = serde_json::from_str(&body_str).unwrap();
     let obj = body_val.as_object().unwrap();
     assert_eq!(obj.get("instance_id").unwrap(), "inst-test");
-    assert_eq!(obj.get("ca_pubkey").unwrap(), "ca-pubkey-abc");
+    assert_eq!(
+        obj.get("ca_pubkey").and_then(Value::as_str),
+        Some(ca.public_key_spki_pem().as_str())
+    );
+    assert_enroll_proof(obj, "inst-test", &ca);
     assert!(
         !obj.contains_key("home_label"),
         "enroll_home payload must not contain home_label"
@@ -617,8 +621,7 @@ fn test_enroll_home_payload_has_no_home_label() {
     let res_renew = enroll_home(
         &format!("http://127.0.0.1:{port}"),
         "inst-test-renew",
-        "ca-pubkey-xyz",
-        "my home label",
+        &ca,
         EnrollMode::Renew,
     );
     assert!(res_renew.is_ok());
@@ -629,7 +632,11 @@ fn test_enroll_home_payload_has_no_home_label() {
     let body_val2: Value = serde_json::from_str(&body_str2).unwrap();
     let obj2 = body_val2.as_object().unwrap();
     assert_eq!(obj2.get("instance_id").unwrap(), "inst-test-renew");
-    assert_eq!(obj2.get("ca_pubkey").unwrap(), "ca-pubkey-xyz");
+    assert_eq!(
+        obj2.get("ca_pubkey").and_then(Value::as_str),
+        Some(ca.public_key_spki_pem().as_str())
+    );
+    assert_enroll_proof(obj2, "inst-test-renew", &ca);
     assert!(
         !obj2.contains_key("home_label"),
         "enroll_home payload must not contain home_label"
@@ -639,6 +646,34 @@ fn test_enroll_home_payload_has_no_home_label() {
         Some("renew"),
         "enroll_home Renew payload must contain mode=renew"
     );
+}
+
+/// Every enrollment call carries a fresh proof signed by the home's CA.
+fn assert_enroll_proof(
+    body: &serde_json::Map<String, Value>,
+    instance: &str,
+    ca: &solstone_core_sol_link::ca::LocalCa,
+) {
+    use solstone_core_sol_link::pairing::attestation::inspect_home_attestation;
+    let proof = body
+        .get("proof")
+        .and_then(Value::as_str)
+        .expect("enroll_home payload must carry a proof");
+    let (header, claims, _) = inspect_home_attestation(proof).expect("proof decodes");
+    assert_eq!(header["typ"], "home-enroll");
+    assert_eq!(claims["scope"], "home.enroll");
+    assert_eq!(claims["instance_id"], instance);
+    // The signature itself is proven against the CA in sol-link's own tests;
+    // here, two proofs for the same CA are never the same bytes.
+    assert!(claims["aud"].as_str().unwrap().starts_with("127.0.0.1:"));
+    let again = solstone_core_sol_link::pairing::attestation::mint_home_enroll_proof(
+        ca,
+        instance,
+        claims["aud"].as_str().unwrap(),
+        claims["iat"].as_i64().unwrap(),
+    )
+    .unwrap();
+    assert_ne!(again, proof);
 }
 
 fn delayed_access_server(

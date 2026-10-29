@@ -77,14 +77,6 @@ pub fn mint_home_attestation(
     device_fp: &str,
     now: i64,
 ) -> Result<String, AttestationError> {
-    let mut random = [0_u8; 16];
-    SystemRandom::new()
-        .fill(&mut random)
-        .map_err(|_| AttestationError::Randomness)?;
-    let header = Header {
-        alg: "ES256",
-        typ: "home-attest",
-    };
     let claims = Claims {
         iss: format!("home:{instance_id}"),
         aud: "spl-relay",
@@ -93,12 +85,63 @@ pub fn mint_home_attestation(
         device_fp,
         iat: now,
         exp: now + ATTESTATION_LIFETIME_SECONDS,
-        jti: base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(random),
+        jti: random_jti()?,
     };
+    sign_compact(ca, "home-attest", &claims)
+}
+
+#[derive(Serialize)]
+struct EnrollProofClaims<'a> {
+    iss: String,
+    aud: &'a str,
+    scope: &'static str,
+    instance_id: &'a str,
+    iat: i64,
+    exp: i64,
+    jti: String,
+}
+
+/// Mint the relay enrollment proof: an ES256 JWS proving this home holds its
+/// CA private key, which the relay requires before it rotates the home's
+/// service token. `audience` is the host of the relay it is sent to, so it
+/// cannot be redeemed at another. Every enrollment call mints a fresh one; the
+/// relay accepts each proof once.
+pub fn mint_home_enroll_proof(
+    ca: &LocalCa,
+    instance_id: &str,
+    audience: &str,
+    now: i64,
+) -> Result<String, AttestationError> {
+    let claims = EnrollProofClaims {
+        iss: format!("home:{instance_id}"),
+        aud: audience,
+        scope: "home.enroll",
+        instance_id,
+        iat: now,
+        exp: now + ATTESTATION_LIFETIME_SECONDS,
+        jti: random_jti()?,
+    };
+    sign_compact(ca, "home-enroll", &claims)
+}
+
+fn random_jti() -> Result<String, AttestationError> {
+    let mut random = [0_u8; 16];
+    SystemRandom::new()
+        .fill(&mut random)
+        .map_err(|_| AttestationError::Randomness)?;
+    Ok(base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(random))
+}
+
+fn sign_compact(
+    ca: &LocalCa,
+    typ: &'static str,
+    claims: &impl Serialize,
+) -> Result<String, AttestationError> {
+    let header = Header { alg: "ES256", typ };
     let header = base64::engine::general_purpose::URL_SAFE_NO_PAD
         .encode(serde_json::to_vec(&header).map_err(AttestationError::Serialization)?);
     let claims = base64::engine::general_purpose::URL_SAFE_NO_PAD
-        .encode(serde_json::to_vec(&claims).map_err(AttestationError::Serialization)?);
+        .encode(serde_json::to_vec(claims).map_err(AttestationError::Serialization)?);
     let signing_input = format!("{header}.{claims}");
     let key = rcgen::KeyPair::from_pem_and_sign_algo(
         &ca.private_key_pem(),
@@ -233,5 +276,34 @@ mod tests {
         )
         .verify(format!("{header}.{claims}").as_bytes(), &signature)
         .expect("signature verifies");
+    }
+
+    #[test]
+    fn enroll_proof_is_a_distinct_short_lived_es256_proof_by_the_committed_ca() {
+        let ca = crate::ca::generate_ca().expect("ca");
+        let first =
+            mint_home_enroll_proof(&ca, "instance", "link.solstone.app", 100).expect("proof");
+        let second =
+            mint_home_enroll_proof(&ca, "instance", "link.solstone.app", 100).expect("proof");
+        let (header, claims, signature_len) = inspect_home_attestation(&first).expect("decodes");
+        assert_eq!(
+            header,
+            serde_json::json!({"alg":"ES256","typ":"home-enroll"})
+        );
+        assert_eq!(claims["iss"], "home:instance");
+        assert_eq!(claims["aud"], "link.solstone.app");
+        assert_eq!(claims["scope"], "home.enroll");
+        assert_eq!(claims["instance_id"], "instance");
+        assert_eq!(claims["iat"], 100);
+        assert_eq!(claims["exp"], 340);
+        assert!(claims.get("device_fp").is_none());
+        assert_eq!(signature_len, 64);
+        let (_, second_claims, _) = inspect_home_attestation(&second).expect("decodes");
+        assert_ne!(claims["jti"], second_claims["jti"]);
+        let (_, pem) = parse_x509_pem(ca.certificate_pem().as_bytes()).expect("pem");
+        assert!(home_attestation_verifies(&pem.contents, &first));
+        let other = crate::ca::generate_ca().expect("ca");
+        let (_, other_pem) = parse_x509_pem(other.certificate_pem().as_bytes()).expect("pem");
+        assert!(!home_attestation_verifies(&other_pem.contents, &first));
     }
 }
