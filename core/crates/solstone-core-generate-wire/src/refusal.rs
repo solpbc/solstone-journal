@@ -15,154 +15,134 @@ pub(crate) const THINKING_CONSUMED_BUDGET_DETAIL: &str =
     "the model reached its output ceiling while thinking and wrote no visible output";
 pub(crate) const HONEST_UNIMPLEMENTED_LANE_DETAIL: &str =
     "no generate implementation exists for the resolved provider lane";
+pub(crate) const NO_ENGINE_DETAIL: &str = "nothing is chosen for thinking yet";
+pub(crate) const ATTESTATION_STALE_DETAIL: &str =
+    "the verification of confidential processing is out of date";
+pub(crate) const INCOMPLETE_JSON_LENGTH_DETAIL: &str =
+    "the model reached its output ceiling before its JSON answer was complete";
+pub(crate) const INCOMPLETE_JSON_DETAIL: &str =
+    "the model stopped before its JSON answer was complete";
 
 pub fn refusal_for(
     outcome: &LaneOutcome,
     resolved_provider: &str,
     request_id: Option<String>,
 ) -> RefusedResponse {
-    let (vector_id, reason, reason_code, live_detail) = match outcome {
+    let (reason, reason_code, detail) = match outcome {
         LaneOutcome::NoEngine => (
-            "refused-no-engine-configured",
             RefusalReason::NoEngineConfigured,
             Some("thinking_engine_not_chosen".to_owned()),
-            None,
+            NO_ENGINE_DETAIL,
         ),
         LaneOutcome::AttestationNotVerified(detail) => (
-            "refused-attestation-not-verified",
             RefusalReason::AttestationNotVerified,
             Some("attestation_not_yet_verified".to_owned()),
-            Some(*detail),
+            *detail,
         ),
         LaneOutcome::AttestationFailed(detail) => (
-            "refused-attestation-failed",
             RefusalReason::AttestationFailed,
             Some("attestation_failed".to_owned()),
-            Some(*detail),
+            *detail,
         ),
         LaneOutcome::AttestationStale => (
-            "refused-attestation-stale",
             RefusalReason::AttestationStale,
             Some("attestation_stale".to_owned()),
-            None,
+            ATTESTATION_STALE_DETAIL,
         ),
         LaneOutcome::BundledFailure(failure) => (
-            "refused-provider-response-invalid",
             RefusalReason::ProviderResponseInvalid,
             failure.reason_code.clone(),
-            Some(LIVE_PROVIDER_FAILURE_DETAIL),
+            LIVE_PROVIDER_FAILURE_DETAIL,
         ),
         LaneOutcome::EndpointFailure(failure) => {
             if failure.reason_code.as_deref() == Some("confidential_channel_closed") {
                 (
-                    "refused-confidential-channel-closed",
                     RefusalReason::ConfidentialChannelClosed,
                     failure.reason_code.clone(),
-                    Some(
-                        failure
-                            .detail
-                            .as_deref()
-                            .unwrap_or("the confidential channel closed before a response"),
-                    ),
+                    failure
+                        .detail
+                        .as_deref()
+                        .unwrap_or("the confidential channel closed before a response"),
                 )
             } else {
                 (
-                    "refused-provider-response-invalid",
                     RefusalReason::ProviderResponseInvalid,
                     failure.reason_code.clone(),
-                    Some(
-                        failure
-                            .detail
-                            .as_deref()
-                            .unwrap_or(LIVE_PROVIDER_FAILURE_DETAIL),
-                    ),
+                    failure
+                        .detail
+                        .as_deref()
+                        .unwrap_or(LIVE_PROVIDER_FAILURE_DETAIL),
                 )
             }
         }
         LaneOutcome::AnthropicFailure(failure) => (
-            "refused-provider-response-invalid",
             RefusalReason::ProviderResponseInvalid,
             failure.reason_code.clone(),
-            Some(
-                failure
-                    .detail
-                    .as_deref()
-                    .unwrap_or(LIVE_PROVIDER_FAILURE_DETAIL),
-            ),
+            failure
+                .detail
+                .as_deref()
+                .unwrap_or(LIVE_PROVIDER_FAILURE_DETAIL),
         ),
         LaneOutcome::OpenAiFailure(failure) => (
-            "refused-provider-response-invalid",
             RefusalReason::ProviderResponseInvalid,
             failure.reason_code.clone(),
-            Some(
-                failure
-                    .detail
-                    .as_deref()
-                    .unwrap_or(LIVE_PROVIDER_FAILURE_DETAIL),
-            ),
+            failure
+                .detail
+                .as_deref()
+                .unwrap_or(LIVE_PROVIDER_FAILURE_DETAIL),
         ),
         LaneOutcome::GoogleFailure(failure) => (
-            "refused-provider-response-invalid",
             RefusalReason::ProviderResponseInvalid,
             failure.reason_code.clone(),
-            Some(
-                failure
-                    .detail
-                    .as_deref()
-                    .unwrap_or(LIVE_PROVIDER_FAILURE_DETAIL),
-            ),
+            failure
+                .detail
+                .as_deref()
+                .unwrap_or(LIVE_PROVIDER_FAILURE_DETAIL),
         ),
         LaneOutcome::ChatGptFailure(failure) => (
-            "refused-provider-response-invalid",
             RefusalReason::ProviderResponseInvalid,
             failure.reason_code.clone(),
-            Some(
-                failure
-                    .detail
-                    .as_deref()
-                    .unwrap_or(LIVE_PROVIDER_FAILURE_DETAIL),
-            ),
+            failure
+                .detail
+                .as_deref()
+                .unwrap_or(LIVE_PROVIDER_FAILURE_DETAIL),
         ),
         LaneOutcome::ValidationFailure(ValidationFailure::ProviderResponseInvalid {
             raw_response_snippet,
         }) => (
-            "refused-provider-response-invalid",
             RefusalReason::ProviderResponseInvalid,
             Some("provider_response_invalid".to_owned()),
-            Some(
-                raw_response_snippet
-                    .as_deref()
-                    .unwrap_or(HONEST_PROVIDER_RESPONSE_INVALID_DETAIL),
-            ),
+            raw_response_snippet
+                .as_deref()
+                .unwrap_or(HONEST_PROVIDER_RESPONSE_INVALID_DETAIL),
         ),
-        LaneOutcome::ValidationFailure(ValidationFailure::IncompleteJson { finish_reason }) => (
-            "refused-incomplete-json",
-            RefusalReason::IncompleteJson,
-            matches!(finish_reason, SanitizedFinishReason::MaxTokens)
-                .then(|| "incomplete_json_length".to_owned()),
-            None,
-        ),
+        LaneOutcome::ValidationFailure(ValidationFailure::IncompleteJson { finish_reason }) => {
+            let length = matches!(finish_reason, SanitizedFinishReason::MaxTokens);
+            (
+                RefusalReason::IncompleteJson,
+                length.then(|| "incomplete_json_length".to_owned()),
+                if length {
+                    INCOMPLETE_JSON_LENGTH_DETAIL
+                } else {
+                    INCOMPLETE_JSON_DETAIL
+                },
+            )
+        }
         LaneOutcome::ValidationFailure(ValidationFailure::ThinkingConsumedBudget {
             json_output,
         }) => (
-            if *json_output {
-                "refused-incomplete-json"
-            } else {
-                "refused-incomplete-text"
-            },
             if *json_output {
                 RefusalReason::IncompleteJson
             } else {
                 RefusalReason::IncompleteText
             },
             Some("thinking_consumed_budget".to_owned()),
-            Some(THINKING_CONSUMED_BUDGET_DETAIL),
+            THINKING_CONSUMED_BUDGET_DETAIL,
         ),
         LaneOutcome::UnimplementedLane => (
-            "refused-provider-response-invalid",
             RefusalReason::ProviderResponseInvalid,
             None,
-            Some(HONEST_UNIMPLEMENTED_LANE_DETAIL),
+            HONEST_UNIMPLEMENTED_LANE_DETAIL,
         ),
         LaneOutcome::BundledLocal
         | LaneOutcome::ByoEndpoint(_)
@@ -174,17 +154,6 @@ pub fn refusal_for(
             panic!("bundled local lane must be invoked before refusal mapping")
         }
     };
-    let vector = contract()["conformance_vectors"]
-        .as_array()
-        .expect("generate contract vectors are an array")
-        .iter()
-        .find(|vector| vector["id"].as_str() == Some(vector_id))
-        .expect("generate contract required refusal vector is present");
-    let fixture_detail = vector["response"]["detail"]
-        .as_str()
-        .expect("generate contract refusal detail is a string")
-        .to_owned();
-    let detail = live_detail.map(str::to_owned).unwrap_or(fixture_detail);
     let (reason_code, retryable, blocking) = classify_reason_code(reason_code);
     RefusedResponse {
         id: request_id,
@@ -194,7 +163,7 @@ pub fn refusal_for(
         blocking,
         reset_at_ms: None,
         provider: Some(resolved_provider.to_owned()),
-        detail,
+        detail: detail.to_owned(),
     }
 }
 
@@ -274,7 +243,7 @@ mod tests {
     use crate::{AnthropicFailure, ChatGptFailure, EndpointFailure, GoogleFailure, OpenAiFailure};
 
     #[test]
-    fn lane_outcomes_use_fixture_vectors_and_provider() {
+    fn lane_outcomes_classify_with_honest_detail_and_provider() {
         let cases = [
             (
                 LaneOutcome::NoEngine,
@@ -327,6 +296,7 @@ mod tests {
             assert_eq!(refusal.retryable, retryable);
             assert_eq!(refusal.blocking, blocking);
             assert_eq!(refusal.provider.as_deref(), Some(provider));
+            assert!(!refusal.detail.contains("fixture"), "{}", refusal.detail);
         }
     }
 
@@ -572,7 +542,7 @@ mod tests {
     }
 
     #[test]
-    fn validation_failures_use_fixture_reason_classifications() {
+    fn validation_failures_classify_with_honest_detail() {
         let cases = [
             (
                 ValidationFailure::ProviderResponseInvalid {
@@ -625,6 +595,7 @@ mod tests {
             );
             assert_eq!(refusal.retryable, retryable);
             assert_eq!(refusal.blocking, blocking);
+            assert!(!refusal.detail.contains("fixture"), "{}", refusal.detail);
         }
     }
 
