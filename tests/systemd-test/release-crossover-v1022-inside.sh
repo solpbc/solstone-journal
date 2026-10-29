@@ -158,6 +158,7 @@ case "$phase" in
         printf 'v1 main PID: %s\nv1 descendant PID: %s\nv1 listener inode: %s\n' \
             "$v1_main" "$v1_child" "$v1_listener"
         cp "$HOME/.local/bin/journal" "$state_dir/v1-journal.wrapper"
+        cp "$HOME/.local/bin/solstone" "$state_dir/v1-solstone.launcher"
         sha256sum "$HOME/.local/bin/solstone" "$HOME/.local/bin/journal" \
             "$HOME/.local/bin/sol" "$HOME/.config/systemd/user/solstone.service" \
             > "$state_dir/v1-artifacts.sha256"
@@ -169,14 +170,17 @@ case "$phase" in
         journal --version | grep -F '1.0.22'
         assert_candidate_version /usr/bin/solstone
 
+        # Setup no longer replaces ~/.local/bin/journal (517957824): it removes only a
+        # recognized one and leaves anything else alone, so the near-twin is the solstone
+        # launcher it still replaces. One extra line breaks the exact console-script match.
         log "near-twin: exact recognition must fail before mutation or backup"
-        sed -i 's/Edits will be overwritten/Changes will be overwritten/' "$HOME/.local/bin/journal"
-        near_twin_hash=$(sha256sum "$HOME/.local/bin/journal")
+        printf '# near-twin\n' >> "$HOME/.local/bin/solstone"
+        near_twin_hash=$(sha256sum "$HOME/.local/bin/solstone")
         unit_hash=$(sha256sum "$HOME/.config/systemd/user/solstone.service")
         if "${setup[@]}" > "$state_dir/near-twin.out" 2>&1; then
             fail "near-twin launcher was admitted"
         fi
-        [ "$(sha256sum "$HOME/.local/bin/journal")" = "$near_twin_hash" ] \
+        [ "$(sha256sum "$HOME/.local/bin/solstone")" = "$near_twin_hash" ] \
             || fail "near-twin launcher changed on refusal"
         [ "$(sha256sum "$HOME/.config/systemd/user/solstone.service")" = "$unit_hash" ] \
             || fail "service changed on near-twin refusal"
@@ -186,8 +190,8 @@ case "$phase" in
             || fail "near-twin refusal created installation identity"
         kill -0 "$v1_main"
         assert_payload
-        cp "$state_dir/v1-journal.wrapper" "$HOME/.local/bin/journal"
-        chmod 755 "$HOME/.local/bin/journal"
+        cp "$state_dir/v1-solstone.launcher" "$HOME/.local/bin/solstone"
+        chmod 755 "$HOME/.local/bin/solstone"
 
         log "artifact replacement failure: no v2 artifact or authority may publish"
         mkdir -p "$HOME/.local/share/solstone"
