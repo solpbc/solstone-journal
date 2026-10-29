@@ -8,13 +8,18 @@ use solstone_core_journal_config::{owner_zone, read_journal_config};
 use std::path::Path;
 
 mod display;
+mod wake;
 pub use display::{publish_display_snapshot, read_display_snapshot};
 
 pub use solstone_core_journal_config::processing::*;
 
-/// An unreadable policy cannot authorize background analysis.
+/// An unreadable policy cannot authorize background analysis, and a Mac's
+/// dark wake holds it until the Mac fully wakes.
 pub fn processing_allowed(journal: &Path) -> bool {
     if solstone_core_journal_io::whole_journal_restore::whole_journal_restore_blocks(journal) {
+        return false;
+    }
+    if wake::in_dark_wake() {
         return false;
     }
     match policy_at(journal, Utc::now()) {

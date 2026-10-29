@@ -293,12 +293,22 @@ pub fn processing_set(ctx: CommandContext<'_>) -> CommandOutput {
         None,
         Value::Null,
     ) {
-        Ok(response) => stdout_json(
-            &response
-                .get("config")
-                .and_then(|config| object_field(config, "processing"))
-                .unwrap_or_else(empty_object),
-        ),
+        Ok(response) => {
+            let mut output = stdout_json(
+                &response
+                    .get("config")
+                    .and_then(|config| object_field(config, "processing"))
+                    .unwrap_or_else(empty_object),
+            );
+            // The journal knows its own host; a note it returns reaches the owner.
+            if let Ok(effective) =
+                request_json(ctx, HttpMethod::Get, "/app/settings/api/processing", None)
+                && let Some(note) = effective.get("note").and_then(Value::as_str)
+            {
+                output.stderr = format!("{note}\n");
+            }
+            output
+        }
         Err(error) if error.reason_code() == Some("invalid_config_value") => {
             if let Some(detail) = error.detail() {
                 stderr(detail)

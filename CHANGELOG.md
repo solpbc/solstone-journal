@@ -13,6 +13,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- on a mac, your journal no longer thinks while your mac is asleep, including the short spells when it wakes itself with the screen off. your journal picks up again when you wake your mac. if you choose a processing window on a mac, your journal now tells you how to keep your mac awake through it.
 - an agent reading your journal now sees one number for each unnamed voice through a continuous recording, instead of a new number every few minutes. the number starts over after a pause or on another device.
 - a day's daily outputs no longer wait on a few stretches whose thinking was set aside, as long as those stretches are no more than a twentieth of the day's recorded time. when that thinking later finishes, the day's outputs are made again, apart from a daily briefing once noon the next day has passed.
 - what your journal writes about each screen frame stays closer to what is on your screen. it no longer includes the journal's own placeholder titles, instruction headings or sample values, and a blank or nearly empty screen frame gets a paragraph about it far less often.
