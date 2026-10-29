@@ -1220,12 +1220,16 @@ impl RuntimeStore for FileRuntimeStore {
             let stopping_owner = self.cleanup_owner_for(self.last_fence.as_ref());
             let fence = self.capture_owner_fence(state);
             let ready_process = self.ready_process_for(fence.as_ref());
-            let cleanup_owner = if state.latest_phase == RuntimePhase::Stopped {
+            let completed_cleanup = matches!(
+                state.latest_phase,
+                RuntimePhase::Stopped | RuntimePhase::NotDesired
+            );
+            let cleanup_owner = if completed_cleanup {
                 stopping_owner.or_else(|| self.cleanup_owner_for(fence.as_ref()))
             } else {
                 self.cleanup_owner_for(fence.as_ref())
             };
-            if state.latest_phase == RuntimePhase::Stopped
+            if completed_cleanup
                 && let Some(owner) = cleanup_owner.as_ref()
                 && let Err(error) = self.clear_port_if_owned(&current, owner)
             {
@@ -2338,6 +2342,21 @@ mod tests {
             store.publish_state(&stopped).unwrap();
             assert!(!store.port_path().exists());
         }
+    }
+
+    #[cfg(feature = "full-tests")]
+    #[test]
+    fn not_desired_cleanup_clears_owned_port_with_unfinished_truth() {
+        let (_journal, mut store, mut inactive) = prepare_for_clear();
+        inactive.latest_phase = RuntimePhase::NotDesired;
+        inactive.desired_fingerprint = None;
+        inactive.has_plan = false;
+        inactive.truth = Some(InFlight {
+            fence: fence(2),
+            result: None,
+        });
+        store.publish_state(&inactive).unwrap();
+        assert!(!store.port_path().exists());
     }
 
     #[test]

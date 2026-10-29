@@ -4178,6 +4178,7 @@ mod tests {
             "nvidia": {"detected": false, "vram_mib": null, "tiering_memory_mib": null, "memory_source": "unavailable"},
             "vulkan": {"probe_ok": vulkan_probe_ok, "devices": devices},
             "render_nodes_present_but_inaccessible": false,
+            "bundled_local_selected_or_planned": true,
             "gpu_evaluation_error": null,
             "version": "x"
         }))
@@ -4279,6 +4280,7 @@ mod tests {
             "nvidia": {"detected": false, "vram_mib": null, "tiering_memory_mib": null, "memory_source": "unavailable"},
             "vulkan": {"probe_ok": true, "devices": []},
             "render_nodes_present_but_inaccessible": false,
+            "bundled_local_selected_or_planned": true,
             "gpu_evaluation_error": null,
             "version": "x"
         }))

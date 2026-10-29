@@ -871,12 +871,10 @@ those NVIDIA CUDA Toolkit EULA bounds.
 
 ### llama.cpp hash components
 
-The llama.cpp b11960 linux CUDA runtimes and b11669 Vulkan runtimes include the following hash components.
+The llama.cpp b11960 Linux and Windows runtimes include the following hash components.
 their upstream license texts are reproduced below.
 
 Source: https://github.com/ggml-org/llama.cpp/tree/8642541b255bfb5dc39cd351a178be09013a55d6/vendor/hash
-
-Vulkan source: https://github.com/ggml-org/llama.cpp/tree/620d2225cc436ab0b001e3200e590e3b286ef9ab/vendor/hash
 
 #### xxHash
 
@@ -960,8 +958,8 @@ this repository.
 
 Files: `llama-server`, extracted from
 `llama-b11669-bin-macos-arm64.tar.gz`,
-`llama-b11669-bin-ubuntu-vulkan-arm64.tar.gz`, and
-`llama-b11669-bin-ubuntu-vulkan-x64.tar.gz`.
+`llama-b11960-bin-ubuntu-vulkan-arm64.tar.gz`, and
+`llama-b11960-bin-ubuntu-vulkan-x64.tar.gz`.
 
 Source: https://github.com/ggml-org/llama.cpp
 

@@ -11,8 +11,8 @@ use std::time::Duration;
 use solstone_core_system::provider_runtime::{
     FileRuntimeStore, LocalHost, LocalLifecycleSeam, LocalProbeSeam, LocalRuntimeShared,
     LocalTruthConfig, LocalTruthSeam, ManagedProcess, ProviderName, ProviderRuntimeCoordinator,
-    ProviderRuntimeNow, ProviderRuntimeState, ProviderStopCleanupRequest, ReasonCode,
-    ReconcileContext, RuntimeClock, RuntimePhase, VecEventSink,
+    ProviderRuntimeNow, ProviderRuntimeState, ReasonCode, ReconcileContext, RuntimeClock,
+    RuntimePhase, VecEventSink,
 };
 use solstone_core_system::vulkan_observe::VulkanObservation;
 
@@ -38,6 +38,12 @@ fn journal() -> std::path::PathBuf {
     let root = std::env::temp_dir().join(format!("solstone-local-e2e-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
     crate::local_installed_fixture::install(&root, "test-ready");
+    std::fs::create_dir_all(root.join("config")).unwrap();
+    std::fs::write(
+        root.join("config/journal.json"),
+        br#"{"providers":{"active":{"provider":"local"}}}"#,
+    )
+    .unwrap();
     root
 }
 fn pump(
@@ -198,15 +204,13 @@ fn ac18_real_coordinator_seams_and_store() {
         "expected a probe-ready reason code, got {:?}",
         s.latest_reason_code
     );
-    s.pending_stop_request = Some(ProviderStopCleanupRequest {
-        managed: ps[0].clone(),
-        reason_code: ReasonCode::known("intent-removed"),
-        target_phase: RuntimePhase::Stopped,
-        target_reason_code: Some(ReasonCode::known("cleanup-succeeded")),
-        admission_exclusive: false,
-        orphaned_start_outcome: false,
-    });
-    for _ in 0..4 {
+    std::fs::write(
+        journal.join("config/journal.json"),
+        br#"{"providers":{"active":{"provider":"google"}}}"#,
+    )
+    .unwrap();
+    s.next_truth_at = 0.0;
+    for _ in 0..6 {
         let mut x = ReconcileContext {
             truth: &mut truth,
             lifecycle: &mut lifecycle,
@@ -216,11 +220,12 @@ fn ac18_real_coordinator_seams_and_store() {
             gate: None,
         };
         pump(&c, n, &mut s, &mut ps, &shared, &mut x);
-        if s.latest_phase == RuntimePhase::Stopped {
+        if s.latest_phase == RuntimePhase::NotDesired && s.stop_cleanup.is_none() {
             break;
         }
     }
-    assert_eq!(s.latest_phase, RuntimePhase::Stopped);
+    assert_eq!(s.latest_phase, RuntimePhase::NotDesired);
+    assert!(ps.iter().all(|process| !process.running));
     assert!(!port.exists());
     let _ = std::fs::remove_dir_all(journal);
 }

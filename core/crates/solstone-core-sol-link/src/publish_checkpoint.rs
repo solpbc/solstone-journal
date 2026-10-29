@@ -18,7 +18,7 @@ pub enum PublishCheckpoint {
 
 impl PublishCheckpoint {
     #[cfg_attr(
-        not(any(feature = "full-tests", feature = "test-hooks")),
+        not(any(all(test, feature = "full-tests"), feature = "test-hooks")),
         allow(dead_code)
     )]
     pub const fn as_str(self) -> &'static str {

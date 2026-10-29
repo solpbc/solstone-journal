@@ -23,8 +23,8 @@ pub use connect::{
     connect_with_authority,
 };
 pub use endpoint::{
-    ByoEndpoint, LocalEndpointResolution, bundled_local_model_holds_gpu, resolve_local_endpoint,
-    served_window_from_models_response,
+    ByoEndpoint, LocalEndpointResolution, active_provider_is_local, bundled_local_model_holds_gpu,
+    resolve_local_endpoint, served_window_from_models_response,
 };
 pub use fixture::local_generate_input_schema;
 pub use generate::{

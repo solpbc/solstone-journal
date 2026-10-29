@@ -376,7 +376,13 @@ fn darwin_follow_acquires_mlx_and_retries_failed_acquisition_after_restart_backo
     observe(&LocalFollow::new(launcher.clone()));
     assert_eq!(launches.load(Ordering::SeqCst), 2);
     active_journal(root.path(), "openai");
-    observe(&LocalFollow::new(launcher.clone()));
+    let inactive = observe_truth(
+        &LocalRuntimeShared::default(),
+        &config(root.path(), LocalHost::Darwin),
+        Some(&LocalFollow::new(launcher.clone())),
+    );
+    assert_eq!(inactive.phase, RuntimePhase::NotDesired);
+    assert!(!inactive.has_plan);
     assert_eq!(launches.load(Ordering::SeqCst), 2);
     let never = tempfile::tempdir().unwrap();
     active_journal(never.path(), "local");

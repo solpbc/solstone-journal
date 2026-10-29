@@ -4,6 +4,7 @@
       "exit_code": 1,
       "human_stdout": "solstone journal check — can this computer run the journal with the bundled local models?\n  [ok]      platform  Linux (x86_64)\n  [unknown] gpu       a GPU render node exists under /dev/dri but this user cannot open it — add yourself to the render group with `sudo usermod -aG render $USER`, then log out and back in and run `solstone journal check` again\n  [ok]      ram       64 GB of system memory\n  [ok]      disk      500 GB free at /journal (need 20 GB)\n  [warn]    ced       Sound tagging is degraded because its CED assets are unavailable. Transcription will continue. Use `journal install-models` to check or repair the CED assets. If the signed CED app payload is unavailable on Windows, reinstall the journal app.\nMostly ready (see the warnings above) — you can install the journal:  see INSTALL.md\n\nThink this readout is wrong for your machine? We'd love a patch — https://github.com/solpbc/solstone-journal\n",
       "inputs": {
+        "bundled_local_selected_or_planned": true,
         "disk": {
           "free_bytes": 536870912000,
           "kind": "ok"
@@ -97,6 +98,7 @@
       "exit_code": 1,
       "human_stdout": "solstone journal check — can this computer run the journal with the bundled local models?\n  [ok]      platform  Linux (x86_64)\n  [unknown] gpu       no NVIDIA GPU found and the Vulkan probe did not complete — GPU readiness is unknown\n  [ok]      ram       64 GB of system memory\n  [ok]      disk      500 GB free at /journal (need 20 GB)\n  [warn]    ced       Sound tagging is degraded because its CED assets are unavailable. Transcription will continue. Use `journal install-models` to check or repair the CED assets. If the signed CED app payload is unavailable on Windows, reinstall the journal app.\nMostly ready (see the warnings above) — you can install the journal:  see INSTALL.md\n\nThink this readout is wrong for your machine? We'd love a patch — https://github.com/solpbc/solstone-journal\n",
       "inputs": {
+        "bundled_local_selected_or_planned": true,
         "disk": {
           "free_bytes": 536870912000,
           "kind": "ok"
@@ -191,6 +193,7 @@
       "fit_report_severity": "warning",
       "human_stdout": "solstone journal check — can this computer run the journal with the bundled local models?\n  [ok]      platform  Linux (x86_64)\n  [blocked] gpu       no usable GPU found — the bundled local models need a hardware GPU with at least 6 GB\n  [ok]      ram       64 GB of system memory\n  [ok]      disk      500 GB free at /journal (need 20 GB)\n  [warn]    ced       Sound tagging is degraded because its CED assets are unavailable. Transcription will continue. Use `journal install-models` to check or repair the CED assets. If the signed CED app payload is unavailable on Windows, reinstall the journal app.\nNot ready — this computer can't run the bundled local models yet.\n\nThink this readout is wrong for your machine? We'd love a patch — https://github.com/solpbc/solstone-journal\n",
       "inputs": {
+        "bundled_local_selected_or_planned": true,
         "disk": {
           "free_bytes": 536870912000,
           "kind": "ok"
@@ -284,6 +287,7 @@
       "exit_code": 2,
       "human_stdout": "solstone journal check — can this computer run the journal with the bundled local models?\n  [ok]      platform  Linux (x86_64)\n  [blocked] gpu       GPU Small Vulkan GPU has 5.5 GB — the bundled local models need at least 6 GB\n  [ok]      ram       64 GB of system memory\n  [ok]      disk      500 GB free at /journal (need 20 GB)\n  [ok]      ced       ced.cpp sound-tag engine and model are ready\nNot ready — this computer can't run the bundled local models yet.\n\nThink this readout is wrong for your machine? We'd love a patch — https://github.com/solpbc/solstone-journal\n",
       "inputs": {
+        "bundled_local_selected_or_planned": true,
         "disk": {
           "free_bytes": 536870912000,
           "kind": "ok"
@@ -382,6 +386,7 @@
       "exit_code": 0,
       "human_stdout": "solstone journal check — can this computer run the journal with the bundled local models?\n  [ok]      platform  Linux (x86_64)\n  [ok]      gpu       Vulkan GPU Vulkan GPU with 24 GB\n  [ok]      ram       64 GB of system memory\n  [ok]      disk      500 GB free at /journal (need 20 GB)\n  [ok]      ced       ced.cpp sound-tag engine and model are ready\nReady — install the journal next:  see INSTALL.md\n\nThink this readout is wrong for your machine? We'd love a patch — https://github.com/solpbc/solstone-journal\n",
       "inputs": {
+        "bundled_local_selected_or_planned": true,
         "disk": {
           "free_bytes": 536870912000,
           "kind": "ok"
@@ -480,6 +485,7 @@
       "exit_code": 1,
       "human_stdout": "solstone journal check — can this computer run the journal with the bundled local models?\n  [ok]      platform  Linux (x86_64)\n  [unknown] gpu       NVIDIA GPU detected but its memory could not be read — GPU readiness is unknown\n  [ok]      ram       64 GB of system memory\n  [ok]      disk      500 GB free at /journal (need 20 GB)\n  [ok]      ced       ced.cpp sound-tag engine and model are ready\nMostly ready (see the warnings above) — you can install the journal:  see INSTALL.md\n\nThink this readout is wrong for your machine? We'd love a patch — https://github.com/solpbc/solstone-journal\n",
       "inputs": {
+        "bundled_local_selected_or_planned": true,
         "disk": {
           "free_bytes": 536870912000,
           "kind": "ok"
@@ -578,6 +584,7 @@
       "exit_code": 2,
       "human_stdout": "solstone journal check — can this computer run the journal with the bundled local models?\n  [ok]      platform  Linux (x86_64)\n  [blocked] gpu       the NVIDIA GPU has 5.5 GB — the bundled local models need at least 6 GB\n  [ok]      ram       64 GB of system memory\n  [ok]      disk      500 GB free at /journal (need 20 GB)\n  [ok]      ced       ced.cpp sound-tag engine and model are ready\nNot ready — this computer can't run the bundled local models yet.\n\nThink this readout is wrong for your machine? We'd love a patch — https://github.com/solpbc/solstone-journal\n",
       "inputs": {
+        "bundled_local_selected_or_planned": true,
         "disk": {
           "free_bytes": 536870912000,
           "kind": "ok"
@@ -676,6 +683,7 @@
       "exit_code": 0,
       "human_stdout": "solstone journal check — can this computer run the journal with the bundled local models?\n  [ok]      platform  Linux (x86_64)\n  [ok]      gpu       NVIDIA GPU with 6 GB; a model runs on your GPU; transcription runs on your CPU on this machine\n  [ok]      ram       64 GB of system memory\n  [ok]      disk      500 GB free at /journal (need 20 GB)\n  [ok]      ced       ced.cpp sound-tag engine and model are ready\nReady — install the journal next:  see INSTALL.md\n\nThink this readout is wrong for your machine? We'd love a patch — https://github.com/solpbc/solstone-journal\n",
       "inputs": {
+        "bundled_local_selected_or_planned": true,
         "disk": {
           "free_bytes": 536870912000,
           "kind": "ok"
@@ -774,6 +782,7 @@
       "exit_code": 0,
       "human_stdout": "solstone journal check — can this computer run the journal with the bundled local models?\n  [ok]      platform  Linux (x86_64)\n  [ok]      gpu       NVIDIA GPU with 6 GB (unified memory)\n  [ok]      ram       64 GB of system memory\n  [ok]      disk      500 GB free at /journal (need 20 GB)\n  [ok]      ced       ced.cpp sound-tag engine and model are ready\nReady — install the journal next:  see INSTALL.md\n\nThink this readout is wrong for your machine? We'd love a patch — https://github.com/solpbc/solstone-journal\n",
       "inputs": {
+        "bundled_local_selected_or_planned": true,
         "disk": {
           "free_bytes": 536870912000,
           "kind": "ok"
@@ -872,6 +881,7 @@
       "exit_code": 1,
       "human_stdout": "solstone journal check — can this computer run the journal with the bundled local models?\n  [ok]      platform  Linux (x86_64)\n  [unknown] gpu       GPU readiness could not be determined: controlled GPU failure\n  [ok]      ram       64 GB of system memory\n  [ok]      disk      500 GB free at /journal (need 20 GB)\n  [ok]      ced       ced.cpp sound-tag engine and model are ready\nMostly ready (see the warnings above) — you can install the journal:  see INSTALL.md\n\nThink this readout is wrong for your machine? We'd love a patch — https://github.com/solpbc/solstone-journal\n",
       "inputs": {
+        "bundled_local_selected_or_planned": true,
         "disk": {
           "free_bytes": 536870912000,
           "kind": "ok"
@@ -970,6 +980,7 @@
       "exit_code": 1,
       "human_stdout": "solstone journal check — can this computer run the journal with the bundled local models?\n  [ok]      platform  Apple Silicon macOS (arm64)\n  [unknown] memory    available memory could not be verified\n  [ok]      disk      500 GB free at /journal (need 20 GB)\n  [ok]      ced       ced.cpp sound-tag engine and model are ready\nMostly ready (see the warnings above) — you can install the journal:  see INSTALL.md\n\nThink this readout is wrong for your machine? We'd love a patch — https://github.com/solpbc/solstone-journal\n",
       "inputs": {
+        "bundled_local_selected_or_planned": true,
         "disk": {
           "free_bytes": 536870912000,
           "kind": "ok"
@@ -1053,6 +1064,7 @@
       "exit_code": 2,
       "human_stdout": "solstone journal check — can this computer run the journal with the bundled local models?\n  [ok]      platform  Apple Silicon macOS (arm64)\n  [blocked] memory    Apple Silicon needs at least 16 GB of memory for the bundled local models (this Mac has 8 GB)\n  [ok]      disk      500 GB free at /journal (need 20 GB)\n  [ok]      ced       ced.cpp sound-tag engine and model are ready\nNot ready — this computer can't run the bundled local models yet.\n\nThink this readout is wrong for your machine? We'd love a patch — https://github.com/solpbc/solstone-journal\n",
       "inputs": {
+        "bundled_local_selected_or_planned": true,
         "disk": {
           "free_bytes": 536870912000,
           "kind": "ok"
@@ -1136,6 +1148,7 @@
       "exit_code": 1,
       "human_stdout": "solstone journal check — can this computer run the journal with the bundled local models?\n  [ok]      platform  Apple Silicon macOS (arm64)\n  [warn]    memory    enough total memory, but only 10 GB is free right now — close some apps before the local models load\n  [ok]      disk      500 GB free at /journal (need 20 GB)\n  [ok]      ced       ced.cpp sound-tag engine and model are ready\nMostly ready (see the warnings above) — you can install the journal:  see INSTALL.md\n\nThink this readout is wrong for your machine? We'd love a patch — https://github.com/solpbc/solstone-journal\n",
       "inputs": {
+        "bundled_local_selected_or_planned": true,
         "disk": {
           "free_bytes": 536870912000,
           "kind": "ok"
@@ -1219,6 +1232,7 @@
       "exit_code": 0,
       "human_stdout": "solstone journal check — can this computer run the journal with the bundled local models?\n  [ok]      platform  Apple Silicon macOS (arm64)\n  [ok]      memory    24 GB of memory meets the 16 GB minimum\n  [ok]      disk      500 GB free at /journal (need 20 GB)\n  [ok]      ced       ced.cpp sound-tag engine and model are ready\nReady — install the journal next:  see INSTALL.md\n\nThink this readout is wrong for your machine? We'd love a patch — https://github.com/solpbc/solstone-journal\n",
       "inputs": {
+        "bundled_local_selected_or_planned": true,
         "disk": {
           "free_bytes": 536870912000,
           "kind": "ok"
@@ -1302,6 +1316,7 @@
       "exit_code": 1,
       "human_stdout": "solstone journal check — can this computer run the journal with the bundled local models?\n  [ok]      platform  Linux (x86_64)\n  [ok]      gpu       Vulkan GPU Vulkan GPU with 24 GB\n  [warn]    ram       system memory could not be verified\n  [ok]      disk      500 GB free at /journal (need 20 GB)\n  [ok]      ced       ced.cpp sound-tag engine and model are ready\nMostly ready (see the warnings above) — you can install the journal:  see INSTALL.md\n\nThink this readout is wrong for your machine? We'd love a patch — https://github.com/solpbc/solstone-journal\n",
       "inputs": {
+        "bundled_local_selected_or_planned": true,
         "disk": {
           "free_bytes": 536870912000,
           "kind": "ok"
@@ -1400,6 +1415,7 @@
       "exit_code": 1,
       "human_stdout": "solstone journal check — can this computer run the journal with the bundled local models?\n  [ok]      platform  Linux (x86_64)\n  [ok]      gpu       Vulkan GPU Vulkan GPU with 24 GB\n  [warn]    ram       5.5 GB of system memory is on the low side — 8 GB or more is recommended\n  [ok]      disk      500 GB free at /journal (need 20 GB)\n  [ok]      ced       ced.cpp sound-tag engine and model are ready\nMostly ready (see the warnings above) — you can install the journal:  see INSTALL.md\n\nThink this readout is wrong for your machine? We'd love a patch — https://github.com/solpbc/solstone-journal\n",
       "inputs": {
+        "bundled_local_selected_or_planned": true,
         "disk": {
           "free_bytes": 536870912000,
           "kind": "ok"
@@ -1498,6 +1514,7 @@
       "exit_code": 1,
       "human_stdout": "solstone journal check — can this computer run the journal with the bundled local models?\n  [ok]      platform  Linux (x86_64)\n  [ok]      gpu       Vulkan GPU Vulkan GPU with 24 GB\n  [ok]      ram       64 GB of system memory\n  [unknown] disk      free space at /journal could not be verified: controlled disk failure\n  [ok]      ced       ced.cpp sound-tag engine and model are ready\nMostly ready (see the warnings above) — you can install the journal:  see INSTALL.md\n\nThink this readout is wrong for your machine? We'd love a patch — https://github.com/solpbc/solstone-journal\n",
       "inputs": {
+        "bundled_local_selected_or_planned": true,
         "disk": {
           "kind": "error",
           "message": "controlled disk failure"
@@ -1596,6 +1613,7 @@
       "exit_code": 2,
       "human_stdout": "solstone journal check — can this computer run the journal with the bundled local models?\n  [ok]      platform  Linux (x86_64)\n  [ok]      gpu       Vulkan GPU Vulkan GPU with 24 GB\n  [ok]      ram       64 GB of system memory\n  [blocked] disk      the journal and local models need at least 20 GB free — /journal has 10 GB\n  [ok]      ced       ced.cpp sound-tag engine and model are ready\nNot ready — this computer can't run the bundled local models yet.\n\nThink this readout is wrong for your machine? We'd love a patch — https://github.com/solpbc/solstone-journal\n",
       "inputs": {
+        "bundled_local_selected_or_planned": true,
         "disk": {
           "free_bytes": 10737418240,
           "kind": "ok"
@@ -1694,6 +1712,7 @@
       "exit_code": 2,
       "human_stdout": "solstone journal check — can this computer run the journal with the bundled local models?\n  [blocked] platform  Windows/AMD64 can't run the bundled local models yet — only Apple Silicon macOS, x86_64/aarch64 Linux and x86_64 Windows are supported.\nNot ready — this computer can't run the bundled local models yet.\n\nThink this readout is wrong for your machine? We'd love a patch — https://github.com/solpbc/solstone-journal\n",
       "inputs": {
+        "bundled_local_selected_or_planned": true,
         "disk": {
           "free_bytes": 536870912000,
           "kind": "ok"
@@ -1750,6 +1769,7 @@
       "exit_code": 2,
       "human_stdout": "solstone journal check — can this computer run the journal with the bundled local models?\n  [blocked] platform  Intel Macs aren't supported — use an Apple Silicon Mac, or run the journal on supported Linux.\nNot ready — this computer can't run the bundled local models yet.\n\nThink this readout is wrong for your machine? We'd love a patch — https://github.com/solpbc/solstone-journal\n",
       "inputs": {
+        "bundled_local_selected_or_planned": true,
         "disk": {
           "free_bytes": 536870912000,
           "kind": "ok"
@@ -1806,6 +1826,7 @@
       "exit_code": 2,
       "human_stdout": "solstone journal check — can this computer run the journal with the bundled local models?\n  [blocked] platform  FreeBSD/x86_64 can't run the bundled local models yet — only Apple Silicon macOS, x86_64/aarch64 Linux and x86_64 Windows are supported.\nNot ready — this computer can't run the bundled local models yet.\n\nThink this readout is wrong for your machine? We'd love a patch — https://github.com/solpbc/solstone-journal\n",
       "inputs": {
+        "bundled_local_selected_or_planned": true,
         "disk": {
           "free_bytes": 536870912000,
           "kind": "ok"
@@ -1862,6 +1883,7 @@
       "exit_code": 2,
       "human_stdout": "solstone journal check — can this computer run the journal with the bundled local models?\n  [ok]      platform  Linux (x86_64)\n  [blocked] gpu       no usable GPU found — the bundled local models need a hardware GPU with at least 6 GB\n  [warn]    ram       5.5 GB of system memory is on the low side — 8 GB or more is recommended\n  [ok]      disk      500 GB free at /journal (need 20 GB)\n  [ok]      ced       ced.cpp sound-tag engine and model are ready\nNot ready — this computer can't run the bundled local models yet.\n\nThink this readout is wrong for your machine? We'd love a patch — https://github.com/solpbc/solstone-journal\n",
       "inputs": {
+        "bundled_local_selected_or_planned": true,
         "disk": {
           "free_bytes": 536870912000,
           "kind": "ok"

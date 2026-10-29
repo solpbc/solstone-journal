@@ -671,7 +671,8 @@ where
 fn local_override_and_brain_lane(
     journal: &Path,
 ) -> Result<(Option<u32>, bool), solstone_core_journal_config::ConfigLoadError> {
-    let config = read_journal_config(journal)?.config.unwrap_or_default();
+    let read = read_journal_config(journal)?;
+    let config = read.config.clone().unwrap_or_default();
     let override_index = config
         .get("providers")
         .and_then(Value::as_object)
@@ -679,8 +680,12 @@ fn local_override_and_brain_lane(
         .and_then(Value::as_object)
         .and_then(|local| local.get("vulkan_device_index"))
         .and_then(local_vulkan_device_index);
-    let brain_lane_active = bundled_local_model_holds_gpu(&config, true);
-    Ok((override_index, brain_lane_active))
+    let bundled_local_selected_or_planned = if read.present {
+        bundled_local_model_holds_gpu(&config)
+    } else {
+        true
+    };
+    Ok((override_index, bundled_local_selected_or_planned))
 }
 
 fn local_vulkan_device_index(value: &Value) -> Option<u32> {
@@ -1907,6 +1912,70 @@ mod tests {
             .find(|check| check.name == "gpu")
             .unwrap();
         assert!(!gpu.detail.contains(solstone_core_local::CPU_PLACEMENT_COPY));
+    }
+
+    #[cfg(all(feature = "full-tests", target_os = "linux"))]
+    #[test]
+    fn selected_provider_agrees_in_check_and_setup_on_an_eight_gib_card() {
+        let journal = tempfile::tempdir().unwrap();
+        fs::create_dir_all(journal.path().join("config")).unwrap();
+        let device = solstone_core_local::VulkanDevice {
+            index: 0,
+            name: "Test GPU".into(),
+            device_type: Some(2),
+            vram_mib: 8192,
+        };
+        for (config, expected_cpu) in [
+            (json!({"providers":{"active":{"provider":"local"}}}), true),
+            (json!({"providers":{"active":{"provider":"google"}}}), false),
+            (json!({"providers":{"active":{}}}), false),
+            (
+                json!({"providers":{"active":{"provider":"local"},"local":{
+                    "endpoint_url":"http://127.0.0.1:8080","served_model_id":"test-model"
+                }}}),
+                false,
+            ),
+        ] {
+            fs::write(
+                journal.path().join("config/journal.json"),
+                config.to_string(),
+            )
+            .unwrap();
+            let observation = || solstone_core_system::vulkan_observe::VulkanObservation {
+                devices: vec![device.clone()],
+                succeeded: true,
+            };
+            let (setup, _) = build_local_report_with(
+                journal.path(),
+                "linux",
+                "x86_64",
+                NvidiaProbe::absent,
+                observation,
+                || None,
+            )
+            .unwrap();
+            let inputs = solstone_core_check::gather_host_inputs_with(
+                journal.path(),
+                "test",
+                "linux",
+                NvidiaProbe::absent,
+                observation,
+            );
+            let check = solstone_core_check::build_check_report(&inputs);
+            let setup_gpu = setup.checks.iter().find(|row| row.name == "gpu").unwrap();
+            let check_gpu = check.checks.iter().find(|row| row.name == "gpu").unwrap();
+            assert_eq!(
+                (
+                    setup_gpu
+                        .detail
+                        .contains(solstone_core_local::CPU_PLACEMENT_COPY),
+                    check_gpu
+                        .detail
+                        .contains(solstone_core_local::CPU_PLACEMENT_COPY)
+                ),
+                (expected_cpu, expected_cpu)
+            );
+        }
     }
 
     #[cfg(all(test, feature = "full-tests"))]
