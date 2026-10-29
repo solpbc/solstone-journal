@@ -1094,11 +1094,15 @@ fn inspect_day(
     // not, as daily work publishes those itself.
     let mut prerequisites_ready = true;
     let mut segments_thought = true;
+    let mut recorded_seconds = 0_u64;
+    let mut set_aside_seconds = 0_u64;
     let mut owed_segments = Vec::new();
     for segment in &segments {
         if is_mcp_audit_segment(Some(&segment.stream)) {
             continue;
         }
+        let seconds = solstone_core_system_health::segment_seconds(&segment.key);
+        recorded_seconds += seconds;
         // Archive ASR belongs to the shared Sense workers. A segment repair
         // would create a second handler pool and bypass live-file priority.
         if segment.stream == "import.archive"
@@ -1162,7 +1166,11 @@ fn inspect_day(
         } else {
             work.history.owed += 1;
         }
-        if readiness == SegmentReadiness::Owed {
+        // Set-aside thinking is the one unfinished work a day may close over,
+        // within the share daily execution also allows.
+        if thinking_held == Some(HeldThinking::SetAside) {
+            set_aside_seconds += seconds;
+        } else if readiness == SegmentReadiness::Owed {
             segments_thought = false;
         }
         // Held thinking is retried one talent at a time, by its own cause.
@@ -1171,6 +1179,9 @@ fn inspect_day(
             continue;
         }
         owed_segments.push((segment, p, readiness));
+    }
+    if set_aside_seconds * solstone_core_system_health::SET_ASIDE_CLOSE_SHARE > recorded_seconds {
+        segments_thought = false;
     }
     work.history.archive_pending =
         solstone_core_import::audio_archive::archive_day_has_pending(journal, day)
@@ -1206,9 +1217,9 @@ fn inspect_day(
             report,
             checkpoint,
         )?);
-        // A daily output waiting solely on set-aside recordings, or on their
-        // set-aside thinking, is also set aside for the range. Ordinary
-        // prerequisites remain work owed.
+        // A daily output waiting solely on set-aside recordings, or on more
+        // set-aside thinking than the day closes over, is also set aside for
+        // the range. Ordinary prerequisites remain work owed.
         let permanently_blocked =
             !segments_thought && work.history.owed == 0 && work.history.set_aside > 0;
         for covered in &coverage.units {
@@ -4183,6 +4194,49 @@ mod tests {
             talent: talent.into(),
             direct: false,
         }
+    }
+
+    /// A day closes over set-aside thinking that is a small share of its
+    /// recorded time, for discovery and daily execution alike. A larger share
+    /// keeps its daily work waiting.
+    #[test]
+    fn a_small_set_aside_gap_lets_its_day_close() {
+        let root = fixture("local");
+        let day = "19990101";
+        failing_talent(root.path(), "screen", 30, "provider_request_rejected", true);
+        // 60 s set aside beside 600 s thought: more than a twentieth.
+        thought_without_receipt(root.path(), day, &["130000_600"]);
+        let queue = queue(root.path());
+        reconcile(root.path(), &queue, &AtomicBool::new(false)).unwrap();
+        assert!(
+            work_retry::read(root.path(), &held_unit("screen").id().unwrap())
+                .unwrap()
+                .unwrap()
+                .held
+        );
+        assert!(!queue.contains_reference("supervisor-work-19990101-daily"));
+        assert!(
+            solstone_core_system_health::day_unpublished_segments(root.path(), day)
+                .unwrap()
+                .is_none()
+        );
+        // 60 s set aside of 1,260 s: within a twentieth, so the day closes.
+        thought_without_receipt(root.path(), day, &["140000_600"]);
+        reconcile(root.path(), &queue, &AtomicBool::new(false)).unwrap();
+        assert!(queue.contains_reference("supervisor-work-19990101-daily"));
+        assert_eq!(
+            solstone_core_system_health::day_unpublished_segments(root.path(), day)
+                .unwrap()
+                .map(|unpublished| unpublished.len()),
+            Some(2)
+        );
+        // The set-aside step itself is still held, not released by the close.
+        assert!(
+            work_retry::read(root.path(), &held_unit("screen").id().unwrap())
+                .unwrap()
+                .unwrap()
+                .held
+        );
     }
 
     /// A talent that fails on every attempt is set aside rather than repaired

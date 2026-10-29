@@ -5,8 +5,8 @@
 
 mod work_readiness;
 pub use work_readiness::{
-    SegmentReadiness, day_segments_ready, day_unpublished_segments, segment_readiness,
-    segment_work_ready,
+    SET_ASIDE_CLOSE_SHARE, SegmentReadiness, day_segments_ready, day_unpublished_segments,
+    segment_readiness, segment_seconds, segment_thinking_set_aside, segment_work_ready,
 };
 
 #[cfg(test)]
