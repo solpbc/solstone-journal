@@ -2,7 +2,14 @@
 // Copyright (c) 2026 sol pbc
 package app.solstone.development.journal;
 import android.app.Service;
+import android.app.ActivityManager;
+import android.content.ComponentName;
+import android.app.Notification;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.app.PendingIntent;
 import android.content.Intent;
+import android.content.pm.ServiceInfo;
 import android.os.*;
 import android.os.Process;
 import org.json.*;
@@ -20,6 +27,8 @@ public class JournalService extends Service {
     long savedFolderProviderIdentity;
     String serviceToolAdmission;
     Messenger incoming;
+    final Handler setupHandler=new Handler(Looper.getMainLooper());
+    final SetupForeground setupForeground=new SetupForeground(SystemClock::elapsedRealtime);
     final ExecutorService ownerRequests = new ThreadPoolExecutor(4,4,0L,TimeUnit.MILLISECONDS,
         new ArrayBlockingQueue<Runnable>(32),new ThreadPoolExecutor.AbortPolicy());
     public void onCreate() {
@@ -42,6 +51,29 @@ public class JournalService extends Service {
                 final String root=m.getData().getString("root");
                 final int count=m.getData().getInt("count",1), id=m.arg1;
                 final Messenger reply=m.replyTo;
+                if ("owner-setup-end".equals(op)) {
+                    if (m.sendingUid == Process.myUid()) setupForeground.end(m.getData().getString("lease"));
+                    return;
+                }
+                if ("owner-setup-begin".equals(op)) {
+                    final String lease=m.getData().getString("lease");
+                    boolean acquired=false;
+                    try {
+                        boolean admitted=!destroyed && m.sendingUid == Process.myUid() && reply != null
+                            && thinkingAdmission.isOpen() && lease != null && lease.length() == 36;
+                        JSONObject generation=new JSONObject(Native.run("", "thinking-generation", 1));
+                        admitted=admitted && generation.optBoolean("ok")
+                            && generation.getJSONObject("value").getLong("generation") == m.getData().getLong("generation",-1);
+                        if (admitted) acquired=setupForeground.begin(lease,true,setupEffects(lease,reply.getBinder()));
+                    } catch(Exception error) { /* Refuse protection; no browser dispatch follows. */ }
+                    if (reply != null) {
+                        Message answer=Message.obtain(null,1); Bundle data=new Bundle();
+                        data.putString("lease",lease); data.putBoolean("acquired",acquired); answer.setData(data);
+                        try { reply.send(answer); }
+                        catch(RemoteException error) { setupForeground.end(lease); }
+                    }
+                    return;
+                }
                 if ("owner-cancel".equals(op)) {
                     Native.cancelOwner(m.getData().getLong("owner_id"));
                     return;
@@ -113,7 +145,7 @@ public class JournalService extends Service {
                 }
                 if ("owner-stop".equals(op)) {
                     ServingActivity.lifecycle("stop_received");
-                    execution.beginStop(JournalService.this::cancelNativeWork);
+                    setupForeground.stop(()->execution.beginStop(JournalService.this::cancelNativeWork));
                     ServingActivity.lifecycle("stop_cancellation_delivered");
                     return;
                 }
@@ -141,7 +173,9 @@ public class JournalService extends Service {
                 }
                 final String admittedOp = admitted;
                 final long generation = thinkingAdmission.generation();
-                if (isStop) execution.beginStop(JournalService.this::cancelNativeWork);
+                if (isStop) {
+                    setupForeground.stop(()->execution.beginStop(JournalService.this::cancelNativeWork));
+                }
                 final ThinkingAdmission.Ticket ticket = isThinking ? thinkingAdmission.admit() : null;
                 if (isThinking && ticket == null) {
                     respond(reply,id,"{\"ok\":false,\"error\":\"thinking is stopped or busy\"}",0);
@@ -192,6 +226,60 @@ public class JournalService extends Service {
             }
         });
     }
+    SetupForeground.Effects setupEffects(String lease, IBinder client) {
+        return new SetupForeground.Effects() {
+            final Runnable timeout=new Runnable() {
+                public void run() {
+                    long delay=setupForeground.checkTimeout(lease);
+                    if (delay > 0 && !setupHandler.postDelayed(this,delay)) setupForeground.end(lease);
+                }
+            };
+            final IBinder.DeathRecipient died=()->setupHandler.post(()->setupForeground.end(lease));
+            boolean linked;
+            public boolean start() throws Exception {
+                client.linkToDeath(died,0); linked=true;
+                NotificationManager notifications=getSystemService(NotificationManager.class);
+                notifications.createNotificationChannel(new NotificationChannel("journal-setup","journal setup",NotificationManager.IMPORTANCE_LOW));
+                PendingIntent back=PendingIntent.getActivity(JournalService.this,0,
+                    new Intent(JournalService.this,OwnerActivity.class).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP|Intent.FLAG_ACTIVITY_SINGLE_TOP),
+                    PendingIntent.FLAG_UPDATE_CURRENT|PendingIntent.FLAG_IMMUTABLE);
+                Notification notification=new Notification.Builder(JournalService.this,"journal-setup")
+                    .setSmallIcon(android.R.drawable.stat_sys_upload).setContentTitle("journal setup")
+                    .setContentText("finish setup in your browser, then return to your journal.")
+                    .setContentIntent(back).setOngoing(true)
+                    .addAction(new Notification.Action.Builder(null,"open journal",back).build()).build();
+                // This service remains bound-only. Promotion does not create a
+                // started/sticky lifetime or restart a stopped native journal.
+                startForeground(7,notification,ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
+                if (!setupForegroundObserved()) return false;
+                // Handler delays exclude sleep. Recheck the elapsed deadline
+                // after a bounded awake interval instead of owing a full delay.
+                if (!setupHandler.postDelayed(timeout,SetupForeground.CHECK_INTERVAL_MS)) throw new IllegalStateException("setup timer unavailable");
+                return true;
+            }
+            public void finish() {
+                setupHandler.removeCallbacks(timeout);
+                try { if (linked) client.unlinkToDeath(died,0); }
+                catch(java.util.NoSuchElementException ignored) { /* Binder death already removed the watch. */ }
+                finally { linked=false; stopForeground(STOP_FOREGROUND_REMOVE); }
+            }
+        };
+    }
+    boolean setupForegroundObserved() {
+        ActivityManager activity=getSystemService(ActivityManager.class);
+        ComponentName expected=new ComponentName(this,JournalService.class);
+        // Promotion may be silently ignored by app-ops. A void return is not
+        // an acquisition receipt; observe this exact service in system state.
+        for (ActivityManager.RunningServiceInfo service : activity.getRunningServices(32)) {
+            if (expected.equals(service.service) && service.uid == Process.myUid()
+                    && service.pid == Process.myPid()) return service.foreground;
+        }
+        return false;
+    }
+    public void onTimeout(int startId,int type) {
+        setupForeground.close();
+        stopSelf(startId);
+    }
     void cancelNativeWork() {
         String result = Native.run("", "cancel", 1);
         // A positive observation follows actual cancellation delivery. No
@@ -234,6 +322,7 @@ public class JournalService extends Service {
         ownerRequests.shutdown();
         evidence("service_destroyed","last binding released");
         execution.retire(this::cancelNativeWork, () -> Native.run("", "serve:{\"op\":\"stop\"}", 1));
+        setupForeground.close();
         Native.retireSavedFolderProvider(savedFolderProviderIdentity);
         super.onDestroy();
     }
