@@ -218,6 +218,43 @@ mod observations {
     }
 
     #[test]
+    fn census_listing_lets_ordinary_entries_move_but_not_evidence_or_membership() {
+        // Every mutation changes a size or the membership, never only a time,
+        // so a coarse filesystem clock cannot hide it.
+        let listed = |mutation: &'static str, census: bool| {
+            let (temp, parent) = fixture();
+            let dir = temp.path().join("parent");
+            fs::write(dir.join("log"), b"old").unwrap();
+            fs::write(dir.join("stage"), b"old").unwrap();
+            let (result, fired) = run_with_media_hook(
+                MediaPrimitive::AfterFirstEnumeration,
+                move || {
+                    match mutation {
+                        "ordinary" => fs::write(dir.join("log"), b"older")?,
+                        "evidence" => fs::write(dir.join("stage"), b"older")?,
+                        _ => fs::write(dir.join("added"), b"new")?,
+                    }
+                    Ok(())
+                },
+                || {
+                    if census {
+                        parent.census_entries(10, |entry| entry.name == "stage")
+                    } else {
+                        parent.entries(10)
+                    }
+                },
+            );
+            assert!(fired, "{mutation}");
+            result.is_ok()
+        };
+        for (mutation, census_accepts) in [("ordinary", true), ("evidence", false), ("add", false)]
+        {
+            assert_eq!(listed(mutation, true), census_accepts, "census {mutation}");
+            assert!(!listed(mutation, false), "strict {mutation}");
+        }
+    }
+
+    #[test]
     fn late_child_observation_errors_never_become_known_absence() {
         for barrier in [
             MediaPrimitive::AfterChildOpen,
