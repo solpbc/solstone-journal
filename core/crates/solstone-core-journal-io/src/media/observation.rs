@@ -51,7 +51,7 @@ impl MediaDirectory {
     /// Two guarded complete walks. None means the limit was exceeded, never
     /// empty coverage. This does not freeze writers or mint destructive authority.
     pub fn entries(&self, maximum: usize) -> io::Result<Option<Vec<MediaEntry>>> {
-        self.listed(maximum, platform::entries)
+        self.listed(maximum, platform::entries, |first, second| first == second)
     }
 
     /// `entries`, keeping UTF-8 names the portable rules refuse, such as old
@@ -59,13 +59,47 @@ impl MediaDirectory {
     /// for an observer that classifies every name itself: such a name still
     /// cannot be opened or read through this type.
     pub fn entries_keeping_any_name(&self, maximum: usize) -> io::Result<Option<Vec<MediaEntry>>> {
-        self.listed(maximum, platform::entries_keeping_any_name)
+        self.listed(
+            maximum,
+            platform::entries_keeping_any_name,
+            |first, second| first == second,
+        )
+    }
+
+    /// `entries_keeping_any_name` for the activity census, which decides its own
+    /// evidence. Between the two walks an entry `evidence` selects must not change
+    /// at all; any other entry must keep its name, kind and identity, but its size
+    /// and times may move, because a live journal keeps appending to its logs and
+    /// touching its directories while the census runs. The directory's own stamp
+    /// still holds, so an entry added, removed or renamed still refuses.
+    pub fn census_entries(
+        &self,
+        maximum: usize,
+        evidence: impl Fn(&MediaEntry) -> bool,
+    ) -> io::Result<Option<Vec<MediaEntry>>> {
+        self.listed(
+            maximum,
+            platform::entries_keeping_any_name,
+            |first, second| {
+                first.len() == second.len()
+                    && first.iter().zip(second).all(|(left, right)| {
+                        if evidence(left) || evidence(right) {
+                            left == right
+                        } else {
+                            left.name == right.name
+                                && left.kind == right.kind
+                                && left.identity == right.identity
+                        }
+                    })
+            },
+        )
     }
 
     fn listed(
         &self,
         maximum: usize,
         list: fn(&platform::Directory, usize) -> io::Result<Option<Vec<MediaEntry>>>,
+        same: impl Fn(&[MediaEntry], &[MediaEntry]) -> bool,
     ) -> io::Result<Option<Vec<MediaEntry>>> {
         self.revalidate()?;
         let before = self.inner.stamp()?;
@@ -82,7 +116,7 @@ impl MediaDirectory {
             return Err(changed());
         };
         self.revalidate()?;
-        if first != second || self.inner.stamp()? != before {
+        if !same(&first, &second) || self.inner.stamp()? != before {
             return Err(changed());
         }
         Ok(Some(second))

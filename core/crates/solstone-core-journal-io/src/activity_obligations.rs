@@ -282,11 +282,16 @@ impl<'a> Relisted<'a> {
     }
 }
 
+/// Stages, and every entry under restore-intents, are the census's evidence.
+fn is_evidence(entry: &MediaEntry, role: Role) -> bool {
+    matches!(role, Role::Intents) || is_stage_namespace_name(&entry.name)
+}
+
 fn relisted(entries: &[MediaEntry], role: Role) -> Vec<Relisted<'_>> {
     entries
         .iter()
         .filter_map(|entry| {
-            if matches!(role, Role::Intents) || is_stage_namespace_name(&entry.name) {
+            if is_evidence(entry, role) {
                 Some(Relisted::Evidence(entry))
             } else if (matches!(role, Role::Chronicle(0..=1))
                 && entry.kind != JournalEntryKind::RegularFile)
@@ -539,11 +544,18 @@ impl<F: FnMut(Checkpoint, &Path)> Reader<F> {
         &mut self,
         directory: &MediaDirectory,
         relative: &Path,
+        role: Role,
     ) -> Result<Vec<MediaEntry>, RecoveryObservationError> {
         // The census classifies every name itself, so a UTF-8 name the portable
-        // rules refuse (old logs named with a colon) is not a refusal here.
+        // rules refuse (old logs named with a colon) is not a refusal here. Only
+        // stages and intents are evidence, as in `Relisted`, so an ordinary
+        // entry's size and times moving between the listing's walks is not a
+        // refusal either.
         let entries = directory
-            .entries_keeping_any_name(self.limits.maximum(RecoveryBudget::DirectoryEntries))
+            .census_entries(
+                self.limits.maximum(RecoveryBudget::DirectoryEntries),
+                |entry| is_evidence(entry, role),
+            )
             .map_err(|source| io_error(relative, source))?
             .ok_or_else(|| {
                 error(
@@ -688,7 +700,7 @@ impl<F: FnMut(Checkpoint, &Path)> Reader<F> {
             RecoveryBudget::Directories,
             relative,
         )?;
-        let entries = self.entries(directory, relative)?;
+        let entries = self.entries(directory, relative, role)?;
         (self.checkpoint)(Checkpoint::Listed, relative);
         let mut missing = Vec::new();
         for entry in &entries {
@@ -731,7 +743,8 @@ impl<F: FnMut(Checkpoint, &Path)> Reader<F> {
             )?;
         }
         (self.checkpoint)(Checkpoint::BeforeFinalList, relative);
-        if let Some(failure) = listing_failure(&entries, &self.entries(directory, relative)?, role)
+        if let Some(failure) =
+            listing_failure(&entries, &self.entries(directory, relative, role)?, role)
         {
             return Err(error(failure, relative));
         }
@@ -894,6 +907,34 @@ mod tests {
         assert_eq!(
             failure.error().failure,
             RecoveryObservationFailure::Budget(RecoveryBudget::IntentBytes)
+        );
+    }
+
+    #[test]
+    fn census_completes_while_a_live_journal_writes_into_listed_directories() {
+        use crate::media::{MediaPrimitive, run_with_media_hook};
+        let f = Fixture::new();
+        f.directory("indexer");
+        f.directory("chronicle/20260101/stream/.tmp-offload-unrelated");
+        fs::write(f.path("journal.log"), b"line\n").unwrap();
+        let (indexer, log) = (f.path("indexer"), f.path("journal.log"));
+        // Between the root listing's two walks a running journal appends to a
+        // log and writes inside a subdirectory, which moves that entry's times.
+        // The append changes a size, so a coarse clock cannot hide it.
+        let (observed, fired) = run_with_media_hook(
+            MediaPrimitive::AfterFirstEnumeration,
+            move || {
+                fs::write(indexer.join("written"), b"live")?;
+                fs::write(log, b"line\nline\n")
+            },
+            || f.observed(),
+        );
+        assert!(fired);
+        let observed = observed.unwrap();
+        assert_eq!(observed.entries().len(), 1);
+        assert!(
+            matches!(&observed.entries()[0], NativeObligation::Stage { relative, .. }
+            if relative == Path::new("chronicle/20260101/stream/.tmp-offload-unrelated"))
         );
     }
 
