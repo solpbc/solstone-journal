@@ -25,21 +25,47 @@ $activity_context
 
 $activity_preamble
 
-# Participation Consolidation
+# Participation
 
-You are a quality-judge consolidating per-segment Sense drafts of entities into a single per-activity `participation` list. The loaded `sense.md` snippets provide entity candidates gathered across the activity span. Deduplicate name variants, preserve the strongest role/source signal, and keep only grounded entities that genuinely participated in or were mentioned during this activity.
+List the people who took part in this activity with you, and the people it named. The activity above holds its speech, with each line's speaker where the journal recognized the voice, a sample of what its screens and terminals showed, and the people Sense named in each segment. Base every entry on it.
 
-## Output Schema
+## Who goes in the list
+
+- **People only.** List individual human beings. Never list a company, organization, team, product, project, tool, AI assistant or coding agent, office or job title, place, event, email address or account. Sense sometimes calls one of these a person: judge from what the activity shows about it.
+- **Never you.** You are the journal owner. Leave out your own name, every shortening or nickname of it, and "you".
+- **Numbered voices.** A voice the speech labels with a number ("Speaker" and a number) is a person the journal has not named yet: list it as an attendee, under that exact label, when it spoke in a meeting or call that is this activity. Leave numbered voices out of anything else. Any other label, role word or placeholder is not a name.
+- **Only this activity.** The segments can hold other things happening at the same time. Keep a person only when what they did or how they came up belongs to this activity as its description tells it; leave out people from a show, video or broadcast playing nearby, from another conversation, or from other work at the same time.
+- **Nothing invented.** Every name you write must appear in the activity. Never complete a first name into a full name the activity does not give.
+- **One entry per person.** When two names in the activity are the same person (a short form, a misspelling, initials), write one entry under the fullest correct form. A first name alone and a full name that begins with it, in the same activity, are one person unless the activity shows two.
+
+## role
+
+- `attendee`: present in this activity with you. They were heard speaking in it, introduced themselves, or were shown as a participant of the call or meeting. A voice from a recording, video, talk on a screen or broadcast is not present.
+- `mentioned`: named in this activity without taking part in it. They were talked about, wrote or received a message you read or wrote, wrote something you read, or their name was on a page.
+
+Only a meeting or call has attendees. Speaker recognition can be wrong: a name it put on only one or two lines is an attendee only when something else in the activity (their name said to them, an introduction, Sense naming them in the meeting) supports it. When unsure, write `mentioned`.
+
+## source
+
+Where the strongest evidence came from: `voice` (speaker recognition heard them), `speaker_label` (a participant name in the meeting), `transcript` (someone said their name), `screen` (their name was only written on screen), `other`.
+
+## confidence and context
+
+`confidence` is a number from 0 to 1: how firmly the activity places this person in this activity in this role. `participation_confidence` is the same for the list as a whole.
+
+`context` is one short clause about how this person came up in the activity, drawn from the activity. Write it to the journal owner as "you". The software never speaks as "I", "we" or "my". Write the product name in lowercase: "solstone". Never write "capture" in any form, and never say the software watches, observes, records, monitors, tracks, listens, sees, hears or surveils.
+
+## Output
 
 ```json
 {
   "participation": [
     {
-      "name": "Full Name",
+      "name": "<a person's name as the activity writes it>",
       "role": "attendee|mentioned",
       "source": "voice|speaker_label|transcript|screen|other",
       "confidence": 0.0,
-      "context": "Short explanation of why this entity belongs in the activity",
+      "context": "<one short clause>",
       "entity_id": null
     }
   ],
@@ -47,16 +73,6 @@ You are a quality-judge consolidating per-segment Sense drafts of entities into 
 }
 ```
 
-`entity_id` must always be `null`; the post-hook resolves it after generation.
+`entity_id` is always `null`. When no other person took part in or was named in this activity, the right answer is `{"participation": [], "participation_confidence": 1.0}`.
 
-## Rules
-
-1. Exclude the journal owner.
-2. Never mark someone `role: attendee` in a non-meeting activity.
-3. No fabrication — if you didn't see them, don't list them.
-4. Empty `participation: []` when no entities were involved.
-5. Confidence is subjective but should reflect signal strength (`voice` > `speaker_label` > `transcript` > `screen`).
-6. Dedupe variants (e.g., "JB" and "John B." → one entry with the richer name).
-7. **Voice.** In the text you write, refer to the journal owner in second person ("you", "your"), never as "the user", "the owner", "this person", or in the third person. The software never speaks as "I", "we" or "my". Write the product name in lowercase: "solstone", never "Solstone". State what happened plainly. Never write "capture" in any form; never say the software watches, observes, records, monitors, tracks, listens, sees, hears or surveils, in any voice, including the passive ("was recorded", "were captured"); attach every claim to what the journal holds.
-
-Return only the JSON object with `participation` and optional `participation_confidence`.
+Return only the JSON object.

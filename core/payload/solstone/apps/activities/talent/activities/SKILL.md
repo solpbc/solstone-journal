@@ -96,7 +96,7 @@ Stdin JSON requirements:
 of participant objects. Each entry must include:
 
 - `name`: non-empty string.
-- `role`: `"attendee"` (took part), `"mentioned"` (someone said the name) or `"visible"` (the name only appeared on screen).
+- `role`: `"attendee"` (took part), `"heard"` (people the owner talked with in a conversation that wasn't a meeting), `"mentioned"` (someone said the name) or `"visible"` (the name only appeared on screen).
 - `source`: one of `"voice"`, `"speaker_label"`, `"transcript"`, `"screen"`, `"other"`.
 - `confidence`: number (typically 0.0-1.0).
 - `context`: string describing where the detection came from.

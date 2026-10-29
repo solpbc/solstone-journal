@@ -161,11 +161,10 @@ pub(crate) fn apply_result_cancellable(
         .flatten()
         .filter_map(Value::as_str)
         .collect::<Vec<_>>();
-    if !segments.is_empty()
-        && !segments
-            .iter()
-            .any(|segment| meeting_detected(journal, day, segment, stream))
-    {
+    let any_meeting = segments
+        .iter()
+        .any(|segment| meeting_detected(journal, day, segment, stream));
+    if !segments.is_empty() && !any_meeting {
         for entry in &mut resolved {
             if entry.get("role").and_then(Value::as_str) == Some("attendee") {
                 entry.insert("role".to_owned(), Value::String("mentioned".to_owned()));
@@ -282,6 +281,60 @@ pub(crate) fn apply_result_cancellable(
                 Some("voice" | "speaker_label" | "transcript")
             ) {
                 entry.insert("source".to_owned(), Value::String("screen".to_owned()));
+            }
+        }
+    }
+    if !any_meeting {
+        let conversation_segments: Vec<&str> = segments
+            .iter()
+            .copied()
+            .filter(|&segment| is_conversation_segment(journal, day, segment, stream))
+            .collect();
+        if !conversation_segments.is_empty() {
+            let mut convo_voice_lines = BTreeMap::<String, usize>::new();
+            let mut convo_assigned = BTreeSet::new();
+            for &segment in &conversation_segments {
+                for (speaker, by_owner) in voice_labels(journal, day, segment, stream, &voices) {
+                    if by_owner {
+                        convo_assigned.insert(speaker.clone());
+                    }
+                    *convo_voice_lines.entry(speaker).or_default() += 1;
+                }
+            }
+            let convo_attributed = convo_voice_lines
+                .into_iter()
+                .filter(|(speaker, lines)| {
+                    *lines >= HEARD_LINES || convo_assigned.contains(speaker)
+                })
+                .map(|(speaker, _)| speaker)
+                .collect::<BTreeSet<_>>();
+            let convo_heard = people
+                .iter()
+                .filter(|person| {
+                    person
+                        .id
+                        .as_ref()
+                        .is_some_and(|id| convo_attributed.contains(id))
+                })
+                .cloned()
+                .collect::<Vec<_>>();
+            for entry in &mut resolved {
+                if let Some(id) = entry
+                    .get("entity_id")
+                    .and_then(Value::as_str)
+                    .filter(|id| !id.is_empty())
+                {
+                    if convo_attributed.contains(id) {
+                        entry.insert("role".to_owned(), Value::String("heard".to_owned()));
+                        entry.insert("source".to_owned(), Value::String("voice".to_owned()));
+                    }
+                } else if let Some(name) = entry.get("name").and_then(Value::as_str)
+                    && let Some(id) = only_person_answering(&convo_heard, name)
+                {
+                    entry.insert("entity_id".to_owned(), Value::String(id.to_owned()));
+                    entry.insert("role".to_owned(), Value::String("heard".to_owned()));
+                    entry.insert("source".to_owned(), Value::String("voice".to_owned()));
+                }
             }
         }
     }
@@ -428,6 +481,48 @@ fn has_screen_input(
                 .filter_map(|entry| entry.file_name().into_string().ok())
                 .any(|name| name.ends_with("screen.jsonl"))
         })
+}
+
+fn has_visual_files(
+    journal: &std::path::Path,
+    day: &str,
+    segment: &str,
+    stream: Option<&str>,
+) -> bool {
+    find_segment_dir(journal, day, segment, stream)
+        .and_then(|directory| fs::read_dir(directory).ok())
+        .is_some_and(|entries| {
+            entries
+                .filter_map(Result::ok)
+                .filter_map(|entry| entry.file_name().into_string().ok())
+                .any(|name| {
+                    name.ends_with("screen.jsonl")
+                        || name == "browser_pages.jsonl"
+                        || name.ends_with("_desktop_activity.jsonl")
+                        || name.ends_with("_protected_video.jsonl")
+                })
+        })
+}
+
+fn is_conversation_segment(
+    journal: &std::path::Path,
+    day: &str,
+    segment: &str,
+    stream: Option<&str>,
+) -> bool {
+    let Some(sense) = segment_talent_json(journal, day, segment, stream, "sense.json") else {
+        return false;
+    };
+    if sense.get("content_type").and_then(Value::as_str) != Some("social") {
+        return false;
+    }
+    if transcript_sentences(journal, day, segment, stream).is_empty() {
+        return false;
+    }
+    if has_visual_files(journal, day, segment, stream) {
+        return false;
+    }
+    true
 }
 
 /// A segment's Sense entity names, each with whether it was heard. A row is
@@ -1414,5 +1509,534 @@ mod tests {
             apply_all(root.path(), json!([row("Atlas", "mentioned", "screen")])),
             owned(&[("Atlas", "mentioned", "screen")])
         );
+    }
+
+    fn setup_segment(
+        root: &Path,
+        segment: &str,
+        meeting: bool,
+        content_type: Option<&str>,
+        labels: Value,
+        sentences: &[&str],
+        visual_file: Option<&str>,
+    ) {
+        let talents = root.join(format!("chronicle/{DAY}/{segment}/talents"));
+        fs::create_dir_all(&talents).unwrap();
+        let mut sense = json!({"meeting_detected": meeting});
+        if let Some(ct) = content_type {
+            sense["content_type"] = json!(ct);
+        }
+        write_json(&talents.join("sense.json"), sense);
+        write_json(
+            &talents.join("speaker_labels.json"),
+            json!({"labels": labels}),
+        );
+        write_json(&talents.join("speakers.json"), json!([]));
+        if !sentences.is_empty() {
+            let mut text = json!({"raw":"fixture"}).to_string() + "\n";
+            for sentence in sentences {
+                text += &(json!({"start":"00:00:01","text":sentence}).to_string() + "\n");
+            }
+            fs::write(
+                root.join(format!("chronicle/{DAY}/{segment}/audio.jsonl")),
+                text,
+            )
+            .unwrap();
+        }
+        if let Some(vf) = visual_file {
+            fs::write(root.join(format!("chronicle/{DAY}/{segment}/{vf}")), "{}\n").unwrap();
+        }
+    }
+
+    fn setup_activity(root: &Path, segments: &[&str]) -> Map<String, Value> {
+        let activity_path = root.join(format!("facets/{FACET}/activities/{DAY}.jsonl"));
+        let act = json!({"id":"activity","segments": segments});
+        fs::write(activity_path, format!("{act}\n")).unwrap();
+        act.as_object().unwrap().clone()
+    }
+
+    fn apply_for_activity(root: &Path, act: &Map<String, Value>, entries: &[Value]) -> Vec<Value> {
+        apply_result(
+            root,
+            &json!({"participation": entries}).to_string(),
+            FACET,
+            &solstone_core_facets::observe_facet_write_identity(root, FACET).unwrap(),
+            DAY,
+            act,
+        )
+        .expect("participation applies");
+        let act_id = act.get("id").and_then(Value::as_str).unwrap();
+        let activity_path = root.join(format!("facets/{FACET}/activities/{DAY}.jsonl"));
+        let row: Value = fs::read_to_string(activity_path)
+            .expect("activity reads")
+            .lines()
+            .find_map(|line| {
+                let v: Value = serde_json::from_str(line).ok()?;
+                (v.get("id").and_then(Value::as_str) == Some(act_id)).then_some(v)
+            })
+            .expect("activity found");
+        row["participation"].as_array().cloned().unwrap_or_default()
+    }
+
+    #[test]
+    fn conversation_segment_acoustic_matches_become_heard() {
+        let root = tempfile::tempdir().unwrap();
+        write_participation_fixture(root.path(), json!({}), json!([]));
+        setup_segment(
+            root.path(),
+            SEGMENT,
+            false,
+            Some("social"),
+            json!([
+                {"speaker": "person", "method": "acoustic"},
+                {"speaker": "person", "method": "acoustic_cluster"},
+            ]),
+            &["Good morning, how are things going?", "Working on roadmap."],
+            None,
+        );
+        let entry = apply(
+            root.path(),
+            json!({
+                "name": "Ada Lovelace",
+                "role": "mentioned",
+                "source": "transcript",
+                "confidence": 0.85,
+                "context": "Discussed roadmap",
+            }),
+        );
+        assert_eq!(entry["role"], "heard");
+        assert_eq!(entry["source"], "voice");
+        assert_eq!(entry["entity_id"], "person");
+        assert_eq!(entry["confidence"], 0.85);
+        assert_eq!(entry["context"], "Discussed roadmap");
+    }
+
+    #[test]
+    fn conversation_segment_user_assigned_line_becomes_heard() {
+        let root = tempfile::tempdir().unwrap();
+        write_participation_fixture(root.path(), json!({}), json!([]));
+        setup_segment(
+            root.path(),
+            SEGMENT,
+            false,
+            Some("social"),
+            json!([{"speaker": "person", "method": "user_assigned"}]),
+            &["Working on roadmap."],
+            None,
+        );
+        let entry = apply(
+            root.path(),
+            json!({
+                "name": "Ada Lovelace",
+                "role": "mentioned",
+                "source": "transcript",
+                "confidence": 0.85,
+                "context": "Discussed roadmap",
+            }),
+        );
+        assert_eq!(entry["role"], "heard");
+        assert_eq!(entry["source"], "voice");
+        assert_eq!(entry["entity_id"], "person");
+        assert_eq!(entry["confidence"], 0.85);
+        assert_eq!(entry["context"], "Discussed roadmap");
+    }
+
+    #[test]
+    fn unresolved_name_resolution_and_ambiguity_in_conversation() {
+        // 3a: Answering to exactly one conversation-segment voice
+        let root = tempfile::tempdir().unwrap();
+        write_participation_fixture(root.path(), json!({}), json!([]));
+        write_entity(root.path(), "grace", "Grace Hopper", "Person");
+        setup_segment(
+            root.path(),
+            SEGMENT,
+            false,
+            Some("social"),
+            json!([
+                {"speaker": "grace", "method": "acoustic"},
+                {"speaker": "grace", "method": "acoustic"},
+            ]),
+            &["Hello.", "Good to hear from you."],
+            None,
+        );
+        let entry = apply(
+            root.path(),
+            json!({
+                "name": "Grace Hopper",
+                "role": "mentioned",
+                "source": "transcript",
+                "confidence": 0.8,
+                "context": "Spoke in convo",
+            }),
+        );
+        assert_eq!(entry["entity_id"], "grace");
+        assert_eq!(entry["role"], "heard");
+        assert_eq!(entry["source"], "voice");
+
+        // 3b: Name answering only to a voice heard outside conversation segments
+        let root2 = tempfile::tempdir().unwrap();
+        write_participation_fixture(root2.path(), json!({}), json!([]));
+        write_entity(root2.path(), "grace", "Grace Hopper", "Person");
+        let act2 = setup_activity(root2.path(), &[SEGMENT, "100000_60"]);
+        setup_segment(
+            root2.path(),
+            SEGMENT,
+            false,
+            Some("social"),
+            json!([]),
+            &["Chatting in hallway."],
+            None,
+        );
+        setup_segment(
+            root2.path(),
+            "100000_60",
+            false,
+            Some("coding"),
+            json!([
+                {"speaker": "grace", "method": "acoustic"},
+                {"speaker": "grace", "method": "acoustic"},
+            ]),
+            &["Coding quietly."],
+            None,
+        );
+        let entries2 = apply_for_activity(
+            root2.path(),
+            &act2,
+            &[json!({
+                "name": "Grace Hopper",
+                "role": "mentioned",
+                "source": "transcript",
+            })],
+        );
+        assert_eq!(entries2[0]["entity_id"], Value::Null);
+        assert_eq!(entries2[0]["role"], "mentioned");
+
+        // 3c: Two conversation-segment voices answer to the name
+        let root3 = tempfile::tempdir().unwrap();
+        write_participation_fixture(root3.path(), json!({}), json!([]));
+        write_entity(root3.path(), "grace", "Grace Hopper", "Person");
+        write_entity(root3.path(), "grace-brewster", "Grace Brewster", "Person");
+        setup_segment(
+            root3.path(),
+            SEGMENT,
+            false,
+            Some("social"),
+            json!([
+                {"speaker": "grace", "method": "acoustic"},
+                {"speaker": "grace", "method": "acoustic"},
+                {"speaker": "grace-brewster", "method": "acoustic"},
+                {"speaker": "grace-brewster", "method": "acoustic"},
+            ]),
+            &["Hello.", "Good to hear from you."],
+            None,
+        );
+        let entry3 = apply(
+            root3.path(),
+            json!({
+                "name": "Grace",
+                "role": "mentioned",
+                "source": "transcript",
+            }),
+        );
+        assert_eq!(entry3["entity_id"], Value::Null);
+        assert_ne!(entry3["role"], "heard");
+    }
+
+    #[test]
+    fn conversation_segment_voice_wins_over_screen_in_another_segment() {
+        let root = tempfile::tempdir().unwrap();
+        write_participation_fixture(root.path(), json!({}), json!([]));
+        let act = setup_activity(root.path(), &[SEGMENT, "100000_60"]);
+        setup_segment(
+            root.path(),
+            SEGMENT,
+            false,
+            Some("social"),
+            json!([
+                {"speaker": "person", "method": "acoustic"},
+                {"speaker": "person", "method": "acoustic"},
+            ]),
+            &["Let us chat about the system.", "Sounds good."],
+            None,
+        );
+        setup_segment(
+            root.path(),
+            "100000_60",
+            false,
+            Some("coding"),
+            json!([]),
+            &[],
+            Some("screen.jsonl"),
+        );
+        let sense2_path = root
+            .path()
+            .join("chronicle")
+            .join(DAY)
+            .join("100000_60")
+            .join("talents/sense.json");
+        write_json(
+            &sense2_path,
+            json!({
+                "meeting_detected": false,
+                "content_type": "coding",
+                "entities": [
+                    {"name": "Ada Lovelace", "role": "visible", "source": "screen"}
+                ]
+            }),
+        );
+        let entries = apply_for_activity(
+            root.path(),
+            &act,
+            &[json!({
+                "name": "Ada Lovelace",
+                "role": "mentioned",
+                "source": "screen",
+            })],
+        );
+        assert_eq!(entries[0]["role"], "heard");
+        assert_eq!(entries[0]["source"], "voice");
+        assert_eq!(entries[0]["entity_id"], "person");
+    }
+
+    #[test]
+    fn non_meeting_conversation_voice_line_thresholds() {
+        // 5a: Zero matched lines -> becomes mentioned
+        let root1 = tempfile::tempdir().unwrap();
+        write_participation_fixture(root1.path(), json!({}), json!([]));
+        setup_segment(
+            root1.path(),
+            SEGMENT,
+            false,
+            Some("social"),
+            json!([]),
+            &["Chatting."],
+            None,
+        );
+        let entry1 = apply(
+            root1.path(),
+            json!({"name": "Ada Lovelace", "role": "attendee", "source": "voice"}),
+        );
+        assert_eq!(entry1["role"], "mentioned");
+
+        // 5b: One acoustic line -> not heard, becomes mentioned
+        let root2 = tempfile::tempdir().unwrap();
+        write_participation_fixture(root2.path(), json!({}), json!([]));
+        setup_segment(
+            root2.path(),
+            SEGMENT,
+            false,
+            Some("social"),
+            json!([{"speaker": "person", "method": "acoustic"}]),
+            &["Chatting."],
+            None,
+        );
+        let entry2 = apply(
+            root2.path(),
+            json!({"name": "Ada Lovelace", "role": "attendee", "source": "voice"}),
+        );
+        assert_eq!(entry2["role"], "mentioned");
+
+        // 5c: 1 line in conversation segment + 1 line in non-conversation segment -> not heard
+        let root3 = tempfile::tempdir().unwrap();
+        write_participation_fixture(root3.path(), json!({}), json!([]));
+        let act3 = setup_activity(root3.path(), &[SEGMENT, "100000_60"]);
+        setup_segment(
+            root3.path(),
+            SEGMENT,
+            false,
+            Some("social"),
+            json!([{"speaker": "person", "method": "acoustic"}]),
+            &["Convo line."],
+            None,
+        );
+        setup_segment(
+            root3.path(),
+            "100000_60",
+            false,
+            Some("coding"),
+            json!([{"speaker": "person", "method": "acoustic"}]),
+            &["Coding line."],
+            None,
+        );
+        let entries3 = apply_for_activity(
+            root3.path(),
+            &act3,
+            &[json!({"name": "Ada Lovelace", "role": "attendee", "source": "voice"})],
+        );
+        assert_eq!(entries3[0]["role"], "mentioned");
+    }
+
+    #[test]
+    fn conversation_segment_disqualified_by_visual_files_or_empty_speech() {
+        // 6a: social with screen.jsonl
+        let root1 = tempfile::tempdir().unwrap();
+        write_participation_fixture(root1.path(), json!({}), json!([]));
+        setup_segment(
+            root1.path(),
+            SEGMENT,
+            false,
+            Some("social"),
+            json!([
+                {"speaker": "person", "method": "acoustic"},
+                {"speaker": "person", "method": "acoustic"},
+            ]),
+            &["Speaking."],
+            Some("screen.jsonl"),
+        );
+        let entry1 = apply(
+            root1.path(),
+            json!({"name": "Ada Lovelace", "role": "attendee", "source": "voice"}),
+        );
+        assert_eq!(entry1["role"], "mentioned");
+
+        // 6b: social with browser_pages.jsonl
+        let root2 = tempfile::tempdir().unwrap();
+        write_participation_fixture(root2.path(), json!({}), json!([]));
+        setup_segment(
+            root2.path(),
+            SEGMENT,
+            false,
+            Some("social"),
+            json!([
+                {"speaker": "person", "method": "acoustic"},
+                {"speaker": "person", "method": "acoustic"},
+            ]),
+            &["Speaking."],
+            Some("browser_pages.jsonl"),
+        );
+        let entry2 = apply(
+            root2.path(),
+            json!({"name": "Ada Lovelace", "role": "attendee", "source": "voice"}),
+        );
+        assert_eq!(entry2["role"], "mentioned");
+
+        // 6c: social with empty speech (no transcript rows)
+        let root3 = tempfile::tempdir().unwrap();
+        write_participation_fixture(root3.path(), json!({}), json!([]));
+        setup_segment(
+            root3.path(),
+            SEGMENT,
+            false,
+            Some("social"),
+            json!([
+                {"speaker": "person", "method": "acoustic"},
+                {"speaker": "person", "method": "acoustic"},
+            ]),
+            &[],
+            None,
+        );
+        let entry3 = apply(
+            root3.path(),
+            json!({"name": "Ada Lovelace", "role": "attendee", "source": "voice"}),
+        );
+        assert_eq!(entry3["role"], "mentioned");
+    }
+
+    #[test]
+    fn voices_matched_only_in_non_conversation_segment_are_not_heard() {
+        let root = tempfile::tempdir().unwrap();
+        write_participation_fixture(root.path(), json!({}), json!([]));
+        let act = setup_activity(root.path(), &[SEGMENT, "100000_60"]);
+        setup_segment(
+            root.path(),
+            SEGMENT,
+            false,
+            Some("social"),
+            json!([]),
+            &["Speaking in conversation."],
+            None,
+        );
+        setup_segment(
+            root.path(),
+            "100000_60",
+            false,
+            Some("coding"),
+            json!([
+                {"speaker": "person", "method": "acoustic"},
+                {"speaker": "person", "method": "acoustic"},
+            ]),
+            &["Speaking in coding."],
+            None,
+        );
+        let entries = apply_for_activity(
+            root.path(),
+            &act,
+            &[json!({"name": "Ada Lovelace", "role": "attendee", "source": "voice"})],
+        );
+        assert_eq!(entries[0]["role"], "mentioned");
+    }
+
+    #[test]
+    fn meeting_segment_in_activity_disables_heard_gate_and_applies_meeting_rules() {
+        let root = tempfile::tempdir().unwrap();
+        write_participation_fixture(root.path(), json!({}), json!([]));
+        let act = setup_activity(root.path(), &[SEGMENT, "100000_60"]);
+        setup_segment(
+            root.path(),
+            SEGMENT,
+            true,
+            Some("meeting"),
+            json!([]),
+            &["Meeting speech."],
+            None,
+        );
+        setup_segment(
+            root.path(),
+            "100000_60",
+            false,
+            Some("social"),
+            json!([
+                {"speaker": "person", "method": "acoustic"},
+                {"speaker": "person", "method": "acoustic"},
+            ]),
+            &["Convo speech."],
+            None,
+        );
+        let entries1 = apply_for_activity(
+            root.path(),
+            &act,
+            &[json!({"name": "Ada Lovelace", "role": "attendee", "source": "voice"})],
+        );
+        assert_eq!(entries1[0]["role"], "attendee");
+
+        let entries2 = apply_for_activity(
+            root.path(),
+            &act,
+            &[json!({"name": "Ada Lovelace", "role": "mentioned", "source": "transcript"})],
+        );
+        assert_eq!(entries2[0]["role"], "mentioned");
+    }
+
+    #[test]
+    fn model_omitted_person_is_not_appended() {
+        let root = tempfile::tempdir().unwrap();
+        write_participation_fixture(root.path(), json!({}), json!([]));
+        write_entity(root.path(), "grace", "Grace Hopper", "Person");
+        setup_segment(
+            root.path(),
+            SEGMENT,
+            false,
+            Some("social"),
+            json!([
+                {"speaker": "person", "method": "acoustic"},
+                {"speaker": "person", "method": "acoustic"},
+                {"speaker": "grace", "method": "acoustic"},
+                {"speaker": "grace", "method": "acoustic"},
+            ]),
+            &["Ada and Grace talking."],
+            None,
+        );
+        let entries = apply_for_activity(
+            root.path(),
+            &activity(),
+            &[json!({
+                "name": "Ada Lovelace",
+                "role": "mentioned",
+                "source": "transcript",
+            })],
+        );
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0]["entity_id"], "person");
+        assert_eq!(entries[0]["role"], "heard");
     }
 }

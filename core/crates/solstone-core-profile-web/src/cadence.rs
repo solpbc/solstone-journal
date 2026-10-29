@@ -25,9 +25,9 @@ pub(crate) fn compute_cadence(
     now: DateTime<FixedOffset>,
 ) -> ProfileResult<(Cadence, Vec<ActivitySourceRef>)> {
     let roles = if include_mentions {
-        ["attendee", "mentioned"].as_slice()
+        ["attendee", "heard", "mentioned"].as_slice()
     } else {
-        ["attendee"].as_slice()
+        ["attendee", "heard"].as_slice()
     };
     let mut interaction_days = Vec::new();
     let mut sources = Vec::new();
@@ -129,7 +129,10 @@ pub(crate) fn list_active_entity_ids(
                 let Some(entry) = entry.as_object() else {
                     continue;
                 };
-                if entry.get("role").and_then(Value::as_str) != Some("attendee") {
+                if !matches!(
+                    entry.get("role").and_then(Value::as_str),
+                    Some("attendee" | "heard")
+                ) {
                     continue;
                 }
                 if let Some(entity_id) = entry
@@ -427,5 +430,36 @@ mod tests {
                 .expect("active IDs")
                 .is_empty()
         );
+    }
+
+    #[test]
+    fn cadence_counts_heard_for_both_modes_and_active_while_visible_counts_for_neither() {
+        let temporary = journal();
+        facet(temporary.path(), "muted", true);
+        records(
+            temporary.path(),
+            "muted",
+            "20260410",
+            &[
+                interaction("heard_act", 1, "pat", "heard"),
+                interaction("vis_act", 2, "vis", "visible"),
+            ],
+        );
+        let (without_mentions, _) =
+            compute_cadence(temporary.path(), "pat", false, now()).expect("cadence");
+        let (with_mentions, _) =
+            compute_cadence(temporary.path(), "pat", true, now()).expect("cadence");
+        assert_eq!(without_mentions.recent_interactions_count_30d, 1);
+        assert_eq!(with_mentions.recent_interactions_count_30d, 1);
+        assert_eq!(
+            list_active_entity_ids(temporary.path(), 30, now()).expect("active IDs"),
+            vec!["pat"]
+        );
+
+        let (vis_without, _) =
+            compute_cadence(temporary.path(), "vis", false, now()).expect("cadence");
+        let (vis_with, _) = compute_cadence(temporary.path(), "vis", true, now()).expect("cadence");
+        assert_eq!(vis_without.recent_interactions_count_30d, 0);
+        assert_eq!(vis_with.recent_interactions_count_30d, 0);
     }
 }

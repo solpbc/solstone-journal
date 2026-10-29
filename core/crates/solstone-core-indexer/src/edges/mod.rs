@@ -1179,6 +1179,63 @@ mod tests {
     }
 
     #[test]
+    fn activity_edges_cover_participation_excludes_heard_role() {
+        let rel = "facets/work/activities/20260430.jsonl";
+        let context = edge_context(rel, "20260430", "work");
+
+        // 1. One attendee pair plus a heard entity id: attended-with rows exist only between attendees
+        let rows1 = activity::extract_activity_edges(
+            &[json!({
+                "id": "act-1",
+                "created_at": 1777554000000_i64,
+                "activity": "meeting",
+                "participation": [
+                    {"role": "attendee", "entity_id": "edge_zoe"},
+                    {"role": "attendee", "entity_id": "edge_ada"},
+                    {"role": "heard", "entity_id": "edge_heidi"},
+                ],
+            })
+            .as_object()
+            .unwrap()
+            .clone()],
+            &context,
+        )
+        .expect("activity edges");
+
+        let attended_with1: Vec<_> = rows1.iter().filter(|r| r.kind == "attended-with").collect();
+        assert_eq!(attended_with1.len(), 1);
+        assert_eq!(attended_with1[0].src, "edge_zoe");
+        assert_eq!(attended_with1[0].dst, "edge_ada");
+        assert!(
+            !rows1
+                .iter()
+                .any(|r| r.src == "edge_heidi" || r.dst == "edge_heidi")
+        );
+
+        // 2. Two heard ids and no second attendee: emit no attended-with row
+        let rows2 = activity::extract_activity_edges(
+            &[json!({
+                "id": "act-2",
+                "created_at": 1777554000000_i64,
+                "activity": "conversation",
+                "participation": [
+                    {"role": "attendee", "entity_id": "edge_zoe"},
+                    {"role": "heard", "entity_id": "edge_heidi"},
+                    {"role": "heard", "entity_id": "edge_henry"},
+                ],
+            })
+            .as_object()
+            .unwrap()
+            .clone()],
+            &context,
+        )
+        .expect("activity edges");
+
+        let attended_with2: Vec<_> = rows2.iter().filter(|r| r.kind == "attended-with").collect();
+        assert!(attended_with2.is_empty());
+    }
+
+    #[test]
     fn legacy_event_edges_skip_only_unoccurred_schedule_rows() {
         let root = temp_root("event-plans");
         write_json(

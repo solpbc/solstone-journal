@@ -294,9 +294,7 @@ fn project_sunday(
 
         let (start, end, duration) =
             crate::tools::activities::activity_times_and_duration(&rep.record);
-        let participants = crate::tools::activities::activity_participants(&rep.record);
-        let mentioned = crate::tools::activities::activity_mentioned(&rep.record);
-        let on_screen = crate::tools::activities::activity_on_screen(&rep.record);
+        let people = crate::tools::activities::activity_people(&rep.record);
         let entities = crate::tools::activities::activity_entities(&rep.record);
         let title = crate::tools::activities::activity_title(&rep.record);
 
@@ -307,9 +305,10 @@ fn project_sunday(
             "start": start,
             "end": end,
             "duration": duration,
-            "participants": participants,
-            "mentioned": mentioned,
-            "on_screen": on_screen,
+            "participants": people.participants,
+            "heard": people.heard,
+            "mentioned": people.mentioned,
+            "on_screen": people.on_screen,
             "entities": entities,
             "reference": reference.clone(),
             "zone": zone_str,

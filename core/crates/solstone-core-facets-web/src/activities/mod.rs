@@ -1340,7 +1340,7 @@ mod tests {
 {"id":"det_midnight","activity":"project_review","title":"Det Midnight","hidden":false,"segments":["235000_1200"],"stream":"s1"}
 {"id":"det_longer","activity":"project_review","title":"Det Longer","hidden":false,"segments":["100000_3600","101500_600"],"stream":"s1"}
 {"id":"det_no_seg","activity":"project_review","title":"Det No Seg","hidden":false}
-{"id":"story_and_people","activity":"project_review","title":"Story & People","hidden":false,"source":"user","story":{"body":"Discussed quarterly roadmap"},"participation":[{"name":"Carol","role":"attendee"},{"name":"Dave","role":"organizer"}]}"#;
+{"id":"story_and_people","activity":"project_review","title":"Story & People","hidden":false,"source":"user","story":{"body":"Discussed quarterly roadmap"},"participation":[{"name":"Carol","role":"attendee"},{"name":"Heidi","role":"heard"},{"name":"Dave","role":"organizer"},{"name":"Mallory","role":"mentioned"},{"name":"Victor","role":"visible"},{"name":"Henry","role":"heard"}]}"#;
         write(
             &root.path().join("facets/work/activities/20260716.jsonl"),
             day16_rows,
@@ -1485,7 +1485,11 @@ mod tests {
             .find(|i| i["id"] == "story_and_people")
             .unwrap();
         assert_eq!(sp["summary"], "Discussed quarterly roadmap");
-        assert_eq!(sp["people"], serde_json::json!(["Carol"]));
+        assert_eq!(sp["people"], serde_json::json!(["Carol", "Heidi", "Henry"]));
+        let people_list = sp["people"].as_array().unwrap();
+        assert!(!people_list.contains(&serde_json::json!("Dave")));
+        assert!(!people_list.contains(&serde_json::json!("Mallory")));
+        assert!(!people_list.contains(&serde_json::json!("Victor")));
 
         // Empty day and ?facet= of an undeclared name return empty items, every declared facet at count 0, hidden_count 0
         let (status_emp, res_emp) = request(

@@ -49,6 +49,7 @@ pub(super) fn render(rel: Option<&str>, records: &[JsonObject]) -> ProducedChunk
         // plain list.
         for (label, role) in [
             ("Attendees", Some("attendee")),
+            ("In conversation", Some("heard")),
             ("Mentioned", Some("mentioned")),
             ("On screen", Some("visible")),
             ("Participation", None),
@@ -224,7 +225,7 @@ fn activity_type(record: &JsonObject) -> Option<String> {
 }
 
 fn participation(record: &JsonObject, role: Option<&str>) -> Option<String> {
-    const ROLES: [&str; 3] = ["attendee", "mentioned", "visible"];
+    const ROLES: [&str; 4] = ["attendee", "heard", "mentioned", "visible"];
     let Value::Array(entries) = record.get("participation")? else {
         return None;
     };
@@ -332,6 +333,7 @@ mod tests {
             "title": "Lyrics review", "activity": "reading",
             "participation": [
                 {"name": "Mina", "role": "attendee"},
+                {"name": "Iris", "role": "heard"},
                 {"name": "Pat", "role": "mentioned"},
                 {"name": "Cifka", "role": "visible"},
                 {"name": "Suda", "role": "visible"},
@@ -344,6 +346,27 @@ mod tests {
         assert!(text.contains("- On screen: Cifka, Suda\n"));
         assert!(text.contains("- Participation: Ola"));
         assert!(!text.contains("Participation: Mina"));
+
+        let iris_lines = text
+            .lines()
+            .filter(|line| line.contains("Iris"))
+            .collect::<Vec<_>>();
+        assert_eq!(iris_lines.len(), 1);
+        let iris_line = iris_lines[0];
+        assert!(!iris_line.starts_with("- Attendees:"));
+        assert!(!iris_line.starts_with("- Mentioned:"));
+        assert!(!iris_line.starts_with("- On screen:"));
+        assert!(!iris_line.starts_with("- Participation:"));
+        let mentioned_line = text
+            .lines()
+            .find(|l| l.starts_with("- Mentioned:"))
+            .unwrap();
+        assert!(!mentioned_line.contains("Iris"));
+        let part_line = text
+            .lines()
+            .find(|l| l.starts_with("- Participation:"))
+            .unwrap();
+        assert!(!part_line.contains("Iris"));
     }
 
     #[test]

@@ -18,7 +18,8 @@
       "enum": [
         "attendee",
         "mentioned",
-        "visible"
+        "visible",
+        "heard"
       ]
     },
     "source": {

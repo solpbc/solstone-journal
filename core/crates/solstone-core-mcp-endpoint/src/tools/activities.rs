@@ -300,37 +300,42 @@ pub(crate) fn activity_times_and_duration(
     (start, end, duration)
 }
 
-/// The people who attended an activity. A person only mentioned in it, or only
-/// on screen, is listed by `activity_mentioned` or `activity_on_screen`.
-pub(crate) fn activity_participants(record: &Map<String, Value>) -> Vec<String> {
-    participation_names(record, |role| role == "attendee")
+#[derive(Debug, Default, PartialEq, Eq)]
+pub(crate) struct ActivityPeople {
+    pub participants: Vec<String>,
+    pub heard: Vec<String>,
+    pub mentioned: Vec<String>,
+    pub on_screen: Vec<String>,
 }
 
-/// The names someone said in an activity without attending it.
-pub(crate) fn activity_mentioned(record: &Map<String, Value>) -> Vec<String> {
-    participation_names(record, |role| role != "attendee" && role != "visible")
-}
-
-/// The names an activity only showed on screen: nobody said them.
-pub(crate) fn activity_on_screen(record: &Map<String, Value>) -> Vec<String> {
-    participation_names(record, |role| role == "visible")
-}
-
-fn participation_names(record: &Map<String, Value>, keep: impl Fn(&str) -> bool) -> Vec<String> {
-    record
-        .get("participation")
-        .and_then(Value::as_array)
-        .map(|arr| {
-            arr.iter()
-                .filter_map(Value::as_object)
-                .filter(|p| keep(p.get("role").and_then(Value::as_str).unwrap_or_default()))
-                .filter_map(|p| p.get("name").and_then(Value::as_str))
-                .map(str::trim)
-                .filter(|n| !n.is_empty())
-                .map(str::to_string)
-                .collect()
-        })
-        .unwrap_or_default()
+/// Classifies an activity's participants into participants, heard, mentioned,
+/// and on-screen names.
+pub(crate) fn activity_people(record: &Map<String, Value>) -> ActivityPeople {
+    let mut people = ActivityPeople::default();
+    let Some(entries) = record.get("participation").and_then(Value::as_array) else {
+        return people;
+    };
+    for entry in entries.iter().filter_map(Value::as_object) {
+        let Some(name) = entry.get("name").and_then(Value::as_str) else {
+            continue;
+        };
+        let trimmed = name.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let name_str = trimmed.to_string();
+        match entry
+            .get("role")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+        {
+            "attendee" => people.participants.push(name_str),
+            "heard" => people.heard.push(name_str),
+            "visible" => people.on_screen.push(name_str),
+            _ => people.mentioned.push(name_str),
+        }
+    }
+    people
 }
 
 pub(crate) fn activity_entities(record: &Map<String, Value>) -> Vec<String> {
@@ -648,9 +653,7 @@ pub(crate) fn execute_list(
             .map_err(|_| DispatchError::Tool(ToolError::ReferenceNotFound))?;
 
         let (start, end, duration) = activity_times_and_duration(&item.record);
-        let participants = activity_participants(&item.record);
-        let mentioned = activity_mentioned(&item.record);
-        let on_screen = activity_on_screen(&item.record);
+        let people = activity_people(&item.record);
         let entities = activity_entities(&item.record);
         let title = activity_title(&item.record);
 
@@ -661,9 +664,10 @@ pub(crate) fn execute_list(
             "start": start,
             "end": end,
             "duration": duration,
-            "participants": participants,
-            "mentioned": mentioned,
-            "on_screen": on_screen,
+            "participants": people.participants,
+            "heard": people.heard,
+            "mentioned": people.mentioned,
+            "on_screen": people.on_screen,
             "entities": entities,
             "reference": reference,
             "zone": zone_str,
@@ -1150,4 +1154,28 @@ fn format_segment_heading(day: &str, seg_key: &str) -> Option<String> {
         start.format("%Y-%m-%d %H:%M:%S"),
         end.format("%H:%M:%S")
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn activity_heard_and_role_classification() {
+        let record = json!({
+            "participation": [
+                {"name": "Alice", "role": "attendee"},
+                {"name": "Bob", "role": "heard"},
+                {"name": "Carol", "role": "mentioned"},
+                {"name": "Dave", "role": "visible"},
+                {"name": "Eve", "role": "organizer"},
+                {"name": "Frank"},
+            ]
+        });
+        let people = activity_people(record.as_object().unwrap());
+        assert_eq!(people.participants, vec!["Alice"]);
+        assert_eq!(people.heard, vec!["Bob"]);
+        assert_eq!(people.mentioned, vec!["Carol", "Eve", "Frank"]);
+        assert_eq!(people.on_screen, vec!["Dave"]);
+    }
 }

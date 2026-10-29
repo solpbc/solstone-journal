@@ -383,7 +383,12 @@ fn project_item(
         .map(|arr| {
             arr.iter()
                 .filter_map(Value::as_object)
-                .filter(|p| p.get("role").and_then(Value::as_str) == Some("attendee"))
+                .filter(|p| {
+                    matches!(
+                        p.get("role").and_then(Value::as_str),
+                        Some("attendee" | "heard")
+                    )
+                })
                 .filter_map(|p| p.get("name").and_then(Value::as_str))
                 .map(str::trim)
                 .filter(|name| !name.is_empty())

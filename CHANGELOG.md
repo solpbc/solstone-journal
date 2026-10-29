@@ -17,6 +17,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - a day's daily outputs no longer wait on a few stretches whose thinking was set aside, as long as those stretches are no more than a twentieth of the day's recorded time. when that thinking later finishes, the day's outputs are made again, apart from a daily briefing once noon the next day has passed.
 - what your journal writes about each screen frame stays closer to what is on your screen. it no longer includes the journal's own placeholder titles, instruction headings or sample values, and a blank or nearly empty screen frame gets a paragraph about it far less often.
 - each stretch's screen description now sticks closer to what your journal holds: it invents fewer details, and in your terminal it more often credits an agent's work to the agent rather than to you.
+- the list of people for new activities is more accurate, and it rarely lists the tools, projects and companies an activity names as people. people you talked with in a conversation that wasn't a meeting, when their voice matches someone your journal remembers, are now listed among the activity's people instead of as mentioned.
 
 ### Fixed
 

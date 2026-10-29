@@ -634,9 +634,9 @@ fn validate_participation(value: &Value) -> Result<Vec<Value>, CommandOutput> {
             )));
         }
         let role = object.get("role").and_then(Value::as_str);
-        if !matches!(role, Some("attendee" | "mentioned" | "visible")) {
+        if !matches!(role, Some("attendee" | "mentioned" | "visible" | "heard")) {
             return Err(stderr(format!(
-                "Error: participation[{index}] has invalid role '{}' (must be one of ['attendee', 'mentioned', 'visible'])",
+                "Error: participation[{index}] has invalid role '{}' (must be one of ['attendee', 'mentioned', 'visible', 'heard'])",
                 object
                     .get("role")
                     .map_or("null".to_string(), json_value_to_python_string)
@@ -884,5 +884,32 @@ mod tests {
                 exit: 1,
             }
         );
+    }
+
+    #[test]
+    fn validate_participation_accepts_heard_and_enumerates_roles_on_error() {
+        let valid_entry = serde_json::json!([{
+            "name": "Iris",
+            "role": "heard",
+            "source": "voice",
+            "confidence": 0.9,
+            "context": "Spoke during conversation",
+        }]);
+        let res = validate_participation(&valid_entry);
+        assert!(res.is_ok());
+
+        let invalid_entry = serde_json::json!([{
+            "name": "Iris",
+            "role": "invalid_role",
+            "source": "voice",
+            "confidence": 0.9,
+            "context": "Test",
+        }]);
+        let err = validate_participation(&invalid_entry).unwrap_err();
+        let stderr_str = err.stderr;
+        assert!(stderr_str.contains("attendee"));
+        assert!(stderr_str.contains("mentioned"));
+        assert!(stderr_str.contains("visible"));
+        assert!(stderr_str.contains("heard"));
     }
 }

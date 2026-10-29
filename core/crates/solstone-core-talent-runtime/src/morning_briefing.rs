@@ -502,7 +502,12 @@ fn attendee_names(record: &Map<String, Value>) -> Vec<String> {
         .into_iter()
         .flatten()
         .filter_map(Value::as_object)
-        .filter(|entry| entry.get("role").and_then(Value::as_str) == Some("attendee"))
+        .filter(|entry| {
+            matches!(
+                entry.get("role").and_then(Value::as_str),
+                Some("attendee" | "heard")
+            )
+        })
         .map(|entry| string_or(entry.get("name").or_else(|| entry.get("entity_id")), ""))
         .filter(|v| !v.is_empty())
         .collect()
@@ -1304,12 +1309,14 @@ mod tests {
                 {"name": "Ada Lovelace", "role": "attendee", "source": "voice"},
                 {"name": "Perry Evans", "role": "mentioned", "source": "screen"},
                 {"name": "Grace Hopper", "source": "screen"},
+                {"name": "Alan Turing", "role": "heard", "source": "voice"},
+                {"name": "Margaret Hamilton", "role": "visible", "source": "screen"},
                 {"entity_id": "atlas", "role": "attendee"},
             ],
         });
         assert_eq!(
             attendee_names(record.as_object().unwrap()),
-            vec!["Ada Lovelace", "atlas"]
+            vec!["Ada Lovelace", "Alan Turing", "atlas"]
         );
     }
 
