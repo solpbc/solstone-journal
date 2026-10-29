@@ -123,6 +123,7 @@ pub fn apply_acoustic_matching(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn apply_cluster_matches(
     labels: &mut BTreeMap<i64, Label>,
     unresolved: &[i64],
