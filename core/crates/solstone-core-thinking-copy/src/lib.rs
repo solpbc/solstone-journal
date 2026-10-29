@@ -1612,7 +1612,7 @@ mod tests {
             unit: "llama-server-vulkan",
             platform: Some(Platform::LinuxX64),
             backend: None,
-            filename: Some("llama-b11669-bin-ubuntu-vulkan-x64.tar.gz"),
+            filename: None,
         };
         let model_1 = DownloadMember::Catalog {
             unit: "local-model",
@@ -1643,7 +1643,6 @@ mod tests {
         let expected_vulkan_runtime: u64 =
             resolve("llama-server-vulkan", Some(Platform::LinuxX64), None)
                 .iter()
-                .filter(|a| a.filename == "llama-b11669-bin-ubuntu-vulkan-x64.tar.gz")
                 .map(|a| a.size_bytes)
                 .sum();
         let expected_models: u64 = resolve("local-model", None, None)
