@@ -29,6 +29,7 @@ pub mod morning_briefing;
 pub mod owner_actors;
 mod partial_input;
 pub mod participation;
+mod participation_floor;
 pub mod possible_names;
 pub mod prepare;
 mod product_names;
@@ -82,6 +83,8 @@ pub struct PreparedTalent {
     pub(crate) entry_sources: Vec<Option<solstone_core_transcripts::EntrySource>>,
     /// What terminal sampling read and left out, emitted once with the run.
     pub(crate) terminal_reading: Option<Value>,
+    /// What participation floor sampling read and left out, emitted once with the run.
+    pub(crate) participation_floor: Option<Value>,
     pub(crate) story_input: Option<story_input::Candidate>,
     pub(crate) story_messages: Option<story_messages::Candidate>,
     pub(crate) story_input_used: bool,
@@ -96,6 +99,7 @@ impl PreparedTalent {
             config,
             entry_sources: Vec::new(),
             terminal_reading: None,
+            participation_floor: None,
             story_input: None,
             story_messages: None,
             story_input_used: false,
@@ -1076,6 +1080,9 @@ fn generate_response(
     prepared.config.remove(INPUT_BUDGET_KEY);
     prepared.config.remove(story::INPUT_WHOLE_KEY);
     if let Some(event) = prepared.terminal_reading.take() {
+        emit(writer, event);
+    }
+    if let Some(event) = prepared.participation_floor.take() {
         emit(writer, event);
     }
     native_generate_response(prepared, generate, writer)

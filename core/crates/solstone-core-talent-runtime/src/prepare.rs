@@ -299,8 +299,24 @@ pub fn prepare(
             Value::String(body),
         );
     }
+    let participation_floor = if composed
+        .get("sources")
+        .and_then(Value::as_object)
+        .and_then(|sources| sources.get("sample_to_floor"))
+        .and_then(Value::as_bool)
+        == Some(true)
+        && composed.get("messages").is_none()
+    {
+        Some(
+            crate::participation_floor::apply(&mut composed, &entry_sources, &context.journal)
+                .map_err(PrepareFailure::Refusal)?,
+        )
+    } else {
+        None
+    };
     crate::product_names::prepare(&name, &mut composed, &entry_sources);
     let mut prepared = PreparedTalent::new(name, composed);
+    prepared.participation_floor = participation_floor;
     if prepared.name == "work" {
         prepared.entry_sources = std::mem::take(&mut entry_sources);
         prepared.story_input = crate::story_input::prepare(&context.journal, &prepared.config)

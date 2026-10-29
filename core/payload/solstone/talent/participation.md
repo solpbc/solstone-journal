@@ -11,6 +11,7 @@
   "max_output_tokens": 6912,
   "timeout_s": 480,
   "load": {
+    "sample_to_floor": true,
     "transcripts": true,
     "percepts": true,
     "talents": {

@@ -66,6 +66,6 @@ Story or the smaller input path. Topic matching is lexical, and useful details
 can be missed. Literal copying preserves the stored wording, including any
 upstream extraction error.
 
-Participation and Conversation keep their existing inputs and behavior. The
+Conversation keeps its existing inputs and behavior. The
 voice gates and whole-activity source-body disqualification remain in force.
 The separate [source passages](SOURCE_PASSAGES.md) capability is unchanged.

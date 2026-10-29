@@ -13,6 +13,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- for long terminal and screen activities, the list of people for new activities now draws on a sample from across the whole activity instead of only its most recent part.
 - on a mac, your journal no longer thinks while your mac is asleep, including the short spells when it wakes itself with the screen off. your journal picks up again when you wake your mac. if you choose a processing window on a mac, your journal now tells you how to keep your mac awake through it.
 - an agent reading your journal now sees one number for each unnamed voice through a continuous recording, instead of a new number every few minutes. the number starts over after a pause or on another device.
 - a day's daily outputs no longer wait on a few stretches whose thinking was set aside, as long as those stretches are no more than a twentieth of the day's recorded time. when that thinking later finishes, the day's outputs are made again, apart from a daily briefing once noon the next day has passed.
