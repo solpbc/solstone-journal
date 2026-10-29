@@ -211,7 +211,18 @@ pub struct DeclaredFix {
     pub introduced: &'static str,
 }
 
-pub const DECLARED_FIXES: &[DeclaredFix] = &[];
+/// A change that fixes a failure class declares it here, keyed on the reason
+/// code the held records carry and the version that first ships the fix.
+/// Without an entry, work set aside for that reason stays set aside on every
+/// journal until its input changes or the owner asks. Entries are permanent:
+/// a journal that updates later still owes its held work one attempt.
+pub const DECLARED_FIXES: &[DeclaredFix] = &[DeclaredFix {
+    // Screen read a long terminal segment in batches that shared one output
+    // allowance; it now reads the sampled terminal reading in one request.
+    id: "screen-terminal-reading",
+    reason: "incomplete_json_length",
+    introduced: "2.0.61",
+}];
 
 fn fix_available(fix: &DeclaredFix) -> bool {
     let version = |text: &str| -> Option<[u64; 3]> {
@@ -751,6 +762,42 @@ mod tests {
         // There are no diagnostic logs in this journal at all.
         assert!(!root.path().join("chronicle").exists());
         assert_eq!(list(root.path()).0.len(), 1);
+    }
+
+    #[test]
+    fn declared_fixes_give_held_work_one_attempt_on_this_build() {
+        let root = tempfile::tempdir().unwrap();
+        let unit = Unit::Segment {
+            day: "20261028".into(),
+            stream: "terminal".into(),
+            segment: "104713_300".into(),
+            talent: "screen".into(),
+            direct: false,
+        };
+        let id = unit.id().unwrap();
+        for fix in DECLARED_FIXES {
+            assert!(fix_available(fix), "{} is not available", fix.id);
+            observe_held(root.path(), &unit, fix.reason, "input").unwrap();
+            let grant = read(root.path(), &id)
+                .unwrap()
+                .unwrap()
+                .permission("input", DECLARED_FIXES)
+                .unwrap();
+            assert_eq!(grant.cause, format!("fix:{}", fix.id));
+            consume(
+                root.path(),
+                &unit,
+                &grant,
+                fix.reason,
+                "input",
+                DECLARED_FIXES,
+            )
+            .unwrap();
+            finish(root.path(), &unit, &grant, Some(fix.reason)).unwrap();
+            let again = read(root.path(), &id).unwrap().unwrap();
+            assert!(again.held);
+            assert!(again.permission("input", DECLARED_FIXES).is_none());
+        }
     }
 
     fn unit() -> Unit {
