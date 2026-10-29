@@ -23,6 +23,7 @@ public final class OwnerFolderCopyTest {
         unknownSizeReadsUntilEofAndKeepsExactBytes();
         serviceCheckpointStopsBeforeCreatingOutput();
         symlinkEscapeDuplicateAndMissingMtime();
+        trustedCacheAliasAndDescendantGuard();
         detachedPathAndBookmark();
         authorityMismatch();
         cancel();
@@ -134,6 +135,49 @@ public final class OwnerFolderCopyTest {
         OwnerFolderCopy.Result undated = OwnerFolderCopy.copy("grant", 1, "grant", 1, missing, dest, new AtomicBoolean());
         require(OwnerFolderCopy.NO_MTIME.equals(undated.ownerMessage));
         require(!dest.exists());
+    }
+
+    static void trustedCacheAliasAndDescendantGuard() throws Exception {
+        java.nio.file.Path root = Files.createTempDirectory("cache-alias").toRealPath();
+        try {
+            java.nio.file.Path real = Files.createDirectories(root.resolve("private/cache"));
+            java.nio.file.Path alias = root.resolve("platform-alias");
+            Files.createSymbolicLink(alias, real.getParent());
+            File rawCache = alias.resolve("cache").toFile();
+            MemoryFolder source = new MemoryFolder();
+            source.dir("");
+            source.file("note.md", "retained note".getBytes("UTF-8"), 1_700_000_000_000L);
+            File rawDestination = new File(rawCache, "owner-bridge/raw");
+            rawDestination.mkdirs();
+            OwnerFolderCopy.Result raw = OwnerFolderCopy.copy("grant", 1, "grant", 1,
+                    source, rawDestination, new AtomicBoolean());
+            require(OwnerFolderCopy.DENIED.equals(raw.ownerMessage));
+            require(!new File(rawDestination, "note.md").exists());
+
+            // Only the trusted platform base is resolved, before appending owned paths.
+            File trustedCache = rawCache.getCanonicalFile();
+            File destination = new File(trustedCache, "owner-bridge/canonical");
+            destination.mkdirs();
+            OwnerFolderCopy.Result copied = OwnerFolderCopy.copy("grant", 1, "grant", 1,
+                    source, destination, new AtomicBoolean());
+            require(copied.authorityMatches && OwnerFolderCopy.READY.equals(copied.ownerMessage));
+            require("retained note".equals(bytes(new File(destination, "note.md"))));
+
+            java.nio.file.Path outside = Files.createDirectory(root.resolve("outside"));
+            java.nio.file.Path link = trustedCache.toPath().resolve("owner-bridge/redirect");
+            Files.createSymbolicLink(link, outside);
+            OwnerFolderCopy.Result held = OwnerFolderCopy.copy("grant", 1, "grant", 1,
+                    source, link.resolve("out").toFile(), new AtomicBoolean());
+            require(OwnerFolderCopy.DENIED.equals(held.ownerMessage));
+            require(!Files.exists(outside.resolve("out")));
+            require(Files.isSymbolicLink(link));
+        } finally {
+            try (java.util.stream.Stream<java.nio.file.Path> paths = Files.walk(root)) {
+                for (java.nio.file.Path path : paths.sorted(java.util.Comparator.reverseOrder()).toArray(java.nio.file.Path[]::new)) {
+                    Files.delete(path);
+                }
+            }
+        }
     }
 
     static void detachedPathAndBookmark() {
