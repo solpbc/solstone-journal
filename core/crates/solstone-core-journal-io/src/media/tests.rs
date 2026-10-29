@@ -219,8 +219,8 @@ mod observations {
 
     #[test]
     fn census_listing_lets_ordinary_entries_move_but_not_evidence_or_membership() {
-        // Every mutation changes a size or the membership, never only a time,
-        // so a coarse filesystem clock cannot hide it.
+        // Every mutation changes a size, an identity or the membership, never
+        // only a time, so a coarse filesystem clock cannot hide it.
         let listed = |mutation: &'static str, census: bool| {
             let (temp, parent) = fixture();
             let dir = temp.path().join("parent");
@@ -232,6 +232,11 @@ mod observations {
                     match mutation {
                         "ordinary" => fs::write(dir.join("log"), b"older")?,
                         "evidence" => fs::write(dir.join("stage"), b"older")?,
+                        "replace" => {
+                            fs::write(dir.join("other"), b"new")?;
+                            fs::rename(dir.join("other"), dir.join("log"))?
+                        }
+                        "remove" => fs::remove_file(dir.join("log"))?,
                         _ => fs::write(dir.join("added"), b"new")?,
                     }
                     Ok(())
@@ -247,8 +252,13 @@ mod observations {
             assert!(fired, "{mutation}");
             result.is_ok()
         };
-        for (mutation, census_accepts) in [("ordinary", true), ("evidence", false), ("add", false)]
-        {
+        for (mutation, census_accepts) in [
+            ("ordinary", true),
+            ("evidence", false),
+            ("replace", false),
+            ("remove", false),
+            ("add", false),
+        ] {
             assert_eq!(listed(mutation, true), census_accepts, "census {mutation}");
             assert!(!listed(mutation, false), "strict {mutation}");
         }

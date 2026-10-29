@@ -282,11 +282,16 @@ impl<'a> Relisted<'a> {
     }
 }
 
+/// Stages, and every entry under restore-intents, are the census's evidence.
+fn is_evidence(entry: &MediaEntry, role: Role) -> bool {
+    matches!(role, Role::Intents) || is_stage_namespace_name(&entry.name)
+}
+
 fn relisted(entries: &[MediaEntry], role: Role) -> Vec<Relisted<'_>> {
     entries
         .iter()
         .filter_map(|entry| {
-            if matches!(role, Role::Intents) || is_stage_namespace_name(&entry.name) {
+            if is_evidence(entry, role) {
                 Some(Relisted::Evidence(entry))
             } else if (matches!(role, Role::Chronicle(0..=1))
                 && entry.kind != JournalEntryKind::RegularFile)
@@ -549,7 +554,7 @@ impl<F: FnMut(Checkpoint, &Path)> Reader<F> {
         let entries = directory
             .census_entries(
                 self.limits.maximum(RecoveryBudget::DirectoryEntries),
-                |entry| matches!(role, Role::Intents) || is_stage_namespace_name(&entry.name),
+                |entry| is_evidence(entry, role),
             )
             .map_err(|source| io_error(relative, source))?
             .ok_or_else(|| {
@@ -911,12 +916,17 @@ mod tests {
         let f = Fixture::new();
         f.directory("indexer");
         f.directory("chronicle/20260101/stream/.tmp-offload-unrelated");
-        let indexer = f.path("indexer");
-        // A file created inside `indexer/` moves the root entry's times between
-        // the root listing's two walks, as a running journal's writers do.
+        fs::write(f.path("journal.log"), b"line\n").unwrap();
+        let (indexer, log) = (f.path("indexer"), f.path("journal.log"));
+        // Between the root listing's two walks a running journal appends to a
+        // log and writes inside a subdirectory, which moves that entry's times.
+        // The append changes a size, so a coarse clock cannot hide it.
         let (observed, fired) = run_with_media_hook(
             MediaPrimitive::AfterFirstEnumeration,
-            move || fs::write(indexer.join("written"), b"live"),
+            move || {
+                fs::write(indexer.join("written"), b"live")?;
+                fs::write(log, b"line\nline\n")
+            },
             || f.observed(),
         );
         assert!(fired);
