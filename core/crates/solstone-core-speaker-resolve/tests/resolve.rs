@@ -149,6 +149,24 @@ fn write_owner_centroid(root: &Path, with_margin: bool) {
     fs::write(root.join("entities/principal/owner_centroid.npz"), bytes).expect("owner centroid");
 }
 fn write_rival_voiceprint(root: &Path, entity_id: &str) {
+    write_rival_row(root, entity_id, true);
+}
+
+/// One voiceprint row from an earlier segment, which named the rival when
+/// `named` (a row only counts toward a centroid with that evidence).
+fn write_rival_row(root: &Path, entity_id: &str, named: bool) {
+    let earlier = root.join("chronicle/20260807/mic/110000_300/talents");
+    fs::create_dir_all(&earlier).expect("create earlier segment");
+    let evidence = if named {
+        json!([{"entity_id": entity_id, "sources": ["speakers"]}])
+    } else {
+        json!([])
+    };
+    fs::write(
+        earlier.join("speaker_labels.json"),
+        json!({"labels": [], "candidate_evidence": evidence}).to_string(),
+    )
+    .expect("write earlier labels");
     let encoder = EncoderIdentity {
         id: "test".to_owned(),
         sha256: "0".repeat(64),
@@ -159,7 +177,9 @@ fn write_rival_voiceprint(root: &Path, entity_id: &str) {
         entity_id,
         &[VoiceprintItem {
             embedding: embedding(1.0, 0.0),
-            metadata: json!({"stream": "mic", "added_at": 1}),
+            metadata: json!({"stream": "mic", "stream_layout": "named", "day": "20260807",
+                             "segment_key": "110000_300", "source": "mic_audio",
+                             "sentence_id": 1, "added_at": 1}),
         }],
         &encoder,
     )
@@ -555,6 +575,17 @@ fn ac8_person_rival_declines_owner_margin_and_non_persons_do_not() {
                 .is_none_or(|gaps| !gaps.iter().any(|gap| gap.entity_id == id))
         );
     }
+}
+
+#[test]
+fn a_rival_row_from_a_segment_that_named_no_one_does_not_decline_the_owner() {
+    let temporary = TempDir::new();
+    seed_owner_with_margin(temporary.path());
+    entity_typed(temporary.path(), "rival", "Rival", "Person", false);
+    write_rival_row(temporary.path(), "rival", false);
+    let output = resolve_owner_statement(temporary.path());
+    assert_eq!(output.labels[0].speaker.as_deref(), Some("principal"));
+    assert_eq!(output.labels[0].owner_margin_declined, None);
 }
 
 #[test]

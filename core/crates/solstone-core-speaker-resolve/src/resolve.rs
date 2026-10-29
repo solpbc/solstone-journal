@@ -194,7 +194,9 @@ pub fn resolve(
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect::<Vec<_>>();
-    let mut cache = VoiceprintCentroidCache::default();
+    // Centroids count only rows whose segment named the person or the owner
+    // labelled (journal #403).
+    let mut cache = VoiceprintCentroidCache::with_evidence(journal_root);
     let mut voiceprint_gaps = Vec::new();
     let layer1 = separate_owner_statements(
         &embeddings.statements,
@@ -257,6 +259,9 @@ pub fn resolve(
         &mut cache,
         &mut voiceprint_gaps,
     );
+    if !read_only {
+        cache.save_evidence();
+    }
     let unmatched = embeddings
         .statements
         .iter()

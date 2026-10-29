@@ -53,6 +53,7 @@ pub mod voice_members;
 pub mod voice_tags;
 pub mod voiceprint_accumulation;
 pub mod voiceprint_centroid;
+pub mod voiceprint_evidence;
 pub mod voiceprint_metadata;
 mod zip_names;
 

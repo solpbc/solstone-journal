@@ -44,9 +44,29 @@ pub struct VoiceprintCentroidCache {
     /// admissible person, so doing that per lookup is quadratic in the size of
     /// the journal; holding the map here keeps it to a single scan.
     directories: Option<HashMap<String, String>>,
+    /// When set, a centroid is built only from rows the journal has evidence
+    /// for (see [`crate::voiceprint_evidence`]).
+    evidence: Option<crate::voiceprint_evidence::VoiceprintEvidence>,
 }
 
 impl VoiceprintCentroidCache {
+    /// A cache whose centroids use only rows with evidence for their person.
+    pub fn with_evidence(journal_root: &Path) -> Self {
+        Self {
+            evidence: Some(crate::voiceprint_evidence::VoiceprintEvidence::load(
+                journal_root,
+            )),
+            ..Self::default()
+        }
+    }
+
+    /// Persist what this call learned about segment evidence.
+    pub fn save_evidence(&mut self) {
+        if let Some(evidence) = self.evidence.as_mut() {
+            evidence.save();
+        }
+    }
+
     /// Load and cache the centroid for one entity.
     pub fn entry_for(
         &mut self,
@@ -85,6 +105,13 @@ impl VoiceprintCentroidCache {
                         (embedding.to_vec(), metadata)
                     })
                     .collect::<Vec<_>>();
+                let rows = match self.evidence.as_mut() {
+                    Some(evidence) => rows
+                        .into_iter()
+                        .filter(|(_, metadata)| evidence.supports(entity_id, metadata))
+                        .collect(),
+                    None => rows,
+                };
                 let centroid = decay_weighted_centroid(&rows, stream, now_ms);
                 VoiceprintCentroidEntry {
                     usable: centroid.is_some(),
