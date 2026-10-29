@@ -6,17 +6,18 @@
 use std::collections::BTreeMap;
 
 use crate::{
-    pcr_appraisal::{ApplicationExpectations, ApplicationPcrPolicy},
+    pcr_appraisal::{ApplicationExpectations, ApplicationPcrPolicy, ApplicationPcrProfiles},
     snp::{PcrMode, Policy},
 };
 
-// The sealed image's two fingerprints were qualified on 2026-10-06, one per
-// Azure firmware state, with reboot-identical quotes. The overlap engine was
-// retired on 2026-10-09 and its fingerprint is no longer admitted.
+// Image 4 retains both reboot-qualified firmware states for the transition.
+// Image 5 was reboot-qualified on 2026-10-29 in the post-roll state only.
+// An unqualified prediction never enters this admission set.
 // Each pin's authenticated manifests and status mode live in nvgpu/rims.rs.
 pub const PRODUCTION_PCR_SHA256_PINS: &[&str] = &[
     "84edaf3d0205a8280068ab485bf45edfc81f371ab7a7dcccaef8538728ccd8a3",
     "0486d5a350467cfa28dea41076659debee9c2fea8c6423828efb53270cbb4641",
+    "8779bff6e5cd2c9eadc41098fb073a425654bc10d505b4257125b750cd25eebf",
 ];
 
 // The key that signs Azure's confidential-VM firmware (the paravisor that
@@ -40,7 +41,9 @@ pub const PUBLISHED_QUOTE_PCR_SELECTION: [u32; 14] =
 // post-roll-expected-pcrs.json, which agree on it across both accepted firmware
 // states. The structural registers 8, 16, 22 and 23 those two files publish are
 // the fixed values pcr_appraisal checks.
-pub const PUBLISHED_APPLICATION_PCRS: [(u32, [u8; 32]); 8] = [
+pub type ApplicationPcrValues = [(u32, [u8; 32]); 8];
+
+pub const IMAGE_4_APPLICATION_PCRS: ApplicationPcrValues = [
     (
         4,
         decode_hex("fd9521ba7ed6f4ebc8ec7befecc3f6f6e3564d432b64dd24a4639858633084e7"),
@@ -66,14 +69,69 @@ pub const PUBLISHED_APPLICATION_PCRS: [(u32, [u8; 32]); 8] = [
     ),
 ];
 
-/// The published build's register selection and application values.
-pub fn published_application_pcr_policy() -> ApplicationPcrPolicy {
-    let digests: BTreeMap<u32, [u8; 32]> = PUBLISHED_APPLICATION_PCRS.into_iter().collect();
-    ApplicationPcrPolicy {
-        selection: PUBLISHED_QUOTE_PCR_SELECTION.to_vec(),
-        expectations: ApplicationExpectations::new(digests)
-            .expect("the published application registers are exactly the appraised set"),
-    }
+// Complete application registers for conf-proc 9968c21. The qualified
+// post-roll fingerprint selects this vector as one indivisible policy.
+pub const IMAGE_5_APPLICATION_PCRS: ApplicationPcrValues = [
+    (
+        4,
+        decode_hex("9559fd2056f187bb0d13d0de5e131bf3a4df94dbdaa9d5b991725ae8adbde852"),
+    ),
+    (
+        7,
+        decode_hex("6ea866422436b46a50e6f2313be40c782a57aee0c71833f9f3c0b6ccfb67c73d"),
+    ),
+    (
+        9,
+        decode_hex("b7a989edefac316f7ea2bea1eba878baedcd4b0c3ea67d1e13df70911ff932be"),
+    ),
+    (
+        11,
+        decode_hex("3215d3f6decf54daa36dcf6a625829feb506e74ad9d4cfd9a0d5081bad3d5fc9"),
+    ),
+    (12, [0u8; 32]),
+    (13, [0u8; 32]),
+    (14, [0u8; 32]),
+    (
+        15,
+        decode_hex("ee22ecf6651b12ade6fd7ab54a8743ea2606e8ce130446ff86792fdb55d3f0e6"),
+    ),
+];
+
+/// Each admitted fingerprint and its complete published register values.
+pub const PUBLISHED_APPLICATION_PCR_PROFILES: &[(&str, &ApplicationPcrValues)] = &[
+    (
+        "8779bff6e5cd2c9eadc41098fb073a425654bc10d505b4257125b750cd25eebf",
+        &IMAGE_5_APPLICATION_PCRS,
+    ),
+    (
+        "84edaf3d0205a8280068ab485bf45edfc81f371ab7a7dcccaef8538728ccd8a3",
+        &IMAGE_4_APPLICATION_PCRS,
+    ),
+    (
+        "0486d5a350467cfa28dea41076659debee9c2fea8c6423828efb53270cbb4641",
+        &IMAGE_4_APPLICATION_PCRS,
+    ),
+];
+
+/// Complete register policies for the admitted published builds.
+pub fn published_application_pcr_profiles() -> ApplicationPcrProfiles {
+    ApplicationPcrProfiles::from_profiles(
+        PUBLISHED_APPLICATION_PCR_PROFILES
+            .iter()
+            .map(|(pin, registers)| {
+                let digests: BTreeMap<u32, [u8; 32]> = registers.iter().copied().collect();
+                (
+                    (*pin).to_owned(),
+                    ApplicationPcrPolicy {
+                        selection: PUBLISHED_QUOTE_PCR_SELECTION.to_vec(),
+                        expectations: ApplicationExpectations::new(digests).expect(
+                            "the published application registers are exactly the appraised set",
+                        ),
+                    },
+                )
+            })
+            .collect(),
+    )
 }
 
 /// Returns the pinned production policy with all other policy defaults intact.
@@ -88,7 +146,7 @@ pub fn production_policy() -> Policy {
             .map(|pin| (*pin).to_owned())
             .collect(),
         id_key_digests: Some(PRODUCTION_ID_KEY_DIGEST_PINS.iter().copied().collect()),
-        application_pcrs: Some(published_application_pcr_policy()),
+        application_pcrs: Some(published_application_pcr_profiles()),
         ..Policy::default()
     }
 }
@@ -125,8 +183,11 @@ mod tests {
         test_support::fixture_bytes,
     };
 
-    const PUBLISHED_BUILD_QUOTES: [&str; 2] =
-        ["sealed-pre-roll-quote.pcrs", "sealed-post-roll-quote.pcrs"];
+    const PUBLISHED_BUILD_QUOTES: &[&str] = &[
+        "sealed-pre-roll-quote.pcrs",
+        "sealed-post-roll-quote.pcrs",
+        "image5-post-roll-quote.pcrs",
+    ];
 
     /// Where register `position` of the selection keeps its digest in a
     /// quote.pcrs file: two TPML_DIGEST lists of up to eight sized slots after
@@ -141,21 +202,46 @@ mod tests {
     }
 
     #[test]
-    fn production_admits_the_published_build_in_both_firmware_states() {
+    fn production_admits_each_qualified_quote_with_its_complete_profile() {
         let policy = production_policy();
-        let application = policy
+        let profiles = policy
             .application_pcrs
             .as_ref()
             .expect("production appraises registers");
+        let mut covered = BTreeSet::new();
         for name in PUBLISHED_BUILD_QUOTES {
             let quote = fixture_bytes(name);
-            assert!(check_pcr_fingerprint(&quote, &policy).is_ok(), "{name}");
-            assert_eq!(
-                check_application_pcrs(&quote, application),
-                Ok(()),
-                "{name}"
-            );
+            let fingerprint = check_pcr_fingerprint(&quote, &policy).expect("qualified quote");
+            assert_eq!(profiles.check(&quote, &fingerprint), Ok(()), "{name}");
+            covered.insert(fingerprint);
         }
+        assert_eq!(covered, policy.pcr_pins);
+    }
+
+    #[test]
+    fn qualified_images_cannot_borrow_each_others_application_profile() {
+        let policy = production_policy();
+        let profiles = policy.application_pcrs.as_ref().unwrap();
+        let old = fixture_bytes("sealed-post-roll-quote.pcrs");
+        let new = fixture_bytes("image5-post-roll-quote.pcrs");
+        let old_pin = check_pcr_fingerprint(&old, &policy).unwrap();
+        let new_pin = check_pcr_fingerprint(&new, &policy).unwrap();
+        assert_eq!(
+            profiles.check(&old, &new_pin),
+            Err(ApplicationPcrError::Register { pcr: 4 })
+        );
+        assert_eq!(
+            profiles.check(&new, &old_pin),
+            Err(ApplicationPcrError::Register { pcr: 4 })
+        );
+        let mut mixed = new.clone();
+        let offset = digest_offset(5); // PCR 9
+        mixed[offset..offset + 32].copy_from_slice(&old[offset..offset + 32]);
+        assert!(check_pcr_fingerprint(&mixed, &policy).is_err());
+        assert_eq!(
+            profiles.check(&mixed, &new_pin),
+            Err(ApplicationPcrError::Register { pcr: 9 })
+        );
     }
 
     #[test]
@@ -164,7 +250,9 @@ mod tests {
         let application = policy
             .application_pcrs
             .as_ref()
-            .expect("production appraises registers");
+            .expect("production appraises registers")
+            .select(super::PRODUCTION_PCR_SHA256_PINS[0])
+            .expect("image-4 profile");
         let published = fixture_bytes("sealed-post-roll-quote.pcrs");
         let mut reasons = BTreeSet::new();
         for (position, pcr) in PUBLISHED_QUOTE_PCR_SELECTION.into_iter().enumerate() {
@@ -190,7 +278,9 @@ mod tests {
         let application = policy
             .application_pcrs
             .as_ref()
-            .expect("production appraises registers");
+            .expect("production appraises registers")
+            .select(super::PRODUCTION_PCR_SHA256_PINS[0])
+            .expect("image-4 profile");
         // The retired engine's quote carries ten registers, not the published
         // fourteen. Both admission layers refuse it independently.
         let overlap = fixture_bytes("quote.pcrs");

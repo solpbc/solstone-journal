@@ -27,12 +27,12 @@ pub use nvgpu::{
     build_nvattest_offline_attest_command_with_installation, locate_nvattest,
 };
 pub use pcr_appraisal::{
-    ApplicationExpectations, ApplicationPcrPolicy, PcrAppraisalFailure, PcrAppraisalReason,
-    appraise_application_pcrs, check_application_pcrs, parse_quote_pcrs,
+    ApplicationExpectations, ApplicationPcrPolicy, ApplicationPcrProfiles, PcrAppraisalFailure,
+    PcrAppraisalReason, appraise_application_pcrs, check_application_pcrs, parse_quote_pcrs,
 };
 pub use pins::{
-    PRODUCTION_ID_KEY_DIGEST_PINS, PRODUCTION_PCR_SHA256_PINS, PUBLISHED_APPLICATION_PCRS,
-    PUBLISHED_QUOTE_PCR_SELECTION, production_policy, published_application_pcr_policy,
+    PRODUCTION_ID_KEY_DIGEST_PINS, PRODUCTION_PCR_SHA256_PINS, PUBLISHED_APPLICATION_PCR_PROFILES,
+    PUBLISHED_QUOTE_PCR_SELECTION, production_policy, published_application_pcr_profiles,
 };
 pub use snp::{
     CpuBundle, PcrMode, Policy, QuoteVerifier, TcbFloor, appraise_cpu_leg, check_pcr_fingerprint,

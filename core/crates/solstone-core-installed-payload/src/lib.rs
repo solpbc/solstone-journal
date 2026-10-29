@@ -115,7 +115,7 @@ pub fn compiled_target() -> &'static str {
 }
 
 /// Android has compile/link support but no admitted desktop installed package
-/// (app-owned service tools use `solstone.android-service-tools.v1`). Desktop
+/// (app-owned service tools use `solstone.android-service-tools.v2`). Desktop
 /// `InstalledPackage::admit` still refuses `android-arm64-unshipped`. App-owned
 /// admission is a separate path and is not a mobile release.
 #[cfg(all(target_os = "android", target_arch = "aarch64"))]

@@ -28,7 +28,7 @@ use crate::{
         CpuAppraisalStage, CpuLegError, PcrFingerprintError, PcrPinMismatchError, SnpParseError,
         SnpVerifyError,
     },
-    pcr_appraisal::{ApplicationPcrPolicy, check_application_pcrs},
+    pcr_appraisal::ApplicationPcrProfiles,
     tlv::decode_gpu_envelope,
     tpm_quote::{TpmQuoteInput, load_ak_public_key, verify_quote, without_leading_zeros},
 };
@@ -166,9 +166,9 @@ pub struct Policy {
     /// `None` leaves the ID key unchecked; `Some` refuses a zero digest and
     /// any digest outside the set, so an empty set refuses every report.
     pub id_key_digests: Option<BTreeSet<[u8; 48]>>,
-    /// The published build's registers, appraised one by one after the
-    /// fingerprint check. `None` leaves the registers to the fingerprint alone.
-    pub application_pcrs: Option<ApplicationPcrPolicy>,
+    /// Complete published profiles, selected after fingerprint verification.
+    /// `None` leaves the registers to the fingerprint alone.
+    pub application_pcrs: Option<ApplicationPcrProfiles>,
 }
 
 impl Default for Policy {
@@ -642,12 +642,12 @@ fn appraise_cpu_leg_at(
         },
     ));
     if let Some(application) = &policy.application_pcrs {
-        check_application_pcrs(bundle.quote_pcrs, application).map_err(|source| {
-            CpuLegError::ApplicationPcrs {
+        application
+            .check(bundle.quote_pcrs, &pcr_sha256)
+            .map_err(|source| CpuLegError::ApplicationPcrs {
                 stage: CpuAppraisalStage::Quote,
                 source,
-            }
-        })?;
+            })?;
         steps.push(ok_step(
             "application-pcrs",
             "PCRs 4, 7, 9 and 11-15 match the published build; 8, 16 and 23 are zero and 22 is all-FF"
@@ -1110,6 +1110,118 @@ mod tests {
 
     const VALID_NOW_UNIX_SECONDS: i64 = 1_800_000_000;
 
+    #[cfg(feature = "full-tests")]
+    #[test]
+    fn certificate_cpu_appraisal_selects_the_verified_fingerprint_profile() {
+        use crate::{
+            error::ApplicationPcrError,
+            pcr_appraisal::{ApplicationPcrProfiles, profile_fixture},
+        };
+        struct FixtureQuote;
+        impl super::QuoteVerifier for FixtureQuote {
+            fn verify(
+                &self,
+                _: crate::tpm_quote::TpmQuoteInput<'_>,
+            ) -> Result<(), crate::error::TpmQuoteError> {
+                Ok(()) // This test isolates policy after the separately tested TPM signature boundary.
+            }
+        }
+        let inputs = fixture_inputs();
+        let certs = fixture_cert_refs(&inputs);
+        let (quotes, profiles) = profile_fixture::fixture();
+        let policy = Policy {
+            pcr_mode: PcrMode::Pin,
+            pcr_pins: quotes.iter().map(|(pin, _)| pin.clone()).collect(),
+            application_pcrs: Some(profiles.clone()),
+            ..Policy::default()
+        };
+        let appraise = |quote: &[u8], policy: &Policy| {
+            super::appraise_cpu_leg_at(
+                super::CpuBundle {
+                    hcl_report: &inputs.hcl_report,
+                    standalone_report: Some(&inputs.report),
+                    cert_pems: &certs,
+                    ak_public_key_pem: &inputs.ak_public_key_pem,
+                    nonce: &inputs.nonce,
+                    quote_message: &inputs.quote_message,
+                    quote_signature: &inputs.quote_signature,
+                    quote_pcrs: quote,
+                },
+                &inputs.envelope_tlv,
+                &inputs.channel_binding,
+                super::BINDING_DOMAIN,
+                Some(policy),
+                Some(&FixtureQuote),
+                VALID_NOW_UNIX_SECONDS,
+            )
+        };
+        for (_, quote) in &quotes[..2] {
+            assert!(appraise(quote, &policy).is_ok());
+        }
+        let mut wrong = policy.clone();
+        wrong.application_pcrs = Some(ApplicationPcrProfiles::from_profiles(vec![
+            (
+                quotes[0].0.clone(),
+                profiles.select(&quotes[1].0).unwrap().clone(),
+            ),
+            (
+                quotes[1].0.clone(),
+                profiles.select(&quotes[0].0).unwrap().clone(),
+            ),
+        ]));
+        for (_, quote) in &quotes[..2] {
+            assert!(matches!(
+                appraise(quote, &wrong),
+                Err(CpuLegError::ApplicationPcrs {
+                    source: ApplicationPcrError::Register { pcr: 4 },
+                    ..
+                })
+            ));
+        }
+        assert!(matches!(
+            appraise(&quotes[2].1, &policy),
+            Err(CpuLegError::ApplicationPcrs {
+                source: ApplicationPcrError::Register { pcr: 9 },
+                ..
+            })
+        ));
+        wrong.application_pcrs = Some(ApplicationPcrProfiles::from_profiles(Vec::new()));
+        assert!(matches!(
+            appraise(&quotes[0].1, &wrong),
+            Err(CpuLegError::ApplicationPcrs {
+                source: ApplicationPcrError::Profile,
+                ..
+            })
+        ));
+        wrong.application_pcrs = Some(ApplicationPcrProfiles::from_profiles(vec![
+            (
+                quotes[0].0.clone(),
+                profiles.select(&quotes[0].0).unwrap().clone(),
+            ),
+            (
+                quotes[0].0.clone(),
+                profiles.select(&quotes[1].0).unwrap().clone(),
+            ),
+        ]));
+        assert!(matches!(
+            appraise(&quotes[0].1, &wrong),
+            Err(CpuLegError::ApplicationPcrs {
+                source: ApplicationPcrError::Profile,
+                ..
+            })
+        ));
+        let mut unpublished = quotes[0].1.clone();
+        unpublished[142] ^= 1; // PCR 0: a private candidate fingerprint.
+        let fingerprint = check_pcr_fingerprint(&unpublished, &Policy::default()).unwrap();
+        let qualification = Policy {
+            pcr_mode: PcrMode::Pin,
+            pcr_pins: [fingerprint].into_iter().collect(),
+            ..Policy::default()
+        };
+        assert!(appraise(&unpublished, &qualification).is_ok());
+        assert!(check_pcr_fingerprint(&unpublished, &crate::pins::production_policy()).is_err());
+    }
+
     struct FixtureInputs {
         hcl_report: Vec<u8>,
         report: Vec<u8>,
@@ -1538,11 +1650,11 @@ mod tests {
         let policy = crate::pins::production_policy();
         assert_eq!(policy.pcr_mode, PcrMode::Pin);
         let profiles = GpuProfiles::production();
-        // Captured quote-PCR bytes for both reboot-qualified firmware states
-        // of the sealed appliance.
+        // Captured quote-PCR bytes for each admitted, reboot-qualified image state.
         for (fixture, status) in [
             ("sealed-pre-roll-quote.pcrs", StatusMode::OfflineSignedAge),
             ("sealed-post-roll-quote.pcrs", StatusMode::OfflineSignedAge),
+            ("image5-post-roll-quote.pcrs", StatusMode::OfflineSignedAge),
         ] {
             let mut quote = fixture_bytes(fixture);
             let fingerprint = check_pcr_fingerprint(&quote, &policy).expect("qualified quote");

@@ -66,6 +66,30 @@ pub struct ApplicationPcrPolicy {
     pub expectations: ApplicationExpectations,
 }
 
+/// Complete application profiles selected by an already verified fingerprint.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ApplicationPcrProfiles(Vec<(String, ApplicationPcrPolicy)>);
+
+impl ApplicationPcrProfiles {
+    /// Supplies local authority; duplicate fingerprints refuse when selected.
+    pub fn from_profiles(profiles: Vec<(String, ApplicationPcrPolicy)>) -> Self {
+        Self(profiles)
+    }
+
+    pub fn select(&self, fingerprint: &str) -> Result<&ApplicationPcrPolicy, ApplicationPcrError> {
+        let mut matches = self.0.iter().filter(|(pin, _)| pin == fingerprint);
+        match (matches.next(), matches.next()) {
+            (Some((_, profile)), None) => Ok(profile),
+            _ => Err(ApplicationPcrError::Profile),
+        }
+    }
+
+    /// Appraises only the complete profile associated with this fingerprint.
+    pub fn check(&self, quote: &[u8], fingerprint: &str) -> Result<(), ApplicationPcrError> {
+        check_application_pcrs(quote, self.select(fingerprint)?)
+    }
+}
+
 /// Appraises a quote's registers one by one against a published build.
 ///
 /// A quote whose selection is not exactly the published one is refused before
@@ -214,6 +238,51 @@ pub fn appraise_application_pcrs(
 }
 
 #[cfg(test)]
+pub(crate) mod profile_fixture {
+    use super::*;
+    use crate::pins::{IMAGE_4_APPLICATION_PCRS, PUBLISHED_QUOTE_PCR_SELECTION};
+
+    pub fn fixture() -> (Vec<(String, Vec<u8>)>, ApplicationPcrProfiles) {
+        let first =
+            include_bytes!("../../../../tests/fixtures/spp_attest/sealed-post-roll-quote.pcrs")
+                .to_vec();
+        let mut second = first.clone();
+        second[140 + 2 * 66 + 2..140 + 2 * 66 + 34].fill(0x33); // PCR 4
+        second[140 + 5 * 66 + 2..140 + 5 * 66 + 34].fill(0x44); // PCR 9
+        let mut mixed = first.clone();
+        mixed[140 + 5 * 66 + 2..140 + 5 * 66 + 34].fill(0x44);
+        let quotes: Vec<_> = [first, second, mixed]
+            .into_iter()
+            .map(|quote| {
+                (
+                    crate::snp::hex_lower(
+                        ring::digest::digest(&ring::digest::SHA256, &quote).as_ref(),
+                    ),
+                    quote,
+                )
+            })
+            .collect();
+        let first_values = IMAGE_4_APPLICATION_PCRS
+            .into_iter()
+            .collect::<BTreeMap<_, _>>();
+        let mut second_values = first_values.clone();
+        second_values.insert(4, [0x33; 32]);
+        second_values.insert(9, [0x44; 32]);
+        let profile = |values| ApplicationPcrPolicy {
+            selection: PUBLISHED_QUOTE_PCR_SELECTION.to_vec(),
+            expectations: ApplicationExpectations::new(values).unwrap(),
+        };
+        let profiles = ApplicationPcrProfiles::from_profiles(vec![
+            (quotes[0].0.clone(), profile(first_values.clone())),
+            (quotes[1].0.clone(), profile(second_values)),
+            // Deliberately admit the negative fingerprint with an incompatible profile.
+            (quotes[2].0.clone(), profile(first_values)),
+        ]);
+        (quotes, profiles)
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
 
@@ -225,6 +294,54 @@ mod tests {
         error::{ApplicationExpectationsError, QuotePcrsError},
         test_support::fixture_bytes,
     };
+
+    #[test]
+    fn profiles_select_one_complete_vector_and_refuse_missing_or_ambiguous_authority() {
+        use super::{ApplicationPcrProfiles, profile_fixture};
+        use crate::error::ApplicationPcrError;
+        let (quotes, profiles) = profile_fixture::fixture();
+        for (pin, quote) in &quotes[..2] {
+            assert_eq!(profiles.check(quote, pin), Ok(()));
+        }
+        assert_eq!(
+            profiles.check(&quotes[2].1, &quotes[2].0),
+            Err(ApplicationPcrError::Register { pcr: 9 })
+        );
+        let swapped = ApplicationPcrProfiles::from_profiles(vec![
+            (
+                quotes[0].0.clone(),
+                profiles.select(&quotes[1].0).unwrap().clone(),
+            ),
+            (
+                quotes[1].0.clone(),
+                profiles.select(&quotes[0].0).unwrap().clone(),
+            ),
+        ]);
+        for (pin, quote) in &quotes[..2] {
+            assert_eq!(
+                swapped.check(quote, pin),
+                Err(ApplicationPcrError::Register { pcr: 4 })
+            );
+        }
+        assert_eq!(
+            profiles.check(&quotes[0].1, "unknown"),
+            Err(ApplicationPcrError::Profile)
+        );
+        let duplicate = ApplicationPcrProfiles::from_profiles(vec![
+            (
+                quotes[0].0.clone(),
+                profiles.select(&quotes[0].0).unwrap().clone(),
+            ),
+            (
+                quotes[0].0.clone(),
+                profiles.select(&quotes[1].0).unwrap().clone(),
+            ),
+        ]);
+        assert_eq!(
+            duplicate.check(&quotes[0].1, &quotes[0].0),
+            Err(ApplicationPcrError::Profile)
+        );
+    }
 
     fn hex_decode_32(s: &str) -> [u8; 32] {
         assert_eq!(s.len(), 64);

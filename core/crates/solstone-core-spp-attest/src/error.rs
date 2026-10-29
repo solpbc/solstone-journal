@@ -228,6 +228,8 @@ pub enum QuotePcrsError {
 /// Fail-closed refusals raised while appraising a quote's registers one by one.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum ApplicationPcrError {
+    #[error("PCR fingerprint has no unique application profile")]
+    Profile,
     #[error("quote.pcrs does not carry the published register set: {0}")]
     Quote(#[from] QuotePcrsError),
     #[error("PCR {pcr} does not match the published build")]
@@ -238,6 +240,7 @@ impl ApplicationPcrError {
     /// The stable refusal reason, one per appraised register.
     pub fn reason_code(&self) -> &'static str {
         match self {
+            Self::Profile => "pcr_profile_missing",
             Self::Quote(_) => "pcr_selection_mismatch",
             Self::Register { pcr } => match pcr {
                 4 => "pcr_4_mismatch",

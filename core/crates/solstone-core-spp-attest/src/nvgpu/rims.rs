@@ -126,9 +126,13 @@ impl GpuProfile {
 // Each admitted production pin and its complete profile. This mapping is
 // separate from CPU admission: a profile here never adds its fingerprint to
 // pins.rs, and the integrity test refuses an admitted pin without a profile.
-// Both firmware states of the sealed image use its authenticated,
-// image-carried proofs.
+// Both admitted builds use authenticated, image-carried status proofs.
 const PRODUCTION_PROFILES: &[(&str, ManifestSet, StatusMode)] = &[
+    (
+        "8779bff6e5cd2c9eadc41098fb073a425654bc10d505b4257125b750cd25eebf",
+        ManifestSet::QUALIFIED_595_71_05,
+        StatusMode::OfflineSignedAge,
+    ),
     (
         "84edaf3d0205a8280068ab485bf45edfc81f371ab7a7dcccaef8538728ccd8a3",
         ManifestSet::QUALIFIED_595_71_05,
@@ -248,6 +252,27 @@ mod tests {
 
     #[test]
     fn every_admitted_cpu_profile_has_integrity_checked_collateral() {
+        use std::collections::BTreeSet;
+        let admitted: BTreeSet<_> = crate::pins::PRODUCTION_PCR_SHA256_PINS
+            .iter()
+            .copied()
+            .collect();
+        assert_eq!(
+            admitted.len(),
+            crate::pins::PRODUCTION_PCR_SHA256_PINS.len()
+        );
+        let application: BTreeSet<_> = crate::pins::PUBLISHED_APPLICATION_PCR_PROFILES
+            .iter()
+            .map(|(pin, _)| *pin)
+            .collect();
+        assert_eq!(
+            application.len(),
+            crate::pins::PUBLISHED_APPLICATION_PCR_PROFILES.len()
+        );
+        let gpu: BTreeSet<_> = PRODUCTION_PROFILES.iter().map(|(pin, _, _)| *pin).collect();
+        assert_eq!(gpu.len(), PRODUCTION_PROFILES.len());
+        assert_eq!(admitted, application);
+        assert_eq!(admitted, gpu);
         let profiles = GpuProfiles::production();
         for pin in crate::pins::PRODUCTION_PCR_SHA256_PINS {
             let profile = profiles

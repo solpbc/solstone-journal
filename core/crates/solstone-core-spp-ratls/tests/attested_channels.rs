@@ -2792,3 +2792,161 @@ fn proof_boundary_complete_fragmented_and_cut_controls() {
         assert!(observation.application_requests.is_empty());
     }
 }
+
+#[test]
+fn signed_exporter_proof_selects_one_complete_application_profile() {
+    use solstone_core_spp_attest::pins::{IMAGE_4_APPLICATION_PCRS, PUBLISHED_QUOTE_PCR_SELECTION};
+    use solstone_core_spp_attest::{
+        ApplicationExpectations, ApplicationPcrPolicy, ApplicationPcrProfiles, Policy,
+        parse_quote_pcrs,
+    };
+    use solstone_core_spp_ratls::ratls::verify::verify_exporter_proof;
+    let first = include_bytes!("../../../../tests/fixtures/spp_attest/sealed-post-roll-quote.pcrs")
+        .to_vec();
+    let mut second = first.clone();
+    second[274..306].fill(0x33);
+    second[472..504].fill(0x44);
+    let mut mixed = first.clone();
+    mixed[472..504].fill(0x44);
+    let quotes = [first, second, mixed];
+    let pins: Vec<_> = quotes
+        .iter()
+        .map(|q| check_pcr_fingerprint(q, &Policy::default()).unwrap())
+        .collect();
+    let first_values = IMAGE_4_APPLICATION_PCRS
+        .into_iter()
+        .collect::<std::collections::BTreeMap<_, _>>();
+    let mut second_values = first_values.clone();
+    second_values.insert(4, [0x33; 32]);
+    second_values.insert(9, [0x44; 32]);
+    let profile = |values| ApplicationPcrPolicy {
+        selection: PUBLISHED_QUOTE_PCR_SELECTION.to_vec(),
+        expectations: ApplicationExpectations::new(values).unwrap(),
+    };
+    let a = profile(first_values);
+    let b = profile(second_values);
+    let profiles = ApplicationPcrProfiles::from_profiles(vec![
+        (pins[0].clone(), a.clone()),
+        (pins[1].clone(), b.clone()),
+        (pins[2].clone(), a.clone()),
+    ]);
+    let mut policy = Policy {
+        pcr_mode: PcrMode::Pin,
+        pcr_pins: pins.iter().cloned().collect(),
+        application_pcrs: Some(profiles),
+        ..Policy::default()
+    };
+    let nonce = [0x11; 32];
+    let exporter = [0x22; 32];
+    let evidence = CompositeEvidence {
+        owner_nonce: nonce.to_vec(),
+        tls_spki_der: b"synthetic SPKI".to_vec(),
+        amd_report: Vec::new(),
+        hcl_report: Vec::new(),
+        ak_public_key_pem: TEST_AK_PUBLIC_PEM.as_bytes().to_vec(),
+        quote_message: Vec::new(),
+        quote_signature: Vec::new(),
+        quote_pcrs: Vec::new(),
+        amd_ark_pem: Vec::new(),
+        amd_ask_pem: Vec::new(),
+        amd_vcek_pem: Vec::new(),
+        gpu_envelope: b"synthetic GPU envelope".to_vec(),
+    };
+    let binding = exporter_binding(
+        &nonce,
+        &evidence.tls_spki_der,
+        &exporter,
+        &evidence.gpu_envelope,
+    );
+    let (_, private) = parse_x509_pem(TEST_AK_PRIVATE_PEM.as_bytes()).unwrap();
+    let key = RsaKeyPair::from_pkcs8(&private.contents).unwrap();
+    let proofs: Vec<_> = quotes
+        .iter()
+        .map(|quote| {
+            let values = parse_quote_pcrs(quote, &PUBLISHED_QUOTE_PCR_SELECTION).unwrap();
+            let mut mask = [0u8; 3];
+            let mut digests = Vec::new();
+            for pcr in PUBLISHED_QUOTE_PCR_SELECTION {
+                mask[pcr as usize / 8] |= 1 << (pcr % 8);
+                digests.extend_from_slice(&values[&pcr]);
+            }
+            let mut message = Vec::new();
+            message.extend_from_slice(&0xff54_4347u32.to_be_bytes());
+            message.extend_from_slice(&0x8018u16.to_be_bytes());
+            message.extend_from_slice(&0u16.to_be_bytes());
+            message.extend_from_slice(&32u16.to_be_bytes());
+            message.extend_from_slice(&binding);
+            message.extend_from_slice(&0u64.to_be_bytes());
+            message.extend_from_slice(&0u32.to_be_bytes());
+            message.extend_from_slice(&0u32.to_be_bytes());
+            message.push(1);
+            message.extend_from_slice(&0u64.to_be_bytes());
+            message.extend_from_slice(&1u32.to_be_bytes());
+            message.extend_from_slice(&0x000bu16.to_be_bytes());
+            message.push(3);
+            message.extend_from_slice(&mask);
+            message.extend_from_slice(&32u16.to_be_bytes());
+            message
+                .extend_from_slice(ring::digest::digest(&ring::digest::SHA256, &digests).as_ref());
+            let mut signature = vec![0; key.public().modulus_len()];
+            key.sign(
+                &RSA_PKCS1_SHA256,
+                &SystemRandom::new(),
+                &message,
+                &mut signature,
+            )
+            .unwrap();
+            let mut signature_blob = Vec::new();
+            signature_blob.extend_from_slice(&0x0014u16.to_be_bytes());
+            signature_blob.extend_from_slice(&0x000bu16.to_be_bytes());
+            signature_blob.extend_from_slice(&(signature.len() as u16).to_be_bytes());
+            signature_blob.extend_from_slice(&signature);
+            ExporterProof {
+                owner_nonce: nonce.to_vec(),
+                tls_spki_der: evidence.tls_spki_der.clone(),
+                tls_exporter: exporter.to_vec(),
+                quote_message: message,
+                quote_signature: signature_blob,
+                quote_pcrs: quote.clone(),
+            }
+            .to_der()
+        })
+        .collect();
+    let verify = |proof: &[u8], policy: &Policy| {
+        verify_exporter_proof(proof, &evidence, &exporter, &nonce, Some(policy))
+    };
+    assert!(verify(&proofs[0], &policy).is_ok());
+    assert!(verify(&proofs[1], &policy).is_ok());
+    assert_eq!(
+        verify(&proofs[2], &policy).unwrap_err().reason_code,
+        "pcr_9_mismatch"
+    );
+    policy.application_pcrs = Some(ApplicationPcrProfiles::from_profiles(vec![
+        (pins[0].clone(), b.clone()),
+        (pins[1].clone(), a.clone()),
+    ]));
+    for proof in &proofs[..2] {
+        assert_eq!(
+            verify(proof, &policy).unwrap_err().reason_code,
+            "pcr_4_mismatch"
+        );
+    }
+    policy.application_pcrs = Some(ApplicationPcrProfiles::from_profiles(Vec::new()));
+    assert_eq!(
+        verify(&proofs[0], &policy).unwrap_err().reason_code,
+        "pcr_profile_missing"
+    );
+    policy.application_pcrs = Some(ApplicationPcrProfiles::from_profiles(vec![
+        (pins[0].clone(), a),
+        (pins[0].clone(), b),
+    ]));
+    assert_eq!(
+        verify(&proofs[0], &policy).unwrap_err().reason_code,
+        "pcr_profile_missing"
+    );
+    policy.pcr_pins.clear();
+    assert_eq!(
+        verify(&proofs[0], &policy).unwrap_err().reason_code,
+        "pcr_pin_mismatch"
+    );
+}

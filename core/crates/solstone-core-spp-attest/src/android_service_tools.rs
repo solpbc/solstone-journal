@@ -6,7 +6,7 @@
 //!
 //! Android applications do not use the desktop installed package layout
 //! (`bin/`, `lib/`, `share/`). Instead, app-owned service tools are delivered
-//! and admitted through `solstone.android-service-tools.v1`.
+//! and admitted through `solstone.android-service-tools.v2`.
 
 use std::collections::BTreeSet;
 use std::ffi::OsStr;
@@ -22,7 +22,7 @@ use solstone_core_installed_payload::{
     resolve_member, sha256_hex, validate_relative,
 };
 
-pub const ANDROID_SERVICE_TOOLS_SCHEMA: &str = "solstone.android-service-tools.v1";
+pub const ANDROID_SERVICE_TOOLS_SCHEMA: &str = "solstone.android-service-tools.v2";
 pub const ANDROID_SERVICE_TOOLS_TARGET: &str = "android-aarch64-app";
 
 pub const ANDROID_RESTIC_FILENAME: &str = "librestic.so";
@@ -153,6 +153,43 @@ pub struct AndroidToolPinEntry {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub struct AndroidApplicationPcrProfile {
+    pub pcr_sha256: String,
+    pub registers: Vec<AndroidApplicationPcrEntry>,
+}
+
+fn application_profiles_manifest(
+    profiles: &[(&str, &crate::pins::ApplicationPcrValues)],
+) -> Vec<AndroidApplicationPcrProfile> {
+    profiles
+        .iter()
+        .map(|(pin, registers)| AndroidApplicationPcrProfile {
+            pcr_sha256: (*pin).to_owned(),
+            registers: registers
+                .iter()
+                .map(|(register, digest)| AndroidApplicationPcrEntry {
+                    register: *register,
+                    sha256: hex_lower(digest),
+                })
+                .collect(),
+        })
+        .collect()
+}
+
+fn validate_application_profiles(
+    actual: &[AndroidApplicationPcrProfile],
+    expected: &[(&str, &crate::pins::ApplicationPcrValues)],
+) -> Result<(), AndroidServiceToolsRefusal> {
+    if actual != application_profiles_manifest(expected) {
+        return Err(AndroidServiceToolsRefusal::PinMismatch {
+            field: "appraisal-policy",
+        });
+    }
+    Ok(())
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct AndroidIdentityManifest {
     pub sdk_revision: String,
     pub regorus_revision: String,
@@ -160,7 +197,7 @@ pub struct AndroidIdentityManifest {
     pub pcr_sha256_pins: Vec<String>,
     pub id_key_digest_pins: Vec<String>,
     pub quote_pcr_selection: Vec<u32>,
-    pub application_pcrs: Vec<AndroidApplicationPcrEntry>,
+    pub application_profiles: Vec<AndroidApplicationPcrProfile>,
     pub rims: Vec<AndroidPackagedRimEntry>,
     pub restic: AndroidToolPinEntry,
     pub rclone: AndroidToolPinEntry,
@@ -850,7 +887,7 @@ fn validate_relative_path(path: &str) -> Result<(), AndroidServiceToolsRefusal> 
     })
 }
 
-/// Renders `solstone.android-service-tools.v1` for one native-library directory
+/// Renders `solstone.android-service-tools.v2` for one native-library directory
 /// and one resource root.
 ///
 /// `receipt_bytes` is a mobile-native-build receipt. It must record a passed
@@ -899,13 +936,9 @@ pub fn render_android_service_tools_manifest(
             .map(|b| hex_lower(b))
             .collect(),
         quote_pcr_selection: crate::pins::PUBLISHED_QUOTE_PCR_SELECTION.to_vec(),
-        application_pcrs: crate::pins::PUBLISHED_APPLICATION_PCRS
-            .iter()
-            .map(|(reg, digest)| AndroidApplicationPcrEntry {
-                register: *reg,
-                sha256: hex_lower(digest),
-            })
-            .collect(),
+        application_profiles: application_profiles_manifest(
+            crate::pins::PUBLISHED_APPLICATION_PCR_PROFILES,
+        ),
         rims: crate::nvgpu::ManifestSet::QUALIFIED_595_71_05
             .entries()
             .iter()
@@ -1092,18 +1125,10 @@ pub fn admit_android_service_tools(
             field: "appraisal-policy",
         });
     }
-    let expected_app_pcrs = crate::pins::PUBLISHED_APPLICATION_PCRS
-        .iter()
-        .map(|(reg, digest)| AndroidApplicationPcrEntry {
-            register: *reg,
-            sha256: hex_lower(digest),
-        })
-        .collect::<Vec<_>>();
-    if raw.identity.application_pcrs != expected_app_pcrs {
-        return Err(AndroidServiceToolsRefusal::PinMismatch {
-            field: "appraisal-policy",
-        });
-    }
+    validate_application_profiles(
+        &raw.identity.application_profiles,
+        crate::pins::PUBLISHED_APPLICATION_PCR_PROFILES,
+    )?;
 
     let qualified_rims = crate::nvgpu::ManifestSet::QUALIFIED_595_71_05.entries();
     if raw.identity.rims.len() != qualified_rims.len() {
@@ -1608,6 +1633,70 @@ fn validate_private_staging(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn identity_binds_distinct_profiles_to_their_fingerprints() {
+        let first = crate::pins::IMAGE_4_APPLICATION_PCRS;
+        let mut second = first;
+        second[0].1 = [0x33; 32];
+        let expected = [("first", &first), ("second", &second)];
+        let valid = super::application_profiles_manifest(&expected);
+        assert!(super::validate_application_profiles(&valid, &expected).is_ok());
+        let mut swapped = valid.clone();
+        swapped[0].registers = valid[1].registers.clone();
+        swapped[1].registers = valid[0].registers.clone();
+        assert!(super::validate_application_profiles(&swapped, &expected).is_err());
+        let mut changed = valid.clone();
+        changed[0].registers[0].sha256 = "00".repeat(32);
+        assert!(super::validate_application_profiles(&changed, &expected).is_err());
+        assert!(super::validate_application_profiles(&valid[..1], &expected).is_err());
+        let mut extra = valid.clone();
+        extra.push(valid[0].clone());
+        assert!(super::validate_application_profiles(&extra, &expected).is_err());
+    }
+
+    #[cfg(feature = "full-tests")]
+    #[test]
+    fn generated_identity_profile_mutations_fail_actual_admission() {
+        let native = tempdir().unwrap();
+        let resources = tempdir().unwrap();
+        setup_fixture_roots(native.path(), resources.path());
+        let (bytes, receipt) = rendered(native.path(), resources.path());
+        admit_android_service_tools(native.path(), resources.path(), &bytes, &receipt).unwrap();
+        for mutation in 0..4 {
+            let mut value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+            let profiles = value["identity"]["application_profiles"]
+                .as_array_mut()
+                .unwrap();
+            match mutation {
+                0 => {
+                    profiles.pop();
+                }
+                1 => {
+                    profiles[0]["pcr_sha256"] = "00".repeat(32).into();
+                }
+                2 => {
+                    profiles[0]["registers"][0]["sha256"] = "00".repeat(32).into();
+                }
+                _ => {
+                    profiles.push(profiles[0].clone());
+                }
+            }
+            let error = admit_android_service_tools(
+                native.path(),
+                resources.path(),
+                &serde_json::to_vec(&value).unwrap(),
+                &receipt,
+            )
+            .unwrap_err();
+            assert!(matches!(
+                error,
+                AndroidServiceToolsRefusal::PinMismatch {
+                    field: "appraisal-policy"
+                }
+            ));
+        }
+    }
+
     use super::*;
     use tempfile::tempdir;
 
