@@ -116,6 +116,49 @@ pub(super) fn submit_owner_maintenance(
         solstone_core_system::partition::canonical_journal_command(["maintenance", "run", routine]),
     )
 }
+
+pub(super) fn submit_owner_offload(
+    root: &JournalRoot,
+    reference: String,
+) -> Result<String, &'static str> {
+    let (owner, queue, cancelled) = owner_queue(root)?;
+    submit_bound_owner_command(
+        &owner,
+        &queue,
+        &cancelled,
+        solstone_core_system::partition::canonical_journal_command([
+            "maintenance",
+            "run",
+            "backup:offload",
+        ]),
+        Some(reference),
+    )
+}
+
+pub(super) fn owner_offload_state(
+    root: &JournalRoot,
+    reference: &str,
+) -> Result<Option<&'static str>, &'static str> {
+    let (owner, queue, cancelled) = owner_queue(root)?;
+    let snapshot = queue.collect_status_snapshot(Instant::now());
+    let state = if snapshot
+        .held
+        .iter()
+        .any(|row| row.reference == reference || row.references.iter().any(|r| r == reference))
+    {
+        Some("held")
+    } else if snapshot.tasks.iter().any(|row| row.reference == reference) {
+        Some("running")
+    } else if queue.contains_reference(reference) {
+        Some("accepted")
+    } else {
+        None
+    };
+    if cancelled() || owner.revalidate_canonical_binding().is_err() {
+        return Err("queue unavailable");
+    }
+    Ok(state)
+}
 fn owner_queue(
     root: &JournalRoot,
 ) -> Result<(Arc<JournalRoot>, Arc<TaskQueue>, Checkpoint), &'static str> {
@@ -1109,6 +1152,7 @@ impl ScheduleSubmissionSink for HostScheduleSink {
     }
 }
 struct HostQueueSink {
+    root: Arc<JournalRoot>,
     daily_observation: Option<Arc<crate::daily_queue_observation::DailyQueueTap>>,
     queue: Arc<OnceLock<Weak<TaskQueue>>>,
     schedule_engine: Arc<Mutex<ScheduleEngine>>,
@@ -1117,6 +1161,7 @@ struct HostQueueSink {
 }
 impl TaskQueueEventSink for HostQueueSink {
     fn emit(&self, event: TaskQueueEvent) {
+        crate::execution::offload_receiving::record_completion(&self.root, &event);
         if (self.cancelled)() {
             return;
         }
@@ -1927,6 +1972,7 @@ impl ForegroundProcessingHost {
                     cap_resolver: Arc::new(DefaultCapResolver::default()),
                     process_state_probe: Arc::new(NoProcesses),
                     queue_sink: Some(Arc::new(HostQueueSink {
+                        root: Arc::clone(&root),
                         daily_observation: daily_observation.clone(),
                         queue: Arc::clone(&queue_slot),
                         schedule_engine: Arc::clone(&schedule_engine),
@@ -8369,3 +8415,7 @@ mod admission {
         assert!(admit_command(journal.path(), &args));
     }
 }
+
+#[cfg(all(test, feature = "full-tests", unix))]
+#[path = "offload_receiving_tests.rs"]
+mod offload_receiving_tests;

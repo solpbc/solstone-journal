@@ -8,7 +8,7 @@ publish = false
 [workspace]
 
 [features]
-full-tests = ["solstone-core-backup-web/full-tests"]
+full-tests = ["solstone-core-backup-web/full-tests", "solstone-core-journal-io/test-hooks"]
 audio-native = ["audio", "journal-mobile-audio/native"]
 audio = ["dep:journal-mobile-audio", "dep:sha2", "dep:solstone-core-transcribe"]
 processing = [

@@ -38,6 +38,10 @@ pub(super) fn routes(sender: OwnerIngress) -> Router {
     Router::new()
         .route("/api/journal/think", post(think))
         .route("/api/journal/maintenance/{routine}", post(maintenance))
+        .route(
+            "/api/journal/maintenance/{routine}/requests/{request_id}",
+            get(offload_receiving::status),
+        )
         .route("/api/journal/recurrences", get(list))
         .route(
             "/api/journal/recurrences/think/{name}",
@@ -53,7 +57,17 @@ pub(super) fn routes(sender: OwnerIngress) -> Router {
 async fn think(State(sender): State<OwnerIngress>, Json(request): Json<ThinkRequest>) -> Response {
     submit_operation(sender, Operation::Think(request.args)).await
 }
-async fn maintenance(State(sender): State<OwnerIngress>, Path(routine): Path<String>) -> Response {
+async fn maintenance(
+    State(sender): State<OwnerIngress>,
+    Path(routine): Path<String>,
+    body: axum::body::Bytes,
+) -> Response {
+    if routine == "backup:offload" {
+        return match offload_receiving::parse(&body) {
+            Ok(request) => submit_operation(sender, Operation::Offload(request)).await,
+            Err(()) => offload_receiving::invalid(),
+        };
+    }
     submit_operation(sender, Operation::Maintenance(routine)).await
 }
 async fn list(State(sender): State<OwnerIngress>) -> Response {
@@ -234,6 +248,7 @@ pub(super) fn execute(
                 ),
             }
         }
+        Operation::Offload(request) => offload_receiving::execute(root, request, cancelled),
         Operation::ListRecurrences => mutate(root, cancelled, |raw| {
             (StatusCode::OK, json!({"schedules":raw}))
         }),

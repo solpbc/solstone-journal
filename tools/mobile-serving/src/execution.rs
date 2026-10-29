@@ -42,6 +42,8 @@ struct PackageRequest {
     activity: String,
 }
 
+#[path = "offload_receiving.rs"]
+pub(crate) mod offload_receiving;
 #[path = "execution_schedules.rs"]
 mod schedules;
 #[path = "execution_source_runs.rs"]
@@ -56,6 +58,7 @@ enum Operation {
     },
     Think(Vec<String>),
     Maintenance(String),
+    Offload(offload_receiving::Request),
     ListRecurrences,
     PutRecurrence {
         name: String,

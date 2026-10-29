@@ -81,3 +81,26 @@ such as `backup:prune`, to the same foreground queue. It accepts no command,
 provider, executable or destination override. Timing edits take effect on the
 scheduler's next tick; an already admitted operation keeps its existing
 cancellation and completion rules.
+
+For an explicit `backup:offload` request, save a fresh `request_id` before
+dispatch, then send `{ "request_id": "your-saved-id" }` to the maintenance
+route. IDs contain 1–64 ASCII letters, digits, underscores or hyphens. The
+app's private owner request transport is required; pairing credentials do not
+grant this access.
+
+After a lost reply, read
+`GET /api/journal/maintenance/backup:offload/requests/{request_id}`. Repeating
+the POST with that ID returns the retained reference without submitting again,
+including after a restart. This uses the existing foreground queue and offload
+worker. Received, accepted and result receipts are immutable files in the
+journal root, named `.owner-offload-{request_id}.{phase}.json`.
+
+`unknown` means no receiving receipt was found. `admission_unknown` means a
+receipt exists but queue admission is unconfirmed. `accepted`, `running` and
+`held` report current queue state; `outcome_unknown` retains confirmed admission
+without a current result. `finished` includes the queue's actual `exit_code`.
+It describes that invocation, not archive creation, local removal or retrieval;
+an exit code of zero also covers a skipped offload. Stop can leave accepted,
+unstarted work with an unknown outcome. Receipts never restart that work.
+An unreadable receipt returns `503` and is preserved. Keep the saved ID and
+reconcile uncertainty before authorizing another operation.
