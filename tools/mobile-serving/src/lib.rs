@@ -36,6 +36,7 @@ pub mod owner_bridge;
 #[cfg(feature = "audio")]
 pub(crate) mod audio;
 
+pub mod creator_recovery;
 #[cfg(any(feature = "audio", feature = "processing"))]
 mod custody;
 #[cfg(feature = "processing")]
@@ -261,6 +262,9 @@ impl MobileServing {
         }
         root.revalidate_canonical_binding()
             .map_err(|e| e.to_string())?;
+        // Creator recovery runs while stopped, before ordinary startup can
+        // publish config, start services, or dispatch due work.
+        creator_recovery::require_ordinary_start(&root)?;
         // A pending restore must stay reachable without materializing config.
         if !solstone_core_journal_io::whole_journal_restore::whole_journal_restore_blocks(
             root.canonical_path(),

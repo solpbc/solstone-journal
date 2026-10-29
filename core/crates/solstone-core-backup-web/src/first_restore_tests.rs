@@ -358,6 +358,82 @@ async fn initial_route_records_then_drains_actual_consumer_before_copy_and_resum
     ));
 }
 
+struct LateCreatorStage(bool);
+impl JournalMaintenance for LateCreatorStage {
+    fn rebuild_body_history(&self, _: &Path) -> Result<(), JournalMaintenanceError> {
+        Ok(())
+    }
+    fn full_scan(&self, root: &Path) -> Result<(), JournalMaintenanceError> {
+        if self.0 {
+            fs::create_dir(root.join(".tmp-offload-00000000000000000000000000000001"))
+                .map_err(|_| JournalMaintenanceError)?;
+        }
+        Ok(())
+    }
+}
+
+#[tokio::test]
+async fn completed_copy_with_creator_stage_keeps_restore_and_every_resume_fenced() {
+    use solstone_core_journal_io::whole_journal_restore::whole_journal_restore_blocks;
+    for unresolved in [false, true] {
+        let mut fixture = Fixture::new(false, false, 0);
+        fixture.deps.journal_maintenance = Arc::new(LateCreatorStage(unresolved));
+        assert_eq!(
+            post_json(&fixture.deps, "/app/backup/restore", Some(restore_body()))
+                .await
+                .0,
+            200
+        );
+        let done = wait_terminal(&fixture.deps).await;
+        assert_eq!(fixture.runner.copies.load(Ordering::SeqCst), 1);
+        assert_eq!(fixture.pauses.load(Ordering::SeqCst), 1);
+        assert_eq!(
+            fixture.resumes.load(Ordering::SeqCst),
+            usize::from(!unresolved),
+            "{done}"
+        );
+        assert_eq!(
+            whole_journal_restore_blocks(fixture.root.path()),
+            unresolved
+        );
+        assert_eq!(
+            begin_target_use_bound(fixture.retained.clone()).is_err(),
+            unresolved
+        );
+        if unresolved {
+            assert_eq!(done["operation"]["phase"], "error", "{done}");
+            assert!(matches!(
+                read_whole_journal_restore(fixture.root.path()),
+                WholeJournalRestoreReadiness::Pending(_)
+            ));
+            // Exercise the legacy notification too; no later hook may reopen.
+            solstone_core_convey_shell::recovery_drain::resume_after_whole_journal_restore(
+                fixture.root.path(),
+            );
+            assert_eq!(fixture.resumes.load(Ordering::SeqCst), 0);
+            assert!(!fixture.root.path().join("resumed-read").exists());
+            assert!(
+                fixture
+                    .root
+                    .path()
+                    .join(".tmp-offload-00000000000000000000000000000001")
+                    .is_dir()
+            );
+        } else {
+            assert_eq!(done["operation"]["phase"], "done", "{done}");
+        }
+        assert_eq!(
+            fs::read(fixture.root.path().join("restored-original")).unwrap(),
+            b"original bytes"
+        );
+        assert_eq!(
+            fs::read(fixture.root.path().join("restored-derived")).unwrap(),
+            b"derived bytes"
+        );
+        fixture.stop().await;
+    }
+}
+
 #[tokio::test]
 async fn wrong_key_cannot_publish_selection_pause_consumer_or_copy() {
     let fixture = Fixture::new(false, true, 0);

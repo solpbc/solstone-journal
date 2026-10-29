@@ -540,6 +540,7 @@ fn catalog_reason(error: CatalogError) -> &'static str {
 
 fn retire_obligation(
     journal: &Path,
+    root: Option<&Arc<solstone_core_journal_io::JournalRoot>>,
     obligation: Option<&solstone_core_journal_io::whole_journal_restore::WholeJournalRestore>,
     mut outcome: RestoreOutcome,
 ) -> RestoreOutcome {
@@ -547,6 +548,21 @@ fn retire_obligation(
         return outcome;
     };
     if outcome.status != "ok" && outcome.status != "degraded" {
+        return outcome;
+    }
+    // Removing the durable fence admits every ordinary consumer, including
+    // owners that wake without a resume hook. Native target revalidation alone
+    // does not census interrupted activity on every platform.
+    let ready = root.is_some_and(|root| {
+        root.revalidate_canonical_binding().is_ok()
+            && solstone_core_journal_io::activity_obligations::observe_obligations(root)
+                .is_ok_and(|census| census.entries().is_empty())
+            && root.revalidate_canonical_binding().is_ok()
+    });
+    if !ready {
+        outcome.status = "error".to_owned();
+        outcome.reason_code = Some(RESTORE_REASON_DESTINATION_ADMISSION_FAILED.to_owned());
+        outcome.resumable = false;
         return outcome;
     }
     if solstone_core_journal_io::whole_journal_restore::clear_whole_journal_restore(journal, record)
@@ -1100,6 +1116,7 @@ fn restore_journal_with(
     }
     retire_obligation(
         journal,
+        mobile.as_ref().map(|request| &request.root),
         obligation.as_ref(),
         finish(
             journal,
@@ -1950,6 +1967,67 @@ mod tests {
 
         fn full_scan(&self, _: &Path) -> Result<(), JournalMaintenanceError> {
             Ok(())
+        }
+    }
+
+    #[cfg(all(unix, feature = "full-tests"))]
+    #[test]
+    fn mobile_final_marker_cut_requires_complete_current_obligations() {
+        use solstone_core_journal_io::whole_journal_restore::whole_journal_restore_blocks;
+        use solstone_core_journal_io::{JournalRoot, activity::ActivityLease};
+        for case in 0..3 {
+            let journal = tempfile::tempdir().unwrap();
+            let root = Arc::new(JournalRoot::open(journal.path()).unwrap());
+            let _lease = ActivityLease::try_acquire(root.clone()).unwrap();
+            let record = publish_whole_journal_restore(
+                journal.path(),
+                &WholeJournalRestoreSource::Byo {
+                    repository: "fixture".into(),
+                    backend: "local".into(),
+                },
+                SNAPSHOT_ID,
+                "/recorded",
+            )
+            .unwrap();
+            let stage = journal
+                .path()
+                .join(".tmp-offload-00000000000000000000000000000001");
+            if case == 1 {
+                fs::create_dir(&stage).unwrap();
+            }
+            if case == 2 {
+                fs::write(journal.path().join("chronicle"), b"incomplete census").unwrap();
+            }
+            let outcome = retire_obligation(
+                journal.path(),
+                Some(&root),
+                Some(&record),
+                unrecorded_outcome(RestoreDraft {
+                    status: "ok".into(),
+                    reason_code: None,
+                    integrity_ok: true,
+                    resumable: true,
+                    files_expected: Some(2),
+                    files_restored: Some(2),
+                    bytes_expected: Some(9),
+                    bytes_restored: Some(9),
+                }),
+            );
+            assert_eq!(outcome.status == "ok", case == 0, "case={case} {outcome:?}");
+            assert_eq!(whole_journal_restore_blocks(journal.path()), case != 0);
+            if case != 0 {
+                assert_eq!(
+                    outcome.reason_code.as_deref(),
+                    Some(RESTORE_REASON_DESTINATION_ADMISSION_FAILED)
+                );
+                assert!(!outcome.resumable);
+                assert!(
+                    matches!(read_whole_journal_restore(journal.path()), WholeJournalRestoreReadiness::Pending(ref current) if **current == record)
+                );
+                assert_eq!(outcome.files_restored, Some(2));
+                assert_eq!(outcome.bytes_restored, Some(9));
+            }
+            assert_eq!(stage.exists(), case == 1);
         }
     }
 

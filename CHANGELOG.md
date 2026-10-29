@@ -8,6 +8,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- the android development app can review interrupted storage work while your journal stays stopped. it can remove temporary copies after checking that the originals are still complete.
 - browser pages in your journal now show their context: whether the tab was in front and its window focused, whether audio or video was playing, whether the solstone app was paused, how long the tab had been open, the page's language and which browser it was. agents reading your journal see the same line. pages from earlier versions of the solstone extension look as before.
 
 ### Changed
@@ -17,6 +18,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- reviewing storage recovery on android could get stuck waiting for your journal to stop, even after it had stopped.
 - home no longer shows a desktop agent command when your journal runs on a phone or tablet.
 - home no longer refuses removal approvals solely because your journal is on android or ios.
 - reopening the android or ios development app during a journal restore now opens recovery instead of failing during startup.

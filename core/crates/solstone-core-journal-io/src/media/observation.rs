@@ -14,6 +14,20 @@ pub struct MediaEntry {
     pub(super) stamp: platform::Stamp,
 }
 
+impl MediaEntry {
+    /// A descriptive change revision, including the private native stamp.
+    /// Comparing it supplies no IO or settlement capability.
+    pub fn observation_revision(&self) -> io::Result<String> {
+        let bytes = serde_json::to_vec(&serde_json::json!({
+            "name":self.name.to_str().ok_or_else(changed)?,
+            "kind":format!("{:?}",self.kind),"identity":self.identity,
+            "size":self.size,"native_stamp":self.stamp,
+        }))
+        .map_err(io::Error::other)?;
+        Ok(format!("{:x}", Sha256::digest(bytes)))
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MediaRead {
     pub entry: MediaEntry,

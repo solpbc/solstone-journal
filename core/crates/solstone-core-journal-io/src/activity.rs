@@ -134,6 +134,34 @@ pub(crate) struct ExistingActivityFailure {
 }
 
 impl ActivityLease {
+    /// Acquire only the producer's existing exclusion entry. Absence is not
+    /// permission to create one while observing interrupted activity.
+    pub fn open_existing(
+        root: Arc<JournalRoot>,
+    ) -> Result<Option<Arc<Self>>, ActivityAdmissionError> {
+        root.revalidate_canonical_binding().map_err(|error| {
+            ActivityAdmissionError::Unavailable(ActivityUnavailable::Root(error))
+        })?;
+        let guard = crate::locking::open_existing_parent_lock_bound(
+            root.as_ref(),
+            OsStr::new(ENTRY),
+            Duration::ZERO,
+            Duration::ZERO,
+        )
+        .map_err(entry_error)?;
+        let Some(guard) = guard else {
+            return Ok(None);
+        };
+        let lease = Arc::new(Self {
+            inner: Admission {
+                root,
+                guard: Mutex::new(guard),
+            },
+        });
+        lease.revalidate()?;
+        Ok(Some(lease))
+    }
+
     #[cfg(target_os = "linux")]
     pub(crate) fn try_acquire_existing(
         root: Arc<JournalRoot>,

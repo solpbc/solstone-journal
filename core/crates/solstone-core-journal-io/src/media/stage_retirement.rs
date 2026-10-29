@@ -106,6 +106,16 @@ impl StageRetirement {
     /// One attempt only. A cancellation or unwind after an effect does not
     /// discard it or authorize another cleanup attempt.
     pub fn retire(&mut self, checkpoint: &dyn Fn() -> io::Result<()>) {
+        self.retire_with_leaf_check(checkpoint, &|| Ok(()));
+    }
+
+    /// The owning domain can re-prove redundant content at the actual leaf
+    /// removal boundary. This callback grants no authority by itself.
+    pub fn retire_with_leaf_check(
+        &mut self,
+        checkpoint: &dyn Fn() -> io::Result<()>,
+        before_leaf: &dyn Fn() -> io::Result<()>,
+    ) {
         let expected = match &self.expected {
             ExpectedLeaf::Recorded(name, identity) => Some((name.clone(), *identity)),
             ExpectedLeaf::Empty => None,
@@ -114,7 +124,7 @@ impl StageRetirement {
             Some((name, identity)) => Leaf::Exact(name, Some(*identity)),
             None => Leaf::Empty,
         };
-        self.attempt(leaf, checkpoint);
+        self.attempt(leaf, checkpoint, before_leaf);
     }
 
     pub fn into_completed_receipt(self) -> Result<StageRetirementReceipt, Box<Self>> {
@@ -125,12 +135,17 @@ impl StageRetirement {
         }
     }
 
-    fn attempt(&mut self, leaf: Leaf<'_>, checkpoint: &dyn Fn() -> io::Result<()>) {
+    fn attempt(
+        &mut self,
+        leaf: Leaf<'_>,
+        checkpoint: &dyn Fn() -> io::Result<()>,
+        before_leaf: &dyn Fn() -> io::Result<()>,
+    ) {
         if self.attempted {
             return;
         }
         self.attempted = true;
-        if let Err(error) = self.perform(leaf, checkpoint) {
+        if let Err(error) = self.perform(leaf, checkpoint, before_leaf) {
             self.receipt.failure = Some(error);
         }
     }
@@ -154,6 +169,7 @@ impl StageRetirement {
         &mut self,
         leaf: Leaf<'_>,
         checkpoint: &dyn Fn() -> io::Result<()>,
+        before_leaf: &dyn Fn() -> io::Result<()>,
     ) -> io::Result<()> {
         plain_name(&self.name)?;
         if let Leaf::Exact(leaf_name, _) = leaf {
@@ -205,6 +221,8 @@ impl StageRetirement {
                 if platform::identity(file)? != entry.identity {
                     return Err(changed());
                 }
+                before_leaf()?;
+                self.check(checkpoint)?;
                 platform::check_leaf(stage, &entry.name, entry.identity)?;
                 self.receipt.leaf_effect = StageRemovalEffect::Uncertain;
                 platform::remove_leaf(stage, &entry.name, file)?;
@@ -245,6 +263,7 @@ impl StageRetirement {
         &mut self,
         _leaf: Leaf<'_>,
         _checkpoint: &dyn Fn() -> io::Result<()>,
+        _before_leaf: &dyn Fn() -> io::Result<()>,
     ) -> io::Result<()> {
         Err(super::activity_carrier::shared_storage())
     }
@@ -269,7 +288,7 @@ pub(super) fn retire_stage(
         name.to_owned(),
         directory,
     );
-    owner.attempt(leaf, &|| Ok(()));
+    owner.attempt(leaf, &|| Ok(()), &|| Ok(()));
     match owner.receipt.failure.take() {
         Some(error) => Err(error),
         None => Ok(owner.receipt.existed == Some(true)),

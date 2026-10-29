@@ -47,6 +47,7 @@ public final class OwnerActivity extends ServingActivity {
     volatile int folderGeneration;
     volatile FolderOperation folderOperation;
     final SetupBrowser setupBrowser = new SetupBrowser();
+    final OwnerCreatorRecovery storageRecovery = new OwnerCreatorRecovery(this);
     final Messenger setupReplies = new Messenger(new Handler(Looper.getMainLooper()) {
         public void handleMessage(Message message) {
             Bundle data=message.getData();
@@ -61,7 +62,7 @@ public final class OwnerActivity extends ServingActivity {
     }
     void connectionRefused() { refreshStatus(); }
     boolean restoreOwnerStop() { return getSharedPreferences("owner",0).getBoolean("stopped",false); }
-    boolean automaticStartAllowed() { return payloadReady && !ownerStopped && !restoreOwnerStop(); }
+    boolean automaticStartAllowed() { return payloadReady && !ownerStopped && !restoreOwnerStop() && storageRecovery.startAllowed(); }
     void setOwnerStop(boolean stopped) {
         boolean saved=getSharedPreferences("owner",0).edit().putBoolean("stopped",stopped).commit();
         if (!saved && !stopped) {
@@ -282,7 +283,13 @@ public final class OwnerActivity extends ServingActivity {
             case "stopped":
                 text="you stopped your journal";
                 if (stopChoiceUnsaved) action("save stop",()->stopJournal(false),true);
-                else action("start",()->ownerAction("start"),true);
+                else {
+                    if (storageRecovery.startAllowed()) action("start",()->ownerAction("start"),true);
+                    if (!storageRecovery.busy) {
+                        action("review storage recovery",storageRecovery::review,false);
+                        if (!storageRecovery.startAllowed()) action("look up saved result",storageRecovery::lookup,false);
+                    } else action("stop recovery",()->stopJournal(false),false);
+                }
                 break;
             case "recovering": text="stopped unexpectedly · starting again…";stopAction();break;
             case "failed":
@@ -392,16 +399,19 @@ public final class OwnerActivity extends ServingActivity {
             if (destroyed || connection != lost || connectionGeneration.get() != generation+1) return;
             closePage(); if(!ownerStopped) {runState="recovering";reason="";renderBar();}
         });
+        storageRecovery.changed();
         super.connectionLost(lost);
     }
     void requestStop(Messenger target) {
         super.requestStop(target);
+        storageRecovery.stopping();
         // The native cancellation signal is enqueued before protection ends.
         setupBrowser.close();
     }
     void ownerAction(String action) {
         if ("start".equals(action)) {
-            if (!ServingConnection.ownerStartAllowed(runState,preparing,runtimeUp,!stopChoiceUnsaved)) return;
+            if (!ServingConnection.ownerStartAllowed(runState,preparing,runtimeUp,!stopChoiceUnsaved)
+                    || !storageRecovery.startAllowed()) return;
             try { setOwnerStop(false); } catch(Exception error) { pageError(error.getMessage()); return; }
             runState="starting";reason="";renderBar();
             if (!payloadReady) { prepareAndBind();return; }
@@ -960,6 +970,7 @@ public final class OwnerActivity extends ServingActivity {
         }
     }
     protected void onDestroy() {
+        storageRecovery.changed();
         setupBrowser.close();
         if (connectivity != null && networkCallback != null) connectivity.unregisterNetworkCallback(networkCallback);
         closePage(); requests.shutdownNow(); uploads.shutdownNow(); web.removeJavascriptInterface("JournalOwner"); web.destroy();
