@@ -290,31 +290,26 @@ async fn receive_until(
     reference: &str,
     event: &str,
 ) -> Value {
-    await_bounded_read(
-        "expected Callosum event",
-        Duration::from_millis(10),
-        800,
-        async {
-            loop {
-                let mut line = String::new();
-                let bytes = reader
-                    .read_line(&mut line)
-                    .await
-                    .expect("read Callosum frame");
-                assert!(
-                    bytes > 0,
-                    "the connection closed before supervisor {event} event for {reference}"
-                );
-                let value: Value = serde_json::from_str(&line).expect("Callosum JSON");
-                if value["tract"] == "supervisor"
-                    && value["event"] == event
-                    && value["ref"] == reference
-                {
-                    return value;
-                }
+    await_bounded_read("expected Callosum event", Duration::from_secs(8), async {
+        loop {
+            let mut line = String::new();
+            let bytes = reader
+                .read_line(&mut line)
+                .await
+                .expect("read Callosum frame");
+            assert!(
+                bytes > 0,
+                "the connection closed before supervisor {event} event for {reference}"
+            );
+            let value: Value = serde_json::from_str(&line).expect("Callosum JSON");
+            if value["tract"] == "supervisor"
+                && value["event"] == event
+                && value["ref"] == reference
+            {
+                return value;
             }
-        },
-    )
+        }
+    })
     .await
 }
 
@@ -325,28 +320,23 @@ async fn receive_started_command(
     // The budget is deliberately generous because the journal fixture reaches
     // the test child through PATH and a shell exec; a tight budget here would
     // report a slow fork as a supervisor defect. This applies to every caller.
-    await_bounded_read(
-        "handler task start",
-        Duration::from_millis(10),
-        2_000,
-        async {
-            loop {
-                let mut line = String::new();
-                let bytes = reader.read_line(&mut line).await.expect("started frame");
-                assert!(
-                    bytes > 0,
-                    "the connection closed before supervisor started frame"
-                );
-                let value: Value = serde_json::from_str(&line).expect("Callosum JSON");
-                if value["tract"] == "supervisor"
-                    && value["event"] == "started"
-                    && value["cmd"] == json!(command)
-                {
-                    return value;
-                }
+    await_bounded_read("handler task start", Duration::from_secs(20), async {
+        loop {
+            let mut line = String::new();
+            let bytes = reader.read_line(&mut line).await.expect("started frame");
+            assert!(
+                bytes > 0,
+                "the connection closed before supervisor started frame"
+            );
+            let value: Value = serde_json::from_str(&line).expect("Callosum JSON");
+            if value["tract"] == "supervisor"
+                && value["event"] == "started"
+                && value["cmd"] == json!(command)
+            {
+                return value;
             }
-        },
-    )
+        }
+    })
     .await
 }
 
@@ -378,29 +368,24 @@ async fn wait_for_logged_message(path: &Path, message: &Value) {
 async fn wait_for_local_recycle(
     reader: &mut tokio::io::BufReader<tokio::net::unix::OwnedReadHalf>,
 ) {
-    await_bounded_read(
-        "provider recycle event",
-        Duration::from_millis(10),
-        4_800,
-        async {
-            loop {
-                let mut line = String::new();
-                let bytes = reader
-                    .read_line(&mut line)
-                    .await
-                    .expect("provider event frame");
-                assert!(bytes > 0, "Callosum closed before local provider recycle");
-                let value: Value = serde_json::from_str(&line).expect("provider event JSON");
-                if value["tract"] == "supervisor"
-                    && value["event"] == "provider_runtime"
-                    && value["kind"] == "recycle_requested"
-                    && value["provider"] == "local"
-                {
-                    return;
-                }
+    await_bounded_read("provider recycle event", Duration::from_secs(48), async {
+        loop {
+            let mut line = String::new();
+            let bytes = reader
+                .read_line(&mut line)
+                .await
+                .expect("provider event frame");
+            assert!(bytes > 0, "Callosum closed before local provider recycle");
+            let value: Value = serde_json::from_str(&line).expect("provider event JSON");
+            if value["tract"] == "supervisor"
+                && value["event"] == "provider_runtime"
+                && value["kind"] == "recycle_requested"
+                && value["provider"] == "local"
+            {
+                return;
             }
-        },
-    )
+        }
+    })
     .await;
 }
 
@@ -463,24 +448,27 @@ async fn receive_timeout_history(
 
 // A dilation-aware alternative to tokio::time::timeout for waits this file
 // cannot express as a synchronous poll closure (an async socket read). It
-// preserves each call site's exact interval*iterations budget and reuses
-// WaitMetrics::dilation() so an expiry caused by scheduler starvation under
+// reuses WaitMetrics::dilation() so an expiry caused by scheduler starvation under
 // check-rust-race's synthetic load reports SUPERVISOR_RACE_INCONCLUSIVE instead of an
 // ordinary panic, while a genuine hang (dilation below the shared 1.10x
 // threshold cited in docs/design/check-rust-race-classification.md) still reports FAILED.
+// The budget is slept in 100 ms steps: tokio's timer rounds every sleep up to its
+// millisecond tick, so 10 ms steps alone reached 1.11x on a genuine hang.
+const BOUNDED_READ_STEP: Duration = Duration::from_millis(100);
+
 async fn await_bounded_read<T>(
     context: &str,
-    interval: Duration,
-    iterations: usize,
+    budget: Duration,
     operation: impl Future<Output = T>,
 ) -> T {
     tokio::pin!(operation);
-    let requested = interval.saturating_mul(iterations as u32);
+    let steps = budget.as_millis().div_ceil(BOUNDED_READ_STEP.as_millis());
+    let requested = BOUNDED_READ_STEP.saturating_mul(steps as u32);
     let started = Instant::now();
-    for _ in 0..iterations {
+    for _ in 0..steps {
         tokio::select! {
             value = &mut operation => return value,
-            _ = tokio::time::sleep(interval) => {}
+            _ = tokio::time::sleep(BOUNDED_READ_STEP) => {}
         }
     }
     panic_for_wait(
@@ -571,8 +559,7 @@ async fn status_reader_reports_closed_callosum_connection() {
         let mut reader = reader;
         let _ = await_bounded_read(
             "supervisor status event",
-            Duration::from_millis(10),
-            800,
+            Duration::from_secs(8),
             receive_status(&mut reader),
         )
         .await;
@@ -596,8 +583,7 @@ async fn timeout_history_reader_reports_closed_callosum_connection() {
         let mut reader = reader;
         let _ = await_bounded_read(
             "timeout-history status event",
-            Duration::from_millis(10),
-            800,
+            Duration::from_secs(8),
             receive_timeout_history(&mut reader),
         )
         .await;
@@ -791,8 +777,7 @@ async fn ac4_no_schedule_preserves_inbound_scheduler_name_without_state_file() {
 
     let status = await_bounded_read(
         "status retaining inbound scheduler name",
-        Duration::from_millis(10),
-        800,
+        Duration::from_secs(8),
         async {
             loop {
                 let status = receive_status(&mut reader).await;
@@ -830,8 +815,7 @@ async fn ac13_status_projects_live_provider_and_schedule_state() {
     let (mut reader, _write) = connect(&socket).await;
     let status = await_bounded_read(
         "supervisor status event",
-        Duration::from_millis(10),
-        800,
+        Duration::from_secs(8),
         receive_status_with_service(&mut reader, "local"),
     )
     .await;
@@ -901,8 +885,7 @@ async fn ac11_capped_task_is_terminated_with_timeout_exit() {
     );
     let status = await_bounded_read(
         "timeout-history status event",
-        Duration::from_millis(10),
-        800,
+        Duration::from_secs(8),
         receive_timeout_history(&mut reader),
     )
     .await;
