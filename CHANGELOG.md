@@ -17,6 +17,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- home no longer shows a desktop agent command when your journal runs on a phone or tablet.
 - home no longer refuses removal approvals solely because your journal is on android or ios.
 - reopening the android or ios development app during a journal restore now opens recovery instead of failing during startup.
 - archive recovery in the android development app could be refused even with files in its own storage. this corrects that storage check.

@@ -969,8 +969,7 @@ async function runTests() {
   assert(surface.querySelector('[data-home-surface="getting-started"]'), 'card stays when connections not an array');
   assert(!surface.querySelector('[data-agent-step]'), 'agent step hidden when connections not an array');
 
-  // Command block:
-  // local_door enabled and listening and address is string
+  // A ready door alone cannot offer desktop-local helpers on an unsupported host.
   setState({
     firstMinutesPayload: {
       window_open: true,
@@ -978,31 +977,41 @@ async function runTests() {
       devices: [],
       checks: { phone: true, thinking: true },
     },
-    agentsPayload: {
-      connections: [],
-      local_door: { enabled: true, listening: true, address: '127.0.0.1:8000' },
-    },
     agentsSettled: true,
   });
-  renderPulse(welcomePulse);
-  assert(surface.querySelector('[data-agent-command]'), '[data-agent-command] present when door enabled + listening + address string');
+  const readyDoor = { enabled: true, listening: true, address: 'http://127.0.0.1:7659/mcp' };
+  for (const capability of [{}, { local_agent_helpers: false }, { local_agent_helpers: true }]) {
+    setState({ agentsPayload: { connections: [], local_door: readyDoor, ...capability } });
+    renderPulse(welcomePulse);
+    const step = surface.querySelector('[data-agent-step]');
+    assert(step, 'agent setup remains available regardless of local helper capability');
+    assert(step.querySelector('a[href="/app/agents/"]'), 'agent setup keeps its pairing page link');
+    const command = step.querySelector('[data-agent-command]');
+    const copy = step.querySelector('[data-copy-agent-command]');
+    const capable = capability.local_agent_helpers === true;
+    assert.strictEqual(Boolean(command), capable, 'local command requires explicit helper capability');
+    assert.strictEqual(Boolean(copy), capable, 'copy action requires explicit helper capability');
+    if (capable) {
+      const displayed = command.querySelector('code').innerHTML;
+      assert(displayed.includes(readyDoor.address), 'desktop command uses the ready local address');
+      assert.strictEqual(copy.getAttribute('data-command'), displayed, 'copy action carries the displayed command');
+      win.__copied = null;
+      copy.click();
+      assert.strictEqual(win.__copied, displayed, 'desktop copy action copies the displayed command');
+    }
+  }
 
-  // door not enabled or not listening or not string
-  setState({
-    firstMinutesPayload: {
-      window_open: true,
-      devices_known: true,
-      devices: [],
-      checks: { phone: true, thinking: true },
-    },
-    agentsPayload: {
-      connections: [],
-      local_door: { enabled: false, listening: true, address: '127.0.0.1:8000' },
-    },
-    agentsSettled: true,
-  });
-  renderPulse(welcomePulse);
-  assert(!surface.querySelector('[data-agent-command]'), 'no agent command when door not enabled');
+  // Capable hosts still need an enabled, listening door with an address.
+  for (const door of [
+    { ...readyDoor, enabled: false },
+    { ...readyDoor, listening: false },
+    { enabled: true, listening: true },
+  ]) {
+    setState({ agentsPayload: { connections: [], local_agent_helpers: true, local_door: door } });
+    renderPulse(welcomePulse);
+    assert(!surface.querySelector('[data-agent-command]'), 'no local command for an unready door');
+    assert(surface.querySelector('a[href="/app/agents/"]'), 'unready door keeps the pairing page link');
+  }
 
   // 6. DOWNLOADS:
   // Absent when downloads is missing or setup is 403
