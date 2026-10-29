@@ -13,6 +13,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- an agent reading your journal now sees one number for each unnamed voice through a continuous recording, instead of a new number every few minutes. the number starts over after a pause or on another device.
 - what your journal writes about each screen frame stays closer to what is on your screen. it no longer includes the journal's own placeholder titles, instruction headings or sample values, and a blank or nearly empty screen frame gets a paragraph about it far less often.
 - each stretch's screen description now sticks closer to what your journal holds: it invents fewer details, and in your terminal it more often credits an agent's work to the agent rather than to you.
 

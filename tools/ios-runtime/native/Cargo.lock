@@ -7144,6 +7144,7 @@ dependencies = [
  "solstone-core-journal-io",
  "solstone-core-memory-original",
  "solstone-core-processing-record",
+ "solstone-core-speaker-id",
 ]
 
 [[package]]

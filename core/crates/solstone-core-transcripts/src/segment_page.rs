@@ -164,8 +164,12 @@ pub fn read_segment_transcript_page(
 ) -> Result<SegmentTranscriptPage, SegmentTranscriptReadError> {
     let files = transcript_files(segment.path())?;
     let labels = speakers.and_then(|speakers| local_speaker_names(segment.path(), speakers));
+    // An agent read keeps one number on one voice through a continuous recording.
+    let run_numbers = speakers
+        .map(|_| crate::run_numbers_by_source(segment.path(), &files))
+        .unwrap_or_default();
     let possible_names = possible_names.filter(|labels| !labels.statements.is_empty());
-    let version = source_version(&files, &labels, possible_names)?;
+    let version = source_version(&files, &labels, &run_numbers, possible_names)?;
     let untimed = files
         .iter()
         .filter(|path| path.extension().and_then(|ext| ext.to_str()) == Some("jsonl"))
@@ -205,6 +209,9 @@ pub fn read_segment_transcript_page(
                     )
             })
             .map(|(_, names)| names);
+        let numbers = name
+            .strip_suffix(".jsonl")
+            .and_then(|stem| run_numbers.get(stem));
         let name_labels = possible_names.filter(|labels| {
             labels.file == name
                 && speech
@@ -217,14 +224,16 @@ pub fn read_segment_transcript_page(
         let mut stopped_in_window = false;
         for (line, line_end) in complete_lines(&window)? {
             let sentence_id = next_statement_ordinal(line, &mut statement_ordinal);
-            let named_line = names.and_then(|names| {
-                let speaker = names.get(&sentence_id?)?;
-                let mut value: Value = serde_json::from_str(line).ok()?;
-                value
-                    .as_object_mut()?
-                    .insert("speaker".into(), Value::String(speaker.clone()));
-                Some(value.to_string())
-            });
+            let named_line = names
+                .and_then(|names| {
+                    let speaker = names.get(&sentence_id?)?;
+                    let mut value: Value = serde_json::from_str(line).ok()?;
+                    value
+                        .as_object_mut()?
+                        .insert("speaker".into(), Value::String(speaker.clone()));
+                    Some(value.to_string())
+                })
+                .or_else(|| numbers.and_then(|numbers| crate::renumber_line(line, numbers)));
             let named = named_line.as_deref().unwrap_or(line);
             let labelled_line = name_labels
                 .and_then(|labels| label_line(named, labels.statements.get(&sentence_id?)?));
@@ -310,10 +319,12 @@ fn is_transcript_name(name: &str) -> bool {
 fn source_version(
     files: &[PathBuf],
     labels: &Option<(String, BTreeMap<i64, String>)>,
+    run_numbers: &BTreeMap<String, BTreeMap<i64, i64>>,
     possible_names: Option<&PossibleNameLabels>,
 ) -> Result<SegmentTranscriptVersion, SegmentTranscriptReadError> {
     let mut hasher = DefaultHasher::new();
     labels.hash(&mut hasher);
+    run_numbers.hash(&mut hasher);
     if let Some(possible_names) = possible_names {
         possible_names.hash(&mut hasher);
     }
@@ -1055,6 +1066,78 @@ mod tests {
                 .iter()
                 .all(|row| row.text.contains("Speaker 1:"))
         );
+    }
+
+    /// One segment's speech: `(diarization number, voice, text)` per line, with
+    /// each voice a distinct direction in the 256-wide embedding.
+    fn audio_with_voices(dir: &std::path::Path, lines: &[(i64, usize, &str)]) {
+        use std::io::Write;
+        let mut text = String::from("{\"raw\":\"audio.flac\"}\n");
+        let mut payload = Vec::new();
+        let mut ids = Vec::new();
+        for (index, (speaker, voice, line)) in lines.iter().enumerate() {
+            text.push_str(
+                &serde_json::json!({"start":"00:00:01","source":"mic","speaker":speaker,"text":line})
+                    .to_string(),
+            );
+            text.push('\n');
+            for column in 0..256 {
+                let value: f32 = if column == *voice { 1.0 } else { 0.0 };
+                payload.extend_from_slice(&value.to_le_bytes());
+            }
+            ids.extend_from_slice(&(index as i32 + 1).to_le_bytes());
+        }
+        fs::write(dir.join("audio.jsonl"), text).unwrap();
+        let mut zip = zip::ZipWriter::new(fs::File::create(dir.join("audio.npz")).unwrap());
+        let options = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Stored);
+        let rows = lines.len();
+        zip.start_file("embeddings.npy", options).unwrap();
+        zip.write_all(&solstone_core_npy::write_npy(
+            "<f4",
+            &format!("({rows}, 256)"),
+            &payload,
+        ))
+        .unwrap();
+        zip.start_file("statement_ids.npy", options).unwrap();
+        zip.write_all(&solstone_core_npy::write_npy(
+            "<i4",
+            &format!("({rows},)"),
+            &ids,
+        ))
+        .unwrap();
+        zip.finish().unwrap();
+    }
+
+    #[test]
+    fn an_agent_read_keeps_one_number_on_one_voice_through_a_recording() {
+        let root = tempfile::tempdir().unwrap();
+        let first = named_segment(root.path());
+        let second = first.with_file_name("090500_300");
+        fs::create_dir_all(&second).unwrap();
+        // Diarization numbers the two voices one way, then the other.
+        audio_with_voices(&first, &[(1, 0, "song"), (2, 1, "talk")]);
+        audio_with_voices(&second, &[(2, 0, "song again"), (1, 1, "talk again")]);
+        let segments = iter_segments(root.path(), PathOrDay::Day("20260914")).unwrap();
+        let read = |key: &str, speakers: Option<&super::AgentSpeakers>| {
+            let segment = segments
+                .iter()
+                .find(|segment| segment.key() == key)
+                .unwrap();
+            read_segment_transcript_page(segment, None, speakers, None)
+                .unwrap()
+                .entries
+                .into_iter()
+                .map(|entry| entry.text)
+                .collect::<Vec<_>>()
+        };
+        let agent = speakers();
+        let later = read("090500_300", Some(&agent));
+        assert!(later[0].contains("Speaker 1: song again"), "{later:?}");
+        assert!(later[1].contains("Speaker 2: talk again"), "{later:?}");
+        // A read without speaker names keeps the stored diarization numbers.
+        let stored = read("090500_300", None);
+        assert!(stored[0].contains("Speaker 2: song again"), "{stored:?}");
     }
 
     #[test]

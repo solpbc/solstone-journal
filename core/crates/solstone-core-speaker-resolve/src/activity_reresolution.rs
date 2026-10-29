@@ -6,8 +6,8 @@
 //!
 //! An activity's participation list and its Story actors were resolved from
 //! names when they were written. An unnamed voice reached the talents as
-//! "Speaker N", N being that segment's diarization speaker, so those entries
-//! stayed unresolved. Once the owner names the voice, the sentences carry a
+//! "Speaker N": N was that segment's diarization speaker, and is now its number
+//! in the recording's run (`run_numbers`). Those entries stayed unresolved. Once the owner names the voice, the sentences carry a
 //! label, and the entry can be resolved without asking a talent again.
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -182,9 +182,13 @@ fn record_segments(record: &Map<String, Value>) -> Vec<String> {
         .collect()
 }
 
-/// For each diarization speaker number in an activity's segments, the people
-/// its labeled sentences name, other than the owner.
-struct SpeakerMap(BTreeMap<i64, BTreeSet<String>>);
+/// For each speaker number in an activity's segments, the people its labeled
+/// sentences name, other than the owner: by diarization number, as older
+/// records wrote it, and by run number, as newer ones do.
+struct SpeakerMap {
+    diarization: BTreeMap<i64, BTreeSet<String>>,
+    run: BTreeMap<i64, BTreeSet<String>>,
+}
 
 impl SpeakerMap {
     fn read(journal: &Path, day: &str, stream: &str, keys: &[String], people: &People) -> Self {
@@ -193,7 +197,10 @@ impl SpeakerMap {
         } else {
             SegmentLayout::Named
         };
-        let mut map = BTreeMap::<i64, BTreeSet<String>>::new();
+        let mut map = Self {
+            diarization: BTreeMap::new(),
+            run: BTreeMap::new(),
+        };
         for key in keys {
             let Ok(Some(segment)) =
                 crate::segment_catalog::resolve_exact(journal, day, stream, key, layout)
@@ -204,6 +211,7 @@ impl SpeakerMap {
                 continue;
             };
             let labels = crate::identify_forward_phases::load_labels(&segment);
+            let run = solstone_core_speaker_id::run_numbers::run_speaker_numbers(&segment, &source);
             for (sentence_id, speaker) in
                 transcript_speakers(&segment.join(format!("{source}.jsonl")))
             {
@@ -216,14 +224,24 @@ impl SpeakerMap {
                 };
                 if people.names.contains_key(person) && people.principal.as_deref() != Some(person)
                 {
-                    map.entry(speaker).or_default().insert(person.to_owned());
+                    let numbered = run.get(&speaker).copied().unwrap_or(speaker);
+                    map.diarization
+                        .entry(speaker)
+                        .or_default()
+                        .insert(person.to_owned());
+                    map.run
+                        .entry(numbered)
+                        .or_default()
+                        .insert(person.to_owned());
                 }
             }
         }
-        Self(map)
+        map
     }
 
-    /// The one person "Speaker N" is, when N's labels agree on exactly one.
+    /// The one person "Speaker N" is, when N's labels under either numbering
+    /// name exactly one: a record does not say which numbering wrote it, and a
+    /// wrong name is worse than none.
     fn person(&self, name: &str) -> Option<&str> {
         let number = name
             .trim()
@@ -232,8 +250,14 @@ impl SpeakerMap {
             .trim()
             .parse::<i64>()
             .ok()?;
-        let people = self.0.get(&number)?;
-        (people.len() == 1).then(|| people.iter().next().map(String::as_str))?
+        let mut people = [&self.diarization, &self.run]
+            .into_iter()
+            .filter_map(|map| map.get(&number))
+            .flatten();
+        let person = people.next()?;
+        people
+            .all(|other| other == person)
+            .then_some(person.as_str())
     }
 }
 
@@ -456,6 +480,34 @@ mod tests {
             reresolve_changed_segments(root.path(), &changed(), &["bob".to_owned()]).unwrap(),
             0
         );
+    }
+
+    #[test]
+    fn a_speaker_number_names_someone_only_when_its_numberings_agree() {
+        let people = |rows: &[(i64, &str)]| {
+            let mut map = BTreeMap::<i64, BTreeSet<String>>::new();
+            for (number, person) in rows {
+                map.entry(*number).or_default().insert((*person).to_owned());
+            }
+            map
+        };
+        // Diarization numbered Bob 1 and Cara 2; the run numbered them the other way.
+        let swapped = SpeakerMap {
+            diarization: people(&[(1, "bob"), (2, "cara")]),
+            run: people(&[(1, "cara"), (2, "bob")]),
+        };
+        assert_eq!(swapped.person("Speaker 1"), None);
+        let agreed = SpeakerMap {
+            diarization: people(&[(1, "bob"), (2, "cara")]),
+            run: people(&[(1, "bob"), (2, "cara")]),
+        };
+        assert_eq!(agreed.person("Speaker 1"), Some("bob"));
+        // An older record's diarization number the run never reached.
+        let older = SpeakerMap {
+            diarization: people(&[(7, "bob")]),
+            run: people(&[(1, "bob")]),
+        };
+        assert_eq!(older.person("Speaker 7"), Some("bob"));
     }
 
     #[test]

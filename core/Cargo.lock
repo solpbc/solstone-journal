@@ -6876,8 +6876,11 @@ dependencies = [
  "solstone-core-format",
  "solstone-core-journal-io",
  "solstone-core-memory-original",
+ "solstone-core-npy",
  "solstone-core-processing-record",
+ "solstone-core-speaker-id",
  "tempfile",
+ "zip",
 ]
 
 [[package]]

@@ -778,17 +778,31 @@ fn process_segment(
             .voices
             .as_ref()
             .and_then(|voices| segment_voices(&segment.path, voices));
+        // An activity read keeps one number on one voice through a continuous
+        // recording; segment talents keep the diarization numbers they label.
+        let run_numbers = sources
+            .voices
+            .as_ref()
+            .map(|_| {
+                let files = transcript
+                    .iter()
+                    .map(|path| (*path).clone())
+                    .collect::<Vec<_>>();
+                run_numbers_by_source(&segment.path, &files)
+            })
+            .unwrap_or_default();
         for path in transcript {
-            let speakers = voiced.as_ref().and_then(|(source, names)| {
-                (path.file_stem().and_then(|stem| stem.to_str()) == Some(source.as_str()))
-                    .then_some(names)
-            });
+            let stem = path.file_stem().and_then(|stem| stem.to_str());
+            let speakers = voiced
+                .as_ref()
+                .and_then(|(source, names)| (stem == Some(source.as_str())).then_some(names));
             if let Some(content) = raw_content_with_speakers(
                 path,
                 segment,
                 day,
                 RawPerceptFamily::Audio,
                 PerceptProjection::Generic,
+                stem.and_then(|stem| run_numbers.get(stem)),
                 speakers,
             ) {
                 let mut transcript = entry(
@@ -1129,7 +1143,7 @@ fn raw_content(
     family: RawPerceptFamily,
     projection: PerceptProjection,
 ) -> Option<RawContent> {
-    raw_content_with_speakers(path, segment, day, family, projection, None)
+    raw_content_with_speakers(path, segment, day, family, projection, None, None)
 }
 
 fn raw_content_with_speakers(
@@ -1138,6 +1152,7 @@ fn raw_content_with_speakers(
     day: &str,
     family: RawPerceptFamily,
     projection: PerceptProjection,
+    numbers: Option<&BTreeMap<i64, i64>>,
     speakers: Option<&BTreeMap<i64, String>>,
 ) -> Option<RawContent> {
     let text = match fs::read_to_string(path) {
@@ -1151,6 +1166,13 @@ fn raw_content_with_speakers(
         }
     };
     let source_sha256 = format!("{:x}", Sha256::digest(text.as_bytes()));
+    let text = match numbers {
+        Some(numbers) => text
+            .lines()
+            .map(|line| renumber_line(line, numbers).unwrap_or_else(|| line.to_owned()) + "\n")
+            .collect(),
+        None => text,
+    };
     let text = match speakers {
         Some(speakers) => name_speakers(&text, speakers),
         None => text,
@@ -1343,6 +1365,34 @@ pub fn labelled_audio_source(dir: &Path) -> Option<String> {
         (None, 1) => transcripts.pop(),
         _ => None,
     }
+}
+
+/// Run numbers for each embedded audio source among `files`, keyed by stem.
+fn run_numbers_by_source(
+    segment: &Path,
+    files: &[PathBuf],
+) -> BTreeMap<String, BTreeMap<i64, i64>> {
+    files
+        .iter()
+        .filter_map(|path| path.file_name()?.to_str()?.strip_suffix(".jsonl"))
+        .filter(|stem| segment.join(format!("{stem}.npz")).is_file())
+        .map(|stem| {
+            (
+                stem.to_owned(),
+                solstone_core_speaker_id::run_numbers::run_speaker_numbers(segment, stem),
+            )
+        })
+        .filter(|(_, numbers)| !numbers.is_empty())
+        .collect()
+}
+
+/// One transcript line with its diarization number replaced by its run number.
+fn renumber_line(line: &str, numbers: &BTreeMap<i64, i64>) -> Option<String> {
+    let mut value: Value = serde_json::from_str(line).ok()?;
+    let record = value.as_object_mut()?;
+    let number = numbers.get(&record.get("speaker")?.as_i64()?)?;
+    record.insert("speaker".to_owned(), Value::from(*number));
+    Some(value.to_string())
 }
 
 /// Rewrite each identified sentence's `speaker` to the name heard on it.
