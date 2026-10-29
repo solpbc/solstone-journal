@@ -8,6 +8,10 @@ use crate::archive_approval::{ArchiveApprovalError, OwnedArchiveApproval};
 use solstone_core_backup::archive_readback::{
     ExactArchiveFile, ReadbackError, RefusedDirectRead, SettledDirectRead,
 };
+#[cfg(any(unix, windows))]
+use solstone_core_journal_io::activity_obligations::{
+    RecoveryObservationError, RecoveryObservationFailure as Failure,
+};
 use solstone_core_journal_io::media::{Cleanup, MediaDigest, MediaIdentity, RemovalReceipt};
 
 /// Independent finish refusal. This is diagnostic, never cleanup authority.
@@ -555,9 +559,14 @@ pub(super) fn finish_native(
             return Err(ReviewedArchiveFinishRefusal::NativeCleanup(cleanup));
         }
     }
-    let obligations = solstone_core_journal_io::activity_obligations::observe_with_carrier(
-        carrier.journal_root(),
-        carrier.observation(),
+    let obligations = observe_finish_census(
+        || {
+            solstone_core_journal_io::activity_obligations::observe_with_carrier(
+                carrier.journal_root(),
+                carrier.observation(),
+            )
+        },
+        || std::thread::sleep(std::time::Duration::from_millis(100)),
     )
     .map_err(ReviewedArchiveFinishRefusal::Census)?;
     if obligations.unresolved_entries().next().is_some() {
@@ -566,6 +575,40 @@ pub(super) fn finish_native(
         ));
     }
     Ok(())
+}
+
+#[cfg(any(unix, windows))]
+const FINISH_CENSUS_ATTEMPTS: usize = 3;
+
+/// A live journal keeps writing while the census lists each directory twice,
+/// and Windows widens that window, so one pass can refuse a journal with
+/// nothing owed. Settlement still needs one fresh complete census: a retry
+/// never reuses a partial walk. A non-directory entry or an exhausted budget
+/// does not retry; an IO refusal does, even though some are permanent, since
+/// a read-only census costs nothing to repeat.
+#[cfg(any(unix, windows))]
+fn observe_finish_census<T>(
+    mut observe: impl FnMut() -> Result<T, RecoveryObservationError>,
+    mut pause: impl FnMut(),
+) -> Result<T, RecoveryObservationError> {
+    let mut attempt = 1;
+    loop {
+        match observe() {
+            Ok(complete) => return Ok(complete),
+            Err(error)
+                if attempt < FINISH_CENSUS_ATTEMPTS
+                    && matches!(
+                        error.failure,
+                        Failure::Io | Failure::Changed | Failure::DirectoryAdded
+                    ) =>
+            {
+                log::warn!("finish census attempt {attempt} refused, retrying: {error}");
+                attempt = attempt.saturating_add(1);
+                pause();
+            }
+            Err(error) => return Err(error),
+        }
+    }
 }
 
 #[cfg(any(unix, windows))]
@@ -869,5 +912,89 @@ mod tests {
         check::<super::ReviewedArchiveReport>();
         check::<super::OwnedSettledReviewedArchiveRemoval>();
         check::<super::OwnedReviewedArchiveFinish>();
+    }
+
+    #[cfg(any(unix, windows))]
+    #[allow(
+        clippy::unwrap_used,
+        clippy::panic,
+        reason = "test code; the crate-level denials exist to constrain the verbs"
+    )]
+    mod finish_census {
+        use super::super::{Failure, RecoveryObservationError, observe_finish_census};
+        use std::path::PathBuf;
+
+        fn refused(failure: Failure) -> RecoveryObservationError {
+            RecoveryObservationError {
+                failure,
+                relative: PathBuf::from("chronicle/20261001"),
+                source: None,
+            }
+        }
+
+        #[test]
+        fn a_listing_that_moves_under_a_live_journal_settles_on_a_fresh_complete_census() {
+            for failure in [Failure::Io, Failure::Changed, Failure::DirectoryAdded] {
+                let (mut calls, mut pauses) = (0, 0);
+                let census = observe_finish_census(
+                    || {
+                        calls += 1;
+                        if calls < 3 {
+                            Err(refused(failure))
+                        } else {
+                            Ok("complete")
+                        }
+                    },
+                    || pauses += 1,
+                );
+                assert_eq!(census.unwrap(), "complete");
+                assert_eq!((calls, pauses), (3, 2));
+            }
+        }
+
+        #[test]
+        fn a_census_that_never_settles_refuses_with_its_last_failure() {
+            let mut calls = 0;
+            let refusal = observe_finish_census::<()>(
+                || {
+                    calls += 1;
+                    Err(RecoveryObservationError {
+                        failure: if calls < 3 {
+                            Failure::Changed
+                        } else {
+                            Failure::Io
+                        },
+                        relative: PathBuf::from(format!("pass-{calls}")),
+                        source: None,
+                    })
+                },
+                || {},
+            )
+            .unwrap_err();
+            assert_eq!(calls, 3);
+            assert_eq!(refusal.failure, Failure::Io);
+            assert_eq!(refusal.relative, PathBuf::from("pass-3"));
+        }
+
+        #[test]
+        fn a_refusal_no_later_pass_can_change_never_retries() {
+            for failure in [
+                Failure::NotDirectory,
+                Failure::Budget(
+                    solstone_core_journal_io::activity_obligations::RecoveryBudget::Obligations,
+                ),
+            ] {
+                let mut calls = 0;
+                let refusal = observe_finish_census::<()>(
+                    || {
+                        calls += 1;
+                        Err(refused(failure))
+                    },
+                    || panic!("a permanent refusal cannot pause or retry"),
+                )
+                .unwrap_err();
+                assert_eq!((calls, refusal.failure), (1, failure));
+            }
+        }
     }
 }

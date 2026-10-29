@@ -8,6 +8,9 @@ use std::io;
 
 use serde::{Serialize, Serializer};
 use serde_json::{Value, json};
+use solstone_core_journal_io::activity_obligations::{
+    RecoveryObservationError, RecoveryObservationFailure,
+};
 use solstone_core_journal_io::media::{
     ActivityCarrierPreparationReceipt, ActivityCarrierRetirementEffect,
     ActivityCarrierRetirementReceipt, RemovalPhase, RemovalReceipt,
@@ -352,9 +355,36 @@ fn finish_refusal_facts(reason: &ReviewedArchiveFinishRefusal) -> Value {
         Refusal::Readback(error) => json!({"kind":"readback", "reason":error.to_string()}),
         Refusal::NativeCleanup(cleanup) => json!({"kind":"native_cleanup", "cleanup":cleanup}),
         Refusal::Changed(error) => json!({"kind":"changed", "error":io_kind(error)}),
-        Refusal::Census(_) => json!({"kind":"census"}),
+        Refusal::Census(error) => census_facts(error),
         Refusal::Obligations(entries) => json!({"kind":"obligations", "count":entries.len()}),
     }
+}
+
+/// Which entry the census could not observe, and how, as a journal-relative path.
+fn census_facts(error: &RecoveryObservationError) -> Value {
+    use RecoveryObservationFailure as Failure;
+    let failure = match error.failure {
+        Failure::Io => "io",
+        Failure::Changed => "changed",
+        Failure::DirectoryAdded => "directory_added",
+        Failure::NotDirectory => "not_directory",
+        Failure::Budget(_) => "budget",
+    };
+    let path = error
+        .relative
+        .components()
+        .map(|part| part.as_os_str().to_string_lossy())
+        .collect::<Vec<_>>()
+        .join("/");
+    json!({
+        "kind":"census", "failure":failure, "path":path,
+        "error":error.source.as_ref().map(io_kind),
+        // Invalid-data refusals are fixed strings that tell a changed listing
+        // from a refused name; other messages can carry absolute paths.
+        "detail":error.source.as_ref()
+            .filter(|source| source.kind() == io::ErrorKind::InvalidData)
+            .map(ToString::to_string),
+    })
 }
 
 fn io_kind(error: &io::Error) -> String {
@@ -629,3 +659,50 @@ fn refusal_facts(error: &ReviewedRemovalRefusal) -> Value {
 
 #[cfg(all(test, feature = "full-tests"))]
 mod tests;
+
+#[cfg(test)]
+mod census_tests {
+    use super::*;
+
+    #[test]
+    fn a_census_finish_refusal_names_the_entry_and_how_it_moved() {
+        let facts = finish_refusal_facts(&ReviewedArchiveFinishRefusal::Census(
+            RecoveryObservationError {
+                failure: RecoveryObservationFailure::Io,
+                relative: std::path::Path::new("chronicle")
+                    .join("20261001")
+                    .join("import.audio"),
+                source: Some(io::Error::from(io::ErrorKind::PermissionDenied)),
+            },
+        ));
+        assert_eq!(
+            facts,
+            json!({
+                "kind":"census", "failure":"io", "path":"chronicle/20261001/import.audio",
+                "error":io::ErrorKind::PermissionDenied.to_string(), "detail":null,
+            })
+        );
+        let facts = finish_refusal_facts(&ReviewedArchiveFinishRefusal::Census(
+            RecoveryObservationError {
+                failure: RecoveryObservationFailure::Io,
+                relative: std::path::PathBuf::from("health"),
+                source: Some(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "retained media binding changed",
+                )),
+            },
+        ));
+        assert_eq!(facts["detail"], "retained media binding changed");
+        let facts = finish_refusal_facts(&ReviewedArchiveFinishRefusal::Census(
+            RecoveryObservationError {
+                failure: RecoveryObservationFailure::DirectoryAdded,
+                relative: std::path::PathBuf::new(),
+                source: None,
+            },
+        ));
+        assert_eq!(
+            facts,
+            json!({"kind":"census", "failure":"directory_added", "path":"", "error":null, "detail":null})
+        );
+    }
+}
