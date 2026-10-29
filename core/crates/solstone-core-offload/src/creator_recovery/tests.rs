@@ -494,3 +494,67 @@ fn replaced_root_never_reopens_replacement_for_settlement() {
     drop(owner);
     fs::remove_dir_all(original).unwrap();
 }
+
+#[test]
+fn discovery_accepts_segment_lock_sidecar_and_revalidates_it() {
+    let f = Fixture::new(1);
+    let original = f.original_dir(0);
+    let lock = solstone_core_journal_io::hold_lock(
+        &original,
+        solstone_core_journal_io::LockOptions::default(),
+    )
+    .unwrap();
+    drop(lock);
+    let sidecar = original.with_file_name(format!("{}.lock", f.selections[0].target.dir));
+    assert!(sidecar.is_file());
+    let before = f.domain_bytes();
+    let owner = observe(&f);
+    assert!(owner.refusal.is_none(), "{}", owner.report());
+    let confirmation = owner.confirmation(&|| Ok(())).unwrap();
+    assert_eq!(confirmation.stages.len(), 1);
+    assert_eq!(
+        confirmation.stages[0].original.as_ref().unwrap().selection,
+        f.selections[0]
+    );
+    assert_eq!(f.domain_bytes(), before);
+    assert!(!owner.report()["attempted"].as_bool().unwrap());
+    fs::write(&sidecar, b"changed lock entry").unwrap();
+    assert!(owner.confirmation(&|| Ok(())).is_err());
+    assert!(f.stage(0).join("imported_audio.wav").is_file());
+}
+
+#[test]
+fn discovery_refuses_segment_like_non_directory_candidates() {
+    for (name, link) in [
+        ("130000_60", false),
+        ("130000_60.txt", false),
+        ("130000_60.lock.lock", false),
+        ("130000_60", true),
+        ("130000_60.lock", true),
+    ] {
+        let f = Fixture::new(1);
+        let candidate = f.original_dir(0).parent().unwrap().join(name);
+        let outside = tempfile::tempdir().unwrap();
+        let sentinel = outside.path().join("sentinel");
+        fs::write(&sentinel, b"outside").unwrap();
+        if link {
+            std::os::unix::fs::symlink(&sentinel, &candidate).unwrap();
+        } else {
+            fs::write(&candidate, b"occupied candidate").unwrap();
+        }
+        let before = f.domain_bytes();
+        let owner = observe(&f);
+        assert!(
+            owner.refusal.is_some(),
+            "name={name} link={link} {}",
+            owner.report()
+        );
+        assert_eq!(owner.report()["attempted"], false);
+        assert_eq!(f.domain_bytes(), before);
+        assert!(f.stage(0).join("imported_audio.wav").is_file());
+        assert_eq!(fs::read(&sentinel).unwrap(), b"outside");
+        if link {
+            assert_eq!(fs::read_link(&candidate).unwrap(), sentinel);
+        }
+    }
+}

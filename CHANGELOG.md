@@ -18,6 +18,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- reviewing interrupted storage work in the android development app could fail before showing the temporary copies.
 - reviewing storage recovery on android could get stuck waiting for your journal to stop, even after it had stopped.
 - home no longer shows a desktop agent command when your journal runs on a phone or tablet.
 - home no longer refuses removal approvals solely because your journal is on android or ios.

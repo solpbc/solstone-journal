@@ -958,6 +958,16 @@ fn candidate_segments(
             } else if solstone_core_segment::is_safe_stream_component(name) {
                 for segment in inventory_entries(&directory, inventory, checkpoint)? {
                     let segment_name = segment.name.to_str().ok_or_else(refuse)?;
+                    // Segment writers leave regular sibling lock files. Keep
+                    // them in the inventory, outside the candidate population.
+                    if segment.kind == JournalEntryKind::RegularFile
+                        && segment_name.strip_suffix(".lock").is_some_and(|base| {
+                            solstone_core_format::segment::segment_key(base).as_deref()
+                                == Some(base)
+                        })
+                    {
+                        continue;
+                    }
                     if solstone_core_format::segment::segment_key(segment_name).is_none() {
                         continue;
                     }
