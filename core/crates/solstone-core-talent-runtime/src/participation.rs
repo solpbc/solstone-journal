@@ -386,6 +386,19 @@ pub(crate) fn apply_result_cancellable(
             }
         }
     }
+    // A numbered voice stands for someone heard here whom the journal has not
+    // named yet, so the only role it can hold is attendee. One the rules above
+    // did not keep as an attendee is a number no two lines of the activity carry
+    // (most are numbers no line carries at all): no role fits it, so it leaves
+    // the list rather than reading as a person mentioned.
+    resolved.retain(|entry| {
+        entry
+            .get("name")
+            .and_then(Value::as_str)
+            .and_then(solstone_core_speaker_resolve::activity_reresolution::speaker_number)
+            .is_none()
+            || entry.get("role").and_then(Value::as_str) == Some("attendee")
+    });
     // A `mentioned` name the activity only showed on screen is `visible`,
     // decided from what the activity holds, not the model's pick.
     let spoken = crate::sense_grounding::Heard::new(&sentences.join("\n"));
@@ -1488,9 +1501,9 @@ mod tests {
     #[test]
     fn numbered_voice_attendance_threshold_from_activity_read() {
         let cases = [
-            (vec![3, 3, 3], "attendee"),
-            (vec![3], "mentioned"),
-            (vec![3, 3], "attendee"),
+            (vec![3, 3, 3], Some("attendee")),
+            (vec![3], None),
+            (vec![3, 3], Some("attendee")),
         ];
         for (speakers, role) in cases {
             let root = tempfile::tempdir().expect("temporary journal");
@@ -1503,13 +1516,18 @@ mod tests {
                 root.path(),
                 json!({"name":"Speaker 3","role":"attendee","source":"speaker_label"}),
             );
-            assert_eq!(entry["role"], role);
-            assert_eq!(entry["entity_id"], Value::Null);
+            match role {
+                Some(role) => {
+                    assert_eq!(entry["role"], role);
+                    assert_eq!(entry["entity_id"], Value::Null);
+                }
+                None => assert!(entry.is_null(), "{entry}"),
+            }
         }
     }
 
     #[test]
-    fn numbered_voice_source_transcript_without_lines_is_mentioned() {
+    fn numbered_voice_source_transcript_without_lines_is_dropped() {
         let root = tempfile::tempdir().expect("temporary journal");
         write_participation_fixture(root.path(), json!({"labels":[]}), json!([]));
         write_unembedded_segment(
@@ -1520,12 +1538,11 @@ mod tests {
             root.path(),
             json!({"name":"Speaker 3","role":"attendee","source":"transcript"}),
         );
-        assert_eq!(entry["role"], "mentioned");
-        assert_eq!(entry["entity_id"], Value::Null);
+        assert!(entry.is_null(), "{entry}");
     }
 
     #[test]
-    fn numbered_voice_demoted_when_diarization_renumbered_to_other_voice() {
+    fn numbered_voice_dropped_when_diarization_renumbered_to_other_voice() {
         let root = tempfile::tempdir().expect("temporary journal");
         write_principal(root.path(), "jordan", "Jordan Rivers");
         solstone_core_facets::create_facet(root.path(), FACET, "Work", "", "", "", None).unwrap();
@@ -1562,12 +1579,11 @@ mod tests {
             &act,
             &[json!({"name":"Speaker 3","role":"attendee","source":"speaker_label"})],
         );
-        assert_eq!(entries[0]["role"], "mentioned");
-        assert_eq!(entries[0]["entity_id"], Value::Null);
+        assert!(entries.is_empty(), "{entries:?}");
     }
 
     #[test]
-    fn numbered_voice_demoted_when_run_named_to_person() {
+    fn numbered_voice_dropped_when_run_named_to_person() {
         let root = tempfile::tempdir().expect("temporary journal");
         write_principal(root.path(), "jordan", "Jordan Rivers");
         solstone_core_facets::create_facet(root.path(), FACET, "Work", "", "", "", None).unwrap();
@@ -1626,12 +1642,11 @@ mod tests {
             &act,
             &[json!({"name":"Speaker 3","role":"attendee","source":"speaker_label"})],
         );
-        assert_eq!(entries[0]["role"], "mentioned");
-        assert_eq!(entries[0]["entity_id"], Value::Null);
+        assert!(entries.is_empty(), "{entries:?}");
     }
 
     #[test]
-    fn numbered_voice_labelled_to_owner_is_demoted() {
+    fn numbered_voice_labelled_to_owner_is_dropped() {
         for method in ["user_assigned", "contextual"] {
             let root = tempfile::tempdir().expect("temporary journal");
             write_principal(root.path(), "jordan", "Jordan Rivers");
@@ -1652,18 +1667,13 @@ mod tests {
                 root.path(),
                 json!({"name":"Speaker 3","role":"attendee","source":"speaker_label"}),
             );
-            assert_eq!(entry["role"], "mentioned", "failed for method {method}");
-            assert_eq!(
-                entry["entity_id"],
-                Value::Null,
-                "failed for method {method}"
-            );
+            assert!(entry.is_null(), "failed for method {method}: {entry}");
         }
     }
 
     #[test]
     fn numbered_voice_ignores_speaker_placeholder_person_entity() {
-        let cases = [(vec![3], "mentioned"), (vec![3, 3, 3], "attendee")];
+        let cases = [(vec![3], None), (vec![3, 3, 3], Some("attendee"))];
         for (speakers, expected_role) in cases {
             let root = tempfile::tempdir().expect("temporary journal");
             write_participation_fixture(
@@ -1693,8 +1703,13 @@ mod tests {
                 root.path(),
                 json!({"name":"Speaker 3","role":"attendee","source":"speaker_label"}),
             );
-            assert_eq!(entry["role"], expected_role);
-            assert_eq!(entry["entity_id"], Value::Null);
+            match expected_role {
+                Some(role) => {
+                    assert_eq!(entry["role"], role);
+                    assert_eq!(entry["entity_id"], Value::Null);
+                }
+                None => assert!(entry.is_null(), "{entry}"),
+            }
         }
     }
 
@@ -1769,10 +1784,11 @@ mod tests {
         for line in screen_transcript.text.lines() {
             let parts: Vec<&str> = line.split_whitespace().collect();
             for window in parts.windows(2) {
-                if window[0] == "Speaker" && window[1].ends_with(':') {
-                    if let Ok(n) = window[1].trim_end_matches(':').parse::<i64>() {
-                        rendered_numbers.insert(n);
-                    }
+                if window[0] == "Speaker"
+                    && window[1].ends_with(':')
+                    && let Ok(n) = window[1].trim_end_matches(':').parse::<i64>()
+                {
+                    rendered_numbers.insert(n);
                 }
             }
         }
@@ -1900,9 +1916,7 @@ mod tests {
             assert_eq!(entries[0]["role"], "heard");
             assert_eq!(entries[0]["entity_id"], "person");
 
-            assert_eq!(entries[1]["name"], "Speaker 3");
-            assert_eq!(entries[1]["role"], "mentioned");
-            assert_eq!(entries[1]["entity_id"], Value::Null);
+            assert_eq!(entries.len(), 1, "{entries:?}");
         }
 
         // Arm B: Non-meeting, not conversation
@@ -1926,9 +1940,7 @@ mod tests {
                 root.path(),
                 json!({"name":"Speaker 3","role":"attendee","source":"speaker_label"}),
             );
-            assert_eq!(entry["name"], "Speaker 3");
-            assert_eq!(entry["role"], "mentioned");
-            assert_eq!(entry["entity_id"], Value::Null);
+            assert!(entry.is_null(), "{entry}");
         }
     }
 
