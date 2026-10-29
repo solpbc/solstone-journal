@@ -609,6 +609,38 @@ fn exited_convey_restarts_under_restart_policy() {
     );
 }
 
+#[test]
+fn convey_restarts_after_a_clean_exit_that_withdrew_its_own_door() {
+    let journal = TempJournal::new();
+    let state_path = journal.0.join("door-withdrawn");
+    let convey_argv = format!(
+        "door-withdraw-once {} {}",
+        state_path.display(),
+        journal.0.display()
+    );
+    let child = start(&journal, &[], Some(convey_argv));
+    wait_for_path(&state_path);
+    let outcome = await_outcome(
+        WaitPolarity::Positive,
+        Duration::from_millis(5),
+        // Same ceiling as the restart-policy case above.
+        400,
+        Instant::now,
+        || {
+            if fixture_process_running(child.id(), &state_path.display().to_string()) {
+                PollState::Held
+            } else {
+                PollState::Pending
+            }
+        },
+        thread::sleep,
+    );
+    panic_for_wait(
+        "Convey did not restart after it withdrew its own door and exited",
+        outcome,
+    );
+}
+
 fn backoff_path(journal: &TempJournal, service: &str) -> PathBuf {
     journal.0.join("health").join(format!("{service}.backoff"))
 }

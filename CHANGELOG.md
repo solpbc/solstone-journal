@@ -21,6 +21,8 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - security fix: updated a library used by journals on phones to address a memory-safety flaw.
 - you can choose a file on the import screen in the android and ios owner apps and save it.
 - journals running on a phone now start their local agent connections and close them when you stop the journal. the agents page already offered these connections, but they did not start on phones.
+- if your journal's pages stopped loading and paired devices couldn't reach it until you restarted the journal, this resolves it.
+- on a mac, home could say the local model didn't finish downloading after it had. home now agrees with the thinking page.
 
 ## [2.0.61] - 2026-10-29
 

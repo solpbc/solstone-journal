@@ -196,6 +196,29 @@ fn local_backend_defaults_to_mlx_on_apple_silicon() {
 }
 
 #[test]
+fn local_thinking_present_reads_the_mlx_model_on_apple_silicon() {
+    let journal = temp("thinking-present-mlx");
+    let _helper = super::mlx_candidate::MlxHelperTestGuard::new();
+    assert!(!super::local_thinking_present_for_key(
+        &journal,
+        "aarch64-apple-darwin"
+    ));
+    let directory = pins::mlx_model_directory(&journal);
+    fs::create_dir_all(&directory).unwrap();
+    for pin in pins::MLX_QWEN_PINS.iter() {
+        fs::File::create(directory.join(pin.name))
+            .unwrap()
+            .set_len(pin.size)
+            .unwrap();
+    }
+    assert!(super::local_thinking_present_for_key(
+        &journal,
+        "aarch64-apple-darwin"
+    ));
+    fs::remove_dir_all(&journal).unwrap();
+}
+
+#[test]
 #[cfg(not(all(target_os = "macos", target_arch = "aarch64")))]
 fn metal_runtime_requires_the_supported_platform_without_ready_state() {
     let root = temp("metal-candidate-platform");

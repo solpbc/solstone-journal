@@ -344,12 +344,7 @@ pub fn read_setup_downloads(journal: &Path) -> Result<SetupDownloads, SetupProgr
         speech_catalog_total,
     );
 
-    let artifact_input = serde_json::json!({"journal": journal, "model_id": "local/qwen3.5-4b"});
-    let artifacts = solstone_core_local::install::readiness::inspect_local_present(
-        artifact_input.as_object().expect("object").clone(),
-    );
-    let thinking_verified = artifacts["artifacts"]["binary_installed"] == true
-        && artifacts["artifacts"]["model_installed"] == true;
+    let thinking_verified = solstone_core_local::install::local_thinking_present(journal);
     let thinking_total = solstone_core_local::install::local_thinking_catalog_plan(journal, None)
         .and_then(|rows| {
             let members = rows

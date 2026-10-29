@@ -848,12 +848,13 @@ fn withhold_app_direct_door(app: &mut ManagedAppProcess, journal: &Path) -> Resu
     let port = read_direct_door_port(journal)
         .map_err(|error| format!("failed to read direct-door port: {error}"))?;
     match withhold_direct_door(journal, generation, port) {
-        Ok(DirectDoorPublishResult::Published) => {
+        // Only a withdrawal advances the generation, so a stale result means
+        // this child's door was already withdrawn (Convey withdraws its own on a
+        // clean exit). Nothing is left to clean up, and holding the authority
+        // would refuse every later Convey start.
+        Ok(DirectDoorPublishResult::Published | DirectDoorPublishResult::RejectedStale) => {
             app.direct_door_generation = None;
             Ok(())
-        }
-        Ok(DirectDoorPublishResult::RejectedStale) => {
-            Err(format!("generation {generation} was stale and rejected"))
         }
         Err(error) => Err(format!(
             "generation {generation} could not be withheld: {error}"
@@ -1609,9 +1610,10 @@ pub(crate) fn spawn_app_process(
     sense_child_environment: &solstone_core_system::process::ChildLaunchContext,
 ) -> Result<(), String> {
     if app.service == AppService::Convey {
-        if app.direct_door_generation.is_some() {
-            return Err("previous direct-door cleanup authority is still retained".to_owned());
-        }
+        // A cleanup that failed at exit is retried here before a new child may claim the door.
+        withhold_app_direct_door(app, journal).map_err(|error| {
+            format!("previous direct-door cleanup authority is still retained: {error}")
+        })?;
         let generation = peek_direct_door_generation(journal)
             .map_err(|error| format!("failed to retain direct-door cleanup authority: {error}"))?;
         app.direct_door_generation = Some(generation);
@@ -2877,13 +2879,12 @@ mod tests {
         let journal = tempfile::TempDir::new().expect("temporary journal");
         std::fs::create_dir_all(journal.path().join("config")).expect("config directory");
         std::fs::create_dir_all(journal.path().join("health")).expect("health directory");
+        // An invalid port makes the cleanup itself fail; a stale generation does not.
         std::fs::write(
             journal.path().join("config/journal.json"),
-            r#"{"pairing":{"direct_port":9000}}"#,
+            r#"{"pairing":{"direct_port":0}}"#,
         )
         .expect("journal config");
-        std::fs::write(journal.path().join("health/direct-door.json"), b"not JSON")
-            .expect("corrupt direct-door fixture");
         let mut app = ManagedAppProcess::new(
             AppService::Convey,
             true,

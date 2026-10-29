@@ -1474,6 +1474,27 @@ pub fn local_thinking_catalog_plan(
     }
 }
 
+/// Whether the local thinking runtime and model that the plan above downloads
+/// are present: the MLX model on Apple silicon, the llama.cpp runtime and model
+/// elsewhere. A cheap check for read paths; it does not hash weights.
+pub fn local_thinking_present(journal: &Path) -> bool {
+    local_thinking_present_for_key(journal, &pins::platform_key())
+}
+
+fn local_thinking_present_for_key(journal: &Path, key: &str) -> bool {
+    let readiness = if key == "aarch64-apple-darwin" {
+        mlx_candidate::inspect_present_default(journal)
+    } else {
+        readiness::inspect_local_present(Map::from_iter([
+            ("journal".into(), json!(journal)),
+            ("model_id".into(), json!("local/qwen3.5-4b")),
+            ("artifact_key".into(), json!(key)),
+        ]))
+    };
+    readiness["artifacts"]["binary_installed"] == true
+        && readiness["artifacts"]["model_installed"] == true
+}
+
 pub fn inspect_parakeet_manifests(journal: &Path, artifact_key: &str) -> (Value, Value, Value) {
     let paths = pins::parakeet_paths(journal, artifact_key);
 

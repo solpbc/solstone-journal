@@ -415,6 +415,35 @@ fn main() {
                 std::process::exit(1);
             }
         }
+        // Convey's own life once: its door opens after setup, then a clean exit
+        // withdraws it, which advances the record's generation.
+        "door-withdraw-once" => {
+            let state_path = args.next().expect("state path");
+            let journal = PathBuf::from(args.next().expect("journal path"));
+            if std::path::Path::new(&state_path).exists() {
+                loop {
+                    std::thread::sleep(Duration::from_secs(1));
+                }
+            }
+            use solstone_core_system::direct_door::{
+                DirectDoorOutcome, DirectDoorPublishResult, peek_direct_door_generation,
+                publish_direct_door, withhold_direct_door,
+            };
+            let port = solstone_core_journal_config::read_direct_door_port(&journal)
+                .expect("direct-door port");
+            let generation = peek_direct_door_generation(&journal).expect("door generation");
+            assert_eq!(
+                publish_direct_door(&journal, generation, DirectDoorOutcome::Bound { port })
+                    .expect("publish door"),
+                DirectDoorPublishResult::Published
+            );
+            assert_eq!(
+                withhold_direct_door(&journal, generation, port).expect("withdraw door"),
+                DirectDoorPublishResult::Published
+            );
+            std::fs::write(&state_path, "exited").expect("record fixture exit");
+            std::process::exit(0);
+        }
         #[cfg(any(target_os = "linux", target_os = "macos"))]
         "block-term-count" => {
             let ready_path = args.next().expect("ready path");
