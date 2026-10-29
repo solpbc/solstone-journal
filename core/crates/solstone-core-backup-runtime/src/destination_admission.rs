@@ -6,15 +6,14 @@ use std::path::Path;
 #[cfg(all(unix, not(target_os = "ios")))]
 use std::path::PathBuf;
 
-#[cfg(any(windows, target_os = "linux", target_os = "android"))]
 use solstone_core_journal_io::JournalRoot;
+use std::sync::Arc;
 #[cfg(any(target_os = "linux", target_os = "android"))]
 use {
     solstone_core_journal_io::{
         activity::ActivityLease, activity_obligations::observe_obligations,
     },
     std::os::fd::{AsFd, AsRawFd, BorrowedFd, OwnedFd},
-    std::sync::Arc,
 };
 
 #[derive(Debug)]
@@ -55,7 +54,7 @@ pub fn with_forced_admission_failure<T>(f: impl FnOnce() -> T) -> T {
 
 pub struct AdmittedDestination {
     #[cfg(windows)]
-    root: JournalRoot,
+    root: Arc<JournalRoot>,
     #[cfg(any(target_os = "linux", target_os = "android"))]
     root: Arc<JournalRoot>,
     #[cfg(any(target_os = "linux", target_os = "android"))]
@@ -69,6 +68,11 @@ pub struct AdmittedDestination {
         not(any(target_os = "linux", target_os = "android", target_os = "ios"))
     ))]
     path: PathBuf,
+    #[cfg(all(
+        unix,
+        not(any(target_os = "linux", target_os = "android", target_os = "ios"))
+    ))]
+    retained_root: Option<Arc<JournalRoot>>,
     #[cfg(target_os = "ios")]
     target: crate::ios_callable::RestoreTarget,
 }
@@ -81,20 +85,43 @@ impl AdmittedDestination {
                 return Err(DestinationAdmissionError::Failed);
             }
         }
+        #[cfg(any(windows, target_os = "linux", target_os = "android", target_os = "ios"))]
+        {
+            Self::admit_bound(Arc::new(
+                JournalRoot::open(path).map_err(|_| DestinationAdmissionError::Failed)?,
+            ))
+        }
+        #[cfg(all(
+            unix,
+            not(any(target_os = "linux", target_os = "android", target_os = "ios"))
+        ))]
+        {
+            Ok(Self {
+                path: path.to_path_buf(),
+                retained_root: None,
+            })
+        }
+        #[cfg(not(any(unix, windows)))]
+        {
+            let _ = path;
+            Err(DestinationAdmissionError::Failed)
+        }
+    }
+
+    /// Admit the host's original target without reopening its pathname.
+    pub fn admit_bound(root: Arc<JournalRoot>) -> Result<Self, DestinationAdmissionError> {
+        #[cfg(any(test, feature = "test-hooks", feature = "test-support"))]
+        if FORCE_ADMISSION_FAILURE.with(|cell| cell.get()) {
+            return Err(DestinationAdmissionError::Failed);
+        }
+        root.revalidate_canonical_binding()
+            .map_err(|_| DestinationAdmissionError::Failed)?;
         #[cfg(windows)]
         {
-            let root = JournalRoot::open(path).map_err(|_| DestinationAdmissionError::Failed)?;
-            root.revalidate_canonical_binding()
-                .map_err(|_| DestinationAdmissionError::Failed)?;
             Ok(Self { root })
         }
         #[cfg(any(target_os = "linux", target_os = "android"))]
         {
-            let absolute =
-                std::path::absolute(path).map_err(|_| DestinationAdmissionError::Failed)?;
-            let root = Arc::new(
-                JournalRoot::open(&absolute).map_err(|_| DestinationAdmissionError::Failed)?,
-            );
             root.canonical_path()
                 .to_str()
                 .ok_or(DestinationAdmissionError::Failed)?;
@@ -116,30 +143,27 @@ impl AdmittedDestination {
             admitted.revalidate_for_target()?;
             Ok(admitted)
         }
+        #[cfg(target_os = "ios")]
+        {
+            // The native activity lease on the journal root lasts until this
+            // admission drops, through every later restore step.
+            let target = crate::ios_callable::RestoreTarget::admit(root)
+                .map_err(|_| DestinationAdmissionError::Failed)?;
+            Ok(Self { target })
+        }
         #[cfg(all(
             unix,
             not(any(target_os = "linux", target_os = "android", target_os = "ios"))
         ))]
         {
             Ok(Self {
-                path: path.to_path_buf(),
+                path: root.canonical_path().to_owned(),
+                retained_root: Some(root),
             })
-        }
-        #[cfg(target_os = "ios")]
-        {
-            // The native activity lease on the journal root lasts until this
-            // admission drops, through every later restore step.
-            let root = std::sync::Arc::new(
-                solstone_core_journal_io::JournalRoot::open(path)
-                    .map_err(|_| DestinationAdmissionError::Failed)?,
-            );
-            let target = crate::ios_callable::RestoreTarget::admit(root)
-                .map_err(|_| DestinationAdmissionError::Failed)?;
-            Ok(Self { target })
         }
         #[cfg(not(any(unix, windows)))]
         {
-            let _ = path;
+            let _ = root;
             Err(DestinationAdmissionError::Failed)
         }
     }
@@ -178,6 +202,10 @@ impl AdmittedDestination {
             not(any(target_os = "linux", target_os = "android", target_os = "ios"))
         ))]
         {
+            if let Some(root) = &self.retained_root {
+                root.revalidate_canonical_binding()
+                    .map_err(|_| DestinationAdmissionError::Failed)?;
+            }
             Ok(&self.path)
         }
         #[cfg(target_os = "ios")]

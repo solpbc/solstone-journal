@@ -12,7 +12,8 @@ use solstone_core_journal_config::read_journal_config;
 use solstone_core_journal_config_write::{
     BoundConfigOutcome, BoundConfigRefusal, CommitConfigError, ConfigExpectation,
     ConfigMutationError, JournalConfigMutation, LockOptions, commit_journal_config_checked,
-    conditional_update_journal_config_at_root, mutate_journal_config_checked,
+    conditional_update_journal_config_at_root, mutate_journal_config_at_root_checked,
+    mutate_journal_config_checked,
 };
 use solstone_core_journal_io::JournalRoot;
 
@@ -114,6 +115,44 @@ pub fn set_mode(journal: &Path, mode: &str) -> Result<(), BackupError> {
     mutate_backup_section(journal, |backup| {
         set_value(backup, "mode", Value::String(mode.to_owned()))
     })
+}
+
+/// Publish a mode through the original journal, preserving publication uncertainty.
+pub fn set_mode_at_root_checked(
+    root: &Arc<JournalRoot>,
+    mode: &str,
+    checkpoint: &dyn Fn() -> Result<(), String>,
+) -> Result<BoundConfigOutcome, BoundConfigRefusal> {
+    if !matches!(mode, "byo" | "operated") {
+        return Err(BoundConfigRefusal::Conflict);
+    }
+    let admit = || {
+        admit_backup_task()?;
+        checkpoint()
+    };
+    let transaction =
+        mutate_journal_config_at_root_checked(root, mutation_lock_options(), &admit, |config| {
+            let backup = config
+                .entry("backup")
+                .or_insert_with(|| Value::Object(Map::new()));
+            let Some(backup) = backup.as_object_mut() else {
+                return JournalConfigMutation {
+                    changed: false,
+                    value: false,
+                };
+            };
+            let mode = Value::String(mode.to_owned());
+            let changed = backup.get("mode") != Some(&mode);
+            backup.insert("mode".into(), mode);
+            JournalConfigMutation {
+                changed,
+                value: true,
+            }
+        })?;
+    if !transaction.value {
+        return Err(BoundConfigRefusal::Conflict);
+    }
+    Ok(transaction.outcome)
 }
 
 pub fn set_retention(journal: &Path, retention: &Map<String, Value>) -> Result<(), BackupError> {

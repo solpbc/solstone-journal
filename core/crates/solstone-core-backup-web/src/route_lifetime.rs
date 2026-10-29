@@ -59,6 +59,27 @@ impl BackupRouteLifetime {
     /// Native joins run in retained blocking tasks, including thread-local
     /// destructors, so they cannot extend this caller's deadline.
     pub fn drain(&self, executor: &tokio::runtime::Handle, deadline: Instant) -> BackupRouteDrain {
+        self.drain_inner(executor, deadline, false)
+    }
+
+    pub(crate) fn drain_recovery(
+        &self,
+        executor: &tokio::runtime::Handle,
+        deadline: Instant,
+        control: &WriteGuard,
+    ) -> BackupRouteDrain {
+        if !control.controls_recovery_of(&self.operations) {
+            return BackupRouteDrain::Failure;
+        }
+        self.drain_inner(executor, deadline, true)
+    }
+
+    fn drain_inner(
+        &self,
+        executor: &tokio::runtime::Handle,
+        deadline: Instant,
+        recovery: bool,
+    ) -> BackupRouteDrain {
         let mut attempted_settlement = false;
         loop {
             let mut guard = match self.operations.try_lock() {
@@ -236,12 +257,17 @@ impl BackupRouteLifetime {
                 }
             }
 
+            let ignored_controls = if recovery {
+                guard.recovery_controls_in_flight
+            } else {
+                0
+            };
             let blocked = !guard.threads.is_empty()
                 || guard.archive.is_busy()
                 || guard.settlement_worker.is_some()
                 || self.operations.joining()
                 || !guard.join_batches.is_empty()
-                || guard.writes_in_flight > 0
+                || guard.writes_in_flight > ignored_controls
                 || worker_active
                 || cleanup_some
                 || prepared_pending;
@@ -267,7 +293,7 @@ impl BackupRouteLifetime {
 
             drop(guard);
 
-            if !closed {
+            if !closed && !recovery {
                 return BackupRouteDrain::Pending;
             }
 

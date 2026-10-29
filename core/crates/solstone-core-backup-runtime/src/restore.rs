@@ -5,6 +5,7 @@
 
 use std::collections::BTreeMap;
 use std::path::Path;
+use std::sync::Arc;
 use std::time::Duration;
 
 use serde_json::{Map, Value, json};
@@ -404,8 +405,9 @@ pub struct MobileSelection {
 }
 
 struct MobileRestore<'a> {
+    root: Arc<solstone_core_journal_io::JournalRoot>,
     identity: MobileRestoreIdentity,
-    selection: MobileSelection,
+    selection: Option<MobileSelection>,
     drain: &'a mut dyn FnMut() -> Result<(), String>,
 }
 
@@ -413,7 +415,7 @@ enum RestorePhase {
     Desktop,
     First {
         identity: MobileRestoreIdentity,
-        selection: MobileSelection,
+        selection: Option<MobileSelection>,
     },
     Adopted {
         record: solstone_core_journal_io::whole_journal_restore::WholeJournalRestore,
@@ -504,9 +506,10 @@ fn classify_restore(
                 selection: request.selection.clone(),
             }),
             WholeJournalRestoreReadiness::Pending(record) => {
-                if record.snapshot_id != request.selection.snapshot_id
-                    || record.subtree != request.selection.subtree
-                    || !source_matches(&record.source, &request.identity, destination)
+                if request.selection.as_ref().is_none_or(|selection| {
+                    record.snapshot_id != selection.snapshot_id
+                        || record.subtree != selection.subtree
+                }) || !source_matches(&record.source, &request.identity, destination)
                 {
                     Err(refuse())
                 } else {
@@ -582,7 +585,7 @@ pub fn restore_journal(
 /// stopped using and publishing it. An empty obligation census is not that proof.
 #[allow(clippy::too_many_arguments)]
 pub fn restore_mobile_journal(
-    journal: &Path,
+    root: Arc<solstone_core_journal_io::JournalRoot>,
     services: &BackupServices<'_>,
     recorder: &dyn RestoreRecorder,
     destination: Destination,
@@ -592,14 +595,42 @@ pub fn restore_mobile_journal(
     drain: &mut dyn FnMut() -> Result<(), String>,
 ) -> RestoreOutcome {
     restore_journal_with(
-        journal,
+        root.canonical_path(),
         services,
         recorder,
         destination,
         entered_recovery_key,
         Some(MobileRestore {
+            root: Arc::clone(&root),
             identity,
-            selection,
+            selection: Some(selection),
+            drain,
+        }),
+    )
+}
+
+/// Begin a mobile restore from the latest unambiguous journal snapshot.
+/// Its exact id and subtree are recorded before drain or copy; retries must
+/// use that recorded selection through `restore_mobile_journal`.
+pub fn restore_mobile_latest_journal(
+    root: Arc<solstone_core_journal_io::JournalRoot>,
+    services: &BackupServices<'_>,
+    recorder: &dyn RestoreRecorder,
+    destination: Destination,
+    entered_recovery_key: &str,
+    identity: MobileRestoreIdentity,
+    drain: &mut dyn FnMut() -> Result<(), String>,
+) -> RestoreOutcome {
+    restore_journal_with(
+        root.canonical_path(),
+        services,
+        recorder,
+        destination,
+        entered_recovery_key,
+        Some(MobileRestore {
+            root: Arc::clone(&root),
+            identity,
+            selection: None,
             drain,
         }),
     )
@@ -613,7 +644,13 @@ fn restore_journal_with(
     entered_recovery_key: &str,
     mut mobile: Option<MobileRestore<'_>>,
 ) -> RestoreOutcome {
-    let admitted = match crate::destination_admission::admit_restore_destination(journal) {
+    let admission = match mobile.as_ref() {
+        Some(request) => crate::destination_admission::AdmittedDestination::admit_bound(
+            Arc::clone(&request.root),
+        ),
+        None => crate::destination_admission::admit_restore_destination(journal),
+    };
+    let admitted = match admission {
         Ok(admitted) => admitted,
         Err(_) => {
             return unrecorded_outcome(error_draft(RESTORE_REASON_DESTINATION_ADMISSION_FAILED));
@@ -751,7 +788,10 @@ fn restore_journal_with(
         return finish(journal, services.clock, recorder, error_draft(reason));
     }
     let (snapshot, tree_path) = match &phase {
-        RestorePhase::Desktop => {
+        RestorePhase::Desktop
+        | RestorePhase::First {
+            selection: None, ..
+        } => {
             let snapshot = match select_journal_snapshot(snapshots.json.as_ref()) {
                 Ok(snapshot) => snapshot,
                 Err(error) => {
@@ -768,7 +808,10 @@ fn restore_journal_with(
                 crate::restic_tree_path(Path::new(&snapshot.path)),
             )
         }
-        RestorePhase::First { selection, .. } => {
+        RestorePhase::First {
+            selection: Some(selection),
+            ..
+        } => {
             let snapshot = match snapshot_with_id(snapshots.json.as_ref(), &selection.snapshot_id) {
                 Ok(snapshot) => snapshot,
                 Err(error) => {
@@ -797,6 +840,13 @@ fn restore_journal_with(
             (snapshot, record.subtree.clone())
         }
     };
+    if services
+        .runner
+        .cancellation()
+        .is_some_and(|cancellation| cancellation.is_cancelled())
+    {
+        return unrecorded_outcome(error_draft(RESTORE_REASON_DESTINATION_ADMISSION_FAILED));
+    }
     let target_path = match admitted.revalidate_for_target() {
         Ok(path) => path,
         Err(_) => {
@@ -927,6 +977,14 @@ fn restore_journal_with(
             false,
         )
     };
+    if obligation.is_some() && !integrity_ok {
+        return finish(
+            journal,
+            services.clock,
+            recorder,
+            counters.into_draft("error", reason_code, false, false),
+        );
+    }
     let admission_failed = || {
         #[cfg(any(target_os = "linux", target_os = "android", target_os = "ios"))]
         {
@@ -1868,7 +1926,7 @@ mod tests {
     ) -> RestoreOutcome {
         let clock = TestClock;
         restore_mobile_journal(
-            journal,
+            Arc::new(solstone_core_journal_io::JournalRoot::open(journal).unwrap()),
             &services(runner, &clock, maintenance),
             recorder,
             destination(),
@@ -2166,7 +2224,7 @@ mod tests {
             ..destination()
         };
         let mismatched_source = restore_mobile_journal(
-            journal.path(),
+            Arc::new(solstone_core_journal_io::JournalRoot::open(journal.path()).unwrap()),
             &services(&runner, &TestClock, &Maintenance),
             &recorder,
             other,

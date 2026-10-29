@@ -34,13 +34,14 @@ use solstone_core_backup_runtime::{
     NativeJournalMaintenance, NativeRestoreRecorder, ResolvedTools, RestoreDraft, RestoreOutcome,
     RestoreRecorder, SystemToolRunner, ToolRunner, UreqHttpTransport, init_repository,
     log_key_label_outcome, neutralize_key_labels, operated_destination, publish_restore_outcome,
-    reason_for_returncode, resolve_operational_tools, restore_journal, rotate_recovery_key,
-    validate_destination,
+    reason_for_returncode, resolve_operational_tools, rotate_recovery_key, validate_destination,
 };
 
 pub mod archive_operation;
 pub mod archive_worker;
 mod assets;
+mod first_restore;
+pub use first_restore::{EmbeddedRestoreLifecycle, PausedRestore};
 mod callosum;
 #[cfg(windows)]
 mod cleanup;
@@ -110,6 +111,7 @@ pub struct BackupWebDeps {
     /// Current fixed-routine admission for this serving lifetime; no submission.
     pub offload_dispatch_probe: Option<OffloadDispatchProbe>,
     pub(crate) restore_prepare: SharedRestorePrepare,
+    pub(crate) restore_host: first_restore::RestoreHost,
 }
 
 /// Host-owned admission for the single `backup:verify` routine.
@@ -149,13 +151,14 @@ impl BackupWebDeps {
     ) -> Result<Self, solstone_core_journal_io::JournalRootError> {
         root.revalidate_canonical_binding()?;
         let journal = root.canonical_path().to_path_buf();
-        let deps = Self::production_with_owner(
+        let mut deps = Self::production_with_owner(
             journal.clone(),
             measurement::new(&journal),
             solstone_core_journal_io::whole_journal_restore::TargetUseOwner::from_root(Arc::clone(
                 &root,
             )),
         );
+        deps.restore_host = first_restore::RestoreHost::Embedded(None);
         #[cfg(target_os = "ios")]
         let deps = {
             let mut deps = deps;
@@ -168,6 +171,12 @@ impl BackupWebDeps {
             deps
         };
         Ok(deps)
+    }
+
+    /// Install before capturing the embedded router. Native construction
+    /// refuses first restore until its host supplies this lifecycle.
+    pub fn install_restore_lifecycle(&mut self, lifecycle: Arc<dyn EmbeddedRestoreLifecycle>) {
+        self.restore_host = first_restore::RestoreHost::Embedded(Some(lifecycle));
     }
 
     pub fn retained_root(
@@ -229,6 +238,7 @@ impl BackupWebDeps {
             verification_submitter: None,
             offload_dispatch_probe: None,
             restore_prepare: restore_prepare::new_shared(),
+            restore_host: first_restore::RestoreHost::Desktop,
         }
     }
 
@@ -815,10 +825,18 @@ fn resolve_tools(deps: &BackupWebDeps) -> Result<ResolvedTools, ClosedToolError>
 }
 
 fn lifetime_runner<'a>(deps: &'a BackupWebDeps) -> LifetimeRunner<'a> {
-    let cancellation = match deps.operations.lock() {
-        Ok(guard) => guard.cancellation.clone(),
-        Err(poisoned) => poisoned.into_inner().cancellation.clone(),
-    };
+    let guard = deps
+        .operations
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let cancellation = guard
+        .current
+        .as_ref()
+        .filter(|current| {
+            current.worker_active && recovery_owner::owns_recovery(&current.view.kind)
+        })
+        .and_then(|current| current.archive_cancellation.clone())
+        .unwrap_or_else(|| guard.cancellation.clone());
     LifetimeRunner::new(deps.runner.as_ref(), cancellation)
 }
 
@@ -1160,7 +1178,7 @@ fn restore_pending_response(deps: &BackupWebDeps) -> Option<axum::response::Resp
 pub fn recover_recorded_journal_with(
     deps: &BackupWebDeps,
     body: &[u8],
-    drain: &mut dyn FnMut() -> Result<(), String>,
+    drain: &mut dyn FnMut() -> Result<Box<dyn PausedRestore>, String>,
 ) -> Result<(), String> {
     use solstone_core_journal_io::whole_journal_restore::{
         WholeJournalRestoreReadiness, read_whole_journal_restore,
@@ -1190,34 +1208,99 @@ pub fn recover_recorded_journal_with(
     let frame = recovery_owner::RecoveryFrame::begin(&deps.operations)?;
     let tools = resolve_tools(deps).map_err(|error| error.to_string())?;
     let runner = LifetimeRunner::new(deps.runner.as_ref(), frame.cancellation());
+    let mut paused = None;
     let outcome = restore_mobile_journal(
-        &deps.journal_root,
+        deps.retained_root().map_err(|error| error.to_string())?,
         &services(deps, &runner, &tools),
         deps.restore_recorder.as_ref(),
         destination,
         recovery_key,
         identity,
         selection,
-        drain,
+        &mut || {
+            if paused.is_some() {
+                return Err("restore attempt has already drained".into());
+            }
+            paused = Some(drain()?);
+            Ok(())
+        },
     );
-    let result = match outcome.status.as_str() {
+    let mut result = match outcome.status.as_str() {
         "ok" | "degraded" => Ok(()),
         _ => Err(outcome
             .reason_code
             .clone()
             .unwrap_or_else(|| "restore_failed".into())),
     };
-    frame.finish(map_restore(outcome));
+    let mut terminal = map_restore(outcome);
+    if result.is_ok() {
+        result = if runner
+            .cancellation()
+            .is_some_and(|stop| stop.is_cancelled())
+        {
+            Err("restore_failed".into())
+        } else {
+            match paused.take() {
+                Some(attempt) => attempt.resume(&|| {
+                    runner
+                        .cancellation()
+                        .is_some_and(|stop| stop.is_cancelled())
+                }),
+                None => Err("restore couldn't confirm your journal was paused".into()),
+            }
+        };
+        if result.is_err() {
+            terminal = Terminal::error("destination_admission_failed");
+        }
+    }
+    drop(paused);
+    frame.finish(terminal);
     result
 }
 
-/// Cancel only the active recovery generation and wait for its actual frame.
-pub fn stop_recorded_journal(deps: &BackupWebDeps) -> Result<(), String> {
-    recovery_owner::stop(&deps.operations)
+/// Cancel the active initial or retry generation and wait for its actual frame.
+pub fn stop_recorded_journal(
+    deps: &BackupWebDeps,
+    executor: &tokio::runtime::Handle,
+) -> Result<(), String> {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+    let control = operation::admit_write(&deps.operations, operation::AdmitWrite::RecoveryControl)
+        .map_err(|_| "restore controls are unavailable".to_owned())?;
+    recovery_owner::stop(&deps.operations)?;
+    match deps.lifetime().drain_recovery(executor, deadline, &control) {
+        BackupRouteDrain::Drained => Ok(()),
+        BackupRouteDrain::Pending => Err("restore is still stopping".into()),
+        BackupRouteDrain::Failure => Err("couldn't confirm that restore stopped".into()),
+    }
 }
 
-pub fn recorded_journal_recovery_active(deps: &BackupWebDeps) -> Result<bool, String> {
-    recovery_owner::active(&deps.operations)
+pub fn recorded_journal_recovery_active(
+    deps: &BackupWebDeps,
+    executor: &tokio::runtime::Handle,
+) -> Result<bool, String> {
+    let control = operation::admit_write(&deps.operations, operation::AdmitWrite::RecoveryControl)
+        .map_err(|_| "restore controls are unavailable".to_owned())?;
+    if recovery_owner::active(&deps.operations)? {
+        return Ok(true);
+    }
+    let recovery = deps
+        .operations
+        .lock()
+        .map_err(|_| "restore controls are unavailable")?
+        .current
+        .as_ref()
+        .is_some_and(|current| recovery_owner::owns_recovery(&current.view.kind));
+    if !recovery {
+        return Ok(false);
+    }
+    match deps
+        .lifetime()
+        .drain_recovery(executor, std::time::Instant::now(), &control)
+    {
+        BackupRouteDrain::Drained => Ok(false),
+        BackupRouteDrain::Pending => Ok(true),
+        BackupRouteDrain::Failure => Err("couldn't confirm that restore stopped".into()),
+    }
 }
 
 fn optional_text<'a>(payload: &'a Map<String, Value>, key: &str) -> Option<&'a str> {
@@ -1384,13 +1467,13 @@ async fn restore_route(deps: BackupWebDeps, body: Bytes) -> axum::response::Resp
                 }
             };
             let runner = lifetime_runner(&worker);
-            map_restore(restore_journal(
-                &worker.journal_root,
+            first_restore::run(
+                &worker,
                 &services(&worker, &runner, &tools),
-                worker.restore_recorder.as_ref(),
                 destination,
                 &recovery_key,
-            ))
+                MobileRestoreIdentity::Byo,
+            )
         }))
         // Restore owns this boundary so spawn_worker's generic fallback is unreachable here.
         .unwrap_or_else(|_| {
@@ -1582,13 +1665,18 @@ fn bound_restore_hosted_inner(
         };
     let destination = operated_destination(&binding, &credentials);
     let runner = lifetime_runner(deps);
-    map_restore(restore_journal(
-        &deps.journal_root,
+    first_restore::run(
+        deps,
         &services(deps, &runner, &tools),
-        deps.restore_recorder.as_ref(),
         destination,
         recovery_key,
-    ))
+        MobileRestoreIdentity::Hosted {
+            account_id: binding.account_id,
+            instance_id: binding.instance_id,
+            bucket: binding.bucket,
+            prefix: binding.prefix,
+        },
+    )
 }
 
 async fn offload_restore_route(deps: BackupWebDeps, body: Bytes) -> axum::response::Response {
@@ -1806,6 +1894,14 @@ pub(crate) fn consume_hosted(
     {
         return Terminal::error(reason);
     }
+    let restore_root = if kind == "enable_hosted" {
+        None
+    } else {
+        match deps.retained_root() {
+            Ok(root) => Some(root),
+            Err(_) => return Terminal::error("destination_admission_failed"),
+        }
+    };
     let tools = match resolve_tools(deps) {
         Ok(tools) => tools,
         Err(error) => return Terminal::tool_error(error),
@@ -1860,15 +1956,24 @@ pub(crate) fn consume_hosted(
         return Terminal::error("invalid_operation_for_state");
     };
     let runner = lifetime_runner(deps);
-    let terminal = map_restore(restore_journal(
-        &deps.journal_root,
+    let terminal = first_restore::run(
+        deps,
         &services(deps, &runner, &tools),
-        deps.restore_recorder.as_ref(),
         destination,
         &recovery_key,
-    ));
+        MobileRestoreIdentity::Hosted {
+            account_id: binding.account_id,
+            instance_id: binding.instance_id,
+            bucket: binding.bucket,
+            prefix: binding.prefix,
+        },
+    );
     if matches!(terminal.phase.as_str(), "done" | "degraded") {
-        let _ = set_mode(&deps.journal_root, "operated");
+        return first_restore::finish_hosted_mode(
+            deps,
+            restore_root.expect("restore root captured before work"),
+            terminal,
+        );
     }
     terminal
 }

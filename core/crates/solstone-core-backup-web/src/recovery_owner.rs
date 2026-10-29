@@ -79,12 +79,26 @@ pub(crate) fn stop(slot: &SharedOperationSlot) -> Result<(), String> {
         let Some(current) = state.current.as_ref() else {
             return Ok(());
         };
-        if current.view.kind != "restore_recovery" || !current.worker_active {
+        if !owns_recovery(&current.view.kind) {
             return Ok(());
         }
         current.generation
     };
-    operation::request_archive_cancellation(slot, generation);
+    if operation::request_archive_cancellation(slot, generation)
+        == crate::archive_operation::ArchiveCancellationRequest::Refused
+    {
+        let state = slot.lock().map_err(|_| "backup operation is unavailable")?;
+        if state.current.as_ref().is_some_and(|current| {
+            current.generation == generation
+                && !operation::is_terminal(&current.view.phase)
+                && !current
+                    .archive_cancellation
+                    .as_ref()
+                    .is_some_and(|stop| stop.is_cancelled())
+        }) {
+            return Err("restore controls are unavailable".into());
+        }
+    }
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
     loop {
         let active = {
@@ -111,10 +125,14 @@ pub(crate) fn active(slot: &SharedOperationSlot) -> Result<bool, String> {
     let state = slot
         .lock()
         .map_err(|_| "backup operation is unavailable".to_owned())?;
-    Ok(state
-        .current
-        .as_ref()
-        .is_some_and(|current| current.view.kind == "restore_recovery" && current.worker_active))
+    Ok(state.current.as_ref().is_some_and(|current| {
+        owns_recovery(&current.view.kind)
+            && (current.worker_active || !operation::is_terminal(&current.view.phase))
+    }))
+}
+
+pub(crate) fn owns_recovery(kind: &str) -> bool {
+    matches!(kind, "restore" | "restore_hosted" | "restore_recovery")
 }
 
 #[cfg(all(test, feature = "full-tests"))]
@@ -122,6 +140,57 @@ mod tests {
     use super::*;
     use std::sync::mpsc;
     use std::time::{Duration, Instant};
+
+    #[cfg(not(windows))]
+    #[test]
+    fn accepted_recovery_cannot_start_its_native_writer_after_stop_returns() {
+        let mut observed = Vec::new();
+        for kind in ["restore", "restore_hosted", "restore_recovery"] {
+            let journal = tempfile::tempdir().unwrap();
+            let deps = crate::BackupWebDeps::new(journal.path().to_owned());
+            let generation = operation::begin(&deps.operations, kind, None, None, None)
+                .unwrap()
+                .generation;
+            let active = crate::recorded_journal_recovery_active(
+                &deps,
+                crate::test_support::join_executor(),
+            )
+            .unwrap();
+            let stopped = crate::stop_recorded_journal(&deps, crate::test_support::join_executor());
+            let path = journal.path().join("late-accepted-restore");
+            let work_path = path.clone();
+            let (done, received) = mpsc::channel();
+            let accepted =
+                operation::spawn_worker(deps.operations.clone(), generation, move || {
+                    std::fs::write(work_path, b"native work after Stop").unwrap();
+                    done.send(()).unwrap();
+                    Terminal::done()
+                });
+            if accepted {
+                received.recv_timeout(Duration::from_secs(5)).unwrap();
+            }
+            let lifetime = deps.lifetime();
+            lifetime.request_stop();
+            assert_eq!(
+                lifetime.drain(
+                    crate::test_support::join_executor(),
+                    Instant::now() + Duration::from_secs(5)
+                ),
+                crate::BackupRouteDrain::Drained
+            );
+            observed.push((kind, active, stopped, accepted, path.exists()));
+        }
+        eprintln!("accepted-before-start controls={observed:?}");
+        assert!(
+            observed
+                .iter()
+                .all(|(_, active, stopped, accepted, copied)| *active
+                    && stopped.is_ok()
+                    && !accepted
+                    && !copied),
+            "accepted recovery generation escaped Stop: {observed:?}"
+        );
+    }
 
     #[test]
     fn cancel_waits_for_the_real_writer_and_preserves_the_retained_owner_for_retry() {
@@ -251,7 +320,7 @@ mod tests {
                 &serde_json::to_vec(&changed).unwrap(),
                 &mut || {
                     drained = true;
-                    Ok(())
+                    Err("unexpected drain".into())
                 },
             );
             assert_eq!(result, Err("restore_source_mismatch".into()));
@@ -270,9 +339,8 @@ mod tests {
     fn recorded_retry_retains_the_actual_runner_frame_through_cancel_and_reuses_its_owner() {
         use solstone_core_backup_runtime::{ToolOutput, ToolRequest, ToolRunner};
         use solstone_core_journal_io::whole_journal_restore::{
-            WholeJournalRestoreReadiness, WholeJournalRestoreSource, hold_target_for_restore,
-            publish_whole_journal_restore, read_whole_journal_restore, release_target_for_restore,
-            wait_for_target_use_to_end,
+            TargetRestoreHold, WholeJournalRestoreReadiness, WholeJournalRestoreSource,
+            publish_whole_journal_restore, read_whole_journal_restore,
         };
         use std::sync::{
             Arc, Mutex,
@@ -426,10 +494,21 @@ mod tests {
             "credentials":{"access_key_id":"synthetic","secret_access_key":"synthetic"}
         }))
         .unwrap();
-        let drain = || {
-            hold_target_for_restore(journal.path());
-            wait_for_target_use_to_end(journal.path());
-            Ok(())
+        struct Paused(TargetRestoreHold);
+        impl crate::PausedRestore for Paused {
+            fn resume(self: Box<Self>, cancelled: &dyn Fn() -> bool) -> Result<(), String> {
+                self.0.revalidate().map_err(|e| e.to_string())?;
+                if cancelled() {
+                    return Err("stopped".into());
+                }
+                Ok(())
+            }
+        }
+        let drain = || -> Result<Box<dyn crate::PausedRestore>, String> {
+            let hold = TargetRestoreHold::acquire(deps.retained_root().unwrap())
+                .map_err(|e| e.to_string())?;
+            hold.wait_for_admitted_use().map_err(|e| e.to_string())?;
+            Ok(Box::new(Paused(hold)))
         };
         std::thread::scope(|scope| {
             let retry =
@@ -439,7 +518,9 @@ mod tests {
                 std::fs::read(journal.path().join("restored-through-retained-frame")).unwrap(),
                 b"partial"
             );
-            let stop = scope.spawn(|| crate::stop_recorded_journal(&deps));
+            let stop = scope.spawn(|| {
+                crate::stop_recorded_journal(&deps, crate::test_support::join_executor())
+            });
             observed_cancel
                 .recv_timeout(Duration::from_secs(5))
                 .unwrap();
@@ -469,7 +550,6 @@ mod tests {
             read_whole_journal_restore(journal.path()),
             WholeJournalRestoreReadiness::Absent
         ));
-        release_target_for_restore(journal.path());
         assert!(
             solstone_core_journal_io::whole_journal_restore::begin_target_use(journal.path())
                 .is_ok()
