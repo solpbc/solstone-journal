@@ -702,6 +702,11 @@ pub fn register_admitted_folder(
     metadata.insert("import_id".into(), json!(folder.import_id.as_str()));
     metadata.insert("source_timestamp".into(), json!(source_timestamp.as_str()));
     metadata.insert("folder_snapshot".into(), json!(folder.snapshot));
+    solstone_core_import::saved_start::initialize_saved_start(
+        &mut metadata,
+        folder.import_id.as_str(),
+    )
+    .map_err(|_| FolderAdmitError::Denied)?;
     folder.write_metadata_bound(root, &metadata)?;
     Ok(summary(&metadata))
 }
@@ -1022,6 +1027,11 @@ pub(crate) async fn save(State(state): State<AppState>, mut multipart: Multipart
         "timestamp_detection_no_match_reason".to_owned(),
         no_match_reason.map_or(Value::Null, |reason| json!(reason)),
     );
+    if let Err(error) =
+        solstone_core_import::saved_start::initialize_saved_start(&mut metadata, &import_id)
+    {
+        return metadata_failed(error.to_string());
+    }
     if let Err(error) = contained_import_file(&state.root, &import_id, "import.json") {
         return metadata_failed(error.to_string());
     }
@@ -1131,6 +1141,11 @@ pub(crate) async fn save_path(State(state): State<AppState>, Json(data): Json<Va
         "timestamp_detection_no_match_reason".to_owned(),
         no_match_reason.map_or(Value::Null, |reason| json!(reason)),
     );
+    if let Err(error) =
+        solstone_core_import::saved_start::initialize_saved_start(&mut metadata, &import_id)
+    {
+        return metadata_failed(error.to_string());
+    }
     if let Err(error) = contained_import_file(&state.root, &import_id, "import.json") {
         return metadata_failed(error.to_string());
     }
@@ -1314,6 +1329,9 @@ pub(crate) type ProduceSeam = std::sync::Arc<
     >,
 >;
 pub(crate) type FollowSeam = std::sync::Arc<std::sync::Mutex<Box<dyn FnMut(&str, &str) + Send>>>;
+pub(crate) type ConsumeSeam = std::sync::Arc<
+    std::sync::Mutex<Box<dyn FnMut(&Path, &str, bool) -> Result<(), ImportError> + Send>>,
+>;
 
 #[derive(Clone, Default)]
 pub(crate) struct StartSeams {
@@ -1322,6 +1340,7 @@ pub(crate) struct StartSeams {
     pub produce: Option<ProduceSeam>,
     pub follow: Option<FollowSeam>,
     pub task_id_hook: Option<std::sync::Arc<TaskIdHook>>,
+    pub consume: Option<ConsumeSeam>,
 }
 
 impl StartSeams {
@@ -1332,6 +1351,7 @@ impl StartSeams {
             produce: None,
             follow: None,
             task_id_hook: None,
+            consume: None,
         }
     }
 }
@@ -1352,6 +1372,24 @@ pub(crate) async fn run_start(
     } else {
         None
     };
+
+    let first_only = match data.get("first_start_only") {
+        None => false,
+        Some(Value::Bool(value)) => *value,
+        Some(_) => return invalid_state("invalid first Start permission", None),
+    };
+    if first_only {
+        let eligible = resolved_id.as_deref().is_some_and(|id| {
+            !embedded.as_ref().is_some_and(|slot| slot.retains(id))
+                && read_import_metadata(root, id).is_ok_and(|metadata| {
+                    solstone_core_import::saved_start::saved_start_state(&metadata, id)
+                        == solstone_core_import::saved_start::SavedStartState::Eligible
+                })
+        });
+        if !eligible || data.get("force").and_then(Value::as_bool) == Some(true) {
+            return invalid_state("saved import first Start is not available", None);
+        }
+    }
 
     let force = data.get("force").and_then(Value::as_bool).unwrap_or(false);
     if let Some(id) = resolved_id.as_deref()
@@ -1418,6 +1456,21 @@ pub(crate) async fn run_start(
             }
         },
     };
+
+    let Some(import_id) = resolved_id.as_deref() else {
+        return invalid_state("saved import first Start is not available", None);
+    };
+    let consumed = if let Some(consume) = &seams.consume {
+        (*consume.lock().unwrap())(root, import_id, first_only)
+    } else {
+        solstone_core_import::saved_start::consume_saved_start(root, import_id, first_only)
+    };
+    if let Err(error) = consumed {
+        if matches!(error, ImportError::InvalidAttemptState { .. }) {
+            return invalid_state("saved import first Start is not available", None);
+        }
+        return metadata_failed(error.to_string());
+    }
 
     let watch = if embedded.is_some() || seams.send.is_some() {
         None
@@ -2526,6 +2579,10 @@ mod tests {
         assert_eq!(stored["is_local_path"], true);
         assert_eq!(stored["file_path"], owner.display().to_string());
         assert_eq!(stored["source_hash"], before.as_str());
+        assert_eq!(
+            solstone_core_import::saved_start::saved_start_state(&stored, timestamp),
+            solstone_core_import::saved_start::SavedStartState::Eligible
+        );
         assert_eq!(hash_source(&owner).unwrap(), before);
         let mut import_files = Vec::new();
         files_below(&root.path().join("imports"), &mut import_files);
@@ -2731,6 +2788,65 @@ mod tests {
         assert_eq!(fs::read(&first_path).unwrap(), b"alpha-bytes");
         assert_eq!(fs::read(&second_path).unwrap(), b"bravo-bytes");
         assert!(!root.path().join("imports/20260801_120003").exists());
+    }
+
+    #[cfg(all(test, feature = "full-tests"))]
+    #[tokio::test]
+    async fn new_save_permission_survives_dedupe_but_never_resets_or_upgrades_legacy() {
+        use solstone_core_import::saved_start::{
+            SAVED_START_KEY, SavedStartState, consume_saved_start, saved_start_state,
+        };
+        let root = TempDir::new().unwrap();
+        let saved = upload(root.path(), "saved-item", "note.txt", "saved bytes").await;
+        let id = saved["timestamp"].as_str().unwrap();
+        let metadata = read_import_metadata(root.path(), id).unwrap();
+        assert_eq!(saved_start_state(&metadata, id), SavedStartState::Eligible);
+        let duplicate = upload(root.path(), "saved-item", "note.txt", "saved bytes").await;
+        assert_eq!(duplicate["path"], saved["path"]);
+        assert_eq!(
+            saved_start_state(&read_import_metadata(root.path(), id).unwrap(), id),
+            SavedStartState::Eligible
+        );
+        consume_saved_start(root.path(), id, true).unwrap();
+        for client in ["saved-item", "different-client"] {
+            let duplicate = upload(root.path(), client, "note.txt", "saved bytes").await;
+            assert_eq!(duplicate["path"], saved["path"]);
+            assert_eq!(
+                saved_start_state(&read_import_metadata(root.path(), id).unwrap(), id),
+                SavedStartState::Consumed
+            );
+        }
+
+        let legacy_root = TempDir::new().unwrap();
+        let legacy = upload(legacy_root.path(), "old-item", "old.txt", "old bytes").await;
+        let legacy_id = legacy["timestamp"].as_str().unwrap();
+        let mut old = read_import_metadata(legacy_root.path(), legacy_id).unwrap();
+        old.remove(SAVED_START_KEY);
+        fs::write(
+            legacy_root
+                .path()
+                .join("imports")
+                .join(legacy_id)
+                .join("import.json"),
+            serde_json::to_vec(&old).unwrap(),
+        )
+        .unwrap();
+        for client in ["old-item", "another-client"] {
+            let duplicate = upload(legacy_root.path(), client, "old.txt", "old bytes").await;
+            assert_eq!(duplicate["path"], legacy["path"]);
+            assert_eq!(
+                saved_start_state(
+                    &read_import_metadata(legacy_root.path(), legacy_id).unwrap(),
+                    legacy_id
+                ),
+                SavedStartState::Unknown
+            );
+        }
+        assert!(
+            !read_import_metadata(legacy_root.path(), legacy_id)
+                .unwrap()
+                .contains_key(SAVED_START_KEY)
+        );
     }
 
     #[cfg(all(test, feature = "full-tests"))]
@@ -4357,20 +4473,18 @@ mod tests {
             .unwrap()
             .as_str()
             .to_owned();
-        write_import_metadata(
-            root.path(),
-            id,
-            json!({
-                "file_path": source,
-                "source_hash": hash,
-                "import_id": id,
-                "user_timestamp": id,
-                "source_timestamp": id,
-            })
-            .as_object()
-            .unwrap(),
-        )
-        .unwrap();
+        let mut metadata = json!({
+            "file_path": source,
+            "source_hash": hash,
+            "import_id": id,
+            "user_timestamp": id,
+            "source_timestamp": id,
+        })
+        .as_object()
+        .unwrap()
+        .clone();
+        solstone_core_import::saved_start::initialize_saved_start(&mut metadata, id).unwrap();
+        write_import_metadata(root.path(), id, &metadata).unwrap();
         (
             root,
             json!({"path": source, "timestamp": id, "import_id": id}),
@@ -4395,21 +4509,19 @@ mod tests {
             .unwrap()
             .as_str()
             .to_owned();
-        write_import_metadata(
-            root.path(),
-            id,
-            json!({
-                "file_path": source,
-                "source_hash": hash,
-                "import_id": id,
-                "user_timestamp": id,
-                "source_timestamp": id,
-                "source_hint": "image",
-            })
-            .as_object()
-            .unwrap(),
-        )
-        .unwrap();
+        let mut metadata = json!({
+            "file_path": source,
+            "source_hash": hash,
+            "import_id": id,
+            "user_timestamp": id,
+            "source_timestamp": id,
+            "source_hint": "image",
+        })
+        .as_object()
+        .unwrap()
+        .clone();
+        solstone_core_import::saved_start::initialize_saved_start(&mut metadata, id).unwrap();
+        write_import_metadata(root.path(), id, &metadata).unwrap();
         (
             root,
             json!({"path": source, "timestamp": id, "import_id": id}),
@@ -4723,20 +4835,18 @@ mod tests {
             .unwrap()
             .as_str()
             .to_owned();
-        write_import_metadata(
-            root1.path(),
-            id2,
-            json!({
-                "file_path": source2,
-                "source_hash": hash2,
-                "import_id": id2,
-                "user_timestamp": id2,
-                "source_timestamp": id2,
-            })
-            .as_object()
-            .unwrap(),
-        )
-        .unwrap();
+        let mut metadata2 = json!({
+            "file_path": source2,
+            "source_hash": hash2,
+            "import_id": id2,
+            "user_timestamp": id2,
+            "source_timestamp": id2,
+        })
+        .as_object()
+        .unwrap()
+        .clone();
+        solstone_core_import::saved_start::initialize_saved_start(&mut metadata2, id2).unwrap();
+        write_import_metadata(root1.path(), id2, &metadata2).unwrap();
         let data2 = json!({"path": source2, "timestamp": id2, "import_id": id2});
 
         let notify_b_done = std::sync::Arc::new(tokio::sync::Notify::new());
@@ -4832,7 +4942,7 @@ mod tests {
         assert_ne!(body2.get("replay"), Some(&Value::Bool(true)));
         assert_eq!(send_count2.load(std::sync::atomic::Ordering::SeqCst), 1);
 
-        // Case 3: A retry whose queued task id is older than bound starts again
+        // Case 3: The existing retry of a queued task older than bound is preserved.
         let (root3, data3) = composition_fixture_with_id("20261019_100003");
         let id3 = data3["import_id"].as_str().unwrap();
         let old_task_id =
@@ -5205,6 +5315,13 @@ mod tests {
         let (retry_status, _) = response_json(retry_res).await;
         assert_eq!(retry_status, StatusCode::OK);
         assert_eq!(ok_send_count.load(std::sync::atomic::Ordering::SeqCst), 1);
+        assert_eq!(
+            solstone_core_import::saved_start::saved_start_state(
+                &read_import_metadata(root1.path(), &id1).unwrap(),
+                &id1
+            ),
+            solstone_core_import::saved_start::SavedStartState::Consumed
+        );
 
         // 2. Attempt-based Failed retry:
         let (root2, data2) = composition_fixture_with_id("20261019_100002");

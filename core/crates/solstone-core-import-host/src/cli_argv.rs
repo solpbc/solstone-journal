@@ -273,7 +273,48 @@ fn run_after_parse(
         return rendered(refusal_run(refusal));
     }
 
+    if let Err(error) = revoke_saved_for_parsed(&parsed, journal_path) {
+        return rendered(failure("", &format!("{error}\n"), 1));
+    }
+
     dispatch_parsed(parsed, journal_path, Dispatch::Cli)
+}
+
+/// Revoke only the new first-Start permission; execution and retry policy stay
+/// with the existing native owner. Parsing/Preview callers never invoke this.
+pub(crate) fn revoke_saved_for_args(args: &[String], journal: &Path) -> Result<(), String> {
+    let parsed = parse_arguments(args)?;
+    revoke_saved_for_parsed(&parsed, journal)
+}
+
+fn revoke_saved_for_parsed(parsed: &ParsedCommand, journal: &Path) -> Result<(), String> {
+    let ParsedCommand::Import(options) = parsed else {
+        return Ok(());
+    };
+    if options.dry_run {
+        return Ok(());
+    }
+    let _target_use = solstone_core_journal_io::whole_journal_restore::begin_target_use(journal)
+        .map_err(|error| error.to_string())?;
+    let mut options = options.clone();
+    owner_instant(&mut options, journal).map_err(|run| run.stderr)?;
+    let Some(media) = options.media.as_deref() else {
+        return Ok(());
+    };
+    // Use the same source/time resolution and read-only record lookup as the
+    // eventual binder, including collision-shifted ids and preview snapshots.
+    let outcome = resolve(options_ref(&options, media), journal)?;
+    let ResolutionOutcome::Resolved { timestamp, .. } = outcome else {
+        return Ok(());
+    };
+    if let Some(id) =
+        solstone_core_import::existing_import_record(journal, &timestamp, Path::new(media))
+            .map_err(|error| error.to_string())?
+    {
+        solstone_core_import::saved_start::revoke_saved_start(journal, id.as_str())
+            .map_err(|error| error.to_string())?;
+    }
+    Ok(())
 }
 
 pub(crate) enum Dispatch<'a> {
@@ -2095,7 +2136,7 @@ impl PlaudManifestLookup for ImportFilenameMatches<'_> {
     }
 }
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 struct Options {
     media: Option<String>,
     timestamp: Option<String>,

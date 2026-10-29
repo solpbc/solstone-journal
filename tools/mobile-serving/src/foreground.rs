@@ -1997,6 +1997,23 @@ impl ForegroundProcessingHost {
                     payload.join("solstone/apps"),
                 )),
             ));
+            let admission_root = Arc::clone(&root);
+            queue
+                .install_submission_admission(Arc::new(move |command| {
+                    let Ok(_use) =
+                        solstone_core_journal_io::whole_journal_restore::begin_target_use_bound(
+                            Arc::clone(&admission_root),
+                        )
+                    else {
+                        return false;
+                    };
+                    solstone_core_import_host::call::revoke_saved_first_start_command(
+                        command,
+                        admission_root.canonical_path(),
+                    )
+                    .is_ok()
+                }))
+                .expect("new queue has no submission hook");
             if queue_slot.set(Arc::downgrade(&queue)).is_err() {
                 log::warn!("foreground schedule queue was already installed");
             }
@@ -4632,6 +4649,147 @@ mod processing_proofs {
     };
     use solstone_core_system::partition::canonical_journal_command;
     use solstone_core_system::work_retry::{self, Unit};
+
+    #[test]
+    fn saved_import_is_revoked_before_real_pending_queue_acceptance() {
+        use solstone_core_import::saved_start::{
+            SavedStartState, initialize_saved_start, saved_start_state,
+        };
+        use solstone_core_system::queue::SubmitOutcome;
+        for scheduled in [false, true] {
+            for launcher in [
+                vec!["solstone", "journal"],
+                vec!["solstone"],
+                vec!["journal"],
+                vec!["/native/solstone-core-journal"],
+                vec!["/native/Solstone.EXE", "journal"],
+            ] {
+                let root = tempfile::tempdir().unwrap();
+                let id = "20261029_120000";
+                let source = root.path().join("imports").join(id).join("note.txt");
+                fs::create_dir_all(source.parent().unwrap()).unwrap();
+                fs::write(&source, b"saved note").unwrap();
+                let mut metadata = json!({"import_id":id, "source_timestamp":id, "file_path":source,
+            "source_hash":solstone_core_import::hash_source(&source).unwrap().as_str(), "file_size":10}).as_object().unwrap().clone();
+                initialize_saved_start(&mut metadata, id).unwrap();
+                solstone_core_import::write_import_metadata(root.path(), id, &metadata).unwrap();
+                let queue = TaskQueue::with_callable_worker_and_admission(
+                    TaskQueueOptions {
+                        #[cfg(windows)]
+                        read_file_grants: Vec::new(),
+                        journal_root: root.path().to_path_buf(),
+                        cap_resolver: Arc::new(DefaultCapResolver::default()),
+                        process_state_probe: Arc::new(NoProcesses),
+                        queue_sink: None,
+                        process_sink: None,
+                        ready: false,
+                        before_deadline_commit: None,
+                        child_environment: BTreeMap::new(),
+                        task_binary: None,
+                    },
+                    Arc::new(|_, _| panic!("pending work must not execute")),
+                    Arc::new(|_| true),
+                    None,
+                );
+                let admission_journal = root.path().to_path_buf();
+                queue
+                    .install_submission_admission(Arc::new(move |command| {
+                        solstone_core_import_host::call::revoke_saved_first_start_command(
+                            command,
+                            &admission_journal,
+                        )
+                        .is_ok()
+                    }))
+                    .unwrap();
+                let mut command: Vec<String> =
+                    launcher.iter().map(|part| (*part).to_owned()).collect();
+                command.extend([
+                    "importer".into(),
+                    source.to_string_lossy().into_owned(),
+                    id.into(),
+                ]);
+                let path = root.path().join("imports").join(id).join("import.json");
+                let before = fs::read(&path).unwrap();
+                if matches!(launcher[0], "solstone" | "journal") {
+                    assert!(admit_command(root.path(), &command));
+                }
+                assert_eq!(fs::read(&path).unwrap(), before);
+                let request = |reference: &str| {
+                    BusTaskRequest::decode(
+                        solstone_core_system::request::WireTaskRequest {
+                            cmd: Some(command.clone()),
+                            reference: Some(reference.into()),
+                            ..Default::default()
+                        },
+                        reference,
+                    )
+                    .unwrap()
+                };
+                let submit = |reference: &str| {
+                    if scheduled {
+                        queue.submit(ExecutionRequest::Scheduled(
+                            solstone_core_system::request::ScheduledRequest::new(
+                                solstone_core_system::request::ScheduledArgv::from_wire(
+                                    command.clone(),
+                                )
+                                .unwrap(),
+                                reference,
+                                "saved-import-test",
+                            ),
+                        ))
+                    } else {
+                        queue.submit(ExecutionRequest::Bus(request(reference)))
+                    }
+                };
+                assert!(queue.admits_command(&command));
+                assert_eq!(fs::read(&path).unwrap(), before);
+                assert!(
+                    queue
+                        .install_submission_admission(Arc::new(|_| true))
+                        .is_err()
+                );
+                assert_eq!(submit("first"), SubmitOutcome::Pending);
+                let current = solstone_core_import::read_import_metadata(root.path(), id).unwrap();
+                assert_eq!(saved_start_state(&current, id), SavedStartState::Consumed);
+                assert!(!current.contains_key("attempt"));
+                assert!(queue.contains_reference("first"));
+                assert!(
+                    solstone_core_import::saved_start::consume_saved_start(root.path(), id, true)
+                        .is_err()
+                );
+                let owner = JournalRoot::open(root.path()).unwrap();
+                let cancelled: Checkpoint = Arc::new(|| false);
+                if matches!(launcher[0], "solstone" | "journal") {
+                    assert_eq!(
+                        submit_bound_owner_command(
+                            &owner,
+                            &queue,
+                            &cancelled,
+                            command.clone(),
+                            Some("owned".into())
+                        ),
+                        Ok("owned".into())
+                    );
+                }
+                let mut corrupt = current;
+                corrupt["saved_start"]["version"] = json!(99);
+                fs::write(&path, serde_json::to_vec(&corrupt).unwrap()).unwrap();
+                assert_eq!(submit("refused"), SubmitOutcome::Rejected);
+                assert!(!queue.contains_reference("refused"));
+                assert!(
+                    submit_bound_owner_command(
+                        &owner,
+                        &queue,
+                        &cancelled,
+                        command.clone(),
+                        Some("owned-refused".into())
+                    )
+                    .is_err()
+                );
+                assert!(!queue.contains_reference("owned-refused"));
+            }
+        }
+    }
 
     fn wait_until(mut ready: impl FnMut() -> bool) {
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);

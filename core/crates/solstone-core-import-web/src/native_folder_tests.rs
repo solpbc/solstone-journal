@@ -69,6 +69,7 @@ async fn native_folder_registration_is_visible_through_maintained_owner_read_rou
     .await;
     assert_eq!(detail["import_json"]["source_hint"], "obsidian");
     assert_eq!(detail["import_json"]["folder_snapshot"], folder.snapshot);
+    assert_eq!(detail["saved_start"]["state"], "eligible");
     assert_eq!(detail["import_json"]["source_hash"], folder.legacy_hash);
     assert_eq!(detail["import_json"]["is_local_path"], false);
     assert_eq!(detail["import_json"]["client_item_id"], "native-row");

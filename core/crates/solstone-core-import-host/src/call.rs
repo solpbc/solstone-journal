@@ -127,14 +127,16 @@ pub fn preview(args: &[String], journal: &Path, seams: &ImportSeams) -> CliRun {
 /// A UI thread must not call `join` or drop the handle.
 ///
 /// # Errors
-/// Returns the thread builder's error when the operating system refuses the
-/// thread. The attempt has not started.
+/// Refuses before spawning if saved first-Start revocation cannot be persisted
+/// or its identity cannot be confirmed. Also returns the thread builder's
+/// error when the operating system refuses the thread.
 pub fn start(
     args: Vec<String>,
     journal: PathBuf,
     seams: ImportSeams,
     stop: WorkStop,
 ) -> io::Result<ImportHandle> {
+    revoke_saved_first_start(&args, &journal).map_err(io::Error::other)?;
     let worker_stop = stop.clone();
     let worker = thread::Builder::new()
         .name("solstone-import".to_owned())
@@ -162,7 +164,53 @@ pub fn execute_desktop(
     journal: &Path,
     seams: &ImportSeams,
 ) -> (CliRun, Option<String>) {
+    if let Err(error) = revoke_saved_first_start(args, journal) {
+        return (
+            CliRun {
+                stdout: String::new(),
+                stderr: error,
+                exit_code: 1,
+            },
+            None,
+        );
+    }
     run_library(args, journal, seams, false)
+}
+
+/// Before accepting a maintained request, revoke the same saved record's new
+/// UI first-Start permission. Idempotence preserves an already-owned dispatch
+/// and existing retry authority; success here is not an execution grant.
+pub fn revoke_saved_first_start(args: &[String], journal: &Path) -> Result<(), String> {
+    crate::cli_argv::revoke_saved_for_args(args, journal)
+}
+
+/// Admission hook for the existing queue's canonical journal commands.
+pub fn revoke_saved_first_start_command(args: &[String], journal: &Path) -> Result<(), String> {
+    let args = if args.first().is_some_and(|arg| {
+        Path::new(arg)
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| {
+                name == "solstone-core-journal"
+                    || (name.eq_ignore_ascii_case("solstone.exe")
+                        && args.get(1).is_some_and(|arg| arg == "journal"))
+            })
+    }) {
+        &args[1..]
+    } else {
+        args
+    };
+    let prefix = args
+        .iter()
+        .take_while(|arg| matches!(arg.as_str(), "solstone" | "journal"))
+        .count();
+    let args = &args[prefix..];
+    if let [command, rest @ ..] = args
+        && command == "importer"
+    {
+        revoke_saved_first_start(rest, journal)?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -202,6 +250,210 @@ mod tests {
                 journal: journal.to_path_buf(),
             }),
         }
+    }
+
+    #[cfg(feature = "full-tests")]
+    fn witnessed_calendar() -> (tempfile::TempDir, Vec<String>) {
+        let root = tempfile::tempdir().unwrap();
+        let id = "20261029_120000";
+        let dir = root.path().join("imports").join(id);
+        std::fs::create_dir_all(&dir).unwrap();
+        let source = dir.join("calendar.ics");
+        std::fs::write(&source, b"BEGIN:VCALENDAR\nBEGIN:VEVENT\nUID:1\nDTSTART:20260101T120000Z\nSUMMARY:Test\nEND:VEVENT\nEND:VCALENDAR\n").unwrap();
+        let mut metadata = serde_json::json!({"import_id": id, "source_timestamp": id,
+            "file_path": source, "source_hash": solstone_core_import::hash_source(&source).unwrap().as_str(),
+            "file_size": std::fs::metadata(&source).unwrap().len(), "source_hint": "ics"}).as_object().unwrap().clone();
+        solstone_core_import::saved_start::initialize_saved_start(&mut metadata, id).unwrap();
+        solstone_core_import::write_import_metadata(root.path(), id, &metadata).unwrap();
+        (
+            root,
+            vec![
+                source.to_string_lossy().into_owned(),
+                id.into(),
+                "--source".into(),
+                "ics".into(),
+            ],
+        )
+    }
+
+    #[cfg(feature = "full-tests")]
+    fn state(root: &Path) -> solstone_core_import::saved_start::SavedStartState {
+        let id = "20261029_120000";
+        solstone_core_import::saved_start::saved_start_state(
+            &solstone_core_import::read_import_metadata(root, id).unwrap(),
+            id,
+        )
+    }
+
+    #[cfg(feature = "full-tests")]
+    #[test]
+    fn native_acceptance_revokes_before_worker_attempt_and_keeps_existing_authority() {
+        use solstone_core_import::saved_start::SavedStartState;
+        let (root, args) = witnessed_calendar();
+        let path = root.path().join("imports/20261029_120000/import.json");
+        let before = std::fs::read(&path).unwrap();
+        assert!(admit_arguments(&args).is_ok());
+        assert_eq!(
+            preview(&args, root.path(), &idle_seams(root.path())).exit_code,
+            0
+        );
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+        let stopped = WorkStop::new();
+        stopped.request();
+        let handle = start(
+            args.clone(),
+            root.path().to_path_buf(),
+            idle_seams(root.path()),
+            stopped,
+        )
+        .unwrap();
+        assert_eq!(state(root.path()), SavedStartState::Consumed);
+        assert_eq!(handle.join().0.exit_code, 1);
+        assert!(
+            !solstone_core_import::read_import_metadata(root.path(), "20261029_120000")
+                .unwrap()
+                .contains_key("attempt")
+        );
+        assert!(
+            solstone_core_import::saved_start::consume_saved_start(
+                root.path(),
+                "20261029_120000",
+                true
+            )
+            .is_err()
+        );
+        // Consumed is not a new UI grant. The native owner retains its old
+        // independently authorized retry, including a prior early refusal.
+        let run = start(
+            args,
+            root.path().to_path_buf(),
+            idle_seams(root.path()),
+            WorkStop::new(),
+        )
+        .unwrap()
+        .join()
+        .0;
+        assert_eq!(run.exit_code, 0, "{}{}", run.stdout, run.stderr);
+        assert_eq!(state(root.path()), SavedStartState::Consumed);
+    }
+
+    #[cfg(feature = "full-tests")]
+    #[test]
+    fn desktop_revokes_before_early_preparation_and_corruption_refuses_both_entries() {
+        use solstone_core_import::saved_start::SavedStartState;
+        let (root, mut args) = witnessed_calendar();
+        // This real execution exits before binding/attempt admission, so the
+        // assertion fails if only the later producer hook consumed the witness.
+        args.extend(["--snapshot-digest".into(), "wrong-digest".into()]);
+        let run = execute_desktop(&args, root.path(), &idle_seams(root.path())).0;
+        assert_eq!(run.exit_code, 1);
+        assert_eq!(state(root.path()), SavedStartState::Consumed);
+        assert!(
+            !solstone_core_import::read_import_metadata(root.path(), "20261029_120000")
+                .unwrap()
+                .contains_key("attempt")
+        );
+
+        let (root, args) = witnessed_calendar();
+        let path = root.path().join("imports/20261029_120000/import.json");
+        let mut metadata: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        metadata["saved_start"]["version"] = serde_json::json!(99);
+        std::fs::write(&path, serde_json::to_vec(&metadata).unwrap()).unwrap();
+        let before = std::fs::read(&path).unwrap();
+        assert!(
+            start(
+                args.clone(),
+                root.path().to_path_buf(),
+                idle_seams(root.path()),
+                WorkStop::new()
+            )
+            .is_err()
+        );
+        assert_eq!(
+            execute_desktop(&args, root.path(), &idle_seams(root.path()))
+                .0
+                .exit_code,
+            1
+        );
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+    }
+
+    #[cfg(feature = "full-tests")]
+    #[test]
+    fn revocation_uses_the_binders_requested_id_and_free_slot_rules() {
+        use solstone_core_import::saved_start::{
+            SavedStartState, initialize_saved_start, saved_start_state,
+        };
+        let (root, args) = witnessed_calendar();
+        let first = "20261029_120000";
+        let second = "20261029_120001";
+        let source = std::path::PathBuf::from(&args[0]);
+        let other = root.path().join("imports").join(second).join("same.ics");
+        std::fs::create_dir_all(other.parent().unwrap()).unwrap();
+        std::fs::copy(&source, &other).unwrap();
+        let mut metadata = solstone_core_import::read_import_metadata(root.path(), first).unwrap();
+        metadata.remove("saved_start");
+        metadata["import_id"] = serde_json::json!(second);
+        metadata["source_timestamp"] = serde_json::json!(second);
+        metadata["file_path"] = serde_json::json!(other);
+        initialize_saved_start(&mut metadata, second).unwrap();
+        solstone_core_import::write_import_metadata(root.path(), second, &metadata).unwrap();
+        let mut second_args = args.clone();
+        second_args[0] = other.to_string_lossy().into_owned();
+        second_args[1] = second.into();
+        revoke_saved_first_start(&second_args, root.path()).unwrap();
+        assert_eq!(state(root.path()), SavedStartState::Eligible);
+        assert_eq!(
+            saved_start_state(
+                &solstone_core_import::read_import_metadata(root.path(), second).unwrap(),
+                second
+            ),
+            SavedStartState::Consumed
+        );
+        let bound = solstone_core_import::bind_import_record(
+            root.path(),
+            &solstone_core_import::validate_timestamp(second).unwrap(),
+            Some(&other),
+        )
+        .unwrap();
+        assert_eq!(bound.import_id.as_str(), second);
+
+        let free = "20261029_120002";
+        let mut free_args = args.clone();
+        free_args[1] = free.into();
+        revoke_saved_first_start(&free_args, root.path()).unwrap();
+        assert_eq!(state(root.path()), SavedStartState::Eligible);
+        let bound = solstone_core_import::bind_import_record(
+            root.path(),
+            &solstone_core_import::validate_timestamp(free).unwrap(),
+            Some(&source),
+        )
+        .unwrap();
+        assert_eq!(bound.import_id.as_str(), free);
+        assert_eq!(state(root.path()), SavedStartState::Eligible);
+    }
+
+    #[cfg(feature = "full-tests")]
+    #[test]
+    fn final_binding_revokes_a_witness_published_after_an_earlier_no_match() {
+        use solstone_core_import::saved_start::SavedStartState;
+        let (root, args) = witnessed_calendar();
+        let id = "20261029_120000";
+        let metadata_path = root.path().join("imports").join(id).join("import.json");
+        let metadata = std::fs::read(&metadata_path).unwrap();
+        std::fs::remove_file(&metadata_path).unwrap();
+        revoke_saved_first_start(&args, root.path()).unwrap();
+        std::fs::write(&metadata_path, metadata).unwrap();
+        assert_eq!(state(root.path()), SavedStartState::Eligible);
+        let bound = solstone_core_import::bind_import_record(
+            root.path(),
+            &solstone_core_import::validate_timestamp(id).unwrap(),
+            Some(Path::new(&args[0])),
+        )
+        .unwrap();
+        assert_eq!(bound.import_id.as_str(), id);
+        assert_eq!(state(root.path()), SavedStartState::Consumed);
     }
 
     #[test]

@@ -72,7 +72,7 @@ impl CapturedImport for ForegroundCaptured {
 
     fn run(&self) -> Result<CliRun, String> {
         let request = self.take_request()?;
-        let prepared = request.prepare()?;
+        let prepared = request.prepare_run()?;
         prepared
             .run()
             .map(|(run, _)| run)

@@ -364,6 +364,7 @@ fn admit_held_attempt(
         message: err.to_string(),
     })?;
     metadata.insert("attempt".to_owned(), value);
+    crate::saved_start::consume_with_attempt(&mut metadata, import_id);
     metadata.insert("task_id".to_owned(), serde_json::json!(import_id));
     if let Some(hint) = source_hint {
         metadata.insert("source_hint".to_owned(), serde_json::json!(hint));
@@ -627,6 +628,7 @@ pub fn record_queued_task(
     let _lock = hold_import_lock(journal_root, import_id)?;
     let mut metadata = read_import_metadata(journal_root, import_id)?;
     metadata.insert("task_id".to_owned(), serde_json::json!(task_id));
+    crate::saved_start::consume_with_attempt(&mut metadata, import_id);
     write_import_metadata_unlocked(journal_root, import_id, &metadata)
 }
 
@@ -722,10 +724,24 @@ pub fn write_import_metadata(
     import_id: &str,
     metadata: &ImportMetadata,
 ) -> Result<PathBuf, ImportError> {
+    let _target_use = solstone_core_journal_io::whole_journal_restore::begin_target_use(
+        journal_root,
+    )
+    .map_err(|_| ImportError::InvalidAttemptState {
+        message: "import target is unavailable".to_owned(),
+    })?;
     let _lock = hold_import_lock(journal_root, import_id)?;
     let mut merged = metadata.clone();
     match read_provenance(journal_root, import_id) {
-        Ok(Some(existing)) => preserve_durable_attempt(&mut merged, &existing),
+        Ok(Some(existing)) => {
+            preserve_durable_attempt(&mut merged, &existing);
+            crate::saved_start::preserve_consumed_relocation(
+                journal_root,
+                import_id,
+                &mut merged,
+                &existing,
+            );
+        }
         Ok(None) => {}
         Err(err) => return Err(err),
     }
@@ -733,6 +749,7 @@ pub fn write_import_metadata(
 }
 
 pub(crate) fn preserve_durable_attempt(merged: &mut ImportMetadata, existing: &ImportMetadata) {
+    crate::saved_start::preserve_saved_start(merged, existing);
     if let Some(att) = existing.get("attempt") {
         merged.insert("attempt".to_owned(), att.clone());
     } else {

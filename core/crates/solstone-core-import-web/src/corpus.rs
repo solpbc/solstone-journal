@@ -228,6 +228,11 @@ pub(crate) mod tests {
                             json!([])
                         };
                     }
+                    // Recorded detail rows are legacy records. The new read-only
+                    // authority field explicitly leaves them unknown.
+                    if phase == "populated" && expected.get("import_json").is_some() {
+                        expected["saved_start"] = json!({"state": "unknown", "active": false});
+                    }
                     serde_json::from_slice::<Value>(&actual_body)
                         .map(|value| {
                             if case.get("body_normalized").is_some() {

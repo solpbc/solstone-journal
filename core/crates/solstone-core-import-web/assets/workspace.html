@@ -3349,11 +3349,22 @@ document.getElementById('contentMonth').addEventListener('change', function() {
 });
 
 // Load import details
-function loadImportDetail() {
-  window.apiJson(`/app/import/api/${importDetailPathSegment}`)
+let importDetailRequest = 0;
+function loadImportDetail(keepSavedStart = false) {
+  const request = ++importDetailRequest;
+  return window.apiJson(`/app/import/api/${importDetailPathSegment}`)
     .then(data => {
+      if (request !== importDetailRequest) return;
+      const overview = document.getElementById('overviewContent');
+      const restoreFocus = Boolean(overview.querySelector('[data-saved-start-slot]')?.contains(document.activeElement));
       document.getElementById('importMeta').innerHTML = window.ImportDetail.renderMeta(data);
-      document.getElementById('overviewContent').innerHTML = window.ImportDetail.renderDetail(data);
+      overview.innerHTML = window.ImportDetail.renderDetail(data);
+      window.ImportDetail.mountSavedStart(overview, data, () => loadImportDetail(true), restoreFocus);
+      if (restoreFocus && !overview.querySelector('[data-saved-start-slot]')) {
+        const heading = document.getElementById('importDetailHeading');
+        heading?.setAttribute('tabindex', '-1');
+        heading?.focus();
+      }
       const detailView = document.getElementById('importDetailView');
       const firstWallTime = detailView?.querySelector('[data-wall-time]');
       if (firstWallTime && window.JournalClock?.placeNote) {
@@ -3361,10 +3372,15 @@ function loadImportDetail() {
       }
     })
     .catch(err => {
+      if (request !== importDetailRequest) return;
       const serverMessage = window.SurfaceState.serverMessageFrom(err);
       const escapedMessage = window.AppServices.escapeHtml(serverMessage);
       document.getElementById('importMeta').innerHTML = `<div class="surface-state-refresh-error">couldn&#39;t load import details.${escapedMessage ? ` ${escapedMessage}` : ''}</div>`;
-      document.getElementById('overviewContent').innerHTML = '<div class="no-data">overview unavailable</div>';
+      const overview = document.getElementById('overviewContent');
+      if (!overview.querySelector('[data-saved-start-slot]')) {
+        overview.innerHTML = '<div class="no-data">overview unavailable</div>';
+      }
+      if (keepSavedStart) throw err;
     });
 }
 
