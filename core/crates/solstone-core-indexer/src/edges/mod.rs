@@ -1786,12 +1786,17 @@ mod tests {
         seed_entity_value(
             &root,
             "speaker_a",
-            json!({"name":"Speaker A","type":"Person"}),
+            json!({"name":"Ada Speaker","type":"Person"}),
         );
         seed_entity_value(
             &root,
             "speaker_b",
-            json!({"name":"Speaker B","type":"Person"}),
+            json!({"name":"Bea Speaker","type":"Person"}),
+        );
+        seed_entity_value(
+            &root,
+            "speaker_2",
+            json!({"name":"Speaker 2","type":"Person"}),
         );
         seed_entity_value(
             &root,
@@ -1811,6 +1816,7 @@ mod tests {
                 {"speaker":"speaker_b","sentence_id":0},
                 {"speaker":"speaker_a","sentence_id":0},
                 {"speaker":"speaker_tool","sentence_id":0},
+                {"speaker":"speaker_2","sentence_id":0},
                 {"speaker":"speaker_blocked","sentence_id":0},
                 {"speaker":"","sentence_id":0},
                 {"speaker":123,"sentence_id":0}

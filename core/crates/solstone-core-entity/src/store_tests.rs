@@ -2924,6 +2924,7 @@ fn placeholder_queries_are_labels_for_the_unnamed_never_names() {
         "participant",
         "colleague",
         "speaker 3",
+        "speaker a",
         "participant 12",
         "colleague b",
     ] {
@@ -2933,6 +2934,7 @@ fn placeholder_queries_are_labels_for_the_unnamed_never_names() {
         "ada",
         "unknown pleasures",
         "speaker one",
+        "speaker ab",
         "colleague ab",
         "the speaker",
     ] {

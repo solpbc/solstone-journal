@@ -51,8 +51,24 @@ impl JournalEntity {
 }
 
 /// Return whether this entity may be used as an active speaker identity.
+///
+/// A Person named with a placeholder such as "Speaker 2" stands for someone a
+/// moment never named, so it never identifies a voice.
 pub fn is_admissible_person(entity: &JournalEntity) -> bool {
-    entity.entity_type() == Some("Person") && !entity.is_blocked()
+    entity.entity_type() == Some("Person")
+        && !entity.is_blocked()
+        && !entity
+            .value
+            .get("name")
+            .and_then(Value::as_str)
+            .is_some_and(is_placeholder_name)
+}
+
+/// Return whether an entity name is a placeholder label, not a name.
+pub fn is_placeholder_name(name: &str) -> bool {
+    super::review_policy::is_placeholder_query(
+        &solstone_core_entity_matching::normalize_resolution_query(name),
+    )
 }
 
 /// The journal's entities, one per effective id, in id order: the entity the
@@ -155,5 +171,14 @@ mod tests {
             json!({"type":"Person","blocked":true})
         )));
         assert!(!is_admissible_person(&entity(json!({}))));
+        assert!(is_admissible_person(&entity(
+            json!({"type":"Person","name":"Ada Lovelace"})
+        )));
+        for name in ["Speaker 3", "speaker 12", "Speaker A", " Unknown Speaker "] {
+            assert!(
+                !is_admissible_person(&entity(json!({"type":"Person","name":name}))),
+                "{name}"
+            );
+        }
     }
 }

@@ -622,6 +622,10 @@ fn effective_entity_id<'a>(directory_id: &'a str, entity: &'a Value) -> &'a str 
 pub(crate) fn is_admissible_speaker_entity(entity: &Value) -> bool {
     entity.get("type").and_then(Value::as_str) == Some("Person")
         && !entity.get("blocked").is_some_and(value_truthy)
+        && !entity
+            .get("name")
+            .and_then(Value::as_str)
+            .is_some_and(solstone_core_entity::is_placeholder_name)
 }
 
 fn string_values(entity: &Value, field: &str) -> Vec<String> {

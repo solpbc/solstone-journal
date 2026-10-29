@@ -648,10 +648,14 @@ fn load_journal_entities(journal: &Path) -> Result<Vec<(String, JsonObject)>, Ed
     Ok(entities)
 }
 
-// This duplicates `is_admissible_person` locally because indexer entities are raw JSON and one boolean does not warrant a new crate dependency.
+// This mirrors `is_admissible_person` for the indexer's raw JSON entities.
 fn is_admissible_speaker_entity(entity: &JsonObject) -> bool {
     entity.get("type").and_then(Value::as_str) == Some("Person")
         && !json_truthy(entity.get("blocked"))
+        && !entity
+            .get("name")
+            .and_then(Value::as_str)
+            .is_some_and(solstone_core_entity::is_placeholder_name)
 }
 
 fn entity_variants(entity: &JsonObject) -> Vec<String> {

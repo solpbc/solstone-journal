@@ -32,7 +32,8 @@ pub fn is_placeholder_query(normalized_query: &str) -> bool {
     ) {
         true
     } else if let Some(rest) = query.strip_prefix("speaker ") {
-        !rest.is_empty() && rest.chars().all(|c| c.is_ascii_digit())
+        (!rest.is_empty() && rest.chars().all(|c| c.is_ascii_digit()))
+            || (rest.len() == 1 && rest.chars().all(|c| c.is_ascii_lowercase()))
     } else if let Some(rest) = query.strip_prefix("participant ") {
         !rest.is_empty() && rest.chars().all(|c| c.is_ascii_digit())
     } else if let Some(rest) = query.strip_prefix("colleague ") {
