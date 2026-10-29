@@ -197,6 +197,56 @@ pub(crate) fn preserve_saved_start(merged: &mut ImportMetadata, existing: &Impor
     }
 }
 
+// Windows canonical paths use VerbatimDisk while the selected root may retain
+// Disk spelling. Accept only that namespace pair on the same drive, retaining
+// exact component equality. Do not resolve links, fold case or normalize data.
+fn strip_owned_prefix<'a>(path: &'a Path, directory: &Path) -> Option<&'a Path> {
+    if let Ok(relative) = path.strip_prefix(directory) {
+        return Some(relative);
+    }
+    #[cfg(windows)]
+    {
+        use std::path::{Component, Prefix};
+        let mut path_parts = path.components();
+        let mut directory_parts = directory.components();
+        let (Some(Component::Prefix(source)), Some(Component::Prefix(root))) =
+            (path_parts.next(), directory_parts.next())
+        else {
+            return None;
+        };
+        if !matches!(
+            (source.kind(), root.kind()),
+            (Prefix::Disk(a), Prefix::VerbatimDisk(b))
+                | (Prefix::VerbatimDisk(a), Prefix::Disk(b)) if a == b
+        ) {
+            return None;
+        }
+        for component in directory_parts {
+            if path_parts.next() != Some(component) {
+                return None;
+            }
+        }
+        Some(path_parts.as_path())
+    }
+    #[cfg(not(windows))]
+    None
+}
+
+/// Recognize an owned original under this exact imports directory, including
+/// Windows' Disk/VerbatimDisk spelling of the same drive and components.
+/// This read-only mapping does not grant admission or change an external path.
+pub fn owned_import_source_relative<'a>(root: &Path, source: &'a Path) -> Option<&'a Path> {
+    let relative = strip_owned_prefix(source, &root.join("imports"))?;
+    if relative.as_os_str().is_empty()
+        || !relative
+            .components()
+            .all(|part| matches!(part, std::path::Component::Normal(_)))
+    {
+        return None;
+    }
+    Some(relative)
+}
+
 /// An owned Start may rename its record to an explicit owner date. Carry only
 /// already-consumed custody to that exact new location; this cannot mint a
 /// first-Start grant or make a changed source eligible.
@@ -221,15 +271,27 @@ pub(crate) fn preserve_consumed_relocation(
     let Ok(mut relocated) = identity(merged, import_id) else {
         return;
     };
-    let old_directory = root.join("imports").join(old_id);
-    let Ok(relative) = Path::new(&old.file_path).strip_prefix(&old_directory) else {
+    let (Ok(old_directory), Ok(new_directory)) = (
+        crate::staging::import_directory(root, old_id),
+        crate::staging::import_directory(root, import_id),
+    ) else {
         return;
     };
-    if relative.as_os_str().is_empty()
-        || relative
-            .components()
-            .any(|part| !matches!(part, std::path::Component::Normal(_)))
-        || Path::new(&relocated.file_path) != root.join("imports").join(import_id).join(relative)
+    let old_path = Path::new(&old.file_path);
+    let same_source_path = if owned_import_source_relative(root, old_path).is_none() {
+        // The existing owner-date planner leaves local pointers in place.
+        relocated.file_path == old.file_path
+    } else {
+        strip_owned_prefix(old_path, &old_directory).is_some_and(|relative| {
+            !relative.as_os_str().is_empty()
+                && relative
+                    .components()
+                    .all(|part| matches!(part, std::path::Component::Normal(_)))
+                && strip_owned_prefix(Path::new(&relocated.file_path), &new_directory)
+                    == Some(relative)
+        })
+    };
+    if !same_source_path
         || relocated.source_hash != old.source_hash
         || relocated.file_size != old.file_size
     {
@@ -261,9 +323,13 @@ mod tests {
     const ID: &str = "20261029_120000";
 
     fn saved() -> ImportMetadata {
+        saved_at("/journal/imports/20261029_120000/note.txt")
+    }
+
+    fn saved_at(file_path: &str) -> ImportMetadata {
         let mut metadata = json!({
             "import_id": ID, "source_hash": "source-digest",
-            "file_path": "/journal/imports/20261029_120000/note.txt", "file_size": 6,
+            "file_path": file_path, "file_size": 6,
             "source_timestamp": "20250101_090000", "setting": "planning"
         })
         .as_object()
@@ -394,6 +460,103 @@ mod tests {
         }
     }
 
+    #[test]
+    fn local_pointer_relocation_carries_only_exact_consumed_identity() {
+        let root = Path::new("/journal");
+        let new_id = "20261030_090000";
+        let moved = |old: &ImportMetadata| {
+            let mut record = old.clone();
+            record.insert("import_id".into(), json!(new_id));
+            record
+        };
+        for path in ["/owner/note.txt", "relative/note.txt"] {
+            let original = saved_at(path);
+            let mut unconsumed = moved(&original);
+            preserve_consumed_relocation(root, new_id, &mut unconsumed, &original);
+            assert_eq!(
+                saved_start_state(&unconsumed, new_id),
+                SavedStartState::Unknown
+            );
+            let mut consumed = original;
+            revoke_with(&mut consumed, ID, |_| Ok(())).unwrap();
+            let mut relocated = moved(&consumed);
+            preserve_consumed_relocation(root, new_id, &mut relocated, &consumed);
+            assert_eq!(
+                saved_start_state(&relocated, new_id),
+                SavedStartState::Consumed
+            );
+            assert_eq!(relocated["file_path"], path);
+            assert!(consume_with(&mut relocated, new_id, |_| panic!("no new grant")).is_err());
+
+            for (key, value) in [
+                ("source_hash", json!("changed")),
+                ("file_size", json!(7)),
+                ("file_path", json!("/another/note.txt")),
+                (
+                    "file_path",
+                    json!("/journal/imports/20261030_090000/note.txt"),
+                ),
+                ("import_id", json!("20261031_090000")),
+            ] {
+                let mut changed = moved(&consumed);
+                changed.insert(key.into(), value);
+                preserve_consumed_relocation(root, new_id, &mut changed, &consumed);
+                assert_eq!(
+                    saved_start_state(&changed, new_id),
+                    SavedStartState::Unknown
+                );
+            }
+            let mut legacy = consumed.clone();
+            legacy.remove(SAVED_START_KEY);
+            let mut malformed = consumed.clone();
+            malformed[SAVED_START_KEY]["version"] = json!(2);
+            let mut malformed_type = consumed.clone();
+            malformed_type[SAVED_START_KEY]["consumed"] = json!("true");
+            let mut unknown_field = consumed.clone();
+            unknown_field[SAVED_START_KEY]["unexpected"] = json!(true);
+            for invalid in [legacy, malformed, malformed_type, unknown_field] {
+                let mut changed = moved(&invalid);
+                preserve_consumed_relocation(root, new_id, &mut changed, &invalid);
+                assert_eq!(
+                    saved_start_state(&changed, new_id),
+                    SavedStartState::Unknown
+                );
+                assert!(consume_with(&mut changed, new_id, |_| panic!("no new grant")).is_err());
+            }
+            let mut wrong_old_id = consumed.clone();
+            wrong_old_id.insert("import_id".into(), json!("20261031_090000"));
+            let mut changed = moved(&wrong_old_id);
+            preserve_consumed_relocation(root, new_id, &mut changed, &wrong_old_id);
+            assert_eq!(
+                saved_start_state(&changed, new_id),
+                SavedStartState::Unknown
+            );
+            let mut malformed_old_id = consumed.clone();
+            malformed_old_id.insert("import_id".into(), json!("../other"));
+            malformed_old_id[SAVED_START_KEY]["import_id"] = json!("../other");
+            let mut changed = moved(&malformed_old_id);
+            preserve_consumed_relocation(root, new_id, &mut changed, &malformed_old_id);
+            assert_eq!(
+                saved_start_state(&changed, new_id),
+                SavedStartState::Unknown
+            );
+            let mut wrong_writer = moved(&consumed);
+            preserve_consumed_relocation(root, "20261031_090000", &mut wrong_writer, &consumed);
+            assert_eq!(
+                saved_start_state(&wrong_writer, new_id),
+                SavedStartState::Unknown
+            );
+        }
+        let mut owned = saved();
+        revoke_with(&mut owned, ID, |_| Ok(())).unwrap();
+        let mut unchanged = moved(&owned);
+        preserve_consumed_relocation(root, new_id, &mut unchanged, &owned);
+        assert_eq!(
+            saved_start_state(&unchanged, new_id),
+            SavedStartState::Unknown
+        );
+    }
+
     #[cfg(feature = "full-tests")]
     #[test]
     fn real_writer_stale_versions_cannot_reset_consumption_after_recreation() {
@@ -437,5 +600,142 @@ mod tests {
                 .count(),
             1
         );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_owned_relocation_accepts_only_same_disk_namespace() {
+        let new_id = "20261030_090000";
+        for (root, old_path, new_path) in [
+            (
+                r"C:\journal",
+                r"C:\journal\imports\20261029_120000\note.txt",
+                r"\\?\C:\journal\imports\20261030_090000\note.txt",
+            ),
+            (
+                r"C:\journal",
+                r"\\?\C:\journal\imports\20261029_120000\note.txt",
+                r"\\?\C:\journal\imports\20261030_090000\note.txt",
+            ),
+            (
+                r"\\?\C:\journal",
+                r"C:\journal\imports\20261029_120000\note.txt",
+                r"C:\journal\imports\20261030_090000\note.txt",
+            ),
+            (
+                r"\\?\C:\journal",
+                r"\\?\C:\journal\imports\20261029_120000\note.txt",
+                r"C:\journal\imports\20261030_090000\note.txt",
+            ),
+        ] {
+            let root = Path::new(root);
+            assert_eq!(
+                owned_import_source_relative(root, Path::new(old_path)),
+                Some(Path::new(r"20261029_120000\note.txt"))
+            );
+            let original = saved_at(old_path);
+            let relocated = |old: &ImportMetadata| {
+                let mut moved = old.clone();
+                moved.insert("import_id".into(), json!(new_id));
+                moved.insert("file_path".into(), json!(new_path));
+                moved
+            };
+            let mut unconsumed = relocated(&original);
+            preserve_consumed_relocation(root, new_id, &mut unconsumed, &original);
+            assert_eq!(
+                saved_start_state(&unconsumed, new_id),
+                SavedStartState::Unknown
+            );
+            let mut consumed = original;
+            consume_with(&mut consumed, ID, |_| Ok(())).unwrap();
+            let mut moved = relocated(&consumed);
+            preserve_consumed_relocation(root, new_id, &mut moved, &consumed);
+            assert_eq!(saved_start_state(&moved, new_id), SavedStartState::Consumed);
+            assert!(consume_with(&mut moved, new_id, |_| panic!("no new grant")).is_err());
+            for (key, value) in [
+                ("source_hash", json!("changed")),
+                ("file_size", json!(7)),
+                ("import_id", json!("20261031_090000")),
+                (
+                    "file_path",
+                    json!(r"\\?\D:\journal\imports\20261030_090000\note.txt"),
+                ),
+                (
+                    "file_path",
+                    json!(r"\\?\C:\elsewhere\imports\20261030_090000\note.txt"),
+                ),
+                (
+                    "file_path",
+                    json!(r"\\?\C:\Journal\imports\20261030_090000\note.txt"),
+                ),
+                (
+                    "file_path",
+                    json!(r"\\?\C:\journal\imports\20261031_090000\note.txt"),
+                ),
+                (
+                    "file_path",
+                    json!(r"\\?\C:\journal\imports\20261030_090000\other.txt"),
+                ),
+                (
+                    "file_path",
+                    json!(r"\\?\UNC\server\journal\imports\20261030_090000\note.txt"),
+                ),
+                (
+                    "file_path",
+                    json!(r"\\.\C:\journal\imports\20261030_090000\note.txt"),
+                ),
+                (
+                    "file_path",
+                    json!(r"C:journal\imports\20261030_090000\note.txt"),
+                ),
+                (
+                    "file_path",
+                    json!(r"\\?\C:\journal\imports\20261030_090000\nested\note.txt"),
+                ),
+                ("file_path", json!(old_path)),
+            ] {
+                let mut changed = relocated(&consumed);
+                changed.insert(key.into(), value);
+                preserve_consumed_relocation(root, new_id, &mut changed, &consumed);
+                assert_eq!(
+                    saved_start_state(&changed, new_id),
+                    SavedStartState::Unknown
+                );
+            }
+            let mut wrong_writer = relocated(&consumed);
+            preserve_consumed_relocation(root, "20261031_090000", &mut wrong_writer, &consumed);
+            assert_eq!(
+                saved_start_state(&wrong_writer, new_id),
+                SavedStartState::Unknown
+            );
+            for variant in ["legacy", "version", "consumed", "extra"] {
+                let mut invalid = consumed.clone();
+                match variant {
+                    "legacy" => {
+                        invalid.remove(SAVED_START_KEY);
+                    }
+                    "version" => invalid[SAVED_START_KEY]["version"] = json!(2),
+                    "consumed" => invalid[SAVED_START_KEY]["consumed"] = json!("true"),
+                    "extra" => invalid[SAVED_START_KEY]["extra"] = json!(true),
+                    _ => unreachable!(),
+                }
+                let mut changed = relocated(&invalid);
+                preserve_consumed_relocation(root, new_id, &mut changed, &invalid);
+                assert_eq!(
+                    saved_start_state(&changed, new_id),
+                    SavedStartState::Unknown
+                );
+            }
+        }
+        // External pointers keep their exact bytes, even across namespace spellings.
+        let mut pointer = saved_at(r"C:\owner\note.txt");
+        consume_with(&mut pointer, ID, |_| Ok(())).unwrap();
+        let mut moved = pointer.clone();
+        moved.insert("import_id".into(), json!(new_id));
+        preserve_consumed_relocation(Path::new(r"C:\journal"), new_id, &mut moved, &pointer);
+        assert_eq!(saved_start_state(&moved, new_id), SavedStartState::Consumed);
+        moved.insert("file_path".into(), json!(r"\\?\C:\owner\note.txt"));
+        preserve_consumed_relocation(Path::new(r"C:\journal"), new_id, &mut moved, &pointer);
+        assert_eq!(saved_start_state(&moved, new_id), SavedStartState::Unknown);
     }
 }

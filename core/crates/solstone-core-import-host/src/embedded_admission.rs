@@ -355,7 +355,18 @@ async fn consumed_saved_custody_follows_the_existing_owner_date_relocation() {
         .unwrap();
     assert_eq!(started.status(), StatusCode::OK);
     let run = route.wait_run();
-    assert_eq!(run.exit_code, 0, "{}{}", run.stdout, run.stderr);
+    assert_eq!(
+        run.exit_code,
+        0,
+        "{}{}; root={:?}; original={:?}; selected_metadata={:?}; original_metadata={:?}; argv={:?}",
+        run.stdout,
+        run.stderr,
+        root.path(),
+        source,
+        read_import_metadata(root.path(), selected),
+        read_import_metadata(root.path(), ID),
+        route.argv.lock().unwrap()
+    );
     let metadata = read_import_metadata(root.path(), selected).unwrap();
     assert_eq!(metadata["setting"], "planning");
     assert_eq!(
@@ -368,5 +379,133 @@ async fn consumed_saved_custody_follows_the_existing_owner_date_relocation() {
     );
     assert_eq!(get_attempt_facts(&metadata).unwrap().generation, 1);
     assert!(!root.path().join("imports").join(ID).exists());
+    slot.retire().unwrap();
+}
+
+#[tokio::test]
+async fn consumed_local_pointer_custody_follows_existing_owner_date() {
+    let root = tempfile::tempdir().unwrap();
+    let source = root.path().join("owner-calendar.ics");
+    std::fs::write(&source, CALENDAR).unwrap();
+    let route = LiveRoute::new(root.path().to_path_buf());
+    let slot = Arc::new(ImportRouteSlot::new());
+    slot.install(route.clone()).unwrap();
+    let app = routes_with_embedded(root.path().to_path_buf(), slot.clone());
+    let saved = app
+        .clone()
+        .oneshot(post_json(
+            "/app/import/api/save-path",
+            &json!({"path":source,"client_item_id":"pointer-owner-date"}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(saved.status(), StatusCode::OK);
+    let saved = json_body(saved).await;
+    let id = saved["timestamp"].as_str().unwrap().to_owned();
+    let selected = "20261012_090000";
+    assert_ne!(id, selected);
+    let mut data = json!({
+        "path":source,"import_id":id,"timestamp":selected,"timestamp_override":true
+    });
+    let preview = app
+        .clone()
+        .oneshot(post_json("/app/import/api/preview", &data))
+        .await
+        .unwrap();
+    assert_eq!(preview.status(), StatusCode::OK);
+    data["preview_token"] = json_body(preview).await["preview_token"].clone();
+    let started = app
+        .oneshot(post_json(mobile_import_contract::START_PATH, &data))
+        .await
+        .unwrap();
+    assert_eq!(started.status(), StatusCode::OK);
+    let run = route.wait_run();
+    assert_eq!(run.exit_code, 0, "{}{}", run.stdout, run.stderr);
+    let metadata = read_import_metadata(root.path(), selected).unwrap();
+    assert_eq!(metadata["file_path"], source.display().to_string());
+    assert_eq!(std::fs::read(&source).unwrap(), CALENDAR);
+    assert_eq!(
+        solstone_core_import::saved_start::saved_start_state(&metadata, selected),
+        solstone_core_import::saved_start::SavedStartState::Consumed
+    );
+    assert_eq!(get_attempt_facts(&metadata).unwrap().generation, 1);
+    assert!(!root.path().join("imports").join(id).exists());
+    slot.retire().unwrap();
+}
+
+#[tokio::test]
+async fn newly_saved_original_custody_follows_owner_date() {
+    let root = tempfile::tempdir().unwrap();
+    let route = LiveRoute::new(root.path().to_path_buf());
+    let slot = Arc::new(ImportRouteSlot::new());
+    slot.install(route.clone()).unwrap();
+    let app = routes_with_embedded(root.path().to_path_buf(), slot.clone());
+    let boundary = "saved-original-owner-date";
+    let body = format!(
+        "--{boundary}\r\nContent-Disposition: form-data; name=\"client_item_id\"\r\n\r\nnew-original-owner-date\r\n--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"calendar.ics\"\r\nContent-Type: text/calendar\r\n\r\n{}\r\n--{boundary}--\r\n",
+        std::str::from_utf8(CALENDAR).unwrap()
+    );
+    let saved = app
+        .clone()
+        .oneshot(
+            Request::post(mobile_import_contract::SAVE_PATH)
+                .header(
+                    "content-type",
+                    format!("multipart/form-data; boundary={boundary}"),
+                )
+                .body(Body::from(body))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(saved.status(), StatusCode::OK);
+    let saved = json_body(saved).await;
+    let id = saved["timestamp"].as_str().unwrap();
+    let path = saved["path"].as_str().unwrap();
+    let before = read_import_metadata(root.path(), id).unwrap();
+    assert_eq!(
+        solstone_core_import::saved_start::saved_start_state(&before, id),
+        solstone_core_import::saved_start::SavedStartState::Eligible
+    );
+    let selected = "20261012_090000";
+    assert_ne!(id, selected);
+    let mut data = json!({
+        "path": path, "import_id": id, "timestamp": selected,
+        "timestamp_override": true, "first_start_only": true
+    });
+    let preview = app
+        .clone()
+        .oneshot(post_json("/app/import/api/preview", &data))
+        .await
+        .unwrap();
+    assert_eq!(preview.status(), StatusCode::OK);
+    data["preview_token"] = json_body(preview).await["preview_token"].clone();
+    let started = app
+        .oneshot(post_json(mobile_import_contract::START_PATH, &data))
+        .await
+        .unwrap();
+    assert_eq!(started.status(), StatusCode::OK);
+    let run = route.wait_run();
+    assert_eq!(
+        run.exit_code,
+        0,
+        "{}{}; saved={saved:?}; final={:?}",
+        run.stdout,
+        run.stderr,
+        read_import_metadata(root.path(), selected)
+    );
+    let metadata = read_import_metadata(root.path(), selected).unwrap();
+    assert_eq!(metadata["source_hash"], before["source_hash"]);
+    assert_eq!(metadata["file_size"], before["file_size"]);
+    assert_eq!(
+        std::fs::read(metadata["file_path"].as_str().unwrap()).unwrap(),
+        CALENDAR
+    );
+    assert_eq!(
+        solstone_core_import::saved_start::saved_start_state(&metadata, selected),
+        solstone_core_import::saved_start::SavedStartState::Consumed
+    );
+    assert_eq!(get_attempt_facts(&metadata).unwrap().generation, 1);
+    assert!(!root.path().join("imports").join(id).exists());
     slot.retire().unwrap();
 }

@@ -1713,7 +1713,8 @@ fn plan_owner_date(
     mut metadata: ImportMetadata,
 ) -> Result<OwnerDatePlan, Box<Response>> {
     let file_path = Path::new(path);
-    let is_local_path = !file_path.starts_with(root.join("imports"));
+    let is_local_path =
+        solstone_core_import::saved_start::owned_import_source_relative(root, file_path).is_none();
     let mut command_path = path.to_owned();
     let owner_choice = owner_timestamp_choice(data, &metadata);
     let mut record_id = original_timestamp.to_owned();
