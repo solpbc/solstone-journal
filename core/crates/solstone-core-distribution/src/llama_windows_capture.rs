@@ -18,7 +18,7 @@ use std::path::Path;
 type Result<T> = std::result::Result<T, String>;
 const SHADER_DIR: &str =
     "engine-build/ggml/src/ggml-vulkan/vulkan-shaders-gen-prefix/src/vulkan-shaders-gen-build";
-const DRIVER_SHA: &str = "dd12eea695b9904f894ef8eb608a6002c4b86d560ad2d734176209f4cfd61998";
+const DRIVER_SHA: &str = "0833e123cbc79ed5411c530d450ab38a2c01cd0ec5aed495c79e4139c49b3d3e";
 const HELPER_SHA: &str = "a4959a5aca1b346a915e87c4019e64169a153f27af2a724012eb01dca13fe605";
 
 #[derive(Deserialize)]
@@ -195,9 +195,9 @@ pub(crate) fn inspect(
 ) -> Result<CaptureEvidence> {
     let inputs: Inputs = json(member(files, "report/inputs.json")?, "inputs")?;
     insist(
-        inputs.product_commit == "9358ee237487d1b95e36f3dba20ba00645a386c2"
+        inputs.product_commit == "b5c8d0af63045d9445067a059f210c8421681266"
             && inputs.cargo_lock_sha256
-                == "895e3255f000644be0ce8b4edd918b6db8ff8386ca7755f33dc2202dc4f38579",
+                == "93f966c0e8b84b6b1c0c7469cdf41759ee36fa4e6da30d19fdac5d53aa3d9d8d",
         "invalid product provenance",
     )?;
     insist(
@@ -557,8 +557,8 @@ fn validate_source_census(
                 ),
                 (
                     "llama/ggml/src/ggml-vulkan/vulkan-shaders/vulkan-shaders-gen.cpp",
-                    82846,
-                    "b0f174b60e7581a8fee677832174f5a8211ad1241c04a21eb56b7fab3c01c9d0",
+                    82912,
+                    "8ec0c25922cc9f6895cc1fffa033a307cfe57d5f1c9bc8dd01e6c34445e1aa8a",
                 ),
             ] {
                 insist(
