@@ -1,26 +1,30 @@
-# Work Story inputs and screen notes
+# Story inputs and screen notes
 
-Work keeps its original activity input when that input fits with the requested
-reply allowance. For a constrained local or confidential endpoint, preparation
-also supplies a smaller first text part. The Generate boundary chooses it before
-trimming the original input. It contains chronological saved Sense summaries and
-topics, plus Screen narratives. Native transcripts, voice labels and private
-memory stay intact. Missing or unusable Screen results leave that segment's raw
-percepts in place. Identity, facet context, history and instructions are unchanged.
+Work and Conversation, the activity Story talents, keep their original activity
+input when it fits the floor's input budget: the floor window ([THINK.md](THINK.md))
+less the reply allowance and the instructions, counted with the journal's own
+tokenizer. When it does not fit, preparation sends a smaller input instead,
+regardless of the serving backend's window, so a Story reads the same input on
+every backend. The smaller input
+holds chronological saved Sense summaries and topics, plus Screen narratives.
+Kept native text stays whole: transcripts, voice labels and private memory are
+never trimmed within a segment. Missing or
+unusable Screen results leave that segment's raw percepts in place. Identity,
+facet context, history and instructions are unchanged.
 
-That order, the original input first and saved segment results only when it does
-not fit, is the current behavior. The direction is the reverse
-([THINK.md](THINK.md) § Talent inputs): Work reads saved segment results and
-excerpts copied by code from the sources by default, and raw segment data only
-where it is small.
+Work shows every segment's own text or none. Conversation keeps whole segments
+of its own text, as many as fit, spread evenly across the activity, so who said
+what, and in what order, survives inside each kept segment. Every other segment
+is told by its reports alone. When the reports alone do not fit, one length cap, the
+largest that fits, applies to every Screen narrative: short ones stay whole, and
+a long one is cut at a sentence. Sense summaries and
+topics stay whole. Past that, the Generate boundary's ordinary fitting is the
+last-resort guard, and it discloses what it drops as `partial_input`.
 
-Bundled Linux admission uses the native exact chat-body count. Other local
-admission uses its existing tokenizer, and an endpoint uses its existing token
-estimate and discovered or calibrated window. A provider context refusal refits
-against the smaller effective window and reconsiders the alternative first.
-The alternative can still need fitting: this does not guarantee whole activity
-coverage or repair missing or clipped segment results. Cloud API lanes keep the
-original input. This policy adds no completion and changes no provider choice.
+Conversation also reads, ahead of its instructions, a count of speech lines per
+speaker label, built by code. The owner is often a minor speaker in their own
+conversations, and the count gives the model that proportion directly instead of
+leaving it to inference.
 
 When the smaller input is selected, the stored Story has `input_projection`
 construction metadata. `partial_input` continues to disclose actual source
@@ -66,6 +70,5 @@ Story or the smaller input path. Topic matching is lexical, and useful details
 can be missed. Literal copying preserves the stored wording, including any
 upstream extraction error.
 
-Conversation keeps its existing inputs and behavior. The
-voice gates and whole-activity source-body disqualification remain in force.
+Conversation's voice gates and whole-activity source-body disqualification remain in force.
 The separate [source passages](SOURCE_PASSAGES.md) capability is unchanged.

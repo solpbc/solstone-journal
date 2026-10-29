@@ -56,8 +56,9 @@ transcripts. Work's literal screen notes are the pattern for copied excerpts
 Participation reads speech and Sense whole, up to three quarters of the floor,
 and everything else sampled to the floor. This is a deliberate exception to
 "later talents build on segment results", because segment results cannot yet tell
-a person from an agent or an office title. Work and Conversation stay unaligned
-(Work only while it fits, [STORY_INPUTS.md](STORY_INPUTS.md)). The Generate
+a person from an agent or an office title. Work and Conversation read their
+original input only when it fits the floor, and otherwise saved segment results
+with as much of Conversation's own speech as fits, on every backend ([STORY_INPUTS.md](STORY_INPUTS.md)). The Generate
 boundary does the fitting ([GENERATE.md](GENERATE.md) § `overflow_text`) as the
 last-resort guard.
 

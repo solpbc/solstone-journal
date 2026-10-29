@@ -4,7 +4,7 @@
   "description": "Generates a conversation story, topics, confidence, and relations to merge onto the activity record.",
   "color": "#00796b",
   "schedule": "activity",
-  "activities": ["meeting", "messaging", "email"],
+  "activities": ["meeting", "messaging", "email", "social"],
   "priority": 20,
   "output": "json",
   "max_output_tokens": 1536,

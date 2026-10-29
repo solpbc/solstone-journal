@@ -548,7 +548,7 @@ mod tests {
         assert_eq!(names, ["conversation", "work"]);
         assert_eq!(
             activities("conversation"),
-            ["meeting", "messaging", "email"]
+            ["meeting", "messaging", "email", "social"]
         );
         assert_eq!(
             activities("work"),
@@ -586,7 +586,7 @@ mod tests {
                 .iter()
                 .filter(|config| crate::activity_contract::matches_activity(&config.metadata, kind))
                 .count();
-            let parked = matches!(*kind, "social" | "video" | "music" | "gaming" | "idle");
+            let parked = matches!(*kind, "video" | "music" | "gaming" | "idle");
             assert_eq!(owners, usize::from(!parked), "{kind}");
         }
         // Story talents list only kinds a segment activity can carry.

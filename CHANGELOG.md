@@ -13,6 +13,9 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- conversations where no one is named, which your journal now sorts as social, get a story again, as meetings, calls, email and messages do.
+- stories of your conversations more often credit what was said to the person who said it. each story is now written from a count of how many lines were yours, leaves out a show playing nearby, and keeps the speakers at a talk apart from you.
+- with a smaller thinking model, stories of long conversations and of email your agent handled cover the whole activity instead of only its most recent part. a story now gets the same input whichever model writes it.
 - for long terminal and screen activities, the list of people for new activities now draws on a sample from across the whole activity instead of only its most recent part.
 - on a mac, your journal no longer thinks while your mac is asleep, including the short spells when it wakes itself with the screen off. your journal picks up again when you wake your mac. if you choose a processing window on a mac, your journal now tells you how to keep your mac awake through it.
 - an agent reading your journal now sees one number for each unnamed voice through a continuous recording, instead of a new number every few minutes. the number starts over after a pause or on another device.
