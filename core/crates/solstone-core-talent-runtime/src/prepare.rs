@@ -256,6 +256,16 @@ pub fn prepare(
             &prompt_context,
         )
         .map_err(PrepareFailure::Refusal)?;
+        // Conversation reads who spoke as a counted fact, not an inference:
+        // the owner is usually a minor speaker in their own conversations.
+        let instruction = match (name == "conversation")
+            .then(|| composed.get("transcript").and_then(Value::as_str))
+            .flatten()
+            .and_then(|transcript| crate::story_input::speaker_count(transcript, &entry_sources))
+        {
+            Some(count) => format!("{count}\n\n{instruction}"),
+            None => instruction,
+        };
         composed.insert("user_instruction".to_owned(), Value::String(instruction));
     }
     if let Some(output) = composed.get("output").and_then(Value::as_str)
@@ -317,12 +327,36 @@ pub fn prepare(
     crate::product_names::prepare(&name, &mut composed, &entry_sources);
     let mut prepared = PreparedTalent::new(name, composed);
     prepared.participation_floor = participation_floor;
+    // Work's message notes read the raw request, before any floor packet.
     if prepared.name == "work" {
         prepared.entry_sources = std::mem::take(&mut entry_sources);
-        prepared.story_input = crate::story_input::prepare(&context.journal, &prepared.config)
-            .map_err(PrepareFailure::Refusal)?;
         prepared.story_messages =
             crate::story_messages::Candidate::prepare(&prepared.entry_sources, &prepared.config);
+    }
+    if matches!(prepared.name.as_str(), "work" | "conversation") {
+        prepared.story_input = crate::story_input::prepare(&context.journal, &prepared.config)
+            .map_err(PrepareFailure::Refusal)?;
+        // Over the floor, the fitted packet is the input on every backend, so
+        // a story never depends on the window that happens to serve it.
+        if let Some(candidate) = &prepared.story_input
+            && crate::story_input::over_floor(&prepared.config)
+        {
+            prepared.config.insert(
+                "transcript".to_owned(),
+                Value::String(candidate.compact_transcript.clone()),
+            );
+            match &candidate.product_spelling_view {
+                Some(view) => {
+                    prepared
+                        .config
+                        .insert(crate::product_names::VIEW_KEY.to_owned(), view.clone());
+                }
+                None => {
+                    prepared.config.remove(crate::product_names::VIEW_KEY);
+                }
+            }
+            prepared.story_input_fitted = true;
+        }
     }
     if matches!(prepared.name.as_str(), "sense" | "screen") {
         prepared.entry_sources = entry_sources;

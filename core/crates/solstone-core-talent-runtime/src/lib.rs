@@ -88,6 +88,9 @@ pub struct PreparedTalent {
     pub(crate) story_input: Option<story_input::Candidate>,
     pub(crate) story_messages: Option<story_messages::Candidate>,
     pub(crate) story_input_used: bool,
+    /// Preparation made the Story packet the input because the whole request
+    /// would not fit the floor window: it is the input on every backend.
+    pub(crate) story_input_fitted: bool,
     /// Set only by a stage's prompt override; a request cannot supply it.
     pub(crate) framed_request: Option<FramedRequest>,
 }
@@ -103,6 +106,7 @@ impl PreparedTalent {
             story_input: None,
             story_messages: None,
             story_input_used: false,
+            story_input_fitted: false,
             framed_request: None,
         }
     }
@@ -1092,10 +1096,11 @@ fn generate_response(
 /// Keep that fact beside the output so a writer can say its result is partial.
 /// Only the fitter drops input, and it reports every drop.
 pub(crate) fn record_input_budget(prepared: &mut PreparedTalent, budget: Option<&Value>) {
-    prepared.story_input_used = budget
-        .and_then(|budget| budget.get("used_overflow_text"))
-        .and_then(Value::as_bool)
-        == Some(true);
+    prepared.story_input_used = prepared.story_input_fitted
+        || budget
+            .and_then(|budget| budget.get("used_overflow_text"))
+            .and_then(Value::as_bool)
+            == Some(true);
     if prepared.story_input_used
         && let Some(candidate) = &prepared.story_input
     {
@@ -1129,7 +1134,7 @@ fn native_generate_response(
 ) -> Result<GeneratedTalentResponse, RuntimeOutcome> {
     let _ = prepared.config.remove(INPUT_BUDGET_KEY);
     let _ = prepared.config.remove(story::INPUT_WHOLE_KEY);
-    prepared.story_input_used = false;
+    prepared.story_input_used = prepared.story_input_fitted;
     if let Some(event) = product_names::event(&prepared.config) {
         emit(writer, event);
     }
@@ -1659,9 +1664,11 @@ fn native_generate_request(prepared: &PreparedTalent) -> Result<GenerateRequest,
         id: None,
         context: prepared.name.clone(),
         contents,
+        // A packet fitted at preparation is already the input.
         overflow_text: prepared
             .story_input
             .as_ref()
+            .filter(|_| !prepared.story_input_fitted)
             .map(|candidate| candidate.model_transcript().to_owned()),
         system_instruction,
         temperature: prepared
