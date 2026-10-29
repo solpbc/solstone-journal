@@ -134,6 +134,11 @@ pub(crate) fn apply_result_cancellable(
         if owner.actor(name) == crate::NamedActor::Owner {
             continue;
         }
+        if solstone_core_speaker_resolve::activity_reresolution::speaker_number(name).is_some() {
+            entry.insert("entity_id".to_owned(), Value::Null);
+            resolved.push(entry);
+            continue;
+        }
         let result = solstone_core_entity::record_entity_resolution(
             journal,
             name,
@@ -164,6 +169,18 @@ pub(crate) fn apply_result_cancellable(
     let any_meeting = segments
         .iter()
         .any(|segment| meeting_detected(journal, day, segment, stream));
+    let has_numbered = resolved.iter().any(|entry| {
+        entry
+            .get("name")
+            .and_then(Value::as_str)
+            .and_then(solstone_core_speaker_resolve::activity_reresolution::speaker_number)
+            .is_some()
+    });
+    let numbered_lines = if any_meeting && has_numbered {
+        collect_numbered_lines(journal, day, &segments, stream)?
+    } else {
+        Vec::new()
+    };
     if !segments.is_empty() && !any_meeting {
         for entry in &mut resolved {
             if entry.get("role").and_then(Value::as_str) == Some("attendee") {
@@ -210,8 +227,6 @@ pub(crate) fn apply_result_cancellable(
     }
     // A voice was heard in the activity when two or more of its lines match
     // it, or the owner assigned one to it. A single stray match is noise.
-    // This holds for a named person and for a recurring voice the journal
-    // has not named yet ("Speaker 2") alike.
     let attributed = voice_lines
         .into_iter()
         .filter(|(speaker, lines)| *lines >= HEARD_LINES || assigned.contains(speaker))
@@ -223,6 +238,31 @@ pub(crate) fn apply_result_cancellable(
         .cloned()
         .collect::<Vec<_>>();
     for entry in &mut resolved {
+        let name = entry
+            .get("name")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        if let Some(number) =
+            solstone_core_speaker_resolve::activity_reresolution::speaker_number(name)
+        {
+            // The count is across the whole activity anyway. One activity that
+            // spans two recordings can put two different voices under one number,
+            // because a run restarts after RUN_GAP_S or on another stream.
+            // One segment with two separately numbered audio sources can do the
+            // same, because run numbers are per audio stem and only the labelled
+            // audio source is named.
+            if entry.get("role").and_then(Value::as_str) == Some("attendee") {
+                let count = numbered_lines
+                    .iter()
+                    .filter(|line| line.number == number && !line.owner)
+                    .count();
+                if !any_meeting || count < HEARD_LINES {
+                    entry.insert("role".to_owned(), Value::String("mentioned".to_owned()));
+                }
+            }
+            continue;
+        }
+
         if entry.get("role").and_then(Value::as_str) != Some("attendee")
             || !matches!(
                 entry.get("source").and_then(Value::as_str),
@@ -319,6 +359,14 @@ pub(crate) fn apply_result_cancellable(
                 .cloned()
                 .collect::<Vec<_>>();
             for entry in &mut resolved {
+                if entry
+                    .get("name")
+                    .and_then(Value::as_str)
+                    .and_then(solstone_core_speaker_resolve::activity_reresolution::speaker_number)
+                    .is_some()
+                {
+                    continue;
+                }
                 if let Some(id) = entry
                     .get("entity_id")
                     .and_then(Value::as_str)
@@ -402,6 +450,82 @@ pub(crate) fn apply_result_cancellable(
     .map_err(|error| error.to_string())?
     .ok_or("activity no longer exists")?;
     Ok(())
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct NumericLine {
+    number: i64,
+    owner: bool,
+}
+
+fn collect_numbered_lines(
+    journal: &std::path::Path,
+    day: &str,
+    segments: &[&str],
+    stream: Option<&str>,
+) -> Result<Vec<NumericLine>, String> {
+    let voices = crate::transcript::voice_names(journal);
+    let principal = voices.as_ref().map(|v| v.principal.clone());
+    let sources = solstone_core_transcripts::Sources {
+        transcripts: true,
+        percepts: false,
+        talents: solstone_core_transcripts::TalentSource::Disabled,
+        voices,
+    };
+    let (screen_transcript, _counts, _memory) =
+        solstone_core_transcripts::cluster_span_with_memory(
+            journal, day, segments, &sources, stream,
+        )?;
+
+    let mut segment_labels = BTreeMap::<std::path::PathBuf, (Option<String>, BTreeSet<i64>)>::new();
+    let mut lines = Vec::new();
+
+    for entry_source in screen_transcript.sources.iter().flatten() {
+        let Some(segment_dir) = entry_source.path.parent() else {
+            continue;
+        };
+        let (labelled_stem, owner_sentence_ids) = segment_labels
+            .entry(segment_dir.to_path_buf())
+            .or_insert_with(|| {
+                let labelled = solstone_core_transcripts::labelled_audio_source(segment_dir);
+                let mut owner_ids = BTreeSet::new();
+                if let Some(ref principal_id) = principal {
+                    let labels_file = segment_dir.join("talents").join("speaker_labels.json");
+                    if let Ok(text) = fs::read_to_string(labels_file)
+                        && let Ok(payload) = serde_json::from_str::<Value>(&text)
+                        && let Some(labels) = payload.get("labels").and_then(Value::as_array)
+                    {
+                        for label in labels.iter().filter_map(Value::as_object) {
+                            if label.get("speaker").and_then(Value::as_str)
+                                == Some(principal_id.as_str())
+                                && let Some(sid) = label.get("sentence_id").and_then(Value::as_i64)
+                            {
+                                owner_ids.insert(sid);
+                            }
+                        }
+                    }
+                }
+                (labelled, owner_ids)
+            });
+
+        let file_stem = std::path::Path::new(&entry_source.file)
+            .file_stem()
+            .and_then(|s| s.to_str());
+        let is_labelled = file_stem.is_some() && file_stem == labelled_stem.as_deref();
+
+        for (_content, record) in &entry_source.chunks {
+            let Some(number) = record.get("speaker").and_then(Value::as_i64) else {
+                continue;
+            };
+            let owner = is_labelled
+                && record
+                    .get("sentence_id")
+                    .and_then(Value::as_i64)
+                    .is_some_and(|sid| owner_sentence_ids.contains(&sid));
+            lines.push(NumericLine { number, owner });
+        }
+    }
+    Ok(lines)
 }
 
 fn resolved_id(
@@ -1292,32 +1416,519 @@ mod tests {
         assert_eq!(entry["role"], "attendee");
     }
 
-    #[test]
-    fn a_recurring_unnamed_voice_heard_twice_is_attending() {
-        let cases = [
-            (
-                json!([{"speaker":"speaker_2","method":"acoustic_cluster"},{"speaker":"speaker_2","method":"acoustic_cluster"}]),
-                "attendee",
-                json!("speaker_2"),
-            ),
-            (
-                json!([{"speaker":"speaker_2","method":"acoustic_cluster"}]),
-                "mentioned",
-                Value::Null,
-            ),
-        ];
-        for (labels, role, entity_id) in cases {
-            let root = tempfile::tempdir().expect("temporary journal");
-            write_heard_fixture(root.path(), labels);
-            write_entity(root.path(), "speaker_2", "Speaker 2", "Person");
+    fn voice(axis: usize, noise: f32) -> Vec<f32> {
+        let mut row = vec![0.0; 256];
+        row[..4].fill(noise);
+        row[axis] = 1.0;
+        row
+    }
 
+    fn write_embedded_segment(dir: &Path, lines: &[(i64, Vec<f32>)]) {
+        use solstone_core_npy::write_npy;
+        use std::io::Write;
+        use zip::write::SimpleFileOptions;
+        use zip::{CompressionMethod, ZipWriter};
+
+        fs::create_dir_all(dir).unwrap();
+        let mut jsonl = String::from("{\"raw\":\"audio.m4a\"}\n");
+        for (index, (speaker, _)) in lines.iter().enumerate() {
+            jsonl.push_str(&format!(
+                "{{\"start\":\"00:00:{index:02}\",\"speaker\":{speaker},\"sentence_id\":{},\"text\":\"line\"}}\n",
+                index + 1
+            ));
+        }
+        fs::write(dir.join("audio.jsonl"), jsonl).unwrap();
+
+        let mut payload = Vec::new();
+        let mut ids = Vec::new();
+        for (index, (_, embedding)) in lines.iter().enumerate() {
+            for value in embedding {
+                payload.extend_from_slice(&value.to_le_bytes());
+            }
+            ids.extend_from_slice(&(index as i32 + 1).to_le_bytes());
+        }
+        let mut zip = ZipWriter::new(fs::File::create(dir.join("audio.npz")).unwrap());
+        let options = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+        zip.start_file("embeddings.npy", options).unwrap();
+        zip.write_all(&write_npy(
+            "<f4",
+            &format!("({}, 256)", lines.len()),
+            &payload,
+        ))
+        .unwrap();
+        zip.start_file("statement_ids.npy", options).unwrap();
+        zip.write_all(&write_npy("<i4", &format!("({},)", lines.len()), &ids))
+            .unwrap();
+        zip.finish().unwrap();
+    }
+
+    fn write_unembedded_segment(dir: &Path, speakers: &[i64]) {
+        fs::create_dir_all(dir).unwrap();
+        let mut jsonl = String::from("{\"raw\":\"audio.m4a\"}\n");
+        for (index, speaker) in speakers.iter().enumerate() {
+            jsonl.push_str(&format!(
+                "{{\"start\":\"00:00:{index:02}\",\"speaker\":{speaker},\"sentence_id\":{},\"text\":\"line\"}}\n",
+                index + 1
+            ));
+        }
+        fs::write(dir.join("audio.jsonl"), jsonl).unwrap();
+    }
+
+    fn write_principal(root: &Path, id: &str, name: &str) {
+        write_json(
+            &root.join("config/journal.json"),
+            json!({"identity":{"name":name,"preferred":name}}),
+        );
+        write_json(
+            &root.join(format!("entities/{id}/entity.json")),
+            json!({"id":id,"name":name,"type":"Person","is_principal":true}),
+        );
+    }
+
+    #[test]
+    fn numbered_voice_attendance_threshold_from_activity_read() {
+        let cases = [
+            (vec![3, 3, 3], "attendee"),
+            (vec![3], "mentioned"),
+            (vec![3, 3], "attendee"),
+        ];
+        for (speakers, role) in cases {
+            let root = tempfile::tempdir().expect("temporary journal");
+            write_participation_fixture(root.path(), json!({"labels":[]}), json!([]));
+            write_unembedded_segment(
+                &root.path().join(format!("chronicle/{DAY}/{SEGMENT}")),
+                &speakers,
+            );
             let entry = apply(
                 root.path(),
-                json!({"name":"Speaker 2","role":"attendee","source":"speaker_label"}),
+                json!({"name":"Speaker 3","role":"attendee","source":"speaker_label"}),
             );
-
             assert_eq!(entry["role"], role);
-            assert_eq!(entry["entity_id"], entity_id);
+            assert_eq!(entry["entity_id"], Value::Null);
+        }
+    }
+
+    #[test]
+    fn numbered_voice_source_transcript_without_lines_is_mentioned() {
+        let root = tempfile::tempdir().expect("temporary journal");
+        write_participation_fixture(root.path(), json!({"labels":[]}), json!([]));
+        write_unembedded_segment(
+            &root.path().join(format!("chronicle/{DAY}/{SEGMENT}")),
+            &[1, 1],
+        );
+        let entry = apply(
+            root.path(),
+            json!({"name":"Speaker 3","role":"attendee","source":"transcript"}),
+        );
+        assert_eq!(entry["role"], "mentioned");
+        assert_eq!(entry["entity_id"], Value::Null);
+    }
+
+    #[test]
+    fn numbered_voice_demoted_when_diarization_renumbered_to_other_voice() {
+        let root = tempfile::tempdir().expect("temporary journal");
+        write_principal(root.path(), "jordan", "Jordan Rivers");
+        solstone_core_facets::create_facet(root.path(), FACET, "Work", "", "", "", None).unwrap();
+        let chronicle = root.path().join(format!("chronicle/{DAY}"));
+        // First segment establishes voice(0, 0.1) as run 1.
+        write_embedded_segment(
+            &chronicle.join("100000_300"),
+            &[(2, voice(0, 0.1)), (1, voice(1, 0.1))],
+        );
+        let talents1 = chronicle.join("100000_300/talents");
+        write_json(
+            &talents1.join("sense.json"),
+            json!({"meeting_detected":true}),
+        );
+        write_json(&talents1.join("speaker_labels.json"), json!({"labels":[]}));
+        write_json(&talents1.join("speakers.json"), json!([]));
+
+        // Later segment in the same run: diarization 3 with voice(0, 0.1) -> renumbered to run 1.
+        write_embedded_segment(
+            &chronicle.join("100500_300"),
+            &[(3, voice(0, 0.1)), (3, voice(0, 0.1)), (3, voice(0, 0.1))],
+        );
+        let talents2 = chronicle.join("100500_300/talents");
+        write_json(
+            &talents2.join("sense.json"),
+            json!({"meeting_detected":true}),
+        );
+        write_json(&talents2.join("speaker_labels.json"), json!({"labels":[]}));
+        write_json(&talents2.join("speakers.json"), json!([]));
+
+        let act = setup_activity(root.path(), &["100500_300"]);
+        let entries = apply_for_activity(
+            root.path(),
+            &act,
+            &[json!({"name":"Speaker 3","role":"attendee","source":"speaker_label"})],
+        );
+        assert_eq!(entries[0]["role"], "mentioned");
+        assert_eq!(entries[0]["entity_id"], Value::Null);
+    }
+
+    #[test]
+    fn numbered_voice_demoted_when_run_named_to_person() {
+        let root = tempfile::tempdir().expect("temporary journal");
+        write_principal(root.path(), "jordan", "Jordan Rivers");
+        solstone_core_facets::create_facet(root.path(), FACET, "Work", "", "", "", None).unwrap();
+        write_entity(root.path(), "ada", "Ada Lovelace", "Person");
+
+        let chronicle = root.path().join(format!("chronicle/{DAY}"));
+        // First segment: establishes run 1 and run 2
+        write_embedded_segment(
+            &chronicle.join("100000_300"),
+            &[(2, voice(0, 0.1)), (1, voice(1, 0.1))],
+        );
+        let talents1 = chronicle.join("100000_300/talents");
+        write_json(
+            &talents1.join("sense.json"),
+            json!({"meeting_detected":true}),
+        );
+        write_json(&talents1.join("speaker_labels.json"), json!({"labels":[]}));
+        write_json(&talents1.join("speakers.json"), json!([]));
+
+        // Second segment: maintains run 1 and run 2
+        write_embedded_segment(
+            &chronicle.join("100500_300"),
+            &[(1, voice(0, 0.2)), (2, voice(1, 0.0))],
+        );
+        let talents2 = chronicle.join("100500_300/talents");
+        write_json(
+            &talents2.join("sense.json"),
+            json!({"meeting_detected":true}),
+        );
+        write_json(&talents2.join("speaker_labels.json"), json!({"labels":[]}));
+        write_json(&talents2.join("speakers.json"), json!([]));
+
+        // Third segment: new voice(2, 0.0) becomes run 3
+        write_embedded_segment(
+            &chronicle.join("101000_300"),
+            &[(3, voice(2, 0.0)), (3, voice(2, 0.0)), (3, voice(2, 0.0))],
+        );
+        let talents3 = chronicle.join("101000_300/talents");
+        write_json(
+            &talents3.join("sense.json"),
+            json!({"meeting_detected":true}),
+        );
+        write_json(
+            &talents3.join("speaker_labels.json"),
+            json!({"labels":[
+                {"sentence_id":1,"speaker":"ada","method":"acoustic"},
+                {"sentence_id":2,"speaker":"ada","method":"acoustic_cluster"},
+                {"sentence_id":3,"speaker":"ada","method":"acoustic"},
+            ]}),
+        );
+        write_json(&talents3.join("speakers.json"), json!([]));
+
+        let act = setup_activity(root.path(), &["101000_300"]);
+        let entries = apply_for_activity(
+            root.path(),
+            &act,
+            &[json!({"name":"Speaker 3","role":"attendee","source":"speaker_label"})],
+        );
+        assert_eq!(entries[0]["role"], "mentioned");
+        assert_eq!(entries[0]["entity_id"], Value::Null);
+    }
+
+    #[test]
+    fn numbered_voice_labelled_to_owner_is_demoted() {
+        for method in ["user_assigned", "contextual"] {
+            let root = tempfile::tempdir().expect("temporary journal");
+            write_principal(root.path(), "jordan", "Jordan Rivers");
+            write_participation_fixture(
+                root.path(),
+                json!({"labels":[
+                    {"sentence_id":1,"speaker":"jordan","method":method},
+                    {"sentence_id":2,"speaker":"jordan","method":method},
+                    {"sentence_id":3,"speaker":"jordan","method":method},
+                ]}),
+                json!([]),
+            );
+            write_unembedded_segment(
+                &root.path().join(format!("chronicle/{DAY}/{SEGMENT}")),
+                &[3, 3, 3],
+            );
+            let entry = apply(
+                root.path(),
+                json!({"name":"Speaker 3","role":"attendee","source":"speaker_label"}),
+            );
+            assert_eq!(entry["role"], "mentioned", "failed for method {method}");
+            assert_eq!(
+                entry["entity_id"],
+                Value::Null,
+                "failed for method {method}"
+            );
+        }
+    }
+
+    #[test]
+    fn numbered_voice_ignores_speaker_placeholder_person_entity() {
+        let cases = [(vec![3], "mentioned"), (vec![3, 3, 3], "attendee")];
+        for (speakers, expected_role) in cases {
+            let root = tempfile::tempdir().expect("temporary journal");
+            write_participation_fixture(
+                root.path(),
+                json!({"labels":[
+                    {"sentence_id":1,"speaker":"speaker_3","method":"acoustic_cluster"},
+                    {"sentence_id":2,"speaker":"speaker_3","method":"acoustic_cluster"},
+                ]}),
+                json!([]),
+            );
+            write_entity(root.path(), "speaker_3", "Speaker 3", "Person");
+            let detected_path = root
+                .path()
+                .join(format!("facets/{FACET}/entities/{DAY}.jsonl"));
+            let mut detected = fs::read_to_string(&detected_path).unwrap_or_default();
+            detected.push_str(&format!(
+                "{}\n",
+                json!({"id":"speaker_3","name":"Speaker 3","type":"Person"})
+            ));
+            fs::write(&detected_path, detected).unwrap();
+
+            write_unembedded_segment(
+                &root.path().join(format!("chronicle/{DAY}/{SEGMENT}")),
+                &speakers,
+            );
+            let entry = apply(
+                root.path(),
+                json!({"name":"Speaker 3","role":"attendee","source":"speaker_label"}),
+            );
+            assert_eq!(entry["role"], expected_role);
+            assert_eq!(entry["entity_id"], Value::Null);
+        }
+    }
+
+    #[test]
+    fn numbered_lines_parity_with_rendered_transcript() {
+        let root = tempfile::tempdir().expect("temporary journal");
+        write_principal(root.path(), "jordan", "Jordan Rivers");
+        solstone_core_facets::create_facet(root.path(), FACET, "Work", "", "", "", None).unwrap();
+        write_entity(root.path(), "ada", "Ada Lovelace", "Person");
+
+        let chronicle = root.path().join(format!("chronicle/{DAY}"));
+        // Segment 1: embedded run 1 and run 2
+        write_embedded_segment(
+            &chronicle.join("100000_300"),
+            &[(2, voice(0, 0.1)), (1, voice(1, 0.1))],
+        );
+        let talents1 = chronicle.join("100000_300/talents");
+        write_json(
+            &talents1.join("sense.json"),
+            json!({"meeting_detected":true}),
+        );
+        write_json(&talents1.join("speaker_labels.json"), json!({"labels":[]}));
+        write_json(&talents1.join("speakers.json"), json!([]));
+
+        // Segment 2: embedded run 1 (rewritten from 3) and acoustic label to Ada
+        write_embedded_segment(
+            &chronicle.join("100500_300"),
+            &[(3, voice(0, 0.1)), (2, voice(1, 0.0))],
+        );
+        let talents2 = chronicle.join("100500_300/talents");
+        write_json(
+            &talents2.join("sense.json"),
+            json!({"meeting_detected":true}),
+        );
+        write_json(
+            &talents2.join("speaker_labels.json"),
+            json!({"labels":[{"sentence_id":2,"speaker":"ada","method":"acoustic"}]}),
+        );
+        write_json(&talents2.join("speakers.json"), json!([]));
+
+        // Segment 3: unembedded segment whose diarization number 4 is kept
+        write_unembedded_segment(&chronicle.join("101000_300"), &[4, 4]);
+        let talents3 = chronicle.join("101000_300/talents");
+        write_json(
+            &talents3.join("sense.json"),
+            json!({"meeting_detected":true}),
+        );
+        write_json(&talents3.join("speaker_labels.json"), json!({"labels":[]}));
+        write_json(&talents3.join("speakers.json"), json!([]));
+
+        let span = ["100000_300", "100500_300", "101000_300"];
+        let lines = collect_numbered_lines(root.path(), DAY, &span, None).unwrap();
+        let gate_numbers: BTreeSet<i64> = lines.iter().map(|line| line.number).collect();
+
+        let sources = solstone_core_transcripts::Sources {
+            transcripts: true,
+            percepts: false,
+            talents: solstone_core_transcripts::TalentSource::Disabled,
+            voices: crate::transcript::voice_names(root.path()),
+        };
+        let (screen_transcript, _counts, _memory) =
+            solstone_core_transcripts::cluster_span_with_memory(
+                root.path(),
+                DAY,
+                &span,
+                &sources,
+                None,
+            )
+            .unwrap();
+
+        let mut rendered_numbers = BTreeSet::new();
+        for line in screen_transcript.text.lines() {
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            for window in parts.windows(2) {
+                if window[0] == "Speaker" && window[1].ends_with(':') {
+                    if let Ok(n) = window[1].trim_end_matches(':').parse::<i64>() {
+                        rendered_numbers.insert(n);
+                    }
+                }
+            }
+        }
+
+        assert_eq!(gate_numbers, rendered_numbers);
+        assert!(!gate_numbers.contains(&3));
+    }
+
+    #[test]
+    fn numbered_attendee_reresolved_when_voice_named() {
+        let root = tempfile::tempdir().expect("temporary journal");
+        write_principal(root.path(), "jordan", "Jordan Rivers");
+        solstone_core_facets::create_facet(root.path(), FACET, "Work", "", "", "", None).unwrap();
+        write_entity(root.path(), "bob", "Bob Smith", "Person");
+
+        let act_line = json!({"id":"activity","stream":"_default","segments":[SEGMENT]});
+        let act_path = root
+            .path()
+            .join(format!("facets/{FACET}/activities/{DAY}.jsonl"));
+        fs::create_dir_all(act_path.parent().unwrap()).unwrap();
+        fs::write(&act_path, format!("{act_line}\n")).unwrap();
+
+        let seg_dir = root.path().join(format!("chronicle/{DAY}/{SEGMENT}"));
+        let talents = seg_dir.join("talents");
+        fs::create_dir_all(&talents).unwrap();
+        write_json(
+            &talents.join("sense.json"),
+            json!({"meeting_detected":true}),
+        );
+        write_json(&talents.join("speaker_labels.json"), json!({"labels":[]}));
+        write_json(&talents.join("speakers.json"), json!([]));
+        write_unembedded_segment(&seg_dir, &[3, 3, 3]);
+
+        apply_result(
+            root.path(),
+            &json!({"participation":[{"name":"Speaker 3","role":"attendee","source":"speaker_label"}]}).to_string(),
+            FACET,
+            &solstone_core_facets::observe_facet_write_identity(root.path(), FACET).unwrap(),
+            DAY,
+            act_line.as_object().unwrap(),
+        )
+        .unwrap();
+
+        let initial_row: Value = serde_json::from_str(
+            fs::read_to_string(&act_path)
+                .unwrap()
+                .lines()
+                .next()
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(initial_row["participation"][0]["name"], "Speaker 3");
+        assert_eq!(initial_row["participation"][0]["role"], "attendee");
+        assert_eq!(initial_row["participation"][0]["entity_id"], Value::Null);
+
+        fs::write(seg_dir.join("audio.npz"), b"").unwrap();
+        write_json(
+            &talents.join("speaker_labels.json"),
+            json!({"labels":[
+                {"sentence_id":1,"speaker":"bob","method":"acoustic"},
+                {"sentence_id":2,"speaker":"bob","method":"acoustic"},
+                {"sentence_id":3,"speaker":"bob","method":"acoustic"},
+            ]}),
+        );
+
+        let count =
+            solstone_core_speaker_resolve::activity_reresolution::reresolve_changed_segments(
+                root.path(),
+                &[
+                    solstone_core_speaker_resolve::activity_reresolution::ChangedSegment {
+                        day: DAY.to_owned(),
+                        stream: "_default".to_owned(),
+                        segment_key: SEGMENT.to_owned(),
+                    },
+                ],
+                &["bob".to_owned()],
+            )
+            .unwrap();
+        assert_eq!(count, 1);
+
+        let updated_row: Value = serde_json::from_str(
+            fs::read_to_string(&act_path)
+                .unwrap()
+                .lines()
+                .next()
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(updated_row["participation"][0]["name"], "Bob Smith");
+        assert_eq!(updated_row["participation"][0]["entity_id"], "bob");
+        assert_eq!(updated_row["participation"][0]["role"], "attendee");
+    }
+
+    #[test]
+    fn numbered_voice_in_conversation_or_non_meeting_is_never_heard_or_attending() {
+        // Arm A: Conversation
+        {
+            let root = tempfile::tempdir().unwrap();
+            write_participation_fixture(root.path(), json!({}), json!([]));
+            setup_segment(
+                root.path(),
+                SEGMENT,
+                false,
+                Some("social"),
+                json!([
+                    {"speaker": "person", "method": "acoustic"},
+                    {"speaker": "person", "method": "acoustic_cluster"},
+                ]),
+                &["Good morning, how are things going?", "Working on roadmap."],
+                None,
+            );
+            write_unembedded_segment(
+                &root.path().join(format!("chronicle/{DAY}/{SEGMENT}")),
+                &[3, 3, 3],
+            );
+            let entries = apply_for_activity(
+                root.path(),
+                &activity(),
+                &[
+                    json!({"name":"Ada Lovelace","role":"mentioned","source":"transcript"}),
+                    json!({"name":"Speaker 3","role":"attendee","source":"speaker_label"}),
+                ],
+            );
+            assert_eq!(entries[0]["name"], "Ada Lovelace");
+            assert_eq!(entries[0]["role"], "heard");
+            assert_eq!(entries[0]["entity_id"], "person");
+
+            assert_eq!(entries[1]["name"], "Speaker 3");
+            assert_eq!(entries[1]["role"], "mentioned");
+            assert_eq!(entries[1]["entity_id"], Value::Null);
+        }
+
+        // Arm B: Non-meeting, not conversation
+        {
+            let root = tempfile::tempdir().unwrap();
+            write_participation_fixture(root.path(), json!({}), json!([]));
+            setup_segment(
+                root.path(),
+                SEGMENT,
+                false,
+                Some("coding"),
+                json!([]),
+                &["fn main() {}"],
+                None,
+            );
+            write_unembedded_segment(
+                &root.path().join(format!("chronicle/{DAY}/{SEGMENT}")),
+                &[3, 3, 3],
+            );
+            let entry = apply(
+                root.path(),
+                json!({"name":"Speaker 3","role":"attendee","source":"speaker_label"}),
+            );
+            assert_eq!(entry["name"], "Speaker 3");
+            assert_eq!(entry["role"], "mentioned");
+            assert_eq!(entry["entity_id"], Value::Null);
         }
     }
 
@@ -1550,6 +2161,7 @@ mod tests {
 
     fn setup_activity(root: &Path, segments: &[&str]) -> Map<String, Value> {
         let activity_path = root.join(format!("facets/{FACET}/activities/{DAY}.jsonl"));
+        fs::create_dir_all(activity_path.parent().unwrap()).unwrap();
         let act = json!({"id":"activity","segments": segments});
         fs::write(activity_path, format!("{act}\n")).unwrap();
         act.as_object().unwrap().clone()

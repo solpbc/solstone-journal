@@ -243,13 +243,7 @@ impl SpeakerMap {
     /// name exactly one: a record does not say which numbering wrote it, and a
     /// wrong name is worse than none.
     fn person(&self, name: &str) -> Option<&str> {
-        let number = name
-            .trim()
-            .strip_prefix("Speaker ")
-            .or_else(|| name.trim().strip_prefix("speaker "))?
-            .trim()
-            .parse::<i64>()
-            .ok()?;
+        let number = speaker_number(name)?;
         let mut people = [&self.diarization, &self.run]
             .into_iter()
             .filter_map(|map| map.get(&number))
@@ -259,6 +253,16 @@ impl SpeakerMap {
             .all(|other| other == person)
             .then_some(person.as_str())
     }
+}
+
+/// Parse a "Speaker N" or "speaker N" name into its number.
+pub fn speaker_number(name: &str) -> Option<i64> {
+    name.trim()
+        .strip_prefix("Speaker ")
+        .or_else(|| name.trim().strip_prefix("speaker "))?
+        .trim()
+        .parse::<i64>()
+        .ok()
 }
 
 /// Sentence id and diarization speaker number of each transcript row.
