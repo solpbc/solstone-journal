@@ -24,6 +24,8 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [2.0.61] - 2026-10-29
 
+2.0.61 isn't available yet on windows computers with arm processors. on those, your journal stays on 2.0.59 and gets these changes, and everything listed under 2.0.60, in a later version.
+
 on windows, 2.0.61 is the first update since 2.0.59, so it also brings everything listed under 2.0.60.
 
 ### Changed
