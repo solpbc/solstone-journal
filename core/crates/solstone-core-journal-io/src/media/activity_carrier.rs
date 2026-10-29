@@ -875,7 +875,12 @@ pub fn qualify_android_container(magic: u64, canonical_path: &str, process: &str
     let Some(process) = android_process_label(process) else {
         return false;
     };
-    android_private_path(canonical_path, process)
+    // The maintained journal service runs in its application's private process.
+    let package = process.strip_suffix(":journal").unwrap_or(process);
+    if package.contains(':') {
+        return false;
+    }
+    android_private_path(canonical_path, package)
 }
 
 fn android_process_label(process: &str) -> Option<&str> {
@@ -1076,6 +1081,62 @@ mod qualification {
             EXT4,
             "/data/user/10/journal.app",
             PROCESS
+        ));
+    }
+
+    #[test]
+    fn android_journal_service_uses_its_application_private_container() {
+        for package in ["app.solstone.development.journal", "journal.app"] {
+            for magic in [EXT4, F2FS] {
+                for root in [
+                    format!("/data/data/{package}/files/journal"),
+                    format!("/data/user/10/{package}/files/journal"),
+                ] {
+                    for process in [
+                        package.to_owned(),
+                        format!("{package}:journal"),
+                        format!("{package}:journal\0unused-argument"),
+                    ] {
+                        assert!(qualify_android_container(magic, &root, &process));
+                    }
+                }
+            }
+        }
+        for (root, process) in [
+            ("/data/data/journal.app/files", "other.app:journal"),
+            ("/data/data/journal.app/files", "journal.app.extra:journal"),
+            ("/data/data/journal.app.extra/files", "journal.app:journal"),
+            ("/data/data/journal.app/files", "journal.app:isolated"),
+            (
+                "/data/data/journal.app/files",
+                "journal.app:journal:journal",
+            ),
+            (
+                "/data/data/journal.app:journal/files",
+                "journal.app:journal:journal",
+            ),
+            (
+                "/data/data/journal.app:isolated/files",
+                "journal.app:isolated",
+            ),
+            ("/data/data/journal.app/files", "journal.app:"),
+            (
+                "/storage/emulated/0/journal.app/files",
+                "journal.app:journal",
+            ),
+            ("/sdcard/journal.app/files", "journal.app:journal"),
+            ("/data/user/u0/journal.app/files", "journal.app:journal"),
+            (
+                "/data/data/journal.app/../other.app/files",
+                "journal.app:journal",
+            ),
+        ] {
+            assert!(!qualify_android_container(EXT4, root, process));
+        }
+        assert!(!qualify_android_container(
+            0x0102_1994,
+            "/data/data/journal.app/files/journal",
+            "journal.app:journal"
         ));
     }
 
