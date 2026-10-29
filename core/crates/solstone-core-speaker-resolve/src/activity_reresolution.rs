@@ -322,7 +322,20 @@ fn record_patch(
                 };
                 let mut object = object.clone();
                 for (field, id_field) in fields {
-                    if object.get(*id_field) != Some(&Value::Null) {
+                    // A placeholder's own id, which older records stored for an
+                    // unnamed voice, names no one and stays open to resolution.
+                    let unresolved = match object.get(*id_field) {
+                        Some(Value::Null) => true,
+                        Some(Value::String(id)) => {
+                            !people.names.contains_key(id)
+                                && object
+                                    .get(*field)
+                                    .and_then(Value::as_str)
+                                    .is_some_and(solstone_core_entity::is_placeholder_name)
+                        }
+                        _ => false,
+                    };
+                    if !unresolved {
                         continue;
                     }
                     let Some((person, placeholder)) = object
@@ -508,6 +521,23 @@ mod tests {
             run: people(&[(1, "bob")]),
         };
         assert_eq!(older.person("Speaker 7"), Some("bob"));
+    }
+
+    #[test]
+    fn an_entry_holding_a_placeholder_id_is_named_like_an_unnamed_one() {
+        let root = journal();
+        person(root.path(), "speaker_2", "Speaker 2", false);
+        write(
+            root.path(),
+            &format!("facets/work/activities/{DAY}.jsonl"),
+            json!({"id":"a1","activity":"meeting","stream":"mic","segments":["120000_300","120500_300"],
+                "participation":[{"name":"Speaker 2","role":"attendee","source":"voice","entity_id":"speaker_2"}]
+            }).to_string() + "\n",
+        );
+        reresolve_changed_segments(root.path(), &changed(), &["bob".to_owned()]).unwrap();
+        let people = record(root.path())["participation"].clone();
+        assert_eq!(people[0]["name"], "Bob");
+        assert_eq!(people[0]["entity_id"], "bob");
     }
 
     #[test]
