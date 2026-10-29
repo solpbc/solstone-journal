@@ -16,15 +16,15 @@ Return JSON matching this shape:
 
 ```json
 {
-  "app": "Gmail",
-  "thread": "Inbox",
-  "view": "inbox",
+  "app": "<the app or service name>",
+  "thread": "<the channel, conversation, inbox or list name>",
+  "view": "<inbox|conversation|unknown>",
   "messages": [
     {
-      "sender": "Alice",
-      "timestamp": "2:34 PM",
-      "subject": "Project update",
-      "text": "Latest visible message or email snippet"
+      "sender": "<who sent it, as shown>",
+      "timestamp": "<its time as shown, or null>",
+      "subject": "<the email subject, or null>",
+      "text": "<the message text or snippet, as shown>"
     }
   ]
 }

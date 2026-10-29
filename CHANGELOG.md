@@ -10,6 +10,10 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - browser pages in your journal now show their context: whether the tab was in front and its window focused, whether audio or video was playing, whether the solstone app was paused, how long the tab had been open, the page's language and which browser it was. agents reading your journal see the same line. pages from earlier versions of the solstone extension look as before.
 
+### Changed
+
+- screen descriptions stay closer to what is on your screen. they no longer include the journal's own placeholder titles, instruction headings or sample values, and a screen with little text on it is described in a paragraph far less often.
+
 ### Fixed
 
 - home no longer shows a desktop agent command when your journal runs on a phone or tablet.

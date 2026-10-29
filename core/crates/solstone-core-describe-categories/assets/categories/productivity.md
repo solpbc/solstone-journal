@@ -12,11 +12,13 @@
 
 Extract text from this productivity screenshot (spreadsheets, slides, document editors, task managers, issue trackers, dashboards, project management tools).
 
-## Header
+Write down only what is readable on this screen, exactly as it is written there.
 
-`# [App Name - Document/View Title]`
+Header:
 
-## Content Focus
+Start with one `#` heading: the app name and the document or view title, as shown on the screen.
+
+Content Focus:
 
 Extract all visible data with appropriate structure:
 
@@ -25,7 +27,7 @@ Extract all visible data with appropriate structure:
 - **Slides**: Use `##` for slide titles, bullets for content
 - **Dashboards/Apps**: Preserve labels, values, statuses, and visible hierarchy
 
-## Who Wrote What
+Who Wrote What:
 
 If this is a chat with an AI assistant (ChatGPT, Claude, Gemini and similar), keep every visible turn and put a label line before each:
 
@@ -35,10 +37,14 @@ If this is a chat with an AI assistant (ChatGPT, Claude, Gemini and similar), ke
 If no prompt bubble is visible, write only **Assistant:**. Never write a **You:** line without the person's own words from the screen.
 If the page shows comments, suggestions or tracked changes, name the author of each when it is visible.
 
-## Quality
+Quality:
 
 - Preserve data relationships and hierarchy
 - Include key metadata (dates, statuses, assignees)
+- Write link text as plain words.
+- Transcribe the text on the screen. When there is little text, the record is short: the heading and the text that is there.
+- Never write markdown link or image syntax: no `[text](…)` and no `![…](…)`.
+- Text means letters written on the screen. App icons and logos are pictures.
 - Mark unclear text with `[unclear]`
 - Mark cut-off text with `...`
 

@@ -16,25 +16,25 @@ Return JSON matching this shape:
 
 ```json
 {
-  "app": "Google Calendar",
-  "view": "week",
-  "range": "Apr 13 - Apr 19, 2026",
+  "app": "<the calendar or booking app>",
+  "view": "<day|week|month|agenda|event_detail|availability|unknown>",
+  "range": "<the visible date range, or null>",
   "events": [
     {
-      "title": "Planning review",
-      "start": "Tue 10:00 AM",
-      "end": "11:00 AM",
-      "location": "Conference Room A",
-      "conferencing": "Google Meet",
-      "guests": ["Alice", "Bob"],
-      "status": "accepted",
-      "recurrence": null,
-      "calendar": "Work",
-      "description": "Visible event notes"
+      "title": "<event title, as shown>",
+      "start": "<start, as shown>",
+      "end": "<end, as shown, or null>",
+      "location": "<location, or null>",
+      "conferencing": "<conferencing service, or null>",
+      "guests": ["<guest name, as shown>"],
+      "status": "<response status, or null>",
+      "recurrence": "<recurrence, or null>",
+      "calendar": "<calendar name, or null>",
+      "description": "<event notes, as shown, or null>"
     }
   ],
-  "availability": ["Tue 2:00 PM", "Wed 10:30 AM"],
-  "notes": "Timezone, booking state, host/service, or visible form fields"
+  "availability": ["<an open slot, as shown>"],
+  "notes": "<other visible scheduling context, or null>"
 }
 ```
 

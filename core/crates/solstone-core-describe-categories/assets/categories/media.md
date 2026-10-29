@@ -12,11 +12,13 @@
 
 Extract text from this media player screenshot (YouTube, streaming services, video players, image galleries).
 
-## Header
+Write down only what is readable on this screen, exactly as it is written there.
 
-`# [Platform - Video/Content Title]`
+Header:
 
-## Content Focus
+Start with one `#` heading: the platform and the video or content title, as shown on the screen.
+
+Content Focus:
 
 - Extract video/content title
 - Include creator, channel, or artist name
@@ -25,10 +27,15 @@ Extract text from this media player screenshot (YouTube, streaming services, vid
 - Include visible captions or subtitles
 - Include playlist or queue context if visible
 - Do NOT describe the visual content of the video/image itself
+- Write an item only when it is on the screen.
 
-## Quality
+Quality:
 
 - Focus on metadata and text overlays, not visual content
+- Write link text as plain words.
+- Transcribe the text on the screen. When there is little text, the record is short: the heading and the text that is there.
+- Never write markdown link or image syntax: no `[text](…)` and no `![…](…)`.
+- Text means letters written on the screen. App icons and logos are pictures.
 - Mark unclear text with `[unclear]`
 - Mark cut-off text with `...`
 

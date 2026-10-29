@@ -12,11 +12,13 @@
 
 Extract text from this code editor screenshot (VS Code, JetBrains, Vim, Emacs, Sublime, etc.).
 
-## Header
+Write down only what is readable on this screen, exactly as it is written there.
 
-`# [Editor - File Path]`
+Header:
 
-## Content Focus
+Start with one `#` heading: the editor and the file path, as shown on the screen.
+
+Content Focus:
 
 - Extract visible code using fenced code blocks with language tags
 - Include file path/name from title bar or tabs
@@ -24,7 +26,7 @@ Extract text from this code editor screenshot (VS Code, JetBrains, Vim, Emacs, S
 - Include visible diagnostics, errors, or warnings from the editor
 - Include project/repo name if visible in sidebar or title
 
-## Who Wrote What
+Who Wrote What:
 
 If this is a chat with an AI assistant (ChatGPT, Claude, Gemini and similar), keep every visible turn and put a label line before each:
 
@@ -34,10 +36,14 @@ If this is a chat with an AI assistant (ChatGPT, Claude, Gemini and similar), ke
 If no prompt bubble is visible, write only **Assistant:**. Never write a **You:** line without the person's own words from the screen.
 If the page shows comments, suggestions or tracked changes, name the author of each when it is visible.
 
-## Quality
+Quality:
 
 - Preserve code indentation and structure
 - Include line numbers only if prominently visible
+- Write link text as plain words.
+- Transcribe the text on the screen. When there is little text, the record is short: the heading and the text that is there.
+- Never write markdown link or image syntax: no `[text](…)` and no `![…](…)`.
+- Text means letters written on the screen. App icons and logos are pictures.
 - Mark unclear text with `[unclear]`
 - Mark cut-off text with `...`
 
