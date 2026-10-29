@@ -29,7 +29,7 @@ impl TempJournal {
         fs::create_dir_all(root.join("config")).expect("config directory");
         fs::write(
             root.join("config/journal.json"),
-            br#"{"setup":{"completed_at":1},"transcribe":{"backend":"parakeet-cpp","parakeet-cpp":{"device":"cpu"}}}"#,
+            br#"{"setup":{"completed_at":1},"providers":{"active":{"provider":"local"}},"transcribe":{"backend":"parakeet-cpp","parakeet-cpp":{"device":"cpu"}}}"#,
         )
         .expect("journal config");
         install_native_local_readiness(&root, fixture);

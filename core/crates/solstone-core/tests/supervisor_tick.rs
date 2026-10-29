@@ -82,7 +82,7 @@ impl TempJournal {
     fn install_local_fixture_artifact(&self) {
         fs::write(
             self.0.join("config/journal.json"),
-            br#"{"setup":{"completed_at":1},"transcribe":{"backend":"parakeet-cpp","parakeet-cpp":{"device":"cpu"}}}"#,
+            br#"{"setup":{"completed_at":1},"providers":{"active":{"provider":"local"}},"transcribe":{"backend":"parakeet-cpp","parakeet-cpp":{"device":"cpu"}}}"#,
         )
         .expect("fixture journal config");
         let cache = pins::cache_root(&self.0);
