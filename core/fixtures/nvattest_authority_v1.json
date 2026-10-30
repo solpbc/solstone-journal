@@ -3,15 +3,15 @@
   "targets": {
     "linux-aarch64": {
       "artifact": {
-        "name": "libnvat-linux-aarch64-1.2.2-sol.7-archive.tar.xz",
-        "sha256": "558ec229fa6c6ff74f11cd9f509e4970c66e403af94715f9ef8189a2295b929a",
-        "size_bytes": 7556056,
-        "url": "https://updates.solstone.app/providers/nvattest/libnvat-linux-aarch64-1.2.2-sol.7-archive.tar.xz"
+        "name": "libnvat-linux-aarch64-1.2.2-sol.8-archive.tar.xz",
+        "sha256": "cb027010ac44f089ea64918c77c78fb7e9d3d4ea2e8791c989d2cb953ad36ba6",
+        "size_bytes": 7582520,
+        "url": "https://updates.solstone.app/providers/nvattest/libnvat-linux-aarch64-1.2.2-sol.8-archive.tar.xz"
       },
       "companion_manifest": {
-        "name": "libnvat-linux-aarch64-1.2.2-sol.7-archive.manifest.json",
-        "sha256": "fa27d533b04b2a84ef4a9efffd7e0cfd9fdf9f763f6a8340027a0ddea82ff03d",
-        "url": "https://updates.solstone.app/providers/nvattest/libnvat-linux-aarch64-1.2.2-sol.7-archive.manifest.json"
+        "name": "libnvat-linux-aarch64-1.2.2-sol.8-archive.manifest.json",
+        "sha256": "af67e6b75b20a1b9698ef112d43bc44c92db2242fb84af2b7371c3821d684cca",
+        "url": "https://updates.solstone.app/providers/nvattest/libnvat-linux-aarch64-1.2.2-sol.8-archive.manifest.json"
       },
       "inventory": [
         {
@@ -58,23 +58,23 @@
         }
       ],
       "source": {
-        "fork_commit": "69a71c859ec02b6e5f10616b8b8a873c230941c9",
+        "fork_commit": "25ea26bc6e3cee09a344f70f29c03481420e8077",
         "upstream_base": "73efa3ac1bec28ed7d7f0c0811a6c993e722dbd4",
         "url_prefix": "https://updates.solstone.app/providers/nvattest/",
-        "version": "1.2.2-sol.7"
+        "version": "1.2.2-sol.8"
       }
     },
     "linux-x86_64": {
       "artifact": {
-        "name": "libnvat-linux-x86_64-1.2.2-sol.7-archive.tar.xz",
-        "sha256": "0201ee04738cb5de2e1a5b5d19326b3efff39d278104cd8363cb6a40cdd84737",
-        "size_bytes": 7803644,
-        "url": "https://updates.solstone.app/providers/nvattest/libnvat-linux-x86_64-1.2.2-sol.7-archive.tar.xz"
+        "name": "libnvat-linux-x86_64-1.2.2-sol.8-archive.tar.xz",
+        "sha256": "167d020504996d9c94a12937cc6f6d11d1b4a3fbbf6f9a3c70f7755e34f00936",
+        "size_bytes": 7817944,
+        "url": "https://updates.solstone.app/providers/nvattest/libnvat-linux-x86_64-1.2.2-sol.8-archive.tar.xz"
       },
       "companion_manifest": {
-        "name": "libnvat-linux-x86_64-1.2.2-sol.7-archive.manifest.json",
-        "sha256": "c62992a8f7ef5c9739e4517d3c0d696c395e42fb67ae3ed6a5891238c2a75273",
-        "url": "https://updates.solstone.app/providers/nvattest/libnvat-linux-x86_64-1.2.2-sol.7-archive.manifest.json"
+        "name": "libnvat-linux-x86_64-1.2.2-sol.8-archive.manifest.json",
+        "sha256": "95a78fd8812191b4936743171bc187f9adb2c6090ef3d3e805116faaa73f3796",
+        "url": "https://updates.solstone.app/providers/nvattest/libnvat-linux-x86_64-1.2.2-sol.8-archive.manifest.json"
       },
       "inventory": [
         {
@@ -121,23 +121,23 @@
         }
       ],
       "source": {
-        "fork_commit": "69a71c859ec02b6e5f10616b8b8a873c230941c9",
+        "fork_commit": "25ea26bc6e3cee09a344f70f29c03481420e8077",
         "upstream_base": "73efa3ac1bec28ed7d7f0c0811a6c993e722dbd4",
         "url_prefix": "https://updates.solstone.app/providers/nvattest/",
-        "version": "1.2.2-sol.7"
+        "version": "1.2.2-sol.8"
       }
     },
     "macos-arm64": {
       "artifact": {
-        "name": "libnvat-macos-arm64-1.2.2-sol.7-archive.tar.xz",
-        "sha256": "35110dbc26ad30b2085f9ce13425b394ee4cd3a77ebb11fbba446879e8481f9f",
-        "size_bytes": 5953100,
-        "url": "https://updates.solstone.app/providers/nvattest/libnvat-macos-arm64-1.2.2-sol.7-archive.tar.xz"
+        "name": "libnvat-macos-arm64-1.2.2-sol.8-archive.tar.xz",
+        "sha256": "7b74dd3a1694696be332e90d4d2f1dda6701c615de7cfd71958bcb8853d744e8",
+        "size_bytes": 5957724,
+        "url": "https://updates.solstone.app/providers/nvattest/libnvat-macos-arm64-1.2.2-sol.8-archive.tar.xz"
       },
       "companion_manifest": {
-        "name": "libnvat-macos-arm64-1.2.2-sol.7-archive.manifest.json",
-        "sha256": "65d054b153d5ca966909a2f1a4858cffd99789e17d0f040a75d60389798830fe",
-        "url": "https://updates.solstone.app/providers/nvattest/libnvat-macos-arm64-1.2.2-sol.7-archive.manifest.json"
+        "name": "libnvat-macos-arm64-1.2.2-sol.8-archive.manifest.json",
+        "sha256": "d1389a3c6cc7f4ae6cf9e630bf80578eb48cfb091c4d15e44036d48179cce79e",
+        "url": "https://updates.solstone.app/providers/nvattest/libnvat-macos-arm64-1.2.2-sol.8-archive.manifest.json"
       },
       "inventory": [
         {
@@ -184,10 +184,10 @@
         }
       ],
       "source": {
-        "fork_commit": "69a71c859ec02b6e5f10616b8b8a873c230941c9",
+        "fork_commit": "25ea26bc6e3cee09a344f70f29c03481420e8077",
         "upstream_base": "73efa3ac1bec28ed7d7f0c0811a6c993e722dbd4",
         "url_prefix": "https://updates.solstone.app/providers/nvattest/",
-        "version": "1.2.2-sol.7"
+        "version": "1.2.2-sol.8"
       }
     }
   }

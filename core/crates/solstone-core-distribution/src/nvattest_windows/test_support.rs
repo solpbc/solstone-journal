@@ -384,6 +384,13 @@ impl Fixture {
         let output_exe = make_test_pe(false, FIXTURE_IMPORTS);
         let report = NvattestBuildReport {
             schema: 1,
+            target_architecture: "x64".into(),
+            target_triple: "x86_64-pc-windows-msvc".into(),
+            native_validation: NvattestReportNativeValidation {
+                status: "passed".into(),
+                executable_sha256: "a".repeat(64),
+                vectors_sha256: crate::nvattest_windows_arm64::UTC_VECTORS_SHA256.into(),
+            },
             source_commit: pins.sdk_revision.into(),
             source_clean: None,
             tools: NvattestReportTools {

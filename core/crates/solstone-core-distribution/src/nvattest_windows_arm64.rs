@@ -11,9 +11,9 @@ use crate::digest::sha256_hex;
 use crate::nvattest_windows::{self as legacy, NvattestToolCensus};
 use solstone_core_installed_payload::WindowsArchitecture;
 
-pub const SDK_REVISION: &str = "6a52b92d1c8e6ae2a2b3a5baffc27c22734f6331";
+pub const SDK_REVISION: &str = "25ea26bc6e3cee09a344f70f29c03481420e8077";
 pub const SOURCE_BYTES: u64 = 5_201_920;
-pub const SOURCE_SHA256: &str = "2c3ffa8a68a8e96343bb0fe1df7f2b178eb27c8e885c6d2c486c23a7bc22b990";
+pub const SOURCE_SHA256: &str = "f2328f87f26a4bc7d1911e94735e18e40035b0ce633d3b7cbe9586952733ddbb";
 pub const UTC_VECTORS_SHA256: &str =
     "7109d4c0dab5d8b017975d150a4632aa22d85635df5c2ab7776fe62101679933";
 pub const TARGET: &str = "aarch64-pc-windows-msvc";
@@ -375,7 +375,7 @@ mod tests {
             ("target_triple", serde_json::json!("x86_64-pc-windows-msvc")),
             (
                 "source_commit",
-                serde_json::json!(legacy::NVATTEST_SDK_REVISION),
+                serde_json::json!("69a71c859ec02b6e5f10616b8b8a873c230941c9"),
             ),
             ("source_clean", serde_json::json!(false)),
             ("schema", serde_json::json!(2)),
@@ -455,15 +455,16 @@ mod tests {
     }
 
     #[test]
-    fn x64_pins_and_report_admission_remain_separate() {
+    fn arm_and_x64_build_from_one_sdk_source() {
         assert_eq!(
             legacy::production_pins().sdk_revision,
-            "69a71c859ec02b6e5f10616b8b8a873c230941c9"
+            "25ea26bc6e3cee09a344f70f29c03481420e8077"
         );
         assert_eq!(pins().sdk_revision, SDK_REVISION);
-        assert_ne!(
-            pins().source_archive.sha256,
-            legacy::production_pins().source_archive.sha256
+        assert_eq!(pins().sdk_revision, legacy::production_pins().sdk_revision);
+        assert_eq!(
+            pins().source_archive,
+            legacy::production_pins().source_archive
         );
         assert_eq!(
             pins().bundle_archive,

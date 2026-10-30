@@ -160,7 +160,7 @@ pub fn read_test_ca_bundle_pem() -> Result<Vec<u8>, std::io::Error> {
 fn read_ca_bundle_pem_uncached() -> Result<Vec<u8>, std::io::Error> {
     let repo_root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..");
     let archive_path = repo_root
-        .join("core/models/assets/nvattest/libnvat-linux-aarch64-1.2.2-sol.7-archive.tar.xz");
+        .join("core/models/assets/nvattest/libnvat-linux-aarch64-1.2.2-sol.8-archive.tar.xz");
     let file = std::fs::File::open(archive_path)?;
     let mut decompressed = Vec::new();
     lzma_rs::xz_decompress(&mut std::io::BufReader::new(file), &mut decompressed)

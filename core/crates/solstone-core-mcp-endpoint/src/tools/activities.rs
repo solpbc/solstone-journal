@@ -627,12 +627,14 @@ pub(crate) fn execute_list(
         now.offset().fix().local_minus_utc(),
     );
 
-    // The calendar belongs to no facet: only a connection that already reads
-    // the whole journal's transcripts, where calendar notes are, sees what it
-    // had scheduled during an activity.
+    // The calendar and a day's location belong to no facet: only a connection
+    // that already reads the whole journal's transcripts, where calendar notes
+    // and each day's location in words are, sees what it had scheduled during
+    // an activity and where a device was.
     let sees_calendar = matches!(snapshot.scope, ConnectionScope::WholeJournal)
         && snapshot.categories.contains(&AdmittedCategory::Transcripts);
     let mut calendars = BTreeMap::new();
+    let mut locations = BTreeMap::new();
 
     let mut activities = Vec::new();
     for item in &page {
@@ -687,6 +689,13 @@ pub(crate) fn execute_list(
             }
             if !scheduled.is_empty() {
                 activity["scheduled"] = Value::Array(scheduled);
+            }
+            let location = locations.entry(item.day.clone()).or_insert_with(|| {
+                solstone_core_location::DayBeside::read(journal_root, &item.day)
+            });
+            let stream = item.record.get("stream").and_then(Value::as_str);
+            if let Some(beside) = location.beside(span, stream) {
+                activity["place"] = json!({"device": beside.device, "words": beside.words});
             }
         }
         activities.push(activity);

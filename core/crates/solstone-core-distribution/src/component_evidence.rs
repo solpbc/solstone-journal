@@ -4711,7 +4711,7 @@ mod tests {
         let (version, source, inputs) = arm("nvattest");
         assert_eq!(version, crate::nvattest_windows_arm64::SDK_REVISION);
         assert_eq!(source, crate::nvattest_windows_arm64::SDK_REVISION);
-        assert_ne!(version, intel("nvattest").0);
+        assert_eq!(version, intel("nvattest").0, "one SDK revision builds both");
         assert!(inputs.is_empty(), "joined to the controlled build receipt");
 
         // ARM builds restic and OpenMP from source under a controlled build.

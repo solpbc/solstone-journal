@@ -36,12 +36,12 @@ $ProgressPreference = 'SilentlyContinue'
 
 # Committed pins. The recorder holds the same values in Rust and refuses any
 # difference; these only let the driver refuse early and name its inputs.
-$PinnedSdkRevision = '6a52b92d1c8e6ae2a2b3a5baffc27c22734f6331'
-$PinnedSourceSha256 = '2c3ffa8a68a8e96343bb0fe1df7f2b178eb27c8e885c6d2c486c23a7bc22b990'
+$PinnedSdkRevision = '25ea26bc6e3cee09a344f70f29c03481420e8077'
+$PinnedSourceSha256 = 'f2328f87f26a4bc7d1911e94735e18e40035b0ce633d3b7cbe9586952733ddbb'
 $PinnedSourceSize = 5201920
-$PinnedBundleSha256 = '114e0135cbcec53dd104d330c76ffafd630c372f5c25d0e103d718514f34725d'
-$PinnedBundleSize = 451512320
-$PinnedManifestSha256 = 'bca2a8fa20094517599953f38a3708e79ab93106228c594df3c9a4e19836932d'
+$PinnedBundleSha256 = 'b4ded473842e091eff4a0abf0793af71771a45916c1a299a43e951889e6ba0cd'
+$PinnedBundleSize = 451553280
+$PinnedManifestSha256 = 'bab2913e5091fb3f730608ffbbbeba4a8abda6400d1f162adbe4831c506ec5ef'
 $CmakeArchiveName = 'cmake-3.31.12-windows-x86_64.zip'
 $CmakeExeRelative = 'cmake-3.31.12-windows-x86_64\bin\cmake.exe'
 $CorruptMember = 'openssl-3.6.5.tar.gz'

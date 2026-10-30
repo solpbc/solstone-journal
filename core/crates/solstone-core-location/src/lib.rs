@@ -16,6 +16,7 @@
 pub mod accuracy;
 pub mod area;
 pub mod asset;
+pub mod beside;
 mod cache;
 pub mod day;
 pub mod fingerprint;
@@ -34,6 +35,7 @@ use std::path::{Path, PathBuf};
 
 pub use area::{AreaName, AreaTier, Boundary, Bounds, TownPoint};
 pub use asset::area_tier;
+pub use beside::{Beside, DayBeside, location_beside};
 pub use day::{
     DayLocation, DeviceDirectory, Entry, SegmentContext, SourceRef, read_day, read_days,
 };

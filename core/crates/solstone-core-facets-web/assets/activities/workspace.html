@@ -548,6 +548,14 @@
   overflow-wrap: anywhere;
 }
 
+.act-panel-place-link {
+  color: var(--orange-ink);
+  text-decoration: none;
+  min-height: var(--touch-min, 44px);
+  display: inline-flex;
+  align-items: center;
+}
+
 .act-panel-calendar-list {
   display: flex;
   flex-direction: column;
@@ -826,6 +834,7 @@
     'segment-minutes': '{n} min',
     'calendar-then': 'on your calendar then: {title}',
     'calendar-then-untitled': 'on your calendar then',
+    'place-then': '{device} was {words} then',
     'people-one': 'with {a}',
     'people-two': 'with {a} and {b}',
     'people-many-one': 'with {a}, {b} and 1 other',
@@ -1466,15 +1475,19 @@
       phtml += `<div class="act-panel-hidden-reason" data-copy-key="${reasonKey}">${STRINGS[reasonKey] || STRINGS['reason-other']}</div>`;
     }
 
-    // What the calendar had scheduled then, beside the activity
-    if (item.calendar?.length) {
+    // What the calendar had scheduled then, and where a device was, beside the activity
+    if (item.calendar?.length || item.place) {
       phtml += '<div class="act-panel-calendar-list">';
-      for (const meeting of item.calendar) {
+      for (const meeting of item.calendar || []) {
         const key = meeting.title ? 'calendar-then' : 'calendar-then-untitled';
         const parts = [fmt(key, { title: meeting.title })];
         if (meeting.start && meeting.end) parts.push(`${meeting.start}–${meeting.end}`);
         if (meeting.people?.length) parts.push(formatPeople(meeting.people));
         phtml += `<div class="act-panel-calendar" data-copy-key="${key}">${esc(parts.join(' · '))}</div>`;
+      }
+      if (item.place) {
+        const words = fmt('place-then', { device: item.place.device, words: item.place.words });
+        phtml += `<div class="act-panel-calendar"><a class="act-panel-place-link" href="${esc(item.place.href)}" data-copy-key="place-then">${esc(words)}</a></div>`;
       }
       phtml += '</div>';
     }
