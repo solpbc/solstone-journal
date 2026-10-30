@@ -11,31 +11,9 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - the android development app can review interrupted storage work while your journal stays stopped. it can remove temporary copies after checking that the originals are still complete.
 - browser pages in your journal now show their context: whether the tab was in front and its window focused, whether audio or video was playing, whether the solstone app was paused, how long the tab had been open, the page's language and which browser it was. agents reading your journal see the same line. pages from earlier versions of the solstone extension look as before.
 
-### Changed
-
-- conversations where no one is named, which your journal now sorts as social, get a story again, as meetings, calls, email and messages do.
-- stories of your conversations more often credit what was said to the person who said it. each story is now written from a count of how many lines were yours, leaves out a show playing nearby, and keeps the speakers at a talk apart from you.
-- with a smaller thinking model, stories of long conversations and of email your agent handled cover the whole activity instead of only its most recent part. a story now gets the same input whichever model writes it.
-- for long terminal and screen activities, the list of people for new activities now draws on a sample from across the whole activity instead of only its most recent part.
-- on a mac, your journal no longer thinks while your mac is asleep, including the short spells when it wakes itself with the screen off. your journal picks up again when you wake your mac. if you choose a processing window on a mac, your journal now tells you how to keep your mac awake through it.
-- an agent reading your journal now sees one number for each unnamed voice through a continuous recording, instead of a new number every few minutes. the number starts over after a pause or on another device.
-- an unnamed voice such as "Speaker 3" is now listed with a meeting's people only when it spoke at least two lines there. before, a voice that spoke once, or a number no line in the meeting carried, could show up as someone the meeting mentioned.
-- a day's daily outputs no longer wait on a few stretches whose thinking was set aside, as long as those stretches are no more than a twentieth of the day's recorded time. when that thinking later finishes, the day's outputs are made again, apart from a daily briefing once noon the next day has passed.
-- what your journal writes about each screen frame stays closer to what is on your screen. it no longer includes the journal's own placeholder titles, instruction headings or sample values, and a blank or nearly empty screen frame gets a paragraph about it far less often.
-- each stretch's screen description now sticks closer to what your journal holds: it invents fewer details, and in your terminal it more often credits an agent's work to the agent rather than to you.
-- the list of people for new activities is more accurate, and it rarely lists the tools, projects and companies an activity names as people. people you talked with in a conversation that wasn't a meeting, when their voice matches someone your journal remembers, are now listed among the activity's people instead of as mentioned.
-- in each new stretch, your journal less often lists AI agents, numbered voices such as "Speaker 2", names that never came up, or you yourself as people, and more often gets right whether each person spoke or was only mentioned.
-
 ### Fixed
 
-- when the local model takes too long to answer, your journal no longer says it couldn't connect to the provider. a few error messages, including the one for an answer the model didn't finish, no longer show test wording.
-- security fix for the private network: your journal now proves it holds its own private key each time it renews its place on the relay, and once it has, the relay refuses anyone who only knows your journal's public key. before, someone holding that public key, such as a device you had removed, could take your journal's place, keep your devices from reaching it and see when they tried to reach it, but never anything in your journal. your journal also no longer puts its relay credential in the web address it connects to.
 - the development phone apps can now recover an explicit media offload request after a lost reply, using the request ID saved before sending it. repeating that request does not start another offload; an unknown result stays unknown.
-- your journal no longer treats a placeholder such as "Speaker 2" as a person it can recognize by voice. lines it had matched to one now show an unnamed speaker.
-- when nothing in a stretch names anyone your journal knows, it now names a voice only when it sounds clearly more like one person you know than like anyone else, and it no longer learns that person's voice from such a guess. an unfamiliar voice, a show playing nearby or your own quieter speech now gets the name of someone you know less often, and such a guess can no longer teach your journal the wrong voice for them.
-- when a stretch names the person you were talking with, your journal now puts that name only on the lines that sound like them, not on every line it couldn't tell was you. a voice that sounds more like someone else you know, or like no one your journal knows, stays unnamed. if your journal doesn't know their voice yet, the name goes only to the main other voice in that stretch, where your journal can tell the voices apart.
-- your journal now matches voices to the people you know using only lines it has reason to believe are theirs: lines from stretches that named them, and lines you labeled yourself. voice it saved from guesses stays saved, but no longer decides whom a voice sounds like, so a show playing nearby or your own quieter speech pulls other people's names onto those lines less often. someone your journal has only guessed at goes unrecognized until a stretch names them or you label them.
-- stretches set aside because their thinking kept coming back unfinished get one more try with this version, so the daily outputs waiting on them can be made.
 - reviewing interrupted storage work in the android development app could fail before showing the temporary copies.
 - reviewing storage recovery on android could get stuck waiting for your journal to stop, even after it had stopped.
 - home no longer shows a desktop agent command when your journal runs on a phone or tablet.
@@ -47,6 +25,36 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - security fix: updated a library used by journals on phones to address a memory-safety flaw.
 - you can choose a file on the import screen in the android and ios owner apps and save it.
 - journals running on a phone now start their local agent connections and close them when you stop the journal. the agents page already offered these connections, but they did not start on phones.
+
+## [2.0.62] - 2026-10-30
+
+on windows computers with arm processors, 2.0.62 is the first update since 2.0.59, so it also brings everything listed under 2.0.61 and 2.0.60.
+
+### Changed
+
+- activities your journal sorts as social, such as a conversation where no one is named or time on social media, now get a story, as meetings, calls, email and messages do.
+- stories of your conversations more often credit what was said to the person who said it. each story of a spoken conversation is now written from a count of how many lines were yours.
+- with a smaller thinking model, stories of long conversations and of email your agent handled cover the whole activity instead of only its most recent part. a story now gets the same input whichever model writes it. before, other models read all of it.
+- for long activities, the list of people for new activities now draws on a sample from across the whole activity, whichever model your journal thinks with. before, with the local model it drew only on the most recent part, and with other models on all of it.
+- on a mac, your journal no longer starts new thinking while your mac is asleep, including the short spells when it wakes itself with the screen off. your journal picks up again when you wake your mac. if you choose a processing window on a mac, your journal now tells you how to keep your mac awake through it.
+- an agent reading your journal now sees one number for each unnamed voice through a continuous recording, instead of a new number every few minutes. the number starts over after a pause or on another device.
+- an unnamed voice such as "Speaker 3" is now listed with a new meeting's people only when it spoke at least two lines there. before, a voice that spoke once, or a number no line in the meeting carried, could show up as someone the meeting mentioned.
+- a day's daily outputs no longer wait on a few stretches whose thinking was set aside, as long as those stretches are no more than a twentieth of the day's recorded time. when that thinking later finishes, the day's outputs are made again, apart from a daily briefing once noon the next day has passed.
+- what your journal writes about each screen frame stays closer to what is on your screen. it now rarely includes the journal's own placeholder titles, instruction headings or sample values, and a blank or nearly empty screen frame gets a paragraph about it far less often.
+- each stretch's screen description now sticks closer to what your journal holds: it invents fewer details, and in your terminal it more often credits an agent's work to the agent rather than to you.
+- the list of people for new activities is more accurate, and it rarely lists the tools, projects and companies an activity names as people. people you talked with in a conversation that wasn't a meeting, when their voice matches someone your journal remembers, are now listed among the activity's people instead of as mentioned.
+- in each new stretch, your journal less often lists AI agents, numbered voices such as "Speaker 2", names that never came up, or you yourself as people, and more often gets right whether each person spoke or was only mentioned.
+- on linux computers where local thinking runs without an nvidia graphics card, your journal downloads an updated runtime for it after this update: about 35 MB, or about 29 MB on arm computers. local thinking waits until the download finishes.
+
+### Fixed
+
+- security fix for the private network: your journal now proves it holds its own private key each time it renews its place on the relay, and once it has, the relay refuses anyone who only knows your journal's public key. before, someone holding that public key, such as a device you had removed, could take your journal's place, keep your devices from reaching it and see when they tried to reach it, but never anything in your journal. your journal also no longer puts its relay credential in the web address it connects to.
+- when the local model takes too long to answer, your journal no longer says it couldn't connect to the provider. a few error messages, including the one for an answer the model didn't finish, no longer show test wording.
+- your journal no longer treats a placeholder such as "Speaker 2" as a person it can recognize by voice. lines it had matched to one now show an unnamed speaker.
+- when nothing in a stretch names anyone your journal knows, it now names a voice only when it sounds clearly more like one person you know than like anyone else, and it no longer learns that person's voice from such a guess. an unfamiliar voice, a show playing nearby or your own quieter speech now gets the name of someone you know less often, and such a guess can no longer teach your journal the wrong voice for them.
+- when a stretch names the person you were talking with, your journal now puts that name only on the lines that sound like them, not on every line it couldn't tell was you. a voice that sounds more like someone else you know, or like no one your journal knows, stays unnamed. if your journal doesn't know their voice yet, the name goes only to the main other voice in that stretch, where your journal can tell the voices apart.
+- your journal now matches voices to the people you know using only lines it has reason to believe are theirs: lines from stretches that named them, and lines you labeled yourself. voice it saved from guesses stays saved, but no longer decides whom a voice sounds like, so a show playing nearby or your own quieter speech pulls other people's names onto those lines less often. someone your journal has only guessed at goes unrecognized until a stretch names them or you label them.
+- stretches set aside because their thinking kept coming back unfinished get one more try with this version, so the daily outputs waiting on them can be made.
 - if your journal's pages stopped loading and paired devices couldn't reach it until you restarted the journal, this resolves it.
 - on a mac, home could say the local model didn't finish downloading after it had. home now agrees with the thinking page.
 - approving the removal of media your backup already holds could say the removal didn't finish, even though the files had been removed and were safe in your backup. it was more likely on windows. it now finishes.
