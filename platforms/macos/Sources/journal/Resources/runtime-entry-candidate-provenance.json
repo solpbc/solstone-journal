@@ -4,8 +4,8 @@
   "source": "J",
   "target": {
     "bundle_identifier": "app.solstone.journal",
-    "bundle_short_version": "2.0.61",
-    "bundle_version": "110"
+    "bundle_short_version": "2.0.62",
+    "bundle_version": "111"
   },
   "runtime_archive_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
   "manifest_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
