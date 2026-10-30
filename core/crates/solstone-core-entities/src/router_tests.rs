@@ -270,18 +270,29 @@ async fn post_with_router(router: &axum::Router, uri: &str) -> (u16, Value) {
     response_value(router.clone().oneshot(request).await.unwrap()).await
 }
 
+/// Every journal-level action record, from every day's ledger. A test that runs
+/// across the owner zone's midnight writes its rows into two day files.
 fn deferred_delete_action_records(root: &Path) -> Vec<Value> {
-    let day = chrono::Utc::now()
-        .with_timezone(&solstone_core_journal_config::owner_zone(root))
-        .format("%Y%m%d")
-        .to_string();
-    let Ok(ledger) = fs::read_to_string(root.join("config/actions").join(format!("{day}.jsonl")))
-    else {
+    let Ok(entries) = fs::read_dir(root.join("config/actions")) else {
         return Vec::new();
     };
-    ledger
-        .lines()
-        .map(|line| serde_json::from_str(line).unwrap())
+    let mut ledgers: Vec<PathBuf> = entries
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| {
+            path.extension()
+                .is_some_and(|extension| extension == "jsonl")
+        })
+        .collect();
+    ledgers.sort();
+    ledgers
+        .iter()
+        .flat_map(|ledger| {
+            fs::read_to_string(ledger)
+                .unwrap()
+                .lines()
+                .map(|line| serde_json::from_str(line).unwrap())
+                .collect::<Vec<Value>>()
+        })
         .collect()
 }
 
