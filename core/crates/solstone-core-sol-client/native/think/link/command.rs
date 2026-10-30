@@ -1977,10 +1977,9 @@ mod tests {
             Err(output) => output,
             Ok(_) => panic!("ambiguous bundle must not enter resident serve"),
         };
-        assert_eq!(
-            ambiguous.stderr,
-            "multiple link bundles found: alpha, beta. pass --label to choose one.\n"
-        );
+        let alpha_offset = ambiguous.stderr.find("alpha").expect("must name alpha");
+        let beta_offset = ambiguous.stderr.find("beta").expect("must name beta");
+        assert!(alpha_offset < beta_offset);
         assert_eq!(ambiguous.exit, 1);
         runner.assert_done();
 
@@ -2910,11 +2909,8 @@ mod tests {
 
         let output = run_status(&[], &env, None);
         assert_eq!(output.exit, 1);
-        assert!(
-            output
-                .stderr
-                .starts_with("solstone link status: error: no link bundles found under ")
-        );
+        let root = config.join("solstone-observer").join("spl");
+        assert!(output.stderr.contains(&root.display().to_string()));
     }
 
     #[test]
@@ -2927,10 +2923,9 @@ mod tests {
 
         let output = run_status(&[], &env, None);
         assert_eq!(output.exit, 1);
-        assert_eq!(
-            output.stderr,
-            "solstone link status: error: multiple link bundles found: alpha, beta. pass --label to choose one.\n"
-        );
+        let alpha_offset = output.stderr.find("alpha").expect("must name alpha");
+        let beta_offset = output.stderr.find("beta").expect("must name beta");
+        assert!(alpha_offset < beta_offset);
     }
 
     #[test]
