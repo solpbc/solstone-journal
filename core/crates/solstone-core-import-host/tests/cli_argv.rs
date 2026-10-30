@@ -77,7 +77,9 @@ fn value_options_accept_attached_and_separated_values() {
 
 #[test]
 fn auto_does_not_swallow_a_path_positional() {
-    let result = run(
+    let temporary = tempfile::tempdir().unwrap();
+    let result = run_at(
+        temporary.path(),
         &["--auto", "/tmp/solstone-cycle2-does-not-exist.md"],
         |name| (name == "SOL_SKIP_SUPERVISOR_CHECK").then(|| "1".to_owned()),
         || false,

@@ -253,6 +253,7 @@ fn staging_rejects_a_destination_name_that_escapes_the_import_directory() {
 fn metadata_round_trip_keeps_known_and_unknown_fields_in_order() {
     let tree = TempTree::new();
     let journal = tree.path().join("journal");
+    fs::create_dir_all(&journal).unwrap();
     let mut record = metadata("source-a");
     record.insert("unknown".to_owned(), json!({"nested": [true, null]}));
     write_import_metadata(&journal, "item", &record).unwrap();
@@ -316,6 +317,7 @@ fn force_rejects_invalid_sources_before_audit_or_removal() {
     for kind in ["directory", "missing"] {
         let tree = TempTree::new();
         let journal = tree.path().join("journal");
+        fs::create_dir_all(&journal).unwrap();
         let source = tree.path().join(kind);
         if kind == "directory" {
             fs::create_dir_all(&source).unwrap();
@@ -355,6 +357,7 @@ fn force_rejects_invalid_sources_before_audit_or_removal() {
 fn force_rejects_invalid_destination_before_audit_or_removal() {
     let tree = TempTree::new();
     let journal = tree.path().join("journal");
+    fs::create_dir_all(&journal).unwrap();
     let source = tree.path().join("replacement.txt");
     fs::write(&source, b"replacement").unwrap();
     let metadata = metadata("source-a");
@@ -404,6 +407,7 @@ fn force_keeps_the_opened_source_when_its_path_changes_during_audit() {
 
     let tree = TempTree::new();
     let journal = tree.path().join("journal");
+    fs::create_dir_all(&journal).unwrap();
     let source = tree.path().join("replacement.txt");
     fs::write(&source, b"opened source content").unwrap();
     let metadata = metadata("source-a");
