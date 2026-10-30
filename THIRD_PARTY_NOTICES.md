@@ -262,7 +262,7 @@ listed in its accompanying `Package.resolved`.
 | [eventsource](https://github.com/mattt/EventSource/tree/86b5096ac59ab46e66bd1f6377c604bc1dab0bc2) | `1.5.1` |
 | [hummingbird](https://github.com/hummingbird-project/hummingbird/tree/e12178302dacb8226fc78157f89078a59c75dd98) | `2.28.0` |
 | [mlx-swift](https://github.com/ml-explore/mlx-swift/tree/19601207e9a0de51e03ee6ec0c3c5f3784275075) | `0.32.3` |
-| [mlx-swift-lm](https://github.com/ml-explore/mlx-swift-lm/tree/48114eedf3c3d4a682a6b1d644cc5af5c2945d10) | `48114eedf3c3` |
+| [mlx-swift-lm](https://github.com/quartzjer/mlx-swift-lm/tree/a0ae0b1d3abbed60f8f005ad250681a33a26d853) | `a0ae0b1d3abb` |
 | [swift-algorithms](https://github.com/apple/swift-algorithms/tree/87e50f483c54e6efd60e885f7f5aa946cee68023) | `1.2.1` |
 | [swift-asn1](https://github.com/apple/swift-asn1/tree/3b6410f7dee09eb33cdd26260c5fd47fda19b0e2) | `1.7.3` |
 | [swift-async-algorithms](https://github.com/apple/swift-async-algorithms/tree/13713a4ffdee8abd929f92568ee9462a46ae26e0) | `1.1.7` |

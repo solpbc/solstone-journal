@@ -73,8 +73,13 @@ public final class StructuredGenerator: @unchecked Sendable {
         if let grammar = compiled[key] {
             return (try grammar.freshMatcher(), tokenizer.vocabSize)
         }
+        // Fixed separators, no free whitespace. With xgrammar's default any
+        // whitespace, the model can begin to close a list with a newline and
+        // then still continue it, which lengthens lists until they run to the
+        // output limit. A llama.cpp grammar never admits whitespace between a
+        // value and the comma after it.
         let grammar = try GrammarConstraint(
-            tokenizer: tokenizer, jsonSchema: schema, fastForward: true,
+            tokenizer: tokenizer, jsonSchema: schema, anyWhitespace: false, fastForward: true,
             hostTokenizer: context.tokenizer)
         // An arbitrary client can supply distinct schemas indefinitely.
         if order.count == 8 { compiled.removeValue(forKey: order.removeFirst()) }

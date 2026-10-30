@@ -363,7 +363,9 @@ private actor OrderedBackend: InferenceBackend {
             return try generator.complete(
                 input: LMInput(tokens: MLXArray([Int32(1), 2, 3])), context: context,
                 schema: schema, maxTokens: request.max_tokens ?? 128,
-                processor: nil, sampler: NoWhitespaceSampler())
+                // Plain argmax: the trace model prefers whitespace bytes, and the
+                // helper's grammar admits none outside its fixed separators.
+                processor: nil, sampler: ArgMaxSampler())
         }
         return Completion(model: "test", text: result.text, finish: result.reachedLimit ? .length : .stop,
                           promptTokens: 3, completionTokens: result.tokens,
@@ -403,6 +405,7 @@ struct StructuredHTTPTests {
                         #expect(usage["completion_tokens"] == 2)
                     } else {
                         #expect(choices[0]["finish_reason"] as? String == "stop")
+                        #expect(!text.contains("\n") && !text.contains("\t"))
                         var positions: [String.Index] = []
                         for key in keys {
                             positions.append(try #require(text.range(of: "\"" + key + "\":" )).lowerBound)
