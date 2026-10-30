@@ -12,7 +12,8 @@ use sha2::{Digest, Sha256};
 use solstone_core_format::agent_memory::{Coordinate, Origin, SourceKey};
 use solstone_core_format::content::{
     Family, RawPerceptFamily, iter_talent_text_projections, parse_raw_percept_records,
-    produce_chunks, produce_raw_percept_chunks_by_shape, produce_screen_talent_raw_screen_chunks,
+    produce_browser_attended_chunks, produce_chunks, produce_raw_percept_chunks_by_shape,
+    produce_screen_talent_raw_screen_chunks,
 };
 use solstone_core_format::segment::segment_parse;
 use solstone_core_journal_io::paths::{PathOrDay, StreamLocation, iter_segments};
@@ -411,7 +412,8 @@ pub fn cluster_period_with_memory(
     )
 }
 
-/// Ordinary segment rendering with complete bounded terminal source records.
+/// Sense's segment rendering: the ordinary one with complete bounded terminal source records, and browser
+/// reads that were not in front of a focused window shown as their page and state without their text.
 /// Retained records are private preparation input, never a different transcript view.
 pub fn cluster_period_for_terminal_sense_with_memory(
     root: &Path,
@@ -948,18 +950,25 @@ fn process_segment(
         for path in browser {
             match fs::read_to_string(path) {
                 Ok(text) => {
-                    let content = produce_chunks(
-                        Family::Browser,
-                        path.file_name()
-                            .and_then(|name| name.to_str())
-                            .unwrap_or_default(),
-                        &text,
-                    )
-                    .chunks
-                    .into_iter()
-                    .map(|chunk| chunk.content)
-                    .collect::<Vec<_>>()
-                    .join("\n\n");
+                    // Sense reads what the owner had in front: a background tab or an unfocused
+                    // window contributes its page and state, not its text.
+                    let produced = if matches!(projection, PerceptProjection::TerminalSense) {
+                        produce_browser_attended_chunks(&text)
+                    } else {
+                        produce_chunks(
+                            Family::Browser,
+                            path.file_name()
+                                .and_then(|name| name.to_str())
+                                .unwrap_or_default(),
+                            &text,
+                        )
+                    };
+                    let content = produced
+                        .chunks
+                        .into_iter()
+                        .map(|chunk| chunk.content)
+                        .collect::<Vec<_>>()
+                        .join("\n\n");
                     if !content.is_empty() {
                         entries.push(entry(
                             start,
