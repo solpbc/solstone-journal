@@ -1237,7 +1237,8 @@ pub(crate) fn decode_build_report(bytes: &[u8]) -> Result<NvattestBuildReport, S
     if report.target_architecture != "x64"
         || report.target_triple != "x86_64-pc-windows-msvc"
         || report.native_validation.status != "passed"
-        || report.native_validation.vectors_sha256 != crate::nvattest_windows_arm64::UTC_VECTORS_SHA256
+        || report.native_validation.vectors_sha256
+            != crate::nvattest_windows_arm64::UTC_VECTORS_SHA256
     {
         return Err("report: not an x64 build with a passed native UTC self-test".into());
     }
