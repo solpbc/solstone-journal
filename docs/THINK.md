@@ -144,6 +144,13 @@ search; readers show an entry only while it still holds. Retrieval thresholds an
 route switches are constants in
 `solstone-core-talent-runtime/src/possible_names/policy.rs`.
 
+Work and Conversation read an entry whose name is spelled differently from its
+words in place of those words, through the same source-bound view as product
+spellings (`solstone-core-talent-runtime/src/product_names.rs`); a quote with that
+name must trace to the labelled words. No other talent reads possible names. An
+entry whose name only repeats its words is kept for search and shown to no
+transcript reader.
+
 A sidecar with the same transcript digest, registry revision and talent version
 is fresh, and Generate is skipped. The registry revision also covers the segment's
 own facet list, so a re-filed segment regenerates. No candidates skips Generate too and replaces
