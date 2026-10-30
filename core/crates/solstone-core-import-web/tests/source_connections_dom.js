@@ -23,7 +23,7 @@ function harness(crateDir, source = 'obsidian') {
   const storage = new Map();
   const calls = [];
   const field = () => ({ textContent: '', innerHTML: '', disabled: false, isConnected: true, focus() { this.focused = true; } });
-  const fields = Object.fromEntries(['data-source-change-status', 'data-source-status', 'data-source-connection', 'data-source-connection-actions', 'data-source-schedule-state', 'data-source-conflicts'].map(key => [key, field()]));
+  const fields = Object.fromEntries(['data-source-read-status', 'data-source-change-status', 'data-source-status', 'data-source-connection', 'data-source-connection-actions', 'data-source-schedule-state', 'data-source-conflicts'].map(key => [key, field()]));
   const select = { value: '', disabled: true, set innerHTML(value) { this.html = value; this.value = /value="([^"]*)" selected/.exec(value)?.[1] || ''; }, get innerHTML() { return this.html || ''; } };
   const input = { checked: false, disabled: true };
   const buttons = Object.fromEntries(['data-source-sync', 'data-source-refresh', 'data-source-remove'].map(key => [key, field()]));
@@ -84,7 +84,82 @@ module.exports = async function sourceConnectionContracts(crateDir) {
     assert.equal(h.run('row.connection.source_identity'), 'old', 'unreadable state never becomes a new connection');
     assert.equal(h.run('row.readable'), false);
     assert.equal(h.buttons['data-source-sync'].disabled, true);
-    assert.match(h.fields['data-source-status'].textContent, /could not read/);
+    assert.ok(h.fields['data-source-read-status'].textContent || h.fields['data-source-status'].textContent);
+    cases++;
+  }
+  {
+    const h = harness(crateDir);
+    const currentFetch = h.context.fetch;
+    h.context.fetch = async () => ({ ok: false });
+    await h.run('refresh(row)');
+    assert.ok(h.fields['data-source-read-status'].textContent || h.fields['data-source-status'].textContent, 'a failed source read is visible');
+    const connection = { source_identity: 'current', folder_name: 'notes', remembered: true, access_state: 'ready' };
+    h.context.fetch = (url, options) => url === '/api/journal/sources/obsidian'
+      ? Promise.resolve({ ok: true, json: async () => ({ source: 'obsidian', connection }) })
+      : currentFetch(url, options);
+    await h.run('refresh(row)');
+    assert.equal(h.fields['data-source-read-status'].textContent, '', 'a current successful read clears its error');
+    assert.equal(h.fields['data-source-status'].textContent, '', 'no superseded read error remains beside the recovered connection');
+    assert.equal(h.buttons['data-source-sync'].disabled, false);
+    assert.ok(h.calls.every(call => !call.options?.method), 'status recovery never writes or starts a sync');
+    for (const next of [{ ...connection, access_state: 'lost' }, { ...connection, remembered: false, access_state: 'absent' }, null]) {
+      h.context.fetch = (url, options) => url === '/api/journal/sources/obsidian'
+        ? Promise.resolve({ ok: true, json: async () => ({ source: 'obsidian', connection: next }) })
+        : currentFetch(url, options);
+      await h.run('refresh(row)');
+      assert.equal(h.fields['data-source-read-status'].textContent, '');
+      assert.equal(h.buttons['data-source-sync'].disabled, true, 'a readable denied or forgotten connection does not authorize sync');
+    }
+    cases++;
+  }
+  {
+    // Each read owns only its error; operation uncertainty survives recovery.
+    for (const state of ['running', 'unknown', 'unreadable']) {
+      const h = harness(crateDir);
+      h.context.fetch = async () => ({ ok: false });
+      await h.run('refresh(row)');
+      h.run("retained(row.source,{change:'unconfirmed-change',sync:{request_id:'pending-id'}})");
+      h.context.fetch = async (url, options) => {
+        h.calls.push({ url, options });
+        if (url.includes('/sync/')) {
+          if (state === 'unreadable') throw new Error('unavailable');
+          return { ok: true, json: async () => ({ source: 'obsidian', request_id: 'pending-id', reference: 'pending-reference', state, terminal: false }) };
+        }
+        return { ok: true, json: async () => url.includes('/recurrences/')
+          ? { source: 'obsidian', enabled: false, entries: [], blocked_names: [] }
+          : { source: 'obsidian', connection: { source_identity: 'current', folder_name: 'notes', remembered: true, access_state: 'ready' } } };
+      };
+      await h.run('refresh(row)');
+      assert.equal(h.fields['data-source-read-status'].textContent, '');
+      assert.ok(h.fields['data-source-status'].textContent, 'sync state or uncertainty remains visible');
+      assert.ok(h.fields['data-source-change-status'].textContent, 'an unconfirmed folder change remains visible');
+      assert.equal(JSON.parse(h.storage.get('journal-source-operation:obsidian')).sync.request_id, 'pending-id');
+      assert.equal(h.buttons['data-source-sync'].disabled, state !== 'unknown', 'only the existing explicit unknown-result policy permits a new owner action');
+      assert.ok(h.calls.every(call => !call.options?.method), 'recovery only observes the retained operation');
+    }
+    cases++;
+  }
+  {
+    // Resolve actual concurrent reads in both orders, without clock sleeps.
+    for (const olderReady of [true, false]) {
+      const h = harness(crateDir);
+      const replies = [];
+      h.context.fetch = () => new Promise(resolve => replies.push(resolve));
+      const older = h.run('refresh(row)');
+      const newer = h.run('refresh(row)');
+      const ready = { ok: true, json: async () => ({ source: 'obsidian', connection: { source_identity: 'current', folder_name: 'notes', remembered: true, access_state: 'ready' } }) };
+      const schedule = { ok: true, json: async () => ({ source: 'obsidian', enabled: false, entries: [], blocked_names: [] }) };
+      replies[2](olderReady ? { ok: false } : ready);
+      replies[3](schedule);
+      await newer;
+      const currentError = h.fields['data-source-read-status'].textContent || h.fields['data-source-status'].textContent;
+      assert.equal(Boolean(currentError), olderReady);
+      replies[0](olderReady ? ready : { ok: false });
+      replies[1](schedule);
+      await older;
+      assert.equal(h.fields['data-source-read-status'].textContent || h.fields['data-source-status'].textContent, currentError, 'a stale read cannot clear or restore the latest error');
+      assert.equal(h.buttons['data-source-sync'].disabled, olderReady);
+    }
     cases++;
   }
   {

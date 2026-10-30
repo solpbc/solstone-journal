@@ -109,7 +109,8 @@
       }
     }
     if (row.readable) showConnection(row);
-    else status(row, 'could not read this source. check again before changing it.');
+    row.node.querySelector('[data-source-read-status]').textContent = row.readable
+      ? '' : 'could not read this source. check again before changing it.';
     const schedule = results[1];
     if (schedule.status === 'fulfilled' && schedule.value.source === row.source
         && typeof schedule.value.enabled === 'boolean' && Array.isArray(schedule.value.entries)
@@ -263,7 +264,7 @@
         <p data-source-connection>checking source…</p>
         ${source === 'plaud' ? '<p><a href="/app/settings/#apikeys">Plaud connection settings</a></p>' : '<p class="import-field-hint">connecting keeps read access to the selected folder for future syncs. forgetting a folder keeps earlier imports in your journal.</p><div class="import-action-row" data-source-connection-actions></div>'}
         <div class="import-action-row"><button type="button" class="import-primary-btn" data-source-sync disabled>sync now</button><button type="button" class="import-secondary-btn" data-source-refresh>check status</button></div>
-        <p data-source-change-status role="status" aria-live="polite"></p><p data-source-status role="status" aria-live="polite"></p>
+        <p data-source-read-status role="status" aria-live="polite"></p><p data-source-change-status role="status" aria-live="polite"></p><p data-source-status role="status" aria-live="polite"></p>
         <details><summary>automatic sync</summary><form data-source-schedule>
           <p data-source-schedule-state>checking schedule…</p><p data-source-conflicts></p>
           <label for="source-${source}-every">how often</label> <select id="source-${source}-every" disabled><option value="">choose a cadence</option></select>
