@@ -65,6 +65,86 @@ pub(super) fn render(records: &[JsonObject]) -> ProducedChunks {
     }
 }
 
+/// Said when no page in front of a focused window sent anything, so the list below it is all there was.
+const NOTHING_IN_FRONT: &str =
+    "No page in front of a focused window sent anything in this segment.";
+
+/// Browser content as a talent reads it to learn what the owner did. A read the browser marks as not in front
+/// of a focused window (a background tab, or a window behind another app) is not what the owner was reading:
+/// what such a page shows by itself (a live clock, a video's captions, an ad) is left out, and the page is
+/// listed once per state after the pages that were in front. Pausing the solstone app does not change this,
+/// and a record without tab state counts as in front.
+pub(super) fn render_attended(records: &[JsonObject]) -> ProducedChunks {
+    let mut in_front = Vec::with_capacity(records.len());
+    let mut pages: HashMap<(Option<String>, Option<String>), &JsonObject> = HashMap::new();
+    let mut open: Vec<String> = Vec::new();
+    for record in records {
+        let kind = record.get("t").and_then(Value::as_str);
+        if kind == Some("segment_start") {
+            pages.insert(memory_key(record), record);
+        }
+        if !matches!(kind, Some("segment_start" | "delta")) || attended(record) {
+            in_front.push(record.clone());
+            continue;
+        }
+        if let Some(page) = pages.get(&memory_key(record)) {
+            let line = open_page_line(page, record);
+            if !open.contains(&line) {
+                open.push(line);
+            }
+        }
+    }
+    let mut produced = render(&in_front);
+    if !open.is_empty() {
+        let mut text = String::new();
+        if produced.chunks.is_empty() {
+            text.push_str(NOTHING_IN_FRONT);
+            text.push_str("\n\n");
+        }
+        text.push_str("## Open, not in front of a focused window\n");
+        text.push_str(
+            &open
+                .iter()
+                .map(|line| format!("- {line}"))
+                .collect::<Vec<_>>()
+                .join("\n"),
+        );
+        produced.chunks.push(super::IndexChunk {
+            content: text,
+            occurrence_time_ms: None,
+            source: None,
+            group_offset_ms: None,
+        });
+    }
+    produced
+}
+
+/// One open page: its title, its site when that says more, and the state the browser reported.
+fn open_page_line(page: &JsonObject, state: &JsonObject) -> String {
+    let title = clean_text(page.get("title"));
+    let site = clean_text(page.get("site"));
+    let url = clean_text(page.get("url"));
+    let heading =
+        first_non_empty(&[title.as_str(), site.as_str(), url.as_str()]).unwrap_or("Browser Page");
+    let mut line = heading.to_string();
+    if !site.is_empty() && site != heading {
+        line.push_str(&format!(" ({site})"));
+    }
+    let attention = parse_attention_text(state);
+    if !attention.is_empty() {
+        line.push_str(&format!(" · {attention}"));
+    }
+    line
+}
+
+fn attended(record: &JsonObject) -> bool {
+    let Some(Value::Object(tab)) = record.get("tab") else {
+        return true;
+    };
+    tab.get("front").and_then(Value::as_bool) != Some(false)
+        && tab.get("focused").and_then(Value::as_bool) != Some(false)
+}
+
 pub(super) fn integer_milliseconds(value: &Value) -> Option<i64> {
     value.as_i64().or_else(|| {
         let number = value.as_f64()?;
@@ -353,6 +433,42 @@ mod tests {
                 "## https://example.com/fallback\n\nFallback page text",
                 "## Browser Page",
             ]
+        );
+    }
+
+    #[test]
+    fn attended_reading_keeps_front_text_and_lists_other_pages_once() {
+        use crate::content::produce_browser_attended_chunks;
+
+        let text = r#"{"t":"segment_start","ts":1,"title":"Soil pH","site":"en.wikipedia.org","tab":{"front":true,"focused":true},"blocks":[{"type":"text","text":"Read in front"}]}
+{"t":"segment_start","ts":2,"title":"Video","site":"www.youtube.com","inst":"i","ctx":"v","tab":{"front":false,"focused":true},"media":{"playing":true},"blocks":[{"type":"text","text":"Caption in the background"}]}
+{"t":"delta","ts":3,"inst":"i","ctx":"v","op":"add","tab":{"front":false,"focused":true},"media":{"playing":true},"block":{"type":"text","text":"Another caption"}}
+{"t":"segment_start","ts":4,"title":"Clock","site":"time.gov","inst":"i","ctx":"c","tab":{"front":true,"focused":true},"blocks":[{"type":"text","text":"11:20"}]}
+{"t":"delta","ts":5,"inst":"i","ctx":"c","op":"add","tab":{"front":true,"focused":false},"block":{"type":"text","text":"11:21 behind another app"}}
+{"t":"segment_start","ts":6,"title":"Guide","tab":{"front":true,"focused":true},"solstone_paused":true,"blocks":[{"type":"text","text":"Read while paused"}]}
+{"t":"segment_start","ts":7,"title":"Older extension","blocks":[{"type":"text","text":"No tab state"}]}
+"#;
+        let contents: Vec<String> = produce_browser_attended_chunks(text)
+            .chunks
+            .into_iter()
+            .map(|chunk| chunk.content)
+            .collect();
+        assert_eq!(
+            contents,
+            vec![
+                "## Soil pH\n\nen.wikipedia.org\ncontext: front tab, window focused\n\nRead in front",
+                "## Clock\n\ntime.gov\ncontext: front tab, window focused\n\n11:20",
+                "## Guide\ncontext: front tab, window focused · solstone app paused\n\nRead while paused",
+                "## Older extension\n\nNo tab state",
+                "## Open, not in front of a focused window\n- Video (www.youtube.com) · background tab · media playing\n- Clock (time.gov) · front tab, window not focused",
+            ]
+        );
+        let background_only = r#"{"t":"segment_start","ts":1,"title":"Video","tab":{"front":false,"focused":true},"blocks":[{"type":"text","text":"Caption"}]}"#;
+        assert_eq!(
+            produce_browser_attended_chunks(background_only).chunks[0].content,
+            format!(
+                "{NOTHING_IN_FRONT}\n\n## Open, not in front of a focused window\n- Video · background tab"
+            )
         );
     }
 

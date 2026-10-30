@@ -737,6 +737,12 @@ fn render_calendar(records: &[JsonObject]) -> ProducedChunks {
     }
 }
 
+/// Render browser JSONL the way a talent reads it to learn what the owner did: pages that were not in front of
+/// a focused window are listed with their state, without their text (`browser::render_attended`).
+pub fn produce_browser_attended_chunks(text: &str) -> ProducedChunks {
+    browser::render_attended(&parse_records_for_family(Family::Browser, text))
+}
+
 pub fn produce_chunks(family: Family, rel: &str, text: &str) -> ProducedChunks {
     if family == Family::ScreenText {
         return screen_text::produce_screen_text_chunks(text);

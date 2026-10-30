@@ -167,6 +167,10 @@ Styling is dropped except strikethrough, which agent task lists use for finished
 
 The entries are then fitted to a budget fixed by design: the floor window's input budget for the talent (`compute_input_budget` of its `max_output_tokens` at `LOCAL_MIN_CONTEXT_TOKENS`) less everything else in the request, counted with the journal's tokenizer. Typed input is always kept. If the entries do not fit whole, one line cap applies to every other entry, the largest that fits: short entries stay whole, and a long one keeps its start and end with the number of lines left out (a first-seen screen keeps its end). Below the smallest cap, new-text entries are chosen by time spread (the last, the first, then each the farthest in time from those kept), and each run left out is named with its time span and size. The reading takes the place of the screen captures in the talent's ordinary request, which runs, validates and publishes like any output of that talent; a `terminal_reading` event records what was read and left out. For Screen it replaces batching: a terminal-only segment is one request with Screen's whole output budget. Generic fitting stays behind it as the disclosed last-resort guard.
 
+## Browser segments
+
+Sense reads a browser segment as what was in front of the owner. A page the browser marks as not in front of a focused window (a background tab, or a window behind another app) contributes no text: what such a page shows by itself, such as a live clock, a video's captions or an ad, is not what the owner read. Those pages are listed once per state, after the pages that were in front, under "Open, not in front of a focused window"; when no page in front sent anything, the reading says so first. Pausing the solstone app does not change what counts as in front, and pages from earlier extension versions, which carry no tab state, read as before. The transcript viewer and agents see every page in full, each with its `context:` line.
+
 ## Architecture
 
 ```

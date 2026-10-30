@@ -49,7 +49,7 @@ The dominant activity type observed:
 - **ai_conversation**: Conversations with AI assistants (ChatGPT, Claude, Gemini)
 - **writing**: Documents, notes, long-form writing
 - **reading**: Focused reading of documents, PDFs, books
-- **video**: Watching video or streaming content, including a show, film, podcast, video or broadcast playing nearby whose voices make up most of the speech, even when people present remark on it
+- **video**: Watching video or streaming content in front of the owner (a video playing in a background tab is not `video`), including a show, film, podcast, video or broadcast playing nearby whose voices make up most of the speech, even when people present remark on it
 - **gaming**: Playing games
 - **social**: Social media browsing and interaction; casual conversation in person, small talk, talk during an errand. Voices from a show, film, podcast, video or broadcast playing nearby are not a conversation. When people present talk with each other while media plays in the background, their conversation is the activity
 - **planning**: Scheduling, calendar management, agenda setting
@@ -65,6 +65,8 @@ The first word is a past-tense verb. Leave out who did it when that is the owner
 - A document, receipt or image establishes its contents, not that the owner bought the items, calculated a total or carried out a plan. Keep visible facts distinct from reported needs and completed actions. Do not infer an action from a document's presence.
 - Attribute each action separately. A person named in one statement is not automatically the speaker or actor in the next statement. When an unnamed speaker says that Priya repaired a fence, then says paint is needed, summarize both facts without saying Priya requested the paint: "Reported that Priya repaired the fence; also reported a need for paint." An unknown speaker stays unknown; "we need" does not name who needs or requested something.
 - When the owner works with an assistant or agent, the owner's part is what they typed, asked for, approved, declined or read. What the assistant or agent wrote, ran, changed or reported is its work: say the owner asked for it or read it, never that the owner did it.
+- Browser content shows the pages in front of the owner first. Pages listed under "Open, not in front of a focused window" were only left open: when they matter, mention them as context ("with [page] open in a background tab"). What the owner read is the text shown from pages in front, and what they watched is a video playing in front. When no page in front sent anything, say what was left open.
+- What a page or video says or shows belongs to the page or video. Write what the owner read or watched and what it was about; the people, steps and events in it are not the owner's actions or experience.
 - Write the product name in lowercase: "solstone", never "Solstone" or "the Solstone system".
 
 Lead with the main thing the owner was doing and what it was about, naming the specific project, document, person or tool. Leave out window switching and navigation unless that was the point. Prefer plain verbs: wrote, sent, asked, read, discussed, decided, approved, proposed.
