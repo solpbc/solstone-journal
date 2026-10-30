@@ -614,9 +614,12 @@ fn has_raw_media(files: &[PathBuf], kind: MediaKind) -> bool {
 /// The newest modification time, in epoch milliseconds, among a segment's input files.
 ///
 /// Input is every regular file directly in the segment directory except what
-/// thinking itself writes there (`events.jsonl`) and transient lock sidecars
-/// and dot-named temporaries.  Talent output lives under `talents/` and is not
-/// read.  `None` when the segment holds no input file.
+/// thinking itself writes there (`events.jsonl`), the ingest manifest
+/// (`ingest.json`), and transient lock sidecars and dot-named temporaries.  The
+/// manifest only records the content files beside it, which carry their own
+/// times, and a duplicate upload rewrites it without changing them.  Talent
+/// output lives under `talents/` and is not read.  `None` when the segment
+/// holds no input file.
 pub fn newest_segment_input_ms(segment_path: &Path) -> Result<Option<i64>, HealthError> {
     let files = segment_files(segment_path)?;
     let inputs = files
@@ -625,7 +628,10 @@ pub fn newest_segment_input_ms(segment_path: &Path) -> Result<Option<i64>, Healt
             path.file_name()
                 .and_then(|name| name.to_str())
                 .is_some_and(|name| {
-                    name != "events.jsonl" && !name.ends_with(".lock") && !name.starts_with('.')
+                    name != "events.jsonl"
+                        && name != "ingest.json"
+                        && !name.ends_with(".lock")
+                        && !name.starts_with('.')
                 })
         })
         .collect::<Vec<_>>();
@@ -754,6 +760,7 @@ mod tests {
         place("audio.jsonl.lock", 900);
         place(".describe-1-0.jsonl.tmp", 900);
         place("talents/sense.json", 900);
+        place("ingest.json", 900);
         assert_eq!(
             newest_segment_input_ms(segment.path()).unwrap(),
             Some(200_000)
@@ -762,6 +769,40 @@ mod tests {
         assert_eq!(
             newest_segment_input_ms(segment.path()).unwrap(),
             Some(300_000)
+        );
+    }
+
+    #[test]
+    fn a_duplicate_upload_rewriting_only_the_manifest_is_not_new_input() {
+        let segment = TempDir::new().unwrap();
+        let place = |name: &str, seconds: u64| {
+            let path = segment.path().join(name);
+            fs::write(&path, "x").unwrap();
+            fs::File::options()
+                .write(true)
+                .open(&path)
+                .unwrap()
+                .set_modified(std::time::UNIX_EPOCH + std::time::Duration::from_secs(seconds))
+                .unwrap();
+        };
+        place("audio.m4a", 100);
+        place("ingest.json", 101);
+        assert_eq!(
+            newest_segment_input_ms(segment.path()).unwrap(),
+            Some(100_000)
+        );
+        // The same bytes arrive again: only the manifest is rewritten.
+        place("ingest.json", 5_000);
+        assert_eq!(
+            newest_segment_input_ms(segment.path()).unwrap(),
+            Some(100_000)
+        );
+        // Different bytes arrive: the content file itself is newer.
+        place("audio.m4a", 6_000);
+        place("ingest.json", 6_001);
+        assert_eq!(
+            newest_segment_input_ms(segment.path()).unwrap(),
+            Some(6_000_000)
         );
     }
 
