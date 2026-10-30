@@ -33,10 +33,28 @@ pub struct RatlsVerificationError {
     pub reason_code: &'static str,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[derive(Clone, PartialEq, Eq, thiserror::Error)]
 #[error("confidential attestation rejected ({reason_code})")]
 pub struct RatlsChannelError {
     pub reason_code: &'static str,
+    pub selected_failure: Option<crate::proof_receive::SelectedProofFailure>,
+}
+
+impl std::fmt::Debug for RatlsChannelError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RatlsChannelError")
+            .field("reason_code", &self.reason_code)
+            .finish()
+    }
+}
+
+impl RatlsChannelError {
+    pub const fn new(reason_code: &'static str) -> Self {
+        Self {
+            reason_code,
+            selected_failure: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]

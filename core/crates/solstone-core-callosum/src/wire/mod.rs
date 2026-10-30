@@ -10,7 +10,9 @@ mod local_inference_client;
 pub mod one_shot_fixture;
 mod server;
 
-pub use brain_startup::{BrainStartupCapture, BrainStartupCursor, BrainStartupEvent};
+pub use brain_startup::{
+    BrainStartupCapture, BrainStartupCursor, BrainStartupEvent, PrivateProofReceive,
+};
 pub use connection::{
     CallosumConnectionPhase, CallosumDiagnosticEmitter, CallosumGapReason, CallosumReceiveEvent,
     CallosumRetrySource, CallosumSocketConnection, CallosumStoppedReason, TokioRetrySource,

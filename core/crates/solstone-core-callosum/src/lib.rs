@@ -102,7 +102,7 @@ pub use wire::{
     BrainStartupCapture, BrainStartupCursor, BrainStartupEvent, CallosumConnectionPhase,
     CallosumDiagnosticEmitter, CallosumGapReason, CallosumReceiveEvent, CallosumRetrySource,
     CallosumSocketConnection, CallosumSocketServer, CallosumSocketServerError,
-    CallosumStoppedReason, TokioRetrySource, request_local_inference_snapshot,
+    CallosumStoppedReason, PrivateProofReceive, TokioRetrySource, request_local_inference_snapshot,
     request_local_inference_snapshot_sync,
 };
 pub use writer::{CallosumWriteError, append_durable_event, append_durable_event_checked};

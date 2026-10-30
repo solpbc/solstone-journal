@@ -7,6 +7,9 @@
 //! There is no cross-process pool, no listener, and no daemon.
 //! Transcription opens a fresh channel per request.
 
+use crate::proof_receive::{
+    ReceiveBranch, ReceiveCategory, ReceiveProgress, ReceiveTermination, SelectedProofFailure,
+};
 use std::fmt;
 use std::io::{ErrorKind, Read, Write};
 use std::net::{SocketAddr, TcpStream, ToSocketAddrs};
@@ -32,8 +35,8 @@ use crate::{
         },
         http::{
             BoundedHttpError, MAX_PROOF_RESPONSE_BYTES, MAX_PROOF_RESPONSE_HEADERS,
-            recv_bounded_http_response, response_status, retry_interrupted,
-            write_all_retry_interrupted,
+            recv_bounded_http_response, recv_bounded_http_response_observed, response_status,
+            retry_interrupted, write_all_retry_interrupted,
         },
         verify::{
             CompositeVerifier, VerifiedCertificateEvidence, verify_certificate_evidence,
@@ -43,6 +46,9 @@ use crate::{
 };
 
 type PeerCertificate = Arc<Mutex<Option<Vec<u8>>>>;
+
+#[cfg(test)]
+mod proof_receive_tests;
 
 /// How long after admission an offline-status channel may start new requests.
 /// The Generate pool's reuse age must never exceed it.
@@ -108,9 +114,7 @@ impl ChannelAdmission {
                         ChannelStatus::OfflineUntil(deadline)
                     }
                     _ => {
-                        return Err(RatlsChannelError {
-                            reason_code: "status_deadline_insufficient",
-                        });
+                        return Err(RatlsChannelError::new("status_deadline_insufficient"));
                     }
                 }
             }
@@ -344,13 +348,13 @@ impl RecordFramingTracker {
     }
 }
 
-pub struct CountingReader<'a> {
-    sock: &'a mut TcpStream,
+struct CountingReader<'a, S: AttestedIo = TcpStream> {
+    sock: &'a mut S,
     tracker: &'a mut RecordFramingTracker,
     deadline: Option<Instant>,
 }
 
-impl<'a> Read for CountingReader<'a> {
+impl<S: AttestedIo> Read for CountingReader<'_, S> {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         let n = DeadlineIo {
             stream: &mut *self.sock,
@@ -379,6 +383,7 @@ pub struct AttestedChannel {
     /// The TLS layer rejected a record; nothing more is read or sent.
     tls_failed: bool,
     io_deadline: Option<Instant>,
+    proof_termination: Option<ReceiveTermination>,
 }
 
 impl AttestedChannel {
@@ -397,6 +402,11 @@ impl AttestedChannel {
             Ok(state) => state,
             Err(_) => return false,
         };
+        if state.peer_has_closed()
+            && let Some(p) = &mut self.proof_termination
+        {
+            p.close_observed = true;
+        }
         !self.saw_eof
             && !self.tls_failed
             && state.plaintext_bytes_to_read() == 0
@@ -455,83 +465,265 @@ impl AttestedIo for AttestedChannel {
     }
 
     fn trailing_after_body(&mut self) -> std::io::Result<Trailing> {
-        let state = match self.conn.process_new_packets() {
-            Ok(state) => state,
-            Err(error) => {
-                self.tls_failed = true;
-                return Err(std::io::Error::new(ErrorKind::InvalidData, error));
+        trailing_attested(
+            &mut self.conn,
+            &mut self.sock,
+            &mut self.tracker,
+            self.io_deadline,
+            &mut self.saw_eof,
+            &mut self.tls_failed,
+            self.proof_termination.as_mut(),
+        )
+    }
+}
+
+trait TrailingIo: AttestedIo {
+    fn set_probe_nonblocking(&mut self, enabled: bool) -> std::io::Result<()>;
+}
+impl TrailingIo for TcpStream {
+    fn set_probe_nonblocking(&mut self, enabled: bool) -> std::io::Result<()> {
+        self.set_nonblocking(enabled)
+    }
+}
+fn trailing_attested(
+    conn: &mut ClientConnection,
+    sock: &mut impl TrailingIo,
+    tracker: &mut RecordFramingTracker,
+    deadline: Option<Instant>,
+    saw_eof: &mut bool,
+    tls_failed: &mut bool,
+    mut observation: Option<&mut ReceiveTermination>,
+) -> std::io::Result<Trailing> {
+    let state = match conn.process_new_packets() {
+        Ok(state) => state,
+        Err(error) => {
+            *tls_failed = true;
+            if let Some(p) = observation.as_deref_mut() {
+                p.tls_failed = true;
+                p.branch = ReceiveBranch::TlsRejected;
             }
-        };
-        if state.plaintext_bytes_to_read() > 0 {
-            return Ok(Trailing::Surplus);
+            return Err(std::io::Error::new(ErrorKind::InvalidData, error));
         }
-        if state.peer_has_closed() {
-            return Ok(Trailing::Eof);
+    };
+    if state.plaintext_bytes_to_read() > 0 {
+        record_branch(
+            &mut observation,
+            ReceiveBranch::TrailingBuffered,
+            *saw_eof,
+            *tls_failed,
+        );
+        return Ok(Trailing::Surplus);
+    }
+    if state.peer_has_closed() {
+        record_branch(
+            &mut observation,
+            ReceiveBranch::TrailingClose,
+            *saw_eof,
+            *tls_failed,
+        );
+        if let Some(p) = observation.as_deref_mut() {
+            p.close_observed = true;
         }
-        if self.sock.set_nonblocking(true).is_err() {
-            return Ok(Trailing::Surplus);
+        return Ok(Trailing::Eof);
+    }
+    if sock.set_probe_nonblocking(true).is_err() {
+        record_branch(
+            &mut observation,
+            ReceiveBranch::TrailingSetupFailed,
+            *saw_eof,
+            *tls_failed,
+        );
+        return Ok(Trailing::Surplus);
+    }
+    let mut reader = CountingReader {
+        sock: &mut *sock,
+        tracker: &mut *tracker,
+        deadline,
+    };
+    let res = conn.read_tls(&mut reader);
+    let restore_ok = sock.set_probe_nonblocking(false).is_ok();
+    if !restore_ok {
+        record_branch(
+            &mut observation,
+            ReceiveBranch::TrailingRestoreFailed,
+            *saw_eof,
+            *tls_failed,
+        );
+        return Ok(Trailing::Surplus);
+    }
+    match res {
+        Err(e) if e.kind() == ErrorKind::WouldBlock => {
+            record_branch(
+                &mut observation,
+                ReceiveBranch::TrailingWouldBlock,
+                *saw_eof,
+                *tls_failed,
+            );
+            Ok(Trailing::None)
         }
-        let mut reader = CountingReader {
-            sock: &mut self.sock,
-            tracker: &mut self.tracker,
-            deadline: self.io_deadline,
-        };
-        let res = self.conn.read_tls(&mut reader);
-        let restore_ok = self.sock.set_nonblocking(false).is_ok();
-        if !restore_ok {
-            return Ok(Trailing::Surplus);
+        Ok(0) => {
+            *saw_eof = true;
+            record_branch(
+                &mut observation,
+                ReceiveBranch::TrailingTcpEof,
+                *saw_eof,
+                *tls_failed,
+            );
+            Ok(Trailing::Eof)
         }
-        match res {
-            Err(e) if e.kind() == ErrorKind::WouldBlock => Ok(Trailing::None),
-            Ok(0) => {
-                self.saw_eof = true;
-                Ok(Trailing::Eof)
-            }
-            Ok(_) => Ok(Trailing::Surplus),
-            Err(_) => Ok(Trailing::Surplus),
+        Ok(_) => {
+            record_branch(
+                &mut observation,
+                ReceiveBranch::TrailingBytes,
+                *saw_eof,
+                *tls_failed,
+            );
+            Ok(Trailing::Surplus)
+        }
+        Err(error) => {
+            let branch = match error.kind() {
+                ErrorKind::ConnectionReset | ErrorKind::ConnectionAborted => {
+                    ReceiveBranch::TrailingReset
+                }
+                ErrorKind::TimedOut => ReceiveBranch::TrailingTimeout,
+                _ => ReceiveBranch::TrailingIoOther,
+            };
+            record_branch(&mut observation, branch, *saw_eof, *tls_failed);
+            Ok(Trailing::Surplus)
         }
     }
 }
 
 impl Read for AttestedChannel {
     fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
-        loop {
-            match self.conn.reader().read(buffer) {
-                // Ok(0) here means close_notify: end of stream now, without waiting
-                // on a peer that may hold the socket half-open.
-                Ok(n) => return Ok(n),
-                // A TCP close without close_notify, once seen, reads as end of stream.
-                Err(e) if e.kind() == ErrorKind::UnexpectedEof && self.saw_eof => return Ok(0),
-                Err(e) if e.kind() == ErrorKind::WouldBlock => {
-                    if self.tls_failed {
-                        return Err(std::io::Error::new(
-                            ErrorKind::InvalidData,
-                            "the TLS layer rejected a record",
-                        ));
+        let mut reader = CountingReader {
+            sock: &mut self.sock,
+            tracker: &mut self.tracker,
+            deadline: self.io_deadline,
+        };
+        read_attested(
+            &mut self.conn,
+            &mut reader,
+            &mut self.saw_eof,
+            &mut self.tls_failed,
+            self.proof_termination.as_mut(),
+            buffer,
+        )
+    }
+}
+
+fn record_branch(
+    observation: &mut Option<&mut ReceiveTermination>,
+    branch: ReceiveBranch,
+    saw_eof: bool,
+    tls_failed: bool,
+) {
+    if let Some(p) = observation.as_deref_mut() {
+        p.branch = branch;
+        p.saw_eof = saw_eof;
+        p.tls_failed = tls_failed;
+    }
+}
+
+// The production Read loop also accepts memory-backed ciphertext for finite controls.
+fn read_attested(
+    conn: &mut ClientConnection,
+    transport: &mut impl Read,
+    saw_eof: &mut bool,
+    tls_failed: &mut bool,
+    mut observation: Option<&mut ReceiveTermination>,
+    buffer: &mut [u8],
+) -> std::io::Result<usize> {
+    loop {
+        match conn.reader().read(buffer) {
+            Ok(n) => {
+                record_branch(
+                    &mut observation,
+                    if n == 0 {
+                        ReceiveBranch::PlaintextZero
+                    } else {
+                        ReceiveBranch::Plaintext
+                    },
+                    *saw_eof,
+                    *tls_failed,
+                );
+                return Ok(n);
+            }
+            Err(e) if e.kind() == ErrorKind::UnexpectedEof && *saw_eof => {
+                record_branch(
+                    &mut observation,
+                    ReceiveBranch::MappedEof,
+                    *saw_eof,
+                    *tls_failed,
+                );
+                return Ok(0);
+            }
+            Err(e) if e.kind() == ErrorKind::WouldBlock => {
+                if *tls_failed {
+                    record_branch(
+                        &mut observation,
+                        ReceiveBranch::TlsRejected,
+                        *saw_eof,
+                        *tls_failed,
+                    );
+                    return Err(std::io::Error::new(
+                        ErrorKind::InvalidData,
+                        "the TLS layer rejected a record",
+                    ));
+                }
+                if *saw_eof {
+                    record_branch(
+                        &mut observation,
+                        ReceiveBranch::LatchedEof,
+                        *saw_eof,
+                        *tls_failed,
+                    );
+                    return Ok(0);
+                }
+                match conn.read_tls(transport) {
+                    Ok(0) => *saw_eof = true,
+                    Ok(_) => {}
+                    Err(e) => {
+                        record_branch(&mut observation, ReceiveBranch::Io, *saw_eof, *tls_failed);
+                        return Err(e);
                     }
-                    if self.saw_eof {
-                        return Ok(0);
+                }
+                match conn.process_new_packets() {
+                    Ok(state) => {
+                        if state.peer_has_closed()
+                            && let Some(p) = observation.as_deref_mut()
+                        {
+                            p.close_observed = true;
+                        }
                     }
-                    let mut reader = CountingReader {
-                        sock: &mut self.sock,
-                        tracker: &mut self.tracker,
-                        deadline: self.io_deadline,
-                    };
-                    if self.conn.read_tls(&mut reader)? == 0 {
-                        self.saw_eof = true;
-                    }
-                    if let Err(error) = self.conn.process_new_packets() {
-                        // Hand back plaintext that arrived before the TLS error, so a
-                        // complete response is not lost to an alert behind it. The
-                        // failure is latched so the next read fails at once.
-                        self.tls_failed = true;
-                        return match self.conn.reader().read(buffer) {
-                            Ok(n) if n > 0 => Ok(n),
-                            _ => Err(std::io::Error::new(ErrorKind::InvalidData, error)),
+                    Err(error) => {
+                        *tls_failed = true;
+                        return match conn.reader().read(buffer) {
+                            Ok(n) if n > 0 => {
+                                record_branch(
+                                    &mut observation,
+                                    ReceiveBranch::BufferedBeforeTlsFailure,
+                                    *saw_eof,
+                                    *tls_failed,
+                                );
+                                Ok(n)
+                            }
+                            _ => {
+                                record_branch(
+                                    &mut observation,
+                                    ReceiveBranch::TlsRejected,
+                                    *saw_eof,
+                                    *tls_failed,
+                                );
+                                Err(std::io::Error::new(ErrorKind::InvalidData, error))
+                            }
                         };
                     }
                 }
-                Err(e) => return Err(e),
+            }
+            Err(e) => {
+                record_branch(&mut observation, ReceiveBranch::Io, *saw_eof, *tls_failed);
+                return Err(e);
             }
         }
     }
@@ -640,9 +832,7 @@ pub fn establish_local_test_channel_with_clock(
         .parse::<std::net::IpAddr>()
         .is_ok_and(|address| address.is_loopback())
     {
-        return Err(RatlsChannelError {
-            reason_code: "test_endpoint_not_loopback",
-        });
+        return Err(RatlsChannelError::new("test_endpoint_not_loopback"));
     }
     establish_unheld_channel_with_clock(
         endpoint,
@@ -711,9 +901,7 @@ fn establish_unheld_channel_with_clock(
 /// production or qualification, starts here.
 pub(crate) fn refuse_held_platform(os: &str) -> Result<(), RatlsChannelError> {
     if crate::nvattest_authority::owner_use_held(os) {
-        return Err(RatlsChannelError {
-            reason_code: "nvattest_platform_unsupported",
-        });
+        return Err(RatlsChannelError::new("nvattest_platform_unsupported"));
     }
     Ok(())
 }
@@ -732,15 +920,13 @@ pub const MULTI_ADDRESS_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 /// Identity is the attestation, never the address: each address is appraised
 /// on its own before anything is sent, so a wrong or stale answer fails closed
 /// exactly as a single wrong address always has. The random order spreads new
-/// channels across engines; nothing about the choice is kept or sent.
+/// channels across engines. A returned failure may retain only its selected destination in private capture.
 fn resolve_engine_addresses(
     endpoint: &RatlsEndpoint,
 ) -> Result<Vec<SocketAddr>, RatlsChannelError> {
     let resolved = (endpoint.host.as_str(), endpoint.port)
         .to_socket_addrs()
-        .map_err(|_| RatlsChannelError {
-            reason_code: "gateway_unreachable",
-        })?;
+        .map_err(|_| RatlsChannelError::new("gateway_unreachable"))?;
     let mut addresses: Vec<SocketAddr> = Vec::new();
     for address in resolved {
         if !addresses.contains(&address) {
@@ -748,9 +934,7 @@ fn resolve_engine_addresses(
         }
     }
     if addresses.is_empty() {
-        return Err(RatlsChannelError {
-            reason_code: "gateway_unreachable",
-        });
+        return Err(RatlsChannelError::new("gateway_unreachable"));
     }
     shuffle_addresses(&mut addresses, &ring::rand::SystemRandom::new());
     addresses.truncate(MAX_ENGINE_ADDRESSES);
@@ -776,9 +960,7 @@ fn fresh_owner_nonce(length: usize) -> Result<Vec<u8>, RatlsChannelError> {
     let mut nonce = vec![0u8; length];
     ring::rand::SystemRandom::new()
         .fill(&mut nonce)
-        .map_err(|_| RatlsChannelError {
-            reason_code: "nonce_generation_failed",
-        })?;
+        .map_err(|_| RatlsChannelError::new("nonce_generation_failed"))?;
     Ok(nonce)
 }
 
@@ -822,6 +1004,7 @@ fn establish_over_addresses<T>(
     mut attempt: impl FnMut(SocketAddr, &[u8]) -> Result<T, RatlsChannelError>,
 ) -> Result<T, RatlsChannelError> {
     let mut reported: Option<RatlsChannelError> = None;
+    let mut attempted = 0;
     for (index, address) in addresses.iter().enumerate() {
         // The whole walk shares one socket-timeout budget: a stalled engine
         // costs one timeout, never one per address.
@@ -835,10 +1018,14 @@ fn establish_over_addresses<T>(
             drawn = next_nonce(owner_nonce.len())?;
             drawn.as_slice()
         };
+        attempted += 1;
         match attempt(*address, nonce) {
             Ok(channel) => return Ok(channel),
             Err(error) if is_local_failure(error.reason_code) => return Err(error),
-            Err(error) => {
+            Err(mut error) => {
+                if let Some(summary) = &mut error.selected_failure {
+                    summary.ordinal = attempted;
+                }
                 let replace = match &reported {
                     None => true,
                     Some(previous) => {
@@ -851,9 +1038,13 @@ fn establish_over_addresses<T>(
             }
         }
     }
-    Err(reported.unwrap_or(RatlsChannelError {
-        reason_code: "gateway_unreachable",
-    }))
+    if let Some(summary) = reported
+        .as_mut()
+        .and_then(|error| error.selected_failure.as_mut())
+    {
+        summary.attempted = attempted;
+    }
+    Err(reported.unwrap_or(RatlsChannelError::new("gateway_unreachable")))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -872,170 +1063,166 @@ fn establish_at_address(
     epoch: u64,
     clock: &dyn AdmissionClock,
 ) -> Result<AttestedChannel, RatlsChannelError> {
-    let mut socket =
-        TcpStream::connect_timeout(&address, connect_timeout).map_err(|_| RatlsChannelError {
-            reason_code: "gateway_unreachable",
-        })?;
-    socket
-        .set_read_timeout(Some(socket_timeout))
-        .map_err(|_| RatlsChannelError {
-            reason_code: "gateway_unreachable",
-        })?;
-    socket
-        .set_write_timeout(Some(socket_timeout))
-        .map_err(|_| RatlsChannelError {
-            reason_code: "gateway_unreachable",
-        })?;
-    socket
-        .write_all(PREFACE_MAGIC)
-        .and_then(|_| socket.write_all(owner_nonce))
-        .map_err(|_| RatlsChannelError {
-            reason_code: "gateway_unreachable",
-        })?;
-    let name =
-        ServerName::try_from(endpoint.server_name.clone()).map_err(|_| RatlsChannelError {
-            reason_code: "tls_handshake_failed",
-        })?;
-    let (config, peer_certificate) = tls_config();
-    let mut connection = ClientConnection::new(config, name).map_err(|_| RatlsChannelError {
-        reason_code: "tls_handshake_failed",
-    })?;
-    let mut tracker = RecordFramingTracker::new();
-    while connection.is_handshaking() {
-        struct CountingIo<'a> {
-            sock: &'a mut TcpStream,
-            tracker: &'a mut RecordFramingTracker,
-        }
-        impl<'a> Read for CountingIo<'a> {
-            fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-                let n = self.sock.read(buf)?;
-                if n > 0 {
-                    self.tracker.observe(&buf[..n]);
+    observe_attempt(address, |summary| {
+        let mut socket = TcpStream::connect_timeout(&address, connect_timeout)
+            .map_err(|_| RatlsChannelError::new("gateway_unreachable"))?;
+        socket
+            .set_read_timeout(Some(socket_timeout))
+            .map_err(|_| RatlsChannelError::new("gateway_unreachable"))?;
+        socket
+            .set_write_timeout(Some(socket_timeout))
+            .map_err(|_| RatlsChannelError::new("gateway_unreachable"))?;
+        socket
+            .write_all(PREFACE_MAGIC)
+            .and_then(|_| socket.write_all(owner_nonce))
+            .map_err(|_| RatlsChannelError::new("gateway_unreachable"))?;
+        let name = ServerName::try_from(endpoint.server_name.clone())
+            .map_err(|_| RatlsChannelError::new("tls_handshake_failed"))?;
+        let (config, peer_certificate) = tls_config();
+        let mut connection = ClientConnection::new(config, name)
+            .map_err(|_| RatlsChannelError::new("tls_handshake_failed"))?;
+        let mut tracker = RecordFramingTracker::new();
+        while connection.is_handshaking() {
+            struct CountingIo<'a> {
+                sock: &'a mut TcpStream,
+                tracker: &'a mut RecordFramingTracker,
+            }
+            impl<'a> Read for CountingIo<'a> {
+                fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+                    let n = self.sock.read(buf)?;
+                    if n > 0 {
+                        self.tracker.observe(&buf[..n]);
+                    }
+                    Ok(n)
                 }
-                Ok(n)
             }
+            impl<'a> Write for CountingIo<'a> {
+                fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+                    self.sock.write(buf)
+                }
+                fn flush(&mut self) -> std::io::Result<()> {
+                    self.sock.flush()
+                }
+            }
+            let mut io = CountingIo {
+                sock: &mut socket,
+                tracker: &mut tracker,
+            };
+            connection
+                .complete_io(&mut io)
+                .map_err(|_| RatlsChannelError::new("gateway_unreachable"))?;
         }
-        impl<'a> Write for CountingIo<'a> {
-            fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-                self.sock.write(buf)
-            }
-            fn flush(&mut self) -> std::io::Result<()> {
-                self.sock.flush()
-            }
-        }
-        let mut io = CountingIo {
-            sock: &mut socket,
-            tracker: &mut tracker,
-        };
-        connection
-            .complete_io(&mut io)
-            .map_err(|_| RatlsChannelError {
-                reason_code: "gateway_unreachable",
-            })?;
-    }
-    let certificate = peer_certificate
-        .lock()
-        .expect("peer certificate lock poisoned")
-        .clone()
-        .ok_or(RatlsChannelError {
-            reason_code: "tls_handshake_failed",
-        })?;
-    let verified = verify_certificate_evidence(
-        &certificate,
-        owner_nonce,
-        now,
-        nvattest_dir,
-        roots_dir,
-        policy,
-        quote_verifier,
-        composite_verifier,
-    )
-    .map_err(|error| RatlsChannelError {
-        reason_code: error.reason_code,
-    })?;
-    let mut exporter = [0u8; EXPORTER_BYTES];
-    connection
-        .export_keying_material(
-            &mut exporter,
-            EXPORTER_LABEL,
-            Some(&exporter_context(owner_nonce, &verified.tls_spki_der)),
+        let certificate = peer_certificate
+            .lock()
+            .expect("peer certificate lock poisoned")
+            .clone()
+            .ok_or(RatlsChannelError::new("tls_handshake_failed"))?;
+        let verified = verify_certificate_evidence(
+            &certificate,
+            owner_nonce,
+            now,
+            nvattest_dir,
+            roots_dir,
+            policy,
+            quote_verifier,
+            composite_verifier,
         )
-        .map_err(|_| RatlsChannelError {
-            reason_code: "gateway_unreachable",
-        })?;
+        .map_err(|error| RatlsChannelError::new(error.reason_code))?;
+        let mut exporter = [0u8; EXPORTER_BYTES];
+        connection
+            .export_keying_material(
+                &mut exporter,
+                EXPORTER_LABEL,
+                Some(&exporter_context(owner_nonce, &verified.tls_spki_der)),
+            )
+            .map_err(|_| RatlsChannelError::new("gateway_unreachable"))?;
 
-    // Provisional until the exporter proof verifies; replaced below.
-    let provisional = ChannelAdmission {
-        at_system: now,
-        at_monotonic: clock.now_monotonic(),
-        status: ChannelStatus::OfflineUntil(SystemTime::UNIX_EPOCH),
-    };
-    let mut channel = AttestedChannel {
-        conn: connection,
-        sock: socket,
-        tracker,
-        verified,
-        epoch,
-        admission: provisional,
-        saw_eof: false,
-        tls_failed: false,
-        io_deadline: None,
-    };
+        // Provisional until the exporter proof verifies; replaced below.
+        let provisional = ChannelAdmission {
+            at_system: now,
+            at_monotonic: clock.now_monotonic(),
+            status: ChannelStatus::OfflineUntil(SystemTime::UNIX_EPOCH),
+        };
+        let mut channel = AttestedChannel {
+            conn: connection,
+            sock: socket,
+            tracker,
+            verified,
+            epoch,
+            admission: provisional,
+            saw_eof: false,
+            tls_failed: false,
+            io_deadline: None,
+            proof_termination: Some(ReceiveTermination::default()),
+        };
 
-    let request = format!(
-        "GET {EXPORTER_PROOF_PATH} HTTP/1.1\r\nHost: spp-engine\r\nContent-Length: 0\r\n\r\n"
-    );
-    channel
-        .write_all(request.as_bytes())
-        .map_err(|_| RatlsChannelError {
-            reason_code: "gateway_unreachable",
-        })?;
-    let proof = recv_proof_response(&mut channel)?;
-    verify_exporter_proof(
-        &proof,
-        &channel.verified.evidence,
-        &exporter,
-        owner_nonce,
-        policy,
-    )
-    .map_err(|error| RatlsChannelError {
-        reason_code: error.reason_code,
-    })?;
-    // Admission: reread this device's clock now that the exporter proof has
-    // verified, so time spent in the exchange counts against the status.
-    channel.admission = ChannelAdmission::admit(
-        channel.verified.verdict.gpu.status,
-        clock.now_system(),
-        clock.now_monotonic(),
-    )?;
-    channel
-        .sock
-        .set_read_timeout(None)
-        .map_err(|_| RatlsChannelError {
-            reason_code: "gateway_unreachable",
-        })?;
-    channel
-        .sock
-        .set_write_timeout(None)
-        .map_err(|_| RatlsChannelError {
-            reason_code: "gateway_unreachable",
-        })?;
-    Ok(channel)
+        let request = format!(
+            "GET {EXPORTER_PROOF_PATH} HTTP/1.1\r\nHost: spp-engine\r\nContent-Length: 0\r\n\r\n"
+        );
+        channel
+            .write_all(request.as_bytes())
+            .map_err(|_| RatlsChannelError::new("gateway_unreachable"))?;
+        let proof = recv_proof_response(&mut channel, &mut summary.progress);
+        summary.termination = channel.proof_termination.take().unwrap_or_default();
+        let proof = proof?;
+        verify_exporter_proof(
+            &proof,
+            &channel.verified.evidence,
+            &exporter,
+            owner_nonce,
+            policy,
+        )
+        .map_err(|error| RatlsChannelError::new(error.reason_code))?;
+        // Admission: reread this device's clock now that the exporter proof has
+        // verified, so time spent in the exchange counts against the status.
+        channel.admission = ChannelAdmission::admit(
+            channel.verified.verdict.gpu.status,
+            clock.now_system(),
+            clock.now_monotonic(),
+        )?;
+        channel
+            .sock
+            .set_read_timeout(None)
+            .map_err(|_| RatlsChannelError::new("gateway_unreachable"))?;
+        channel
+            .sock
+            .set_write_timeout(None)
+            .map_err(|_| RatlsChannelError::new("gateway_unreachable"))?;
+        Ok(channel)
+    })
 }
 
-fn recv_proof_response(channel: &mut AttestedChannel) -> Result<Vec<u8>, RatlsChannelError> {
-    let body = recv_proof_body(channel)?;
+fn observe_attempt<T>(
+    address: SocketAddr,
+    attempt: impl FnOnce(&mut SelectedProofFailure) -> Result<T, RatlsChannelError>,
+) -> Result<T, RatlsChannelError> {
+    let mut summary = SelectedProofFailure::new(address);
+    attempt(&mut summary).map_err(|mut error| {
+        if !is_local_failure(error.reason_code) {
+            error.selected_failure = Some(summary);
+        }
+        error
+    })
+}
+
+fn recv_proof_response(
+    channel: &mut AttestedChannel,
+    progress: &mut ReceiveProgress,
+) -> Result<Vec<u8>, RatlsChannelError> {
+    let body = recv_proof_body_observed(channel, Some(progress))?;
     match channel.trailing_after_body() {
         Ok(Trailing::None) if channel.clean_to_reuse() => Ok(body),
         // A close right after the proof is not a bad proof. The ended channel
         // fails its first request and is never pooled.
         Ok(Trailing::Eof) => Ok(body),
-        Ok(Trailing::None) => Err(RatlsChannelError {
-            reason_code: "proof_http_channel_state",
-        }),
-        _ => Err(RatlsChannelError {
-            reason_code: "proof_http_trailing",
-        }),
+        Ok(Trailing::None) => {
+            progress.category = ReceiveCategory::ChannelState;
+            Err(RatlsChannelError::new("proof_http_channel_state"))
+        }
+        _ => {
+            progress.category = ReceiveCategory::Trailing;
+            Err(RatlsChannelError::new("proof_http_trailing"))
+        }
     }
 }
 
@@ -1052,25 +1239,39 @@ fn proof_http_error(error: BoundedHttpError) -> RatlsChannelError {
         BoundedHttpError::Protocol("response_eof" | "response_body_eof") => "proof_http_eof",
         BoundedHttpError::Protocol(_) => "proof_http_framing",
     };
-    RatlsChannelError { reason_code }
+    RatlsChannelError::new(reason_code)
 }
 
+#[cfg(test)]
 fn recv_proof_body(stream: &mut impl Read) -> Result<Vec<u8>, RatlsChannelError> {
-    let response =
-        recv_bounded_http_response(stream, MAX_PROOF_RESPONSE_HEADERS, MAX_PROOF_RESPONSE_BYTES)
-            .map_err(proof_http_error)?;
+    recv_proof_body_observed(stream, None)
+}
+
+fn recv_proof_body_observed(
+    stream: &mut impl Read,
+    mut progress: Option<&mut ReceiveProgress>,
+) -> Result<Vec<u8>, RatlsChannelError> {
+    let response = recv_bounded_http_response_observed(
+        stream,
+        MAX_PROOF_RESPONSE_HEADERS,
+        MAX_PROOF_RESPONSE_BYTES,
+        progress.as_deref_mut(),
+    )
+    .map_err(proof_http_error)?;
     if response.status_line.as_slice() != b"HTTP/1.1 200 OK" {
-        return Err(RatlsChannelError {
-            reason_code: "proof_http_status",
-        });
+        if let Some(p) = progress.as_deref_mut() {
+            p.category = ReceiveCategory::Status;
+        }
+        return Err(RatlsChannelError::new("proof_http_status"));
     }
     for (name, value) in &response.headers {
         if name.eq_ignore_ascii_case(b"content-type")
             && std::str::from_utf8(value).ok().map(str::trim) != Some(EXPORTER_PROOF_MEDIA_TYPE)
         {
-            return Err(RatlsChannelError {
-                reason_code: "proof_http_content_type",
-            });
+            if let Some(p) = progress.as_deref_mut() {
+                p.category = ReceiveCategory::ContentType;
+            }
+            return Err(RatlsChannelError::new("proof_http_content_type"));
         }
     }
     Ok(response.body)
@@ -1391,7 +1592,7 @@ mod tests {
     }
 
     fn refused(reason_code: &'static str) -> RatlsChannelError {
-        RatlsChannelError { reason_code }
+        RatlsChannelError::new(reason_code)
     }
 
     fn fixed_nonce(length: usize) -> Result<Vec<u8>, RatlsChannelError> {
@@ -1719,9 +1920,7 @@ mod tests {
         for short in [129, 0] {
             assert_eq!(
                 ChannelAdmission::admit(offline(at + Duration::from_secs(short)), at, mono),
-                Err(RatlsChannelError {
-                    reason_code: "status_deadline_insufficient"
-                }),
+                Err(RatlsChannelError::new("status_deadline_insufficient")),
                 "{short}"
             );
         }

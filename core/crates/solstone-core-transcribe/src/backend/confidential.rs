@@ -227,6 +227,7 @@ where
                 control.observation,
                 solstone_core_brain::RuntimeRefusalCaller::Transcription,
                 solstone_core_brain::ObservationPhase::TranscriptionReattest,
+                None,
             );
         }
         if let Err(error) = solstone_core_brain::record_transcription_verification(

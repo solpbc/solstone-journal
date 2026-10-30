@@ -114,7 +114,6 @@ pub(crate) fn confidential_generate_with_context(
                 clock,
             )
             .map(|channel| EstablishedChannel::Attested(Box::new(channel)))
-            .map_err(|error| error.reason_code)
         },
     )
 }
@@ -151,7 +150,6 @@ pub fn confidential_generate_in_package(
                 clock,
             )
             .map(|channel| EstablishedChannel::Attested(Box::new(channel)))
-            .map_err(|error| error.reason_code)
         },
     )
 }
@@ -224,7 +222,7 @@ where
         &Path,
         u64,
         &dyn solstone_core_spp_ratls::AdmissionClock,
-    ) -> Result<EstablishedChannel, &'static str>,
+    ) -> Result<EstablishedChannel, solstone_core_spp_ratls::RatlsChannelError>,
 {
     let priority =
         match solstone_core_journal_config::work_priority::WorkPriority::from_environment() {
@@ -261,7 +259,7 @@ where
         &Path,
         u64,
         &dyn solstone_core_spp_ratls::AdmissionClock,
-    ) -> Result<EstablishedChannel, &'static str>,
+    ) -> Result<EstablishedChannel, solstone_core_spp_ratls::RatlsChannelError>,
 {
     let priority = context.priority;
     if context.cancellation.is_cancelled() {
@@ -353,7 +351,7 @@ where
         &Path,
         u64,
         &dyn solstone_core_spp_ratls::AdmissionClock,
-    ) -> Result<EstablishedChannel, &'static str>,
+    ) -> Result<EstablishedChannel, solstone_core_spp_ratls::RatlsChannelError>,
 {
     if context.cancellation.is_cancelled() {
         return ConfidentialResult::Failed(EndpointFailure {
@@ -387,6 +385,7 @@ where
                     runtime.brain_observation(),
                     solstone_core_brain::RuntimeRefusalCaller::Generate,
                     solstone_core_brain::ObservationPhase::RuntimeReadiness,
+                    None,
                 );
             }
             runtime
@@ -407,6 +406,7 @@ where
                     runtime.brain_observation(),
                     solstone_core_brain::RuntimeRefusalCaller::Generate,
                     solstone_core_brain::ObservationPhase::RuntimeTarget,
+                    None,
                 );
             }
             runtime.attestation_state().record_attestation_failed(
@@ -487,7 +487,12 @@ where
         }
         let established = match established {
             Ok(channel) => channel,
-            Err(reason_code) => {
+            Err(error) => {
+                let reason_code = error.reason_code;
+                let private_proof = error
+                    .selected_failure
+                    .as_ref()
+                    .map(solstone_core_brain::PrivateProofReceive::encode);
                 drop(guard);
                 if !is_health_probe {
                     solstone_core_brain::record_confidential_attestation_refusal_observed(
@@ -497,6 +502,7 @@ where
                         runtime.brain_observation(),
                         solstone_core_brain::RuntimeRefusalCaller::Generate,
                         solstone_core_brain::ObservationPhase::RuntimeEstablish,
+                        private_proof,
                     );
                 }
                 let kind = classify_channel_failure(reason_code);
@@ -827,7 +833,6 @@ pub mod test_support {
                     clock,
                 )
                 .map(|channel| EstablishedChannel::Attested(Box::new(channel)))
-                .map_err(|error| error.reason_code)
             },
         )
     }
@@ -874,7 +879,6 @@ pub mod test_support {
                     clock,
                 )
                 .map(|channel| EstablishedChannel::Attested(Box::new(channel)))
-                .map_err(|error| error.reason_code)
             },
         )
     }
@@ -949,7 +953,11 @@ mod tests {
                 },
                 &context,
                 |_| NvattestEnsureStatus::AlreadyInstalled,
-                |_, _, _, _| Err("tls_handshake_failed"),
+                |_, _, _, _| {
+                    Err(solstone_core_spp_ratls::RatlsChannelError::new(
+                        "tls_handshake_failed",
+                    ))
+                },
             );
             assert!(matches!(result, ConfidentialResult::AttestationFailed(_)));
             assert_eq!(
@@ -1405,7 +1413,9 @@ mod tests {
             },
             |_, _, _, _| {
                 attempts.fetch_add(1, Ordering::SeqCst);
-                Err("tls_handshake_failed")
+                Err(solstone_core_spp_ratls::RatlsChannelError::new(
+                    "tls_handshake_failed",
+                ))
             },
         );
         assert!(matches!(
@@ -1443,7 +1453,7 @@ mod tests {
                 |_| NvattestEnsureStatus::AlreadyInstalled,
                 |_, _, _, _| {
                     attempts.fetch_add(1, Ordering::SeqCst);
-                    Err(cause)
+                    Err(solstone_core_spp_ratls::RatlsChannelError::new(cause))
                 },
             );
             assert!(matches!(
@@ -1544,7 +1554,9 @@ mod tests {
             },
             |_, _, _, _| {
                 establish.fetch_add(1, Ordering::SeqCst);
-                Err("tls_handshake_failed")
+                Err(solstone_core_spp_ratls::RatlsChannelError::new(
+                    "tls_handshake_failed",
+                ))
             },
         );
         assert!(matches!(
@@ -1712,6 +1724,195 @@ mod tests {
 
     #[cfg(feature = "full-tests")]
     #[test]
+    fn private_selected_failure_follows_actual_generate_publication_and_cancellation() {
+        use solstone_core_spp_ratls::proof_receive::*;
+        use std::sync::{
+            Arc, Barrier,
+            atomic::{AtomicBool, Ordering},
+        };
+        let capture = solstone_core_callosum::BrainStartupCapture::new();
+        let (emitter, mut ordinary) =
+            solstone_core_callosum::test_support::diagnostic_fixture_with_startup_capture(
+                128,
+                Arc::clone(&capture),
+            );
+        let sink = solstone_core_brain::BrainObservationSink::new(emitter);
+        let barrier = Arc::new(Barrier::new(2));
+        let expected = std::thread::scope(|threads| {
+            let handles: Vec<_> = (1..=2)
+                .map(|index| {
+                    let sink = sink.clone();
+                    let barrier = Arc::clone(&barrier);
+                    threads.spawn(move || {
+                        let path = journal(&format!("private-selected-{index}"));
+                        let config = active_spp_config();
+                        setup_journal(&path, &config);
+                        let runtime = EndpointRuntime::default().with_brain_observation(Some(sink));
+                        let endpoint = endpoint(9099);
+                        let req = request();
+                        let result = confidential_generate_with_control(
+                            ConfidentialCall {
+                                request: &req,
+                                journal_path: &path,
+                                endpoint: &endpoint,
+                                config: &config,
+                                runtime: &runtime,
+                                now: UNIX_EPOCH,
+                            },
+                            &crate::GenerateCallContext {
+                                priority: Default::default(),
+                                cancellation: &solstone_core_generate::Cancellation::never(),
+                            },
+                            |_| NvattestEnsureStatus::AlreadyInstalled,
+                            |_, _, _, _| {
+                                barrier.wait();
+                                Err(solstone_core_spp_ratls::RatlsChannelError {
+                                    reason_code: "proof_http_eof",
+                                    selected_failure: Some(SelectedProofFailure {
+                                        destination: std::net::SocketAddr::from((
+                                            [10, 0, 0, index],
+                                            443,
+                                        )),
+                                        ordinal: 1,
+                                        attempted: 2,
+                                        progress: ReceiveProgress {
+                                            stage: ReceiveStage::Headers,
+                                            category: ReceiveCategory::ResponseEof,
+                                            header_bytes: Some(0),
+                                            body_bytes: None,
+                                            declared_body_bytes: None,
+                                        },
+                                        termination: ReceiveTermination {
+                                            branch: ReceiveBranch::MappedEof,
+                                            saw_eof: true,
+                                            tls_failed: false,
+                                            close_observed: false,
+                                        },
+                                    }),
+                                })
+                            },
+                        );
+                        assert!(matches!(
+                            result,
+                            ConfidentialResult::AttestationFailed("proof_http_eof")
+                        ));
+                        let record = solstone_core_brain::inspect_brain_state(
+                            &path,
+                            &config,
+                            chrono::Utc::now(),
+                        )
+                        .record
+                        .unwrap();
+                        std::fs::remove_dir_all(path).unwrap();
+                        (format!("10.0.0.{index}:443"), record)
+                    })
+                })
+                .collect();
+            handles
+                .into_iter()
+                .map(|h| h.join().unwrap())
+                .collect::<Vec<_>>()
+        });
+        let mut bus = Vec::new();
+        while let Ok(row) = ordinary.try_recv() {
+            let row = serde_json::to_value(row).unwrap();
+            assert!(row.get("proof_receive").is_none());
+            bus.push(row);
+        }
+        assert_eq!(bus.len(), 2);
+        fn take(
+            capture: &solstone_core_callosum::BrainStartupCapture,
+            cursor: &mut solstone_core_callosum::BrainStartupCursor,
+        ) -> solstone_core_callosum::BrainStartupEvent {
+            use std::future::Future;
+            let mut f = Box::pin(capture.next(cursor));
+            let mut cx = std::task::Context::from_waker(std::task::Waker::noop());
+            match f.as_mut().poll(&mut cx) {
+                std::task::Poll::Ready(Some(event)) => event,
+                _ => panic!("expected finalized capture"),
+            }
+        }
+        let mut cursor = solstone_core_callosum::BrainStartupCursor::default();
+        let mut events = Vec::new();
+        let mut ids = Vec::new();
+        for _ in 0..2 {
+            let event = take(&capture, &mut cursor);
+            let value: Value = serde_json::from_str(&event.data).unwrap();
+            let row = &value["row"];
+            let destination = row["proof_receive"]["destination"].as_str().unwrap();
+            let record = &expected.iter().find(|(d, _)| d == destination).unwrap().1;
+            assert_eq!(row["revision"], record["revision"]);
+            assert_eq!(
+                row["runtime_failure_marker"],
+                record["runtime_failure_marker"]["marker_id"]
+            );
+            assert!(
+                bus.iter()
+                    .any(|r| r["observation_id"] == row["observation_id"]
+                        && r["revision"] == row["revision"])
+            );
+            ids.push(row["observation_id"].clone());
+            events.push(json!({"name":event.name,"data":event.data}));
+        }
+        assert_ne!(ids[0], ids[1]);
+        let event = take(&capture, &mut cursor);
+        assert_eq!(
+            serde_json::from_str::<Value>(&event.data).unwrap()["coverage"],
+            "complete"
+        );
+        events.push(json!({"name":event.name,"data":event.data}));
+        println!(
+            "GENERATE_PROOF_WIRE={}",
+            json!({"events":events,"ids":ids,"ordinary":bus})
+        );
+        // Cancellation after establishment suppresses the original publication and summary together.
+        let path = journal("private-selected-cancel");
+        let config = active_spp_config();
+        setup_journal(&path, &config);
+        let cancelled = AtomicBool::new(false);
+        let check = || cancelled.load(Ordering::Acquire);
+        let cancellation = solstone_core_generate::Cancellation::from_fn(&check);
+        let runtime = EndpointRuntime::default().with_brain_observation(Some(sink));
+        let req = request();
+        let endpoint = endpoint(9099);
+        let result = confidential_generate_with_control(
+            ConfidentialCall {
+                request: &req,
+                journal_path: &path,
+                endpoint: &endpoint,
+                config: &config,
+                runtime: &runtime,
+                now: UNIX_EPOCH,
+            },
+            &crate::GenerateCallContext {
+                priority: Default::default(),
+                cancellation: &cancellation,
+            },
+            |_| NvattestEnsureStatus::AlreadyInstalled,
+            |_, _, _, _| {
+                cancelled.store(true, Ordering::Release);
+                Err(solstone_core_spp_ratls::RatlsChannelError {
+                    reason_code: "proof_http_eof",
+                    selected_failure: Some(SelectedProofFailure {
+                        destination: std::net::SocketAddr::from(([10, 0, 0, 3], 443)),
+                        ordinal: 1,
+                        attempted: 1,
+                        progress: ReceiveProgress::default(),
+                        termination: ReceiveTermination::default(),
+                    }),
+                })
+            },
+        );
+        assert!(
+            matches!(result,ConfidentialResult::Failed(ref failure) if failure.reason_code.as_deref()==Some("request_cancelled"))
+        );
+        assert!(ordinary.try_recv().is_err());
+        assert!(!solstone_core_brain::brain_state_path(&path).exists());
+        std::fs::remove_dir_all(path).unwrap();
+    }
+
+    #[cfg(feature = "full-tests")]
+    #[test]
     fn observed_actual_refusal_callers_and_health_probe_exclusion() {
         for case in ["readiness", "target", "establish"] {
             let path = journal(&format!("observed-refusal-{case}"));
@@ -1743,7 +1944,11 @@ mod tests {
                         NvattestEnsureStatus::AlreadyInstalled
                     }
                 },
-                |_, _, _, _| Err("proof_http_eof"),
+                |_, _, _, _| {
+                    Err(solstone_core_spp_ratls::RatlsChannelError::new(
+                        "proof_http_eof",
+                    ))
+                },
             );
             assert!(matches!(
                 result,
@@ -1785,7 +1990,11 @@ mod tests {
                     now: UNIX_EPOCH,
                 },
                 |_| NvattestEnsureStatus::Unavailable,
-                |_, _, _, _| Err("proof_http_eof"),
+                |_, _, _, _| {
+                    Err(solstone_core_spp_ratls::RatlsChannelError::new(
+                        "proof_http_eof",
+                    ))
+                },
             );
             assert!(rows.try_recv().is_err());
             assert_eq!(
@@ -1817,7 +2026,11 @@ mod tests {
                 now: UNIX_EPOCH,
             },
             |_| NvattestEnsureStatus::AlreadyInstalled,
-            |_, _, _, _| Err("gateway_unreachable"),
+            |_, _, _, _| {
+                Err(solstone_core_spp_ratls::RatlsChannelError::new(
+                    "gateway_unreachable",
+                ))
+            },
         );
         assert!(matches!(
             result,
@@ -1851,7 +2064,11 @@ mod tests {
                 now: UNIX_EPOCH,
             },
             |_| NvattestEnsureStatus::AlreadyInstalled,
-            |_, _, _, _| Err("tls_handshake_failed"),
+            |_, _, _, _| {
+                Err(solstone_core_spp_ratls::RatlsChannelError::new(
+                    "tls_handshake_failed",
+                ))
+            },
         );
         assert!(matches!(
             probe_result,
@@ -1895,7 +2112,11 @@ mod tests {
                     reason_code: "nvattest_unavailable",
                 })
             },
-            |_, _, _, _| Err("gateway_unreachable"),
+            |_, _, _, _| {
+                Err(solstone_core_spp_ratls::RatlsChannelError::new(
+                    "gateway_unreachable",
+                ))
+            },
         );
         assert!(matches!(
             result,
@@ -1939,7 +2160,11 @@ mod tests {
                 now: UNIX_EPOCH,
             },
             |_| NvattestEnsureStatus::AlreadyInstalled,
-            |_, _, _, _| Err("gateway_unreachable"),
+            |_, _, _, _| {
+                Err(solstone_core_spp_ratls::RatlsChannelError::new(
+                    "gateway_unreachable",
+                ))
+            },
         );
         assert!(matches!(
             result,
@@ -1996,7 +2221,11 @@ mod tests {
                 now: UNIX_EPOCH,
             },
             |_| NvattestEnsureStatus::AlreadyInstalled,
-            |_, _, _, _| Err("certificate_invalid"),
+            |_, _, _, _| {
+                Err(solstone_core_spp_ratls::RatlsChannelError::new(
+                    "certificate_invalid",
+                ))
+            },
         );
         assert!(matches!(
             result,
@@ -2046,7 +2275,11 @@ mod tests {
                 now: UNIX_EPOCH,
             },
             |_| NvattestEnsureStatus::AlreadyInstalled,
-            |_, _, _, _| Err("certificate_invalid"),
+            |_, _, _, _| {
+                Err(solstone_core_spp_ratls::RatlsChannelError::new(
+                    "certificate_invalid",
+                ))
+            },
         );
         assert!(matches!(
             result,
@@ -2135,7 +2368,11 @@ mod tests {
                 now: UNIX_EPOCH,
             },
             |_| NvattestEnsureStatus::AlreadyInstalled,
-            |_, _, _, _| Err("gateway_unreachable"),
+            |_, _, _, _| {
+                Err(solstone_core_spp_ratls::RatlsChannelError::new(
+                    "gateway_unreachable",
+                ))
+            },
         );
         assert!(matches!(
             result,
@@ -2171,7 +2408,11 @@ mod tests {
                 now: UNIX_EPOCH,
             },
             |_| NvattestEnsureStatus::AlreadyInstalled,
-            |_, _, _, _| Err("gateway_unreachable"),
+            |_, _, _, _| {
+                Err(solstone_core_spp_ratls::RatlsChannelError::new(
+                    "gateway_unreachable",
+                ))
+            },
         );
         assert!(matches!(
             result,

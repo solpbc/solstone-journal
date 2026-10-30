@@ -1,0 +1,131 @@
+{
+  "_source": "solstone-core-spp-ratls/src/proof_receive.rs",
+  "_regenerate": "cargo test --manifest-path core/Cargo.toml -p solstone-core-spp-ratls schema_matches_fixture -- --nocapture",
+  "_rule": "Generated; do not retype vocabulary in consumers.",
+  "required": [
+    "destination",
+    "ordinal",
+    "attempted",
+    "stage",
+    "category",
+    "branch",
+    "saw_eof",
+    "tls_failed",
+    "close_observed"
+  ],
+  "optional": [
+    "header_bytes",
+    "body_bytes",
+    "declared_body_bytes"
+  ],
+  "enums": {
+    "stage": [
+      "before_receive",
+      "headers",
+      "body",
+      "complete"
+    ],
+    "category": [
+      "before_receive",
+      "response_eof",
+      "response_body_eof",
+      "io_unexpected_eof",
+      "timeout",
+      "reset",
+      "io_other",
+      "framing",
+      "status",
+      "content_type",
+      "trailing",
+      "channel_state",
+      "proof_rejected"
+    ],
+    "branch": [
+      "unknown",
+      "plaintext",
+      "plaintext_zero",
+      "mapped_unexpected_eof",
+      "latched_eof",
+      "io",
+      "tls_rejected",
+      "buffered_before_tls_failure",
+      "trailing_buffered",
+      "trailing_close",
+      "trailing_setup_failed",
+      "trailing_restore_failed",
+      "trailing_would_block",
+      "trailing_tcp_eof",
+      "trailing_bytes",
+      "trailing_reset",
+      "trailing_timeout",
+      "trailing_io_other"
+    ]
+  },
+  "limits": {
+    "header_bytes": 16384,
+    "body_bytes": 8388608,
+    "declared_body_bytes": 8388608,
+    "attempted": 8
+  },
+  "stage_categories": {
+    "before_receive": [
+      "before_receive"
+    ],
+    "headers": [
+      "response_eof",
+      "io_unexpected_eof",
+      "timeout",
+      "reset",
+      "io_other",
+      "framing"
+    ],
+    "body": [
+      "response_body_eof",
+      "io_unexpected_eof",
+      "timeout",
+      "reset",
+      "io_other",
+      "framing"
+    ],
+    "complete": [
+      "status",
+      "content_type",
+      "trailing",
+      "channel_state",
+      "proof_rejected"
+    ]
+  },
+  "branch_flags": {
+    "mapped_unexpected_eof": "saw_eof",
+    "latched_eof": "saw_eof",
+    "tls_rejected": "tls_failed",
+    "buffered_before_tls_failure": "tls_failed",
+    "trailing_tcp_eof": "saw_eof",
+    "trailing_close": "close_observed"
+  },
+  "category_reasons": {
+    "response_eof": "proof_http_eof",
+    "response_body_eof": "proof_http_eof",
+    "io_unexpected_eof": "proof_http_eof",
+    "timeout": "proof_http_timeout",
+    "reset": "proof_http_transport",
+    "io_other": "proof_http_transport",
+    "framing": "proof_http_framing",
+    "status": "proof_http_status",
+    "content_type": "proof_http_content_type",
+    "trailing": "proof_http_trailing",
+    "channel_state": "proof_http_channel_state"
+  },
+  "complete_branches": [
+    "trailing_buffered",
+    "trailing_close",
+    "trailing_setup_failed",
+    "trailing_restore_failed",
+    "trailing_would_block",
+    "trailing_tcp_eof",
+    "trailing_bytes",
+    "trailing_reset",
+    "trailing_timeout",
+    "trailing_io_other"
+  ]
+}

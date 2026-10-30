@@ -35,6 +35,7 @@ impl BrainObservationSink {
             sink: self.clone(),
             id,
             caller,
+            private_proof: None,
         })
     }
 }
@@ -146,6 +147,7 @@ pub struct BrainObservation {
     sink: BrainObservationSink,
     id: String,
     caller: ObservationCaller,
+    pub(crate) private_proof: Option<solstone_core_callosum::PrivateProofReceive>,
 }
 
 impl BrainObservation {
@@ -166,7 +168,12 @@ impl BrainObservation {
             ("outcome".into(), json!(outcome)),
         ]);
         fields.extend(extra);
-        let _ = self.sink.0.emit("supervisor", "brain_observation", fields);
+        let _ = self.sink.0.emit_with_private(
+            "supervisor",
+            "brain_observation",
+            fields,
+            self.private_proof.as_ref(),
+        );
     }
 
     pub fn outcome(&self, phase: ObservationPhase, outcome: ObservationOutcome) {

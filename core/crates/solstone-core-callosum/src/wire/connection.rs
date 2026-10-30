@@ -259,6 +259,35 @@ pub struct CallosumDiagnosticEmitter {
 impl CallosumDiagnosticEmitter {
     /// Queued only. Missing capacity, contention and stopped owners omit the row.
     pub fn emit(&self, tract: &str, event: &str, fields: Map<String, Value>) -> bool {
+        self.emit_with_private(tract, event, fields, None)
+    }
+
+    /// The sidecar belongs only to this send's private preparation/finalization.
+    pub fn emit_with_private(
+        &self,
+        tract: &str,
+        event: &str,
+        fields: Map<String, Value>,
+        proof: Option<&super::PrivateProofReceive>,
+    ) -> bool {
+        self.emit_prepared(
+            tract,
+            event,
+            fields,
+            proof,
+            #[cfg(test)]
+            None,
+        )
+    }
+
+    fn emit_prepared(
+        &self,
+        tract: &str,
+        event: &str,
+        fields: Map<String, Value>,
+        proof: Option<&super::PrivateProofReceive>,
+        #[cfg(test)] mut pause: Option<&mut dyn FnMut(u8)>,
+    ) -> bool {
         let Some(envelope) = outbound_envelope(None, tract, event, fields) else {
             if let Some(capture) = &self.brain_startup {
                 capture.missing_emission(tract, event);
@@ -268,8 +297,16 @@ impl CallosumDiagnosticEmitter {
         let pending = self
             .brain_startup
             .as_ref()
-            .and_then(|capture| capture.prepare(&envelope));
+            .and_then(|capture| capture.prepare(&envelope, proof));
+        #[cfg(test)]
+        if let Some(pause) = pause.as_mut() {
+            pause(0);
+        }
         let sent = self.send(envelope);
+        #[cfg(test)]
+        if let Some(pause) = pause.as_mut() {
+            pause(1);
+        }
         if let Some(pending) = pending {
             pending.finish(sent);
         }
@@ -522,7 +559,7 @@ impl CallosumSocketConnection {
         let pending = self
             .brain_startup
             .as_ref()
-            .and_then(|capture| capture.prepare(&envelope));
+            .and_then(|capture| capture.prepare(&envelope, None));
         let sent = match self.outbound.try_send(envelope) {
             Ok(()) => true,
             Err(mpsc::error::TrySendError::Full(_)) => {
@@ -711,6 +748,110 @@ pub(super) fn diagnostic_fixture_with_startup_capture(
 mod diagnostic_tests {
     use super::*;
     use serde_json::json;
+
+    fn private_fixture() -> super::super::PrivateProofReceive {
+        super::super::PrivateProofReceive::encode(&json!({
+            "destination":"[ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff%4294967295]:65535",
+            "ordinal":8,"attempted":8,"stage":"complete","category":"channel_state",
+            "header_bytes":16384,"body_bytes":8388608,"declared_body_bytes":8388608,
+            "branch":"buffered_before_tls_failure","saw_eof":true,"tls_failed":true,"close_observed":true
+        }))
+    }
+    fn publication_fields() -> Map<String, Value> {
+        serde_json::from_value(json!({"observation_id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "caller":"generate","phase":"runtime_establish","outcome":"published",
+            "revision":9007199254740991u64,"reason_code":"attestation_rejected",
+            "verification_reason":"proof_http_channel_state","runtime_failure_marker":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"})).unwrap()
+    }
+    fn next_capture(
+        capture: &BrainStartupCapture,
+        cursor: &mut super::super::BrainStartupCursor,
+    ) -> super::super::BrainStartupEvent {
+        use std::future::Future;
+        let mut future = Box::pin(capture.next(cursor));
+        let mut cx = std::task::Context::from_waker(std::task::Waker::noop());
+        match future.as_mut().poll(&mut cx) {
+            std::task::Poll::Ready(Some(event)) => event,
+            _ => panic!("capture event expected"),
+        }
+    }
+
+    #[test]
+    fn private_sidecar_keeps_both_real_send_gaps_pending_and_bus_bytes_unchanged() {
+        let proof = private_fixture();
+        let fields = publication_fields();
+        let (ordinary, mut ordinary_rx) = diagnostic_fixture(128);
+        assert!(ordinary.emit("supervisor", "brain_observation", fields.clone()));
+        let original =
+            super::super::frame::encode_envelope(&ordinary_rx.try_recv().unwrap()).unwrap();
+        let capture = BrainStartupCapture::new();
+        let (emitter, mut receiver) =
+            diagnostic_fixture_with_startup_capture(128, Arc::clone(&capture));
+        let mut events = Vec::new();
+        let mut stages = Vec::new();
+        let sent = emitter.emit_prepared(
+            "supervisor",
+            "brain_observation",
+            fields.clone(),
+            Some(&proof),
+            Some(&mut |stage| {
+                stages.push(stage);
+                let event =
+                    next_capture(&capture, &mut super::super::BrainStartupCursor::default());
+                let marker: Value = serde_json::from_str(&event.data).unwrap();
+                assert_eq!(marker["coverage"], "pending");
+                assert_eq!(marker["pending"], 1);
+                events.push(json!({"name":event.name,"data":event.data}));
+            }),
+        );
+        assert!(sent);
+        assert_eq!(stages, vec![0, 1]);
+        let received = receiver.try_recv().unwrap();
+        assert_eq!(
+            super::super::frame::encode_envelope(&received).unwrap(),
+            original
+        );
+        assert!(!received.extra.contains_key("proof_receive"));
+        assert!(receiver.try_recv().is_err());
+        let mut cursor = super::super::BrainStartupCursor::default();
+        let event = next_capture(&capture, &mut cursor);
+        let row: Value = serde_json::from_str(&event.data).unwrap();
+        let row_bytes = serde_json::to_vec(&row["row"]).unwrap();
+        assert!(row_bytes.len() <= 1024);
+        assert_eq!(row["row"]["proof_receive"]["ordinal"], 8);
+        events.push(json!({"name":event.name,"data":event.data}));
+        let event = next_capture(&capture, &mut cursor);
+        let marker: Value = serde_json::from_str(&event.data).unwrap();
+        assert_eq!(marker["coverage"], "complete");
+        events.push(json!({"name":event.name,"data":event.data}));
+        println!(
+            "PROOF_CAPTURE_WIRE={}",
+            json!({"events":events,"ordinary":String::from_utf8(original).unwrap(),"row_bytes":row_bytes.len()})
+        );
+        // Capture absence and invalid private evidence cannot change the actual send.
+        let (absent, mut rx) = diagnostic_fixture(128);
+        assert!(absent.emit_with_private(
+            "supervisor",
+            "brain_observation",
+            fields.clone(),
+            Some(&proof)
+        ));
+        assert_eq!(
+            serde_json::to_value(rx.try_recv().unwrap()).unwrap(),
+            serde_json::to_value(received).unwrap()
+        );
+        let malformed =
+            super::super::PrivateProofReceive::encode(&json!({"arbitrary":"must not escape"}));
+        let lost = BrainStartupCapture::new();
+        let (bad, mut rx) = diagnostic_fixture_with_startup_capture(128, Arc::clone(&lost));
+        assert!(bad.emit_with_private("supervisor", "brain_observation", fields, Some(&malformed)));
+        assert!(rx.try_recv().is_ok());
+        let event = next_capture(&lost, &mut super::super::BrainStartupCursor::default());
+        assert_eq!(
+            serde_json::from_str::<Value>(&event.data).unwrap()["coverage"],
+            "incomplete"
+        );
+    }
 
     #[test]
     fn diagnostic_headroom_preserves_original_batches_defaults_and_drop_accounting() {

@@ -3,6 +3,8 @@
 
 //! Read-only projection of journal/health/brain.json.
 
+pub use solstone_core_callosum::PrivateProofReceive;
+
 mod credential_hold;
 mod fingerprint;
 mod fixture;

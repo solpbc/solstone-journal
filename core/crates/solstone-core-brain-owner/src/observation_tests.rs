@@ -65,6 +65,7 @@ fn runtime_refusal(
         sink,
         caller,
         ObservationPhase::RuntimeEstablish,
+        None,
     );
 }
 

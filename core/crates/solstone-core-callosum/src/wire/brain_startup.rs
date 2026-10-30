@@ -24,6 +24,157 @@ const OVERFLOW: u64 = 8;
 const MALFORMED: u64 = 16;
 const IDENTITY: u64 = 32;
 
+/// Capture-only encoded fixed metadata. Never part of an ordinary envelope.
+#[derive(Clone)]
+pub struct PrivateProofReceive {
+    bytes: [u8; 512],
+    len: Option<usize>,
+}
+impl PrivateProofReceive {
+    /// Encoding failure remains a present, invalid observation, so it cannot
+    /// silently turn a lost summary into complete private evidence.
+    pub fn encode(summary: &impl Serialize) -> Self {
+        let mut fixed = FixedRow {
+            bytes: [0; ROW_BYTES],
+            len: 0,
+        };
+        let encoded = serde_json::to_writer(&mut fixed, summary).is_ok() && fixed.len <= 512;
+        let mut result = Self {
+            bytes: [0; 512],
+            len: encoded.then_some(fixed.len),
+        };
+        if encoded {
+            result.bytes[..fixed.len].copy_from_slice(&fixed.bytes[..fixed.len]);
+        }
+        result
+    }
+
+    fn value(&self) -> Option<Value> {
+        let value: Value = serde_json::from_slice(&self.bytes[..self.len?]).ok()?;
+        valid_proof_receive(&value).then_some(value)
+    }
+}
+
+fn valid_proof_receive(value: &Value) -> bool {
+    let Some(fields) = value.as_object() else {
+        return false;
+    };
+    let schema: Value = serde_json::from_str(include_str!(
+        "../../../../fixtures/proof_receive_schema.json"
+    ))
+    .expect("generated private proof schema");
+    let required = schema["required"].as_array().expect("required fields");
+    let optional = schema["optional"].as_array().expect("optional fields");
+    if !required
+        .iter()
+        .all(|key| fields.contains_key(key.as_str().unwrap()))
+        || !fields.keys().all(|key| {
+            required
+                .iter()
+                .chain(optional)
+                .any(|k| k.as_str() == Some(key))
+        })
+    {
+        return false;
+    }
+    if !value["destination"]
+        .as_str()
+        .is_some_and(|s| s.len() <= 65 && s.parse::<std::net::SocketAddr>().is_ok())
+    {
+        return false;
+    }
+    for (key, choices) in schema["enums"].as_object().unwrap() {
+        if !choices.as_array().unwrap().contains(&value[key]) {
+            return false;
+        }
+    }
+    for key in ["saw_eof", "tls_failed", "close_observed"] {
+        if !value[key].is_boolean() {
+            return false;
+        }
+    }
+    let Some(ordinal) = value["ordinal"].as_u64() else {
+        return false;
+    };
+    let Some(attempted) = value["attempted"].as_u64() else {
+        return false;
+    };
+    if ordinal == 0
+        || ordinal > attempted
+        || attempted > schema["limits"]["attempted"].as_u64().unwrap()
+    {
+        return false;
+    }
+    for key in ["header_bytes", "body_bytes", "declared_body_bytes"] {
+        if let Some(v) = fields.get(key)
+            && !v
+                .as_u64()
+                .is_some_and(|n| n <= schema["limits"][key].as_u64().unwrap())
+        {
+            return false;
+        }
+    }
+    if !schema["stage_categories"][value["stage"].as_str().unwrap()]
+        .as_array()
+        .unwrap()
+        .contains(&value["category"])
+    {
+        return false;
+    }
+    if let Some(flag) = schema["branch_flags"]
+        .get(value["branch"].as_str().unwrap())
+        .and_then(Value::as_str)
+        && value[flag] != true
+    {
+        return false;
+    }
+    if let (Some(body), Some(declared)) = (
+        value["body_bytes"].as_u64(),
+        value["declared_body_bytes"].as_u64(),
+    ) && body > declared
+        && value["category"] != "framing"
+    {
+        return false;
+    }
+    if schema["complete_branches"]
+        .as_array()
+        .unwrap()
+        .contains(&value["branch"])
+        && value["stage"] != "complete"
+    {
+        return false;
+    }
+    let header = fields.get("header_bytes").and_then(Value::as_u64);
+    let body = fields.get("body_bytes").and_then(Value::as_u64);
+    let declared = fields.get("declared_body_bytes").and_then(Value::as_u64);
+    match value["stage"].as_str() {
+        Some("before_receive") => {
+            header.is_none()
+                && body.is_none()
+                && declared.is_none()
+                && value["category"] == "before_receive"
+                && value["branch"] == "unknown"
+                && value["saw_eof"] == false
+                && value["tls_failed"] == false
+                && value["close_observed"] == false
+        }
+        Some("headers") => {
+            header.is_some()
+                && body.is_none()
+                && declared.is_none()
+                && value["category"] != "before_receive"
+        }
+        Some("body" | "complete") => {
+            header.is_some_and(|n| n >= 4)
+                && body.is_some()
+                && declared.is_some()
+                && (value["stage"] != "complete" || body == declared)
+                && value["category"] != "before_receive"
+        }
+        _ => false,
+    }
+}
+
 // One monotonic reservation charges both limits. Readers never own writer state.
 const BYTE_BITS: u32 = 17;
 const BYTE_MASK: u64 = (1 << BYTE_BITS) - 1;
@@ -155,12 +306,16 @@ impl BrainStartupCapture {
         self.changed.notify_waiters();
     }
 
-    pub(super) fn prepare(self: &Arc<Self>, row: &CallosumEnvelope) -> Option<Pending> {
+    pub(super) fn prepare(
+        self: &Arc<Self>,
+        row: &CallosumEnvelope,
+        proof: Option<&PrivateProofReceive>,
+    ) -> Option<Pending> {
         if !selected(row) {
             return None;
         }
         self.pending.fetch_add(1, Ordering::AcqRel);
-        let data = match project(row) {
+        let data = match project(row, proof) {
             Some(data) => Some(data),
             None => {
                 self.invalidate(MALFORMED);
@@ -379,7 +534,7 @@ const FIELDS: &[&str] = &[
     "active_ref",
 ];
 
-struct Selected<'a>(&'a CallosumEnvelope);
+struct Selected<'a>(&'a CallosumEnvelope, Option<&'a Value>);
 impl Serialize for Selected<'_> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let mut map = serializer.serialize_map(None)?;
@@ -389,6 +544,9 @@ impl Serialize for Selected<'_> {
             if let Some(value) = self.0.extra.get(*key) {
                 map.serialize_entry(key, value)?;
             }
+        }
+        if let Some(proof) = self.1 {
+            map.serialize_entry("proof_receive", proof)?;
         }
         map.end()
     }
@@ -412,7 +570,43 @@ impl Write for FixedRow {
     }
 }
 
-fn project(row: &CallosumEnvelope) -> Option<FixedRow> {
+fn project(row: &CallosumEnvelope, proof: Option<&PrivateProofReceive>) -> Option<FixedRow> {
+    let proof = match proof {
+        Some(proof) => {
+            if row.event != "brain_observation"
+                || row.extra.get("caller")?.as_str()? != "generate"
+                || row.extra.get("phase")?.as_str()? != "runtime_establish"
+                || !matches!(
+                    row.extra.get("outcome")?.as_str()?,
+                    "published" | "unchanged" | "refused" | "publication_uncertain"
+                )
+            {
+                return None;
+            }
+            let value = proof.value()?;
+            let schema: Value = serde_json::from_str(include_str!(
+                "../../../../fixtures/proof_receive_schema.json"
+            ))
+            .ok()?;
+            if let Some(expected) = schema["category_reasons"]
+                .get(value["category"].as_str()?)
+                .and_then(Value::as_str)
+            {
+                let verification = row.extra.get("verification_reason").and_then(Value::as_str);
+                let reason = row.extra.get("reason_code").and_then(Value::as_str);
+                if verification.is_some_and(|r| r != expected)
+                    || reason.is_some_and(|r| r != "attestation_rejected")
+                    || (row.extra.get("outcome")?.as_str()? == "published"
+                        && (verification != Some(expected)
+                            || reason != Some("attestation_rejected")))
+                {
+                    return None;
+                }
+            }
+            Some(value)
+        }
+        None => None,
+    };
     if !opaque(row.extra.get("observation_id")?) {
         return None;
     }
@@ -471,7 +665,7 @@ fn project(row: &CallosumEnvelope) -> Option<FixedRow> {
         bytes: [0; ROW_BYTES],
         len: 0,
     };
-    serde_json::to_writer(&mut data, &Selected(row)).ok()?;
+    serde_json::to_writer(&mut data, &Selected(row, proof.as_ref())).ok()?;
     Some(data)
 }
 
@@ -488,11 +682,115 @@ mod tests {
     fn take(capture: &BrainStartupCapture, cursor: &mut BrainStartupCursor) -> Value {
         serde_json::from_str(&capture.try_next(cursor).unwrap().data).unwrap()
     }
+    #[test]
+    fn private_proof_rejects_conflicts_and_keeps_existing_loss_limits() {
+        let base = serde_json::json!({"destination":"127.0.0.1:443","ordinal":1,"attempted":2,
+            "stage":"body","category":"response_body_eof","header_bytes":64,"body_bytes":2,
+            "declared_body_bytes":3,"branch":"mapped_unexpected_eof","saw_eof":true,"tls_failed":false,"close_observed":false});
+        assert!(valid_proof_receive(&base));
+        for (key, value) in [
+            ("ordinal", json!(3)),
+            ("attempted", json!(9)),
+            ("destination", json!("service.example:443")),
+            ("header_bytes", json!(16385)),
+            ("body_bytes", json!(8388609)),
+            ("stage", json!("complete")),
+            ("branch", json!("trailing_reset")),
+            ("category", json!("response_eof")),
+            ("saw_eof", json!(false)),
+            ("secret", json!("not allowed")),
+        ] {
+            let mut bad = base.clone();
+            bad[key] = value;
+            assert!(!valid_proof_receive(&bad), "{key}");
+        }
+        let make_row = || {
+            serde_json::from_value::<CallosumEnvelope>(json!({"tract":"supervisor","event":"brain_observation",
+            "observation_id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","caller":"generate","phase":"runtime_establish","outcome":"unchanged"})).unwrap()
+        };
+        let proof = PrivateProofReceive::encode(&base);
+        let capture = BrainStartupCapture::new();
+        for _ in 0..=ROWS {
+            capture
+                .prepare(&make_row(), Some(&proof))
+                .unwrap()
+                .finish(true);
+        }
+        let mut cursor = BrainStartupCursor::default();
+        let mut retained = 0;
+        loop {
+            let event = take(&capture, &mut cursor);
+            if event.get("coverage").is_some() {
+                assert_eq!(event["coverage"], "incomplete");
+                break;
+            }
+            retained += 1;
+        }
+        assert!(retained > 0 && retained <= ROWS);
+        let closed = BrainStartupCapture::new();
+        let pending = closed.prepare(&make_row(), Some(&proof)).unwrap();
+        closed.close();
+        pending.finish(true);
+        assert_eq!(
+            take(&closed, &mut BrainStartupCursor::default())["coverage"],
+            "closed"
+        );
+        let mut wrong = make_row();
+        wrong.extra.insert("caller".into(), json!("mobile_renewal"));
+        assert!(project(&wrong, Some(&proof)).is_none());
+        let too_large = PrivateProofReceive::encode(&json!({"secret":"x".repeat(2048)}));
+        assert!(too_large.value().is_none());
+    }
+
+    #[test]
+    fn private_proof_reason_binding_and_all_closed_publication_row_bounds() {
+        let base = json!({"destination":"[ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff%4294967295]:65535","ordinal":8,"attempted":8,
+            "stage":"complete","category":"channel_state","header_bytes":16384,"body_bytes":8388608,"declared_body_bytes":8388608,
+            "branch":"buffered_before_tls_failure","saw_eof":false,"tls_failed":true,"close_observed":false});
+        let mut row:CallosumEnvelope=serde_json::from_value(json!({"tract":"supervisor","event":"brain_observation",
+            "observation_id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","caller":"generate","phase":"runtime_establish","outcome":"published",
+            "revision":9007199254740991u64,"runtime_failure_marker":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "reason_code":"attestation_rejected","verification_reason":"proof_http_eof"})).unwrap();
+        let proof = PrivateProofReceive::encode(&base);
+        for outcome in ["published", "unchanged", "refused", "publication_uncertain"] {
+            row.extra.insert("outcome".into(), json!(outcome));
+            assert!(project(&row, Some(&proof)).is_none(), "{outcome}");
+        }
+        row.extra.remove("verification_reason");
+        row.extra.remove("reason_code");
+        assert!(project(&row, Some(&proof)).is_some());
+        row.extra.insert("outcome".into(), json!("published"));
+        assert!(project(&row, Some(&proof)).is_none());
+        let mut summary = base;
+        summary["category"] = json!("proof_rejected");
+        let proof = PrivateProofReceive::encode(&summary);
+        row.extra
+            .insert("reason_code".into(), json!("attestation_rejected"));
+        let mut max = 0;
+        let mut cases = 0;
+        for line in include_str!("../../../../fixtures/brain_observation_vocabulary.tsv").lines() {
+            if let Some(("verification_reason", reason)) = line.split_once('\t') {
+                row.extra
+                    .insert("verification_reason".into(), json!(reason));
+                let data = project(&row, Some(&proof))
+                    .expect("every closed reason fits a maximal private publication");
+                max = max.max(data.len);
+                cases += 1;
+            }
+        }
+        assert!(cases > 0 && max <= ROW_BYTES);
+        println!(
+            "PROOF_ROW_BOUND={}",
+            json!({"cases":cases,"max_bytes":max,"limit":ROW_BYTES,
+            "construction":"Every verification_reason in exact brain_observation_vocabulary.tsv, maximal numeric IPv6/ordinal/count/header/body/length/publication IDs/revision and longest allowed terminal branch; conservative allowed combinations."})
+        );
+    }
+
     #[tokio::test]
     async fn unresolved_slot_resumes_without_another_emission() {
         let capture = BrainStartupCapture::new();
         let mut first = reserved(&capture, "started");
-        capture.prepare(&row("stopped")).unwrap().finish(true);
+        capture.prepare(&row("stopped"), None).unwrap().finish(true);
         let mut cursor = BrainStartupCursor::default();
         assert_eq!(take(&capture, &mut cursor)["coverage"], "pending");
         let mut next = Box::pin(capture.next(&mut cursor));
@@ -513,11 +811,11 @@ mod tests {
     }
 
     fn projected(event: &str) -> Vec<u8> {
-        let data = project(&row(event)).unwrap();
+        let data = project(&row(event), None).unwrap();
         data.bytes[..data.len].to_vec()
     }
     fn reserved(capture: &Arc<BrainStartupCapture>, event: &str) -> Pending {
-        let mut pending = capture.prepare(&row(event)).unwrap();
+        let mut pending = capture.prepare(&row(event), None).unwrap();
         pending.reservation = capture.prefix.reserve(pending.data.take().unwrap().len);
         assert!(pending.reservation.is_some());
         pending
@@ -526,7 +824,7 @@ mod tests {
     async fn failed_reservation_wakes_reader_and_does_not_count_as_a_row() {
         let capture = BrainStartupCapture::new();
         let first = reserved(&capture, "started");
-        capture.prepare(&row("stopped")).unwrap().finish(true);
+        capture.prepare(&row("stopped"), None).unwrap().finish(true);
         let mut cursor = BrainStartupCursor::default();
         assert_eq!(take(&capture, &mut cursor)["coverage"], "pending");
         let mut next = Box::pin(capture.next(&mut cursor));
@@ -546,7 +844,7 @@ mod tests {
     #[test]
     fn settled_marker_rechecks_the_horizon_after_a_prepared_producer_finishes() {
         let capture = BrainStartupCapture::new();
-        let pending = capture.prepare(&row("started")).unwrap();
+        let pending = capture.prepare(&row("started"), None).unwrap();
         let mut cursor = BrainStartupCursor::default();
         assert_eq!(capture.prefix.horizon(), 0); // reader's first horizon sample
         pending.finish(true); // reserve/publish/release before marker samples pending
@@ -593,7 +891,7 @@ mod tests {
         assert_eq!(capture.prefix.reserved.load(Ordering::Acquire), state);
         assert_eq!(capture.pending.load(Ordering::Acquire), 0);
         assert!(capture.prefix.slots[0].get().unwrap().is_none());
-        capture.prepare(&row("stopped")).unwrap().finish(true);
+        capture.prepare(&row("stopped"), None).unwrap().finish(true);
         let mut cursor = BrainStartupCursor::default();
         assert_eq!(take(&capture, &mut cursor)["sequence"], 1);
         assert_eq!(
@@ -605,12 +903,12 @@ mod tests {
     fn delayed_cursor_and_pending_send_have_distinct_watermarks() {
         let capture = BrainStartupCapture::new();
         let mut cursor = BrainStartupCursor::default();
-        let pending = capture.prepare(&row("started")).unwrap();
+        let pending = capture.prepare(&row("started"), None).unwrap();
         assert_eq!(take(&capture, &mut cursor)["coverage"], "pending");
         pending.finish(true);
         assert_eq!(take(&capture, &mut cursor)["sequence"], 1);
         assert_eq!(take(&capture, &mut cursor)["coverage"], "complete");
-        let pending = capture.prepare(&row("stopped")).unwrap();
+        let pending = capture.prepare(&row("stopped"), None).unwrap();
         let unresolved = take(&capture, &mut cursor);
         assert_eq!(unresolved["through"], 1);
         assert_eq!(unresolved["coverage"], "pending");
@@ -633,8 +931,8 @@ mod tests {
             let capture = BrainStartupCapture::new();
             let mut bad = row("started");
             bad.extra.insert(key.into(), value);
-            capture.prepare(&bad).unwrap().finish(true);
-            capture.prepare(&row("started")).unwrap().finish(true);
+            capture.prepare(&bad, None).unwrap().finish(true);
+            capture.prepare(&row("started"), None).unwrap().finish(true);
             assert_eq!(capture.prefix.horizon(), 1);
             assert!(
                 !String::from_utf8_lossy(capture.prefix.slots[0].get().unwrap().as_ref().unwrap())
@@ -660,13 +958,16 @@ mod tests {
     #[test]
     fn send_loss_overflow_and_unavailable_never_recover_to_complete() {
         let capture = BrainStartupCapture::new();
-        capture.prepare(&row("started")).unwrap().finish(false);
+        capture
+            .prepare(&row("started"), None)
+            .unwrap()
+            .finish(false);
         let mut cursor = BrainStartupCursor::default();
         assert_eq!(take(&capture, &mut cursor)["sequence"], 1);
         assert_eq!(take(&capture, &mut cursor)["coverage"], "incomplete");
         let capture = BrainStartupCapture::new();
         for _ in 0..129 {
-            capture.prepare(&row("started")).unwrap().finish(true);
+            capture.prepare(&row("started"), None).unwrap().finish(true);
         }
         assert_eq!(capture.prefix.horizon(), 128);
         assert!(capture.prefix.reserved.load(Ordering::Acquire) & BYTE_MASK <= BYTES as u64);
@@ -675,7 +976,7 @@ mod tests {
             BrainStartupCapture::with_generation(None, false),
             BrainStartupCapture::with_generation(Some("a".repeat(32)), true),
         ] {
-            capture.prepare(&row("started")).unwrap().finish(true);
+            capture.prepare(&row("started"), None).unwrap().finish(true);
             let mut cursor = BrainStartupCursor::default();
             assert_eq!(take(&capture, &mut cursor)["coverage"], "unavailable");
         }
@@ -683,7 +984,7 @@ mod tests {
     #[test]
     fn close_supersedes_undelivered_rows_and_new_runtime_has_its_own_identity() {
         let capture = BrainStartupCapture::new();
-        capture.prepare(&row("started")).unwrap().finish(true);
+        capture.prepare(&row("started"), None).unwrap().finish(true);
         capture.close();
         let mut cursor = BrainStartupCursor::default();
         assert_eq!(take(&capture, &mut cursor)["coverage"], "closed");
@@ -701,14 +1002,14 @@ mod tests {
             .extra
             .insert("revision".into(), json!(9_007_199_254_740_991_u64));
         original.extra.insert("secret".into(), json!("excluded"));
-        let projection = project(&original).unwrap();
+        let projection = project(&original, None).unwrap();
         let value: Value = serde_json::from_slice(&projection.bytes[..projection.len]).unwrap();
         assert_eq!(value["revision"], 9_007_199_254_740_991_u64);
         assert!(value.get("secret").is_none());
         original
             .extra
             .insert("revision".into(), json!(9_007_199_254_740_992_u64));
-        assert!(project(&original).is_none());
+        assert!(project(&original, None).is_none());
     }
     #[tokio::test]
     async fn cursor_notification_and_closure_cover_the_handoff() {
@@ -721,7 +1022,7 @@ mod tests {
                 .await
                 .is_pending()
         );
-        capture.prepare(&row("started")).unwrap().finish(true);
+        capture.prepare(&row("started"), None).unwrap().finish(true);
         assert_eq!(next.await.unwrap().name, "brain_startup");
         assert_eq!(take(&capture, &mut cursor)["coverage"], "complete");
         let mut next = Box::pin(capture.next(&mut cursor));
@@ -740,7 +1041,7 @@ mod tests {
             .prefix
             .reserved
             .store((BYTES - 1) as u64, Ordering::Release);
-        capture.prepare(&row("started")).unwrap().finish(true);
+        capture.prepare(&row("started"), None).unwrap().finish(true);
         assert_eq!(capture.prefix.horizon(), 0);
         assert_ne!(capture.loss.load(Ordering::Acquire) & OVERFLOW, 0);
         let capture = BrainStartupCapture::new();

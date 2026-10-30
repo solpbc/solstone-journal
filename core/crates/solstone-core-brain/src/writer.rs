@@ -2844,6 +2844,7 @@ pub fn record_confidential_attestation_refusal(
         None,
         RuntimeRefusalCaller::Generate,
         crate::ObservationPhase::RuntimeEstablish,
+        None,
     );
 }
 
@@ -2855,6 +2856,7 @@ pub fn record_confidential_attestation_refusal_observed(
     sink: Option<&crate::BrainObservationSink>,
     caller: RuntimeRefusalCaller,
     phase: crate::ObservationPhase,
+    private_proof: Option<solstone_core_callosum::PrivateProofReceive>,
 ) {
     let observation = sink.and_then(|sink| {
         sink.begin(match caller {
@@ -2863,7 +2865,8 @@ pub fn record_confidential_attestation_refusal_observed(
         })
     });
     let result = confidential_refusal_result(journal_path, held_config, raw_reason);
-    if let Some(observation) = observation {
+    if let Some(mut observation) = observation {
+        observation.private_proof = private_proof;
         match result {
             RefusalObservation::Published(record) => observation.publication(phase, &record),
             RefusalObservation::Unchanged => {

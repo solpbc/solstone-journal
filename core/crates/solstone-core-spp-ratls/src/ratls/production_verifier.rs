@@ -415,9 +415,7 @@ pub fn establish_production_attested_channel_with_clock(
     let mut owner_nonce = [0u8; 32];
     SystemRandom::new()
         .fill(&mut owner_nonce)
-        .map_err(|_| RatlsChannelError {
-            reason_code: "nonce_generation_failed",
-        })?;
+        .map_err(|_| RatlsChannelError::new("nonce_generation_failed"))?;
     let policy = production_policy();
     let verifier = ProductionCompositeVerifier::new(nvattest_dir.to_path_buf());
     establish_attested_channel_with_clock(
@@ -450,15 +448,11 @@ pub fn establish_production_attested_channel_with_clock(
         let _ = _nvattest_dir;
         crate::ratls::channel::refuse_held_platform(std::env::consts::OS)?;
         let admitted = solstone_core_spp_attest::android_service_tools::admitted_android_verifier()
-            .map_err(|_| RatlsChannelError {
-                reason_code: android_channel_reason(),
-            })?;
+            .map_err(|_| RatlsChannelError::new(android_channel_reason()))?;
         let mut owner_nonce = [0u8; 32];
         SystemRandom::new()
             .fill(&mut owner_nonce)
-            .map_err(|_| RatlsChannelError {
-                reason_code: "nonce_generation_failed",
-            })?;
+            .map_err(|_| RatlsChannelError::new("nonce_generation_failed"))?;
         let policy = production_policy();
         let installation = solstone_core_spp_attest::NvattestInstallation {
             binary: admitted.binary,
@@ -491,19 +485,15 @@ pub fn establish_production_attested_channel_with_clock(
                     solstone_core_spp_attest::ios_service_tools::ios_verifier_refusal_reason(
                         &refusal,
                     );
-                RatlsChannelError { reason_code }
+                RatlsChannelError::new(reason_code)
             })?;
         if solstone_core_spp_attest::ios_appraisal::get_ios_gpu_appraisal_callback().is_none() {
-            return Err(RatlsChannelError {
-                reason_code: "nvattest_unavailable",
-            });
+            return Err(RatlsChannelError::new("nvattest_unavailable"));
         }
         let mut owner_nonce = [0u8; 32];
         SystemRandom::new()
             .fill(&mut owner_nonce)
-            .map_err(|_| RatlsChannelError {
-                reason_code: "nonce_generation_failed",
-            })?;
+            .map_err(|_| RatlsChannelError::new("nonce_generation_failed"))?;
         let policy = production_policy();
         let verifier = ProductionCompositeVerifier::ios_admitted();
         return establish_attested_channel_with_clock(
@@ -523,18 +513,15 @@ pub fn establish_production_attested_channel_with_clock(
 
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     {
-        let current_exe = std::env::current_exe().map_err(|_| RatlsChannelError {
-            reason_code: "nvattest_unavailable",
-        })?;
+        let current_exe =
+            std::env::current_exe().map_err(|_| RatlsChannelError::new("nvattest_unavailable"))?;
         let root = solstone_core_installed_payload::locate_installed_package(
             &current_exe,
             solstone_core_installed_payload::host_executable_platform(),
         )
         .map_err(|refusal| {
             let mapped = crate::installed::refusal_for_installed_payload(&refusal);
-            RatlsChannelError {
-                reason_code: mapped.failure.reason_code,
-            }
+            RatlsChannelError::new(mapped.failure.reason_code)
         })?;
         let package = solstone_core_installed_payload::InstalledPackage::admit(
             &root,
@@ -543,9 +530,7 @@ pub fn establish_production_attested_channel_with_clock(
         )
         .map_err(|refusal| {
             let mapped = crate::installed::refusal_for_installed_payload(&refusal);
-            RatlsChannelError {
-                reason_code: mapped.failure.reason_code,
-            }
+            RatlsChannelError::new(mapped.failure.reason_code)
         })?;
 
         establish_production_attested_channel_in_package_with_clock(
@@ -587,9 +572,7 @@ pub fn establish_production_attested_channel_in_package_with_clock(
     let mut owner_nonce = [0u8; 32];
     SystemRandom::new()
         .fill(&mut owner_nonce)
-        .map_err(|_| RatlsChannelError {
-            reason_code: "nonce_generation_failed",
-        })?;
+        .map_err(|_| RatlsChannelError::new("nonce_generation_failed"))?;
     let policy = production_policy();
     let verifier = ProductionCompositeVerifier::in_package(package.clone());
     let dummy_dir = Path::new("");
@@ -617,9 +600,7 @@ pub fn establish_production_attested_channel_in_package_with_clock(
     _clock: &dyn AdmissionClock,
 ) -> Result<AttestedChannel, RatlsChannelError> {
     crate::ratls::channel::refuse_held_platform(std::env::consts::OS)?;
-    Err(RatlsChannelError {
-        reason_code: "nvattest_unavailable",
-    })
+    Err(RatlsChannelError::new("nvattest_unavailable"))
 }
 
 fn cpu_error(error: CpuLegError) -> CompositeVerificationError {

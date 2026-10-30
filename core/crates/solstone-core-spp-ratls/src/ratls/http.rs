@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use crate::proof_receive::{ReceiveCategory, ReceiveProgress, ReceiveStage};
 use std::io::{ErrorKind, Read, Write};
 
 pub const MAX_PROOF_RESPONSE_HEADERS: usize = 16 * 1024;
@@ -92,6 +93,47 @@ pub fn recv_bounded_http_response<R: Read + ?Sized>(
     max_headers: usize,
     max_body: usize,
 ) -> Result<BoundedHttpResponse, BoundedHttpError> {
+    recv_bounded_http_response_observed(stream, max_headers, max_body, None)
+}
+
+pub(crate) fn recv_bounded_http_response_observed<R: Read + ?Sized>(
+    stream: &mut R,
+    max_headers: usize,
+    max_body: usize,
+    mut progress: Option<&mut ReceiveProgress>,
+) -> Result<BoundedHttpResponse, BoundedHttpError> {
+    if let Some(p) = progress.as_deref_mut() {
+        *p = ReceiveProgress {
+            stage: ReceiveStage::Headers,
+            category: ReceiveCategory::Framing,
+            header_bytes: Some(0),
+            body_bytes: None,
+            declared_body_bytes: None,
+        };
+    }
+    let result = recv_response(stream, max_headers, max_body, &mut progress);
+    if let (Some(p), Err(error)) = (progress, &result) {
+        p.category = match error {
+            BoundedHttpError::Transport(e) => match e.kind() {
+                ErrorKind::UnexpectedEof => ReceiveCategory::IoUnexpectedEof,
+                ErrorKind::TimedOut | ErrorKind::WouldBlock => ReceiveCategory::Timeout,
+                ErrorKind::ConnectionReset | ErrorKind::ConnectionAborted => ReceiveCategory::Reset,
+                _ => ReceiveCategory::IoOther,
+            },
+            BoundedHttpError::Protocol("response_eof") => ReceiveCategory::ResponseEof,
+            BoundedHttpError::Protocol("response_body_eof") => ReceiveCategory::ResponseBodyEof,
+            BoundedHttpError::Protocol(_) => ReceiveCategory::Framing,
+        };
+    }
+    result
+}
+
+fn recv_response<R: Read + ?Sized>(
+    stream: &mut R,
+    max_headers: usize,
+    max_body: usize,
+    progress: &mut Option<&mut ReceiveProgress>,
+) -> Result<BoundedHttpResponse, BoundedHttpError> {
     let mut data = Vec::new();
     let marker = b"\r\n\r\n";
     while !data.windows(marker.len()).any(|window| window == marker) {
@@ -106,11 +148,17 @@ pub fn recv_bounded_http_response<R: Read + ?Sized>(
             return Err(BoundedHttpError::Protocol("response_eof"));
         }
         data.extend_from_slice(&buffer[..count]);
+        if let Some(p) = progress.as_deref_mut() {
+            p.header_bytes = Some(data.len());
+        }
     }
     let split = data
         .windows(marker.len())
         .position(|window| window == marker)
         .expect("marker present");
+    if let Some(p) = progress.as_deref_mut() {
+        p.header_bytes = Some(split + marker.len());
+    }
     let (head, remainder) = data.split_at(split);
     let mut body = remainder[marker.len()..].to_vec();
     let lines = http_header_lines(head).map_err(BoundedHttpError::Protocol)?;
@@ -151,6 +199,11 @@ pub fn recv_bounded_http_response<R: Read + ?Sized>(
             .ok_or(BoundedHttpError::Protocol(
                 "response_content_length_invalid",
             ))?;
+    if let Some(p) = progress.as_deref_mut() {
+        p.stage = ReceiveStage::Body;
+        p.body_bytes = Some(body.len());
+        p.declared_body_bytes = Some(length);
+    }
     if body.len() > length {
         return Err(BoundedHttpError::Protocol("response_surplus"));
     }
@@ -163,6 +216,13 @@ pub fn recv_bounded_http_response<R: Read + ?Sized>(
             return Err(BoundedHttpError::Protocol("response_body_eof"));
         }
         body.extend_from_slice(&buffer[..count]);
+        if let Some(p) = progress.as_deref_mut() {
+            p.body_bytes = Some(body.len());
+        }
+    }
+    if let Some(p) = progress.as_deref_mut() {
+        p.stage = ReceiveStage::Complete;
+        p.category = ReceiveCategory::ProofRejected;
     }
     Ok(BoundedHttpResponse {
         status_line,
