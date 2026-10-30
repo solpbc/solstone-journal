@@ -652,18 +652,9 @@ mod tests {
         )
         .expect("desktop staging");
         let temp = std::env::temp_dir();
-        assert_eq!(
-            staged.rim_dir().parent().unwrap().as_os_str(),
-            temp.as_os_str()
-        );
-        assert_eq!(
-            staged.evidence().parent().unwrap().as_os_str(),
-            temp.as_os_str()
-        );
-        assert_eq!(
-            staged.proof().parent().unwrap().as_os_str(),
-            temp.as_os_str()
-        );
+        assert_eq!(staged.rim_dir().parent().unwrap(), temp.as_path());
+        assert_eq!(staged.evidence().parent().unwrap(), temp.as_path());
+        assert_eq!(staged.proof().parent().unwrap(), temp.as_path());
         assert_eq!(fs::read(staged.proof()).unwrap(), proof);
         let rim = staged.rim_dir().to_path_buf();
         let evidence = staged.evidence().to_path_buf();
