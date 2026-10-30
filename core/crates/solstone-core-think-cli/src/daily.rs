@@ -2116,8 +2116,8 @@ mod tests {
                     publish_test_proposal(
                         &self.context.journal,
                         ["20260911", "20260912"][attempt],
-                        "Ada",
-                        "Ada Lovelace",
+                        "Marcus Feldhaus",
+                        "Marcus Feldhans",
                         ["first sibling rewrite", "second sibling rewrite"][attempt],
                     );
                 }
@@ -2216,18 +2216,34 @@ mod tests {
         std::fs::write(root.join("config/journal.json"),
             r#"{"identity":{"timezone":"UTC"},"providers":{"active":{"provider":"openai","model":"test-model"}}}"#).unwrap();
         solstone_core_facets::create_facet(root, "work", "Work", "", "", "", None).unwrap();
+        // A pair is asked only when both names are saved entities or today's candidates, and
+        // neither is the other plus words (4dfeaac17): "Ada"/"Ada Lovelace" is no longer asked.
+        for name in ["Marcus Feldhaus", "Marcus Feldhans"] {
+            let id = solstone_core_entity_matching::entity_slug(name);
+            solstone_core_entity::save_entity_identity(
+                root,
+                &id,
+                &json!({"id": id, "name": name, "type": "Person"}),
+                None,
+            )
+            .unwrap();
+        }
         for detection_day in ["20260908", "20260909"] {
             solstone_core_facets::upsert_detection_segment(
                 root,
                 "work",
                 detection_day,
                 "090000_300",
-                &["Ada", "Ada Lovelace", "Grace", "Grace Hopper"].map(|name| {
-                    solstone_core_facets::DetectedEntityInput {
-                        entity_type: "Person".into(),
-                        name: name.into(),
-                        description: "Collaborator".into(),
-                    }
+                &[
+                    "Marcus Feldhaus",
+                    "Marcus Feldhans",
+                    "Grace",
+                    "Grace Hopper",
+                ]
+                .map(|name| solstone_core_facets::DetectedEntityInput {
+                    entity_type: "Person".into(),
+                    name: name.into(),
+                    description: "Collaborator".into(),
                 }),
             )
             .unwrap();
@@ -2237,10 +2253,16 @@ mod tests {
         std::fs::write(segment.join("facets.json"), r#"[{"facet":"work"}]"#).unwrap();
         std::fs::write(
             segment.parent().unwrap().join("note_transcript.md"),
-            "Discussed Ada and Grace.",
+            "Discussed Marcus Feldhaus and Grace.",
         )
         .unwrap();
-        publish_test_proposal(root, "20260909", "Ada", "Ada Lovelace", "original");
+        publish_test_proposal(
+            root,
+            "20260909",
+            "Marcus Feldhaus",
+            "Marcus Feldhans",
+            "original",
+        );
         publish_test_proposal(root, "20260909", "Grace", "Grace Hopper", "unrelated");
         solstone_core_entity::dismiss_merge_candidate(root, "work", "grace", "grace_hopper")
             .unwrap()
@@ -2252,7 +2274,7 @@ mod tests {
         std::fs::write(apps.join("entities/talent/entities_review.md"),
             "{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"schedule\":\"daily\",\"priority\":56,\"output\":\"json\",\"multi_facet\":true,\"hook\":{\"pre\":\"entities:entities_review\",\"post\":\"entities:entities_review\"}\n}\nReview entities.").unwrap();
         let response = json!({"promotions":[], "merges":[{
-            "source":"Ada", "canonical":"Ada Lovelace", "evidence":"same person"
+            "source":"Marcus Feldhaus", "canonical":"Marcus Feldhans", "evidence":"same person"
         }]});
         std::fs::write(
             root.join("response.json"),
@@ -2349,7 +2371,10 @@ mod tests {
             &owner_row
         );
         assert_eq!(
-            rows.iter().find(|row| row["source_slug"] == "ada").unwrap()["evidence"]["summary"],
+            rows.iter()
+                .find(|row| row["source_slug"]
+                    == solstone_core_entity_matching::entity_slug("Marcus Feldhaus"))
+                .unwrap()["evidence"]["summary"],
             "same person"
         );
     }
