@@ -93,13 +93,17 @@
             }
           },
           "status": {
-            "type": "string",
+            "type": [
+              "string",
+              "null"
+            ],
             "enum": [
               "accepted",
               "declined",
               "tentative",
               "needs_action",
-              "unknown"
+              "unknown",
+              null
             ]
           },
           "recurrence": {

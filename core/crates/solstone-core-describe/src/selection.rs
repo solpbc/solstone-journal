@@ -123,6 +123,22 @@ pub fn select(
     if frames.len() == 1 {
         return Ok(finalize_selection(Vec::new(), frames, overrides));
     }
+    // When every frame worth reading, with the first-frame anchor, fits the
+    // extraction budget there is nothing to choose either: keep them all, under
+    // the rules a model answer gets.
+    let first = frames.iter().map(|frame| frame.frame_id).min();
+    let readable = frames
+        .iter()
+        .filter(|frame| {
+            let primary = frame.analysis.get("primary").and_then(Value::as_str);
+            Some(frame.frame_id) == first
+                || resolved_importance(primary, overrides) != Importance::Ignore
+        })
+        .map(|frame| frame.frame_id)
+        .collect::<Vec<_>>();
+    if readable.len() <= usize::try_from(max_extractions).unwrap_or(usize::MAX) {
+        return Ok(finalize_selection(readable, frames, overrides));
+    }
     let request = request(frames, max_extractions, overrides);
     session
         .submit(request)
@@ -681,7 +697,7 @@ mod tests {
             ("[3,5]", vec![1, 3, 5]),
         ] {
             assert_eq!(
-                select(&generated(response), &categorized, 5, &BTreeMap::new()).unwrap(),
+                select(&generated(response), &categorized, 4, &BTreeMap::new()).unwrap(),
                 expected,
                 "{response}"
             );
@@ -756,6 +772,22 @@ mod tests {
     }
 
     #[test]
+    fn frames_that_fit_the_budget_are_all_kept_without_a_model_call() {
+        // A short segment: browsing, social, a media frame, a game and an idle page.
+        let categorized = frames(&[
+            (1, 0.0, "browsing"),
+            (11, 5.0, "social"),
+            (121, 60.0, "media"),
+            (281, 140.0, "gaming"),
+            (421, 210.0, "browsing"),
+        ]);
+        assert_eq!(
+            select(&NoCall, &categorized, 20, &BTreeMap::new()).unwrap(),
+            vec![1, 11, 121, 421]
+        );
+    }
+
+    #[test]
     fn blocked_refusals_do_not_fall_back() {
         let categorized = frames(&[(1, 0.0, "reading"), (2, 1.0, "reading")]);
         for reply in [
@@ -763,7 +795,7 @@ mod tests {
             refused(RefusalReason::AttestationStale, true),
         ] {
             assert!(matches!(
-                select(&reply, &categorized, 5, &BTreeMap::new()),
+                select(&reply, &categorized, 1, &BTreeMap::new()),
                 Err(SelectionError::Blocked { .. })
             ));
         }

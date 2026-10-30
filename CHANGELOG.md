@@ -14,6 +14,9 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- the description of a calendar on your screen less often guesses whether you accepted or declined an event, and can now leave the response out when the calendar shows none.
+- the description of a code editor on your screen less often invents a conversation with an AI assistant.
+- when a stretch has few enough screens worth describing to cover them all, the screen description now covers every one, so a video or a call on screen only briefly is no longer skipped.
 - your journal now describes time in your browser by the pages you had in front of you. a video playing in a background tab, or a page left open behind another app, is mentioned as open rather than as something you watched or read, and what a page or video shows is now less often written as something you did.
 - summaries of recordings you import now credit what was said to whoever said it, by name when the recording gives one and as "a speaker" otherwise, and an unnamed speaker can be you. a summary now rarely says you discussed, planned or asked for what someone else said in one.
 - each stretch's screen description now rarely calls you "the user": it addresses you as "you" and calls the AI agent working for you "your agent".
