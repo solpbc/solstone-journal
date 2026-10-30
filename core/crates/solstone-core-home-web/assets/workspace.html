@@ -73,11 +73,9 @@
 
 .pulse-waiting-row a {
   color: var(--warn-ink);
-  text-decoration: none;
 }
 
 .pulse-waiting-row.red a { color: var(--danger); }
-.pulse-waiting-row a:hover { text-decoration: underline; }
 .pulse-waiting-row a:focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
@@ -789,11 +787,6 @@
 
 .pulse-empty-state .pulse-empty-message a {
   color: var(--orange-text-aa);
-  text-decoration: none;
-}
-
-.pulse-empty-state .pulse-empty-message a:hover {
-  text-decoration: underline;
 }
 
 .pulse-empty-state .pulse-empty-message a:focus-visible {
@@ -1039,11 +1032,21 @@
   align-items: center;
   gap: 0.75rem;
 }
-.week-row-source, .week-row-peek a, .week-nav a, .week-prev-repeat a, .week-said-link {
+.week-row-source,
+.week-row-peek a,
+.week-nav a,
+.week-prev-repeat a,
+.week-said-link {
   color: var(--orange-text-aa);
+}
+.week-row-source,
+.week-nav a,
+.week-prev-repeat a {
   text-decoration: none;
 }
-.week-row-source:hover, .week-row-peek a:hover, .week-nav a:hover, .week-prev-repeat a:hover, .week-said-link:hover {
+.week-row-source:hover,
+.week-nav a:hover,
+.week-prev-repeat a:hover {
   text-decoration: underline;
 }
 .week-row-source:focus-visible, .week-row-peek a:focus-visible, .week-nav a:focus-visible, .week-prev-repeat a:focus-visible, .week-said-link:focus-visible,

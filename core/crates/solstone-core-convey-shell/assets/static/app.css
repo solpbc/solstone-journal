@@ -1436,7 +1436,13 @@ a.ev-meta,
 .health-dashboard a:not([class]),
 .error-advice-link,
 .import-leads-notice a,
-.import-collision-callout a {
+.import-collision-callout a,
+.pulse-waiting-row a,
+.week-row-peek a,
+.week-said-link,
+.tr-body-panel-more a,
+.pulse-empty-state .pulse-empty-message a,
+.thinking-workspace a.textlink {
   text-decoration: underline;
   text-decoration-thickness: 1px;
   text-underline-offset: 0.18em;
@@ -1470,7 +1476,13 @@ a.ev-meta:hover,
 .health-dashboard a:not([class]):hover,
 .error-advice-link:hover,
 .import-leads-notice a:hover,
-.import-collision-callout a:hover {
+.import-collision-callout a:hover,
+.pulse-waiting-row a:hover,
+.week-row-peek a:hover,
+.week-said-link:hover,
+.tr-body-panel-more a:hover,
+.pulse-empty-state .pulse-empty-message a:hover,
+.thinking-workspace a.textlink:hover {
   text-decoration-thickness: 2px;
 }
 
