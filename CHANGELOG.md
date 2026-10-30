@@ -18,7 +18,8 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - a show, film or podcast playing near you is now less often mistaken for a conversation, so fewer of them get a story as if the people in it were with you.
 - people mentioned by their full name in an activity now link to the person your journal remembers, including by another name you've saved for them.
 - a misheard or misspelled form of your own name is now recognized as you, so it no longer appears among an activity's people or gets saved as a new person.
-- when two spellings of a name look like the same person, your journal can now suggest merging them, not only when one name contains the other.
+- when two spellings of a name look like the same person, your journal can now suggest merging them.
+- your journal now suggests merging two names only when both are saved and look like one thing written two ways. it no longer suggests merging a product with its company, a part with its project or a first name with a full name, which are often different things.
 - the people on a calendar invite now help your journal put names to voices during that meeting, for people it remembers.
 
 ### Fixed

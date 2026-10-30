@@ -1452,7 +1452,19 @@ mod tests {
         fs::create_dir_all(&context.journal).unwrap();
         solstone_core_facets::create_facet(&context.journal, "work", "Work", "", "", "", None)
             .unwrap();
-        for (day, name) in [("20260101", "Ada"), ("20260102", "Ada Lovelace")] {
+        for (day, name) in [
+            ("20260101", "Marcus Feldhaus"),
+            ("20260102", "Marcus Feldhans"),
+        ] {
+            // A pair is asked only when both names are saved entities.
+            let id = solstone_core_entity_matching::entity_slug(name);
+            solstone_core_entity::save_entity_identity(
+                &context.journal,
+                &id,
+                &json!({"id": id, "name": name, "type": "Person"}),
+                None,
+            )
+            .unwrap();
             solstone_core_facets::upsert_detection_segment(
                 &context.journal,
                 "work",
@@ -1682,7 +1694,19 @@ mod tests {
             };
             solstone_core_facets::create_facet(&context.journal, "work", "Work", "", "", "", None)
                 .unwrap();
-            for (day, name) in [("20260101", "Ada"), ("20260102", "Ada Lovelace")] {
+            for (day, name) in [
+                ("20260101", "Marcus Feldhaus"),
+                ("20260102", "Marcus Feldhans"),
+            ] {
+                // A pair is asked only when both names are saved entities.
+                let id = solstone_core_entity_matching::entity_slug(name);
+                solstone_core_entity::save_entity_identity(
+                    &context.journal,
+                    &id,
+                    &json!({"id": id, "name": name, "type": "Person"}),
+                    None,
+                )
+                .unwrap();
                 solstone_core_facets::upsert_detection_segment(
                     &context.journal,
                     "work",
@@ -1762,7 +1786,19 @@ mod tests {
         fs::create_dir_all(&context.journal).unwrap();
         solstone_core_facets::create_facet(&context.journal, "work", "Work", "", "", "", None)
             .unwrap();
-        for (day, name) in [("20260101", "Ada"), ("20260102", "Ada Lovelace")] {
+        for (day, name) in [
+            ("20260101", "Marcus Feldhaus"),
+            ("20260102", "Marcus Feldhans"),
+        ] {
+            // A pair is asked only when both names are saved entities.
+            let id = solstone_core_entity_matching::entity_slug(name);
+            solstone_core_entity::save_entity_identity(
+                &context.journal,
+                &id,
+                &json!({"id": id, "name": name, "type": "Person"}),
+                None,
+            )
+            .unwrap();
             solstone_core_facets::upsert_detection_segment(
                 &context.journal,
                 "work",
@@ -1776,12 +1812,12 @@ mod tests {
             )
             .unwrap();
         }
-        let source = solstone_core_entity_matching::entity_slug("Ada");
-        let target = solstone_core_entity_matching::entity_slug("Ada Lovelace");
+        let source = solstone_core_entity_matching::entity_slug("Marcus Feldhaus");
+        let target = solstone_core_entity_matching::entity_slug("Marcus Feldhans");
         // Publishes a merge proposal as another day's review of the facet does.
         let propose = |day: &str, summary: &str| {
-            let proposal = json!({"facet":"work", "day":day, "source":"Ada", "source_slug":source,
-                "target":"Ada Lovelace", "target_slug":target, "summary":summary});
+            let proposal = json!({"facet":"work", "day":day, "source":"Marcus Feldhaus", "source_slug":source,
+                "target":"Marcus Feldhans", "target_slug":target, "summary":summary});
             let batch =
                 solstone_core_entity::prepare_merge_proposals(&context.journal, &[proposal])
                     .unwrap();
@@ -1820,7 +1856,7 @@ mod tests {
         record.packet_digest = Some(crate::daily_prepare::packet_digest(&packet));
         record.frozen_packet = Some(packet);
         record.generated_result = Some(json!({"response":json!({"promotions":[],
-            "merges":[{"source":"Ada", "canonical":"Ada Lovelace", "evidence":"same person"}]})
+            "merges":[{"source":"Marcus Feldhaus", "canonical":"Marcus Feldhans", "evidence":"same person"}]})
         .to_string()}));
         save_daily_unit_record(&context.journal, &record).unwrap();
         // Another day's review resurfaces the same proposal while this one ran.
@@ -1966,7 +2002,19 @@ mod tests {
         solstone_core_facets::create_facet(&journal, "work", "Work", "", "", "", None).unwrap();
 
         // Helpers for review merge proposals
-        for (day, name) in [("20260101", "Ada"), ("20260102", "Ada Lovelace")] {
+        for (day, name) in [
+            ("20260101", "Marcus Feldhaus"),
+            ("20260102", "Marcus Feldhans"),
+        ] {
+            // A pair is asked only when both names are saved entities.
+            let id = solstone_core_entity_matching::entity_slug(name);
+            solstone_core_entity::save_entity_identity(
+                &journal,
+                &id,
+                &json!({"id": id, "name": name, "type": "Person"}),
+                None,
+            )
+            .unwrap();
             solstone_core_facets::upsert_detection_segment(
                 &journal,
                 "work",
@@ -1980,11 +2028,11 @@ mod tests {
             )
             .unwrap();
         }
-        let source_slug = solstone_core_entity_matching::entity_slug("Ada");
-        let target_slug = solstone_core_entity_matching::entity_slug("Ada Lovelace");
+        let source_slug = solstone_core_entity_matching::entity_slug("Marcus Feldhaus");
+        let target_slug = solstone_core_entity_matching::entity_slug("Marcus Feldhans");
         let propose = |day: &str, summary: &str| {
-            let proposal = json!({"facet":"work", "day":day, "source":"Ada", "source_slug":source_slug,
-                "target":"Ada Lovelace", "target_slug":target_slug, "summary":summary});
+            let proposal = json!({"facet":"work", "day":day, "source":"Marcus Feldhaus", "source_slug":source_slug,
+                "target":"Marcus Feldhans", "target_slug":target_slug, "summary":summary});
             let batch =
                 solstone_core_entity::prepare_merge_proposals(&journal, &[proposal]).unwrap();
             solstone_core_entity::publish_merge_proposals(
@@ -2018,7 +2066,7 @@ mod tests {
         review_record.packet_digest = Some(crate::daily_prepare::packet_digest(&review_packet));
         review_record.frozen_packet = Some(review_packet);
         review_record.generated_result = Some(json!({"response":json!({"promotions":[],
-            "merges":[{"source":"Ada", "canonical":"Ada Lovelace", "evidence":"same person"}]})
+            "merges":[{"source":"Marcus Feldhaus", "canonical":"Marcus Feldhans", "evidence":"same person"}]})
         .to_string()}));
         save_daily_unit_record(&journal, &review_record).unwrap();
         propose("20260106", "second"); // conflict
@@ -2047,7 +2095,19 @@ mod tests {
         assert!(loaded_rev.generated_result.is_none());
 
         // 1b. Receipt-free action_plan is cleared for merge_proposals_changed (with pre-existing action_plan)
-        for (day, name) in [("20260103", "Ada"), ("20260104", "Ada Lovelace")] {
+        for (day, name) in [
+            ("20260103", "Marcus Feldhaus"),
+            ("20260104", "Marcus Feldhans"),
+        ] {
+            // A pair is asked only when both names are saved entities.
+            let id = solstone_core_entity_matching::entity_slug(name);
+            solstone_core_entity::save_entity_identity(
+                &journal,
+                &id,
+                &json!({"id": id, "name": name, "type": "Person"}),
+                None,
+            )
+            .unwrap();
             solstone_core_facets::upsert_detection_segment(
                 &journal,
                 "work",
@@ -2077,7 +2137,7 @@ mod tests {
         let (spec2, state2) = thawed_stage2.unwrap();
         let commit2 = spec2.commit.unwrap();
         let parsed2 = (commit2.parse)(
-            &json!({"promotions":[], "merges":[{"source":"Ada", "canonical":"Ada Lovelace", "evidence":"same"}]}).to_string(),
+            &json!({"promotions":[], "merges":[{"source":"Marcus Feldhaus", "canonical":"Marcus Feldhans", "evidence":"same"}]}).to_string(),
             &thawed_prep2,
             &state2,
         )
@@ -2171,7 +2231,7 @@ mod tests {
                 crate::daily_prepare::freeze(prepared, &context).unwrap()
             };
         let merge_response = json!({"response":json!({"promotions":[],
-            "merges":[{"source":"Ada", "canonical":"Ada Lovelace", "evidence":"same person"}]})
+            "merges":[{"source":"Marcus Feldhaus", "canonical":"Marcus Feldhans", "evidence":"same person"}]})
         .to_string()});
 
         // 3a. Receipts sit only on accepted -> does clear plan and packet
@@ -3044,7 +3104,19 @@ mod tests {
         activate_location(&context.journal);
         solstone_core_facets::create_facet(&context.journal, "work", "Work", "", "", "", None)
             .unwrap();
-        for (day, name) in [("20260101", "Ada"), ("20260102", "Ada Lovelace")] {
+        for (day, name) in [
+            ("20260101", "Marcus Feldhaus"),
+            ("20260102", "Marcus Feldhans"),
+        ] {
+            // A pair is asked only when both names are saved entities.
+            let id = solstone_core_entity_matching::entity_slug(name);
+            solstone_core_entity::save_entity_identity(
+                &context.journal,
+                &id,
+                &json!({"id": id, "name": name, "type": "Person"}),
+                None,
+            )
+            .unwrap();
             solstone_core_facets::upsert_detection_segment(
                 &context.journal,
                 "work",
@@ -3058,11 +3130,11 @@ mod tests {
             )
             .unwrap();
         }
-        let source = solstone_core_entity_matching::entity_slug("Ada");
-        let target = solstone_core_entity_matching::entity_slug("Ada Lovelace");
+        let source = solstone_core_entity_matching::entity_slug("Marcus Feldhaus");
+        let target = solstone_core_entity_matching::entity_slug("Marcus Feldhans");
         let propose = |day: &str, summary: &str| {
-            let proposal = json!({"facet":"work", "day":day, "source":"Ada", "source_slug":source,
-                "target":"Ada Lovelace", "target_slug":target, "summary":summary});
+            let proposal = json!({"facet":"work", "day":day, "source":"Marcus Feldhaus", "source_slug":source,
+                "target":"Marcus Feldhans", "target_slug":target, "summary":summary});
             let batch =
                 solstone_core_entity::prepare_merge_proposals(&context.journal, &[proposal])
                     .unwrap();
@@ -3106,7 +3178,7 @@ mod tests {
         record.frozen_packet = Some(packet);
         record.failure_count = 0;
         record.generated_result = Some(json!({"response":json!({"promotions":[],
-            "merges":[{"source":"Ada", "canonical":"Ada Lovelace", "evidence":"same person"}]})
+            "merges":[{"source":"Marcus Feldhaus", "canonical":"Marcus Feldhans", "evidence":"same person"}]})
         .to_string()}));
         save_daily_unit_record(&context.journal, &record).unwrap();
         fs::write(&location, b"after\n").unwrap();

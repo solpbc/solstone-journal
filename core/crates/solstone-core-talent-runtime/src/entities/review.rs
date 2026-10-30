@@ -59,11 +59,215 @@ fn threshold(entity_type: &str) -> usize {
     }
 }
 
+/// The most candidates one review reads. A day with more keeps the rest for a
+/// later day, when they recur.
+const MAX_CANDIDATES: usize = 20;
+/// The most notes one candidate carries: its latest, at most one per window day.
+const MAX_CONTEXTS: usize = REVIEW_WINDOW_DAYS as usize;
+/// The longest note shown, in characters.
+const MAX_CONTEXT_CHARS: usize = 480;
+/// The most name pairs one review reads.
+const MAX_PAIRS: usize = 60;
+/// What the request adds around the talent's own text.
+const FRAMING_TOKENS: u32 = 256;
+
 #[derive(Clone, Debug, PartialEq)]
 struct ReviewInputs {
     eligible: Vec<Value>,
     hints: Vec<(String, String)>,
     prior: Vec<Value>,
+    /// The type each pair name carries on the most days, shown beside it.
+    types: BTreeMap<String, String>,
+    /// How many window days each pair name was seen, for ranking.
+    name_days: BTreeMap<String, usize>,
+}
+
+fn pair_key(left: &str, right: &str) -> BTreeSet<String> {
+    BTreeSet::from([
+        solstone_core_entity_matching::entity_slug(left),
+        solstone_core_entity_matching::entity_slug(right),
+    ])
+}
+
+fn row_pair_key(row: &Value) -> BTreeSet<String> {
+    let side = |slug: &str, name: &str| {
+        row[slug]
+            .as_str()
+            .filter(|value| !value.is_empty())
+            .map(str::to_owned)
+            .unwrap_or_else(|| {
+                solstone_core_entity_matching::entity_slug(row[name].as_str().unwrap_or_default())
+            })
+    };
+    BTreeSet::from([side("source_slug", "source"), side("target_slug", "target")])
+}
+
+/// A candidate seen on more days comes first.
+fn candidate_rank(item: &Value) -> (std::cmp::Reverse<u64>, (String, String)) {
+    (
+        std::cmp::Reverse(item["day_count"].as_u64().unwrap_or_default()),
+        format_name_key(item["name"].as_str().unwrap_or_default()),
+    )
+}
+
+/// A pair's place in line: untouched, unproposed, fewer days, then by name.
+type PairRank = (
+    bool,
+    bool,
+    std::cmp::Reverse<usize>,
+    (String, String),
+    (String, String),
+);
+
+/// A pair touching a candidate comes first, then one already proposed, then the
+/// pair whose names were seen on more days.
+fn pair_rank(inputs: &ReviewInputs, (left, right): &(String, String)) -> PairRank {
+    let key = pair_key(left, right);
+    let touches = inputs
+        .eligible
+        .iter()
+        .any(|item| item["slug"].as_str().is_some_and(|slug| key.contains(slug)));
+    let proposed = inputs.prior.iter().any(|row| row_pair_key(row) == key);
+    let days = inputs.name_days.get(left).copied().unwrap_or_default()
+        + inputs.name_days.get(right).copied().unwrap_or_default();
+    (
+        !touches,
+        !proposed,
+        std::cmp::Reverse(days),
+        format_name_key(left),
+        format_name_key(right),
+    )
+}
+
+fn sort_for_display(inputs: &mut ReviewInputs) {
+    inputs.eligible.sort_by_key(|item| {
+        (
+            format_name_key(item["name"].as_str().unwrap_or_default()),
+            item["type"].as_str().unwrap_or_default().to_owned(),
+        )
+    });
+    inputs
+        .hints
+        .sort_by_key(|pair| (format_name_key(&pair.0), format_name_key(&pair.1)));
+}
+
+/// Keep the highest-ranked candidates and pairs within the count bounds.
+fn bound(inputs: &mut ReviewInputs) {
+    inputs.eligible.sort_by_key(candidate_rank);
+    inputs.eligible.truncate(MAX_CANDIDATES);
+    let ranked = {
+        let mut hints = inputs.hints.clone();
+        hints.sort_by_key(|pair| pair_rank(inputs, pair));
+        hints
+    };
+    inputs.hints = ranked.into_iter().take(MAX_PAIRS).collect();
+    keep_prior_for_pairs(inputs);
+    sort_for_display(inputs);
+}
+
+fn keep_prior_for_pairs(inputs: &mut ReviewInputs) {
+    let live = inputs
+        .hints
+        .iter()
+        .map(|(left, right)| pair_key(left, right))
+        .collect::<BTreeSet<_>>();
+    inputs.prior.retain(|row| live.contains(&row_pair_key(row)));
+}
+
+/// The input budget at the floor window, less the talent's own text.
+fn packet_budget(template: &str, max_output_tokens: u32) -> u32 {
+    solstone_core_local::generate::compute_input_budget(
+        max_output_tokens,
+        solstone_core_local::plan::LOCAL_MIN_CONTEXT_TOKENS,
+    )
+    .saturating_sub(solstone_core_tokens::count(
+        &template.replace("$review_packet", ""),
+    ))
+    .saturating_sub(FRAMING_TOKENS)
+}
+
+/// The counts above fit the floor for ordinary text. A script that takes more
+/// tokens per character can still overflow it, so the lowest-ranked pairs, and
+/// then candidates, wait for a later day until the packet fits.
+fn fit_to_budget(inputs: &mut ReviewInputs, budget: u32) {
+    while solstone_core_tokens::count(&format_review_packet(inputs)) > budget {
+        if !inputs.hints.is_empty() {
+            let worst = inputs
+                .hints
+                .iter()
+                .enumerate()
+                .max_by_key(|(_, pair)| pair_rank(inputs, pair))
+                .map(|(index, _)| index)
+                .expect("pairs are not empty");
+            inputs.hints.remove(worst);
+            keep_prior_for_pairs(inputs);
+        } else if inputs.eligible.len() > 1 {
+            let worst = inputs
+                .eligible
+                .iter()
+                .enumerate()
+                .max_by_key(|(_, item)| candidate_rank(item))
+                .map(|(index, _)| index)
+                .expect("candidates are not empty");
+            inputs.eligible.remove(worst);
+        } else {
+            break;
+        }
+    }
+}
+
+/// Words that name a thing's form, not a different thing.
+const FORM_WORDS: [&str; 10] = [
+    "the",
+    "inc",
+    "llc",
+    "ltd",
+    "corp",
+    "corporation",
+    "co",
+    "company",
+    "gmbh",
+    "plc",
+];
+
+/// One name is the other plus words that narrow it: a product of a company, a
+/// part of a project, a version of a tool, a surname after a first name. The
+/// review's own standard calls those different things, or can't tell them
+/// apart, so the pair is not asked: a wrong merge is worse than a missed one.
+/// A name that adds only a corporate suffix or a leading article is still asked.
+fn narrows(left: &str, right: &str) -> bool {
+    let words = |name: &str| {
+        solstone_core_entity_matching::entity_slug(name)
+            .split('_')
+            .map(str::to_owned)
+            .collect::<Vec<_>>()
+    };
+    let (left_words, right_words) = (words(left), words(right));
+    let (longer, shorter) = if left_words.len() > right_words.len() {
+        (&left_words, &right_words)
+    } else {
+        (&right_words, &left_words)
+    };
+    let n = shorter.len();
+    if longer.len() == n || shorter.first().is_none_or(String::is_empty) {
+        return false;
+    }
+    let extra = if longer[..n] == shorter[..] {
+        &longer[n..]
+    } else if longer[longer.len() - n..] == shorter[..] {
+        &longer[..longer.len() - n]
+    } else {
+        return false;
+    };
+    !extra.iter().all(|word| FORM_WORDS.contains(&word.as_str()))
+}
+
+fn shorten(text: &str) -> String {
+    if text.chars().count() <= MAX_CONTEXT_CHARS {
+        return text.to_owned();
+    }
+    let cut = text.chars().take(MAX_CONTEXT_CHARS - 1).collect::<String>();
+    format!("{}…", cut.trim_end())
 }
 
 type CandidateBucket = (
@@ -183,6 +387,20 @@ fn build_review_inputs(journal: &Path, facet: &str, day: &str) -> Result<ReviewI
             }
         }
     }
+    // Each pair name's days and type, read from its own bucket before the
+    // buckets are spent on candidates.
+    let mut name_days = BTreeMap::new();
+    let mut types = BTreeMap::new();
+    for name in &names {
+        if let Some((days, type_days, _)) =
+            buckets.get(&solstone_core_entity_matching::entity_slug(name))
+        {
+            name_days.insert(name.clone(), days.len());
+            if let Some((entity_type, _)) = dominant_type(type_days) {
+                types.insert(name.clone(), entity_type.to_owned());
+            }
+        }
+    }
     let mut eligible = Vec::new();
     for (slug, (days, type_days, mut contexts)) in buckets {
         let Some((entity_type, type_day_count)) = dominant_type(&type_days) else {
@@ -240,8 +458,9 @@ fn build_review_inputs(journal: &Path, facet: &str, day: &str) -> Result<ReviewI
         } else {
             latest_name
         };
-        let slug = solstone_core_entity_matching::entity_slug(name);
-        if solstone_core_entity_matching::find_matching_entity(name, &candidates, 90.0)
+        let name = name.to_owned();
+        let slug = solstone_core_entity_matching::entity_slug(&name);
+        if solstone_core_entity_matching::find_matching_entity(&name, &candidates, 90.0)
             .is_some_and(|matched| matched.tier.is_high_confidence())
         {
             continue;
@@ -275,8 +494,70 @@ fn build_review_inputs(journal: &Path, facet: &str, day: &str) -> Result<ReviewI
         }
     }
     hints.sort_by_key(|pair| (format_name_key(&pair.0), format_name_key(&pair.1)));
-    let mut prior = solstone_core_entity::load_merge_candidates(journal, Some(facet), None)
+    let prior = solstone_core_entity::load_merge_candidates(journal, Some(facet), None)
         .map_err(|error| error.to_string())?;
+    let saved = solstone_core_entity::load_all_journal_entities(journal)
+        .map_err(|error| error.to_string())?
+        .into_iter()
+        .map(|entity| entity.id)
+        .collect::<BTreeSet<_>>();
+    Ok(select_review_inputs(
+        eligible, hints, prior, types, name_days, &saved,
+    ))
+}
+
+/// Choose what one review reads from what the window holds: the candidates'
+/// latest notes, and the pairs a merge could settle, within the bounds.
+fn select_review_inputs(
+    mut eligible: Vec<Value>,
+    mut hints: Vec<(String, String)>,
+    mut prior: Vec<Value>,
+    types: BTreeMap<String, String>,
+    name_days: BTreeMap<String, usize>,
+    saved: &BTreeSet<String>,
+) -> ReviewInputs {
+    // The latest notes carry a candidate; older ones repeat it.
+    for item in &mut eligible {
+        if let Some(contexts) = item["contexts"].as_array_mut() {
+            let latest = contexts.split_off(contexts.len().saturating_sub(MAX_CONTEXTS));
+            *contexts = latest
+                .into_iter()
+                .map(|mut context| {
+                    let short = shorten(context["description"].as_str().unwrap_or_default());
+                    context["description"] = Value::String(short);
+                    context
+                })
+                .collect();
+        }
+    }
+    // Two spellings of one pair of names ask one question.
+    let mut asked = BTreeSet::new();
+    hints.retain(|(left, right)| asked.insert(pair_key(left, right)));
+    // A pair the owner accepted or dismissed is settled and is not asked again.
+    let settled = prior
+        .iter()
+        .filter(|row| {
+            matches!(
+                row["status"].as_str(),
+                Some("accepted" | "dismissed" | "resolved")
+            )
+        })
+        .map(row_pair_key)
+        .collect::<BTreeSet<_>>();
+    hints.retain(|(left, right)| !settled.contains(&pair_key(left, right)));
+    // A proposal is accepted as a merge of two saved entities, so a pair is
+    // asked only when both names are saved, or are today's candidates.
+    let candidates = eligible
+        .iter()
+        .filter_map(|item| item["slug"].as_str())
+        .collect::<BTreeSet<_>>();
+    hints.retain(|(left, right)| {
+        [left, right].iter().all(|name| {
+            let slug = solstone_core_entity_matching::entity_slug(name);
+            saved.contains(&slug) || candidates.contains(slug.as_str())
+        })
+    });
+    hints.retain(|(left, right)| !narrows(left, right));
     prior.sort_by_key(|row| {
         (
             default_case_fold_str(row["source"].as_str().unwrap_or_default()),
@@ -284,15 +565,19 @@ fn build_review_inputs(journal: &Path, facet: &str, day: &str) -> Result<ReviewI
             row["status"].as_str().unwrap_or("open").to_owned(),
         )
     });
-    Ok(ReviewInputs {
+    let mut inputs = ReviewInputs {
         eligible,
         hints,
         prior,
-    })
+        types,
+        name_days,
+    };
+    bound(&mut inputs);
+    inputs
 }
 
 fn format_review_packet(inputs: &ReviewInputs) -> String {
-    let mut lines = vec!["These are recurring people and things noticed across recent days in one area of the owner's life.".to_owned(), "Judge from the facts below. Save stable, useful context; leave ambiguity out.".to_owned(), String::new(), "## Recurring candidates".to_owned(), String::new()];
+    let mut lines = vec!["These are recurring people and things noticed across recent days in one area of the owner's life.".to_owned(), String::new(), "## Recurring candidates".to_owned(), String::new()];
     if inputs.eligible.is_empty() {
         lines.extend(["None.".to_owned(), String::new()]);
     }
@@ -319,29 +604,90 @@ fn format_review_packet(inputs: &ReviewInputs) -> String {
     lines.extend(["## Possible name variants".to_owned(), String::new()]);
     if inputs.hints.is_empty() {
         lines.push("None.".to_owned())
-    } else {
-        lines.extend(
-            inputs
-                .hints
-                .iter()
-                .map(|(left, right)| format!("- {left} / {right}")),
-        );
     }
-    lines.push(String::new());
-    lines.extend(["## Prior merge decisions".to_owned(), String::new()]);
-    if inputs.prior.is_empty() {
-        lines.push("None.".to_owned())
-    } else {
-        lines.extend(inputs.prior.iter().map(|row| {
-            format!(
-                "- {} -> {} ({})",
-                row["source"].as_str().unwrap_or_default(),
-                row["target"].as_str().unwrap_or_default(),
-                row["status"].as_str().unwrap_or("open")
-            )
-        }));
+    // Numbered, so a merge names its pair by number instead of copying names.
+    let typed = |name: &str| match inputs.types.get(name) {
+        Some(entity_type) => format!("\"{name}\" ({entity_type})"),
+        None => format!("\"{name}\""),
+    };
+    for (index, (left, right)) in inputs.hints.iter().enumerate() {
+        lines.push(format!(
+            "{}. {} and {}",
+            index + 1,
+            typed(left),
+            typed(right)
+        ));
     }
     lines.join("\n").trim().to_owned() + "\n"
+}
+
+/// A merge names its pair by number and the name to keep; it becomes a
+/// proposal from the other name to that one. A pair already proposed in the
+/// other direction keeps that direction: the review refreshes a proposal and
+/// never files its reverse. Older outputs that name `source` and `canonical`
+/// pass through the same direction rule.
+fn resolve_merges(output: &str, inputs: Option<&Value>) -> String {
+    let Ok(mut data) = serde_json::from_str::<Value>(output) else {
+        return output.to_owned();
+    };
+    let Some(merges) = data.get("merges").and_then(Value::as_array).cloned() else {
+        return output.to_owned();
+    };
+    let hints: Vec<(String, String)> = inputs
+        .and_then(|inputs| inputs.get("hints"))
+        .and_then(|hints| serde_json::from_value(hints.clone()).ok())
+        .unwrap_or_default();
+    let prior = inputs
+        .and_then(|inputs| inputs.get("prior"))
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let slug = solstone_core_entity_matching::entity_slug;
+    let open = |source: &str, target: &str| {
+        prior.iter().find(|row| {
+            row["status"].as_str().unwrap_or("open") == "open"
+                && row["source_slug"].as_str() == Some(slug(source).as_str())
+                && row["target_slug"].as_str() == Some(slug(target).as_str())
+        })
+    };
+    let mut resolved = Vec::new();
+    for row in merges {
+        let evidence = row["evidence"].clone();
+        let (source, canonical) = if let Some(number) = row.get("pair") {
+            let Some((left, right)) = number
+                .as_u64()
+                .and_then(|number| usize::try_from(number).ok())
+                .and_then(|number| number.checked_sub(1))
+                .and_then(|index| hints.get(index))
+            else {
+                continue;
+            };
+            let keep = slug(row["keep"].as_str().unwrap_or_default().trim());
+            if keep == slug(left) {
+                (right.clone(), left.clone())
+            } else if keep == slug(right) {
+                (left.clone(), right.clone())
+            } else {
+                continue;
+            }
+        } else {
+            (
+                row["source"].as_str().unwrap_or_default().to_owned(),
+                row["canonical"].as_str().unwrap_or_default().to_owned(),
+            )
+        };
+        let (source, canonical) = match (open(&source, &canonical), open(&canonical, &source)) {
+            (None, Some(reverse)) => (
+                reverse["source"].as_str().unwrap_or(&canonical).to_owned(),
+                reverse["target"].as_str().unwrap_or(&source).to_owned(),
+            ),
+            _ => (source, canonical),
+        };
+        resolved
+            .push(serde_json::json!({"source":source,"canonical":canonical,"evidence":evidence}));
+    }
+    data["merges"] = Value::Array(resolved);
+    serde_json::to_string(&data).unwrap_or_else(|_| output.to_owned())
 }
 pub fn gate(
     prepared: &PreparedTalent,
@@ -438,6 +784,26 @@ pub fn build(
             "review inputs changed during preparation",
         )));
     }
+    let mut inputs = inputs;
+    let max_output_tokens = prepared
+        .config
+        .get("max_output_tokens")
+        .and_then(Value::as_u64)
+        .and_then(|value| u32::try_from(value).ok())
+        .unwrap_or_default();
+    let template = prepared
+        .config
+        .get("user_instruction")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_owned();
+    fit_to_budget(&mut inputs, packet_budget(&template, max_output_tokens));
+    owner_before.retain(|slug, _| {
+        inputs
+            .eligible
+            .iter()
+            .any(|item| item["slug"].as_str() == Some(slug.as_str()))
+    });
     prepared.config.insert(
         "_daily_review_owner_before".to_owned(),
         Value::Object(owner_before),
@@ -473,10 +839,13 @@ pub fn apply_prompt_override(
 }
 pub fn parse(
     output: &str,
-    _: &PreparedTalent,
+    prepared: &PreparedTalent,
     _: &PrePostState,
 ) -> Result<ParsedOutput, StageError> {
-    Ok(ParsedOutput::Text(output.to_owned()))
+    Ok(ParsedOutput::Text(resolve_merges(
+        output,
+        prepared.config.get("_daily_review_inputs"),
+    )))
 }
 pub fn commit(
     parsed: ParsedOutput,
@@ -1017,6 +1386,18 @@ mod tests {
         .unwrap();
     }
 
+    /// Save a journal entity, so a pair naming it can be asked.
+    fn save(root: &Path, name: &str, entity_type: &str) {
+        let id = solstone_core_entity_matching::entity_slug(name);
+        solstone_core_entity::save_entity_identity(
+            root,
+            &id,
+            &serde_json::json!({"id":id,"name":name,"type":entity_type}),
+            None,
+        )
+        .unwrap();
+    }
+
     #[test]
     fn review_window_and_name_key_match_reference() {
         // Derived from solstone/apps/entities/talent/entities_review.py:40-52,74-87.
@@ -1029,13 +1410,15 @@ mod tests {
         assert!(format_name_key("Ada") < format_name_key("beta"));
         assert_eq!(format_name_key("Straße").0, "strasse");
         let root = tempfile::tempdir().unwrap();
-        detect(root.path(), "20260101", "Ada");
-        detect(root.path(), "20260102", "Ada Lovelace");
+        detect(root.path(), "20260101", "Marcus Feldhaus");
+        detect(root.path(), "20260102", "Marcus Feldhans");
+        save(root.path(), "Marcus Feldhaus", "Person");
+        save(root.path(), "Marcus Feldhans", "Person");
         assert_eq!(
             build_review_inputs(root.path(), "work", "20260108")
                 .unwrap()
                 .hints,
-            [("Ada".to_owned(), "Ada Lovelace".to_owned())]
+            [("Marcus Feldhans".to_owned(), "Marcus Feldhaus".to_owned())]
         );
     }
 
@@ -1171,9 +1554,11 @@ mod tests {
         for day in ["20260101", "20260102"] {
             detect(root.path(), day, "Ada Lovelace");
         }
-        detect(root.path(), "20260101", "Ada");
-        detect(root.path(), "20260102", "Ada");
-        apply_result(root.path(), r#"{"promotions":[{"name":"Ada Lovelace","description":"Writes analytical notes.","promote":true,"aliases":["Countess Ada"]}],"merges":[{"source":"Ada","canonical":"Ada Lovelace","evidence":"same recurring person"}]}"#, "work", "20260108").unwrap();
+        detect(root.path(), "20260101", "Marcus Feldhaus");
+        detect(root.path(), "20260102", "Marcus Feldhans");
+        save(root.path(), "Marcus Feldhaus", "Person");
+        save(root.path(), "Marcus Feldhans", "Person");
+        apply_result(root.path(), r#"{"promotions":[{"name":"Ada Lovelace","description":"Writes analytical notes.","promote":true,"aliases":["Countess Ada"]}],"merges":[{"source":"Marcus Feldhans","canonical":"Marcus Feldhaus","evidence":"same recurring person"}]}"#, "work", "20260108").unwrap();
         let attached =
             solstone_core_facets::list_scoped_facet_entities(root.path(), "work", false, false)
                 .unwrap();
@@ -1408,12 +1793,210 @@ mod tests {
         detect(root.path(), "20260104", "Friar");
         detect(root.path(), "20260105", "Russell Banks");
         detect(root.path(), "20260106", "Dussell Banks");
+        for name in [
+            "Marcus Feldhaus",
+            "Marcus Feldhans",
+            "Fryer",
+            "Friar",
+            "Russell Banks",
+            "Dussell Banks",
+        ] {
+            save(root.path(), name, "Person");
+        }
         assert_eq!(
             build_review_inputs(root.path(), "work", "20260108")
                 .unwrap()
                 .hints,
             [("Marcus Feldhans".to_owned(), "Marcus Feldhaus".to_owned())]
         );
+    }
+
+    #[test]
+    fn a_settled_pair_is_not_asked_again_and_only_todays_pairs_bring_their_proposals() {
+        let root = tempfile::tempdir().unwrap();
+        detect_typed(
+            root.path(),
+            "20260101",
+            &[
+                ("Acme", "Company"),
+                ("Acme Inc", "Company"),
+                ("Globex", "Company"),
+                ("Globex Corp", "Company"),
+            ],
+        );
+        for name in ["Acme", "Acme Inc", "Globex", "Globex Corp"] {
+            save(root.path(), name, "Company");
+        }
+        let propose = |source: &str, target: &str| {
+            solstone_core_entity::record_merge_candidate(
+                root.path(),
+                "work",
+                "20260101",
+                source,
+                &solstone_core_entity_matching::entity_slug(source),
+                target,
+                &solstone_core_entity_matching::entity_slug(target),
+                "same person",
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+        };
+        propose("Acme Inc", "Acme");
+        propose("Globex Corp", "Globex");
+        propose("Initech LLC", "Initech");
+        solstone_core_entity::dismiss_merge_candidate(root.path(), "work", "globex_corp", "globex")
+            .unwrap();
+        let inputs = build_review_inputs(root.path(), "work", "20260108").unwrap();
+        assert_eq!(inputs.hints, [("Acme".to_owned(), "Acme Inc".to_owned())]);
+        let prior = inputs
+            .prior
+            .iter()
+            .map(|row| row["source"].as_str().unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(prior, ["Acme Inc"]);
+        let packet = format_review_packet(&inputs);
+        assert!(packet.contains("1. \"Acme\" (Company) and \"Acme Inc\" (Company)"));
+        assert!(!packet.contains("Prior merge"));
+    }
+
+    #[test]
+    fn a_pair_is_asked_only_when_a_merge_could_stand_and_the_names_can_be_one_thing() {
+        let root = tempfile::tempdir().unwrap();
+        detect_typed(
+            root.path(),
+            "20260101",
+            &[
+                ("Acme", "Company"),
+                ("Acme Cloud", "Tool"),
+                ("Acme Inc", "Company"),
+                ("Orbit", "Project"),
+                ("Orbit Mobile", "Project"),
+                ("Lin", "Person"),
+                ("Lin Okafor", "Person"),
+                ("Quill", "Tool"),
+                ("Quill App", "Tool"),
+            ],
+        );
+        for (name, entity_type) in [
+            ("Acme", "Company"),
+            ("Acme Cloud", "Tool"),
+            ("Acme Inc", "Company"),
+            ("Orbit", "Project"),
+            ("Orbit Mobile", "Project"),
+            ("Lin", "Person"),
+            ("Lin Okafor", "Person"),
+            ("Quill", "Tool"),
+        ] {
+            save(root.path(), name, entity_type);
+        }
+        let inputs = build_review_inputs(root.path(), "work", "20260108").unwrap();
+        // A product, a part and a surname narrow their name; an unsaved name
+        // can't be merged; a corporate suffix is still asked.
+        assert_eq!(inputs.hints, [("Acme".to_owned(), "Acme Inc".to_owned())]);
+    }
+
+    #[test]
+    fn a_day_with_more_candidates_than_one_review_reads_keeps_the_most_recurring() {
+        let root = tempfile::tempdir().unwrap();
+        for index in 0..(MAX_CANDIDATES + 3) {
+            let name = format!("Person {index:02}");
+            // The last three are seen on two days, the rest on three.
+            let days = if index >= MAX_CANDIDATES { 2 } else { 3 };
+            for day in ["20260101", "20260102", "20260103"].iter().take(days) {
+                detect(root.path(), day, &name);
+            }
+        }
+        let inputs = build_review_inputs(root.path(), "work", "20260108").unwrap();
+        assert_eq!(inputs.eligible.len(), MAX_CANDIDATES);
+        assert!(inputs.eligible.iter().all(|item| item["day_count"] == 3));
+    }
+
+    #[test]
+    fn a_packet_over_its_budget_leaves_pairs_then_candidates_for_a_later_day() {
+        let root = tempfile::tempdir().unwrap();
+        for day in ["20260101", "20260102"] {
+            detect(root.path(), day, "Ada Lovelace");
+            detect(root.path(), day, "Grace Hopper");
+        }
+        detect_typed(
+            root.path(),
+            "20260103",
+            &[("Acme", "Company"), ("Acme Inc", "Company")],
+        );
+        save(root.path(), "Acme", "Company");
+        save(root.path(), "Acme Inc", "Company");
+        let mut inputs = build_review_inputs(root.path(), "work", "20260108").unwrap();
+        assert_eq!((inputs.eligible.len(), inputs.hints.len()), (2, 1));
+        let one_candidate = {
+            let mut fewer = inputs.clone();
+            fewer.hints.clear();
+            fewer.eligible.truncate(1);
+            solstone_core_tokens::count(&format_review_packet(&fewer))
+        };
+        fit_to_budget(&mut inputs, one_candidate);
+        assert!(inputs.hints.is_empty());
+        assert_eq!(inputs.eligible.len(), 1);
+        assert!(solstone_core_tokens::count(&format_review_packet(&inputs)) <= one_candidate);
+    }
+
+    #[test]
+    fn a_numbered_merge_becomes_its_pair_and_never_reverses_an_open_proposal() {
+        let inputs = serde_json::json!({
+            "hints": [["Ada", "Ada Lovelace"], ["Bob", "Bobby"]],
+            "prior": [{"source":"Bobby","source_slug":"bobby","target":"Bob","target_slug":"bob","status":"open"}],
+        });
+        let output = r#"{"promotions":[],"merges":[{"pair":1,"keep":"Ada Lovelace","evidence":"same person"},{"pair":2,"keep":"Bobby","evidence":"same person"},{"pair":3,"keep":"Ada","evidence":"no such pair"},{"pair":1,"keep":"Grace","evidence":"neither name"}]}"#;
+        let resolved: Value = serde_json::from_str(&resolve_merges(output, Some(&inputs))).unwrap();
+        assert_eq!(
+            resolved["merges"],
+            serde_json::json!([
+                {"source":"Ada","canonical":"Ada Lovelace","evidence":"same person"},
+                {"source":"Bobby","canonical":"Bob","evidence":"same person"},
+            ])
+        );
+        let named = r#"{"promotions":[],"merges":[{"source":"Ada","canonical":"Ada Lovelace","evidence":"same person"}]}"#;
+        let resolved: Value = serde_json::from_str(&resolve_merges(named, Some(&inputs))).unwrap();
+        assert_eq!(resolved["merges"][0]["canonical"], "Ada Lovelace");
+    }
+
+    /// Replays recorded review inputs against packets built by the evaluation
+    /// harness. Run by hand: REVIEW_PARITY_DIR=<dir of case files> cargo test
+    /// -p solstone-core-talent-runtime --lib review_packets_match_recorded -- --ignored
+    #[test]
+    #[ignore = "needs recorded inputs"]
+    fn review_packets_match_recorded() {
+        let dir = std::env::var("REVIEW_PARITY_DIR").expect("REVIEW_PARITY_DIR");
+        let mut checked = 0;
+        for entry in fs::read_dir(dir).unwrap() {
+            let case: Value =
+                serde_json::from_str(&fs::read_to_string(entry.unwrap().path()).unwrap()).unwrap();
+            let field = |key: &str| case[key].clone();
+            let inputs = select_review_inputs(
+                serde_json::from_value(field("eligible")).unwrap(),
+                serde_json::from_value(field("hints")).unwrap(),
+                serde_json::from_value(field("prior")).unwrap(),
+                serde_json::from_value(field("types")).unwrap(),
+                serde_json::from_value(field("name_days")).unwrap(),
+                &serde_json::from_value(field("saved")).unwrap(),
+            );
+            assert_eq!(
+                format_review_packet(&inputs),
+                case["packet"].as_str().unwrap(),
+                "{}",
+                case["id"]
+            );
+            assert_eq!(
+                serde_json::to_value(&inputs.hints).unwrap(),
+                case["hints_used"],
+                "{}",
+                case["id"]
+            );
+            checked += 1;
+        }
+        assert!(checked > 0);
+        eprintln!("{checked} packets match");
     }
 
     #[test]
@@ -1430,13 +2013,16 @@ mod tests {
         detect_typed(
             root.path(),
             "20260106",
-            &[("Jo", "Person"), ("Ada", "Person")],
+            &[("Jo", "Person"), ("Marcus Feldhaus", "Person")],
         );
         detect_typed(
             root.path(),
             "20260107",
-            &[("Jordy", "Person"), ("Ada Lovelace", "Person")],
+            &[("Jordy", "Person"), ("Marcus Feldhans", "Person")],
         );
+        for name in ["Marcus Feldhaus", "Marcus Feldhans"] {
+            save(root.path(), name, "Person");
+        }
         let inputs = build_review_inputs(root.path(), "work", "20260108").unwrap();
         let owner = inputs
             .eligible
@@ -1447,7 +2033,7 @@ mod tests {
         assert_eq!(owner["day_count"], 2);
         assert_eq!(
             inputs.hints,
-            [("Ada".to_owned(), "Ada Lovelace".to_owned())]
+            [("Marcus Feldhans".to_owned(), "Marcus Feldhaus".to_owned())]
         );
 
         review_and_publish(

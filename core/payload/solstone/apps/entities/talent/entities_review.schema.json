@@ -8,16 +8,16 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["name", "description", "promote", "aliases"],
+        "required": ["name", "promote", "description", "aliases"],
         "properties": {
           "name": {
             "type": "string"
           },
-          "description": {
-            "type": "string"
-          },
           "promote": {
             "type": "boolean"
+          },
+          "description": {
+            "type": "string"
           },
           "aliases": {
             "type": "array",
@@ -33,12 +33,12 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["source", "canonical", "evidence"],
+        "required": ["pair", "keep", "evidence"],
         "properties": {
-          "source": {
-            "type": "string"
+          "pair": {
+            "type": "integer"
           },
-          "canonical": {
+          "keep": {
             "type": "string"
           },
           "evidence": {

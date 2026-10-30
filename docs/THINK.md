@@ -62,6 +62,13 @@ with as much of Conversation's own speech as fits, on every backend ([STORY_INPU
 boundary does the fitting ([GENERATE.md](GENERATE.md) § `overflow_text`) as the
 last-resort guard.
 
+The daily entity review reads at most 20 recurring candidates and 60 name pairs,
+with each candidate's latest seven notes shortened to 480 characters. Candidates
+rank by how often they recur, and pairs that touch a candidate or were already
+proposed rank ahead of the rest; whatever is past those bounds is left for a later
+day's review, if it still recurs, and the lowest-ranked pairs, then candidates,
+are dropped until the packet fits the floor.
+
 ## Daily date coordinates
 
 `--day` selects the analysis day. Daily artifacts, including `morning_briefing.json`,
