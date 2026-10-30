@@ -1303,12 +1303,7 @@ a:focus-visible {
 
 .surface-state-action > a:not([class]) {
   color: var(--orange-text-aa);
-  text-decoration: none;
   font-weight: 500;
-}
-
-.surface-state-action > a:not([class]):hover {
-  text-decoration: underline;
 }
 
 .surface-state-action > a:not([class]):focus-visible {
@@ -1413,8 +1408,70 @@ a:focus-visible {
   cursor: pointer;
 }
 
-.surface-state-copy-reference:hover {
+.pulse-narrative-content a,
+.pulse-reflection-memory a,
+.week-row-text a,
+.thinking-output-document a,
+.tr-md-content a,
+.import-guide-content a,
+.import-content-markdown a,
+.body-link,
+.provider-key-warning a,
+.surface-state-action > a:not([class]),
+.surface-state-copy-reference,
+.glance-action,
+.backlog-verdict-day,
+.laneinline,
+.stats-refresh,
+.journal-tidy-link,
+.act-panel-place-link,
+.act-panel-evidence-link,
+.entity-conn-state-link,
+.entity-conn-evidence-date,
+.entity-conn-view-link,
+a.ev-meta,
+.daygrid-peek-open,
+.brain-tokens-link,
+.registered-clients-manage,
+.health-dashboard a:not([class]),
+.error-advice-link,
+.import-leads-notice a,
+.import-collision-callout a {
   text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.18em;
+}
+
+.pulse-narrative-content a:hover,
+.pulse-reflection-memory a:hover,
+.week-row-text a:hover,
+.thinking-output-document a:hover,
+.tr-md-content a:hover,
+.import-guide-content a:hover,
+.import-content-markdown a:hover,
+.body-link:hover,
+.provider-key-warning a:hover,
+.surface-state-action > a:not([class]):hover,
+.surface-state-copy-reference:hover,
+.glance-action:hover,
+.backlog-verdict-day:hover,
+.laneinline:hover,
+.stats-refresh:hover,
+.journal-tidy-link:hover,
+.act-panel-place-link:hover,
+.act-panel-evidence-link:hover,
+.entity-conn-state-link:hover,
+.entity-conn-evidence-date:hover,
+.entity-conn-view-link:hover,
+a.ev-meta:hover,
+.daygrid-peek-open:hover,
+.brain-tokens-link:hover,
+.registered-clients-manage:hover,
+.health-dashboard a:not([class]):hover,
+.error-advice-link:hover,
+.import-leads-notice a:hover,
+.import-collision-callout a:hover {
+  text-decoration-thickness: 2px;
 }
 
 .surface-state-refresh-error {

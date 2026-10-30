@@ -718,14 +718,14 @@ fn resolve_serve_bundle(
     }
     if bundles.is_empty() {
         return Err(format!(
-            "no observer link bundles found under {}. Run `solstone link join` to pair this device.",
+            "no link bundles found under {}. run `solstone link join` to pair this device.",
             root.display()
         ));
     }
     if bundles.len() > 1 {
         let labels = bundles.keys().cloned().collect::<Vec<_>>().join(", ");
         return Err(format!(
-            "multiple observer link bundles found: {labels}. Pass --label to choose one."
+            "multiple link bundles found: {labels}. pass --label to choose one."
         ));
     }
     let (label, (bundle, bundle_dir)) = bundles.into_iter().next().expect("bundle count checked");
@@ -749,7 +749,9 @@ fn observer_spl_root(env: &BTreeMap<String, String>) -> Result<PathBuf, String> 
             |xdg| Some(PathBuf::from(xdg)),
         );
     let Some(base) = base else {
-        return Err("Could not resolve home directory for observer credentials.".to_string());
+        return Err(
+            "could not resolve home directory for this device's pairing credentials.".to_string(),
+        );
     };
     Ok(base.join("solstone-observer").join("spl"))
 }
@@ -1259,7 +1261,7 @@ fn serve_transport_error_text(kind: LinkServeTransportErrorKind) -> String {
             "Secure link handshake failed. Re-run solstone link join if the journal certificate or pairing changed.".to_string()
         }
         LinkServeTransportErrorKind::Crypto => {
-            "Link credential material is invalid. Re-run solstone link join for this observer.".to_string()
+            "link credential material is invalid. re-run solstone link join for this device.".to_string()
         }
         LinkServeTransportErrorKind::Mux => {
             "SPL stream framing failed while serving. Retry; re-pair if it continues.".to_string()
@@ -1271,7 +1273,7 @@ fn serve_transport_error_text(kind: LinkServeTransportErrorKind) -> String {
             "Relay or bridge JSON could not be parsed. Check the relay URL and retry.".to_string()
         }
         LinkServeTransportErrorKind::PairLink => {
-            "Stored pairing data is invalid. Re-run solstone link join for this observer.".to_string()
+            "stored pairing data is invalid. re-run solstone link join for this device.".to_string()
         }
         LinkServeTransportErrorKind::Pairing => {
             "Link credential or relay enrollment failed. Re-run solstone link join if retrying does not fix it.".to_string()
@@ -1286,7 +1288,7 @@ fn serve_transport_error_text(kind: LinkServeTransportErrorKind) -> String {
                     "Relay enrollment was rejected with HTTP {status}. Re-run solstone link join if the bundle attestation is stale."
                 ),
                 crate::seam::LinkServeRelayControlEndpoint::TokenRefresh => format!(
-                    "Relay token refresh was rejected with HTTP {status}. Re-run solstone link join for this observer."
+                    "relay token refresh was rejected with HTTP {status}. re-run solstone link join for this device."
                 ),
             }
         }
@@ -1308,7 +1310,7 @@ fn serve_relay_error_text(error: crate::seam::LinkServeRelayErrorKind) -> &'stat
             "the relay reports your journal is offline. start the journal or use --direct on lan/vpn."
         }
         crate::seam::LinkServeRelayErrorKind::Unauthorized => {
-            "The relay rejected this observer token. Re-run solstone link join for this observer."
+            "the relay rejected this device token. re-run solstone link join for this device."
         }
         crate::seam::LinkServeRelayErrorKind::Unpaid => {
             "The relay account is not available. Check relay service/account status or use --direct."
@@ -1977,7 +1979,7 @@ mod tests {
         };
         assert_eq!(
             ambiguous.stderr,
-            "multiple observer link bundles found: alpha, beta. Pass --label to choose one.\n"
+            "multiple link bundles found: alpha, beta. pass --label to choose one.\n"
         );
         assert_eq!(ambiguous.exit, 1);
         runner.assert_done();
@@ -2911,7 +2913,7 @@ mod tests {
         assert!(
             output
                 .stderr
-                .starts_with("solstone link status: error: no observer link bundles found under ")
+                .starts_with("solstone link status: error: no link bundles found under ")
         );
     }
 
@@ -2927,7 +2929,7 @@ mod tests {
         assert_eq!(output.exit, 1);
         assert_eq!(
             output.stderr,
-            "solstone link status: error: multiple observer link bundles found: alpha, beta. Pass --label to choose one.\n"
+            "solstone link status: error: multiple link bundles found: alpha, beta. pass --label to choose one.\n"
         );
     }
 

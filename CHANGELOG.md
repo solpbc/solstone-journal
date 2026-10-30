@@ -19,6 +19,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- links in dashboard sentences stay underlined, in an orange that reads on the page, and the evidence clock on the cream page is dark enough to read. help and errors no longer call a solstone app or a linked device an observer.
 - on a mac, the local model sometimes kept adding names and topics to a list until it reached its limit. those runs took minutes, failed and were tried again later. lists now end where they should.
 - fixed a case where confidential processing stayed unchecked after you allowed it in your browser.
 - fixed a failure when picking a folder to import in the android development app.

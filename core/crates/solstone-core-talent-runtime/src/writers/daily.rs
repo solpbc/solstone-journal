@@ -245,7 +245,9 @@ fn validate_model_intent(intent: &WriteIntent) -> Result<(), StageError> {
         }
         "observer" => {
             if !value.get("entities").is_some_and(Value::is_array) {
-                return Err(invalid("observer entities must be an array"));
+                return Err(invalid(
+                    "entities:entity_observer requires an entities array",
+                ));
             }
         }
         "review" => {

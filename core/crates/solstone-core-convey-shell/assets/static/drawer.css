@@ -126,6 +126,10 @@
   color: var(--ink-faint-paper);
 }
 
+a.ev-meta {
+  color: var(--ink-faint);
+}
+
 .drawer-provenance {
   margin: var(--space-3) 0 0;
   font-size: 12px;

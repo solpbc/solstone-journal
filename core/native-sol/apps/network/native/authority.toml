@@ -31,7 +31,7 @@ params = []
 [[entries]]
 path = ["link", "observer-pause"]
 kind = "command"
-help = "Pause linked observers (not yet available)."
+help = "pause linked devices (not yet available)."
 operation_id = "link.observer-pause"
 entry_type = "local"
 handler = "observer_pause"

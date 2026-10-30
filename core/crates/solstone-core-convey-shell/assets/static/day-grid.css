@@ -117,7 +117,7 @@
 
 .daygrid-months a:hover,
 .daygrid-months a:focus-visible {
-  color: var(--focus);
+  color: var(--orange-text-aa);
   outline: 0;
   text-decoration: underline;
 }
@@ -304,15 +304,13 @@ button.daygrid-cell {
 
 .daygrid-peek-open {
   pointer-events: auto;
-  color: var(--focus);
+  color: var(--orange-text-aa);
   font-weight: var(--weight-medium);
-  text-decoration: none;
 }
 
 .daygrid-peek-open:hover,
 .daygrid-peek-open:focus-visible {
   outline: 0;
-  text-decoration: underline;
 }
 
 .daygrid-peek-hint {

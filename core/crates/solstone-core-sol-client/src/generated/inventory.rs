@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
-// authority-source-sha256: fce2a327d69925ec937ef8be533012c1142d9d87bb4115c810871508108f0b8b
+// authority-source-sha256: 9b0fda7f2c57b8d5d11c4788f7800cc017f9610318e3276c5f8fa3ccc75c2957
 
 use crate::aggregate::{Handler, InventoryEntry};
 use crate::resident::ResidentHandler;
@@ -690,7 +690,7 @@ pub const ENTRIES: &[InventoryEntry] = &[
         surface: "sol-call",
         path: &["link", "observer-pause"],
         kind: "command",
-        help: "Pause linked observers (not yet available).",
+        help: "pause linked devices (not yet available).",
         authority_path: "core/native-sol/apps/network/native/authority.toml",
         params_json: "[]",
         entry_type: "local",

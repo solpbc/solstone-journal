@@ -489,7 +489,7 @@ pub fn build(
             "entities:entity_observer",
             talent,
             format!(
-                "entity observer context is {context_chars} characters; maximum is {MAX_OBSERVER_CONTEXT_CHARS}"
+                "entity facts context is {context_chars} characters; maximum is {MAX_OBSERVER_CONTEXT_CHARS}"
             ),
         )));
     }
@@ -673,7 +673,7 @@ pub fn apply_prompt_override(
             "override",
             "entities:entity_observer",
             talent,
-            "expected entity observer state",
+            "expected entity facts state",
         ));
     };
     if let Some(context) = &state.context {
@@ -722,7 +722,7 @@ pub fn commit(
             "commit",
             "entities:entity_observer",
             talent,
-            "expected entity observer state",
+            "expected entity facts state",
         ));
     };
     let facet = talent
@@ -765,7 +765,7 @@ pub fn prepare_publication(
     let entries = data
         .get("entities")
         .and_then(Value::as_array)
-        .ok_or("validation: observer entities must be an array")?;
+        .ok_or("validation: entities:entity_observer requires an entities array")?;
 
     let (attached_ids, candidates) = attached_entities(journal, facet)?;
     let mut combined: BTreeMap<String, Vec<Value>> = BTreeMap::new();
