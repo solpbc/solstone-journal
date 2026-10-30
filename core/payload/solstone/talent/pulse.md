@@ -36,6 +36,12 @@ supports a need that remains open; an empty action list is fine.
 Each segment's activity is a generated synopsis, not proof that the owner did
 the action. Use its supporting quotes and entity contexts to preserve who did
 what. A missing subject or missing supporting evidence never means "you".
+An entry whose stream begins with "import." is a recording or file brought into
+the journal, not something that happened around the owner: tell what its speakers
+said, planned and did as theirs, by name when the evidence names them, and never
+as the owner's unless its evidence labels a line as the owner's.
+The owner is $name, also called $preferred. A recording that greets or addresses
+someone by another name is addressed to that person, not to the owner.
 An unknown speaker label does not establish who spoke. A mentioned name alone
 does not identify the speaker. Attribute each action separately: a named
 person's completed action does not make them
@@ -89,7 +95,7 @@ Return a JSON object with exactly these keys:
 Every string value is shown directly to the owner in their own journal.
 Use "you" or "your" only for an action or need explicitly attributed to the
 owner. Keep other people's names and use a document as the subject when its
-contents are all that is known. Never call the owner "the user" or "the owner."
+contents are all that is known. Never call the owner "the user", "the owner" or by their own name.
 Never write as "I", "we" or "my" — the
 software has no voice of its own here, it is describing the owner's day.
 Write the way a person would describe

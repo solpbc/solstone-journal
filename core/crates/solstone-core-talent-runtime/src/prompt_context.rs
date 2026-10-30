@@ -70,6 +70,10 @@ pub(crate) fn build(
         "import_guidance".to_owned(),
         stream_import_guidance(stream.as_deref(), source, kind),
     );
+    context.insert(
+        "imported_recording_rule".to_owned(),
+        imported_recording_rule(stream.as_deref(), source, kind),
+    );
 
     if let Some(segment) = config
         .get("segment")
@@ -372,6 +376,44 @@ fn stream_content_description(
     }
 }
 
+/// Imports that hold no one speaking: chats keep their own You and Assistant labels, and
+/// documents, notes, calendars, highlights, images and body data have no speakers.
+const UNSPOKEN_IMPORTS: &[&str] = &[
+    "chatgpt",
+    "claude",
+    "gemini",
+    "ics",
+    "obsidian",
+    "document",
+    "kindle",
+    "image",
+    "text",
+    "json",
+    "notes",
+    "strava",
+    "apple_health",
+    "oura",
+];
+
+const IMPORTED_RECORDING_RULE: &str = "- In a recording imported into the journal, a line is the owner's only where the transcript labels it You. Everything else in it was said by its speakers, so the speaker comes first: \"[name] [past-tense verb] [the specific thing]\", or \"A speaker [past-tense verb] [the specific thing]\" when no name is given. The owner's part is only that the recording is in their journal. Write `facets[].activity` the same way.";
+
+/// Sense's rule for a recording imported into the journal, where the owner may not be in it at
+/// all: whoever speaks is the subject, and only a line labeled You is the owner's. Live capture
+/// and imports without speakers get nothing.
+fn imported_recording_rule(
+    stream: Option<&str>,
+    source: Option<&str>,
+    kind: Option<&str>,
+) -> String {
+    let Some(name) = stream.and_then(|stream| stream.strip_prefix("import.")) else {
+        return String::new();
+    };
+    if is_browser_route(stream, source, kind) || UNSPOKEN_IMPORTS.contains(&name) {
+        return String::new();
+    }
+    IMPORTED_RECORDING_RULE.to_owned()
+}
+
 fn stream_import_guidance(
     stream: Option<&str>,
     source: Option<&str>,
@@ -610,5 +652,32 @@ mod tests {
             stream_content_description(None, None, None)
         );
         assert!(!stream_import_guidance(Some("archon"), None, None).is_empty());
+    }
+
+    #[test]
+    fn only_an_imported_recording_gets_the_speaker_first_rule() {
+        for stream in [
+            "import.audio",
+            "import.apple",
+            "import.granola",
+            "import.family_tapes",
+        ] {
+            assert_eq!(
+                imported_recording_rule(Some(stream), None, None),
+                IMPORTED_RECORDING_RULE
+            );
+        }
+        for stream in [
+            None,
+            Some("archon"),
+            Some("device_watch-audio"),
+            Some("import.chatgpt"),
+            Some("import.document"),
+            Some("import.obsidian"),
+            Some("import.image"),
+        ] {
+            assert!(imported_recording_rule(stream, None, None).is_empty());
+        }
+        assert!(imported_recording_rule(Some("import.audio"), Some("browser"), None).is_empty());
     }
 }

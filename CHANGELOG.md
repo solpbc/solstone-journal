@@ -15,6 +15,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 
 - your journal now describes time in your browser by the pages you had in front of you. a video playing in a background tab, or a page left open behind another app, is mentioned as open rather than as something you watched or read, and what a page or video shows is now less often written as something you did.
+- summaries of recordings you import now credit what was said to whoever said it, by name when the recording gives one and as "a speaker" otherwise, and an unnamed speaker can be you. a summary now rarely says you discussed, planned or asked for what someone else said in one.
 - each stretch's screen description now rarely calls you "the user": it addresses you as "you" and calls the AI agent working for you "your agent".
 - a show, film or podcast playing near you is now less often mistaken for a conversation, so fewer of them get a story as if the people in it were with you.
 - people mentioned by their full name in an activity now link to the person your journal remembers, including by another name you've saved for them.
