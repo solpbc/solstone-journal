@@ -38,8 +38,10 @@ Classify based on whether meaningful human activity occurred:
 - **idle**: Near-zero content — fewer than 3 transcript lines AND fewer than 3 distinct screen frames. Static screen with no user activity, silence, or system noise only.
 
 ### content_type
+First decide whose voices the transcript holds. Speech can come from a show, film, podcast, video or broadcast playing nearby rather than from people present. Signs of media: acted or scripted dialogue, characters calling each other by names that belong to a story, plot and drama (quests, crimes, battles, romance), narration, a host's introduction or sign-off, ads, theme songs, polished delivery from many voices. Signs of people present: everyday logistics, food, children, errands, plans for the day, reactions to each other and to the room. When most of the speech is media, the activity is `video` (or `music` for songs), never `meeting` or `social`, and the media's speakers are not participants. People talking about a show, film, game or ride, planning to watch one, or reacting to one are a conversation: only the media's own voices are media. A recorded announcement in the background does not make a conversation media.
+
 The dominant activity type observed:
-- **meeting**: A call or a sit-down meeting in which at least one other participant is named, conferences with turn-taking. A conversation in which no one is named is `social`, never `meeting`
+- **meeting**: A call or a sit-down meeting in which at least one other participant is named, conferences with turn-taking. A conversation in which no one is named is `social`, never `meeting`. A show, film, podcast, video or broadcast playing nearby is never a meeting, even when its characters or hosts name each other
 - **coding**: Writing or editing code, IDE work, code review, debugging
 - **browsing**: Web browsing, research, reading articles online
 - **email**: Reading or composing email
@@ -47,9 +49,9 @@ The dominant activity type observed:
 - **ai_conversation**: Conversations with AI assistants (ChatGPT, Claude, Gemini)
 - **writing**: Documents, notes, long-form writing
 - **reading**: Focused reading of documents, PDFs, books
-- **video**: Watching video or streaming content
+- **video**: Watching video or streaming content, including a show, film, podcast, video or broadcast playing nearby whose voices make up most of the speech, even when people present remark on it
 - **gaming**: Playing games
-- **social**: Social media browsing and interaction; casual conversation in person, small talk, talk during an errand
+- **social**: Social media browsing and interaction; casual conversation in person, small talk, talk during an errand. Voices from a show, film, podcast, video or broadcast playing nearby are not a conversation. When people present talk with each other while media plays in the background, their conversation is the activity
 - **planning**: Scheduling, calendar management, agenda setting
 - **productivity**: Spreadsheets, slides, task management
 - **terminal**: Command line / shell sessions
@@ -128,7 +130,7 @@ The proposed name must be specific and grounded in the observed activity. Write 
 - $preferred takes part in it;
 - at least one other participant is identified by name: on a participant list, by introducing themselves, or by being addressed by name.
 
-Otherwise `false`. If you could not write at least one participant's name into `speakers`, this is `false`. A short exchange, small talk with someone unnamed, an errand or purchase, overheard speech and a single voice are all `false`. When unsure, `false`.
+Talk among people present is live even when it is about a show or one plays in the background. Otherwise `false`. If you could not write at least one participant's name into `speakers`, this is `false`. A short exchange, small talk with someone unnamed, an errand or purchase, overheard speech and a single voice are all `false`. When unsure, `false`.
 
 ### speakers
 If `meeting_detected` is true, extract participant names from:

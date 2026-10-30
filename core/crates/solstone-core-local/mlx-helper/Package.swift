@@ -8,8 +8,8 @@ let package = Package(
     platforms: [.macOS(.v15)],
     products: [.executable(name: "mlx-helper", targets: ["mlx-helper"])],
     dependencies: [
-        .package(url: "https://github.com/ml-explore/mlx-swift-lm.git",
-                 revision: "48114eedf3c3d4a682a6b1d644cc5af5c2945d10", traits: []),
+        .package(url: "https://github.com/quartzjer/mlx-swift-lm.git",
+                 revision: "a0ae0b1d3abbed60f8f005ad250681a33a26d853", traits: []),
         .package(url: "https://github.com/ml-explore/mlx-swift.git", .upToNextMinor(from: "0.32.3")),
         .package(url: "https://github.com/huggingface/swift-transformers.git", from: "1.3.3"),
         .package(url: "https://github.com/hummingbird-project/hummingbird.git", from: "2.20.0"),

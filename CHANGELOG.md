@@ -15,9 +15,11 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 
 - each stretch's screen description now rarely calls you "the user": it addresses you as "you" and calls the AI agent working for you "your agent".
+- a show, film or podcast playing near you is now less often mistaken for a conversation, so fewer of them get a story as if the people in it were with you.
 
 ### Fixed
 
+- on a mac, the local model sometimes kept adding names and topics to a list until it reached its limit. those runs took minutes, failed and were tried again later. lists now end where they should.
 - fixed a case where confidential processing stayed unchecked after you allowed it in your browser.
 - fixed a failure when picking a folder to import in the android development app.
 - in imports, checking a folder's status now clears an earlier read error when the check succeeds. an unconfirmed sync or folder change stays visible.
