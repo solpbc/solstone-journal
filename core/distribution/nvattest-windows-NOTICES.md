@@ -39,8 +39,8 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ## curl_external
 
-Source: https://github.com/curl/curl/releases/download/curl-8_22_0/curl-8.22.0.tar.gz
-Pin: d54dd598bf05927a726deb38df31c6a255ba83ff1de57c5d1464dac3ed8f44a1
+Source: https://github.com/curl/curl/releases/download/curl-8_23_0/curl-8.23.0.tar.gz
+Pin: e3de77cfa6367083c776a26647fc9f633b538c06c3baa73d931a252ac8f72b49
 
 ### curl_external.txt
 
@@ -523,8 +523,8 @@ and users must comply to its license: https://raw.githubusercontent.com/fmtlib/f
 
 ## xmlsec_external
 
-Source: https://github.com/lsh123/xmlsec/releases/download/xmlsec-1_2_42/xmlsec1-1.2.42.tar.gz
-Pin: 5359e3c19016ab164b505c1222ef5a2d87b34f50f85ff91d765f4aaa0df42db2
+Source: https://github.com/lsh123/xmlsec/releases/download/xmlsec-1_2_43/xmlsec1-1.2.43.tar.gz
+Pin: a0e67d377d2692a24fd53e4a2d029edd8d384f861231a5cea28f628f93b45345
 
 ### xmlsec_external.txt
 

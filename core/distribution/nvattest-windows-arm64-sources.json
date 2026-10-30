@@ -1,8 +1,8 @@
 {
   "schema": "solstone.nvattest-windows-notices.v1",
-  "notices_body_sha256": "b12f2cb77c1578524f1d2f05c6cc35fdac3f499bb280bce66959590efd909579",
-  "body_assembly_revision": "69a71c859ec02b6e5f10616b8b8a873c230941c9",
-  "admitted_sdk_revision": "6a52b92d1c8e6ae2a2b3a5baffc27c22734f6331",
+  "notices_body_sha256": "e1c2bb174cce9fc4bdb5e95122c49fe114ff56a22ea5a230b81884a0f052b4ae",
+  "body_assembly_revision": "25ea26bc6e3cee09a344f70f29c03481420e8077",
+  "admitted_sdk_revision": "25ea26bc6e3cee09a344f70f29c03481420e8077",
   "regorus_cargo_lock": {
     "member": "sol/release/regorus-Cargo.lock",
     "sha256": "b8352c80ef609b602bfd25e393ad774f74894bab1ab60a9afbeb61d6aae3c910"
@@ -23,14 +23,14 @@
       "sha256": "780157a1efdb57188ec474dca87acaee67a3a839c2525b2214d318228451809f"
     },
     {
-      "name": "xmlsec1-1.2.42.tar.gz",
-      "url": "https://github.com/lsh123/xmlsec/releases/download/xmlsec-1_2_42/xmlsec1-1.2.42.tar.gz",
-      "sha256": "5359e3c19016ab164b505c1222ef5a2d87b34f50f85ff91d765f4aaa0df42db2"
+      "name": "xmlsec1-1.2.43.tar.gz",
+      "url": "https://github.com/lsh123/xmlsec/releases/download/xmlsec-1_2_43/xmlsec1-1.2.43.tar.gz",
+      "sha256": "a0e67d377d2692a24fd53e4a2d029edd8d384f861231a5cea28f628f93b45345"
     },
     {
-      "name": "curl-8.22.0.tar.gz",
-      "url": "https://github.com/curl/curl/releases/download/curl-8_22_0/curl-8.22.0.tar.gz",
-      "sha256": "d54dd598bf05927a726deb38df31c6a255ba83ff1de57c5d1464dac3ed8f44a1"
+      "name": "curl-8.23.0.tar.gz",
+      "url": "https://github.com/curl/curl/releases/download/curl-8_23_0/curl-8.23.0.tar.gz",
+      "sha256": "e3de77cfa6367083c776a26647fc9f633b538c06c3baa73d931a252ac8f72b49"
     },
     {
       "name": "zlib-1.3.1.tar.gz",

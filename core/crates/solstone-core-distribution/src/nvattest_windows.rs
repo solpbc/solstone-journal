@@ -210,14 +210,14 @@ const NATIVE_SOURCES: &[NativeSourcePin] = &[
         "780157a1efdb57188ec474dca87acaee67a3a839c2525b2214d318228451809f",
     ),
     download(
-        "xmlsec1-1.2.42.tar.gz",
-        "https://github.com/lsh123/xmlsec/releases/download/xmlsec-1_2_42/xmlsec1-1.2.42.tar.gz",
-        "5359e3c19016ab164b505c1222ef5a2d87b34f50f85ff91d765f4aaa0df42db2",
+        "xmlsec1-1.2.43.tar.gz",
+        "https://github.com/lsh123/xmlsec/releases/download/xmlsec-1_2_43/xmlsec1-1.2.43.tar.gz",
+        "a0e67d377d2692a24fd53e4a2d029edd8d384f861231a5cea28f628f93b45345",
     ),
     download(
-        "curl-8.22.0.tar.gz",
-        "https://github.com/curl/curl/releases/download/curl-8_22_0/curl-8.22.0.tar.gz",
-        "d54dd598bf05927a726deb38df31c6a255ba83ff1de57c5d1464dac3ed8f44a1",
+        "curl-8.23.0.tar.gz",
+        "https://github.com/curl/curl/releases/download/curl-8_23_0/curl-8.23.0.tar.gz",
+        "e3de77cfa6367083c776a26647fc9f633b538c06c3baa73d931a252ac8f72b49",
     ),
     download(
         "zlib-1.3.1.tar.gz",
@@ -279,7 +279,7 @@ const BUILD_TOOLS: &[DownloadSourcePin] = &[
     },
 ];
 
-pub const NVATTEST_SDK_REVISION: &str = "69a71c859ec02b6e5f10616b8b8a873c230941c9";
+pub const NVATTEST_SDK_REVISION: &str = "25ea26bc6e3cee09a344f70f29c03481420e8077";
 
 #[must_use]
 pub fn pinned_ca_bundle_sha256() -> &'static str {
@@ -302,13 +302,13 @@ pub(crate) const fn production_pins() -> Pins {
         sdk_revision: NVATTEST_SDK_REVISION,
         source_archive: ArchivePin {
             bytes: 5201920,
-            sha256: "8a6f05954c8fe490acec8c1032926a72e31fb3f303493a7cb263bd5e63534623",
+            sha256: "f2328f87f26a4bc7d1911e94735e18e40035b0ce633d3b7cbe9586952733ddbb",
         },
         bundle_archive: ArchivePin {
-            bytes: 451512320,
-            sha256: "114e0135cbcec53dd104d330c76ffafd630c372f5c25d0e103d718514f34725d",
+            bytes: 451553280,
+            sha256: "b4ded473842e091eff4a0abf0793af71771a45916c1a299a43e951889e6ba0cd",
         },
-        manifest_sha256: "bca2a8fa20094517599953f38a3708e79ab93106228c594df3c9a4e19836932d",
+        manifest_sha256: "bab2913e5091fb3f730608ffbbbeba4a8abda6400d1f162adbe4831c506ec5ef",
         ca_bundle: FilePin {
             member: "ca-bundle.pem",
             bytes: 186446,
@@ -324,8 +324,8 @@ pub(crate) const fn production_pins() -> Pins {
             bytes: 45645,
             sha256: "b8352c80ef609b602bfd25e393ad774f74894bab1ab60a9afbeb61d6aae3c910",
         },
-        notices_body_sha256: "b12f2cb77c1578524f1d2f05c6cc35fdac3f499bb280bce66959590efd909579",
-        body_assembly_revision: "69a71c859ec02b6e5f10616b8b8a873c230941c9",
+        notices_body_sha256: "e1c2bb174cce9fc4bdb5e95122c49fe114ff56a22ea5a230b81884a0f052b4ae",
+        body_assembly_revision: "25ea26bc6e3cee09a344f70f29c03481420e8077",
         native_sources: NATIVE_SOURCES,
         build_tools: BUILD_TOOLS,
         msvc_runtime: MsvcRuntimePins {
