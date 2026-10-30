@@ -281,6 +281,8 @@ async function main() {
     setChatGptNotice,
     buildNotice,
     openConsentTab,
+    enableConfidential,
+    stopConfidentialPoll,
     openLane,
     renderLaneSwitch,
     showView,
@@ -4089,6 +4091,74 @@ async function main() {
     thinking.state.providers = base;
     window.apiJson = baseApiJson;
     context.setTimeout = savedSetTimeout;
+  }
+
+  // Returning from the consent browser can miss the short-lived operation.
+  // The saved configuration still needs the normal check; it is not readiness.
+  {
+    const baseApiJson = window.apiJson;
+    const previousProviders = thinking.state.providers;
+    thinking.showView('confidential-setup');
+    const response = (operation, enabled = true, provenance = true) => ({
+      active: {provider: 'local', model: 'local/qwen3.5-4b'},
+      active_lane: {
+        lane: enabled ? 'confidential' : 'none',
+        confidential_enabled: enabled,
+        confidential_provenance_configured: provenance,
+        confidential_operation: operation,
+        confidential_attestation: {state: 'inactive'},
+      },
+      provider_status: {local: {configured: true, generate_ready: false, issues: []}},
+      brain: {
+        state: 'unknown', reason_code: 'fingerprint_key_unavailable',
+        identity: {lane: 'none'}, evidence: {observed_at: 'old'},
+      },
+    });
+    for (const [name, operation, enabled, provenance, expected] of [
+      ['expired terminal', null, true, true, 1],
+      ['observed terminal', {phase: 'not_verified'}, true, true, 1],
+      ['disabled', null, false, true, 0],
+      ['unbound configuration', null, true, false, 0],
+      ['failed turn-on', {phase: 'repair_needed'}, true, true, 0],
+    ]) {
+      let checks = 0;
+      const payload = response(operation, enabled, provenance);
+      thinking.state.providers = response(null, false, false);
+      window.apiJson = (url, options) => {
+        if (url === 'api/confidential/enable') return Promise.resolve({operation: {phase: 'waiting'}});
+        if (url.startsWith('api/providers')) return Promise.resolve(payload);
+        if (url === 'api/brain/check') {
+          assert.strictEqual(options.method, 'POST', 'use the normal check request');
+          checks += 1;
+          return Promise.resolve({ok: true, brain: payload.brain});
+        }
+        throw Error(`unexpected consent request: ${url}`);
+      };
+      await thinking.enableConfidential();
+      assert.strictEqual(checks, expected, `${name}: request the normal check only for configured completion`);
+      assert.strictEqual(thinking.state.providers.brain.state, 'unknown', `${name}: configuration never establishes readiness`);
+    }
+
+    // A superseded poll does not borrow the newer page's configured state.
+    let releaseRead;
+    let checks = 0;
+    thinking.state.providers = response(null, false, false);
+    window.apiJson = (url) => {
+      if (url === 'api/confidential/enable') return Promise.resolve({operation: {phase: 'waiting'}});
+      if (url.startsWith('api/providers')) return new Promise((resolve) => { releaseRead = resolve; });
+      if (url === 'api/brain/check') { checks += 1; return Promise.resolve({ok: true}); }
+      throw Error(`unexpected cancelled consent request: ${url}`);
+    };
+    const enabling = thinking.enableConfidential();
+    await settle();
+    assert.strictEqual(typeof releaseRead, 'function');
+    thinking.stopConfidentialPoll();
+    thinking.state.providers = response(null);
+    releaseRead(response(null));
+    await enabling;
+    assert.strictEqual(checks, 0, 'a superseded poll cannot request a check');
+    thinking.state.providers = previousProviders;
+    window.apiJson = baseApiJson;
   }
 
   console.log(`DOM CASES: ${passedCases}/${executedCases} passed`);

@@ -550,7 +550,8 @@
   function confidentialEnableNeedsRecheck(activeLane) {
     return activeLane?.confidential_enabled === true
       && activeLane?.confidential_provenance_configured === true
-      && activeLane?.confidential_operation?.phase === 'not_verified';
+      // The successful operation can expire while the consent browser is open.
+      && (!activeLane.confidential_operation || activeLane.confidential_operation.phase === 'not_verified');
   }
 
   function confidentialOperationRender(operation, text) {
@@ -4142,6 +4143,7 @@
           return;
         }
         stopConfidentialPoll();
+        return payload;
       })
       .catch((err) => {
         handleConfidentialPollError({
@@ -4358,8 +4360,8 @@
       renderAll();
     }
     openConsentTab(start?.operation);
-    await startConfidentialPoll();
-    if (confidentialEnableNeedsRecheck(state.providers.active_lane)) {
+    const completed = await startConfidentialPoll();
+    if (completed && confidentialEnableNeedsRecheck(completed.active_lane)) {
       try {
         await refreshConfidentialReadiness();
       } catch (err) {

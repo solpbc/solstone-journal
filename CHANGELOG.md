@@ -13,6 +13,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- fixed a case where confidential processing stayed unchecked after you allowed it in your browser.
 - fixed a failure when picking a folder to import in the android development app.
 - in imports, checking a folder's status now clears an earlier read error when the check succeeds. an unconfirmed sync or folder change stays visible.
 - the development phone apps can now recover an explicit media offload request after a lost reply, using the request ID saved before sending it. repeating that request does not start another offload; an unknown result stays unknown.
