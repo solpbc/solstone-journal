@@ -1054,6 +1054,14 @@ async fn set_backup_destination(deps: BackupWebDeps, body: Bytes) -> axum::respo
         Err(response) => return response,
     };
     let destination = destination_from_payload(&payload);
+    if !solstone_core_backup::repository_names_backend(&destination) {
+        return response::error(
+            axum::http::StatusCode::BAD_REQUEST,
+            "one of those values couldn't be used.",
+            "repository_unsupported",
+            "repository must start with the backend name",
+        );
+    }
     if set_destination(&deps.journal_root, &destination).is_err() {
         return internal_error();
     }

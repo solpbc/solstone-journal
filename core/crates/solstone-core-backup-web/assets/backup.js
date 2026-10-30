@@ -274,6 +274,7 @@
       "invalid_config_value": "use non-negative whole numbers, then save again.",
       "invalid_operation_for_state": "finish the current backup setup step, then try again.",
       "invalid_request_value": "check the destination details and try again.",
+      "repository_unsupported": "the repository has to start with s3: or b2:, matching the backend you chose (for example s3:s3.amazonaws.com/your-bucket or b2:your-bucket:journal).",
       "repo_missing": "no backup repository was found at that destination.",
       "auth_failed": "that recovery key didn't unlock the backup. check the key first, then the destination details.",
       "locked": "the destination is busy. try again shortly.",

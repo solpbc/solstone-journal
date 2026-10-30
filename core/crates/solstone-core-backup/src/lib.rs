@@ -54,7 +54,7 @@ pub mod teardown_recovery;
 
 pub use archive_readback::SUPPORTED_RESTIC_VERSION;
 pub use defaults::backup_defaults;
-pub use destination::assemble_backend_env;
+pub use destination::{assemble_backend_env, repository_names_backend};
 pub use hosted::{
     delete_hosted_binding, load_hosted_binding, load_hosted_binding_at_root, save_hosted_binding,
 };

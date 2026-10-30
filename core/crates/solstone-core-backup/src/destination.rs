@@ -58,6 +58,25 @@ pub fn assemble_backend_env(destination: &Destination) -> Result<Map<String, Val
     }
 }
 
+/// Whether an owner's own S3 or B2 destination names its storage service.
+///
+/// restic reads a repository without a backend prefix as a folder on this
+/// computer, relative to the journal's working directory. That folder sits
+/// inside the journal, so each backup would copy the repository into itself
+/// while the storage credentials went unused. Other backends are not owner
+/// destinations and are not judged here.
+#[must_use]
+pub fn repository_names_backend(destination: &Destination) -> bool {
+    match destination.backend.as_str() {
+        backend @ ("s3" | "b2") => destination
+            .repository
+            .strip_prefix(backend)
+            .and_then(|rest| rest.strip_prefix(':'))
+            .is_some_and(|location| !location.trim().is_empty()),
+        _ => true,
+    }
+}
+
 /// The iOS signer needs the signing region that desktop restic discovers on its own.
 /// An owner-supplied region wins; otherwise use the endpoint's `s3.<region>.` or
 /// `s3-<region>.` host label, else S3's default. A wrong region fails authentication.
@@ -109,6 +128,38 @@ fn required(credentials: &Map<String, Value>, key: &'static str) -> Result<Strin
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn owner_repositories_must_name_their_storage_service() {
+        let destination = |backend: &str, repository: &str| Destination {
+            repository: repository.into(),
+            backend: backend.into(),
+            credentials: Map::new(),
+        };
+        for (backend, repository) in [
+            ("s3", "s3:s3.us-west-004.backblazeb2.com/bucket"),
+            ("s3", "s3:https://s3.amazonaws.com/bucket/prefix"),
+            ("b2", "b2:bucket:journal"),
+            ("rclone", "rclone:spb:bucket/prefix"),
+        ] {
+            assert!(repository_names_backend(&destination(backend, repository)));
+        }
+        for (backend, repository) in [
+            ("s3", "solstone-backup"),
+            ("b2", "solstone-backup"),
+            ("s3", "/Users/owner/backup"),
+            ("s3", "b2:bucket:journal"),
+            ("b2", "s3:host/bucket"),
+            ("s3", "s3:"),
+            ("b2", "b2: "),
+            ("s3", "S3:host/bucket"),
+        ] {
+            assert!(
+                !repository_names_backend(&destination(backend, repository)),
+                "{backend} {repository}"
+            );
+        }
+    }
 
     #[test]
     fn ios_region_prefers_owner_value_then_endpoint_then_default() {

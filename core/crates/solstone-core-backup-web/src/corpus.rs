@@ -2183,6 +2183,35 @@ async fn destination_returns_distinct_reason_codes_from_cat_config() {
     }
 }
 
+// This fixture admits a Unix bin/lib payload; Windows requires verified native workers.
+#[cfg(unix)]
+#[tokio::test]
+async fn destination_without_its_backend_prefix_is_refused_and_not_saved() {
+    for (backend, credentials) in [
+        (
+            "s3",
+            json!({"access_key_id":"key","secret_access_key":"secret"}),
+        ),
+        ("b2", json!({"account_id":"id","account_key":"key"})),
+    ] {
+        let root = crate::test_support::root("fresh");
+        let runner = Arc::new(ScriptRunner::with_outputs(vec![]));
+        let (deps, _restic) = prepared(root.path().to_path_buf(), runner.clone());
+        let destination =
+            json!({"repository":"solstone-backup","backend":backend,"credentials":credentials});
+        let (status, body) = post_json(&deps, "/app/backup/destination", Some(destination)).await;
+        assert_eq!(status, 400, "{backend}");
+        assert_eq!(body["reason_code"], "repository_unsupported", "{backend}");
+        assert!(runner.calls.lock().unwrap().is_empty(), "{backend}");
+        assert!(
+            solstone_core_backup::get_destination(root.path())
+                .unwrap()
+                .is_none(),
+            "{backend}"
+        );
+    }
+}
+
 #[cfg(feature = "full-tests")]
 fn assert_enable_portal_url(url: &str) {
     let relative = url.strip_prefix("https://services.solstone.app").unwrap();
