@@ -223,7 +223,8 @@ pub fn resolve(
     };
     let (screen_names, gaps) = extract_screen_participants_with_gaps(&segment_dir);
     evidence_gaps.extend(gaps);
-    let (meeting_names, gaps) = extract_meeting_participants_with_gaps(journal_root, day);
+    let (meeting_names, gaps) =
+        extract_meeting_participants_with_gaps(journal_root, day, segment_key);
     evidence_gaps.extend(gaps);
     let layer2 = apply_structural_heuristics(
         layer1.labels,

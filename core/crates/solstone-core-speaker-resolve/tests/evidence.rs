@@ -49,7 +49,7 @@ fn ac1_setting_and_meeting_distinguish_missing_empty_and_invalid_sources() {
     let segment = segment(&temporary);
     assert_eq!(load_setting_field_with_gaps(&segment), (None, vec![]));
     assert_eq!(
-        extract_meeting_participants_with_gaps(temporary.path(), "20260808"),
+        extract_meeting_participants_with_gaps(temporary.path(), "20260808", "120000_300"),
         (Vec::new(), vec![])
     );
 
@@ -61,11 +61,11 @@ fn ac1_setting_and_meeting_distinguish_missing_empty_and_invalid_sources() {
         "malformed_json"
     );
 
-    let meetings = temporary
-        .path()
-        .join("chronicle/20260808/talents/meetings.md");
-    fs::create_dir_all(&meetings).expect("make unreadable meetings path");
-    let (_, gaps) = extract_meeting_participants_with_gaps(temporary.path(), "20260808");
+    let index = solstone_core_indexer_store::db::db_path(temporary.path());
+    fs::create_dir_all(index.parent().expect("index directory")).expect("make index directory");
+    fs::write(&index, b"not a database").expect("write unreadable search index");
+    let (_, gaps) =
+        extract_meeting_participants_with_gaps(temporary.path(), "20260808", "120000_300");
     assert_eq!(gaps[0].source, "meeting_day");
     assert_eq!(gaps[0].reason, "unreadable");
 }

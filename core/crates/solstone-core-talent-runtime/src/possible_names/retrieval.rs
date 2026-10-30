@@ -144,6 +144,23 @@ pub(crate) fn compact(text: &str) -> String {
     NOT_ALNUM.replace_all(&folded, "").into_owned()
 }
 
+/// Whether two written names are near spellings of each other, by the rule
+/// the spelling route matches a span to a name with: the same first letter and
+/// word count, and match keys of [`MIN_SPELLING_CHARS`] or more that differ,
+/// are within [`SPELLING_MAX_LENGTH_DIFFERENCE`] characters in length and reach
+/// [`SPELLING_MIN_RATIO`].
+pub(crate) fn near_spelling(left: &str, right: &str) -> bool {
+    let (left_key, right_key) = (compact(left), compact(right));
+    let (left_length, right_length) = (char_count(&left_key), char_count(&right_key));
+    left_key != right_key
+        && left_length >= MIN_SPELLING_CHARS
+        && right_length >= MIN_SPELLING_CHARS
+        && left_key.chars().next() == right_key.chars().next()
+        && split_words(left).count() == split_words(right).count()
+        && left_length.abs_diff(right_length) <= SPELLING_MAX_LENGTH_DIFFERENCE
+        && rapidfuzz::fuzz::ratio(left_key.chars(), right_key.chars()) * 100.0 >= SPELLING_MIN_RATIO
+}
+
 /// Python's `str.casefold`.
 pub(crate) fn casefold(text: &str) -> String {
     caseless::default_case_fold_str(text)

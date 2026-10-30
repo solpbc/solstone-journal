@@ -26,9 +26,9 @@
 //!   gates a segment's publication.
 
 mod packet;
-mod phon;
+pub(crate) mod phon;
 mod policy;
-mod retrieval;
+pub(crate) mod retrieval;
 #[cfg(test)]
 mod tests;
 

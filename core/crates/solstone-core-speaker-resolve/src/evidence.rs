@@ -30,13 +30,6 @@ static TRAILING_SETTING_CONTEXT: LazyLock<Regex> = LazyLock::new(|| {
 static SETTING_CONNECTOR: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r",\s*(?:and\s+)?|\s+and\s+|&\s*").expect("valid setting connector regex")
 });
-static MEETING_PARTICIPANTS: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)\*\*Participants?\s*[:–—\-]\*\*\s*(.*)|\*\*Participants?\*\*\s*[:–—\-]\s*(.*)")
-        .expect("valid meeting participants regex")
-});
-static MEETING_SEPARATOR: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"[,;]").expect("valid meeting separator regex"));
-
 /// One source-health gap observed while assembling candidate evidence.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EvidenceGap {
@@ -199,43 +192,44 @@ pub fn extract_screen_participants_with_gaps(
     (names, Vec::new())
 }
 
-/// Read daily meeting participant names and its source-health gaps.
+/// Read the known people invited to calendar events scheduled during a
+/// segment, as the journal names them now, and its source-health gaps. An
+/// event sits beside the segment by the rule an activity uses
+/// (`ScheduledEvent::scheduled_during`); the people are the ones the calendar
+/// listing already matched to known entities, the owner left out.
 pub fn extract_meeting_participants_with_gaps(
     journal_root: &Path,
     day: &str,
+    segment_key: &str,
 ) -> (Vec<String>, Vec<EvidenceGap>) {
-    let path = journal_root
-        .join("chronicle")
-        .join(day)
-        .join("talents/meetings.md");
-    if !path.exists() {
+    let Some(span) = segment_seconds(day, segment_key) else {
         return (Vec::new(), Vec::new());
-    }
-    let bytes = match fs::read(&path) {
-        Ok(bytes) => bytes,
-        Err(_) => return (Vec::new(), vec![gap("meeting_day", "unreadable")]),
     };
-    let content = match String::from_utf8(bytes) {
-        Ok(content) => content,
-        Err(_) => return (Vec::new(), vec![gap("meeting_day", "unreadable")]),
-    };
-    let mut names = Vec::new();
-    for line in content.lines() {
-        let Some(captures) = MEETING_PARTICIPANTS.captures(line) else {
-            continue;
+    let events =
+        match solstone_core_indexer_store::calendar_schedule::scheduled_on_day(journal_root, day) {
+            Ok(events) => events,
+            Err(_) => return (Vec::new(), vec![gap("meeting_day", "unreadable")]),
         };
-        let participants = captures
-            .get(1)
-            .or_else(|| captures.get(2))
-            .map_or("", |capture| capture.as_str());
-        for name in MEETING_SEPARATOR.split(participants) {
-            let name = name.trim().trim_matches('*').trim();
-            if name.chars().count() > 1 {
-                names.push(name.to_owned());
+    let mut names = Vec::new();
+    for event in events
+        .iter()
+        .filter(|event| event.scheduled_during(day, span))
+    {
+        for person in &event.people {
+            if !names.contains(&person.name) {
+                names.push(person.name.clone());
             }
         }
     }
     (names, Vec::new())
+}
+
+/// A segment's span in seconds from its day's midnight.
+fn segment_seconds(day: &str, segment_key: &str) -> Option<(u32, u32)> {
+    let (start, end) = solstone_core_format::calendar::segment_span(day, segment_key)?;
+    let midnight = start.date().and_hms_opt(0, 0, 0)?;
+    let seconds = |at: chrono::NaiveDateTime| u32::try_from((at - midnight).num_seconds()).ok();
+    Some((seconds(start)?, seconds(end)?))
 }
 
 /// Parse non-owner participant names from an imported setting field.
@@ -373,4 +367,131 @@ fn channel_rank(source: &str) -> usize {
         .iter()
         .position(|channel| *channel == source)
         .unwrap_or(CHANNEL_ORDER.len())
+}
+
+#[cfg(test)]
+#[allow(clippy::disallowed_methods, clippy::disallowed_types)]
+mod tests {
+    use std::fs;
+    use std::path::Path;
+
+    use serde_json::json;
+    use sha2::{Digest, Sha256};
+
+    use super::extract_meeting_participants_with_gaps;
+
+    /// A meeting on 2026-10-27, 10:00–11:00 Denver, organized by Alex Rivera
+    /// with the owner invited.
+    const MEETING: &str = include_str!("../../../fixtures/calendar_notes/golden.jsonl");
+    const CALENDAR: &str = "phone_calendar";
+
+    fn person(journal: &Path, id: &str, name: &str, emails: &[&str], principal: bool) {
+        let dir = journal.join("entities").join(id);
+        fs::create_dir_all(&dir).unwrap();
+        let mut identity = json!({"id": id, "name": name, "type": "Person", "emails": emails});
+        if principal {
+            identity["is_principal"] = json!(true);
+        }
+        fs::write(dir.join("entity.json"), identity.to_string()).unwrap();
+    }
+
+    /// A journal whose calendar holds the meeting, indexed.
+    fn journal_with_meeting() -> tempfile::TempDir {
+        let journal = tempfile::TempDir::new().unwrap();
+        let root = journal.path();
+        fs::create_dir_all(root.join("config")).unwrap();
+        fs::write(
+            root.join("config/journal.json"),
+            json!({"identity": {"timezone": "America/Denver", "email_addresses": ["owner@example.com"]}})
+                .to_string(),
+        )
+        .unwrap();
+        fs::create_dir_all(root.join("streams")).unwrap();
+        fs::write(
+            root.join("streams").join(format!("{CALENDAR}.json")),
+            json!({
+                "name": CALENDAR, "kind": "observer", "host": null, "platform": null,
+                "created_at": 0, "last_day": null, "last_segment": null, "seq": 1,
+                "cid": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "source": "calendar",
+            })
+            .to_string(),
+        )
+        .unwrap();
+        person(root, "owner", "Jordan Lee", &["owner@example.com"], true);
+        person(
+            root,
+            "alex_rivera",
+            "Alex Rivera",
+            &["alex@example.com"],
+            false,
+        );
+        let dir = root
+            .join("chronicle/20261019")
+            .join(CALENDAR)
+            .join("094200_300");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(
+            dir.join("stream.json"),
+            json!({"stream": CALENDAR, "prev_day": null, "prev_segment": null, "seq": 1})
+                .to_string(),
+        )
+        .unwrap();
+        let bytes = format!("{}\n", MEETING.lines().next().unwrap()).into_bytes();
+        let name = format!("calendar_{:x}.jsonl", Sha256::digest(&bytes));
+        fs::write(dir.join(&name), bytes).unwrap();
+        solstone_core_indexer_store::scan::rescan_file(
+            root,
+            Path::new(&format!("20261019/{CALENDAR}/094200_300/{name}")),
+        )
+        .unwrap();
+        journal
+    }
+
+    #[test]
+    fn a_segment_during_a_meeting_names_its_known_invitees() {
+        let journal = journal_with_meeting();
+        assert_eq!(
+            extract_meeting_participants_with_gaps(journal.path(), "20261027", "101500_300"),
+            (vec!["Alex Rivera".to_owned()], vec![])
+        );
+    }
+
+    #[test]
+    fn a_segment_outside_every_meeting_names_no_one() {
+        let journal = journal_with_meeting();
+        assert_eq!(
+            extract_meeting_participants_with_gaps(journal.path(), "20261027", "120000_300"),
+            (Vec::new(), vec![])
+        );
+        assert_eq!(
+            extract_meeting_participants_with_gaps(journal.path(), "20261028", "101500_300"),
+            (Vec::new(), vec![])
+        );
+    }
+
+    #[test]
+    fn an_unreadable_search_index_is_a_meeting_gap() {
+        let journal = tempfile::TempDir::new().unwrap();
+        let index = solstone_core_indexer_store::db::db_path(journal.path());
+        fs::create_dir_all(index.parent().unwrap()).unwrap();
+        fs::write(&index, b"not a database").unwrap();
+        let (names, gaps) =
+            extract_meeting_participants_with_gaps(journal.path(), "20261027", "101500_300");
+        assert!(names.is_empty());
+        assert_eq!(gaps.len(), 1);
+        assert_eq!(
+            (gaps[0].source.as_str(), gaps[0].reason.as_str()),
+            ("meeting_day", "unreadable")
+        );
+    }
+
+    #[test]
+    fn a_journal_without_a_search_index_has_no_meetings_and_no_gap() {
+        let journal = tempfile::TempDir::new().unwrap();
+        assert_eq!(
+            extract_meeting_participants_with_gaps(journal.path(), "20261027", "101500_300"),
+            (Vec::new(), vec![])
+        );
+    }
 }

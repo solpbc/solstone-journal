@@ -161,7 +161,19 @@ pub(crate) struct JournalOwner {
     /// The principal entity's display name.
     pub(crate) name: Option<String>,
     names: Vec<String>,
+    /// The owner's own names as written, for [`Self::sounds_like`].
+    forms: Vec<String>,
 }
+
+/// The fewest letters a name needs before it can be heard as the owner's.
+const OWNER_VARIANT_MIN_CHARS: usize = 6;
+/// The fewest sounds a key needs to count: a short key ("Miller" is `MLR`)
+/// is shared by too many other names.
+const OWNER_VARIANT_MIN_KEY: usize = 4;
+/// A sound-alike: the same key, a spelling at least this similar, and lengths
+/// within the possible-names sound-match ratios.
+const OWNER_SOUND_MIN_RATIO: f64 = 70.0;
+const OWNER_SOUND_LENGTH_RATIO: std::ops::RangeInclusive<f64> = 0.67..=1.5;
 
 impl JournalOwner {
     pub(crate) fn load(journal: &Path) -> Result<Self, String> {
@@ -181,6 +193,12 @@ impl JournalOwner {
             names.extend(value.get("name").and_then(Value::as_str).map(str::to_owned));
             names.extend(string_values(&value, "aka"));
         }
+        let forms = names
+            .iter()
+            .skip(2)
+            .map(|name| name.trim().to_owned())
+            .filter(|name| !name.is_empty())
+            .collect();
         let mut folded = Vec::new();
         for name in names.iter().map(|name| fold_name(name)) {
             if !name.is_empty() && !folded.contains(&name) {
@@ -196,6 +214,7 @@ impl JournalOwner {
                 .filter(|name| !name.is_empty())
                 .map(str::to_owned),
             names: folded,
+            forms,
         })
     }
 
@@ -211,6 +230,62 @@ impl JournalOwner {
             NamedActor::Other
         }
     }
+
+    /// Whether `name`, which [`Self::actor`] does not take as the owner, is
+    /// how speech recognition or a talent wrote one of the owner's own names:
+    /// a near spelling (the possible-names spelling route), or the same sound
+    /// with a spelling not far off. Each
+    /// whole name counts, and so does its surname alone (the words after the
+    /// first, or the last word) when its sound is distinctive enough that a
+    /// common short surname is never taken for the owner.
+    pub(crate) fn sounds_like(&self, name: &str) -> bool {
+        let heard = possible_names::retrieval::compact(name);
+        let heard_length = heard.chars().count();
+        if heard_length < OWNER_VARIANT_MIN_CHARS {
+            return false;
+        }
+        let heard_key = possible_names::phon::key(name);
+        self.forms
+            .iter()
+            .flat_map(|form| owner_targets(form))
+            .any(|(form, surname)| {
+                let target = possible_names::retrieval::compact(&form);
+                let length = target.chars().count();
+                let key = possible_names::phon::key(&form);
+                if length < OWNER_VARIANT_MIN_CHARS
+                    || (surname && key.chars().count() < OWNER_VARIANT_MIN_KEY)
+                {
+                    return false;
+                }
+                if heard == target {
+                    return true;
+                }
+                if possible_names::retrieval::near_spelling(name, &form) {
+                    return true;
+                }
+                heard_key == key
+                    && key.chars().count() >= OWNER_VARIANT_MIN_KEY
+                    && OWNER_SOUND_LENGTH_RATIO.contains(&(heard_length as f64 / length as f64))
+                    && rapidfuzz::fuzz::ratio(heard.chars(), target.chars()) * 100.0
+                        >= OWNER_SOUND_MIN_RATIO
+            })
+    }
+}
+
+/// A full owner name `form` as a whole, then its surname alone: the words
+/// after the first ("Van Dusen"), and the last word when that differs. A
+/// one-word name (a first name, a nickname, a handle) is matched exactly or not
+/// at all: "Matthias" is someone else as often as it is a misheard "Mattias".
+fn owner_targets(form: &str) -> Vec<(String, bool)> {
+    let words = form.split_whitespace().collect::<Vec<_>>();
+    if words.len() < 2 {
+        return Vec::new();
+    }
+    let mut targets = vec![(words.join(" "), false), (words[1..].join(" "), true)];
+    if words.len() >= 3 {
+        targets.push((words[words.len() - 1].to_owned(), true));
+    }
+    targets
 }
 
 fn fold_name(name: &str) -> String {

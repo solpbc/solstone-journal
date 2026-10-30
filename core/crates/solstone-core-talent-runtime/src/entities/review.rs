@@ -35,6 +35,21 @@ fn review_days(day: &str) -> Vec<String> {
         .collect()
 }
 
+/// Whether `name` is, as written, the name of a known entity other than the
+/// owner: the confident tiers only (name or alias, ignoring case, email, id).
+fn names_known_other(
+    name: &str,
+    candidates: &[solstone_core_entity_matching::EntityNameCandidate],
+    owner: &crate::JournalOwner,
+) -> bool {
+    solstone_core_entity_matching::find_matching_entity(name, candidates, 90.0).is_some_and(
+        |matched| {
+            matched.tier.is_high_confidence()
+                && candidates[matched.candidate_index].id.as_deref() != owner.id.as_deref()
+        },
+    )
+}
+
 fn threshold(entity_type: &str) -> usize {
     match entity_type {
         "Person" => 2,
@@ -76,60 +91,6 @@ const OWNER_BUCKET: &str = "";
 fn build_review_inputs(journal: &Path, facet: &str, day: &str) -> Result<ReviewInputs, String> {
     let owner = crate::JournalOwner::load(journal)?;
     let mut buckets: BTreeMap<String, CandidateBucket> = BTreeMap::new();
-    let mut names = BTreeSet::new();
-    for review_day in review_days(day) {
-        for entity in solstone_core_facets::read_detected_entities(journal, facet, &review_day)
-            .map_err(|error| error.to_string())?
-        {
-            let name = entity
-                .get("name")
-                .and_then(Value::as_str)
-                .unwrap_or_default()
-                .trim();
-            let entity_type = entity
-                .get("type")
-                .and_then(Value::as_str)
-                .unwrap_or_default()
-                .trim();
-            let description = entity
-                .get("description")
-                .and_then(Value::as_str)
-                .unwrap_or_default()
-                .trim();
-            let slug = solstone_core_entity_matching::entity_slug(name);
-            if name.is_empty() || entity_type.is_empty() || slug.is_empty() {
-                continue;
-            }
-            // "Speaker 2" or "Unknown" stands for someone the moment never named.
-            if solstone_core_entity::is_placeholder_query(
-                &solstone_core_entity_matching::normalize_resolution_query(name),
-            ) {
-                continue;
-            }
-            // Every name the owner answers to is one person: the owner. Saving
-            // them separately would list the owner once per name.
-            let is_owner = entity_type == "Person" && owner.actor(name) == crate::NamedActor::Owner;
-            let bucket = buckets
-                .entry(if is_owner {
-                    OWNER_BUCKET.to_owned()
-                } else {
-                    slug
-                })
-                .or_default();
-            bucket.0.insert(review_day.clone());
-            bucket
-                .1
-                .entry(entity_type.to_owned())
-                .or_default()
-                .insert(review_day.clone());
-            bucket
-                .2
-                .push(serde_json::json!({"day":review_day,"name":name,"description":description}));
-            if !is_owner {
-                names.insert(name.to_owned());
-            }
-        }
-    }
     let attached = solstone_core_facets::list_scoped_facet_entities(journal, facet, false, false)
         .map_err(|error| error.to_string())?;
     let candidates = attached
@@ -164,6 +125,64 @@ fn build_review_inputs(journal: &Path, facet: &str, day: &str) -> Result<ReviewI
             },
         )
         .collect::<Vec<_>>();
+    let mut names = BTreeSet::new();
+    for review_day in review_days(day) {
+        for entity in solstone_core_facets::read_detected_entities(journal, facet, &review_day)
+            .map_err(|error| error.to_string())?
+        {
+            let name = entity
+                .get("name")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .trim();
+            let entity_type = entity
+                .get("type")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .trim();
+            let description = entity
+                .get("description")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .trim();
+            let slug = solstone_core_entity_matching::entity_slug(name);
+            if name.is_empty() || entity_type.is_empty() || slug.is_empty() {
+                continue;
+            }
+            // "Speaker 2" or "Unknown" stands for someone the moment never named.
+            if solstone_core_entity::is_placeholder_query(
+                &solstone_core_entity_matching::normalize_resolution_query(name),
+            ) {
+                continue;
+            }
+            // Every name the owner answers to is one person: the owner. Saving
+            // them separately would list the owner once per name.
+            // A misheard form of the owner's name joins them too, unless it is
+            // another known person's name as written.
+            let is_owner = entity_type == "Person"
+                && (owner.actor(name) == crate::NamedActor::Owner
+                    || (owner.sounds_like(name) && !names_known_other(name, &candidates, &owner)));
+            let bucket = buckets
+                .entry(if is_owner {
+                    OWNER_BUCKET.to_owned()
+                } else {
+                    slug
+                })
+                .or_default();
+            bucket.0.insert(review_day.clone());
+            bucket
+                .1
+                .entry(entity_type.to_owned())
+                .or_default()
+                .insert(review_day.clone());
+            bucket
+                .2
+                .push(serde_json::json!({"day":review_day,"name":name,"description":description}));
+            if !is_owner {
+                names.insert(name.to_owned());
+            }
+        }
+    }
     let mut eligible = Vec::new();
     for (slug, (days, type_days, mut contexts)) in buckets {
         let Some((entity_type, type_day_count)) = dominant_type(&type_days) else {
@@ -241,7 +260,8 @@ fn build_review_inputs(journal: &Path, facet: &str, day: &str) -> Result<ReviewI
         for right in names.iter().skip(index + 1) {
             if solstone_core_entity_matching::entity_slug(left)
                 != solstone_core_entity_matching::entity_slug(right)
-                && solstone_core_entity_matching::is_name_variant_match(left, right)
+                && (solstone_core_entity_matching::is_name_variant_match(left, right)
+                    || crate::possible_names::retrieval::near_spelling(left, right))
             {
                 let pair = if format_name_key(left) <= format_name_key(right) {
                     (left.clone(), right.clone())
@@ -1326,6 +1346,74 @@ mod tests {
             .into_iter()
             .map(|entity| entity.entity_id)
             .collect()
+    }
+
+    #[test]
+    fn a_misheard_owner_name_joins_the_owner_unless_a_known_person_has_it() {
+        let root = owner_journal();
+        solstone_core_entity::save_entity_identity(
+            root.path(),
+            "jordan_rivera",
+            &serde_json::json!({"id":"jordan_rivera","name":"Jordan Rivera","type":"Person","is_principal":true}),
+            None,
+        )
+        .unwrap();
+        // Someone else whose name is one letter off the owner's.
+        solstone_core_facets::attach_or_reactivate_entity(
+            root.path(),
+            "work",
+            "Person",
+            "Jordan Rivero",
+            "A neighbour.",
+        )
+        .unwrap();
+        for day in ["20260106", "20260107"] {
+            detect_typed(
+                root.path(),
+                day,
+                &[("Jordan Riviera", "Person"), ("Jordan Rivero", "Person")],
+            );
+        }
+        let inputs = build_review_inputs(root.path(), "work", "20260108").unwrap();
+        let owner = inputs
+            .eligible
+            .iter()
+            .find(|candidate| candidate["slug"] == "jordan_rivera")
+            .unwrap();
+        assert_eq!(owner["day_count"], 2);
+        assert!(
+            inputs
+                .eligible
+                .iter()
+                .all(|candidate| candidate["slug"] != "jordan_riviera")
+        );
+        // The neighbour stays themself: already attached, so not eligible, and
+        // never folded into the owner.
+        assert!(
+            inputs
+                .eligible
+                .iter()
+                .all(|candidate| candidate["slug"] != "jordan_rivero")
+        );
+        assert!(inputs.hints.is_empty());
+    }
+
+    #[test]
+    fn near_spellings_of_one_name_are_offered_as_possible_variants() {
+        let root = tempfile::tempdir().unwrap();
+        detect(root.path(), "20260101", "Marcus Feldhaus");
+        detect(root.path(), "20260102", "Marcus Feldhans");
+        // Too short to call, and a different first letter: never offered.
+        detect(root.path(), "20260103", "Fryer");
+        detect(root.path(), "20260104", "Friar");
+        detect(root.path(), "20260105", "Russell Banks");
+        detect(root.path(), "20260106", "Dussell Banks");
+        assert_eq!(
+            build_review_inputs(root.path(), "work", "20260108")
+                .unwrap()
+                .hints,
+            [("Marcus Feldhans".to_owned(), "Marcus Feldhaus".to_owned())]
+        );
     }
 
     #[test]

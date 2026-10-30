@@ -122,6 +122,15 @@ pub(crate) fn apply_result_cancellable(
     }
     let entities = detected_resolution_entities(journal, facet, day)?;
     let owner = crate::JournalOwner::load(journal)?;
+    let admitted = solstone_core_entity::load_all_journal_entities(journal)
+        .map_err(|error| error.to_string())?
+        .into_iter()
+        .filter(solstone_core_entity::is_admissible_person)
+        .collect::<Vec<_>>();
+    let people = admitted
+        .iter()
+        .map(solstone_core_entity::JournalEntity::resolution_entity)
+        .collect::<Vec<_>>();
     let origin = |field: &str| json!({"lane":"talent.participation","facet":facet,"day":day,"record_id":record_id,"field":field});
     let mut resolved = Vec::new();
     for entry in entries.iter().filter_map(Value::as_object) {
@@ -149,7 +158,16 @@ pub(crate) fn apply_result_cancellable(
             false,
         )
         .map_err(|error| error.to_string())?;
-        let entity_id = resolved_id(&result, &entities);
+        let mut entity_id = resolved_id(&result, &entities);
+        if entity_id.is_null()
+            && let Some(id) = known_person(&people, name)
+        {
+            entity_id = Value::String(id);
+        }
+        // A misheard form of the owner's own name is still the owner.
+        if entity_id.is_null() && owner.sounds_like(name) {
+            continue;
+        }
         if owner.id.is_some() && entity_id.as_str() == owner.id.as_deref() {
             continue;
         }
@@ -188,15 +206,6 @@ pub(crate) fn apply_result_cancellable(
             }
         }
     }
-    let admitted = solstone_core_entity::load_all_journal_entities(journal)
-        .map_err(|error| error.to_string())?
-        .into_iter()
-        .filter(solstone_core_entity::is_admissible_person)
-        .collect::<Vec<_>>();
-    let people = admitted
-        .iter()
-        .map(solstone_core_entity::JournalEntity::resolution_entity)
-        .collect::<Vec<_>>();
     // A voice is heard on the evidence the talent's transcripts name it by:
     // an acoustic match or the owner's own assignment, never a name inferred
     // from what was said.
@@ -539,6 +548,38 @@ fn collect_numbered_lines(
         }
     }
     Ok(lines)
+}
+
+/// A full name the day's detected entities leave unlinked, linked to the one
+/// known person it names outright: their name or an alias, ignoring case, an
+/// email or their id. A single word stays unlinked, as Sense lists a first name
+/// only when the moment shows who it is; two people answering to the name
+/// leave it unlinked too.
+fn known_person(
+    people: &[solstone_core_entity::EntityResolutionEntity],
+    name: &str,
+) -> Option<String> {
+    if name.split_whitespace().count() < 2 {
+        return None;
+    }
+    let candidates = people
+        .iter()
+        .map(
+            |person| solstone_core_entity_matching::EntityNameCandidate {
+                id: person.id.clone(),
+                name: person.name.clone(),
+                aka: person.aka.clone(),
+                emails: person.emails.clone(),
+            },
+        )
+        .collect::<Vec<_>>();
+    match solstone_core_entity_matching::find_matching_entity_detailed(name, &candidates, 90.0) {
+        solstone_core_entity_matching::EntityNameMatchOutcome::Matched {
+            candidate_index,
+            tier,
+        } if tier.is_high_confidence() => people[candidate_index].id.clone(),
+        _ => None,
+    }
 }
 
 fn resolved_id(
@@ -1019,6 +1060,158 @@ mod tests {
             .map(|entry| entry["name"].as_str().unwrap_or_default())
             .collect::<Vec<_>>();
         assert_eq!(names, ["Ada Lovelace"]);
+    }
+
+    /// Grace Hopper is a known person the day's text never detected; Grace
+    /// Kelly and Grace Jones are two known people one first name fits.
+    fn write_known_people(root: &Path) {
+        write_participation_fixture(root, json!({}), json!({}));
+        write_json(
+            &root.join("entities/grace_hopper/entity.json"),
+            json!({"id":"grace_hopper","name":"Grace Hopper","aka":["Amazing Grace Hopper"],"type":"Person"}),
+        );
+        write_entity(root, "grace_kelly", "Grace Kelly", "Person");
+        write_entity(root, "grace", "Grace", "Person");
+    }
+
+    fn mentioned(name: &str) -> Value {
+        json!({"name":name,"role":"mentioned","source":"transcript","confidence":0.5,"context":"","entity_id":null})
+    }
+
+    #[test]
+    fn a_known_full_name_the_day_never_detected_links_to_that_person() {
+        let root = tempfile::tempdir().expect("temporary journal");
+        write_known_people(root.path());
+
+        assert_eq!(
+            apply(root.path(), mentioned("grace hopper"))["entity_id"],
+            "grace_hopper"
+        );
+        assert_eq!(
+            apply(root.path(), mentioned("Amazing Grace Hopper"))["entity_id"],
+            "grace_hopper"
+        );
+    }
+
+    #[test]
+    fn a_first_name_alone_or_a_near_spelling_never_links_to_a_known_person() {
+        let root = tempfile::tempdir().expect("temporary journal");
+        write_known_people(root.path());
+
+        // One known person is named exactly "Grace", and still a first name
+        // alone names no one.
+        assert_eq!(
+            apply(root.path(), mentioned("Grace"))["entity_id"],
+            Value::Null
+        );
+        assert_eq!(
+            apply(root.path(), mentioned("Grace Hoppper"))["entity_id"],
+            Value::Null
+        );
+        assert_eq!(
+            apply(root.path(), mentioned("Grace K"))["entity_id"],
+            Value::Null
+        );
+    }
+
+    #[test]
+    fn a_full_name_two_known_people_answer_to_links_to_neither() {
+        let root = tempfile::tempdir().expect("temporary journal");
+        write_known_people(root.path());
+        write_json(
+            &root.path().join("entities/grace_hopper_2/entity.json"),
+            json!({"id":"grace_hopper_2","name":"Rear Admiral Hopper","aka":["Grace Hopper"],"type":"Person"}),
+        );
+
+        assert_eq!(
+            apply(root.path(), mentioned("Grace Hopper"))["entity_id"],
+            Value::Null
+        );
+    }
+
+    #[test]
+    fn a_misheard_form_of_the_owners_name_is_the_owner_and_never_listed() {
+        let root = tempfile::tempdir().expect("temporary journal");
+        write_participation_fixture(root.path(), json!({}), json!({}));
+        write_principal(root.path(), "owner", "Mara Vandusen");
+        write_entity(root.path(), "dana_vandenberg", "Dana Vandenberg", "Person");
+        let entries = [
+            "Van Doosen",
+            "Mara Vanduson",
+            "Vandusen",
+            "Dana Vandenberg",
+            "Vandersloot",
+        ]
+        .into_iter()
+        .map(mentioned)
+        .collect::<Vec<_>>();
+        apply_result(
+            root.path(),
+            &json!({"participation":entries}).to_string(),
+            FACET,
+            &solstone_core_facets::observe_facet_write_identity(root.path(), FACET).unwrap(),
+            DAY,
+            &activity(),
+        )
+        .expect("participation applies");
+        let activity: Value = serde_json::from_str(
+            fs::read_to_string(
+                root.path()
+                    .join(format!("facets/{FACET}/activities/{DAY}.jsonl")),
+            )
+            .expect("activity reads")
+            .lines()
+            .next()
+            .expect("activity row"),
+        )
+        .expect("activity parses");
+        let names = activity["participation"]
+            .as_array()
+            .expect("participation")
+            .iter()
+            .map(|entry| entry["name"].as_str().unwrap_or_default())
+            .collect::<Vec<_>>();
+        assert_eq!(names, ["Dana Vandenberg", "Vandersloot"]);
+    }
+
+    #[test]
+    fn a_common_surname_or_a_one_word_near_name_is_never_taken_for_the_owner() {
+        let root = tempfile::tempdir().expect("temporary journal");
+        write_participation_fixture(root.path(), json!({}), json!({}));
+        write_json(
+            &root.path().join("config/journal.json"),
+            json!({"identity":{"name":"Mattias Miller","preferred":"Matt","aliases":["Mattias"]}}),
+        );
+        write_json(
+            &root.path().join("entities/owner/entity.json"),
+            json!({"id":"owner","name":"Mattias Miller","type":"Person","is_principal":true}),
+        );
+        for name in ["Miller", "Matthias", "Matthias Ashby"] {
+            assert_eq!(apply(root.path(), mentioned(name))["name"], name);
+        }
+        let entries = ["Matthias Miller", "Ada Lovelace"].map(mentioned);
+        apply_result(
+            root.path(),
+            &json!({"participation":entries}).to_string(),
+            FACET,
+            &solstone_core_facets::observe_facet_write_identity(root.path(), FACET).unwrap(),
+            DAY,
+            &activity(),
+        )
+        .expect("participation applies");
+        let activity: Value = serde_json::from_str(
+            fs::read_to_string(
+                root.path()
+                    .join(format!("facets/{FACET}/activities/{DAY}.jsonl")),
+            )
+            .expect("activity reads")
+            .lines()
+            .next()
+            .expect("activity row"),
+        )
+        .expect("activity parses");
+        assert_eq!(activity["participation"].as_array().map(Vec::len), Some(1));
+        assert_eq!(activity["participation"][0]["name"], "Ada Lovelace");
     }
 
     #[test]
@@ -2332,7 +2525,9 @@ mod tests {
                 "source": "transcript",
             })],
         );
-        assert_eq!(entries2[0]["entity_id"], Value::Null);
+        // A known person's full name links to them; a voice heard outside the
+        // conversation still does not make them heard.
+        assert_eq!(entries2[0]["entity_id"], "grace");
         assert_eq!(entries2[0]["role"], "mentioned");
 
         // 3c: Two conversation-segment voices answer to the name
