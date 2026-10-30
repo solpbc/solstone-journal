@@ -936,22 +936,23 @@ async fn batch_observed_message_does_not_run_the_journal_stub() {
     let journal = TempJournal::new();
     journal.enable_thinking();
     let stub_marker = journal.install_journal_stub();
+    // The segment exists so the supervisor logs the message to its events.jsonl. It logs
+    // after planning the same message, so the logged line proves the batch decision ran.
+    let segment = journal.segment_dir("20260102", None, "120000_60");
+    fs::create_dir_all(&segment).expect("segment directory");
     // The scheduler is off so a built-in cadence entry crossing a minute
     // boundary cannot run the stub; only the observe path is under test.
     let mut child = start(&journal, None, &["--no-schedule"]);
     let socket = journal.0.join("health/callosum.sock");
     wait_for_socket(&mut child, &socket);
     let (_reader, mut write) = connect(&socket).await;
+    let message = json!({
+        "tract": "observe", "event": "observed", "day": "20260102",
+        "segment": "120000_60", "batch": true
+    });
 
-    send_message(
-        &mut write,
-        json!({
-            "tract": "observe", "event": "observed", "day": "20260102",
-            "segment": "120000_60", "batch": true
-        }),
-    )
-    .await;
-    tokio::time::sleep(Duration::from_millis(300)).await;
+    send_message(&mut write, message.clone()).await;
+    wait_for_logged_message(&segment.join("events.jsonl"), &message).await;
 
     assert!(!stub_marker.exists(), "batch observation submitted a task");
 }
@@ -1033,6 +1034,10 @@ async fn segment_events_log_appends_existing_stream_segment() {
 async fn segment_events_log_does_not_materialize_missing_segment() {
     let journal = TempJournal::new();
     let segment = journal.segment_dir("20260102", None, "120000_60");
+    // The supervisor handles messages in arrival order, so once a later message is logged
+    // to an existing segment, the missing segment's message has been handled too.
+    let barrier = journal.segment_dir("20260102", None, "130000_60");
+    fs::create_dir_all(&barrier).expect("barrier segment directory");
     let mut child = start(&journal, None, &[]);
     let socket = journal.0.join("health/callosum.sock");
     wait_for_socket(&mut child, &socket);
@@ -1046,7 +1051,12 @@ async fn segment_events_log_does_not_materialize_missing_segment() {
         }),
     )
     .await;
-    tokio::time::sleep(Duration::from_millis(300)).await;
+    let after = json!({
+        "tract": "think", "event": "status", "day": "20260102",
+        "segment": "130000_60"
+    });
+    send_message(&mut write, after.clone()).await;
+    wait_for_logged_message(&barrier.join("events.jsonl"), &after).await;
 
     assert!(!segment.exists());
     assert!(child.try_wait().expect("supervisor status").is_none());
