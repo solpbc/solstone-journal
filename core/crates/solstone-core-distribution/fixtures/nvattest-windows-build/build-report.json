@@ -1,12 +1,17 @@
 ﻿{
     "schema":  1,
-    "source_commit":  "69a71c859ec02b6e5f10616b8b8a873c230941c9",
+    "target_architecture":  "x64",
+    "target_triple":  "x86_64-pc-windows-msvc",
+    "native_validation":  {
+                              "status":  "passed",
+                              "executable_sha256":  "543e9481e1c042c01c206284df9f50f05d56a9fca55d803fb14e86f1e5253352",
+                              "vectors_sha256":  "7109d4c0dab5d8b017975d150a4632aa22d85635df5c2ab7776fe62101679933"
+                          },
+    "source_commit":  "25ea26bc6e3cee09a344f70f29c03481420e8077",
     "source_clean":  null,
     "tools":  {
                   "msvc":  "14.44.35207",
-                  "vs":  {
-
-                         },
+                  "vs":  "17.14.42",
                   "windows_sdk":  "10.0.26100.0\\",
                   "cmake":  "cmake version 3.31.12",
                   "rustc":  "rustc 1.97.1 (8bab26f4f 2026-07-14)",
@@ -25,14 +30,14 @@
                         "sha256":  "780157a1efdb57188ec474dca87acaee67a3a839c2525b2214d318228451809f"
                     },
                     {
-                        "name":  "xmlsec1-1.2.42.tar.gz",
-                        "url":  "https://github.com/lsh123/xmlsec/releases/download/xmlsec-1_2_42/xmlsec1-1.2.42.tar.gz",
-                        "sha256":  "5359e3c19016ab164b505c1222ef5a2d87b34f50f85ff91d765f4aaa0df42db2"
+                        "name":  "xmlsec1-1.2.43.tar.gz",
+                        "url":  "https://github.com/lsh123/xmlsec/releases/download/xmlsec-1_2_43/xmlsec1-1.2.43.tar.gz",
+                        "sha256":  "a0e67d377d2692a24fd53e4a2d029edd8d384f861231a5cea28f628f93b45345"
                     },
                     {
-                        "name":  "curl-8.22.0.tar.gz",
-                        "url":  "https://github.com/curl/curl/releases/download/curl-8_22_0/curl-8.22.0.tar.gz",
-                        "sha256":  "d54dd598bf05927a726deb38df31c6a255ba83ff1de57c5d1464dac3ed8f44a1"
+                        "name":  "curl-8.23.0.tar.gz",
+                        "url":  "https://github.com/curl/curl/releases/download/curl-8_23_0/curl-8.23.0.tar.gz",
+                        "sha256":  "e3de77cfa6367083c776a26647fc9f633b538c06c3baa73d931a252ac8f72b49"
                     },
                     {
                         "name":  "zlib-1.3.1.tar.gz",
@@ -133,8 +138,8 @@
                     },
                     {
                         "path":  "bin/nvattest.exe",
-                        "bytes":  14846976,
-                        "sha256":  "e30259cc739069c4430f59666630d0347cb966d729a3386b388c126509d19348",
+                        "bytes":  14872064,
+                        "sha256":  "3cf0fdb783868a2e753b35f152dbc68a418b9697ca75ce56c905acfabafdf261",
                         "file_version":  null
                     },
                     {
