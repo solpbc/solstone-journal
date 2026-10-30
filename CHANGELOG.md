@@ -17,8 +17,6 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - fixed a failure when picking a folder to import in the android development app.
 - in imports, checking a folder's status now clears an earlier read error when the check succeeds. an unconfirmed sync or folder change stays visible.
 - the development phone apps can now recover an explicit media offload request after a lost reply, using the request ID saved before sending it. repeating that request does not start another offload; an unknown result stays unknown.
-- reviewing interrupted storage work in the android development app could fail before showing the temporary copies.
-- reviewing storage recovery on android could get stuck waiting for your journal to stop, even after it had stopped.
 - home no longer shows a desktop agent command when your journal runs on a phone or tablet.
 - home no longer refuses removal approvals solely because your journal is on android or ios.
 - reopening the android or ios development app during a journal restore now opens recovery instead of failing during startup.
