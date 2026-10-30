@@ -1358,6 +1358,7 @@ pub(crate) fn dispatch_backend(
                     attestation_state,
                     &|| runtime.checkpoint(),
                     runtime.service_io,
+                    runtime.observation,
                 );
             }
             confidential::transcribe(statement_audio, journal_path, config, attestation_state)
@@ -1974,6 +1975,7 @@ mod tests {
                 };
                 let notify = || authorized.set(true);
                 let runtime = crate::embedded::EmbeddedContext {
+                    observation: None,
                     models: root.path(),
                     scratch: root.path(),
                     asr: &UnusedAsr,
@@ -2936,6 +2938,7 @@ mod tests {
             });
             let recorder = Recorder(RefCell::new(Vec::new()));
             let runtime = crate::embedded::EmbeddedContext {
+                observation: None,
                 models: root.path(),
                 scratch: root.path(),
                 asr: &recorder,
@@ -3967,6 +3970,7 @@ mod tests {
         let stub_asr = StubAsr;
         let cancel_fn = || false;
         let embedded = crate::embedded::EmbeddedContext {
+            observation: None,
             owner_original_deleted: &|| {},
             models: root.path(),
             scratch: root.path(),
@@ -4054,6 +4058,7 @@ mod tests {
         fn ignore_deleted() {}
         fn ignore_service_io(_: crate::ConfidentialIoPhase) {}
         let embedded = crate::embedded::EmbeddedContext {
+            observation: None,
             owner_original_deleted: &ignore_deleted,
             models: root,
             scratch: root,

@@ -3534,6 +3534,7 @@ mod tests {
             &root.path().join("scratch"),
             &asr,
             crate::embedded::EmbeddedControl {
+                observation: None,
                 owner_original_deleted: &|| deleted.set(true),
                 cancelled: &|| false,
                 service_io: &|_| {},
@@ -3596,6 +3597,7 @@ mod tests {
             &root.path().join("scratch"),
             &CancelAsr(&flag),
             crate::embedded::EmbeddedControl {
+                observation: None,
                 owner_original_deleted: &|| deleted.set(true),
                 cancelled: &cancel,
                 service_io: &|_| {},
@@ -3618,6 +3620,7 @@ mod tests {
             &root.path().join("scratch"),
             &FailingAsr,
             crate::embedded::EmbeddedControl {
+                observation: None,
                 owner_original_deleted: &|| deleted.set(true),
                 cancelled: &|| false,
                 service_io: &|_| {},
@@ -3643,6 +3646,7 @@ mod tests {
             &root.path().join("scratch"),
             &FailingAsr,
             crate::embedded::EmbeddedControl {
+                observation: None,
                 owner_original_deleted: &|| deleted.set(true),
                 cancelled: &|| false,
                 service_io: &|_| {},
@@ -3689,6 +3693,7 @@ mod tests {
         };
         let attestation = AttestationStateStore::new();
         let context = crate::embedded::EmbeddedContext {
+            observation: None,
             models: Path::new("missing-models"),
             scratch: &root.path().join("scratch"),
             asr: &FailingAsr,
@@ -3873,6 +3878,7 @@ mod tests {
             &root.join("scratch"),
             asr,
             crate::embedded::EmbeddedControl {
+                observation: None,
                 owner_original_deleted: &|| deleted.set(true),
                 cancelled: cancel,
                 service_io: &|_| {},
@@ -4261,6 +4267,7 @@ mod tests {
         };
         let deleted = std::cell::Cell::new(false);
         let context = crate::embedded::EmbeddedContext {
+            observation: None,
             models: Path::new("missing-models"),
             scratch: &root.path().join("scratch"),
             asr: &held_asr,
@@ -4836,6 +4843,7 @@ mod tests {
             &root.path().join("scratch"),
             &asr,
             crate::embedded::EmbeddedControl {
+                observation: None,
                 owner_original_deleted: &|| deleted.set(true),
                 cancelled: &cancel,
                 service_io: &|_| {},
@@ -4938,6 +4946,7 @@ mod tests {
             &root.path().join("scratch"),
             &asr,
             crate::embedded::EmbeddedControl {
+                observation: None,
                 owner_original_deleted: &|| deleted.set(true),
                 cancelled: &cancel,
                 service_io: &|_| {},
@@ -5053,6 +5062,7 @@ mod tests {
             &root.path().join("scratch"),
             &asr,
             crate::embedded::EmbeddedControl {
+                observation: None,
                 owner_original_deleted: &|| deleted.set(true),
                 cancelled: &cancel,
                 service_io: &|_| {},
@@ -5606,6 +5616,7 @@ mod tests {
             &scratch,
             &asr,
             crate::embedded::EmbeddedControl {
+                observation: None,
                 owner_original_deleted: &|| deleted.set(true),
                 cancelled: &cancel,
                 service_io: &|_| {},
@@ -5662,6 +5673,7 @@ mod tests {
             &scratch,
             &asr,
             crate::embedded::EmbeddedControl {
+                observation: None,
                 owner_original_deleted: &|| {
                     success_deleted.set(true);
                     let analyzed = read_processing_record_header(&jsonl)
@@ -5948,6 +5960,7 @@ mod tests {
             &root.join("scratch"),
             &asr,
             crate::embedded::EmbeddedControl {
+                observation: None,
                 owner_original_deleted: &|| {},
                 cancelled: &|| false,
                 service_io: &|_| {},

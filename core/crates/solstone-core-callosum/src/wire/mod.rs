@@ -10,8 +10,8 @@ pub mod one_shot_fixture;
 mod server;
 
 pub use connection::{
-    CallosumConnectionPhase, CallosumGapReason, CallosumReceiveEvent, CallosumRetrySource,
-    CallosumSocketConnection, CallosumStoppedReason, TokioRetrySource,
+    CallosumConnectionPhase, CallosumDiagnosticEmitter, CallosumGapReason, CallosumReceiveEvent,
+    CallosumRetrySource, CallosumSocketConnection, CallosumStoppedReason, TokioRetrySource,
 };
 pub use local_inference_client::{
     request_local_inference_snapshot, request_local_inference_snapshot_sync,

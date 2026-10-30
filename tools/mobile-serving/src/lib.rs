@@ -65,6 +65,7 @@ pub struct MobileServing {
     #[cfg(feature = "audio")]
     audio: Option<audio::AudioWorker>,
     bus: solstone_core_callosum::CallosumSocketServer,
+    brain_observation: solstone_core_brain_owner::BrainObservationSink,
     handle: Arc<EmbeddedConveyHandle>,
     runtime: tokio::runtime::Runtime,
     root: Arc<JournalRoot>,
@@ -150,6 +151,10 @@ struct AppServices {
 impl MobileServing {
     pub fn import_route(&self) -> Arc<ImportRouteSlot> {
         Arc::clone(&self.import_route)
+    }
+
+    pub fn brain_observation_sink(&self) -> solstone_core_brain_owner::BrainObservationSink {
+        self.brain_observation.clone()
     }
 
     pub fn stop_handle(&self) -> MobileServingStop {
@@ -288,6 +293,7 @@ impl MobileServing {
             root.canonical_path().join("health/callosum.sock"),
         ));
         let bus = bus.map_err(|e| e.to_string())?;
+        let (brain_connection, brain_observation) = brain::connection(&root);
         let (shutdown, stop) = watch::channel(false);
         let early_shutdown = shutdown.clone();
         let cancelled = startup
@@ -303,7 +309,12 @@ impl MobileServing {
             solstone_core_mcp_endpoint::owner_routes(root.canonical_path().to_path_buf());
         #[cfg(feature = "processing")]
         let (execution_routes, execution_worker, settings_sync) =
-            execution::routes_and_worker(Arc::clone(&root), payload_root.clone(), stop.clone());
+            execution::routes_and_worker_observed(
+                Arc::clone(&root),
+                payload_root.clone(),
+                stop.clone(),
+                Some(brain_observation.clone()),
+            );
         #[cfg(feature = "processing")]
         let owner_routes = owner_routes.merge(execution_routes);
         let import_route = Arc::new(ImportRouteSlot::new());
@@ -367,7 +378,12 @@ impl MobileServing {
         #[cfg(feature = "processing")]
         let execution_task = runtime.spawn(execution_worker);
         let (ready, registered) = oneshot::channel();
-        let brain_task = runtime.spawn(brain::run(Arc::clone(&root), stop.clone(), ready));
+        let brain_task = runtime.spawn(brain::run(
+            Arc::clone(&root),
+            stop.clone(),
+            ready,
+            brain_connection,
+        ));
         let (backup_ready, subscribed) = oneshot::channel();
         let backup_task = runtime.spawn(backup::run(
             Arc::clone(&root),
@@ -417,6 +433,7 @@ impl MobileServing {
             #[cfg(feature = "audio")]
             audio: None,
             bus,
+            brain_observation,
             handle: Arc::new(handle),
             runtime,
             root,
@@ -567,12 +584,13 @@ impl MobileServing {
         if self.audio.is_some() {
             return Ok(());
         }
-        self.audio = Some(audio::AudioWorker::start_with_cancellation(
+        self.audio = Some(audio::AudioWorker::start_observed(
             self.root.canonical_path().to_path_buf(),
             models,
             model,
             scratch,
             cancelled,
+            Some(self.brain_observation.clone()),
         )?);
         Ok(())
     }

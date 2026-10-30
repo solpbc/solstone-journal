@@ -54,6 +54,7 @@ name = "provider_environment_isolation"
 path = "tests/provider_environment_isolation.rs"
 
 [dev-dependencies]
+solstone-core-callosum = { workspace = true, features = ["wire", "test-hooks"] }
 tempfile = "3.24.0"
 rcgen = { workspace = true }
 rustls = { workspace = true }

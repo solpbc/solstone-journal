@@ -401,7 +401,7 @@ fn serving(root: &Path, command: &str) -> Result<Value, String> {
                 Some(std::sync::Arc::clone(&processing_stop));
             let backup = handle.backup_dependencies();
             let (import_factory, sources) = saved_sources::factory(admitted_library);
-            let mut host = match journal_mobile_serving::foreground::ForegroundProcessingHost::open_with_imports(
+            let mut host = match journal_mobile_serving::foreground::ForegroundProcessingHost::open_with_imports_observed(
                 std::sync::Arc::clone(&binding), &payload_dir,
                 std::sync::Arc::new(move || THINKING_GENERATION.load(Ordering::SeqCst) & !1 != generation & !1),
                 processing_stop,
@@ -409,6 +409,7 @@ fn serving(root: &Path, command: &str) -> Result<Value, String> {
                 import_factory,
                 false,
                 false,
+                Some(handle.brain_observation_sink()),
             ) {
                 Ok(host) => host,
                 Err(error) => {

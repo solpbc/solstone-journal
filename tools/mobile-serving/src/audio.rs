@@ -57,6 +57,7 @@ impl solstone_core_transcribe::EmbeddedAsr for LocalAsr<'_> {
 }
 
 struct State {
+    observation: Option<solstone_core_brain_owner::BrainObservationSink>,
     stop: AtomicBool,
     cancel: AtomicBool,
     generation: AtomicU64,
@@ -129,6 +130,7 @@ impl AudioWorker {
         Self::start_with_cancellation(root, models, model, scratch, Arc::new(|| false))
     }
 
+    #[cfg(test)]
     pub fn start_with_cancellation(
         root: PathBuf,
         models: PathBuf,
@@ -136,9 +138,20 @@ impl AudioWorker {
         scratch: PathBuf,
         external_cancelled: Arc<dyn Fn() -> bool + Send + Sync>,
     ) -> Result<Self, String> {
+        Self::start_observed(root, models, model, scratch, external_cancelled, None)
+    }
+    pub fn start_observed(
+        root: PathBuf,
+        models: PathBuf,
+        model: PathBuf,
+        scratch: PathBuf,
+        external_cancelled: Arc<dyn Fn() -> bool + Send + Sync>,
+        observation: Option<solstone_core_brain_owner::BrainObservationSink>,
+    ) -> Result<Self, String> {
         let authority =
             solstone_core_journal_io::JournalRoot::open(&root).map_err(|e| e.to_string())?;
         let state = Arc::new(State {
+            observation,
             stop: AtomicBool::new(false),
             cancel: AtomicBool::new(false),
             generation: AtomicU64::new(0),
@@ -181,9 +194,11 @@ impl AudioWorker {
         model: PathBuf,
         scratch: PathBuf,
         external_cancelled: Arc<dyn Fn() -> bool + Send + Sync>,
+        observation: Option<solstone_core_brain_owner::BrainObservationSink>,
     ) -> Self {
         Self {
             state: Arc::new(State {
+                observation,
                 stop: AtomicBool::new(false),
                 cancel: AtomicBool::new(false),
                 generation: AtomicU64::new(0),
@@ -307,6 +322,7 @@ impl AudioWorker {
             &config.scratch,
             &asr,
             EmbeddedControl {
+                observation: self.state.observation.as_ref(),
                 cancelled: &cancel,
                 owner_original_deleted: &|| owner_original_deleted.set(true),
                 service_io: &|phase| {
@@ -536,6 +552,7 @@ fn run(
                             scratch,
                             &asr,
                             EmbeddedControl {
+                                observation: state.observation.as_ref(),
                                 cancelled: &|| {
                                     state.cancelled(generation)
                                         || authority.revalidate_canonical_binding().is_err()
@@ -986,6 +1003,7 @@ mod tests {
         file.set_len(16 * 1024 * 1024 + 1).unwrap();
 
         let state = State {
+            observation: None,
             stop: AtomicBool::new(false),
             cancel: AtomicBool::new(false),
             generation: AtomicU64::new(0),
@@ -1062,6 +1080,7 @@ mod tests {
             root.join("unused-model"),
             root.join("scratch"),
             Arc::new(|| false),
+            None,
         )
     }
 
@@ -1316,6 +1335,7 @@ mod tests {
         assert_eq!(inputs, vec![valid_audio]);
 
         let state = State {
+            observation: None,
             stop: AtomicBool::new(false),
             cancel: AtomicBool::new(false),
             generation: AtomicU64::new(0),
@@ -1343,6 +1363,7 @@ mod tests {
         let authority = solstone_core_journal_io::JournalRoot::open(&root).unwrap();
         std::fs::rename(&root, temp.path().join("away")).unwrap();
         let state = State {
+            observation: None,
             stop: AtomicBool::new(false),
             cancel: AtomicBool::new(false),
             generation: AtomicU64::new(0),
@@ -1366,6 +1387,7 @@ mod tests {
     #[test]
     fn resume_cannot_erase_cancellation_of_an_active_inference() {
         let state = State {
+            observation: None,
             stop: AtomicBool::new(false),
             cancel: AtomicBool::new(false),
             generation: AtomicU64::new(0),
@@ -1399,6 +1421,7 @@ mod tests {
     fn input_failure_survives_headline_replacement_and_resume_identifies_old_attempt() {
         let worker = AudioWorker {
             state: Arc::new(State {
+                observation: None,
                 stop: AtomicBool::new(false),
                 cancel: AtomicBool::new(false),
                 generation: AtomicU64::new(7),

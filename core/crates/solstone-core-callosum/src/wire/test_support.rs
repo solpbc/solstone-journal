@@ -3,6 +3,16 @@
 
 pub use super::server::ServerTestHooks;
 
+#[doc(hidden)]
+pub fn diagnostic_fixture(
+    capacity: usize,
+) -> (
+    super::CallosumDiagnosticEmitter,
+    tokio::sync::mpsc::Receiver<crate::CallosumEnvelope>,
+) {
+    super::connection::diagnostic_fixture(capacity)
+}
+
 use std::path::Path;
 
 use serde_json::Map;

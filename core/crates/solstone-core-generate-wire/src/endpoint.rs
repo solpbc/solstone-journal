@@ -150,9 +150,23 @@ impl EndpointTransport for UreqEndpointTransport {
 
 #[derive(Default)]
 pub struct EndpointRuntime {
+    brain_observation: Option<solstone_core_brain::BrainObservationSink>,
     served_windows: Mutex<ServedWindowCache>,
     attestation_state: AttestationStateStore,
     confidential_channels: crate::pool::ConfidentialChannelPool,
+}
+
+impl EndpointRuntime {
+    pub fn with_brain_observation(
+        mut self,
+        sink: Option<solstone_core_brain::BrainObservationSink>,
+    ) -> Self {
+        self.brain_observation = sink;
+        self
+    }
+    pub(crate) fn brain_observation(&self) -> Option<&solstone_core_brain::BrainObservationSink> {
+        self.brain_observation.as_ref()
+    }
 }
 
 pub fn endpoint_generate(
@@ -724,6 +738,7 @@ pub(crate) fn terminal_request_rejection(body: &str) -> RequestRejection {
 impl EndpointRuntime {
     pub fn new(max_in_flight: usize) -> Self {
         Self {
+            brain_observation: None,
             served_windows: Mutex::new(HashMap::new()),
             attestation_state: AttestationStateStore::new(),
             confidential_channels: crate::pool::ConfidentialChannelPool::new(
@@ -739,6 +754,7 @@ impl EndpointRuntime {
         clock: std::sync::Arc<dyn crate::pool::PoolClock>,
     ) -> Self {
         Self {
+            brain_observation: None,
             served_windows: Mutex::new(HashMap::new()),
             attestation_state: AttestationStateStore::new(),
             confidential_channels: crate::pool::ConfidentialChannelPool::new(max_in_flight, clock),

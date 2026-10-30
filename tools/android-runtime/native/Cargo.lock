@@ -5251,6 +5251,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
+ "solstone-core-callosum",
  "solstone-core-chatgpt-auth",
  "solstone-core-installed-payload",
  "solstone-core-journal-config",

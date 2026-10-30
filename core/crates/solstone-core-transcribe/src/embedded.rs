@@ -14,6 +14,7 @@ pub const EMBEDDED_AUDIO_MAX_SAMPLES: usize = 120 * 16_000;
 
 /// The caller's cancellation lifetime and content-free service-I/O observation.
 pub struct EmbeddedControl<'a> {
+    pub observation: Option<&'a solstone_core_brain::BrainObservationSink>,
     pub cancelled: &'a dyn Fn() -> bool,
     pub service_io: &'a dyn Fn(crate::ConfidentialIoPhase),
     /// Retention deleted the verified owner-voice original after publication,
@@ -43,6 +44,7 @@ pub trait EmbeddedAsr {
 }
 
 pub(crate) struct EmbeddedContext<'a> {
+    pub(crate) observation: Option<&'a solstone_core_brain::BrainObservationSink>,
     pub(crate) models: &'a Path,
     pub(crate) scratch: &'a Path,
     pub(crate) asr: &'a dyn EmbeddedAsr,
@@ -170,6 +172,7 @@ pub fn process_embedded(
     retry: Option<&RetryContext>,
 ) -> Result<TranscribeFile, TranscribeError> {
     let context = EmbeddedContext {
+        observation: control.observation,
         models,
         scratch,
         asr,
@@ -285,6 +288,7 @@ mod tests {
                     .map(|resolution| resolution.backend)
                 };
                 let context = EmbeddedContext {
+                    observation: None,
                     owner_original_deleted: &|| {},
                     models: Path::new("unused"),
                     scratch: Path::new("unused"),
@@ -314,6 +318,7 @@ mod tests {
             config: Some(value.as_object().unwrap().clone()),
         };
         let context = EmbeddedContext {
+            observation: None,
             owner_original_deleted: &|| {},
             models: Path::new("unused"),
             scratch: Path::new("unused"),
@@ -380,6 +385,7 @@ mod tests {
             )
             .map(|resolution| resolution.backend);
             let context = EmbeddedContext {
+                observation: None,
                 owner_original_deleted: &|| {},
                 models: Path::new("unused"),
                 scratch: Path::new("unused"),
@@ -425,6 +431,7 @@ mod tests {
             &journal.path().join("scratch"),
             &LocalRecognizer,
             EmbeddedControl {
+                observation: None,
                 owner_original_deleted: &|| {},
                 cancelled: &|| false,
                 service_io: &|_| {},
@@ -449,6 +456,7 @@ mod tests {
             }
         }
         let context = EmbeddedContext {
+            observation: None,
             owner_original_deleted: &|| {},
             models: Path::new("unused"),
             scratch: Path::new("unused"),
@@ -489,6 +497,7 @@ mod tests {
         let asr = CancelDuringAsr(AtomicBool::new(false));
         let cancel = || asr.0.load(Ordering::Acquire);
         let context = EmbeddedContext {
+            observation: None,
             owner_original_deleted: &|| {},
             models: Path::new("unused"),
             scratch: Path::new("unused"),
@@ -508,6 +517,7 @@ mod tests {
                 Path::new("unused"),
                 &asr,
                 EmbeddedControl {
+                    observation: None,
                     owner_original_deleted: &|| {},
                     cancelled: &cancel,
                     service_io: &|_| {}
@@ -539,6 +549,7 @@ mod tests {
             &root.path().join("scratch"),
             &LocalRecognizer,
             EmbeddedControl {
+                observation: None,
                 owner_original_deleted: &|| deleted.set(true),
                 cancelled: &|| false,
                 service_io: &|_| {},
@@ -575,6 +586,7 @@ mod tests {
                 &root.path().join("scratch"),
                 &LocalRecognizer,
                 EmbeddedControl {
+                    observation: None,
                     cancelled: &|| false,
                     service_io: &|_| {},
                     owner_original_deleted: &|| {},

@@ -2819,30 +2819,88 @@ fn record_runtime_failure_locked(
     Ok(write_record(root, lock, &record, now, &publish_checkpoint)?)
 }
 
-/// Record a confidential attestation refusal into the brain record.
+/// Closed identity for an independent runtime-refusal publisher.
+#[derive(Clone, Copy)]
+pub enum RuntimeRefusalCaller {
+    Generate,
+    Transcription,
+}
+
+enum RefusalObservation {
+    Published(Value),
+    Unchanged,
+    Failed(crate::ObservationFailure),
+}
+
 pub fn record_confidential_attestation_refusal(
     journal_path: &Path,
     held_config: &Map<String, Value>,
     raw_reason: &str,
 ) {
+    record_confidential_attestation_refusal_observed(
+        journal_path,
+        held_config,
+        raw_reason,
+        None,
+        RuntimeRefusalCaller::Generate,
+        crate::ObservationPhase::RuntimeEstablish,
+    );
+}
+
+/// Observe this invocation's returned publication after its record lock drops.
+pub fn record_confidential_attestation_refusal_observed(
+    journal_path: &Path,
+    held_config: &Map<String, Value>,
+    raw_reason: &str,
+    sink: Option<&crate::BrainObservationSink>,
+    caller: RuntimeRefusalCaller,
+    phase: crate::ObservationPhase,
+) {
+    let observation = sink.and_then(|sink| {
+        sink.begin(match caller {
+            RuntimeRefusalCaller::Generate => crate::ObservationCaller::Generate,
+            RuntimeRefusalCaller::Transcription => crate::ObservationCaller::Transcription,
+        })
+    });
+    let result = confidential_refusal_result(journal_path, held_config, raw_reason);
+    if let Some(observation) = observation {
+        match result {
+            RefusalObservation::Published(record) => observation.publication(phase, &record),
+            RefusalObservation::Unchanged => {
+                observation.outcome(phase, crate::ObservationOutcome::Unchanged)
+            }
+            RefusalObservation::Failed(crate::ObservationFailure::PublicationUncertain) => {
+                observation.outcome(phase, crate::ObservationOutcome::PublicationUncertain);
+            }
+            RefusalObservation::Failed(category) => observation.failure(phase, category),
+        }
+    }
+}
+
+/// Record a confidential attestation refusal into the brain record.
+fn confidential_refusal_result(
+    journal_path: &Path,
+    held_config: &Map<String, Value>,
+    raw_reason: &str,
+) -> RefusalObservation {
     let root = match BrainWriteRoot::open(journal_path) {
         Ok(root) => root,
         Err(error) => {
             log::warn!("the confidential attestation refusal was not recorded: {error}");
-            return;
+            return RefusalObservation::Failed(crate::ObservationFailure::StateUnavailable);
         }
     };
     let checkpoint = || root.checkpoint(journal_path);
     let mapped_reason = valid_spp_reason(raw_reason);
     let diagnostic = spp_reason_diagnostic(raw_reason);
     if derive_active_brain_lane(held_config).lane.as_deref() != Some("spp") {
-        return;
+        return RefusalObservation::Unchanged;
     }
     let Some(key) = root.existing_key() else {
         log::warn!(
             "the confidential attestation refusal was not recorded: fingerprint key unavailable"
         );
-        return;
+        return RefusalObservation::Failed(crate::ObservationFailure::KeyUnavailable);
     };
     let held_fingerprint = match build_active_brain_fingerprint(
         held_config,
@@ -2855,7 +2913,7 @@ pub fn record_confidential_attestation_refusal(
             log::warn!(
                 "the confidential attestation refusal was not recorded: active fingerprint unavailable"
             );
-            return;
+            return RefusalObservation::Failed(crate::ObservationFailure::StateUnavailable);
         }
     };
     let loaded = match fingerprint_for_write(&root, None) {
@@ -2864,27 +2922,27 @@ pub fn record_confidential_attestation_refusal(
             log::warn!(
                 "the confidential attestation refusal was not recorded: active fingerprint unavailable"
             );
-            return;
+            return RefusalObservation::Failed(crate::ObservationFailure::StateUnavailable);
         }
     };
     if held_fingerprint != loaded.sha256 {
         log::warn!(
             "the confidential attestation refusal was not recorded: active fingerprint mismatch"
         );
-        return;
+        return RefusalObservation::Failed(crate::ObservationFailure::FingerprintMismatch);
     }
     let now = Utc::now();
     let lock = match root.lock(record_name(), &checkpoint) {
         Ok(lock) => lock,
         Err(error) => {
             log::warn!("the confidential attestation refusal was not recorded: {error}");
-            return;
+            return RefusalObservation::Failed(crate::ObservationFailure::StateUnavailable);
         }
     };
     match read_current(&root, now) {
         Err(WriterError::Io(error)) => {
             log::warn!("the confidential attestation refusal was not recorded: {error}");
-            return;
+            return RefusalObservation::Failed(crate::ObservationFailure::StateUnavailable);
         }
         Ok(Some((_, current))) => {
             if current.checking.is_none()
@@ -2904,12 +2962,12 @@ pub fn record_confidential_attestation_refusal(
                                 }))
                     })
             {
-                return;
+                return RefusalObservation::Unchanged;
             }
         }
         Ok(None) | Err(_) => {}
     }
-    if let Err(error) = record_runtime_failure_locked(
+    match record_runtime_failure_locked(
         &root,
         &lock,
         RuntimeFailureObservation {
@@ -2921,19 +2979,40 @@ pub fn record_confidential_attestation_refusal(
             bundled_runtime_fingerprint_sha256: None,
         },
     ) {
-        match error {
-            RuntimeFailureInternal::Rejected(reason, detail) => {
-                if let Some(detail) = detail {
-                    log::warn!(
-                        "the confidential attestation refusal was not recorded: {reason} ({detail})"
-                    );
-                } else {
-                    log::warn!("the confidential attestation refusal was not recorded: {reason}");
+        Ok(record) => RefusalObservation::Published(record),
+        Err(error) => {
+            let category = match &error {
+                RuntimeFailureInternal::Writer(error) => crate::ObservationFailure::writer(error),
+                RuntimeFailureInternal::Rejected(reason, _) => match *reason {
+                    "reason_not_recordable" => crate::ObservationFailure::ReasonNotRecordable,
+                    "component_reason_not_allowed" => {
+                        crate::ObservationFailure::ComponentNotAllowed
+                    }
+                    "fingerprint_mismatch" => crate::ObservationFailure::FingerprintMismatch,
+                    "fingerprint_not_available" => {
+                        crate::ObservationFailure::FingerprintUnavailable
+                    }
+                    "state_unavailable" => crate::ObservationFailure::StateUnavailable,
+                    _ => crate::ObservationFailure::UnknownRefusal,
+                },
+            };
+            match error {
+                RuntimeFailureInternal::Rejected(reason, detail) => {
+                    if let Some(detail) = detail {
+                        log::warn!(
+                            "the confidential attestation refusal was not recorded: {reason} ({detail})"
+                        );
+                    } else {
+                        log::warn!(
+                            "the confidential attestation refusal was not recorded: {reason}"
+                        );
+                    }
+                }
+                RuntimeFailureInternal::Writer(error) => {
+                    log::warn!("the confidential attestation refusal was not recorded: {error}");
                 }
             }
-            RuntimeFailureInternal::Writer(error) => {
-                log::warn!("the confidential attestation refusal was not recorded: {error}");
-            }
+            RefusalObservation::Failed(category)
         }
     }
 }

@@ -99,8 +99,8 @@ pub use wire::one_shot_fixture as test_fixture;
 pub use wire::test_support;
 #[cfg(feature = "wire")]
 pub use wire::{
-    CallosumConnectionPhase, CallosumGapReason, CallosumReceiveEvent, CallosumRetrySource,
-    CallosumSocketConnection, CallosumSocketServer, CallosumSocketServerError,
+    CallosumConnectionPhase, CallosumDiagnosticEmitter, CallosumGapReason, CallosumReceiveEvent,
+    CallosumRetrySource, CallosumSocketConnection, CallosumSocketServer, CallosumSocketServerError,
     CallosumStoppedReason, TokioRetrySource, request_local_inference_snapshot,
     request_local_inference_snapshot_sync,
 };

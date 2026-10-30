@@ -13,6 +13,7 @@ pub enum ConfidentialIoPhase {
 }
 
 struct TranscribeControl<'a> {
+    observation: Option<&'a solstone_core_brain::BrainObservationSink>,
     checkpoint: &'a dyn Fn() -> Result<(), TranscribeError>,
     service_io: &'a dyn Fn(ConfidentialIoPhase),
 }
@@ -168,6 +169,7 @@ where
         readiness,
         establish,
         TranscribeControl {
+            observation: None,
             checkpoint: &|| Ok(()),
             service_io: &|_| {},
         },
@@ -218,10 +220,13 @@ where
     )
     .map_err(|failure| {
         if let Some(held_config) = config.config.as_ref() {
-            solstone_core_brain::record_confidential_attestation_refusal(
+            solstone_core_brain::record_confidential_attestation_refusal_observed(
                 journal_path,
                 held_config,
                 failure.reason_code,
+                control.observation,
+                solstone_core_brain::RuntimeRefusalCaller::Transcription,
+                solstone_core_brain::ObservationPhase::TranscriptionReattest,
             );
         }
         if let Err(error) = solstone_core_brain::record_transcription_verification(
@@ -271,7 +276,15 @@ pub(crate) fn transcribe(
     config: &JournalConfigRead,
     state: &AttestationStateStore,
 ) -> Result<(TranscriptionResponse, ModelInfo), TranscribeError> {
-    transcribe_cancellable(audio, journal_path, config, state, &|| Ok(()), &|_| {})
+    transcribe_cancellable(
+        audio,
+        journal_path,
+        config,
+        state,
+        &|| Ok(()),
+        &|_| {},
+        None,
+    )
 }
 
 pub(crate) fn transcribe_cancellable(
@@ -281,6 +294,7 @@ pub(crate) fn transcribe_cancellable(
     state: &AttestationStateStore,
     checkpoint: &dyn Fn() -> Result<(), TranscribeError>,
     service_io: &dyn Fn(ConfidentialIoPhase),
+    observation: Option<&solstone_core_brain::BrainObservationSink>,
 ) -> Result<(TranscriptionResponse, ModelInfo), TranscribeError> {
     #[cfg(all(test, feature = "full-tests"))]
     if CONFIDENTIAL_SEND_HOOK.with(|cell| cell.get()) {
@@ -320,6 +334,7 @@ pub(crate) fn transcribe_cancellable(
         readiness,
         establish_fresh_production_channel,
         TranscribeControl {
+            observation,
             checkpoint,
             service_io,
         },
@@ -733,6 +748,56 @@ mod tests {
         assert_eq!(channel_attempts.load(Ordering::SeqCst), 0);
     }
 
+    #[cfg(feature = "full-tests")]
+    #[test]
+    fn observed_transcription_refusal_uses_its_own_caller_and_exact_publication() {
+        let temp = tempfile::tempdir().unwrap();
+        let config = active_config();
+        std::fs::create_dir_all(temp.path().join("config")).unwrap();
+        std::fs::write(
+            temp.path().join("config/journal.json"),
+            serde_json::to_vec(config.config.as_ref().unwrap()).unwrap(),
+        )
+        .unwrap();
+        solstone_core_brain::generate_fingerprint_key(temp.path()).unwrap();
+        let (emitter, mut rows) = solstone_core_callosum::test_support::diagnostic_fixture(128);
+        let sink = solstone_core_brain::BrainObservationSink::new(emitter);
+        let error = super::transcribe_with_checkpoint(
+            &[0.0; 160],
+            temp.path(),
+            &config,
+            &AttestationStateStore::new(),
+            |_| NvattestEnsureStatus::Unavailable,
+            |_, _, _| -> Result<(CompositeVerdict, MockAttestedStream), &'static str> {
+                panic!("readiness refusal must not establish")
+            },
+            super::TranscribeControl {
+                observation: Some(&sink),
+                checkpoint: &|| Ok(()),
+                service_io: &|_| panic!("refusal must not send audio"),
+            },
+        )
+        .unwrap_err();
+        assert_deferred_reason(error, "attestation_unreachable");
+        let record = solstone_core_brain::inspect_brain_state(
+            temp.path(),
+            config.config.as_ref().unwrap(),
+            chrono::Utc::now(),
+        )
+        .record
+        .unwrap();
+        let row = serde_json::to_value(rows.try_recv().unwrap()).unwrap();
+        assert_eq!(row["caller"], "transcription");
+        assert_eq!(row["phase"], "transcription_reattest");
+        assert_eq!(row["outcome"], "published");
+        assert_eq!(row["revision"], record["revision"]);
+        assert_eq!(
+            row["runtime_failure_marker"],
+            record["runtime_failure_marker"]["marker_id"]
+        );
+        assert!(rows.try_recv().is_err());
+    }
+
     #[test]
     fn cancellation_after_attestation_prevents_audio_egress() {
         use std::sync::{Arc, Mutex, atomic::AtomicBool};
@@ -759,6 +824,7 @@ mod tests {
                 ))
             },
             super::TranscribeControl {
+                observation: None,
                 checkpoint: &|| {
                     if cancelled.load(Ordering::SeqCst) {
                         Err(TranscribeError::Cancelled)

@@ -7,6 +7,7 @@ mod credential_hold;
 mod fingerprint;
 mod fixture;
 mod inspect;
+mod observation;
 mod presentation;
 mod record;
 mod runtime_health;
@@ -18,6 +19,10 @@ mod corpus_tests;
 
 pub use credential_hold::{
     CredentialHoldError, CredentialHoldSession, CredentialHoldTarget, VolatileCredentialWitness,
+};
+pub use observation::{
+    BrainObservation, BrainObservationSink, ObservationCaller, ObservationFailure,
+    ObservationOutcome, ObservationPhase,
 };
 
 pub use fingerprint::{
@@ -58,17 +63,18 @@ pub use transcription_verification::{
 pub use writer::{
     BeginPrerequisiteRenewal, BeginRefreshError, BrainRefreshPermit, CredentialRejectionCarrier,
     CredentialRejectionFailure, CredentialRejectionReceipt, CredentialValidationWitness,
-    REACHABLE_WRITE_CASES, RuntimeFailureResult, WriterError, abandon_prerequisite_renewal,
-    abandon_prerequisite_renewal_checked, abandon_refresh, abandon_refresh_checked,
-    begin_prerequisite_renewal, begin_prerequisite_renewal_checked, begin_refresh,
-    begin_refresh_checked, capture_credential_validation_bound,
+    REACHABLE_WRITE_CASES, RuntimeFailureResult, RuntimeRefusalCaller, WriterError,
+    abandon_prerequisite_renewal, abandon_prerequisite_renewal_checked, abandon_refresh,
+    abandon_refresh_checked, begin_prerequisite_renewal, begin_prerequisite_renewal_checked,
+    begin_refresh, begin_refresh_checked, capture_credential_validation_bound,
     classify_credential_admission_bound, finish_prerequisite_renewal,
     finish_prerequisite_renewal_checked, finish_refresh, finish_refresh_checked,
     finish_refresh_rejected, finish_refresh_rejected_checked, generate_fingerprint_key,
     generate_fingerprint_key_at_root_checked, generate_fingerprint_key_checked, hold_record_lock,
     read_fingerprint_key_material_bound, record_confidential_attestation_refusal,
-    record_credential_hold_bound, record_runtime_failure,
-    retain_credential_rejection_with_config_bound, retain_current_credential_rejection_bound,
+    record_confidential_attestation_refusal_observed, record_credential_hold_bound,
+    record_runtime_failure, retain_credential_rejection_with_config_bound,
+    retain_current_credential_rejection_bound,
 };
 
 pub use solstone_core_journal_config::read_journal_config;
