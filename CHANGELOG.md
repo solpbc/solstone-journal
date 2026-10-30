@@ -15,6 +15,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 
 - each stretch's screen description now rarely calls you "the user": it addresses you as "you" and calls the AI agent working for you "your agent".
+- a show, film or podcast playing near you is now less often mistaken for a conversation, so fewer of them get a story as if the people in it were with you.
 
 ### Fixed
 
