@@ -80,7 +80,7 @@ fn sound_keys_match_the_evaluated_prototype() {
         ("Cognova", "KGNF"),
         ("Kognova", "KGNF"),
         ("Balthasar", "BL0SR"),
-        ("Jeremie", "JRM"),
+        ("Jerome", "JRM"),
         ("Sunstone", "SNSTN"),
         ("Kathryn", "K0RN"),
         ("Catherine", "K0RN"),

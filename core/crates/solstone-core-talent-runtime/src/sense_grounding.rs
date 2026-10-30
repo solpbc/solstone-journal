@@ -133,7 +133,7 @@ fn seen_only(row: &serde_json::Map<String, Value>) -> bool {
     field("role") == "mentioned" && field("source") == "screen"
 }
 
-/// The owner, or a shortening of one of the owner's names ("Jer", "Jeremie M").
+/// The owner, or a shortening of one of the owner's names ("Kat", "Kathryn M").
 fn names_owner(owner: &JournalOwner, name: &str) -> bool {
     if owner.actor(name) == NamedActor::Owner {
         return true;
