@@ -28,6 +28,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- fixed a failure when picking a folder to import in the android development app.
 - in imports, checking a folder's status now clears an earlier read error when the check succeeds. an unconfirmed sync or folder change stays visible.
 - when the local model takes too long to answer, your journal no longer says it couldn't connect to the provider. a few error messages, including the one for an answer the model didn't finish, no longer show test wording.
 - security fix for the private network: your journal now proves it holds its own private key each time it renews its place on the relay, and once it has, the relay refuses anyone who only knows your journal's public key. before, someone holding that public key, such as a device you had removed, could take your journal's place, keep your devices from reaching it and see when they tried to reach it, but never anything in your journal. your journal also no longer puts its relay credential in the web address it connects to.

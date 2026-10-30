@@ -165,6 +165,16 @@ unsafe fn copy_folder(
         return Err(());
     }
     let cache = Path::new(unsafe { CStr::from_ptr(cache) }.to_str().map_err(|_| ())?);
+    if !cache.is_absolute() {
+        return Err(());
+    }
+    // The private Service supplies its own cache, never a document-selected
+    // path. Resolve Android's app-private ancestor alias before allocating any
+    // bridge descendants; the copier still refuses links beneath this base.
+    let cache = cache.canonicalize().map_err(|_| ())?;
+    if !cache.is_dir() {
+        return Err(());
+    }
     let request: Value =
         serde_json::from_slice(unsafe { std::slice::from_raw_parts(request, length) })
             .map_err(|_| ())?;
@@ -229,7 +239,7 @@ unsafe fn copy_folder(
     // SERVING is released before all provider, staging, metadata and cleanup I/O.
     // No native import attempt is admitted by this copy/register operation.
     let outcome = preparation.with_folder_copy(
-        cache,
+        &cache,
         reference,
         &timestamp,
         |destination| {

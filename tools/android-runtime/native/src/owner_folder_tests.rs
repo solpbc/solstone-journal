@@ -9,6 +9,7 @@ use std::sync::{Weak, mpsc};
 use std::time::Duration;
 
 type RegistrationHook = Box<dyn FnOnce(&jio::JournalRoot, &solstone_core_import::AdmittedFolder)>;
+static PROVIDER_CALLS: AtomicU64 = AtomicU64::new(0);
 thread_local! {
     static BEFORE_REGISTRATION: std::cell::RefCell<Option<RegistrationHook>> = const { std::cell::RefCell::new(None) };
 }
@@ -195,15 +196,18 @@ struct Provider {
     resource: Rc<()>,
     entered: Option<mpsc::Sender<()>>,
     release: Option<mpsc::Receiver<()>>,
+    destination: Option<PathBuf>,
 }
 
 unsafe extern "C" fn provider(context: *mut c_void, destination: *const c_char) -> bool {
+    PROVIDER_CALLS.fetch_add(1, Ordering::SeqCst);
     let state = unsafe { &mut *context.cast::<Provider>() };
     assert_eq!(std::thread::current().id(), state.worker);
     assert_eq!(Rc::strong_count(&state.resource), 1);
     assert!(journal_owner_folder_copy_continues());
     assert_eq!(journal_owner_folder_page_current(), state.page);
     let destination = Path::new(unsafe { CStr::from_ptr(destination) }.to_str().unwrap());
+    state.destination = Some(destination.to_path_buf());
     fs::create_dir(destination.join("empty")).unwrap();
     fs::write(
         destination.join("note.md"),
@@ -247,6 +251,7 @@ fn copy(
         resource: Rc::new(()),
         entered,
         release,
+        destination: None,
     };
     let cache = CString::new(cache.to_str().unwrap()).unwrap();
     let request = request.to_string();
@@ -264,7 +269,69 @@ fn copy(
         !journal_owner_folder_copy_continues(),
         "native worker kept its installed Stop after return"
     );
+    if let Some(destination) = state.destination {
+        // The Java copier rejects every symlink ancestor. The native boundary
+        // must supply its canonical private cache, not the Android alias.
+        let canonical_cache = Path::new(cache.to_str().unwrap()).canonicalize().unwrap();
+        assert!(destination.starts_with(canonical_cache));
+    }
     serde_json::from_slice(result.as_bytes()).unwrap()
+}
+
+#[test]
+fn private_cache_alias_saves_original_bytes_and_retires_temporary_copy() {
+    if isolated("private_cache_alias_saves_original_bytes_and_retires_temporary_copy") {
+        return;
+    }
+    let fixture = Fixture::new();
+    let data = fixture.directory.join("data");
+    fs::create_dir_all(data.join("data/app")).unwrap();
+    fs::create_dir(data.join("user")).unwrap();
+    fs::rename(&fixture.cache, data.join("data/app/cache")).unwrap();
+    std::os::unix::fs::symlink(data.join("data"), data.join("user/0")).unwrap();
+    let cache = data.join("user/0/app/cache");
+    let result = copy(&cache, &fixture.request(), None);
+    assert_eq!(result["state"], "saved", "{result}");
+    let id = result["import_id"].as_str().unwrap();
+    assert_eq!(
+        fs::read(fixture.root.join("imports").join(id).join("tree/note.md")).unwrap(),
+        b"# Picked notes\n\ncobalt retained provider note\n"
+    );
+    no_temporary_copy(&cache);
+    fixture.stop();
+    fixture.stopped();
+}
+
+#[test]
+fn invalid_cache_bases_and_bridge_redirect_refuse_without_allocation() {
+    if isolated("invalid_cache_bases_and_bridge_redirect_refuse_without_allocation") {
+        return;
+    }
+    let fixture = Fixture::new();
+    let request = fixture.request();
+    let missing = fixture.directory.join("missing");
+    let file = fixture.directory.join("file");
+    fs::write(&file, b"retained sentinel").unwrap();
+    for cache in [&missing, &file, Path::new("relative-cache")] {
+        assert_eq!(copy(cache, &request, None)["state"], "refused");
+    }
+    assert!(!missing.exists());
+    assert!(!Path::new("relative-cache").exists());
+    assert_eq!(fs::read(&file).unwrap(), b"retained sentinel");
+    let outside = fixture.directory.join("outside");
+    fs::create_dir(&outside).unwrap();
+    fs::write(outside.join("sentinel"), b"retained sentinel").unwrap();
+    std::os::unix::fs::symlink(&outside, fixture.cache.join("owner-bridge")).unwrap();
+    assert_eq!(copy(&fixture.cache, &request, None)["state"], "refused");
+    assert_eq!(fs::read_dir(&outside).unwrap().count(), 1);
+    assert_eq!(
+        fs::read(outside.join("sentinel")).unwrap(),
+        b"retained sentinel"
+    );
+    assert!(!fixture.root.join("imports").exists());
+    assert_eq!(PROVIDER_CALLS.load(Ordering::SeqCst), 0);
+    fixture.stop();
+    fixture.stopped();
 }
 
 fn no_temporary_copy(cache: &Path) {
