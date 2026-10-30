@@ -20,7 +20,8 @@
     "broker_error": "encrypted backup didn't return usable settings.",
     "hosted_entitlement_inactive": "encrypted backup isn't turned on in the services portal.",
     "binding_invalid": "this computer's link to encrypted backup was refused.",
-    "binding_superseded": "this computer's link to encrypted backup was replaced."
+    "binding_superseded": "this computer's link to encrypted backup was replaced.",
+    "repository_unsupported": "the repository in your backup settings doesn't start with s3: or b2: to match its backend, so backup stopped. turn off & delete backup, then set it up again with a repository that starts with s3: or b2:."
 };
   const VERIFICATION_SUBSET = {
     one: "checked all of your backup this week.",

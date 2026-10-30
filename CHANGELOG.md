@@ -25,6 +25,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- backup settings now refuse a repository that doesn't start with `s3:` or `b2:`. without that prefix, backups went to a folder on your computer instead of your bucket. on a mac that folder sat inside your journal, so every backup copied it into itself and it kept growing until it could fill your disk. a backup already set up that way now stops with a message saying so. restoring from it, or turning it off and deleting it, still works.
 - links in dashboard sentences stay underlined, in an orange that reads on the page, and the evidence clock on the cream page is dark enough to read. help and errors no longer call a solstone app or a linked device an observer.
 - on a mac, the local model sometimes kept adding names and topics to a list until it reached its limit. those runs took minutes, failed and were tried again later. lists now end where they should.
 - fixed a case where confidential processing stayed unchecked after you allowed it in your browser.

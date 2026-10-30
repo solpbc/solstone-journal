@@ -845,6 +845,17 @@ fn destination_set_from_payload(
         Ok(destination) => destination,
         Err(message) => return runtime_error(message),
     };
+    if !solstone_core_backup::repository_names_backend(&destination) {
+        return runtime_error(format!(
+            "The repository must start with {}: (for example {}).",
+            destination.backend,
+            if destination.backend == "b2" {
+                "b2:your-bucket:journal"
+            } else {
+                "s3:s3.amazonaws.com/your-bucket"
+            }
+        ));
+    }
     if let Err(error) = set_destination(journal, &destination) {
         return runtime_error(error.to_string());
     }
@@ -1401,6 +1412,11 @@ fn backup_failure_reason(reason: &str) -> String {
         // they are sitting at their own terminal.
         "binding_invalid" => "your journal's backup settings are no longer valid".into(),
         "binding_superseded" => "newer backup settings replaced these".into(),
+        "repository_unsupported" => {
+            "the repository in your backup settings doesn't start with s3: or b2: to match its \
+             backend"
+                .into()
+        }
         // ⛔ Not "it didn't finish": the header already said that.
         "failed" | "unknown" => "no reason was given".into(),
         other => format!(
@@ -2121,6 +2137,7 @@ mod tests {
             "hosted_entitlement_inactive",
             "binding_invalid",
             "binding_superseded",
+            "repository_unsupported",
             "failed",
             "unknown",
         ];
@@ -2898,6 +2915,29 @@ mod tests {
             || panic!("invalid input must not acquire restic"),
         );
         assert_eq!(output.stderr, "Error: Missing credentials.\n");
+        assert_eq!(fs::read_dir(journal.path()).unwrap().count(), before);
+    }
+
+    #[test]
+    fn a_repository_without_its_backend_prefix_never_mutates_the_journal() {
+        let journal = tempfile::tempdir().unwrap();
+        let runner = UnusedRunner;
+        let http = UnusedHttp;
+        let clock = FixedClock;
+        let maintenance = UnusedMaintenance;
+        let services = unconfigured_services(&runner, &http, &clock, &maintenance);
+        let before = fs::read_dir(journal.path()).unwrap().count();
+        let output = destination_set_from_payload(
+            journal.path(),
+            &services,
+            &payload(json!({"repository":"solstone-backup", "backend":"b2",
+                "credentials":{"account_id":"id","account_key":"key"}})),
+            || panic!("a refused repository must not acquire restic"),
+        );
+        assert_eq!(
+            output.stderr,
+            "Error: The repository must start with b2: (for example b2:your-bucket:journal).\n"
+        );
         assert_eq!(fs::read_dir(journal.path()).unwrap().count(), before);
     }
 

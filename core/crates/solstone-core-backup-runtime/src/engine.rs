@@ -1242,6 +1242,11 @@ impl AdmittedCapability {
             }
         };
         let runtime = match mode {
+            AdmittedBackupMode::Byo { destination }
+                if !solstone_core_backup::repository_names_backend(&destination) =>
+            {
+                Err("repository_unsupported".to_owned())
+            }
             AdmittedBackupMode::Byo { destination } => value_env(&destination)
                 .map(|backend_env| Runtime {
                     destination,
@@ -1623,6 +1628,17 @@ pub fn run_archive_backup(
                 status: "skipped".into(),
                 snapshot_id: None,
                 error_reason: None,
+                unreadable: None,
+                detail: None,
+            };
+        }
+        Ok(Some(runtime))
+            if !solstone_core_backup::repository_names_backend(&runtime.destination) =>
+        {
+            return BackupResult {
+                status: "error".into(),
+                snapshot_id: None,
+                error_reason: Some("repository_unsupported".into()),
                 unreadable: None,
                 detail: None,
             };
@@ -7107,6 +7123,50 @@ mod tests {
                 .any(|pair| pair == ["--exclude", "health"])
         );
         assert_one_resolution_attempt();
+    }
+    #[test]
+    fn a_repository_without_its_backend_prefix_is_refused_before_restic_runs() {
+        // restic would read the bare name as a folder in the journal, and every
+        // run would then copy that folder into itself.
+        let journal = configured_journal();
+        let mut destination = solstone_core_backup::get_destination(journal.path())
+            .unwrap()
+            .unwrap();
+        destination.repository = "solstone-backup".into();
+        solstone_core_backup::set_destination(journal.path(), &destination).unwrap();
+        reset_backup_path_resolution_attempts();
+        let runner = Script {
+            outputs: RefCell::new(VecDeque::new()),
+            commands: RefCell::new(vec![]),
+        };
+        let http = Http;
+        let clock = FixedClock;
+        let maintenance = Maintenance;
+        let result = run_backup(
+            journal.path(),
+            &services(&runner, &http, &clock, &maintenance),
+        );
+        assert_eq!(result.status, "error");
+        assert_eq!(
+            result.error_reason.as_deref(),
+            Some("repository_unsupported")
+        );
+        assert!(runner.commands.borrow().is_empty());
+        let recorded = solstone_core_backup::get_backup_config(journal.path()).unwrap();
+        assert_eq!(
+            recorded["last_backup"]["error_reason"],
+            "repository_unsupported"
+        );
+        let archive = run_archive_backup(
+            journal.path(),
+            &services(&runner, &http, &clock, &maintenance),
+            &[journal.path().join("chronicle")],
+        );
+        assert_eq!(
+            archive.error_reason.as_deref(),
+            Some("repository_unsupported")
+        );
+        assert!(runner.commands.borrow().is_empty());
     }
     #[test]
     fn backup_argv_uses_one_resolved_path_for_source_and_endpoint_exclusion() {
