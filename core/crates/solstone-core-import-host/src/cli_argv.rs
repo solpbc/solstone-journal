@@ -294,8 +294,14 @@ fn revoke_saved_for_parsed(parsed: &ParsedCommand, journal: &Path) -> Result<(),
     if options.dry_run {
         return Ok(());
     }
-    let _target_use = solstone_core_journal_io::whole_journal_restore::begin_target_use(journal)
+    // Open the root here so a relative or missing journal path is reported as
+    // such, not as the restore refusal `begin_target_use` folds it into.
+    let root = solstone_core_journal_io::journal_root::JournalRoot::open(journal)
         .map_err(|error| error.to_string())?;
+    let _target_use = solstone_core_journal_io::whole_journal_restore::begin_target_use_bound(
+        std::sync::Arc::new(root),
+    )
+    .map_err(|error| error.to_string())?;
     let mut options = options.clone();
     owner_instant(&mut options, journal).map_err(|run| run.stderr)?;
     let Some(media) = options.media.as_deref() else {

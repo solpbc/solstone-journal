@@ -49,13 +49,20 @@ fn argv_parses_before_supervisor_preflight_and_preserves_exit_contract() {
 
 #[test]
 fn positional_timestamp_reaches_the_generic_dispatch() {
-    let result = run(
+    let temporary = tempfile::tempdir().unwrap();
+    let result = run_at(
+        temporary.path(),
         &["file", "20260311_120000"],
         |name| (name == "SOL_SKIP_SUPERVISOR_CHECK").then(|| "1".to_owned()),
         || false,
     );
 
     assert!(!result.stderr.contains("usage: solstone journal importer"));
+    assert!(
+        result.stderr.contains("source path does not exist"),
+        "stderr={}",
+        result.stderr
+    );
 }
 
 #[test]
@@ -64,7 +71,9 @@ fn value_options_accept_attached_and_separated_values() {
         &["--timestamp=20260311_120000", "file"][..],
         &["--timestamp", "20260311_120000", "file"][..],
     ] {
-        let result = run(
+        let temporary = tempfile::tempdir().unwrap();
+        let result = run_at(
+            temporary.path(),
             arguments,
             |name| (name == "SOL_SKIP_SUPERVISOR_CHECK").then(|| "1".to_owned()),
             || false,
@@ -72,6 +81,32 @@ fn value_options_accept_attached_and_separated_values() {
 
         assert!(!result.stderr.contains("usage: solstone journal importer"));
         assert!(!result.stderr.contains("media"));
+        assert!(
+            result.stderr.contains("source path does not exist"),
+            "stderr={}",
+            result.stderr
+        );
+    }
+}
+
+#[test]
+fn an_unusable_journal_path_is_named() {
+    let missing = tempfile::tempdir().unwrap().path().join("absent");
+    for journal in [Path::new("."), missing.as_path()] {
+        let result = run_at(
+            journal,
+            &["file"],
+            |name| (name == "SOL_SKIP_SUPERVISOR_CHECK").then(|| "1".to_owned()),
+            || false,
+        );
+        assert_eq!(result.exit_code, 1);
+        assert!(
+            result
+                .stderr
+                .contains(&format!("invalid journal root {}", journal.display())),
+            "stderr={}",
+            result.stderr
+        );
     }
 }
 
