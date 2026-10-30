@@ -26,7 +26,7 @@ from tools.local_thinking_install.harness import (
 from tools.local_thinking_install.portal import HttpResponse, PortalProcess
 
 LINUX_VULKAN_DOWNLOAD_TOTAL = (
-    MODEL_TOTAL_BYTES + RUNTIME_DOWNLOAD_BYTES["llama-b11669-bin-ubuntu-vulkan-x64.tar.gz"]
+    MODEL_TOTAL_BYTES + RUNTIME_DOWNLOAD_BYTES["llama-b11960-bin-ubuntu-vulkan-x64.tar.gz"]
 )
 
 

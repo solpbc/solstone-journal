@@ -23,13 +23,14 @@ from .portal import HttpResponse, PortalProcess, PortalStartupError, find_free_p
 SPAWN_UNAVAILABLE_SNIPPET = "local install can't be started from this build yet"
 MODEL_TOTAL_BYTES = 2_740_937_888 + 672_423_616  # 3,413,361,504
 # Download progress also counts the pinned llama-server runtime the install
-# fetches for its platform and backend (solstone-core-assets, b11669).
+# fetches for its platform and backend (solstone-core-assets: b11960 on Linux
+# CUDA and Vulkan, b11669 on macOS).
 RUNTIME_DOWNLOAD_BYTES = {
-    "llama-b11669-bin-linux-cuda13-amd64-sol1.tar.gz": 592_895_506,
-    "llama-b11669-bin-linux-cuda13-arm64-sol1.tar.gz": 700_854_480,
+    "llama-b11960-bin-linux-cuda13-amd64-sol1.tar.gz": 598_930_370,
+    "llama-b11960-bin-linux-cuda13-arm64-sol1.tar.gz": 706_647_607,
     "llama-b11669-bin-macos-arm64.tar.gz": 12_191_582,
-    "llama-b11669-bin-ubuntu-vulkan-arm64.tar.gz": 24_187_561,
-    "llama-b11669-bin-ubuntu-vulkan-x64.tar.gz": 30_497_889,
+    "llama-b11960-bin-ubuntu-vulkan-arm64.tar.gz": 28_828_107,
+    "llama-b11960-bin-ubuntu-vulkan-x64.tar.gz": 35_474_467,
 }
 EXPECTED_DOWNLOAD_TOTALS = {MODEL_TOTAL_BYTES + size for size in RUNTIME_DOWNLOAD_BYTES.values()}
 # macOS has the smallest supported sockaddr_un.sun_path budget: 104 bytes
