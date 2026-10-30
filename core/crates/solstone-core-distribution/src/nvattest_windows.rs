@@ -545,6 +545,9 @@ pub struct NvattestDumpbinDependents {
 #[serde(deny_unknown_fields)]
 pub struct NvattestBuildReport {
     pub schema: u32,
+    pub target_architecture: String,
+    pub target_triple: String,
+    pub native_validation: NvattestReportNativeValidation,
     pub source_commit: String,
     pub source_clean: Option<bool>,
     pub tools: NvattestReportTools,
@@ -553,6 +556,15 @@ pub struct NvattestBuildReport {
     pub ca_bundle: NvattestReportCaBundle,
     pub imports: Vec<String>,
     pub outputs: Vec<NvattestReportOutputEntry>,
+}
+
+/// The SDK runs its UTC self-test natively when the build host is the target.
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct NvattestReportNativeValidation {
+    pub status: String,
+    pub executable_sha256: String,
+    pub vectors_sha256: String,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
@@ -1220,8 +1232,16 @@ pub(crate) fn base64_encode(input: &[u8]) -> String {
 pub(crate) fn decode_build_report(bytes: &[u8]) -> Result<NvattestBuildReport, String> {
     // Windows PowerShell 5.1 writes a UTF-8 BOM; the embedded bytes keep it.
     let json = bytes.strip_prefix(&[0xEF, 0xBB, 0xBF]).unwrap_or(bytes);
-    serde_json::from_slice(json)
-        .map_err(|e| format!("report: failed to parse build-report.json: {e}"))
+    let report: NvattestBuildReport = serde_json::from_slice(json)
+        .map_err(|e| format!("report: failed to parse build-report.json: {e}"))?;
+    if report.target_architecture != "x64"
+        || report.target_triple != "x86_64-pc-windows-msvc"
+        || report.native_validation.status != "passed"
+        || report.native_validation.vectors_sha256 != crate::nvattest_windows_arm64::UTC_VECTORS_SHA256
+    {
+        return Err("report: not an x64 build with a passed native UTC self-test".into());
+    }
+    Ok(report)
 }
 
 fn validate_census(
