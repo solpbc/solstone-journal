@@ -8,7 +8,7 @@ use serde::ser::{Serialize, SerializeMap, Serializer};
 use serde_json::{Value, json};
 use std::io::{self, Write};
 use std::sync::{
-    Arc, Mutex,
+    Arc, OnceLock,
     atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
 };
 use tokio::sync::Notify;
@@ -24,15 +24,43 @@ const OVERFLOW: u64 = 8;
 const MALFORMED: u64 = 16;
 const IDENTITY: u64 = 32;
 
+// One monotonic reservation charges both limits. Readers never own writer state.
+const BYTE_BITS: u32 = 17;
+const BYTE_MASK: u64 = (1 << BYTE_BITS) - 1;
 struct Prefix {
-    rows: Vec<Vec<u8>>,
-    bytes: usize,
+    slots: Vec<OnceLock<Option<Vec<u8>>>>,
+    reserved: AtomicU64,
+}
+impl Prefix {
+    fn horizon(&self) -> usize {
+        (self.reserved.load(Ordering::Acquire) >> BYTE_BITS) as usize
+    }
+    fn reserve(&self, bytes: usize) -> Option<usize> {
+        let mut state = self.reserved.load(Ordering::Acquire);
+        loop {
+            let count = (state >> BYTE_BITS) as usize;
+            let charged = (state & BYTE_MASK) as usize;
+            if count >= ROWS || charged + bytes > BYTES {
+                return None;
+            }
+            let next = (((count + 1) as u64) << BYTE_BITS) | (charged + bytes) as u64;
+            match self
+                .reserved
+                .compare_exchange(state, next, Ordering::AcqRel, Ordering::Acquire)
+            {
+                Ok(_) => return Some(count),
+                // Strong CAS fails only when another of at most 128 reservations
+                // advances. No reset, refund or other writer changes this state.
+                Err(actual) => state = actual,
+            }
+        }
+    }
 }
 
 /// No execution resource or transport ownership. Writers never wait for readers.
 pub struct BrainStartupCapture {
     generation: Option<String>,
-    prefix: Mutex<Prefix>,
+    prefix: Prefix,
     loss: AtomicU64,
     pending: AtomicUsize,
     closed: AtomicBool,
@@ -43,8 +71,8 @@ pub struct BrainStartupCapture {
 #[derive(Default)]
 pub struct BrainStartupCursor {
     next: usize,
-    marker: Option<(usize, u64, usize, bool)>,
-    contended: bool,
+    slot: usize,
+    marker: Option<(usize, u64, usize, bool, bool)>,
 }
 
 pub struct BrainStartupEvent {
@@ -70,8 +98,11 @@ impl BrainStartupCapture {
     }
 
     pub(super) fn with_generation(generation: Option<String>, unavailable: bool) -> Arc<Self> {
-        let mut rows = Vec::new();
-        let unavailable = unavailable || rows.try_reserve_exact(ROWS).is_err();
+        let mut slots = Vec::new();
+        let unavailable = unavailable || slots.try_reserve_exact(ROWS).is_err();
+        if !unavailable {
+            slots.extend((0..ROWS).map(|_| OnceLock::new()));
+        }
         let loss = if unavailable || generation.is_none() {
             UNAVAILABLE
         } else {
@@ -79,7 +110,10 @@ impl BrainStartupCapture {
         };
         Arc::new(Self {
             generation,
-            prefix: Mutex::new(Prefix { rows, bytes: 0 }),
+            prefix: Prefix {
+                slots,
+                reserved: AtomicU64::new(0),
+            },
             loss: AtomicU64::new(loss),
             pending: AtomicUsize::new(0),
             closed: AtomicBool::new(false),
@@ -137,6 +171,7 @@ impl BrainStartupCapture {
             capture: Arc::clone(self),
             data,
             finalized: false,
+            reservation: None,
         })
     }
 
@@ -150,13 +185,6 @@ impl BrainStartupCapture {
             if let Some(event) = self.try_next(cursor) {
                 return Some(event);
             }
-            if cursor.contended {
-                // Another response can briefly own this lock without emitting
-                // or notifying. Retry cooperatively instead of awaiting a
-                // source change that may never occur for a settled prefix.
-                tokio::task::yield_now().await;
-                continue;
-            }
             if self.closed.load(Ordering::Acquire) {
                 return None;
             }
@@ -165,26 +193,16 @@ impl BrainStartupCapture {
     }
 
     fn try_next(&self, cursor: &mut BrainStartupCursor) -> Option<BrainStartupEvent> {
-        cursor.contended = false;
-        let closed = self.closed.load(Ordering::Acquire);
-        if closed {
-            return self.marker(cursor, cursor.next, true);
+        if self.closed.load(Ordering::Acquire) {
+            return self.marker(cursor, true);
         }
-        let prefix = match self.prefix.try_lock() {
-            Ok(prefix) => prefix,
-            Err(std::sync::TryLockError::WouldBlock) => {
-                cursor.contended = true;
-                return None;
-            }
-            Err(std::sync::TryLockError::Poisoned(_)) => {
-                self.invalidate(UNAVAILABLE);
-                self.close();
-                return self.marker(cursor, cursor.next, true);
-            }
-        };
-        if !closed && let Some(row) = prefix.rows.get(cursor.next) {
-            // The retained row is already bounded and valid JSON. This allocation
-            // belongs to the reader; producer try_lock never waits for it.
+        let horizon = self.prefix.horizon();
+        while cursor.slot < horizon {
+            let Some(published) = self.prefix.slots[cursor.slot].get() else {
+                return self.marker(cursor, false);
+            };
+            cursor.slot += 1;
+            let Some(row) = published else { continue };
             let row: Value = serde_json::from_slice(row).expect("selected source JSON");
             cursor.next += 1;
             return Some(BrainStartupEvent {
@@ -194,21 +212,21 @@ impl BrainStartupCapture {
                 terminal: false,
             });
         }
-        self.marker(cursor, prefix.rows.len(), closed)
+        self.marker(cursor, false)
     }
 
-    fn marker(
-        &self,
-        cursor: &mut BrainStartupCursor,
-        through: usize,
-        closed: bool,
-    ) -> Option<BrainStartupEvent> {
+    fn marker(&self, cursor: &mut BrainStartupCursor, closed: bool) -> Option<BrainStartupEvent> {
         // A finalized send sets loss before releasing pending. Acquire of zero
         // therefore cannot certify a send whose failure has not yet been read.
         let closed = closed || self.closed.load(Ordering::Acquire);
         let pending = self.pending.load(Ordering::Acquire);
+        // A producer prepared before our scan may publish between the old
+        // horizon and pending-zero samples. Acquire its horizon after pending;
+        // never certify a prefix that has not delivered those resolved slots.
+        let unresolved = cursor.slot < self.prefix.horizon();
         let loss = self.loss.load(Ordering::Acquire);
-        let status = (through, loss, pending, closed);
+        let through = cursor.next;
+        let status = (through, loss, pending, closed, unresolved);
         if cursor.marker == Some(status) {
             return None;
         }
@@ -219,7 +237,7 @@ impl BrainStartupCapture {
             "unavailable"
         } else if loss != 0 {
             "incomplete"
-        } else if pending != 0 {
+        } else if pending != 0 || unresolved {
             "pending"
         } else {
             "complete"
@@ -249,6 +267,7 @@ pub(super) struct Pending {
     capture: Arc<BrainStartupCapture>,
     data: Option<FixedRow>,
     finalized: bool,
+    reservation: Option<usize>,
 }
 
 impl Pending {
@@ -260,27 +279,34 @@ impl Pending {
             self.finalized = true;
             return;
         }
-        if let Some(data) = self.data.take() {
-            match self.capture.prefix.try_lock() {
-                Ok(mut prefix) => {
-                    if prefix.rows.len() >= ROWS || prefix.bytes + data.len > BYTES {
-                        self.capture.invalidate(OVERFLOW);
-                    } else if self.capture.loss.load(Ordering::Acquire) & UNAVAILABLE == 0 {
-                        let mut row = Vec::new();
-                        if row.try_reserve_exact(data.len).is_err() {
-                            self.capture.invalidate(UNAVAILABLE);
-                        } else {
-                            row.extend_from_slice(&data.bytes[..data.len]);
-                            prefix.bytes += row.len();
-                            prefix.rows.push(row);
-                        }
-                    }
+        if let Some(data) = self.data.take()
+            && self.capture.loss.load(Ordering::Acquire) & UNAVAILABLE == 0
+        {
+            if let Some(slot) = self.capture.prefix.reserve(data.len) {
+                // Install the unwind obligation before allocation or publication.
+                self.reservation = Some(slot);
+                let mut row = Vec::new();
+                if row.try_reserve_exact(data.len).is_err() {
+                    self.capture.invalidate(UNAVAILABLE);
+                    self.publish(None);
+                } else {
+                    row.extend_from_slice(&data.bytes[..data.len]);
+                    self.publish(Some(row));
                 }
-                Err(std::sync::TryLockError::WouldBlock) => self.capture.invalidate(CONTENTION),
-                Err(std::sync::TryLockError::Poisoned(_)) => self.capture.invalidate(UNAVAILABLE),
+            } else {
+                self.capture.invalidate(OVERFLOW);
             }
         }
         self.finalized = true;
+    }
+
+    fn publish(&mut self, row: Option<Vec<u8>>) {
+        if let Some(slot) = self.reservation {
+            // Only this reservation can initialize its cell; no reader or rival
+            // producer initializes it, so set cannot wait on another initializer.
+            assert!(self.capture.prefix.slots[slot].set(row).is_ok());
+            self.reservation = None;
+        }
     }
 }
 
@@ -288,6 +314,7 @@ impl Drop for Pending {
     fn drop(&mut self) {
         if !self.finalized {
             self.capture.invalidate(SOURCE_LOSS);
+            self.publish(None);
         }
         self.capture.pending.fetch_sub(1, Ordering::AcqRel);
         self.capture.changed.notify_waiters();
@@ -462,23 +489,116 @@ mod tests {
         serde_json::from_str(&capture.try_next(cursor).unwrap().data).unwrap()
     }
     #[tokio::test]
-    async fn reader_lock_contention_retries_without_another_source_emission() {
+    async fn unresolved_slot_resumes_without_another_emission() {
         let capture = BrainStartupCapture::new();
-        capture.prepare(&row("started")).unwrap().finish(true);
-        let held = capture.prefix.lock().unwrap();
+        let mut first = reserved(&capture, "started");
+        capture.prepare(&row("stopped")).unwrap().finish(true);
         let mut cursor = BrainStartupCursor::default();
+        assert_eq!(take(&capture, &mut cursor)["coverage"], "pending");
         let mut next = Box::pin(capture.next(&mut cursor));
         let waker = std::task::Waker::noop();
-        let mut context = std::task::Context::from_waker(waker);
-        assert!(next.as_mut().poll(&mut context).is_pending());
-        drop(held);
-        let event = tokio::time::timeout(std::time::Duration::from_secs(1), next)
-            .await
-            .unwrap()
-            .unwrap();
+        let mut cx = std::task::Context::from_waker(waker);
+        assert!(next.as_mut().poll(&mut cx).is_pending());
+        first.publish(Some(projected("started")));
+        first.finalized = true;
+        drop(first);
         assert_eq!(
-            serde_json::from_str::<Value>(&event.data).unwrap()["sequence"],
+            serde_json::from_str::<Value>(&next.await.unwrap().data).unwrap()["sequence"],
             1
+        );
+        assert_eq!(take(&capture, &mut cursor)["sequence"], 2);
+        let marker = take(&capture, &mut cursor);
+        assert_eq!(marker["through"], 2);
+        assert_eq!(marker["coverage"], "complete");
+    }
+
+    fn projected(event: &str) -> Vec<u8> {
+        let data = project(&row(event)).unwrap();
+        data.bytes[..data.len].to_vec()
+    }
+    fn reserved(capture: &Arc<BrainStartupCapture>, event: &str) -> Pending {
+        let mut pending = capture.prepare(&row(event)).unwrap();
+        pending.reservation = capture.prefix.reserve(pending.data.take().unwrap().len);
+        assert!(pending.reservation.is_some());
+        pending
+    }
+    #[tokio::test]
+    async fn failed_reservation_wakes_reader_and_does_not_count_as_a_row() {
+        let capture = BrainStartupCapture::new();
+        let first = reserved(&capture, "started");
+        capture.prepare(&row("stopped")).unwrap().finish(true);
+        let mut cursor = BrainStartupCursor::default();
+        assert_eq!(take(&capture, &mut cursor)["coverage"], "pending");
+        let mut next = Box::pin(capture.next(&mut cursor));
+        let waker = std::task::Waker::noop();
+        let mut cx = std::task::Context::from_waker(waker);
+        assert!(next.as_mut().poll(&mut cx).is_pending());
+        drop(first);
+        let surviving: Value = serde_json::from_str(&next.await.unwrap().data).unwrap();
+        assert_eq!(surviving["sequence"], 1);
+        assert_eq!(surviving["row"]["event"], "stopped");
+        let marker = take(&capture, &mut cursor);
+        assert_eq!(marker["through"], 1);
+        assert_eq!(marker["pending"], 0);
+        assert_eq!(marker["reasons"], json!(["source_send_loss"]));
+        assert_eq!(marker["coverage"], "incomplete");
+    }
+    #[test]
+    fn settled_marker_rechecks_the_horizon_after_a_prepared_producer_finishes() {
+        let capture = BrainStartupCapture::new();
+        let pending = capture.prepare(&row("started")).unwrap();
+        let mut cursor = BrainStartupCursor::default();
+        assert_eq!(capture.prefix.horizon(), 0); // reader's first horizon sample
+        pending.finish(true); // reserve/publish/release before marker samples pending
+        let marker: Value =
+            serde_json::from_str(&capture.marker(&mut cursor, false).unwrap().data).unwrap();
+        assert_eq!(marker["coverage"], "pending");
+        assert_eq!(marker["through"], 0);
+        assert_eq!(take(&capture, &mut cursor)["sequence"], 1);
+        assert_eq!(take(&capture, &mut cursor)["coverage"], "complete");
+    }
+    #[test]
+    fn concurrent_reservations_obey_both_budgets_and_never_refund_failures() {
+        for (count, bytes, charge) in [(127, 0, 1), (0, BYTES - 7, 7)] {
+            let capture = BrainStartupCapture::new();
+            capture
+                .prefix
+                .reserved
+                .store((count << BYTE_BITS) | bytes as u64, Ordering::Release);
+            let barrier = Arc::new(std::sync::Barrier::new(3));
+            let threads: Vec<_> = (0..2)
+                .map(|_| {
+                    let c = Arc::clone(&capture);
+                    let b = Arc::clone(&barrier);
+                    std::thread::spawn(move || {
+                        b.wait();
+                        c.prefix.reserve(charge)
+                    })
+                })
+                .collect();
+            barrier.wait();
+            let results: Vec<_> = threads.into_iter().map(|t| t.join().unwrap()).collect();
+            assert_eq!(results.iter().filter(|v| v.is_some()).count(), 1);
+            let state = capture.prefix.reserved.load(Ordering::Acquire);
+            assert_eq!(state >> BYTE_BITS, count + 1);
+            assert_eq!(state & BYTE_MASK, bytes as u64 + charge as u64);
+        }
+        let capture = BrainStartupCapture::new();
+        let pending = reserved(&capture, "started");
+        let state = capture.prefix.reserved.load(Ordering::Acquire);
+        let _unwind = std::panic::catch_unwind(move || {
+            let _pending = pending;
+            panic!("finalization unwind");
+        });
+        assert_eq!(capture.prefix.reserved.load(Ordering::Acquire), state);
+        assert_eq!(capture.pending.load(Ordering::Acquire), 0);
+        assert!(capture.prefix.slots[0].get().unwrap().is_none());
+        capture.prepare(&row("stopped")).unwrap().finish(true);
+        let mut cursor = BrainStartupCursor::default();
+        assert_eq!(take(&capture, &mut cursor)["sequence"], 1);
+        assert_eq!(
+            take(&capture, &mut cursor)["reasons"],
+            json!(["source_send_loss"])
         );
     }
     #[test]
@@ -515,10 +635,11 @@ mod tests {
             bad.extra.insert(key.into(), value);
             capture.prepare(&bad).unwrap().finish(true);
             capture.prepare(&row("started")).unwrap().finish(true);
-            let prefix = capture.prefix.lock().unwrap();
-            assert_eq!(prefix.rows.len(), 1);
-            assert!(!String::from_utf8_lossy(&prefix.rows[0]).contains("private_token"));
-            drop(prefix);
+            assert_eq!(capture.prefix.horizon(), 1);
+            assert!(
+                !String::from_utf8_lossy(capture.prefix.slots[0].get().unwrap().as_ref().unwrap())
+                    .contains("private_token")
+            );
             let mut cursor = BrainStartupCursor::default();
             take(&capture, &mut cursor);
             assert_eq!(take(&capture, &mut cursor)["coverage"], "incomplete");
@@ -537,21 +658,18 @@ mod tests {
         }
     }
     #[test]
-    fn contention_overflow_and_unavailable_never_recover_to_complete() {
+    fn send_loss_overflow_and_unavailable_never_recover_to_complete() {
         let capture = BrainStartupCapture::new();
-        let held = capture.prefix.lock().unwrap();
-        capture.prepare(&row("started")).unwrap().finish(true);
-        drop(held);
+        capture.prepare(&row("started")).unwrap().finish(false);
         let mut cursor = BrainStartupCursor::default();
+        assert_eq!(take(&capture, &mut cursor)["sequence"], 1);
         assert_eq!(take(&capture, &mut cursor)["coverage"], "incomplete");
         let capture = BrainStartupCapture::new();
         for _ in 0..129 {
             capture.prepare(&row("started")).unwrap().finish(true);
         }
-        let prefix = capture.prefix.lock().unwrap();
-        assert_eq!(prefix.rows.len(), 128);
-        assert!(prefix.bytes <= 65536);
-        drop(prefix);
+        assert_eq!(capture.prefix.horizon(), 128);
+        assert!(capture.prefix.reserved.load(Ordering::Acquire) & BYTE_MASK <= BYTES as u64);
         assert_ne!(capture.loss.load(Ordering::Acquire) & OVERFLOW, 0);
         for capture in [
             BrainStartupCapture::with_generation(None, false),
@@ -618,9 +736,12 @@ mod tests {
     #[test]
     fn byte_budget_and_identity_failure_are_sticky() {
         let capture = BrainStartupCapture::new();
-        capture.prefix.lock().unwrap().bytes = BYTES - 1;
+        capture
+            .prefix
+            .reserved
+            .store((BYTES - 1) as u64, Ordering::Release);
         capture.prepare(&row("started")).unwrap().finish(true);
-        assert_eq!(capture.prefix.lock().unwrap().rows.len(), 0);
+        assert_eq!(capture.prefix.horizon(), 0);
         assert_ne!(capture.loss.load(Ordering::Acquire) & OVERFLOW, 0);
         let capture = BrainStartupCapture::new();
         capture.missing_identity();
