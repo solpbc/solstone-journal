@@ -11,6 +11,10 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - the android development app can review interrupted storage work while your journal stays stopped. it can remove temporary copies after checking that the originals are still complete.
 - browser pages in your journal now show their context: whether the tab was in front and its window focused, whether audio or video was playing, whether the solstone app was paused, how long the tab had been open, the page's language and which browser it was. agents reading your journal see the same line. pages from earlier versions of the solstone extension look as before.
 
+### Changed
+
+- each stretch's screen description now rarely calls you "the user": it addresses you as "you" and calls the AI agent working for you "your agent".
+
 ### Fixed
 
 - fixed a case where confidential processing stayed unchecked after you allowed it in your browser.

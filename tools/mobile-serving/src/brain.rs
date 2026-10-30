@@ -8,7 +8,9 @@ use std::sync::{
 
 use serde_json::{Map, Value, json};
 use solstone_core_brain_owner::{
-    OwnerRefreshOptions, OwnerRefreshOutcome, ProductionSppPrerequisite, RespondWithConfigProbe,
+    BrainObservation, BrainObservationSink, ObservationCaller, ObservationOutcome,
+    ObservationPhase, OwnerRefreshOptions, OwnerRefreshOutcome, ProductionSppPrerequisite,
+    RespondWithConfigProbe,
 };
 use solstone_core_callosum::{
     CallosumConnectionPhase, CallosumEnvelope, CallosumReceiveEvent, CallosumSocketConnection,
@@ -92,30 +94,45 @@ fn execute(
     root: &JournalRoot,
     action: Action,
     cancelled: &(dyn Fn() -> bool + Send + Sync),
+    observation: Option<&BrainObservation>,
 ) -> i32 {
     if cancelled() || root.revalidate_canonical_binding().is_err() {
+        if let Some(observation) = observation {
+            observation.outcome(
+                ObservationPhase::RootBinding,
+                ObservationOutcome::ExecutionUnavailable,
+            );
+        }
         return 2;
     }
     let probe = RespondWithConfigProbe {
         runtime: solstone_core_generate_wire::EndpointRuntime::default(),
     };
     let outcome = match action {
-        Action::Refresh(options) => solstone_core_brain_owner::refresh(
+        Action::Refresh(options) => solstone_core_brain_owner::refresh_observed(
             root.canonical_path(),
             &options,
             &probe,
             &ProductionSppPrerequisite,
             cancelled,
+            observation,
         ),
-        Action::Renew(fingerprint) => solstone_core_brain_owner::renew_prerequisites(
+        Action::Renew(fingerprint) => solstone_core_brain_owner::renew_prerequisites_observed(
             root.canonical_path(),
             Some(&fingerprint),
             &probe,
             &ProductionSppPrerequisite,
             cancelled,
+            observation,
         ),
     };
     if cancelled() || root.revalidate_canonical_binding().is_err() {
+        if let Some(observation) = observation {
+            observation.outcome(
+                ObservationPhase::RootBinding,
+                ObservationOutcome::ExecutionUnavailable,
+            );
+        }
         return 2;
     }
     match outcome {
@@ -147,8 +164,13 @@ fn event(
 pub(super) fn run_scheduled(
     root: &JournalRoot,
     cancelled: &(dyn Fn() -> bool + Send + Sync),
+    sink: Option<&BrainObservationSink>,
 ) -> i32 {
+    let observation = sink.and_then(|sink| sink.begin(ObservationCaller::ScheduledRefresh));
     let Some(_lease) = RefreshLease::try_acquire() else {
+        if let Some(observation) = &observation {
+            observation.outcome(ObservationPhase::Admission, ObservationOutcome::Busy);
+        }
         return 3;
     };
     execute(
@@ -159,42 +181,73 @@ pub(super) fn run_scheduled(
             expect_active_fingerprint_absent: false,
         }),
         cancelled,
+        observation.as_ref(),
     )
+}
+
+pub(super) fn connection(root: &JournalRoot) -> (CallosumSocketConnection, BrainObservationSink) {
+    let connection = CallosumSocketConnection::new(
+        root.canonical_path().join("health/callosum.sock"),
+        Map::new(),
+    );
+    let sink = BrainObservationSink::new(connection.diagnostic_emitter());
+    (connection, sink)
+}
+
+fn observed_fields(
+    mut fields: Map<String, Value>,
+    observation: Option<&BrainObservation>,
+) -> Map<String, Value> {
+    if let Some(observation) = observation {
+        fields.insert("observation_id".into(), json!(observation.id()));
+    }
+    fields
 }
 
 pub(super) async fn run(
     root: Arc<JournalRoot>,
     stop: watch::Receiver<bool>,
     ready: oneshot::Sender<()>,
+    connection: CallosumSocketConnection,
 ) {
     run_with_executor(
         root,
         stop,
         ready,
-        Arc::new(|root, action, cancelled| execute(root, action, cancelled)),
+        Arc::new(|root, action, cancelled, observation| {
+            execute(root, action, cancelled, observation)
+        }),
+        connection,
     )
     .await;
 }
 
-type Executor =
-    Arc<dyn Fn(&JournalRoot, Action, &(dyn Fn() -> bool + Send + Sync)) -> i32 + Send + Sync>;
+type Executor = Arc<
+    dyn Fn(
+            &JournalRoot,
+            Action,
+            &(dyn Fn() -> bool + Send + Sync),
+            Option<&BrainObservation>,
+        ) -> i32
+        + Send
+        + Sync,
+>;
 
 async fn run_with_executor(
     root: Arc<JournalRoot>,
     mut stop: watch::Receiver<bool>,
     ready: oneshot::Sender<()>,
     executor: Executor,
+    mut connection: CallosumSocketConnection,
 ) {
-    let mut connection = CallosumSocketConnection::new(
-        root.canonical_path().join("health/callosum.sock"),
-        Map::new(),
-    );
+    let sink = BrainObservationSink::new(connection.diagnostic_emitter());
     connection.start();
     let marker = NEXT_START.fetch_add(1, Ordering::Relaxed);
     let mut ready = Some(ready);
     let mut renewal: Option<EmbeddedSppRenewal> = None;
     let mut worker: Option<JoinHandle<i32>> = None;
     let mut active_ref = String::new();
+    let mut active_observation: Option<BrainObservation> = None;
     let mut request_sequence = 0_u64;
     let mut tick = tokio::time::interval(std::time::Duration::from_millis(250));
     tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
@@ -215,9 +268,10 @@ async fn run_with_executor(
                     Some(Ok(code)) => code,
                     _ => -1,
                 };
-                event(&connection, "stopped", &active_ref, Map::from_iter([("exit_code".into(), json!(code))]));
+                event(&connection, "stopped", &active_ref, observed_fields(Map::from_iter([("exit_code".into(), json!(code))]), active_observation.as_ref()));
                 worker = None;
                 active_ref.clear();
+                active_observation = None;
             },
             _ = tick.tick() => {
                 if let Some(renewal) = &renewal {
@@ -256,20 +310,28 @@ async fn run_with_executor(
                 request_sequence = request_sequence.wrapping_add(1);
                 let reference = envelope.extra.get("ref").and_then(Value::as_str)
                     .map(str::to_owned).unwrap_or_else(|| format!("embedded-brain-{marker}-{request_sequence}"));
+                let observation = sink.begin(match &action {
+                    Action::Refresh(_) => ObservationCaller::MobileRefresh,
+                    Action::Renew(_) => ObservationCaller::MobileRenewal,
+                });
                 if worker.is_some() {
-                    event(&connection, "skipped", &reference, Map::from_iter([
+                    if let Some(observation) = &observation { observation.outcome(ObservationPhase::Admission, ObservationOutcome::Busy); }
+                    event(&connection, "skipped", &reference, observed_fields(Map::from_iter([
                         ("active_ref".into(), json!(active_ref)), ("reason".into(), json!("busy")),
-                    ]));
+                    ]), observation.as_ref()));
                     continue;
                 }
                 let Some(lease) = RefreshLease::try_acquire() else {
-                    event(&connection, "skipped", &reference, Map::from_iter([
+                    if let Some(observation) = &observation { observation.outcome(ObservationPhase::Admission, ObservationOutcome::Busy); }
+                    event(&connection, "skipped", &reference, observed_fields(Map::from_iter([
                         ("active_ref".into(), json!(active_ref)), ("reason".into(), json!("busy")),
-                    ]));
+                    ]), observation.as_ref()));
                     continue;
                 };
                 active_ref = reference;
-                event(&connection, "started", &active_ref, Map::new());
+                active_observation = observation;
+                event(&connection, "started", &active_ref, observed_fields(Map::new(), active_observation.as_ref()));
+                let observation = active_observation.clone();
                 let root = Arc::clone(&root);
                 let executor = Arc::clone(&executor);
                 let stop_for_worker = stop.clone();
@@ -288,7 +350,7 @@ async fn run_with_executor(
                         *stop_for_worker.borrow()
                             || root.revalidate_canonical_binding().is_err()
                     };
-                    executor(&root, action, &cancelled)
+                    executor(&root, action, &cancelled, observation.as_ref())
                 }));
             },
         }
@@ -304,7 +366,10 @@ async fn run_with_executor(
             &connection,
             "stopped",
             &active_ref,
-            Map::from_iter([("exit_code".into(), json!(code))]),
+            observed_fields(
+                Map::from_iter([("exit_code".into(), json!(code))]),
+                active_observation.as_ref(),
+            ),
         );
     }
     connection.stop().await;
@@ -420,113 +485,128 @@ mod tests {
             .expect("correlated bus event")
         }
 
-        let temp = tempfile::tempdir().unwrap();
-        let root = Arc::new(JournalRoot::open(temp.path()).unwrap());
-        let socket = root.canonical_path().join("health/callosum.sock");
-        let bus = CallosumSocketServer::bind(socket.clone()).await.unwrap();
-        let mut observer = CallosumSocketConnection::new(socket, Map::new());
-        observer.start();
-        tokio::time::timeout(Duration::from_secs(5), async {
-            loop {
-                match observer.next_event().await {
-                    Some(CallosumReceiveEvent::Continuity {
-                        phase: CallosumConnectionPhase::Connected,
-                        ..
-                    }) => {
-                        event(&observer, "status", "observer-registered", Map::new());
+        for observer_loss in [false, true] {
+            let temp = tempfile::tempdir().unwrap();
+            let root = Arc::new(JournalRoot::open(temp.path()).unwrap());
+            let socket = root.canonical_path().join("health/callosum.sock");
+            let bus = CallosumSocketServer::bind(socket.clone()).await.unwrap();
+            let mut observer = CallosumSocketConnection::new(socket, Map::new());
+            observer.start();
+            tokio::time::timeout(Duration::from_secs(5), async {
+                loop {
+                    match observer.next_event().await {
+                        Some(CallosumReceiveEvent::Continuity {
+                            phase: CallosumConnectionPhase::Connected,
+                            ..
+                        }) => {
+                            event(&observer, "status", "observer-registered", Map::new());
+                        }
+                        Some(CallosumReceiveEvent::Envelope { envelope, .. })
+                            if envelope.extra.get("ref").and_then(Value::as_str)
+                                == Some("observer-registered") =>
+                        {
+                            break;
+                        }
+                        _ => {}
                     }
-                    Some(CallosumReceiveEvent::Envelope { envelope, .. })
-                        if envelope.extra.get("ref").and_then(Value::as_str)
-                            == Some("observer-registered") =>
-                    {
-                        break;
-                    }
-                    _ => {}
                 }
-            }
-        })
-        .await
-        .unwrap();
-        let (entered, mut entry) = tokio::sync::mpsc::unbounded_channel();
-        let (release, released) = std::sync::mpsc::channel();
-        let released = Mutex::new(released);
-        let calls = Arc::new(AtomicUsize::new(0));
-        let worker_calls = Arc::clone(&calls);
-        let executor: Executor = Arc::new(move |root, action, _cancelled| {
-            root.revalidate_canonical_binding().unwrap();
-            worker_calls.fetch_add(1, Ordering::SeqCst);
-            entered.send(action).unwrap();
-            released
-                .lock()
-                .unwrap()
-                .recv_timeout(Duration::from_secs(10))
-                .unwrap();
-            0
-        });
-        let (stop, stopping) = watch::channel(false);
-        let (ready, registered) = oneshot::channel();
-        let mut consumer = tokio::spawn(run_with_executor(
-            Arc::clone(&root),
-            stopping,
-            ready,
-            executor,
-        ));
-        tokio::time::timeout(Duration::from_secs(5), registered)
+            })
             .await
-            .unwrap()
             .unwrap();
-        // Observe the maintained automatic startup refresh before injecting the
-        // explicit owner request, so the test does not race that policy.
-        let first = tokio::time::timeout(Duration::from_secs(5), entry.recv())
-            .await
-            .unwrap()
-            .unwrap();
-        assert!(matches!(first, Action::Refresh(_)));
-        let startup = received(&mut observer, "started", "").await;
-        let startup_ref = startup.extra["ref"].as_str().unwrap().to_owned();
-        let command = json!(["solstone", "journal", "brain", "refresh"]);
-        event(
-            &observer,
-            "request",
-            "owner-recheck",
-            Map::from_iter([("cmd".into(), command.clone())]),
-        );
-        let skipped = received(&mut observer, "skipped", "owner-recheck").await;
-        assert_eq!(skipped.extra["active_ref"], startup_ref);
-        assert_eq!(calls.load(Ordering::SeqCst), 1);
-        release.send(()).unwrap();
-        received(&mut observer, "stopped", &startup_ref).await;
-        event(
-            &observer,
-            "request",
-            "owner-check",
-            Map::from_iter([("cmd".into(), command)]),
-        );
-        tokio::time::timeout(Duration::from_secs(5), entry.recv())
-            .await
-            .unwrap()
-            .unwrap();
-        received(&mut observer, "started", "owner-check").await;
-        stop.send(true).unwrap();
-        assert!(
-            tokio::time::timeout(Duration::from_millis(25), &mut consumer)
+            let (entered, mut entry) = tokio::sync::mpsc::unbounded_channel();
+            let (release, released) = std::sync::mpsc::channel();
+            let released = Mutex::new(released);
+            let calls = Arc::new(AtomicUsize::new(0));
+            let worker_calls = Arc::clone(&calls);
+            let executor: Executor = Arc::new(move |root, action, _cancelled, observation| {
+                assert!(observation.is_some());
+                root.revalidate_canonical_binding().unwrap();
+                worker_calls.fetch_add(1, Ordering::SeqCst);
+                entered.send(action).unwrap();
+                released
+                    .lock()
+                    .unwrap()
+                    .recv_timeout(Duration::from_secs(10))
+                    .unwrap();
+                0
+            });
+            let (stop, stopping) = watch::channel(false);
+            let (ready, registered) = oneshot::channel();
+            let (connection, _) = connection(&root);
+            let mut consumer = tokio::spawn(run_with_executor(
+                Arc::clone(&root),
+                stopping,
+                ready,
+                executor,
+                connection,
+            ));
+            tokio::time::timeout(Duration::from_secs(5), registered)
                 .await
-                .is_err()
-        );
-        assert!(
-            Arc::strong_count(&root) > 1,
-            "actual worker retains root during retirement"
-        );
-        release.send(()).unwrap();
-        tokio::time::timeout(Duration::from_secs(5), consumer)
-            .await
-            .unwrap()
-            .unwrap();
-        let stopped = received(&mut observer, "stopped", "owner-check").await;
-        assert_eq!(stopped.extra["exit_code"], 0);
-        assert_eq!(calls.load(Ordering::SeqCst), 2);
-        assert_eq!(Arc::strong_count(&root), 1);
-        observer.stop().await;
-        bus.stop().await;
+                .unwrap()
+                .unwrap();
+            // Observe the maintained automatic startup refresh before injecting the
+            // explicit owner request, so the test does not race that policy.
+            let first = tokio::time::timeout(Duration::from_secs(5), entry.recv())
+                .await
+                .unwrap()
+                .unwrap();
+            assert!(matches!(first, Action::Refresh(_)));
+            let startup = received(&mut observer, "started", "").await;
+            let startup_ref = startup.extra["ref"].as_str().unwrap().to_owned();
+            assert_eq!(startup.extra["observation_id"].as_str().unwrap().len(), 32);
+            let command = json!(["solstone", "journal", "brain", "refresh"]);
+            event(
+                &observer,
+                "request",
+                "owner-recheck",
+                Map::from_iter([("cmd".into(), command.clone())]),
+            );
+            let skipped = received(&mut observer, "skipped", "owner-recheck").await;
+            assert_eq!(skipped.extra["active_ref"], startup_ref);
+            assert_eq!(calls.load(Ordering::SeqCst), 1);
+            release.send(()).unwrap();
+            received(&mut observer, "stopped", &startup_ref).await;
+            event(
+                &observer,
+                "request",
+                "owner-check",
+                Map::from_iter([("cmd".into(), command)]),
+            );
+            tokio::time::timeout(Duration::from_secs(5), entry.recv())
+                .await
+                .unwrap()
+                .unwrap();
+            let owner_started = received(&mut observer, "started", "owner-check").await;
+            if observer_loss {
+                observer.stop().await;
+            }
+            stop.send(true).unwrap();
+            assert!(
+                tokio::time::timeout(Duration::from_millis(25), &mut consumer)
+                    .await
+                    .is_err()
+            );
+            assert!(
+                Arc::strong_count(&root) > 1,
+                "actual worker retains root during retirement"
+            );
+            release.send(()).unwrap();
+            tokio::time::timeout(Duration::from_secs(5), consumer)
+                .await
+                .unwrap()
+                .unwrap();
+            if !observer_loss {
+                let stopped = received(&mut observer, "stopped", "owner-check").await;
+                assert_eq!(stopped.extra["exit_code"], 0);
+                assert_eq!(
+                    stopped.extra["observation_id"],
+                    owner_started.extra["observation_id"]
+                );
+            }
+            assert_eq!(calls.load(Ordering::SeqCst), 2);
+            assert_eq!(Arc::strong_count(&root), 1);
+            observer.stop().await;
+            bus.stop().await;
+        }
     }
 }

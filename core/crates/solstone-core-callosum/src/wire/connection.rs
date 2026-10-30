@@ -245,6 +245,61 @@ impl FrameProgress {
     }
 }
 
+/// Nonblocking, defaults-free diagnostics over an existing connection queue.
+/// Retains no endpoint, journal root, receiver, task or join ownership.
+#[derive(Clone)]
+pub struct CallosumDiagnosticEmitter {
+    outbound: mpsc::Sender<CallosumEnvelope>,
+    running: Arc<AtomicBool>,
+    admission: Arc<AtomicBool>,
+}
+
+impl CallosumDiagnosticEmitter {
+    /// Queued only. Missing capacity, contention and stopped owners omit the row.
+    pub fn emit(&self, tract: &str, event: &str, fields: Map<String, Value>) -> bool {
+        let Some(envelope) = outbound_envelope(None, tract, event, fields) else {
+            return false;
+        };
+        if !self.running.load(Ordering::Acquire)
+            || self
+                .admission
+                .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+                .is_err()
+        {
+            return false;
+        }
+        struct Release<'a>(&'a AtomicBool);
+        impl Drop for Release<'_> {
+            fn drop(&mut self) {
+                self.0.store(false, Ordering::Release);
+            }
+        }
+        let _release = Release(&self.admission);
+        let Ok(permit) = self.outbound.try_reserve() else {
+            return false;
+        };
+        // Two existing eight-row renewal batches retain their original slots.
+        if self.outbound.capacity() < 16 || !self.running.load(Ordering::Acquire) {
+            return false;
+        }
+        permit.send(envelope);
+        true
+    }
+}
+
+fn outbound_envelope(
+    defaults: Option<&Map<String, Value>>,
+    tract: &str,
+    event: &str,
+    fields: Map<String, Value>,
+) -> Option<CallosumEnvelope> {
+    let mut merged = defaults.cloned().unwrap_or_default();
+    merged.insert("tract".to_owned(), Value::String(tract.to_owned()));
+    merged.insert("event".to_owned(), Value::String(event.to_owned()));
+    merged.extend(fields);
+    serde_json::from_value(Value::Object(merged)).ok()
+}
+
 /// Long-lived, reconnecting Callosum local-transport client.
 pub struct CallosumSocketConnection {
     #[cfg(unix)]
@@ -262,6 +317,7 @@ pub struct CallosumSocketConnection {
     running: Arc<AtomicBool>,
     malformed_frame_drops: Arc<AtomicU64>,
     outbound_saturation_drops: Arc<AtomicU64>,
+    diagnostic_admission: Arc<AtomicBool>,
     delivered_generation: u64,
     delivered_epoch: u64,
     initial_counters: ConnectionCounters,
@@ -341,6 +397,7 @@ impl CallosumSocketConnection {
             running: Arc::new(AtomicBool::new(false)),
             malformed_frame_drops: Arc::new(AtomicU64::new(0)),
             outbound_saturation_drops: Arc::new(AtomicU64::new(0)),
+            diagnostic_admission: Arc::new(AtomicBool::new(false)),
             delivered_generation: 0,
             delivered_epoch: 0,
             initial_counters: ConnectionCounters::initial(),
@@ -401,16 +458,22 @@ impl CallosumSocketConnection {
         })));
     }
 
+    /// Share diagnostics with this queue without inheriting caller defaults.
+    pub fn diagnostic_emitter(&self) -> CallosumDiagnosticEmitter {
+        CallosumDiagnosticEmitter {
+            outbound: self.outbound.clone(),
+            running: Arc::clone(&self.running),
+            admission: Arc::clone(&self.diagnostic_admission),
+        }
+    }
+
     /// Queue an outbound message with Python-compatible field precedence.
     pub fn emit(&self, tract: &str, event: &str, caller_fields: Map<String, Value>) -> bool {
         if !self.running.load(Ordering::Acquire) {
             return false;
         }
-        let mut merged = self.defaults.clone();
-        merged.insert("tract".to_owned(), Value::String(tract.to_owned()));
-        merged.insert("event".to_owned(), Value::String(event.to_owned()));
-        merged.extend(caller_fields);
-        let Ok(envelope) = serde_json::from_value::<CallosumEnvelope>(Value::Object(merged)) else {
+        let Some(envelope) = outbound_envelope(Some(&self.defaults), tract, event, caller_fields)
+        else {
             return false;
         };
         match self.outbound.try_send(envelope) {
@@ -558,6 +621,124 @@ impl Drop for CallosumSocketConnection {
     fn drop(&mut self) {
         self.running.store(false, Ordering::Release);
         let _ = self.shutdown.send(true);
+    }
+}
+
+#[cfg(any(test, feature = "test-hooks"))]
+pub(super) fn diagnostic_fixture(
+    capacity: usize,
+) -> (CallosumDiagnosticEmitter, mpsc::Receiver<CallosumEnvelope>) {
+    let (outbound, receiver) = mpsc::channel(capacity);
+    (
+        CallosumDiagnosticEmitter {
+            outbound,
+            running: Arc::new(AtomicBool::new(true)),
+            admission: Arc::new(AtomicBool::new(false)),
+        },
+        receiver,
+    )
+}
+
+#[cfg(test)]
+mod diagnostic_tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn diagnostic_headroom_preserves_original_batches_defaults_and_drop_accounting() {
+        let mut connection = CallosumSocketConnection::new(
+            "unused",
+            Map::from_iter([
+                (
+                    "private_default".into(),
+                    json!("must not reach diagnostics"),
+                ),
+                ("service".into(), json!("default")),
+            ]),
+        );
+        let emitter = connection.diagnostic_emitter();
+        assert!(!emitter.emit("supervisor", "brain_observation", Map::new()));
+        connection.running.store(true, Ordering::Release);
+        let mut receiver = connection.outbound_rx.take().unwrap();
+        let capacity = connection.outbound.max_capacity();
+        for _ in 0..capacity - 17 {
+            assert!(connection.emit("supervisor", "status", Map::new()));
+        }
+        assert!(emitter.emit("supervisor", "brain_observation", Map::new()));
+        assert_eq!(connection.outbound.capacity(), 16);
+        assert!(!emitter.emit("supervisor", "brain_observation", Map::new()));
+        assert_eq!(connection.outbound.capacity(), 16);
+        for _ in 0..16 {
+            assert!(connection.emit(
+                "supervisor",
+                "request",
+                Map::from_iter([("service".into(), json!("explicit"))])
+            ));
+        }
+        assert!(!emitter.emit("supervisor", "brain_observation", Map::new()));
+        assert_eq!(
+            connection.outbound_saturation_drops.load(Ordering::Acquire),
+            0
+        );
+        assert!(!connection.emit("supervisor", "request", Map::new()));
+        assert_eq!(
+            connection.outbound_saturation_drops.load(Ordering::Acquire),
+            1
+        );
+        let mut seen_diagnostic = false;
+        let mut requests = 0;
+        while let Ok(row) = receiver.try_recv() {
+            if row.event == "brain_observation" {
+                seen_diagnostic = true;
+                assert!(row.extra.is_empty());
+            } else if row.event == "request" {
+                requests += 1;
+                assert_eq!(row.extra["service"], "explicit");
+            }
+        }
+        assert!(seen_diagnostic);
+        assert_eq!(requests, 16);
+        drop(receiver);
+        assert!(!emitter.emit("supervisor", "brain_observation", Map::new()));
+        assert!(!emitter.admission.load(Ordering::Acquire));
+        drop(connection);
+        assert!(!emitter.running.load(Ordering::Acquire));
+        assert!(!emitter.emit("supervisor", "brain_observation", Map::new()));
+    }
+
+    #[cfg(feature = "full-tests")]
+    #[test]
+    fn racing_diagnostics_retain_two_original_batches() {
+        let (emitter, mut receiver) = diagnostic_fixture(64);
+        std::thread::scope(|threads| {
+            for _ in 0..8 {
+                let emitter = emitter.clone();
+                threads.spawn(move || {
+                    for _ in 0..64 {
+                        let _ = emitter.emit("supervisor", "brain_observation", Map::new());
+                    }
+                });
+            }
+        });
+        assert!(emitter.outbound.capacity() >= 16);
+        for _ in 0..16 {
+            assert!(
+                emitter
+                    .outbound
+                    .try_send(CallosumEnvelope {
+                        tract: "supervisor".into(),
+                        event: "request".into(),
+                        ts: None,
+                        extra: Map::new(),
+                    })
+                    .is_ok()
+            );
+        }
+        let mut originals = 0;
+        while let Ok(row) = receiver.try_recv() {
+            originals += usize::from(row.event == "request");
+        }
+        assert_eq!(originals, 16);
     }
 }
 

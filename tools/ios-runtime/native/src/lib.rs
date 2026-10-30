@@ -461,8 +461,11 @@ fn run(v: Value) -> Result<Value, String> {
                 sources,
             });
             *STOP_ROOT.lock().unwrap_or_else(|p| p.into_inner()) = Some(Arc::clone(root));
+            let brain_observation = serving
+                .as_ref()
+                .map(|instance| instance.serving.brain_observation_sink());
             let host =
-                journal_mobile_serving::foreground::ForegroundProcessingHost::open_with_imports(
+                journal_mobile_serving::foreground::ForegroundProcessingHost::open_with_imports_observed(
                     Arc::clone(root),
                     &payload,
                     Arc::new(move || {
@@ -473,6 +476,7 @@ fn run(v: Value) -> Result<Value, String> {
                     import_factory,
                     true,
                     v["mode"].as_str() == Some("observe-daily-queue"),
+                    brain_observation,
                 );
             let mut host = match host {
                 Ok(host) => host,

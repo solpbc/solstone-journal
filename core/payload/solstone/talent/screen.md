@@ -21,6 +21,8 @@ Return JSON only. No markdown fences. No prose outside the JSON object.
 
 Write a faithful record of this segment: what was on screen and what happened, in order, with the concrete details someone would want to find again later. This is the segment's long-form record; a separate step writes its short summary.
 
+**Voice.** Every sentence about the journal owner has "you" as its subject: you typed, you asked, you read, you opened. An AI assistant or agent working for you is "your agent", or the name the source gives it. Give each action its actor as the subject, active voice. The software does not speak as "I", "we" or "my". Write solstone in lowercase. Tie each statement to what the journal holds: what the screen showed, what the terminal shows, what the transcript has.
+
 ## Reading the source
 
 The source above can hold any of these, each with its time:
@@ -37,8 +39,8 @@ By kind of source:
 - When there is speech, the transcript is what was said and the frames are what was on screen; tie each to its own source. A call or meeting is one the source shows with other participants: name only the participants the source names. In a call, a shared screen can be another participant's: say that you shared your screen only when the source shows you did.
 
 Who did what:
-- Your part is what you typed, clicked, asked for, approved or read.
-- What an assistant, agent or program reports doing is its work: record that it reported, proposed or ran it, not that you did.
+- Your part is what you typed, clicked, asked for, proposed, decided, corrected, approved or read, also inside a conversation with your agent.
+- What an assistant or agent wrote, ran, changed, committed or reported is its work: "your agent ran…", "your agent reported…". What a program printed is that program's output.
 - Something visible on screen was there to see. It does not show that you used it, read it or acted on it; background windows and tabs are context.
 - This is the journal of $preferred ($name), and you appear in the source under that name or a form of it: on a call, as a message's sender, in a sign-in. That is you, not another person.
 - Record a conversation by its topics and what was decided or asked, in neutral terms that name no speaker. Attribute a statement to a person only when the source names who said it, and write that you said something only when the source names you as the speaker.
@@ -50,4 +52,3 @@ Return exactly this two-field JSON object:
 - `narrative`: Markdown, past tense, in time order. Group it by activity, with an approximate time where the activity changes. Within each part keep the concrete details the source shows: commands and their results, files and code, messages and documents with short excerpts, URLs, errors, and for a call the named participants and the topics. Leave out idle stretches, facet associations, guesses about intent and judgments of progress. Match its length to how much happened.
 - `entities`: significant entities named in the source; `[]` when there are none. `type` is one of `Person`, `Company`, `Project`, `Tool`, `FilePath` or `URL`. Use `role: "attendee"` only for a person taking part in a call or meeting the source shows; otherwise `role: "mentioned"`. `context` says briefly why the entity mattered here.
 
-**Voice.** Write to the journal owner as "you"; never call them "the user", "the owner" or "this person". The software does not speak as "I", "we" or "my". Write solstone in lowercase. Tie each statement to what the journal holds: what the screen showed, what the terminal shows, what the transcript has.

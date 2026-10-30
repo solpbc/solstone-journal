@@ -100,7 +100,20 @@ impl Drop for CancelRequest {
 pub fn routes_and_worker(
     root: Arc<JournalRoot>,
     payload: Option<PathBuf>,
+    stop: watch::Receiver<bool>,
+) -> (
+    Router,
+    impl Future<Output = ()> + Send + 'static,
+    solstone_core_settings_web::SourceSyncDelegate,
+) {
+    routes_and_worker_observed(root, payload, stop, None)
+}
+
+pub fn routes_and_worker_observed(
+    root: Arc<JournalRoot>,
+    payload: Option<PathBuf>,
     mut stop: watch::Receiver<bool>,
+    observation: Option<solstone_core_brain_owner::BrainObservationSink>,
 ) -> (
     Router,
     impl Future<Output = ()> + Send + 'static,
@@ -143,6 +156,7 @@ pub fn routes_and_worker(
             let root = Arc::clone(&root);
             let payload = payload.clone();
             let stopped = stop.clone();
+            let observation = observation.clone();
             let lease = Arc::clone(&job.lease);
             // Await this task even if its HTTP receiver disconnects or Stop
             // arrives. The root and runtime stay owned until it has retired.
@@ -160,6 +174,7 @@ pub fn routes_and_worker(
                             let generate = OwnerGenerate {
                                 root: &root,
                                 cancelled: &cancelled,
+                                observation: observation.as_ref(),
                             };
                             execute_preview(&root, &payload, &args, package, &generate, &cancelled)
                         }
@@ -299,6 +314,7 @@ fn stopped_response() -> Response {
 }
 
 struct OwnerGenerate<'a> {
+    observation: Option<&'a solstone_core_brain_owner::BrainObservationSink>,
     root: &'a JournalRoot,
     cancelled: &'a (dyn Fn() -> bool + Send + Sync),
 }
@@ -307,7 +323,8 @@ impl GenerateExecutor for OwnerGenerate<'_> {
         let cancellation = solstone_core_generate::Cancellation::from_fn(self.cancelled);
         solstone_core_generate_wire::respond_with_context(
             request,
-            &solstone_core_generate_wire::EndpointRuntime::default(),
+            &solstone_core_generate_wire::EndpointRuntime::default()
+                .with_brain_observation(self.observation.cloned()),
             self.root.canonical_path(),
             |_| None,
             &solstone_core_generate_wire::GenerateCallContext {

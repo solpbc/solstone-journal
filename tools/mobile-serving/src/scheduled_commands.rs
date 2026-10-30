@@ -272,7 +272,11 @@ fn brain_refresh(hosted: &HostedCommand, checkpoint: &StopCheckpoint) -> i32 {
     if cancelled() {
         return 2;
     }
-    crate::brain::run_scheduled(&hosted.root, &cancelled)
+    crate::brain::run_scheduled(
+        &hosted.root,
+        &cancelled,
+        hosted.generator.observation.as_ref(),
+    )
 }
 
 fn rebuild_edges(hosted: &HostedCommand, checkpoint: &StopCheckpoint) -> i32 {

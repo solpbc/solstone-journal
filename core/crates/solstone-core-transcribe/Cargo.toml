@@ -62,6 +62,7 @@ solstone-core-format.workspace = true
 nix = { workspace = true, features = ["process", "signal"] }
 
 [dev-dependencies]
+solstone-core-callosum = { workspace = true, features = ["wire", "test-hooks"] }
 filetime = "0.2.29"
 temp-env = "0.3.6"
 socket2 = { workspace = true }

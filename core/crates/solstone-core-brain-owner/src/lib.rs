@@ -26,6 +26,11 @@ use solstone_core_generate::{
 };
 use solstone_core_spp_ratls::AttestationSession;
 
+pub use solstone_core_brain::{
+    BrainObservation, BrainObservationSink, ObservationCaller, ObservationFailure,
+    ObservationOutcome, ObservationPhase,
+};
+
 const COMPONENTS: [&str; 3] = ["configuration", "lane_prerequisites", "generate"];
 
 #[derive(Clone, Debug, PartialEq)]
@@ -173,6 +178,45 @@ pub fn refresh(
     spp: &impl OwnerSppPrerequisite,
     cancelled: &(dyn Fn() -> bool + Send + Sync),
 ) -> OwnerRefreshOutcome {
+    refresh_observed(journal, options, probe, spp, cancelled, None)
+}
+
+pub fn refresh_observed(
+    journal: &Path,
+    options: &OwnerRefreshOptions,
+    probe: &impl OwnerProbe,
+    spp: &impl OwnerSppPrerequisite,
+    cancelled: &(dyn Fn() -> bool + Send + Sync),
+    observation: Option<&BrainObservation>,
+) -> OwnerRefreshOutcome {
+    let outcome = refresh_inner(journal, options, probe, spp, cancelled, observation);
+    if let Some(observation) = observation {
+        let tag = match &outcome {
+            OwnerRefreshOutcome::PersistedReady { .. } => ObservationOutcome::Ready,
+            OwnerRefreshOutcome::PersistedNonReady { .. } => ObservationOutcome::NonReady,
+            OwnerRefreshOutcome::Busy { .. } => ObservationOutcome::Busy,
+            OwnerRefreshOutcome::StaleExpectedFingerprint { .. } => {
+                ObservationOutcome::StaleExpectedFingerprint
+            }
+            OwnerRefreshOutcome::LostFence { .. } => ObservationOutcome::LostFence,
+            OwnerRefreshOutcome::OperationalFailure { .. } => {
+                ObservationOutcome::OperationalFailure
+            }
+            OwnerRefreshOutcome::Cancelled => ObservationOutcome::Cancelled,
+        };
+        observation.outcome(ObservationPhase::Terminal, tag);
+    }
+    outcome
+}
+
+fn refresh_inner(
+    journal: &Path,
+    options: &OwnerRefreshOptions,
+    probe: &impl OwnerProbe,
+    spp: &impl OwnerSppPrerequisite,
+    cancelled: &(dyn Fn() -> bool + Send + Sync),
+    observation: Option<&BrainObservation>,
+) -> OwnerRefreshOutcome {
     let now = Utc::now();
     if options.expected_fingerprint.is_some() && options.expect_active_fingerprint_absent {
         return OwnerRefreshOutcome::StaleExpectedFingerprint {
@@ -273,12 +317,15 @@ pub fn refresh(
         }
     };
 
+    if let Some(observation) = observation {
+        observation.permit(&permit);
+    }
     probe.after_permit_acquired(journal);
 
     let checking_config = match read_journal_config(journal) {
         Ok(read) => read.config.unwrap_or_default(),
         Err(_) => {
-            return abandon_probe_failure(journal, &config, permit, now, cancelled);
+            return abandon_probe_failure(journal, &config, permit, now, cancelled, observation);
         }
     };
     let key = load_existing_fingerprint_key(journal);
@@ -293,6 +340,11 @@ pub fn refresh(
         .flatten()
     });
     if recomputed.as_deref() != Some(permit.fingerprint_sha256.as_str()) {
+        trace_failure(
+            observation,
+            ObservationPhase::Permit,
+            ObservationFailure::RecomputedFingerprint,
+        );
         drop(permit);
         return OwnerRefreshOutcome::LostFence {
             view: transient_view("lost_fence", &empty_view()),
@@ -305,13 +357,25 @@ pub fn refresh(
         checking_view.provider.as_deref(),
         checking_view.model.as_deref(),
     ) else {
-        return abandon_probe_failure(journal, &checking_config, permit, now, cancelled);
+        return abandon_probe_failure(
+            journal,
+            &checking_config,
+            permit,
+            now,
+            cancelled,
+            observation,
+        );
     };
 
     let credential_target = RefreshCredential::from_config(&checking_config);
     let credential_witness = match credential_target.as_ref() {
         Some(target) => {
             if !target.matches(&checking_config, probe.process_overrides()) {
+                trace_failure(
+                    observation,
+                    ObservationPhase::Permit,
+                    ObservationFailure::CredentialBinding,
+                );
                 return OwnerRefreshOutcome::LostFence {
                     view: transient_view("lost_fence", &empty_view()),
                 };
@@ -334,6 +398,11 @@ pub fn refresh(
     // A correction racing the preliminary read must invalidate this permit,
     // before the actual probe. Never rebind the permit to the witness's epoch.
     if permit.checkpoint(journal).is_err() {
+        trace_failure(
+            observation,
+            ObservationPhase::Permit,
+            ObservationFailure::PermitCheckpointFailed,
+        );
         return OwnerRefreshOutcome::LostFence {
             view: transient_view("lost_fence", &empty_view()),
         };
@@ -462,6 +531,11 @@ pub fn refresh(
             &admit,
         )
     };
+    if let Ok(record) = &finished {
+        observe_publication(observation, ObservationPhase::Finish, record);
+    } else if let (Some(observation), Err(error)) = (observation, &finished) {
+        observation.writer_failure(ObservationPhase::Finish, error);
+    }
     if finished.is_err() {
         if cancelled() {
             return OwnerRefreshOutcome::Cancelled;
@@ -485,6 +559,11 @@ pub fn refresh(
             &admit,
         )
     {
+        trace_failure(
+            observation,
+            ObservationPhase::CredentialSettlement,
+            ObservationFailure::CredentialSettlementFailed,
+        );
         return OwnerRefreshOutcome::OperationalFailure {
             message: format!("thinking check failed: {error}"),
         };
@@ -503,6 +582,11 @@ pub fn refresh(
         || !solstone_core_journal_io::JournalRoot::open(journal)
             .is_ok_and(|root| root.identity() == refresh_root.identity())
     {
+        trace_failure(
+            observation,
+            ObservationPhase::RootBinding,
+            ObservationFailure::RootBindingFailed,
+        );
         return OwnerRefreshOutcome::LostFence {
             view: transient_view("lost_fence", &empty_view()),
         };
@@ -528,6 +612,7 @@ fn abandon_probe_failure(
     permit: solstone_core_brain::BrainRefreshPermit,
     now: DateTime<Utc>,
     cancelled: &(dyn Fn() -> bool + Send + Sync),
+    observation: Option<&BrainObservation>,
 ) -> OwnerRefreshOutcome {
     if cancelled() {
         drop(permit);
@@ -541,9 +626,12 @@ fn abandon_probe_failure(
         now,
         &writer_checkpoint(cancelled),
     ) {
-        Ok(_) => {}
+        Ok(record) => observe_publication(observation, ObservationPhase::Abandon, &record),
         Err(WriterError::Cancelled(_)) => return OwnerRefreshOutcome::Cancelled,
-        Err(_) => {
+        Err(error) => {
+            if let Some(observation) = observation {
+                observation.writer_failure(ObservationPhase::Abandon, &error);
+            }
             return OwnerRefreshOutcome::LostFence {
                 view: transient_view("lost_fence", &empty_view()),
             };
@@ -563,6 +651,52 @@ pub fn renew_prerequisites(
     probe: &impl OwnerProbe,
     spp: &impl OwnerSppPrerequisite,
     cancelled: &(dyn Fn() -> bool + Send + Sync),
+) -> OwnerRefreshOutcome {
+    renew_prerequisites_observed(journal, expected_fingerprint, probe, spp, cancelled, None)
+}
+
+pub fn renew_prerequisites_observed(
+    journal: &Path,
+    expected_fingerprint: Option<&str>,
+    probe: &impl OwnerProbe,
+    spp: &impl OwnerSppPrerequisite,
+    cancelled: &(dyn Fn() -> bool + Send + Sync),
+    observation: Option<&BrainObservation>,
+) -> OwnerRefreshOutcome {
+    let outcome = renew_prerequisites_inner(
+        journal,
+        expected_fingerprint,
+        probe,
+        spp,
+        cancelled,
+        observation,
+    );
+    if let Some(observation) = observation {
+        let tag = match &outcome {
+            OwnerRefreshOutcome::PersistedReady { .. } => ObservationOutcome::Ready,
+            OwnerRefreshOutcome::PersistedNonReady { .. } => ObservationOutcome::NonReady,
+            OwnerRefreshOutcome::Busy { .. } => ObservationOutcome::Busy,
+            OwnerRefreshOutcome::StaleExpectedFingerprint { .. } => {
+                ObservationOutcome::StaleExpectedFingerprint
+            }
+            OwnerRefreshOutcome::LostFence { .. } => ObservationOutcome::LostFence,
+            OwnerRefreshOutcome::OperationalFailure { .. } => {
+                ObservationOutcome::OperationalFailure
+            }
+            OwnerRefreshOutcome::Cancelled => ObservationOutcome::Cancelled,
+        };
+        observation.outcome(ObservationPhase::Terminal, tag);
+    }
+    outcome
+}
+
+fn renew_prerequisites_inner(
+    journal: &Path,
+    expected_fingerprint: Option<&str>,
+    probe: &impl OwnerProbe,
+    spp: &impl OwnerSppPrerequisite,
+    cancelled: &(dyn Fn() -> bool + Send + Sync),
+    observation: Option<&BrainObservation>,
 ) -> OwnerRefreshOutcome {
     let now = Utc::now();
     let config = match read_journal_config(journal) {
@@ -585,6 +719,9 @@ pub fn renew_prerequisites(
     match begin_prerequisite_renewal_checked(journal, now, None, expected_fingerprint, None, &admit)
     {
         Ok(BeginPrerequisiteRenewal::Started(permit)) => {
+            if let Some(observation) = observation {
+                observation.permit(&permit);
+            }
             probe.after_permit_acquired(journal);
 
             let checking_config = match read_journal_config(journal) {
@@ -609,6 +746,11 @@ pub fn renew_prerequisites(
                 .flatten()
             });
             if recomputed.as_deref() != Some(&permit.fingerprint_sha256) {
+                trace_failure(
+                    observation,
+                    ObservationPhase::Renewal,
+                    ObservationFailure::RecomputedFingerprint,
+                );
                 drop(permit);
                 return OwnerRefreshOutcome::LostFence {
                     view: transient_view("lost_fence", &empty_view()),
@@ -628,9 +770,12 @@ pub fn renew_prerequisites(
                 None,
                 &writer_checkpoint(cancelled),
             ) {
-                Ok(_) => {}
+                Ok(record) => observe_publication(observation, ObservationPhase::Renewal, &record),
                 Err(WriterError::Cancelled(_)) => return OwnerRefreshOutcome::Cancelled,
-                Err(_) => {
+                Err(error) => {
+                    if let Some(observation) = observation {
+                        observation.writer_failure(ObservationPhase::Renewal, &error);
+                    }
                     return OwnerRefreshOutcome::LostFence {
                         view: transient_view("lost_fence", &empty_view()),
                     };
@@ -643,7 +788,7 @@ pub fn renew_prerequisites(
             view: transient_view("busy", &current),
         },
         Err(WriterError::Cancelled(_)) => OwnerRefreshOutcome::Cancelled,
-        Ok(BeginPrerequisiteRenewal::Unsafe { .. }) | Err(_) => refresh(
+        Ok(BeginPrerequisiteRenewal::Unsafe { .. }) | Err(_) => refresh_inner(
             journal,
             &OwnerRefreshOptions {
                 expected_fingerprint: expected_fingerprint.map(str::to_owned),
@@ -653,8 +798,41 @@ pub fn renew_prerequisites(
             probe,
             spp,
             cancelled,
+            observation,
         ),
     }
+}
+
+fn trace_failure(
+    observation: Option<&BrainObservation>,
+    phase: ObservationPhase,
+    category: ObservationFailure,
+) {
+    if let Some(observation) = observation {
+        observation.failure(phase, category);
+    }
+}
+
+fn observe_publication(
+    observation: Option<&BrainObservation>,
+    phase: ObservationPhase,
+    record: &Value,
+) {
+    if let Some(observation) = observation {
+        observation.publication(phase, record);
+    }
+    #[cfg(all(test, feature = "full-tests"))]
+    AFTER_PUBLICATION.with(|hook| {
+        let callback = hook.borrow_mut().take();
+        if let Some(callback) = callback {
+            callback();
+        }
+    });
+}
+
+#[cfg(all(test, feature = "full-tests"))]
+thread_local! {
+    static AFTER_PUBLICATION: std::cell::RefCell<Option<Box<dyn FnOnce()>>> = const { std::cell::RefCell::new(None) };
 }
 
 fn persisted(view: OwnerView) -> OwnerRefreshOutcome {
@@ -1763,7 +1941,7 @@ mod tests {
         );
     }
 
-    fn generated_response(
+    pub(super) fn generated_response(
         text: &str,
         finish_reason: &str,
         usage: Value,
@@ -1874,7 +2052,7 @@ mod tests {
         assert!(!mismatch.contains_key("runtime_reason"));
     }
 
-    fn cloud_journal() -> tempfile::TempDir {
+    pub(super) fn cloud_journal() -> tempfile::TempDir {
         let temp = tempfile::tempdir().expect("temp journal");
         std::fs::create_dir_all(temp.path().join("config")).expect("config dir");
         std::fs::write(
@@ -1887,9 +2065,10 @@ mod tests {
 
     type AfterPermit = Box<dyn Fn(&Path) + Send + Sync>;
 
-    struct StaticProbe {
-        generate: Mutex<Box<dyn FnMut() -> Result<GenerateResponse, ClientError> + Send>>,
-        after_permit: Option<AfterPermit>,
+    pub(super) struct StaticProbe {
+        pub(super) generate:
+            Mutex<Box<dyn FnMut() -> Result<GenerateResponse, ClientError> + Send>>,
+        pub(super) after_permit: Option<AfterPermit>,
     }
 
     impl OwnerProbe for StaticProbe {
@@ -1928,7 +2107,7 @@ mod tests {
         }
     }
 
-    struct NoSpp;
+    pub(super) struct NoSpp;
 
     impl OwnerSppPrerequisite for NoSpp {
         fn assess(&self, _: &Path, _: &Map<String, Value>, _: DateTime<Utc>) -> Value {
@@ -1936,7 +2115,7 @@ mod tests {
         }
     }
 
-    fn refresh_options() -> OwnerRefreshOptions {
+    pub(super) fn refresh_options() -> OwnerRefreshOptions {
         OwnerRefreshOptions {
             expected_fingerprint: None,
             expected_active_fingerprint: false,
@@ -1944,7 +2123,7 @@ mod tests {
         }
     }
 
-    fn brain_record(journal: &Path) -> Value {
+    pub(super) fn brain_record(journal: &Path) -> Value {
         let bytes = std::fs::read(brain_state_path(journal)).expect("brain record");
         serde_json::from_slice(&bytes).expect("brain json")
     }
@@ -3427,3 +3606,6 @@ mod tests {
         }
     }
 }
+
+#[cfg(all(test, feature = "full-tests"))]
+mod observation_tests;

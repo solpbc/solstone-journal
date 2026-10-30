@@ -12,6 +12,7 @@ publish = false
 workspace = true
 
 [dependencies]
+solstone-core-callosum = { workspace = true, features = ["wire"] }
 chrono.workspace = true
 hmac.workspace = true
 log.workspace = true

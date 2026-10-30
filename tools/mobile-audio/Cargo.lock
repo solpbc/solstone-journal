@@ -1788,6 +1788,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "solstone-core-callosum",
  "solstone-core-chatgpt-auth",
  "solstone-core-installed-payload",
  "solstone-core-journal-config",
@@ -1802,6 +1803,7 @@ dependencies = [
  "getrandom 0.3.4",
  "hmac",
  "interprocess",
+ "log",
  "serde",
  "serde_json",
  "sha2",
@@ -1809,6 +1811,7 @@ dependencies = [
  "solstone-core-installation-identity",
  "solstone-core-journal",
  "solstone-core-journal-io",
+ "tokio",
  "widestring",
  "windows-sys 0.61.2",
 ]

@@ -380,10 +380,13 @@ where
         Ok(dir) => dir,
         Err(failure) => {
             if !attestation_refusal_is_health_probe(request) {
-                solstone_core_brain::record_confidential_attestation_refusal(
+                solstone_core_brain::record_confidential_attestation_refusal_observed(
                     journal_path,
                     config,
                     failure.reason_code,
+                    runtime.brain_observation(),
+                    solstone_core_brain::RuntimeRefusalCaller::Generate,
+                    solstone_core_brain::ObservationPhase::RuntimeReadiness,
                 );
             }
             runtime
@@ -397,10 +400,13 @@ where
         Some(target) => target,
         None => {
             if !attestation_refusal_is_health_probe(request) {
-                solstone_core_brain::record_confidential_attestation_refusal(
+                solstone_core_brain::record_confidential_attestation_refusal_observed(
                     journal_path,
                     config,
                     "tls_handshake_failed",
+                    runtime.brain_observation(),
+                    solstone_core_brain::RuntimeRefusalCaller::Generate,
+                    solstone_core_brain::ObservationPhase::RuntimeTarget,
                 );
             }
             runtime.attestation_state().record_attestation_failed(
@@ -484,10 +490,13 @@ where
             Err(reason_code) => {
                 drop(guard);
                 if !is_health_probe {
-                    solstone_core_brain::record_confidential_attestation_refusal(
+                    solstone_core_brain::record_confidential_attestation_refusal_observed(
                         journal_path,
                         config,
                         reason_code,
+                        runtime.brain_observation(),
+                        solstone_core_brain::RuntimeRefusalCaller::Generate,
+                        solstone_core_brain::ObservationPhase::RuntimeEstablish,
                     );
                 }
                 let kind = classify_channel_failure(reason_code);
@@ -1699,6 +1708,92 @@ mod tests {
                 "expires_at": expires,
             }
         })
+    }
+
+    #[cfg(feature = "full-tests")]
+    #[test]
+    fn observed_actual_refusal_callers_and_health_probe_exclusion() {
+        for case in ["readiness", "target", "establish"] {
+            let path = journal(&format!("observed-refusal-{case}"));
+            let config = active_spp_config();
+            setup_journal(&path, &config);
+            let (emitter, mut rows) = solstone_core_callosum::test_support::diagnostic_fixture(128);
+            let sink = solstone_core_brain::BrainObservationSink::new(emitter);
+            let runtime = EndpointRuntime::default().with_brain_observation(Some(sink));
+            let mut endpoint = endpoint(9099);
+            if case == "target" {
+                endpoint.base_url = "invalid-target".into();
+            }
+            let mut req = request();
+            req.id = Some("excluded-arbitrary-request-id".into());
+            req.context = "excluded-arbitrary-context".into();
+            let result = confidential_generate_with(
+                ConfidentialCall {
+                    request: &req,
+                    journal_path: &path,
+                    endpoint: &endpoint,
+                    config: &config,
+                    runtime: &runtime,
+                    now: UNIX_EPOCH,
+                },
+                |_| {
+                    if case == "readiness" {
+                        NvattestEnsureStatus::Unavailable
+                    } else {
+                        NvattestEnsureStatus::AlreadyInstalled
+                    }
+                },
+                |_, _, _, _| Err("proof_http_eof"),
+            );
+            assert!(matches!(
+                result,
+                ConfidentialResult::AttestationFailed(_)
+                    | ConfidentialResult::AttestationNotVerified(_)
+            ));
+            let record =
+                solstone_core_brain::inspect_brain_state(&path, &config, chrono::Utc::now())
+                    .record
+                    .unwrap();
+            let row =
+                serde_json::to_value(rows.try_recv().expect("actual caller observation")).unwrap();
+            assert_eq!(row["caller"], "generate");
+            assert_eq!(
+                row["phase"],
+                match case {
+                    "readiness" => "runtime_readiness",
+                    "target" => "runtime_target",
+                    _ => "runtime_establish",
+                }
+            );
+            assert_eq!(row["outcome"], "published");
+            assert_eq!(row["revision"], record["revision"]);
+            assert_eq!(
+                row["runtime_failure_marker"],
+                record["runtime_failure_marker"]["marker_id"]
+            );
+            assert!(!row.to_string().contains("excluded-arbitrary"));
+            assert!(rows.try_recv().is_err());
+            req.context = solstone_core_generate::HEALTH_BRAIN_GENERATE_CONTEXT.into();
+            let before = std::fs::read(solstone_core_brain::brain_state_path(&path)).unwrap();
+            let _ = confidential_generate_with(
+                ConfidentialCall {
+                    request: &req,
+                    journal_path: &path,
+                    endpoint: &endpoint,
+                    config: &config,
+                    runtime: &runtime,
+                    now: UNIX_EPOCH,
+                },
+                |_| NvattestEnsureStatus::Unavailable,
+                |_, _, _, _| Err("proof_http_eof"),
+            );
+            assert!(rows.try_recv().is_err());
+            assert_eq!(
+                std::fs::read(solstone_core_brain::brain_state_path(&path)).unwrap(),
+                before
+            );
+            std::fs::remove_dir_all(path).unwrap();
+        }
     }
 
     #[test]

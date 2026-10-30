@@ -643,6 +643,7 @@ impl ProcessStateProbe for NoProcesses {
 }
 
 pub struct ProductionGenerateExecutor {
+    observation: Option<solstone_core_brain_owner::BrainObservationSink>,
     root: Arc<JournalRoot>,
     cancelled: Checkpoint,
     priority: WorkPriority,
@@ -650,7 +651,8 @@ pub struct ProductionGenerateExecutor {
 impl GenerateExecutor for ProductionGenerateExecutor {
     fn execute(&self, request: &GenerateRequest) -> Result<GenerateResponse, ClientError> {
         let cancellation = solstone_core_generate::Cancellation::from_fn(self.cancelled.as_ref());
-        let runtime = solstone_core_generate_wire::EndpointRuntime::default();
+        let runtime = solstone_core_generate_wire::EndpointRuntime::default()
+            .with_brain_observation(self.observation.clone());
         solstone_core_generate_wire::respond_with_context(
             request,
             &runtime,
@@ -667,6 +669,7 @@ impl GenerateExecutor for ProductionGenerateExecutor {
 
 #[derive(Clone)]
 struct HostGenerator {
+    observation: Option<solstone_core_brain_owner::BrainObservationSink>,
     root: Arc<JournalRoot>,
     injected: Option<Arc<dyn GenerateExecutor + Send + Sync>>,
 }
@@ -679,6 +682,7 @@ impl HostGenerator {
         self.injected.clone().unwrap_or_else(|| {
             Arc::new(ProductionGenerateExecutor {
                 root: Arc::clone(&self.root),
+                observation: self.observation.clone(),
                 cancelled,
                 priority,
             })
@@ -702,7 +706,8 @@ impl WireClient for HostWireClient<'_> {
         let cancellation = solstone_core_generate::Cancellation::from_fn(self.checkpoint);
         solstone_core_generate_wire::respond_with_context(
             request,
-            &solstone_core_generate_wire::EndpointRuntime::default(),
+            &solstone_core_generate_wire::EndpointRuntime::default()
+                .with_brain_observation(self.generator.observation.clone()),
             self.generator.root.canonical_path(),
             |_| None,
             &solstone_core_generate_wire::GenerateCallContext {
@@ -804,7 +809,8 @@ impl DescribeSession for InProcessDescribeSession<'_> {
             let cancellation = solstone_core_generate::Cancellation::from_fn(self.checkpoint);
             solstone_core_generate_wire::respond_with_context(
                 &request,
-                &solstone_core_generate_wire::EndpointRuntime::default(),
+                &solstone_core_generate_wire::EndpointRuntime::default()
+                    .with_brain_observation(self.generator.observation.clone()),
                 self.generator.root.canonical_path(),
                 |_| None,
                 &solstone_core_generate_wire::GenerateCallContext {
@@ -1722,6 +1728,37 @@ impl ForegroundProcessingHost {
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
+    pub fn open_with_imports_observed(
+        root: Arc<JournalRoot>,
+        payload: &Path,
+        external: Checkpoint,
+        stop: Arc<AtomicBool>,
+        backup: BackupWebDeps,
+        imports: Arc<ImportSeamFactory>,
+        rebuild_recovery: bool,
+        observe_daily: bool,
+        observation: Option<solstone_core_brain_owner::BrainObservationSink>,
+    ) -> Result<Self, String> {
+        let now = ScheduleNow::in_zone(
+            Utc::now(),
+            solstone_core_journal_config::owner_zone(root.canonical_path()),
+        );
+        Self::open_bound_with_brain(
+            root,
+            payload,
+            now,
+            None,
+            external,
+            stop,
+            backup,
+            rebuild_recovery,
+            observe_daily,
+            Some(imports),
+            observation,
+        )
+    }
+
     #[cfg(all(test, feature = "full-tests", target_os = "linux"))]
     #[allow(
         clippy::too_many_arguments,
@@ -1859,6 +1896,34 @@ impl ForegroundProcessingHost {
         observe_daily: bool,
         initial_imports: Option<Arc<ImportSeamFactory>>,
     ) -> Result<Self, String> {
+        Self::open_bound_with_brain(
+            root,
+            payload,
+            now,
+            executor,
+            external,
+            stop,
+            backup,
+            rebuild_recovery,
+            observe_daily,
+            initial_imports,
+            None,
+        )
+    }
+    #[allow(clippy::too_many_arguments)]
+    fn open_bound_with_brain(
+        root: Arc<JournalRoot>,
+        payload: &Path,
+        now: ScheduleNow,
+        executor: Option<Arc<dyn GenerateExecutor + Send + Sync>>,
+        external: Checkpoint,
+        stop: Arc<AtomicBool>,
+        backup: BackupWebDeps,
+        rebuild_recovery: bool,
+        observe_daily: bool,
+        initial_imports: Option<Arc<ImportSeamFactory>>,
+        observation: Option<solstone_core_brain_owner::BrainObservationSink>,
+    ) -> Result<Self, String> {
         let generation = HOST_GENERATION
             .fetch_update(Ordering::AcqRel, Ordering::Acquire, |current| {
                 current.checked_add(1)
@@ -1902,6 +1967,7 @@ impl ForegroundProcessingHost {
             // Recovery is a startup action, before any callable use can be live.
             let cortex_owner = Arc::new(CallableCortex::open(&journal)?);
             let generator = HostGenerator {
+                observation,
                 root: Arc::clone(&root),
                 injected: executor,
             };
@@ -2630,6 +2696,7 @@ impl ForegroundProcessingHost {
                     model,
                     scratch,
                     Arc::clone(&self.cancelled),
+                    self.generator.observation.clone(),
                 )),
             });
         }
