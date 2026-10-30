@@ -393,3 +393,34 @@ fn an_agent_without_the_entities_category_is_shown_none() {
     assert!(registry.admits("friar", "Friar", &facets(&["alpha"])));
     assert!(registry.admits("friar", "Friar", &Viewer::Owner));
 }
+
+#[test]
+fn a_label_that_only_repeats_its_words_is_not_shown_beside_them() {
+    let entry = |heard: &str, name: &str| LiveEntry {
+        index: 0,
+        file: "audio.jsonl".to_owned(),
+        sentence: 1,
+        start_byte: 0,
+        end_byte: heard.len(),
+        heard: heard.to_owned(),
+        entity_id: "e".to_owned(),
+        name: name.to_owned(),
+    };
+    for (heard, name) in [
+        ("ChatGPT", "ChatGPT"),
+        ("Chat GPT", "ChatGPT"),
+        ("open-ai", "OpenAI"),
+        ("Élan", "élan"),
+    ] {
+        assert!(repeats_heard(&entry(heard, name)), "{heard}");
+        assert!(
+            transcript_labels(&[entry(heard, name)]).is_none(),
+            "{heard}"
+        );
+    }
+    let shown = transcript_labels(&[entry("ChatGPT", "ChatGPT"), entry("Fryer", "Friar")]).unwrap();
+    assert_eq!(
+        shown.statements.get(&1).unwrap(),
+        &vec![(5, "Friar".to_owned())]
+    );
+}

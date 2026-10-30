@@ -990,6 +990,7 @@ fn possible_name_marks(
     let mut labels = entries
         .iter()
         .filter(|entry| entry.file == file && entry.sentence == sentence)
+        .filter(|entry| !solstone_core_possible_names::repeats_heard(entry))
         .collect::<Vec<_>>();
     if labels.is_empty() {
         return Vec::new();

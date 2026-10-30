@@ -618,11 +618,29 @@ fn statement_words(transcript: &str, wanted: &BTreeSet<u64>) -> BTreeMap<u64, St
     words
 }
 
+/// Whether an entry's name only repeats the words it labels, ignoring case,
+/// spaces and punctuation. Search still links those words to the entity, but a
+/// transcript reader shows no label for them: it would add nothing to the text.
+#[must_use]
+pub fn repeats_heard(entry: &LiveEntry) -> bool {
+    let fold = |text: &str| {
+        text.chars()
+            .filter(|c| c.is_alphanumeric())
+            .flat_map(char::to_lowercase)
+            .collect::<String>()
+    };
+    fold(&entry.heard) == fold(&entry.name)
+}
+
 /// The labels a transcript reader shows for these entries, or `None` when
-/// there are none.
+/// there are none. An entry that only repeats its words shows no label.
 #[must_use]
 pub fn transcript_labels(entries: &[LiveEntry]) -> Option<PossibleNameLabels> {
-    let first = entries.first()?;
+    let entries = entries
+        .iter()
+        .filter(|entry| !repeats_heard(entry))
+        .collect::<Vec<_>>();
+    let first = *entries.first()?;
     let mut labels = PossibleNameLabels {
         file: first.file.clone(),
         statements: BTreeMap::new(),

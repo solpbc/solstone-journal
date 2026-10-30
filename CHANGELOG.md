@@ -21,6 +21,8 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - when two spellings of a name look like the same person, your journal can now suggest merging them.
 - your journal now suggests merging two names only when both are saved and look like one thing written two ways. it no longer suggests merging a product with its company, a part with its project or a first name with a full name, which are often different things.
 - the people on a calendar invite now help your journal put names to voices during that meeting, for people it remembers.
+- when your journal has a possible name spelled differently from the words it labels, the stories it writes about your work and conversations now use that name. your transcript still shows what was heard, with the possible name beside it.
+- your transcript, and the transcripts your agents read, no longer show a possible name that only repeats the words beside it, such as "ChatGPT (possible name: ChatGPT)". search still finds the mention under that name.
 
 ### Fixed
 

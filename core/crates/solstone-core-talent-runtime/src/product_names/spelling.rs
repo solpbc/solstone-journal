@@ -13,6 +13,17 @@ pub struct Edit {
     pub view_end: usize,
     pub original: String,
     pub replacement: String,
+    /// Set when the replacement is a possible name: the entity it names.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub entity_id: Option<String>,
+}
+
+/// A possible name read in place of the words it labels, by byte range.
+pub struct Named<'a> {
+    pub start: usize,
+    pub end: usize,
+    pub name: &'a str,
+    pub entity_id: &'a str,
 }
 
 static NAME: LazyLock<Regex> = LazyLock::new(|| {
@@ -37,10 +48,50 @@ pub fn has_variant(text: &str) -> bool {
 }
 
 pub fn normalize(text: &str) -> (String, Vec<Edit>) {
-    let protected: Vec<_> = LITERAL.find_iter(text).map(|m| m.range()).collect();
+    normalize_with(text, &[])
+}
+
+/// [`normalize`], plus each possible name read in place of its words. One
+/// whose words overlap a product spelling or another possible name, or don't
+/// sit on character boundaries, is left out.
+pub fn normalize_with(text: &str, named: &[Named<'_>]) -> (String, Vec<Edit>) {
+    let mut planned = product_matches(text);
+    for n in named {
+        if n.start >= n.end
+            || !text.is_char_boundary(n.start)
+            || !text.is_char_boundary(n.end)
+            || planned.iter().any(|(s, e, ..)| n.start < *e && n.end > *s)
+        {
+            continue;
+        }
+        planned.push((n.start, n.end, n.name, Some(n.entity_id)));
+    }
+    planned.sort_by_key(|p| p.0);
     let mut out = String::with_capacity(text.len());
     let mut edits = Vec::new();
     let mut cursor = 0;
+    for (start, end, replacement, entity_id) in planned {
+        out.push_str(&text[cursor..start]);
+        let view_start = out.len();
+        out.push_str(replacement);
+        edits.push(Edit {
+            start,
+            end,
+            view_start,
+            view_end: out.len(),
+            original: text[start..end].to_owned(),
+            replacement: replacement.to_owned(),
+            entity_id: entity_id.map(str::to_owned),
+        });
+        cursor = end;
+    }
+    out.push_str(&text[cursor..]);
+    (out, edits)
+}
+
+fn product_matches<'a>(text: &str) -> Vec<(usize, usize, &'a str, Option<&'a str>)> {
+    let protected: Vec<_> = LITERAL.find_iter(text).map(|m| m.range()).collect();
+    let mut matches = Vec::new();
     for m in NAME.find_iter(text) {
         if text[..m.start()].chars().next_back().is_some_and(word)
             || text[m.end()..].chars().next().is_some_and(word)
@@ -57,21 +108,9 @@ pub fn normalize(text: &str) -> (String, Vec<Edit>) {
         } else {
             "sol pbc"
         };
-        out.push_str(&text[cursor..m.start()]);
-        let view_start = out.len();
-        out.push_str(replacement);
-        edits.push(Edit {
-            start: m.start(),
-            end: m.end(),
-            view_start,
-            view_end: out.len(),
-            original: m.as_str().to_owned(),
-            replacement: replacement.to_owned(),
-        });
-        cursor = m.end();
+        matches.push((m.start(), m.end(), replacement, None));
     }
-    out.push_str(&text[cursor..]);
-    (out, edits)
+    matches
 }
 
 /// A normalized substring's exact original byte range. Partial name edits

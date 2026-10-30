@@ -1042,7 +1042,12 @@ mod tests {
                 "reset_carry":c.reset_carry,
             })).collect()
         ));
-        crate::product_names::prepare("screen", &mut original.config, &[Some(source)]);
+        crate::product_names::prepare(
+            std::path::Path::new("."),
+            "screen",
+            &mut original.config,
+            &[Some(source)],
+        );
         let full = crate::generate_contents(&original);
         let root = TempDir::new().unwrap();
         fs::create_dir_all(root.path().join("config")).unwrap();

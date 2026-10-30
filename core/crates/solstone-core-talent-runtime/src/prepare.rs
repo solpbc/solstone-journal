@@ -324,7 +324,7 @@ pub fn prepare(
     } else {
         None
     };
-    crate::product_names::prepare(&name, &mut composed, &entry_sources);
+    crate::product_names::prepare(&context.journal, &name, &mut composed, &entry_sources);
     let mut prepared = PreparedTalent::new(name, composed);
     prepared.participation_floor = participation_floor;
     // Work's message notes read the raw request, before any floor packet.

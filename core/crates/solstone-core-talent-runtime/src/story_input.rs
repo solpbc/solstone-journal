@@ -209,7 +209,7 @@ pub(crate) fn prepare(
         .get("name")
         .and_then(Value::as_str)
         .unwrap_or_default();
-    crate::product_names::prepare(name, &mut projected, &compact_sources);
+    crate::product_names::prepare(journal, name, &mut projected, &compact_sources);
     Ok(Some(Candidate {
         compact_transcript,
         product_spelling_view: projected.remove(crate::product_names::VIEW_KEY),

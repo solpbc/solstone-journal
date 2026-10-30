@@ -2,15 +2,25 @@
 // Copyright (c) 2026 sol pbc
 
 //! A source-bound model view, separate from the original transcript.
+//!
+//! Product names the speech model misspells are read in their canonical
+//! spelling. For Work and Conversation, a possible name spelled differently
+//! from the words it labels is read in place of those words. Either way the
+//! transcript itself is unchanged, and a quote the model writes with a view
+//! spelling must trace back to the source words.
 mod spelling;
 use crate::PreparedTalent;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
 use solstone_core_transcripts::EntrySource;
+use std::collections::BTreeMap;
+use std::path::Path;
 
 pub(crate) const VIEW_KEY: &str = "_product_spelling_view";
 const TALENTS: &[&str] = &["sense", "work", "conversation", "screen", "participation"];
+/// Talents that also read possible names in place of the words they label.
+const POSSIBLE_NAME_TALENTS: &[&str] = &["work", "conversation"];
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 struct Line {
@@ -40,7 +50,28 @@ fn view(config: &Map<String, Value>) -> Option<View> {
     serde_json::from_value(config.get(VIEW_KEY)?.clone()).ok()
 }
 
+/// The possible names a source's statements may read in place of their words,
+/// by statement ordinal: entries the owner is shown now whose name is spelled
+/// differently from the words. An entry that repeats its words changes nothing.
+fn possible_names(
+    registry: &solstone_core_possible_names::Registry,
+    source: &EntrySource,
+) -> BTreeMap<u64, Vec<solstone_core_possible_names::LiveEntry>> {
+    let mut by_statement = BTreeMap::<u64, Vec<_>>::new();
+    let Some(segment) = source.path.parent() else {
+        return by_statement;
+    };
+    let viewer = solstone_core_possible_names::Viewer::Owner;
+    for entry in solstone_core_possible_names::live_entries_with(registry, segment, &viewer) {
+        if entry.file == source.file && !solstone_core_possible_names::repeats_heard(&entry) {
+            by_statement.entry(entry.sentence).or_default().push(entry);
+        }
+    }
+    by_statement
+}
+
 pub(crate) fn prepare(
+    journal: &Path,
     name: &str,
     config: &mut Map<String, Value>,
     sources: &[Option<EntrySource>],
@@ -52,7 +83,19 @@ pub(crate) fn prepare(
     let Some(original) = config.get("transcript").and_then(Value::as_str) else {
         return;
     };
-    if !spelling::has_variant(original) {
+    let registry = solstone_core_possible_names::Registry::new(journal);
+    let named: Vec<_> = sources
+        .iter()
+        .map(|source| match source {
+            Some(source)
+                if POSSIBLE_NAME_TALENTS.contains(&name) && source.is_speech_transcript() =>
+            {
+                possible_names(&registry, source)
+            }
+            _ => BTreeMap::new(),
+        })
+        .collect();
+    if !spelling::has_variant(original) && named.iter().all(BTreeMap::is_empty) {
         return;
     }
     let shift = if original.starts_with(crate::prepare::SPARSE_INPUT_NOTE) {
@@ -62,10 +105,11 @@ pub(crate) fn prepare(
     };
     let mut lines = Vec::new();
     let mut gaps = Vec::new();
-    for source in sources
+    for (source, named) in sources
         .iter()
-        .flatten()
-        .filter(|s| s.is_speech_transcript())
+        .zip(&named)
+        .filter_map(|(source, named)| Some((source.as_ref()?, named)))
+        .filter(|(s, _)| s.is_speech_transcript())
     {
         let mut record_cursor = 0;
         for ((chunk, record), at) in source.chunks.iter().zip(&source.chunk_offsets) {
@@ -83,7 +127,6 @@ pub(crate) fn prepare(
                     None => continue,
                 },
             };
-            let (text, edits) = spelling::normalize(raw);
             let record_index = source.records[record_cursor..]
                 .iter()
                 .position(|r| r == record)
@@ -91,6 +134,25 @@ pub(crate) fn prepare(
             if let Some(i) = record_index {
                 record_cursor = i + 1;
             }
+            // Statements are numbered as speaker labels number them.
+            let ordinal = record_index.map(|i| {
+                source.records[..=i]
+                    .iter()
+                    .filter(|r| r.contains_key("start"))
+                    .count() as u64
+            });
+            let here = ordinal
+                .and_then(|n| named.get(&n))
+                .into_iter()
+                .flatten()
+                .map(|entry| spelling::Named {
+                    start: entry.start_byte,
+                    end: entry.end_byte,
+                    name: &entry.name,
+                    entity_id: &entry.entity_id,
+                })
+                .collect::<Vec<_>>();
+            let (text, edits) = spelling::normalize_with(raw, &here);
             let positions: Vec<_> = if raw.is_empty() {
                 Vec::new()
             } else {
@@ -299,8 +361,26 @@ pub(crate) fn verify(prepared: &PreparedTalent, response: &str) -> Result<Checke
     let Ok(mut value) = serde_json::from_str::<Value>(response) else {
         return Ok(result);
     };
+    // A quote with a possible name in it is a source quote only where it
+    // traces to the words that name labels, unless the input already holds it.
+    let original = prepared
+        .config
+        .get("transcript")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let names = v
+        .lines
+        .iter()
+        .flat_map(|l| &l.edits)
+        .filter(|e| e.entity_id.is_some())
+        .map(|e| e.replacement.as_str())
+        .collect::<Vec<_>>();
+    let needs_span = |text: &str| {
+        canonical(text)
+            || (names.iter().any(|name| text.contains(name)) && !original.contains(text))
+    };
     let mut check = |text: &str, speaker: Option<&str>, field: &str, action: &str| {
-        if !canonical(text) {
+        if !needs_span(text) {
             return true;
         }
         let found = bindings(&v, text, speaker, field);
@@ -447,7 +527,7 @@ mod tests {
             loaded.text.clone() + "\n### Screen Activity\nSoulstone remains screen text.";
         let mut c = config(&original);
         let instruction = c["user_instruction"].clone();
-        prepare("sense", &mut c, &loaded.sources);
+        prepare(root.path(), "sense", &mut c, &loaded.sources);
         assert_eq!(c["transcript"], original);
         assert_eq!(c["user_instruction"], instruction);
         assert_eq!(fs::read(&path).unwrap(), raw);
@@ -486,13 +566,136 @@ mod tests {
         );
         for name in ["pulse", "documents"] {
             let mut c = config(&original);
-            prepare(name, &mut c, &loaded.sources);
+            prepare(root.path(), name, &mut c, &loaded.sources);
             assert!(event(&c).is_none());
         }
         let mut c = config(&original);
         c.insert("messages".into(), json!([]));
-        prepare("sense", &mut c, &loaded.sources);
+        prepare(root.path(), "sense", &mut c, &loaded.sources);
         assert!(event(&c).is_none());
+    }
+    fn known(root: &std::path::Path, id: &str, name: &str) {
+        let dir = root.join("entities").join(id);
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(
+            dir.join("entity.json"),
+            json!({"id": id, "name": name}).to_string(),
+        )
+        .unwrap();
+        let link = root.join("facets/home/entities").join(id);
+        fs::create_dir_all(&link).unwrap();
+        fs::write(
+            link.join("entity.json"),
+            json!({"entity_id": id}).to_string(),
+        )
+        .unwrap();
+    }
+    fn possible_names(audio: &std::path::Path, entries: &[(u64, &str, &str, &str)]) {
+        use solstone_core_possible_names::{Sidecar, SidecarEntry, SidecarSource};
+        let dir = audio.parent().unwrap();
+        let text = |n: u64| {
+            fs::read_to_string(audio)
+                .unwrap()
+                .lines()
+                .filter(|l| l.contains("\"start\""))
+                .nth(n as usize - 1)
+                .map(|l| {
+                    serde_json::from_str::<Value>(l).unwrap()["text"]
+                        .as_str()
+                        .unwrap()
+                        .to_owned()
+                })
+                .unwrap()
+        };
+        let entries = entries
+            .iter()
+            .map(|(sentence, heard, id, name)| {
+                let start = text(*sentence).find(heard).unwrap();
+                SidecarEntry {
+                    sentence: *sentence,
+                    start_byte: start,
+                    end_byte: start + heard.len(),
+                    heard: (*heard).to_owned(),
+                    entity_id: (*id).to_owned(),
+                    name: (*name).to_owned(),
+                }
+            })
+            .collect();
+        let source = SidecarSource {
+            file: "audio.jsonl".to_owned(),
+            sha256: solstone_core_possible_names::source_sha256(dir, "audio.jsonl").unwrap(),
+        };
+        solstone_core_possible_names::write(dir, &Sidecar::new("test", source, "rev", 1, entries))
+            .unwrap();
+    }
+    #[test]
+    fn stories_read_a_respelt_possible_name_in_place_of_the_words_it_labels() {
+        let root = tempfile::tempdir().unwrap();
+        let path = speech(
+            root.path(),
+            &[
+                json!({"start":"09:00:01","speaker":1,"text":"Morning, how was the drive?"}),
+                json!({"start":"09:00:05","speaker":2,"text":"Fine. Then Fryer called about the Orchard plan."}),
+            ],
+        );
+        known(root.path(), "friar", "Friar");
+        known(root.path(), "orchard", "Orchard");
+        // The second entry repeats its words, so it changes nothing.
+        possible_names(
+            &path,
+            &[
+                (2, "Fryer", "friar", "Friar"),
+                (2, "Orchard", "orchard", "Orchard"),
+            ],
+        );
+        let raw = fs::read(&path).unwrap();
+        let loaded = load(root.path(), None);
+        for talent in ["conversation", "work"] {
+            let mut c = config(&loaded.text);
+            prepare(root.path(), talent, &mut c, &loaded.sources);
+            assert_eq!(c["transcript"], loaded.text);
+            let v = view(&c).unwrap();
+            assert!(
+                v.text.contains("Then Friar called about the Orchard plan."),
+                "{}",
+                v.text
+            );
+            assert!(!v.text.contains("Fryer"));
+            let line = v.lines.iter().find(|l| !l.edits.is_empty()).unwrap();
+            let edits = &line.edits;
+            assert_eq!(edits.len(), 1);
+            assert_eq!(
+                (edits[0].original.as_str(), edits[0].entity_id.as_deref()),
+                ("Fryer", Some("friar"))
+            );
+            let prepared = PreparedTalent::new(talent.into(), c);
+            let checked = verify(
+                &prepared,
+                &json!({"quotes":[
+                    {"speaker":"Speaker 2","text":"Then Friar called about the Orchard plan."},
+                    {"speaker":"Speaker 2","text":"Friar sent the seeds."},
+                    {"speaker":"Speaker 1","text":"Morning, how was the drive?"}
+                ]})
+                .to_string(),
+            )
+            .unwrap();
+            let kept: Value = serde_json::from_str(&checked.text).unwrap();
+            assert_eq!(kept["quotes"].as_array().unwrap().len(), 2);
+            assert_eq!(checked.gaps.len(), 1);
+            let b = &checked.bindings[0];
+            assert_eq!(
+                &line.original[b["raw_start"].as_u64().unwrap() as usize
+                    ..b["raw_end"].as_u64().unwrap() as usize],
+                "Then Fryer called about the Orchard plan."
+            );
+        }
+        assert_eq!(fs::read(&path).unwrap(), raw);
+        // Sense, Screen and Participation read possible names nowhere.
+        for talent in ["sense", "participation"] {
+            let mut c = config(&loaded.text);
+            prepare(root.path(), talent, &mut c, &loaded.sources);
+            assert!(view(&c).is_none(), "{talent}");
+        }
     }
     #[test]
     fn variant_free_input_is_a_noop_and_unbound_source_has_a_gap() {
@@ -506,7 +709,7 @@ mod tests {
         let loaded = load(root.path(), None);
         let mut c = config(&loaded.text);
         let before = c.clone();
-        prepare("sense", &mut c, &loaded.sources);
+        prepare(root.path(), "sense", &mut c, &loaded.sources);
         assert_eq!(c, before);
         assert!(event(&c).is_none());
         speech(
@@ -518,7 +721,7 @@ mod tests {
         let mut loaded = load(root.path(), None);
         loaded.sources[0].as_mut().unwrap().chunk_offsets[0] += 1;
         let mut c = config(&loaded.text);
-        prepare("sense", &mut c, &loaded.sources);
+        prepare(root.path(), "sense", &mut c, &loaded.sources);
         let e = event(&c).unwrap();
         assert_eq!(e["gaps"].as_array().unwrap().len(), 1);
         assert_eq!(model_text(&c), Some(loaded.text.as_str()));
@@ -660,7 +863,7 @@ mod tests {
             c.insert("hook".into(), json!({"post":"story"}));
             let body = crate::story::source_body("conversation", &c, &loaded.sources).unwrap();
             assert!(body.contains("Soulstone"));
-            prepare("conversation", &mut c, &loaded.sources);
+            prepare(root.path(), "conversation", &mut c, &loaded.sources);
             assert_eq!(
                 crate::story::source_body("conversation", &c, &loaded.sources),
                 Some(body)
@@ -793,7 +996,7 @@ mod tests {
         let original = loaded.text.clone() + "\n### Screen Activity\nSoulstone.cpp /work/Soulstone";
         for name in ["screen", "participation"] {
             let mut c = config(&original);
-            prepare(name, &mut c, &loaded.sources);
+            prepare(root.path(), name, &mut c, &loaded.sources);
             let prepared = PreparedTalent::new(name.into(), c);
             let parts = crate::generate_contents(&prepared);
             let ContentPart::Text { text } = &parts[0] else {
@@ -820,7 +1023,7 @@ mod tests {
         let loaded = load(root.path(), None);
         let mut c = config(&loaded.text);
         c.insert("output_path".into(), json!("result.json"));
-        prepare("conversation", &mut c, &loaded.sources);
+        prepare(root.path(), "conversation", &mut c, &loaded.sources);
         let destination = root.path().join("result.json");
         fs::write(&destination, "existing output").unwrap();
         let mut prepared = PreparedTalent::new("conversation".into(), c);
