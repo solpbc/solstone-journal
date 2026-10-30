@@ -60,6 +60,7 @@ solstone-core-segment.workspace = true
 solstone-core-sol-link = { workspace = true, features = ["host"] }
 solstone-core-system.workspace = true
 solstone-core-facets.workspace = true
+solstone-core-location.workspace = true
 solstone-core-talent-runtime.workspace = true
 solstone-core-transcripts.workspace = true
 spl-core.workspace = true

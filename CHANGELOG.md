@@ -8,6 +8,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- an activity now says where your phone or watch was while it ran, in the words your map uses: "your watch was near Golden, Colorado then". the line opens that place on your map when it's a place in your journal, otherwise that day on the map. agents that can read your whole journal's transcripts see the same, in words and never coordinates.
 - the android development app can review interrupted storage work while your journal stays stopped. it can remove temporary copies after checking that the originals are still complete.
 - browser pages in your journal now show their context: whether the tab was in front and its window focused, whether audio or video was playing, whether the solstone app was paused, how long the tab had been open, the page's language and which browser it was. agents reading your journal see the same line. pages from earlier versions of the solstone extension look as before.
 

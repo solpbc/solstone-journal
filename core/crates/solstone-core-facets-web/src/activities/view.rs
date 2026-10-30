@@ -162,6 +162,7 @@ pub fn build_view(root: &Path, day: &str, query: Option<&str>) -> Result<Value, 
     }
 
     let calendar = calendar_on_day(root, day);
+    let location = solstone_core_location::DayBeside::read(root, day);
     let mut items = Vec::new();
     for ((facet, row), course) in scoped_rows.iter().zip(courses) {
         let is_hidden = row.get("hidden").is_some_and(activity_value_truthy);
@@ -169,7 +170,13 @@ pub fn build_view(root: &Path, day: &str, query: Option<&str>) -> Result<Value, 
             continue;
         }
 
-        let item = project_item(facet, row, &course, &definitions_by_facet, (day, &calendar));
+        let item = project_item(
+            facet,
+            row,
+            &course,
+            &definitions_by_facet,
+            (day, &calendar, &location),
+        );
         items.push(item);
     }
 
@@ -185,7 +192,7 @@ fn project_item(
     record: &Map<String, Value>,
     course: &solstone_core_facets::ActivityCourse,
     definitions_by_facet: &BTreeMap<String, BTreeMap<String, String>>,
-    (day, calendar): (&str, &[ScheduledEvent]),
+    (day, calendar, location): (&str, &[ScheduledEvent], &solstone_core_location::DayBeside),
 ) -> Value {
     let mut item = Map::new();
 
@@ -402,6 +409,20 @@ fn project_item(
         .map(|span| calendar_beside(calendar, day, span))
         .unwrap_or_default();
     item.insert("calendar".to_owned(), Value::Array(beside));
+    // Where a device was while it ran, in the map's words; the link opens the
+    // place when the journal has worked one out, else that day on the map.
+    let place = course
+        .span
+        .and_then(|span| location.beside(span, course.stream.as_deref()))
+        .map(|beside| {
+            let href = match &beside.place_id {
+                Some(id) => format!("/app/map/place/{id}"),
+                None => format!("/app/map/{day}"),
+            };
+            json!({"device": beside.device, "words": beside.words, "href": href})
+        })
+        .unwrap_or(Value::Null);
+    item.insert("place".to_owned(), place);
 
     let edits = record
         .get("edits")

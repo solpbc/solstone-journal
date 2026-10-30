@@ -406,3 +406,75 @@ fn an_activity_lists_the_meeting_it_ran_during_only_to_a_connection_that_reads_t
         [Value::Null, Value::Null]
     );
 }
+
+fn place_beside_activities(journal: &Path) -> Vec<Value> {
+    let listed =
+        run_mcp_probe(journal, CONNECTION, "list_activities", &json!({"day": DAY})).unwrap();
+    listed["activities"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|activity| activity.get("place").cloned().unwrap_or(Value::Null))
+        .collect()
+}
+
+#[test]
+fn an_activity_says_where_a_device_was_only_to_a_connection_that_reads_the_whole_journal() {
+    let journal = journal();
+    let root = journal.path();
+    // A visit the phone reported near Denver, 10:00–11:00 Denver time.
+    let segment = root.join(format!("chronicle/{DAY}/phone_mobile-segment/100000_300"));
+    fs::create_dir_all(&segment).unwrap();
+    fs::write(
+        segment.join("location.jsonl"),
+        concat!(
+            r#"{"accuracy":"full","fix_count":0,"gap":false,"kind":"location","platform":"ios","schema":"solstone.location.segment/1","source":"location","tier":"full"}"#,
+            "\n",
+            r#"{"arrival":"2026-10-27T16:00:00Z","departure":"2026-10-27T17:00:00Z","h_acc":40,"lat":39.7527,"lon":-105.0001,"schema":"solstone.location.visit/1"}"#,
+            "\n"
+        ),
+    )
+    .unwrap();
+    solstone_core_location::reconcile_journal(
+        root,
+        &mut solstone_core_location::Reconciler::default(),
+    )
+    .unwrap();
+    fs::create_dir_all(root.join("facets/work/activities")).unwrap();
+    let during = json!({"id": "meeting_100200_300", "activity": "meeting", "segments": ["100200_1800"], "description": "talked through the mocks", "created_at": 1});
+    let after = json!({"id": "coding_120000_300", "activity": "coding", "segments": ["120000_1800"], "description": "wrote code", "created_at": 2});
+    fs::write(
+        root.join(format!("facets/work/activities/{DAY}.jsonl")),
+        format!("{during}\n{after}\n"),
+    )
+    .unwrap();
+    index(root);
+
+    grant_categories(root, &["facets", "transcripts"], ReadScope::WholeJournal);
+    let places = place_beside_activities(root);
+    let words = places[0]["words"].as_str().unwrap();
+    assert!(words.starts_with("near Denver"), "{places:?}");
+    assert!(
+        places[0]["device"]
+            .as_str()
+            .is_some_and(|device| !device.is_empty())
+    );
+    assert!(
+        !words.contains("39.75") && !words.contains("105.0"),
+        "{words}"
+    );
+    assert_eq!(places[1], Value::Null, "nothing covers 12:00");
+
+    // A day's location belongs to no facet, and without transcripts a
+    // connection doesn't read it at all.
+    grant_categories(
+        root,
+        &["facets", "transcripts"],
+        ReadScope::Facets {
+            ids: vec![FACET.to_owned()],
+        },
+    );
+    assert_eq!(place_beside_activities(root), [Value::Null, Value::Null]);
+    grant_categories(root, &["facets"], ReadScope::WholeJournal);
+    assert_eq!(place_beside_activities(root), [Value::Null, Value::Null]);
+}
