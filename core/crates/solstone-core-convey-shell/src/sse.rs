@@ -5,6 +5,7 @@ use std::convert::Infallible;
 use std::future::Future;
 use std::path::PathBuf;
 use std::pin::Pin;
+use std::sync::Arc;
 use std::task::{Context, Poll};
 use std::time::Duration;
 
@@ -13,11 +14,31 @@ use axum::response::sse::{Event, KeepAlive, Sse};
 use futures_core::Stream;
 use serde_json::{Map, json};
 use solstone_core_callosum::{
-    CallosumConnectionPhase, CallosumReceiveEvent, CallosumSocketConnection,
+    BrainStartupCapture, BrainStartupCursor, CallosumConnectionPhase, CallosumReceiveEvent,
+    CallosumSocketConnection,
 };
 
-type NextEvent =
-    Pin<Box<dyn Future<Output = (CallosumSocketConnection, Option<Event>, bool)> + Send>>;
+type NextEvent = Pin<
+    Box<
+        dyn Future<
+                Output = (
+                    CallosumSocketConnection,
+                    Option<StartupReader>,
+                    Option<Event>,
+                    bool,
+                ),
+            > + Send,
+    >,
+>;
+
+struct StartupReader {
+    capture: Arc<BrainStartupCapture>,
+    cursor: BrainStartupCursor,
+}
+enum Received {
+    Bus(Option<CallosumReceiveEvent>),
+    Startup(Option<solstone_core_callosum::BrainStartupEvent>),
+}
 
 // The response body owns the connection, including while waiting for a message.
 // Dropping the body drops the connection and signals its transport task to stop.
@@ -25,48 +46,77 @@ struct LiveEvents {
     next: Option<NextEvent>,
 }
 
-fn next_event(mut connection: CallosumSocketConnection) -> NextEvent {
+fn next_event(
+    mut connection: CallosumSocketConnection,
+    mut startup: Option<StartupReader>,
+) -> NextEvent {
     Box::pin(async move {
         let mut terminal = false;
-        let event = match connection.next_event().await {
-            Some(CallosumReceiveEvent::Envelope { envelope, .. }) => {
-                Some(Event::default().json_data(envelope).expect("JSON envelope"))
+        let received = if let Some(reader) = &mut startup {
+            tokio::select! {
+                biased;
+                event = reader.capture.next(&mut reader.cursor) => Received::Startup(event),
+                event = connection.next_event() => Received::Bus(event),
             }
-            Some(CallosumReceiveEvent::Continuity {
-                generation,
-                epoch,
-                phase,
-            }) => {
-                let state = match phase {
-                    CallosumConnectionPhase::Connecting { .. } => "connecting",
-                    CallosumConnectionPhase::Unavailable { .. } => "unavailable",
-                    CallosumConnectionPhase::Connected => "connected",
-                    CallosumConnectionPhase::Gapped { .. } => "gapped",
-                    CallosumConnectionPhase::Stopped { .. } => {
-                        terminal = true;
-                        "stopped"
-                    }
-                };
-                Some(
-                    Event::default()
-                        .event("continuity")
-                        .json_data(json!({
-                            "state": state, "generation": generation, "epoch": epoch,
-                        }))
-                        .expect("JSON continuity"),
-                )
-            }
-            None => None,
+        } else {
+            Received::Bus(connection.next_event().await)
         };
-        (connection, event, terminal)
+        let event = match received {
+            Received::Startup(Some(event)) => {
+                terminal = event.terminal;
+                Some(Event::default().event(event.name).data(event.data))
+            }
+            Received::Startup(None) => {
+                terminal = true;
+                None
+            }
+            Received::Bus(event) => match event {
+                Some(CallosumReceiveEvent::Envelope { envelope, .. }) => {
+                    Some(Event::default().json_data(envelope).expect("JSON envelope"))
+                }
+                Some(CallosumReceiveEvent::Continuity {
+                    generation,
+                    epoch,
+                    phase,
+                }) => {
+                    let state = match phase {
+                        CallosumConnectionPhase::Connecting { .. } => "connecting",
+                        CallosumConnectionPhase::Unavailable { .. } => "unavailable",
+                        CallosumConnectionPhase::Connected => "connected",
+                        CallosumConnectionPhase::Gapped { .. } => "gapped",
+                        CallosumConnectionPhase::Stopped { .. } => {
+                            terminal = true;
+                            "stopped"
+                        }
+                    };
+                    Some(
+                        Event::default()
+                            .event("continuity")
+                            .json_data(json!({
+                                "state": state, "generation": generation, "epoch": epoch,
+                            }))
+                            .expect("JSON continuity"),
+                    )
+                }
+                None => None,
+            },
+        };
+        (connection, startup, event, terminal)
     })
 }
 
 impl LiveEvents {
-    fn new(mut connection: CallosumSocketConnection) -> Self {
+    fn new(
+        mut connection: CallosumSocketConnection,
+        capture: Option<Arc<BrainStartupCapture>>,
+    ) -> Self {
         connection.start();
+        let startup = capture.map(|capture| StartupReader {
+            capture,
+            cursor: BrainStartupCursor::default(),
+        });
         Self {
-            next: Some(next_event(connection)),
+            next: Some(next_event(connection, startup)),
         }
     }
 }
@@ -78,22 +128,25 @@ impl Stream for LiveEvents {
         let Some(next) = self.next.as_mut() else {
             return Poll::Ready(None);
         };
-        let Poll::Ready((connection, event, terminal)) = next.as_mut().poll(cx) else {
+        let Poll::Ready((connection, startup, event, terminal)) = next.as_mut().poll(cx) else {
             return Poll::Pending;
         };
         self.next = if terminal {
             None
         } else {
-            event.as_ref().map(|_| next_event(connection))
+            event.as_ref().map(|_| next_event(connection, startup))
         };
         Poll::Ready(event.map(Ok))
     }
 }
 
-pub async fn events(journal_root: PathBuf) -> axum::response::Response {
+pub async fn events(
+    journal_root: PathBuf,
+    capture: Option<Arc<BrainStartupCapture>>,
+) -> axum::response::Response {
     let connection =
         CallosumSocketConnection::new(journal_root.join("health/callosum.sock"), Map::new());
-    let mut response = Sse::new(LiveEvents::new(connection))
+    let mut response = Sse::new(LiveEvents::new(connection, capture))
         .keep_alive(
             KeepAlive::new()
                 .interval(Duration::from_secs(15))
@@ -133,7 +186,7 @@ mod tests {
             1,
             Box::new(ClosedRetries),
         );
-        let response = Sse::new(LiveEvents::new(connection)).into_response();
+        let response = Sse::new(LiveEvents::new(connection, None)).into_response();
         let mut body = response.into_body().into_data_stream();
         let wire = tokio::time::timeout(Duration::from_secs(1), async {
             let mut wire = String::new();
@@ -146,5 +199,41 @@ mod tests {
         .expect("terminal reader must close the SSE response");
         assert!(wire.contains("event: continuity\n"));
         assert!(wire.contains("\"state\":\"stopped\""));
+    }
+    #[cfg(feature = "full-tests")]
+    #[tokio::test]
+    async fn stop_during_prefix_handoff_is_terminal_and_cannot_certify_replacement() {
+        let capture = BrainStartupCapture::new();
+        let (emitter, _receiver) =
+            solstone_core_callosum::test_support::diagnostic_fixture_with_startup_capture(
+                64,
+                Arc::clone(&capture),
+            );
+        assert!(emitter.emit("supervisor","brain_observation",serde_json::from_value(serde_json::json!({
+            "observation_id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","caller":"mobile_refresh","phase":"terminal","outcome":"ready"
+        })).unwrap()));
+        let connection = CallosumSocketConnection::with_retry_source(
+            "unused",
+            Map::new(),
+            1,
+            Box::new(ClosedRetries),
+        );
+        let response =
+            Sse::new(LiveEvents::new(connection, Some(Arc::clone(&capture)))).into_response();
+        let mut body = response.into_body().into_data_stream();
+        let first = String::from_utf8(body.next().await.unwrap().unwrap().to_vec()).unwrap();
+        assert!(first.contains("event: brain_startup\n"));
+        capture.close();
+        let closed = String::from_utf8(body.next().await.unwrap().unwrap().to_vec()).unwrap();
+        assert!(closed.contains("\"coverage\":\"closed\""));
+        assert!(body.next().await.is_none());
+        let replacement = BrainStartupCapture::new();
+        let replacement = replacement
+            .next(&mut BrainStartupCursor::default())
+            .await
+            .unwrap();
+        let replacement: serde_json::Value = serde_json::from_str(&replacement.data).unwrap();
+        assert_eq!(replacement["through"], 0);
+        assert!(!first.contains(replacement["generation"].as_str().unwrap()));
     }
 }

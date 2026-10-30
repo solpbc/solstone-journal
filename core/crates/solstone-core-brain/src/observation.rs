@@ -17,9 +17,15 @@ impl BrainObservationSink {
 
     pub fn begin(&self, caller: ObservationCaller) -> Option<BrainObservation> {
         let mut bytes = [0_u8; 16];
-        getrandom::fill(&mut bytes).ok()?;
+        if getrandom::fill(&mut bytes).is_err() {
+            self.0.missing_brain_identity();
+            return None;
+        }
         let mut id = String::new();
-        id.try_reserve_exact(32).ok()?;
+        if id.try_reserve_exact(32).is_err() {
+            self.0.missing_brain_identity();
+            return None;
+        }
         const HEX: &[u8; 16] = b"0123456789abcdef";
         for byte in bytes {
             id.push(char::from(HEX[usize::from(byte >> 4)]));

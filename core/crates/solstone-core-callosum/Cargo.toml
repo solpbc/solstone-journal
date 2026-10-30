@@ -22,6 +22,7 @@ full-tests = ["wire"]
 [dependencies]
 serde = { workspace = true }
 serde_json = { workspace = true }
+getrandom.workspace = true
 solstone-core-journal-io = { workspace = true }
 hmac.workspace = true
 sha2.workspace = true
@@ -29,7 +30,6 @@ log = { workspace = true, optional = true }
 tokio = { workspace = true, optional = true, features = ["io-util", "macros", "net", "rt", "sync", "time"] }
 
 [target.'cfg(windows)'.dependencies]
-getrandom.workspace = true
 interprocess = { workspace = true, features = ["tokio"] }
 solstone-core-installation-identity = { workspace = true }
 solstone-core-journal = { workspace = true }

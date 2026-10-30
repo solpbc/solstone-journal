@@ -90,6 +90,7 @@ pub struct MobileServingStop {
     services: watch::Sender<bool>,
     backup: solstone_core_backup_web::BackupRouteLifetime,
     imports: std::sync::Weak<ImportRouteSlot>,
+    brain_startup: Arc<solstone_core_callosum::BrainStartupCapture>,
 }
 
 struct ServingStartup {
@@ -99,6 +100,7 @@ struct ServingStartup {
 
 impl MobileServingStop {
     pub fn request_stop(&self) {
+        self.brain_startup.close();
         if let Some(imports) = self.imports.upgrade() {
             imports.request_stop();
         }
@@ -293,7 +295,7 @@ impl MobileServing {
             root.canonical_path().join("health/callosum.sock"),
         ));
         let bus = bus.map_err(|e| e.to_string())?;
-        let (brain_connection, brain_observation) = brain::connection(&root);
+        let (brain_connection, brain_observation, brain_startup) = brain::connection(&root);
         let (shutdown, stop) = watch::channel(false);
         let early_shutdown = shutdown.clone();
         let cancelled = startup
@@ -320,8 +322,10 @@ impl MobileServing {
         let import_route = Arc::new(ImportRouteSlot::new());
         let route_for_bind = Arc::clone(&import_route);
         let early_imports = Arc::downgrade(&import_route);
+        let early_brain_startup = Arc::clone(&brain_startup);
         let handle = runtime.block_on(async {
             let startup = solstone_core_convey_shell::EmbeddedStartup {
+                brain_startup: Some(Arc::clone(&brain_startup)),
                 #[cfg(feature = "processing")]
                 backup_offload_dispatch: Some(verification::offload_dispatch_probe(
                     &root,
@@ -349,6 +353,7 @@ impl MobileServing {
                         services: early_shutdown.clone(),
                         backup,
                         imports: early_imports.clone(),
+                        brain_startup: Arc::clone(&early_brain_startup),
                     };
                     stop_ready(signal.clone());
                     if early_cancelled() {
@@ -427,6 +432,7 @@ impl MobileServing {
             services: shutdown.clone(),
             backup: handle.backup_dependencies().lifetime(),
             imports: Arc::downgrade(&import_route),
+            brain_startup,
         };
         let owner = Self {
             stop: stop_handle,
@@ -469,6 +475,7 @@ impl MobileServing {
         backup_registered: oneshot::Receiver<()>,
     ) -> Result<Self, StartupFailure> {
         if self.stop.is_stopping() {
+            self.stop.brain_startup.close();
             return Err(StartupFailure {
                 message: "stop requested during startup; journal retained".into(),
                 owner: Some(Box::new(self)),
@@ -488,12 +495,14 @@ impl MobileServing {
                 )
             });
             if self.stop.is_stopping() {
+                self.stop.brain_startup.close();
                 return Err(StartupFailure {
                     message: "stop requested during startup; journal retained".into(),
                     owner: Some(Box::new(self)),
                 });
             }
             if !ready {
+                self.stop.brain_startup.close();
                 self.handle.backup_dependencies().lifetime().request_stop();
                 self.handle.shutdown();
                 if let Some(services) = self
@@ -512,6 +521,7 @@ impl MobileServing {
         }
         #[cfg(target_os = "ios")]
         if self.root.revalidate_canonical_binding().is_err() {
+            self.stop.brain_startup.close();
             self.handle.backup_dependencies().lifetime().request_stop();
             self.handle.shutdown();
             if let Some(services) = self
@@ -1462,6 +1472,12 @@ mod tests {
         let (message, owner) = failure.into_parts();
         assert_eq!(message, "embedded backup consumer did not register");
         let owner = owner.expect("the exposed original owner must be returned");
+        let capture = Arc::clone(&owner.stop.brain_startup);
+        let closed = runtime
+            .block_on(capture.next(&mut solstone_core_callosum::BrainStartupCursor::default()))
+            .unwrap();
+        assert!(closed.terminal);
+        assert!(closed.data.contains("\"coverage\":\"closed\""));
         assert!(lifetime.admit_maintenance().is_err());
         let root = owner.root.clone();
         let mut retirement = Retirement::start_isolated((*owner, directory), root, |owner| {

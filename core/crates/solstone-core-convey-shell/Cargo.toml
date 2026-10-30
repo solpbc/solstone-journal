@@ -230,6 +230,7 @@ nix = { workspace = true, features = ["signal"] }
 serde_json.workspace = true
 
 [dev-dependencies]
+solstone-core-callosum = { workspace = true, features = ["test-hooks"] }
 solstone-core-cortex.workspace = true
 solstone-core-generate.workspace = true
 axum = { workspace = true, features = ["tokio", "http1"] }
@@ -253,4 +254,4 @@ x509-parser = "0.16.0"
 solstone-core-mcp-endpoint.workspace = true
 
 [target.'cfg(windows)'.dev-dependencies]
-solstone-core-callosum = { workspace = true, features = ["full-tests"] }
+solstone-core-callosum = { workspace = true, features = ["full-tests", "test-hooks"] }

@@ -96,6 +96,8 @@ ort = { version = "=2.0.0-rc.12", default-features = false, features = ["api-24"
 ort = { version = "=2.0.0-rc.12", default-features = false, features = ["load-dynamic"] }
 
 [dev-dependencies]
+solstone-core-callosum = { path = "../../core/crates/solstone-core-callosum", features = ["test-hooks"] }
+solstone-core-brain = { path = "../../core/crates/solstone-core-brain" }
 solstone-core-format = { path = "../../core/crates/solstone-core-format" }
 axum = { version = "0.8.9", default-features = false, features = ["http1", "tokio"] }
 tempfile = "3"

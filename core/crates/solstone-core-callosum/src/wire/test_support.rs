@@ -52,3 +52,22 @@ pub fn connection_with_initial_counters(
 pub async fn join_terminated(connection: &mut CallosumSocketConnection) {
     connection.join_terminated_for_test().await;
 }
+
+/// Force only the optional capture constructor's failure, never real work.
+#[doc(hidden)]
+pub fn unavailable_brain_startup_capture(
+    allocation_failure: bool,
+) -> std::sync::Arc<super::BrainStartupCapture> {
+    super::brain_startup::BrainStartupCapture::unavailable_for_test(allocation_failure)
+}
+
+#[doc(hidden)]
+pub fn diagnostic_fixture_with_startup_capture(
+    capacity: usize,
+    capture: std::sync::Arc<super::BrainStartupCapture>,
+) -> (
+    super::CallosumDiagnosticEmitter,
+    tokio::sync::mpsc::Receiver<crate::CallosumEnvelope>,
+) {
+    super::connection::diagnostic_fixture_with_startup_capture(capacity, capture)
+}

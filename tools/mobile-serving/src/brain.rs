@@ -185,13 +185,21 @@ pub(super) fn run_scheduled(
     )
 }
 
-pub(super) fn connection(root: &JournalRoot) -> (CallosumSocketConnection, BrainObservationSink) {
-    let connection = CallosumSocketConnection::new(
+pub(super) fn connection(
+    root: &JournalRoot,
+) -> (
+    CallosumSocketConnection,
+    BrainObservationSink,
+    Arc<solstone_core_callosum::BrainStartupCapture>,
+) {
+    let capture = solstone_core_callosum::BrainStartupCapture::new();
+    let connection = CallosumSocketConnection::new_with_brain_startup_capture(
         root.canonical_path().join("health/callosum.sock"),
         Map::new(),
+        Arc::clone(&capture),
     );
     let sink = BrainObservationSink::new(connection.diagnostic_emitter());
-    (connection, sink)
+    (connection, sink, capture)
 }
 
 fn observed_fields(
@@ -532,7 +540,7 @@ mod tests {
             });
             let (stop, stopping) = watch::channel(false);
             let (ready, registered) = oneshot::channel();
-            let (connection, _) = connection(&root);
+            let (connection, _, _capture) = connection(&root);
             let mut consumer = tokio::spawn(run_with_executor(
                 Arc::clone(&root),
                 stopping,
@@ -607,6 +615,333 @@ mod tests {
             assert_eq!(Arc::strong_count(&root), 1);
             observer.stop().await;
             bus.stop().await;
+        }
+    }
+}
+
+#[cfg(all(test, feature = "full-tests", feature = "processing"))]
+mod startup_continuity_tests {
+    use super::*;
+    use axum::{body::Body, http::Request};
+    use http_body_util::BodyExt;
+    use solstone_core_brain_owner::{
+        BundledRuntimePrerequisiteAssessment, OwnerProbe, OwnerSppPrerequisite,
+    };
+    use solstone_core_generate::{
+        Cancellation, ClientError, GenerateRequest, GenerateResponse, GeneratedResponse,
+    };
+    use std::path::Path;
+    use std::sync::Mutex;
+    use std::time::Duration;
+    use tower::ServiceExt;
+
+    struct Probe;
+    impl OwnerProbe for Probe {
+        fn bundled_runtime_fingerprint(&self, _: &Path, _: &Map<String, Value>) -> Option<String> {
+            None
+        }
+        fn assess_bundled_runtime(
+            &self,
+            _: &Path,
+            _: Option<&str>,
+        ) -> BundledRuntimePrerequisiteAssessment {
+            BundledRuntimePrerequisiteAssessment {
+                reason_code: None,
+                desired_fingerprint_sha256: None,
+                phase: None,
+                runtime_reason: None,
+            }
+        }
+        fn execute_generate(
+            &self,
+            _: &GenerateRequest,
+            _: &Path,
+            _: &Map<String, Value>,
+            _: &Cancellation,
+        ) -> Result<GenerateResponse, ClientError> {
+            Ok(GenerateResponse::Generated(Box::new(GeneratedResponse {
+                id: None,
+                text: "OK".into(),
+                model: "test-model".into(),
+                usage: json!({}),
+                finish_reason: "stop".into(),
+                thinking: None,
+                schema_validation: None,
+                input_budget: None,
+                request_budget: None,
+                inference: None,
+                hints_applied: Vec::new(),
+            })))
+        }
+    }
+    struct NoSpp;
+    impl OwnerSppPrerequisite for NoSpp {
+        fn assess(
+            &self,
+            _: &Path,
+            _: &Map<String, Value>,
+            _: chrono::DateTime<chrono::Utc>,
+        ) -> Value {
+            panic!("synthetic cloud fixture must never use SPP")
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn delayed_owner_sse_retains_the_actual_startup_relation_without_delaying_work() {
+        for mode in [
+            "disabled",
+            "retained",
+            "marked_loss",
+            "overflow",
+            "identity_unavailable",
+            "allocation_unavailable",
+        ] {
+            let captured = mode != "disabled";
+            let available = mode == "retained";
+            let temp = tempfile::tempdir().unwrap();
+            std::fs::create_dir_all(temp.path().join("config")).unwrap();
+            let config_path = temp.path().join("config/journal.json");
+            std::fs::write(&config_path,br#"{"setup":{"completed_at":1767225600},"env":{"GOOGLE_API_KEY":"test-key"},"providers":{"active":{"provider":"google","model":"gemini-test"}}}"#).unwrap();
+            let principal = temp.path().join("entities/principal");
+            std::fs::create_dir_all(&principal).unwrap();
+            std::fs::write(principal.join("entity.json"),br#"{"id":"principal","name":"Source Fixture","type":"Person","is_principal":true}"#).unwrap();
+            let before = std::fs::read(&config_path).unwrap();
+            let root = Arc::new(JournalRoot::open(temp.path()).unwrap());
+            let socket = root.canonical_path().join("health/callosum.sock");
+            let bus = solstone_core_callosum::CallosumSocketServer::bind(&socket)
+                .await
+                .unwrap();
+            let capture = match mode {
+                "identity_unavailable" => {
+                    solstone_core_callosum::test_support::unavailable_brain_startup_capture(false)
+                }
+                "allocation_unavailable" => {
+                    solstone_core_callosum::test_support::unavailable_brain_startup_capture(true)
+                }
+                _ => solstone_core_callosum::BrainStartupCapture::new(),
+            };
+            if mode == "marked_loss" {
+                capture.missing_identity();
+            }
+            if mode == "overflow" {
+                let (emitter, _receiver) =
+                    solstone_core_callosum::test_support::diagnostic_fixture_with_startup_capture(
+                        256,
+                        Arc::clone(&capture),
+                    );
+                for _ in 0..129 {
+                    assert!(emitter.emit("supervisor","brain_observation",serde_json::from_value(json!({
+                        "observation_id":"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee","caller":"generate",
+                        "phase":"runtime_establish","outcome":"refused"
+                    })).unwrap()));
+                }
+            }
+            let connection = if captured {
+                CallosumSocketConnection::new_with_brain_startup_capture(
+                    &socket,
+                    Map::new(),
+                    Arc::clone(&capture),
+                )
+            } else {
+                CallosumSocketConnection::new(&socket, Map::new())
+            };
+            let (done, complete) = oneshot::channel();
+            let done = Mutex::new(Some(done));
+            let (release, released) = std::sync::mpsc::channel();
+            let released = Mutex::new(released);
+            let executor: Executor = Arc::new(move |root, action, cancelled, observation| {
+                assert!(matches!(action, Action::Refresh(_)));
+                let Action::Refresh(options) = action else {
+                    unreachable!()
+                };
+                let outcome = solstone_core_brain_owner::refresh_observed(
+                    root.canonical_path(),
+                    &options,
+                    &Probe,
+                    &NoSpp,
+                    cancelled,
+                    observation,
+                );
+                assert!(matches!(
+                    outcome,
+                    OwnerRefreshOutcome::PersistedReady { .. }
+                ));
+                // Real decision and writer/lease assertions precede retained
+                // evidence assertions, including in the capture-removal control.
+                assert!(
+                    !solstone_core_brain::probe_file_lease_held(
+                        &solstone_core_brain::brain_refresh_lease_path(root.canonical_path())
+                    )
+                    .unwrap()
+                );
+                done.lock().unwrap().take().unwrap().send(()).unwrap();
+                released
+                    .lock()
+                    .unwrap()
+                    .recv_timeout(Duration::from_secs(10))
+                    .unwrap();
+                0
+            });
+            let (stop, stopping) = watch::channel(false);
+            let (ready, registered) = oneshot::channel();
+            let consumer = tokio::spawn(run_with_executor(
+                Arc::clone(&root),
+                stopping,
+                ready,
+                executor,
+                connection,
+            ));
+            tokio::time::timeout(Duration::from_secs(5), registered)
+                .await
+                .unwrap()
+                .unwrap();
+            tokio::time::timeout(Duration::from_secs(5), complete)
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(std::fs::read(&config_path).unwrap(), before);
+            // Register a test reader after appraisal returns, then release the
+            // actual worker and await its reflected stopped row before SSE opens.
+            let mut barrier = CallosumSocketConnection::new(&socket, Map::new());
+            barrier.start();
+            tokio::time::timeout(Duration::from_secs(5), async {
+                loop {
+                    match barrier.next_event().await {
+                        Some(CallosumReceiveEvent::Continuity {
+                            phase: CallosumConnectionPhase::Connected,
+                            ..
+                        }) => {
+                            barrier.emit(
+                                "supervisor",
+                                "request",
+                                Map::from_iter([
+                                    (
+                                        "cmd".into(),
+                                        json!(["solstone", "journal", "brain", "not-an-action"]),
+                                    ),
+                                    ("ref".into(), json!("barrier")),
+                                ]),
+                            );
+                        }
+                        Some(CallosumReceiveEvent::Envelope { envelope, .. })
+                            if envelope.extra.get("ref") == Some(&json!("barrier")) =>
+                        {
+                            break;
+                        }
+                        _ => {}
+                    }
+                }
+            })
+            .await
+            .unwrap();
+            release.send(()).unwrap();
+            let stopped = tokio::time::timeout(Duration::from_secs(5), async {
+                loop {
+                    if let Some(envelope) = barrier.next_message().await
+                        && envelope.event == "stopped"
+                        && envelope.extra.get("service") == Some(&json!("brain"))
+                    {
+                        break envelope;
+                    }
+                }
+            })
+            .await
+            .unwrap();
+            assert_eq!(stopped.extra["exit_code"], 0);
+            // The actual maintained router serializes named SSE events. No
+            // listener, device, credential or production request is involved.
+            let router = solstone_core_convey_shell::router(root.canonical_path().to_path_buf());
+            let router = if captured {
+                router.layer(axum::Extension(Arc::clone(&capture)))
+            } else {
+                router
+            };
+            let response = router
+                .oneshot(
+                    Request::builder()
+                        .uri("/sse/events")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), 200);
+            let mut body = response.into_body();
+            let mut wire = String::new();
+            let mut capture_complete = false;
+            let delivered = tokio::time::timeout(Duration::from_secs(5), async {
+                while let Some(frame) = body.frame().await {
+                    let frame = frame.unwrap();
+                    if let Some(data) = frame.data_ref() {
+                        wire.push_str(std::str::from_utf8(data).unwrap());
+                    }
+                    if captured && wire.contains("\"coverage\":\"complete\"") {
+                        capture_complete = true;
+                    }
+                    if available && capture_complete && wire.contains("\"state\":\"connected\"") {
+                        break;
+                    }
+                    if !available && wire.contains("\"state\":\"connected\"") {
+                        break;
+                    }
+                }
+            })
+            .await
+            .is_ok();
+            drop(body);
+            stop.send(true).unwrap();
+            tokio::time::timeout(Duration::from_secs(5), consumer)
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(std::fs::read(&config_path).unwrap(), before);
+            assert_eq!(Arc::strong_count(&root), 1);
+            assert!(
+                !solstone_core_brain::probe_file_lease_held(
+                    &solstone_core_brain::brain_refresh_lease_path(root.canonical_path())
+                )
+                .unwrap()
+            );
+            barrier.stop().await;
+            bus.stop().await;
+            println!(
+                "STARTUP_CAUSAL_EXECUTION={}",
+                json!({"mode":mode,"exit_code":stopped.extra["exit_code"],
+                "config_unchanged":true,"permit_released":true,"worker_joined":true,"root_released":true})
+            );
+            assert!(
+                delivered,
+                "retained prefix must be available across delayed subscription"
+            );
+            if available {
+                assert!(capture_complete);
+                assert!(wire.contains("\"event\":\"started\""));
+                assert!(wire.contains("\"phase\":\"permit\""));
+                assert!(wire.contains("\"outcome\":\"published\""));
+                assert!(wire.contains("\"phase\":\"terminal\""));
+                assert!(wire.contains("\"event\":\"stopped\""));
+            } else if captured {
+                assert!(!capture_complete);
+                let expected = if matches!(mode, "marked_loss" | "overflow") {
+                    "incomplete"
+                } else {
+                    "unavailable"
+                };
+                assert!(wire.contains(&format!("\"coverage\":\"{expected}\"")));
+            } else {
+                assert!(!wire.contains("brain_startup"));
+                assert!(!wire.contains("\"phase\":\"permit\""));
+            }
+            println!(
+                "STARTUP_CAUSAL_WIRE={}",
+                json!({"captured":captured,"available":available,"mode":mode,"wire":wire})
+            );
+            if captured {
+                let mut cursor = solstone_core_callosum::BrainStartupCursor::default();
+                let closed = capture.next(&mut cursor).await.unwrap();
+                assert!(closed.terminal);
+                assert!(closed.data.contains("\"coverage\":\"closed\""));
+            }
         }
     }
 }

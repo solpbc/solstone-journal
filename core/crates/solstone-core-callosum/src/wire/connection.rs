@@ -21,6 +21,7 @@ use tokio::sync::{Notify, mpsc, watch};
 use tokio::task::JoinHandle;
 use tokio::time::{sleep, timeout};
 
+use super::brain_startup::BrainStartupCapture;
 use crate::CallosumEnvelope;
 
 #[cfg(windows)]
@@ -252,14 +253,36 @@ pub struct CallosumDiagnosticEmitter {
     outbound: mpsc::Sender<CallosumEnvelope>,
     running: Arc<AtomicBool>,
     admission: Arc<AtomicBool>,
+    brain_startup: Option<Arc<BrainStartupCapture>>,
 }
 
 impl CallosumDiagnosticEmitter {
     /// Queued only. Missing capacity, contention and stopped owners omit the row.
     pub fn emit(&self, tract: &str, event: &str, fields: Map<String, Value>) -> bool {
         let Some(envelope) = outbound_envelope(None, tract, event, fields) else {
+            if let Some(capture) = &self.brain_startup {
+                capture.missing_emission(tract, event);
+            }
             return false;
         };
+        let pending = self
+            .brain_startup
+            .as_ref()
+            .and_then(|capture| capture.prepare(&envelope));
+        let sent = self.send(envelope);
+        if let Some(pending) = pending {
+            pending.finish(sent);
+        }
+        sent
+    }
+
+    pub fn missing_brain_identity(&self) {
+        if let Some(capture) = &self.brain_startup {
+            capture.missing_identity();
+        }
+    }
+
+    fn send(&self, envelope: CallosumEnvelope) -> bool {
         if !self.running.load(Ordering::Acquire)
             || self
                 .admission
@@ -318,6 +341,7 @@ pub struct CallosumSocketConnection {
     malformed_frame_drops: Arc<AtomicU64>,
     outbound_saturation_drops: Arc<AtomicU64>,
     diagnostic_admission: Arc<AtomicBool>,
+    brain_startup: Option<Arc<BrainStartupCapture>>,
     delivered_generation: u64,
     delivered_epoch: u64,
     initial_counters: ConnectionCounters,
@@ -335,6 +359,17 @@ impl CallosumSocketConnection {
             CLIENT_INBOUND_CAPACITY,
             Box::<TokioRetrySource>::default(),
         )
+    }
+
+    /// Attach the closed startup prefix at construction, before any sink exists.
+    pub fn new_with_brain_startup_capture(
+        socket_path: impl AsRef<Path>,
+        defaults: Map<String, Value>,
+        capture: Arc<BrainStartupCapture>,
+    ) -> Self {
+        let mut connection = Self::new(socket_path, defaults);
+        connection.brain_startup = Some(capture);
+        connection
     }
 
     /// Construct a connection with an explicit inbound data capacity.
@@ -398,6 +433,7 @@ impl CallosumSocketConnection {
             malformed_frame_drops: Arc::new(AtomicU64::new(0)),
             outbound_saturation_drops: Arc::new(AtomicU64::new(0)),
             diagnostic_admission: Arc::new(AtomicBool::new(false)),
+            brain_startup: None,
             delivered_generation: 0,
             delivered_epoch: 0,
             initial_counters: ConnectionCounters::initial(),
@@ -464,19 +500,30 @@ impl CallosumSocketConnection {
             outbound: self.outbound.clone(),
             running: Arc::clone(&self.running),
             admission: Arc::clone(&self.diagnostic_admission),
+            brain_startup: self.brain_startup.clone(),
         }
     }
 
     /// Queue an outbound message with Python-compatible field precedence.
     pub fn emit(&self, tract: &str, event: &str, caller_fields: Map<String, Value>) -> bool {
         if !self.running.load(Ordering::Acquire) {
+            if let Some(capture) = &self.brain_startup {
+                capture.missing_emission(tract, event);
+            }
             return false;
         }
         let Some(envelope) = outbound_envelope(Some(&self.defaults), tract, event, caller_fields)
         else {
+            if let Some(capture) = &self.brain_startup {
+                capture.missing_emission(tract, event);
+            }
             return false;
         };
-        match self.outbound.try_send(envelope) {
+        let pending = self
+            .brain_startup
+            .as_ref()
+            .and_then(|capture| capture.prepare(&envelope));
+        let sent = match self.outbound.try_send(envelope) {
             Ok(()) => true,
             Err(mpsc::error::TrySendError::Full(_)) => {
                 let _ = self
@@ -485,7 +532,11 @@ impl CallosumSocketConnection {
                 false
             }
             Err(mpsc::error::TrySendError::Closed(_)) => false,
+        };
+        if let Some(pending) = pending {
+            pending.finish(sent);
         }
+        sent
     }
 
     /// Receive the next reflected Callosum message, skipping continuity markers.
@@ -589,6 +640,9 @@ impl CallosumSocketConnection {
     }
 
     pub async fn stop(&mut self) {
+        if let Some(capture) = &self.brain_startup {
+            capture.close();
+        }
         if !self.running.swap(false, Ordering::AcqRel) {
             return;
         }
@@ -619,6 +673,9 @@ impl CallosumSocketConnection {
 
 impl Drop for CallosumSocketConnection {
     fn drop(&mut self) {
+        if let Some(capture) = &self.brain_startup {
+            capture.close();
+        }
         self.running.store(false, Ordering::Release);
         let _ = self.shutdown.send(true);
     }
@@ -634,9 +691,20 @@ pub(super) fn diagnostic_fixture(
             outbound,
             running: Arc::new(AtomicBool::new(true)),
             admission: Arc::new(AtomicBool::new(false)),
+            brain_startup: None,
         },
         receiver,
     )
+}
+
+#[cfg(any(test, feature = "test-hooks"))]
+pub(super) fn diagnostic_fixture_with_startup_capture(
+    capacity: usize,
+    capture: Arc<BrainStartupCapture>,
+) -> (CallosumDiagnosticEmitter, mpsc::Receiver<CallosumEnvelope>) {
+    let (mut emitter, receiver) = diagnostic_fixture(capacity);
+    emitter.brain_startup = Some(capture);
+    (emitter, receiver)
 }
 
 #[cfg(test)]
@@ -646,64 +714,69 @@ mod diagnostic_tests {
 
     #[test]
     fn diagnostic_headroom_preserves_original_batches_defaults_and_drop_accounting() {
-        let mut connection = CallosumSocketConnection::new(
-            "unused",
-            Map::from_iter([
-                (
-                    "private_default".into(),
-                    json!("must not reach diagnostics"),
-                ),
-                ("service".into(), json!("default")),
-            ]),
-        );
-        let emitter = connection.diagnostic_emitter();
-        assert!(!emitter.emit("supervisor", "brain_observation", Map::new()));
-        connection.running.store(true, Ordering::Release);
-        let mut receiver = connection.outbound_rx.take().unwrap();
-        let capacity = connection.outbound.max_capacity();
-        for _ in 0..capacity - 17 {
-            assert!(connection.emit("supervisor", "status", Map::new()));
-        }
-        assert!(emitter.emit("supervisor", "brain_observation", Map::new()));
-        assert_eq!(connection.outbound.capacity(), 16);
-        assert!(!emitter.emit("supervisor", "brain_observation", Map::new()));
-        assert_eq!(connection.outbound.capacity(), 16);
-        for _ in 0..16 {
-            assert!(connection.emit(
-                "supervisor",
-                "request",
-                Map::from_iter([("service".into(), json!("explicit"))])
-            ));
-        }
-        assert!(!emitter.emit("supervisor", "brain_observation", Map::new()));
-        assert_eq!(
-            connection.outbound_saturation_drops.load(Ordering::Acquire),
-            0
-        );
-        assert!(!connection.emit("supervisor", "request", Map::new()));
-        assert_eq!(
-            connection.outbound_saturation_drops.load(Ordering::Acquire),
-            1
-        );
-        let mut seen_diagnostic = false;
-        let mut requests = 0;
-        while let Ok(row) = receiver.try_recv() {
-            if row.event == "brain_observation" {
-                seen_diagnostic = true;
-                assert!(row.extra.is_empty());
-            } else if row.event == "request" {
-                requests += 1;
-                assert_eq!(row.extra["service"], "explicit");
+        for capture_enabled in [false, true] {
+            let mut connection = CallosumSocketConnection::new(
+                "unused",
+                Map::from_iter([
+                    (
+                        "private_default".into(),
+                        json!("must not reach diagnostics"),
+                    ),
+                    ("service".into(), json!("default")),
+                ]),
+            );
+            if capture_enabled {
+                connection.brain_startup = Some(BrainStartupCapture::new());
             }
+            let emitter = connection.diagnostic_emitter();
+            assert!(!emitter.emit("supervisor", "brain_observation", Map::new()));
+            connection.running.store(true, Ordering::Release);
+            let mut receiver = connection.outbound_rx.take().unwrap();
+            let capacity = connection.outbound.max_capacity();
+            for _ in 0..capacity - 17 {
+                assert!(connection.emit("supervisor", "status", Map::new()));
+            }
+            assert!(emitter.emit("supervisor", "brain_observation", Map::new()));
+            assert_eq!(connection.outbound.capacity(), 16);
+            assert!(!emitter.emit("supervisor", "brain_observation", Map::new()));
+            assert_eq!(connection.outbound.capacity(), 16);
+            for _ in 0..16 {
+                assert!(connection.emit(
+                    "supervisor",
+                    "request",
+                    Map::from_iter([("service".into(), json!("explicit"))])
+                ));
+            }
+            assert!(!emitter.emit("supervisor", "brain_observation", Map::new()));
+            assert_eq!(
+                connection.outbound_saturation_drops.load(Ordering::Acquire),
+                0
+            );
+            assert!(!connection.emit("supervisor", "request", Map::new()));
+            assert_eq!(
+                connection.outbound_saturation_drops.load(Ordering::Acquire),
+                1
+            );
+            let mut seen_diagnostic = false;
+            let mut requests = 0;
+            while let Ok(row) = receiver.try_recv() {
+                if row.event == "brain_observation" {
+                    seen_diagnostic = true;
+                    assert!(row.extra.is_empty());
+                } else if row.event == "request" {
+                    requests += 1;
+                    assert_eq!(row.extra["service"], "explicit");
+                }
+            }
+            assert!(seen_diagnostic);
+            assert_eq!(requests, 16);
+            drop(receiver);
+            assert!(!emitter.emit("supervisor", "brain_observation", Map::new()));
+            assert!(!emitter.admission.load(Ordering::Acquire));
+            drop(connection);
+            assert!(!emitter.running.load(Ordering::Acquire));
+            assert!(!emitter.emit("supervisor", "brain_observation", Map::new()));
         }
-        assert!(seen_diagnostic);
-        assert_eq!(requests, 16);
-        drop(receiver);
-        assert!(!emitter.emit("supervisor", "brain_observation", Map::new()));
-        assert!(!emitter.admission.load(Ordering::Acquire));
-        drop(connection);
-        assert!(!emitter.running.load(Ordering::Acquire));
-        assert!(!emitter.emit("supervisor", "brain_observation", Map::new()));
     }
 
     #[cfg(feature = "full-tests")]

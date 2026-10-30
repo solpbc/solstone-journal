@@ -146,3 +146,7 @@ mod workspace_reachability;
 #[cfg(test)]
 #[path = "contracts/owner_origin_host.rs"]
 mod owner_origin_host;
+
+#[cfg(test)]
+#[path = "contracts/brain_observation_vocabulary.rs"]
+mod brain_observation_vocabulary;

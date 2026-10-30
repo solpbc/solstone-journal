@@ -2692,6 +2692,7 @@ dependencies = [
  "solstone-core-backup",
  "solstone-core-backup-runtime",
  "solstone-core-backup-web",
+ "solstone-core-brain",
  "solstone-core-brain-owner",
  "solstone-core-callosum",
  "solstone-core-convey-shell",

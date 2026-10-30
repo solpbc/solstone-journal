@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+mod brain_startup;
 mod connection;
 mod frame;
 mod framing;
@@ -9,6 +10,7 @@ mod local_inference_client;
 pub mod one_shot_fixture;
 mod server;
 
+pub use brain_startup::{BrainStartupCapture, BrainStartupCursor, BrainStartupEvent};
 pub use connection::{
     CallosumConnectionPhase, CallosumDiagnosticEmitter, CallosumGapReason, CallosumReceiveEvent,
     CallosumRetrySource, CallosumSocketConnection, CallosumStoppedReason, TokioRetrySource,

@@ -375,6 +375,7 @@ pub struct EmbeddedConveyStop {
 /// receives signals only; the constructor retains the actual serving owner.
 #[cfg(feature = "host")]
 pub struct EmbeddedStartup {
+    pub brain_startup: Option<Arc<solstone_core_callosum::BrainStartupCapture>>,
     pub backup_offload_dispatch: Option<solstone_core_backup_web::OffloadDispatchProbe>,
     pub backup_verification: Option<solstone_core_backup_web::VerificationSubmitter>,
     pub settings_sync: Option<solstone_core_settings_web::SourceSyncDelegate>,
@@ -715,6 +716,15 @@ async fn bind_embedded_router(
             admission.clone(),
             embedded_admission_gate,
         ));
+    // Only the private owner rail receives the retained prefix. Paired device
+    // routes above retain their existing ordinary event behavior and admission.
+    let owner_router = match startup
+        .as_ref()
+        .and_then(|startup| startup.brain_startup.clone())
+    {
+        Some(capture) => owner_router.layer(Extension(capture)),
+        None => owner_router,
+    };
     if let Some(startup) = &startup {
         (startup.stop_ready)(
             EmbeddedConveyStop {
@@ -1371,7 +1381,14 @@ fn router_with_roots(
             "/sse/events",
             get({
                 let journal_root = journal_root.clone();
-                move || sse::events(journal_root.clone())
+                move |capture: Option<
+                    Extension<Arc<solstone_core_callosum::BrainStartupCapture>>,
+                >| {
+                    sse::events(
+                        journal_root.clone(),
+                        capture.map(|Extension(capture)| capture),
+                    )
+                }
             }),
         );
     for prefix in network::NETWORK_ROUTE_PREFIXES {
