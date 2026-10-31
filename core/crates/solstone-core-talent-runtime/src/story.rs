@@ -585,6 +585,21 @@ pub(crate) fn apply_story_cancellable(
     {
         story["input_projection"] = projection.clone();
     }
+    // The story is the one step that reads every segment of the activity, and
+    // its opening sentence is already the line the morning briefing shows. So
+    // it becomes the activity's line too, where each segment's own line could
+    // only say what that segment held: an activity's last segment can miss a
+    // show an earlier one recognized, or belong to what came next. A line the
+    // owner wrote or edited stays theirs.
+    if record.get("source").and_then(Value::as_str) != Some("user")
+        && let Some(line) = value["body"].as_str().and_then(activity_line)
+    {
+        for field in ["title", "description"] {
+            if !solstone_core_facets::activity_field_held(&record, field) {
+                patch.insert(field.into(), Value::String(line.clone()));
+            }
+        }
+    }
     patch.insert("story".into(), story);
     patch.insert("relations".into(), Value::Array(relations));
     solstone_core_facets::update_activity_record_checked(
@@ -601,6 +616,60 @@ pub(crate) fn apply_story_cancellable(
     .map_err(|error| error.to_string())?
     .ok_or("activity no longer exists")?;
     Ok(())
+}
+
+/// Words a period follows inside a sentence: titles, initials' companions and
+/// the like. "Dr. Achebe explained…" is one sentence, not "Dr."
+const ABBREVIATIONS: [&str; 12] = [
+    "Dr", "Mr", "Mrs", "Ms", "Prof", "St", "Jr", "Sr", "vs", "etc", "e.g", "i.e",
+];
+
+/// Longer than this, an opening sentence is a run-on, not a line: the activity
+/// keeps the line it had.
+const ACTIVITY_LINE_MAX_CHARS: usize = 320;
+
+/// The activity's line from its story: the first sentence, in the shape every
+/// segment's line has ("Met with Mina…", not "You met with Mina…"). A sentence
+/// whose subject is more than the owner ("You and Mina…") keeps it.
+pub(crate) fn activity_line(body: &str) -> Option<String> {
+    let first = first_sentence(body.trim())?;
+    let line = match first.strip_prefix("You ") {
+        Some(rest) if !rest.starts_with("and ") => {
+            solstone_core_system::activity_state::normalize_activity_description(first)
+        }
+        _ => first.to_owned(),
+    };
+    (!line.is_empty() && line.chars().count() <= ACTIVITY_LINE_MAX_CHARS).then_some(line)
+}
+
+fn first_sentence(text: &str) -> Option<&str> {
+    if text.is_empty() {
+        return None;
+    }
+    for (index, mark) in text.char_indices() {
+        if !matches!(mark, '.' | '!' | '?') {
+            continue;
+        }
+        let end = index + mark.len_utf8();
+        let after = &text[end..];
+        let next = after.trim_start().chars().next();
+        if !(after.is_empty()
+            || (after.starts_with(char::is_whitespace)
+                && next.is_some_and(|next| next.is_uppercase() || next == '"')))
+        {
+            continue;
+        }
+        let word = text[..index]
+            .rsplit(char::is_whitespace)
+            .next()
+            .unwrap_or("");
+        let initial = word.chars().count() == 1 && word.chars().all(char::is_uppercase);
+        if mark == '.' && (ABBREVIATIONS.contains(&word) || initial) {
+            continue;
+        }
+        return Some(text[..end].trim());
+    }
+    Some(text)
 }
 
 /// What the owner said in the activity's audio, by recognized voice: `None`
@@ -773,6 +842,95 @@ mod tests {
         .unwrap_err();
         assert_eq!(error, "activity output is held by owner");
         assert_eq!(read()["story"], held_story);
+    }
+
+    #[test]
+    fn the_story_opening_becomes_the_activity_line_unless_the_owner_wrote_it() {
+        assert_eq!(
+            activity_line("You listened to a podcast episode hosted by Priya. Then Tom spoke.")
+                .as_deref(),
+            Some("Listened to a podcast episode hosted by Priya.")
+        );
+        assert_eq!(
+            activity_line("You heard Dr. Achebe and J. Ruiz explain aquifers. Later, more.")
+                .as_deref(),
+            Some("Heard Dr. Achebe and J. Ruiz explain aquifers.")
+        );
+        assert_eq!(
+            activity_line("You and Joel planned a camping trip. Marta drove.").as_deref(),
+            Some("You and Joel planned a camping trip.")
+        );
+        assert_eq!(
+            activity_line("Someone described a trip").as_deref(),
+            Some("Someone described a trip")
+        );
+        assert_eq!(activity_line("  "), None);
+        assert_eq!(
+            activity_line(&format!("You talked about {}", "the plan and ".repeat(40))),
+            None
+        );
+
+        let root = tempfile::tempdir().unwrap();
+        solstone_core_facets::create_facet(root.path(), "work", "Work", "", "", "", None).unwrap();
+        for row in [
+            json!({"id":"show","activity":"social","segments":["190000_300","190500_300"],
+                "description":"Discussed software architecture with a colleague."}),
+            json!({"id":"edited","activity":"meeting","segments":["200000_300"],
+                "description":"Edited Python code."}),
+            json!({"id":"mine","activity":"meeting","source":"user","title":"Launch sync",
+                "description":"Owner wrote this.","segments":["210000_300"]}),
+        ] {
+            let _ = solstone_core_facets::append_activity_record(
+                root.path(),
+                "work",
+                "20260101",
+                row.as_object().unwrap().clone(),
+            )
+            .unwrap();
+        }
+        solstone_core_facets::update_activity_record(
+            root.path(),
+            "work",
+            "20260101",
+            "edited",
+            &Map::from_iter([("title".into(), json!("Call with Priya"))]),
+            "owner:update",
+            "",
+            "2026-01-01T10:00:00Z",
+        )
+        .unwrap();
+        let destination =
+            solstone_core_facets::observe_facet_write_identity(root.path(), "work").unwrap();
+        let story = json!({"body":"You listened to a podcast episode about architecture. The hosts argued for monoliths.",
+            "topics":["architecture"],"confidence":0.7,"relations":[]});
+        for id in ["show", "edited", "mine"] {
+            apply_story(
+                root.path(),
+                "conversation",
+                "work",
+                &destination,
+                "20260101",
+                id,
+                &story,
+            )
+            .unwrap();
+        }
+        let read = |id: &str| {
+            solstone_core_facets::get_activity_record(root.path(), "work", "20260101", id)
+                .unwrap()
+                .unwrap()
+        };
+        let line = "Listened to a podcast episode about architecture.";
+        assert_eq!(read("show")["title"], line);
+        assert_eq!(read("show")["description"], line);
+        // The owner's title holds, the rest of the story still lands.
+        assert_eq!(read("edited")["title"], "Call with Priya");
+        assert_eq!(read("edited")["description"], line);
+        assert_eq!(read("edited")["story"]["body"], story["body"]);
+        // An activity the owner made keeps its own words.
+        assert_eq!(read("mine")["title"], "Launch sync");
+        assert_eq!(read("mine")["description"], "Owner wrote this.");
+        assert_eq!(read("mine")["story"]["body"], story["body"]);
     }
 
     #[test]

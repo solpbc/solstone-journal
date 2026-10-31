@@ -161,8 +161,8 @@ Activity record IDs follow the format `{activity_type}_{segment_key}` where `seg
 - `segments` (array of strings) – Ordered list of segment keys where this activity was active
 - `stream` (string) – The stream whose segments the activity covers, on records written by segment thinking for a named stream. Another stream can hold a segment with the same key, so whatever reads the activity's segments reads them from this stream. Absent on older records and for segments filed directly under the day.
 - `level_avg` (float) – Engagement level of the last segment that listed this facet above low. Newly tracked automatic records contain 0.5 (medium) or 1.0 (high); low facets are excluded before tracking. Older records may differ. The stored key is historical: this is not an average. Records you create may omit it.
-- `title` (string) – Human title for the activity span; falls back to `description` unless set explicitly (for example by a CLI edit)
-- `description` (string) – Description of the activity span, carried from the per-segment activity state when the record is written
+- `title` (string) – Human title for the activity span; falls back to `description` unless set explicitly (for example by a CLI edit). When the activity's story is written, its opening sentence becomes the title, unless the owner wrote the activity or edited the title
+- `description` (string) – Description of the activity span, carried from the per-segment activity state when the record is written, which is the line of its latest segment. When the activity's story is written, its opening sentence replaces it, unless the owner wrote the activity or edited the description
 - `details` (string) – Optional longer-form narrative detail for the span
 - `active_entities` (array of strings) – Merged and deduplicated entity names from all segments
 - `hidden` (boolean) – When `true`, the record is muted from default list views
