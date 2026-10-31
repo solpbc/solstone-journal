@@ -6,9 +6,10 @@ use std::path::Path;
 
 use serde_json::{Map, Value, json};
 use solstone_core_facets::{
-    ActivityRecord, PlacedRecord, ScheduledEvent, activity_value_truthy, calendar_beside,
-    calendar_on_day, list_activity_day_stems, list_declared_facet_names, load_activity_records,
-    observe_facet_declaration, place_activity_records, read_activity_definitions,
+    ActivityRecord, PlacedRecord, ScheduledEvent, activity_field_held, activity_value_truthy,
+    calendar_beside, calendar_on_day, edit_removable, edit_removed, list_activity_day_stems,
+    list_declared_facet_names, load_activity_records, observe_facet_declaration,
+    place_activity_records, read_activity_definitions,
 };
 
 pub fn compute_day_counts(root: &Path, query: Option<&str>) -> BTreeMap<String, usize> {
@@ -163,6 +164,8 @@ pub fn build_view(root: &Path, day: &str, query: Option<&str>) -> Result<Value, 
 
     let calendar = calendar_on_day(root, day);
     let location = solstone_core_location::DayBeside::read(root, day);
+    // A damaged ask store reads as nothing updating; the view still shows.
+    let asks = solstone_core_system::owner_ask::read(root).unwrap_or_default();
     let mut items = Vec::new();
     for ((facet, row), course) in scoped_rows.iter().zip(courses) {
         let is_hidden = row.get("hidden").is_some_and(activity_value_truthy);
@@ -170,13 +173,20 @@ pub fn build_view(root: &Path, day: &str, query: Option<&str>) -> Result<Value, 
             continue;
         }
 
-        let item = project_item(
+        let mut item = project_item(
             facet,
             row,
             &course,
             &definitions_by_facet,
             (day, &calendar, &location),
         );
+        if let Value::Object(item) = &mut item {
+            let id = string_field(row, "id");
+            item.insert(
+                "updating".to_owned(),
+                Value::Bool(updating(root, day, facet, &id, asks.values())),
+            );
+        }
         items.push(item);
     }
 
@@ -185,6 +195,32 @@ pub fn build_view(root: &Path, day: &str, query: Option<&str>) -> Result<Value, 
         "facets": facet_entries,
         "hidden_count": hidden_count,
     }))
+}
+
+/// Whether a pending owner ask names the activity, still to hand to its work
+/// or handed already, and its talents have not completed since that ask.
+fn updating<'a>(
+    root: &Path,
+    day: &str,
+    facet: &str,
+    id: &str,
+    asks: impl Iterator<Item = &'a solstone_core_system::owner_ask::OwnerAsk>,
+) -> bool {
+    let named = solstone_core_system::owner_ask::AskedActivity {
+        facet: facet.to_owned(),
+        activity: id.to_owned(),
+    };
+    asks.filter(|ask| ask.day == day)
+        .filter(|ask| ask.to_seed.contains(&named) || ask.seeded.contains(&named))
+        .any(|ask| {
+            !solstone_core_system::activity_provenance::completed_since(
+                root,
+                day,
+                facet,
+                id,
+                ask.created_at_ms,
+            )
+        })
 }
 
 fn project_item(
@@ -209,6 +245,16 @@ fn project_item(
     item.insert(
         "details".to_owned(),
         Value::String(string_field(record, "details")),
+    );
+    let playback = record.get("playback") == Some(&Value::Bool(true));
+    item.insert("playback".to_owned(), Value::Bool(playback));
+    item.insert(
+        "corrected".to_owned(),
+        Value::Bool(
+            !string_field(record, "details").is_empty()
+                || playback
+                || activity_field_held(record, "description"),
+        ),
     );
 
     let source = record
@@ -363,14 +409,20 @@ fn project_item(
         .and_then(Value::as_array)
         .is_some_and(|edits| {
             edits.iter().filter_map(Value::as_object).any(|edit| {
+                if edit_removed(edit) {
+                    return false;
+                }
                 let actor = edit.get("actor").and_then(Value::as_str).unwrap_or("");
                 let Some(fields) = edit.get("fields").and_then(Value::as_array) else {
                     return false;
                 };
                 actor.starts_with("owner:")
-                    && fields
-                        .iter()
-                        .any(|f| matches!(f.as_str(), Some("title" | "description" | "details")))
+                    && fields.iter().any(|f| {
+                        matches!(
+                            f.as_str(),
+                            Some("title" | "description" | "details" | "playback")
+                        )
+                    })
             })
         });
     item.insert("edited_by_owner".to_owned(), Value::Bool(edited_by_owner));
@@ -430,7 +482,8 @@ fn project_item(
         .map(|arr| {
             arr.iter()
                 .filter_map(Value::as_object)
-                .map(|obj| {
+                .enumerate()
+                .map(|(position, obj)| {
                     let timestamp = obj.get("timestamp").cloned().unwrap_or(Value::Null);
                     let actor_val = obj.get("actor").cloned().unwrap_or(Value::Null);
                     let actor_str = obj.get("actor").and_then(Value::as_str).unwrap_or("");
@@ -459,6 +512,10 @@ fn project_item(
                     edit_out.insert("fields".to_owned(), fields_val.clone());
                     edit_out.insert("note".to_owned(), note_val);
                     edit_out.insert("kind".to_owned(), Value::String(kind.to_owned()));
+                    // The position the remove route addresses this edit by.
+                    edit_out.insert("position".to_owned(), Value::from(position));
+                    edit_out.insert("removable".to_owned(), Value::Bool(edit_removable(obj)));
+                    edit_out.insert("removed".to_owned(), Value::Bool(edit_removed(obj)));
                     Value::Object(edit_out)
                 })
                 .collect::<Vec<_>>()

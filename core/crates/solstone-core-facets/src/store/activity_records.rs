@@ -81,6 +81,35 @@ pub enum ActivityRecordStoreError {
     PublicationRefused {
         detail: String,
     },
+    EditRefused(EditRefusal),
+}
+
+/// Why an edit could not be removed. Nothing is written when one is refused.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EditRefusal {
+    /// No edit is at that position.
+    OutOfRange,
+    /// The edit at that position has another timestamp or actor.
+    Mismatch,
+    /// Hiding and unhiding have their own inverse.
+    NotRemovable,
+    /// The edit was saved before edits recorded their values.
+    NotRecorded,
+    AlreadyRemoved,
+}
+
+impl EditRefusal {
+    /// The stable reason code for this refusal.
+    #[must_use]
+    pub fn reason_code(self) -> &'static str {
+        match self {
+            Self::OutOfRange => "activity_edit_not_found",
+            Self::Mismatch => "activity_edit_mismatch",
+            Self::NotRemovable => "activity_edit_not_removable",
+            Self::NotRecorded => "activity_edit_not_recorded",
+            Self::AlreadyRemoved => "activity_edit_already_removed",
+        }
+    }
 }
 
 impl std::fmt::Display for ActivityRecordStoreError {
@@ -110,6 +139,17 @@ impl std::fmt::Display for ActivityRecordStoreError {
                 write!(formatter, "destination facet is muted: {facet}")
             }
             Self::PublicationRefused { detail } => write!(formatter, "{detail}"),
+            Self::EditRefused(refusal) => write!(
+                formatter,
+                "{}",
+                match refusal {
+                    EditRefusal::OutOfRange => "no edit is at that position",
+                    EditRefusal::Mismatch => "the edit at that position is a different edit",
+                    EditRefusal::NotRemovable => "hiding and unhiding are undone, not removed",
+                    EditRefusal::NotRecorded => "that edit did not record its values",
+                    EditRefusal::AlreadyRemoved => "that edit is already removed",
+                }
+            ),
         }
     }
 }
@@ -722,6 +762,12 @@ fn update_activity_record_with_check(
                 let Some(patch) = derive.take().and_then(|derive| derive(&row)) else {
                     return row;
                 };
+                let before = records_values(actor).then(|| {
+                    patch
+                        .keys()
+                        .filter_map(|key| Some((key.clone(), row.get(key)?.clone())))
+                        .collect::<Map<_, _>>()
+                });
                 let mut merged = row;
                 for (key, value) in &patch {
                     merged.insert(key.clone(), value.clone());
@@ -730,13 +776,22 @@ fn update_activity_record_with_check(
                     "destination_id".to_owned(),
                     Value::String(current_id.clone()),
                 );
-                let edited = append_edit(
+                let mut edited = append_edit(
                     normalize(merged),
                     actor,
                     patch.keys().cloned().collect(),
                     note,
                     timestamp,
                 );
+                if let Some(before) = before
+                    && let Some(Value::Object(edit)) = edited
+                        .get_mut("edits")
+                        .and_then(Value::as_array_mut)
+                        .and_then(|edits| edits.last_mut())
+                {
+                    edit.insert(EDIT_SET.to_owned(), Value::Object(patch.clone()));
+                    edit.insert(EDIT_BEFORE.to_owned(), Value::Object(before));
+                }
                 result = Some(edited.clone());
                 edited
             })
@@ -932,24 +987,192 @@ fn hidden(record: &ActivityRecord) -> bool {
     record.get("hidden").is_some_and(activity_value_truthy)
 }
 
+/// Whether `field` is the owner's: some edit that has not been removed, made
+/// by the owner or from the command line, names it. While it is held no
+/// talent writes it.
 pub fn activity_field_held(record: &ActivityRecord, field: &str) -> bool {
-    let Some(edits) = record.get("edits").and_then(Value::as_array) else {
-        return false;
+    record
+        .get("edits")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_object)
+        .any(|edit| owner_edit(edit) && !edit_removed(edit) && edit_names(edit, field))
+}
+
+/// What a recorded edit set, per field.
+pub const EDIT_SET: &str = "set";
+/// What each field an edit set held just before. A field that was absent is
+/// absent here too.
+pub const EDIT_BEFORE: &str = "before";
+/// When a removed edit was removed.
+pub const EDIT_REMOVED: &str = "removed";
+
+fn records_values(actor: &str) -> bool {
+    matches!(actor, "owner:update" | "cli:update")
+}
+
+fn owner_edit(edit: &Map<String, Value>) -> bool {
+    let actor = edit
+        .get("actor")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    actor.starts_with("owner:") || actor.starts_with("cli:")
+}
+
+/// Whether an edit has been removed.
+pub fn edit_removed(edit: &Map<String, Value>) -> bool {
+    edit.contains_key(EDIT_REMOVED)
+}
+
+fn edit_names(edit: &Map<String, Value>, field: &str) -> bool {
+    edit.get("fields")
+        .and_then(Value::as_array)
+        .is_some_and(|fields| fields.iter().any(|name| name.as_str() == Some(field)))
+}
+
+fn edit_recorded(edit: &Map<String, Value>) -> bool {
+    edit.get(EDIT_SET).is_some_and(Value::is_object)
+        && edit.get(EDIT_BEFORE).is_some_and(Value::is_object)
+}
+
+/// Whether an edit can be removed: an update that recorded its values and
+/// has not been removed yet.
+pub fn edit_removable(edit: &Map<String, Value>) -> bool {
+    edit.get("actor")
+        .and_then(Value::as_str)
+        .is_some_and(records_values)
+        && edit_recorded(edit)
+        && !edit_removed(edit)
+}
+
+/// The value `field` takes once the edits that are removed no longer count:
+/// the newest remaining owner edit's value, else what the field held before
+/// the oldest owner edit since the journal last wrote it. `None` is absent.
+/// `Err` leaves the field as it is, for a history this cannot read.
+fn field_after_removal(edits: &[Map<String, Value>], field: &str) -> Result<Option<Value>, ()> {
+    let naming = edits
+        .iter()
+        .enumerate()
+        .filter(|(_, edit)| edit_names(edit, field))
+        .collect::<Vec<_>>();
+    let window = naming
+        .iter()
+        .rposition(|(_, edit)| !owner_edit(edit))
+        .map_or(&naming[..], |last| &naming[last + 1..]);
+    let recorded = |edit: &Map<String, Value>, key: &str| {
+        edit.get(key)
+            .and_then(Value::as_object)
+            .map(|values| values.get(field).cloned())
     };
-    for edit in edits.iter().rev() {
-        let Some(obj) = edit.as_object() else {
-            continue;
-        };
-        let Some(fields) = obj.get("fields").and_then(Value::as_array) else {
-            continue;
-        };
-        let lists_field = fields.iter().any(|f| f.as_str() == Some(field));
-        if lists_field {
-            let actor = obj.get("actor").and_then(Value::as_str).unwrap_or_default();
-            return actor.starts_with("owner:") || actor.starts_with("cli:");
+    let after = match window.iter().rposition(|(_, edit)| !edit_removed(edit)) {
+        Some(newest) => {
+            if let Some(set) = recorded(window[newest].1, EDIT_SET) {
+                return set.map(Some).ok_or(());
+            }
+            newest + 1
         }
-    }
-    false
+        None => 0,
+    };
+    window[after..]
+        .iter()
+        .find_map(|(_, edit)| edit_recorded(edit).then(|| recorded(edit, EDIT_BEFORE)))
+        .flatten()
+        .ok_or(())
+}
+
+/// Remove the edit at `position` in the record's edit list, once its
+/// timestamp and actor match, and give every field it set the value the
+/// remaining edits leave it. The edit stays in the history, marked removed.
+#[allow(clippy::too_many_arguments)] // These fields name the one edit removed.
+pub fn remove_activity_edit(
+    root: &Path,
+    facet: &str,
+    day: &str,
+    record_id: &str,
+    position: usize,
+    edit_timestamp: &str,
+    edit_actor: &str,
+    removed_at: &str,
+) -> Result<Option<ActivityRecord>, ActivityRecordStoreError> {
+    let current_id = admit_activity_destination(root, facet)?;
+    locked_modify_day_records(root, facet, day, false, &current_id, |rows| {
+        let rows = adopt_moved_rows(root, &current_id, rows);
+        let mut result = None;
+        let mut updated = Vec::with_capacity(rows.len());
+        for row in rows {
+            if id(&row) != record_id || result.is_some() {
+                updated.push(row);
+                continue;
+            }
+            if let Some(stored_id) = row.get("destination_id").and_then(Value::as_str) {
+                super::declaration::require_observed_facet_write_identity(root, facet, stored_id)?;
+            }
+            let mut record = normalize(row);
+            let mut edits = record
+                .get("edits")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_object)
+                .cloned()
+                .collect::<Vec<_>>();
+            let refuse = |refusal| Err(ActivityRecordStoreError::EditRefused(refusal));
+            let Some(edit) = edits.get_mut(position) else {
+                return refuse(EditRefusal::OutOfRange);
+            };
+            if edit.get("timestamp").and_then(Value::as_str) != Some(edit_timestamp)
+                || edit.get("actor").and_then(Value::as_str) != Some(edit_actor)
+            {
+                return refuse(EditRefusal::Mismatch);
+            }
+            if !edit
+                .get("actor")
+                .and_then(Value::as_str)
+                .is_some_and(records_values)
+            {
+                return refuse(EditRefusal::NotRemovable);
+            }
+            if edit_removed(edit) {
+                return refuse(EditRefusal::AlreadyRemoved);
+            }
+            if !edit_recorded(edit) {
+                return refuse(EditRefusal::NotRecorded);
+            }
+            edit.insert(
+                EDIT_REMOVED.to_owned(),
+                Value::String(removed_at.to_owned()),
+            );
+            let fields = edit
+                .get(EDIT_SET)
+                .and_then(Value::as_object)
+                .map(|set| set.keys().cloned().collect::<Vec<_>>())
+                .unwrap_or_default();
+            for field in fields {
+                match field_after_removal(&edits, &field) {
+                    Ok(Some(value)) => {
+                        record.insert(field, value);
+                    }
+                    Ok(None) => {
+                        record.remove(&field);
+                    }
+                    Err(()) => {}
+                }
+            }
+            record.insert(
+                "edits".to_owned(),
+                Value::Array(edits.into_iter().map(Value::Object).collect()),
+            );
+            record.insert(
+                "destination_id".to_owned(),
+                Value::String(current_id.clone()),
+            );
+            let record = normalize(record);
+            result = Some(record.clone());
+            updated.push(record);
+        }
+        Ok((updated, result))
+    })
 }
 
 /// Python's `bool(value)` for activity-record compatibility.
@@ -1119,6 +1342,224 @@ mod tests {
             assert_eq!(row[field], "owner value");
             assert_eq!(row["unrelated"], "unheld output");
         }
+    }
+
+    const DAY: &str = "20261016";
+    const ROW: &str = "writing_090000_300";
+
+    fn corrected_root(original: Value) -> tempfile::TempDir {
+        let root = tempfile::tempdir().unwrap();
+        crate::create_facet(root.path(), "home", "Home", "Test", "#123456", "", None).unwrap();
+        let mut row = serde_json::json!({"id":ROW,"activity":"writing","segments":["090000_300"]});
+        if let Value::Object(fields) = original {
+            row.as_object_mut().unwrap().extend(fields);
+        }
+        let _ = append_activity_record(root.path(), "home", DAY, row.as_object().unwrap().clone())
+            .unwrap();
+        root
+    }
+
+    fn owner_set(root: &Path, field: &str, value: Value, at: &str) -> ActivityRecord {
+        let patch = Map::from_iter([(field.to_owned(), value)]);
+        update_activity_record(root, "home", DAY, ROW, &patch, "owner:update", "", at)
+            .unwrap()
+            .unwrap()
+    }
+
+    fn remove_at(root: &Path, position: usize) -> Result<ActivityRecord, ActivityRecordStoreError> {
+        let record = get_activity_record(root, "home", DAY, ROW)
+            .unwrap()
+            .unwrap();
+        let edit = record["edits"][position].clone();
+        remove_activity_edit(
+            root,
+            "home",
+            DAY,
+            ROW,
+            position,
+            edit["timestamp"].as_str().unwrap_or_default(),
+            edit["actor"].as_str().unwrap_or_default(),
+            "2026-10-16T13:00:00Z",
+        )
+        .map(|record| record.unwrap())
+    }
+
+    #[test]
+    fn an_owner_update_records_what_it_set_and_what_was_there() {
+        let root = corrected_root(serde_json::json!({"description":"original"}));
+        let record = owner_set(root.path(), "description", Value::from("A"), "t1");
+        let edit = &record["edits"][0];
+        assert_eq!(edit[EDIT_SET], serde_json::json!({"description":"A"}));
+        assert_eq!(
+            edit[EDIT_BEFORE],
+            serde_json::json!({"description":"original"})
+        );
+        let record = owner_set(root.path(), "playback", Value::Bool(true), "t2");
+        let edit = record["edits"][1].as_object().unwrap();
+        assert_eq!(edit[EDIT_SET], serde_json::json!({"playback":true}));
+        assert_eq!(edit[EDIT_BEFORE], serde_json::json!({}));
+        assert!(activity_field_held(&record, "playback"));
+        let story = Map::from_iter([("story".to_owned(), Value::from("body"))]);
+        let record =
+            update_activity_record(root.path(), "home", DAY, ROW, &story, "story", "", "t3")
+                .unwrap()
+                .unwrap();
+        assert!(
+            !record["edits"][2]
+                .as_object()
+                .unwrap()
+                .contains_key(EDIT_SET)
+        );
+    }
+
+    #[test]
+    fn removing_edits_newest_first_returns_the_field_to_the_journal() {
+        for (field, original) in [
+            ("description", Value::from("original")),
+            ("details", Value::from("")),
+        ] {
+            let root = corrected_root(serde_json::json!({ field: original.clone() }));
+            owner_set(root.path(), field, Value::from("A"), "t1");
+            owner_set(root.path(), field, Value::from("B"), "t2");
+            let record = remove_at(root.path(), 1).unwrap();
+            assert_eq!(record[field], "A", "{field}");
+            assert!(activity_field_held(&record, field), "{field}");
+            let record = remove_at(root.path(), 0).unwrap();
+            assert_eq!(record[field], original, "{field}");
+            assert!(!activity_field_held(&record, field), "{field}");
+        }
+        // The journal's line write can set the description again.
+        let root = corrected_root(serde_json::json!({"description":"original"}));
+        owner_set(root.path(), "description", Value::from("A"), "t1");
+        remove_at(root.path(), 0).unwrap();
+        let line = Map::from_iter([("description".to_owned(), Value::from("journal line"))]);
+        let record = update_activity_record_checked(
+            root.path(),
+            "home",
+            DAY,
+            ROW,
+            &line,
+            "story",
+            "",
+            "t3",
+            || Ok(()),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(record["description"], "journal line");
+    }
+
+    #[test]
+    fn removing_edits_oldest_first_keeps_the_newer_correction() {
+        for (field, original) in [
+            ("description", Value::from("original")),
+            ("details", Value::from("")),
+        ] {
+            let root = corrected_root(serde_json::json!({ field: original.clone() }));
+            owner_set(root.path(), field, Value::from("A"), "t1");
+            owner_set(root.path(), field, Value::from("B"), "t2");
+            let record = remove_at(root.path(), 0).unwrap();
+            assert_eq!(record[field], "B", "{field}");
+            assert!(activity_field_held(&record, field), "{field}");
+            let record = remove_at(root.path(), 1).unwrap();
+            assert_eq!(record[field], original, "{field}");
+            assert!(!activity_field_held(&record, field), "{field}");
+        }
+    }
+
+    #[test]
+    fn removing_a_correction_of_an_absent_field_deletes_it() {
+        let root = corrected_root(serde_json::json!({}));
+        owner_set(root.path(), "playback", Value::Bool(true), "t1");
+        let record = remove_at(root.path(), 0).unwrap();
+        assert!(!record.contains_key("playback"));
+        assert!(!activity_field_held(&record, "playback"));
+        assert_eq!(record["edits"][0][EDIT_REMOVED], "2026-10-16T13:00:00Z");
+    }
+
+    #[test]
+    fn a_journal_write_after_a_removed_correction_is_what_a_later_removal_returns_to() {
+        let root = corrected_root(serde_json::json!({"description":"original"}));
+        owner_set(root.path(), "description", Value::from("A"), "t1");
+        remove_at(root.path(), 0).unwrap();
+        let line = Map::from_iter([("description".to_owned(), Value::from("journal line"))]);
+        update_activity_record_checked(
+            root.path(),
+            "home",
+            DAY,
+            ROW,
+            &line,
+            "story",
+            "",
+            "t2",
+            || Ok(()),
+        )
+        .unwrap();
+        owner_set(root.path(), "description", Value::from("C"), "t3");
+        let record = remove_at(root.path(), 2).unwrap();
+        assert_eq!(record["description"], "journal line");
+    }
+
+    #[test]
+    fn refused_removals_change_nothing() {
+        let root = corrected_root(serde_json::json!({"description":"original"}));
+        owner_set(root.path(), "description", Value::from("A"), "t1");
+        set_activity_hidden(
+            root.path(),
+            "home",
+            DAY,
+            ROW,
+            true,
+            "owner:mute",
+            None,
+            "t2",
+        )
+        .unwrap();
+        // An edit saved before edits recorded their values.
+        update_activity_record_with(
+            root.path(),
+            "home",
+            DAY,
+            ROW,
+            |_| Some(Map::new()),
+            "story",
+            "",
+            "t3",
+        )
+        .unwrap();
+        let path = day_path(root.path(), "home", DAY).unwrap();
+        let mut row: Value =
+            serde_json::from_str(std::fs::read_to_string(&path).unwrap().trim()).unwrap();
+        row["edits"]
+            .as_array_mut()
+            .unwrap()
+            .push(serde_json::json!({"timestamp":"t0","actor":"owner:update","fields":["title"],"note":""}));
+        std::fs::write(&path, format!("{row}\n")).unwrap();
+        remove_at(root.path(), 0).unwrap();
+        let before = std::fs::read(&path).unwrap();
+        let refused = |position, timestamp: &str, actor: &str| match remove_activity_edit(
+            root.path(),
+            "home",
+            DAY,
+            ROW,
+            position,
+            timestamp,
+            actor,
+            "t9",
+        ) {
+            Err(ActivityRecordStoreError::EditRefused(refusal)) => refusal,
+            other => panic!("{other:?}"),
+        };
+        assert_eq!(
+            refused(0, "t1", "owner:update"),
+            EditRefusal::AlreadyRemoved
+        );
+        assert_eq!(refused(1, "t2", "owner:mute"), EditRefusal::NotRemovable);
+        assert_eq!(refused(3, "t0", "owner:update"), EditRefusal::NotRecorded);
+        assert_eq!(refused(4, "t0", "owner:update"), EditRefusal::OutOfRange);
+        assert_eq!(refused(0, "t0", "owner:update"), EditRefusal::Mismatch);
+        assert_eq!(refused(0, "t1", "cli:update"), EditRefusal::Mismatch);
+        assert_eq!(std::fs::read(&path).unwrap(), before);
     }
 
     #[test]

@@ -2708,33 +2708,7 @@ pub(crate) fn activity_provenance_path(
     facet: &str,
     activity_id: &str,
 ) -> std::path::PathBuf {
-    context
-        .journal
-        .join("chronicle")
-        .join(day)
-        .join("health/talent-provenance/activity-inputs")
-        .join(provenance_component(facet))
-        .join(format!("{}.json", provenance_component(activity_id)))
-}
-
-/// Match `urllib.parse.quote(value, safe="._-")` used by the reference
-/// provenance path, keeping an activity identifier confined to one filename.
-fn provenance_component(value: &str) -> String {
-    const HEX: &[u8; 16] = b"0123456789ABCDEF";
-    let mut encoded = String::new();
-    for byte in value.bytes() {
-        match byte {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'.' | b'_' | b'-' => {
-                encoded.push(char::from(byte));
-            }
-            _ => {
-                encoded.push('%');
-                encoded.push(char::from(HEX[usize::from(byte >> 4)]));
-                encoded.push(char::from(HEX[usize::from(byte & 0x0f)]));
-            }
-        }
-    }
-    encoded
+    solstone_core_system::activity_provenance::input_path(&context.journal, day, facet, activity_id)
 }
 
 pub(crate) fn write_activity_provenance(

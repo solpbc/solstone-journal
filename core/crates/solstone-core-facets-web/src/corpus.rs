@@ -183,6 +183,50 @@ async fn replay_record(router: Router, root: &Path, expected: &Value) {
                 }
             }
             check_identity(&mut value, root);
+            // Edits record their values, the day view says what a correction
+            // is doing, and an update says whether it asked the journal to
+            // think again: the frozen corpus predates all three. Assert their
+            // shape, then drop them before comparing.
+            fn strip_corrections(value: &mut Value) {
+                match value {
+                    Value::Object(object) => {
+                        if object.contains_key("actor") && object.contains_key("fields") {
+                            for key in ["set", "before"] {
+                                if let Some(values) = object.remove(key) {
+                                    assert!(values.is_object(), "{key}: {values}");
+                                }
+                            }
+                            if object.contains_key("kind") {
+                                assert!(object.remove("position").is_some_and(|p| p.is_u64()));
+                                for key in ["removable", "removed"] {
+                                    assert!(object.remove(key).is_some_and(|v| v.is_boolean()));
+                                }
+                            }
+                        }
+                        if object.contains_key("activity_label") {
+                            for key in ["corrected", "updating", "playback"] {
+                                assert!(object.remove(key).is_some_and(|v| v.is_boolean()));
+                            }
+                        }
+                        if object.contains_key("record") && object.contains_key("markdown") {
+                            object.remove("ask_reason");
+                            if let Some(asked) = object.remove("asked") {
+                                assert!(asked.is_boolean());
+                            }
+                        }
+                        for child in object.values_mut() {
+                            strip_corrections(child);
+                        }
+                    }
+                    Value::Array(items) => {
+                        for child in items {
+                            strip_corrections(child);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            strip_corrections(&mut value);
         }
         normalize(&mut value, root);
         // Preserve the captured contract except the deliberately revised facet prompt.

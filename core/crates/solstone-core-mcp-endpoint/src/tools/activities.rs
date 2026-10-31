@@ -397,6 +397,19 @@ pub(crate) fn clean_activity_record_for_wire(mut record: Map<String, Value>) -> 
     {
         record.remove("source");
     }
+    // What the owner retracted, or wrote over, never reaches their agent: an
+    // edit goes out without the values it recorded, and a removed one not at all.
+    if let Some(Value::Array(edits)) = record.get_mut("edits") {
+        edits.retain(|edit| {
+            !edit
+                .as_object()
+                .is_some_and(solstone_core_facets::edit_removed)
+        });
+        for edit in edits.iter_mut().filter_map(Value::as_object_mut) {
+            edit.remove(solstone_core_facets::EDIT_SET);
+            edit.remove(solstone_core_facets::EDIT_BEFORE);
+        }
+    }
     record
 }
 
@@ -1168,6 +1181,30 @@ fn format_segment_heading(day: &str, seg_key: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_agent_never_reads_what_the_owner_retracted_or_wrote_over() {
+        let record = |edits: Value| {
+            serde_json::json!({"id":"a","description":"kept","edits":edits})
+                .as_object()
+                .unwrap()
+                .clone()
+        };
+        let cleaned = clean_activity_record_for_wire(record(serde_json::json!([
+            {"timestamp":"t1","actor":"owner:update","fields":["description"],"set":{"description":"retracted"},"before":{"description":"old"},"removed":"t3"},
+            {"timestamp":"t2","actor":"owner:update","fields":["description"],"set":{"description":"kept"},"before":{"description":"old"}},
+        ])));
+        assert_eq!(
+            Value::Object(cleaned),
+            Value::Object(record(serde_json::json!([
+                {"timestamp":"t2","actor":"owner:update","fields":["description"]},
+            ])))
+        );
+        let plain = record(serde_json::json!([
+            {"timestamp":"t0","actor":"cli:create","fields":["title"],"note":"created"},
+        ]));
+        assert_eq!(clean_activity_record_for_wire(plain.clone()), plain);
+    }
 
     #[test]
     fn activity_heard_and_role_classification() {

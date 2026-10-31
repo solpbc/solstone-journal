@@ -3,6 +3,7 @@
 
 //! Typed system-process and task-request primitives.
 
+pub mod activity_provenance;
 pub mod activity_state;
 pub mod cap;
 pub mod catchup;

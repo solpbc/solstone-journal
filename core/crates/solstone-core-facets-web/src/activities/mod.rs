@@ -52,6 +52,10 @@ pub fn routes(root: PathBuf, clock: Clock) -> Router {
             post(update),
         )
         .route(
+            "/app/activities/api/day/{day}/record/{span_id}/edits/remove",
+            post(remove_edit),
+        )
+        .route(
             "/app/activities/api/day/{day}/record/{span_id}/mute",
             post(mute),
         )
@@ -326,6 +330,136 @@ async fn update(
     .await
 }
 
+/// Fields an owner correction of the activity itself names. Changing one of
+/// them runs the activity's talents again; a title alone only lets the day's
+/// briefing regenerate.
+const RETHOUGHT_FIELDS: [&str; 3] = ["details", "playback", "description"];
+
+/// Ask the journal to think the corrected day again, once the correction has
+/// been saved. The correction stands either way; the reply says whether the
+/// ask was saved too, so a client never repeats the correction to get one.
+fn think_again(root: &Path, day: &str, facet: &str, activity: Option<&str>) -> Map<String, Value> {
+    let activities = activity
+        .map(|activity| solstone_core_system::owner_ask::AskedActivity {
+            facet: facet.to_owned(),
+            activity: activity.to_owned(),
+        })
+        .into_iter()
+        .collect::<Vec<_>>();
+    #[cfg(not(test))]
+    let asked = solstone_core_system::owner_ask::think_again(root, day, &activities, true);
+    // Routine tests check the ask itself and never wake work discovery's socket.
+    #[cfg(test)]
+    let asked = solstone_core_system::owner_ask::record(
+        root,
+        day,
+        &activities,
+        true,
+        Utc::now().timestamp_millis(),
+    );
+    match asked {
+        Ok(_) => Map::from_iter([("asked".to_owned(), Value::Bool(true))]),
+        Err(error) => {
+            let reason = match error {
+                solstone_core_system::owner_ask::AskError::Unreadable(_) => "owner_asks_unreadable",
+                _ => "owner_ask_unsaved",
+            };
+            Map::from_iter([
+                ("asked".to_owned(), Value::Bool(false)),
+                ("ask_reason".to_owned(), Value::String(reason.to_owned())),
+            ])
+        }
+    }
+}
+
+fn not_asked() -> Map<String, Value> {
+    Map::from_iter([("asked".to_owned(), Value::Bool(false))])
+}
+
+fn with_ask(record: ActivityRecord, ask: Map<String, Value>) -> Response {
+    let mut body = payload(record);
+    if let Value::Object(body) = &mut body {
+        body.extend(ask);
+    }
+    Json(body).into_response()
+}
+
+async fn remove_edit(
+    State((root, clock)): State<(PathBuf, Clock)>,
+    RoutePath((day, span_id)): RoutePath<(String, String)>,
+    RawQuery(query): RawQuery,
+    headers: axum::http::HeaderMap,
+    body: Bytes,
+) -> Response {
+    if headers.get(ACTOR_HEADER).and_then(|v| v.to_str().ok()) != Some(ACTOR_OWNER) {
+        return http::error(
+            "activity_owner_only",
+            "only you can remove a correction.",
+            "removing an edit needs the owner".to_owned(),
+            StatusCode::FORBIDDEN,
+        );
+    }
+    let facet = query_value(query.as_deref(), "facet").unwrap_or_default();
+    if facet.is_empty() {
+        return not_found(span_id);
+    }
+    let body = object_body(&body);
+    let (Some(position), Some(edit_timestamp), Some(edit_actor)) = (
+        body.get("position")
+            .and_then(Value::as_u64)
+            .and_then(|position| usize::try_from(position).ok()),
+        body.get("timestamp").and_then(Value::as_str),
+        body.get("actor").and_then(Value::as_str),
+    ) else {
+        return invalid("position, timestamp and actor name the edit to remove");
+    };
+    let removed_at = clock
+        .now()
+        .with_timezone(&Utc)
+        .format("%Y-%m-%dT%H:%M:%SZ")
+        .to_string();
+    match solstone_core_facets::remove_activity_edit(
+        &root,
+        &facet,
+        &day,
+        &span_id,
+        position,
+        edit_timestamp,
+        edit_actor,
+        &removed_at,
+    ) {
+        Ok(Some(record)) => {
+            let ask = think_again(&root, &day, &facet, Some(&span_id));
+            if let Err(error) = solstone_core_facets::append_action_log_for_day(
+                &root,
+                Some(&facet),
+                "app",
+                "activities",
+                "activity_edit_remove",
+                json!({"id":span_id,"position":position}),
+                &day,
+            ) {
+                return internal(error.to_string());
+            }
+            with_ask(record, ask)
+        }
+        Ok(None) | Err(solstone_core_facets::ActivityRecordStoreError::MissingDayFile { .. }) => {
+            not_found(span_id)
+        }
+        Err(solstone_core_facets::ActivityRecordStoreError::EditRefused(refusal)) => http::error(
+            refusal.reason_code(),
+            "that edit couldn't be removed.",
+            solstone_core_facets::ActivityRecordStoreError::EditRefused(refusal).to_string(),
+            if refusal == solstone_core_facets::EditRefusal::OutOfRange {
+                StatusCode::NOT_FOUND
+            } else {
+                StatusCode::CONFLICT
+            },
+        ),
+        Err(error) => store_error(error),
+    }
+}
+
 async fn mute(
     State((root, clock)): State<(PathBuf, Clock)>,
     RoutePath((day, span_id)): RoutePath<(String, String)>,
@@ -387,7 +521,12 @@ async fn mutate_update(
     }
     let disallowed = patch
         .keys()
-        .filter(|key| !matches!(key.as_str(), "title" | "description" | "details"))
+        .filter(|key| {
+            !matches!(
+                key.as_str(),
+                "title" | "description" | "details" | "playback"
+            )
+        })
         .cloned()
         .collect::<Vec<_>>();
     if !disallowed.is_empty() {
@@ -395,6 +534,12 @@ async fn mutate_update(
             "patch contains disallowed fields: {}",
             disallowed.join(", ")
         ));
+    }
+    if patch
+        .get("playback")
+        .is_some_and(|value| !value.is_boolean())
+    {
+        return invalid("playback must be true or false");
     }
     let note = activity_value_or_empty(body.get("note"));
     let timestamp = clock
@@ -406,6 +551,14 @@ async fn mutate_update(
         root, &facet, &day, &span_id, patch, actor, &note, &timestamp,
     ) {
         Ok(Some(record)) => {
+            let ask = if actor == "owner:update" {
+                let rethought = patch
+                    .keys()
+                    .any(|key| RETHOUGHT_FIELDS.contains(&key.as_str()));
+                think_again(root, &day, &facet, rethought.then_some(span_id.as_str()))
+            } else {
+                not_asked()
+            };
             if let Err(error) = solstone_core_facets::append_action_log_for_day(
                 root,
                 Some(&facet),
@@ -417,7 +570,7 @@ async fn mutate_update(
             ) {
                 return internal(error.to_string());
             }
-            Json(payload(record)).into_response()
+            with_ask(record, ask)
         }
         Ok(None) | Err(solstone_core_facets::ActivityRecordStoreError::MissingDayFile { .. }) => {
             not_found(span_id)
@@ -2134,5 +2287,398 @@ mod tests {
         assert_eq!(item2["hidden"], true);
         assert_eq!(item2["hidden_reason"], "owner");
         assert_eq!(item2["cancelled"], false);
+    }
+
+    const CORRECTED_DAY: &str = "20260510";
+
+    fn corrected_journal() -> tempfile::TempDir {
+        let root = phase_root("established_empty");
+        solstone_core_facets::create_facet(root.path(), "work", "Work", "", "", "", None).unwrap();
+        let seed = json!({"id":"rec","activity":"meeting","title":"Seed","description":"seen","segments":[],"source":"user","edits":[]});
+        let _ = solstone_core_facets::append_activity_record(
+            root.path(),
+            "work",
+            CORRECTED_DAY,
+            seed.as_object().unwrap().clone(),
+        )
+        .unwrap();
+        root
+    }
+
+    async fn as_actor(
+        root: &Path,
+        path: &str,
+        actor: Option<&str>,
+        body: Value,
+    ) -> (StatusCode, Value) {
+        let mut request = Request::builder()
+            .method("POST")
+            .uri(format!(
+                "/app/activities/api/day/{CORRECTED_DAY}/record/rec/{path}?facet=work"
+            ))
+            .header(header::CONTENT_TYPE, "application/json");
+        if let Some(actor) = actor {
+            request = request.header(ACTOR_HEADER, actor);
+        }
+        let response = gated(root, fixed_clock())
+            .oneshot(
+                request
+                    .body(Body::from(serde_json::to_vec(&body).unwrap()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let status = response.status();
+        let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        (
+            status,
+            serde_json::from_slice(&bytes).unwrap_or(Value::Null),
+        )
+    }
+
+    async fn owner_patch(root: &Path, patch: Value) -> (StatusCode, Value) {
+        as_actor(root, "update", Some(ACTOR_OWNER), json!({ "patch": patch })).await
+    }
+
+    fn asks(root: &Path) -> Vec<solstone_core_system::owner_ask::OwnerAsk> {
+        let mut asks = solstone_core_system::owner_ask::read(root)
+            .unwrap()
+            .into_values()
+            .collect::<Vec<_>>();
+        asks.sort_by_key(|ask| ask.created_at_ms);
+        asks
+    }
+
+    fn day_bytes(root: &Path) -> Vec<u8> {
+        std::fs::read(root.join(format!("facets/work/activities/{CORRECTED_DAY}.jsonl"))).unwrap()
+    }
+
+    #[tokio::test]
+    async fn playback_is_an_owner_field_and_only_a_boolean() {
+        let root = corrected_journal();
+        let before = day_bytes(root.path());
+        for value in [json!("false"), json!(1), Value::Null] {
+            let (status, body) = owner_patch(root.path(), json!({ "playback": value })).await;
+            assert_eq!(status, StatusCode::BAD_REQUEST, "{value}");
+            assert_eq!(body["reason_code"], "activity_invalid", "{value}");
+        }
+        assert_eq!(day_bytes(root.path()), before);
+        for value in [true, false] {
+            let (status, body) = owner_patch(root.path(), json!({ "playback": value })).await;
+            assert_eq!(status, StatusCode::OK);
+            assert_eq!(body["record"]["playback"], value);
+            let record = body["record"].as_object().unwrap();
+            assert!(solstone_core_facets::activity_field_held(
+                record, "playback"
+            ));
+        }
+    }
+
+    #[tokio::test]
+    async fn every_owner_correction_asks_the_journal_to_think_again() {
+        let root = corrected_journal();
+        let rec = solstone_core_system::owner_ask::AskedActivity {
+            facet: "work".into(),
+            activity: "rec".into(),
+        };
+        let mut expected = Vec::new();
+        for patch in [
+            json!({"details":"we met at the cafe"}),
+            json!({"playback":true}),
+            json!({"description":"a call"}),
+            json!({"description":"a call"}),
+            json!({"title":"Lunch"}),
+        ] {
+            let (status, body) = owner_patch(root.path(), patch.clone()).await;
+            assert_eq!(status, StatusCode::OK, "{patch}");
+            assert_eq!(body["asked"], true, "{patch}");
+            expected.push(patch.get("title").is_none());
+        }
+        let (status, body) = as_actor(
+            root.path(),
+            "update",
+            None,
+            json!({"patch":{"details":"from the command line"}}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["asked"], false);
+        let (status, body) = as_actor(
+            root.path(),
+            "edits/remove",
+            Some(ACTOR_OWNER),
+            json!({"position":1,"timestamp":"2026-05-15T12:00:00Z","actor":"owner:update"}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["asked"], true);
+        expected.push(true);
+        let recorded = asks(root.path());
+        assert_eq!(recorded.len(), expected.len());
+        for ask in &recorded {
+            assert_eq!(ask.day, CORRECTED_DAY);
+            assert!(ask.thaw);
+        }
+        let named = recorded
+            .iter()
+            .map(|ask| ask.to_seed == std::collections::BTreeSet::from([rec.clone()]))
+            .collect::<Vec<_>>();
+        // Asks share one clock millisecond at most, so compare as a multiset.
+        assert_eq!(
+            named.iter().filter(|named| **named).count(),
+            expected.iter().filter(|named| **named).count()
+        );
+        assert!(
+            recorded
+                .iter()
+                .any(|ask| ask.to_seed.is_empty() && ask.thaw)
+        );
+    }
+
+    #[tokio::test]
+    async fn a_correction_stands_when_its_ask_cannot_be_saved() {
+        let root = corrected_journal();
+        write(&root.path().join("health/owner-asks.json"), "{");
+        let (status, body) =
+            owner_patch(root.path(), json!({"details":"it was a rehearsal"})).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["asked"], false);
+        assert_eq!(body["ask_reason"], "owner_asks_unreadable");
+        assert_eq!(body["record"]["details"], "it was a rehearsal");
+        let stored =
+            solstone_core_facets::get_activity_record(root.path(), "work", CORRECTED_DAY, "rec")
+                .unwrap()
+                .unwrap();
+        assert_eq!(stored["details"], "it was a rehearsal");
+        assert_eq!(stored["edits"].as_array().unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn an_action_log_failure_still_asks() {
+        let root = corrected_journal();
+        write(&root.path().join("facets/work/logs"), "not a directory");
+        let (status, _) = owner_patch(root.path(), json!({"details":"it was a rehearsal"})).await;
+        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(asks(root.path()).len(), 1);
+    }
+
+    #[tokio::test]
+    async fn only_the_owner_removes_an_edit_and_a_refusal_changes_nothing() {
+        let root = corrected_journal();
+        owner_patch(root.path(), json!({"description":"a call"})).await;
+        as_actor(root.path(), "mute", Some(ACTOR_OWNER), json!({})).await;
+        let before = day_bytes(root.path());
+        let asked = asks(root.path()).len();
+        let at = "2026-05-15T12:00:00Z";
+        for (actor, edit, status, reason) in [
+            (
+                None,
+                json!({"position":0,"timestamp":at,"actor":"owner:update"}),
+                StatusCode::FORBIDDEN,
+                "activity_owner_only",
+            ),
+            (
+                Some("owner:update"),
+                json!({"position":0,"timestamp":at,"actor":"owner:update"}),
+                StatusCode::FORBIDDEN,
+                "activity_owner_only",
+            ),
+            (
+                Some(ACTOR_OWNER),
+                json!({"position":0,"timestamp":"2026-05-15T12:00:01Z","actor":"owner:update"}),
+                StatusCode::CONFLICT,
+                "activity_edit_mismatch",
+            ),
+            (
+                Some(ACTOR_OWNER),
+                json!({"position":0,"timestamp":at,"actor":"cli:update"}),
+                StatusCode::CONFLICT,
+                "activity_edit_mismatch",
+            ),
+            (
+                Some(ACTOR_OWNER),
+                json!({"position":1,"timestamp":at,"actor":"owner:mute"}),
+                StatusCode::CONFLICT,
+                "activity_edit_not_removable",
+            ),
+            (
+                Some(ACTOR_OWNER),
+                json!({"position":2,"timestamp":at,"actor":"owner:update"}),
+                StatusCode::NOT_FOUND,
+                "activity_edit_not_found",
+            ),
+            (
+                Some(ACTOR_OWNER),
+                json!({"position":"0","timestamp":at,"actor":"owner:update"}),
+                StatusCode::BAD_REQUEST,
+                "activity_invalid",
+            ),
+        ] {
+            let (got, body) = as_actor(root.path(), "edits/remove", actor, edit.clone()).await;
+            assert_eq!(got, status, "{edit}");
+            assert_eq!(body["reason_code"], reason, "{edit}");
+        }
+        assert_eq!(day_bytes(root.path()), before);
+        assert_eq!(asks(root.path()).len(), asked);
+        let (status, body) = as_actor(
+            root.path(),
+            "edits/remove",
+            Some(ACTOR_OWNER),
+            json!({"position":0,"timestamp":at,"actor":"owner:update"}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["record"]["description"], "seen");
+        let (status, body) = as_actor(
+            root.path(),
+            "edits/remove",
+            Some(ACTOR_OWNER),
+            json!({"position":0,"timestamp":at,"actor":"owner:update"}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CONFLICT);
+        assert_eq!(body["reason_code"], "activity_edit_already_removed");
+    }
+
+    #[tokio::test]
+    async fn the_day_view_says_what_each_correction_is_doing() {
+        use solstone_core_system::{activity_provenance, owner_ask};
+        let root = phase_root("established_empty");
+        solstone_core_facets::create_facet(root.path(), "work", "Work", "", "", "", None).unwrap();
+        let recorded = |actor: &str, set: Value| json!({"timestamp":"t","actor":actor,"fields":set.as_object().unwrap().keys().collect::<Vec<_>>(),"note":"","set":set,"before":{}});
+        let rows = [
+            json!({"id":"plain","activity":"meeting","title":"Plain","details":""}),
+            json!({"id":"told","activity":"meeting","title":"Told","details":"my account"}),
+            json!({"id":"recording","activity":"meeting","title":"Rec","playback":true}),
+            json!({"id":"renamed","activity":"meeting","title":"Renamed","description":"mine","edits":[recorded("owner:update", json!({"description":"mine"}))]}),
+            json!({"id":"retracted","activity":"meeting","title":"Retracted","description":"journal","edits":[
+                {"timestamp":"t0","actor":"cli:create","fields":["title"],"note":"created"},
+                {"timestamp":"t1","actor":"owner:update","fields":["title"],"note":""},
+                recorded("owner:update", json!({"description":"gone"})),
+                {"timestamp":"t3","actor":"owner:mute","fields":["hidden"],"note":"muted"},
+                {"timestamp":"t4","actor":"owner:unmute","fields":["hidden"],"note":"unmuted"},
+                recorded("cli:update", json!({"title":"Retracted"})),
+            ]}),
+            json!({"id":"updating","activity":"meeting","title":"Updating","details":"again"}),
+            json!({"id":"finished","activity":"meeting","title":"Finished","details":"again"}),
+        ];
+        let mut rows = rows.map(|row| row.to_string()).join("\n");
+        rows.push('\n');
+        write(
+            &root
+                .path()
+                .join(format!("facets/work/activities/{CORRECTED_DAY}.jsonl")),
+            &rows,
+        );
+        // The retracted correction is removed.
+        let path = root
+            .path()
+            .join(format!("facets/work/activities/{CORRECTED_DAY}.jsonl"));
+        let text = std::fs::read_to_string(&path).unwrap().replace(
+            r#""set":{"description":"gone"}"#,
+            r#""removed":"t9","set":{"description":"gone"}"#,
+        );
+        std::fs::write(&path, text).unwrap();
+        let asked = |id: &str| owner_ask::AskedActivity {
+            facet: "work".into(),
+            activity: id.into(),
+        };
+        owner_ask::record(
+            root.path(),
+            CORRECTED_DAY,
+            &[asked("updating")],
+            true,
+            20_000,
+        )
+        .unwrap();
+        let waiting = owner_ask::record(
+            root.path(),
+            CORRECTED_DAY,
+            &[asked("finished")],
+            true,
+            20_000,
+        )
+        .unwrap();
+        owner_ask::update(root.path(), &waiting.id, |current| {
+            let mut next = current.clone();
+            next.to_seed.clear();
+            next.seeded.insert(asked("finished"));
+            Some(Some(next))
+        })
+        .unwrap();
+        for (id, finished_at) in [("updating", 10), ("finished", 30)] {
+            let provenance =
+                activity_provenance::input_path(root.path(), CORRECTED_DAY, "work", id);
+            write(&provenance, "{}");
+            std::fs::File::options()
+                .write(true)
+                .open(&provenance)
+                .unwrap()
+                .set_modified(std::time::UNIX_EPOCH + Duration::from_secs(finished_at))
+                .unwrap();
+        }
+        let view = |root: &Path| {
+            let root = root.to_path_buf();
+            async move {
+                let (status, body) = request(
+                    gated(&root, fixed_clock()),
+                    "GET",
+                    &format!("/app/activities/api/day/{CORRECTED_DAY}/view"),
+                    None,
+                )
+                .await;
+                assert_eq!(status, StatusCode::OK);
+                body["items"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|item| (item["id"].as_str().unwrap().to_owned(), item.clone()))
+                    .collect::<std::collections::BTreeMap<_, _>>()
+            }
+        };
+        let items = view(root.path()).await;
+        for (id, corrected, updating) in [
+            ("plain", false, false),
+            ("told", true, false),
+            ("recording", true, false),
+            ("renamed", true, false),
+            ("retracted", false, false),
+            ("updating", true, true),
+            ("finished", true, false),
+        ] {
+            assert_eq!(items[id]["corrected"], corrected, "{id}");
+            assert_eq!(items[id]["updating"], updating, "{id}");
+        }
+        assert_eq!(items["retracted"]["edited_by_owner"], true);
+        assert_eq!(items["renamed"]["edited_by_owner"], true);
+        let history = items["retracted"]["edits"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|edit| {
+                (
+                    edit["position"].as_u64().unwrap(),
+                    edit["removable"].as_bool().unwrap(),
+                    edit["removed"].as_bool().unwrap(),
+                )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            history,
+            [
+                (0, false, false),
+                (1, false, false),
+                (2, false, true),
+                (3, false, false),
+                (4, false, false),
+                (5, true, false),
+            ]
+        );
+        assert_eq!(items["renamed"]["edits"][0]["removable"], true);
+
+        write(&root.path().join("health/owner-asks.json"), "{");
+        let items = view(root.path()).await;
+        assert!(items.values().all(|item| item["updating"] == false));
+        assert_eq!(items["told"]["corrected"], true);
     }
 }
