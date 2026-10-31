@@ -372,7 +372,8 @@ mod bound {
         operation
             .revalidate()
             .map_err(|error| native::inputs(OffloadOfferRefusal::Admission(error)))?;
-        if !operation.configuration().offload_enabled() {
+        // A paused backup plans no offload, so no local media is released.
+        if !operation.configuration().offload_enabled() || operation.configuration().paused() {
             return Err(planning(OffloadPlanningRefusal::Disabled));
         }
         report.reconciliation = Some(reconcile_offload_empty(operation, today, now));

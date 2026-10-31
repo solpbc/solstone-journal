@@ -483,7 +483,11 @@ pub fn resolve_runtime(
     let config = get_backup_config(journal).map_err(|_| HostedCredsUnavailable {
         reason_code: "broker_error",
     })?;
-    if config.get("enabled") != Some(&Value::Bool(true)) {
+    // A paused backup resolves no runtime, so verification, prune and archive
+    // writes skip without reaching the destination.
+    if config.get("enabled") != Some(&Value::Bool(true))
+        || solstone_core_backup::backup_paused_at(&config).is_some()
+    {
         return Ok(RuntimeResolution::Skip);
     }
     let Some(keys) = get_keys(journal).map_err(|_| HostedCredsUnavailable {

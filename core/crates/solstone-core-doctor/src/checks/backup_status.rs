@@ -59,6 +59,30 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
             ));
         }
     }
+    // A pause is the owner's choice: it reads as paused with its history, and
+    // never as failing or stale.
+    match backup.get("paused_at") {
+        None | Some(Value::Null) => {}
+        Some(paused) if paused.is_i64() => {
+            let history = backup.get("last_backup").map_or_else(
+                || "last successful copy unknown".to_owned(),
+                |latest| success_history(latest, context.now),
+            );
+            return Ok(row(
+                Status::Skip,
+                &format!(
+                    "backup paused by you since {}; {history}",
+                    date(Some(paused))
+                ),
+            ));
+        }
+        Some(_) => {
+            return Ok(row(
+                Status::Warn,
+                "backup status unavailable: invalid pause setting",
+            ));
+        }
+    }
     // Off deliberately avoids all unused history and identity inputs. Identity
     // is needed only for a record that actually carries a valid fingerprint.
     let latest = match backup.get("last_backup") {
@@ -671,5 +695,37 @@ mod filesystem_tests {
         fs::remove_file(staged.journal_path.join("config/journal.json")).unwrap();
         fs::create_dir(staged.journal_path.join("config/journal.json")).unwrap();
         observe(&staged, "unreadable config entry", Status::Warn);
+    }
+
+    #[test]
+    fn a_paused_backup_reads_as_paused_with_its_history_never_as_a_warning() {
+        let mut staged = context();
+        staged.context.now = DateTime::from_timestamp(400, 0).unwrap();
+        fs::create_dir_all(&staged.journal_path).unwrap();
+        generate_and_store_keys(&staged.journal_path).unwrap();
+        set_enabled(&staged.journal_path, true).unwrap();
+        record_backup_result(
+            &staged.journal_path,
+            "error",
+            json!(300),
+            Value::Null,
+            json!("timeout"),
+            None,
+            None,
+        )
+        .unwrap();
+        solstone_core_backup::set_backup_paused(&staged.journal_path, Some(350)).unwrap();
+        let row = observe(&staged, "paused", Status::Skip);
+        assert!(
+            row.detail
+                .starts_with("backup paused by you since 1970-01-01T00:05:50+00:00; "),
+            "{}",
+            row.detail
+        );
+        assert!(
+            row.detail.contains("last successful copy unknown"),
+            "{}",
+            row.detail
+        );
     }
 }

@@ -27,6 +27,7 @@ mod archive_support;
 mod controlled_http;
 pub mod destination;
 pub mod destination_admission;
+pub mod destination_edit;
 pub mod engine;
 pub mod hosted_runtime;
 #[cfg(target_os = "ios")]
@@ -44,7 +45,7 @@ pub mod schedule;
 pub mod teardown;
 pub mod teardown_admission;
 pub use archive_support::check_archive_creator_support;
-pub use engine::backup_enabled;
+pub use engine::{backup_enabled, backup_paused};
 pub use schedule::effective_backup_schedule;
 #[cfg(windows)]
 pub mod windows_cleanup;
@@ -58,6 +59,9 @@ pub use destination::{DestinationStatus, validate_destination};
 pub use destination_admission::with_forced_admission_failure;
 pub use destination_admission::{
     AdmittedDestination, DestinationAdmissionError, admit_restore_destination,
+};
+pub use destination_edit::{
+    DestinationChange, DestinationEditRefusal, destination_change, edit_destination,
 };
 pub use engine::{
     ARCHIVE_TAG, AdmittedArchive, AdmittedCapability, ArchiveAdmissionEffects,

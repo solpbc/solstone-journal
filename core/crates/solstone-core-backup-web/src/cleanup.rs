@@ -35,6 +35,8 @@ const CONFLICTING_MUTATIONS: &[&str] = &[
     "/app/backup/offload/enable",
     "/app/backup/offload/disable",
     "/app/backup/backup-now",
+    "/app/backup/pause",
+    "/app/backup/resume",
     "/app/backup/enable",
     "/app/backup/enable-hosted",
     "/app/backup/destination",

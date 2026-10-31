@@ -481,6 +481,8 @@ impl std::error::Error for ClosedToolError {}
 
 enum BackupAdmissionTerminal {
     Skip,
+    /// The owner paused backup; nothing reaches the destination until resume.
+    Paused,
     Unresolved,
     Error {
         record_journal: PathBuf,
@@ -766,6 +768,9 @@ fn prepare_backup_run(journal: &Path) -> Result<AdmittedCapability, BackupAdmiss
         })?;
     if config.get("enabled") != Some(&Value::Bool(true)) {
         return Err(BackupAdmissionTerminal::Skip);
+    }
+    if solstone_core_backup::backup_paused_at(&config).is_some() {
+        return Err(BackupAdmissionTerminal::Paused);
     }
     let Some(keys) =
         keys_from_backup_config(&config).map_err(|_| BackupAdmissionTerminal::Error {
@@ -1126,6 +1131,13 @@ pub fn backup_enabled(journal: &Path) -> bool {
     get_backup_config(journal).is_ok_and(|config| config.get("enabled") == Some(&Value::Bool(true)))
 }
 
+/// Whether the owner paused this journal's backup. Paused work skips before
+/// any tool runs.
+pub fn backup_paused(journal: &Path) -> bool {
+    get_backup_config(journal)
+        .is_ok_and(|config| solstone_core_backup::backup_paused_at(&config).is_some())
+}
+
 /// Persist a backup-run failure that happened before `run_backup` was invoked.
 pub fn record_backup_error(journal: &Path, clock: &dyn Clock, reason: &str) -> BackupResult {
     let result = BackupResult {
@@ -1172,6 +1184,13 @@ pub fn prepare(journal: &Path, clock: &dyn Clock) -> Result<AdmittedCapability, 
             error_reason: None,
             unreadable: None,
             detail: None,
+        }),
+        Err(BackupAdmissionTerminal::Paused) => Err(BackupResult {
+            status: "skipped".into(),
+            snapshot_id: None,
+            error_reason: None,
+            unreadable: None,
+            detail: Some("paused".into()),
         }),
         Err(BackupAdmissionTerminal::Unresolved) => Err(BackupResult {
             status: "error".into(),
@@ -2351,7 +2370,8 @@ pub fn admit_prepared_archive<'a>(
     let admission = (|| {
         operation.revalidate()?;
         let config = operation.configuration();
-        if !config.enabled() {
+        // A paused backup admits no archive write.
+        if !config.enabled() || config.paused() {
             return Err(ArchiveError::NotConfigured);
         }
         let keys = config.keys()?.ok_or(ArchiveError::NotConfigured)?;
@@ -3565,7 +3585,8 @@ pub fn admit_prepared_archive_owned_creator_installed<'a>(
                 .map_err(|_| ArchiveError::JournalIdentityChanged)?;
         }
         let config = operation.configuration();
-        if !config.enabled() {
+        // A paused backup admits no archive write.
+        if !config.enabled() || config.paused() {
             return Err(ArchiveError::NotConfigured);
         }
         let keys = config.keys()?.ok_or(ArchiveError::NotConfigured)?;
@@ -7480,6 +7501,40 @@ mod tests {
             assert_eq!(result.status, "skipped", "{name}");
             assert_eq!(result.error_reason, None, "{name}");
             assert_one_resolution_attempt();
+        }
+    }
+
+    #[test]
+    fn a_paused_backup_skips_every_destination_routine_before_any_tool() {
+        let journal = tempfile::tempdir().expect("test journal creates");
+        let mut backup = valid_backup_section(valid_destination());
+        backup["paused_at"] = json!(1_769_990_400);
+        write_backup_section(journal.path(), backup);
+        let clock = FixedClock;
+
+        let result = prepare_error(prepare(journal.path(), &clock));
+        assert_eq!(result.status, "skipped");
+        assert_eq!(result.detail.as_deref(), Some("paused"));
+
+        let maintenance = Maintenance;
+        let services = services(&PanicRunner, &PanicHttp, &clock, &maintenance);
+        assert_eq!(run_prune(journal.path(), &services).status, "skipped");
+        assert_eq!(
+            run_verification(journal.path(), &services, &clock).status,
+            "skipped"
+        );
+        assert_eq!(
+            run_archive_backup(journal.path(), &services, &[]).status,
+            "skipped"
+        );
+        assert!(backup_paused(journal.path()));
+        // Nothing was recorded: a pause is not a failed or skipped attempt.
+        let config = get_backup_config(journal.path()).unwrap();
+        for key in ["last_backup", "last_prune", "last_verification"] {
+            assert!(
+                config[key].get("status").is_none_or(Value::is_null),
+                "{key}"
+            );
         }
     }
 

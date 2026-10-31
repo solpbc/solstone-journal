@@ -98,7 +98,7 @@ pub fn run_planned_offload(
         );
     }
     if let Ok(configuration) = ArchiveConfiguration::capture(&root)
-        && !configuration.offload_enabled()
+        && (!configuration.offload_enabled() || configuration.paused())
     {
         if checkpoint().is_err()
             || configuration.revalidate(&root).is_err()
@@ -109,7 +109,14 @@ pub fn run_planned_offload(
                 Some("admission_changed"),
             );
         }
-        return outcome(PlannedOffloadDisposition::Skipped, Some("offload_off"));
+        return outcome(
+            PlannedOffloadDisposition::Skipped,
+            Some(if configuration.paused() {
+                "backup_paused"
+            } else {
+                "offload_off"
+            }),
+        );
     }
     #[cfg(target_os = "ios")]
     if deps

@@ -38,6 +38,9 @@ pub(crate) fn backup_run_result(result: BackupResult) -> CliRun {
             "backup: ok snapshot_id={}",
             result.snapshot_id.as_deref().unwrap_or("None")
         ),
+        "skipped" if result.detail.as_deref() == Some("paused") => {
+            format!("backup: skipped. {PAUSED_NOTHING_RAN}")
+        }
         "skipped" => "backup: skipped".to_owned(),
         // ⛔ Not a retry candidate: the broker has told us, permanently, that
         // this device's binding was replaced by a newer one. Local settings
@@ -59,7 +62,18 @@ pub(crate) fn backup_run_result(result: BackupResult) -> CliRun {
 }
 
 fn backup_prune(journal: &Path, services: &BackupServices<'_>) -> CliRun {
-    backup_prune_result(run_prune(journal, services))
+    paused_line(journal, backup_prune_result(run_prune(journal, services)))
+}
+
+const PAUSED_NOTHING_RAN: &str =
+    "backup is paused, so nothing ran. run `solstone journal backup resume` to start it again.";
+
+// A skip while paused says why, so a direct run doesn't read as a fault.
+fn paused_line(journal: &Path, mut run: CliRun) -> CliRun {
+    if solstone_core_backup_runtime::backup_paused(journal) && run.stdout.ends_with(": skipped\n") {
+        run.stdout = format!("{}. {PAUSED_NOTHING_RAN}\n", run.stdout.trim_end());
+    }
+    run
 }
 
 fn backup_prune_result(result: PruneResult) -> CliRun {
@@ -75,7 +89,10 @@ fn backup_prune_result(result: PruneResult) -> CliRun {
 }
 
 fn backup_verify(journal: &Path, services: &BackupServices<'_>) -> CliRun {
-    backup_verify_result(run_verification(journal, services, services.clock))
+    paused_line(
+        journal,
+        backup_verify_result(run_verification(journal, services, services.clock)),
+    )
 }
 
 fn backup_verify_result(result: VerificationResult) -> CliRun {

@@ -89,6 +89,7 @@
         "content_type": "application/json",
         "json": {
           "daily_key_set": true,
+          "paused_at": null,
           "destination": {
             "backend": "s3",
             "credentials_set": true,
@@ -594,6 +595,7 @@
         "content_type": "application/json",
         "json": {
           "daily_key_set": true,
+          "paused_at": null,
           "destination": {
             "backend": "s3",
             "credentials_set": true,
@@ -916,6 +918,7 @@
         "content_type": "application/json",
         "json": {
           "daily_key_set": false,
+          "paused_at": null,
           "destination": {
             "backend": null,
             "credentials_set": false,
@@ -1238,6 +1241,7 @@
         "content_type": "application/json",
         "json": {
           "daily_key_set": true,
+          "paused_at": null,
           "destination": {
             "backend": "s3",
             "credentials_set": true,

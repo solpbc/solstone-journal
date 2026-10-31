@@ -294,6 +294,13 @@ function fixture(document) {
   const showRestore = add(intro, 'button', { 'data-action': 'show-restore' });
   const generateKey = add(intro, 'button', { 'data-action': 'understand' });
   const management = add(panels, 'article', { 'data-backup-panel': 'management', hidden: '' });
+  const pausedSection = add(management, 'section', { 'data-paused-section': '', hidden: '' });
+  const resume = add(pausedSection, 'button', { 'data-action': 'resume' });
+  const byoLocation = add(management, 'section', { 'data-byo-location-section': '', hidden: '' });
+  add(byoLocation, 'p', { 'data-byo-location-meta': '' });
+  add(byoLocation, 'code', { 'data-byo-location-repository': '' });
+  const destinationEdit = add(byoLocation, 'button', { 'data-action': 'destination-edit' });
+  add(byoLocation, 'p', { 'data-byo-location-status': '', hidden: '' });
   const managementGrid = add(management, 'div', { class: 'backup-management-grid' });
   const lastBackup = add(managementGrid, 'p', { 'data-last-backup': '' });
   add(managementGrid, 'p', { 'data-last-successful-backup': '' });
@@ -340,6 +347,8 @@ function fixture(document) {
   const offloadForm = add(offload, 'form', { 'data-offload-enable-form': '' });
   const saveOffload = add(offloadForm, 'button', { 'data-action': 'offload-save' });
   add(offloadForm, 'button', { 'data-action': 'offload-enable' });
+  const pauseSection = add(management, 'section', { 'data-pause-section': '', hidden: '' });
+  const pause = add(pauseSection, 'button', { 'data-action': 'pause' });
   const teardownSection = add(management, 'section', { class: 'backup-teardown' });
   const teardownOpen = add(teardownSection, 'button', { 'data-action': 'teardown-open' });
   const teardownGate = add(teardownSection, 'div', { class: 'backup-teardown-gate', 'data-teardown-gate': '', hidden: '' });
@@ -365,7 +374,12 @@ function fixture(document) {
   destinationForm.elements.backend.value = 's3';
   const destinationStatus = add(destinationForm, 'p', { 'data-destination-status': '' });
   const enableBackup = add(destinationForm, 'button', { type: 'button', 'data-action': 'enable-backup' });
-  const saveDestination = add(destinationForm, 'button', { type: 'submit' });
+  const saveDestination = add(destinationForm, 'button', { type: 'submit', 'data-destination-save': '' });
+  const destinationCancel = add(destinationForm, 'button', { type: 'button', 'data-action': 'destination-edit-cancel', hidden: '' });
+  const switchGate = add(destinationForm, 'div', { 'data-switch-gate': '', hidden: '' });
+  const switchDays = add(switchGate, 'p', { 'data-switch-days': '', hidden: '' });
+  add(switchGate, 'button', { type: 'button', 'data-action': 'switch-restore-first', hidden: '' });
+  const switchConfirm = add(switchGate, 'button', { type: 'button', 'data-action': 'switch-confirm' });
   add(destination, 'div', { 'data-mode-panel': 'hosted', hidden: '' });
 
   const restore = add(panels, 'article', { 'data-backup-panel': 'restore', hidden: '' });
@@ -393,7 +407,7 @@ function fixture(document) {
   add(byo, 'form', { 'data-restore-form': '' });
   const panelCancel = add(restore, 'button', { 'data-action': 'cancel-restore' });
   panelCancel.textContent = 'cancel';
-  return { root, destination, destinationForm, destinationStatus, enableBackup, saveDestination, showRestore, generateKey, backupNow, viewKey, rotateKey, retention, saveRetention, offloadProof, lastOffload, lastVerify, runHistory, runSuccessTime, verifyHistory, verifySuccessTime, stallReason, saveOffload, restore, destinationByo, destinationHosted, byoLane, operatedLane, operated, byo, heading, keyControl, key, keyReassurance, outcome, primary, attemptCancel, reopen, panelCancel, banner, cleanupBanner, cleanup, management, managementGrid, lastBackup, teardownOpen, teardownGate, teardownInput, teardownConfirm };
+  return { pausedSection, resume, byoLocation, destinationEdit, pauseSection, pause, destinationCancel, switchGate, switchDays, switchConfirm, root, destination, destinationForm, destinationStatus, enableBackup, saveDestination, showRestore, generateKey, backupNow, viewKey, rotateKey, retention, saveRetention, offloadProof, lastOffload, lastVerify, runHistory, runSuccessTime, verifyHistory, verifySuccessTime, stallReason, saveOffload, restore, destinationByo, destinationHosted, byoLane, operatedLane, operated, byo, heading, keyControl, key, keyReassurance, outcome, primary, attemptCancel, reopen, panelCancel, banner, cleanupBanner, cleanup, management, managementGrid, lastBackup, teardownOpen, teardownGate, teardownInput, teardownConfirm };
 }
 
 function createHarness(options = {}) {
@@ -2288,6 +2302,70 @@ asyncCase('detached workspaces dispose subscriptions and ignore an in-flight res
   const replacement = createHarness({ realtime: true });
   await ready(replacement);
   assert.strictEqual(replacement.subscriptions(), 2);
+});
+
+testCase('a paused backup reads as the owner\'s choice, never as failing', () => {
+  const harness = createHarness();
+  const view = harness.window.BackupStatus.select({
+    ...status(), enabled: true, paused_at: 1770000000,
+    last_backup: { status: 'error', error_reason: 'timeout', time: 1769990000 },
+  });
+  assert.strictEqual(view.tone, 'neutral');
+  assert.ok(view.text.startsWith('you paused backup on '), view.text);
+});
+
+asyncCase('paused hides back up now and pause, and resume posts', async () => {
+  const paused = { ...status(), enabled: true, paused_at: 1770000000 };
+  const harness = createHarness({ respond(call) {
+    if (call.url === '/app/backup/status') return response(paused);
+    if (call.url === '/app/backup/resume') return response({ ...paused, paused_at: null });
+    return undefined;
+  } });
+  await ready(harness);
+  assert.strictEqual(harness.pausedSection.hidden, false);
+  assert.strictEqual(harness.backupNow.hidden, true);
+  assert.strictEqual(harness.pauseSection.hidden, true);
+  click(harness.resume);
+  await settle();
+  assert.ok(harness.calls.some((call) => call.url === '/app/backup/resume'));
+  assert.strictEqual(harness.pausedSection.hidden, true);
+  assert.strictEqual(harness.backupNow.hidden, false);
+  assert.strictEqual(harness.pauseSection.hidden, false);
+});
+
+asyncCase('a different repository asks first, then posts the confirmation', async () => {
+  const on = { ...status(), enabled: true, mode: 'byo',
+    destination: { repository: 's3:host/bucket/old', backend: 's3', credentials_set: true } };
+  const posted = [];
+  const harness = createHarness({ respond(call) {
+    if (call.url === '/app/backup/status') return response(on);
+    if (call.url === '/app/backup/destination') {
+      const body = JSON.parse(call.request.body);
+      posted.push(body);
+      return body.confirm_new_repository
+        ? response({ error: 'x', reason_code: 'bucket_not_found' }, 400) : undefined;
+    }
+    return undefined;
+  } });
+  await ready(harness);
+  assert.strictEqual(harness.byoLocation.hidden, false);
+  click(harness.destinationEdit);
+  await settle();
+  assert.strictEqual(harness.destination.hidden, false);
+  assert.strictEqual(harness.enableBackup.hidden, true);
+  assert.strictEqual(harness.destinationForm.elements.repository.value, 's3:host/bucket/old');
+  harness.destinationForm.elements.repository.value = 's3:host/bucket/new';
+  harness.destinationForm.dispatchEvent(event('submit', { cancelable: true }));
+  await settle();
+  assert.strictEqual(posted.length, 0);
+  assert.strictEqual(harness.switchGate.hidden, false);
+  click(harness.switchConfirm);
+  await settle();
+  assert.strictEqual(posted.length, 1);
+  assert.strictEqual(posted[0].confirm_new_repository, true);
+  assert.ok(harness.destinationStatus.textContent.includes('a bucket by that name, so nothing was saved'));
+  assert.strictEqual(harness.destinationStatus.getAttribute('data-tone'), 'refused');
+  assert.strictEqual(harness.destination.hidden, false);
 });
 
 async function runAsyncCases() {

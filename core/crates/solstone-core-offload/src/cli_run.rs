@@ -84,8 +84,10 @@ enum Custody {
         _root: Option<Arc<JournalRoot>>,
         _clock: Arc<dyn Clock + Send + Sync>,
     },
-    /// Offload is off in this journal's configuration, so nothing was prepared.
+    /// Offload is off in this journal's configuration, or the owner paused
+    /// backup, so nothing was prepared.
     Skipped {
+        paused: bool,
         _root: Arc<JournalRoot>,
         _clock: Arc<dyn Clock + Send + Sync>,
     },
@@ -329,11 +331,13 @@ pub fn run_cli_offload(
         );
     }
     // Offload stays off until the owner turns it on, and a scheduled run then
-    // has nothing to do. Configuration that can't be read goes on to
-    // preparation, which refuses it.
-    if ArchiveConfiguration::capture(&root).is_ok_and(|config| !config.offload_enabled()) {
+    // has nothing to do; a paused backup likewise offloads nothing. Configuration
+    // that can't be read goes on to preparation, which refuses it.
+    let captured = ArchiveConfiguration::capture(&root).ok();
+    if let Some(config) = captured.filter(|config| !config.offload_enabled() || config.paused()) {
         return OwnedOffloadCliRun::receive(
             Custody::Skipped {
+                paused: config.paused(),
                 _root: root,
                 _clock: clock,
             },

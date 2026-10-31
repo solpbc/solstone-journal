@@ -223,6 +223,12 @@ impl ArchiveConfiguration {
         self.settings.get("enabled") == Some(&Value::Bool(true))
     }
 
+    /// The owner paused backup. Nothing that writes to or maintains the
+    /// destination is admitted; reads for restore still are.
+    pub fn paused(&self) -> bool {
+        crate::backup_paused_at(&self.settings).is_some()
+    }
+
     pub fn mode(&self) -> Option<&str> {
         self.settings.get("mode").and_then(Value::as_str)
     }
@@ -302,9 +308,11 @@ impl ArchiveConfiguration {
         };
         root.revalidate_canonical_binding()
             .map_err(|_| AdmissionError::JournalIdentityChanged)?;
-        // Status, schedules and accounting are not transport identity.
+        // Status, schedules and accounting are not transport identity. A pause
+        // is admission, so pausing mid-operation reads as a changed configuration.
         let settings = [
             "enabled",
+            "paused_at",
             "mode",
             "destination",
             "daily_key",

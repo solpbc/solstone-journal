@@ -52,7 +52,32 @@
         "locked": "the destination is busy. try again shortly.",
         "timeout": "the destination took too long to respond. try again shortly.",
         "unreachable": "the destination couldn't be reached. check the backup location and try again.",
-        "bucket_not_found": "these credentials can't open a bucket by that name. check that the repository has the bucket's own name, not the key's name."
+        "bucket_not_found": "these credentials can't open a bucket by that name. check that the repository uses the bucket's name, not your storage key's name. if the bucket doesn't exist yet, make it with your storage provider first."
+      },
+      "edit": {
+        "lead": "change the repository, the credentials or both. your recovery key stays the same.",
+        "keep_hint": "leave both empty to keep the credentials you use now.",
+        "partial_credentials": "enter both, or leave both empty to keep the credentials you use now.",
+        "checking": "checking the destination…",
+        "no_change": "that's already your destination.",
+        "saved_credentials": "saved. the new credentials open your backup.",
+        "saved_existing": "saved. there's already a backup there that your journal can open, so it uses that one.",
+        "saved_new": "saved. there was no backup there yet, so your journal set up a new one.",
+        "confirm_title": "back up somewhere new?",
+        "confirm_lead": "your existing backup stays where it is, untouched. once you switch, your journal won't back up to it or restore from it.",
+        "confirm_days": "{days} days of your journal ({size}) exist only in that backup.",
+        "confirm_day": "1 day of your journal ({size}) exists only in that backup.",
+        "confirm_days_unavailable": "can't check right now how many days of your journal exist only in that backup.",
+        "confirm_action": "use the new destination",
+        "refusals": {
+          "auth_failed": "the destination rejected the credentials, so nothing was saved. check them and try again.",
+          "bucket_not_found": "these credentials can't open a bucket by that name, so nothing was saved. check the bucket name in the repository.",
+          "repository_key_refused": "there's already a backup there that your recovery key can't open, so nothing was saved. choose another destination.",
+          "unreachable": "the destination couldn't be opened, so nothing was saved. check the repository and credentials, then try again.",
+          "timeout": "the destination didn't answer in time, so nothing was saved. check the repository and credentials, then try again.",
+          "locked": "the backup there is busy, so nothing was saved. try again shortly.",
+          "destination_unchanged": "that's already your destination."
+        }
       },
       "modes": {
         "byo": {
@@ -87,6 +112,16 @@
       "rotate_key_summary": "replace your recovery key",
       "rotate_key_caption": "this replaces your recovery key. the old key stops working, so every copy of it you saved becomes useless. write the new one down before you leave this page.",
       "retention_hint": "how many recent copies to keep at each interval.",
+      "location_meta": "your own storage · {backend}",
+      "pause": {
+        "title": "pause backup",
+        "caption": "stops backups, spot-checks, cleanup and media offload until you resume. your backup, keys and history stay as they are."
+      },
+      "paused": {
+        "title": "backup is paused",
+        "body": "no backups run until you resume. your backup stays as it was, and restoring still works.",
+        "hosted_note": "pausing doesn't turn off encrypted backup in the services portal."
+      },
       "status_labels": {
         "last_backup": "latest backup attempt",
         "last_successful_backup": "last successful backup",
@@ -168,6 +203,8 @@
         }
       },
       "disable_note": "this stops. days already in your backup stay there, protected and restorable.",
+      "paused_note": "media offload is paused with backup. no media leaves this computer until you resume.",
+      "paused_enable_note": "resume backup to turn on media offload.",
       "unavailable_lead": "can't read offload status right now.",
       "action_error": "media offload couldn't finish. check backup setup, then try again.",
       "invalid_limits": "enter a positive number for each limit, then save again.",
@@ -266,6 +303,7 @@
       "empty": "not set up yet"
     },
     "operation_reason_labels": {
+      "backup_paused": "backup is paused. resume it, then try again.",
       "cleanup_pending": "couldn't confirm that the backup task has stopped. other backup actions are waiting.",
       "backup_busy": "another backup task is already running. try again in a moment.",
       "backup_not_confirmed": "confirm your recovery key before turning on backup.",
@@ -314,6 +352,9 @@
       "start": "get started",
       "understand": "i understand",
       "save_destination": "save destination",
+      "change_destination": "change destination",
+      "pause": "pause backup",
+      "resume": "resume backup",
       "enable": "turn on backup",
       "backup_now": "back up now",
       "view_key": "view recovery key",
@@ -365,7 +406,9 @@
     'understand', 'enable-backup', 'enable-hosted', 'backup-now', 'rotate-key',
     'teardown-confirm', 'teardown-restore-first', 'restore-hosted-unbound-start',
     'offload-enable', 'offload-save', 'offload-disable', 'offload-restore-day',
+    'pause', 'resume', 'destination-edit', 'switch-confirm', 'switch-restore-first',
   ]);
+  let destinationEditing = false;
   let restoreLane = null;
   let hostedRestoreAttempt = {
     stage: 'idle',
@@ -481,6 +524,8 @@
   const hostedCopy = copy.hosted || {};
   const restoreHostedCopy = (copy.restore && copy.restore.hosted) || {};
   const offloadCopy = copy.offload || {};
+  const editCopy = (copy.destination && copy.destination.edit) || {};
+  const fieldLabels = (copy.destination && copy.destination.field_labels) || {};
   const offloadLabels = offloadCopy.labels || {};
   const offloadMessages = offloadCopy.messages || {};
   const offloadStallLabels = offloadCopy.stall_reason_labels || {};
@@ -1059,6 +1104,33 @@
     if (detail) detail.hidden = !exact;
   }
 
+  // A pause is the owner's choice. It keeps every setting and stops only the
+  // work that reaches the destination; the server enforces the same flag.
+  function backupPaused() {
+    return state.enabled === true && Number.isInteger(state.paused_at);
+  }
+
+  function renderPaused() {
+    const paused = backupPaused();
+    setElementHidden('[data-paused-section]', !paused);
+    setElementHidden('[data-paused-hosted-note]', !(paused && state.mode === 'operated'));
+    setElementHidden('[data-pause-section]', paused || state.enabled !== true);
+    setElementHidden('[data-action="backup-now"]', paused);
+  }
+
+  function renderByoLocation() {
+    const section = root.querySelector('[data-byo-location-section]');
+    if (!section) return;
+    const destination = state.destination || {};
+    const repository = typeof destination.repository === 'string' ? destination.repository : '';
+    const show = state.enabled === true && state.mode === 'byo' && repository !== '';
+    section.hidden = !show;
+    if (!show) return;
+    const backend = destination.backend === 'b2' ? fieldLabels.b2 : fieldLabels.s3;
+    setText('[data-byo-location-meta]', (managementCopy.location_meta || '').replace('{backend}', backend || ''));
+    setText('[data-byo-location-repository]', repository);
+  }
+
   function formatTime(value) {
     if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
       return statusLabels.not_yet || '';
@@ -1572,9 +1644,20 @@
       if (field) field.disabled = !showControls;
     }
 
+    // Paused: offload runs with backup, so it reads as paused too, and turning
+    // it on waits for resume.
+    const paused = backupPaused();
+    const pausedNote = root.querySelector('[data-offload-paused-note]');
+    if (pausedNote) {
+      pausedNote.textContent = paused
+        ? (enabled ? offloadCopy.paused_note : offloadCopy.paused_enable_note) || '' : '';
+      pausedNote.hidden = !paused || (!enabled && !showControls);
+    }
+    if (form && paused && !enabled) form.hidden = true;
+
     const stakes = root.querySelector('[data-offload-stakes]');
     if (stakes) {
-      stakes.hidden = !showControls;
+      stakes.hidden = !showControls || (paused && !enabled);
       stakes.classList.toggle('backup-offload-stakes--warning', showControls && !enabled);
       stakes.classList.toggle('backup-offload-stakes--note', showControls && enabled);
     }
@@ -1814,6 +1897,8 @@
     renderCleanup();
     renderHostedRestoreOperation();
     renderHostedLocation();
+    renderByoLocation();
+    renderPaused();
     renderOffload();
     applyCleanupFence();
     const heading = root.querySelector('h1[data-copy="intro.title"]') || document.querySelector('h1');
@@ -2164,6 +2249,131 @@
     return payload;
   }
 
+  function destinationMessage(text, tone) {
+    const element = root.querySelector('[data-destination-status]');
+    if (!element) return;
+    element.textContent = text || '';
+    element.hidden = !text;
+    if (tone) element.setAttribute('data-tone', tone);
+    else element.removeAttribute('data-tone');
+  }
+
+  function syncKeepHint() {
+    const form = root.querySelector('[data-destination-form]');
+    const current = (state.destination || {}).backend;
+    setElementHidden('[data-destination-keep-hint]',
+      !(destinationEditing && form && formValue(form, 'backend') === current));
+  }
+
+  function hideSwitchGate() {
+    setElementHidden('[data-switch-gate]', true);
+    setElementHidden('[data-destination-actions]', false);
+  }
+
+  function setDestinationEditMode(editing) {
+    destinationEditing = editing;
+    setElementHidden('[data-destination-setup-heading]', editing);
+    setElementHidden('[data-destination-edit-heading]', !editing);
+    setElementHidden('[data-destination-edit-lead]', !editing);
+    setElementHidden('.backup-modes', editing);
+    setElementHidden('[data-action="enable-backup"]', editing);
+    setElementHidden('[data-action="destination-edit-cancel"]', !editing);
+    root.querySelector('[data-destination-save]')?.classList.toggle('primary', editing);
+    hideSwitchGate();
+    syncKeepHint();
+  }
+
+  // Secrets never come back to the page, so the credential fields start empty;
+  // empty with the same backend keeps the current ones.
+  function openDestinationEdit() {
+    const form = root.querySelector('[data-destination-form]');
+    if (!form) return;
+    const destination = state.destination || {};
+    form.elements.repository.value = destination.repository || '';
+    form.elements.backend.value = destination.backend === 'b2' ? 'b2' : 's3';
+    for (const name of ['access_key_id', 'secret_access_key', 'account_id', 'account_key']) {
+      if (form.elements[name]) form.elements[name].value = '';
+    }
+    setMode('byo');
+    syncBackendFields('');
+    setDestinationEditMode(true);
+    destinationMessage('', null);
+    showMessage('[data-byo-location-status]', '');
+    showPanel('destination');
+  }
+
+  function closeDestinationEdit(savedMessage) {
+    setDestinationEditMode(false);
+    destinationMessage('', null);
+    showPanel('management');
+    showMessage('[data-byo-location-status]', savedMessage || '');
+  }
+
+  function editRefusal(err) {
+    const code = err && err.reason_code;
+    return (editCopy.refusals || {})[code] || reasonLabel(code) || (err && err.error) || '';
+  }
+
+  function credentialsFilled(body) {
+    const values = Object.values(body.credentials);
+    const filled = values.filter(Boolean).length;
+    return filled === 0 ? 'none' : filled === values.length ? 'all' : 'some';
+  }
+
+  // These totals explain the confirmation; the server still asks for it.
+  async function openSwitchGate() {
+    try {
+      await refreshOffloadStatus();
+    } catch (err) {
+      if (window.logError) window.logError(err, { context: 'backup switch offload status failed' });
+      renderOffloadUnavailable();
+    }
+    const totals = backupOnlyTotalsForTeardown();
+    const kept = Boolean(totals && (totals.days > 0 || totals.bytes > 0));
+    let line = '';
+    if (totals === null) line = editCopy.confirm_days_unavailable || '';
+    else if (kept && totals.days === 1) line = (editCopy.confirm_day || '').replace('{size}', totals.size);
+    else if (kept) {
+      line = (editCopy.confirm_days || '')
+        .replace('{days}', totals.days.toLocaleString())
+        .replace('{size}', totals.size);
+    }
+    showMessage('[data-switch-days]', line);
+    setElementHidden('[data-action="switch-restore-first"]', !kept);
+    destinationMessage('', null);
+    setElementHidden('[data-destination-actions]', true);
+    setElementHidden('[data-switch-gate]', false);
+  }
+
+  async function submitDestinationEdit(form, confirmed) {
+    const body = destinationBody(form);
+    if (credentialsFilled(body) === 'some') {
+      destinationMessage(editCopy.partial_credentials, 'refused');
+      return;
+    }
+    const current = state.destination || {};
+    if (!confirmed && (body.repository !== current.repository || body.backend !== current.backend)) {
+      await openSwitchGate();
+      return;
+    }
+    if (confirmed) body.confirm_new_repository = true;
+    hideSwitchGate();
+    destinationMessage(editCopy.checking, null);
+    const save = root.querySelector('[data-destination-save]');
+    if (save) save.disabled = true;
+    try {
+      const payload = await postJson('/app/backup/destination', body);
+      applyPayload(payload);
+      const status = payload.destination_status || {};
+      closeDestinationEdit(status.change === 'credentials' ? editCopy.saved_credentials
+        : status.reason_code === 'repo_missing' ? editCopy.saved_new : editCopy.saved_existing);
+    } catch (err) {
+      destinationMessage(editRefusal(err), 'refused');
+    } finally {
+      if (save) save.disabled = false;
+    }
+  }
+
   function bindIntro() {
     root.addEventListener('click', async function (event) {
       const button = event.target.closest('[data-action]');
@@ -2195,6 +2405,14 @@
           await cancelHostedRestoreAttempt({ showCancelled: true });
           return;
         }
+        if (action === 'destination-edit') openDestinationEdit();
+        if (action === 'destination-edit-cancel') closeDestinationEdit('');
+        if (action === 'switch-cancel') hideSwitchGate();
+        if (action === 'switch-confirm') {
+          await submitDestinationEdit(root.querySelector('[data-destination-form]'), true);
+        }
+        if (action === 'pause') applyPayload(await postJson('/app/backup/pause'));
+        if (action === 'resume') applyPayload(await postJson('/app/backup/resume'));
         if (action === 'start') showPanel('educate');
         if (action === 'show-restore') showPanel('restore');
         if (action === 'understand') {
@@ -2236,6 +2454,12 @@
           if (payload.operation && payload.operation.kind === 'teardown' && !operationActive(payload.operation)) {
             resetTeardownGate();
           }
+        }
+        if (action === 'switch-restore-first') {
+          closeDestinationEdit('');
+          const totalBytes = offloadState.payload?.backup_only?.total_bytes;
+          showMessage('[data-offload-restore-status]', offloadRestoreExpectation(totalBytes));
+          await startOperation('/app/backup/offload/restore', { all: true });
         }
         if (action === 'teardown-restore-first') {
           const totalBytes =
@@ -2295,7 +2519,7 @@
           renderOffloadDays((offloadState.payload && offloadState.payload.days) || []);
         }
       } catch (err) {
-        if (action === 'offload-restore-day' || action === 'teardown-restore-first') {
+        if (['offload-restore-day', 'teardown-restore-first', 'switch-restore-first'].includes(action)) {
           showMessage('[data-offload-restore-status]', '');
         }
         if (action && action.startsWith('teardown-')) {
@@ -2337,6 +2561,10 @@
       destinationForm.addEventListener('submit', async function (event) {
         event.preventDefault();
         if (cleanupRequired()) return;
+        if (destinationEditing) {
+          await submitDestinationEdit(destinationForm, false);
+          return;
+        }
         try {
           await saveDestination(destinationForm, '[data-destination-status]');
         } catch (err) {
@@ -2391,6 +2619,7 @@
     if (destinationBackend) {
       destinationBackend.addEventListener('change', function () {
         syncBackendFields('');
+        syncKeepHint();
       });
     }
     const restoreBackend = root.querySelector('[data-field="restore_backend"]');

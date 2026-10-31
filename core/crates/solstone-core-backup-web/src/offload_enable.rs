@@ -180,6 +180,11 @@ fn enable(
             "backup is disabled",
         );
     }
+    // Turning offload on starts a verification and offload runs; a paused
+    // backup admits neither, so the owner resumes first.
+    if crate::pause::paused(&snapshot.backup) {
+        return crate::pause::paused_response();
+    }
     if snapshot.backup.get("confirmed_recovery_key") != Some(&Value::Bool(true)) {
         return response::error(
             StatusCode::BAD_REQUEST,

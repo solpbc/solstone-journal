@@ -30,11 +30,12 @@ use solstone_core_backup_runtime::restore::{
     MobileRestoreIdentity, MobileSelection, restore_mobile_journal,
 };
 use solstone_core_backup_runtime::{
-    BackupServices, Clock, ClosedToolError, HttpTransport, JournalMaintenance,
-    NativeJournalMaintenance, NativeRestoreRecorder, ResolvedTools, RestoreDraft, RestoreOutcome,
-    RestoreRecorder, SystemToolRunner, ToolRunner, UreqHttpTransport, init_repository,
-    log_key_label_outcome, neutralize_key_labels, operated_destination, publish_restore_outcome,
-    reason_for_returncode, resolve_operational_tools, rotate_recovery_key, validate_destination,
+    BackupServices, Clock, ClosedToolError, DestinationEditRefusal, HttpTransport,
+    JournalMaintenance, NativeJournalMaintenance, NativeRestoreRecorder, ResolvedTools,
+    RestoreDraft, RestoreOutcome, RestoreRecorder, SystemToolRunner, ToolRunner, UreqHttpTransport,
+    init_repository, log_key_label_outcome, neutralize_key_labels, operated_destination,
+    publish_restore_outcome, reason_for_returncode, resolve_operational_tools, rotate_recovery_key,
+    validate_destination,
 };
 
 pub mod archive_operation;
@@ -55,6 +56,7 @@ mod offload_enable;
 mod offload_report;
 mod offload_support;
 mod operation;
+mod pause;
 mod recovery_owner;
 pub mod removal_report;
 mod response;
@@ -271,6 +273,8 @@ pub fn routes_with_deps(deps: BackupWebDeps) -> Router {
     let confirm = deps.clone();
     let retention_deps = deps.clone();
     let backup_now_deps = deps.clone();
+    let pause_deps = deps.clone();
+    let resume_deps = deps.clone();
     let enable = deps.clone();
     let enable_hosted = deps.clone();
     let destination = deps.clone();
@@ -333,6 +337,14 @@ pub fn routes_with_deps(deps: BackupWebDeps) -> Router {
         .route(
             "/app/backup/backup-now",
             post(move || backup_now(backup_now_deps.clone())),
+        )
+        .route(
+            "/app/backup/pause",
+            post(move || pause::pause(pause_deps.clone())),
+        )
+        .route(
+            "/app/backup/resume",
+            post(move || pause::resume(resume_deps.clone())),
         )
         .route(
             "/app/backup/enable",
@@ -730,6 +742,9 @@ async fn offload_disable(deps: BackupWebDeps) -> axum::response::Response {
 }
 
 async fn backup_now(deps: BackupWebDeps) -> axum::response::Response {
+    if config::backup(&deps.journal_root).is_ok_and(|backup| pause::paused(&backup)) {
+        return pause::paused_response();
+    }
     if !callosum::request(&deps.journal_root, "backup:run") {
         return response::error(
             axum::http::StatusCode::SERVICE_UNAVAILABLE,
@@ -1046,6 +1061,14 @@ async fn set_backup_destination(deps: BackupWebDeps, body: Bytes) -> axum::respo
         Ok(value) => value,
         Err(error) => return error,
     };
+    // With own-storage backup on, this is an edit: checked before it saves.
+    if let Ok(backup) = config::backup(&deps.journal_root)
+        && backup.get("enabled") == Some(&Value::Bool(true))
+        && (backup.get("mode").and_then(Value::as_str) == Some("operated")
+            || solstone_core_backup::destination_from_config(&backup).is_some())
+    {
+        return edit_backup_destination(&deps, payload, &backup);
+    }
     if let Err(error) = validation::destination(&payload) {
         return error;
     }
@@ -1106,6 +1129,139 @@ async fn set_backup_destination(deps: BackupWebDeps, body: Bytes) -> axum::respo
         ),
         Err(_) => internal_error(),
     }
+}
+
+/// Change an own-storage destination while backup stays on. Empty credentials
+/// with the same backend keep the current ones, so fixing a repository needs no
+/// secrets typed again. Nothing is saved unless the new destination is usable.
+fn edit_backup_destination(
+    deps: &BackupWebDeps,
+    mut payload: Map<String, Value>,
+    backup: &Map<String, Value>,
+) -> axum::response::Response {
+    if backup.get("mode").and_then(Value::as_str) != Some("byo") {
+        return response::error(
+            axum::http::StatusCode::BAD_REQUEST,
+            "that action isn't available in the current state.",
+            "invalid_operation_for_state",
+            "hosted backup has no destination to change",
+        );
+    }
+    if let Some(current) = solstone_core_backup::destination_from_config(backup)
+        && payload
+            .get("backend")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            == Some(current.backend.as_str())
+        && credentials_blank(&payload)
+    {
+        payload.remove("credentials");
+        for (key, value) in current.credentials {
+            payload.insert(key, value);
+        }
+    }
+    if let Err(error) = validation::destination(&payload) {
+        return error;
+    }
+    let _guard = match admit_write(&deps.operations, AdmitWrite::IdleOnly) {
+        Ok(guard) => guard,
+        Err(response) => return response,
+    };
+    let destination = destination_from_payload(&payload);
+    if !solstone_core_backup::repository_names_backend(&destination) {
+        return response::error(
+            axum::http::StatusCode::BAD_REQUEST,
+            "one of those values couldn't be used.",
+            "repository_unsupported",
+            "repository must start with the backend name",
+        );
+    }
+    let tools = match resolve_tools(deps) {
+        Ok(tools) => tools,
+        Err(error) => {
+            return response::error_with_guidance(
+                axum::http::StatusCode::SERVICE_UNAVAILABLE,
+                &error.to_string(),
+                "restic_unavailable",
+                error.detail(),
+                Some(error.guidance()),
+            );
+        }
+    };
+    let confirm = payload.get("confirm_new_repository") == Some(&Value::Bool(true));
+    let runner = lifetime_runner(deps);
+    match solstone_core_backup_runtime::edit_destination(
+        &runner,
+        &deps.journal_root,
+        &destination,
+        tools.restic.invocation(),
+        confirm,
+    ) {
+        Ok((change, status)) => match status::status(&deps.journal_root, &deps.operations) {
+            Ok(mut value) => {
+                value["destination_status"] = json!({
+                    "reachable": status.reachable,
+                    "repo_exists": status.repo_exists,
+                    "reason_code": status.reason_code,
+                    "message": status.message,
+                    "change": change.as_str(),
+                });
+                response::success(value)
+            }
+            Err(_) => internal_error(),
+        },
+        Err(DestinationEditRefusal::NeedsConfirmation) => response::error(
+            axum::http::StatusCode::CONFLICT,
+            "that's a different repository. confirm the change to use it.",
+            "confirm_new_repository",
+            "",
+        ),
+        Err(DestinationEditRefusal::Unusable(status)) => response::error(
+            axum::http::StatusCode::BAD_REQUEST,
+            status.message,
+            status.reason_code,
+            "nothing was saved",
+        ),
+        Err(DestinationEditRefusal::SetupFailed(reason)) => response::error(
+            axum::http::StatusCode::BAD_GATEWAY,
+            "a backup couldn't be set up there. nothing was saved.",
+            reason,
+            "nothing was saved",
+        ),
+        Err(DestinationEditRefusal::Unchanged) => response::error(
+            axum::http::StatusCode::BAD_REQUEST,
+            "that's already your destination.",
+            "destination_unchanged",
+            "nothing was saved",
+        ),
+        Err(DestinationEditRefusal::NotEditable) => response::error(
+            axum::http::StatusCode::BAD_REQUEST,
+            "that action isn't available in the current state.",
+            "invalid_operation_for_state",
+            "own-storage backup isn't on",
+        ),
+        Err(DestinationEditRefusal::Config(_)) => internal_error(),
+    }
+}
+
+fn credentials_blank(payload: &Map<String, Value>) -> bool {
+    let source = payload
+        .get("credentials")
+        .and_then(Value::as_object)
+        .unwrap_or(payload);
+    [
+        "access_key_id",
+        "secret_access_key",
+        "account_id",
+        "account_key",
+    ]
+    .iter()
+    .all(|key| {
+        source
+            .get(*key)
+            .and_then(Value::as_str)
+            .is_none_or(|value| value.trim().is_empty())
+    })
 }
 
 fn destination_status_response(

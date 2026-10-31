@@ -58,6 +58,19 @@ pub fn validate_destination<'invocation>(
             reason_code: "repo_exists",
             message: "backup repository is reachable",
         },
+        // restic reports a B2 bucket that doesn't exist as no repository too,
+        // and `init` would then create a bucket named after a typo. Only a
+        // missing config file inside a bucket that exists means needs setup.
+        10 if destination.backend == "b2"
+            && !result.stderr.contains("unable to open config file") =>
+        {
+            DestinationStatus {
+                reachable: true,
+                repo_exists: false,
+                reason_code: "bucket_not_found",
+                message: "these credentials can't open a bucket by that name",
+            }
+        }
         10 => DestinationStatus {
             reachable: true,
             repo_exists: false,
@@ -94,8 +107,8 @@ pub fn validate_destination<'invocation>(
 // A B2 key scoped to one bucket is refused at list_buckets when the repository
 // names any other bucket, which is how a key's name typed as the bucket's
 // shows up. A key that can list every bucket never gets here: restic reports
-// a missing bucket as no repository (10). Rejected B2 credentials are refused
-// one step earlier.
+// a missing bucket as no repository (10), handled above. Rejected B2
+// credentials are refused one step earlier.
 fn open_failure_status(stderr: &str) -> DestinationStatus {
     if stderr.contains("b2_authorize_account: 401") {
         return DestinationStatus {
@@ -249,6 +262,52 @@ mod tests {
                 (status.reason_code, status.reachable, status.repo_exists),
                 (reason, reachable, false)
             );
+        }
+    }
+
+    // Captured from restic 0.19.0 against Backblaze B2 with a key that can
+    // reach every bucket, read-only `cat config`, 2026-10-31. Both exit 10;
+    // only the second is a bucket that exists with nothing in it yet, and only
+    // that one may be set up. `init` on the first creates the mistyped bucket.
+    #[test]
+    fn a_missing_b2_bucket_is_never_read_as_needs_setup() {
+        let b2 = Destination {
+            repository: "b2:typo:journal".into(),
+            backend: "b2".into(),
+            credentials: serde_json::from_value(json!({"account_id":"ID","account_key":"KEY"}))
+                .unwrap(),
+        };
+        for (destination, stderr, reason) in [
+            (
+                &b2,
+                "Fatal: repository does not exist at b2:solstone-nonexistent-probe-7f3a91:journal: repository does not exist\n",
+                "bucket_not_found",
+            ),
+            (
+                &b2,
+                "Fatal: repository does not exist: unable to open config file: Stat: b2_download_file_by_name: 404: \nIs there a repository at the following location?\nb2:extro-backup-bd4a90de:nonexistent-probe-path\n",
+                "repo_missing",
+            ),
+            (
+                &destination(),
+                "Fatal: repository does not exist: unable to open config file: Stat: The specified key does not exist.\nIs there a repository at the following location?\ns3:s3.us-west-004.backblazeb2.com/extro-backup-bd4a90de/nonexistent-probe-path\n",
+                "repo_missing",
+            ),
+        ] {
+            let runner = Fixture {
+                code: 10,
+                stderr,
+                requests: RefCell::new(vec![]),
+            };
+            let status = validate_destination(
+                &runner,
+                destination,
+                "PASSWORD",
+                Path::new("/fixture/bin/restic"),
+                None,
+            )
+            .unwrap();
+            assert_eq!((status.reason_code, status.repo_exists), (reason, false));
         }
     }
 }

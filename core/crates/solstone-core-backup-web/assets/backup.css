@@ -157,6 +157,13 @@
 }
 
 .backup-panel[hidden],
+.backup-modes[hidden],
+.backup-location[hidden],
+.backup-paused[hidden],
+.backup-paused-note[hidden],
+.backup-pause[hidden],
+.backup-switch-gate[hidden],
+.backup-status-message[hidden],
 .backup-operation[hidden],
 [data-restore-lane-panel][hidden],
 [data-hosted-restore-key-control][hidden],
@@ -739,4 +746,58 @@
   [data-backup-root] {
     padding-left: 1rem;
   }
+}
+
+/* own-storage destination, the sibling of the hosted location section */
+.backup-location {
+  margin: 0 0 1.1rem;
+  padding-bottom: 1.1rem;
+  border-bottom: 1px solid var(--hairline);
+}
+.backup-location code {
+  display: inline-block;
+  padding: 0.15rem 0.45rem;
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  background: var(--cream-bright);
+  font-family: var(--font-mono);
+  font-size: 0.9rem;
+  overflow-wrap: anywhere;
+}
+.backup-location-meta { color: var(--ink-soft-paper); }
+
+/* a refused save reads as a refusal, not as a grey hint */
+.backup-status-message[data-tone="refused"] { color: var(--danger); }
+.backup-status-message[data-tone="saved"] { color: var(--success-ink); }
+
+/* the different-repository confirm: warn, not danger (nothing is deleted) */
+.backup-switch-gate {
+  margin-top: 0.9rem;
+  padding: 0.85rem;
+  border: 1px solid var(--warn);
+  border-left: 3px solid var(--warn);
+  border-radius: 8px;
+  background: var(--warn-wash);
+}
+.backup-switch-gate h3 { margin: 0; font-size: 1rem; }
+.backup-switch-gate p { color: var(--warn-ink); }
+
+/* paused is the owner's choice: neutral, never warn or danger */
+.backup-paused,
+.backup-paused-note {
+  margin: 0 0 1.1rem;
+  padding: 0.85rem;
+  border: 1px solid var(--hairline-2);
+  border-left: 3px solid var(--hairline-2);
+  border-radius: 8px;
+  background: var(--cream-bright);
+}
+.backup-paused p,
+.backup-paused-note { color: var(--ink-soft-paper); }
+
+/* pause sits directly above turn off & delete: the reversible stop comes first */
+.backup-pause {
+  margin-top: 1.1rem;
+  padding-top: 1.1rem;
+  border-top: 1px solid var(--hairline);
 }

@@ -420,6 +420,7 @@ impl OwnedOffloadCliRun {
                 CliPrelaunchRefusal::Budget(_) => "deadline_unavailable",
                 CliPrelaunchRefusal::Recovery(_) => "recovery_unavailable",
             },
+            Custody::Skipped { paused: true, .. } => "backup_paused",
             Custody::Skipped { .. } => "offload_off",
             Custody::PreparationFailure { .. } => "preparation_refused",
             Custody::PreparedHold { refusal, .. } => match refusal {

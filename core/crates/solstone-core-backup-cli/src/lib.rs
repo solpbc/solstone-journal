@@ -9,21 +9,22 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use chrono::{Datelike, NaiveDate, Utc};
 use serde_json::{Map, Value, json};
 use solstone_core_backup::{
-    Destination, HostedBinding, confirm_recovery_key, format_recovery_key_display,
-    generate_and_store_keys, generate_daily_key, get_backup_config, get_destination, get_keys,
-    save_hosted_binding, set_destination, set_enabled, set_recovery_key_confirmed, status_view,
+    Destination, HostedBinding, backup_paused_at, confirm_recovery_key,
+    format_recovery_key_display, generate_and_store_keys, generate_daily_key, get_backup_config,
+    get_destination, get_keys, save_hosted_binding, set_backup_paused, set_destination,
+    set_enabled, set_recovery_key_confirmed, status_view,
 };
 use solstone_core_backup_runtime::restore::{
     RESTORE_REASON_INTEGRITY_FAILED, RESTORE_REASON_INTEGRITY_UNVERIFIED,
     RESTORE_REASON_RESTORE_RECORD_FAILED, RESTORE_REASON_RESTORE_SUMMARY_MISSING,
 };
 use solstone_core_backup_runtime::{
-    BackupResult, BackupServices, Clock, ClosedToolError, HttpTransport, NativeJournalMaintenance,
-    NativeRestoreRecorder, PruneResult, ResticKeyError, RestoreDraft, RestoreOutcome,
-    RestoreRecorder, RotationResult, SystemToolRunner, ToolRunner, UnreadableSources,
-    UreqHttpTransport, prepare, publish_restore_outcome, resolve_operational_tools,
-    resolve_restic_member, resolve_tools, restore_journal, rotate_recovery_key, run_prune,
-    validate_destination,
+    BackupResult, BackupServices, Clock, ClosedToolError, DestinationChange,
+    DestinationEditRefusal, HttpTransport, NativeJournalMaintenance, NativeRestoreRecorder,
+    PruneResult, ResticKeyError, RestoreDraft, RestoreOutcome, RestoreRecorder, RotationResult,
+    SystemToolRunner, ToolRunner, UnreadableSources, UreqHttpTransport, edit_destination, prepare,
+    publish_restore_outcome, resolve_operational_tools, resolve_restic_member, resolve_tools,
+    restore_journal, rotate_recovery_key, run_prune, validate_destination,
 };
 use solstone_core_offload::cli_run::{OwnedOffloadCliRun, run_cli_offload};
 use solstone_core_offload::{
@@ -546,6 +547,8 @@ fn run_cli_with(
         "destination" => destination_command(rest, journal, services, executable),
         "recovery-key" => recovery_key_command(rest, journal, services),
         "enable" if no_positionals(rest) => enable(journal, services, executable),
+        "pause" if no_positionals(rest) => pause_command(journal, services, true),
+        "resume" if no_positionals(rest) => pause_command(journal, services, false),
         "prune" if no_positionals(rest) => backup_prune(journal, services),
         "offload" => offload_command(rest, journal, services),
         "off" => off_command(rest, journal, services),
@@ -617,7 +620,10 @@ fn destination_command(
             Err(error) => runtime_error(error.to_string()),
         },
         [command] if command == "set-hosted" => set_hosted(journal),
-        [command] if command == "set" => destination_set(journal, services, executable),
+        [command] if command == "set" => destination_set(journal, services, executable, false),
+        [command, flag] if command == "set" && flag == "--confirm-new-repository" => {
+            destination_set(journal, services, executable, true)
+        }
         _ => destination_usage_error(&args.join(" ")),
     }
 }
@@ -822,12 +828,17 @@ fn init_error(error: solstone_core_backup_runtime::repo::RepoError) -> CliRun {
     }
 }
 
-fn destination_set(journal: &Path, services: &BackupServices<'_>, executable: &Path) -> CliRun {
+fn destination_set(
+    journal: &Path,
+    services: &BackupServices<'_>,
+    executable: &Path,
+    confirm_new_repository: bool,
+) -> CliRun {
     let payload = match read_stdin_json() {
         Ok(payload) => payload,
         Err(message) => return runtime_error(message),
     };
-    destination_set_from_payload(journal, services, &payload, || {
+    destination_set_with(journal, services, &payload, confirm_new_repository, || {
         resolve_restic_member(executable).map_err(|error| {
             let guidance = error.guidance();
             format!("{error} detail={} {guidance}", error.detail())
@@ -835,10 +846,21 @@ fn destination_set(journal: &Path, services: &BackupServices<'_>, executable: &P
     })
 }
 
+#[cfg(test)]
 fn destination_set_from_payload(
     journal: &Path,
     services: &BackupServices<'_>,
     payload: &Map<String, Value>,
+    ensure: impl FnOnce() -> Result<std::path::PathBuf, String>,
+) -> CliRun {
+    destination_set_with(journal, services, payload, false, ensure)
+}
+
+fn destination_set_with(
+    journal: &Path,
+    services: &BackupServices<'_>,
+    payload: &Map<String, Value>,
+    confirm_new_repository: bool,
     ensure: impl FnOnce() -> Result<std::path::PathBuf, String>,
 ) -> CliRun {
     let destination = match destination_from_payload(payload) {
@@ -855,6 +877,21 @@ fn destination_set_from_payload(
                 "s3:s3.amazonaws.com/your-bucket"
             }
         ));
+    }
+    // With backup on, this is an edit: checked before anything is saved.
+    if let Ok(config) = get_backup_config(journal)
+        && config.get("enabled") == Some(&Value::Bool(true))
+        && (config.get("mode").and_then(Value::as_str) == Some("operated")
+            || solstone_core_backup::destination_from_config(&config).is_some())
+    {
+        return destination_edit(
+            journal,
+            services,
+            &destination,
+            &config,
+            confirm_new_repository,
+            ensure,
+        );
     }
     if let Err(error) = set_destination(journal, &destination) {
         return runtime_error(error.to_string());
@@ -889,6 +926,174 @@ fn destination_set_from_payload(
         output.exit_code = 1;
     }
     output
+}
+
+fn destination_edit(
+    journal: &Path,
+    services: &BackupServices<'_>,
+    destination: &Destination,
+    config: &Map<String, Value>,
+    confirm_new_repository: bool,
+    ensure: impl FnOnce() -> Result<std::path::PathBuf, String>,
+) -> CliRun {
+    if config.get("mode").and_then(Value::as_str) != Some("byo") {
+        return runtime_error(DESTINATION_HOSTED.into());
+    }
+    let change = get_destination(journal)
+        .ok()
+        .flatten()
+        .map(|current| solstone_core_backup_runtime::destination_change(&current, destination));
+    if change == Some(DestinationChange::Repository) && !confirm_new_repository {
+        return runtime_error(new_repository_warning(journal, config));
+    }
+    let restic_path = match ensure() {
+        Ok(path) => path,
+        Err(error) => return runtime_error(error),
+    };
+    match edit_destination(
+        services.runner,
+        journal,
+        destination,
+        &restic_path,
+        confirm_new_repository,
+    ) {
+        Ok((change, status)) => render_json(Ok::<_, String>(json!({
+            "saved": true,
+            "change": change.as_str(),
+            "reachable": status.reachable,
+            "repo_exists": status.repo_exists,
+            "reason_code": status.reason_code,
+            "message": status.message,
+        }))),
+        Err(DestinationEditRefusal::NeedsConfirmation) => {
+            runtime_error(new_repository_warning(journal, config))
+        }
+        Err(DestinationEditRefusal::Unusable(status)) => runtime_error(format!(
+            "{} {DESTINATION_NOT_SAVED}",
+            destination_reason_text(status.reason_code)
+        )),
+        Err(DestinationEditRefusal::SetupFailed(reason)) => runtime_error(format!(
+            "a backup couldn't be set up there ({reason}). {DESTINATION_NOT_SAVED}"
+        )),
+        Err(DestinationEditRefusal::Unchanged) => {
+            runtime_error("that's already your destination.".into())
+        }
+        Err(DestinationEditRefusal::NotEditable) => runtime_error(DESTINATION_HOSTED.into()),
+        Err(DestinationEditRefusal::Config(error)) => runtime_error(error.to_string()),
+    }
+}
+
+const DESTINATION_HOSTED: &str = "sol pbc runs your backup storage, so there's no destination to \
+     change here. manage it in the services portal.";
+const DESTINATION_NOT_SAVED: &str = "nothing was saved.";
+
+fn destination_reason_text(reason: &str) -> &'static str {
+    match reason {
+        "auth_failed" => "the destination rejected the credentials.",
+        "bucket_not_found" => {
+            "these credentials can't open a bucket by that name. check the bucket name in the \
+             repository."
+        }
+        "repository_key_refused" => {
+            "there's already a backup there that your recovery key can't open. choose another \
+             destination."
+        }
+        "repo_missing" => "no backup was found there with these credentials.",
+        "locked" => "the backup there is busy. try again shortly.",
+        "timeout" => {
+            "the destination didn't answer in time. check the repository and credentials, then \
+             try again."
+        }
+        _ => {
+            "the destination couldn't be opened. check the repository and credentials, then try \
+             again."
+        }
+    }
+}
+
+/// The different-repository warning, with the days kept only in the current
+/// backup when media offload is on (the same totals turn off & delete shows).
+fn new_repository_warning(journal: &Path, config: &Map<String, Value>) -> String {
+    let mut text = String::from(
+        "that's a different repository. your existing backup stays where it is, untouched, \
+         and your journal won't back up to it or restore from it.",
+    );
+    // Days offloaded earlier stay only in that backup even after offload is
+    // turned off, so the count is read whenever offload has ever run.
+    let ever_offloaded = config
+        .get("offload")
+        .and_then(|offload| offload.get("enabled"))
+        == Some(&Value::Bool(true))
+        || config
+            .get("last_offload")
+            .and_then(|last| last.get("time"))
+            .is_some_and(|time| !time.is_null());
+    if ever_offloaded {
+        let totals = build_checked_offload_status(journal)
+            .ok()
+            .and_then(|status| {
+                let backup_only = status.value.get("backup_only")?.clone();
+                (backup_only.get("degraded") == Some(&Value::Bool(false))).then_some(())?;
+                Some((
+                    backup_only.get("total_days")?.as_u64()?,
+                    backup_only.get("total_bytes")?.as_u64()?,
+                ))
+            });
+        text.push_str(&match totals {
+            Some((0, 0)) => String::new(),
+            Some((days, bytes)) => format!(
+                " {days} {} of your journal ({}) {} only in that backup.",
+                if days == 1 { "day" } else { "days" },
+                human_bytes(bytes),
+                if days == 1 { "exists" } else { "exist" },
+            ),
+            None => " can't check right now how many days of your journal exist only in that \
+                     backup."
+                .to_owned(),
+        });
+    }
+    text.push_str(" to switch, run again with --confirm-new-repository.");
+    text
+}
+
+fn human_bytes(bytes: u64) -> String {
+    const UNITS: [&str; 5] = ["B", "KB", "MB", "GB", "TB"];
+    let mut value = bytes as f64;
+    let mut unit = 0;
+    while value >= 1000.0 && unit < UNITS.len() - 1 {
+        value /= 1000.0;
+        unit += 1;
+    }
+    if unit == 0 {
+        format!("{bytes} B")
+    } else {
+        format!("{value:.1} {}", UNITS[unit])
+    }
+}
+
+fn pause_command(journal: &Path, services: &BackupServices<'_>, pause: bool) -> CliRun {
+    let config = match get_backup_config(journal) {
+        Ok(config) if config.get("enabled") == Some(&Value::Bool(true)) => config,
+        Ok(_) if pause => {
+            return runtime_error("backup is off, so there's nothing to pause.".into());
+        }
+        Ok(_) => return runtime_error("backup isn't paused.".into()),
+        Err(error) => return runtime_error(error.to_string()),
+    };
+    match (pause, backup_paused_at(&config).is_some()) {
+        (true, true) => return runtime_error("backup is already paused.".into()),
+        (false, false) => return runtime_error("backup isn't paused.".into()),
+        _ => {}
+    }
+    let paused_at = pause.then(|| services.clock.now_unix());
+    if let Err(error) = set_backup_paused(journal, paused_at) {
+        return runtime_error(error.to_string());
+    }
+    success(if pause {
+        "backup paused. run `solstone journal backup resume` to start it again.\n".to_owned()
+    } else {
+        "backup resumed. the next backup runs on its usual schedule.\n".to_owned()
+    })
 }
 
 fn destination_from_payload(payload: &Map<String, Value>) -> Result<Destination, String> {
@@ -2030,6 +2235,72 @@ mod tests {
 
     fn payload(value: Value) -> Map<String, Value> {
         value.as_object().unwrap().clone()
+    }
+
+    fn journal_with_own_storage_on() -> tempfile::TempDir {
+        let journal = tempfile::tempdir().unwrap();
+        generate_and_store_keys(journal.path()).unwrap();
+        set_destination(
+            journal.path(),
+            &destination_from_payload(&payload(json!({"repository":"s3:host/bucket/old",
+                "backend":"s3","credentials":{"access_key_id":"OLD","secret_access_key":"s"}})))
+            .unwrap(),
+        )
+        .unwrap();
+        solstone_core_backup::set_mode(journal.path(), "byo").unwrap();
+        set_enabled(journal.path(), true).unwrap();
+        journal
+    }
+
+    #[test]
+    fn pause_and_resume_say_what_happened_and_refuse_a_repeat() {
+        let journal = journal_with_own_storage_on();
+        let (runner, http, clock, maintenance) =
+            (UnusedRunner, UnusedHttp, FixedClock, UnusedMaintenance);
+        let services = unconfigured_services(&runner, &http, &clock, &maintenance);
+        let pause = pause_command(journal.path(), &services, true);
+        assert_eq!(pause.exit_code, 0);
+        assert!(pause.stdout.starts_with("backup paused."));
+        assert_eq!(
+            pause_command(journal.path(), &services, true).stderr,
+            "Error: backup is already paused.\n"
+        );
+        assert!(status_view(journal.path()).unwrap()["paused_at"].is_i64());
+        assert_eq!(pause_command(journal.path(), &services, false).exit_code, 0);
+        assert_eq!(
+            pause_command(journal.path(), &services, false).stderr,
+            "Error: backup isn't paused.\n"
+        );
+    }
+
+    #[test]
+    fn destination_set_with_backup_on_needs_the_flag_for_a_different_repository() {
+        let journal = journal_with_own_storage_on();
+        let (runner, http, clock, maintenance) =
+            (UnusedRunner, UnusedHttp, FixedClock, UnusedMaintenance);
+        let services = unconfigured_services(&runner, &http, &clock, &maintenance);
+        let output = destination_set_from_payload(
+            journal.path(),
+            &services,
+            &payload(json!({"repository":"s3:host/bucket/new","backend":"s3",
+                "credentials":{"access_key_id":"OLD","secret_access_key":"s"}})),
+            || panic!("no tool runs before the owner confirms"),
+        );
+        assert_eq!(output.exit_code, 1);
+        assert!(
+            output.stderr.contains("--confirm-new-repository"),
+            "{}",
+            output.stderr
+        );
+        assert!(
+            output
+                .stderr
+                .contains("your existing backup stays where it is, untouched")
+        );
+        assert_eq!(
+            get_destination(journal.path()).unwrap().unwrap().repository,
+            "s3:host/bucket/old"
+        );
     }
 
     #[test]

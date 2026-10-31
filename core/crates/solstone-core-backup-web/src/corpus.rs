@@ -254,7 +254,7 @@ async fn status_shape_preserves_backup_phase_discrimination() {
         assert_eq!(status, 200);
         assert_eq!(
             body.as_object().expect("object").len(),
-            20 + usize::from(cfg!(windows))
+            21 + usize::from(cfg!(windows))
         );
         assert_eq!(body["recovery_key_revocation_pending"], false);
         assert_eq!(body["recovery_key_revocation_unresolved"], false);
@@ -2210,6 +2210,92 @@ async fn destination_without_its_backend_prefix_is_refused_and_not_saved() {
             "{backend}"
         );
     }
+}
+
+// A pause keeps every setting, refuses the two actions that would reach the
+// destination, and resume restores the same backup.
+#[cfg(unix)]
+#[tokio::test]
+async fn pause_refuses_destination_work_and_resume_restores_the_same_settings() {
+    let root = crate::test_support::root("healthy");
+    let runner = Arc::new(ScriptRunner::with_outputs(vec![]));
+    let (deps, _restic) = prepared(root.path().to_path_buf(), runner.clone());
+    let before = crate::config::backup(root.path()).unwrap();
+
+    let (status, body) = post_json(&deps, "/app/backup/pause", None).await;
+    assert_eq!(status, 200);
+    assert!(body["paused_at"].is_i64());
+    for path in ["/app/backup/backup-now", "/app/backup/offload/enable"] {
+        let (status, body) = post_json(&deps, path, None).await;
+        assert_eq!(status, 409, "{path}");
+        assert_eq!(body["reason_code"], "backup_paused", "{path}");
+    }
+    let (status, body) = post_json(&deps, "/app/backup/resume", None).await;
+    assert_eq!(status, 200);
+    assert_eq!(body["paused_at"], Value::Null);
+    assert_eq!(crate::config::backup(root.path()).unwrap(), before);
+    assert!(runner.calls.lock().unwrap().is_empty());
+}
+
+// With backup on, a destination save is an edit, checked before it saves.
+#[cfg(unix)]
+#[tokio::test]
+async fn an_edit_with_backup_on_saves_only_a_usable_destination() {
+    let root = crate::test_support::root("healthy");
+    let current = solstone_core_backup::get_destination(root.path())
+        .unwrap()
+        .unwrap();
+    let saved = || {
+        solstone_core_backup::get_destination(root.path())
+            .unwrap()
+            .unwrap()
+    };
+
+    // A different repository asks first and runs nothing.
+    let runner = Arc::new(ScriptRunner::with_outputs(vec![]));
+    let (deps, _restic) = prepared(root.path().to_path_buf(), runner.clone());
+    let moved =
+        json!({"repository":"s3:s3.example.invalid/elsewhere","backend":"s3","credentials":{}});
+    let (status, body) = post_json(&deps, "/app/backup/destination", Some(moved)).await;
+    assert_eq!(status, 409);
+    assert_eq!(body["reason_code"], "confirm_new_repository");
+    assert!(runner.calls.lock().unwrap().is_empty());
+    assert!(saved() == current);
+
+    // New credentials the destination refuses are not saved.
+    let runner = Arc::new(ScriptRunner::with_outputs(vec![output(12, "")]));
+    let (deps, _restic) = prepared(root.path().to_path_buf(), runner.clone());
+    let rotated = json!({"repository":current.repository,"backend":"s3",
+        "credentials":{"access_key_id":"NEWKEY","secret_access_key":"new-secret"}});
+    let (status, body) = post_json(&deps, "/app/backup/destination", Some(rotated.clone())).await;
+    assert_eq!(status, 400);
+    assert_eq!(body["reason_code"], "auth_failed");
+    assert!(saved() == current);
+
+    // ...and ones that open the same backup are, with nothing else changed.
+    let runner = Arc::new(ScriptRunner::with_outputs(vec![output(0, "")]));
+    let (deps, _restic) = prepared(root.path().to_path_buf(), runner.clone());
+    let (status, body) = post_json(&deps, "/app/backup/destination", Some(rotated)).await;
+    assert_eq!(status, 200);
+    assert_eq!(body["destination_status"]["change"], "credentials");
+    assert_eq!(saved().credentials["access_key_id"], "NEWKEY");
+    assert_eq!(saved().repository, current.repository);
+
+    // A confirmed B2 repository whose bucket doesn't exist is never set up.
+    let runner = Arc::new(ScriptRunner::with_outputs(vec![ToolOutput {
+        returncode: 10,
+        stdout: vec![],
+        stderr: b"Fatal: repository does not exist at b2:typo:journal: repository does not exist\n"
+            .to_vec(),
+    }]));
+    let (deps, _restic) = prepared(root.path().to_path_buf(), runner.clone());
+    let typo = json!({"repository":"b2:typo:journal","backend":"b2","confirm_new_repository":true,
+        "credentials":{"account_id":"id","account_key":"key"}});
+    let (status, body) = post_json(&deps, "/app/backup/destination", Some(typo)).await;
+    assert_eq!(status, 400);
+    assert_eq!(body["reason_code"], "bucket_not_found");
+    assert_eq!(runner.calls.lock().unwrap().len(), 1);
+    assert_eq!(saved().repository, current.repository);
 }
 
 #[cfg(feature = "full-tests")]
@@ -6585,8 +6671,14 @@ async fn cancelled_restore_worker_does_not_cancel_later_idle_destination_validat
             started.generation,
             crate::operation::Terminal::error("restore_failed"),
         );
+        // Backup is on here, so this is a credentials edit: one check, then save.
+        let rotated = json!({
+            "repository": "s3:s3.example.invalid/journal-corpus",
+            "backend": "s3",
+            "credentials": {"access_key_id": "key", "secret_access_key": "secret"}
+        });
         assert_eq!(
-            post_json(&deps, "/app/backup/destination", Some(restore_body()))
+            post_json(&deps, "/app/backup/destination", Some(rotated))
                 .await
                 .0,
             200

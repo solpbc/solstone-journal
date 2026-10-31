@@ -85,7 +85,9 @@
     </article>
 
     <article class="backup-panel" data-backup-panel="destination" hidden>
-      <h2 data-copy="management.status_labels.destination"></h2>
+      <h2 data-destination-setup-heading data-copy="management.status_labels.destination"></h2>
+      <h2 data-destination-edit-heading data-copy="action_labels.change_destination" hidden></h2>
+      <p class="backup-note" data-destination-edit-lead data-copy="destination.edit.lead" hidden></p>
 
       <div class="backup-modes" role="radiogroup" data-copy-aria-label="management.status_labels.destination">
         <button type="button" class="backup-mode is-selected" data-mode="byo" role="radio" aria-checked="true">
@@ -140,14 +142,26 @@
               <input name="account_key" data-field="account_key" type="password" autocomplete="off">
             </label>
           </div>
+          <small class="backup-hint" data-destination-keep-hint data-copy="destination.edit.keep_hint" hidden></small>
           <details class="backup-disclose">
             <summary data-copy="destination.object_lock_summary"></summary>
             <p class="backup-note" data-copy="destination.object_lock_warning"></p>
           </details>
           <p class="backup-status-message" data-destination-status></p>
-          <div class="backup-panel-actions">
+          <div class="backup-panel-actions" data-destination-actions>
             <button type="button" class="primary" data-action="enable-backup" data-copy="action_labels.enable"></button>
-            <button type="submit" data-copy="action_labels.save_destination"></button>
+            <button type="submit" data-destination-save data-copy="action_labels.save_destination"></button>
+            <button type="button" data-action="destination-edit-cancel" data-copy="action_labels.cancel" hidden></button>
+          </div>
+          <div class="backup-switch-gate" data-switch-gate role="group" aria-labelledby="backup-switch-title" hidden>
+            <h3 id="backup-switch-title" data-copy="destination.edit.confirm_title"></h3>
+            <p data-copy="destination.edit.confirm_lead"></p>
+            <p data-switch-days hidden></p>
+            <div class="backup-panel-actions">
+              <button type="button" data-action="switch-restore-first" data-copy="management.teardown_restore_first_action" hidden></button>
+              <button type="button" class="primary" data-action="switch-confirm" data-copy="destination.edit.confirm_action"></button>
+              <button type="button" data-action="switch-cancel" data-copy="action_labels.cancel"></button>
+            </div>
           </div>
         </form>
       </div>
@@ -161,6 +175,25 @@
     </article>
 
     <article class="backup-panel" data-backup-panel="management" hidden>
+      <section class="backup-paused" data-paused-section hidden>
+        <h2 data-copy="management.paused.title"></h2>
+        <p data-copy="management.paused.body"></p>
+        <p data-paused-hosted-note data-copy="management.paused.hosted_note" hidden></p>
+        <div class="backup-panel-actions">
+          <button type="button" class="primary" data-action="resume" data-copy="action_labels.resume"></button>
+        </div>
+      </section>
+
+      <section class="backup-location" data-byo-location-section hidden>
+        <h2 data-copy="management.status_labels.destination"></h2>
+        <p class="backup-location-meta" data-byo-location-meta></p>
+        <p><code data-byo-location-repository></code></p>
+        <div class="backup-panel-actions">
+          <button type="button" data-action="destination-edit" data-copy="action_labels.change_destination"></button>
+        </div>
+        <p class="backup-status-message" data-byo-location-status data-tone="saved" role="status" hidden></p>
+      </section>
+
       <section data-hosted-location-section hidden>
         <h2 data-copy="management.status_labels.destination"></h2>
         <p data-hosted-location></p>
@@ -216,6 +249,7 @@
           <span class="backup-offload-chip" data-offload-on-chip data-copy="management.status_labels.enabled" hidden></span>
         </header>
 
+        <p class="backup-paused-note" data-offload-paused-note hidden></p>
         <p class="backup-offload-stakes" data-offload-stakes data-copy="offload.stakes" hidden></p>
         <p class="backup-warning" data-offload-stall-reason hidden></p>
         <p class="backup-status-message" data-offload-unavailable data-copy="offload.unavailable_lead" hidden></p>
@@ -350,6 +384,14 @@
         <p class="backup-status-message" data-offload-restore-status></p>
         <p class="backup-note" data-offload-disable-note data-copy="offload.disable_note"></p>
         <button type="button" data-action="offload-disable" data-offload-disable data-copy="offload.actions.disable"></button>
+      </section>
+
+      <section class="backup-pause" data-pause-section hidden>
+        <h2 data-copy="management.pause.title"></h2>
+        <p class="backup-note" data-copy="management.pause.caption"></p>
+        <div class="backup-panel-actions">
+          <button type="button" data-action="pause" data-copy="action_labels.pause"></button>
+        </div>
       </section>
 
       <section class="backup-teardown">

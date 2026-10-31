@@ -71,7 +71,7 @@ pub(crate) fn status_with_operation(
         .and_then(solstone_core_backup::PendingKeyRevocation::parse)
         .is_some();
     Ok(with_cleanup_admission(json!({
-        "success": true, "enabled": backup.get("enabled").cloned().unwrap_or(Value::Null), "mode": backup.get("mode").cloned().unwrap_or(Value::Null),
+        "success": true, "enabled": backup.get("enabled").cloned().unwrap_or(Value::Null), "paused_at": solstone_core_backup::backup_paused_at(&backup).map_or(Value::Null, Value::from), "mode": backup.get("mode").cloned().unwrap_or(Value::Null),
         "destination": {"repository": destination.and_then(|d| d.get("repository")).cloned().unwrap_or(Value::Null), "backend": destination.and_then(|d| d.get("backend")).cloned().unwrap_or(Value::Null), "credentials_set": destination.and_then(|d| d.get("credentials")).is_some_and(|value| value.as_object().is_some_and(|value| !value.is_empty()))},
         "daily_key_set": backup.get("daily_key").is_some_and(|value| !value.is_null()), "recovery_key_set": backup.get("recovery_key").is_some_and(|value| !value.is_null()), "recovery_key_confirmed": backup.get("confirmed_recovery_key").and_then(Value::as_bool).unwrap_or(false),
         "recovery_key_revocation_pending": revocation_pending, "recovery_key_revocation_unresolved": revocation_unresolved,
@@ -89,7 +89,9 @@ pub fn home_backup_observation(deps: &crate::BackupWebDeps) -> Value {
     let Some(enabled) = status["enabled"].as_bool() else {
         return json!({"available": false});
     };
+    // A pause is the owner's choice, never an issue.
     if !enabled
+        || status["paused_at"].is_i64()
         || status["operation"].as_object().is_some_and(|op| {
             op.get("phase")
                 .and_then(Value::as_str)

@@ -8,6 +8,8 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- with your own storage, you can now change where your backup lives, or its credentials, without turning backup off. new credentials are saved once they open your backup. switching to a different repository asks first, and says your existing backup stays where it is, untouched. a backblaze b2 bucket that doesn't exist is now refused instead of created, so a mistyped bucket name is caught before the first backup.
+- you can now pause backup and resume it, on the backup page or with `solstone journal backup pause` and `solstone journal backup resume`. while it's paused, no backups, spot-checks, cleanup or media offload run, and the backup page, health and `solstone journal doctor` say it's paused.
 - private troubleshooting evidence now keeps connection details and how far the attempt got when confidential processing refuses a connection.
 - the android development app can review interrupted storage work while your journal stays stopped. it can remove temporary copies after checking that the originals are still complete.
 - browser pages in your journal now show their context: whether the tab was in front and its window focused, whether audio or video was playing, whether the solstone app was paused, how long the tab had been open, the page's language and which browser it was. agents reading your journal see the same line. pages from earlier versions of the solstone extension look as before.

@@ -21,7 +21,7 @@
     "hosted_entitlement_inactive": "encrypted backup isn't turned on in the services portal.",
     "binding_invalid": "this computer's link to encrypted backup was refused.",
     "binding_superseded": "this computer's link to encrypted backup was replaced.",
-    "repository_unsupported": "the repository in your backup settings doesn't start with s3: or b2: to match its backend, so backup stopped. turn off & delete backup, then set it up again with a repository that starts with s3: or b2:."
+    "repository_unsupported": "the repository in your backup settings doesn't start with s3: or b2: to match its backend, so backup stopped. change the destination to a repository that starts with s3: or b2:."
 };
   const VERIFICATION_SUBSET = {
     one: "checked all of your backup this week.",
@@ -98,7 +98,13 @@
     const attempt = snapshot.last_backup;
     const verification = snapshot.last_verification;
     let text, tone = 'neutral';
+    // A pause is the owner's choice: neutral, and never read as failing or stale.
+    const paused = snapshot.enabled && Number.isInteger(snapshot.paused_at);
     if (!snapshot.enabled) text = 'backup is off.';
+    else if (paused) {
+      text = date(snapshot.paused_at) ? `you paused backup on ${date(snapshot.paused_at)}.`
+        : "you paused backup. the date isn't known.";
+    }
     else if (attempt?.status === 'error') {
       text = 'the latest recorded backup attempt failed.';
       tone = 'attention';
@@ -155,7 +161,9 @@
       ? attempt.last_success : attempt?.status === 'ok' ? attempt : null;
     const operation = snapshot.operation;
     const facts = [
-      ['backup', snapshot.enabled ? 'on' : 'off'],
+      ['backup', !snapshot.enabled ? 'off' : Number.isInteger(snapshot.paused_at)
+        ? (date(snapshot.paused_at) ? `paused by you, ${date(snapshot.paused_at)}` : "paused by you, date isn't known")
+        : 'on'],
       ['operation', operation
         ? `${operationKinds[operation.kind]}: ${operation.phase === 'error' && operation.reason_code === 'cancelled'
           ? 'cancelled' : operationPhases[operation.phase]}` : 'none reported'],

@@ -1408,6 +1408,8 @@ fn native_backup_grammar_never_reaches_a_poisoned_interpreter() {
         (["destination", "set"].as_slice(), 1),
         (["destination", "set-hosted"].as_slice(), 1),
         (["enable"].as_slice(), 1),
+        (["pause"].as_slice(), 1),
+        (["resume"].as_slice(), 1),
         (["run"].as_slice(), 0),
         (["prune"].as_slice(), 0),
         (["offload", "status"].as_slice(), 0),

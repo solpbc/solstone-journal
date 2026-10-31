@@ -108,6 +108,23 @@ pub fn set_enabled(journal: &Path, enabled: bool) -> Result<(), BackupError> {
     })
 }
 
+/// When the owner paused backup, as unix seconds. A pause keeps every setting
+/// and only stops work that reaches the destination: backup runs, verification,
+/// prune and media offload. Restore and turn off & delete are never paused.
+pub fn backup_paused_at(config: &Map<String, Value>) -> Option<i64> {
+    config.get("paused_at").and_then(Value::as_i64)
+}
+
+/// Pause backup at `paused_at`, or resume it with `None`. Pausing an already
+/// paused backup keeps the original time, so "paused since" stays true.
+pub fn set_backup_paused(journal: &Path, paused_at: Option<i64>) -> Result<(), BackupError> {
+    mutate_backup_section(journal, |backup| match paused_at {
+        Some(_) if backup_paused_at(backup).is_some() => Ok((false, ())),
+        Some(time) => set_value(backup, "paused_at", Value::from(time)),
+        None => Ok((backup.remove("paused_at").is_some(), ())),
+    })
+}
+
 pub fn set_mode(journal: &Path, mode: &str) -> Result<(), BackupError> {
     if !matches!(mode, "byo" | "operated") {
         return Err(BackupError::InvalidMode);
@@ -816,6 +833,10 @@ pub fn status_view(journal: &Path) -> Result<Map<String, Value>, BackupError> {
     };
     Ok(Map::from_iter([
         ("enabled".into(), config["enabled"].clone()),
+        (
+            "paused_at".into(),
+            backup_paused_at(&config).map_or(Value::Null, Value::from),
+        ),
         ("mode".into(), config["mode"].clone()),
         (
             "destination".into(),
@@ -2115,5 +2136,19 @@ mod retained_clear_tests {
         ));
         assert_eq!(std::fs::read(path).unwrap(), original);
         assert!(!root.path().join("config/journal.json.lock").exists());
+    }
+
+    #[test]
+    fn a_pause_keeps_its_first_time_and_resume_leaves_every_other_setting() {
+        let journal = tempfile::tempdir().unwrap();
+        set_enabled(journal.path(), true).unwrap();
+        let before = get_backup_config(journal.path()).unwrap();
+        set_backup_paused(journal.path(), Some(100)).unwrap();
+        set_backup_paused(journal.path(), Some(200)).unwrap();
+        let paused = get_backup_config(journal.path()).unwrap();
+        assert_eq!(backup_paused_at(&paused), Some(100));
+        assert_eq!(status_view(journal.path()).unwrap()["paused_at"], 100);
+        set_backup_paused(journal.path(), None).unwrap();
+        assert_eq!(get_backup_config(journal.path()).unwrap(), before);
     }
 }
