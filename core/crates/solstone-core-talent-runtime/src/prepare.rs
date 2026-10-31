@@ -1062,6 +1062,94 @@ mod tests {
         instruction
     }
 
+    /// The instruction a shipped activity talent renders for `activity`.
+    fn render_shipped_talent(talent: &str, activity: Value) -> String {
+        let root = tempfile::tempdir().expect("root");
+        let payload = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../payload/solstone");
+        let talent_root = root.path().join("talent");
+        let journal = root.path().join("journal");
+        for directory in [
+            talent_root.clone(),
+            root.path().join("apps"),
+            journal.join("config"),
+            journal.join("facets").join("work"),
+            journal.join("chronicle").join("20260101").join("090000_60"),
+        ] {
+            fs::create_dir_all(directory).expect("fixture directory");
+        }
+        fs::write(
+            journal.join("config").join("journal.json"),
+            r#"{"identity":{"preferred":"Soleil"},"providers":{"active":{"provider":"none"}}}"#,
+        )
+        .expect("journal config");
+        fs::write(
+            journal.join("facets").join("work").join("facet.json"),
+            r#"{"name":"work","description":"Work"}"#,
+        )
+        .expect("facet");
+        // Something said in the segment, so the talent has input to run on.
+        let mut audio = json!({"raw":"fixture"}).to_string() + "\n";
+        for text in ["Let's ship it.", "The release is ready.", "Tag it now."] {
+            audio += &(json!({"start":"00:00:01","text":text}).to_string() + "\n");
+        }
+        fs::write(
+            journal.join("chronicle/20260101/090000_60/audio.jsonl"),
+            audio,
+        )
+        .expect("audio");
+        for entry in fs::read_dir(payload.join("talent")).expect("talents") {
+            let path = entry.expect("talent").path();
+            let name = path.file_name().unwrap().to_string_lossy().into_owned();
+            if name == format!("{talent}.md") || name.ends_with(".schema.json") {
+                fs::copy(&path, talent_root.join(&name)).expect("talent copy");
+            }
+        }
+        let prepared = prepare(
+            json!({"name":talent,"day":"20260101","facet":"work","span":["090000_60"],"activity":activity})
+                .as_object()
+                .expect("request object")
+                .clone(),
+            &RuntimePaths {
+                talent_root,
+                apps_root: root.path().join("apps"),
+                templates_dir: payload.join("think/templates"),
+            },
+            &ExecutionContext { journal },
+            PrepareMode::Preview,
+        )
+        .expect("prepare");
+        prepared.config["user_instruction"]
+            .as_str()
+            .expect("instruction")
+            .to_owned()
+    }
+
+    fn sections(text: &str) -> usize {
+        text.lines().filter(|line| line.starts_with("## ")).count()
+    }
+
+    #[test]
+    fn the_owners_account_and_a_recording_reach_every_activity_talent() {
+        let base = json!({"id":"coding_090000_60","activity":"coding","description":"Release work","segments":["090000_60"]});
+        let account = "We were \"rehearsing\", not presenting.\nMina ran the slides.";
+        for talent in ["participation", "work", "conversation"] {
+            let plain = render_shipped_talent(talent, base.clone());
+            assert!(!plain.contains("$activity_context"), "{talent}");
+            let mut told = base.clone();
+            told["details"] = json!(account);
+            told["playback"] = json!(true);
+            let told = render_shipped_talent(talent, told);
+            assert_eq!(sections(&told), sections(&plain) + 2, "{talent}");
+            assert!(told.contains(account), "{talent}");
+
+            // A record the store normalized, with nothing the owner said.
+            let mut normalized = base.clone();
+            normalized["details"] = json!("");
+            normalized["playback"] = json!(false);
+            assert_eq!(render_shipped_talent(talent, normalized), plain, "{talent}");
+        }
+    }
+
     const PER_SEGMENT_SECTION: &str = "Activity State Per Segment";
 
     #[test]

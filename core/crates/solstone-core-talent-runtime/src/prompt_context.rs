@@ -249,6 +249,22 @@ fn activity_context(
         estimate_duration_minutes(&segments),
         segments.len(),
     )];
+    // What the owner said about the activity outranks what the journal made
+    // of it. Both read the record exactly as stored.
+    if let Some(account) = activity
+        .get("details")
+        .and_then(Value::as_str)
+        .filter(|account| !account.trim().is_empty())
+    {
+        parts.push(format!(
+            "## Your Account\nThe owner's own account of this activity, in their words. Where the transcript, the screen or the description disagrees, follow the owner. Keep quoted words exactly as they were said.\n\n{account}"
+        ));
+    }
+    if activity.get("playback") == Some(&Value::Bool(true)) {
+        parts.push(
+            "## A Recording\nThe owner says this was a recording or video playing. No one heard or seen in it was present with the owner. Tell it as the owner watching or listening.".to_owned(),
+        );
+    }
 
     let state_lines = span
         .iter()

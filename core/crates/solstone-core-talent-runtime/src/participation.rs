@@ -114,12 +114,14 @@ pub(crate) fn apply_result_cancellable(
     let Some(entries) = data.get("participation").and_then(Value::as_array) else {
         return Ok(());
     };
-    if solstone_core_facets::get_activity_record(journal, facet, day, record_id)
+    let Some(stored) = solstone_core_facets::get_activity_record(journal, facet, day, record_id)
         .map_err(|error| error.to_string())?
-        .is_none()
-    {
+    else {
         return Err("activity no longer exists".to_owned());
-    }
+    };
+    // Read as it stands under the write lock, so a correction made while the
+    // talent ran still counts.
+    let playback = stored.get("playback") == Some(&Value::Bool(true));
     let entities = detected_resolution_entities(journal, facet, day)?;
     let owner = crate::JournalOwner::load(journal)?;
     let admitted = solstone_core_entity::load_all_journal_entities(journal)
@@ -441,6 +443,27 @@ pub(crate) fn apply_result_cancellable(
         if only_seen {
             entry.insert("role".to_owned(), Value::String("visible".to_owned()));
             entry.insert("source".to_owned(), Value::String("screen".to_owned()));
+        }
+    }
+    // A recording or video the owner says was playing had no one present with
+    // the owner, whatever its voices and screens showed. This is the last word
+    // on roles: no one attended or was heard, and a numbered voice names no
+    // one at all.
+    if playback {
+        resolved.retain(|entry| {
+            entry
+                .get("name")
+                .and_then(Value::as_str)
+                .and_then(solstone_core_speaker_resolve::activity_reresolution::speaker_number)
+                .is_none()
+        });
+        for entry in &mut resolved {
+            if matches!(
+                entry.get("role").and_then(Value::as_str),
+                Some("attendee" | "heard")
+            ) {
+                entry.insert("role".to_owned(), Value::String("mentioned".to_owned()));
+            }
         }
     }
     let mut patch = Map::from_iter([(
@@ -2428,6 +2451,94 @@ mod tests {
         assert_eq!(entry["entity_id"], "person");
         assert_eq!(entry["confidence"], 0.85);
         assert_eq!(entry["context"], "Discussed roadmap");
+    }
+
+    /// Mark the stored activity a recording, or not, as the owner said.
+    fn set_playback(root: &Path, playback: bool) {
+        let path = root.join(format!("facets/{FACET}/activities/{DAY}.jsonl"));
+        let mut row: Value =
+            serde_json::from_str(fs::read_to_string(&path).unwrap().lines().next().unwrap())
+                .unwrap();
+        row["playback"] = Value::Bool(playback);
+        fs::write(path, format!("{row}\n")).unwrap();
+    }
+
+    fn roles(entries: &[Value]) -> Vec<(String, String)> {
+        entries
+            .iter()
+            .map(|entry| {
+                (
+                    entry["name"].as_str().unwrap_or_default().to_owned(),
+                    entry["role"].as_str().unwrap_or_default().to_owned(),
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_recording_has_no_one_present_even_a_voice_the_conversation_heard() {
+        let root = tempfile::tempdir().unwrap();
+        write_participation_fixture(root.path(), json!({}), json!([]));
+        setup_segment(
+            root.path(),
+            SEGMENT,
+            false,
+            Some("social"),
+            json!([
+                {"speaker": "person", "method": "acoustic"},
+                {"speaker": "person", "method": "acoustic_cluster"},
+            ]),
+            &["Good morning, how are things going?", "Working on roadmap."],
+            None,
+        );
+        set_playback(root.path(), true);
+        let entries = apply_for_activity(
+            root.path(),
+            &activity(),
+            &[
+                json!({"name":"Ada Lovelace","role":"mentioned","source":"transcript"}),
+                json!({"name":"Speaker 1","role":"attendee","source":"voice"}),
+            ],
+        );
+        assert_eq!(
+            roles(&entries),
+            [("Ada Lovelace".to_owned(), "mentioned".to_owned())]
+        );
+    }
+
+    #[test]
+    fn a_recording_turns_a_corroborated_attendee_into_a_mention() {
+        for playback in [false, true] {
+            let root = tempfile::tempdir().unwrap();
+            write_heard_fixture(root.path(), grace_heard_twice());
+            write_unembedded_segment(
+                &root.path().join(format!("chronicle/{DAY}/{SEGMENT}")),
+                &[3, 3],
+            );
+            set_playback(root.path(), playback);
+            let entries = apply_for_activity(
+                root.path(),
+                &activity(),
+                &[
+                    json!({"name":"Grace Hopper","role":"attendee","source":"voice"}),
+                    json!({"name":"Speaker 3","role":"attendee","source":"speaker_label"}),
+                ],
+            );
+            let expected: &[(&str, &str)] = if playback {
+                &[("Grace Hopper", "mentioned")]
+            } else {
+                &[("Grace Hopper", "attendee"), ("Speaker 3", "attendee")]
+            };
+            assert_eq!(
+                roles(&entries),
+                expected
+                    .iter()
+                    .map(|(name, role)| ((*name).to_owned(), (*role).to_owned()))
+                    .collect::<Vec<_>>(),
+                "{playback}"
+            );
+            assert_eq!(entries[0]["entity_id"], "grace", "{playback}");
+        }
     }
 
     #[test]
