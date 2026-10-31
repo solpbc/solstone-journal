@@ -62,11 +62,18 @@ pub fn run_speaker_numbers(segment: &Path, source: &str) -> BTreeMap<i64, i64> {
         .filter(|((start, _), _)| *start <= target_start)
         .collect::<Vec<_>>();
     keys.sort();
+    // A source named for its segment (`HHMMSS_LEN_audio`) is the same source
+    // under each segment's own key.
+    let keyed = source
+        .strip_prefix(target)
+        .and_then(|rest| rest.strip_prefix('_'));
+    let source_in =
+        |key: &str| keyed.map_or_else(|| source.to_owned(), |rest| format!("{key}_{rest}"));
 
     // Walk back from this segment to the start of its run.
     let mut run: Vec<RunSegment> = Vec::new();
     for ((start, end), key) in keys.into_iter().rev() {
-        let Some(clusters) = segment_clusters(&stream_dir.join(&key), source) else {
+        let Some(clusters) = segment_clusters(&stream_dir.join(&key), &source_in(&key)) else {
             continue;
         };
         if let Some(next) = run.last()
@@ -232,6 +239,10 @@ mod tests {
 
     /// One segment's transcript and embeddings: `(speaker, embedding)` per line.
     fn segment(root: &Path, key: &str, lines: &[(i64, Vec<f32>)]) {
+        segment_source(root, key, "audio", lines);
+    }
+
+    fn segment_source(root: &Path, key: &str, source: &str, lines: &[(i64, Vec<f32>)]) {
         let dir = root.join(key);
         fs::create_dir_all(&dir).unwrap();
         let mut jsonl = String::from("{\"raw\":\"audio.m4a\"}\n");
@@ -240,7 +251,7 @@ mod tests {
                 "{{\"start\":\"00:00:{index:02}\",\"speaker\":{speaker},\"text\":\"line\"}}\n"
             ));
         }
-        fs::write(dir.join("audio.jsonl"), jsonl).unwrap();
+        fs::write(dir.join(format!("{source}.jsonl")), jsonl).unwrap();
         let mut payload = Vec::new();
         let mut ids = Vec::new();
         for (index, (_, embedding)) in lines.iter().enumerate() {
@@ -249,7 +260,7 @@ mod tests {
             }
             ids.extend_from_slice(&(index as i32 + 1).to_le_bytes());
         }
-        let mut zip = ZipWriter::new(fs::File::create(dir.join("audio.npz")).unwrap());
+        let mut zip = ZipWriter::new(fs::File::create(dir.join(format!("{source}.npz"))).unwrap());
         let options = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
         zip.start_file("embeddings.npy", options).unwrap();
         zip.write_all(&write_npy(
@@ -291,6 +302,39 @@ mod tests {
         assert_eq!(first, BTreeMap::from([(2, 1), (1, 2)]));
         assert_eq!(second, BTreeMap::from([(1, 1), (2, 2)]));
         assert_eq!(third, BTreeMap::from([(3, 3), (1, 2), (2, 1)]));
+    }
+
+    #[test]
+    fn a_voice_keeps_its_number_when_each_source_is_named_for_its_segment() {
+        let root = tempfile::tempdir().unwrap();
+        // The macOS app names each segment's audio for its key.
+        segment_source(
+            root.path(),
+            "174951_9",
+            "174951_9_audio",
+            &[(1, voice(0, 0.1))],
+        );
+        segment_source(
+            root.path(),
+            "175000_300",
+            "175000_300_audio",
+            &[(2, voice(1, 0.1)), (1, voice(0, 0.0))],
+        );
+        segment_source(
+            root.path(),
+            "175500_300",
+            "175500_300_audio",
+            &[(1, voice(1, 0.2)), (2, voice(0, 0.1))],
+        );
+
+        assert_eq!(
+            run_speaker_numbers(&root.path().join("175000_300"), "175000_300_audio"),
+            BTreeMap::from([(2, 2), (1, 1)])
+        );
+        assert_eq!(
+            run_speaker_numbers(&root.path().join("175500_300"), "175500_300_audio"),
+            BTreeMap::from([(1, 2), (2, 1)])
+        );
     }
 
     #[test]
