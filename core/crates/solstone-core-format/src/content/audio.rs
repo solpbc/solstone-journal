@@ -21,6 +21,10 @@ pub(super) fn render(rel: &str, records: &[JsonObject]) -> ProducedChunks {
     let mut skipped = 0usize;
     let mut chunks = Vec::new();
     let (base_timestamp, start_header) = base_timestamp_and_header(rel);
+    // Measurement variant: with only the computer's own sound recorded, no line is the owner's.
+    let others_only = metadata.is_some_and(|metadata| {
+        audio_source(metadata).is_some_and(|source| source.starts_with("this computer's own sound only"))
+    });
 
     for (index, record) in records.iter().enumerate() {
         if index == 0 && metadata.is_some() {
@@ -59,6 +63,7 @@ pub(super) fn render(rel: &str, records: &[JsonObject]) -> ProducedChunks {
         match record.get("speaker") {
             Some(Value::Number(value)) => parts.push(format!("Speaker {value}:")),
             Some(value) => parts.push(format!("{}:", display_value(value))),
+            None if others_only => parts.push("Another person:".to_string()),
             None => parts.push(String::new()),
         }
 
