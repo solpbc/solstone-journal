@@ -1136,7 +1136,7 @@ fn finish_unavailable(
     if cancellation.is_cancelled() {
         return RuntimeOutcome::Cancelled;
     }
-    if reason != "zero_slots" {
+    if !matches!(reason, "zero_slots" | crate::weekly_reflection::ALL_KEPT) {
         emit(
             writer,
             json!({"event":"unavailable_selection","trigger": reason}),

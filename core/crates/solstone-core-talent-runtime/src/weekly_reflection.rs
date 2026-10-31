@@ -40,7 +40,7 @@ use std::fs;
 use std::path::Path;
 use std::sync::OnceLock;
 
-use chrono::{DateTime, Datelike, Duration, NaiveDate, Utc};
+use chrono::{DateTime, Datelike, Duration, NaiveDate, Timelike, Utc};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
@@ -143,6 +143,58 @@ pub struct WeeklyReflectionState {
     pub slots: Vec<Slot>,
     pub all_candidates: Vec<(String, Candidate)>, // (memory_id, candidate)
     pub said: Vec<Said>,
+    /// Set when the week already had a page and every slot keeps that page's
+    /// memory: the page is remade with this selection and no model call.
+    pub kept: Option<KeptSelection>,
+}
+
+/// The selection a week's existing page recorded.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct KeptSelection {
+    pub status: String,
+    pub model: Option<String>,
+}
+
+/// The reason a remade week whose every slot is kept makes no model call.
+pub const ALL_KEPT: &str = "all_kept";
+
+/// The memory key each day of a week's existing page shows, and the
+/// selection it recorded. A page that cannot be trusted keeps nothing.
+fn existing_page(
+    journal: &Path,
+    start_day: &str,
+) -> Option<(Vec<(String, String)>, KeptSelection)> {
+    let solstone_core_home::weekly::WeekJudgment::Page(page) =
+        solstone_core_home::weekly::judge(journal, start_day)
+    else {
+        return None;
+    };
+    let selection = fs::read(
+        journal
+            .join("reflections/weekly")
+            .join(format!("{start_day}.json")),
+    )
+    .ok()
+    .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
+    .and_then(|value| value.get("selection").cloned())
+    .unwrap_or(Value::Null);
+    let kept = KeptSelection {
+        status: selection
+            .get("status")
+            .and_then(Value::as_str)
+            .unwrap_or("model")
+            .to_owned(),
+        model: selection
+            .get("model")
+            .and_then(Value::as_str)
+            .map(str::to_owned),
+    };
+    let keys = page
+        .memories
+        .into_iter()
+        .map(|memory| (memory.day, memory.key))
+        .collect();
+    Some((keys, kept))
 }
 
 pub fn build(
@@ -152,7 +204,12 @@ pub fn build(
     let utc = pinned_or_utc_now();
     let zoned = utc.with_timezone(&solstone_core_journal_config::owner_zone(&context.journal));
     let today = zoned.date_naive();
-    let generated_at = zoned.to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+    // Milliseconds, so the time a page was built compares exactly with the
+    // time an owner asked for it; a whole second prints as before.
+    let generated_at = zoned
+        .with_nanosecond(zoned.timestamp_subsec_millis() * 1_000_000)
+        .unwrap_or(zoned)
+        .to_rfc3339_opts(chrono::SecondsFormat::AutoSi, true);
 
     let day_str = configured_day(prepared);
     let start_date = match NaiveDate::parse_from_str(&day_str, "%Y%m%d") {
@@ -198,6 +255,11 @@ pub fn build(
     let facets = enabled_facet_names(&HomeContext::new(&context.journal, utc));
     // Every entity is read to name voices; once for the week, not per record.
     let voices = crate::transcript::voice_names(&context.journal);
+    // A remade week keeps each day whose shown memory is still among its
+    // candidates at the same day, position and text; only other days are
+    // picked again.
+    let existing = existing_page(&context.journal, &start_date.format("%Y%m%d").to_string());
+    let mut kept_slots = 0usize;
 
     let mut curr = start_date;
     while curr <= end_date {
@@ -213,6 +275,21 @@ pub fn build(
             day: curr_str.clone(),
             classification: classif,
         });
+
+        let kept = existing.as_ref().and_then(|(keys, _)| {
+            let (_, key) = keys.iter().find(|(day, _)| *day == curr_str)?;
+            candidates
+                .iter()
+                .find(|c| compute_memory_key(&c.day, c.position, &c.text) == *key)
+                .cloned()
+        });
+        let candidates = match kept {
+            Some(candidate) => {
+                kept_slots += 1;
+                vec![candidate]
+            }
+            None => candidates,
+        };
 
         if !candidates.is_empty() {
             let slot_id = format!("S{:02}", slot_counter);
@@ -242,6 +319,9 @@ pub fn build(
         curr += Duration::days(1);
     }
 
+    let kept = existing
+        .filter(|_| !slots.is_empty() && kept_slots == slots.len())
+        .map(|(_, selection)| selection);
     let state = WeeklyReflectionState {
         start_day,
         end_day,
@@ -251,6 +331,7 @@ pub fn build(
         slots,
         all_candidates,
         said,
+        kept,
     };
 
     Ok(PrePostState::WeeklyReflection(state))
@@ -259,6 +340,7 @@ pub fn build(
 pub fn unavailable_before_generate(state: &PrePostState) -> Option<&'static str> {
     match state {
         PrePostState::WeeklyReflection(state) if state.slots.is_empty() => Some("zero_slots"),
+        PrePostState::WeeklyReflection(state) if state.kept.is_some() => Some(ALL_KEPT),
         _ => None,
     }
 }
@@ -514,6 +596,21 @@ pub fn unavailable_commit(
             "mismatched pre-state for weekly_reflection",
         ));
     };
+
+    if let Some(kept) = state.kept.as_ref().filter(|_| reason == ALL_KEPT) {
+        let candidates = state
+            .slots
+            .iter()
+            .filter_map(|slot| slot.candidates.first().cloned())
+            .collect::<Vec<_>>();
+        let (markdown, document) =
+            assemble_reflection(state, &kept.status, kept.model.as_deref(), &candidates)?;
+        return Ok(CommitPlan::Write(WriteIntent::WeeklyReflection {
+            start: state.start_day.clone(),
+            markdown,
+            document,
+        }));
+    }
 
     if reason == "zero_slots" {
         let (markdown, document) = assemble_reflection(state, "none", None, &[])?;
@@ -1722,6 +1819,235 @@ mod tests {
         );
     }
 
+    /// A journal whose week starting 20260308 has two days with briefings.
+    fn keep_stable_week(first: &[&str], second: &[&str]) -> tempfile::TempDir {
+        let journal = tempdir().unwrap();
+        write_denver_journal_config(journal.path());
+        for (day, bullets) in [("20260308", first), ("20260309", second)] {
+            let day_dir = journal.path().join("chronicle").join(day);
+            fs::create_dir_all(day_dir.join("default/120000_60")).unwrap();
+            fs::create_dir_all(day_dir.join("talents")).unwrap();
+            fs::write(
+                day_dir.join("talents/morning_briefing.json"),
+                json!({ "yesterday": bullets }).to_string(),
+            )
+            .unwrap();
+        }
+        journal
+    }
+
+    fn weekly_prepared() -> PreparedTalent {
+        PreparedTalent::new(
+            "weekly_reflection".to_owned(),
+            Map::from_iter([
+                ("max_output_tokens".to_owned(), json!(1024)),
+                ("day".to_owned(), Value::String("20260308".to_owned())),
+                ("provider".to_owned(), Value::String("google".to_owned())),
+                ("model".to_owned(), Value::String("gemini".to_owned())),
+            ]),
+        )
+    }
+
+    fn weekly_state(journal: &Path) -> (PreparedTalent, PrePostState) {
+        let mut prepared = weekly_prepared();
+        let state = build(
+            &mut prepared,
+            &ExecutionContext {
+                journal: journal.to_owned(),
+            },
+        )
+        .unwrap();
+        (prepared, state)
+    }
+
+    fn publish(journal: &Path, plan: CommitPlan) -> Value {
+        let CommitPlan::Write(WriteIntent::WeeklyReflection {
+            start,
+            markdown,
+            document,
+        }) = plan
+        else {
+            panic!("expected a weekly page");
+        };
+        write_page(journal, &start, &markdown, &document).unwrap();
+        serde_json::from_str(&document).unwrap()
+    }
+
+    fn memory_keys(document: &Value) -> Vec<(String, String, String)> {
+        document["memories"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|m| {
+                (
+                    m["day"].as_str().unwrap().to_owned(),
+                    m["key"].as_str().unwrap().to_owned(),
+                    m["text"].as_str().unwrap().to_owned(),
+                )
+            })
+            .collect()
+    }
+
+    /// The first page of the week: the model picked each day's second bullet.
+    fn first_page(journal: &Path) -> Value {
+        let _guard = pin_stage_now("2026-03-16T18:00:00Z");
+        let (prepared, state) = weekly_state(journal);
+        assert_eq!(unavailable_before_generate(&state), None);
+        let plan = commit(
+            ParsedOutput::Json(json!({"S00": "M001", "S01": "M003"})),
+            &prepared,
+            &state,
+        )
+        .unwrap();
+        publish(journal, plan)
+    }
+
+    const FIRST: [&str; 2] = ["Planted the tomatoes.", "Walked the long trail."];
+    const SECOND: [&str; 2] = ["Fixed the fence.", "Called an old friend."];
+
+    #[test]
+    fn a_remade_week_with_every_day_unchanged_keeps_each_memory_without_a_model_call() {
+        let journal = keep_stable_week(&FIRST, &SECOND);
+        let before = first_page(journal.path());
+        // Quotes the owner said are recomputed on every remake, never kept.
+        let mut stale = before.clone();
+        stale["said"] = json!([{"id":"s-20260309-0","key":"0123456789abcdef","day":"20260309","quote":"words nobody said","source":{"kind":"activity","uri":"sol://facets/work/activities/20260309#gone"}}]);
+        fs::write(
+            journal.path().join("reflections/weekly/20260308.json"),
+            stale.to_string(),
+        )
+        .unwrap();
+        let _guard = pin_stage_now("2026-03-17T18:00:00.250Z");
+        let (prepared, state) = weekly_state(journal.path());
+        assert_eq!(unavailable_before_generate(&state), Some(ALL_KEPT));
+        let PrePostState::WeeklyReflection(weekly) = &state else {
+            unreachable!()
+        };
+        assert!(weekly.slots.iter().all(|slot| slot.memory_ids.len() == 1));
+        let after = publish(
+            journal.path(),
+            unavailable_commit(ALL_KEPT, &prepared, &state).unwrap(),
+        );
+        assert_eq!(memory_keys(&after), memory_keys(&before));
+        assert_eq!(after["memories"], before["memories"]);
+        assert_eq!(after["selection"], before["selection"]);
+        assert_eq!(after["said"], json!([]));
+        let built = |page: &Value| {
+            DateTime::parse_from_rfc3339(page["generated_at"].as_str().unwrap()).unwrap()
+        };
+        assert!(built(&after) > built(&before));
+        assert_eq!(built(&after).timestamp_subsec_millis(), 250);
+    }
+
+    #[test]
+    fn a_week_without_a_page_picks_every_day() {
+        let journal = keep_stable_week(&FIRST, &SECOND);
+        let _guard = pin_stage_now("2026-03-16T18:00:00Z");
+        let (_, state) = weekly_state(journal.path());
+        assert_eq!(unavailable_before_generate(&state), None);
+        let PrePostState::WeeklyReflection(weekly) = &state else {
+            unreachable!()
+        };
+        assert!(weekly.slots.iter().all(|slot| slot.memory_ids.len() == 2));
+    }
+
+    #[test]
+    fn a_remade_week_offers_one_memory_for_a_kept_day_and_every_candidate_for_a_changed_one() {
+        let journal = keep_stable_week(&FIRST, &SECOND);
+        let before = first_page(journal.path());
+        fs::write(
+            journal
+                .path()
+                .join("chronicle/20260309/talents/morning_briefing.json"),
+            json!({"yesterday": ["Painted the shed.", "Read by the window.", "Baked bread."]})
+                .to_string(),
+        )
+        .unwrap();
+        let _guard = pin_stage_now("2026-03-17T18:00:00Z");
+        let (mut prepared, state) = weekly_state(journal.path());
+        assert_eq!(unavailable_before_generate(&state), None);
+        apply_prompt_override(&mut prepared, &state).unwrap();
+        let packet: Value =
+            serde_json::from_str(prepared.config["transcript"].as_str().unwrap()).unwrap();
+        assert_eq!(packet["slots"][0]["ids"], json!(["M000"]));
+        assert_eq!(packet["slots"][1]["ids"], json!(["M001", "M002", "M003"]));
+        let after = publish(
+            journal.path(),
+            commit(
+                ParsedOutput::Json(json!({"S00": "M000", "S01": "M002"})),
+                &prepared,
+                &state,
+            )
+            .unwrap(),
+        );
+        let (before_keys, after_keys) = (memory_keys(&before), memory_keys(&after));
+        assert_eq!(after_keys[0], before_keys[0]);
+        assert_ne!(after_keys[1], before_keys[1]);
+        assert_eq!(after_keys[1].2, "Painted the shed.");
+    }
+
+    #[test]
+    fn a_left_out_memory_on_a_kept_day_stays_left_out() {
+        let journal = keep_stable_week(&FIRST, &SECOND);
+        let before = first_page(journal.path());
+        let left_out = before["memories"][0]["key"].as_str().unwrap().to_owned();
+        fs::create_dir_all(journal.path().join("health")).unwrap();
+        fs::write(
+            solstone_core_home::weekly::left_out_path(journal.path()),
+            json!({"keys": [left_out]}).to_string(),
+        )
+        .unwrap();
+        let _guard = pin_stage_now("2026-03-17T18:00:00Z");
+        let (prepared, state) = weekly_state(journal.path());
+        let after = publish(
+            journal.path(),
+            unavailable_commit(ALL_KEPT, &prepared, &state).unwrap(),
+        );
+        let solstone_core_home::weekly::LeftOut::Keys(keys) =
+            solstone_core_home::weekly::read_left_out(journal.path())
+        else {
+            panic!("left-out marks are readable");
+        };
+        assert!(keys.contains(after["memories"][0]["key"].as_str().unwrap()));
+        // Twin: the day not left out keeps a key the mark does not name.
+        assert!(!keys.contains(after["memories"][1]["key"].as_str().unwrap()));
+    }
+
+    #[test]
+    fn a_moved_bullet_picks_its_day_again() {
+        let journal = keep_stable_week(&FIRST, &SECOND);
+        first_page(journal.path());
+        // The same words, now first: a different position is a different memory.
+        fs::write(
+            journal
+                .path()
+                .join("chronicle/20260308/talents/morning_briefing.json"),
+            json!({"yesterday": ["Walked the long trail.", "Planted the tomatoes."]}).to_string(),
+        )
+        .unwrap();
+        let _guard = pin_stage_now("2026-03-17T18:00:00Z");
+        let (_, state) = weekly_state(journal.path());
+        assert_eq!(unavailable_before_generate(&state), None);
+        let PrePostState::WeeklyReflection(weekly) = &state else {
+            unreachable!()
+        };
+        assert_eq!(weekly.slots[0].memory_ids.len(), 2);
+        assert_eq!(weekly.slots[1].memory_ids.len(), 1);
+    }
+
+    #[test]
+    fn a_page_with_malformed_content_picks_every_day_again() {
+        let journal = keep_stable_week(&FIRST, &SECOND);
+        first_page(journal.path());
+        fs::write(journal.path().join("reflections/weekly/20260308.json"), "{").unwrap();
+        let _guard = pin_stage_now("2026-03-17T18:00:00Z");
+        let (_, state) = weekly_state(journal.path());
+        let PrePostState::WeeklyReflection(weekly) = &state else {
+            unreachable!()
+        };
+        assert!(weekly.slots.iter().all(|slot| slot.memory_ids.len() == 2));
+    }
+
     #[test]
     fn test_week_guard() {
         let _guard = pin_stage_now("2026-09-30T18:00:00Z");
@@ -1825,6 +2151,7 @@ mod tests {
             slots: vec![],
             all_candidates: vec![],
             said: vec![],
+            kept: None,
         };
 
         let (md0, doc0_str) = assemble_reflection(&state, "none", None, &[]).unwrap();
@@ -2130,6 +2457,7 @@ mod tests {
                 record_id: "meeting_1".to_owned(),
                 quote: "I'll get you the deck by friday".to_owned(),
             }],
+            kept: None,
         };
 
         let (md, doc) = assemble_reflection(&state, "none", None, &[]).unwrap();

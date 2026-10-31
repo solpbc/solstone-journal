@@ -91,6 +91,7 @@ fn producer_week_opens_in_the_reader() {
             slots: Vec::new(),
             all_candidates: Vec::new(),
             said,
+            kept: None,
         };
         let (_markdown, document) =
             assemble_reflection(&state, "model", None, &candidates).unwrap();

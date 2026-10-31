@@ -31,6 +31,9 @@ pub struct TrustedWeek {
     pub days: Vec<TrustedDay>,
     pub memories: Vec<TrustedMemory>,
     pub said: Said,
+    /// When the page was built, as the page records it; `None` when absent
+    /// or not a readable time.
+    pub generated_at_ms: Option<i64>,
 }
 
 /// Voice-backed quotes the page may show. A malformed list is unreadable and
@@ -207,6 +210,17 @@ pub fn newest_week_candidate(journal: &Path) -> WeeklyDirectoryCandidate {
 
 pub fn judge(journal: &Path, day: &str) -> WeekJudgment {
     read_and_judge(journal, day, false).unwrap_or(WeekJudgment::CouldntCheck)
+}
+
+/// The week's page could not be read from disk.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WeekPageUnreadable;
+
+/// [`judge`], telling a page that could not be read apart from one whose
+/// content could not be checked: the error is a read failure, and
+/// `Ok(CouldntCheck)` is malformed content.
+pub fn judge_page(journal: &Path, day: &str) -> Result<WeekJudgment, WeekPageUnreadable> {
+    read_and_judge(journal, day, false).map_err(|()| WeekPageUnreadable)
 }
 
 fn read_and_judge(journal: &Path, day: &str, listed_json: bool) -> Result<WeekJudgment, ()> {
@@ -418,6 +432,11 @@ fn judge_contents(day: &str, start_date: NaiveDate, content_bytes: &[u8]) -> Wee
         .to_string();
 
     let said = read_said(&value, &trusted_days, &trusted_memories);
+    let generated_at_ms = value
+        .get("generated_at")
+        .and_then(Value::as_str)
+        .and_then(|at| chrono::DateTime::parse_from_rfc3339(at).ok())
+        .map(|at| at.timestamp_millis());
 
     WeekJudgment::Page(TrustedWeek {
         start_day,
@@ -425,6 +444,7 @@ fn judge_contents(day: &str, start_date: NaiveDate, content_bytes: &[u8]) -> Wee
         days: trusted_days,
         memories: trusted_memories,
         said,
+        generated_at_ms,
     })
 }
 
@@ -819,6 +839,10 @@ fn said_model(said: &Said, left_out_keys: &BTreeSet<String>, start_date: NaiveDa
     }
 }
 
+#[allow(
+    clippy::result_large_err,
+    reason = "The refusal is the judged page itself, returned once per page read."
+)]
 pub fn page_model(
     journal: &Path,
     day: &str,
@@ -2068,6 +2092,41 @@ mod tests {
                 "said": {said}
             }}"#
         )
+    }
+
+    #[test]
+    fn page_reader_tells_a_read_failure_from_malformed_content_and_reads_build_time() {
+        let root = TempDir::new().unwrap();
+        let page = "reflections/weekly/20260308.json";
+        assert_eq!(
+            judge_page(root.path(), "20260308"),
+            Ok(WeekJudgment::Absent)
+        );
+        write(root.path(), page, "{");
+        assert_eq!(
+            judge_page(root.path(), "20260308"),
+            Ok(WeekJudgment::CouldntCheck)
+        );
+        fs::remove_file(root.path().join(page)).unwrap();
+        fs::create_dir_all(root.path().join(page)).unwrap();
+        assert_eq!(judge_page(root.path(), "20260308"), Err(WeekPageUnreadable));
+        assert_eq!(judge(root.path(), "20260308"), WeekJudgment::CouldntCheck);
+        fs::remove_dir(root.path().join(page)).unwrap();
+        let undated = week_with_said("[]");
+        assert_eq!(judged_page(root.path(), &undated).generated_at_ms, None);
+        let dated = undated.replacen(
+            "\"version\": 1,",
+            "\"version\": 1, \"generated_at\": \"2026-03-15T11:00:00.250-07:00\",",
+            1,
+        );
+        assert_eq!(
+            judged_page(root.path(), &dated).generated_at_ms,
+            Some(
+                chrono::DateTime::parse_from_rfc3339("2026-03-15T18:00:00.250Z")
+                    .unwrap()
+                    .timestamp_millis()
+            )
+        );
     }
 
     fn judged_page(root: &Path, body: &str) -> TrustedWeek {
