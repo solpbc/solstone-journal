@@ -84,14 +84,41 @@ pub fn validate_destination<'invocation>(
         },
         _ => {
             let _ = reason_for_returncode(result.returncode);
-            DestinationStatus {
-                reachable: false,
-                repo_exists: false,
-                reason_code: "unreachable",
-                message: "could not reach the backup destination",
-            }
+            open_failure_status(&result.stderr)
         }
     })
+}
+
+// restic exits 1 for every repository it can't open, so only its own words
+// tell a destination it reached and was refused by from one it never reached.
+// A B2 key scoped to one bucket is refused at list_buckets when the repository
+// names any other bucket, which is how a key's name typed as the bucket's
+// shows up. A key that can list every bucket never gets here: restic reports
+// a missing bucket as no repository (10). Rejected B2 credentials are refused
+// one step earlier.
+fn open_failure_status(stderr: &str) -> DestinationStatus {
+    if stderr.contains("b2_authorize_account: 401") {
+        return DestinationStatus {
+            reachable: true,
+            repo_exists: false,
+            reason_code: "auth_failed",
+            message: "the destination rejected the credentials",
+        };
+    }
+    if stderr.contains("b2_list_buckets: 401") {
+        return DestinationStatus {
+            reachable: true,
+            repo_exists: false,
+            reason_code: "bucket_not_found",
+            message: "these credentials can't open a bucket by that name",
+        };
+    }
+    DestinationStatus {
+        reachable: false,
+        repo_exists: false,
+        reason_code: "unreachable",
+        message: "could not reach the backup destination",
+    }
 }
 
 #[cfg(test)]
@@ -104,6 +131,7 @@ mod tests {
 
     struct Fixture {
         code: i32,
+        stderr: &'static str,
         requests: RefCell<Vec<ToolRequest<'static>>>,
     }
     impl ToolRunner for Fixture {
@@ -121,7 +149,7 @@ mod tests {
             Ok(ToolOutput {
                 returncode: self.code,
                 stdout: vec![],
-                stderr: vec![],
+                stderr: self.stderr.as_bytes().to_vec(),
             })
         }
     }
@@ -148,6 +176,7 @@ mod tests {
         ] {
             let runner = Fixture {
                 code,
+                stderr: "",
                 requests: RefCell::new(vec![]),
             };
             let status = validate_destination(
@@ -176,6 +205,49 @@ mod tests {
                     .get(&std::ffi::OsString::from("AWS_SECRET_ACCESS_KEY"))
                     .unwrap(),
                 "SECRET"
+            );
+        }
+    }
+
+    // Captured from restic 0.19.0 against Backblaze B2: a key scoped to one
+    // bucket, with the repository naming another bucket (the key's own name);
+    // then with credentials B2 doesn't know; then an S3 host that doesn't
+    // resolve.
+    #[test]
+    fn a_wrong_bucket_and_rejected_credentials_are_not_unreachable() {
+        for (stderr, reason, reachable) in [
+            (
+                "Fatal: unable to open repository at b2:solstone-journal-key:journal: Bucket: b2_list_buckets: 401: \n",
+                "bucket_not_found",
+                true,
+            ),
+            (
+                "Fatal: unable to open repository at b2:no-such-bucket:journal: b2.NewClient: b2_authorize_account: 401:\n",
+                "auth_failed",
+                true,
+            ),
+            (
+                "Stat(<config/>) returned error, retrying after 588.80128ms: Stat: Get \"https://s3.example.invalid/bucket/?location=\": dial tcp: lookup s3.example.invalid on 127.0.0.53:53: no such host\n",
+                "unreachable",
+                false,
+            ),
+        ] {
+            let runner = Fixture {
+                code: 1,
+                stderr,
+                requests: RefCell::new(vec![]),
+            };
+            let status = validate_destination(
+                &runner,
+                &destination(),
+                "PASSWORD",
+                Path::new("/fixture/bin/restic"),
+                None,
+            )
+            .unwrap();
+            assert_eq!(
+                (status.reason_code, status.reachable, status.repo_exists),
+                (reason, reachable, false)
             );
         }
     }

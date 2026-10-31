@@ -51,7 +51,8 @@
         "auth_failed": "the destination rejected the key or credentials. check the recovery key and destination details.",
         "locked": "the destination is busy. try again shortly.",
         "timeout": "the destination took too long to respond. try again shortly.",
-        "unreachable": "the destination couldn't be reached. check the backup location and try again."
+        "unreachable": "the destination couldn't be reached. check the backup location and try again.",
+        "bucket_not_found": "these credentials can't open a bucket by that name. check that the repository has the bucket's own name, not the key's name."
       },
       "modes": {
         "byo": {

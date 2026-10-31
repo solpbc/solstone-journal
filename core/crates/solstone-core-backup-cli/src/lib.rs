@@ -884,7 +884,7 @@ fn destination_set_from_payload(
     })));
     if matches!(
         status.reason_code,
-        "auth_failed" | "timeout" | "unreachable"
+        "auth_failed" | "timeout" | "unreachable" | "bucket_not_found"
     ) {
         output.exit_code = 1;
     }
@@ -1394,6 +1394,7 @@ fn backup_failure_reason(reason: &str) -> String {
         "auth_failed" => "the destination rejected the credentials".into(),
         "access" => "the destination refused permission for this write".into(),
         "unreachable" => "the destination couldn't be reached".into(),
+        "bucket_not_found" => "your credentials can't open the bucket the repository names".into(),
         "timeout" => "it ran too long and stopped".into(),
         // ✅ restic and rclone are named. Canon bars a third-party brand as a
         // SERVICE name; these are missing dependencies, and with no recovery
@@ -2128,6 +2129,7 @@ mod tests {
             "auth_failed",
             "access",
             "unreachable",
+            "bucket_not_found",
             "timeout",
             "restic_unavailable",
             "rclone_unavailable",

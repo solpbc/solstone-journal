@@ -32,6 +32,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - security fix: updated a library used by journals on phones to address a memory-safety flaw.
 - you can choose a file on the import screen in the android and ios owner apps and save it.
 - journals running on a phone now start their local agent connections and close them when you stop the journal. the agents page already offered these connections, but they did not start on phones.
+- setting up backup to Backblaze B2 with a key limited to one bucket now says when the repository names a different bucket, for example when the key's name is typed where the bucket's belongs. it also now says when B2 rejects the credentials themselves. both used to read as "the destination couldn't be reached."
 
 ## [2.0.63] - 2026-10-31
 
