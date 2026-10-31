@@ -89,6 +89,7 @@ pub enum ArtifactId {
     SegmentSpeakers,
     SegmentSpeakerLabels,
     SegmentSpeakerCorrections,
+    SegmentOwnerLineLabels,
     SegmentStream,
     SegmentIngest,
     TalentProvenance,
@@ -199,6 +200,13 @@ pub const JOURNAL_ARTIFACTS: &[DurableArtifact] = &[
         class: DurabilityClass::MustBeValid,
         parser: ParserKind::WholeJson,
         rationale: "preserve authoritative retirement evidence and refuse on damage; admission drops cannot rebuild past ancestry",
+    },
+    DurableArtifact {
+        id: ArtifactId::SegmentOwnerLineLabels,
+        path: "chronicle/**/talents/owner_line_labels.json",
+        class: DurabilityClass::MustBeValid,
+        parser: ParserKind::WholeJson,
+        rationale: "owner-authored line answers that can't be rebuilt; written under a lock with atomic replace, and a damaged file is reported and refused, never set aside",
     },
     DurableArtifact {
         id: ArtifactId::Entity,
@@ -1073,7 +1081,7 @@ mod tests {
     }
 
     #[test]
-    fn the_inventory_preserves_configuration_and_irreplaceable_retirement_evidence() {
+    fn the_inventory_preserves_configuration_retirement_evidence_and_owner_line_answers() {
         let strict: Vec<_> = JOURNAL_ARTIFACTS
             .iter()
             .filter(|artifact| artifact.class == DurabilityClass::MustBeValid)
@@ -1086,6 +1094,8 @@ mod tests {
                 "health/parent-loss/generations/*/census-obligation.json",
                 "health/parent-loss/generations/*/census-started.json",
                 "health/parent-loss/generations/*/census-refusal.json",
+                // Owner-authored line answers that can't be rebuilt.
+                "chronicle/**/talents/owner_line_labels.json",
             ]
         );
         for artifact in JOURNAL_ARTIFACTS {

@@ -560,6 +560,7 @@ fn blocked_categories(outcome: &solstone_core_facets::EntityDeleteGuardOutcome) 
         ("activity", refs.activity),
         ("segment_label", refs.segment_label),
         ("segment_correction", refs.segment_correction),
+        ("owner_line_label", refs.owner_line_label),
         ("aka_crossref", refs.aka_crossref),
         ("speaker_candidate", refs.speaker_candidate),
         ("keep_separate", refs.keep_separate),
@@ -881,6 +882,39 @@ mod tests {
                 .unwrap()
                 .is_none()
         );
+    }
+
+    #[test]
+    fn undo_entity_names_an_owner_line_answer_that_blocks_deleting_the_created_person() {
+        let temporary = Temp::new();
+        let mut state = state(temporary.path());
+        state.will_create = true;
+        let entity_plan = crate::identify_forward_phases::EntityPhasePlan {
+            target_entity_id: "target".into(),
+            will_create: true,
+            intended_identity: json!({"id":"target","name":"Target","type":"Person"}),
+            operation_id: state.operation_id.clone(),
+        };
+        let checkpoint =
+            crate::identify_forward_phases::phase_entity(temporary.path(), &entity_plan)
+                .unwrap()
+                .fields;
+        state
+            .phase_checkpoints
+            .insert(ForwardPhase::Entity, checkpoint);
+        let directory = segment(temporary.path());
+        fs::write(
+            directory.join("talents/owner_line_labels.json"),
+            json!({"version":1,"entries":[{"source":"audio","sentence_id":1,"start":null,
+                "text_sha256":"a".repeat(64),"speaker":"target","set_at":"2026-08-08T12:00:00Z"}]})
+            .to_string(),
+        )
+        .unwrap();
+        let report = undo_entity(temporary.path(), &state).unwrap();
+        assert_eq!(report["entity"]["deleted"], false);
+        let blocked = report["entity"]["blocked_categories"].as_array().unwrap();
+        assert!(blocked.contains(&json!("owner_line_label")), "{blocked:?}");
+        assert!(temporary.path().join("entities/target").exists());
     }
 
     #[test]

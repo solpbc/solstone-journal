@@ -301,7 +301,8 @@ pub(super) fn recover(journal: &Path) -> Result<Option<Value>, SnapshotError> {
             || relative.starts_with("facets/")
             || (relative.starts_with("chronicle/")
                 && (relative.ends_with("/talents/speaker_labels.json")
-                    || relative.ends_with("/talents/speaker_corrections.json")))
+                    || relative.ends_with("/talents/speaker_corrections.json")
+                    || relative.ends_with("/talents/owner_line_labels.json")))
             || relative == "logs/entity-merges.jsonl")
         {
             return Err(failure(&path, "invalid entity recovery source path"));
@@ -685,6 +686,45 @@ mod tests {
         rollback.finish(&journal).unwrap();
         std::fs::remove_dir_all(journal).unwrap();
     }
+    #[test]
+    fn an_interrupted_merge_restores_owner_line_labels_and_clears_its_record() {
+        let journal =
+            std::env::temp_dir().join(format!("entity-merge-owner-lines-{}", std::process::id()));
+        let talents = journal.join("chronicle/20260102/080000_300/talents");
+        std::fs::create_dir_all(&talents).unwrap();
+        let journal = std::fs::canonicalize(journal).unwrap();
+        let path = talents.join("owner_line_labels.json");
+        let before = format!(
+            r#"{{"version":1,"entries":[{{"source":"audio","sentence_id":1,"start":null,"text_sha256":"{}","speaker":"sam","set_at":"2026-10-31T12:00:00Z"}}]}}"#,
+            "a".repeat(64)
+        );
+        std::fs::write(&path, &before).unwrap();
+        let mut rollback = MergeRollback::begin(&journal).unwrap();
+        let stats = super::super::merge::merge_segment_labels(
+            &journal,
+            "sam",
+            "samantha_ortiz",
+            Some(&mut rollback),
+            None,
+        )
+        .unwrap();
+        assert_eq!(stats.files_scanned, 1);
+        rollback.checkpoint(&journal).unwrap();
+        // The process stops here: the record and the rewritten file remain.
+        drop(rollback);
+        assert!(
+            std::fs::read_to_string(&path)
+                .unwrap()
+                .contains("samantha_ortiz")
+        );
+        assert!(entity_merge_recovery_pending(&journal));
+
+        recover_interrupted_entity_merge(&journal).unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), before);
+        assert!(!entity_merge_recovery_pending(&journal));
+        std::fs::remove_dir_all(journal).unwrap();
+    }
+
     #[test]
     fn a_before_image_keeps_the_form_earlier_builds_fingerprinted() {
         let snapshot = JournalSnapshot::Directory(SnapshotDirectory {

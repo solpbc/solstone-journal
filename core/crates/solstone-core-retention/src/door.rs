@@ -2317,6 +2317,18 @@ mod tests {
         assert_eq!(names, vec![TOMBSTONE_NAME.to_owned()]);
     }
 
+    #[test]
+    fn a_removed_segment_takes_the_owners_line_answers_with_it() {
+        let bed = Bed::new();
+        let segment = populated(&bed, "070000_17");
+        fs::write(segment.join("talents/owner_line_labels.json"), b"{}").unwrap();
+        let outcome = remove(&bed, &[target("20260805", "field.audio", "070000_17")]);
+
+        assert!(outcome.halted.is_none());
+        assert!(!segment.join("talents").exists());
+        assert!(segment.join(TOMBSTONE_NAME).is_file());
+    }
+
     #[cfg(all(windows, feature = "full-tests"))]
     #[test]
     fn segment_delete_waits_for_ordinary_and_nested_readers() {

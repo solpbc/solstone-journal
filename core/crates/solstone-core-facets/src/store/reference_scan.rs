@@ -27,6 +27,7 @@ pub struct EntityReferenceBreakdown {
     pub activity: usize,
     pub segment_label: usize,
     pub segment_correction: usize,
+    pub owner_line_label: usize,
     pub aka_crossref: usize,
     pub speaker_candidate: usize,
     pub keep_separate: usize,
@@ -257,6 +258,7 @@ fn count_segment_speakers(
                     operation_id,
                     counts,
                 );
+                count_owner_line_labels(&talents.join("owner_line_labels.json"), entity_id, counts);
             }
         }
     }
@@ -273,6 +275,23 @@ fn count_segment_labels(path: &Path, entity_id: &str, counts: &mut EntityReferen
         {
             if label.get("speaker").and_then(Value::as_str) == Some(entity_id) {
                 counts.segment_label += 1;
+            }
+        }
+    }
+}
+
+/// The owner's own answers about who spoke a line. A damaged file is counted
+/// as unreadable, never read past.
+fn count_owner_line_labels(path: &Path, entity_id: &str, counts: &mut EntityReferenceBreakdown) {
+    if let Some(value) = json_object(path, counts) {
+        for entry in value
+            .get("entries")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+        {
+            if entry.get("speaker").and_then(Value::as_str) == Some(entity_id) {
+                counts.owner_line_label += 1;
             }
         }
     }

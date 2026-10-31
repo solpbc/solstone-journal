@@ -38,6 +38,7 @@ pub mod owner_candidate_hydrate;
 pub mod owner_centroid;
 pub mod owner_contamination_screen;
 pub mod owner_detection;
+pub mod owner_line_labels;
 pub mod owner_provisional;
 pub mod owner_voice;
 pub mod repair_coordinator;

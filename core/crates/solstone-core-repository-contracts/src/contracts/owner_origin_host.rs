@@ -166,7 +166,7 @@ fn item_attrs(item: &syn::Item) -> &[syn::Attribute] {
     }
 }
 
-fn is_test_item(item: &syn::Item) -> bool {
+pub(crate) fn is_test_item(item: &syn::Item) -> bool {
     if let syn::Item::Mod(m) = item
         && m.ident == "tests"
     {
@@ -188,7 +188,7 @@ fn impl_item_attrs(item: &syn::ImplItem) -> &[syn::Attribute] {
     }
 }
 
-fn is_test_impl_item(item: &syn::ImplItem) -> bool {
+pub(crate) fn is_test_impl_item(item: &syn::ImplItem) -> bool {
     let attrs = impl_item_attrs(item);
     attrs
         .iter()

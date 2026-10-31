@@ -34,7 +34,8 @@ const NO_SEMANTIC_VARIANTS: [ArtifactId; 12] = [
 ];
 
 #[test]
-fn artifact_paths_are_unique_and_strict_artifacts_preserve_irreplaceable_evidence() {
+fn artifact_paths_are_unique_and_strict_artifacts_preserve_irreplaceable_evidence_and_owner_answers()
+ {
     let mut seen_paths = BTreeSet::new();
     let mut must_be_valid_paths = Vec::new();
 
@@ -56,8 +57,10 @@ fn artifact_paths_are_unique_and_strict_artifacts_preserve_irreplaceable_evidenc
             "health/parent-loss/generations/*/census-obligation.json",
             "health/parent-loss/generations/*/census-started.json",
             "health/parent-loss/generations/*/census-refusal.json",
+            // Owner-authored line answers that can't be rebuilt.
+            "chronicle/**/talents/owner_line_labels.json",
         ],
-        "MustBeValid artifacts must match the reviewed configuration and retirement evidence; found: {:?}",
+        "MustBeValid artifacts must match the reviewed configuration, retirement evidence and owner line answers; found: {:?}",
         must_be_valid_paths
     );
 }

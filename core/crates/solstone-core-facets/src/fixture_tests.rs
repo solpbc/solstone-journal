@@ -28,6 +28,7 @@ struct LifecycleCounts {
     activity: usize,
     segment_label: usize,
     segment_correction: usize,
+    owner_line_label: usize,
     aka_crossref: usize,
     speaker_candidate: usize,
     keep_separate: usize,
@@ -70,6 +71,10 @@ fn lifecycle_fixture_scans_python_writer_backed_inputs() {
     assert_eq!(
         counts.segment_correction,
         fixture.expected_counts.segment_correction
+    );
+    assert_eq!(
+        counts.owner_line_label,
+        fixture.expected_counts.owner_line_label
     );
     assert_eq!(counts.aka_crossref, fixture.expected_counts.aka_crossref);
     assert_eq!(

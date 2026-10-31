@@ -1095,6 +1095,93 @@ fn commit_rewrites_segment_speaker_corrections() {
     fs::remove_dir_all(journal).unwrap();
 }
 
+fn owner_line_labels(speaker: &str) -> String {
+    format!(
+        r#"{{"version":1,"entries":[{{"source":"audio","sentence_id":1,"start":"00:00:01","text_sha256":"{}","speaker":"{speaker}","set_at":"2026-10-31T12:00:00Z"}}]}}"#,
+        "a".repeat(64)
+    )
+}
+
+#[test]
+fn commit_rewrites_owner_line_labels_and_rollback_restores_them() {
+    let journal = voiceprint_journal();
+    for id in ["source", "target"] {
+        save_entity_identity(&journal, id, &json!({"id":id,"name":id}), None).unwrap();
+    }
+    // The labels file names someone else, so only the owner's answer names the id.
+    let talents = journal.join("chronicle/20260102/080000_300/talents");
+    fs::create_dir_all(&talents).unwrap();
+    fs::write(
+        talents.join("speaker_labels.json"),
+        br#"{"labels":[{"speaker":"other"}]}"#,
+    )
+    .unwrap();
+    let path = talents.join("owner_line_labels.json");
+    fs::write(&path, owner_line_labels("source")).unwrap();
+    let before = fs::read(&path).unwrap();
+    assert!(
+        commit_entity_merge_with_injector(
+            &journal,
+            "source",
+            "target",
+            EntityMergeOptions::default(),
+            Some(&|phase, artifact_index| phase == "segments" && artifact_index == 0)
+        )
+        .is_err()
+    );
+    assert_eq!(fs::read(&path).unwrap(), before);
+    commit_entity_merge(&journal, "source", "target", EntityMergeOptions::default()).unwrap();
+    let value: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    assert_eq!(value["entries"][0]["speaker"], "target");
+    assert_eq!(value["entries"][0]["set_at"], "2026-10-31T12:00:00Z");
+    fs::remove_dir_all(journal).unwrap();
+}
+
+#[test]
+fn commit_rewrites_corrections_even_when_the_labels_name_someone_else() {
+    let journal = voiceprint_journal();
+    let talents = journal.join("chronicle/20260102/080000_300/talents");
+    fs::create_dir_all(&talents).unwrap();
+    fs::write(
+        talents.join("speaker_labels.json"),
+        br#"{"labels":[{"speaker":"other"}]}"#,
+    )
+    .unwrap();
+    let path = talents.join("speaker_corrections.json");
+    fs::write(
+        &path,
+        br#"{"corrections":[{"original_speaker":"source","corrected_speaker":"other"}]}"#,
+    )
+    .unwrap();
+    commit_segment_merge(&journal);
+    let value: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    assert_eq!(value["corrections"][0]["original_speaker"], "target");
+    fs::remove_dir_all(journal).unwrap();
+}
+
+#[test]
+fn a_damaged_owner_line_labels_file_naming_the_id_refuses_the_merge() {
+    for damaged in [
+        r#"{"version":1,"entries":[{"speaker":"source"}"#.to_owned(),
+        r#"{"version":1,"entries":{"speaker":"source"}}"#.to_owned(),
+    ] {
+        let journal = voiceprint_journal();
+        for id in ["source", "target"] {
+            save_entity_identity(&journal, id, &json!({"id":id,"name":id}), None).unwrap();
+        }
+        let path = journal.join("chronicle/20260102/080000_300/talents/owner_line_labels.json");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(&path, &damaged).unwrap();
+        assert!(matches!(
+            commit_entity_merge(&journal, "source", "target", EntityMergeOptions::default()),
+            Err(EntityMergeError::Failed { .. } | EntityMergeError::Refused(_))
+        ));
+        assert_eq!(fs::read(&path).unwrap(), damaged.as_bytes());
+        assert!(journal.join("entities/source/entity.json").is_file());
+        fs::remove_dir_all(journal).unwrap();
+    }
+}
+
 #[test]
 fn commit_rewrites_activity_entity_references() {
     let journal = voiceprint_journal();

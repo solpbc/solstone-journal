@@ -2242,6 +2242,7 @@ dependencies = [
  "solstone-core-segment",
  "solstone-core-speaker-id",
  "solstone-core-system",
+ "solstone-core-transcripts",
  "thiserror 2.0.21",
  "zip",
 ]
@@ -2419,6 +2420,21 @@ dependencies = [
  "thiserror 2.0.21",
  "ureq",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "solstone-core-transcripts"
+version = "2.0.63"
+dependencies = [
+ "chrono",
+ "log",
+ "serde_json",
+ "sha2",
+ "solstone-core-format",
+ "solstone-core-journal-io",
+ "solstone-core-memory-original",
+ "solstone-core-processing-record",
+ "solstone-core-speaker-id",
 ]
 
 [[package]]

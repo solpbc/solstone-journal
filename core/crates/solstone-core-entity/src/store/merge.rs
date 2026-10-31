@@ -661,110 +661,147 @@ pub(crate) fn merge_segment_labels(
         for segment in iter_segments(journal, PathOrDay::Directory(&day))
             .map_err(|error| EntityMergeError::Refused(error.to_string()))?
         {
-            let path = segment.path().join("talents/speaker_labels.json");
-            if path_lexists(&path).map_err(|error| EntityMergeError::Refused(error.to_string()))? {
-                stats.files_scanned += 1;
-                let raw = read_bytes(&path, Vec::new())
-                    .map_err(|error| EntityMergeError::Refused(error.to_string()))?;
-                if !mentions_id(&raw, source_id) {
-                    continue;
-                }
-                let newly_locked = match rollback.as_deref_mut() {
-                    Some(rollback) => rollback.lock_file(&path)?,
-                    None => false,
-                };
-                let mut value: Value = read_json(&path, Value::Null, MalformedPolicy::Raise)
-                    .map_err(|error| EntityMergeError::Refused(error.to_string()))?;
-                let mut changed = false;
-                if let Some(labels) = value.get_mut("labels").and_then(Value::as_array_mut) {
-                    for label in labels.iter_mut() {
-                        if let Some(object) = label.as_object_mut()
-                            && object.get("speaker").and_then(Value::as_str) == Some(source_id)
-                        {
-                            object
-                                .insert("speaker".to_owned(), Value::String(target_id.to_owned()));
-                            changed = true;
-                        }
-                    }
-                }
-                if !changed
-                    && newly_locked
-                    && let Some(rollback) = rollback.as_deref_mut()
-                {
-                    rollback.unlock_file(&path);
-                }
-                if changed {
-                    capture_rollback_file(&mut rollback, journal, &path)?;
-                    write_json(
-                        &path,
-                        &value,
-                        JsonWriteOptions {
-                            indent: Some(2),
-                            sort_keys: false,
-                            mode: None,
-                        },
-                    )
-                    .map_err(|error| EntityMergeError::Refused(error.to_string()))?;
-                    inject_failure(injector, "segments", artifact_index)?;
-                    artifact_index += 1;
-                    stats.labels_rewritten += 1;
-                }
-            }
-            let path = segment.path().join("talents/speaker_corrections.json");
-            if !path_lexists(&path).map_err(|error| EntityMergeError::Refused(error.to_string()))? {
-                continue;
-            }
-            stats.files_scanned += 1;
-            let raw = read_bytes(&path, Vec::new())
-                .map_err(|error| EntityMergeError::Refused(error.to_string()))?;
-            if !mentions_id(&raw, source_id) {
-                continue;
-            }
-            let newly_locked = match rollback.as_deref_mut() {
-                Some(rollback) => rollback.lock_file(&path)?,
-                None => false,
-            };
-            let mut value: Value = read_json(&path, Value::Null, MalformedPolicy::Raise)
-                .map_err(|error| EntityMergeError::Refused(error.to_string()))?;
-            let mut changed = false;
-            if let Some(corrections) = value.get_mut("corrections").and_then(Value::as_array_mut) {
-                for correction in corrections.iter_mut() {
-                    if let Some(object) = correction.as_object_mut() {
-                        for field in ["original_speaker", "corrected_speaker"] {
-                            if object.get(field).and_then(Value::as_str) == Some(source_id) {
-                                object
-                                    .insert(field.to_owned(), Value::String(target_id.to_owned()));
-                                changed = true;
-                            }
-                        }
-                    }
-                }
-            }
-            if !changed
-                && newly_locked
-                && let Some(rollback) = rollback.as_deref_mut()
-            {
-                rollback.unlock_file(&path);
-            }
-            if changed {
-                capture_rollback_file(&mut rollback, journal, &path)?;
-                write_json(
-                    &path,
-                    &value,
-                    JsonWriteOptions {
-                        indent: Some(2),
-                        sort_keys: false,
-                        mode: None,
-                    },
+            let talents = segment.path().join("talents");
+            // Each file is examined on its own: one that doesn't name the
+            // merged id says nothing about the others.
+            let mut rewrite = |name: &str, apply: &dyn Fn(&mut Value) -> Result<bool, String>| {
+                merge_segment_file(
+                    journal,
+                    &talents.join(name),
+                    source_id,
+                    &mut rollback,
+                    injector,
+                    &mut artifact_index,
+                    &mut stats.files_scanned,
+                    apply,
                 )
-                .map_err(|error| EntityMergeError::Refused(error.to_string()))?;
-                inject_failure(injector, "segments", artifact_index)?;
-                artifact_index += 1;
+            };
+            if rewrite("speaker_labels.json", &|value| {
+                Ok(rewrite_ids(
+                    value,
+                    "labels",
+                    &["speaker"],
+                    source_id,
+                    target_id,
+                ))
+            })? {
+                stats.labels_rewritten += 1;
+            }
+            if rewrite("speaker_corrections.json", &|value| {
+                Ok(rewrite_ids(
+                    value,
+                    "corrections",
+                    &["original_speaker", "corrected_speaker"],
+                    source_id,
+                    target_id,
+                ))
+            })? {
                 stats.corrections_rewritten += 1;
             }
+            // The owner's own line answers. They are never healed, so one
+            // that names the merged id but isn't a valid record refuses the
+            // merge rather than leaving that id behind.
+            rewrite("owner_line_labels.json", &|value| {
+                let valid = value
+                    .get("entries")
+                    .and_then(Value::as_array)
+                    .is_some_and(|entries| entries.iter().all(Value::is_object));
+                if !valid {
+                    return Err("owner line labels are not a valid record".to_owned());
+                }
+                Ok(rewrite_ids(
+                    value,
+                    "entries",
+                    &["speaker"],
+                    source_id,
+                    target_id,
+                ))
+            })?;
         }
     }
     Ok(stats)
+}
+
+/// Replace `source_id` with `target_id` in `fields` of every object in the
+/// `list` array. Returns whether anything changed.
+fn rewrite_ids(
+    value: &mut Value,
+    list: &str,
+    fields: &[&str],
+    source_id: &str,
+    target_id: &str,
+) -> bool {
+    let mut changed = false;
+    for item in value
+        .get_mut(list)
+        .and_then(Value::as_array_mut)
+        .into_iter()
+        .flatten()
+    {
+        let Some(object) = item.as_object_mut() else {
+            continue;
+        };
+        for field in fields {
+            if object.get(*field).and_then(Value::as_str) == Some(source_id) {
+                object.insert((*field).to_owned(), Value::String(target_id.to_owned()));
+                changed = true;
+            }
+        }
+    }
+    changed
+}
+
+/// Rewrite one segment speaker file that names `source_id`, capturing its
+/// before-image first. Returns whether it was rewritten. A file that names
+/// the id but can't be read refuses the merge.
+#[allow(clippy::too_many_arguments)]
+fn merge_segment_file(
+    journal: &Path,
+    path: &Path,
+    source_id: &str,
+    rollback: &mut Option<&mut MergeRollback>,
+    injector: Option<&FailureInjector>,
+    artifact_index: &mut usize,
+    files_scanned: &mut usize,
+    apply: &dyn Fn(&mut Value) -> Result<bool, String>,
+) -> Result<bool, EntityMergeError> {
+    if !path_lexists(path).map_err(|error| EntityMergeError::Refused(error.to_string()))? {
+        return Ok(false);
+    }
+    *files_scanned += 1;
+    let raw = read_bytes(path, Vec::new())
+        .map_err(|error| EntityMergeError::Refused(error.to_string()))?;
+    if !mentions_id(&raw, source_id) {
+        return Ok(false);
+    }
+    let newly_locked = match rollback.as_deref_mut() {
+        Some(rollback) => rollback.lock_file(path)?,
+        None => false,
+    };
+    let mut value: Value = read_json(path, Value::Null, MalformedPolicy::Raise)
+        .map_err(|error| EntityMergeError::Refused(error.to_string()))?;
+    let changed = apply(&mut value)
+        .map_err(|detail| EntityMergeError::Refused(format!("{}: {detail}", path.display())))?;
+    if !changed {
+        if newly_locked && let Some(rollback) = rollback.as_deref_mut() {
+            rollback.unlock_file(path);
+        }
+        return Ok(false);
+    }
+    capture_rollback_file(rollback, journal, path)?;
+    write_json(
+        path,
+        &value,
+        JsonWriteOptions {
+            indent: Some(2),
+            sort_keys: false,
+            mode: None,
+        },
+    )
+    .map_err(|error| EntityMergeError::Refused(error.to_string()))?;
+    inject_failure(injector, "segments", *artifact_index)?;
+    *artifact_index += 1;
+    Ok(true)
 }
 
 fn capture_rollback_file(

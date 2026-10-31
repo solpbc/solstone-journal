@@ -97,6 +97,9 @@ mod mcp_endpoint_gate_purity;
 #[path = "contracts/native_process_launch_admission.rs"]
 mod native_process_launch_admission;
 #[cfg(all(test, feature = "full-tests"))]
+#[path = "contracts/owner_line_label_containment.rs"]
+mod owner_line_label_containment;
+#[cfg(all(test, feature = "full-tests"))]
 #[path = "contracts/paired_stream_allocator_governance.rs"]
 mod paired_stream_allocator_governance;
 #[cfg(test)]

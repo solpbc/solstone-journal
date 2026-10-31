@@ -47,6 +47,10 @@ pub enum ArtifactWipeError {
 }
 
 /// Report, and optionally remove, all legacy speaker artifacts.
+///
+/// The owner's own answers about who spoke a line
+/// (`talents/owner_line_labels.json`) are not speaker artifacts: they are
+/// owner-authored, can't be rebuilt, and are left in place.
 pub fn wipe_speaker_artifacts(
     journal_root: &Path,
     dry_run: bool,
@@ -306,6 +310,23 @@ mod tests {
         assert_eq!(committed.owner_candidate.count, 1);
         assert_eq!(committed.total_files, paths.len());
         assert!(paths.iter().all(|path| !root.join(path).exists()));
+
+        fs::remove_dir_all(root).expect("remove fixture root");
+    }
+
+    #[test]
+    fn wipe_leaves_the_owners_line_answers_in_place() {
+        let root = test_root();
+        let answers = "chronicle/20260809/main/120000_1/talents/owner_line_labels.json";
+        write(&root, answers);
+        write(
+            &root,
+            "chronicle/20260809/main/120000_1/talents/speaker_labels.json",
+        );
+
+        let committed = wipe_speaker_artifacts(&root, false).expect("commit wipe");
+        assert_eq!(committed.total_files, 1);
+        assert_eq!(fs::read(root.join(answers)).unwrap(), b"fixture");
 
         fs::remove_dir_all(root).expect("remove fixture root");
     }

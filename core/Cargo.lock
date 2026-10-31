@@ -6414,6 +6414,7 @@ dependencies = [
  "solstone-core-segment",
  "solstone-core-speaker-id",
  "solstone-core-system",
+ "solstone-core-transcripts",
  "tempfile",
  "thiserror 2.0.20",
  "zip",

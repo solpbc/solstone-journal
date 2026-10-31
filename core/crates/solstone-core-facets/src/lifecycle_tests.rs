@@ -619,6 +619,51 @@ fn scan_counts_synthetic_dismissal_entity_reference() {
 }
 
 #[test]
+fn a_person_named_only_by_an_owner_line_answer_is_referenced_in_its_own_category() {
+    let temporary = TempDir::new();
+    let (identity, history) = create_identify_entity(temporary.path(), "target", "op-1");
+    open_index(temporary.path()).unwrap();
+    write_text(
+        temporary.path(),
+        "chronicle/20260805/stream/seg/talents/owner_line_labels.json",
+        &format!(
+            "{{\"version\":1,\"entries\":[{{\"source\":\"audio\",\"sentence_id\":1,\"start\":null,\"text_sha256\":\"{}\",\"speaker\":\"target\",\"set_at\":\"2026-08-05T12:00:00Z\"}}]}}",
+            "a".repeat(64)
+        ),
+    );
+
+    let outcome = delete_created_entity_if_unreferenced(
+        temporary.path(),
+        "target",
+        "op-1",
+        &identity,
+        &[history],
+    )
+    .unwrap();
+
+    assert!(!outcome.deleted);
+    assert_eq!(
+        outcome.references,
+        crate::store::reference_scan::EntityReferenceBreakdown {
+            owner_line_label: 1,
+            ..Default::default()
+        }
+    );
+    assert!(temporary.path().join("entities/target").exists());
+}
+
+#[test]
+fn a_damaged_owner_line_labels_file_is_counted_as_unreadable() {
+    let counts = scan_synthetic_entity_reference(
+        "chronicle/20260805/stream/seg/talents/owner_line_labels.json",
+        "{\"version\":1,\"entries\":[",
+    );
+
+    assert_eq!(counts.owner_line_label, 0);
+    assert_eq!(counts.unreadable, 1);
+}
+
+#[test]
 fn scan_counts_synthetic_repair_operation_entity_reference() {
     let counts = scan_synthetic_entity_reference(
         "speakers/repair-operations.jsonl",
