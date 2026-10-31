@@ -62,18 +62,18 @@ pub fn run_speaker_numbers(segment: &Path, source: &str) -> BTreeMap<i64, i64> {
         .filter(|((start, _), _)| *start <= target_start)
         .collect::<Vec<_>>();
     keys.sort();
-    // A source named for its segment (`HHMMSS_LEN_audio`) is the same source
-    // under each segment's own key.
-    let keyed = source
-        .strip_prefix(target)
-        .and_then(|rest| rest.strip_prefix('_'));
-    let source_in =
-        |key: &str| keyed.map_or_else(|| source.to_owned(), |rest| format!("{key}_{rest}"));
+    let identity = source_identity(target, source);
 
     // Walk back from this segment to the start of its run.
     let mut run: Vec<RunSegment> = Vec::new();
     for ((start, end), key) in keys.into_iter().rev() {
-        let Some(clusters) = segment_clusters(&stream_dir.join(&key), &source_in(&key)) else {
+        let dir = stream_dir.join(&key);
+        let stem = if key == target {
+            Some(source.to_owned())
+        } else {
+            source_stem(&dir, &key, identity)
+        };
+        let Some(clusters) = stem.and_then(|stem| segment_clusters(&dir, &stem)) else {
             continue;
         };
         if let Some(next) = run.last()
@@ -92,6 +92,33 @@ pub fn run_speaker_numbers(segment: &Path, source: &str) -> BTreeMap<i64, i64> {
     }
     run.reverse();
     number_run(&run).remove(target).unwrap_or_default()
+}
+
+/// A source's name within its segment, without the segment's own key or clock
+/// that some producers put in front of it (`175000_300_audio`, `175000_audio`):
+/// the directory already says which segment it is, so `audio` is the same
+/// source in every segment of a stream, and `mic_audio` stays apart from
+/// `sys_audio`.
+fn source_identity<'a>(key: &str, stem: &'a str) -> &'a str {
+    let clock = key.split_once('_').map_or(key, |(clock, _)| clock);
+    [key, clock]
+        .into_iter()
+        .find_map(|prefix| stem.strip_prefix(prefix)?.strip_prefix('_'))
+        .unwrap_or(stem)
+}
+
+/// The transcript stem in one segment that carries `identity`, the first by
+/// name if more than one does.
+fn source_stem(segment: &Path, key: &str, identity: &str) -> Option<String> {
+    let mut stems = fs::read_dir(segment)
+        .ok()?
+        .flatten()
+        .filter_map(|entry| entry.file_name().into_string().ok())
+        .filter_map(|name| Some(name.strip_suffix(".jsonl")?.to_owned()))
+        .filter(|stem| source_identity(key, stem) == identity)
+        .collect::<Vec<_>>();
+    stems.sort();
+    stems.into_iter().next()
 }
 
 /// Run numbers, from 1, for every segment of one run in time order.
@@ -307,11 +334,12 @@ mod tests {
     #[test]
     fn a_voice_keeps_its_number_when_each_source_is_named_for_its_segment() {
         let root = tempfile::tempdir().unwrap();
-        // The macOS app names each segment's audio for its key.
+        // The macOS app names each segment's audio for its key, and older
+        // segments for their clock alone.
         segment_source(
             root.path(),
             "174951_9",
-            "174951_9_audio",
+            "174951_audio",
             &[(1, voice(0, 0.1))],
         );
         segment_source(
@@ -334,6 +362,29 @@ mod tests {
         assert_eq!(
             run_speaker_numbers(&root.path().join("175500_300"), "175500_300_audio"),
             BTreeMap::from([(1, 2), (2, 1)])
+        );
+    }
+
+    #[test]
+    fn one_microphone_never_numbers_from_another_source() {
+        let root = tempfile::tempdir().unwrap();
+        // The same voice on system audio just before: a different source, so
+        // the microphone's run starts here.
+        segment_source(
+            root.path(),
+            "100000_300",
+            "sys_audio",
+            &[(1, voice(0, 0.0))],
+        );
+        segment_source(
+            root.path(),
+            "100500_300",
+            "mic_audio",
+            &[(2, voice(1, 0.0)), (1, voice(0, 0.0))],
+        );
+        assert_eq!(
+            run_speaker_numbers(&root.path().join("100500_300"), "mic_audio"),
+            BTreeMap::from([(2, 1), (1, 2)])
         );
     }
 
