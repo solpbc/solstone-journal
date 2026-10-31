@@ -14,6 +14,71 @@ use crate::segment::{is_date_key, segment_parse};
 /// mode, identifiers), and every reader of this header takes it as part of what was said.
 const HEADER_FIELDS: &[&str] = &["language", "setting", "topics", "untimed"];
 
+/// The speaker of a line from audio that holds only the computer's own sound: someone the journal
+/// has not identified, and never the owner, because no microphone was recorded.
+pub const OTHER_VOICE: &str = "Someone else";
+
+/// Where a recording's sound came from, as its producer reported it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum AudioSource {
+    /// Only the computer's own sound: the other people on a call, media playing.
+    Computer,
+    Microphone,
+    Both,
+}
+
+impl AudioSource {
+    fn describe(self) -> &'static str {
+        match self {
+            Self::Computer => {
+                "this computer's own sound, such as a call or media, with no microphone"
+            }
+            Self::Microphone => "a microphone",
+            Self::Both => "a microphone and this computer's own sound",
+        }
+    }
+}
+
+/// The producer's report, from the most deliberate place it gives one: the `audio_sources` field,
+/// then the macOS app's per-source capture record (sources that recorded nothing don't count), then
+/// a split transcript's file name (`sys_audio`, `mic_audio`). `None` when the producer didn't say.
+fn audio_source(rel: &str, metadata: Option<&JsonObject>) -> Option<AudioSource> {
+    let declared = metadata.and_then(|metadata| {
+        let kinds = if let Some(sources) = metadata.get("audio_sources").and_then(Value::as_array) {
+            sources.iter().filter_map(Value::as_str).collect::<Vec<_>>()
+        } else {
+            metadata
+                .get("audio_capture")?
+                .get("sources")?
+                .as_array()?
+                .iter()
+                .filter(|source| {
+                    source.get("started").and_then(Value::as_bool) != Some(false)
+                        && source.get("accepted_frames").and_then(Value::as_u64) != Some(0)
+                })
+                .filter_map(|source| source.get("kind").and_then(Value::as_str))
+                .collect()
+        };
+        let computer = kinds
+            .iter()
+            .any(|kind| matches!(*kind, "computer" | "system"));
+        let microphone = kinds
+            .iter()
+            .any(|kind| matches!(*kind, "microphone" | "mic"));
+        match (computer, microphone) {
+            (true, false) => Some(AudioSource::Computer),
+            (false, true) => Some(AudioSource::Microphone),
+            (true, true) => Some(AudioSource::Both),
+            (false, false) => None,
+        }
+    });
+    declared.or_else(|| match rel.rsplit('/').next()? {
+        name if name.ends_with("sys_audio.jsonl") => Some(AudioSource::Computer),
+        name if name.ends_with("mic_audio.jsonl") => Some(AudioSource::Microphone),
+        _ => None,
+    })
+}
+
 pub(super) fn render(rel: &str, records: &[JsonObject]) -> ProducedChunks {
     let metadata = records
         .first()
@@ -21,6 +86,7 @@ pub(super) fn render(rel: &str, records: &[JsonObject]) -> ProducedChunks {
     let mut skipped = 0usize;
     let mut chunks = Vec::new();
     let (base_timestamp, start_header) = base_timestamp_and_header(rel);
+    let heard_from = audio_source(rel, metadata);
 
     for (index, record) in records.iter().enumerate() {
         if index == 0 && metadata.is_some() {
@@ -59,6 +125,10 @@ pub(super) fn render(rel: &str, records: &[JsonObject]) -> ProducedChunks {
         match record.get("speaker") {
             Some(Value::Number(value)) => parts.push(format!("Speaker {value}:")),
             Some(value) => parts.push(format!("{}:", display_value(value))),
+            // No microphone was recorded, so a line no voice was matched to is someone else's.
+            None if heard_from == Some(AudioSource::Computer) => {
+                parts.push(format!("{OTHER_VOICE}:"))
+            }
             None => parts.push(String::new()),
         }
 
@@ -84,7 +154,7 @@ pub(super) fn render(rel: &str, records: &[JsonObject]) -> ProducedChunks {
         chunks.push(recorded_chunk(markdown, timestamp, record));
     }
 
-    let header = audio_header(metadata, start_header);
+    let header = audio_header(metadata, start_header, heard_from);
     ProducedChunks {
         chunks,
         agent_override: Some("audio".to_string()),
@@ -95,8 +165,15 @@ pub(super) fn render(rel: &str, records: &[JsonObject]) -> ProducedChunks {
     }
 }
 
-fn audio_header(metadata: Option<&JsonObject>, start_header: Option<String>) -> Option<String> {
+fn audio_header(
+    metadata: Option<&JsonObject>,
+    start_header: Option<String>,
+    source: Option<AudioSource>,
+) -> Option<String> {
     let mut parts = start_header.into_iter().collect::<Vec<_>>();
+    if let Some(source) = source {
+        parts.push(format!("Audio: {}", source.describe()));
+    }
     if let Some(metadata) = metadata {
         for (key, value) in metadata {
             if !HEADER_FIELDS.contains(&key.as_str()) {
@@ -162,6 +239,120 @@ fn header_value(value: &Value) -> String {
             .collect::<Vec<_>>()
             .join(", "),
         _ => display_value(value),
+    }
+}
+
+#[cfg(test)]
+mod source_tests {
+    use super::*;
+
+    fn rows(header: serde_json::Value) -> Vec<JsonObject> {
+        [
+            header,
+            serde_json::json!({"start":"05:50:00","text":"I'll start with beans."}),
+            serde_json::json!({"start":"05:50:20","text":"Counting is enough.","speaker":2}),
+        ]
+        .into_iter()
+        .map(|row| row.as_object().unwrap().clone())
+        .collect()
+    }
+
+    fn mac(kinds: &[(&str, u64)]) -> serde_json::Value {
+        let sources = kinds
+            .iter()
+            .map(|(kind, frames)| serde_json::json!({"kind":kind,"started":true,"accepted_frames":frames}))
+            .collect::<Vec<_>>();
+        serde_json::json!({"raw":"x.m4a","audio_capture":{"sources":sources}})
+    }
+
+    fn lines(produced: &ProducedChunks) -> Vec<String> {
+        produced
+            .chunks
+            .iter()
+            .map(|chunk| chunk.content.clone())
+            .collect()
+    }
+
+    #[test]
+    fn computer_only_audio_is_said_and_its_unmatched_lines_are_someone_elses() {
+        for (rel, header) in [
+            (
+                "20261031/device/055000_300/055000_300_audio.jsonl",
+                mac(&[("system", 9)]),
+            ),
+            // The microphone was expected but recorded nothing.
+            (
+                "20261031/device/055000_300/055000_300_audio.jsonl",
+                mac(&[("system", 9), ("microphone", 0)]),
+            ),
+            (
+                "20261031/device/055000_300/055000_300_audio.jsonl",
+                serde_json::json!({"audio_sources":["computer"]}),
+            ),
+            (
+                "20261031/linux/055000_300/sys_audio.jsonl",
+                serde_json::json!({"raw":"sys_audio.flac"}),
+            ),
+        ] {
+            let produced = render(rel, &rows(header));
+            assert!(
+                produced
+                    .header
+                    .as_deref()
+                    .unwrap()
+                    .contains("Audio: this computer's own sound"),
+                "{rel}"
+            );
+            let lines = lines(&produced);
+            assert!(
+                lines[0].contains("Someone else: I'll start with beans."),
+                "{lines:?}"
+            );
+            // A voice the journal did tell apart keeps its own label.
+            assert!(
+                lines[1].contains("Speaker 2: Counting is enough."),
+                "{lines:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn audio_with_a_microphone_keeps_unmatched_lines_unlabelled() {
+        for (rel, header, said) in [
+            (
+                "20261031/device/055000_300/055000_300_audio.jsonl",
+                mac(&[("system", 9), ("microphone", 9)]),
+                Some("Audio: a microphone and this computer's own sound"),
+            ),
+            (
+                "20261031/device/055000_300/055000_300_audio.jsonl",
+                mac(&[("microphone", 9)]),
+                Some("Audio: a microphone"),
+            ),
+            (
+                "20261031/linux/055000_300/mic_audio.jsonl",
+                serde_json::json!({"raw":"mic_audio.flac"}),
+                Some("Audio: a microphone"),
+            ),
+            // A producer that doesn't say, such as a phone or watch.
+            (
+                "20261031/watch/055000_300/audio.jsonl",
+                serde_json::json!({"raw":"audio.m4a"}),
+                None,
+            ),
+        ] {
+            let produced = render(rel, &rows(header));
+            let header = produced.header.clone().unwrap_or_default();
+            match said {
+                Some(said) => assert!(header.contains(said), "{header}"),
+                None => assert!(!header.contains("Audio:"), "{header}"),
+            }
+            assert!(
+                !lines(&produced)
+                    .iter()
+                    .any(|line| line.contains(OTHER_VOICE))
+            );
+        }
     }
 }
 

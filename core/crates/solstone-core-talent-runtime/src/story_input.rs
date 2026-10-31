@@ -428,7 +428,7 @@ pub(crate) fn speaker_count(
     transcript: &str,
     sources: &[Option<solstone_core_transcripts::EntrySource>],
 ) -> Option<String> {
-    let (mut own, mut numbered) = (0_usize, 0_usize);
+    let (mut own, mut numbered, mut other) = (0_usize, 0_usize, 0_usize);
     let mut named: Vec<(String, usize)> = Vec::new();
     for source in sources
         .iter()
@@ -441,6 +441,8 @@ pub(crate) fn speaker_count(
         for label in text.lines().filter_map(speech_label) {
             if label == solstone_core_transcripts::OWNER_VOICE {
                 own += 1;
+            } else if label == solstone_core_format::content::OTHER_VOICE {
+                other += 1;
             } else if label
                 .strip_prefix("Speaker ")
                 .is_some_and(|n| !n.is_empty() && n.chars().all(|c| c.is_ascii_digit()))
@@ -453,7 +455,7 @@ pub(crate) fn speaker_count(
             }
         }
     }
-    let total = own + numbered + named.iter().map(|(_, n)| n).sum::<usize>();
+    let total = own + numbered + other + named.iter().map(|(_, n)| n).sum::<usize>();
     if total == 0 {
         return None;
     }
@@ -478,6 +480,12 @@ pub(crate) fn speaker_count(
     if numbered > 0 {
         rows.push(format!(
             "- Unnamed voices (\"Speaker\" and a number): {numbered} lines. The numbers restart in each segment, so the same number in two segments can be two different people."
+        ));
+    }
+    if other > 0 {
+        rows.push(format!(
+            "- {}: {other} lines, from this computer's own sound with no microphone, so none of them is yours. They can be more than one person.",
+            solstone_core_format::content::OTHER_VOICE
         ));
     }
     rows.push("Every line that is not under `You:` was said by someone else.".to_owned());
@@ -984,6 +992,14 @@ mod tests {
         assert!(
             count.contains("- You: none of the 1 lines. Nothing said in this activity is yours.")
         );
+        // Computer-only audio: its unmatched lines are someone else's, counted as nobody named.
+        let call = "## seg\n[05:50:00] (055000_300) Someone else: I'll start\n[05:50:20] (055000_300) Someone else: ok\n";
+        source.rendered_range = 0..call.len();
+        let count = speaker_count(call, &[Some(source.clone())]).unwrap();
+        assert!(count.contains("- You: none of the 2 lines."), "{count}");
+        assert!(count.contains("- Someone else: 2 lines"), "{count}");
+        assert!(!count.contains("Named voices"), "{count}");
+        source.rendered_range = 0..silent.len();
         source.file = "screen.jsonl".into();
         assert!(speaker_count(silent, &[Some(source)]).is_none());
         assert!(speaker_count(silent, &[None]).is_none());

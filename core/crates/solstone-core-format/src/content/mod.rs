@@ -6,6 +6,7 @@ mod activities;
 pub use activities::is_retired_plan;
 mod ai_chat;
 mod audio;
+pub use audio::OTHER_VOICE;
 mod browser;
 mod day_accumulator;
 mod desktop_activity;
