@@ -1078,6 +1078,82 @@ mod tests {
         legacy_slot.retire().unwrap();
     }
 
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn registered_folder_previews_and_first_starts_from_its_copied_tree() {
+        let journal = crate::test_support::phase_root("empty");
+        let root = Arc::new(solstone_core_journal_io::JournalRoot::open(journal.path()).unwrap());
+        let stamp = solstone_core_import::validate_timestamp(ID).unwrap();
+        let source = tempfile::tempdir().unwrap();
+        std::fs::write(source.path().join("note.md"), b"folder note").unwrap();
+        let folder =
+            solstone_core_import::admit_folder_bound(&root, source.path(), "folder", &stamp)
+                .unwrap();
+        assert_eq!(folder.import_id.as_str(), ID);
+        crate::register_admitted_folder(
+            &root,
+            &folder,
+            "obsidian",
+            "notes",
+            "folder-row",
+            &stamp,
+            chrono_tz::UTC,
+        )
+        .unwrap();
+        // Continuation reads only the copied tree, never the owner's original.
+        drop(source);
+        let fake = Fake::new(journal.path().to_path_buf());
+        let slot = installed(&fake);
+        let state = AppState {
+            root: journal.path().to_path_buf(),
+            route: Some(slot.clone()),
+        };
+        let detail = body_of(
+            crate::imports::detail(State(state.clone()), axum::extract::Path(ID.to_owned())).await,
+        )
+        .await;
+        assert_eq!(detail["saved_start"]["state"], "eligible");
+        let metadata = &detail["import_json"];
+        assert_eq!(metadata["file_size"], Value::Null);
+        // The same request body the detail page sends.
+        let mut data = json!({"import_id": ID, "path": metadata["file_path"],
+            "timestamp": metadata["source_timestamp"], "setting": ""});
+        let previewed =
+            body_of(preview::preview(State(state.clone()), Json(data.clone())).await).await;
+        assert!(previewed["preview_token"].is_string(), "{previewed}");
+        data["preview_token"] = previewed["preview_token"].clone();
+        data["first_start_only"] = json!(true);
+        assert_eq!(
+            lifecycle::start(State(state), Json(data.clone()))
+                .await
+                .status(),
+            StatusCode::OK
+        );
+        wait_until(&fake.entered);
+        assert_eq!(fake.runs.load(Ordering::Acquire), 1);
+        slot.retire().unwrap();
+        assert_eq!(
+            solstone_core_import::saved_start::saved_start_state(
+                &read_import_metadata(journal.path(), ID).unwrap(),
+                ID
+            ),
+            solstone_core_import::saved_start::SavedStartState::Consumed
+        );
+        let restarted = Fake::new(journal.path().to_path_buf());
+        let restarted_slot = installed(&restarted);
+        let again = lifecycle::start(
+            State(AppState {
+                root: journal.path().to_path_buf(),
+                route: Some(restarted_slot.clone()),
+            }),
+            Json(data),
+        )
+        .await;
+        assert_ne!(again.status(), StatusCode::OK);
+        assert_eq!(restarted.runs.load(Ordering::Acquire), 0);
+        restarted_slot.retire().unwrap();
+    }
+
     #[tokio::test]
     async fn concurrent_first_starts_and_early_run_refusal_do_not_restore_permission() {
         let (root, mut data, _) = fixture();

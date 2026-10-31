@@ -179,5 +179,52 @@ module.exports = async function savedStartCases(crateDir) {
     assert.strictEqual(h.calls.length, 0);
     cases += 1;
   }
+  // A copied folder is registered with no single file size and its copied tree's snapshot.
+  const folder = () => {
+    const data = saved();
+    Object.assign(data.import_json, { file_path: '/journal/imports/20261029_120000/tree',
+      file_size: null, folder_snapshot: 'a'.repeat(64), source_hint: 'obsidian', setting: null });
+    return data;
+  };
+  {
+    const h = harness(async url => url.endsWith('/preview') ? ready : { import_id: folder().timestamp });
+    h.render(folder());
+    assert.ok(h.button(), 'an eligible copied folder offers Preview');
+    await h.button().onclick();
+    h.setRefresh(async () => h.render({ ...folder(), status: 'running', saved_start: { state: 'consumed', active: true } }));
+    await h.button().onclick();
+    const [p, s] = h.calls;
+    assert.ok(h.calls.length === 2 && p.url.endsWith('/preview') && s.url.endsWith('/start'));
+    for (const call of h.calls) {
+      assert.strictEqual(call.body.path, folder().import_json.file_path);
+      assert.strictEqual(call.body.setting, '');
+    }
+    assert.strictEqual(s.body.preview_token, ready.preview_token);
+    assert.strictEqual(s.body.first_start_only, true);
+    assert.ok(!h.button());
+    cases += 1;
+  }
+  {
+    const h = harness(async () => ready);
+    h.render(folder()); await h.button().onclick();
+    const changed = folder(); changed.import_json.folder_snapshot = 'b'.repeat(64);
+    h.render(changed); await h.button().onclick();
+    assert.ok(h.calls.every(call => call.url.endsWith('/preview')), 'a changed folder snapshot needs a new Preview');
+    const refused = harness(async () => { throw new Error('no request'); });
+    const sizeless = folder(); delete sizeless.import_json.folder_snapshot;
+    const undigested = folder(); undigested.import_json.folder_snapshot = 'snapshot';
+    const sizelessFile = folder(); sizelessFile.import_json.file_path = saved().import_json.file_path;
+    const sized = folder(); sized.import_json.file_size = 0;
+    const archive = folder(); archive.import_json.source_hint = 'audio_archive';
+    const pointer = folder(); pointer.import_json.is_local_path = true;
+    for (const data of [sizeless, undigested, sizelessFile, sized, archive, pointer,
+      { ...folder(), saved_start: { state: 'unknown', active: false } },
+      { ...folder(), saved_start: { state: 'consumed', active: false } }]) {
+      refused.render(data);
+      assert.ok(!refused.button());
+    }
+    assert.strictEqual(refused.calls.length, 0);
+    cases += 1;
+  }
   return cases;
 };

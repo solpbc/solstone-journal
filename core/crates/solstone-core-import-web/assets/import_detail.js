@@ -725,7 +725,18 @@
   function savedBinding(data) {
     const metadata = data?.import_json || {};
     return JSON.stringify([data?.timestamp, metadata.import_id, metadata.file_path,
-      metadata.source_hash, metadata.file_size, metadata.source_timestamp, metadata.setting]);
+      metadata.source_hash, metadata.file_size, metadata.folder_snapshot,
+      metadata.source_timestamp, metadata.setting]);
+  }
+
+  // A saved file has its size; a copied folder has none, but its own copied tree and snapshot.
+  // An audio archive also needs its recording time zone, which only the workspace asks for.
+  function savedSource(metadata, id) {
+    if (Number.isSafeInteger(metadata.file_size) && metadata.file_size > 0) return true;
+    return metadata.file_size === null && metadata.source_hint !== 'audio_archive'
+      && typeof metadata.folder_snapshot === 'string'
+      && /^[0-9a-f]{64}$/.test(metadata.folder_snapshot)
+      && metadata.file_path.endsWith(`/imports/${id}/tree`);
   }
 
   function savedEligible(data) {
@@ -734,7 +745,7 @@
       && data?.status === 'pending' && data?.saved_start?.state === 'eligible'
       && metadata?.import_id === data.timestamp && typeof metadata.file_path === 'string'
       && typeof metadata.source_timestamp === 'string' && !metadata.is_local_path
-      && Number.isSafeInteger(metadata.file_size) && metadata.file_size > 0;
+      && savedSource(metadata, data.timestamp);
   }
 
   function hasSavedFlow(data) {
