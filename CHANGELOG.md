@@ -9,7 +9,6 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 
 - private troubleshooting evidence now keeps connection details and how far the attempt got when confidential processing refuses a connection.
-- an activity now says where your phone or watch was while it ran, in the words your map uses: "your watch was near Golden, Colorado then". the line opens that place on your map when it's a place in your journal, otherwise that day on the map. agents that can read your whole journal's transcripts see the same, in words and never coordinates.
 - the android development app can review interrupted storage work while your journal stays stopped. it can remove temporary copies after checking that the originals are still complete.
 - browser pages in your journal now show their context: whether the tab was in front and its window focused, whether audio or video was playing, whether the solstone app was paused, how long the tab had been open, the page's language and which browser it was. agents reading your journal see the same line. pages from earlier versions of the solstone extension look as before.
 
@@ -19,25 +18,10 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - the description of a code editor on your screen less often invents a conversation with an AI assistant.
 - when a stretch has few enough screens worth describing to cover them all, the screen description now covers every one, so a video or a call on screen only briefly is no longer skipped.
 - your journal now describes time in your browser by the pages you had in front of you. a video playing in a background tab, or a page left open behind another app, is mentioned as open rather than as something you watched or read, and what a page or video shows is now less often written as something you did.
-- summaries of recordings you import now credit what was said to whoever said it, by name when the recording gives one and as "a speaker" otherwise, and an unnamed speaker can be you. a summary now rarely says you discussed, planned or asked for what someone else said in one.
-- each stretch's screen description now rarely calls you "the user": it addresses you as "you" and calls the AI agent working for you "your agent".
-- a show, film or podcast playing near you is now less often mistaken for a conversation, so fewer of them get a story as if the people in it were with you.
-- people mentioned by their full name in an activity now link to the person your journal remembers, including by another name you've saved for them.
-- a misheard or misspelled form of your own name is now recognized as you, so it no longer appears among an activity's people or gets saved as a new person.
-- when two spellings of a name look like the same person, your journal can now suggest merging them.
-- your journal now suggests merging two names only when both are saved and look like one thing written two ways. it no longer suggests merging a product with its company, a part with its project or a first name with a full name, which are often different things.
-- the people on a calendar invite now help your journal put names to voices during that meeting, for people it remembers.
-- when your journal has a possible name spelled differently from the words it labels, the stories it writes about your work and conversations now use that name. your transcript still shows what was heard, with the possible name beside it.
-- your transcript, and the transcripts your agents read, no longer show a possible name that only repeats the words beside it, such as "ChatGPT (possible name: ChatGPT)". search still finds the mention under that name.
 
 ### Fixed
 
-- backup settings now refuse a repository that doesn't start with `s3:` or `b2:`. without that prefix, backups went to a folder on your computer instead of your bucket. on a mac that folder sat inside your journal, so every backup copied it into itself and it kept growing until it could fill your disk. a backup already set up that way now stops with a message saying so. restoring from it, or turning it off and deleting it, still works.
-- links in dashboard sentences stay underlined, in an orange that reads on the page, and the evidence clock on the cream page is dark enough to read. help and errors no longer call a solstone app or a linked device an observer.
-- on a mac, the local model sometimes kept adding names and topics to a list until it reached its limit. those runs took minutes, failed and were tried again later. lists now end where they should.
-- fixed a case where confidential processing stayed unchecked after you allowed it in your browser.
 - fixed a failure when picking a folder to import in the android development app.
-- in imports, checking a folder's status now clears an earlier read error when the check succeeds. an unconfirmed sync or folder change stays visible.
 - the development phone apps can now recover an explicit media offload request after a lost reply, using the request ID saved before sending it. repeating that request does not start another offload; an unknown result stays unknown.
 - home no longer shows a desktop agent command when your journal runs on a phone or tablet.
 - home no longer refuses removal approvals solely because your journal is on android or ios.
@@ -48,6 +32,32 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - security fix: updated a library used by journals on phones to address a memory-safety flaw.
 - you can choose a file on the import screen in the android and ios owner apps and save it.
 - journals running on a phone now start their local agent connections and close them when you stop the journal. the agents page already offered these connections, but they did not start on phones.
+
+## [2.0.63] - 2026-10-31
+
+### Added
+
+- an activity now says where your phone or watch was while it ran, in the words your map uses: "your watch was near Golden, Colorado then". the line opens that place on your map when it's a place in your journal, otherwise that day on the map. agents that can read your whole journal's transcripts see the same, in words and never coordinates.
+
+### Changed
+
+- summaries of recordings you import now credit what was said to whoever said it, by name when the recording gives one and as "a speaker" otherwise. a summary now rarely says you discussed, planned or asked for what someone else said in one.
+- each stretch's screen description now rarely calls you "the user": it addresses you as "you" and calls the AI agent working for you "your agent".
+- a show, film or podcast playing near you is now less often mistaken for a conversation, so fewer of them get a story as if the people in it were with you.
+- people mentioned by their full name in an activity now link to the person your journal remembers, including by another name you've saved for them.
+- a misheard or misspelled form of your full name is now recognized as you, so it no longer appears among an activity's people or gets saved as a new person.
+- your journal can now suggest merging two names that look like one thing written two ways, and only when each is saved or about to be. it no longer suggests merging a product with its company, a part with its project or a first name with a full name, which are often different things, and it doesn't ask again about a pair you've already accepted or dismissed.
+- the people on a calendar invite now help your journal put names to voices during that meeting, for people it remembers.
+- when your journal has a possible name spelled differently from the words it labels, the stories it writes about your work and conversations now use that name. your transcript still shows what was heard, with the possible name beside it.
+- your transcript, and the transcripts your agents read, no longer show a possible name that only repeats the words beside it, such as "ChatGPT (possible name: ChatGPT)". search still finds the mention under that name.
+
+### Fixed
+
+- backup settings for your own storage now refuse a repository that doesn't start with `s3:` or `b2:` to match the kind of storage you chose. without that prefix, backups went to a folder on your computer instead of your bucket. on a mac that folder sat inside your journal, so every backup copied it into itself and it kept growing until it could fill your disk. a backup already set up that way now stops with a message saying so. restoring from it, or turning it off and deleting it, still works.
+- links in dashboard sentences are now always underlined, not only when you point at them, in an orange that reads on the page, and the time beside each piece of evidence is now dark enough to read. help and errors no longer call a solstone app or a linked device an observer.
+- on a mac, the local model sometimes kept adding names and topics to a list until it reached its limit. those runs took minutes, failed and were tried again later. this now happens far less often.
+- fixed a case where your journal didn't check confidential processing again after you allowed it in your browser.
+- in imports, checking a folder's status now clears an earlier read error when the check succeeds. an unconfirmed sync or folder change stays visible.
 
 ## [2.0.62] - 2026-10-30
 
