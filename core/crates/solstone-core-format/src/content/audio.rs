@@ -9,14 +9,10 @@ use super::{
 };
 use crate::segment::{is_date_key, segment_parse};
 
-const HEADER_SKIP_FIELDS: &[&str] = &[
-    "error",
-    "raw",
-    "imported",
-    "_solstone_processing",
-    "sound_tags",
-    "sound_tag_status",
-];
+/// The metadata fields that describe the recording itself. The rest of a metadata line is how
+/// the audio was handled (device, power, transcription and speaker-analysis tooling, capture
+/// mode, identifiers), and every reader of this header takes it as part of what was said.
+const HEADER_FIELDS: &[&str] = &["language", "setting", "topics", "untimed"];
 
 pub(super) fn render(rel: &str, records: &[JsonObject]) -> ProducedChunks {
     let metadata = records
@@ -103,7 +99,7 @@ fn audio_header(metadata: Option<&JsonObject>, start_header: Option<String>) -> 
     let mut parts = start_header.into_iter().collect::<Vec<_>>();
     if let Some(metadata) = metadata {
         for (key, value) in metadata {
-            if HEADER_SKIP_FIELDS.contains(&key.as_str()) {
+            if !HEADER_FIELDS.contains(&key.as_str()) {
                 continue;
             }
             let value = header_value(value);

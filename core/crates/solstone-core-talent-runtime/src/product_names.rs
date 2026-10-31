@@ -516,7 +516,7 @@ mod tests {
         let path = speech(
             root.path(),
             &[
-                json!({"title":"Soulstone header"}),
+                json!({"topics":"Soulstone header"}),
                 json!({"start":"09:00:01","speaker":1,"text":"é Today I use Soulstone journal."}),
                 json!({"start":"09:00:02","speaker":2,"text":"é Today I use solstone journal."}),
             ],

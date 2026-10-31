@@ -1034,7 +1034,7 @@
       ],
       "family": null,
       "formatter": "format_audio",
-      "header": "Start: 2026-03-04 09:00am Model: parakeet Language: en",
+      "header": "Start: 2026-03-04 09:00am Language: en",
       "id": "audio_transcript_nominal",
       "input": [
         {
@@ -1064,7 +1064,7 @@
       "chunks": [],
       "family": null,
       "formatter": "format_audio",
-      "header": "Start: 2026-03-04 09:00am Model: parakeet",
+      "header": "Start: 2026-03-04 09:00am",
       "id": "audio_metadata_only",
       "input": [
         {
@@ -1092,7 +1092,7 @@
       "error": "Skipped 1 entries missing 'start' field in 20260304/workstation/090000_300/audio.jsonl",
       "family": null,
       "formatter": "format_audio",
-      "header": "Start: 2026-03-04 09:00am Model: parakeet",
+      "header": "Start: 2026-03-04 09:00am",
       "id": "audio_row_missing_start_is_reported",
       "input": [
         {
@@ -1139,7 +1139,7 @@
       ],
       "family": null,
       "formatter": "format_audio",
-      "header": "Start: 2026-03-04 09:00am Model: parakeet Language: en",
+      "header": "Start: 2026-03-04 09:00am Language: en",
       "id": "audio_split_filename",
       "input": [
         {
@@ -1357,7 +1357,7 @@
       ],
       "family": null,
       "formatter": "format_audio",
-      "header": "Start: 2026-03-04 09:00am Model: parakeet Language: en",
+      "header": "Start: 2026-03-04 09:00am Language: en",
       "id": "audio_legacy_transcript_filename",
       "input": [
         {
@@ -1397,8 +1397,8 @@
       ],
       "family": null,
       "formatter": "format_audio",
-      "header": "Start: 2026-03-04 09:00am Model: parakeet Language: en Devices: mic, headset Facet: work",
-      "id": "audio_header_projects_metadata_generically",
+      "header": "Start: 2026-03-04 09:00am Language: en Setting: workshop planning Topics: seed library Untimed: true Facet: work",
+      "id": "audio_header_renders_only_recording_fields",
       "input": [
         {
           "devices": [
@@ -1411,11 +1411,16 @@
             "import_id": "imp-7"
           },
           "language": "en",
+          "mode": "meeting",
           "model": "parakeet",
+          "overlap_detector": "pyannote-segmentation-3.0",
           "raw": "should be skipped",
+          "setting": "workshop planning",
           "sound_tags": [
             "should be skipped"
-          ]
+          ],
+          "topics": "seed library",
+          "untimed": true
         },
         {
           "speaker": "Ada",
@@ -1423,7 +1428,7 @@
           "text": "Morning."
         }
       ],
-      "input_text": "{\"model\": \"parakeet\", \"language\": \"en\", \"devices\": [\"mic\", \"headset\"], \"imported\": {\"facet\": \"work\", \"import_id\": \"imp-7\"}, \"error\": \"should be skipped\", \"raw\": \"should be skipped\", \"sound_tags\": [\"should be skipped\"]}\n{\"start\": \"09:00:01\", \"speaker\": \"Ada\", \"text\": \"Morning.\"}\n",
+      "input_text": "{\"model\": \"parakeet\", \"mode\": \"meeting\", \"overlap_detector\": \"pyannote-segmentation-3.0\", \"language\": \"en\", \"devices\": [\"mic\", \"headset\"], \"imported\": {\"facet\": \"work\", \"import_id\": \"imp-7\"}, \"error\": \"should be skipped\", \"raw\": \"should be skipped\", \"sound_tags\": [\"should be skipped\"], \"setting\": \"workshop planning\", \"topics\": \"seed library\", \"untimed\": true}\n{\"start\": \"09:00:01\", \"speaker\": \"Ada\", \"text\": \"Morning.\"}\n",
       "note": "the header is a generic projection over metadata keys, not a fixed set. ⛔ A renderer that hardcodes model/language passes the nominal case and is wrong on a real journal. Also pins which keys are skipped and the separate treatment of the imported dict.",
       "pending_family": "Audio",
       "rel": "20260304/workstation/090000_300/audio.jsonl"
@@ -1584,7 +1589,7 @@
       ],
       "family": null,
       "formatter": "format_audio",
-      "header": "Start: 2026-03-04 09:00am Model: parakeet",
+      "header": "Start: 2026-03-04 09:00am",
       "id": "audio_turns_keep_file_order",
       "input": [
         {
