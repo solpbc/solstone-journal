@@ -1178,7 +1178,7 @@ mod tests {
     use std::fs;
     use std::io::{BufRead, BufReader, Seek, SeekFrom, Write};
     use std::path::Path;
-    use std::sync::atomic::{AtomicI64, Ordering};
+    use std::sync::atomic::{AtomicI64, AtomicUsize, Ordering};
     use std::sync::{Arc, Mutex, MutexGuard, Once, OnceLock};
 
     use chrono::NaiveDate;
@@ -1203,6 +1203,7 @@ mod tests {
 
     #[derive(Default)]
     struct Recorder {
+        next_id: AtomicUsize,
         requests: Mutex<Vec<solstone_core_cortex_client::CortexRequest>>,
         waits: Mutex<Vec<Vec<String>>>,
         deadlines: Mutex<Vec<Option<std::time::Duration>>>,
@@ -1229,11 +1230,21 @@ mod tests {
     impl context::CortexBoundary for Recorder {
         fn dispatch(
             &self,
-            _: &tokio::runtime::Runtime,
+            runtime: &tokio::runtime::Runtime,
             request: &solstone_core_cortex_client::CortexRequest,
         ) -> Result<String, context::DispatchFailure> {
-            let mut requests = self.requests.lock().unwrap();
-            requests.push(request.clone());
+            self.dispatch_prepared(runtime, request, None, &mut |_| Ok(()))
+        }
+        fn dispatch_prepared(
+            &self,
+            _: &tokio::runtime::Runtime,
+            request: &solstone_core_cortex_client::CortexRequest,
+            _reserved: Option<&str>,
+            prepare: &mut (dyn FnMut(&str) -> std::io::Result<()> + Send),
+        ) -> Result<String, context::DispatchFailure> {
+            let id = format!("use-{}", self.next_id.fetch_add(1, Ordering::Relaxed) + 1);
+            prepare(&id).map_err(|_| context::DispatchFailure::Unavailable)?;
+            self.requests.lock().unwrap().push(request.clone());
             if let Some(error) = self
                 .dispatch_failures
                 .lock()
@@ -1246,18 +1257,7 @@ mod tests {
             if let Some(error) = self.dispatch_failure.lock().unwrap().clone() {
                 return Err(error);
             }
-            Ok(format!("use-{}", requests.len()))
-        }
-        fn dispatch_prepared(
-            &self,
-            runtime: &tokio::runtime::Runtime,
-            request: &solstone_core_cortex_client::CortexRequest,
-            _reserved: Option<&str>,
-            prepare: &mut (dyn FnMut(&str) -> std::io::Result<()> + Send),
-        ) -> Result<String, context::DispatchFailure> {
-            let id = format!("use-{}", self.requests.lock().unwrap().len() + 1);
-            prepare(&id).map_err(|_| context::DispatchFailure::Unavailable)?;
-            self.dispatch(runtime, request)
+            Ok(id)
         }
         fn wait(
             &self,
@@ -6240,6 +6240,45 @@ mod tests {
             log.iter()
                 .any(|record| record["reason"] == "skip_talents_flag")
         );
+    }
+
+    #[test]
+    fn recorder_keeps_prepared_ids_unique_when_preparations_overlap() {
+        use context::CortexBoundary;
+        let recorder = Recorder::default();
+        let prepared = std::sync::Barrier::new(2);
+        let returned = std::thread::scope(|scope| {
+            let handles = (0..2)
+                .map(|index| {
+                    let recorder = &recorder;
+                    let prepared = &prepared;
+                    scope.spawn(move || {
+                        let runtime = tokio::runtime::Builder::new_current_thread()
+                            .build()
+                            .unwrap();
+                        let request = solstone_core_cortex_client::CortexRequest::new(
+                            "test",
+                            format!("request-{index}"),
+                        );
+                        let mut prepared_id = String::new();
+                        let id = recorder
+                            .dispatch_prepared(&runtime, &request, None, &mut |id| {
+                                prepared_id = id.to_owned();
+                                prepared.wait();
+                                Ok(())
+                            })
+                            .unwrap();
+                        assert_eq!(prepared_id, id);
+                        id
+                    })
+                })
+                .collect::<Vec<_>>();
+            handles
+                .into_iter()
+                .map(|handle| handle.join().unwrap())
+                .collect::<BTreeSet<_>>()
+        });
+        assert_eq!(returned.len(), 2);
     }
 
     #[test]
