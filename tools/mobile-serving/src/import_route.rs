@@ -173,3 +173,7 @@ pub fn packaged_import_factory(library: PathBuf) -> Arc<ImportSeamFactory> {
 #[cfg(all(test, feature = "full-tests"))]
 #[path = "import_route_tests.rs"]
 mod tests;
+
+#[cfg(all(test, feature = "full-tests"))]
+#[path = "import_pdf_identity_tests.rs"]
+mod pdf_identity_tests;

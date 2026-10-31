@@ -1270,13 +1270,16 @@ pub(crate) fn command(
         .and_then(Value::as_str);
     if metadata.contains_key("owner_timestamp") {
         cmd.push(timestamp.to_owned());
-    } else if matches!(method, Some("deterministic") | Some("document_dates")) {
+    } else if method == Some("deterministic") {
         cmd.extend([
             "--auto".to_owned(),
             "--preview-stamp".to_owned(),
             timestamp.to_owned(),
         ]);
-    } else if matches!(method, Some("upload_fallback") | Some("path_fallback")) {
+    } else if matches!(
+        method,
+        Some("document_dates" | "upload_fallback" | "path_fallback")
+    ) {
         cmd.extend([
             "--fallback-timestamp".to_owned(),
             timestamp.to_owned(),
