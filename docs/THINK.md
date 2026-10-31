@@ -176,7 +176,7 @@ The entries are then fitted to a budget fixed by design: the floor window's inpu
 
 ## Browser segments
 
-Sense reads a browser segment as what was in front of the owner. A page the browser marks as not in front of a focused window (a background tab, or a window behind another app) contributes no text: what such a page shows by itself, such as a live clock, a video's captions or an ad, is not what the owner read. Those pages are listed once per state, after the pages that were in front, under "Open, not in front of a focused window"; when no page in front sent anything, the reading says so first. Pausing the solstone app does not change what counts as in front, and pages from earlier extension versions, which carry no tab state, read as before. The transcript viewer and agents see every page in full, each with its `context:` line.
+Sense and Screen read a browser segment as what was in front of the owner. A page the browser marks as not in front of a focused window (a background tab, or a window behind another app) contributes no text: what such a page shows by itself, such as a live clock, a video's captions or an ad, is not what the owner read. Those pages are listed once per state, after the pages that were in front, under "Open, not in front of a focused window"; when no page in front sent anything, the reading says so first. Pausing the solstone app does not change what counts as in front, and pages from earlier extension versions, which carry no tab state, read as before. Work and Conversation read a browser activity through those reports, so a background page reaches them as the open-page list, not its text. The transcript viewer and agents see every page in full, each with its `context:` line.
 
 ## Architecture
 

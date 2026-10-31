@@ -950,9 +950,12 @@ fn process_segment(
         for path in browser {
             match fs::read_to_string(path) {
                 Ok(text) => {
-                    // Sense reads what the owner had in front: a background tab or an unfocused
-                    // window contributes its page and state, not its text.
-                    let produced = if matches!(projection, PerceptProjection::TerminalSense) {
+                    // Sense and Screen read what the owner had in front: a background tab or an
+                    // unfocused window contributes its page and state, not its text.
+                    let produced = if matches!(
+                        projection,
+                        PerceptProjection::TerminalSense | PerceptProjection::ScreenTalent
+                    ) {
                         produce_browser_attended_chunks(&text)
                     } else {
                         produce_chunks(
@@ -2163,6 +2166,45 @@ mod tests {
         assert!(!screen.0.contains("Terminal session 'main'"));
         assert!(!screen.0.contains("@8"));
         assert!(!screen.0.contains("\\u001b[31m"));
+    }
+
+    #[test]
+    fn sense_and_screen_read_browser_pages_in_front_and_other_readers_read_every_page() {
+        let root = TempDir::new().unwrap();
+        let segment = segment(&root);
+        fs::write(
+            segment.join("browser_events.jsonl"),
+            concat!(
+                r#"{"t":"segment_start","ts":1,"title":"Soil pH","tab":{"front":true,"focused":true},"blocks":[{"type":"text","text":"Read in front"}]}"#,
+                "\n",
+                r#"{"t":"segment_start","ts":2,"title":"Video","tab":{"front":false,"focused":true},"media":{"playing":true},"blocks":[{"type":"text","text":"Caption in the background"}]}"#,
+                "\n",
+            ),
+        )
+        .unwrap();
+        let sources = sources(false, true, TalentSource::Disabled);
+
+        let generic = cluster_period(root.path(), DAY, SEGMENT, &sources, None).0;
+        let screen = cluster_period_for_screen_talent(root.path(), DAY, SEGMENT, &sources, None)
+            .0
+            .text;
+        let sense = cluster_period_for_terminal_sense_with_memory(
+            root.path(),
+            DAY,
+            SEGMENT,
+            &sources,
+            None,
+        )
+        .0
+        .text;
+
+        assert!(generic.contains("Read in front"));
+        assert!(generic.contains("Caption in the background"));
+        for attended in [&screen, &sense] {
+            assert!(attended.contains("Read in front"));
+            assert!(!attended.contains("Caption in the background"));
+            assert!(attended.contains("- Video · background tab · media playing"));
+        }
     }
 
     #[test]

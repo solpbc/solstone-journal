@@ -18,6 +18,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - the description of a code editor on your screen less often invents a conversation with an AI assistant.
 - when a stretch has few enough screens worth describing to cover them all, the screen description now covers every one, so a video or a call on screen only briefly is no longer skipped.
 - your journal now describes time in your browser by the pages you had in front of you. a video playing in a background tab, or a page left open behind another app, is mentioned as open rather than as something you watched or read, and what a page or video shows is now less often written as something you did.
+- each stretch's screen description now does the same: it covers the browser pages you had in front of you and lists the others as open, so what a video in a background tab says or shows is less often written in your activity stories as something you did or planned.
 
 ### Fixed
 
