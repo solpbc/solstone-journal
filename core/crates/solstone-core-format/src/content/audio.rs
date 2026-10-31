@@ -142,7 +142,7 @@ fn audio_source(metadata: &JsonObject) -> Option<&'static str> {
     match (system, microphone) {
         (true, false) => Some(
             "this computer's own sound only, such as the other people on a call or media playing; \
-             the owner's microphone was off, so none of it is the owner speaking",
+             the owner's microphone was not recorded, so none of it is the owner speaking",
         ),
         (true, true) => Some("the owner's microphone and this computer's own sound, mixed"),
         (false, true) => Some("the owner's microphone"),
