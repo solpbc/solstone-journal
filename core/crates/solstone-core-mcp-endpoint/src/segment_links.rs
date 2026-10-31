@@ -33,8 +33,8 @@ pub(crate) trait TranscriptPageCheck {
     ) -> Result<Option<u64>, ()>;
 }
 
-/// Live first-page checks for one response. Who spoke is resolved once, the
-/// first time a segment carries speaker labels, so every link in the response
+/// Live first-page checks for one response. Who spoke is resolved once, on the
+/// first check, so every link in the response
 /// binds the same rendering. Possible names are the ones this connection's
 /// `get_transcript` shows, so a link binds the version that read will see.
 pub(crate) struct LiveTranscriptPages {
@@ -68,13 +68,12 @@ impl TranscriptPageCheck for LiveTranscriptPages {
         journal_root: &Path,
         segment: &Segment,
     ) -> Result<Option<u64>, ()> {
-        let speakers = if segment.path().join("talents/speaker_labels.json").exists() {
-            self.speakers
-                .get_or_insert_with(|| solstone_core_talent_runtime::agent_speakers(journal_root))
-                .as_ref()
-        } else {
-            None
-        };
+        // The read numbers voices across segments whether or not this one has
+        // labels, so the link resolves who spoke the same way on every segment.
+        let speakers = self
+            .speakers
+            .get_or_insert_with(|| solstone_core_talent_runtime::agent_speakers(journal_root))
+            .as_ref();
         let possible_names = self.possible_names.labels(segment.path());
         match solstone_core_transcripts::read_segment_transcript_page(
             segment,
@@ -380,4 +379,98 @@ fn get_day_segments<'a>(
                 .collect()
         })
         .as_slice()
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+    use std::io::Write;
+
+    use solstone_core_indexer_query::ConnectionScope;
+    use solstone_core_npy::write_npy;
+    use solstone_core_transcripts::{AgentSpeakers, VoiceNames};
+    use zip::{CompressionMethod, ZipWriter};
+
+    use super::*;
+    use crate::permissions::ConnectionReadSnapshot;
+
+    const DAY: &str = "20261030";
+    const STREAM: &str = "device";
+
+    /// One segment's transcript and embeddings, one line per `(speaker, axis)`.
+    fn segment(root: &Path, key: &str, lines: &[(i64, usize)]) {
+        let dir = root.join("chronicle").join(DAY).join(STREAM).join(key);
+        fs::create_dir_all(&dir).unwrap();
+        let mut jsonl = String::from("{\"raw\":\"audio.m4a\"}\n");
+        let mut payload = Vec::new();
+        let mut ids = Vec::new();
+        for (index, (speaker, axis)) in lines.iter().enumerate() {
+            jsonl.push_str(&format!(
+                "{{\"start\":\"00:00:{index:02}\",\"speaker\":{speaker},\"text\":\"line\"}}\n"
+            ));
+            let mut row = vec![0.0_f32; 256];
+            row[*axis] = 1.0;
+            for value in row {
+                payload.extend_from_slice(&value.to_le_bytes());
+            }
+            ids.extend_from_slice(&(index as i32 + 1).to_le_bytes());
+        }
+        fs::write(dir.join("audio.jsonl"), jsonl).unwrap();
+        let mut zip = ZipWriter::new(fs::File::create(dir.join("audio.npz")).unwrap());
+        let options =
+            zip::write::SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+        zip.start_file("embeddings.npy", options).unwrap();
+        zip.write_all(&write_npy(
+            "<f4",
+            &format!("({}, 256)", lines.len()),
+            &payload,
+        ))
+        .unwrap();
+        zip.start_file("statement_ids.npy", options).unwrap();
+        zip.write_all(&write_npy("<i4", &format!("({},)", lines.len()), &ids))
+            .unwrap();
+        zip.finish().unwrap();
+    }
+
+    #[test]
+    fn a_link_binds_the_version_a_read_sees_on_a_segment_without_labels() {
+        let journal = tempfile::tempdir().unwrap();
+        // Diarization swaps the two voices' numbers between back-to-back
+        // segments, so the second segment's read renumbers them.
+        segment(journal.path(), "100000_300", &[(1, 0), (2, 1)]);
+        segment(journal.path(), "100500_300", &[(2, 0), (1, 1)]);
+        let segment = Segment::resolve_exact(journal.path(), DAY, STREAM, "100500_300")
+            .unwrap()
+            .unwrap();
+        assert!(!segment.path().join("talents/speaker_labels.json").exists());
+        let speakers = AgentSpeakers {
+            voices: VoiceNames {
+                principal: "owner".to_owned(),
+                owner_voice_confirmed: false,
+                people: BTreeMap::new(),
+            },
+            owner: "The owner".to_owned(),
+        };
+        let snapshot = ConnectionReadSnapshot {
+            categories: BTreeSet::new(),
+            scope: ConnectionScope::WholeJournal,
+            generation: 1,
+        };
+        let possible_names = ConnectionPossibleNames::new(journal.path(), &snapshot);
+
+        let read = solstone_core_transcripts::read_segment_transcript_page(
+            &segment,
+            None,
+            Some(&speakers),
+            possible_names.labels(segment.path()).as_ref(),
+        )
+        .unwrap();
+        let mut checker =
+            LiveTranscriptPages::with_speakers(Some(speakers), Arc::clone(&possible_names));
+
+        assert_eq!(
+            checker.check_first_page(journal.path(), &segment),
+            Ok(Some(read.version.fingerprint()))
+        );
+    }
 }

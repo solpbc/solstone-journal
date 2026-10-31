@@ -5814,6 +5814,7 @@ dependencies = [
  "solstone-core-location",
  "solstone-core-mcp-audit",
  "solstone-core-memory-original",
+ "solstone-core-npy",
  "solstone-core-possible-names",
  "solstone-core-retention",
  "solstone-core-segment",
@@ -5832,6 +5833,7 @@ dependencies = [
  "tower",
  "webpki-roots 1.0.10",
  "x509-parser 0.16.0",
+ "zip",
 ]
 
 [[package]]

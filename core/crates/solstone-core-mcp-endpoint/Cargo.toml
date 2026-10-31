@@ -85,6 +85,8 @@ serde.workspace = true
 solstone-core-indexer-store = { workspace = true, features = ["test-fixtures"] }
 syn = { version = "2.0.119", features = ["full", "visit"] }
 tempfile = "3.24.0"
+solstone-core-npy.workspace = true
+zip = { version = "=9.0.3", default-features = false, features = ["deflate"] }
 tokio = { workspace = true, features = ["macros", "test-util"] }
 
 # This opt-in target exercises the public bootstrap boundary through its real

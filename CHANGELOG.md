@@ -45,6 +45,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - journals running on a phone now start their local agent connections and close them when you stop the journal. the agents page already offered these connections, but they did not start on phones.
 - setting up backup to Backblaze B2 with a key limited to one bucket now says when the repository names a different bucket, for example when the key's name is typed where the bucket's belongs. it also now says when B2 rejects the credentials themselves. both used to read as "the destination couldn't be reached."
 - for audio from the solstone app on your mac, an agent reading your journal now sees one number for each unnamed voice through a continuous recording, instead of a new number every few minutes.
+- an agent following a link in its search or activity results to a recording's transcript could be told the transcript wasn't found, when your journal hadn't yet worked out who was speaking in that recording. those links now open.
 
 ## [2.0.63] - 2026-10-31
 
