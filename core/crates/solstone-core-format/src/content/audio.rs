@@ -107,6 +107,9 @@ fn audio_header(metadata: Option<&JsonObject>, start_header: Option<String>) -> 
                 parts.push(format!("{}: {value}", capitalize(key)));
             }
         }
+        if let Some(source) = audio_source(metadata) {
+            parts.push(format!("Audio: {source}"));
+        }
         if let Some(imported) = metadata.get("imported").and_then(Value::as_object) {
             if let Some(facet) = imported.get("facet").map(display_value)
                 && !facet.is_empty()
@@ -121,6 +124,30 @@ fn audio_header(metadata: Option<&JsonObject>, start_header: Option<String>) -> 
         }
     }
     (!parts.is_empty()).then(|| parts.join(" "))
+}
+
+/// Where the audio came from, when the producer said: a desktop records the computer's own
+/// sound (a call's other people, media) apart from the owner's microphone, and only the
+/// microphone is the owner's voice.
+fn audio_source(metadata: &JsonObject) -> Option<&'static str> {
+    let kinds = metadata
+        .get("audio_capture")?
+        .get("sources")?
+        .as_array()?
+        .iter()
+        .filter_map(|source| source.get("kind").and_then(Value::as_str))
+        .collect::<Vec<_>>();
+    let system = kinds.contains(&"system");
+    let microphone = kinds.contains(&"microphone");
+    match (system, microphone) {
+        (true, false) => Some(
+            "this computer's own sound only, such as the other people on a call or media playing; \
+             the owner's microphone was off, so none of it is the owner speaking",
+        ),
+        (true, true) => Some("the owner's microphone and this computer's own sound, mixed"),
+        (false, true) => Some("the owner's microphone"),
+        (false, false) => None,
+    }
 }
 
 fn base_timestamp_and_header(rel: &str) -> (i64, Option<String>) {
