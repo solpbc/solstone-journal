@@ -25,6 +25,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- on mac and linux, when a call reached your journal only as your computer's own sound, with no microphone, what the other people said could be told as things you said. in those recordings, lines no voice was matched to are now treated as someone else's, so your stories of those calls less often give their words to you.
 - a stretch when nobody touched your computer could still be described as you browsing whatever was on screen. on windows and linux, when your computer was idle or locked for nearly the whole stretch and little or nothing was said or changed on screen, your journal now treats it as idle and leaves it out of your activities.
 - on arm64 windows computers, the local model check no longer rejects the computer just for its processor type. setup now checks the GPU and memory requirements, as it does on x64 windows. arm64 GPU use remains untested.
 - your journal no longer treats the details of how audio was turned into text, such as the speech model's name or your watch's battery level, as part of what was said. those details stop turning up among the people and things a moment is about, and audio from your phone or watch is less often taken for a meeting.

@@ -28,13 +28,14 @@ enum AudioSource {
 }
 
 impl AudioSource {
-    fn describe(self) -> &'static str {
+    /// The header's word on it. A microphone alone is what every reader assumes, so it goes unsaid.
+    fn describe(self) -> Option<&'static str> {
         match self {
             Self::Computer => {
-                "this computer's own sound, such as a call or media, with no microphone"
+                Some("this computer's own sound, such as a call or media, with no microphone")
             }
-            Self::Microphone => "a microphone",
-            Self::Both => "a microphone and this computer's own sound",
+            Self::Microphone => None,
+            Self::Both => Some("a microphone and this computer's own sound"),
         }
     }
 }
@@ -171,8 +172,8 @@ fn audio_header(
     source: Option<AudioSource>,
 ) -> Option<String> {
     let mut parts = start_header.into_iter().collect::<Vec<_>>();
-    if let Some(source) = source {
-        parts.push(format!("Audio: {}", source.describe()));
+    if let Some(source) = source.and_then(AudioSource::describe) {
+        parts.push(format!("Audio: {source}"));
     }
     if let Some(metadata) = metadata {
         for (key, value) in metadata {
@@ -327,12 +328,12 @@ mod source_tests {
             (
                 "20261031/device/055000_300/055000_300_audio.jsonl",
                 mac(&[("microphone", 9)]),
-                Some("Audio: a microphone"),
+                None,
             ),
             (
                 "20261031/linux/055000_300/mic_audio.jsonl",
                 serde_json::json!({"raw":"mic_audio.flac"}),
-                Some("Audio: a microphone"),
+                None,
             ),
             // A producer that doesn't say, such as a phone or watch.
             (
