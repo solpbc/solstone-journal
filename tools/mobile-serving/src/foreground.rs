@@ -626,6 +626,7 @@ const MAINTENANCE_ROUTINE_IDS: &[&str] = &[
     "speakers:name-variants",
     "speakers:consolidate-pool",
     "speakers:backfill-pool",
+    "speakers:backfill-labels",
     "backup:run",
     "backup:verify",
     "backup:prune",

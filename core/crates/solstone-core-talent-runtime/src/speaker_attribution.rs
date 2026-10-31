@@ -302,6 +302,21 @@ fn accumulate_with_embeddings_cancellable(
     .map_err(|error| error.to_string())
 }
 
+/// Whether Sense asked for this segment's speakers to be attributed, which is what
+/// admits the model-based fourth layer. Layers 1-3 need no model and run regardless.
+fn layer_four_recommended(segment_dir: &Path) -> bool {
+    std::fs::read_to_string(segment_dir.join("talents/sense.json"))
+        .ok()
+        .and_then(|text| serde_json::from_str::<Value>(&text).ok())
+        .and_then(|sense| {
+            sense
+                .get("recommend")?
+                .get("speaker_attribution")?
+                .as_bool()
+        })
+        .unwrap_or(false)
+}
+
 fn is_dry_run(prepared: &PreparedTalent) -> bool {
     // Only this stage honors DRY_RUN_KEY; it is not a general per-stage dry-run flag.
     prepared
@@ -398,7 +413,10 @@ pub(crate) fn build_cancellable(
         return Err(skipped(prepared, reason));
     }
     let state = SpeakerAttributionState { resolved };
-    if state.resolved.unmatched.is_empty() {
+    // Layers 1-3 run on every segment with voice embeddings; the model reads the
+    // sentences they left unmatched only where Sense asked for attribution.
+    let layer_four = !state.resolved.unmatched.is_empty() && layer_four_recommended(&segment_dir);
+    if !layer_four {
         if !dry_run {
             solstone_core_speaker_id::labels::write_full_labels_checked(
                 &segment_dir,
@@ -419,7 +437,12 @@ pub(crate) fn build_cancellable(
         }
         // Preserve solstone/talent/speaker_attribution.py:73-81: this writes from build because
         // the reference writes before it skips generation.
-        return Err(skipped(prepared, "all_resolved"));
+        let reason = if state.resolved.unmatched.is_empty() {
+            "all_resolved"
+        } else {
+            "layer_four_not_recommended"
+        };
+        return Err(skipped(prepared, reason));
     }
     Ok(PrePostState::SpeakerAttribution(state))
 }
@@ -803,6 +826,31 @@ mod tests {
                 .exists(),
             "preview dry-run must not create the segment directory"
         );
+    }
+
+    #[test]
+    fn only_a_sense_recommendation_admits_layer_four() {
+        let root = tempfile::tempdir().unwrap();
+        let talents = root.path().join("talents");
+        std::fs::create_dir_all(&talents).unwrap();
+        assert!(!layer_four_recommended(root.path()), "no Sense output yet");
+        for (sense, admitted) in [
+            (
+                serde_json::json!({"recommend":{"speaker_attribution":true}}),
+                true,
+            ),
+            (
+                serde_json::json!({"recommend":{"speaker_attribution":false}}),
+                false,
+            ),
+            (serde_json::json!({"recommend":{}}), false),
+            (serde_json::json!({"density":"idle"}), false),
+        ] {
+            std::fs::write(talents.join("sense.json"), sense.to_string()).unwrap();
+            assert_eq!(layer_four_recommended(root.path()), admitted, "{sense}");
+        }
+        std::fs::write(talents.join("sense.json"), "not json").unwrap();
+        assert!(!layer_four_recommended(root.path()));
     }
 
     #[test]

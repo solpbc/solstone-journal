@@ -954,6 +954,7 @@
     'maintenance:speakers:name-variants': 'speaker name suggestions',
     'maintenance:speakers:consolidate-pool': 'speaker cleanup',
     'maintenance:speakers:backfill-pool': 'voice list catch-up',
+    'maintenance:speakers:backfill-labels': 'speaker naming catch-up',
   };
 
   function scheduleName(name) {

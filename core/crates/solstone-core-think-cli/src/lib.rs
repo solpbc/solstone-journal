@@ -5943,7 +5943,7 @@ mod tests {
                     .collect::<Vec<_>>()
             })
             .filter_map(|line| serde_json::from_str::<Value>(&line).ok())
-            .filter(|row| row["event"] == "talent.skip" && row["reason"] == "not_recommended")
+            .filter(|row| row["event"] == "talent.skip" && row["reason"] == "no_audio_embeddings")
             .collect::<Vec<_>>();
         assert_eq!(skips.len(), 1);
         assert_eq!(skips[0]["name"], "speaker_attribution");
@@ -5952,14 +5952,25 @@ mod tests {
         fs::write(path.join("audio.npz"), []).unwrap();
         let second = run_segment(&context, journal.path(), "090000_300", true, false);
         assert_eq!(second.success, 4);
-        assert!(
+        let attributions = || {
             recorder
                 .requests
                 .lock()
                 .unwrap()
                 .iter()
-                .any(|request| request.name == "speaker_attribution")
+                .filter(|request| request.name == "speaker_attribution")
+                .count()
+        };
+        assert_eq!(attributions(), 1);
+        // Speakers are resolved even when Sense did not ask: the talent's own
+        // pre-step keeps the model layer for the segments Sense recommended.
+        write_sense_output(
+            &context,
+            "090000_300",
+            serde_json::json!({"density":"active","content_type":"social","recommend":{"screen_record":false,"speaker_attribution":false}}),
         );
+        run_segment(&context, journal.path(), "090000_300", true, false);
+        assert_eq!(attributions(), 2);
     }
 
     #[test]

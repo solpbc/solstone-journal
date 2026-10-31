@@ -880,10 +880,10 @@ fn select_agents<'a>(
     } else {
         log_skip(log, context, "screen", segment, "not_recommended", stream);
     }
-    let speakers_recommended = recommend
-        .get("speaker_attribution")
-        .is_some_and(python_truthy);
-    if speakers_recommended && has_audio_embeddings(segment_dir) {
+    // Every segment with voice embeddings gets its speakers resolved: the owner's voice
+    // and known voiceprints need no model. Sense's recommendation decides only whether
+    // the model then reads what they left unmatched (the talent's own pre-step).
+    if has_audio_embeddings(segment_dir) {
         if let Some(config) = by_name.get("speaker_attribution") {
             selected.push(config);
         } else {
@@ -897,14 +897,12 @@ fn select_agents<'a>(
             );
         }
     } else {
-        // Source-derived, not measured: thinking.py:1905-1930 keeps both the
-        // non-recommended and no-audio-embeddings branches distinguishable.
         log_skip(
             log,
             context,
             "speaker_attribution",
             segment,
-            "not_recommended",
+            "no_audio_embeddings",
             stream,
         );
     }

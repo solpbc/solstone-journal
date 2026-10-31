@@ -29,7 +29,7 @@ pub struct RoutineDescriptor {
     pub max_runtime: Option<&'static str>,
 }
 
-const ROUTINES: [RoutineDescriptor; 12] = [
+const ROUTINES: [RoutineDescriptor; 13] = [
     RoutineDescriptor {
         id: "speakers:discover-voices",
         description: "Refresh recurring voice discovery cache.",
@@ -59,6 +59,12 @@ const ROUTINES: [RoutineDescriptor; 12] = [
         description: "catch up the voice list from audio already transcribed, then look for your voice.",
         cadence: Cadence::Daily,
         max_runtime: Some("10m"),
+    },
+    RoutineDescriptor {
+        id: "speakers:backfill-labels",
+        description: "name the speakers, without the model, in audio that has no speaker labels yet.",
+        cadence: Cadence::Daily,
+        max_runtime: Some("30m"),
     },
     RoutineDescriptor {
         id: "backup:run",
@@ -116,7 +122,7 @@ pub fn routine(id: &str) -> Option<&'static RoutineDescriptor> {
 
 #[cfg(test)]
 fn validate_census(routines: &[RoutineDescriptor]) -> Result<(), String> {
-    const EXPECTED: [(&str, Cadence, Option<&str>); 12] = [
+    const EXPECTED: [(&str, Cadence, Option<&str>); 13] = [
         ("speakers:discover-voices", Cadence::Daily, Some("10m")),
         (
             "speakers:candidate-pair-suggestions",
@@ -126,6 +132,7 @@ fn validate_census(routines: &[RoutineDescriptor]) -> Result<(), String> {
         ("speakers:name-variants", Cadence::Daily, Some("10m")),
         ("speakers:consolidate-pool", Cadence::Daily, Some("10m")),
         ("speakers:backfill-pool", Cadence::Daily, Some("10m")),
+        ("speakers:backfill-labels", Cadence::Daily, Some("30m")),
         ("backup:run", Cadence::Hourly, Some("49h")),
         ("backup:prune", Cadence::Daily, Some("3h")),
         ("backup:verify", Cadence::Weekly, Some("90m")),
@@ -170,9 +177,9 @@ mod tests {
     use std::collections::BTreeSet;
 
     #[test]
-    fn census_has_twelve_unique_well_formed_ids() {
+    fn census_has_thirteen_unique_well_formed_ids() {
         let all = routines();
-        assert_eq!(all.len(), 12);
+        assert_eq!(all.len(), 13);
         let ids = all
             .iter()
             .map(|descriptor| descriptor.id)

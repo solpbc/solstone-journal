@@ -307,6 +307,7 @@ fn maintenance(
         "speakers:name-variants" => name_variants(hosted, checkpoint),
         "speakers:consolidate-pool" => consolidate_pool(hosted, checkpoint),
         "speakers:backfill-pool" => backfill_pool(hosted, checkpoint),
+        "speakers:backfill-labels" => backfill_labels(hosted, checkpoint),
         "backup:run" => backup(hosted, EmbeddedBackupRoutine::Run, checkpoint),
         "backup:verify" => backup(hosted, EmbeddedBackupRoutine::Verify, checkpoint),
         "backup:prune" => backup(hosted, EmbeddedBackupRoutine::Prune, checkpoint),
@@ -434,6 +435,31 @@ fn consolidate_pool(hosted: &HostedCommand, checkpoint: &StopCheckpoint) -> i32 
         Ok(_) => 0,
         Err(error) => {
             log::warn!("foreground speaker pool consolidation: {error}");
+            1
+        }
+    }
+}
+
+/// Name the speakers, without the model, in audio that has no speaker labels yet.
+fn backfill_labels(hosted: &HostedCommand, checkpoint: &StopCheckpoint) -> i32 {
+    if stopped(checkpoint) {
+        return 1;
+    }
+    let request = solstone_core_speaker_resolve::backfill_coordinator::StartBackfillRequest {
+        operation_id: None,
+        commit: true,
+        reattribute: false,
+        accumulation: false,
+        now_ms: Utc::now().timestamp_millis(),
+    };
+    match solstone_core_speaker_resolve::backfill_coordinator::run_backfill_blocking_checked(
+        &hosted.journal,
+        &request,
+        checkpoint,
+    ) {
+        Ok(_) => 0,
+        Err(error) => {
+            log::warn!("foreground speaker label backfill: {error}");
             1
         }
     }

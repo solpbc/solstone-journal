@@ -204,7 +204,9 @@ fn print_segment_orchestrator(
             "sense" => "mandatory",
             "entities" => "always for non-idle",
             "screen" => "if recommend.screen_record",
-            "speaker_attribution" => "if recommend.speaker_attribution + audio embeddings",
+            "speaker_attribution" => {
+                "if audio embeddings (the model layer only if recommend.speaker_attribution)"
+            }
             _ => "if a speech transcript (never gates the segment)",
         };
         let type_label = if is_gen { "gen" } else { "cog" };

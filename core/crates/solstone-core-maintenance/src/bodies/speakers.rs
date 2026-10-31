@@ -46,6 +46,44 @@ pub(crate) fn backfill_pool(args: &[String], journal: &Path) -> CliRun {
     }
 }
 
+/// Resolve speakers, without the model, in every segment with voice embeddings that has
+/// no speaker labels yet or only a stub: segments thought before speakers were resolved
+/// everywhere, and any a live run missed. Labelled segments are never touched again here,
+/// and no voiceprint learns from this pass.
+pub(crate) fn backfill_labels(args: &[String], journal: &Path) -> CliRun {
+    if !args.is_empty() {
+        return CliRun {
+            stdout: String::new(),
+            stderr: "usage: solstone journal maintenance run speakers:backfill-labels\n".to_owned(),
+            exit_code: 2,
+        };
+    }
+    let request = solstone_core_speaker_resolve::backfill_coordinator::StartBackfillRequest {
+        operation_id: None,
+        commit: true,
+        reattribute: false,
+        accumulation: false,
+        now_ms: chrono::Utc::now().timestamp_millis(),
+    };
+    match solstone_core_speaker_resolve::backfill_coordinator::run_backfill_blocking(
+        journal, &request,
+    ) {
+        Ok(status) => CliRun {
+            stdout: format!(
+                "{}\n",
+                serde_json::to_value(&status).unwrap_or(serde_json::Value::Null)
+            ),
+            stderr: String::new(),
+            exit_code: 0,
+        },
+        Err(error) => CliRun {
+            stdout: String::new(),
+            stderr: format!("speaker label backfill failed: {error}\n"),
+            exit_code: 1,
+        },
+    }
+}
+
 pub(crate) fn consolidate(args: &[String], journal: &Path) -> CliRun {
     if !args.is_empty() {
         return CliRun {
