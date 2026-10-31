@@ -22,6 +22,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - your journal now describes time in your browser by the pages you had in front of you. a video playing in a background tab, or a page left open behind another app, is mentioned as open rather than as something you watched or read, and what a page or video shows is now less often written as something you did.
 - each stretch's screen description now does the same: it covers the browser pages you had in front of you and lists the others as open, so what a video in a background tab says or shows is less often written in your activity stories as something you did or planned.
 - an activity's one line, on home and in activities, now comes from the opening of its story, when it has one, which is written from the whole activity, rather than from its last few minutes. a podcast or show that played through an activity is named in that line more often. a title or description you wrote or edited stays as you left it.
+- when you edit an activity's description or details, your journal now writes that activity's story and people again from what you wrote, and that day's daily briefing and that day's memory on your week follow, even after noon the next day. what you write in details is now read as your own account of what happened: where what was heard or on screen disagrees, your journal goes by what you wrote.
 
 ### Fixed
 
