@@ -19,7 +19,7 @@ use crate::hold_entity_trust_lock;
 
 pub const PREFIX_CUTOFF: f64 = 35.0;
 pub const TYPO_FLOOR: f64 = 93.0;
-pub const ENTITY_REVIEW_POLICY_VERSION: u64 = 1;
+pub const ENTITY_REVIEW_POLICY_VERSION: u64 = 2;
 pub const REVIEW_SWEEP_RECEIPT_RELATIVE_PATH: &str = "health/entity-review-sweep.json";
 
 /// Return whether a normalized query is a recognized placeholder: a label
@@ -580,17 +580,28 @@ pub fn apply_merge_candidate_review_policy(
         return;
     }
 
+    let source_slug = row
+        .get("source_slug")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_owned();
     let target_slug = row
         .get("target_slug")
         .and_then(Value::as_str)
         .unwrap_or_default()
         .to_owned();
-    if target_slug.is_empty() {
+    if source_slug.is_empty() || target_slug.is_empty() {
         return;
     }
 
-    let is_stale = census.is_proved_absent(&target_slug);
-    let stale_key = format!("stale:{target_slug}");
+    let target_absent = census.is_proved_absent(&target_slug);
+    let is_stale = target_absent || census.is_proved_absent(&source_slug);
+    // Keep existing target evidence keys, including explicit owner releases.
+    let stale_key = if target_absent {
+        format!("stale:{target_slug}")
+    } else {
+        format!("stale-source:{source_slug}")
+    };
 
     let review_obj = row.get("review").and_then(Value::as_object);
     let current_suppression = review_obj
@@ -617,35 +628,11 @@ pub fn apply_merge_candidate_review_policy(
         })
         .unwrap_or_default();
 
-    if is_stale {
-        if let Some((curr_reason, curr_key)) = &current_suppression
-            && curr_reason == "stale"
-            && curr_key == &stale_key
-        {
-            // Unchanged
-        } else if !released_keys.contains(&("stale".to_owned(), stale_key.clone())) {
-            let review_mut = ensure_review_object(row, true);
-            review_mut.insert(
-                "suppression".to_owned(),
-                json!({
-                    "reason": "stale",
-                    "at": now,
-                    "evidence_key": stale_key,
-                }),
-            );
-            let history = review_mut
-                .entry("history".to_owned())
-                .or_insert_with(|| Value::Array(Vec::new()))
-                .as_array_mut()
-                .expect("history array");
-            history.push(json!({
-                "action": "set_aside",
-                "reason": "stale",
-                "at": now,
-                "evidence_key": stale_key,
-            }));
-        }
-    } else if let Some((curr_reason, curr_key)) = current_suppression {
+    let suppression_unchanged = is_stale
+        && current_suppression
+            .as_ref()
+            .is_some_and(|(reason, key)| reason == "stale" && key == &stale_key);
+    if !suppression_unchanged && let Some((curr_reason, curr_key)) = current_suppression {
         let review_mut = ensure_review_object(row, true);
         review_mut.insert("suppression".to_owned(), Value::Null);
         let history = review_mut
@@ -659,6 +646,148 @@ pub fn apply_merge_candidate_review_policy(
             "at": now,
             "evidence_key": curr_key,
         }));
+    }
+    if is_stale
+        && !suppression_unchanged
+        && !released_keys.contains(&("stale".to_owned(), stale_key.clone()))
+    {
+        let review_mut = ensure_review_object(row, true);
+        review_mut.insert(
+            "suppression".to_owned(),
+            json!({"reason": "stale", "at": now, "evidence_key": stale_key}),
+        );
+        let history = review_mut
+            .entry("history".to_owned())
+            .or_insert_with(|| Value::Array(Vec::new()))
+            .as_array_mut()
+            .expect("history array");
+        history.push(json!({
+            "action": "set_aside",
+            "reason": "stale",
+            "at": now,
+            "evidence_key": stale_key,
+        }));
+    }
+}
+
+#[cfg(test)]
+mod merge_policy_tests {
+    use super::*;
+    use crate::store::census::CensusEntity;
+
+    fn census(ids: &[&str], complete: bool) -> IdentityCensus {
+        IdentityCensus {
+            complete,
+            entities: ids
+                .iter()
+                .map(|id| {
+                    let entity = CensusEntity {
+                        id: (*id).into(),
+                        dir_name: (*id).into(),
+                        name: (*id).into(),
+                        entity_type: None,
+                        blocked: false,
+                        is_principal: false,
+                        aka: vec![],
+                        emails: vec![],
+                    };
+                    ((*id).into(), entity)
+                })
+                .collect(),
+        }
+    }
+
+    fn proposal() -> Map<String, Value> {
+        json!({"status": "open", "source_slug": "source", "target_slug": "target"})
+            .as_object()
+            .unwrap()
+            .clone()
+    }
+
+    #[test]
+    fn merge_policy_requires_both_saved_endpoints_and_proved_absence() {
+        for (ids, complete, key) in [
+            (vec!["target"], true, Some("stale-source:source")),
+            (vec!["source"], true, Some("stale:target")),
+            (vec![], true, Some("stale:target")),
+            (vec!["source", "target"], true, None),
+            (vec!["target"], false, None),
+            (vec![], false, None),
+        ] {
+            let mut row = proposal();
+            let current_census = census(&ids, complete);
+            apply_merge_candidate_review_policy(&mut row, &current_census, "first");
+            assert_eq!(row["status"], "open");
+            assert_eq!(
+                row.get("review")
+                    .and_then(|r| r["suppression"]["evidence_key"].as_str()),
+                key,
+            );
+            let after = row.clone();
+            apply_merge_candidate_review_policy(&mut row, &current_census, "later");
+            assert_eq!(row, after);
+            if key.is_some() {
+                apply_merge_candidate_review_policy(
+                    &mut row,
+                    &census(&["source", "target"], true),
+                    "saved",
+                );
+                assert!(row["review"]["suppression"].is_null());
+                assert_eq!(row["review"]["history"][1]["action"], "reopen");
+            }
+        }
+    }
+
+    #[test]
+    fn merge_policy_preserves_settled_rows_and_prior_target_suppression() {
+        for status in ["accepted", "dismissed", "resolved"] {
+            let mut row = proposal();
+            row.insert("status".into(), json!(status));
+            row.insert("review".into(), json!({"history": [{"action": "undo"}]}));
+            let before = row.clone();
+            apply_merge_candidate_review_policy(&mut row, &census(&[], true), "later");
+            assert_eq!(row, before);
+        }
+        let mut row = proposal();
+        row.insert(
+            "review".into(),
+            json!({
+                "suppression": {"reason": "stale", "evidence_key": "stale:target", "at": "old"},
+                "history": [], "released": []
+            }),
+        );
+        let before = row.clone();
+        apply_merge_candidate_review_policy(&mut row, &census(&[], true), "later");
+        assert_eq!(row, before);
+        row.get_mut("review").unwrap()["suppression"] = Value::Null;
+        row.get_mut("review").unwrap()["released"] =
+            json!([{"reason": "stale", "evidence_key": "stale:target"}]);
+        let restored = row.clone();
+        apply_merge_candidate_review_policy(&mut row, &census(&[], true), "later");
+        assert_eq!(row, restored);
+    }
+
+    #[test]
+    fn merge_policy_honors_source_restore_after_target_evidence_changes() {
+        let mut row = proposal();
+        row.insert(
+            "review".into(),
+            json!({
+                "suppression": null, "history": [],
+                "released": [{"reason": "stale", "evidence_key": "stale-source:source"}]
+            }),
+        );
+        let restored = row.clone();
+        apply_merge_candidate_review_policy(&mut row, &census(&["target"], true), "restored");
+        assert_eq!(row, restored);
+        apply_merge_candidate_review_policy(&mut row, &census(&[], true), "target gone");
+        assert_eq!(row["review"]["suppression"]["evidence_key"], "stale:target");
+        apply_merge_candidate_review_policy(&mut row, &census(&["target"], true), "target saved");
+        assert!(row["review"]["suppression"].is_null());
+        assert_eq!(row["review"]["history"][1]["action"], "reopen");
+        let after = row.clone();
+        apply_merge_candidate_review_policy(&mut row, &census(&["target"], true), "repeat");
+        assert_eq!(row, after);
     }
 }
 

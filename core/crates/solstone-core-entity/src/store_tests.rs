@@ -3496,6 +3496,13 @@ fn review_group_rejects_changed_scores_and_current_block_without_partial_answers
 #[test]
 fn new_stale_merge_suggestions_are_reversible_and_fresh_evidence_reopens() {
     let temporary = TempDir::new();
+    save_entity_identity(
+        temporary.path(),
+        "taylor",
+        &json!({"id":"taylor", "name":"Taylor Reed"}),
+        None,
+    )
+    .unwrap();
     let record = || {
         crate::record_merge_candidate(
             temporary.path(),
