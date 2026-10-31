@@ -2325,6 +2325,7 @@ dependencies = [
  "sha2",
  "solstone-core-assets",
  "solstone-core-brain",
+ "solstone-core-callosum",
  "solstone-core-distribution",
  "solstone-core-facets",
  "solstone-core-format",

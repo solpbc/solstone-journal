@@ -104,6 +104,7 @@ pub enum ArtifactId {
     TalentDayAccumulator,
     TaskQueueHolds,
     WorkIntent,
+    OwnerAsks,
     WorkInventory,
     IndexTodo,
     IndexAttempts,
@@ -143,6 +144,13 @@ pub const JOURNAL_ARTIFACTS: &[DurableArtifact] = &[
         class: DurabilityClass::MustBeValid,
         parser: ParserKind::WholeJson,
         rationale: "the owner's configuration; written under a lock with atomic replace",
+    },
+    DurableArtifact {
+        id: ArtifactId::OwnerAsks,
+        path: "health/owner-asks.json",
+        class: DurabilityClass::MustBeValid,
+        parser: ParserKind::WholeJson,
+        rationale: "the owner's pending asks to think a corrected day again, written under a lock with atomic replace and read strictly by owner_ask::read; nothing can rebuild what the owner asked, so a damaged one is kept as it is, no ask is worked and recording a new one refuses",
     },
     // Healable
     DurableArtifact {
@@ -1081,7 +1089,7 @@ mod tests {
     }
 
     #[test]
-    fn the_inventory_preserves_configuration_retirement_evidence_and_owner_line_answers() {
+    fn the_inventory_preserves_configuration_owner_state_and_retirement_evidence() {
         let strict: Vec<_> = JOURNAL_ARTIFACTS
             .iter()
             .filter(|artifact| artifact.class == DurabilityClass::MustBeValid)
@@ -1091,6 +1099,7 @@ mod tests {
             strict,
             vec![
                 "config/journal.json",
+                "health/owner-asks.json",
                 "health/parent-loss/generations/*/census-obligation.json",
                 "health/parent-loss/generations/*/census-started.json",
                 "health/parent-loss/generations/*/census-refusal.json",

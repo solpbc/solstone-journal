@@ -32,6 +32,7 @@ solstone-core-callosum.workspace = true
 solstone-core-cortex-client.workspace = true
 solstone-core-facets.workspace = true
 solstone-core-format.workspace = true
+solstone-core-home.workspace = true
 solstone-core-import.workspace = true
 solstone-core-indexer-store.workspace = true
 solstone-core-indexer.workspace = true

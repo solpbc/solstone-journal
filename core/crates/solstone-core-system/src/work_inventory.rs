@@ -84,6 +84,32 @@ impl HistorySample {
     }
 }
 
+/// One pending owner ask and what it is waiting on.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PendingOwnerAsk {
+    pub id: String,
+    pub day: String,
+    pub waiting_on: String,
+}
+
+/// The owner's asks to think a day again, as the last pass found them.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OwnerAskProgress {
+    pub pending: Vec<PendingOwnerAsk>,
+    /// The ask store could not be read, so no ask was worked.
+    #[serde(default)]
+    pub unreadable: bool,
+    /// Activities an ask could not run again, by reason.
+    #[serde(default)]
+    pub dropped: std::collections::BTreeMap<String, u64>,
+    /// Week steps that ended without a page made after the ask, by reason.
+    #[serde(default)]
+    pub week_unfinished: std::collections::BTreeMap<String, u64>,
+    /// Thaws that ended on a briefing at its failure cap.
+    #[serde(default)]
+    pub thaw_capped: u64,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkInventory {
     pub version: u32,
@@ -101,6 +127,8 @@ pub struct WorkInventory {
     /// When discovery will look again. A finished pass stays current until then.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub next_pass_ms: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub owner_asks: Option<OwnerAskProgress>,
 }
 
 /// How long a snapshot stays current past its pass or its promised next one.
@@ -121,6 +149,7 @@ impl Default for WorkInventory {
             history: None,
             unreadable: Vec::new(),
             next_pass_ms: None,
+            owner_asks: None,
         }
     }
 }

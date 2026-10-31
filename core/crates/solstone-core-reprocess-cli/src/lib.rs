@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use chrono::{DateTime, NaiveDate, Utc};
 use chrono_tz::Tz;
-use serde_json::{Map, json};
+use serde_json::json;
 use solstone_core_callosum::{CallosumEnvelope, CallosumOneShotSender};
 use solstone_core_segment::{PathOrDay, day_path, iter_segments, touch_stream_health_marker};
 use solstone_core_system_health::{FilesystemSegmentSource, scan_day};
@@ -638,14 +638,7 @@ fn parse_day(journal: &Path, day: &str) -> Option<NaiveDate> {
 }
 
 fn drain_envelope(day: &str) -> CallosumEnvelope {
-    let mut extra = Map::new();
-    extra.insert("day".to_owned(), json!(day));
-    CallosumEnvelope {
-        tract: "supervisor".to_owned(),
-        event: "drain".to_owned(),
-        ts: None,
-        extra,
-    }
+    CallosumEnvelope::supervisor_drain(day)
 }
 
 fn frame_envelope(envelope: &CallosumEnvelope) -> Option<String> {

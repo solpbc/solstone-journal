@@ -228,6 +228,28 @@ impl ThinkContext {
         event_clock: Arc<dyn Fn() -> i64 + Send + Sync>,
     ) -> Result<Self, String> {
         let (talent_root, apps_root) = package_roots()?;
+        Self::new_with_roots(
+            journal,
+            day,
+            day_dir,
+            now_ms,
+            event_clock,
+            talent_root,
+            apps_root,
+        )
+    }
+
+    /// [`Self::new_with_event_clock`] reading talents from the given roots, as
+    /// an embedded host that supplies its own resources does.
+    pub(crate) fn new_with_roots(
+        journal: &Path,
+        day: String,
+        day_dir: PathBuf,
+        now_ms: i64,
+        event_clock: Arc<dyn Fn() -> i64 + Send + Sync>,
+        talent_root: PathBuf,
+        apps_root: PathBuf,
+    ) -> Result<Self, String> {
         let allocator_now = now_ms;
         Ok(Self {
             rebuild_recovery: false,

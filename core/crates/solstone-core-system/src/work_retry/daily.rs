@@ -122,6 +122,7 @@ fn observe_using_checked(
     let evidence = read_evidence()?;
     if record.status.is_terminal_success()
         || crate::daily_coverage::accepted_reuse(
+            journal,
             &record,
             &evidence,
             crate::daily_coverage::local_now(journal, chrono::Utc::now()),
@@ -179,6 +180,7 @@ fn request_using(
     }
     let evidence = read_evidence()?;
     if crate::daily_coverage::accepted_reuse(
+        journal,
         &record,
         &evidence,
         crate::daily_coverage::local_now(journal, chrono::Utc::now()),

@@ -26,6 +26,7 @@ mod flush;
 mod gate;
 mod helpers;
 mod objects;
+mod owner_asks;
 mod phase_process;
 pub mod planner;
 mod repair;
@@ -2766,6 +2767,63 @@ mod tests {
                 assert_eq!(packet["activities"][0]["day"], "20260812");
                 assert_eq!(packet["activities"][1]["day"], "20260813");
             }
+        }
+    }
+
+    #[test]
+    fn an_owner_asked_activity_dispatches_as_a_refresh_first_and_on_every_retry() {
+        for asked in [true, false] {
+            let journal = tempdir().unwrap();
+            write_activity_record(
+                journal.path(),
+                "work",
+                "20260813",
+                serde_json::json!({"id":"reading_1", "activity":"reading", "segments":["090000"]}),
+            );
+            let roots = tempdir().unwrap();
+            let (talent_root, apps_root) = talent_roots(
+                roots.path(),
+                &[(
+                    "one",
+                    "{\n\"type\": \"generate\", \"max_output_tokens\": 1024, \"schedule\": \"activity\", \"priority\": 1, \"activities\": [\"reading\"], \"output\": \"md\"\n}\n",
+                )],
+            );
+            let (context, recorder) = recorder_context(journal.path(), "20260813", 9);
+            let clock = Arc::new(AtomicI64::new(1_785_000_000_000));
+            let ticks = Arc::clone(&clock);
+            let context = context
+                .with_talent_roots(talent_root, apps_root)
+                .with_event_clock(Arc::new(move || {
+                    ticks.fetch_add(10_000_000, Ordering::SeqCst)
+                }));
+            if asked {
+                assert_eq!(
+                    activity::seed_refresh(&context, "reading_1", "work").unwrap(),
+                    activity::Seeded::Recorded
+                );
+            } else {
+                activity::enqueue(&context, "reading_1", "work", false).unwrap();
+            }
+            // The first dispatch reaches no endpoint; the retry of that work succeeds.
+            *recorder.dispatch_failure.lock().unwrap() =
+                Some(context::DispatchFailure::Unavailable);
+            let mut log = test_log(&context, "activity");
+            let first =
+                activity::run(&context, &mut log, "reading_1", "work", false, false, 0).unwrap();
+            assert_eq!(first.failed, 1);
+            *recorder.dispatch_failure.lock().unwrap() = None;
+            let retry =
+                activity::run(&context, &mut log, "reading_1", "work", false, false, 0).unwrap();
+            assert_eq!((retry.success, retry.failed), (1, 0));
+            let requests = recorder.requests.lock().unwrap();
+            assert_eq!(requests.len(), 2);
+            assert!(
+                requests
+                    .iter()
+                    .all(|request| request.config.get("refresh")
+                        == asked.then_some(&Value::Bool(true))),
+                "{asked}"
+            );
         }
     }
 

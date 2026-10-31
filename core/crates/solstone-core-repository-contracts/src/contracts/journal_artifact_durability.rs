@@ -54,13 +54,14 @@ fn artifact_paths_are_unique_and_strict_artifacts_preserve_irreplaceable_evidenc
         must_be_valid_paths,
         vec![
             "config/journal.json",
+            "health/owner-asks.json",
             "health/parent-loss/generations/*/census-obligation.json",
             "health/parent-loss/generations/*/census-started.json",
             "health/parent-loss/generations/*/census-refusal.json",
             // Owner-authored line answers that can't be rebuilt.
             "chronicle/**/talents/owner_line_labels.json",
         ],
-        "MustBeValid artifacts must match the reviewed configuration, retirement evidence and owner line answers; found: {:?}",
+        "MustBeValid artifacts must match the reviewed configuration, owner asks, retirement evidence and owner line answers; found: {:?}",
         must_be_valid_paths
     );
 }

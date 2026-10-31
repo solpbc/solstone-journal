@@ -1162,6 +1162,48 @@ pub fn eligible_or_fail_open(journal: &Path, day: &str, now: SystemTime) -> bool
     }
 }
 
+/// [`eligible_or_fail_open`], where a backoff whose last attempt began
+/// before `asked_at_ms` does not hold the day: the owner asked after it was
+/// earned. A backoff earned at or after the ask, or a run still active,
+/// holds as before. Attempt times are seconds; the ask's time is milliseconds.
+pub fn eligible_since_ask_or_fail_open(
+    journal: &Path,
+    day: &str,
+    now: SystemTime,
+    asked_at_ms: Option<i64>,
+) -> bool {
+    let Some(asked_at_ms) = asked_at_ms else {
+        return eligible_or_fail_open(journal, day, now);
+    };
+    match (|| {
+        let entries = read_entries(journal)?;
+        for kind in [CatchupKind::DailyCatchup, CatchupKind::SegmentRepair] {
+            let earned_before_ask = entries
+                .get(&catchup_state_key(day, kind.as_str()))
+                .and_then(Value::as_object)
+                .is_some_and(|entry| {
+                    !entry.get("active").is_some_and(json_truthy)
+                        && entry
+                            .get("last_attempt_at")
+                            .and_then(Value::as_f64)
+                            .is_some_and(|seconds| seconds * 1000.0 < asked_at_ms as f64)
+                });
+            if !earned_before_ask && !day_eligible_to_drain(journal, day, kind, now)? {
+                return Ok(false);
+            }
+        }
+        Ok::<_, CatchupError>(true)
+    })() {
+        Ok(eligible) => eligible,
+        Err(error) => {
+            eprintln!(
+                "supervisor: catchup eligibility check failed for {day}; treating as eligible: {error}"
+            );
+            true
+        }
+    }
+}
+
 /// Return days with a persisted, expired retry watermark without fingerprint work.
 pub fn days_with_expired_retry(
     journal: &Path,
@@ -1448,6 +1490,51 @@ mod tests {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.root);
         }
+    }
+
+    #[test]
+    fn a_backoff_earned_before_an_ask_does_not_hold_and_one_earned_after_does() {
+        let bed = Bed::new("ask-backoff");
+        let day = "20260101";
+        // The last attempt began at 1000 s and backs off for a day.
+        bed.write(
+            "health/catchup-state.json",
+            state_entry(
+                day,
+                CatchupKind::DailyCatchup,
+                r#"{"day":"20260101","command_kind":"daily_catchup","last_attempt_at":1000,"next_retry_at":90000,"fingerprint":"older","reason_code":"daily_failed"}"#,
+            ),
+        );
+        bed.segment_file(day, "120000_60", "audio.jsonl", b"{}\n");
+        let fingerprint = read_raw_input_fingerprint(&bed.root, day).unwrap();
+        let state = fs::read_to_string(bed.root.join("health/catchup-state.json")).unwrap();
+        bed.write(
+            "health/catchup-state.json",
+            state.replace("\"older\"", &format!("\"{fingerprint}\"")),
+        );
+        let now = UNIX_EPOCH + Duration::from_secs(2000);
+        assert!(!eligible_or_fail_open(&bed.root, day, now));
+        assert!(!eligible_since_ask_or_fail_open(&bed.root, day, now, None));
+        // Asked after the attempt began: seconds compared with milliseconds.
+        assert!(eligible_since_ask_or_fail_open(
+            &bed.root,
+            day,
+            now,
+            Some(1_000_001)
+        ));
+        // Asked before, or at, the attempt that earned the backoff.
+        assert!(!eligible_since_ask_or_fail_open(
+            &bed.root,
+            day,
+            now,
+            Some(999_999)
+        ));
+        assert!(!eligible_since_ask_or_fail_open(
+            &bed.root,
+            day,
+            now,
+            Some(1_000_000)
+        ));
     }
 
     fn state_entry(day: &str, kind: CatchupKind, entry: &str) -> String {

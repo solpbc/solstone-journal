@@ -16,7 +16,7 @@ use solstone_core_journal_io::{
 
 use crate::context::ThinkContext;
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ActivityRetry {
     pub day: String,
     pub facet: String,
@@ -48,6 +48,14 @@ struct Record {
     muted_pause: bool,
     #[serde(default)]
     blocked: Option<BlockedDisposition>,
+    /// Every dispatch of this work, first and retry, asks its talents to
+    /// make their output again rather than keep what is there.
+    #[serde(default, skip_serializing_if = "is_false")]
+    refresh: bool,
+}
+
+fn is_false(value: &bool) -> bool {
+    !*value
 }
 
 pub(crate) struct ActivityWork {
@@ -92,6 +100,8 @@ fn read(path: &Path) -> Result<Option<Record>, String> {
 
 /// The error a run gets when another run holds the same activity's work.
 pub(crate) const CLAIMED: &str = "activity work is held by another run";
+/// The error a refresh gets while the work it would replace is still running.
+pub(crate) const STILL_RUNNING: &str = "previous activity input is still running";
 
 fn claim(context: &ThinkContext, identity: &ActivityRetry) -> Result<FileLock, String> {
     let claim_path = crate::segment::activity_provenance_path(
@@ -144,6 +154,24 @@ pub(crate) fn claim_drained(
         return Err("retained activity has unfinished work".into());
     }
     Ok(held)
+}
+
+/// Whether new work may replace this activity's record: no record, or one
+/// this version reads. A malformed or newer record is `Ok(false)`; a record
+/// that cannot be read at all is an error.
+pub(crate) fn record_replaceable(journal: &Path, identity: &ActivityRetry) -> Result<bool, String> {
+    use solstone_core_journal_io::durability::{
+        ArtifactId, DurableObservation, observe_json_durable,
+    };
+    match observe_json_durable::<Record>(ArtifactId::ActivityWork, &path(journal, identity)?) {
+        DurableObservation::Present(record) => Ok(record.version == 1),
+        DurableObservation::Absent => Ok(true),
+        DurableObservation::Malformed { .. } => Ok(false),
+        DurableObservation::Unreadable { path, source } => Err(format!(
+            "cannot read activity work {}: {source}",
+            path.display()
+        )),
+    }
 }
 
 pub(crate) fn has_persisted_disposition(
@@ -241,10 +269,11 @@ impl ActivityWork {
                 .map_err(|e| e.to_string())?
                     == solstone_core_cortex_client::UseFileStatus::Running
                 {
-                    return Err("previous activity input is still running".to_owned());
+                    return Err(STILL_RUNNING.to_owned());
                 }
             }
         }
+        let refreshing = refresh || old.as_ref().is_some_and(|record| record.refresh);
         let mut names = names;
         if old.is_none() && !refresh {
             let provenance =
@@ -284,6 +313,7 @@ impl ActivityWork {
                 destination_id: None,
                 muted_pause: false,
                 blocked: None,
+                refresh: refreshing,
             },
         };
         let work = Self {
@@ -303,6 +333,10 @@ impl ActivityWork {
     }
     pub(crate) fn is_complete(&self) -> bool {
         self.record.remaining.is_empty()
+    }
+    /// Whether this work runs its talents as a full refresh.
+    pub(crate) fn refreshes(&self) -> bool {
+        self.record.refresh
     }
     pub(crate) fn due(&self, now_ms: i64) -> bool {
         if self.record.blocked.is_some() || self.record.muted_pause {
@@ -816,12 +850,36 @@ pub(crate) fn available_input(
 
 /// A broken sibling is a visible gap, not a reason to suppress all valid work.
 pub fn discover_activity_retries(journal: &Path, now_ms: i64) -> (Vec<ActivityRetry>, Vec<String>) {
+    let snapshot = snapshot_activity_work(journal, now_ms);
+    (snapshot.due, snapshot.errors)
+}
+
+/// One read of every activity work record, as a discovery pass sees it.
+#[derive(Default)]
+pub struct ActivityWorkSnapshot {
+    /// Work due to run now, newest day first.
+    pub due: Vec<ActivityRetry>,
+    /// Work with talents still to run that are neither parked nor blocked,
+    /// whether or not a retry is due yet.
+    pub unfinished: BTreeSet<ActivityRetry>,
+    pub errors: Vec<String>,
+}
+
+pub fn snapshot_activity_work(journal: &Path, now_ms: i64) -> ActivityWorkSnapshot {
     let entries = match std::fs::read_dir(directory(journal)) {
         Ok(entries) => entries,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return (vec![], vec![]),
-        Err(e) => return (vec![], vec![e.to_string()]),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            return ActivityWorkSnapshot::default();
+        }
+        Err(e) => {
+            return ActivityWorkSnapshot {
+                errors: vec![e.to_string()],
+                ..ActivityWorkSnapshot::default()
+            };
+        }
     };
     let mut due = Vec::new();
+    let mut unfinished = BTreeSet::new();
     let mut errors = Vec::new();
     for entry in entries {
         let entry = match entry {
@@ -842,14 +900,33 @@ pub fn discover_activity_retries(journal: &Path, now_ms: i64) -> (Vec<ActivityRe
         {
             continue;
         }
-        match due_activity_record(journal, &path, now_ms) {
+        let record = match read(&path) {
+            Ok(Some(record)) => record,
+            Ok(None) => continue,
+            Err(error) => {
+                errors.push(format!("{}: {error}", path.display()));
+                continue;
+            }
+        };
+        if self::path(journal, &record.identity).ok().as_ref() == Some(&path)
+            && record.blocked.is_none()
+            && !record.muted_pause
+            && record.remaining.iter().any(|n| !record.parked.contains(n))
+        {
+            unfinished.insert(record.identity.clone());
+        }
+        match due_record(journal, &path, record, now_ms) {
             Ok(Some(identity)) => due.push(identity),
             Ok(None) => {}
             Err(error) => errors.push(format!("{}: {error}", path.display())),
         }
     }
     due.sort_by(|a, b| (&b.day, &a.facet, &a.activity).cmp(&(&a.day, &b.facet, &b.activity)));
-    (due, errors)
+    ActivityWorkSnapshot {
+        due,
+        unfinished,
+        errors,
+    }
 }
 
 fn due_activity_record(
@@ -860,6 +937,15 @@ fn due_activity_record(
     let Some(record) = read(entry)? else {
         return Ok(None);
     };
+    due_record(journal, entry, record, now_ms)
+}
+
+fn due_record(
+    journal: &Path,
+    entry: &Path,
+    record: Record,
+    now_ms: i64,
+) -> Result<Option<ActivityRetry>, String> {
     if path(journal, &record.identity)? != entry {
         return Err("activity work filename mismatch".to_owned());
     }
@@ -1011,6 +1097,7 @@ pub(crate) fn seed_activity_retries_checked(
                 blocked: None,
                 attempts: 0,
                 next_attempt_ms: 0,
+                refresh: false,
             },
         }
         .save_checked(checkpoint)?;
@@ -1504,6 +1591,7 @@ mod tests {
                     reason_code: "held".into(),
                     message: "held".into(),
                 }),
+                refresh: false,
             };
             solstone_core_journal_io::write_json(
                 &target,

@@ -808,6 +808,7 @@ fn daily_retries(
     imports: &[ImportThinking],
     policy: WorkPolicy,
     ready: bool,
+    ask: crate::owner_asks::DayAsk,
     permanently_held: &mut BTreeSet<String>,
     report: &mut WorkInventory,
     checkpoint: &dyn Fn() -> Result<(), String>,
@@ -841,7 +842,8 @@ fn daily_retries(
             Some(cause) if cause.starts_with("fix:") => Some(WorkBand::Completing),
             _ => imported.then_some(WorkBand::Import),
         };
-        let p = priority(day, None, today, explicit);
+        let mut p = priority(day, None, today, explicit);
+        p.band = ask.band(p.band);
         if !covered.state.is_owed() {
             report.band(p.band).daily_units_owed += 1;
         }
@@ -900,6 +902,7 @@ fn talent_retries(
     intent: Option<&OwnerIntent>,
     imports: &[ImportThinking],
     policy: WorkPolicy,
+    ask: crate::owner_asks::DayAsk,
     permanently_held_activities: &mut u64,
     report: &mut WorkInventory,
     checkpoint: &dyn Fn() -> Result<(), String>,
@@ -945,7 +948,10 @@ fn talent_retries(
             } => (Some(segment.clone()), Some(stream.clone())),
             _ => (None, None),
         };
-        let p = priority(day, segment.as_deref(), today, explicit);
+        let mut p = priority(day, segment.as_deref(), today, explicit);
+        if matches!(record.unit, Unit::Activity { .. }) {
+            p.band = ask.band(p.band);
+        }
         report.holds.push(WorkHold {
             retry_unit: Some(id.clone()),
             day: day.into(),
@@ -996,6 +1002,7 @@ struct DaySources<'a> {
     imports: &'a [ImportThinking],
     archive_coordinates: &'a BTreeSet<Coordinate>,
     roots: Option<&'a DiscoveryTalentRoots>,
+    ask: crate::owner_asks::DayAsk,
 }
 
 #[allow(
@@ -1202,7 +1209,8 @@ fn inspect_day(
             .map(|_| WorkBand::Waiting)
             .or_else(|| imported.then_some(WorkBand::Import));
         let coverage = read_coverage(journal, day, sources.roots)?;
-        let p = daily_priority(priority(day, None, today, explicit), &coverage);
+        let mut p = daily_priority(priority(day, None, today, explicit), &coverage);
+        p.band = sources.ask.band(p.band);
         let mut permanently_held_daily = BTreeSet::new();
         work.candidates.extend(daily_retries(
             journal,
@@ -1212,7 +1220,8 @@ fn inspect_day(
             intent,
             sources.imports,
             policy,
-            prerequisites_ready && !closing,
+            prerequisites_ready && !closing && !sources.ask.holds,
+            sources.ask,
             &mut permanently_held_daily,
             report,
             checkpoint,
@@ -1252,6 +1261,7 @@ fn inspect_day(
                 segments_thought && !closing,
                 prerequisites_ready,
                 intent,
+                sources.ask,
                 p,
                 policy,
                 &mut work,
@@ -1308,6 +1318,7 @@ fn queue_daily(
     segments_thought: bool,
     prerequisites_ready: bool,
     intent: Option<&OwnerIntent>,
+    ask: crate::owner_asks::DayAsk,
     p: WorkPriority,
     policy: WorkPolicy,
     work: &mut DayWork,
@@ -1342,14 +1353,23 @@ fn queue_daily(
     if owed == 0 {
         return Ok(false);
     }
-    if !segments_thought {
+    if ask.holds {
+        // The owner's asked activities run first; the day's daily work reads them.
+        report.band(p.band).prerequisite_held += owed;
+        held(report, day, None, p.band, "owner_ask_activities");
+    } else if !segments_thought {
         report.band(p.band).prerequisite_held += owed;
         held(report, day, None, p.band, "segment_prerequisites");
     } else if !policy.permits(p.band) {
         report.band(p.band).permission_held += owed;
         held(report, day, None, p.band, "spending_confirmation");
     } else if intent.is_none()
-        && !solstone_core_system::catchup::eligible_or_fail_open(journal, day, SystemTime::now())
+        && !solstone_core_system::catchup::eligible_since_ask_or_fail_open(
+            journal,
+            day,
+            SystemTime::now(),
+            ask.asked_at_ms,
+        )
     {
         held(report, day, None, p.band, "retry_wait");
     } else {
@@ -1465,6 +1485,9 @@ fn still_owed(
             },
             chrono::Utc::now().timestamp_millis(),
         );
+    }
+    if argv.iter().any(|arg| arg == "--weekly") {
+        return crate::owner_asks::week_still_owed(journal, day);
     }
     if let Some(id) = argument("--work-intent") {
         let intents = work_intent::read(journal)?;
@@ -1898,8 +1921,24 @@ fn reconcile_pass_with_roots(
                 }
             }
         };
-    let (activities, activity_errors) =
-        crate::discover_activity_retries(journal, chrono::Utc::now().timestamp_millis());
+    // The owner's asks seed their activities before activity work is read,
+    // so this pass's snapshot already holds them.
+    let mut asks = crate::owner_asks::AskPass::seed(
+        journal,
+        &work_intent::read(journal)?,
+        roots.map(|roots| (roots.talent.as_path(), roots.apps.as_path())),
+        chrono::Utc::now().timestamp_millis(),
+        checkpoint,
+    )?;
+    let crate::activity_work::ActivityWorkSnapshot {
+        due: activities,
+        unfinished: unfinished_activities,
+        errors: activity_errors,
+    } = crate::activity_work::snapshot_activity_work(
+        journal,
+        chrono::Utc::now().timestamp_millis(),
+    );
+    asks.hold(&unfinished_activities);
     let (held_activities, held_errors) = crate::discover_held_activities(journal);
     let (held_records, retry_errors) = work_retry::list(journal);
     let now = chrono::Utc::now();
@@ -1927,6 +1966,10 @@ fn reconcile_pass_with_roots(
         days.entry(activity.day.clone())
             .or_insert_with(|| journal.join("chronicle").join(&activity.day));
     }
+    for day in asks.days() {
+        days.entry(day.clone())
+            .or_insert_with(|| journal.join("chronicle").join(day));
+    }
     let mut report = WorkInventory {
         days_total: days.len(),
         oldest_day: days.keys().next().cloned(),
@@ -1935,6 +1978,8 @@ fn reconcile_pass_with_roots(
         ..WorkInventory::default()
     };
     report.unreadable.extend(activity_errors);
+    report.unreadable.extend(asks.unreadable());
+    report.unreadable.extend(asks.errors().iter().cloned());
     report.unreadable.extend(held_errors);
     report.unreadable.extend(retry_errors);
     for (id, error) in pending_archives.errors {
@@ -2024,6 +2069,7 @@ fn reconcile_pass_with_roots(
                 imports: &imports.imports,
                 archive_coordinates: &archive_coordinates,
                 roots,
+                ask: asks.day(&day),
             },
             policy,
             &mut day_report,
@@ -2085,6 +2131,7 @@ fn reconcile_pass_with_roots(
                 intents.get(&day),
                 &imports.imports,
                 policy,
+                asks.day(&day),
                 &mut permanent_activities,
                 &mut day_report,
                 checkpoint,
@@ -2112,12 +2159,13 @@ fn reconcile_pass_with_roots(
             let today = chrono::Utc::now()
                 .with_timezone(&solstone_core_journal_config::owner_zone(journal))
                 .date_naive();
-            let p = priority(
+            let mut p = priority(
                 &day,
                 None,
                 today,
                 intents.get(&day).map(|_| WorkBand::Waiting),
             );
+            p.band = asks.day(&day).band(p.band);
             day_report.band(p.band).activities_owed += 1;
             if !policy.permits(p.band) {
                 day_report.band(p.band).permission_held += 1;
@@ -2231,6 +2279,16 @@ fn reconcile_pass_with_roots(
             }
         }
     }
+    let seed_errors = asks.errors().len();
+    let week_tasks = asks.finish(
+        journal,
+        roots.map(|roots| (roots.talent.as_path(), roots.apps.as_path())),
+        chrono::NaiveDate::parse_from_str(&pass_day, "%Y%m%d").map_err(|e| e.to_string())?,
+        policy,
+        chrono::Utc::now().timestamp_millis(),
+        checkpoint,
+    )?;
+    retain_best(&mut candidates, week_tasks);
     aggregate(
         &mut report,
         &day_reports,
@@ -2238,6 +2296,10 @@ fn reconcile_pass_with_roots(
         &days,
         inspected.len(),
     );
+    report
+        .unreadable
+        .extend(asks.errors()[seed_errors..].iter().cloned());
+    report.owner_asks = asks.progress();
     for import in imports.imports {
         let segments = import
             .segments
@@ -2507,6 +2569,10 @@ pub fn plan_observed_segment(
     );
     true
 }
+
+#[cfg(test)]
+#[path = "planner_owner_ask_tests.rs"]
+mod owner_ask_tests;
 
 #[cfg(test)]
 mod tests {
@@ -3030,6 +3096,7 @@ mod tests {
                 imports: &[],
                 archive_coordinates: &BTreeSet::new(),
                 roots: None,
+                ask: Default::default(),
             },
             policy,
             &mut report,
@@ -3065,6 +3132,7 @@ mod tests {
                 imports: &[],
                 archive_coordinates: &BTreeSet::new(),
                 roots: None,
+                ask: Default::default(),
             },
             policy,
             &mut report,
@@ -3086,6 +3154,7 @@ mod tests {
                 imports: &[],
                 archive_coordinates: &BTreeSet::new(),
                 roots: None,
+                ask: Default::default(),
             },
             policy,
             &mut report,
@@ -3142,6 +3211,7 @@ mod tests {
                     imports: &[],
                     archive_coordinates: &BTreeSet::new(),
                     roots: None,
+                    ask: Default::default(),
                 },
                 WorkPolicy::read(root.path()).unwrap(),
                 &mut report,
@@ -4289,6 +4359,7 @@ mod tests {
                 imports: &[],
                 archive_coordinates: &BTreeSet::new(),
                 roots: None,
+                ask: Default::default(),
             },
             policy,
             &mut report,
@@ -4712,6 +4783,7 @@ mod tests {
                 imports: &[],
                 archive_coordinates: &archive_coords_today,
                 roots: None,
+                ask: Default::default(),
             },
             policy,
             &mut report_today,
@@ -4759,6 +4831,7 @@ mod tests {
                 imports: &[],
                 archive_coordinates: &BTreeSet::new(),
                 roots: None,
+                ask: Default::default(),
             },
             policy,
             &mut report_past_empty,
@@ -4788,6 +4861,7 @@ mod tests {
                 imports: &[],
                 archive_coordinates: &past_archive_coords,
                 roots: None,
+                ask: Default::default(),
             },
             policy,
             &mut report_past_set,
@@ -4882,6 +4956,7 @@ mod tests {
                 imports: &[],
                 archive_coordinates: &coords,
                 roots: None,
+                ask: Default::default(),
             },
             policy,
             &mut report,
@@ -4973,6 +5048,7 @@ mod tests {
                 imports: &[],
                 archive_coordinates: &coords,
                 roots: None,
+                ask: Default::default(),
             },
             policy,
             &mut report,
@@ -5033,6 +5109,7 @@ mod tests {
                     imports: &[],
                     archive_coordinates: &coords,
                     roots: None,
+                    ask: Default::default(),
                 },
                 policy,
                 &mut WorkInventory::default(),
@@ -5051,6 +5128,7 @@ mod tests {
                 imports: &[],
                 archive_coordinates: &coords,
                 roots: None,
+                ask: Default::default(),
             },
             policy,
             &mut WorkInventory::default(),
@@ -5120,6 +5198,7 @@ mod tests {
                 imports: &[],
                 archive_coordinates: &coords,
                 roots: None,
+                ask: Default::default(),
             },
             policy,
             &mut WorkInventory::default(),
@@ -5300,6 +5379,7 @@ mod tests {
                     imports: &[],
                     archive_coordinates: &BTreeSet::new(),
                     roots: None,
+                    ask: Default::default(),
                 },
                 WorkPolicy::read(root.path()).unwrap(),
                 &mut WorkInventory::default(),

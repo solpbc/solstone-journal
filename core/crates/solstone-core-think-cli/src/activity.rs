@@ -53,6 +53,57 @@ pub(crate) fn enqueue(
     .map(|work| Some(work.into_claim()))
 }
 
+/// How seeding an owner-asked activity went.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Seeded {
+    /// Its work is recorded as a full refresh.
+    Recorded,
+    /// Another run holds it or its earlier work is still running; ask again later.
+    Busy,
+    /// It cannot run again, for this reason.
+    Dropped(&'static str),
+}
+
+/// Record an owner-asked activity's work as a full refresh through
+/// [`enqueue`], so every selected talent runs again on its first dispatch and
+/// on every retry of that work.
+pub(crate) fn seed_refresh(
+    context: &ThinkContext,
+    activity_id: &str,
+    facet: &str,
+) -> Result<Seeded, String> {
+    let identity = crate::activity_work::ActivityRetry {
+        day: context.day.clone(),
+        facet: facet.to_owned(),
+        activity: activity_id.to_owned(),
+    };
+    if !crate::activity_work::record_replaceable(&context.journal, &identity)? {
+        return Ok(Seeded::Dropped("work_record_unreadable"));
+    }
+    let record = match get_activity_record(&context.journal, facet, &context.day, activity_id) {
+        Ok(Some(record)) => record,
+        Ok(None) => return Ok(Seeded::Dropped("activity_missing")),
+        Err(_) => return Ok(Seeded::Dropped("inputs_unreadable")),
+    };
+    if selected_configs(context, &record)?.is_none_or(|configs| configs.is_empty()) {
+        return Ok(Seeded::Dropped("no_activity_talents"));
+    }
+    if crate::segment::compute_activity_input_hash(context, &context.day, &record).is_none() {
+        return Ok(Seeded::Dropped("inputs_unreadable"));
+    }
+    match enqueue(context, activity_id, facet, true) {
+        Ok(Some(_claim)) => Ok(Seeded::Recorded),
+        Ok(None) => Ok(Seeded::Dropped("activity_missing")),
+        Err(error)
+            if error == crate::activity_work::CLAIMED
+                || error == crate::activity_work::STILL_RUNNING =>
+        {
+            Ok(Seeded::Busy)
+        }
+        Err(error) => Err(error),
+    }
+}
+
 /// The talents a stored activity record selects, and the fingerprint of the
 /// input they read. A synthetic record, or one with no input span, selects
 /// none and succeeds without running anything.
@@ -442,6 +493,7 @@ fn run_selected(
         return Ok(failed("activity retry pending"));
     }
     work.start_attempt(context.event_now_ms())?;
+    let refresh = refresh || work.refreshes();
     let groups = grouped(configs);
     let total_count = groups.values().map(Vec::len).sum::<usize>();
     let start = fields(

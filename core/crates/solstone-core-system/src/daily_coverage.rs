@@ -216,7 +216,11 @@ pub enum AcceptedReuse {
 /// files.  ⛔ Every reader that decides reuse goes through this --
 /// the coverage reader and the run's own skip must never disagree, or a day
 /// reads current while its run regenerates it.
+///
+/// A past briefing is not frozen while an owner ask on its day thaws it
+/// ([`crate::owner_ask::thawed`]); this is the only place that question is asked.
 pub fn accepted_reuse(
+    journal: &Path,
     record: &solstone_core_journal_io::DailyUnitRecord,
     evidence: &DailyEvidence,
     now: chrono::NaiveDateTime,
@@ -271,6 +275,9 @@ pub fn accepted_reuse(
             .and_hms_opt(BRIEFING_MORNING_ENDS_HOUR, 0, 0)
             .is_some_and(|noon| now >= noon)
     {
+        if crate::owner_ask::thawed(journal, &record.identity.day) {
+            return None;
+        }
         return Some(Some(AcceptedReuse::FrozenBriefing));
     }
     if day < today - chrono::Duration::days(CONTRACT_REOWE_CLOSED_DAYS)
@@ -453,7 +460,7 @@ fn read_unit_coverage_cached(
                     && record.has_uncommitted_started_receipt())
             {
                 CoverageState::Outstanding
-            } else if let Some(reuse) = accepted_reuse(record, &evidence, now) {
+            } else if let Some(reuse) = accepted_reuse(journal, record, &evidence, now) {
                 // An accepted result stands whatever became of its files, so
                 // it is never work to redo. The run's own skip reads the same,
                 // so the two never disagree.
@@ -1608,7 +1615,7 @@ mod tests {
                 .unwrap()
                 .unwrap();
             let current = evidence(suggestion, day);
-            let reuse = accepted_reuse(&record, &current, wall);
+            let reuse = accepted_reuse(root, &record, &current, wall);
             let date = chrono::NaiveDate::parse_from_str(day, "%Y%m%d").unwrap();
             if date >= chrono::NaiveDate::parse_from_str(&cutoff, "%Y%m%d").unwrap() {
                 assert_eq!(reuse, None, "{day}");
@@ -1628,7 +1635,12 @@ mod tests {
         .unwrap()
         .unwrap();
         assert_eq!(
-            accepted_reuse(&briefing_record, &evidence(briefing, &briefing_day), wall),
+            accepted_reuse(
+                root,
+                &briefing_record,
+                &evidence(briefing, &briefing_day),
+                wall
+            ),
             Some(Some(AcceptedReuse::FrozenBriefing))
         );
         let later = now + chrono::Duration::days(3);
@@ -1657,7 +1669,7 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(
-            accepted_reuse(&oldest, &evidence(suggestion, &days[0]), wall),
+            accepted_reuse(root, &oldest, &evidence(suggestion, &days[0]), wall),
             None
         );
         let recent = days.last().unwrap();
@@ -1666,7 +1678,7 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(
-            accepted_reuse(&recent_record, &evidence(suggestion, recent), wall),
+            accepted_reuse(root, &recent_record, &evidence(suggestion, recent), wall),
             None
         );
         let open = today.format("%Y%m%d").to_string();
@@ -1687,7 +1699,7 @@ mod tests {
                 .unwrap()
                 .unwrap();
             let current = evidence(suggestion, day);
-            let reuse = accepted_reuse(&record, &current, wall);
+            let reuse = accepted_reuse(root, &record, &current, wall);
             let date = chrono::NaiveDate::parse_from_str(day, "%Y%m%d").unwrap();
             if date < today - chrono::Duration::days(CONTRACT_REOWE_CLOSED_DAYS) {
                 assert_eq!(reuse, Some(Some(AcceptedReuse::EarlierContract)), "{day}");

@@ -15,6 +15,21 @@ pub struct CallosumEnvelope {
     pub extra: Map<String, Value>,
 }
 
+impl CallosumEnvelope {
+    /// The wakeup that asks the supervisor's work discovery to look again,
+    /// naming the day whose work changed.
+    pub fn supervisor_drain(day: &str) -> Self {
+        let mut extra = Map::new();
+        extra.insert("day".to_owned(), Value::String(day.to_owned()));
+        Self {
+            tract: "supervisor".to_owned(),
+            event: "drain".to_owned(),
+            ts: None,
+            extra,
+        }
+    }
+}
+
 /// A file attributed to a device-ingest record.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct FileDescriptor {
