@@ -54,7 +54,7 @@ Day 2026-01-01 segment 010203_60
 Sense orchestrator (linear):
   1. sense (gen/json) (new) — mandatory
   2. screen (gen/json) (new) — if recommend.screen_record
-  3. speaker_attribution (gen/json) (new) — if recommend.speaker_attribution + audio embeddings
+  3. speaker_attribution (gen/json) (new) — if audio embeddings (the model layer only if recommend.speaker_attribution)
   4. entities:possible_names (gen/json) (new) — if a speech transcript (never gates the segment)
 
   idle segments: write stubs only (unless --refresh)
@@ -67,7 +67,7 @@ Day 2026-01-01 segment 010203_60 (refresh)
 Sense orchestrator (linear):
   1. sense (gen/json) (new) — mandatory
   2. screen (gen/json) (new) — if recommend.screen_record
-  3. speaker_attribution (gen/json) (new) — if recommend.speaker_attribution + audio embeddings
+  3. speaker_attribution (gen/json) (new) — if audio embeddings (the model layer only if recommend.speaker_attribution)
   4. entities:possible_names (gen/json) (new) — if a speech transcript (never gates the segment)
 
   idle segments: write stubs only (unless --refresh)
@@ -144,7 +144,7 @@ Day 2026-01-01 segment 010203_60
 Sense orchestrator (linear):
   1. sense (gen/json) (new) — mandatory
   2. screen (gen/json) (new) — if recommend.screen_record
-  3. speaker_attribution (gen/json) (new) — if recommend.speaker_attribution + audio embeddings
+  3. speaker_attribution (gen/json) (new) — if audio embeddings (the model layer only if recommend.speaker_attribution)
   4. entities:possible_names (gen/json) (new) — if a speech transcript (never gates the segment)
 
   idle segments: write stubs only (unless --refresh)
@@ -200,7 +200,7 @@ Day 2026-01-01 — re-process 2 segments
 Sense orchestrator (linear):
   1. sense (gen/json) — mandatory
   2. screen (gen/json) — if recommend.screen_record
-  3. speaker_attribution (gen/json) — if recommend.speaker_attribution + audio embeddings
+  3. speaker_attribution (gen/json) — if audio embeddings (the model layer only if recommend.speaker_attribution)
   4. entities:possible_names (gen/json) — if a speech transcript (never gates the segment)
 
   idle segments: write stubs only (unless --refresh)
