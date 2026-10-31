@@ -154,15 +154,13 @@ fn analyzed_rows(path: &Path) -> Option<Vec<Map<String, Value>>> {
     )
 }
 
-/// Sentence id to voice for the segment's labelled audio source.
+/// Sentence id to voice for the segment's labelled audio source: who spoke,
+/// with the owner's own answers applied.
 fn segment_labels(dir: &Path, voices: &VoiceNames) -> Option<(String, BTreeMap<i64, Voice>)> {
-    let text = fs::read_to_string(dir.join("talents").join("speaker_labels.json")).ok()?;
-    let payload = serde_json::from_str::<Value>(&text).ok()?;
-    let labels = payload
-        .get("labels")?
-        .as_array()?
+    let source = solstone_core_transcripts::labelled_audio_source(dir)?;
+    let labels = solstone_core_transcripts::load_who_spoke(dir, Some(&source), None)
+        .rows
         .iter()
-        .filter_map(Value::as_object)
         .filter_map(|row| {
             let sentence = row.get("sentence_id")?.as_i64()?;
             let name = voices.name_for(row)?;
@@ -178,10 +176,7 @@ fn segment_labels(dir: &Path, voices: &VoiceNames) -> Option<(String, BTreeMap<i
             Some((sentence, voice))
         })
         .collect();
-    Some((
-        solstone_core_transcripts::labelled_audio_source(dir)?,
-        labels,
-    ))
+    Some((source, labels))
 }
 
 fn utterance(row: &Map<String, Value>, labels: Option<&BTreeMap<i64, Voice>>) -> Option<Utterance> {
@@ -249,4 +244,154 @@ fn messaging_frame(row: &Map<String, Value>, segment_start: Option<u32>) -> Opti
             .zip(offset)
             .map(|(start, offset)| start.saturating_add(offset as u32)),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+    use solstone_core_speaker_id::owner_line_labels::{
+        LineFingerprint, OwnerLineEntry, encode_owner_line_labels, owner_line_labels_path,
+    };
+
+    use super::*;
+
+    const LINES: [&str; 3] = [
+        r#"{"start":"00:00:01","speaker":1,"sentence_id":1,"text":"Let us begin"}"#,
+        r#"{"start":"00:00:02","speaker":2,"sentence_id":2,"text":"I will send it"}"#,
+        r#"{"start":"00:00:03","speaker":1,"sentence_id":3,"text":"Sounds good"}"#,
+    ];
+
+    /// Quinn heard by voice on lines 1 and 3, the owner matched on line 2.
+    fn attributed(root: &Path) -> std::path::PathBuf {
+        let dir = root.join("090000_60");
+        fs::create_dir_all(dir.join("talents")).unwrap();
+        let mut jsonl = format!(
+            "{}\n",
+            json!({"_solstone_processing": {"state": STATE_ANALYZED}})
+        );
+        for line in LINES {
+            jsonl.push_str(line);
+            jsonl.push('\n');
+        }
+        fs::write(dir.join("audio.jsonl"), jsonl).unwrap();
+        fs::write(
+            dir.join("talents/speaker_labels.json"),
+            json!({"labels": [
+                {"sentence_id": 1, "speaker": "quinn", "method": "acoustic", "confidence": "high"},
+                {"sentence_id": 2, "speaker": "owner", "method": "owner_centroid", "confidence": "high"},
+                {"sentence_id": 3, "speaker": "quinn", "method": "acoustic", "confidence": "high"}
+            ]})
+            .to_string(),
+        )
+        .unwrap();
+        dir
+    }
+
+    fn entry(line: usize, speaker: Option<&str>) -> OwnerLineEntry {
+        let Value::Object(record) = serde_json::from_str(LINES[line - 1]).unwrap() else {
+            unreachable!()
+        };
+        OwnerLineEntry {
+            source: "audio".to_owned(),
+            sentence_id: line as i64,
+            fingerprint: LineFingerprint::of_record(&record),
+            speaker: speaker.map(str::to_owned),
+            set_at: "2026-10-31T12:00:00Z".to_owned(),
+        }
+    }
+
+    fn answer(dir: &Path, entries: &[OwnerLineEntry]) {
+        fs::write(
+            owner_line_labels_path(dir),
+            encode_owner_line_labels(entries),
+        )
+        .unwrap();
+    }
+
+    fn voices() -> VoiceNames {
+        VoiceNames {
+            principal: "owner".to_owned(),
+            owner_voice_confirmed: true,
+            people: [
+                ("quinn".to_owned(), "Quinn".to_owned()),
+                ("pat".to_owned(), "Pat".to_owned()),
+            ]
+            .into(),
+        }
+    }
+
+    fn voices_of(dir: &Path) -> Vec<Voice> {
+        load_segment(dir, "090000_60", Some(&voices()))
+            .utterances
+            .into_iter()
+            .map(|utterance| utterance.voice)
+            .collect()
+    }
+
+    fn quinn() -> Voice {
+        Voice::Entity {
+            id: "quinn".to_owned(),
+            name: "Quinn".to_owned(),
+        }
+    }
+
+    #[test]
+    fn linked_sharing_follows_the_owners_answers() {
+        let root = tempfile::tempdir().unwrap();
+        let dir = attributed(root.path());
+        let before = vec![quinn(), Voice::Owner, quinn()];
+        assert_eq!(voices_of(&dir), before);
+
+        answer(
+            &dir,
+            &[
+                entry(1, Some("owner")),
+                entry(2, Some("pat")),
+                entry(3, None),
+            ],
+        );
+        assert_eq!(
+            voices_of(&dir),
+            vec![
+                Voice::Owner,
+                Voice::Entity {
+                    id: "pat".to_owned(),
+                    name: "Pat".to_owned()
+                },
+                Voice::Unidentified
+            ]
+        );
+
+        fs::remove_file(owner_line_labels_path(&dir)).unwrap();
+        assert_eq!(voices_of(&dir), before);
+    }
+
+    #[test]
+    fn linked_sharing_on_a_segment_without_labels_or_with_unreadable_answers() {
+        let root = tempfile::tempdir().unwrap();
+        let dir = attributed(root.path());
+        fs::write(owner_line_labels_path(&dir), "not a record").unwrap();
+        assert_eq!(voices_of(&dir), vec![Voice::Unidentified; 3]);
+
+        fs::remove_file(dir.join("talents/speaker_labels.json")).unwrap();
+        fs::remove_file(owner_line_labels_path(&dir)).unwrap();
+        assert_eq!(voices_of(&dir), vec![Voice::Unidentified; 3]);
+        answer(&dir, &[entry(2, Some("pat"))]);
+        assert_eq!(
+            voices_of(&dir),
+            vec![
+                Voice::Unidentified,
+                Voice::Entity {
+                    id: "pat".to_owned(),
+                    name: "Pat".to_owned()
+                },
+                Voice::Unidentified
+            ]
+        );
+
+        let mut changed = entry(2, Some("pat"));
+        changed.fingerprint.start = json!("00:00:09");
+        answer(&dir, &[changed]);
+        assert_eq!(voices_of(&dir), vec![Voice::Unidentified; 3]);
+    }
 }

@@ -473,4 +473,109 @@ mod tests {
             Ok(Some(read.version.fingerprint()))
         );
     }
+
+    #[test]
+    fn a_link_binds_the_version_a_read_sees_with_the_owners_answers() {
+        use sha2::{Digest, Sha256};
+
+        let journal = tempfile::tempdir().unwrap();
+        let dir = journal
+            .path()
+            .join("chronicle")
+            .join(DAY)
+            .join(STREAM)
+            .join("100000_300");
+        fs::create_dir_all(dir.join("talents")).unwrap();
+        let lines = [
+            r#"{"start":"00:00:01","speaker":1,"sentence_id":1,"text":"Let us begin"}"#,
+            r#"{"start":"00:00:02","speaker":2,"sentence_id":2,"text":"I will send it"}"#,
+        ];
+        fs::write(
+            dir.join("audio.jsonl"),
+            format!("{{\"raw\":\"audio.m4a\"}}\n{}\n", lines.join("\n")),
+        )
+        .unwrap();
+        let answers = |entries: &[(usize, &str)]| {
+            let entries = entries
+                .iter()
+                .map(|(line, speaker)| {
+                    let record: Value = serde_json::from_str(lines[line - 1]).unwrap();
+                    json!({
+                        "source": "audio",
+                        "sentence_id": line,
+                        "start": record["start"],
+                        "text_sha256": format!("{:x}", Sha256::digest(record["text"].as_str().unwrap())),
+                        "speaker": speaker,
+                        "set_at": "2026-10-31T12:00:00Z",
+                    })
+                })
+                .collect::<Vec<_>>();
+            fs::write(
+                dir.join("talents/owner_line_labels.json"),
+                json!({"version": 1, "entries": entries}).to_string(),
+            )
+            .unwrap();
+        };
+        let segment = Segment::resolve_exact(journal.path(), DAY, STREAM, "100000_300")
+            .unwrap()
+            .unwrap();
+        let speakers = AgentSpeakers {
+            voices: VoiceNames {
+                principal: "owner".to_owned(),
+                owner_voice_confirmed: true,
+                people: BTreeMap::from([("pat".to_owned(), "Pat".to_owned())]),
+            },
+            owner: "The owner".to_owned(),
+        };
+        let snapshot = ConnectionReadSnapshot {
+            categories: BTreeSet::new(),
+            scope: ConnectionScope::WholeJournal,
+            generation: 1,
+        };
+        let possible_names = ConnectionPossibleNames::new(journal.path(), &snapshot);
+        let read = || {
+            solstone_core_transcripts::read_segment_transcript_page(
+                &segment,
+                None,
+                Some(&speakers),
+                possible_names.labels(segment.path()).as_ref(),
+            )
+            .unwrap()
+        };
+        let check = || {
+            LiveTranscriptPages::with_speakers(Some(speakers.clone()), Arc::clone(&possible_names))
+                .check_first_page(journal.path(), &segment)
+        };
+
+        // A segment the journal never attributed.
+        let unanswered = read();
+        assert_eq!(check(), Ok(Some(unanswered.version.fingerprint())));
+        answers(&[(1, "pat")]);
+        let answered = read();
+        assert_eq!(answered.entries[0].text, "[00:00:01] Pat: Let us begin");
+        assert_ne!(answered.version, unanswered.version);
+        assert_eq!(check(), Ok(Some(answered.version.fingerprint())));
+
+        // An attributed one.
+        fs::write(
+            dir.join("talents/speaker_labels.json"),
+            json!({"labels":[{"sentence_id":2,"speaker":"owner","method":"owner_centroid"}]})
+                .to_string(),
+        )
+        .unwrap();
+        answers(&[(1, "owner"), (2, "pat")]);
+        let answered = read();
+        assert_eq!(
+            answered.entries[0].text,
+            "[00:00:01] The owner: Let us begin"
+        );
+        assert_eq!(answered.entries[1].text, "[00:00:02] Pat: I will send it");
+        assert_eq!(check(), Ok(Some(answered.version.fingerprint())));
+
+        // Without answers the read and the link are what they were.
+        fs::remove_file(dir.join("talents/speaker_labels.json")).unwrap();
+        fs::remove_file(dir.join("talents/owner_line_labels.json")).unwrap();
+        assert_eq!(read(), unanswered);
+        assert_eq!(check(), Ok(Some(unanswered.version.fingerprint())));
+    }
 }

@@ -23,6 +23,7 @@ mod percept_absence;
 mod possible_name_labels;
 mod segment_page;
 mod speaker_coordinates;
+mod who_spoke;
 
 use percept_absence::PerceptFamily;
 pub use percept_absence::screen_inputs_absent;
@@ -30,6 +31,9 @@ pub use solstone_core_processing_record::is_transcribe_output;
 
 pub use possible_name_labels::{PossibleNameLabels, label_statement, statement_text};
 pub use speaker_coordinates::{next_statement_ordinal, speaker_label_source};
+pub use who_spoke::{
+    JournalLabels, OWNER_ANSWER_METHOD, OwnerAnswer, UnreadableAnswers, WhoSpoke, load_who_spoke,
+};
 
 pub use segment_page::{
     AgentSpeakers, MAX_TRANSCRIPT_PAGE_BYTES, MAX_TRANSCRIPT_PAGE_ITEMS,
@@ -1307,25 +1311,21 @@ fn raw_content_with_speakers(
 }
 
 /// Sentence id to speaker name for the segment's labelled audio source, and
-/// that source's file stem. `None` when no line has a voice-identified speaker.
+/// that source's file stem: who spoke, with the owner's own answers applied.
+/// `None` when no line has a named speaker.
 fn segment_voices(dir: &Path, voices: &VoiceNames) -> Option<(String, BTreeMap<i64, String>)> {
-    let text = fs::read_to_string(dir.join("talents").join("speaker_labels.json")).ok()?;
-    let payload = serde_json::from_str::<Value>(&text).ok()?;
-    let names = payload
-        .get("labels")?
-        .as_array()?
+    let source = labelled_audio_source(dir)?;
+    let names = load_who_spoke(dir, Some(&source), None)
+        .rows
         .iter()
-        .filter_map(Value::as_object)
         .filter_map(|row| Some((row.get("sentence_id")?.as_i64()?, voices.name_for(row)?)))
         .collect::<BTreeMap<_, _>>();
-    if names.is_empty() {
-        return None;
-    }
-    Some((labelled_audio_source(dir)?, names))
+    (!names.is_empty()).then_some((source, names))
 }
 
-/// What the owner said in a segment, by recognized voice: the text of every
-/// labelled sentence `VoiceNames` names as the owner, in transcript order.
+/// What the owner said in a segment: the text of every sentence `VoiceNames`
+/// names as the owner, by recognized voice or the owner's own answer, in
+/// transcript order.
 pub fn owner_voice_lines(dir: &Path, voices: &VoiceNames) -> Vec<String> {
     let Some((source, names)) = segment_voices(dir, voices) else {
         return Vec::new();

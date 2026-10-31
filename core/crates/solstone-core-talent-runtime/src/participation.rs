@@ -512,18 +512,18 @@ fn collect_numbered_lines(
                 let labelled = solstone_core_transcripts::labelled_audio_source(segment_dir);
                 let mut owner_ids = BTreeSet::new();
                 if let Some(ref principal_id) = principal {
-                    let labels_file = segment_dir.join("talents").join("speaker_labels.json");
-                    if let Ok(text) = fs::read_to_string(labels_file)
-                        && let Ok(payload) = serde_json::from_str::<Value>(&text)
-                        && let Some(labels) = payload.get("labels").and_then(Value::as_array)
-                    {
-                        for label in labels.iter().filter_map(Value::as_object) {
-                            if label.get("speaker").and_then(Value::as_str)
-                                == Some(principal_id.as_str())
-                                && let Some(sid) = label.get("sentence_id").and_then(Value::as_i64)
-                            {
-                                owner_ids.insert(sid);
-                            }
+                    // Who spoke, with the owner's own answers applied.
+                    let who = solstone_core_transcripts::load_who_spoke(
+                        segment_dir,
+                        labelled.as_deref(),
+                        None,
+                    );
+                    for label in &who.rows {
+                        if label.get("speaker").and_then(Value::as_str)
+                            == Some(principal_id.as_str())
+                            && let Some(sid) = label.get("sentence_id").and_then(Value::as_i64)
+                        {
+                            owner_ids.insert(sid);
                         }
                     }
                 }
@@ -735,7 +735,7 @@ fn same_name(left: &str, right: &str) -> bool {
 }
 
 /// The voice of each line in a segment that a voice match or the owner's own
-/// assignment names, and whether the owner assigned it.
+/// assignment or answer names, and whether the owner set it.
 fn voice_labels(
     journal: &std::path::Path,
     day: &str,
@@ -743,11 +743,13 @@ fn voice_labels(
     stream: Option<&str>,
     voices: &solstone_core_transcripts::VoiceNames,
 ) -> Vec<(String, bool)> {
-    segment_talent_json(journal, day, segment, stream, "speaker_labels.json")
-        .and_then(|value| value.get("labels").and_then(Value::as_array).cloned())
-        .unwrap_or_default()
+    let Some(directory) = find_segment_dir(journal, day, segment, stream) else {
+        return Vec::new();
+    };
+    let source = solstone_core_transcripts::labelled_audio_source(&directory);
+    solstone_core_transcripts::load_who_spoke(&directory, source.as_deref(), None)
+        .rows
         .iter()
-        .filter_map(Value::as_object)
         .filter(|label| voices.name_for(label).is_some())
         .filter_map(|label| {
             let speaker = label.get("speaker").and_then(Value::as_str)?;
@@ -2857,5 +2859,162 @@ mod tests {
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0]["entity_id"], "person");
         assert_eq!(entries[0]["role"], "heard");
+    }
+
+    mod who_spoke {
+        use solstone_core_speaker_id::owner_line_labels::{
+            LineFingerprint, OwnerLineEntry, encode_owner_line_labels, owner_line_labels_path,
+        };
+
+        use super::*;
+
+        const LINES: [&str; 3] = [
+            r#"{"start":"00:00:01","speaker":1,"sentence_id":1,"text":"Let us begin"}"#,
+            r#"{"start":"00:00:02","speaker":2,"sentence_id":2,"text":"I will send it"}"#,
+            r#"{"start":"00:00:03","speaker":1,"sentence_id":3,"text":"Sounds good"}"#,
+        ];
+
+        /// Quinn heard by voice on lines 1 and 3, the owner matched on line 2.
+        fn attributed(root: &Path) -> std::path::PathBuf {
+            write_principal(root, "owner", "Olive Owner");
+            write_entity(root, "quinn", "Quinn", "Person");
+            write_entity(root, "pat", "Pat", "Person");
+            let dir = root.join(format!("chronicle/{DAY}/{SEGMENT}"));
+            fs::create_dir_all(dir.join("talents")).unwrap();
+            let mut jsonl = String::from("{\"raw\":\"audio.m4a\"}\n");
+            for line in LINES {
+                jsonl.push_str(line);
+                jsonl.push('\n');
+            }
+            fs::write(dir.join("audio.jsonl"), jsonl).unwrap();
+            write_json(
+                &dir.join("talents/speaker_labels.json"),
+                json!({"labels": [
+                    {"sentence_id": 1, "speaker": "quinn", "method": "acoustic", "confidence": "high"},
+                    {"sentence_id": 2, "speaker": "owner", "method": "owner_centroid", "confidence": "high"},
+                    {"sentence_id": 3, "speaker": "quinn", "method": "acoustic", "confidence": "high"}
+                ]}),
+            );
+            dir
+        }
+
+        fn entry(line: usize, speaker: Option<&str>) -> OwnerLineEntry {
+            let Value::Object(record) = serde_json::from_str(LINES[line - 1]).unwrap() else {
+                unreachable!()
+            };
+            OwnerLineEntry {
+                source: "audio".to_owned(),
+                sentence_id: line as i64,
+                fingerprint: LineFingerprint::of_record(&record),
+                speaker: speaker.map(str::to_owned),
+                set_at: "2026-10-31T12:00:00Z".to_owned(),
+            }
+        }
+
+        fn answer(dir: &Path, entries: &[OwnerLineEntry]) {
+            fs::write(
+                owner_line_labels_path(dir),
+                encode_owner_line_labels(entries),
+            )
+            .unwrap();
+        }
+
+        fn people() -> solstone_core_transcripts::VoiceNames {
+            solstone_core_transcripts::VoiceNames {
+                principal: "owner".to_owned(),
+                owner_voice_confirmed: false,
+                people: [
+                    ("quinn".to_owned(), "Quinn".to_owned()),
+                    ("pat".to_owned(), "Pat".to_owned()),
+                ]
+                .into(),
+            }
+        }
+
+        fn readers(root: &Path) -> (Vec<NumericLine>, Vec<(String, bool)>) {
+            (
+                collect_numbered_lines(root, DAY, &[SEGMENT], None).unwrap(),
+                voice_labels(root, DAY, SEGMENT, None, &people()),
+            )
+        }
+
+        fn line(number: i64, owner: bool) -> NumericLine {
+            NumericLine { number, owner }
+        }
+
+        #[test]
+        fn participation_follows_the_owners_answers() {
+            let root = tempfile::tempdir().unwrap();
+            let dir = attributed(root.path());
+            let before = (
+                vec![line(2, true)],
+                vec![("quinn".to_owned(), false), ("quinn".to_owned(), false)],
+            );
+            assert_eq!(readers(root.path()), before);
+
+            // Quinn's first line was the owner's, the owner's line was Pat's,
+            // and Quinn's second line was someone the owner doesn't know.
+            answer(
+                &dir,
+                &[
+                    entry(1, Some("owner")),
+                    entry(2, Some("pat")),
+                    entry(3, None),
+                ],
+            );
+            let (numbered, voices) = readers(root.path());
+            assert_eq!(voices, vec![("pat".to_owned(), true)]);
+            assert_eq!(numbered, vec![line(1, false)]);
+
+            // The owner's line marked unknown counts toward its Speaker N; the
+            // line the owner claimed does not.
+            answer(&dir, &[entry(1, Some("owner")), entry(2, None)]);
+            let (numbered, voices) = readers(root.path());
+            assert_eq!(numbered, vec![line(2, false)]);
+            assert_eq!(voices, vec![("quinn".to_owned(), false)]);
+
+            fs::remove_file(owner_line_labels_path(&dir)).unwrap();
+            assert_eq!(readers(root.path()), before);
+        }
+
+        #[test]
+        fn participation_hears_an_answer_on_a_segment_without_labels() {
+            let root = tempfile::tempdir().unwrap();
+            let dir = attributed(root.path());
+            fs::remove_file(dir.join("talents/speaker_labels.json")).unwrap();
+            let before = (vec![line(1, false), line(2, false), line(1, false)], vec![]);
+            assert_eq!(readers(root.path()), before);
+
+            answer(&dir, &[entry(1, Some("pat"))]);
+            assert_eq!(
+                readers(root.path()),
+                (
+                    vec![line(2, false), line(1, false)],
+                    vec![("pat".to_owned(), true)]
+                )
+            );
+        }
+
+        #[test]
+        fn unreadable_or_inert_answers_in_participation() {
+            let root = tempfile::tempdir().unwrap();
+            let dir = attributed(root.path());
+            fs::write(owner_line_labels_path(&dir), "not a record").unwrap();
+            assert_eq!(
+                readers(root.path()),
+                (vec![line(1, false), line(2, false), line(1, false)], vec![])
+            );
+
+            let mut changed = entry(2, Some("pat"));
+            changed.fingerprint.text_sha256 = "0".repeat(64);
+            answer(&dir, &[changed]);
+            assert_eq!(
+                readers(root.path()),
+                (
+                    vec![line(2, true)],
+                    vec![("quinn".to_owned(), false), ("quinn".to_owned(), false)]
+                )
+            );
+        }
     }
 }

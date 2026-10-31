@@ -5657,6 +5657,7 @@ dependencies = [
  "solstone-core-generate",
  "solstone-core-journal-config",
  "solstone-core-processing-record",
+ "solstone-core-speaker-id",
  "solstone-core-system-health",
  "solstone-core-talent-runtime",
  "solstone-core-transcripts",

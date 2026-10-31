@@ -21,7 +21,9 @@ use solstone_core_journal_io::paths::{Segment, segment_origin};
 use solstone_core_processing_record::is_transcribe_output;
 
 use crate::possible_name_labels::label_line;
-use crate::{PossibleNameLabels, VoiceNames, next_statement_ordinal, speaker_label_source};
+use crate::{
+    PossibleNameLabels, VoiceNames, load_who_spoke, next_statement_ordinal, speaker_label_source,
+};
 
 /// Who an agent's transcript line names: only a speaker the journal's voice
 /// gate names (the same gate an activity's Story reads), with the owner's own
@@ -345,26 +347,16 @@ fn source_version(
 
 // Resolve only names used by this segment, through the voice gate: a name the
 // journal inferred from what was said, or a declined owner match, names no one.
+// The owner's own answers apply; both files are read within the page bound.
 fn local_speaker_names(
     segment: &Path,
     speakers: &AgentSpeakers,
 ) -> Option<(String, BTreeMap<i64, String>)> {
-    let path = segment.join("talents/speaker_labels.json");
-    let file = File::open(path).ok()?;
-    let mut bytes = Vec::new();
-    file.take(MAX_TRANSCRIPT_PAGE_BYTES as u64 + 1)
-        .read_to_end(&mut bytes)
-        .ok()?;
-    if bytes.len() > MAX_TRANSCRIPT_PAGE_BYTES {
-        return None;
-    }
-    let payload: Value = serde_json::from_slice(&bytes).ok()?;
-    let rows = payload.get("labels")?.as_array()?;
     let (source, _) = speaker_label_source(segment);
     let source = source?;
-    let labels = rows
+    let labels = load_who_spoke(segment, Some(&source), Some(MAX_TRANSCRIPT_PAGE_BYTES))
+        .rows
         .iter()
-        .filter_map(Value::as_object)
         .filter_map(|row| {
             let id = row.get("sentence_id")?.as_i64()?;
             let name = speakers.voices.name_for(row)?;

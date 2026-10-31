@@ -6,8 +6,9 @@
 //! Owner-voice mode removes audio based on voice evidence. The owner's own
 //! answers about who spoke a line (`talents/owner_line_labels.json`) are not
 //! voice evidence, so only the code listed here may name the file, its path
-//! constant, its path helper or its readers. A reader that decides who spoke
-//! adds itself here when it lands; nothing else is pre-allowed.
+//! constant, its path helper or its readers. Readers that show who spoke get
+//! the answers only through the who-spoke loader, and only the readers listed
+//! here may call it; nothing else is pre-allowed.
 
 use std::collections::BTreeSet;
 use std::fs;
@@ -23,7 +24,7 @@ const TOKENS: [&str; 5] = [
 ];
 
 /// Production sources allowed to reach the file, relative to `core/crates`.
-const ALLOWED: [&str; 7] = [
+const ALLOWED: [&str; 8] = [
     // The store itself: format and read, then set, remove and restore.
     "solstone-core-speaker-id/src/owner_line_labels.rs",
     "solstone-core-speaker-resolve/src/owner_line_labels.rs",
@@ -36,6 +37,27 @@ const ALLOWED: [&str; 7] = [
     "solstone-core-entity/src/store/merge_rollback.rs",
     // Entity reference scans.
     "solstone-core-facets/src/store/reference_scan.rs",
+    // The who-spoke loader.
+    "solstone-core-transcripts/src/who_spoke.rs",
+];
+
+/// The tokens that reach the who-spoke loader.
+const LOADER_TOKENS: [&str; 1] = ["load_who_spoke"];
+
+/// Production sources allowed to call the who-spoke loader: the loader itself
+/// and the readers that show who spoke, relative to `core/crates`.
+const LOADER_ALLOWED: [&str; 6] = [
+    "solstone-core-transcripts/src/who_spoke.rs",
+    // The talent transcript view and the owner's own lines.
+    "solstone-core-transcripts/src/lib.rs",
+    // The agent and connected-agent segment page.
+    "solstone-core-transcripts/src/segment_page.rs",
+    // The transcript page's speaker chips.
+    "solstone-core-transcripts-web/src/segment_speakers.rs",
+    // Participation.
+    "solstone-core-talent-runtime/src/participation.rs",
+    // Linked sharing.
+    "solstone-core-linked-share/src/source.rs",
 ];
 
 fn is_test_source(path: &Path) -> bool {
@@ -95,9 +117,9 @@ fn production_part(source: &str) -> String {
     }
 }
 
-/// Every production source under `crates` that reaches the file, relative to
-/// `crates`. This census never scans its own crate.
-fn reaching_sources(crates: &Path) -> BTreeSet<String> {
+/// Every production source under `crates` that names one of `tokens`,
+/// relative to `crates`. This census never scans its own crate.
+fn reaching_sources(crates: &Path, tokens: &[&str]) -> BTreeSet<String> {
     let mut files = Vec::new();
     collect(crates, &mut files);
     files
@@ -112,7 +134,7 @@ fn reaching_sources(crates: &Path) -> BTreeSet<String> {
             let source = fs::read_to_string(&path).ok()?;
             let production = production_part(&source);
             let production = production.as_str();
-            TOKENS
+            tokens
                 .iter()
                 .any(|token| production.contains(token))
                 .then(|| relative.to_string_lossy().replace('\\', "/"))
@@ -120,20 +142,35 @@ fn reaching_sources(crates: &Path) -> BTreeSet<String> {
         .collect()
 }
 
-/// What breaks the census: a source that reaches the file without being
-/// allowed, or an allowed source that no longer reaches it.
+/// What breaks the census: a source that reaches the file or calls the
+/// loader without being allowed, or an allowed source that no longer does.
 fn census_violations(crates: &Path) -> Vec<String> {
-    let reaching = reaching_sources(crates);
-    let allowed = ALLOWED.iter().map(|path| (*path).to_owned()).collect();
-    let mut violations = reaching
-        .difference(&allowed)
-        .map(|path| format!("{path} reaches the owner's line answers but isn't allowed to"))
-        .collect::<Vec<_>>();
-    violations.extend(
-        allowed
-            .difference(&reaching)
-            .map(|path| format!("{path} is allowed but no longer reaches the file; remove it")),
-    );
+    let mut violations = Vec::new();
+    for (tokens, allowed, what) in [
+        (
+            &TOKENS[..],
+            &ALLOWED[..],
+            "reaches the owner's line answers",
+        ),
+        (
+            &LOADER_TOKENS[..],
+            &LOADER_ALLOWED[..],
+            "calls the who-spoke loader",
+        ),
+    ] {
+        let reaching = reaching_sources(crates, tokens);
+        let allowed = allowed.iter().map(|path| (*path).to_owned()).collect();
+        violations.extend(
+            reaching
+                .difference(&allowed)
+                .map(|path| format!("{path} {what} but isn't allowed to")),
+        );
+        violations.extend(
+            allowed
+                .difference(&reaching)
+                .map(|path| format!("{path} is allowed but no longer {what}; remove it")),
+        );
+    }
     violations
 }
 
@@ -158,6 +195,13 @@ fn the_census_fails_on_an_unlisted_reference_and_ignores_tests() {
         let path = crates.join(allowed);
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(path, "const FILE: &str = \"owner_line_labels.json\";\n").unwrap();
+    }
+    for allowed in LOADER_ALLOWED {
+        let path = crates.join(allowed);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let mut contents = fs::read_to_string(&path).unwrap_or_default();
+        contents.push_str("use x::load_who_spoke;\n");
+        fs::write(path, contents).unwrap();
     }
     let write = |relative: &str, contents: &str| {
         let path = crates.join(relative);
@@ -190,7 +234,24 @@ fn the_census_fails_on_an_unlisted_reference_and_ignores_tests() {
         ]
     );
 
+    write(
+        "solstone-core-voice/src/evidence.rs",
+        "fn evidence(dir: &Path) { let _ = solstone_core_transcripts::load_who_spoke(dir, None, None); }\n",
+    );
+    assert_eq!(
+        census_violations(crates),
+        vec![
+            "solstone-core-voice/src/evidence.rs calls the who-spoke loader but isn't allowed to"
+                .to_owned()
+        ]
+    );
+
     write("solstone-core-voice/src/evidence.rs", "fn evidence() {}\n");
     write("solstone-core-entity/src/store/merge.rs", "fn merge() {}\n");
     assert_eq!(census_violations(crates).len(), 1);
+    write(
+        "solstone-core-linked-share/src/source.rs",
+        "fn segment_labels() {}\n",
+    );
+    assert_eq!(census_violations(crates).len(), 2);
 }

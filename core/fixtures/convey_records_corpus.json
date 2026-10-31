@@ -116,6 +116,12 @@
       "why": "an unhandled exception is not a contract worth reproducing; the sibling speakers corpus already carries this same deviation for its own media route."
     },
     {
+      "native": "carries who_spoke_present beside present and loaded.",
+      "path_or_field": "/app/transcripts/api/segment/{day}/{stream}/{segment} speaker_labels",
+      "reference": "present, loaded, source and ambiguous only.",
+      "why": "the owner's own answers about who spoke can name lines on a segment with no speaker labels file, so whether chips show and whether speaker fixes are offered are separate facts"
+    },
+    {
       "path_or_field": "synthetic audio JSONL start/end and displayed source clocks",
       "reference": "captured seeder uses segment-relative placeholder clocks",
       "native": "source rows and expected display/source references use absolute wall clocks; expected numeric epochs are unchanged",
@@ -3618,7 +3624,8 @@
               "ambiguous": false,
               "loaded": false,
               "present": false,
-              "source": null
+              "source": null,
+              "who_spoke_present": false
             },
             "transcripts_copy": {
               "TR_SPEAKER_ACTION_UNAVAILABLE": "speaker change unavailable",
@@ -3708,7 +3715,8 @@
               "ambiguous": false,
               "loaded": false,
               "present": false,
-              "source": null
+              "source": null,
+              "who_spoke_present": false
             },
             "transcripts_copy": {
               "TR_SPEAKER_ACTION_UNAVAILABLE": "speaker change unavailable",
@@ -3798,7 +3806,8 @@
               "ambiguous": false,
               "loaded": false,
               "present": false,
-              "source": null
+              "source": null,
+              "who_spoke_present": false
             },
             "transcripts_copy": {
               "TR_SPEAKER_ACTION_UNAVAILABLE": "speaker change unavailable",
@@ -3888,7 +3897,8 @@
               "ambiguous": false,
               "loaded": false,
               "present": false,
-              "source": null
+              "source": null,
+              "who_spoke_present": false
             },
             "transcripts_copy": {
               "TR_SPEAKER_ACTION_UNAVAILABLE": "speaker change unavailable",
@@ -3978,7 +3988,8 @@
               "ambiguous": false,
               "loaded": false,
               "present": false,
-              "source": null
+              "source": null,
+              "who_spoke_present": false
             },
             "transcripts_copy": {
               "TR_SPEAKER_ACTION_UNAVAILABLE": "speaker change unavailable",
@@ -4078,7 +4089,8 @@
               "ambiguous": false,
               "loaded": false,
               "present": false,
-              "source": null
+              "source": null,
+              "who_spoke_present": false
             },
             "transcripts_copy": {
               "TR_SPEAKER_ACTION_UNAVAILABLE": "speaker change unavailable",
@@ -4178,7 +4190,8 @@
               "ambiguous": false,
               "loaded": false,
               "present": false,
-              "source": null
+              "source": null,
+              "who_spoke_present": false
             },
             "transcripts_copy": {
               "TR_SPEAKER_ACTION_UNAVAILABLE": "speaker change unavailable",
@@ -4319,7 +4332,8 @@
               "ambiguous": false,
               "loaded": true,
               "present": true,
-              "source": "mic_audio"
+              "source": "mic_audio",
+              "who_spoke_present": true
             },
             "transcripts_copy": {
               "TR_SPEAKER_ACTION_UNAVAILABLE": "speaker change unavailable",
@@ -4470,7 +4484,8 @@
               "ambiguous": true,
               "loaded": true,
               "present": true,
-              "source": null
+              "source": null,
+              "who_spoke_present": true
             },
             "transcripts_copy": {
               "TR_SPEAKER_ACTION_UNAVAILABLE": "speaker change unavailable",
@@ -4631,7 +4646,8 @@
               "ambiguous": true,
               "loaded": false,
               "present": true,
-              "source": null
+              "source": null,
+              "who_spoke_present": true
             },
             "transcripts_copy": {
               "TR_SPEAKER_ACTION_UNAVAILABLE": "speaker change unavailable",
@@ -4768,7 +4784,8 @@
               "ambiguous": false,
               "loaded": false,
               "present": true,
-              "source": "mic_audio"
+              "source": "mic_audio",
+              "who_spoke_present": true
             },
             "transcripts_copy": {
               "TR_SPEAKER_ACTION_UNAVAILABLE": "speaker change unavailable",
@@ -4919,7 +4936,8 @@
               "ambiguous": false,
               "loaded": true,
               "present": true,
-              "source": "mic_audio"
+              "source": "mic_audio",
+              "who_spoke_present": true
             },
             "transcripts_copy": {
               "TR_SPEAKER_ACTION_UNAVAILABLE": "speaker change unavailable",
@@ -5060,7 +5078,8 @@
               "ambiguous": false,
               "loaded": true,
               "present": true,
-              "source": "mic_audio"
+              "source": "mic_audio",
+              "who_spoke_present": true
             },
             "transcripts_copy": {
               "TR_SPEAKER_ACTION_UNAVAILABLE": "speaker change unavailable",
@@ -5201,7 +5220,8 @@
               "ambiguous": false,
               "loaded": true,
               "present": true,
-              "source": "mic_audio"
+              "source": "mic_audio",
+              "who_spoke_present": true
             },
             "transcripts_copy": {
               "TR_SPEAKER_ACTION_UNAVAILABLE": "speaker change unavailable",
@@ -5342,7 +5362,8 @@
               "ambiguous": false,
               "loaded": true,
               "present": true,
-              "source": "mic_audio"
+              "source": "mic_audio",
+              "who_spoke_present": true
             },
             "transcripts_copy": {
               "TR_SPEAKER_ACTION_UNAVAILABLE": "speaker change unavailable",

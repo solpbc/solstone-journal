@@ -12,14 +12,20 @@ use serde_json::Value;
 use solstone_core_entity::{is_admissible_person, load_all_journal_entities};
 use solstone_core_journal_io::zip2_name::{Zip2NameFailure, prove_zip2_directory};
 use solstone_core_npy::parse_npy;
+use solstone_core_transcripts::{JournalLabels, OwnerAnswer, load_who_spoke};
 use zip::ZipArchive;
 
 #[derive(Clone, Serialize)]
 pub(crate) struct SpeakerLabelsState {
+    /// The segment has its own speaker labels file.
     pub(crate) present: bool,
+    /// That file was read as a labels record.
     pub(crate) loaded: bool,
     pub(crate) source: Option<String>,
     pub(crate) ambiguous: bool,
+    /// The segment says who spoke: its own labels, an owner answer that
+    /// applies, or owner answers that can't be read.
+    pub(crate) who_spoke_present: bool,
 }
 #[derive(Clone, Serialize)]
 pub(crate) struct SpeakerLabel {
@@ -39,6 +45,10 @@ pub(crate) struct SpeakerJoin {
     /// Names of admissible people, for voices already confirmed as someone.
     pub(crate) person_names: BTreeMap<String, String>,
     pub(crate) principal: Option<String>,
+    /// The owner's answers that apply to lines of `state.source`, by sentence id.
+    pub(crate) owner_set: BTreeMap<i64, OwnerAnswer>,
+    /// The owner's answers can't be read: every line is an unnamed voice.
+    pub(crate) owner_unreadable: bool,
 }
 
 /// The anonymous voice a sentence belongs to when nobody has named that sentence.
@@ -93,9 +103,12 @@ pub(crate) fn load(
     has_audio_transcript: bool,
 ) -> SpeakerJoin {
     let path = dir.join("talents/speaker_labels.json");
-    let present = path.is_file();
-    let (source, ambiguous) = if present {
-        solstone_core_transcripts::speaker_label_source(dir)
+    let (page_source, page_ambiguous) = solstone_core_transcripts::speaker_label_source(dir);
+    let who = load_who_spoke(dir, page_source.as_deref(), None);
+    let present = who.labels != JournalLabels::Absent;
+    let who_spoke_present = who.present();
+    let (source, ambiguous) = if present || who_spoke_present {
+        (page_source, page_ambiguous)
     } else {
         (None, false)
     };
@@ -107,9 +120,19 @@ pub(crate) fn load(
             now,
         ));
     }
+    if let Some(unreadable) = &who.owner_unreadable {
+        warnings.push(crate::segment::WarningDetail {
+            kind: "owner_line_labels".into(),
+            file: unreadable.file.display().to_string(),
+            message:
+                "your answers about who spoke can't be read, so no one is named in this segment"
+                    .into(),
+            ts: now.to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+        });
+    }
     let mut labels = BTreeMap::new();
-    let mut loaded = false;
-    let entities = match if present || has_audio_transcript {
+    let loaded = who.labels == JournalLabels::Loaded;
+    let entities = match if who_spoke_present || has_audio_transcript {
         load_all_journal_entities(journal_root)
     } else {
         Ok(Vec::new())
@@ -151,66 +174,54 @@ pub(crate) fn load(
         .next()
         .map(|entity| entity.id.clone())
         .filter(|_| principals.next().is_none());
-    if present {
-        match fs_read_json(&path) {
-            Some(Value::Object(payload)) => match payload.get("labels").and_then(Value::as_array) {
-                Some(rows) => {
-                    loaded = true;
-                    for row in rows.iter().filter_map(Value::as_object) {
-                        let Some(id) = row.get("sentence_id").and_then(Value::as_i64) else {
-                            continue;
-                        };
-                        let Some(entity_id) = row.get("speaker").and_then(Value::as_str) else {
-                            continue;
-                        };
-                        if !admitted_entity_ids.contains(entity_id) {
-                            continue;
-                        }
-                        let name = entities
-                            .iter()
-                            .find(|entity| entity.id == entity_id)
-                            .and_then(|entity| entity.value.get("name"))
-                            .and_then(Value::as_str)
-                            .unwrap_or(entity_id)
-                            .to_owned();
-                        let confidence = row.get("confidence").cloned().unwrap_or(Value::Null);
-                        let confidence_state = match confidence.as_str() {
-                            Some("high" | "medium") => confidence.as_str().unwrap().to_owned(),
-                            _ => "unknown".into(),
-                        };
-                        labels.insert(
-                            id,
-                            SpeakerLabel {
-                                name,
-                                entity_id: entity_id.into(),
-                                confidence,
-                                confidence_state,
-                                method: row.get("method").cloned().unwrap_or(Value::Null),
-                                owner_margin_declined: row
-                                    .get("owner_margin_declined")
-                                    .and_then(Value::as_bool)
-                                    .unwrap_or(false),
-                                acoustic_margin_declined: row
-                                    .get("acoustic_margin_declined")
-                                    .and_then(Value::as_bool)
-                                    .unwrap_or(false),
-                                is_owner: principal.as_deref() == Some(entity_id),
-                            },
-                        );
-                    }
-                }
-                None => warnings.push(warning(
-                    &path,
-                    "speaker labels are unavailable for this segment",
-                    now,
-                )),
-            },
-            _ => warnings.push(warning(
-                &path,
-                "speaker labels are unavailable for this segment",
-                now,
-            )),
+    if who.labels == JournalLabels::Damaged {
+        warnings.push(warning(
+            &path,
+            "speaker labels are unavailable for this segment",
+            now,
+        ));
+    }
+    for row in &who.rows {
+        let Some(id) = row.get("sentence_id").and_then(Value::as_i64) else {
+            continue;
+        };
+        let Some(entity_id) = row.get("speaker").and_then(Value::as_str) else {
+            continue;
+        };
+        if !admitted_entity_ids.contains(entity_id) {
+            continue;
         }
+        let name = entities
+            .iter()
+            .find(|entity| entity.id == entity_id)
+            .and_then(|entity| entity.value.get("name"))
+            .and_then(Value::as_str)
+            .unwrap_or(entity_id)
+            .to_owned();
+        let confidence = row.get("confidence").cloned().unwrap_or(Value::Null);
+        let confidence_state = match confidence.as_str() {
+            Some("high" | "medium") => confidence.as_str().unwrap().to_owned(),
+            _ => "unknown".into(),
+        };
+        labels.insert(
+            id,
+            SpeakerLabel {
+                name,
+                entity_id: entity_id.into(),
+                confidence,
+                confidence_state,
+                method: row.get("method").cloned().unwrap_or(Value::Null),
+                owner_margin_declined: row
+                    .get("owner_margin_declined")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false),
+                acoustic_margin_declined: row
+                    .get("acoustic_margin_declined")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false),
+                is_owner: principal.as_deref() == Some(entity_id),
+            },
+        );
     }
     SpeakerJoin {
         state: SpeakerLabelsState {
@@ -218,11 +229,14 @@ pub(crate) fn load(
             loaded,
             source,
             ambiguous,
+            who_spoke_present,
         },
         labels,
         warnings,
         person_names,
         principal,
+        owner_set: who.owner_set,
+        owner_unreadable: who.owner_unreadable.is_some(),
     }
 }
 
@@ -246,9 +260,6 @@ fn warning(path: &Path, message: &str, now: DateTime<Utc>) -> crate::segment::Wa
         message: message.into(),
         ts: now.to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
     }
-}
-fn fs_read_json(path: &Path) -> Option<Value> {
-    serde_json::from_reader(File::open(path).ok()?).ok()
 }
 fn read_statement_ids(path: &Path) -> Result<Option<Vec<i64>>, Zip2NameFailure> {
     let Ok(file) = File::open(path) else {

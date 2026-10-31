@@ -772,6 +772,68 @@ mod tests {
     use std::fs;
 
     #[test]
+    fn a_quote_is_said_by_you_on_the_line_the_owner_says_was_theirs() {
+        use solstone_core_speaker_id::owner_line_labels::{
+            LineFingerprint, OwnerLineEntry, encode_owner_line_labels, owner_line_labels_path,
+        };
+        let root = tempfile::tempdir().unwrap();
+        let dir = root.path().join("chronicle/20260101/watch/090000_300");
+        fs::create_dir_all(dir.join("talents")).unwrap();
+        let lines = [
+            r#"{"start":"00:00:01","speaker":1,"sentence_id":1,"text":"We should ship the deck"}"#,
+            r#"{"start":"00:00:02","speaker":2,"sentence_id":2,"text":"I will send it"}"#,
+        ];
+        fs::write(dir.join("audio.jsonl"), lines.join("\n") + "\n").unwrap();
+        fs::write(
+            dir.join("talents/speaker_labels.json"),
+            json!({"labels":[
+                {"sentence_id":1,"speaker":"quinn","method":"acoustic"},
+                {"sentence_id":2,"speaker":"owner","method":"owner_centroid"}
+            ]})
+            .to_string(),
+        )
+        .unwrap();
+        let voices = VoiceNames {
+            principal: "owner".into(),
+            owner_voice_confirmed: true,
+            people: [
+                ("quinn".to_owned(), "Quinn".to_owned()),
+                ("pat".to_owned(), "Pat".to_owned()),
+            ]
+            .into(),
+        };
+        let record = json!({"segments":["090000_300"]})
+            .as_object()
+            .unwrap()
+            .clone();
+        let said = || {
+            normalize_words(&owner_heard(root.path(), "20260101", &record, Some(&voices)).unwrap())
+        };
+        assert!(quoted_from("I will send it", &said()));
+        assert!(!quoted_from("We should ship the deck", &said()));
+
+        let entry = |line: usize, speaker: &str| {
+            let Value::Object(record) = serde_json::from_str(lines[line - 1]).unwrap() else {
+                unreachable!()
+            };
+            OwnerLineEntry {
+                source: "audio".into(),
+                sentence_id: line as i64,
+                fingerprint: LineFingerprint::of_record(&record),
+                speaker: Some(speaker.into()),
+                set_at: "2026-10-31T12:00:00Z".into(),
+            }
+        };
+        fs::write(
+            owner_line_labels_path(&dir),
+            encode_owner_line_labels(&[entry(1, "owner"), entry(2, "pat")]),
+        )
+        .unwrap();
+        assert!(quoted_from("We should ship the deck", &said()));
+        assert!(!quoted_from("I will send it", &said()));
+    }
+
+    #[test]
     fn source_note_provenance_is_replaced_with_the_body_and_owner_held_together() {
         let root = tempfile::tempdir().unwrap();
         solstone_core_facets::create_facet(root.path(), "work", "Work", "", "", "", None).unwrap();

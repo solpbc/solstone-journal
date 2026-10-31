@@ -605,7 +605,18 @@ fn audio_chunks(
         let has_embedding = ids
             .as_ref()
             .is_some_and(|ids| sid.is_some_and(|id| ids.contains(&id)));
-        let mut chunk = json!({"type":"audio","time":start,"timestamp":produced.chunks.iter().find(|chunk| chunk.source.as_ref() == Some(row)).and_then(|chunk| chunk.occurrence_time_ms).map_or(0, |value| local_wall_instant(context.zone, value.0)),"markdown":markdown,"sentence_id":sid,"speaker_source":source,"has_embedding":has_embedding,"speaker_actionable":speakers.state.present && speakers.state.loaded && speakers.state.source.as_deref() == Some(source) && has_embedding,"source_ref":{"start":start,"source":row.get("source"),"speaker":row.get("speaker")}});
+        let labelled = speakers.state.source.as_deref() == Some(source);
+        // The owner's own answer for this line, if one applies.
+        let answer = sid
+            .and_then(|id| speakers.owner_set.get(&id))
+            .filter(|_| labelled);
+        let actionable = speakers.state.present
+            && speakers.state.loaded
+            && labelled
+            && has_embedding
+            && answer.is_none()
+            && !speakers.owner_unreadable;
+        let mut chunk = json!({"type":"audio","time":start,"timestamp":produced.chunks.iter().find(|chunk| chunk.source.as_ref() == Some(row)).and_then(|chunk| chunk.occurrence_time_ms).map_or(0, |value| local_wall_instant(context.zone, value.0)),"markdown":markdown,"sentence_id":sid,"speaker_source":source,"has_embedding":has_embedding,"speaker_actionable":actionable,"source_ref":{"start":start,"source":row.get("source"),"speaker":row.get("speaker")}});
         if let Some((ref audio_url, origin_ms)) = placement_media
             && let Some(obj) = chunk.as_object_mut()
         {
@@ -620,17 +631,28 @@ fn audio_chunks(
         }
         if let Some(label) = sid
             .and_then(|id| speakers.labels.get(&id))
-            .filter(|_| speakers.state.source.as_deref() == Some(source))
+            .filter(|_| labelled)
         {
             chunk
                 .as_object_mut()
                 .unwrap()
                 .insert("speaker_label".into(), serde_json::to_value(label).unwrap());
-        } else if let Some(voice) = sid.and_then(|id| voices.get(&id)) {
+        } else if let Some(voice) = sid
+            .and_then(|id| voices.get(&id))
+            // A line the owner answered for, or a segment whose answers
+            // can't be read, never takes a pool voice's name.
+            .filter(|_| answer.is_none() && !speakers.owner_unreadable)
+        {
             chunk
                 .as_object_mut()
                 .unwrap()
                 .insert("speaker_voice".into(), serde_json::to_value(voice).unwrap());
+        }
+        if let Some(answer) = answer {
+            chunk.as_object_mut().unwrap().insert(
+                "owner_line_label".into(),
+                json!({"speaker": answer.speaker, "set_at": answer.set_at}),
+            );
         }
         chunks.push(chunk);
     }
@@ -2602,5 +2624,312 @@ mod tests {
 
         assert!(prepared.audio.is_empty());
         assert!(prepared.screen.is_empty());
+    }
+
+    mod who_spoke {
+        use std::fs;
+        use std::io::Write;
+        use std::path::Path;
+
+        use serde_json::{Value, json};
+        use sha2::{Digest, Sha256};
+        use zip::ZipWriter;
+
+        const DAY: &str = "20260101";
+        const STREAM: &str = "_default";
+        const KEY: &str = "120000_60";
+        const LINES: [&str; 3] = [
+            r#"{"start":"00:00:01","speaker":1,"sentence_id":1,"text":"Let us begin"}"#,
+            r#"{"start":"00:00:02","speaker":2,"sentence_id":2,"text":"I will send it"}"#,
+            r#"{"start":"00:00:03","speaker":1,"sentence_id":3,"text":"Sounds good"}"#,
+        ];
+
+        fn npz(path: &Path, ids: &[i32]) {
+            let mut zip = ZipWriter::new(fs::File::create(path).unwrap());
+            let options = zip::write::SimpleFileOptions::default()
+                .compression_method(zip::CompressionMethod::Stored);
+            zip.start_file("statement_ids.npy", options).unwrap();
+            let payload = ids
+                .iter()
+                .flat_map(|id| id.to_le_bytes())
+                .collect::<Vec<_>>();
+            zip.write_all(&solstone_core_npy::write_npy(
+                "<i4",
+                &format!("({},)", ids.len()),
+                &payload,
+            ))
+            .unwrap();
+            zip.finish().unwrap();
+        }
+
+        /// The owner, Quinn and Pat; Quinn is heard by voice on lines 1 and 3, a
+        /// pool voice confirmed as Quinn covers line 3, and the owner's voice is
+        /// matched on line 2.
+        fn attributed(root: &Path) -> std::path::PathBuf {
+            for entity in [
+                json!({"id":"owner","name":"Owner","type":"Person","is_principal":true}),
+                json!({"id":"quinn","name":"Quinn","type":"Person"}),
+                json!({"id":"pat","name":"Pat","type":"Person"}),
+            ] {
+                let dir = root.join("entities").join(entity["id"].as_str().unwrap());
+                fs::create_dir_all(&dir).unwrap();
+                fs::write(dir.join("entity.json"), entity.to_string()).unwrap();
+            }
+            let dir = root.join("chronicle").join(DAY).join(KEY);
+            fs::create_dir_all(dir.join("talents")).unwrap();
+            let mut jsonl = String::from("{\"raw\":\"audio.flac\"}\n");
+            for line in LINES {
+                jsonl.push_str(line);
+                jsonl.push('\n');
+            }
+            fs::write(dir.join("audio.jsonl"), jsonl).unwrap();
+            npz(&dir.join("audio.npz"), &[1, 2, 3]);
+            fs::write(
+                dir.join("talents/speaker_labels.json"),
+                json!({"labels": [
+                    {"sentence_id": 1, "speaker": "quinn", "method": "acoustic", "confidence": "high"},
+                    {"sentence_id": 2, "speaker": "owner", "method": "owner_centroid", "confidence": "high"},
+                    {"sentence_id": 3, "speaker": "quinn", "method": "acoustic", "confidence": "high"}
+                ]})
+                .to_string(),
+            )
+            .unwrap();
+            fs::create_dir_all(root.join("awareness")).unwrap();
+            fs::write(
+                root.join("awareness/speaker_candidates.json"),
+                json!({"next_id":20,"candidates":[
+                    {"cand_id":7,"centroid":[1.0],"status":"confirmed","confirmed_entity":"quinn","source_segments":[
+                        {"day":DAY,"stream_layout":"direct","stream":STREAM,"segment_key":KEY,"source":"audio","cluster_label":1,"sentence_ids":[3]}
+                    ]}
+                ]})
+                .to_string(),
+            )
+            .unwrap();
+            dir
+        }
+
+        /// The speaker part of the page: its label state, warning kinds, and
+        /// each audio line's speaker fields.
+        fn page(root: &Path) -> Value {
+            let value =
+                super::super::prepare_segment(root, DAY, STREAM, KEY, chrono::Utc::now()).unwrap();
+            let lines = value["chunks"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|chunk| chunk["type"] == "audio")
+                .map(|chunk| {
+                    let mut line = serde_json::Map::new();
+                    for key in [
+                        "sentence_id",
+                        "speaker_label",
+                        "speaker_voice",
+                        "speaker_actionable",
+                        "owner_line_label",
+                    ] {
+                        if let Some(field) = chunk.get(key) {
+                            line.insert(key.to_owned(), field.clone());
+                        }
+                    }
+                    Value::Object(line)
+                })
+                .collect::<Vec<_>>();
+            let warnings = value["warning_details"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|warning| warning["type"].clone())
+                .collect::<Vec<_>>();
+            json!({"speaker_labels": value["speaker_labels"], "warnings": warnings, "lines": lines})
+        }
+
+        fn answer(dir: &Path, entries: &[(usize, Option<&str>)]) {
+            let entries = entries
+                .iter()
+                .map(|(line, speaker)| {
+                    let record: Value = serde_json::from_str(LINES[line - 1]).unwrap();
+                    json!({
+                        "source": "audio",
+                        "sentence_id": line,
+                        "start": record["start"],
+                        "text_sha256": format!("{:x}", Sha256::digest(record["text"].as_str().unwrap())),
+                        "speaker": speaker,
+                        "set_at": "2026-10-31T12:00:00Z",
+                    })
+                })
+                .collect::<Vec<_>>();
+            fs::write(
+                dir.join("talents/owner_line_labels.json"),
+                json!({"version": 1, "entries": entries}).to_string(),
+            )
+            .unwrap();
+        }
+
+        /// The page without the who-spoke presence flag, which is new, and
+        /// that flag.
+        fn before_shape(mut page: Value) -> (Value, bool) {
+            let present = page["speaker_labels"]
+                .as_object_mut()
+                .unwrap()
+                .remove("who_spoke_present")
+                .unwrap();
+            (page, present.as_bool().unwrap())
+        }
+
+        fn label(name: &str, id: &str, method: &str, is_owner: bool) -> Value {
+            json!({"name":name,"entity_id":id,"confidence":"high","confidence_state":"high","method":method,"owner_margin_declined":false,"acoustic_margin_declined":false,"is_owner":is_owner})
+        }
+
+        /// The attributed segment's speaker part before answers existed.
+        fn attributed_before() -> Value {
+            json!({"speaker_labels":{"present":true,"loaded":true,"source":"audio","ambiguous":false},"warnings":[],"lines":[
+                {"sentence_id":1,"speaker_label":label("Quinn","quinn","acoustic",false),"speaker_actionable":true},
+                {"sentence_id":2,"speaker_label":label("Owner","owner","owner_centroid",true),"speaker_actionable":true},
+                {"sentence_id":3,"speaker_label":label("Quinn","quinn","acoustic",false),"speaker_actionable":true}
+            ]})
+        }
+
+        /// The same segment without its labels file, before answers existed.
+        fn unlabelled_before() -> Value {
+            json!({"speaker_labels":{"present":false,"loaded":false,"source":null,"ambiguous":false},"warnings":[],"lines":[
+                {"sentence_id":1,"speaker_actionable":false},
+                {"sentence_id":2,"speaker_actionable":false},
+                {"sentence_id":3,"speaker_voice":{"voice_id":7,"entity_id":"quinn","name":"Quinn"},"speaker_actionable":false}
+            ]})
+        }
+
+        fn marker(speaker: Option<&str>) -> Value {
+            json!({"speaker": speaker, "set_at": "2026-10-31T12:00:00Z"})
+        }
+
+        #[test]
+        fn chips_follow_the_owners_answers() {
+            let temp = tempfile::tempdir().unwrap();
+            let root = temp.path();
+            let dir = attributed(root);
+            assert_eq!(before_shape(page(root)), (attributed_before(), true));
+
+            answer(&dir, &[(1, Some("owner")), (2, Some("pat")), (3, None)]);
+            let shown = page(root);
+            assert_eq!(shown["speaker_labels"]["who_spoke_present"], true);
+            assert_eq!(
+                shown["lines"],
+                json!([
+                    {"sentence_id":1,"speaker_label":label("Owner","owner","user_labeled",true),"speaker_actionable":false,"owner_line_label":marker(Some("owner"))},
+                    {"sentence_id":2,"speaker_label":label("Pat","pat","user_labeled",false),"speaker_actionable":false,"owner_line_label":marker(Some("pat"))},
+                    {"sentence_id":3,"speaker_actionable":false,"owner_line_label":marker(None)}
+                ])
+            );
+            // The line the owner doesn't know never takes the pool voice's name.
+            let full =
+                super::super::prepare_segment(root, DAY, STREAM, KEY, chrono::Utc::now()).unwrap();
+            let unknown = full["chunks"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|chunk| chunk["sentence_id"] == 3)
+                .unwrap()
+                .to_string()
+                .to_lowercase();
+            assert!(!unknown.contains("quinn"), "{unknown}");
+
+            fs::remove_file(dir.join("talents/owner_line_labels.json")).unwrap();
+            assert_eq!(before_shape(page(root)), (attributed_before(), true));
+            answer(&dir, &[]);
+            assert_eq!(before_shape(page(root)), (attributed_before(), true));
+        }
+
+        #[test]
+        fn an_answer_whose_person_is_hidden_names_no_one_and_takes_no_pool_voice() {
+            let temp = tempfile::tempdir().unwrap();
+            let root = temp.path();
+            let dir = attributed(root);
+            answer(&dir, &[(3, Some("pat"))]);
+            fs::write(
+                root.join("entities/pat/entity.json"),
+                json!({"id":"pat","name":"Pat","type":"Person","blocked":true}).to_string(),
+            )
+            .unwrap();
+            assert_eq!(
+                page(root)["lines"][2],
+                json!({"sentence_id":3,"speaker_actionable":false,"owner_line_label":marker(Some("pat"))})
+            );
+        }
+
+        #[test]
+        fn an_answer_shows_a_chip_on_a_segment_without_labels() {
+            let temp = tempfile::tempdir().unwrap();
+            let root = temp.path();
+            let dir = attributed(root);
+            fs::remove_file(dir.join("talents/speaker_labels.json")).unwrap();
+            assert_eq!(before_shape(page(root)), (unlabelled_before(), false));
+
+            answer(&dir, &[(1, Some("pat"))]);
+            let shown = page(root);
+            assert_eq!(
+                shown["speaker_labels"],
+                json!({"present":false,"loaded":false,"source":"audio","ambiguous":false,"who_spoke_present":true})
+            );
+            assert_eq!(
+                shown["lines"][0],
+                json!({"sentence_id":1,"speaker_label":label("Pat","pat","user_labeled",false),"speaker_actionable":false,"owner_line_label":marker(Some("pat"))})
+            );
+            assert_eq!(
+                shown["lines"].as_array().unwrap()[1..],
+                unlabelled_before()["lines"].as_array().unwrap()[1..]
+            );
+        }
+
+        #[test]
+        fn unreadable_answers_name_no_one_and_warn_on_their_own() {
+            let temp = tempfile::tempdir().unwrap();
+            let root = temp.path();
+            let dir = attributed(root);
+            fs::write(dir.join("talents/owner_line_labels.json"), "not a record").unwrap();
+            let shown = page(root);
+            assert_eq!(shown["warnings"], json!(["owner_line_labels"]));
+            assert_eq!(shown["speaker_labels"]["who_spoke_present"], true);
+            assert_eq!(
+                shown["lines"],
+                json!([
+                    {"sentence_id":1,"speaker_actionable":false},
+                    {"sentence_id":2,"speaker_actionable":false},
+                    {"sentence_id":3,"speaker_actionable":false}
+                ])
+            );
+
+            fs::remove_file(dir.join("talents/owner_line_labels.json")).unwrap();
+            assert_eq!(before_shape(page(root)), (attributed_before(), true));
+        }
+
+        #[test]
+        fn an_answer_for_a_changed_line_changes_no_chip() {
+            let temp = tempfile::tempdir().unwrap();
+            let root = temp.path();
+            let dir = attributed(root);
+            answer(&dir, &[(1, Some("owner")), (2, Some("pat")), (3, None)]);
+            let jsonl = fs::read_to_string(dir.join("audio.jsonl")).unwrap();
+            fs::write(
+                dir.join("audio.jsonl"),
+                jsonl.replace("Let us begin", "Let us start"),
+            )
+            .unwrap();
+            let answered = page(root);
+            assert!(answered["lines"][0].get("owner_line_label").is_none());
+            fs::remove_file(dir.join("talents/owner_line_labels.json")).unwrap();
+            assert_eq!(page(root)["lines"][0], answered["lines"][0]);
+
+            // On a segment without labels, an answer that applies nowhere
+            // leaves the page as it was.
+            fs::remove_file(dir.join("talents/speaker_labels.json")).unwrap();
+            fs::write(dir.join("audio.jsonl"), &jsonl).unwrap();
+            answer(&dir, &[(1, Some("pat"))]);
+            fs::write(
+                dir.join("audio.jsonl"),
+                jsonl.replace("Let us begin", "Let us start"),
+            )
+            .unwrap();
+            assert_eq!(before_shape(page(root)), (unlabelled_before(), false));
+        }
     }
 }

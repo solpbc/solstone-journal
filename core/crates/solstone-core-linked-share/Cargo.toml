@@ -27,4 +27,5 @@ solstone-core-talent-runtime.workspace = true
 solstone-core-transcripts.workspace = true
 
 [dev-dependencies]
+solstone-core-speaker-id.workspace = true
 tempfile = "3.24.0"
