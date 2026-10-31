@@ -1710,7 +1710,7 @@
     },
     {
       "exit_code": 2,
-      "human_stdout": "solstone journal check — can this computer run the journal with the bundled local models?\n  [blocked] platform  Windows/AMD64 can't run the bundled local models yet — only Apple Silicon macOS, x86_64/aarch64 Linux and x86_64 Windows are supported.\nNot ready — this computer can't run the bundled local models yet.\n\nThink this readout is wrong for your machine? We'd love a patch — https://github.com/solpbc/solstone-journal\n",
+      "human_stdout": "solstone journal check — can this computer run the journal with the bundled local models?\n  [blocked] platform  Windows/AMD64 can't run the bundled local models yet. supported platforms are apple silicon macos, x86_64/aarch64 linux and x86_64/aarch64 windows.\nNot ready — this computer can't run the bundled local models yet.\n\nThink this readout is wrong for your machine? We'd love a patch — https://github.com/solpbc/solstone-journal\n",
       "inputs": {
         "bundled_local_selected_or_planned": true,
         "disk": {
@@ -1745,7 +1745,7 @@
         "checks": [
           {
             "available_bytes": null,
-            "detail": "Windows/AMD64 can't run the bundled local models yet — only Apple Silicon macOS, x86_64/aarch64 Linux and x86_64 Windows are supported.",
+            "detail": "Windows/AMD64 can't run the bundled local models yet. supported platforms are apple silicon macos, x86_64/aarch64 linux and x86_64/aarch64 windows.",
             "name": "platform",
             "required_bytes": null,
             "severity": "blocked",
@@ -1824,7 +1824,7 @@
     },
     {
       "exit_code": 2,
-      "human_stdout": "solstone journal check — can this computer run the journal with the bundled local models?\n  [blocked] platform  FreeBSD/x86_64 can't run the bundled local models yet — only Apple Silicon macOS, x86_64/aarch64 Linux and x86_64 Windows are supported.\nNot ready — this computer can't run the bundled local models yet.\n\nThink this readout is wrong for your machine? We'd love a patch — https://github.com/solpbc/solstone-journal\n",
+      "human_stdout": "solstone journal check — can this computer run the journal with the bundled local models?\n  [blocked] platform  FreeBSD/x86_64 can't run the bundled local models yet. supported platforms are apple silicon macos, x86_64/aarch64 linux and x86_64/aarch64 windows.\nNot ready — this computer can't run the bundled local models yet.\n\nThink this readout is wrong for your machine? We'd love a patch — https://github.com/solpbc/solstone-journal\n",
       "inputs": {
         "bundled_local_selected_or_planned": true,
         "disk": {
@@ -1859,7 +1859,7 @@
         "checks": [
           {
             "available_bytes": null,
-            "detail": "FreeBSD/x86_64 can't run the bundled local models yet — only Apple Silicon macOS, x86_64/aarch64 Linux and x86_64 Windows are supported.",
+            "detail": "FreeBSD/x86_64 can't run the bundled local models yet. supported platforms are apple silicon macos, x86_64/aarch64 linux and x86_64/aarch64 windows.",
             "name": "platform",
             "required_bytes": null,
             "severity": "blocked",

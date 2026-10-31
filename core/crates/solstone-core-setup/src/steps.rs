@@ -4168,10 +4168,16 @@ mod tests {
         );
     }
 
-    fn check_report(os: &str, vulkan_probe_ok: bool, devices: Value, free_gib: u64) -> CheckReport {
+    fn check_report(
+        os: &str,
+        arch: &str,
+        vulkan_probe_ok: bool,
+        devices: Value,
+        free_gib: u64,
+    ) -> CheckReport {
         let gib = 1024 * 1024 * 1024_u64;
         let inputs = serde_json::from_value(json!({
-            "platform": {"os": os, "os_version": "x", "arch": "x86_64"},
+            "platform": {"os": os, "os_version": "x", "arch": arch},
             "memory": {"total_bytes": 32 * gib, "available_bytes": 32 * gib},
             "disk": {"kind": "ok", "free_bytes": free_gib * gib},
             "journal_path": "/journal",
@@ -4191,11 +4197,15 @@ mod tests {
         let discrete = json!([{"index":0,"name":"Radeon RX 7600","device_type":2,"vram_mib":8192}]);
         let software_only =
             json!([{"index":0,"name":"llvmpipe (LLVM 17)","device_type":4,"vram_mib":0}]);
-        for os in ["Windows", "Linux"] {
+        for (os, arch) in [
+            ("Windows", "x86_64"),
+            ("Windows", "aarch64"),
+            ("Linux", "x86_64"),
+        ] {
             assert_eq!(
-                local_provider_readiness(&check_report(os, true, discrete.clone(), 100)),
+                local_provider_readiness(&check_report(os, arch, true, discrete.clone(), 100)),
                 LocalProviderReadiness::Ready,
-                "{os}: a hardware GPU keeps local as the default"
+                "{os}/{arch}: eligible hardware allows local setup"
             );
             for (label, probe_ok, devices) in [
                 ("no devices", true, json!([])),
@@ -4203,21 +4213,18 @@ mod tests {
                 ("probe could not run", false, json!([])),
             ] {
                 assert_eq!(
-                    local_provider_readiness(&check_report(os, probe_ok, devices, 100)),
+                    local_provider_readiness(&check_report(os, arch, probe_ok, devices, 100)),
                     LocalProviderReadiness::Unavailable,
-                    "{os}: {label}"
+                    "{os}/{arch}: {label}"
                 );
             }
             assert_eq!(
-                local_provider_readiness(&check_report(os, true, discrete.clone(), 1)),
+                local_provider_readiness(&check_report(os, arch, true, discrete.clone(), 1)),
                 LocalProviderReadiness::BootstrapBlocked,
-                "{os}: low disk blocks only the bootstrap"
+                "{os}/{arch}: low disk blocks only the bootstrap"
             );
         }
-        let mut unsupported = check_report("Windows", true, discrete, 100);
-        unsupported.checks.retain(|check| check.name == "platform");
-        unsupported.checks[0].severity = Severity::Blocked;
-        unsupported.overall = Severity::Blocked;
+        let unsupported = check_report("Windows", "x86", true, discrete, 100);
         assert_eq!(
             local_provider_readiness(&unsupported),
             LocalProviderReadiness::Unavailable
@@ -4226,27 +4233,29 @@ mod tests {
 
     #[test]
     fn windows_setup_readiness_enforces_6_gib_minimum() {
-        for (mib, expected) in [
-            (4096, LocalProviderReadiness::Unavailable),
-            (6143, LocalProviderReadiness::Unavailable),
-            (0, LocalProviderReadiness::Unavailable),
-            (6144, LocalProviderReadiness::Ready),
-            (8192, LocalProviderReadiness::Ready),
-        ] {
-            let dev = json!([{"index": 0, "name": "RTX", "device_type": 2, "vram_mib": mib}]);
-            let report = check_report("Windows", true, dev, 100);
+        for arch in ["x86_64", "aarch64"] {
+            for (mib, expected) in [
+                (4096, LocalProviderReadiness::Unavailable),
+                (6143, LocalProviderReadiness::Unavailable),
+                (0, LocalProviderReadiness::Unavailable),
+                (6144, LocalProviderReadiness::Ready),
+                (8192, LocalProviderReadiness::Ready),
+            ] {
+                let dev = json!([{"index": 0, "name": "RTX", "device_type": 2, "vram_mib": mib}]);
+                let report = check_report("Windows", arch, true, dev, 100);
+                assert_eq!(
+                    local_provider_readiness(&report),
+                    expected,
+                    "Windows/{arch} setup readiness for mib={mib}"
+                );
+            }
+            let failed_probe = check_report("Windows", arch, false, json!([]), 100);
             assert_eq!(
-                local_provider_readiness(&report),
-                expected,
-                "Windows setup readiness for mib={mib}"
+                local_provider_readiness(&failed_probe),
+                LocalProviderReadiness::Unavailable,
+                "Windows/{arch} setup readiness for failed probe"
             );
         }
-        let failed_probe = check_report("Windows", false, json!([]), 100);
-        assert_eq!(
-            local_provider_readiness(&failed_probe),
-            LocalProviderReadiness::Unavailable,
-            "Windows setup readiness for failed probe"
-        );
     }
 
     struct FixedCheck(LocalProviderReadiness);

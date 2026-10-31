@@ -563,15 +563,12 @@ fn placement_suffix(
 }
 /// Whether this host runs any of the bundled local capabilities.
 ///
-/// ⛔ Not "runs all of them". Windows ships and runs CED and RF-DETR today and
-/// has no local-STT lane yet; reporting the whole surface as blocked there told
-/// owners the machine could run none of it, which was false on a build that
-/// downloads a CED model on request. The per-capability rows carry what is
-/// actually true; this gate only decides whether the owner gets to see them.
+/// The per-capability rows carry hardware and asset readiness. This gate only
+/// decides whether the host's native platform can reach those checks.
 fn supported(platform: &PlatformInput) -> bool {
     (platform.os == "Darwin" && platform.arch == "arm64")
         || (platform.os == "Linux" && matches!(platform.arch.as_str(), "x86_64" | "aarch64"))
-        || (platform.os == "Windows" && platform.arch == "x86_64")
+        || (platform.os == "Windows" && matches!(platform.arch.as_str(), "x86_64" | "aarch64"))
 }
 fn overall(checks: &[Check]) -> Severity {
     if checks.iter().any(|item| item.severity == Severity::Blocked) {
@@ -600,7 +597,7 @@ pub fn build_check_report(inputs: &CheckInputs) -> CheckReport {
             "Intel Macs aren't supported — use an Apple Silicon Mac, or run the journal on supported Linux.".into()
         } else {
             format!(
-                "{}/{} can't run the bundled local models yet — only Apple Silicon macOS, x86_64/aarch64 Linux and x86_64 Windows are supported.",
+                "{}/{} can't run the bundled local models yet. supported platforms are apple silicon macos, x86_64/aarch64 linux and x86_64/aarch64 windows.",
                 inputs.platform.os, inputs.platform.arch
             )
         };
@@ -1219,7 +1216,6 @@ mod tests {
     fn windows_renders_the_capabilities_it_actually_ships() {
         let mut inputs = check_inputs(Some(CapabilityStatus::Ready), RfdetrCheckInput::Ready);
         inputs.platform.os = "Windows".into();
-        inputs.platform.arch = "x86_64".into();
         inputs.vulkan.devices = vec![VulkanDevice {
             index: 0,
             name: "RTX 4090".into(),
@@ -1227,38 +1223,68 @@ mod tests {
             vram_mib: 24_000,
         }];
 
-        let report = build_check_report(&inputs);
-        assert!(report.platform.supported, "windows/x86_64 is supported");
-        assert_eq!(report.overall, Severity::Ok);
-        assert_eq!(report.recommended_package, Some("solstone-journal"));
+        for arch in ["x86_64", "aarch64"] {
+            inputs.platform.arch = arch.into();
+            let report = build_check_report(&inputs);
+            assert!(report.platform.supported, "windows/{arch} is supported");
+            assert_eq!(report.overall, Severity::Ok);
+            assert_eq!(report.recommended_package, Some("solstone-journal"));
 
-        let names: Vec<_> = report.checks.iter().map(|item| item.name).collect();
-        assert!(names.contains(&"ced"), "{names:?}");
-        assert!(names.contains(&"rfdetr"), "{names:?}");
-        assert!(names.contains(&"gpu"), "{names:?}");
-        assert_eq!(report.checks[0].name, "platform");
-        assert_eq!(report.checks[0].severity, Severity::Ok);
+            let names: Vec<_> = report.checks.iter().map(|item| item.name).collect();
+            assert!(names.contains(&"ced"), "{names:?}");
+            assert!(names.contains(&"rfdetr"), "{names:?}");
+            assert!(names.contains(&"gpu"), "{names:?}");
+            assert_eq!(report.checks[0].name, "platform");
+            assert_eq!(report.checks[0].severity, Severity::Ok);
+        }
     }
 
-    /// The unsupported sentence names the real accept set, and Windows arm64 is
-    /// genuinely not in it.
+    /// An unshipped architecture still stops before capability checks.
     #[test]
     fn an_unsupported_host_is_told_what_is_actually_supported() {
         let mut inputs = check_inputs(None, RfdetrCheckInput::Omit);
         inputs.platform.os = "Windows".into();
-        inputs.platform.arch = "aarch64".into();
+        inputs.platform.arch = "x86".into();
 
         let report = build_check_report(&inputs);
         assert!(!report.platform.supported);
         assert_eq!(report.overall, Severity::Blocked);
         assert_eq!(report.checks.len(), 1);
-        assert!(
-            report.checks[0].detail.contains("x86_64 Windows"),
-            "{}",
-            report.checks[0].detail
-        );
-        // ⛔ The retired arm claimed Windows was unsupported outright.
-        assert!(!report.checks[0].detail.contains("Windows isn't supported"));
+        assert_eq!(report.checks[0].name, "platform");
+        assert_eq!(report.recommended_package, None);
+    }
+
+    #[test]
+    fn windows_arm64_capabilities_preserve_hardware_admission() {
+        let mut inputs = check_inputs(None, RfdetrCheckInput::Omit);
+        inputs.platform.os = "Windows".into();
+        inputs.platform.arch = "aarch64".into();
+        for (probe_ok, device_type, vram_mib, expected) in [
+            (true, 2, 6144, Severity::Ok),
+            (true, 2, 6143, Severity::Blocked),
+            (true, 4, 8192, Severity::Blocked),
+            (true, 2, 0, Severity::Unknown),
+            (false, 2, 8192, Severity::Unknown),
+        ] {
+            inputs.vulkan.probe_ok = probe_ok;
+            inputs.vulkan.devices = vec![VulkanDevice {
+                index: 0,
+                name: "Test GPU".into(),
+                device_type: Some(device_type),
+                vram_mib,
+            }];
+            let report = build_check_report(&inputs);
+            assert!(report.platform.supported);
+            let gpu = report.checks.iter().find(|row| row.name == "gpu").unwrap();
+            assert_eq!(
+                gpu.severity, expected,
+                "{probe_ok}/{device_type}/{vram_mib}"
+            );
+        }
+        inputs.vulkan.devices.clear();
+        inputs.vulkan.probe_ok = true;
+        let report = build_check_report(&inputs);
+        assert_eq!(report.checks[1].severity, Severity::Blocked);
     }
 
     #[cfg(all(test, feature = "full-tests"))]
