@@ -37,6 +37,25 @@ pub enum BackupRouteDrain {
     Failure,
 }
 
+/// RetainedArchive is not a drain acknowledgement or replacement authority.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BackupRouteStop {
+    Drained,
+    Pending,
+    RetainedArchive,
+    Failure,
+}
+
+impl BackupRouteStop {
+    fn ordinary(self) -> BackupRouteDrain {
+        match self {
+            Self::Drained => BackupRouteDrain::Drained,
+            Self::Pending | Self::RetainedArchive => BackupRouteDrain::Pending,
+            Self::Failure => BackupRouteDrain::Failure,
+        }
+    }
+}
+
 impl BackupRouteLifetime {
     /// Signal stop across all operations in this lifetime without waiting.
     ///
@@ -59,7 +78,19 @@ impl BackupRouteLifetime {
     /// Native joins run in retained blocking tasks, including thread-local
     /// destructors, so they cannot extend this caller's deadline.
     pub fn drain(&self, executor: &tokio::runtime::Handle, deadline: Instant) -> BackupRouteDrain {
-        self.drain_inner(executor, deadline, false)
+        self.drain_inner(executor, deadline, false, false)
+            .ordinary()
+    }
+
+    /// Observe retained archive custody only after this router's actual work and
+    /// joins finish. Keep the original lifetime/runtime on every non-Drained
+    /// result; this grants no recovery, replacement or remote-cancellation proof.
+    pub fn drain_for_stop(
+        &self,
+        executor: &tokio::runtime::Handle,
+        deadline: Instant,
+    ) -> BackupRouteStop {
+        self.drain_inner(executor, deadline, false, true)
     }
 
     pub(crate) fn drain_recovery(
@@ -71,7 +102,7 @@ impl BackupRouteLifetime {
         if !control.controls_recovery_of(&self.operations) {
             return BackupRouteDrain::Failure;
         }
-        self.drain_inner(executor, deadline, true)
+        self.drain_inner(executor, deadline, true, false).ordinary()
     }
 
     fn drain_inner(
@@ -79,7 +110,8 @@ impl BackupRouteLifetime {
         executor: &tokio::runtime::Handle,
         deadline: Instant,
         recovery: bool,
-    ) -> BackupRouteDrain {
+        observe_retained: bool,
+    ) -> BackupRouteStop {
         let mut attempted_settlement = false;
         loop {
             let mut guard = match self.operations.try_lock() {
@@ -91,7 +123,7 @@ impl BackupRouteLifetime {
                 Err(std::sync::TryLockError::WouldBlock) => {
                     let remaining = deadline.saturating_duration_since(Instant::now());
                     if remaining.is_zero() {
-                        return BackupRouteDrain::Pending;
+                        return BackupRouteStop::Pending;
                     }
                     std::thread::park_timeout(Duration::from_millis(10).min(remaining));
                     continue;
@@ -262,8 +294,7 @@ impl BackupRouteLifetime {
             } else {
                 0
             };
-            let blocked = !guard.threads.is_empty()
-                || guard.archive.is_busy()
+            let pending_work = !guard.threads.is_empty()
                 || guard.settlement_worker.is_some()
                 || self.operations.joining()
                 || !guard.join_batches.is_empty()
@@ -272,17 +303,35 @@ impl BackupRouteLifetime {
                 || cleanup_some
                 || prepared_pending;
 
+            let blocked = pending_work || guard.archive.is_busy();
             let closed = guard.closed;
             let join_failure = self.operations.join_failed();
 
             if join_failure {
-                return BackupRouteDrain::Failure;
+                return BackupRouteStop::Failure;
             }
 
             if blocked {
+                // Preserve the existing single settlement attempt before a
+                // retained outcome. This reads custody without releasing it.
+                if observe_retained
+                    && closed
+                    && !pending_work
+                    && !guard.archive.workers_running()
+                    && guard.failed_joins.is_empty()
+                    && guard.current.as_ref().is_none_or(|current| {
+                        current.pending_handoff_terminal.is_none() && current.handoff_poll.is_none()
+                    })
+                    && (!guard.archive.needs_settlement() || attempted_settlement)
+                    && solstone_core_backup::archive_admission::wait_for_archive_children(
+                        Duration::ZERO,
+                    )
+                {
+                    return BackupRouteStop::RetainedArchive;
+                }
                 let now = Instant::now();
                 if now >= deadline {
-                    return BackupRouteDrain::Pending;
+                    return BackupRouteStop::Pending;
                 }
                 let remaining = deadline - now;
                 let slice = Duration::from_millis(10).min(remaining);
@@ -294,14 +343,14 @@ impl BackupRouteLifetime {
             drop(guard);
 
             if !closed && !recovery {
-                return BackupRouteDrain::Pending;
+                return BackupRouteStop::Pending;
             }
 
             if join_failure {
-                return BackupRouteDrain::Failure;
+                return BackupRouteStop::Failure;
             }
 
-            return BackupRouteDrain::Drained;
+            return BackupRouteStop::Drained;
         }
     }
 

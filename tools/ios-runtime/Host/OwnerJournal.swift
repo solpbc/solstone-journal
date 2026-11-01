@@ -206,8 +206,9 @@ import UIKit
     guard retained else { return }
     do {
       await cancelAndDrain()
-      _ = try await runner.servingCall(runner.request(explicit ? "serve-stop" : "serve-suspend"), "owner.drained")
+      let reply = try await runner.servingCall(runner.request(explicit ? "serve-stop" : "serve-suspend"), "owner.drain-result")
       retained = false
+      runner.log("owner.drained", ["reply": reply])
     } catch { runner.log("owner.drain-failed", ["error": String(describing: error)]) }
   }
   func scene(_ active: Bool) {

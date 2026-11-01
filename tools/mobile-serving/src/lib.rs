@@ -113,8 +113,11 @@ impl MobileServingStop {
     }
 }
 
-#[derive(Debug)]
-pub struct ShutdownFailure;
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ShutdownFailure {
+    Unconfirmed,
+    RetainedArchive,
+}
 
 /// Startup can expose the authenticated door before a consumer refuses readiness.
 /// The caller must retain and retire this actual owner before allowing replacement.
@@ -756,7 +759,7 @@ impl MobileServing {
         use std::sync::atomic::Ordering;
         use stop_diagnostics::Phase;
         if self.shutdown_failed.load(Ordering::Acquire) {
-            return Err(ShutdownFailure);
+            return Err(ShutdownFailure::Unconfirmed);
         }
         if self.shutdown_complete.load(Ordering::Acquire) {
             return Ok(());
@@ -769,7 +772,7 @@ impl MobileServing {
         let mut service_owner =
             Phase::ServiceOwnerLock.run(|| self.services.lock().unwrap_or_else(|p| p.into_inner()));
         if self.shutdown_failed.load(Ordering::Acquire) {
-            return Err(ShutdownFailure);
+            return Err(ShutdownFailure::Unconfirmed);
         }
         if self.shutdown_complete.load(Ordering::Acquire) {
             return Ok(());
@@ -784,7 +787,7 @@ impl MobileServing {
             .is_err()
         {
             self.shutdown_failed.store(true, Ordering::Release);
-            return Err(ShutdownFailure);
+            return Err(ShutdownFailure::Unconfirmed);
         }
         #[cfg(all(test, feature = "full-tests"))]
         {
@@ -800,7 +803,7 @@ impl MobileServing {
             .is_err()
         {
             self.shutdown_failed.store(true, Ordering::Release);
-            return Err(ShutdownFailure);
+            return Err(ShutdownFailure::Unconfirmed);
         }
         if let Some(services) = service_owner.take() {
             let _ = services.shutdown.send(true);
@@ -829,21 +832,27 @@ impl MobileServing {
                 })
             });
             if self.shutdown_failed.load(Ordering::Acquire) {
-                return Err(ShutdownFailure);
+                return Err(ShutdownFailure::Unconfirmed);
             }
         }
         Phase::ShellDrain.run(|| self.runtime.block_on(self.handle.shutdown_and_wait()));
         Phase::BackupLifetimeDrain.run(|| {
             loop {
-                match lifetime.drain(
+                match lifetime.drain_for_stop(
                     self.runtime.handle(),
                     Instant::now() + Duration::from_secs(3600),
                 ) {
-                    solstone_core_backup_web::BackupRouteDrain::Drained => break Ok(()),
-                    solstone_core_backup_web::BackupRouteDrain::Pending => continue,
-                    solstone_core_backup_web::BackupRouteDrain::Failure => {
+                    solstone_core_backup_web::BackupRouteStop::Drained => break Ok(()),
+                    solstone_core_backup_web::BackupRouteStop::Pending => continue,
+                    solstone_core_backup_web::BackupRouteStop::RetainedArchive => {
+                        // Keep self, its runtime/bus/root, and the original slot.
+                        // Both native platform owners retain self on this Err.
+                        log::warn!("event=mobile_shutdown_retained archive_custody=true authorizes_release=false");
+                        return Err(ShutdownFailure::RetainedArchive);
+                    }
+                    solstone_core_backup_web::BackupRouteStop::Failure => {
                         self.shutdown_failed.store(true, Ordering::Release);
-                        return Err(ShutdownFailure);
+                        return Err(ShutdownFailure::Unconfirmed);
                     }
                 }
             }
@@ -1096,6 +1105,62 @@ mod tests {
             server
                 .shutdown_complete
                 .load(std::sync::atomic::Ordering::Acquire)
+        );
+
+        // An idle archive reservation differs from the live write above.
+        // The original server must survive an explicit retained outcome.
+        let (server, _directory) = fixture();
+        let deps = server.handle.backup_dependencies().clone();
+        let original = Arc::downgrade(&server.root);
+        let begun = solstone_core_backup_web::archive_worker::begin_owned(
+            &deps.operations,
+            "offload",
+            Arc::clone(&server.root),
+            Arc::clone(&deps.clock),
+        )
+        .unwrap();
+        let (send, receive) = std::sync::mpsc::channel();
+        let stopping = std::thread::spawn(move || {
+            let result = server.shutdown_for_retirement();
+            send.send((server, result)).unwrap();
+        });
+        let returned = receive.recv_timeout(Duration::from_secs(5));
+        let returned_without_release = returned.is_ok();
+        let retained = returned.as_ref().ok().map(|(server, result)| {
+            (
+                *result,
+                server
+                    .shutdown_complete
+                    .load(std::sync::atomic::Ordering::Acquire),
+                deps.lifetime().admit_maintenance().is_err(),
+                original
+                    .upgrade()
+                    .is_some_and(|root| root.revalidate_canonical_binding().is_ok()),
+                deps.lifetime()
+                    .drain(server.runtime.handle(), Instant::now())
+                    == solstone_core_backup_web::BackupRouteDrain::Pending,
+            )
+        });
+        // Cancel only this test's unstarted reservation so even a regression
+        // can join. This is not a release of an actual Held archive return.
+        begun.cancel_before_preparation(&deps.operations);
+        let (server, _) =
+            returned.unwrap_or_else(|_| receive.recv_timeout(Duration::from_secs(5)).unwrap());
+        stopping.join().unwrap();
+        server.shutdown_for_retirement().unwrap();
+        assert!(
+            returned_without_release,
+            "retained archive custody must return without pretending to retire it"
+        );
+        assert_eq!(
+            retained,
+            Some((
+                Err(ShutdownFailure::RetainedArchive),
+                false,
+                true,
+                true,
+                true
+            ))
         );
     }
 
