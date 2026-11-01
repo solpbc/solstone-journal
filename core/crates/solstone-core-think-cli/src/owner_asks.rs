@@ -27,6 +27,9 @@ use solstone_core_system::work_policy::WorkPolicy;
 use crate::activity::Seeded;
 use crate::activity_work::ActivityRetry;
 
+/// Why an asked activity that was handed to its work was dropped: the work
+/// was set aside or paused rather than finished.
+pub(crate) const ACTIVITY_SET_ASIDE: &str = "activity_set_aside";
 /// How many times one ask counts an attempt to re-make its week's page.
 pub(crate) const WEEK_ATTEMPTS: u32 = 3;
 /// At most one attempt is counted in this long while the page stays owed.
@@ -204,8 +207,47 @@ impl AskPass {
     }
 
     /// Settle which days the asks hold, from the pass-start snapshot of
-    /// activity work.
-    pub(crate) fn hold(&mut self, unfinished: &BTreeSet<ActivityRetry>) {
+    /// activity work. An asked activity whose work was set aside, failed past
+    /// its retries or paused, is no longer being run for the ask: it moves to
+    /// the ask's dropped activities, so nothing reads it as still updating.
+    pub(crate) fn hold(&mut self, journal: &Path, unfinished: &BTreeSet<ActivityRetry>) {
+        let mut set_aside = Vec::new();
+        for (id, ask) in &self.asks {
+            if self.waiting.contains_key(id) {
+                continue;
+            }
+            for name in &ask.seeded {
+                let identity = ActivityRetry {
+                    day: ask.day.clone(),
+                    facet: name.facet.clone(),
+                    activity: name.activity.clone(),
+                };
+                if !unfinished.contains(&identity)
+                    && crate::activity_work::has_persisted_disposition(
+                        journal,
+                        &identity.day,
+                        &identity.facet,
+                        &identity.activity,
+                    )
+                    .unwrap_or(false)
+                {
+                    set_aside.push((id.clone(), name.clone()));
+                }
+            }
+        }
+        for (id, name) in set_aside {
+            self.apply(journal, &id, |current| {
+                let mut next = current.clone();
+                if !next.seeded.remove(&name) {
+                    return None;
+                }
+                *next
+                    .dropped
+                    .entry(ACTIVITY_SET_ASIDE.to_owned())
+                    .or_default() += 1;
+                Some(Some(next))
+            });
+        }
         for (id, ask) in &self.asks {
             if self.waiting.contains_key(id) {
                 continue;

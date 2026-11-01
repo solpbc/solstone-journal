@@ -1948,7 +1948,7 @@ fn reconcile_pass_with_roots(
         journal,
         chrono::Utc::now().timestamp_millis(),
     );
-    asks.hold(&unfinished_activities);
+    asks.hold(journal, &unfinished_activities);
     let (held_activities, held_errors) = crate::discover_held_activities(journal);
     let (held_records, retry_errors) = work_retry::list(journal);
     let now = chrono::Utc::now();

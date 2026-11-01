@@ -693,6 +693,32 @@ fn owner_intents_leave_asks_alone_and_hold_them_until_they_end() {
 }
 
 #[test]
+fn an_asked_activity_whose_work_is_set_aside_leaves_the_ask_as_dropped() {
+    let root = journal();
+    let day = days_ago(90);
+    let asked = activity(root.path(), &day, "reading_090000_300", "090000_300");
+    let ask = owner_ask::record(root.path(), &day, std::slice::from_ref(&asked), false, 1).unwrap();
+    let queue = queue(root.path());
+    plan(root.path(), &queue);
+    let seeded = owner_ask::read(root.path()).unwrap()[&ask.id].clone();
+    assert_eq!(seeded.seeded, BTreeSet::from([asked.clone()]));
+    // Still running, it stays seeded.
+    plan(root.path(), &queue);
+    assert_eq!(owner_ask::read(root.path()).unwrap()[&ask.id], seeded);
+
+    edit_record(&work_record(root.path(), &day, &asked), |record| {
+        record["blocked"] = serde_json::json!({"reason_code": "fixture", "message": "fixture"});
+    });
+    plan(root.path(), &queue);
+    let dropped = owner_ask::read(root.path()).unwrap()[&ask.id].clone();
+    assert!(dropped.seeded.is_empty(), "{dropped:?}");
+    assert_eq!(
+        dropped.dropped,
+        BTreeMap::from([(crate::owner_asks::ACTIVITY_SET_ASIDE.to_owned(), 1)])
+    );
+}
+
+#[test]
 fn an_activity_that_cannot_run_again_is_dropped_and_counted() {
     let root = journal();
     let day = days_ago(90);
