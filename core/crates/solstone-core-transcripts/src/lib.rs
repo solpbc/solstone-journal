@@ -30,7 +30,9 @@ pub use percept_absence::screen_inputs_absent;
 pub use solstone_core_processing_record::is_transcribe_output;
 
 pub use possible_name_labels::{PossibleNameLabels, label_statement, statement_text};
-pub use speaker_coordinates::{next_statement_ordinal, speaker_label_source};
+pub use speaker_coordinates::{
+    line_coordinate, next_line_coordinate, next_statement_ordinal, speaker_label_source,
+};
 pub use who_spoke::{
     JournalLabels, OWNER_ANSWER_METHOD, OwnerAnswer, UnreadableAnswers, WhoSpoke, load_who_spoke,
 };
@@ -1333,12 +1335,14 @@ pub fn owner_voice_lines(dir: &Path, voices: &VoiceNames) -> Vec<String> {
     let Ok(text) = fs::read_to_string(dir.join(format!("{source}.jsonl"))) else {
         return Vec::new();
     };
+    let mut ordinal = 0;
     text.lines()
-        .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+        .filter_map(|line| match serde_json::from_str::<Value>(line.trim()) {
+            Ok(Value::Object(record)) => Some(record),
+            _ => None,
+        })
         .filter(|record| {
-            record
-                .get("sentence_id")
-                .and_then(Value::as_i64)
+            next_line_coordinate(record, &mut ordinal)
                 .and_then(|id| names.get(&id))
                 .is_some_and(|name| name == OWNER_VOICE)
         })
@@ -1410,12 +1414,14 @@ fn renumber_line(line: &str, numbers: &BTreeMap<i64, i64>) -> Option<String> {
 /// Rewrite each identified sentence's `speaker` to the name heard on it.
 fn name_speakers(text: &str, speakers: &BTreeMap<i64, String>) -> String {
     let mut output = String::with_capacity(text.len());
+    let mut ordinal = 0;
     for line in text.lines() {
-        let named = serde_json::from_str::<Value>(line)
+        let named = serde_json::from_str::<Value>(line.trim())
             .ok()
             .and_then(|value| match value {
                 Value::Object(mut record) => {
-                    let name = speakers.get(&record.get("sentence_id")?.as_i64()?)?;
+                    let id = next_line_coordinate(&record, &mut ordinal)?;
+                    let name = speakers.get(&id)?;
                     record.insert("speaker".to_owned(), Value::String(name.clone()));
                     Some(Value::Object(record).to_string())
                 }

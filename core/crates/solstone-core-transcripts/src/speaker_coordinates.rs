@@ -6,18 +6,41 @@
 use std::fs;
 use std::path::Path;
 
-use serde_json::Value;
+use serde_json::{Map, Value};
 
 /// Count statements from the start of each source, including non-rendered starts.
 /// Stored sentence_id fields are not the coordinates used by local speaker labels.
 pub fn next_statement_ordinal(line: &str, ordinal: &mut u64) -> Option<i64> {
     match serde_json::from_str::<Value>(line.trim()) {
-        Ok(Value::Object(value)) if value.contains_key("start") => {
-            *ordinal += 1;
-            i64::try_from(*ordinal).ok()
-        }
+        Ok(Value::Object(record)) => next_record_ordinal(&record, ordinal),
         _ => None,
     }
+}
+
+fn next_record_ordinal(record: &Map<String, Value>, ordinal: &mut u64) -> Option<i64> {
+    if !record.contains_key("start") {
+        return None;
+    }
+    *ordinal += 1;
+    i64::try_from(*ordinal).ok()
+}
+
+/// The coordinate who-spoke rows name a transcript line by: its stored
+/// `sentence_id`, or its statement `ordinal` when it stores none. Transcripts
+/// written before the transcriber stored sentence ids are named by ordinal; a
+/// stored id that isn't an integer names no line.
+pub fn line_coordinate(record: &Map<String, Value>, ordinal: Option<i64>) -> Option<i64> {
+    match record.get("sentence_id") {
+        None | Some(Value::Null) => ordinal,
+        Some(stored) => stored.as_i64(),
+    }
+}
+
+/// The next record's [`line_coordinate`], advancing `ordinal` exactly as
+/// [`next_statement_ordinal`] does for the line the record parsed from.
+pub fn next_line_coordinate(record: &Map<String, Value>, ordinal: &mut u64) -> Option<i64> {
+    let statement = next_record_ordinal(record, ordinal);
+    line_coordinate(record, statement)
 }
 
 fn audio_sources(dir: &Path) -> Vec<String> {
@@ -63,6 +86,27 @@ pub fn speaker_label_source(dir: &Path) -> (Option<String>, bool) {
 
 #[cfg(test)]
 mod tests {
+    use serde_json::{Map, Value, json};
+
+    fn record(value: Value) -> Map<String, Value> {
+        value.as_object().cloned().unwrap()
+    }
+
+    #[test]
+    fn a_line_is_named_by_its_stored_sentence_id_else_its_ordinal() {
+        let mut ordinal = 0;
+        let coordinates = [
+            json!({"start": "00:00:01", "text": "no stored id"}),
+            json!({"raw": "audio.flac"}),
+            json!({"start": "00:00:02", "sentence_id": 9}),
+            json!({"start": "00:00:03", "sentence_id": null}),
+            json!({"start": "00:00:04", "sentence_id": "4"}),
+        ]
+        .map(|value| super::next_line_coordinate(&record(value), &mut ordinal));
+        assert_eq!(coordinates, [Some(1), None, Some(9), Some(3), None]);
+        assert_eq!(ordinal, 4);
+    }
+
     #[test]
     fn only_start_bearing_objects_advance_the_statement_ordinal() {
         let mut ordinal = 0;

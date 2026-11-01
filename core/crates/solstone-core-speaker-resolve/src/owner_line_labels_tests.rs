@@ -402,7 +402,7 @@ fn a_pending_merge_recovery_refuses_every_change() {
 }
 
 #[test]
-fn lines_are_addressed_by_statement_ordinal_and_must_be_stored_with_it() {
+fn lines_are_addressed_by_statement_ordinal_and_a_stored_id_must_agree() {
     let root = journal();
     // A start-bearing row nobody renders comes first, so stored ids trail
     // the statement ordinals; the last stored id names no ordinal at all.
@@ -426,18 +426,16 @@ fn lines_are_addressed_by_statement_ordinal_and_must_be_stored_with_it() {
                 stored: Some(1),
             }
     });
-    assert_set_refused(root.path(), &[line(&offset, 1)], &person("ada"), |error| {
-        matches!(
-            error,
-            OwnerLineLabelError::LineIdMismatch { stored: None, .. }
-        )
-    });
     assert_set_refused(root.path(), &[line(&offset, 7)], &person("ada"), |error| {
         matches!(
             error,
             OwnerLineLabelError::LineNotFound { sentence_id: 7, .. }
         )
     });
+    // The row that stores no id is named by its ordinal, as every who-spoke
+    // reader names it.
+    set_owner_line_labels(root.path(), &[line(&offset, 1)], &person("ada")).unwrap();
+    assert_eq!(entries(&offset)[0].sentence_id, 1);
 
     let aligned = segment_with(
         root.path(),
@@ -458,6 +456,42 @@ fn lines_are_addressed_by_statement_ordinal_and_must_be_stored_with_it() {
     assert_eq!(stored[0].sentence_id, 2);
     assert_eq!(
         stored[0].fingerprint,
+        LineFingerprint::of_record(record.as_object().unwrap())
+    );
+}
+
+#[test]
+fn a_transcript_that_stores_no_sentence_ids_takes_answers_at_each_ordinal() {
+    let root = journal();
+    let unnumbered = segment_with(
+        root.path(),
+        "120000_300",
+        &[(
+            "audio.jsonl",
+            &jsonl(&[
+                json!({"raw": "audio.flac"}),
+                json!({"start": "00:00:01", "text": "one"}),
+                json!({"start": "00:00:02", "text": "two"}),
+            ]),
+        )],
+    );
+    set_owner_line_labels(
+        root.path(),
+        &[line(&unnumbered, 1), line(&unnumbered, 2)],
+        &person("ada"),
+    )
+    .unwrap();
+    let stored = entries(&unnumbered);
+    assert_eq!(
+        stored
+            .iter()
+            .map(|entry| entry.sentence_id)
+            .collect::<Vec<_>>(),
+        [1, 2]
+    );
+    let record = json!({"start": "00:00:02", "text": "two"});
+    assert_eq!(
+        stored[1].fingerprint,
         LineFingerprint::of_record(record.as_object().unwrap())
     );
 }

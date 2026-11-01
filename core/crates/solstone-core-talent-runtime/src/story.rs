@@ -197,7 +197,7 @@ fn spoken_lines(source: &EntrySource, alone: bool, numbered: bool) -> Option<Vec
             let start = record.get("start")?.as_str()?;
             ordinal += 1;
             let text = shown_text(record)?;
-            let voiced = match record.get("sentence_id").and_then(Value::as_i64) {
+            let voiced = match solstone_core_transcripts::line_coordinate(record, Some(ordinal)) {
                 Some(id) if source.voice_named.contains(&id) => {
                     // Agent reads apply labels by statement position; frame a
                     // voice only where both readings name the same line.
@@ -1631,6 +1631,27 @@ mod tests {
                 "An unidentified speaker said",
             ]
         );
+    }
+
+    #[test]
+    fn a_line_that_stores_no_sentence_id_is_framed_by_its_ordinal() {
+        let numbered = spoken(
+            "phone",
+            &[(json!(2), "Hello."), (json!("You"), "I paid it.")],
+            &[2],
+        );
+        let mut unnumbered = numbered.clone();
+        for (record, chunk) in unnumbered
+            .records
+            .iter_mut()
+            .zip(unnumbered.chunks.iter_mut())
+        {
+            record.remove("sentence_id");
+            chunk.1 = record.clone();
+        }
+        let framed = spoken_lines(&numbered, false, true);
+        assert!(framed.is_some());
+        assert_eq!(spoken_lines(&unnumbered, false, true), framed);
     }
 
     #[test]

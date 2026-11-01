@@ -13,7 +13,8 @@
 //!
 //! An answer applies only to the source the reader renders, and only while
 //! the line at its statement ordinal is still the line it was given for: the
-//! same start, the same text and the same stored sentence id. Otherwise it is
+//! same start and the same text, and a stored sentence id, if the line has
+//! one, equal to that ordinal (`line_coordinate`). Otherwise it is
 //! inert and the line reads from the journal's own row, as if there were no
 //! answer.
 
@@ -28,7 +29,7 @@ use solstone_core_speaker_id::owner_line_labels::{
     owner_line_labels_path, read_owner_line_labels,
 };
 
-use crate::next_statement_ordinal;
+use crate::{line_coordinate, next_statement_ordinal};
 
 /// The method an owner's answer reads with in a who-spoke row.
 pub const OWNER_ANSWER_METHOD: &str = "user_labeled";
@@ -253,7 +254,7 @@ fn applying(
         };
         if let Some(entry) = wanted.remove(&id)
             && let Ok(Value::Object(record)) = serde_json::from_str::<Value>(line.trim())
-            && record.get("sentence_id").and_then(Value::as_i64) == Some(id)
+            && line_coordinate(&record, Some(id)) == Some(id)
             && LineFingerprint::of_record(&record) == entry.fingerprint
         {
             applying.insert(
@@ -475,6 +476,31 @@ mod tests {
         assert_eq!(readers(root.path(), &dir), attributed_before());
         write_answers(&dir, &[]);
         assert_eq!(readers(root.path(), &dir), attributed_before());
+    }
+
+    #[test]
+    fn lines_that_store_no_sentence_id_are_named_by_their_ordinal_in_every_reader() {
+        let root = tempfile::tempdir().unwrap();
+        let dir = attributed_segment(root.path());
+        let mut jsonl = String::from("{\"raw\":\"audio.flac\"}\n");
+        for (index, line) in LINES.iter().enumerate() {
+            jsonl.push_str(&line.replace(&format!("\"sentence_id\":{},", index + 1), ""));
+            jsonl.push('\n');
+        }
+        assert!(!jsonl.contains("sentence_id"));
+        fs::write(dir.join("audio.jsonl"), jsonl).unwrap();
+        assert_eq!(readers(root.path(), &dir), attributed_before());
+
+        answer(&dir);
+        let (talent, page, said) = readers(root.path(), &dir);
+        assert_eq!(
+            talent,
+            "[00:00:01] You: Let us begin\n[00:00:02] Pat: I will send it\n[00:00:03] Speaker 1: Sounds good"
+        );
+        assert_eq!(page[0], "[00:00:01] The owner: Let us begin");
+        assert_eq!(page[1], "[00:00:02] Pat: I will send it");
+        assert_eq!(said, vec!["Let us begin".to_owned()]);
+        assert_eq!(load_who_spoke(&dir, Some("audio"), None).owner_set.len(), 3);
     }
 
     #[test]

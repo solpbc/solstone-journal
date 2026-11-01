@@ -320,12 +320,16 @@ fn set_locked(
                         audio_source: source.clone(),
                         sentence_id,
                     })?;
-            let stored = record.get("sentence_id").and_then(Value::as_i64);
-            if stored != Some(sentence_id) {
+            // Who-spoke readers name a line by its stored sentence id, or by
+            // its ordinal when it stores none; an answer is kept only where
+            // both name the same line.
+            if solstone_core_transcripts::line_coordinate(record, Some(sentence_id))
+                != Some(sentence_id)
+            {
                 return Err(OwnerLineLabelError::LineIdMismatch {
                     audio_source: source.clone(),
                     sentence_id,
-                    stored,
+                    stored: record.get("sentence_id").and_then(Value::as_i64),
                 });
             }
             let entry = OwnerLineEntry {

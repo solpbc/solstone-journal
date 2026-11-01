@@ -558,15 +558,24 @@ fn collect_numbered_lines(
             .and_then(|s| s.to_str());
         let is_labelled = file_stem.is_some() && file_stem == labelled_stem.as_deref();
 
+        // Each rendered chunk is a clone of one of the file's records, in
+        // file order; the records carry the line coordinates.
+        let mut records = entry_source.records.iter();
+        let mut ordinal = 0;
         for (_content, record) in &entry_source.chunks {
+            let mut line = None;
+            for candidate in records.by_ref() {
+                let coordinate =
+                    solstone_core_transcripts::next_line_coordinate(candidate, &mut ordinal);
+                if candidate == record {
+                    line = coordinate;
+                    break;
+                }
+            }
             let Some(number) = record.get("speaker").and_then(Value::as_i64) else {
                 continue;
             };
-            let owner = is_labelled
-                && record
-                    .get("sentence_id")
-                    .and_then(Value::as_i64)
-                    .is_some_and(|sid| owner_sentence_ids.contains(&sid));
+            let owner = is_labelled && line.is_some_and(|sid| owner_sentence_ids.contains(&sid));
             lines.push(NumericLine { number, owner });
         }
     }
@@ -1887,6 +1896,34 @@ mod tests {
             );
             assert!(entry.is_null(), "failed for method {method}: {entry}");
         }
+    }
+
+    #[test]
+    fn numbered_voice_labelled_to_owner_is_dropped_on_lines_that_store_no_sentence_id() {
+        let root = tempfile::tempdir().expect("temporary journal");
+        write_principal(root.path(), "jordan", "Jordan Rivers");
+        write_participation_fixture(
+            root.path(),
+            json!({"labels":[
+                {"sentence_id":1,"speaker":"jordan","method":"contextual"},
+                {"sentence_id":2,"speaker":"jordan","method":"contextual"},
+                {"sentence_id":3,"speaker":"jordan","method":"contextual"},
+            ]}),
+            json!([]),
+        );
+        let dir = root.path().join(format!("chronicle/{DAY}/{SEGMENT}"));
+        write_unembedded_segment(&dir, &[3, 3, 3]);
+        let jsonl = fs::read_to_string(dir.join("audio.jsonl")).unwrap();
+        let unnumbered = (1..=3).fold(jsonl, |text, id| {
+            text.replace(&format!(",\"sentence_id\":{id}"), "")
+        });
+        assert!(!unnumbered.contains("sentence_id"));
+        fs::write(dir.join("audio.jsonl"), unnumbered).unwrap();
+        let entry = apply(
+            root.path(),
+            json!({"name":"Speaker 3","role":"attendee","source":"speaker_label"}),
+        );
+        assert!(entry.is_null(), "{entry}");
     }
 
     #[test]
