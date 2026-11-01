@@ -51,6 +51,12 @@ pub struct BackfillPlan {
     pub selected: usize,
     pub protected_skipped: usize,
     pub skipped_no_embeddings: usize,
+    /// Segments whose labels file cannot be read or parsed. They are left
+    /// untouched and the rest of the journal goes ahead.
+    pub gap_skipped: usize,
+    /// Placeholder labels left as they are because the owner still has no
+    /// saved voice, so walking them again could only write the same placeholder.
+    pub stub_skipped: usize,
     pub to_process: Vec<BackfillSegmentKey>,
 }
 
@@ -70,8 +76,6 @@ pub enum BackfillError {
     Path(#[from] solstone_core_journal_io::PathError),
     #[error("backfill operation lock failed: {0}")]
     Trust(#[from] solstone_core_entity::EntityTrustLockError),
-    #[error("labels gap detected at {path}: {detail}")]
-    LabelsGap { path: PathBuf, detail: String },
 }
 
 /// Classify a parsed JSON label payload according to the 4-way classifier rules.
@@ -115,6 +119,10 @@ pub fn classify_speaker_labels_file(path: &Path) -> SpeakerLabelsClass {
 }
 
 /// Enumerate audio-bearing segments and apply the 4-way classifier.
+///
+/// One unreadable labels file never stops the rest: that segment is skipped
+/// and counted. A placeholder is walked again only once the owner has a saved
+/// voice, since without one the walk can only write the same placeholder.
 pub fn plan_backfill_segments(
     journal_root: &Path,
     reattribute: bool,
@@ -122,7 +130,11 @@ pub fn plan_backfill_segments(
     let mut total_scanned = 0;
     let mut skipped_no_embeddings = 0;
     let mut protected_skipped = 0;
+    let mut gap_skipped = 0;
+    let mut stub_skipped = 0;
     let mut to_process = Vec::new();
+    let mut first_gap: Option<PathBuf> = None;
+    let owner_absent = owner_voice_absent(journal_root);
 
     for segment in scan_segments(journal_root)? {
         total_scanned += 1;
@@ -134,10 +146,11 @@ pub fn plan_backfill_segments(
         let class = classify_speaker_labels_file(&labels_path);
         match class {
             SpeakerLabelsClass::Gap => {
-                return Err(BackfillError::LabelsGap {
-                    path: labels_path,
-                    detail: "malformed or unreadable speaker_labels.json".to_owned(),
-                });
+                gap_skipped += 1;
+                first_gap.get_or_insert(labels_path);
+            }
+            SpeakerLabelsClass::Stub if owner_absent && !reattribute => {
+                stub_skipped += 1;
             }
             SpeakerLabelsClass::Absent | SpeakerLabelsClass::Stub => {
                 to_process.push(BackfillSegmentKey {
@@ -162,11 +175,19 @@ pub fn plan_backfill_segments(
         }
     }
 
+    if let Some(path) = first_gap {
+        log::warn!(
+            "speaker label backfill skipped {gap_skipped} segment(s) whose speaker_labels.json cannot be read or parsed, first {}",
+            path.display()
+        );
+    }
     Ok(BackfillPlan {
         total_scanned,
         selected: to_process.len(),
         protected_skipped,
         skipped_no_embeddings,
+        gap_skipped,
+        stub_skipped,
         to_process,
     })
 }
@@ -613,12 +634,10 @@ mod tests {
         assert_eq!(plan.protected_skipped, 0);
         assert_eq!(plan.to_process.len(), 1);
 
-        // Turn labels into a Gap -> planning fails
+        // Turn labels into a Gap -> that segment is skipped and counted
         fs::write(segment_dir.join("talents/speaker_labels.json"), b"{}").unwrap();
-        assert!(matches!(
-            plan_backfill_segments(temp.path(), false),
-            Err(BackfillError::LabelsGap { .. })
-        ));
+        let plan = plan_backfill_segments(temp.path(), false).unwrap();
+        assert_eq!((plan.selected, plan.gap_skipped), (0, 1));
     }
 
     #[test]
@@ -799,6 +818,65 @@ mod tests {
     }
 
     #[test]
+    fn one_broken_labels_file_leaves_the_rest_and_placeholders_wait_for_a_saved_voice() {
+        let temp = Temp::new();
+        let segment = |name: &str, labels: &[u8]| {
+            let dir = temp.path().join("chronicle/20260808/mic").join(name);
+            fs::create_dir_all(dir.join("talents")).unwrap();
+            fs::write(dir.join("audio.npz"), b"fake npz").unwrap();
+            if !labels.is_empty() {
+                fs::write(dir.join("talents/speaker_labels.json"), labels).unwrap();
+            }
+        };
+        segment("120000_300", b"{broken json");
+        segment("120500_300", b"");
+        segment(
+            "121000_300",
+            br#"{"labels": [], "skipped": true, "reason": "no_owner_centroid"}"#,
+        );
+        let owner = temp.path().join("entities/owner");
+        fs::create_dir_all(&owner).unwrap();
+        fs::write(
+            owner.join("entity.json"),
+            serde_json::json!({"id":"owner","name":"owner","type":"Person","is_principal":true})
+                .to_string(),
+        )
+        .unwrap();
+
+        // No saved voice: the broken file is skipped, the unlabelled segment is
+        // still planned, and the placeholder is not walked again.
+        let plan = plan_backfill_segments(temp.path(), false).unwrap();
+        let planned: Vec<_> = plan
+            .to_process
+            .iter()
+            .map(|k| k.segment_key.as_str())
+            .collect();
+        assert_eq!(planned, ["120500_300"]);
+        assert_eq!((plan.gap_skipped, plan.stub_skipped), (1, 1));
+
+        // Re-attribution walks the placeholder regardless.
+        assert_eq!(
+            plan_backfill_segments(temp.path(), true)
+                .unwrap()
+                .stub_skipped,
+            0
+        );
+
+        // Once the owner saves a voice, the placeholder is planned again.
+        let centroid = owner_centroid_file(temp.path(), "owner").unwrap();
+        fs::create_dir_all(centroid.parent().unwrap()).unwrap();
+        fs::write(&centroid, b"saved").unwrap();
+        let plan = plan_backfill_segments(temp.path(), false).unwrap();
+        let planned: Vec<_> = plan
+            .to_process
+            .iter()
+            .map(|k| k.segment_key.as_str())
+            .collect();
+        assert_eq!(planned, ["120500_300", "121000_300"]);
+        assert_eq!((plan.gap_skipped, plan.stub_skipped), (1, 0));
+    }
+
+    #[test]
     fn gap_then_repair_to_stub_or_protected() {
         let temp = Temp::new();
         let segment_dir = temp.path().join("chronicle/20260808/mic/120000_300");
@@ -807,13 +885,11 @@ mod tests {
         fs::write(&label_path, b"{broken json").unwrap();
         fs::write(segment_dir.join("audio.npz"), b"fake npz").unwrap();
 
-        // Gap fails
-        assert!(matches!(
-            plan_backfill_segments(temp.path(), false),
-            Err(BackfillError::LabelsGap { .. })
-        ));
+        // Gap is skipped, never selected
+        let plan_gap = plan_backfill_segments(temp.path(), false).unwrap();
+        assert_eq!((plan_gap.selected, plan_gap.gap_skipped), (0, 1));
 
-        // Repair to stub -> succeeds and selects
+        // Repair to stub -> selects
         fs::write(&label_path, r#"{"labels": [], "skipped": true}"#).unwrap();
         let plan_stub = plan_backfill_segments(temp.path(), false).unwrap();
         assert_eq!(plan_stub.selected, 1);
