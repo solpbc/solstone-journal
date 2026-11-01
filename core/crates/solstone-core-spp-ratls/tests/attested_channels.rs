@@ -412,6 +412,23 @@ fn start_gateway_with_writer(
 fn start_gateway_with_proof_writer(
     config: ServerConfig,
     plan: GatewayPlan,
+    write_proof: impl FnMut(&mut StreamOwned<ServerConnection, TcpStream>, &[u8]) -> io::Result<()>
+    + Send
+    + 'static,
+    write_application: impl FnMut(
+        &mut StreamOwned<ServerConnection, TcpStream>,
+        &[u8],
+    ) -> io::Result<()>
+    + Send
+    + 'static,
+) -> Gateway {
+    start_gateway_with_admission_timeout(config, plan, IO_TIMEOUT, write_proof, write_application)
+}
+
+fn start_gateway_with_admission_timeout(
+    config: ServerConfig,
+    plan: GatewayPlan,
+    admission_timeout: Duration,
     mut write_proof: impl FnMut(&mut StreamOwned<ServerConnection, TcpStream>, &[u8]) -> io::Result<()>
     + Send
     + 'static,
@@ -465,7 +482,18 @@ fn start_gateway_with_proof_writer(
                 return;
             }
         }
-        observation.exporter_request = read_http_request(&mut stream).unwrap_or_default();
+        stream
+            .sock
+            .set_read_timeout(Some(admission_timeout))
+            .expect("admission timeout");
+        observation.exporter_request = match read_http_request(&mut stream) {
+            Ok(request) => request,
+            Err(_) => {
+                observed_sender.send(observation).expect("observation send");
+                return;
+            }
+        };
+        assert_eq!(observation.exporter_request, exact_exporter_request());
         let response = match plan.proof {
             GatewayResponse::None => None,
             GatewayResponse::Static(response) => Some(response),
@@ -510,15 +538,25 @@ fn start_gateway_with_proof_writer(
         if let Some(response) = response {
             write_proof(&mut stream, &response).expect("proof response");
         }
+        stream
+            .sock
+            .set_read_timeout(Some(IO_TIMEOUT))
+            .expect("application timeout");
         for response in plan.application_responses {
             let request = read_http_request(&mut stream).expect("bounded application request");
             observation.application_requests.push(request);
             write_application(&mut stream, &response).expect("application response");
         }
         if plan.capture_unanswered_application {
-            observation
-                .application_requests
-                .extend(read_http_request(&mut stream).ok());
+            let mut first = [0u8; 1];
+            if stream.read(&mut first).is_ok_and(|n| n > 0) {
+                // Even a partial request is application traffic on a channel
+                // whose appraisal may have rejected it.
+                let mut reader = io::Cursor::new(first).chain(&mut stream);
+                observation
+                    .application_requests
+                    .push(read_http_request(&mut reader).unwrap_or_else(|_| first.to_vec()));
+            }
         }
         observed_sender.send(observation).expect("observation send");
     });
@@ -526,6 +564,98 @@ fn start_gateway_with_proof_writer(
         port,
         observed: observed_receiver,
         handle: Some(handle),
+    }
+}
+
+#[test]
+fn proof_exchange_precedes_slow_appraisal_without_admitting_rejected_channels() {
+    struct SlowVerifier {
+        proof_sent: std::sync::Mutex<mpsc::Receiver<()>>,
+        reject: bool,
+    }
+    impl CompositeVerifier for SlowVerifier {
+        fn verify(
+            &self,
+            _: CpuBundle<'_>,
+            _: CompositeVerificationInput<'_>,
+        ) -> Result<CompositeVerdict, CompositeVerificationError> {
+            self.proof_sent
+                .lock()
+                .unwrap()
+                .recv_timeout(IO_TIMEOUT)
+                .map_err(|_| CompositeVerificationError {
+                    reason_code: "proof_not_sent_before_appraisal",
+                })?;
+            // Cross the gateway's short admission deadline while its proof
+            // waits in the socket. Its post-proof application timeout is longer.
+            thread::sleep(Duration::from_millis(400));
+            if self.reject {
+                Err(CompositeVerificationError {
+                    reason_code: "composite_appraisal_failed",
+                })
+            } else {
+                Ok(test_verdict())
+            }
+        }
+    }
+
+    for reject in [false, true] {
+        let (config, evidence) = certificate_with_evidence(&[7; 32], true, false);
+        let (proof_sent, proof_received) = mpsc::channel();
+        let gateway = start_gateway_with_admission_timeout(
+            config,
+            GatewayPlan {
+                proof: GatewayResponse::ValidProof(Box::new(evidence)),
+                application_responses: if reject {
+                    vec![]
+                } else {
+                    vec![static_response(200, b"synthetic result")]
+                },
+                capture_unanswered_application: true,
+            },
+            Duration::from_millis(200),
+            move |stream, response| {
+                stream.write_all(response)?;
+                stream.flush()?;
+                proof_sent.send(()).expect("proof sent signal");
+                Ok(())
+            },
+            |stream, response| stream.write_all(response),
+        );
+        let verifier = SlowVerifier {
+            proof_sent: std::sync::Mutex::new(proof_received),
+            reject,
+        };
+        let result = establish(gateway.port, &verifier);
+        if reject {
+            assert_eq!(rejected(result).reason_code, "composite_appraisal_failed");
+        } else {
+            let mut channel = result.expect("proof survives slow appraisal");
+            let response = send_json_request(
+                &mut channel,
+                "spp-engine",
+                "/v1/chat/completions",
+                Some("synthetic-credential"),
+                b"{\"synthetic\":true}",
+                false,
+            )
+            .expect("application request after admission");
+            assert_eq!(response.body, b"synthetic result");
+        }
+        let observation = gateway.finish();
+        assert_eq!(observation.exporter_request, exact_exporter_request());
+        if reject {
+            assert!(
+                observation.application_requests.is_empty(),
+                "no application bytes on a rejected channel"
+            );
+        } else {
+            assert_eq!(observation.application_requests.len(), 1);
+            let request = std::str::from_utf8(&observation.application_requests[0]).unwrap();
+            assert!(request.starts_with("POST /v1/chat/completions HTTP/1.1\r\n"));
+            assert!(request.contains("Authorization: Bearer synthetic-credential\r\n"));
+            assert!(request.ends_with("{\"synthetic\":true}"));
+        }
     }
 }
 
@@ -712,21 +842,22 @@ fn tls_client_rejects_a_tls12_only_gateway() {
 }
 
 #[test]
-fn certificate_rejection_writes_no_exporter_http_payload_and_closes() {
+fn certificate_rejection_allows_only_the_bodyless_proof_request_and_closes() {
     let (config, _) = certificate_with_evidence(&[7; 32], true, false);
     let gateway = start_gateway(
         config,
         GatewayPlan {
             proof: GatewayResponse::None,
             application_responses: vec![],
-            capture_unanswered_application: false,
+            capture_unanswered_application: true,
         },
     );
     let error = rejected(establish(gateway.port, &RejectingCompositeVerifier));
     assert_eq!(error.reason_code, "composite_appraisal_failed");
     let observation = gateway.finish();
     assert_preface(&observation);
-    assert!(observation.exporter_request.is_empty());
+    assert_eq!(observation.exporter_request, exact_exporter_request());
+    assert!(observation.application_requests.is_empty());
 }
 
 #[test]

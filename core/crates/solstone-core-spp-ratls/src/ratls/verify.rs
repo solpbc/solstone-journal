@@ -82,6 +82,28 @@ pub fn verify_certificate_evidence(
     quote_verifier: Option<&dyn QuoteVerifier>,
     composite_verifier: &dyn CompositeVerifier,
 ) -> Result<VerifiedCertificateEvidence, RatlsVerificationError> {
+    appraise_certificate_evidence(
+        parse_certificate_evidence(certificate_der, owner_nonce)?,
+        now,
+        nvattest_dir,
+        roots_dir,
+        policy,
+        quote_verifier,
+        composite_verifier,
+    )
+}
+
+/// Parsed and channel-bound, but not yet trusted for application traffic.
+pub(super) struct ParsedCertificateEvidence {
+    evidence: CompositeEvidence,
+    tls_spki_der: Vec<u8>,
+    status_proofs: Option<Vec<u8>>,
+}
+
+pub(super) fn parse_certificate_evidence(
+    certificate_der: &[u8],
+    owner_nonce: &[u8],
+) -> Result<ParsedCertificateEvidence, RatlsVerificationError> {
     if certificate_der.len() > MAX_CERTIFICATE_BYTES {
         return Err(RatlsVerificationError {
             reason_code: "certificate_too_large",
@@ -116,7 +138,7 @@ pub fn verify_certificate_evidence(
                     reason_code: "certificate_status_proofs_invalid",
                 });
             }
-            Some(proofs.value)
+            Some(proofs.value.to_vec())
         }
     };
     if !extension.critical {
@@ -147,6 +169,28 @@ pub fn verify_certificate_evidence(
             reason_code: "spki_mismatch",
         });
     }
+    Ok(ParsedCertificateEvidence {
+        evidence,
+        tls_spki_der,
+        status_proofs,
+    })
+}
+
+pub(super) fn appraise_certificate_evidence(
+    parsed: ParsedCertificateEvidence,
+    now: SystemTime,
+    nvattest_dir: &Path,
+    roots_dir: Option<&Path>,
+    policy: Option<&Policy>,
+    quote_verifier: Option<&dyn QuoteVerifier>,
+    composite_verifier: &dyn CompositeVerifier,
+) -> Result<VerifiedCertificateEvidence, RatlsVerificationError> {
+    let ParsedCertificateEvidence {
+        evidence,
+        tls_spki_der,
+        status_proofs,
+    } = parsed;
+    let owner_nonce = &evidence.owner_nonce;
     let channel_binding = ring::digest::digest(&ring::digest::SHA256, &tls_spki_der)
         .as_ref()
         .to_vec();
@@ -177,7 +221,7 @@ pub fn verify_certificate_evidence(
                 roots_dir,
                 policy,
                 quote_verifier,
-                status_proofs,
+                status_proofs: status_proofs.as_deref(),
             },
         )
         .map_err(|error| RatlsVerificationError {

@@ -39,8 +39,8 @@ use crate::{
             retry_interrupted, write_all_retry_interrupted,
         },
         verify::{
-            CompositeVerifier, VerifiedCertificateEvidence, verify_certificate_evidence,
-            verify_exporter_proof,
+            CompositeVerifier, VerifiedCertificateEvidence, appraise_certificate_evidence,
+            parse_certificate_evidence, verify_exporter_proof,
         },
     },
 };
@@ -1117,9 +1117,22 @@ fn establish_at_address(
             .expect("peer certificate lock poisoned")
             .clone()
             .ok_or(RatlsChannelError::new("tls_handshake_failed"))?;
-        let verified = verify_certificate_evidence(
-            &certificate,
-            owner_nonce,
+        let parsed = parse_certificate_evidence(&certificate, owner_nonce)
+            .map_err(|error| RatlsChannelError::new(error.reason_code))?;
+        // The gateway's short admission deadline includes the proof exchange.
+        // Let it send the proof while CPU/GPU appraisal runs on this device.
+        // Only this fixed, empty request may precede complete verification:
+        // no credentials, owner content or inference are sent before admission.
+        let request = format!(
+            "GET {EXPORTER_PROOF_PATH} HTTP/1.1\r\nHost: spp-engine\r\nContent-Length: 0\r\n\r\n"
+        );
+        connection
+            .writer()
+            .write_all(request.as_bytes())
+            .and_then(|_| drain_tls_to(&mut connection, &mut socket, None, Instant::now))
+            .map_err(|_| RatlsChannelError::new("gateway_unreachable"))?;
+        let verified = appraise_certificate_evidence(
+            parsed,
             now,
             nvattest_dir,
             roots_dir,
@@ -1156,12 +1169,6 @@ fn establish_at_address(
             proof_termination: Some(ReceiveTermination::default()),
         };
 
-        let request = format!(
-            "GET {EXPORTER_PROOF_PATH} HTTP/1.1\r\nHost: spp-engine\r\nContent-Length: 0\r\n\r\n"
-        );
-        channel
-            .write_all(request.as_bytes())
-            .map_err(|_| RatlsChannelError::new("gateway_unreachable"))?;
         let proof = recv_proof_response(&mut channel, &mut summary.progress);
         summary.termination = channel.proof_termination.take().unwrap_or_default();
         let proof = proof?;

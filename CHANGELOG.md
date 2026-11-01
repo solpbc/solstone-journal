@@ -22,6 +22,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- fixed a confidential processing connection failure on devices that take longer to verify the service.
 - in older transcripts, lines your journal had already named on the transcript page went unnamed in your activity stories and people. they're now named there too when one of those activities is written again, such as after you correct or edit it.
 - fixed a failure when picking a folder to import in the android development app.
 - a folder you chose to import in the android or ios development app, other than an audio archive, can now be previewed and started from its import page, without choosing it again.

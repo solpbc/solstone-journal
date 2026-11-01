@@ -216,13 +216,20 @@ pub struct DeclaredFix {
 /// Without an entry, work set aside for that reason stays set aside on every
 /// journal until its input changes or the owner asks. Entries are permanent:
 /// a journal that updates later still owes its held work one attempt.
-pub const DECLARED_FIXES: &[DeclaredFix] = &[DeclaredFix {
-    // Screen read a long terminal segment in batches that shared one output
-    // allowance; it now reads the sampled terminal reading in one request.
-    id: "screen-terminal-reading",
-    reason: "incomplete_json_length",
-    introduced: "2.0.61",
-}];
+pub const DECLARED_FIXES: &[DeclaredFix] = &[
+    DeclaredFix {
+        // Screen read a long terminal segment in batches that shared one output
+        // allowance; it now reads the sampled terminal reading in one request.
+        id: "screen-terminal-reading",
+        reason: "incomplete_json_length",
+        introduced: "2.0.61",
+    },
+    DeclaredFix {
+        id: "spp-proof-before-appraisal",
+        reason: "attestation_failed",
+        introduced: "2.0.64",
+    },
+];
 
 fn fix_available(fix: &DeclaredFix) -> bool {
     let version = |text: &str| -> Option<[u64; 3]> {
