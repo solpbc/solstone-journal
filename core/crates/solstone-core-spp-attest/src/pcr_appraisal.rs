@@ -240,11 +240,11 @@ pub fn appraise_application_pcrs(
 #[cfg(test)]
 pub(crate) mod profile_fixture {
     use super::*;
-    use crate::pins::{IMAGE_4_APPLICATION_PCRS, PUBLISHED_QUOTE_PCR_SELECTION};
+    use crate::pins::{IMAGE_5_APPLICATION_PCRS, PUBLISHED_QUOTE_PCR_SELECTION};
 
     pub fn fixture() -> (Vec<(String, Vec<u8>)>, ApplicationPcrProfiles) {
         let first =
-            include_bytes!("../../../../tests/fixtures/spp_attest/sealed-post-roll-quote.pcrs")
+            include_bytes!("../../../../tests/fixtures/spp_attest/image5-post-roll-quote.pcrs")
                 .to_vec();
         let mut second = first.clone();
         second[140 + 2 * 66 + 2..140 + 2 * 66 + 34].fill(0x33); // PCR 4
@@ -262,7 +262,7 @@ pub(crate) mod profile_fixture {
                 )
             })
             .collect();
-        let first_values = IMAGE_4_APPLICATION_PCRS
+        let first_values = IMAGE_5_APPLICATION_PCRS
             .into_iter()
             .collect::<BTreeMap<_, _>>();
         let mut second_values = first_values.clone();

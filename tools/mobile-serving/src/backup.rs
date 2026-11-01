@@ -404,6 +404,7 @@ pub(crate) fn report_scheduled_offload_terminal(
     outcome: &solstone_core_backup_web::maintenance::PlannedOffloadOutcome,
     reference: &str,
 ) -> Result<(), solstone_core_callosum::CallosumOneShotError> {
+    crate::execution::offload_receiving::record_outcome(root, outcome, reference);
     report_scheduled_fields(
         root,
         backup_terminal_fields(reference, "backup:offload", offload_outcome_exit(outcome)),

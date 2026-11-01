@@ -538,10 +538,20 @@ fn backup(
 
 fn offload(hosted: &HostedCommand, checkpoint: &StopCheckpoint, reference: &str) -> i32 {
     if stopped(checkpoint) {
+        crate::execution::offload_receiving::record_refusal(
+            &hosted.root,
+            reference,
+            "task_cancelled",
+        );
         return 1;
     }
     #[cfg(target_os = "ios")]
     let Some(root) = hosted.backup.runner.ios_journal_root().map(Arc::clone) else {
+        crate::execution::offload_receiving::record_refusal(
+            &hosted.root,
+            reference,
+            "journal_binding_unavailable",
+        );
         return 1;
     };
     #[cfg(not(target_os = "ios"))]

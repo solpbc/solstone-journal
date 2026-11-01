@@ -644,7 +644,7 @@ mod tests {
             &staging_envelope(),
             &[0x11; 32],
             &GpuProfile::new(
-                "84edaf3d0205a8280068ab485bf45edfc81f371ab7a7dcccaef8538728ccd8a3",
+                "8779bff6e5cd2c9eadc41098fb073a425654bc10d505b4257125b750cd25eebf",
                 ManifestSet::QUALIFIED_595_71_05,
                 StatusMode::OfflineSignedAge,
             ),
