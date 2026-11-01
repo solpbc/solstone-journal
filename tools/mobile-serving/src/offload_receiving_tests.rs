@@ -161,6 +161,128 @@ fn request(service: &crate::MobileServing, method: &str, path: &str, body: Value
 }
 
 #[test]
+fn offload_receiving_admits_paired_owner_and_confines_pairing_peers() {
+    use axum::body::{Body, to_bytes};
+    use axum::http::Request;
+    use solstone_core_convey_http::identity::{AccessBasis, Carrier, LinkedDeviceCid};
+    use solstone_core_sol_link::ledger::{AuthorizationLedger, ClientEntry, ClientRole};
+    use tokio::sync::watch;
+    use tower::ServiceExt;
+
+    let _serial = crate::foreground::TEST_LOCK
+        .lock()
+        .unwrap_or_else(|p| p.into_inner());
+    let _hooks = ClearHooks;
+    let completed = results();
+    let count = calls();
+    let (journal, service, host) = serving();
+    let cid = format!("sha256:{}", "a".repeat(64));
+    let mut ledger = AuthorizationLedger::new(journal.path());
+    ledger
+        .add(ClientEntry::new(
+            &cid,
+            "synthetic paired owner",
+            "2026-11-01T00:00:00Z",
+            "synthetic",
+            ClientRole::Roleless,
+        ))
+        .unwrap();
+    let (_posture, authorization) = watch::channel(
+        solstone_core_sol_link::DeviceDoorAuthorization::from(ledger.read_state()),
+    );
+    let (stop, receiver) = watch::channel(false);
+    let (routes, worker, _) =
+        crate::execution::routes_and_worker(Arc::clone(&service.root), None, receiver);
+    let worker = service.runtime.spawn(worker);
+    let app = solstone_core_convey_shell::authorization_gate::authorized_router_with_router(
+        routes,
+        journal.path().to_owned(),
+        authorization,
+    )
+    .into_inner();
+    let body = json!({"request_id":"paired-owner-parity"});
+    let linked = |cid: &str| AccessBasis::LinkedDevice {
+        carrier: Carrier::Direct,
+        cid: LinkedDeviceCid::try_from(cid).unwrap(),
+        leaf_spki: vec![0x30, 0x00],
+    };
+    let send = |basis: Option<AccessBasis>| {
+        service.runtime.block_on(async {
+            let mut request = Request::post(PATH)
+                .header("content-type", "application/json")
+                .body(Body::from(body.to_string()))
+                .unwrap();
+            if let Some(basis) = basis {
+                request.extensions_mut().insert(basis);
+            }
+            let reply = app.clone().oneshot(request).await.unwrap();
+            let code = reply.status().as_u16();
+            let bytes = to_bytes(reply.into_body(), 4096).await.unwrap();
+            (
+                code,
+                serde_json::from_slice::<Value>(&bytes)
+                    .unwrap_or_else(|_| json!({"raw":String::from_utf8_lossy(&bytes)})),
+            )
+        })
+    };
+    for basis in [
+        None,
+        Some(linked(&format!("sha256:{}", "b".repeat(64)))),
+        Some(AccessBasis::PairingPeer {
+            carrier: Carrier::Direct,
+        }),
+    ] {
+        assert_eq!(send(basis).0, 403);
+        assert!(
+            !journal
+                .path()
+                .join(".owner-offload-paired-owner-parity.received.json")
+                .exists()
+        );
+    }
+    let (code, paired) = send(Some(linked(&cid)));
+    assert_eq!(code, 202, "{paired}");
+    assert_eq!(
+        completed.recv_timeout(Duration::from_secs(10)).unwrap(),
+        "paired-owner-parity"
+    );
+    assert_eq!(count.load(Ordering::SeqCst), 1);
+    host.shutdown().unwrap();
+    stop.send_replace(true);
+    service.runtime.block_on(worker).unwrap();
+    service.shutdown_for_retirement().unwrap();
+}
+
+#[test]
+fn offload_receipt_survives_ephemeral_ui_restart_without_resubmission() {
+    let _serial = crate::foreground::TEST_LOCK
+        .lock()
+        .unwrap_or_else(|p| p.into_inner());
+    let _hooks = ClearHooks;
+    let count = calls();
+    let (journal, service, host) = serving();
+    let latest = format!("{PATH}/requests");
+    assert_eq!(
+        request(&service, "GET", &latest, json!(null)).1,
+        json!({"request":null})
+    );
+    receipt(journal.path(), "manual-lost-reply", "received", json!(null));
+    receipt(journal.path(), "manual-lost-reply", "accepted", json!(null));
+    receipt(journal.path(), "manual-lost-reply", "result", json!(4));
+    let (code, before) = request(&service, "GET", &latest, json!(null));
+    assert_eq!(code, 200);
+    assert_eq!(before["request"]["request_id"], "manual-lost-reply");
+    assert_eq!(before["request"]["exit_code"], 4);
+    host.shutdown().unwrap();
+    service.shutdown_for_retirement().unwrap();
+    let (service, host) = reopen(journal.path());
+    assert_eq!(request(&service, "GET", &latest, json!(null)).1, before);
+    assert_eq!(count.load(Ordering::SeqCst), 0);
+    host.shutdown().unwrap();
+    service.shutdown_for_retirement().unwrap();
+}
+
+#[test]
 fn offload_receiving_lost_reply_recovers_same_identity() {
     let _serial = crate::foreground::TEST_LOCK
         .lock()

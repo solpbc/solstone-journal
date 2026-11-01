@@ -347,6 +347,10 @@ function fixture(document) {
   const offloadForm = add(offload, 'form', { 'data-offload-enable-form': '' });
   const saveOffload = add(offloadForm, 'button', { 'data-action': 'offload-save' });
   add(offloadForm, 'button', { 'data-action': 'offload-enable' });
+  const preparation = add(offload, 'div', { 'data-offload-prepare': '', hidden: '' });
+  add(preparation, 'button', { 'data-action': 'offload-prepare', disabled: '' });
+  add(preparation, 'button', { 'data-action': 'offload-prepare-check' });
+  add(preparation, 'p', { 'data-offload-prepare-status': '' });
   const pauseSection = add(management, 'section', { 'data-pause-section': '', hidden: '' });
   const pause = add(pauseSection, 'button', { 'data-action': 'pause' });
   const teardownSection = add(management, 'section', { class: 'backup-teardown' });
@@ -449,6 +453,7 @@ function createHarness(options = {}) {
   };
   const navigator = { userAgent: options.userAgent || 'Mozilla/5.0 (X11; Linux x86_64)' };
   const window = {
+    crypto: require('crypto').webcrypto,
     document,
     console,
     fetch,
@@ -2366,6 +2371,53 @@ asyncCase('a different repository asks first, then posts the confirmation', asyn
   assert.ok(harness.destinationStatus.textContent.includes('a bucket by that name, so nothing was saved'));
   assert.strictEqual(harness.destinationStatus.getAttribute('data-tone'), 'refused');
   assert.strictEqual(harness.destination.hidden, false);
+});
+
+asyncCase('preparation reconciles a lost reply and an ephemeral page restart without another write', async () => {
+  const endpoint = '/api/journal/maintenance/backup:offload';
+  let retained = null;
+  let writes = 0;
+  let archiveHeld = false;
+  const options = { respond(call) {
+    if (call.url === '/app/backup/status') return response({ ...status(archiveHeld
+      ? { kind: 'offload', phase: 'setting_up', reason_code: 'failed', report: { metadata_settled: false } } : null),
+      enabled: true, recovery_key_confirmed: true });
+    if (call.url === '/app/backup/offload/status') return response({ success: true, prepare_supported: true, offload: { enabled: true }, days: [] });
+    if (call.url === endpoint + '/requests') return response({ request: retained });
+    if (call.url === endpoint && call.request.method === 'POST') {
+      writes += 1;
+      retained = { request_id: JSON.parse(call.request.body).request_id, terminal: false, exit_code: null, state: 'accepted' };
+      throw new Error('reply lost after receiving');
+    }
+    if (call.url === endpoint + '/requests/' + retained?.request_id) return response(retained);
+    throw new Error('unexpected action ' + call.url);
+  } };
+  const first = createHarness(options);
+  await ready(first);
+  const prepare = first.root.querySelector('[data-action="offload-prepare"]');
+  assert.strictEqual(prepare.disabled, false);
+  click(prepare);
+  click(prepare);
+  await settle();
+  assert.strictEqual(writes, 1);
+  assert.strictEqual(prepare.disabled, true);
+  first.detach();
+  // No session/local storage is carried into this new WebView.
+  const reopened = createHarness(options);
+  await ready(reopened);
+  const next = reopened.root.querySelector('[data-action="offload-prepare"]');
+  assert.strictEqual(next.disabled, true);
+  assert.strictEqual(writes, 1);
+  retained = { ...retained, terminal: true, exit_code: 4, state: 'finished' };
+  archiveHeld = true;
+  click(reopened.root.querySelector('[data-action="offload-prepare-check"]'));
+  await settle(48);
+  assert.strictEqual(next.disabled, true, 'a terminal queue receipt cannot release an active archive owner');
+  archiveHeld = false;
+  click(reopened.root.querySelector('[data-action="offload-prepare-check"]'));
+  await settle(48);
+  assert.strictEqual(next.disabled, false);
+  assert.strictEqual(writes, 1, 'checking and reopening never submit work or approve removal');
 });
 
 async function runAsyncCases() {

@@ -39,6 +39,10 @@ pub(super) fn routes(sender: OwnerIngress) -> Router {
         .route("/api/journal/think", post(think))
         .route("/api/journal/maintenance/{routine}", post(maintenance))
         .route(
+            "/api/journal/maintenance/{routine}/requests",
+            get(offload_receiving::latest),
+        )
+        .route(
             "/api/journal/maintenance/{routine}/requests/{request_id}",
             get(offload_receiving::status),
         )

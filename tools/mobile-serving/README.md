@@ -85,8 +85,10 @@ cancellation and completion rules.
 For an explicit `backup:offload` request, save a fresh `request_id` before
 dispatch, then send `{ "request_id": "your-saved-id" }` to the maintenance
 route. IDs contain 1–64 ASCII letters, digits, underscores or hyphens. The
-app's private owner request transport is required; pairing credentials do not
-grant this access.
+app's private owner request transport and authenticated paired-device transport
+reach the same owner action. pairing peers and revoked devices remain refused.
+preparing copies does not approve removal; review the proposed originals on
+`/app/home/originals/` before approving their removal.
 
 After a lost reply, read
 `GET /api/journal/maintenance/backup:offload/requests/{request_id}`. Repeating

@@ -284,6 +284,16 @@
           </div>
         </form>
 
+        <div data-offload-prepare hidden>
+          <p class="backup-note" data-copy="offload.prepare_hint"></p>
+          <div class="backup-panel-actions">
+            <button type="button" data-action="offload-prepare" data-copy="offload.actions.prepare" disabled></button>
+            <button type="button" data-action="offload-prepare-check" data-copy="offload.actions.check_preparation"></button>
+            <a class="backup-link" href="/app/home/originals/" data-copy="offload.actions.review_originals"></a>
+          </div>
+          <p class="backup-status-message" data-offload-prepare-status role="status" aria-live="polite"></p>
+        </div>
+
         <div class="backup-offload-summary" data-offload-summary>
           <section>
             <h3 data-copy="offload.labels.raw_media"></h3>

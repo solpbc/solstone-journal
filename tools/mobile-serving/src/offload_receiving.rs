@@ -14,6 +14,7 @@ const PREFIX: &str = "owner-offload-request-";
 pub(super) enum Request {
     Submit(String),
     Status(String),
+    Latest,
 }
 
 #[derive(Deserialize)]
@@ -38,6 +39,49 @@ pub(super) async fn status(
         return invalid();
     }
     submit_operation(sender, Operation::Offload(Request::Status(request_id))).await
+}
+
+/// Recover the Backup page's last identity even when its WebView store was
+/// ephemeral. This reads the existing immutable receipts and never submits.
+pub(super) async fn latest(
+    State(sender): State<OwnerIngress>,
+    Path(routine): Path<String>,
+) -> Response {
+    if routine != "backup:offload" {
+        return invalid();
+    }
+    submit_operation(sender, Operation::Offload(Request::Latest)).await
+}
+
+#[cfg(unix)]
+fn latest_request(root: &JournalRoot) -> Result<Value, ()> {
+    use solstone_core_journal_io::flat_directory::{FlatDirectory, list_flat_directory};
+    let directory = FlatDirectory::from_root(root).map_err(|_| ())?;
+    // Refuse an incomplete view rather than forget a previously received action.
+    let entries = list_flat_directory(&directory, 16_384)
+        .map_err(|_| ())?
+        .ok_or(())?;
+    let latest = entries
+        .iter()
+        .filter_map(|entry| {
+            let name = entry.name.to_str()?;
+            let id = name
+                .strip_prefix(".owner-offload-")?
+                .strip_suffix(".received.json")?;
+            valid_id(id).then_some((entry, id))
+        })
+        .max_by_key(|(entry, id)| (entry.mtime.seconds, entry.mtime.nanoseconds, *id));
+    let value = match latest {
+        Some((_, id)) => observed(root, id)?,
+        None => json!(null),
+    };
+    root.revalidate_canonical_binding().map_err(|_| ())?;
+    Ok(json!({"request":value}))
+}
+
+#[cfg(not(unix))]
+fn latest_request(_root: &JournalRoot) -> Result<Value, ()> {
+    Err(())
 }
 
 pub(super) fn invalid() -> Response {
@@ -233,9 +277,19 @@ pub(super) fn execute(
     request: Request,
     cancelled: &(dyn Fn() -> bool + Send + Sync),
 ) -> (StatusCode, Value) {
+    if matches!(request, Request::Latest) {
+        return if cancelled() {
+            unavailable()
+        } else {
+            latest_request(root)
+                .map(|value| (StatusCode::OK, value))
+                .unwrap_or_else(|_| unavailable())
+        };
+    }
     let (id, submit) = match request {
         Request::Submit(id) => (id, true),
         Request::Status(id) => (id, false),
+        Request::Latest => unreachable!(),
     };
     if !valid_id(&id) {
         return (

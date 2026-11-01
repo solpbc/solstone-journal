@@ -441,6 +441,8 @@ fn offload_value(deps: &BackupWebDeps) -> Result<Value, ()> {
     let mut value = status::offload(root.canonical_path(), &deps.cache, &deps.operations)?;
     let support = offload_support::check(deps, &root);
     value["enable_supported"] = Value::Bool(support.is_ok());
+    value["prepare_supported"] =
+        Value::Bool(support.is_ok() && deps.offload_dispatch_probe.is_some());
     if let Err(reason) = support {
         value["enable_unavailable_reason"] = json!(reason);
     }

@@ -243,6 +243,9 @@
       "reason_unavailable": "the reason isn't available here.",
       "verification_integrity_failed": "the backup copy failed its integrity check and may be damaged.",
       "actions": {
+        "prepare": "prepare copies",
+        "check_preparation": "check preparation",
+        "review_originals": "review originals",
         "enable": "turn on media offload",
         "save": "save limits",
         "disable": "turn off media offload",
@@ -254,6 +257,14 @@
         "show_all_days": "show all {count} days",
         "incomplete": "some media totals aren't available.",
         "degraded": "some of the record of what's in your backup couldn't be read. these days may hold more than shown."
+      },
+      "prepare_hint": "prepare encrypted copies for review. choose which originals to remove on the originals page.",
+      "preparation": {
+        "checking": "checking preparation…",
+        "pending": "a final result isn't available. check again.",
+        "finished": "see the latest offload result and proposed originals.",
+        "failed": "preparation needs attention. see the latest offload result.",
+        "unavailable": "can't confirm preparation right now. check again before starting another."
       },
       "stall_reason_labels": {
         "backup_not_ready": "encrypted backup needs to finish setup before media offload can run.",
@@ -388,6 +399,9 @@
   let state = {};
   let backupStatusCurrent = false;
   let offloadState = { status: 'loading', payload: null };
+  const preparationPath = '/api/journal/maintenance/backup:offload';
+  let preparation = { loaded: false, request: null, busy: false, error: false };
+  let preparationRead = null;
   let currentRecoveryDisplay = '';
   let offloadDaysExpanded = false;
   let displayedRestoreOperation = null;
@@ -406,6 +420,7 @@
     'understand', 'enable-backup', 'enable-hosted', 'backup-now', 'rotate-key',
     'teardown-confirm', 'teardown-restore-first', 'restore-hosted-unbound-start',
     'offload-enable', 'offload-save', 'offload-disable', 'offload-restore-day',
+    'offload-prepare',
     'pause', 'resume', 'destination-edit', 'switch-confirm', 'switch-restore-first',
   ]);
   let destinationEditing = false;
@@ -1718,6 +1733,95 @@
     }
 
     renderOffloadDays(showProof ? payload.days : []);
+    renderPreparation();
+  }
+
+  function preparationRequest(value) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)
+        || !/^[A-Za-z0-9_-]{1,64}$/.test(value.request_id || '')
+        || typeof value.terminal !== 'boolean'
+        || value.terminal && !Number.isInteger(value.exit_code)) {
+      throw new Error('preparation receipt unavailable');
+    }
+    return value;
+  }
+
+  function renderPreparation() {
+    const supported = offloadState.status === 'ready'
+      && offloadState.payload?.prepare_supported === true;
+    setElementHidden('[data-offload-prepare]', !supported);
+    const request = preparation.request;
+    const pending = request && !request.terminal;
+    const prepare = root.querySelector('[data-action="offload-prepare"]');
+    if (prepare) setButtonDisabled(prepare, !supported || !offloadReady()
+      || offloadState.payload?.offload?.enabled !== true || backupPaused()
+      || operationActive(state.operation)
+      || !preparation.loaded || preparation.busy || preparation.error || pending);
+    const check = root.querySelector('[data-action="offload-prepare-check"]');
+    if (check) check.disabled = preparation.busy;
+    const labels = offloadCopy.preparation;
+    const message = preparation.busy ? labels.checking
+      : preparation.error ? labels.unavailable
+      : pending ? labels.pending
+      : request ? request.exit_code === 0 ? labels.finished : labels.failed : '';
+    setText('[data-offload-prepare-status]', message);
+  }
+
+  function refreshPreparation() {
+    if (!workspaceCurrent() || offloadState.payload?.prepare_supported !== true) {
+      return Promise.resolve();
+    }
+    if (preparationRead) return preparationRead;
+    preparation.busy = true;
+    renderPreparation();
+    const id = preparation.request?.request_id;
+    const path = preparationPath + '/requests' + (id ? '/' + encodeURIComponent(id) : '');
+    preparationRead = (async function () {
+      try {
+        const payload = await readJson(await fetch(path, { headers: { Accept: 'application/json' } }));
+        const value = id ? preparationRequest(payload)
+          : payload?.request === null ? null : preparationRequest(payload?.request);
+        if (id && value.request_id !== id) throw new Error('preparation identity changed');
+        if (!workspaceCurrent()) return;
+        preparation.request = value;
+        preparation.loaded = true;
+        preparation.error = false;
+      } catch (_) {
+        if (workspaceCurrent()) preparation.error = true;
+      } finally {
+        preparationRead = null;
+        preparation.busy = false;
+        if (workspaceCurrent()) renderPreparation();
+      }
+    })();
+    return preparationRead;
+  }
+
+  async function prepareCopies() {
+    if (!preparation.loaded || preparation.busy || preparation.error
+        || preparation.request && !preparation.request.terminal) return;
+    // Retain this identity before dispatch. An uncertain reply only offers a
+    // read of this receipt; it never automatically sends another mutation.
+    if (typeof window.crypto?.getRandomValues !== 'function') {
+      preparation.error = true;
+      renderPreparation();
+      return;
+    }
+    const bytes = window.crypto.getRandomValues(new Uint8Array(16));
+    const id = 'ui-' + Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+    preparation.request = { request_id: id, terminal: false };
+    preparation.busy = true;
+    renderPreparation();
+    try {
+      const value = preparationRequest(await postJson(preparationPath, { request_id: id }));
+      if (value.request_id !== id) throw new Error('preparation identity changed');
+      if (workspaceCurrent()) preparation.request = value;
+    } catch (_) {
+      if (workspaceCurrent()) preparation.error = true;
+    } finally {
+      preparation.busy = false;
+      if (workspaceCurrent()) renderPreparation();
+    }
   }
 
   function restoreEffectText(value) {
@@ -2088,6 +2192,7 @@
             );
             if (!workspaceCurrent()) return null;
             applyOffloadPayload(payload);
+            if (payload.prepare_supported === true) await refreshPreparation();
             failure = null;
           } catch (error) {
             if (!workspaceCurrent()) return null;
@@ -2384,6 +2489,16 @@
         return;
       }
       try {
+        if (action === 'offload-prepare') {
+          await prepareCopies();
+          return;
+        }
+        if (action === 'offload-prepare-check') {
+          await refreshStatus();
+          await refreshPreparation();
+          await refreshChangedOffloadStatus();
+          return;
+        }
         if (action === 'finish-cleanup') {
           if (cleanupRequestRunning || !cleanupRequired()) return;
           cleanupRequestRunning = true;

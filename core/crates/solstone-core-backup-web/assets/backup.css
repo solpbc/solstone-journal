@@ -406,6 +406,10 @@
   margin-top: 0.9rem;
 }
 
+.backup-panel [data-offload-prepare] button {
+  min-height: 44px;
+}
+
 .backup-panel button,
 .backup-operation button,
 .backup-panel input,
