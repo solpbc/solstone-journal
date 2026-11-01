@@ -2561,8 +2561,13 @@
         return;
       }
 
-      // Backdrop click on mobile sheet
-      if (isMobile() && state.selectedId && !e.target.closest('[data-panel-area]') && !e.target.closest('button.act-block') && !e.target.closest('.act-untimed-row')) {
+      // Backdrop click on mobile sheet. A tap inside the panel often
+      // re-renders it before this runs, detaching the tapped element, so
+      // where the tap landed is read from the path the event took, not from
+      // the target's current ancestors.
+      const path = e.composedPath();
+      const landedIn = (sel) => path.some((node) => typeof node.matches === 'function' && node.matches(sel));
+      if (isMobile() && state.selectedId && !landedIn('[data-panel-area]') && !landedIn('button.act-block') && !landedIn('.act-untimed-row')) {
         closePanel();
       }
     });

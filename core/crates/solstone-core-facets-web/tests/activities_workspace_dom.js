@@ -126,11 +126,13 @@ class Element {
   }
   set value(v) { this._value = String(v); }
   get textContent() { return this._text + this.children.map((c) => c.textContent).join(''); }
-  set textContent(v) { this.children = []; this._text = String(v); }
+  // Replacing content detaches the old children, as in a browser.
+  detachChildren() { this.children.forEach((c) => { c.parentElement = null; }); this.children = []; }
+  set textContent(v) { this.detachChildren(); this._text = String(v); }
   get innerHTML() { return this._html ?? this.textContent; }
   set innerHTML(v) {
     this._html = String(v);
-    this.children = [];
+    this.detachChildren();
     this._text = '';
     parseHtml(String(v), this.ownerDocument).forEach((child) => this.appendChild(child));
   }
@@ -159,14 +161,20 @@ class Element {
   addEventListener(type, fn) { (this.listeners[type] ||= []).push(fn); }
   removeEventListener(type, fn) { this.listeners[type] = (this.listeners[type] || []).filter((l) => l !== fn); }
   dispatchEvent(event) {
-    event.target ||= this;
-    event.currentTarget = this;
+    // As in a browser, the path is fixed when dispatch starts: the event
+    // still bubbles to the document, and composedPath() still names the
+    // tapped element's ancestors, after a handler detaches it.
+    const eventPath = [];
+    for (let cur = this; cur; cur = cur.parentElement) eventPath.push(cur);
+    if (eventPath[eventPath.length - 1] === this.ownerDocument.documentElement) eventPath.push(this.ownerDocument);
+    event.target = this;
+    event.composedPath = () => eventPath.slice();
     event.preventDefault ||= () => { event.defaultPrevented = true; };
     event.stopPropagation ||= () => { event.cancelBubble = true; };
-    for (const fn of [...(this.listeners[event.type] || [])]) fn.call(this, event);
-    if (event.bubbles && !event.cancelBubble) {
-      if (this.parentElement) this.parentElement.dispatchEvent(event);
-      else if (this === this.ownerDocument.documentElement) this.ownerDocument.dispatchEvent(event);
+    for (const node of event.bubbles ? eventPath : [this]) {
+      if (event.cancelBubble) break;
+      event.currentTarget = node;
+      for (const fn of [...(node.listeners[event.type] || [])]) fn.call(node, event);
     }
     return !event.defaultPrevented;
   }
@@ -280,7 +288,7 @@ async function settle() {
   for (let i = 0; i < 6; i += 1) await new Promise((r) => setTimeout(r, 0));
 }
 
-async function createPage({ items, url = `https://journal.example/app/activities/${DAY}#work/standup`, transcripts = {}, post = () => respond(200, { record: {}, markdown: '', asked: true }) }) {
+async function createPage({ items, url = `https://journal.example/app/activities/${DAY}#work/standup`, transcripts = {}, post = () => respond(200, { record: {}, markdown: '', asked: true }), narrow = false }) {
   const doc = new Document();
   parseHtml(markup, doc).forEach((el) => doc.body.appendChild(el));
   const requests = [];
@@ -290,7 +298,7 @@ async function createPage({ items, url = `https://journal.example/app/activities
     addEventListener(type, fn) { (winListeners[type] ||= []).push(fn); },
     removeEventListener() {},
     dispatchEvent(event) { (winListeners[event.type] || []).forEach((fn) => fn(event)); },
-    matchMedia: () => ({ matches: false, addEventListener() {} }),
+    matchMedia: (query) => ({ matches: narrow && query.includes('max-width'), addEventListener() {} }),
     JournalClock: {
       today: () => '20261031',
       parts: (d = new Date()) => ({
@@ -595,6 +603,28 @@ test('an activity opened without that ask shows its panel as before', async () =
   assert.strictEqual(env.panel().querySelector('[data-correct-step]'), null);
   assert.ok(env.panel().querySelector('[data-action-correct]'));
   assert.ok(env.panel().querySelector('[data-action-edit]'));
+});
+
+test('on a narrow screen, taps that redraw the sheet keep it open', async () => {
+  const env = await createPage({ items: [activity()], transcripts: { '100000_300': SPOKEN }, narrow: true });
+  await env.click(env.panel().querySelector('[data-action-correct]'));
+  assert.ok(env.panel().querySelector('[data-correct-step="choose"]'), 'the chooser opens');
+  await env.click(env.panel().querySelector('[data-correct-answer="who"]'));
+  assert.ok(env.panel().querySelector('[data-correct-step="who"]'), 'an answer opens its step');
+  await env.click(env.panel().querySelector('[data-correct-back]'));
+  assert.ok(env.panel().querySelector('[data-correct-step="choose"]'), 'back returns to the chooser');
+  await env.click(env.panel().querySelector('[data-correct-cancel]'));
+  await env.click(env.panel().querySelector('[data-action-edit]'));
+  assert.ok(env.panel().querySelector('[data-edit-form]'), 'edit opens its form');
+  assert.strictEqual(env.win.location.hash, '#work/standup', 'the activity stays selected');
+});
+
+test('on a narrow screen, a tap outside the sheet still closes it', async () => {
+  const env = await createPage({ items: [activity()], narrow: true });
+  assert.ok(env.panel().querySelector('[data-action-correct]'));
+  await env.click(env.doc.body);
+  assert.strictEqual(env.panel().querySelector('[data-action-correct]'), null);
+  assert.strictEqual(env.win.location.hash, '');
 });
 
 (async () => {
