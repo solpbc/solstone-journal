@@ -65,6 +65,7 @@ fn reference(id: &str) -> String {
 enum Phase {
     Received,
     Accepted,
+    Outcome,
     Result,
 }
 
@@ -73,6 +74,7 @@ impl Phase {
         match self {
             Self::Received => "received",
             Self::Accepted => "accepted",
+            Self::Outcome => "outcome",
             Self::Result => "result",
         }
     }
@@ -86,6 +88,17 @@ struct Receipt {
     reference: String,
     phase: Phase,
     exit_code: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    outcome: Option<Outcome>,
+}
+
+/// A runner observation, never proof of queue completion or native retirement.
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Outcome {
+    disposition: solstone_core_backup_web::maintenance::PlannedOffloadDisposition,
+    reason: Option<String>,
+    generation: Option<u64>,
 }
 
 impl Receipt {
@@ -96,6 +109,7 @@ impl Receipt {
             reference: reference(id),
             phase,
             exit_code,
+            outcome: None,
         }
     }
     fn name(&self) -> String {
@@ -124,6 +138,7 @@ fn read(root: &JournalRoot, id: &str, phase: Phase) -> Result<Option<Receipt>, (
                 || receipt.reference != reference(id)
                 || receipt.phase != phase
                 || (phase == Phase::Result) != receipt.exit_code.is_some()
+                || (phase == Phase::Outcome) != receipt.outcome.is_some()
             {
                 return Err(());
             }
@@ -204,7 +219,10 @@ fn observed(root: &JournalRoot, id: &str) -> Result<Value, ()> {
     let received = read(root, id, Phase::Received)?;
     let accepted = read(root, id, Phase::Accepted)?;
     let result = read(root, id, Phase::Result)?;
-    if received.is_none() && (accepted.is_some() || result.is_some()) {
+    // The runner publishes its immutable diagnostic before queue completion.
+    // Sample it after the result so a new terminal read includes that evidence.
+    let outcome = read(root, id, Phase::Outcome)?;
+    if received.is_none() && (accepted.is_some() || outcome.is_some() || result.is_some()) {
         return Err(());
     }
     // A completion can win the race with acceptance publication, or survive
@@ -224,8 +242,59 @@ fn observed(root: &JournalRoot, id: &str) -> Result<Value, ()> {
     root.revalidate_canonical_binding().map_err(|_| ())?;
     Ok(
         json!({"request_id":id,"reference":reference(id),"state":state,
-        "accepted":admitted,"terminal":terminal,"exit_code":exit_code}),
+        "accepted":admitted,"terminal":terminal,"exit_code":exit_code,
+        "outcome":outcome.and_then(|receipt| receipt.outcome)}),
     )
+}
+
+/// Preserve the actual runner's reason before its queue adapter reduces it to
+/// an exit code. This leaf neither finishes nor retries the queued operation.
+pub(crate) fn record_outcome(
+    root: &JournalRoot,
+    outcome: &solstone_core_backup_web::maintenance::PlannedOffloadOutcome,
+    reference: &str,
+) {
+    record_diagnostic(
+        root,
+        reference,
+        Outcome {
+            disposition: outcome.disposition(),
+            reason: outcome.reason().map(str::to_owned),
+            generation: outcome.generation(),
+        },
+    );
+}
+
+pub(crate) fn record_refusal(root: &JournalRoot, reference: &str, reason: &str) {
+    record_diagnostic(
+        root,
+        reference,
+        Outcome {
+            disposition: solstone_core_backup_web::maintenance::PlannedOffloadDisposition::Refused,
+            reason: Some(reason.to_owned()),
+            generation: None,
+        },
+    );
+}
+
+fn record_diagnostic(root: &JournalRoot, reference: &str, outcome: Outcome) {
+    let Some(id) = reference.strip_prefix(PREFIX).filter(|id| valid_id(id)) else {
+        return;
+    };
+    let result = (|| {
+        if read(root, id, Phase::Received)?.is_none() {
+            return Err(());
+        }
+        let mut receipt = Receipt::new(id, Phase::Outcome, None);
+        receipt.outcome = Some(outcome);
+        if let Some(existing) = read(root, id, Phase::Outcome)? {
+            return if existing == receipt { Ok(()) } else { Err(()) };
+        }
+        publish(root, &receipt)
+    })();
+    if result.is_err() {
+        log::warn!("offload runner diagnostic unavailable; its outcome remains unknown");
+    }
 }
 
 pub(super) fn execute(

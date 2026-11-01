@@ -13,7 +13,8 @@ use solstone_core_journal_io::JournalRoot;
 use crate::{BackupWebDeps, archive_worker, operation};
 
 /// The current run's disposition; stored previous success is not consulted.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum PlannedOffloadDisposition {
     Skipped,
     Completed,

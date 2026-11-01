@@ -223,6 +223,10 @@ fn offload_receiving_result_survives_restart_without_reexecution() {
     assert_eq!(recovered["state"], "finished");
     assert_eq!(recovered["reference"], accepted["reference"]);
     assert_eq!(recovered["exit_code"], 0);
+    assert_eq!(
+        recovered["outcome"],
+        json!({"disposition":"skipped", "reason":"offload_off", "generation":null})
+    );
     assert_eq!(code, 202, "{retry}");
     assert_eq!(retry["reused"], true);
     assert_eq!(
@@ -270,7 +274,7 @@ fn offload_receiving_uncertain_damaged_and_unconfirmed_records_never_replay() {
         );
         assert_eq!(retry["terminal"], false);
     }
-    for phase in ["received", "accepted", "result"] {
+    for phase in ["received", "accepted", "outcome", "result"] {
         let id = format!("damaged-{phase}");
         receipt(journal.path(), &id, "received", json!(null));
         let file = journal
@@ -322,6 +326,98 @@ fn offload_receiving_uncertain_damaged_and_unconfirmed_records_never_replay() {
     host.shutdown().unwrap();
     service.shutdown_for_retirement().unwrap();
     assert_eq!(count.load(Ordering::SeqCst), 0);
+}
+
+#[test]
+fn offload_receiving_preserves_actual_refusal_before_queue_completion() {
+    let _serial = crate::foreground::TEST_LOCK
+        .lock()
+        .unwrap_or_else(|p| p.into_inner());
+    let (journal, service, host) = serving();
+    let id = "actual-refusal";
+    receipt(journal.path(), id, "received", json!(null));
+    receipt(journal.path(), id, "accepted", json!(null));
+    let root = Arc::new(solstone_core_journal_io::JournalRoot::open(journal.path()).unwrap());
+    let deps = solstone_core_backup_web::BackupWebDeps::new(journal.path().to_path_buf());
+    let outcome = solstone_core_backup_web::maintenance::run_planned_offload(
+        Arc::clone(&root),
+        &deps,
+        Arc::new(|| Err("actual task cancellation".to_owned())),
+    );
+    let reference = format!("owner-offload-request-{id}");
+    crate::backup::report_scheduled_offload_terminal(&root, &outcome, &reference).unwrap();
+    let observed = status(&service, id);
+    assert_eq!(
+        observed["terminal"], false,
+        "diagnostic completed a queue task"
+    );
+    assert_eq!(observed["exit_code"], Value::Null);
+    assert_eq!(
+        observed["outcome"],
+        json!({"disposition":"refused", "reason":"task_cancelled", "generation":null})
+    );
+    let file = journal
+        .path()
+        .join(format!(".owner-offload-{id}.outcome.json"));
+    let saved = std::fs::read(&file).unwrap();
+    offload_receiving::record_refusal(&root, &reference, "different_attempt");
+    assert_eq!(
+        std::fs::read(&file).unwrap(),
+        saved,
+        "diagnostic was overwritten"
+    );
+    host.shutdown().unwrap();
+    service.shutdown_for_retirement().unwrap();
+    drop(host);
+    drop(service);
+    let (service, host) = reopen(journal.path());
+    assert_eq!(status(&service, id)["outcome"], observed["outcome"]);
+    assert_eq!(status(&service, id)["terminal"], false);
+    host.shutdown().unwrap();
+    service.shutdown_for_retirement().unwrap();
+}
+
+#[test]
+fn offload_receiving_held_diagnostic_does_not_retire_or_enrich_an_old_result() {
+    let _serial = crate::foreground::TEST_LOCK
+        .lock()
+        .unwrap_or_else(|p| p.into_inner());
+    let _hooks = ClearHooks;
+    let count = calls();
+    let (journal, service, host) = serving();
+    receipt(journal.path(), "old", "received", json!(null));
+    receipt(journal.path(), "old", "result", json!(1));
+    assert_eq!(status(&service, "old")["outcome"], Value::Null);
+    let id = "held-observation";
+    receipt(journal.path(), id, "received", json!(null));
+    receipt(journal.path(), id, "accepted", json!(null));
+    let file = journal
+        .path()
+        .join(format!(".owner-offload-{id}.outcome.json"));
+    let saved = json!({
+        "version":1,"request_id":id,"reference":format!("owner-offload-request-{id}"),
+        "phase":"outcome","exit_code":null,
+        "outcome":{"disposition":"held","reason":null,"generation":42}
+    })
+    .to_string();
+    std::fs::write(&file, &saved).unwrap();
+    let observed = status(&service, id);
+    assert_eq!(observed["terminal"], false);
+    assert_eq!(observed["exit_code"], Value::Null);
+    assert_eq!(observed["outcome"]["disposition"], "held");
+    assert_eq!(observed["outcome"]["generation"], 42);
+    let (code, repeated) = request(&service, "POST", PATH, json!({"request_id":id}));
+    assert_eq!(code, 202);
+    assert_eq!(repeated["reused"], true);
+    assert_eq!(std::fs::read_to_string(file).unwrap(), saved);
+    assert_eq!(status(&service, "old")["outcome"], Value::Null);
+    host.shutdown().unwrap();
+    service.shutdown_for_retirement().unwrap();
+    assert_eq!(
+        count.load(Ordering::SeqCst),
+        0,
+        "a diagnostic replayed work"
+    );
 }
 
 #[cfg(unix)]
