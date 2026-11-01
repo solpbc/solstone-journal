@@ -2086,6 +2086,27 @@
   background: var(--cream-bright);
 }
 
+.tr-speaker-picker-divider {
+  width: 100%;
+  margin: 4px 0;
+  border: 0;
+  border-top: 1px solid var(--hairline);
+}
+
+.tr-speaker-picker-handoff {
+  color: var(--orange-text-aa);
+  text-decoration: underline;
+}
+
+.tr-speaker-picker-title-line {
+  display: none;
+}
+
+.tr-speaker-picker-title-time {
+  color: var(--ink-faint);
+  font-variant-numeric: tabular-nums;
+}
+
 .tr-speaker-picker-tail,
 .tr-speaker-status {
   font-size: 12px;
@@ -2485,6 +2506,8 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
   }
 }
 @media (max-width: 480px) {
+  .tr-speaker-picker-title--line .tr-speaker-picker-title-any { display: none; }
+  .tr-speaker-picker-title--line .tr-speaker-picker-title-line { display: inline; }
   .tr-wrap { padding: 12px; }
   .tr-content { padding: 12px; }
   .tr-panel { padding: 8px; }
@@ -5232,6 +5255,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
         data-stream-layout="${escapeHtml(selectedSegment?.stream_layout || '')}"
         data-segment-key="${escapeHtml(selectedSegment?.key || '')}"
         data-sentence-id="${Number.isFinite(sentenceId) ? sentenceId : ''}"
+        data-line-words="${escapeHtml(speakerLineWords(item.markdown))}"
         data-speaker-source="${escapeHtml(item.speaker_source || '')}"
         data-voice-id="${escapeHtml(voiceId)}"
         data-voice-only="${voiceId && unavailableReason && !answerable ? '1' : ''}"
@@ -5282,6 +5306,12 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
     return journalPeoplePromise;
   }
 
+  // A line's first words, without a leading "(mic)"-style source note.
+  function speakerLineWords(text) {
+    const words = String(text || '').replace(/^\s*\([^()]{1,24}\)\s*/, '').trim().split(/\s+/).filter(Boolean);
+    return words.slice(0, 8).join(' ') + (words.length > 8 ? '…' : '');
+  }
+
   function speakerPickerVoiceNaming(trigger) {
     const voiceScoped = !!trigger.dataset.voiceId;
     return voiceScoped && (trigger.dataset.voiceOnly === '1' || trigger.dataset.voiceScope !== 'off');
@@ -5294,17 +5324,42 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
       return String(person.name || person.entity_id || '').toLowerCase().includes(normalized);
     });
     const lineChoices = !options.voiceNaming;
+    // The line's own answers come first, then the people, and last the way
+    // out to the speakers page, which leaves this page.
     return [
       ...(lineChoices ? [{ kind: 'owner', name: trCopy('TR_SPEAKER_PICKER_OWNER'), entity_id: '' }] : []),
+      ...(lineChoices ? [{ kind: 'unknown', name: trCopy('TR_SPEAKER_PICKER_UNKNOWN'), entity_id: '' }] : []),
+      ...(lineChoices && options.ownerSet ? [{ kind: 'guess', name: trCopy('TR_SPEAKER_PICKER_GUESS'), entity_id: '' }] : []),
       ...filtered.map(person => ({
         kind: 'known',
         name: String(person.name || person.entity_id || ''),
         entity_id: String(person.entity_id || '')
       })),
-      ...(lineChoices ? [{ kind: 'unknown', name: trCopy('TR_SPEAKER_PICKER_UNKNOWN'), entity_id: '' }] : []),
-      ...(lineChoices && options.ownerSet ? [{ kind: 'guess', name: trCopy('TR_SPEAKER_PICKER_GUESS'), entity_id: '' }] : []),
       ...(options.teach ? [{ kind: 'someone_else', name: trCopy('TR_SPEAKER_SOMEONE_ELSE'), entity_id: '', handoff: true }] : [])
     ];
+  }
+
+  function speakerPickerOptionHtml(option, trigger) {
+    const data = `data-speaker-option="${escapeHtml(option.kind)}" data-speaker-id="${escapeHtml(option.entity_id)}" data-speaker-name="${escapeHtml(option.name)}"`;
+    if (option.handoff) {
+      return `<hr class="tr-speaker-picker-divider"><a class="tr-speaker-picker-option tr-speaker-picker-handoff" href="${escapeHtml(speakerStatementHandoffUrl(trigger))}" ${data} data-speaker-handoff="statement">${escapeHtml(option.name)}</a>`;
+    }
+    return `<button type="button" class="tr-speaker-picker-option" ${data}>${escapeHtml(option.name)}</button>`;
+  }
+
+  // The line a picker answers for: its time and first words, which head the
+  // picker on a phone, where the line itself may be out of sight.
+  function speakerPickerLine(trigger) {
+    const time = trigger.closest('.tr-entry')?.querySelector('.tr-entry-time')?.textContent || '';
+    const words = trigger.dataset.lineWords || '';
+    return time && words ? { time, words } : null;
+  }
+
+  function speakerPickerTitleHtml(trigger) {
+    const line = speakerPickerLine(trigger);
+    const any = `<span class="tr-speaker-picker-title-any">${escapeHtml(trCopy('TR_SPEAKER_PICKER_TITLE'))}</span>`;
+    if (!line) return `<div class="tr-speaker-picker-title">${any}</div>`;
+    return `<div class="tr-speaker-picker-title tr-speaker-picker-title--line">${any}<span class="tr-speaker-picker-title-line"><span class="tr-speaker-picker-title-time">${escapeHtml(line.time)}</span> <span class="tr-speaker-picker-title-words">${escapeHtml(line.words)}</span></span></div>`;
   }
 
   function lineOnlyHtml() {
@@ -5428,23 +5483,14 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
       : (knownMatches.length === 0 ? trCopy('TR_SPEAKER_PICKER_NO_RESULTS') : '');
     popover.innerHTML = `
       <div class="tr-speaker-picker-head">
-        <div class="tr-speaker-picker-title">${escapeHtml(trCopy('TR_SPEAKER_PICKER_TITLE'))}</div>
+        ${speakerPickerTitleHtml(trigger)}
         <button type="button" class="tr-speaker-picker-close" aria-label="${escapeHtml(trCopy('TR_SPEAKER_PROPAGATION_DISMISS'))}">×</button>
       </div>
       ${voiceScoped && !ownerSet ? `<label class="tr-speaker-picker-scope"><input type="checkbox" class="tr-speaker-picker-scope-input"${voiceNaming ? ' checked' : ''}${voiceOnly ? ' disabled' : ''}> ${escapeHtml(trCopy('TR_SPEAKER_VOICE_SCOPE'))}</label>${voiceNaming ? `<div class="tr-speaker-picker-scope-note">${escapeHtml(trCopy('TR_SPEAKER_VOICE_SCOPE_NOTE'))}</div>` : ''}` : ''}
       ${voiceNaming ? '' : lineOnlyHtml()}
       ${showSearch ? `<input class="tr-speaker-picker-search" type="search" value="${escapeHtml(query)}" placeholder="${escapeHtml(trCopy('TR_SPEAKER_PICKER_SEARCH_PLACEHOLDER'))}">` : ''}
-      <div class="tr-speaker-picker-list" role="listbox">
-        ${options.map(option => `
-          <button
-            type="button"
-            class="tr-speaker-picker-option"
-            data-speaker-option="${escapeHtml(option.kind)}"
-            data-speaker-id="${escapeHtml(option.entity_id)}"
-            data-speaker-name="${escapeHtml(option.name)}"
-            ${option.handoff ? 'data-speaker-handoff="statement"' : ''}
-          >${escapeHtml(option.name)}</button>
-        `).join('')}
+      <div class="tr-speaker-picker-list" role="group" aria-label="${escapeHtml(trCopy('TR_SPEAKER_PICKER_TITLE'))}">
+        ${options.map(option => speakerPickerOptionHtml(option, trigger)).join('')}
       </div>
       <div class="tr-speaker-picker-tail">
         ${emptyText ? `<div>${escapeHtml(emptyText)}</div>` : ''}

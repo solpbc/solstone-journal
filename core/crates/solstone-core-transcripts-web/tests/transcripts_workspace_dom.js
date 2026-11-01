@@ -2333,13 +2333,29 @@ async function pickerEnvironment(options = {}) {
   return env;
 }
 
-test('the picker offers me, any person and someone i don\'t know, with no journal guess to go back to', async () => {
+test('the picker offers me, someone i don\'t know and any person, with no journal guess to go back to', async () => {
   const env = await pickerEnvironment();
   const popover = await env.openPicker(1);
-  assert.deepStrictEqual(env.options(popover), ['owner', 'known', 'unknown', 'someone_else']);
+  assert.deepStrictEqual(env.options(popover), ['owner', 'unknown', 'known', 'someone_else']);
+  const list = popover.querySelector('.tr-speaker-picker-list');
+  assert.strictEqual(list.getAttribute('role'), 'group');
+  const handoff = popover.querySelector('[data-speaker-handoff="statement"]');
+  assert.strictEqual(handoff.tagName, 'A', 'teaching a voice leaves the page, so it is a link');
+  assert.ok(new URL(handoff.getAttribute('href'), 'https://journal.example').pathname === '/app/speakers/');
+  const children = list.children;
+  assert.strictEqual(children[children.indexOf(handoff) - 1].tagName, 'HR', 'a divider sets it apart');
   assert.strictEqual(popover.querySelector('[data-speaker-option="known"]').dataset.speakerId, 'romeo',
     'every admitted person but the owner, not only voices the journal grouped');
   assert.strictEqual(popover.querySelector('[data-speaker-option="guess"]'), null);
+});
+
+test('the picker can be headed by its line\'s time and first words', async () => {
+  const env = await pickerEnvironment();
+  const popover = await env.openPicker(1);
+  const title = popover.querySelector('.tr-speaker-picker-title');
+  assert.ok(title.classList.contains('tr-speaker-picker-title--line'));
+  assert.ok(title.querySelector('.tr-speaker-picker-title-time').textContent);
+  assert.strictEqual(title.querySelector('.tr-speaker-picker-title-words').textContent, 'line 1');
 });
 
 test('the picker says the answer fixes this line only and links to the speakers page', async () => {
@@ -2358,7 +2374,7 @@ test('a line carrying the owner\'s answer shows it, offers the journal\'s guess 
   assert.ok(env.chip(4).querySelector('.tr-speaker-owner-set'));
   assert.strictEqual(env.chip(1).querySelector('.tr-speaker-owner-set'), null);
   const popover = await env.openPicker(2);
-  assert.deepStrictEqual(env.options(popover), ['owner', 'known', 'unknown', 'guess']);
+  assert.deepStrictEqual(env.options(popover), ['owner', 'unknown', 'guess', 'known']);
   assert.strictEqual(popover.querySelector('[data-speaker-handoff]'), null);
   assert.strictEqual(popover.querySelector('.tr-speaker-picker-scope-input'), null);
 });
@@ -2422,7 +2438,7 @@ test('naming a voice everywhere stays as it was, and unticking it offers the lin
   scope.checked = false;
   scope.dispatchEvent({ type: 'change', target: scope });
   popover = env.doc.querySelector('.tr-speaker-popover');
-  assert.deepStrictEqual(env.options(popover), ['owner', 'known', 'unknown', 'someone_else']);
+  assert.deepStrictEqual(env.options(popover), ['owner', 'unknown', 'known', 'someone_else']);
   const again = popover.querySelector('.tr-speaker-picker-scope-input');
   again.checked = true;
   again.dispatchEvent({ type: 'change', target: again });
