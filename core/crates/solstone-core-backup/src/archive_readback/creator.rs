@@ -101,6 +101,56 @@ pub struct DirectArchiveSnapshot {
 pub struct DirectArchiveFailure {
     pub reason: ReadbackError,
     pub effects: DirectArchiveEffects,
+    pub diagnostic: Option<ArchiveCommandDiagnostic>,
+}
+
+/// Bounded display data from an actual failed archive child, never completion
+/// or settlement authority. Known command credentials are removed before clipping.
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize)]
+pub struct ArchiveCommandDiagnostic {
+    stderr: String,
+    truncated: bool,
+}
+
+impl ArchiveCommandDiagnostic {
+    pub fn from_stderr(stderr: &[u8], environment: &BTreeMap<OsString, OsString>) -> Option<Self> {
+        let mut text = String::from_utf8_lossy(stderr).into_owned();
+        if text.trim().is_empty() {
+            return None;
+        }
+        let secret_keys = [
+            "RESTIC_REPOSITORY",
+            "RESTIC_PASSWORD",
+            "AWS_ACCESS_KEY_ID",
+            "AWS_SECRET_ACCESS_KEY",
+            "AWS_SESSION_TOKEN",
+            "B2_ACCOUNT_ID",
+            "B2_ACCOUNT_KEY",
+            "RCLONE_CONFIG_SPB_ACCESS_KEY_ID",
+            "RCLONE_CONFIG_SPB_SECRET_ACCESS_KEY",
+            "RCLONE_CONFIG_SPB_SESSION_TOKEN",
+        ];
+        let mut secrets: Vec<_> = secret_keys
+            .iter()
+            .filter_map(|key| environment.get(std::ffi::OsStr::new(key)))
+            .filter_map(|value| value.to_str())
+            .filter(|value| !value.is_empty())
+            .collect();
+        secrets.sort_by_key(|value| std::cmp::Reverse(value.len()));
+        for secret in secrets {
+            text = text.replace(secret, "<redacted>");
+        }
+        let truncated = text.len() > 4096;
+        let mut end = text.len().min(4096);
+        while !text.is_char_boundary(end) {
+            end -= 1;
+        }
+        text.truncate(end);
+        Some(Self {
+            stderr: text,
+            truncated,
+        })
+    }
 }
 
 enum CreatorState {
@@ -889,6 +939,7 @@ impl OwnedArchiveCreator {
         Err(DirectArchiveFailure {
             reason: ReadbackError::Unsupported,
             effects: DirectArchiveEffects::NotAttempted,
+            diagnostic: None,
         })
     }
     #[cfg(not(target_os = "ios"))]
@@ -930,6 +981,7 @@ impl OwnedArchiveCreator {
                 return Err(DirectArchiveFailure {
                     reason: ReadbackError::Unsupported,
                     effects: DirectArchiveEffects::NotAttempted,
+                    diagnostic: None,
                 });
             };
             let index = custody.capture.archives.len();
@@ -943,6 +995,7 @@ impl OwnedArchiveCreator {
                     return Err(DirectArchiveFailure {
                         reason: ReadbackError::ToolFailed,
                         effects: DirectArchiveEffects::NotAttempted,
+                        diagnostic: None,
                     });
                 }
             };
@@ -955,14 +1008,19 @@ impl OwnedArchiveCreator {
             index
         };
         let mut effects = DirectArchiveEffects::NotAttempted;
-        let result = self.archive_inner(sources, argv, index, &mut effects);
+        let mut diagnostic = None;
+        let result = self.archive_inner(sources, argv, index, &mut effects, &mut diagnostic);
         if let Some(custody) = self.read.read.execution.borrow_mut().predecessor.as_mut() {
             custody.capture.archives[index].effects = effects.clone();
             if let Err(reason) = result {
                 custody.refuse(reason);
             }
         }
-        result.map_err(|reason| DirectArchiveFailure { reason, effects })
+        result.map_err(|reason| DirectArchiveFailure {
+            reason,
+            effects,
+            diagnostic,
+        })
     }
     #[cfg(not(any(unix, windows)))]
     fn archive_inner(
@@ -971,6 +1029,7 @@ impl OwnedArchiveCreator {
         _: Vec<OsString>,
         _: usize,
         _: &mut DirectArchiveEffects,
+        _: &mut Option<ArchiveCommandDiagnostic>,
     ) -> Result<DirectArchiveSnapshot, ReadbackError> {
         Err(ReadbackError::Unsupported)
     }
@@ -981,6 +1040,7 @@ impl OwnedArchiveCreator {
         argv: Vec<OsString>,
         index: usize,
         effects: &mut DirectArchiveEffects,
+        _diagnostic: &mut Option<ArchiveCommandDiagnostic>,
     ) -> Result<DirectArchiveSnapshot, ReadbackError> {
         let mut names = std::collections::BTreeSet::new();
         if sources.is_empty()
@@ -1096,6 +1156,7 @@ impl OwnedArchiveCreator {
         argv: Vec<OsString>,
         index: usize,
         effects: &mut DirectArchiveEffects,
+        diagnostic: &mut Option<ArchiveCommandDiagnostic>,
     ) -> Result<DirectArchiveSnapshot, ReadbackError> {
         let mut names = std::collections::BTreeSet::new();
         if sources.is_empty()
@@ -1214,6 +1275,12 @@ impl OwnedArchiveCreator {
             self.prepared_operation().budget().cancellation(),
         );
         let observed = child.as_ref().ok().map(|child| child.output().returncode);
+        if let Ok(child) = &child
+            && !child.successful()
+        {
+            *diagnostic =
+                ArchiveCommandDiagnostic::from_stderr(&child.output().stderr, &request.env);
+        }
         let snapshot = child
             .as_ref()
             .ok()

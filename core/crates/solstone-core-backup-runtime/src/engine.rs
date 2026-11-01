@@ -1802,6 +1802,7 @@ pub enum ArchiveRemoteEffects {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ArchiveFailure {
+    pub diagnostic: Option<solstone_core_backup::archive_readback::ArchiveCommandDiagnostic>,
     pub error: ArchiveError,
     pub remote_effects: ArchiveRemoteEffects,
 }
@@ -1810,8 +1811,35 @@ impl ArchiveFailure {
     #[cfg(any(target_os = "ios", test))]
     pub(crate) fn native_start(status: i32) -> Self {
         Self {
+            diagnostic: None,
             error: ArchiveError::NativeStart { status },
             remote_effects: ArchiveRemoteEffects::NotAttempted,
+        }
+    }
+}
+
+impl From<solstone_core_backup::archive_readback::DirectArchiveFailure> for ArchiveFailure {
+    fn from(failure: solstone_core_backup::archive_readback::DirectArchiveFailure) -> Self {
+        Self {
+            diagnostic: failure.diagnostic,
+            error: match failure.reason {
+                ReadbackError::Admission(reason) => reason.into(),
+                ReadbackError::NativeFailure => ArchiveError::SourceUnavailable,
+                ReadbackError::InvalidSelection => ArchiveError::InvalidSelection,
+                ReadbackError::RepositoryIdentityChanged => ArchiveError::RepositoryIdentityChanged,
+                ReadbackError::SnapshotNodeUnavailable => ArchiveError::SnapshotIdentityInvalid,
+                reason => ArchiveError::Readback(reason),
+            },
+            remote_effects: match failure.effects {
+                DirectArchiveEffects::NotAttempted => ArchiveRemoteEffects::NotAttempted,
+                DirectArchiveEffects::Attempted {
+                    returncode,
+                    observed_snapshot_id,
+                } => ArchiveRemoteEffects::Attempted {
+                    returncode,
+                    observed_snapshot_id,
+                },
+            },
         }
     }
 }
@@ -3517,28 +3545,7 @@ impl OwnedAdmittedArchive {
                 repository_id: snapshot.repository_id,
                 snapshot_id: snapshot.snapshot_id,
             })
-            .map_err(|failure| ArchiveFailure {
-                error: match failure.reason {
-                    ReadbackError::Admission(reason) => reason.into(),
-                    ReadbackError::NativeFailure => ArchiveError::SourceUnavailable,
-                    ReadbackError::InvalidSelection => ArchiveError::InvalidSelection,
-                    ReadbackError::RepositoryIdentityChanged => {
-                        ArchiveError::RepositoryIdentityChanged
-                    }
-                    ReadbackError::SnapshotNodeUnavailable => ArchiveError::SnapshotIdentityInvalid,
-                    reason => ArchiveError::Readback(reason),
-                },
-                remote_effects: match failure.effects {
-                    DirectArchiveEffects::NotAttempted => ArchiveRemoteEffects::NotAttempted,
-                    DirectArchiveEffects::Attempted {
-                        returncode,
-                        observed_snapshot_id,
-                    } => ArchiveRemoteEffects::Attempted {
-                        returncode,
-                        observed_snapshot_id,
-                    },
-                },
-            })
+            .map_err(ArchiveFailure::from)
     }
     pub fn into_read_operation(self) -> Result<OwnedReadOperation, OwnedArchiveAdmissionFailure> {
         self.creator
@@ -3942,6 +3949,7 @@ impl<'a> AdmittedArchive<'a> {
     pub fn archive(&mut self, paths: &[PathBuf]) -> Result<ArchiveSnapshot, ArchiveFailure> {
         if paths.is_empty() || paths.iter().any(|path| !path.is_absolute()) {
             return Err(ArchiveFailure {
+                diagnostic: None,
                 error: ArchiveError::InvalidSelection,
                 remote_effects: ArchiveRemoteEffects::NotAttempted,
             });
@@ -3970,6 +3978,7 @@ impl<'a> AdmittedArchive<'a> {
             })
         {
             return Err(ArchiveFailure {
+                diagnostic: None,
                 error: ArchiveError::InvalidSelection,
                 remote_effects: ArchiveRemoteEffects::NotAttempted,
             });
@@ -4064,6 +4073,7 @@ impl<'a> AdmittedArchive<'a> {
         sources: &[ArchiveSource<'_>],
     ) -> Result<ArchiveSnapshot, ArchiveFailure> {
         let before = |error| ArchiveFailure {
+            diagnostic: None,
             error,
             remote_effects: ArchiveRemoteEffects::NotAttempted,
         };
@@ -4114,6 +4124,7 @@ impl<'a> AdmittedArchive<'a> {
             observed_snapshot_id: observed_snapshot_id.clone(),
         };
         let after = |error| ArchiveFailure {
+            diagnostic: None,
             error,
             remote_effects: effects.clone(),
         };
@@ -5801,6 +5812,7 @@ mod tests {
                     assert_eq!(
                         admitted.archive_owned(&[source]).unwrap_err(),
                         ArchiveFailure {
+                            diagnostic: None,
                             error: ArchiveError::SourceUnavailable,
                             remote_effects: ArchiveRemoteEffects::NotAttempted
                         }
@@ -5836,6 +5848,7 @@ mod tests {
                         assert_eq!(
                             admitted.archive_owned(&[source]).unwrap_err(),
                             ArchiveFailure {
+                                diagnostic: None,
                                 error: ArchiveError::SourceUnavailable,
                                 remote_effects: if cut < 4 {
                                     ArchiveRemoteEffects::NotAttempted
@@ -5884,6 +5897,7 @@ mod tests {
                         assert_eq!(
                             admitted.archive_owned(&[source]).unwrap_err(),
                             ArchiveFailure {
+                                diagnostic: None,
                                 error: if cancelled {
                                     ArchiveError::Cancelled
                                 } else {
@@ -6053,6 +6067,7 @@ mod tests {
                 assert_eq!(
                     admitted.archive(&source(journal.path())).unwrap_err(),
                     ArchiveFailure {
+                        diagnostic: None,
                         error: ArchiveError::Cancelled,
                         remote_effects: ArchiveRemoteEffects::Attempted {
                             returncode: code,

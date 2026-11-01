@@ -41,3 +41,64 @@ fn offload_report_keeps_uncertain_effects_and_unavailable_totals() {
     }
     assert!(planning.get("budget_met").is_none());
 }
+
+#[test]
+fn failed_archive_stderr_reaches_report_bounded_and_redacted_without_settling_effects() {
+    use solstone_core_backup::archive_readback::{
+        ArchiveCommandDiagnostic, DirectArchiveEffects, DirectArchiveFailure, ReadbackError,
+    };
+    use std::{collections::BTreeMap, ffi::OsString};
+    let environment = BTreeMap::from([
+        (
+            OsString::from("RESTIC_PASSWORD"),
+            OsString::from("fixture-password"),
+        ),
+        (
+            OsString::from("AWS_SECRET_ACCESS_KEY"),
+            OsString::from("fixture-secret"),
+        ),
+        (
+            OsString::from("RCLONE_CONFIG_SPB_SESSION_TOKEN"),
+            OsString::from("fixture-session"),
+        ),
+        (
+            OsString::from("RCLONE_CONFIG_SPB_TYPE"),
+            OsString::from("s3"),
+        ),
+    ]);
+    let stderr = format!(
+        "Fatal: s3 command refused fixture-password fixture-secret fixture-session {}",
+        "\u{03b1}".repeat(4096)
+    );
+    let diagnostic =
+        ArchiveCommandDiagnostic::from_stderr(stderr.as_bytes(), &environment).unwrap();
+    let direct = DirectArchiveFailure {
+        reason: ReadbackError::ToolFailed,
+        effects: DirectArchiveEffects::Attempted {
+            returncode: Some(1),
+            observed_snapshot_id: None,
+        },
+        diagnostic: Some(diagnostic),
+    };
+    let report = archives(&[Err(ArchiveFailure::from(direct))]);
+    let message = report[0]["diagnostic"]["stderr"].as_str().unwrap();
+    assert!(message.starts_with("Fatal: s3 command refused <redacted> <redacted> <redacted>"));
+    assert!(message.len() <= 4096);
+    assert!(
+        !message.contains("fixture-password")
+            && !message.contains("fixture-secret")
+            && !message.contains("fixture-session")
+    );
+    assert_eq!(report[0]["diagnostic"]["truncated"], true);
+    assert_eq!(
+        report[0]["remote_effects"],
+        json!({"state":"attempted","returncode":1,"observed_snapshot_id":null})
+    );
+    let missing = DirectArchiveFailure {
+        reason: ReadbackError::ToolFailed,
+        effects: DirectArchiveEffects::NotAttempted,
+        diagnostic: None,
+    };
+    assert!(archives(&[Err(ArchiveFailure::from(missing))])[0]["diagnostic"].is_null());
+    assert!(ArchiveCommandDiagnostic::from_stderr(b"", &environment).is_none());
+}

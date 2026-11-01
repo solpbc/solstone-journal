@@ -54,6 +54,7 @@ struct DrainReport {
 
 fn not_attempted(error: ArchiveError) -> ArchiveFailure {
     ArchiveFailure {
+        diagnostic: None,
         error,
         remote_effects: ArchiveRemoteEffects::NotAttempted,
     }
@@ -65,6 +66,7 @@ fn attempted(
     snapshot_id: Option<String>,
 ) -> ArchiveFailure {
     ArchiveFailure {
+        diagnostic: None,
         error,
         remote_effects: ArchiveRemoteEffects::Attempted {
             returncode: status,

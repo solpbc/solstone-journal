@@ -21,9 +21,10 @@ mod nodes;
 mod seal;
 use creator::ArchivePredecessorCustody;
 pub use creator::{
-    AndroidArchiveWriter, ArchiveEndpointCapture, ArchivePredecessorCapture,
-    ArchiveWriterObservation, ArchiveWriterSourceObservation, DirectArchiveEffects,
-    DirectArchiveFailure, DirectArchiveSnapshot, OwnedArchiveCreator, OwnedArchiveCreatorAdmission,
+    AndroidArchiveWriter, ArchiveCommandDiagnostic, ArchiveEndpointCapture,
+    ArchivePredecessorCapture, ArchiveWriterObservation, ArchiveWriterSourceObservation,
+    DirectArchiveEffects, DirectArchiveFailure, DirectArchiveSnapshot, OwnedArchiveCreator,
+    OwnedArchiveCreatorAdmission,
 };
 pub use nodes::{ArchiveNodeRecord, parse_bounded_nodes};
 pub use seal::{OwnerObservation, same_owner};
