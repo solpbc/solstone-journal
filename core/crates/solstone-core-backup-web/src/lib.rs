@@ -71,7 +71,7 @@ pub mod route_lifetime;
 
 pub use operation::{AdmitWrite, WriteGuard, admit_write};
 pub(crate) use route_lifetime::LifetimeRunner;
-pub use route_lifetime::{BackupRouteDrain, BackupRouteLifetime};
+pub use route_lifetime::{BackupRouteDrain, BackupRouteLifetime, BackupRouteStop};
 pub use validation::{HandoffFieldError, require_https_portal_url};
 
 use measurement::SharedMeasurementCache;

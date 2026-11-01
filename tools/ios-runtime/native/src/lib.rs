@@ -62,10 +62,16 @@ impl ServingInstance {
             .map(|host| host.shutdown())
             .transpose();
         let serving = self.serving.shutdown_for_retirement();
-        if processing.is_err() || serving.is_err() {
+        if processing.is_err() {
             return Err("processing or serving drain failed; journal retained".into());
         }
-        Ok(())
+        match serving {
+            Ok(()) => Ok(()),
+            Err(journal_mobile_serving::ShutdownFailure::RetainedArchive) => {
+                Err("archive_custody_retained".into())
+            }
+            Err(_) => Err("processing or serving drain failed; journal retained".into()),
+        }
     }
 }
 static SERVING: Mutex<Option<ServingInstance>> = Mutex::new(None);
