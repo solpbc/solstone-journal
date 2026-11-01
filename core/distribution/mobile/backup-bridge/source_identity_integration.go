@@ -106,6 +106,8 @@ int32_t restic_bridge_teardown_v1_start(restic_request*,restic_s3_request*,resti
 int32_t restic_bridge_s3_teardown_observe_v1(int,const char*,uint32_t,const char*,uint32_t,int*,char*,uint32_t,uint32_t*);
 int32_t restic_bridge_s3_teardown_retire_v1(int,const char*,uint32_t,const char*,uint32_t);
 int32_t restic_bridge_s3_teardown_verify_v1(int,const char*,uint32_t,const char*,uint32_t);
+int32_t restic_bridge_s3_archive_sources_v1_start(restic_s3_request*,int,int,const char*,uint32_t,const char*,uint32_t,uint32_t,uint64_t*);
+int32_t restic_bridge_s3_archive_sources_v2_start(restic_s3_request*,int,int,const char*,uint32_t,const char*,uint32_t,uint32_t,uint64_t*,uint32_t*);
 */
 import "C"
 import "unsafe"
@@ -274,6 +276,29 @@ func sourceCRawS3Start(input sourceCInput, operation int32) (uint64, int32) {
 	id := C.uint64_t(0xfedcba9876543210)
 	status := C.restic_bridge_s3_start(&request, &id)
 	return uint64(id), int32(status)
+}
+
+func sourceCArchiveStart(input sourceCInput, legacy bool, sourceFD, stateFD int, root string, names []byte) (uint64, int32, archiveStartStage) {
+	var allocations []unsafe.Pointer
+	defer func() {
+		for _, p := range allocations {
+			C.free(p)
+		}
+	}()
+	request := sourceCS3Request(input, OpArchiveSources, &allocations)
+	rootPtr := C.CString(root)
+	defer C.free(unsafe.Pointer(rootPtr))
+	namesPtr := C.CBytes(names)
+	defer C.free(namesPtr)
+	var id C.uint64_t
+	stage := C.uint32_t(0xffffffff)
+	var status C.int32_t
+	if legacy {
+		status = C.restic_bridge_s3_archive_sources_v1_start(&request, C.int(stateFD), C.int(sourceFD), rootPtr, C.uint32_t(len(root)), (*C.char)(namesPtr), C.uint32_t(len(names)), 0, &id)
+	} else {
+		status = C.restic_bridge_s3_archive_sources_v2_start(&request, C.int(stateFD), C.int(sourceFD), rootPtr, C.uint32_t(len(root)), (*C.char)(namesPtr), C.uint32_t(len(names)), 0, &id, &stage)
+	}
+	return uint64(id), int32(status), archiveStartStage(stage)
 }
 
 func sourceCRawS3OperationV1Start(input sourceCInput, operation int32) (uint64, int32) {

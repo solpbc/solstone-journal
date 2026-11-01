@@ -20,6 +20,102 @@ pub trait Clock {
     fn iso_week(&self) -> u8;
 }
 
+/// Fixed native archive admission facts. No argument values or authority are carried.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum NativeArchiveStartStage {
+    Names,
+    LogicalRoot,
+    Reservation,
+    RemoteRequest,
+    RemoteFields,
+    RemoteConfiguration,
+    StateIdentity,
+    StateDestination,
+    StateOpen,
+    StatePermissions,
+    StateBinding,
+    StateReservation,
+    StateLock,
+    StatePolicy,
+    StateRoot,
+    StateCensus,
+    StateRecord,
+    StatePaths,
+    AppendOnly,
+    SourceIdentity,
+    SourceDuplicate,
+    SourceBinding,
+    SourceRoot,
+    SourceClose,
+    Publication,
+    RejectionCleanup,
+}
+
+impl NativeArchiveStartStage {
+    pub fn from_code(code: u32) -> Option<Self> {
+        match code {
+            1 => Some(Self::Names),
+            2 => Some(Self::LogicalRoot),
+            3 => Some(Self::Reservation),
+            4 => Some(Self::RemoteRequest),
+            5 => Some(Self::RemoteFields),
+            6 => Some(Self::RemoteConfiguration),
+            7 => Some(Self::StateIdentity),
+            8 => Some(Self::StateDestination),
+            9 => Some(Self::StateOpen),
+            10 => Some(Self::StatePermissions),
+            11 => Some(Self::StateBinding),
+            12 => Some(Self::StateReservation),
+            13 => Some(Self::StateLock),
+            14 => Some(Self::StatePolicy),
+            15 => Some(Self::StateRoot),
+            16 => Some(Self::StateCensus),
+            17 => Some(Self::StateRecord),
+            18 => Some(Self::StatePaths),
+            19 => Some(Self::AppendOnly),
+            20 => Some(Self::SourceIdentity),
+            21 => Some(Self::SourceDuplicate),
+            22 => Some(Self::SourceBinding),
+            23 => Some(Self::SourceRoot),
+            24 => Some(Self::SourceClose),
+            25 => Some(Self::Publication),
+            26 => Some(Self::RejectionCleanup),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Names => "names",
+            Self::LogicalRoot => "logical_root",
+            Self::Reservation => "reservation",
+            Self::RemoteRequest => "remote_request",
+            Self::RemoteFields => "remote_fields",
+            Self::RemoteConfiguration => "remote_configuration",
+            Self::StateIdentity => "state_identity",
+            Self::StateDestination => "state_destination",
+            Self::StateOpen => "state_open",
+            Self::StatePermissions => "state_permissions",
+            Self::StateBinding => "state_binding",
+            Self::StateReservation => "state_reservation",
+            Self::StateLock => "state_lock",
+            Self::StatePolicy => "state_policy",
+            Self::StateRoot => "state_root",
+            Self::StateCensus => "state_census",
+            Self::StateRecord => "state_record",
+            Self::StatePaths => "state_paths",
+            Self::AppendOnly => "append_only",
+            Self::SourceIdentity => "source_identity",
+            Self::SourceDuplicate => "source_duplicate",
+            Self::SourceBinding => "source_binding",
+            Self::SourceRoot => "source_root",
+            Self::SourceClose => "source_close",
+            Self::Publication => "publication",
+            Self::RejectionCleanup => "rejection_cleanup",
+        }
+    }
+}
+
 /// A shared refusal signal. Cancellation is irreversible and grants no authority.
 ///
 /// `task` is observed only by this request's child. [`Self::new_child`] does not

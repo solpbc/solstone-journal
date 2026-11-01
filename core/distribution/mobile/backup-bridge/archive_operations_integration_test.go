@@ -14,6 +14,58 @@ import (
 	"testing"
 )
 
+func TestArchiveStartRefusalStageBelongsToItsCInvocation(t *testing.T) {
+	f := newDirectoryFixture(t, true)
+	f.call(t, OpInit)
+	names := []byte(`["owner.txt"]`)
+	source, state := int(f.source.Fd()), int(f.state.Fd())
+	check := func(root string, payload []byte, sourceFD, stateFD int, expected archiveStartStage) {
+		t.Helper()
+		id, status, stage := sourceCArchiveStart(f.input, false, sourceFD, stateFD, root, payload)
+		if id != 0 || status != StatusInvalidArgument || stage != expected {
+			t.Fatalf("refusal changed status/identity/stage: id=%d status=%d stage=%d expected=%d", id, status, stage, expected)
+		}
+	}
+	check("archive", []byte(`[]`), source, state, archiveStartNames)
+	check("../archive", names, source, state, archiveStartLogicalRoot)
+	check("archive", names, source, -1, archiveStartStateIdentity)
+	check("archive", names, source, source, archiveStartStateBinding)
+	check("archive", names, -1, state, archiveStartSourceIdentity)
+	// Different concurrent refusals must carry their own stage, with no shared
+	// last-error slot or neighbor backfill.
+	results := make(chan archiveStartStage, 2)
+	for _, root := range []string{"archive", "../archive"} {
+		go func(root string) {
+			payload := names
+			if root == "archive" {
+				payload = []byte(`[]`)
+			}
+			_, _, stage := sourceCArchiveStart(f.input, false, source, state, root, payload)
+			results <- stage
+		}(root)
+	}
+	seen := map[archiveStartStage]bool{<-results: true, <-results: true}
+	if !seen[archiveStartNames] || !seen[archiveStartLogicalRoot] {
+		t.Fatal("concurrent refusal stage crossed invocations", seen)
+	}
+	for _, legacy := range []bool{false, true} {
+		id, status, stage := sourceCArchiveStart(f.input, legacy, source, state, "archive", names)
+		if status != StatusOk || id == 0 || !legacy && stage != archiveStartNone {
+			t.Fatalf("valid C archive refused or inherited a prior stage: %d %d %d", id, status, stage)
+		}
+		result, waited, freed := sourceCWaitAndFree(id)
+		if result.status != StatusOk || waited != StatusOk || freed != StatusOk || !validS3ID(result.snapshotID) {
+			t.Fatal("archive execution/retirement changed", result.status, waited, freed)
+		}
+	}
+	if _, err := f.source.Stat(); err != nil {
+		t.Fatal("caller source closed", err)
+	}
+	if _, err := f.state.Stat(); err != nil {
+		t.Fatal("caller state closed", err)
+	}
+}
+
 func archiveTestRepository(t *testing.T) (string, []byte) {
 	t.Helper()
 	repo := filepath.Join(t.TempDir(), "repo")

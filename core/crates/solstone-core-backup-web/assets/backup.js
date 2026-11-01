@@ -1261,10 +1261,8 @@
     if (typeof bytes !== 'number' || !Number.isFinite(bytes) || bytes <= 0) {
       return '';
     }
-    const value = bytes / BYTES_PER_GB;
-    const rounded = Math.round(value * 100) / 100;
-    if (rounded <= 0) return '0.01';
-    return String(rounded);
+    // Keep configured bytes exact when an unchanged field is saved or enabled.
+    return String(bytes / BYTES_PER_GB);
   }
 
   function applyOffloadSuggestion(field, hintSelector, suggestedBytes) {

@@ -115,3 +115,10 @@ an exit code of zero also covers a skipped offload. Stop can leave accepted,
 unstarted work with an unknown outcome. Receipts never restart that work.
 An unreadable receipt returns `503` and is preserved. Keep the saved ID and
 reconcile uncertainty before authorizing another operation.
+
+For iOS native archive admission refusals, the operation report can include
+`native_start: {status, refusal_stage}` on that failed archive. The stage is a
+fixed enum from the same invocation; it contains no argument values. Without a stage,
+`native_start` is null. It does not change the status, remote-effect classification
+or retained recovery custody. The consumer requires the matching backup bridge
+with `restic_bridge_s3_archive_sources_v2_start`; the v1 entry remains available.

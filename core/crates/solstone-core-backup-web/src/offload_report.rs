@@ -54,7 +54,10 @@ fn observed(offers: &ObservedOffloadOffers) -> Value {
 fn archives(results: &[Result<ArchiveSnapshot, ArchiveFailure>]) -> Value {
     json!(results.iter().map(|result| match result {
         Ok(snapshot) => json!({"repository_id":snapshot.repository_id,"snapshot_id":snapshot.snapshot_id}),
-        Err(failure) => json!({"reason":failure.error.to_string(),"diagnostic":failure.diagnostic,"remote_effects":match &failure.remote_effects {
+        Err(failure) => json!({"reason":failure.error.to_string(),"diagnostic":failure.diagnostic,"native_start":match failure.error {
+            solstone_core_backup_runtime::ArchiveError::NativeStart { status, stage: Some(stage) } => Some(json!({"status":status,"refusal_stage":stage.as_str()})),
+            _ => None,
+        },"remote_effects":match &failure.remote_effects {
             ArchiveRemoteEffects::NotAttempted => json!({"state":"not_attempted"}),
             ArchiveRemoteEffects::Attempted { returncode, observed_snapshot_id } => json!({"state":"attempted","returncode":returncode,"observed_snapshot_id":observed_snapshot_id}),
         }}),

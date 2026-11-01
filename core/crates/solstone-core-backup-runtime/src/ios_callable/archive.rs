@@ -315,7 +315,7 @@ fn start_archive(
     logical_root: &str,
     source: std::os::fd::BorrowedFd<'_>,
     names: &[u8],
-) -> Result<Call, i32> {
+) -> Result<Call, native::ArchiveStartFailure> {
     match &session.kind {
         OpenedKind::Local { path } => Call::archive_local(
             session.password.as_slice(),
@@ -323,10 +323,12 @@ fn start_archive(
             logical_root,
             source,
             names,
-        ),
+        )
+        .map_err(Into::into),
         OpenedKind::S3 { .. } => {
-            let state = state.ok_or(1)?;
-            let remote = remote(session, state).map_err(|_| 1)?;
+            let state = state.ok_or_else(|| native::ArchiveStartFailure::from(1))?;
+            let remote =
+                remote(session, state).map_err(|_| native::ArchiveStartFailure::from(1))?;
             Call::archive_remote(
                 session.password.as_slice(),
                 &remote,
@@ -552,7 +554,7 @@ impl OwnedAdmittedArchive {
         }
         let (session, state, timeout, cancellation) = prepare(self, authority)?;
         let call = start_archive(&session, state.as_ref(), logical_root, source, &payload)
-            .map_err(ArchiveFailure::native_start)?;
+            .map_err(|failure| ArchiveFailure::native_start(failure.status, failure.stage))?;
         let bound = bind_call(
             self,
             authority,

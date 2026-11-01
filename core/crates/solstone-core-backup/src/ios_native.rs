@@ -219,7 +219,7 @@ unsafe extern "C" {
         size_bound: u64,
         out_id: *mut u64,
     ) -> i32;
-    fn restic_bridge_s3_archive_sources_v1_start(
+    fn restic_bridge_s3_archive_sources_v2_start(
         request: *const RemoteRequest,
         state_fd: i32,
         source_fd: i32,
@@ -229,6 +229,7 @@ unsafe extern "C" {
         names_len: u32,
         append_only: u32,
         out_id: *mut u64,
+        refusal_stage: *mut u32,
     ) -> i32;
     fn restic_bridge_s3_list_nodes_v1_start(
         request: *const RemoteRequest,
@@ -426,7 +427,7 @@ mod unlinked {
     ) -> i32 {
         INVALID_ARGUMENT
     }
-    pub unsafe fn restic_bridge_s3_archive_sources_v1_start(
+    pub unsafe fn restic_bridge_s3_archive_sources_v2_start(
         _: *const RemoteRequest,
         _: i32,
         _: i32,
@@ -436,6 +437,7 @@ mod unlinked {
         _: u32,
         _: u32,
         _: *mut u64,
+        _: *mut u32,
     ) -> i32 {
         INVALID_ARGUMENT
     }
@@ -630,6 +632,21 @@ fn s3_request(
     })
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ArchiveStartFailure {
+    pub status: i32,
+    pub stage: Option<crate::archive_admission::NativeArchiveStartStage>,
+}
+
+impl From<i32> for ArchiveStartFailure {
+    fn from(status: i32) -> Self {
+        Self {
+            status,
+            stage: None,
+        }
+    }
+}
+
 impl Call {
     pub fn handle(&self) -> u64 {
         self.id
@@ -727,14 +744,15 @@ impl Call {
         source: BorrowedFd<'_>,
         names: &[u8],
         append_only: bool,
-    ) -> Result<Self, i32> {
+    ) -> Result<Self, ArchiveStartFailure> {
         let began = Instant::now();
         let request = s3_request(ARCHIVE_SOURCES, password, remote, &[])?;
         let logical_root = Bytes::new(logical_root.as_bytes())?;
         let names = Bytes::new(names)?;
         let mut id = 0;
+        let mut refusal_stage = 0;
         let status = unsafe {
-            restic_bridge_s3_archive_sources_v1_start(
+            restic_bridge_s3_archive_sources_v2_start(
                 &request,
                 remote.state.descriptor.as_raw_fd(),
                 source.as_raw_fd(),
@@ -744,9 +762,13 @@ impl Call {
                 names.length,
                 u32::from(append_only),
                 &mut id,
+                &mut refusal_stage,
             )
         };
-        Self::published(id, status, began)
+        Self::published(id, status, began).map_err(|status| ArchiveStartFailure {
+            status,
+            stage: crate::archive_admission::NativeArchiveStartStage::from_code(refusal_stage),
+        })
     }
 
     pub fn list_remote(
