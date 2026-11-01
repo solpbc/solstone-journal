@@ -500,6 +500,12 @@ fn exercise_verifier_construction(foreign_dir: &Path, resource_dir: &Path) -> Nv
 #[test]
 #[allow(unsafe_code)]
 fn android_service_tools_process_lifecycle_and_env_isolation() {
+    let archive_writer = solstone_core_backup_runtime::resolve::android_archive_writer_authority();
+    assert!(
+        archive_writer
+            .revalidate_program(Path::new("/uninstalled/librclone.so"))
+            .is_err()
+    );
     let dummy_exe = Path::new("/system/bin/app_process64");
     let journal = configured_journal();
     let capability = prepare(journal.path(), &FixedClock).unwrap();
@@ -714,6 +720,24 @@ fn android_service_tools_process_lifecycle_and_env_isolation() {
         restic_full
     );
     assert_eq!(resolved_op.rclone_path, Some(rclone_full));
+
+    // The operated creator must use the admitted service tool, not a desktop
+    // package. The retained authority rechecks bytes even after initial admission.
+    assert!(
+        solstone_core_installed_payload::resolve_current_member("lib/solstone-rclone/rclone")
+            .is_err()
+    );
+    let rclone_full = native_temp.path().join(ANDROID_RCLONE_FILENAME);
+    archive_writer.revalidate_program(&rclone_full).unwrap();
+    assert_eq!(
+        archive_writer.revalidate_program(Path::new("/injected/rclone")),
+        Err(solstone_core_backup::archive_readback::ReadbackError::ToolChanged)
+    );
+    let original_rclone = fs::read(&rclone_full).unwrap();
+    fs::write(&rclone_full, b"changed-rclone-after-admission").unwrap();
+    assert!(archive_writer.revalidate_program(&rclone_full).is_err());
+    fs::write(&rclone_full, original_rclone).unwrap();
+    archive_writer.revalidate_program(&rclone_full).unwrap();
 
     let verifier_command = exercise_verifier_construction(other_temp.path(), resource_temp.path());
     exercise_private_appraisal_staging(resource_temp.path());
