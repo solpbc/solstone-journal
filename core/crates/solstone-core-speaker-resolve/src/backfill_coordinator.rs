@@ -15,7 +15,8 @@ use std::time::Duration;
 
 use chrono::Utc;
 use solstone_core_journal_io::{
-    JournalRoot, JournalRootError, LockError, LockOptions, ObjectIdentity, hold_lock,
+    DEFAULT_LOCK_POLL_INTERVAL, JournalRoot, JournalRootError, LockError, LockOptions,
+    ObjectIdentity, hold_lock,
 };
 use thiserror::Error;
 
@@ -33,12 +34,25 @@ static ACTIVE_TOKENS: LazyLock<Mutex<HashMap<(ObjectIdentity, String), u64>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 static NEXT_TOKEN: AtomicU64 = AtomicU64::new(1);
 
+/// How long the catch-up leaves the entity trust lock free after each segment.
+///
+/// Each segment takes the lock and the next one takes it again at once. A
+/// waiter in another process retries at random intervals no longer than
+/// [`DEFAULT_LOCK_POLL_INTERVAL`], so without a pause it almost never lands in
+/// the gap, and a writer that does not retry (per-segment entity detection)
+/// loses its turn for good. Twice the longest retry interval lets every waiter
+/// try at least once before the catch-up continues.
+const ENTITY_TRUST_YIELD: Duration = DEFAULT_LOCK_POLL_INTERVAL.saturating_mul(2);
+
 #[cfg(test)]
 #[derive(Default)]
 pub struct BackfillTestHooks {
     pub inject_scan_failure: Option<String>,
     pub inject_executor_failure: Option<String>,
     pub inject_panic: bool,
+    /// Hold the entity trust lock this long around each segment, as a slow
+    /// segment on a real journal does.
+    pub member_hold: Option<Duration>,
 }
 
 #[cfg(test)]
@@ -603,14 +617,19 @@ fn run_backfill_attempt(
 
             let labels_path = segment_path.join("talents/speaker_labels.json");
             let labels_before = state.commit.then(|| std::fs::read(&labels_path).ok());
-            let (outcome, error_detail) = execute_backfill_member(
-                &journal_root,
-                &key,
-                &segment_path,
-                state.commit,
-                state.accumulation,
-                now_ms,
-            );
+            let (outcome, error_detail) = {
+                #[cfg(test)]
+                let _slow_member = hold_member_for_test(&journal_root);
+                execute_backfill_member(
+                    &journal_root,
+                    &key,
+                    &segment_path,
+                    state.commit,
+                    state.accumulation,
+                    now_ms,
+                )
+            };
+            std::thread::sleep(ENTITY_TRUST_YIELD);
             if let Some(before) = labels_before
                 && std::fs::read(&labels_path).ok() != before
             {
@@ -685,6 +704,17 @@ fn run_backfill_attempt(
 
     drop(execution_lock);
     clear_active_token(identity, &operation_id, token_id);
+}
+
+#[cfg(test)]
+fn hold_member_for_test(journal_root: &Path) -> Option<solstone_core_entity::EntityTrustLock> {
+    let hold = TEST_HOOKS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .member_hold?;
+    let trust = solstone_core_entity::hold_entity_trust_lock(journal_root).ok()?;
+    std::thread::sleep(hold);
+    Some(trust)
 }
 
 /// Once a checkpoint is written, ask the journal to think again the recent
@@ -768,6 +798,108 @@ mod tests {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.0);
         }
+    }
+
+    /// A writer in another process waiting for the entity trust lock gets it
+    /// while the catch-up still has segments to walk. Segments hold the lock
+    /// for 100ms and the writer waits 600ms, about the ratio of a real
+    /// segment (under two seconds) to entity detection's ten-second wait.
+    #[cfg(feature = "full-tests")]
+    #[test]
+    fn a_waiting_writer_gets_entity_trust_between_catch_up_segments() {
+        struct ResetHooks;
+        impl Drop for ResetHooks {
+            fn drop(&mut self) {
+                TEST_HOOKS
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .member_hold = None;
+            }
+        }
+
+        let _test_lock = COORD_TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let temp = Temp::new();
+        for minute in 0..12 {
+            let segment = temp
+                .path()
+                .join(format!("chronicle/20260808/mic/12{minute:02}00_300"));
+            fs::create_dir_all(segment.join("talents")).unwrap();
+            fs::write(
+                segment.join("talents/speaker_labels.json"),
+                r#"{"labels": [], "skipped": true}"#,
+            )
+            .unwrap();
+            fs::write(segment.join("audio.npz"), b"fake npz").unwrap();
+        }
+        let _reset = ResetHooks;
+        TEST_HOOKS
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .member_hold = Some(Duration::from_millis(100));
+
+        start_backfill(
+            temp.path(),
+            &StartBackfillRequest {
+                operation_id: Some("bfop-yield".to_owned()),
+                commit: true,
+                reattribute: false,
+                accumulation: false,
+                now_ms: 1,
+            },
+        )
+        .unwrap();
+
+        let lock_file = temp.path().join("health/locks/entity-trust");
+        let started = std::time::Instant::now();
+        loop {
+            let probe = hold_lock(
+                &lock_file,
+                LockOptions {
+                    timeout: Duration::ZERO,
+                    ..Default::default()
+                },
+            );
+            if matches!(probe, Err(LockError::Timeout(_))) {
+                break;
+            }
+            drop(probe);
+            assert!(
+                started.elapsed() < Duration::from_secs(5),
+                "the catch-up never took the entity trust lock"
+            );
+            std::thread::sleep(Duration::from_millis(1));
+        }
+
+        let waiter = hold_lock(
+            &lock_file,
+            LockOptions {
+                timeout: Duration::from_millis(600),
+                ..Default::default()
+            },
+        );
+        let status = backfill_status(temp.path(), "bfop-yield").unwrap().unwrap();
+        assert!(
+            waiter.is_ok(),
+            "a waiting writer lost the entity trust lock to the catch-up: {waiter:?}"
+        );
+        assert_eq!(status.status, BackfillStatusKind::ActiveRunning);
+        drop(waiter);
+
+        for _ in 0..250 {
+            if backfill_status(temp.path(), "bfop-yield")
+                .unwrap()
+                .is_some_and(|s| {
+                    !matches!(
+                        s.status,
+                        BackfillStatusKind::ActivePreparing | BackfillStatusKind::ActiveRunning
+                    )
+                })
+            {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        panic!("the catch-up did not finish after the writer released the lock");
     }
 
     #[test]
