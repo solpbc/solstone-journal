@@ -196,11 +196,40 @@ pub(crate) fn apply_result_cancellable(
             .and_then(solstone_core_speaker_resolve::activity_reresolution::speaker_number)
             .is_some()
     });
-    let numbered_lines = if any_meeting && has_numbered {
+    let numbered = if has_numbered {
         collect_numbered_lines(journal, day, &segments, stream)?
     } else {
-        Vec::new()
+        NumberedVoices::default()
     };
+    // A numbered voice whose every line here the owner answered alike is who
+    // they said: the owner, whom Participation never lists, or the one person
+    // they named, unless that person is already listed.
+    let listed = resolved
+        .iter()
+        .filter_map(|entry| entry.get("entity_id").and_then(Value::as_str))
+        .map(str::to_owned)
+        .collect::<BTreeSet<_>>();
+    resolved.retain_mut(|entry| {
+        let Some(speaker) = entry
+            .get("name")
+            .and_then(Value::as_str)
+            .and_then(solstone_core_speaker_resolve::activity_reresolution::speaker_number)
+            .and_then(|number| numbered.sole_answer(number))
+        else {
+            return true;
+        };
+        if owner.id.as_deref() == Some(speaker) || listed.contains(speaker) {
+            return false;
+        }
+        if let Some(person) = people
+            .iter()
+            .find(|person| person.id.as_deref() == Some(speaker))
+        {
+            entry.insert("name".to_owned(), Value::String(person.name.clone()));
+            entry.insert("entity_id".to_owned(), Value::String(speaker.to_owned()));
+        }
+        true
+    });
     if !segments.is_empty() && !any_meeting {
         for entry in &mut resolved {
             if entry.get("role").and_then(Value::as_str) == Some("attendee") {
@@ -263,7 +292,8 @@ pub(crate) fn apply_result_cancellable(
             // same, because run numbers are per audio stem and only the labelled
             // audio source is named.
             if entry.get("role").and_then(Value::as_str) == Some("attendee") {
-                let count = numbered_lines
+                let count = numbered
+                    .lines
                     .iter()
                     .filter(|line| line.number == number && !line.owner)
                     .count();
@@ -501,6 +531,93 @@ pub(crate) fn apply_result_cancellable(
 struct NumericLine {
     number: i64,
     owner: bool,
+    /// The owner answered who said it, naming someone the transcript could
+    /// not show by name.
+    answered: bool,
+}
+
+/// The activity's numbered voices as its transcript reads them.
+#[derive(Debug, Default)]
+struct NumberedVoices {
+    /// Every line the transcript still shows under a number.
+    lines: Vec<NumericLine>,
+    /// Each line the owner answered with a person or themselves, by the
+    /// number the transcript would show for it and the entity they named.
+    answered: Vec<(i64, String)>,
+}
+
+impl NumberedVoices {
+    /// The one entity the owner named for every line of `number`, when they
+    /// answered all of them alike.
+    fn sole_answer(&self, number: i64) -> Option<&str> {
+        if self
+            .lines
+            .iter()
+            .any(|line| line.number == number && !line.owner && !line.answered)
+        {
+            return None;
+        }
+        let mut answers = self
+            .answered
+            .iter()
+            .filter(|(answered, _)| *answered == number)
+            .map(|(_, speaker)| speaker.as_str());
+        let first = answers.next()?;
+        answers.all(|speaker| speaker == first).then_some(first)
+    }
+}
+
+/// Who the owner said spoke each line of a segment's labelled source, for the
+/// lines they named a person or themselves on.
+fn owner_answers(who: &solstone_core_transcripts::WhoSpoke) -> BTreeMap<i64, String> {
+    who.owner_set
+        .iter()
+        .filter_map(|(line, answer)| Some((*line, answer.speaker.clone()?)))
+        .collect()
+}
+
+/// The number the activity read shows for each answered line of `stem`: its
+/// diarization number, renumbered across the run where the segment has
+/// embeddings, exactly as the transcript renumbers it.
+fn answered_numbers(
+    segment_dir: &std::path::Path,
+    path: &std::path::Path,
+    stem: &str,
+    answers: &BTreeMap<i64, String>,
+) -> Vec<(i64, String)> {
+    let Ok(text) = std::fs::read_to_string(path) else {
+        return Vec::new();
+    };
+    let runs = if segment_dir.join(format!("{stem}.npz")).is_file() {
+        solstone_core_speaker_id::run_numbers::run_speaker_numbers(segment_dir, stem)
+    } else {
+        BTreeMap::new()
+    };
+    let mut ordinal = 0;
+    let mut answered = Vec::new();
+    for line in text.lines() {
+        let Ok(Value::Object(record)) = serde_json::from_str::<Value>(line.trim()) else {
+            continue;
+        };
+        let Some(id) = solstone_core_transcripts::next_line_coordinate(&record, &mut ordinal)
+        else {
+            continue;
+        };
+        if let (Some(speaker), Some(diarized)) = (
+            answers.get(&id),
+            record.get("speaker").and_then(Value::as_i64),
+        ) {
+            let number = runs.get(&diarized).copied().unwrap_or(diarized);
+            answered.push((number, speaker.clone()));
+        }
+    }
+    answered
+}
+
+struct SegmentWho {
+    labelled: Option<String>,
+    owner_ids: BTreeSet<i64>,
+    answers: BTreeMap<i64, String>,
 }
 
 fn collect_numbered_lines(
@@ -508,7 +625,7 @@ fn collect_numbered_lines(
     day: &str,
     segments: &[&str],
     stream: Option<&str>,
-) -> Result<Vec<NumericLine>, String> {
+) -> Result<NumberedVoices, String> {
     let voices = crate::transcript::voice_names(journal);
     let principal = voices.as_ref().map(|v| v.principal.clone());
     let sources = solstone_core_transcripts::Sources {
@@ -522,25 +639,25 @@ fn collect_numbered_lines(
             journal, day, segments, &sources, stream,
         )?;
 
-    let mut segment_labels = BTreeMap::<std::path::PathBuf, (Option<String>, BTreeSet<i64>)>::new();
-    let mut lines = Vec::new();
+    let mut segment_labels = BTreeMap::<std::path::PathBuf, SegmentWho>::new();
+    let mut numbered = NumberedVoices::default();
 
     for entry_source in screen_transcript.sources.iter().flatten() {
         let Some(segment_dir) = entry_source.path.parent() else {
             continue;
         };
-        let (labelled_stem, owner_sentence_ids) = segment_labels
+        let labels = segment_labels
             .entry(segment_dir.to_path_buf())
             .or_insert_with(|| {
                 let labelled = solstone_core_transcripts::labelled_audio_source(segment_dir);
+                // Who spoke, with the owner's own answers applied.
+                let who = solstone_core_transcripts::load_who_spoke(
+                    segment_dir,
+                    labelled.as_deref(),
+                    None,
+                );
                 let mut owner_ids = BTreeSet::new();
                 if let Some(ref principal_id) = principal {
-                    // Who spoke, with the owner's own answers applied.
-                    let who = solstone_core_transcripts::load_who_spoke(
-                        segment_dir,
-                        labelled.as_deref(),
-                        None,
-                    );
                     for label in &who.rows {
                         if label.get("speaker").and_then(Value::as_str)
                             == Some(principal_id.as_str())
@@ -550,13 +667,27 @@ fn collect_numbered_lines(
                         }
                     }
                 }
-                (labelled, owner_ids)
+                SegmentWho {
+                    labelled,
+                    owner_ids,
+                    answers: owner_answers(&who),
+                }
             });
 
         let file_stem = std::path::Path::new(&entry_source.file)
             .file_stem()
             .and_then(|s| s.to_str());
-        let is_labelled = file_stem.is_some() && file_stem == labelled_stem.as_deref();
+        let labelled_stem = file_stem.filter(|stem| Some(*stem) == labels.labelled.as_deref());
+        if let Some(stem) = labelled_stem
+            && !labels.answers.is_empty()
+        {
+            numbered.answered.extend(answered_numbers(
+                segment_dir,
+                &entry_source.path,
+                stem,
+                &labels.answers,
+            ));
+        }
 
         // Each rendered chunk is a clone of one of the file's records, in
         // file order; the records carry the line coordinates.
@@ -575,11 +706,15 @@ fn collect_numbered_lines(
             let Some(number) = record.get("speaker").and_then(Value::as_i64) else {
                 continue;
             };
-            let owner = is_labelled && line.is_some_and(|sid| owner_sentence_ids.contains(&sid));
-            lines.push(NumericLine { number, owner });
+            let line = line.filter(|_| labelled_stem.is_some());
+            numbered.lines.push(NumericLine {
+                number,
+                owner: line.is_some_and(|sid| labels.owner_ids.contains(&sid)),
+                answered: line.is_some_and(|sid| labels.answers.contains_key(&sid)),
+            });
         }
     }
-    Ok(lines)
+    Ok(numbered)
 }
 
 /// A full name the day's detected entities leave unlinked, linked to the one
@@ -1926,6 +2061,56 @@ mod tests {
         assert!(entry.is_null(), "{entry}");
     }
 
+    /// A meeting whose three lines are all Speaker 3, every one answered by
+    /// the owner as `speaker`.
+    fn answered_numbered_voice(root: &Path, speaker: &str) -> Value {
+        use solstone_core_speaker_id::owner_line_labels::{
+            LineFingerprint, OwnerLineEntry, encode_owner_line_labels, owner_line_labels_path,
+        };
+        write_principal(root, "jordan", "Jordan Rivers");
+        write_participation_fixture(root, json!({"labels":[]}), json!([]));
+        let dir = root.join(format!("chronicle/{DAY}/{SEGMENT}"));
+        write_unembedded_segment(&dir, &[3, 3, 3]);
+        let entries = (1..=3)
+            .map(|line| OwnerLineEntry {
+                source: "audio".to_owned(),
+                sentence_id: line,
+                fingerprint: LineFingerprint::of_record(
+                    json!({"start": format!("00:00:{:02}", line - 1), "text": "line"})
+                        .as_object()
+                        .unwrap(),
+                ),
+                speaker: Some(speaker.to_owned()),
+                set_at: "2026-10-31T12:00:00Z".to_owned(),
+            })
+            .collect::<Vec<_>>();
+        fs::write(
+            owner_line_labels_path(&dir),
+            encode_owner_line_labels(&entries),
+        )
+        .unwrap();
+        apply(
+            root,
+            json!({"name":"Speaker 3","role":"attendee","source":"speaker_label"}),
+        )
+    }
+
+    #[test]
+    fn a_numbered_voice_whose_every_line_the_owner_says_is_theirs_is_not_listed() {
+        let root = tempfile::tempdir().expect("temporary journal");
+        let entry = answered_numbered_voice(root.path(), "jordan");
+        assert!(entry.is_null(), "{entry}");
+    }
+
+    #[test]
+    fn a_numbered_voice_whose_every_line_the_owner_gives_one_person_is_that_person() {
+        let root = tempfile::tempdir().expect("temporary journal");
+        let entry = answered_numbered_voice(root.path(), "person");
+        assert_eq!(entry["name"], "Ada Lovelace", "{entry}");
+        assert_eq!(entry["entity_id"], "person");
+        assert_eq!(entry["role"], "attendee");
+    }
+
     #[test]
     fn numbered_voice_ignores_speaker_placeholder_person_entity() {
         let cases = [(vec![3], None), (vec![3, 3, 3], Some("attendee"))];
@@ -2016,7 +2201,9 @@ mod tests {
         write_json(&talents3.join("speakers.json"), json!([]));
 
         let span = ["100000_300", "100500_300", "101000_300"];
-        let lines = collect_numbered_lines(root.path(), DAY, &span, None).unwrap();
+        let lines = collect_numbered_lines(root.path(), DAY, &span, None)
+            .unwrap()
+            .lines;
         let gate_numbers: BTreeSet<i64> = lines.iter().map(|line| line.number).collect();
 
         let sources = solstone_core_transcripts::Sources {
@@ -3081,13 +3268,19 @@ mod tests {
 
         fn readers(root: &Path) -> (Vec<NumericLine>, Vec<(String, bool)>) {
             (
-                collect_numbered_lines(root, DAY, &[SEGMENT], None).unwrap(),
+                collect_numbered_lines(root, DAY, &[SEGMENT], None)
+                    .unwrap()
+                    .lines,
                 voice_labels(root, DAY, SEGMENT, None, &people()),
             )
         }
 
         fn line(number: i64, owner: bool) -> NumericLine {
-            NumericLine { number, owner }
+            NumericLine {
+                number,
+                owner,
+                answered: false,
+            }
         }
 
         #[test]
