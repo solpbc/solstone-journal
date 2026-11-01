@@ -165,7 +165,7 @@ call :run_exact_integration "solstone-core-spp-ratls" "attested_channels" "fixtu
 call :run_exact_integration "solstone-core-spp-ratls" "attested_channels" "certificate_evidence_nonce_spki_criticality_and_presence_are_enforced" "full-tests,test-hooks" || exit /b 1
 call :run_exact_integration "solstone-core-spp-ratls" "attested_channels" "exporter_mismatch_rejects_after_a_verified_certificate" "full-tests,test-hooks" || exit /b 1
 call :run_exact_integration "solstone-core-spp-ratls" "attested_channels" "exact_spprat1_preface_nonce_and_exporter_request_establish_channel" "full-tests,test-hooks" || exit /b 1
-call :run_exact_integration "solstone-core-spp-ratls" "attested_channels" "certificate_rejection_writes_no_exporter_http_payload_and_closes" "full-tests,test-hooks" || exit /b 1
+call :run_exact_integration "solstone-core-spp-ratls" "attested_channels" "certificate_rejection_allows_only_the_bodyless_proof_request_and_closes" "full-tests,test-hooks" || exit /b 1
 call :run_exact_library "solstone-core-brain" "presentation::tests::a_platform_with_no_hardware_check_says_so_on_every_brain_surface" || exit /b 1
 call :run_exact_library "solstone-core-thinking" "brain::tests::this_platform_offers_confidential_processing" || exit /b 1
 call :run_exact_library "solstone-core-thinking" "brain::tests::with_no_hardware_check_confidential_processing_reads_not_on_platform" || exit /b 1
