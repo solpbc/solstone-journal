@@ -551,6 +551,14 @@ fn detection_failures_latch_after_one_attempt() {
 fn tier_one_temp_is_nonempty_before_atomic_promotion_and_is_removed_afterward() {
     let root = temporary_root("temp");
     let video = copied_video(&root, "mixed_vp8_screen.webm");
+    // A budget below the frames worth reading keeps the selection request (92bca88c5 keeps every frame that
+    // fits without one), so the stub's pause after five requests still lands while the tier-one temp is held.
+    fs::create_dir_all(root.join("config")).expect("config directory");
+    fs::write(
+        root.join("config/journal.json"),
+        r#"{"describe":{"max_extractions":1}}"#,
+    )
+    .expect("config");
     let release = root.join("release");
     let request_log = root.join("requests.jsonl");
     let mut child = describe(&root, &video, "generated")

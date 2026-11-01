@@ -260,7 +260,7 @@ impl TestRun {
             redo,
             config: WinnowConfig::default(),
             redact_rules,
-            max_extractions: 3,
+            max_extractions: 2, // below the 3 synthetic frames so selection still asks the model (92bca88c5 keeps every frame that fits without a call)
             category_overrides: BTreeMap::<String, CategoryOverride>::new(),
             capture: CaptureContext::default(),
         }
@@ -562,10 +562,12 @@ fn synthetic_decode_covers_selection_schema_and_category_branches() {
         "observe.extract.selection" => generated(request, "not JSON"),
         _ => default_response(request),
     });
+    // Frame 4 repeats frame 3, so three frames are worth reading against a budget of two and selection still asks the model
+    // (92bca88c5 keeps every frame that fits without a call); the non-JSON answer falls back to the first frame and the farthest one.
     run_decoded(
         test.options(false, Vec::new()),
         &factory,
-        decoded(&[1, 2, 3]),
+        decoded(&[1, 2, 3, 4]),
     )
     .expect("schema row failure and fallback selection complete");
 
@@ -585,8 +587,8 @@ fn synthetic_decode_covers_selection_schema_and_category_branches() {
     assert!(unextractable.get("content").is_none());
     let secondary = rows
         .iter()
-        .find(|row| row["frame_id"] == 3)
-        .expect("frame 3");
+        .find(|row| row["frame_id"] == 4)
+        .expect("frame 4");
     assert_eq!(secondary["content"]["code"], "# extracted markdown");
     assert_eq!(secondary["content"]["messaging"]["ok"], true);
 
@@ -597,7 +599,7 @@ fn synthetic_decode_covers_selection_schema_and_category_branches() {
         solstone_core_generate::ContentPart::Image { .. } => panic!("selection is text"),
     };
     let summaries: Vec<Value> = serde_json::from_str(selection_text).expect("selection summaries");
-    assert_eq!(summaries.len(), 2, "invalid categorization is omitted");
+    assert_eq!(summaries.len(), 3, "invalid categorization is omitted");
     assert!(phase_requests(&factory.requests(), "observe.describe.messaging").len() == 1);
 }
 
@@ -913,7 +915,12 @@ fn synthetic_decode_handles_session_and_phase_blockers_without_artifacts() {
     });
     assert!(matches!(
         run_decoded(
-            selection_test.options(false, Vec::new()),
+            {
+                // Two frames: a budget of one keeps the selection model call this case blocks.
+                let mut options = selection_test.options(false, Vec::new());
+                options.max_extractions = 1;
+                options
+            },
             &selection_factory,
             decoded(&[1, 2])
         ),

@@ -818,7 +818,9 @@ pub mod test_support {
                 let mut owner_nonce = [0u8; 32];
                 ring::rand::SystemRandom::new()
                     .fill(&mut owner_nonce)
-                    .map_err(|_| "random_failed")?;
+                    .map_err(|_| {
+                        solstone_core_spp_ratls::RatlsChannelError::new("random_failed")
+                    })?;
                 solstone_core_spp_ratls::establish_attested_channel_with_clock(
                     ratls_endpoint,
                     &owner_nonce,
@@ -864,7 +866,9 @@ pub mod test_support {
                 let mut owner_nonce = [0u8; 32];
                 ring::rand::SystemRandom::new()
                     .fill(&mut owner_nonce)
-                    .map_err(|_| "random_failed")?;
+                    .map_err(|_| {
+                        solstone_core_spp_ratls::RatlsChannelError::new("random_failed")
+                    })?;
                 solstone_core_spp_ratls::establish_attested_channel_with_clock(
                     ratls_endpoint,
                     &owner_nonce,
@@ -1738,11 +1742,16 @@ mod tests {
             );
         let sink = solstone_core_brain::BrainObservationSink::new(emitter);
         let barrier = Arc::new(Barrier::new(2));
+        // Both establishes are in flight together (barrier); the second then returns its failure only after the
+        // first call has published. The diagnostic emitter admits one send at a time and drops a concurrent one by
+        // design (best-effort bus), so two failures published in the same instant made this test lose a row.
+        let first_published = Arc::new((std::sync::Mutex::new(false), std::sync::Condvar::new()));
         let expected = std::thread::scope(|threads| {
             let handles: Vec<_> = (1..=2)
                 .map(|index| {
                     let sink = sink.clone();
                     let barrier = Arc::clone(&barrier);
+                    let first_published = Arc::clone(&first_published);
                     threads.spawn(move || {
                         let path = journal(&format!("private-selected-{index}"));
                         let config = active_spp_config();
@@ -1766,6 +1775,16 @@ mod tests {
                             |_| NvattestEnsureStatus::AlreadyInstalled,
                             |_, _, _, _| {
                                 barrier.wait();
+                                if index == 2 {
+                                    let (published, ready) = &*first_published;
+                                    let _ = ready
+                                        .wait_timeout_while(
+                                            published.lock().unwrap(),
+                                            Duration::from_secs(30),
+                                            |published| !*published,
+                                        )
+                                        .unwrap();
+                                }
                                 Err(solstone_core_spp_ratls::RatlsChannelError {
                                     reason_code: "proof_http_eof",
                                     selected_failure: Some(SelectedProofFailure {
@@ -1792,6 +1811,11 @@ mod tests {
                                 })
                             },
                         );
+                        if index == 1 {
+                            let (published, ready) = &*first_published;
+                            *published.lock().unwrap() = true;
+                            ready.notify_all();
+                        }
                         assert!(matches!(
                             result,
                             ConfidentialResult::AttestationFailed("proof_http_eof")
