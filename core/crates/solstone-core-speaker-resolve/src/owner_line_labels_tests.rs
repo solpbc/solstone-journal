@@ -756,28 +756,46 @@ fn clear(directory: &Path) {
     }
 }
 
-/// What segment removal leaves at each of its stages.
-fn remove_segment(segment: &Path, removal: Removal) -> PathBuf {
+/// What segment removal leaves at each of its stages, or `None` where Windows
+/// refuses to stage it: Windows will not rename a directory while a handle beneath
+/// it is open, such as the lock a write holds, so there a staged removal cannot
+/// begin under the write and that refusal is what keeps the race from happening.
+fn remove_segment(segment: &Path, removal: Removal) -> Option<PathBuf> {
     match removal {
         Removal::Tombstone => {
             clear(segment);
             fs::write(segment.join("tombstone.json"), b"{}").unwrap();
-            segment.to_path_buf()
+            Some(segment.to_path_buf())
         }
         Removal::Staged => {
             let staged = segment.with_file_name(format!(
                 ".removing_{}",
                 segment.file_name().unwrap().to_str().unwrap()
             ));
-            fs::rename(segment, &staged).unwrap();
+            match fs::rename(segment, &staged) {
+                Ok(()) => {}
+                #[cfg(windows)]
+                Err(error) => {
+                    assert_eq!(
+                        error.kind(),
+                        std::io::ErrorKind::PermissionDenied,
+                        "staging {}: {error}",
+                        segment.display()
+                    );
+                    return None;
+                }
+                #[cfg(not(windows))]
+                Err(error) => panic!("staging {}: {error}", segment.display()),
+            }
             clear(&staged);
-            staged
+            Some(staged)
         }
     }
 }
 
 #[test]
 fn a_set_or_remove_racing_a_segment_delete_refuses_and_recreates_nothing() {
+    let mut refusals = 0;
     for removal in [Removal::Tombstone, Removal::Staged] {
         for removing in [false, true] {
             for injected_call in 0.. {
@@ -789,9 +807,13 @@ fn a_set_or_remove_racing_a_segment_delete_refuses_and_recreates_nothing() {
                 }
                 let calls = std::cell::Cell::new(0);
                 let left = std::cell::RefCell::new(None);
+                let refused = std::cell::Cell::new(false);
                 let checkpoint = || {
                     if calls.get() == injected_call {
-                        *left.borrow_mut() = Some(remove_segment(&segment, removal));
+                        match remove_segment(&segment, removal) {
+                            Some(path) => *left.borrow_mut() = Some(path),
+                            None => refused.set(true),
+                        }
                     }
                     calls.set(calls.get() + 1);
                     Ok(())
@@ -805,6 +827,19 @@ fn a_set_or_remove_racing_a_segment_delete_refuses_and_recreates_nothing() {
                 };
                 let Some(left) = left.into_inner() else {
                     result.unwrap();
+                    if refused.get() {
+                        // Windows refused to stage the segment: it is still present
+                        // and the write landed in it.
+                        refusals += 1;
+                        assert!(segment.exists());
+                        let labels = entries(&segment);
+                        if removing {
+                            assert_eq!(labels, Vec::new());
+                        } else {
+                            assert_eq!(labels[0].speaker.as_deref(), Some("bo"));
+                        }
+                        continue;
+                    }
                     assert!(injected_call > 2, "{removal:?} reached every step");
                     break;
                 };
@@ -826,4 +861,7 @@ fn a_set_or_remove_racing_a_segment_delete_refuses_and_recreates_nothing() {
             }
         }
     }
+    // Windows must have refused staging at least once: the write holds its lock
+    // beneath the segment across a checkpoint. Elsewhere staging always succeeds.
+    assert_eq!(cfg!(windows), refusals > 0, "{refusals} staging refusals");
 }
