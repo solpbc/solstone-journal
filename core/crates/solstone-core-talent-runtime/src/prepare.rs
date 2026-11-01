@@ -1141,6 +1141,12 @@ mod tests {
             let told = render_shipped_talent(talent, told);
             assert_eq!(sections(&told), sections(&plain) + 2, "{talent}");
             assert!(told.contains(account), "{talent}");
+            // The talent's standing rule names each section it renders, so
+            // renaming one in code cannot leave the rule pointing at nothing.
+            for heading in ["Your Account", "A Recording"] {
+                assert!(told.contains(&format!("\n## {heading}\n")), "{talent}");
+                assert!(plain.contains(&format!("`{heading}`")), "{talent}");
+            }
 
             // A record the store normalized, with nothing the owner said.
             let mut normalized = base.clone();
