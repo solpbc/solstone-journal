@@ -64,10 +64,15 @@ func openOwnedDirectory(path string, entry *ownedCall) (*os.File, error) {
 }
 
 func adoptOwnedRoot(path string, pinned *os.File, entry *ownedCall) (*os.Root, error) {
+	return adoptOwnedRootDiagnosed(path, pinned, entry, nil)
+}
+
+func adoptOwnedRootDiagnosed(path string, pinned *os.File, entry *ownedCall, stage *archiveStartStage) (*os.Root, error) {
 	if entry == nil {
 		return adoptRoot(path, pinned)
 	}
 	if entry.failed() {
+		stage.at(archiveStartSourceRootCustody)
 		return nil, errOwnedCleanup
 	}
 	if testOwnedStage != nil {
@@ -75,14 +80,24 @@ func adoptOwnedRoot(path string, pinned *os.File, entry *ownedCall) (*os.Root, e
 	}
 	root, err := os.OpenRoot(path)
 	if err != nil {
+		stage.at(archiveRootOpenRefusal(err))
 		return nil, errPinnedIdentity
 	}
 	entry.hold(root)
 	info, statErr := root.Stat(".")
 	held, heldErr := pinned.Stat()
 	if statErr != nil || heldErr != nil || !os.SameFile(info, held) {
+		switch {
+		case statErr != nil:
+			stage.at(archiveStartSourceRootStat)
+		case heldErr != nil:
+			stage.at(archiveStartSourceRootPinnedStat)
+		default:
+			stage.at(archiveStartSourceRootIdentity)
+		}
 		entry.scrubRejection()
 		if closeErr := entry.close(root, "adopt-rejected-root"); closeErr != nil {
+			stage.at(archiveStartSourceRootCleanup)
 			return nil, closeErr
 		}
 		return nil, errPinnedIdentity

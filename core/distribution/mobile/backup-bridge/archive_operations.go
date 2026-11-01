@@ -57,6 +57,15 @@ typedef enum {
     RESTIC_ARCHIVE_START_SOURCE_CLOSE = 24,
     RESTIC_ARCHIVE_START_PUBLICATION = 25,
     RESTIC_ARCHIVE_START_REJECTION_CLEANUP = 26,
+    RESTIC_ARCHIVE_START_SOURCE_ROOT_CUSTODY = 27,
+    RESTIC_ARCHIVE_START_SOURCE_ROOT_OPEN_DENIED = 28,
+    RESTIC_ARCHIVE_START_SOURCE_ROOT_OPEN_UNAVAILABLE = 29,
+    RESTIC_ARCHIVE_START_SOURCE_ROOT_OPEN_RESOURCE = 30,
+    RESTIC_ARCHIVE_START_SOURCE_ROOT_OPEN_FAILED = 31,
+    RESTIC_ARCHIVE_START_SOURCE_ROOT_STAT = 32,
+    RESTIC_ARCHIVE_START_SOURCE_ROOT_PINNED_STAT = 33,
+    RESTIC_ARCHIVE_START_SOURCE_ROOT_IDENTITY = 34,
+    RESTIC_ARCHIVE_START_SOURCE_ROOT_CLEANUP = 35,
 } restic_archive_start_stage_v2;
 #endif
 */
@@ -572,38 +581,62 @@ func dupOwnedFD(fd int) (*os.File, int32) {
 type archiveStartStage uint32
 
 const (
-	archiveStartNone                archiveStartStage = C.RESTIC_ARCHIVE_START_NONE
-	archiveStartNames               archiveStartStage = C.RESTIC_ARCHIVE_START_NAMES
-	archiveStartLogicalRoot         archiveStartStage = C.RESTIC_ARCHIVE_START_LOGICAL_ROOT
-	archiveStartReservation         archiveStartStage = C.RESTIC_ARCHIVE_START_RESERVATION
-	archiveStartRemoteRequest       archiveStartStage = C.RESTIC_ARCHIVE_START_REMOTE_REQUEST
-	archiveStartRemoteFields        archiveStartStage = C.RESTIC_ARCHIVE_START_REMOTE_FIELDS
-	archiveStartRemoteConfiguration archiveStartStage = C.RESTIC_ARCHIVE_START_REMOTE_CONFIGURATION
-	archiveStartStateIdentity       archiveStartStage = C.RESTIC_ARCHIVE_START_STATE_IDENTITY
-	archiveStartStateDestination    archiveStartStage = C.RESTIC_ARCHIVE_START_STATE_DESTINATION
-	archiveStartStateOpen           archiveStartStage = C.RESTIC_ARCHIVE_START_STATE_OPEN
-	archiveStartStatePermissions    archiveStartStage = C.RESTIC_ARCHIVE_START_STATE_PERMISSIONS
-	archiveStartStateBinding        archiveStartStage = C.RESTIC_ARCHIVE_START_STATE_BINDING
-	archiveStartStateReservation    archiveStartStage = C.RESTIC_ARCHIVE_START_STATE_RESERVATION
-	archiveStartStateLock           archiveStartStage = C.RESTIC_ARCHIVE_START_STATE_LOCK
-	archiveStartStatePolicy         archiveStartStage = C.RESTIC_ARCHIVE_START_STATE_POLICY
-	archiveStartStateRoot           archiveStartStage = C.RESTIC_ARCHIVE_START_STATE_ROOT
-	archiveStartStateCensus         archiveStartStage = C.RESTIC_ARCHIVE_START_STATE_CENSUS
-	archiveStartStateRecord         archiveStartStage = C.RESTIC_ARCHIVE_START_STATE_RECORD
-	archiveStartStatePaths          archiveStartStage = C.RESTIC_ARCHIVE_START_STATE_PATHS
-	archiveStartAppendOnly          archiveStartStage = C.RESTIC_ARCHIVE_START_APPEND_ONLY
-	archiveStartSourceIdentity      archiveStartStage = C.RESTIC_ARCHIVE_START_SOURCE_IDENTITY
-	archiveStartSourceDuplicate     archiveStartStage = C.RESTIC_ARCHIVE_START_SOURCE_DUPLICATE
-	archiveStartSourceBinding       archiveStartStage = C.RESTIC_ARCHIVE_START_SOURCE_BINDING
-	archiveStartSourceRoot          archiveStartStage = C.RESTIC_ARCHIVE_START_SOURCE_ROOT
-	archiveStartSourceClose         archiveStartStage = C.RESTIC_ARCHIVE_START_SOURCE_CLOSE
-	archiveStartPublication         archiveStartStage = C.RESTIC_ARCHIVE_START_PUBLICATION
-	archiveStartRejectionCleanup    archiveStartStage = C.RESTIC_ARCHIVE_START_REJECTION_CLEANUP
+	archiveStartNone                      archiveStartStage = C.RESTIC_ARCHIVE_START_NONE
+	archiveStartNames                     archiveStartStage = C.RESTIC_ARCHIVE_START_NAMES
+	archiveStartLogicalRoot               archiveStartStage = C.RESTIC_ARCHIVE_START_LOGICAL_ROOT
+	archiveStartReservation               archiveStartStage = C.RESTIC_ARCHIVE_START_RESERVATION
+	archiveStartRemoteRequest             archiveStartStage = C.RESTIC_ARCHIVE_START_REMOTE_REQUEST
+	archiveStartRemoteFields              archiveStartStage = C.RESTIC_ARCHIVE_START_REMOTE_FIELDS
+	archiveStartRemoteConfiguration       archiveStartStage = C.RESTIC_ARCHIVE_START_REMOTE_CONFIGURATION
+	archiveStartStateIdentity             archiveStartStage = C.RESTIC_ARCHIVE_START_STATE_IDENTITY
+	archiveStartStateDestination          archiveStartStage = C.RESTIC_ARCHIVE_START_STATE_DESTINATION
+	archiveStartStateOpen                 archiveStartStage = C.RESTIC_ARCHIVE_START_STATE_OPEN
+	archiveStartStatePermissions          archiveStartStage = C.RESTIC_ARCHIVE_START_STATE_PERMISSIONS
+	archiveStartStateBinding              archiveStartStage = C.RESTIC_ARCHIVE_START_STATE_BINDING
+	archiveStartStateReservation          archiveStartStage = C.RESTIC_ARCHIVE_START_STATE_RESERVATION
+	archiveStartStateLock                 archiveStartStage = C.RESTIC_ARCHIVE_START_STATE_LOCK
+	archiveStartStatePolicy               archiveStartStage = C.RESTIC_ARCHIVE_START_STATE_POLICY
+	archiveStartStateRoot                 archiveStartStage = C.RESTIC_ARCHIVE_START_STATE_ROOT
+	archiveStartStateCensus               archiveStartStage = C.RESTIC_ARCHIVE_START_STATE_CENSUS
+	archiveStartStateRecord               archiveStartStage = C.RESTIC_ARCHIVE_START_STATE_RECORD
+	archiveStartStatePaths                archiveStartStage = C.RESTIC_ARCHIVE_START_STATE_PATHS
+	archiveStartAppendOnly                archiveStartStage = C.RESTIC_ARCHIVE_START_APPEND_ONLY
+	archiveStartSourceIdentity            archiveStartStage = C.RESTIC_ARCHIVE_START_SOURCE_IDENTITY
+	archiveStartSourceDuplicate           archiveStartStage = C.RESTIC_ARCHIVE_START_SOURCE_DUPLICATE
+	archiveStartSourceBinding             archiveStartStage = C.RESTIC_ARCHIVE_START_SOURCE_BINDING
+	archiveStartSourceRoot                archiveStartStage = C.RESTIC_ARCHIVE_START_SOURCE_ROOT
+	archiveStartSourceClose               archiveStartStage = C.RESTIC_ARCHIVE_START_SOURCE_CLOSE
+	archiveStartPublication               archiveStartStage = C.RESTIC_ARCHIVE_START_PUBLICATION
+	archiveStartRejectionCleanup          archiveStartStage = C.RESTIC_ARCHIVE_START_REJECTION_CLEANUP
+	archiveStartSourceRootCustody         archiveStartStage = C.RESTIC_ARCHIVE_START_SOURCE_ROOT_CUSTODY
+	archiveStartSourceRootOpenDenied      archiveStartStage = C.RESTIC_ARCHIVE_START_SOURCE_ROOT_OPEN_DENIED
+	archiveStartSourceRootOpenUnavailable archiveStartStage = C.RESTIC_ARCHIVE_START_SOURCE_ROOT_OPEN_UNAVAILABLE
+	archiveStartSourceRootOpenResource    archiveStartStage = C.RESTIC_ARCHIVE_START_SOURCE_ROOT_OPEN_RESOURCE
+	archiveStartSourceRootOpenFailed      archiveStartStage = C.RESTIC_ARCHIVE_START_SOURCE_ROOT_OPEN_FAILED
+	archiveStartSourceRootStat            archiveStartStage = C.RESTIC_ARCHIVE_START_SOURCE_ROOT_STAT
+	archiveStartSourceRootPinnedStat      archiveStartStage = C.RESTIC_ARCHIVE_START_SOURCE_ROOT_PINNED_STAT
+	archiveStartSourceRootIdentity        archiveStartStage = C.RESTIC_ARCHIVE_START_SOURCE_ROOT_IDENTITY
+	archiveStartSourceRootCleanup         archiveStartStage = C.RESTIC_ARCHIVE_START_SOURCE_ROOT_CLEANUP
 )
 
 func (stage *archiveStartStage) at(value archiveStartStage) {
 	if stage != nil {
 		*stage = value
+	}
+}
+
+// Classify only the failed OpenRoot call; no path, errno value or error text
+// crosses the ABI. All admission errors and cleanup retain their old behavior.
+func archiveRootOpenRefusal(err error) archiveStartStage {
+	switch {
+	case errors.Is(err, os.ErrPermission):
+		return archiveStartSourceRootOpenDenied
+	case errors.Is(err, os.ErrNotExist), errors.Is(err, unix.ENOTDIR):
+		return archiveStartSourceRootOpenUnavailable
+	case errors.Is(err, unix.EMFILE), errors.Is(err, unix.ENFILE), errors.Is(err, unix.ENOMEM):
+		return archiveStartSourceRootOpenResource
+	default:
+		return archiveStartSourceRootOpenFailed
 	}
 }
 
@@ -624,18 +657,22 @@ func admitArchiveDirectoryDiagnosed(fd int, entry *ownedCall, stage *archiveStar
 	}
 	stage.at(archiveStartSourceBinding)
 	if !matchesBorrowedDirectory("archive-source", file, expected) {
-		_ = file.Close()
+		if closeErr := file.Close(); closeErr != nil {
+			stage.at(archiveStartSourceClose)
+		}
 		return nil, StatusInvalidArgument
 	}
 	stage.at(archiveStartSourceRoot)
-	root, err := adoptOwnedRoot(fmt.Sprintf("/dev/fd/%d", int(file.Fd())), file, entry)
+	root, err := adoptOwnedRootDiagnosed(fmt.Sprintf("/dev/fd/%d", int(file.Fd())), file, entry, stage)
 	closeErr := file.Close()
 	if err != nil || closeErr != nil {
-		if err == nil {
+		if closeErr != nil {
 			stage.at(archiveStartSourceClose)
 		}
 		if root != nil {
-			_ = root.Close()
+			if rootCloseErr := root.Close(); rootCloseErr != nil {
+				stage.at(archiveStartSourceRootCleanup)
+			}
 		}
 		return nil, StatusInvalidArgument
 	}
