@@ -682,6 +682,152 @@
   margin-top: 0.5rem;
 }
 
+.act-history-remove {
+  align-self: flex-start;
+  min-height: var(--touch-min, 44px);
+  padding: 0 0.25rem;
+  background: none;
+  border: none;
+  color: var(--orange-text-aa);
+  font: inherit;
+  font-size: 0.8rem;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.act-panel-updating {
+  color: var(--ink-faint);
+  font-style: italic;
+}
+
+.act-panel-corrected {
+  margin-top: -0.75rem;
+}
+
+.act-correct {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.act-correct-title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.act-correct-answers {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.act-correct-answer {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  min-height: var(--touch-min, 44px);
+  padding: 0.6rem 0.75rem;
+  background: var(--paper);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-m, 6px);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.875rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.act-correct-answer:hover {
+  background: var(--orange-wash);
+}
+
+.act-correct-answer-hint,
+.act-correct-note {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--ink-soft);
+}
+
+.act-lines {
+  display: flex;
+  flex-direction: column;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.act-line {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.act-line-pick {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 1;
+  min-height: var(--touch-min, 44px);
+  font-size: 0.85rem;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.act-line-time {
+  flex-shrink: 0;
+  font-size: 0.75rem;
+  color: var(--ink-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.act-line-play {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--touch-min, 44px);
+  height: var(--touch-min, 44px);
+  background: none;
+  border: none;
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+
+.act-line-play svg {
+  width: 16px;
+  height: 16px;
+}
+
+.act-speaker-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.act-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.act-person-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  list-style: none;
+  padding: 0;
+  margin: 0.5rem 0 0;
+}
+
+.act-person {
+  width: 100%;
+  justify-content: flex-start;
+}
+
 /* 700px Breakpoint */
 @media (max-width: 700px) {
   .act-top-bar {
@@ -783,8 +929,8 @@
     'hidden-status': "hidden. it's still in your journal.",
     'label-title': 'title',
     'label-description': 'description',
-    'label-details': 'details',
-    'details-placeholder': 'anything you want to add',
+    'label-details': 'your account',
+    'account-hint': "say it the way you'd tell a friend: who did what, what was decided, what's still open.",
     'save': 'save',
     'cancel': 'cancel',
     'save-failure': "couldn't save. your changes are still here, so you can try again.",
@@ -805,7 +951,7 @@
     'evidence-show-all': 'show all {n} segments',
     'heading-summary': 'summary',
     'heading-description': 'description',
-    'heading-details': 'details',
+    'heading-details': 'your account',
     'heading-history': 'history',
     'history-found': 'found in segments from {stream}',
     'history-found-mixed': 'found in segments from more than one source',
@@ -839,12 +985,54 @@
     'people-many': 'with {a}, {b} and {n} others',
     'fields-title': 'the title',
     'fields-description': 'the description',
-    'fields-details': 'the details',
+    'fields-details': 'your account',
     'fields-title-description': 'the title and description',
-    'fields-title-details': 'the title and details',
-    'fields-description-details': 'the description and details',
-    'fields-all': 'the title, description and details',
+    'fields-title-details': 'the title and your account',
+    'fields-description-details': 'the description and your account',
+    'fields-all': 'the title, the description and your account',
     'now': 'now',
+    'action-correct': "that's not right",
+    'correct-title': "that's not right",
+    'correct-who': 'who said it',
+    'correct-who-hint': "something you said shows as someone else's, or theirs shows as yours",
+    'correct-what': 'what actually happened',
+    'correct-what-hint': 'tell your journal in your own words',
+    'correct-playback': 'this was a recording or video playing',
+    'back': 'back',
+    'lines-loading': 'finding the spoken lines…',
+    'lines-yours': 'lines your journal credits to you',
+    'lines-others': 'other spoken lines',
+    'lines-count': '{n} lines',
+    'lines-question': 'who said the lines you ticked?',
+    'lines-none-ticked': 'tick the lines you want to fix first.',
+    'line-play': 'play this line',
+    'speaker-me': 'me',
+    'speaker-person': 'a person',
+    'speaker-unknown': "someone i don't know",
+    'person-search': 'find a person',
+    'people-loading': 'loading the people in your journal…',
+    'people-load-failed': "couldn't load the people in your journal.",
+    'person-none': 'no one in your journal matches that.',
+    'playback-confirm-body': 'your journal will think this through again as something you watched or listened to, with no one else taking part.',
+    'playback-confirm': 'yes, it was playing',
+    'refusal-line-source': "these lines can't take an answer about who said them. you can tell your journal what happened instead.",
+    'refusal-line-changed': 'these lines have changed since they were shown. go back and open them again.',
+    'refusal-line-person': "that person can't be chosen. pick someone else, or someone you don't know.",
+    'refusal-line-owner': "your journal doesn't know which person is you yet, so it can't mark lines as yours.",
+    'refusal-line-unreadable': "your earlier answers about who spoke here can't be read, so this one wasn't saved.",
+    'refusal-line-outside': "some of those lines aren't part of this activity.",
+    'refusal-line-empty': 'tick the lines you want to fix first.',
+    'refusal-line-other': "couldn't save that. try again in a moment.",
+    'updating': 'updating…',
+    'corrected-by-you': 'corrected by you',
+    'history-you-told': 'you told your journal what happened',
+    'history-you-playback': 'you said this was a recording or video playing',
+    'history-you-lines-one': 'you fixed who said 1 line',
+    'history-you-lines-many': 'you fixed who said {n} lines',
+    'history-remove': 'remove',
+    'history-removed': 'removed',
+    'remove-stale': 'that changed since it was shown, so this is up to date now.',
+    'remove-failure': "couldn't remove that. try again in a moment.",
     'home-today-link': "all of today's activities →"
   };
   // --- end owner-facing strings ---
@@ -854,6 +1042,19 @@
 
   const ACTOR_HEADER = 'x-solstone-actor';
   const ACTOR_OWNER = 'owner';
+  // How often the panel reads the day again while an activity is updating.
+  const UPDATING_POLL_MS = 5000;
+  const LINE_REFUSALS = {
+    owner_line_source_unsupported: 'refusal-line-source',
+    owner_line_not_found: 'refusal-line-changed',
+    owner_line_person_unavailable: 'refusal-line-person',
+    owner_line_owner_not_admitted: 'refusal-line-owner',
+    owner_line_answers_unreadable: 'refusal-line-unreadable',
+    owner_line_outside_activity: 'refusal-line-outside',
+    owner_line_empty: 'refusal-line-empty'
+  };
+  // A remove refused because the history moved on; the view is read again.
+  const REMOVE_STALE = new Set(['activity_edit_not_found', 'activity_edit_mismatch', 'activity_edit_already_removed']);
 
   const esc = (s) => (window.AppServices?.escapeHtml ? window.AppServices.escapeHtml(s) : String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])));
 
@@ -872,7 +1073,17 @@
     outlineBlock: null,
     fetchSequence: 0,
     justHidden: null,
-    listboxOpen: false
+    listboxOpen: false,
+    // The open "that's not right" flow: { step, ticked, picking, query, refusal }.
+    correct: null,
+    openCorrect: false,
+    // Spoken lines per activity, read from its segments' transcripts.
+    lines: new Map(),
+    people: null,
+    peoplePromise: null,
+    peopleFailed: false,
+    notice: null,
+    pollTimer: null
   };
 
   function parsePathDay() {
@@ -994,6 +1205,15 @@
       }
 
       render();
+      if (state.openCorrect) {
+        state.openCorrect = false;
+        const u = new URL(window.location.href);
+        u.searchParams.delete('correct');
+        window.history.replaceState(null, '', u.pathname + u.search + u.hash);
+        const item = currentItem();
+        if (item && !item.hidden) openCorrect(item);
+      }
+      scheduleUpdatingPoll();
     } catch (err) {
       if (seq !== state.fetchSequence) return;
       const stateArea = document.querySelector('[data-state-area]');
@@ -1439,6 +1659,11 @@
       return;
     }
 
+    if (state.correct && found) {
+      renderCorrect(panelArea, item);
+      return;
+    }
+
     let phtml = '';
     if (mobile) {
       phtml += `<div class="act-panel-grab"></div><button type="button" class="act-btn" data-copy-key="sheet-close" data-close-sheet style="align-self: flex-end;">${STRINGS['sheet-close']}</button>`;
@@ -1490,12 +1715,18 @@
       phtml += '</div>';
     }
 
-    // Summary & People
-    if (item.summary != null) {
+    // Summary & People. While the journal thinks a correction through, the
+    // summary says so; once it's done the new one shows, marked as corrected.
+    if (item.updating) {
+      phtml += `<div class="act-panel-section"><h3 class="act-panel-heading" data-copy-key="heading-summary">${STRINGS['heading-summary']}</h3><p class="act-panel-text act-panel-updating" role="status" data-copy-key="updating">${esc(STRINGS['updating'])}</p></div>`;
+    } else if (item.summary != null) {
       phtml += `<div class="act-panel-section"><h3 class="act-panel-heading" data-copy-key="heading-summary">${STRINGS['heading-summary']}</h3><p class="act-panel-text">${esc(item.summary)}</p></div>`;
     }
     if (item.people?.length) {
       phtml += `<div class="act-panel-people" data-copy-key="people">${esc(formatPeople(item.people))}</div>`;
+    }
+    if (!item.updating && isCorrected(item)) {
+      phtml += `<div class="act-panel-corrected"><span class="act-cue" data-copy-key="corrected-by-you">${esc(STRINGS['corrected-by-you'])}</span></div>`;
     }
 
     // Description
@@ -1579,7 +1810,8 @@
       let kindKey = null;
       switch (ed.kind) {
         case 'grew': kindKey = 'history-grew'; break;
-        case 'owner_update': kindKey = 'history-you-changed'; break;
+        case 'owner_update': kindKey = ownerUpdateKey(ed.fields); break;
+        case 'owner_lines': kindKey = Number(ed.lines) === 1 ? 'history-you-lines-one' : 'history-you-lines-many'; break;
         case 'owner_hide': kindKey = 'history-you-hid'; break;
         case 'owner_unhide': kindKey = 'history-you-unhid'; break;
         case 'command_update': kindKey = 'history-cli-changed'; break;
@@ -1593,8 +1825,12 @@
         let label = STRINGS[kindKey];
         if (kindKey === 'history-you-changed') {
           label = fmt('history-you-changed', { fields: formatFieldList(ed.fields) });
+        } else if (kindKey === 'history-you-lines-many') {
+          label = fmt('history-you-lines-many', { n: Number(ed.lines) || 0 });
         }
-        editHtml += `<li class="act-panel-history-item"><span data-copy-key="${kindKey}">${esc(label)}</span>${dateStr ? `<span class="act-panel-history-date">${esc(dateStr)}</span>` : ''}</li>`;
+        const removed = ed.removed ? `<span class="act-panel-history-date" data-copy-key="history-removed">${esc(STRINGS['history-removed'])}</span>` : '';
+        const remove = ed.removable ? `<button type="button" class="act-history-remove" data-history-remove="${idx}" data-copy-key="history-remove">${esc(STRINGS['history-remove'])}</button>` : '';
+        editHtml += `<li class="act-panel-history-item"><span data-copy-key="${kindKey}">${esc(label)}</span>${dateStr ? `<span class="act-panel-history-date">${esc(dateStr)}</span>` : ''}${removed}${remove}</li>`;
       }
       if (editHtml) {
         const editInstant = ed.timestamp ? new Date(ed.timestamp).getTime() : null;
@@ -1619,6 +1855,7 @@
     // Actions
     phtml += `<div class="act-panel-actions">`;
     if (!item.hidden) {
+      phtml += `<button type="button" class="act-btn" data-copy-key="action-correct" data-action-correct>${esc(STRINGS['action-correct'])}</button>`;
       phtml += `<button type="button" class="act-btn" data-copy-key="action-edit" data-action-edit>${STRINGS['action-edit']}</button>`;
       phtml += `<button type="button" class="act-btn" data-copy-key="action-hide" data-action-hide>${STRINGS['action-hide']}</button>`;
     } else if (item.hidden_reason === 'owner' || item.hidden_reason === 'command') {
@@ -1626,6 +1863,9 @@
     }
     phtml += `<span class="control-save-error" role="alert" data-control-save-error hidden></span>`;
     phtml += `</div>`;
+    if (state.notice) {
+      phtml += `<p class="act-panel-status" role="alert" data-copy-key="${state.notice}">${esc(STRINGS[state.notice])}</p>`;
+    }
 
     panelArea.innerHTML = phtml;
 
@@ -1637,7 +1877,17 @@
       state.expandedEvidence = true;
       renderPanel();
     });
+    panelArea.querySelector('[data-action-correct]')?.addEventListener('click', () => {
+      openCorrect(item);
+    });
+    panelArea.querySelectorAll('[data-history-remove]').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        const ed = (item.edits || [])[Number(btn.getAttribute('data-history-remove'))];
+        if (ed) removeEdit(item, ed, e.currentTarget);
+      });
+    });
     panelArea.querySelector('[data-action-edit]')?.addEventListener('click', () => {
+      state.notice = null;
       state.editing = true;
       state.isDirty = false;
       renderPanel();
@@ -1651,7 +1901,7 @@
   }
 
   function renderEditForm(panelArea, item) {
-    let fhtml = `<form class="act-form" data-edit-form><div class="act-form-field"><label class="act-form-label" for="act-edit-title" data-copy-key="label-title">${STRINGS['label-title']}</label><input type="text" class="act-form-input" id="act-edit-title" name="title" value="${esc(item.title || '')}" required /></div><div class="act-form-field"><label class="act-form-label" for="act-edit-description" data-copy-key="label-description">${STRINGS['label-description']}</label><textarea class="act-form-textarea" id="act-edit-description" name="description">${esc(item.description || '')}</textarea></div><div class="act-form-field"><label class="act-form-label" for="act-edit-details" data-copy-key="label-details">${STRINGS['label-details']}</label><textarea class="act-form-textarea" id="act-edit-details" name="details" placeholder="${esc(STRINGS['details-placeholder'])}">${esc(item.details || '')}</textarea></div><div class="act-form-actions"><span class="control-save-error" role="alert" data-copy-key="save-failure" hidden>${STRINGS['save-failure']}</span><button type="button" class="act-btn" data-copy-key="cancel" data-form-cancel>${STRINGS['cancel']}</button><button type="submit" class="act-btn act-btn--primary" data-copy-key="save">${STRINGS['save']}</button></div></form>`;
+    let fhtml = `<form class="act-form" data-edit-form><div class="act-form-field"><label class="act-form-label" for="act-edit-title" data-copy-key="label-title">${STRINGS['label-title']}</label><input type="text" class="act-form-input" id="act-edit-title" name="title" value="${esc(item.title || '')}" required /></div><div class="act-form-field"><label class="act-form-label" for="act-edit-description" data-copy-key="label-description">${STRINGS['label-description']}</label><textarea class="act-form-textarea" id="act-edit-description" name="description">${esc(item.description || '')}</textarea></div><div class="act-form-field"><label class="act-form-label" for="act-edit-details" data-copy-key="label-details">${STRINGS['label-details']}</label><textarea class="act-form-textarea" id="act-edit-details" name="details" placeholder="${esc(STRINGS['account-hint'])}">${esc(item.details || '')}</textarea></div><div class="act-form-actions"><span class="control-save-error" role="alert" data-copy-key="save-failure" hidden>${STRINGS['save-failure']}</span><button type="button" class="act-btn" data-copy-key="cancel" data-form-cancel>${STRINGS['cancel']}</button><button type="submit" class="act-btn act-btn--primary" data-copy-key="save">${STRINGS['save']}</button></div></form>`;
     panelArea.innerHTML = fhtml;
 
     const form = panelArea.querySelector('[data-edit-form]');
@@ -1701,6 +1951,401 @@
         if (errEl) errEl.hidden = false;
       }
     });
+  }
+
+  function currentItem() {
+    const items = state.view?.items || [];
+    return items.find(it => it.id === state.selectedId && (!state.selectedFacet || it.facet === state.selectedFacet)) || null;
+  }
+
+  function itemKey(item) {
+    return `${item.facet}/${item.id}`;
+  }
+
+  function recordUrl(item, action) {
+    return `/app/activities/api/day/${state.day}/record/${encodeURIComponent(item.id)}/${action}?facet=${encodeURIComponent(item.facet)}`;
+  }
+
+  function ownerPost(url, body) {
+    return window.apiJson(url, {
+      method: 'POST',
+      headers: { [ACTOR_HEADER]: ACTOR_OWNER, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+  }
+
+  function ownerUpdateKey(fields) {
+    const arr = Array.isArray(fields) ? fields : [];
+    if (arr.length === 1 && arr[0] === 'details') return 'history-you-told';
+    if (arr.length === 1 && arr[0] === 'playback') return 'history-you-playback';
+    return 'history-you-changed';
+  }
+
+  function isCorrected(item) {
+    return Boolean(item.corrected) || (item.edits || []).some(ed => ed.kind === 'owner_lines' && !ed.removed);
+  }
+
+  function scheduleUpdatingPoll() {
+    clearTimeout(state.pollTimer);
+    state.pollTimer = null;
+    if (!(state.view?.items || []).some(it => it.updating)) return;
+    state.pollTimer = setTimeout(() => {
+      state.pollTimer = null;
+      // A form in progress is never redrawn under the owner; try again later.
+      if (state.editing || state.correct) {
+        scheduleUpdatingPoll();
+        return;
+      }
+      fetchView();
+    }, UPDATING_POLL_MS);
+  }
+
+  function lineTime(chunk) {
+    const ts = Number(chunk.timestamp);
+    if (ts > 0 && window.JournalClock && window.JournalClock.parts) {
+      const p = window.JournalClock.parts(new Date(ts));
+      return `${String(p.hour).padStart(2, '0')}:${String(p.minute).padStart(2, '0')}:${String(p.second ?? '00').padStart(2, '0')}`;
+    }
+    return String(chunk.time || '');
+  }
+
+  function firstWords(text) {
+    const words = String(text || '').trim().split(/\s+/).filter(Boolean);
+    return words.slice(0, 8).join(' ') + (words.length > 8 ? '…' : '');
+  }
+
+  // The spoken lines of one segment's transcript. A line can take an answer
+  // when its segment says who spoke from that line's own source, and the
+  // owner's earlier answers there can be read.
+  function spokenLines(data, stream, segment) {
+    const labels = data?.speaker_labels || {};
+    const unreadable = (data?.warning_details || []).some(w => w && w.type === 'owner_line_labels');
+    const audio = (data?.chunks || []).filter(c => c && c.type === 'audio');
+    const base = audio.length ? Number(audio[0].timestamp) || 0 : 0;
+    return audio
+      .filter(c => typeof c.sentence_id === 'number' && c.speaker_source)
+      .map(c => {
+        const timestamp = Number(c.timestamp) || 0;
+        let audioUrl = '';
+        let offset = 0;
+        if (c.audio_url && c.audio_origin != null) {
+          audioUrl = c.audio_url;
+          offset = (timestamp - Number(c.audio_origin)) / 1000;
+        } else if (data.audio_file) {
+          audioUrl = data.audio_file;
+          offset = (timestamp - base) / 1000;
+        }
+        return {
+          key: [stream, segment, c.speaker_source, c.sentence_id].join('|'),
+          stream,
+          segment,
+          source: c.speaker_source,
+          sentence_id: c.sentence_id,
+          timestamp,
+          time: lineTime(c),
+          words: firstWords(c.markdown),
+          owner: Boolean(c.speaker_label && c.speaker_label.is_owner),
+          answerable: !unreadable && !labels.ambiguous && (!labels.source || labels.source === c.speaker_source),
+          audioUrl,
+          offset: Math.max(0, offset)
+        };
+      });
+  }
+
+  function loadLines(item) {
+    const key = itemKey(item);
+    if (state.lines.has(key)) return state.lines.get(key).promise;
+    const entry = { status: 'loading', lines: [] };
+    const reads = (item.segments || []).map(seg => {
+      const stream = seg.stream || item.stream;
+      if (!seg.key || !stream) return Promise.resolve([]);
+      const url = `/app/transcripts/api/segment/${state.day}/${encodeURIComponent(stream)}/${encodeURIComponent(seg.key)}`;
+      // A segment that can't be read offers no lines; the others still do.
+      return window.apiJson(url).then(data => spokenLines(data, stream, seg.key)).catch(() => []);
+    });
+    entry.promise = Promise.all(reads).then(groups => {
+      entry.lines = groups.flat().sort((a, b) => a.timestamp - b.timestamp);
+      entry.status = 'ready';
+      return entry;
+    });
+    state.lines.set(key, entry);
+    return entry.promise;
+  }
+
+  function answerableLines(item) {
+    const entry = state.lines.get(itemKey(item));
+    return entry && entry.status === 'ready' ? entry.lines.filter(l => l.answerable) : [];
+  }
+
+  function loadPeople() {
+    if (!state.peoplePromise) {
+      state.peopleFailed = false;
+      state.peoplePromise = window.apiJson('/app/entities/api/journal').then(data => {
+        state.people = (data?.entities || [])
+          .filter(e => e && e.type === 'Person' && !e.blocked && !e.is_principal && e.entity_id)
+          .map(e => ({ id: String(e.entity_id), name: String(e.name || e.entity_id), aka: Array.isArray(e.aka) ? e.aka.map(String) : [] }))
+          .sort((a, b) => a.name.localeCompare(b.name));
+        return state.people;
+      }).catch(err => {
+        state.peoplePromise = null;
+        state.peopleFailed = true;
+        throw err;
+      });
+    }
+    return state.peoplePromise;
+  }
+
+  function openCorrect(item) {
+    state.notice = null;
+    state.editing = false;
+    state.correct = { step: 'choose', ticked: new Set(), picking: false, query: '', refusal: null };
+    renderPanel();
+    focusCorrect();
+    loadLines(item).then(() => {
+      if (state.correct && state.correct.step === 'choose' && currentItem() === item) renderPanel();
+    });
+  }
+
+  function focusCorrect() {
+    document.querySelector('[data-panel-area] .act-correct-title')?.focus();
+  }
+
+  function closeCorrect() {
+    state.correct = null;
+    renderPanel();
+    document.querySelector('[data-action-correct]')?.focus();
+  }
+
+  function answerButton(answer, labelKey, hintKey) {
+    const hint = hintKey ? `<span class="act-correct-answer-hint" data-copy-key="${hintKey}">${esc(STRINGS[hintKey])}</span>` : '';
+    return `<button type="button" class="act-correct-answer" data-correct-answer="${answer}"><span class="act-correct-answer-label" data-copy-key="${labelKey}">${esc(STRINGS[labelKey])}</span>${hint}</button>`;
+  }
+
+  function correctHeading(key) {
+    return `<h3 class="act-correct-title" tabindex="-1" data-copy-key="${key}">${esc(STRINGS[key])}</h3>`;
+  }
+
+  function correctChooserHtml(item) {
+    const entry = state.lines.get(itemKey(item));
+    let who = '';
+    if (!entry || entry.status !== 'ready') {
+      who = `<p class="act-correct-note" role="status" data-copy-key="lines-loading">${esc(STRINGS['lines-loading'])}</p>`;
+    } else if (answerableLines(item).length) {
+      who = answerButton('who', 'correct-who', 'correct-who-hint');
+    }
+    const playback = item.playback ? '' : answerButton('playback', 'correct-playback', null);
+    return `<section class="act-correct" data-correct-step="choose">${correctHeading('correct-title')}<div class="act-correct-answers">${who}${answerButton('what', 'correct-what', 'correct-what-hint')}${playback}</div><div class="act-form-actions"><button type="button" class="act-btn" data-copy-key="cancel" data-correct-cancel>${esc(STRINGS['cancel'])}</button></div></section>`;
+  }
+
+  function lineHtml(line) {
+    const checked = state.correct.ticked.has(line.key) ? ' checked' : '';
+    const play = line.audioUrl
+      ? `<button type="button" class="act-line-play" data-line-play="${esc(line.key)}" aria-label="${esc(STRINGS['line-play'])}" data-copy-key="line-play">${window.ConveyIcons ? window.ConveyIcons.svg('volume-2') : ''}</button>`
+      : '';
+    return `<li class="act-line"><label class="act-line-pick"><input type="checkbox" data-line-key="${esc(line.key)}"${checked}><span class="act-line-time">${esc(line.time)}</span><span class="act-line-words">${esc(line.words)}</span></label>${play}</li>`;
+  }
+
+  function personListHtml() {
+    if (state.peopleFailed) return `<li class="act-correct-note" data-copy-key="people-load-failed">${esc(STRINGS['people-load-failed'])}</li>`;
+    if (!state.people) return `<li class="act-correct-note" role="status" data-copy-key="people-loading">${esc(STRINGS['people-loading'])}</li>`;
+    const q = state.correct.query.trim().toLowerCase();
+    const matches = state.people
+      .filter(p => !q || p.name.toLowerCase().includes(q) || p.aka.some(a => a.toLowerCase().includes(q)))
+      .slice(0, 8);
+    if (!matches.length) return `<li class="act-correct-note" data-copy-key="person-none">${esc(STRINGS['person-none'])}</li>`;
+    return matches.map(p => `<li><button type="button" class="act-btn act-person" data-person-id="${esc(p.id)}">${esc(p.name)}</button></li>`).join('');
+  }
+
+  function correctLinesHtml(item) {
+    const c = state.correct;
+    const lines = answerableLines(item);
+    const yours = lines.filter(l => l.owner);
+    const others = lines.filter(l => !l.owner);
+    let html = `<section class="act-correct" data-correct-step="who">${correctHeading('correct-who')}`;
+    if (yours.length) {
+      html += `<div class="act-panel-section"><h4 class="act-panel-heading" data-copy-key="lines-yours">${esc(STRINGS['lines-yours'])}</h4><ul class="act-lines">${yours.map(lineHtml).join('')}</ul></div>`;
+    }
+    if (others.length) {
+      const body = `<ul class="act-lines">${others.map(lineHtml).join('')}</ul>`;
+      // The rest stay folded away behind the owner's own lines.
+      html += `<div data-copy-key="lines-others">${window.Drawer.render({ id: 'other-lines', label: STRINGS['lines-others'], line: fmt('lines-count', { n: others.length }), open: !yours.length, bodyHtml: body })}</div>`;
+    }
+    html += '<audio data-lines-audio preload="none" hidden></audio>';
+    const none = c.ticked.size === 0;
+    const disabled = none ? ' disabled' : '';
+    html += `<div class="act-panel-section"><h4 class="act-panel-heading" data-copy-key="lines-question">${esc(STRINGS['lines-question'])}</h4><p class="act-correct-note" data-lines-hint data-copy-key="lines-none-ticked"${none ? '' : ' hidden'}>${esc(STRINGS['lines-none-ticked'])}</p><div class="act-speaker-choices">`;
+    html += `<button type="button" class="act-btn" data-speaker="owner" data-copy-key="speaker-me"${disabled}>${esc(STRINGS['speaker-me'])}</button>`;
+    html += `<button type="button" class="act-btn" data-speaker="person" data-copy-key="speaker-person" aria-expanded="${c.picking}"${disabled}>${esc(STRINGS['speaker-person'])}</button>`;
+    html += `<button type="button" class="act-btn" data-speaker="unknown" data-copy-key="speaker-unknown"${disabled}>${esc(STRINGS['speaker-unknown'])}</button>`;
+    html += '</div>';
+    if (c.picking) {
+      html += `<div class="act-person-picker"><label class="act-form-label" for="act-person-search" data-copy-key="person-search">${esc(STRINGS['person-search'])}</label><input type="search" class="act-form-input" id="act-person-search" data-person-search value="${esc(c.query)}" autocomplete="off"><ul class="act-person-list" data-person-list>${personListHtml()}</ul></div>`;
+    }
+    html += '</div>';
+    if (c.refusal) {
+      html += `<p class="control-save-error act-correct-refusal" role="alert" tabindex="-1" data-copy-key="${c.refusal}">${esc(STRINGS[c.refusal])}</p>`;
+      if (c.refusal === 'refusal-line-source') html += answerButton('what', 'correct-what', 'correct-what-hint');
+    }
+    html += `<div class="act-form-actions"><button type="button" class="act-btn" data-copy-key="back" data-correct-back>${esc(STRINGS['back'])}</button></div></section>`;
+    return html;
+  }
+
+  function correctAccountHtml(item) {
+    return `<form class="act-form act-correct" data-correct-step="what" data-account-form>${correctHeading('correct-what')}<div class="act-form-field"><label class="act-form-label" for="act-account" data-copy-key="label-details">${esc(STRINGS['label-details'])}</label><p class="act-correct-note" id="act-account-hint" data-copy-key="account-hint">${esc(STRINGS['account-hint'])}</p><textarea class="act-form-textarea" id="act-account" name="details" aria-describedby="act-account-hint">${esc(item.details || '')}</textarea></div><div class="act-form-actions"><span class="control-save-error" role="alert" data-copy-key="save-failure" hidden>${esc(STRINGS['save-failure'])}</span><button type="button" class="act-btn" data-copy-key="back" data-correct-back>${esc(STRINGS['back'])}</button><button type="submit" class="act-btn act-btn--primary" data-copy-key="save">${esc(STRINGS['save'])}</button></div></form>`;
+  }
+
+  function correctPlaybackHtml() {
+    return `<section class="act-correct" data-correct-step="playback">${correctHeading('correct-playback')}<p class="act-panel-text" data-copy-key="playback-confirm-body">${esc(STRINGS['playback-confirm-body'])}</p><div class="act-form-actions"><span class="control-save-error" role="alert" data-copy-key="save-failure" hidden>${esc(STRINGS['save-failure'])}</span><button type="button" class="act-btn" data-copy-key="back" data-correct-back>${esc(STRINGS['back'])}</button><button type="button" class="act-btn act-btn--primary" data-copy-key="playback-confirm" data-playback-confirm>${esc(STRINGS['playback-confirm'])}</button></div></section>`;
+  }
+
+  function renderCorrect(panelArea, item) {
+    const step = state.correct.step;
+    let html = isMobile() ? '<div class="act-panel-grab"></div>' : '';
+    html += `<div class="act-panel-header"><h2 class="act-panel-title">${esc(item.title)}</h2></div>`;
+    if (step === 'who') html += correctLinesHtml(item);
+    else if (step === 'what') html += correctAccountHtml(item);
+    else if (step === 'playback') html += correctPlaybackHtml(item);
+    else html += correctChooserHtml(item);
+    window.Drawer.preserveOpen(panelArea, () => { panelArea.innerHTML = html; });
+    bindCorrect(panelArea, item);
+  }
+
+  function bindPersonList(panelArea, item) {
+    panelArea.querySelectorAll('[data-person-id]').forEach(btn => {
+      btn.addEventListener('click', (e) => submitLines(item, { kind: 'person', id: btn.getAttribute('data-person-id') }, e.currentTarget));
+    });
+  }
+
+  function bindCorrect(panelArea, item) {
+    const c = state.correct;
+    panelArea.querySelector('[data-correct-cancel]')?.addEventListener('click', closeCorrect);
+    panelArea.querySelector('[data-correct-back]')?.addEventListener('click', () => {
+      state.correct = { ...c, step: 'choose', picking: false, query: '', refusal: null };
+      renderPanel();
+      focusCorrect();
+    });
+    panelArea.querySelectorAll('[data-correct-answer]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        state.correct = { ...c, step: btn.getAttribute('data-correct-answer'), refusal: null };
+        renderPanel();
+        focusCorrect();
+      });
+    });
+    panelArea.querySelectorAll('[data-line-key]').forEach(box => {
+      box.addEventListener('change', () => {
+        const key = box.getAttribute('data-line-key');
+        if (box.checked) c.ticked.add(key);
+        else c.ticked.delete(key);
+        const none = c.ticked.size === 0;
+        panelArea.querySelectorAll('[data-speaker]').forEach(b => { b.disabled = none; });
+        const hint = panelArea.querySelector('[data-lines-hint]');
+        if (hint) hint.hidden = !none;
+      });
+    });
+    panelArea.querySelectorAll('[data-line-play]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const line = answerableLines(item).find(l => l.key === btn.getAttribute('data-line-play'));
+        const audio = panelArea.querySelector('[data-lines-audio]');
+        if (!line || !audio) return;
+        if (audio.getAttribute('src') !== line.audioUrl) audio.setAttribute('src', line.audioUrl);
+        audio.currentTime = line.offset;
+        const playing = audio.play();
+        if (playing && typeof playing.catch === 'function') playing.catch(() => {});
+      });
+    });
+    panelArea.querySelectorAll('[data-speaker]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const kind = btn.getAttribute('data-speaker');
+        if (kind !== 'person') {
+          submitLines(item, { kind }, e.currentTarget);
+          return;
+        }
+        c.picking = !c.picking;
+        renderPanel();
+        if (!c.picking) return;
+        panelArea.querySelector('[data-person-search]')?.focus();
+        loadPeople().catch(() => {}).then(() => {
+          const list = state.correct === c && document.querySelector('[data-person-list]');
+          if (!list) return;
+          list.innerHTML = personListHtml();
+          bindPersonList(document.querySelector('[data-panel-area]'), item);
+        });
+      });
+    });
+    const search = panelArea.querySelector('[data-person-search]');
+    search?.addEventListener('input', () => {
+      c.query = search.value;
+      const list = panelArea.querySelector('[data-person-list]');
+      if (list) list.innerHTML = personListHtml();
+      bindPersonList(panelArea, item);
+    });
+    bindPersonList(panelArea, item);
+    const form = panelArea.querySelector('[data-account-form]');
+    form?.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const details = form.querySelector('textarea[name="details"]').value;
+      if (details === (item.details || '')) {
+        closeCorrect();
+        return;
+      }
+      submitPatch(item, { details }, form.querySelector('[data-copy-key="save-failure"]'));
+    });
+    panelArea.querySelector('[data-playback-confirm]')?.addEventListener('click', () => {
+      submitPatch(item, { playback: true }, panelArea.querySelector('[data-copy-key="save-failure"]'));
+    });
+  }
+
+  async function submitLines(item, speaker, control) {
+    const c = state.correct;
+    const lines = answerableLines(item)
+      .filter(l => c.ticked.has(l.key))
+      .map(l => ({ stream: l.stream, segment: l.segment, source: l.source, sentence_id: l.sentence_id }));
+    if (control) control.disabled = true;
+    try {
+      await ownerPost(recordUrl(item, 'lines'), { lines, speaker });
+    } catch (err) {
+      if (state.correct !== c) return;
+      c.refusal = LINE_REFUSALS[err && err.reasonCode] || 'refusal-line-other';
+      renderPanel();
+      document.querySelector('[data-panel-area] .act-correct-refusal')?.focus();
+      return;
+    }
+    await afterCorrection(item);
+  }
+
+  async function submitPatch(item, patch, errEl) {
+    if (errEl) errEl.hidden = true;
+    try {
+      await ownerPost(recordUrl(item, 'update'), { patch });
+    } catch (_) {
+      if (errEl) errEl.hidden = false;
+      return;
+    }
+    await afterCorrection(item);
+  }
+
+  // After a correction the panel reads the day again; while the journal thinks
+  // it through, the view says the activity is updating.
+  async function afterCorrection(item) {
+    state.correct = null;
+    state.lines.delete(itemKey(item));
+    await fetchView();
+    document.querySelector('[data-action-correct]')?.focus();
+  }
+
+  async function removeEdit(item, ed, control) {
+    state.notice = null;
+    if (control) control.disabled = true;
+    try {
+      await ownerPost(recordUrl(item, 'edits/remove'), { position: ed.position, timestamp: ed.timestamp, actor: ed.actor });
+    } catch (err) {
+      state.notice = REMOVE_STALE.has(err && err.reasonCode) ? 'remove-stale' : 'remove-failure';
+      if (state.notice === 'remove-stale') await fetchView();
+      else renderPanel();
+      return;
+    }
+    state.lines.delete(itemKey(item));
+    await fetchView();
   }
 
   function postRecord(item, action, control) {
@@ -1757,6 +2402,8 @@
     state.selectedFacet = facet;
     state.editing = false;
     state.isDirty = false;
+    state.correct = null;
+    state.notice = null;
     state.expandedEvidence = false;
     const hash = `#${encodeURIComponent(facet)}/${encodeURIComponent(id)}`;
     window.history.pushState(null, '', window.location.pathname + window.location.search + hash);
@@ -1777,6 +2424,8 @@
     state.selectedFacet = null;
     state.editing = false;
     state.isDirty = false;
+    state.correct = null;
+    state.notice = null;
     window.history.pushState(null, '', window.location.pathname + window.location.search);
     renderMain();
     renderPanel();
@@ -1967,7 +2616,8 @@
 
       if (e.key === 'Escape' && state.selectedId) {
         e.preventDefault();
-        closePanel();
+        if (state.correct) closeCorrect();
+        else closePanel();
         return;
       }
     });
@@ -2009,6 +2659,8 @@
   function init() {
     state.day = parsePathDay();
     readUrlParams();
+    // A link may open an activity with its corrections showing.
+    state.openCorrect = new URLSearchParams(window.location.search).get('correct') === '1';
     setupEvents();
     showLoading();
     fetchView();

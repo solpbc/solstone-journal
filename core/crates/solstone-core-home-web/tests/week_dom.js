@@ -677,7 +677,7 @@ async function runTests() {
     assert.strictEqual(menuDropdown.children[0].getAttribute('data-action'), 'leave-out');
     // Second item: this isn't right link
     assert.strictEqual(menuDropdown.children[1].tagName, 'A');
-    assert.strictEqual(menuDropdown.children[1].getAttribute('href'), primaryModel.rows[0].peek_href);
+    assert.strictEqual(menuDropdown.children[1].getAttribute('href'), primaryModel.rows[0].menu_href);
 
     // Single provenance anchor
     const peekAnchor = surface.querySelector('.week-row-peek a');
@@ -1291,6 +1291,18 @@ async function runTests() {
     assert.ok(memory.querySelector('a'), 'memory row renders the link');
     const { surface: withIntro } = render(quoteTwin('intro line'));
     assert.strictEqual(withIntro.querySelectorAll('.week-intro').length, 1);
+  }
+
+  // A memory citing an activity: "this isn't right" opens that activity's
+  // corrections, while the provenance link still opens where it came from.
+  {
+    caseCount++;
+    const model = quoteTwin(null);
+    model.rows[0].menu_href = '/app/activities/20260309?facet=work&correct=1#work/act1';
+    const { surface } = render(model);
+    const items = surface.querySelector('.week-row .week-menu-dropdown').children;
+    assert.strictEqual(items[1].getAttribute('href'), model.rows[0].menu_href);
+    assert.strictEqual(surface.querySelector('.week-row-peek a').getAttribute('href'), model.rows[0].peek_href);
   }
 
   // Leave-out and undo on a quote row move focus the same way a memory row does.

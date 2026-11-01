@@ -777,6 +777,37 @@ fn encode_uri_ref(uri: &str) -> String {
     encoded
 }
 
+/// The activities page for an activity reference
+/// (`sol://facets/{facet}/activities/{day}#{id}`), opened on that activity
+/// with its corrections showing. `None` for any other reference.
+fn activity_correction_href(uri: &str) -> Option<String> {
+    let rest = uri.trim().strip_prefix("sol://")?;
+    let (path, id) = rest.split_once('#')?;
+    let mut parts = path.split('/');
+    let (Some("facets"), Some(facet), Some("activities"), Some(day), None) = (
+        parts.next(),
+        parts.next(),
+        parts.next(),
+        parts.next(),
+        parts.next(),
+    ) else {
+        return None;
+    };
+    if facet.is_empty()
+        || id.is_empty()
+        || id.contains(['/', '#'])
+        || day.len() != 8
+        || !day.bytes().all(|b| b.is_ascii_digit())
+    {
+        return None;
+    }
+    let facet = encode_uri_ref(facet);
+    let id = encode_uri_ref(id);
+    Some(format!(
+        "/app/activities/{day}?facet={facet}&correct=1#{facet}/{id}"
+    ))
+}
+
 const SAID_HEADING: &str = "said by you";
 const SAID_LINK_LABEL: &str = "open where you said it →";
 const SAID_LEAVE_OUT_HINT: &str = "only this week changes. what you said stays in your journal.";
@@ -906,7 +937,14 @@ pub fn page_model(
 
                 let peek_href = format!("/source?ref={}", encode_uri_ref(peek_ref));
                 let source_href = format!("/source?ref={}", encode_uri_ref(&mem.source.uri));
-                let menu_href = peek_href.clone();
+                // "this isn't right" opens the activity the memory cites, with
+                // its corrections open; otherwise where the memory came from.
+                let menu_href = mem
+                    .source
+                    .refs
+                    .iter()
+                    .find_map(|r| activity_correction_href(r))
+                    .unwrap_or_else(|| peek_href.clone());
 
                 let briefing_date = mem
                     .source
@@ -1265,6 +1303,28 @@ mod tests {
     use tempfile::TempDir;
 
     use super::*;
+
+    #[test]
+    fn an_activity_reference_opens_that_activity_with_its_corrections() {
+        assert_eq!(
+            activity_correction_href("sol://facets/work/activities/20260309#act1").as_deref(),
+            Some("/app/activities/20260309?facet=work&correct=1#work/act1")
+        );
+        assert_eq!(
+            activity_correction_href("sol://facets/my work/activities/20260309#a b").as_deref(),
+            Some("/app/activities/20260309?facet=my%20work&correct=1#my%20work/a%20b")
+        );
+        for other in [
+            "sol://20260308/100000_300",
+            "sol://chronicle/20260310/talents/morning_briefing",
+            "sol://facets/work/news/20260326",
+            "sol://facets/work/activities/20260309",
+            "sol://facets/work/activities/2026030#act1",
+            "sol://facets//activities/20260309#act1",
+        ] {
+            assert_eq!(activity_correction_href(other), None, "{other}");
+        }
+    }
 
     fn write(root: &Path, rel: &str, content: &str) {
         let path = root.join(rel);

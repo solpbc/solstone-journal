@@ -5083,6 +5083,19 @@ required_features = []
 runtime = "none"
 
 [[suites]]
+id = "solstone-core-facets-web::activities_workspace_dom"
+package = "solstone-core-facets-web"
+target = "activities_workspace_dom"
+set = "component"
+areas = ["facets"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+runtime = "none"
+
+[[suites]]
 id = "solstone-core-facets-web::curation_dom"
 package = "solstone-core-facets-web"
 target = "curation_dom"

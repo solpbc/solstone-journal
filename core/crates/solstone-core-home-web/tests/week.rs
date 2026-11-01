@@ -776,6 +776,7 @@ async fn week_peek_moment_and_caption_resolution() {
         "/source?ref=sol%3A%2F%2F20260308%2F100000_300"
     );
     assert_eq!(rows[0]["peek_caption"], "from the daily briefing for sun 8");
+    assert_eq!(rows[0]["menu_href"], rows[0]["peek_href"]);
 
     // 2. Activity reference selected as moment
     assert_eq!(rows[1]["peek_label"], "open that moment →");
@@ -784,6 +785,11 @@ async fn week_peek_moment_and_caption_resolution() {
         "/source?ref=sol%3A%2F%2Ffacets%2Fwork%2Factivities%2F20260309%23act1"
     );
     assert_eq!(rows[1]["peek_caption"], "from the daily briefing for mon 9");
+    // "this isn't right" opens the cited activity with its corrections open.
+    assert_eq!(
+        rows[1]["menu_href"],
+        "/app/activities/20260309?facet=work&correct=1#work/act1"
+    );
 
     // 3. Fallback when refs is empty -> fallback to source.uri
     assert_eq!(rows[2]["peek_label"], "open it in thinking →");
@@ -795,6 +801,7 @@ async fn week_peek_moment_and_caption_resolution() {
         rows[2]["peek_caption"],
         "from the daily briefing for tue 10"
     );
+    assert_eq!(rows[2]["menu_href"], rows[2]["peek_href"]);
 }
 
 #[tokio::test]
