@@ -1371,6 +1371,17 @@
       sentenceId: searchParams.get('voice_sentence_id') || '',
     },
   };
+  // Every page script reads a segment's stream layout through this one
+  // decoder: a missing layout is named only where the caller allows it.
+  window.decodeSegmentLayout = function decodeSegmentLayout(value, allowMissing = false) {
+    if (value === 'direct' || value === 'named') {
+      return value;
+    }
+    if (allowMissing && (value === undefined || value === null)) {
+      return 'named';
+    }
+    throw new Error('invalid segment layout');
+  };
   window.loadSpeakersState = function loadSpeakersState() {
     const params = new URLSearchParams();
     if (speakerFilter) params.set('speaker', speakerFilter);
@@ -1501,15 +1512,7 @@
   const OWNER_TEACH_RECENT_DAYS = 14;
   const OWNER_TEACH_TARGET_STATEMENTS = 40;
 
-  function decodeSegmentLayout(value, allowMissing = false) {
-    if (value === 'direct' || value === 'named') {
-      return value;
-    }
-    if (allowMissing && (value === undefined || value === null)) {
-      return 'named';
-    }
-    throw new Error('invalid segment layout');
-  }
+  const { decodeSegmentLayout } = window;
 
   function segmentLayout(seg) {
     return decodeSegmentLayout(seg?.stream_layout);
@@ -4264,6 +4267,7 @@
 
 <script>
 (() => {
+  const { decodeSegmentLayout } = window;
   let COPY = {};
   let OWNER_STATUS_ROUTING = {};
   let NOT_IN_NEW_VOICES_COPY = '';

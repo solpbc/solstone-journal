@@ -269,6 +269,37 @@ async function overviewFailuresStayUnavailable(workspace) {
     'a failed quality read never becomes zero progress');
 }
 
+// The overview script resolves a statement handoff from the page's own
+// context script alone: the layout decoder it calls is one the page gives
+// every script, not one private to another script.
+async function statementHandoffResolvesFromThePageContext(workspace) {
+  const contextStart = workspace.indexOf('<script>') + '<script>'.length;
+  const contextScript = workspace.slice(contextStart, workspace.indexOf('</script>', contextStart));
+  const overviewStart = workspace.lastIndexOf('<script>') + '<script>'.length;
+  const overviewScript = workspace.slice(overviewStart, workspace.lastIndexOf('</script>'));
+  const requested = [];
+  const page = {
+    location: { search: '?voice_day=20261022&voice_stream=mic&voice_segment_key=100000_300&voice_source=audio&voice_sentence_id=2' },
+    solPathContext: () => ({ segment: '' }),
+    apiJson: async (url) => { requested.push(url); return { status: 'miss' }; },
+    URLSearchParams,
+  };
+  page.window = page;
+  vm.createContext(page);
+  vm.runInContext(contextScript, page);
+  vm.runInContext(functionSource(overviewScript, 'resolveStatementHandoff'), page);
+  await vm.runInContext('resolveStatementHandoff(window.SPEAKERS_CONTEXT.statementHandoff)', page);
+  const resolves = requested.filter((url) => url.startsWith('/app/speakers/api/discovery/resolve-statement?'));
+  const params = new URLSearchParams(resolves[0]?.split('?')[1] || '');
+  check(resolves.length === 1, 'a complete handoff asks which voice holds its statement');
+  check(params.get('voice_stream_layout') === 'named' && params.get('voice_sentence_id') === '2',
+    'the handoff carries its line and a named layout when the link names none');
+  page.window.SPEAKERS_CONTEXT.statementHandoff.streamLayout = 'sideways';
+  assert.throws(() => vm.runInContext('resolveStatementHandoff(window.SPEAKERS_CONTEXT.statementHandoff)', page),
+    /invalid segment layout/);
+  check(true, 'a handoff with an unknown layout is refused before it is asked');
+}
+
 // Where a voice appears reads each stream's provenance label once, joined,
 // with the stream names behind each label kept in its title.
 async function voiceStreamsReadAsLabels(workspace) {
@@ -358,6 +389,7 @@ async function main() {
   await teachingReachesPastDays(workspace);
   await overviewFailuresStayUnavailable(workspace);
   await voiceStreamsReadAsLabels(workspace);
+  await statementHandoffResolvesFromThePageContext(workspace);
   sampleFallsBackToTheLabel();
 
   console.log(`DOM CASES: ${cases} passed`);
