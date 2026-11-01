@@ -891,7 +891,7 @@
             "SPK_OWNER_TEACH_START_LABEL": "start teaching",
             "SPK_OWNER_TEACH_TITLE": "teach your voice",
             "SPK_OWNER_UNDO_CANCEL_LABEL": "keep it",
-            "SPK_OWNER_UNDO_CONFIRM_BODY": "past conversations go back to unnamed voices. your journal looks for your voice again but won't offer this one. labels you set yourself, people you named and stories already written stay as they are.",
+            "SPK_OWNER_UNDO_CONFIRM_BODY": "past conversations go back to unnamed voices. your journal looks for your voice again but won't offer this one. labels you set yourself and people you named stay as they are. people and stories from today and the last 7 days are rewritten to match, and older ones stay as written.",
             "SPK_OWNER_UNDO_CONFIRM_LABEL": "remove my voice",
             "SPK_OWNER_UNDO_CONFIRM_TITLE": "remove your saved voice?",
             "SPK_OWNER_UNDO_DONE": "past conversations are back to unnamed voices. labels you set yourself and people you named stayed.",
