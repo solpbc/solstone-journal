@@ -914,7 +914,7 @@ const TRANSCRIPTS_COPY: &[(&str, &str)] = &[
     ("TR_SPEAKER_PICKER_OWNER", "me"),
     ("TR_SPEAKER_OWNER_NAME", "you"),
     ("TR_SPEAKER_PICKER_EMPTY", "no people in your journal yet"),
-    ("TR_SPEAKER_SOMEONE_ELSE", "someone else…"),
+    ("TR_SPEAKER_SOMEONE_ELSE", "teach this voice…"),
     ("TR_SPEAKER_PICKER_NO_RESULTS", "no matching people"),
     ("TR_SPEAKER_UNKNOWN_CHIP", "unknown voice"),
     ("TR_SPEAKER_VOICE_CHIP", "voice {number}"),
@@ -977,6 +977,10 @@ const TRANSCRIPTS_COPY: &[(&str, &str)] = &[
     (
         "TR_SPEAKER_LINE_CHANGED",
         "this line has changed since it was shown. reload to see it as it is now.",
+    ),
+    (
+        "TR_SPEAKER_LINE_OWNER",
+        "your journal doesn't know which person is you yet, so it can't mark lines as yours.",
     ),
     (
         "TR_SPEAKER_LINE_PERSON",
