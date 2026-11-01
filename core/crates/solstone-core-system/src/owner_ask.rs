@@ -297,6 +297,155 @@ fn wake(journal: &Path, day: &str) {
     }
 }
 
+impl AskError {
+    /// The stable reason code a reply gives when an ask was not saved.
+    #[must_use]
+    pub fn reason_code(&self) -> &'static str {
+        match self {
+            Self::Unreadable(_) => "owner_asks_unreadable",
+            _ => "owner_ask_unsaved",
+        }
+    }
+}
+
+/// Every activity on `day`, in any facet, whose stream and segments include
+/// one of `segments`, each given as (stream, segment key). A facet whose
+/// activities can't be read is skipped and logged.
+pub fn activities_over(
+    journal: &Path,
+    day: &str,
+    segments: &BTreeSet<(String, String)>,
+) -> Result<Vec<AskedActivity>, String> {
+    let mut activities = Vec::new();
+    if segments.is_empty() {
+        return Ok(activities);
+    }
+    for facet in
+        solstone_core_facets::list_declared_facet_names(journal).map_err(|e| e.to_string())?
+    {
+        let records = match solstone_core_facets::load_activity_records(journal, &facet, day, true)
+        {
+            Ok(records) => records,
+            Err(error) => {
+                log::warn!("owner ask: activities of {facet} on {day} not read: {error}");
+                continue;
+            }
+        };
+        for record in records {
+            let Some(stream) = record.get("stream").and_then(serde_json::Value::as_str) else {
+                continue;
+            };
+            let holds = record
+                .get("segments")
+                .and_then(serde_json::Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(serde_json::Value::as_str)
+                .any(|key| segments.contains(&(stream.to_owned(), key.to_owned())));
+            let Some(id) = record.get("id").and_then(serde_json::Value::as_str) else {
+                continue;
+            };
+            let asked = AskedActivity {
+                facet: facet.clone(),
+                activity: id.to_owned(),
+            };
+            if holds && valid_activity(day, &asked) {
+                activities.push(asked);
+            }
+        }
+    }
+    activities.sort();
+    activities.dedup();
+    Ok(activities)
+}
+
+/// One segment whose speaker label bytes a committed change rewrote.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct RelabelledSegment {
+    pub day: String,
+    pub stream: String,
+    pub segment_key: String,
+}
+
+/// How many closed days before today a broad label change still rewrites.
+pub const RECENT_DAYS: i64 = 7;
+
+/// After a committed change rewrote speaker labels across many segments, ask
+/// the journal to think again the activities over them, for today and the
+/// last [`RECENT_DAYS`] closed days in the owner's zone. Older days stay as
+/// written, a day with no such activities gets no ask, and no briefing thaws.
+/// A failed ask is logged and never fails the change.
+pub fn ask_after_relabel(journal: &Path, changed: &[RelabelledSegment]) {
+    let today = now()
+        .with_timezone(&solstone_core_journal_config::owner_zone(journal))
+        .date_naive();
+    let earliest = today - chrono::Duration::days(RECENT_DAYS);
+    let mut by_day = BTreeMap::<&str, BTreeSet<(String, String)>>::new();
+    for segment in changed {
+        let Ok(date) = chrono::NaiveDate::parse_from_str(&segment.day, "%Y%m%d") else {
+            continue;
+        };
+        if date < earliest || date > today {
+            continue;
+        }
+        by_day
+            .entry(segment.day.as_str())
+            .or_default()
+            .insert((segment.stream.clone(), segment.segment_key.clone()));
+    }
+    for (day, segments) in by_day {
+        let activities = match activities_over(journal, day, &segments) {
+            Ok(activities) => activities,
+            Err(error) => {
+                log::warn!("relabel: activities on {day} not asked again: {error}");
+                continue;
+            }
+        };
+        if activities.is_empty() {
+            continue;
+        }
+        if let Err(error) = ask_again(journal, day, &activities) {
+            log::warn!("relabel: activities on {day} not asked again: {error}");
+        }
+    }
+}
+
+#[cfg(any(test, feature = "test-hooks"))]
+thread_local! {
+    static FIXED_NOW: std::cell::Cell<Option<chrono::DateTime<chrono::Utc>>> =
+        const { std::cell::Cell::new(None) };
+}
+
+/// Run `body` with [`ask_after_relabel`]'s clock fixed at `now` on this
+/// thread. Its asks are then recorded without waking work discovery.
+#[cfg(any(test, feature = "test-hooks"))]
+pub fn with_fixed_clock<T>(now: chrono::DateTime<chrono::Utc>, body: impl FnOnce() -> T) -> T {
+    let previous = FIXED_NOW.replace(Some(now));
+    let result = body();
+    FIXED_NOW.set(previous);
+    result
+}
+
+fn now() -> chrono::DateTime<chrono::Utc> {
+    #[cfg(any(test, feature = "test-hooks"))]
+    if let Some(now) = FIXED_NOW.get() {
+        return now;
+    }
+    chrono::Utc::now()
+}
+
+fn ask_again(
+    journal: &Path,
+    day: &str,
+    activities: &[AskedActivity],
+) -> Result<OwnerAsk, AskError> {
+    #[cfg(any(test, feature = "test-hooks"))]
+    if let Some(now) = FIXED_NOW.get() {
+        return record(journal, day, activities, false, now.timestamp_millis());
+    }
+    think_again(journal, day, activities, false)
+}
+
 /// Change one ask under the store lock. `change` sees the ask as it is now
 /// and compares it with what its caller read: `None` leaves it, `Some(None)`
 /// removes it and `Some(Some(ask))` replaces it. Returns whether it changed.
@@ -449,6 +598,117 @@ mod tests {
         assert_eq!(asks[&b.id], b);
         assert_eq!(asks[&a.id].to_seed, BTreeSet::from([asked("work", "c")]));
         assert_eq!(asks[&a.id].seeded, BTreeSet::from([asked("work", "a")]));
+    }
+
+    fn activity(root: &Path, facet: &str, day: &str, id: &str, stream: &str, segment: &str) {
+        if !root.join("facets").join(facet).exists() {
+            solstone_core_facets::create_facet(root, facet, facet, "", "", "", None).unwrap();
+        }
+        let row =
+            serde_json::json!({"id":id,"activity":"meeting","stream":stream,"segments":[segment]});
+        let _ = solstone_core_facets::append_activity_record(
+            root,
+            facet,
+            day,
+            row.as_object().unwrap().clone(),
+        )
+        .unwrap();
+    }
+
+    fn relabelled(day: &str, stream: &str, segment_key: &str) -> RelabelledSegment {
+        RelabelledSegment {
+            day: day.into(),
+            stream: stream.into(),
+            segment_key: segment_key.into(),
+        }
+    }
+
+    /// 03:00 UTC on 1 November is still 31 October in Denver.
+    fn denver_journal() -> (tempfile::TempDir, chrono::DateTime<chrono::Utc>) {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(root.path().join("config")).unwrap();
+        std::fs::write(
+            root.path().join("config/journal.json"),
+            serde_json::json!({"identity":{"timezone":"America/Denver"}}).to_string(),
+        )
+        .unwrap();
+        let now = chrono::DateTime::parse_from_rfc3339("2026-11-01T03:00:00Z")
+            .unwrap()
+            .with_timezone(&chrono::Utc);
+        (root, now)
+    }
+
+    #[test]
+    fn a_relabel_asks_for_recent_days_by_the_owners_day_and_skips_days_without_activities() {
+        let (root, now) = denver_journal();
+        // Today is 20261031 in the owner's zone: 20261024 is seven closed days
+        // back and 20261023 eight.
+        activity(root.path(), "work", "20261024", "kept", "mic", "120000_300");
+        activity(
+            root.path(),
+            "home",
+            "20261024",
+            "other_facet",
+            "mic",
+            "120000_300",
+        );
+        activity(
+            root.path(),
+            "work",
+            "20261024",
+            "other_stream",
+            "phone",
+            "120000_300",
+        );
+        activity(
+            root.path(),
+            "work",
+            "20261023",
+            "too_old",
+            "mic",
+            "120000_300",
+        );
+        with_fixed_clock(now, || {
+            ask_after_relabel(
+                root.path(),
+                &[
+                    relabelled("20261024", "mic", "120000_300"),
+                    relabelled("20261023", "mic", "120000_300"),
+                    // A recent day with no activity over the segment.
+                    relabelled("20261030", "mic", "090000_300"),
+                ],
+            );
+        });
+        let asks = read(root.path()).unwrap().into_values().collect::<Vec<_>>();
+        assert_eq!(asks.len(), 1);
+        assert_eq!(asks[0].day, "20261024");
+        assert!(!asks[0].thaw);
+        assert_eq!(
+            asks[0].to_seed,
+            BTreeSet::from([asked("work", "kept"), asked("home", "other_facet")])
+        );
+        assert_eq!(asks[0].created_at_ms, now.timestamp_millis());
+    }
+
+    #[test]
+    fn a_relabel_with_no_recent_activity_asks_nothing() {
+        let (root, now) = denver_journal();
+        with_fixed_clock(now, || {
+            ask_after_relabel(root.path(), &[relabelled("20261031", "mic", "120000_300")]);
+        });
+        assert!(!path(root.path()).exists());
+    }
+
+    #[test]
+    fn a_relabel_ask_that_cannot_be_saved_is_left_to_the_log() {
+        let (root, now) = denver_journal();
+        activity(root.path(), "work", "20261031", "a", "mic", "120000_300");
+        std::fs::create_dir_all(path(root.path()).parent().unwrap()).unwrap();
+        std::fs::write(path(root.path()), "{").unwrap();
+        with_fixed_clock(now, || {
+            ask_after_relabel(root.path(), &[relabelled("20261031", "mic", "120000_300")]);
+        });
+        assert_eq!(std::fs::read_to_string(path(root.path())).unwrap(), "{");
     }
 
     #[cfg(feature = "full-tests")]

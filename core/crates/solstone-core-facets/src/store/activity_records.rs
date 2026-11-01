@@ -1008,8 +1008,22 @@ pub const EDIT_BEFORE: &str = "before";
 /// When a removed edit was removed.
 pub const EDIT_REMOVED: &str = "removed";
 
+/// The actor of an edit recording who the owner said spoke some of the
+/// activity's lines.
+pub const OWNER_LINES_ACTOR: &str = "owner:lines";
+/// The lines an owner lines edit labelled: each line's stream, segment,
+/// source and sentence id, the `set_at` token its answer was written with and
+/// the owner's answer it replaced (`prior`, or null).
+pub const EDIT_LINES: &str = "lines";
+/// Who an owner lines edit says spoke its lines, in tagged form.
+pub const EDIT_SPEAKER: &str = "speaker";
+
 fn records_values(actor: &str) -> bool {
     matches!(actor, "owner:update" | "cli:update")
+}
+
+fn lines_edit(edit: &Map<String, Value>) -> bool {
+    edit.get("actor").and_then(Value::as_str) == Some(OWNER_LINES_ACTOR)
 }
 
 fn owner_edit(edit: &Map<String, Value>) -> bool {
@@ -1039,11 +1053,15 @@ fn edit_recorded(edit: &Map<String, Value>) -> bool {
 /// Whether an edit can be removed: an update that recorded its values and
 /// has not been removed yet.
 pub fn edit_removable(edit: &Map<String, Value>) -> bool {
-    edit.get("actor")
-        .and_then(Value::as_str)
-        .is_some_and(records_values)
-        && edit_recorded(edit)
-        && !edit_removed(edit)
+    !edit_removed(edit)
+        && if lines_edit(edit) {
+            edit.get(EDIT_LINES).is_some_and(Value::is_array)
+        } else {
+            edit.get("actor")
+                .and_then(Value::as_str)
+                .is_some_and(records_values)
+                && edit_recorded(edit)
+        }
 }
 
 /// The value `field` takes once the edits that are removed no longer count:
@@ -1095,7 +1113,114 @@ pub fn remove_activity_edit(
     edit_actor: &str,
     removed_at: &str,
 ) -> Result<Option<ActivityRecord>, ActivityRecordStoreError> {
+    modify_record(root, facet, day, record_id, |mut record| {
+        let mut edits = record
+            .get("edits")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_object)
+            .cloned()
+            .collect::<Vec<_>>();
+        let refuse = |refusal| Err(ActivityRecordStoreError::EditRefused(refusal));
+        let Some(edit) = edits.get_mut(position) else {
+            return refuse(EditRefusal::OutOfRange);
+        };
+        if edit.get("timestamp").and_then(Value::as_str) != Some(edit_timestamp)
+            || edit.get("actor").and_then(Value::as_str) != Some(edit_actor)
+        {
+            return refuse(EditRefusal::Mismatch);
+        }
+        let lines = lines_edit(edit);
+        if !lines
+            && !edit
+                .get("actor")
+                .and_then(Value::as_str)
+                .is_some_and(records_values)
+        {
+            return refuse(EditRefusal::NotRemovable);
+        }
+        if edit_removed(edit) {
+            return refuse(EditRefusal::AlreadyRemoved);
+        }
+        if !edit_removable(edit) {
+            return refuse(EditRefusal::NotRecorded);
+        }
+        edit.insert(
+            EDIT_REMOVED.to_owned(),
+            Value::String(removed_at.to_owned()),
+        );
+        // A lines edit sets no field; its lines are put back by the caller.
+        let fields = edit
+            .get(EDIT_SET)
+            .and_then(Value::as_object)
+            .filter(|_| !lines)
+            .map(|set| set.keys().cloned().collect::<Vec<_>>())
+            .unwrap_or_default();
+        for field in fields {
+            match field_after_removal(&edits, &field) {
+                Ok(Some(value)) => {
+                    record.insert(field, value);
+                }
+                Ok(None) => {
+                    record.remove(&field);
+                }
+                Err(()) => {}
+            }
+        }
+        record.insert(
+            "edits".to_owned(),
+            Value::Array(edits.into_iter().map(Value::Object).collect()),
+        );
+        Ok(record)
+    })
+}
+
+/// Record who the owner said spoke some of the activity's lines: append an
+/// [`OWNER_LINES_ACTOR`] edit carrying `lines` and `speaker`. It sets no
+/// field, so no talent output is held by it. `checkpoint` runs under the
+/// day's lock before anything is written; an error from it writes nothing.
+#[allow(clippy::too_many_arguments)] // The edit and where it goes.
+pub fn append_activity_lines_edit(
+    root: &Path,
+    facet: &str,
+    day: &str,
+    record_id: &str,
+    lines: Vec<Value>,
+    speaker: Value,
+    timestamp: &str,
+    checkpoint: impl FnOnce() -> Result<(), String>,
+) -> Result<Option<ActivityRecord>, ActivityRecordStoreError> {
+    let mut checkpoint = Some(checkpoint);
+    modify_record(root, facet, day, record_id, |record| {
+        if let Some(checkpoint) = checkpoint.take() {
+            checkpoint()
+                .map_err(|detail| ActivityRecordStoreError::PublicationRefused { detail })?;
+        }
+        let mut record = append_edit(record, OWNER_LINES_ACTOR, Vec::new(), "", timestamp);
+        if let Some(Value::Object(edit)) = record
+            .get_mut("edits")
+            .and_then(Value::as_array_mut)
+            .and_then(|edits| edits.last_mut())
+        {
+            edit.insert(EDIT_LINES.to_owned(), Value::Array(lines));
+            edit.insert(EDIT_SPEAKER.to_owned(), speaker);
+        }
+        Ok(record)
+    })
+}
+
+/// Change the one record `record_id` names under the day's lock, after its
+/// stored destination is confirmed. `Ok(None)` when no record has that id.
+fn modify_record(
+    root: &Path,
+    facet: &str,
+    day: &str,
+    record_id: &str,
+    change: impl FnOnce(ActivityRecord) -> Result<ActivityRecord, ActivityRecordStoreError>,
+) -> Result<Option<ActivityRecord>, ActivityRecordStoreError> {
     let current_id = admit_activity_destination(root, facet)?;
+    let mut change = Some(change);
     locked_modify_day_records(root, facet, day, false, &current_id, |rows| {
         let rows = adopt_moved_rows(root, &current_id, rows);
         let mut result = None;
@@ -1108,61 +1233,11 @@ pub fn remove_activity_edit(
             if let Some(stored_id) = row.get("destination_id").and_then(Value::as_str) {
                 super::declaration::require_observed_facet_write_identity(root, facet, stored_id)?;
             }
-            let mut record = normalize(row);
-            let mut edits = record
-                .get("edits")
-                .and_then(Value::as_array)
-                .into_iter()
-                .flatten()
-                .filter_map(Value::as_object)
-                .cloned()
-                .collect::<Vec<_>>();
-            let refuse = |refusal| Err(ActivityRecordStoreError::EditRefused(refusal));
-            let Some(edit) = edits.get_mut(position) else {
-                return refuse(EditRefusal::OutOfRange);
+            let Some(change) = change.take() else {
+                updated.push(row);
+                continue;
             };
-            if edit.get("timestamp").and_then(Value::as_str) != Some(edit_timestamp)
-                || edit.get("actor").and_then(Value::as_str) != Some(edit_actor)
-            {
-                return refuse(EditRefusal::Mismatch);
-            }
-            if !edit
-                .get("actor")
-                .and_then(Value::as_str)
-                .is_some_and(records_values)
-            {
-                return refuse(EditRefusal::NotRemovable);
-            }
-            if edit_removed(edit) {
-                return refuse(EditRefusal::AlreadyRemoved);
-            }
-            if !edit_recorded(edit) {
-                return refuse(EditRefusal::NotRecorded);
-            }
-            edit.insert(
-                EDIT_REMOVED.to_owned(),
-                Value::String(removed_at.to_owned()),
-            );
-            let fields = edit
-                .get(EDIT_SET)
-                .and_then(Value::as_object)
-                .map(|set| set.keys().cloned().collect::<Vec<_>>())
-                .unwrap_or_default();
-            for field in fields {
-                match field_after_removal(&edits, &field) {
-                    Ok(Some(value)) => {
-                        record.insert(field, value);
-                    }
-                    Ok(None) => {
-                        record.remove(&field);
-                    }
-                    Err(()) => {}
-                }
-            }
-            record.insert(
-                "edits".to_owned(),
-                Value::Array(edits.into_iter().map(Value::Object).collect()),
-            );
+            let mut record = change(normalize(row))?;
             record.insert(
                 "destination_id".to_owned(),
                 Value::String(current_id.clone()),

@@ -865,3 +865,99 @@ fn a_set_or_remove_racing_a_segment_delete_refuses_and_recreates_nothing() {
     // beneath the segment across a checkpoint. Elsewhere staging always succeeds.
     assert_eq!(cfg!(windows), refusals > 0, "{refusals} staging refusals");
 }
+
+fn file_bytes(segment: &Path) -> Option<Vec<u8>> {
+    fs::read(owner_line_labels_path(segment)).ok()
+}
+
+#[test]
+fn a_failed_change_after_a_set_puts_every_file_back_exactly() {
+    let root = journal();
+    let answered = segment(root.path(), "120000_300", 2);
+    let fresh = segment(root.path(), "120500_300", 2);
+    set_owner_line_labels(root.path(), &[line(&answered, 1)], &person("bo")).unwrap();
+    let before = [file_bytes(&answered), file_bytes(&fresh)];
+    assert!(before[1].is_none());
+    let result = set_owner_line_labels_then(
+        root.path(),
+        &[line(&answered, 1), line(&fresh, 2)],
+        &person("ada"),
+        |set| {
+            assert_eq!(set.len(), 2);
+            assert_eq!(entries(&fresh).len(), 1);
+            Err::<(), _>("the edit wasn't saved")
+        },
+    )
+    .unwrap();
+    assert_eq!(result, Err("the edit wasn't saved"));
+    assert_eq!([file_bytes(&answered), file_bytes(&fresh)], before);
+}
+
+#[test]
+fn a_revert_puts_back_only_lines_still_carrying_a_token() {
+    let root = journal();
+    let segment = segment(root.path(), "120000_300", 3);
+    let gone = segment_with(root.path(), "121000_300", &[]);
+    let prior = set_owner_line_labels(root.path(), &[line(&segment, 3)], &person("bo")).unwrap();
+    let first = set_owner_line_labels(
+        root.path(),
+        &[line(&segment, 1), line(&segment, 2), line(&segment, 3)],
+        &person("ada"),
+    )
+    .unwrap();
+    let token = first[0].set_at.clone();
+    // Line 2 has been answered again since.
+    set_owner_line_labels(root.path(), &[line(&segment, 2)], &LineSpeaker::Unknown).unwrap();
+    merge(root.path(), "bo", "ada");
+    fs::remove_dir_all(&gone).unwrap();
+    let revert = |sentence_id, restore: Option<OwnerLineEntry>, dir: &Path| LineRevert {
+        line: line(dir, sentence_id),
+        tokens: BTreeSet::from([token.clone()]),
+        restore,
+    };
+    let outcomes = revert_owner_line_labels(
+        root.path(),
+        &[
+            revert(1, None, &segment),
+            revert(2, None, &segment),
+            revert(3, first[2].prior.clone(), &segment),
+            revert(1, None, &gone),
+        ],
+    )
+    .unwrap();
+    assert_eq!(
+        outcomes,
+        [
+            RevertOutcome::Reverted,
+            RevertOutcome::Left,
+            RevertOutcome::Reverted,
+            RevertOutcome::SegmentGone
+        ]
+    );
+    let stored = entries(&segment)
+        .into_iter()
+        .map(|entry| (entry.sentence_id, entry.speaker, entry.set_at))
+        .collect::<Vec<_>>();
+    let restored = prior[0].set_at.clone();
+    assert_eq!(stored.len(), 2);
+    assert_eq!(stored[0].0, 2);
+    assert_eq!(stored[0].1, None);
+    // The prior answer named someone merged away since: it comes back as the survivor.
+    assert_eq!(stored[1], (3, Some("ada".to_owned()), restored));
+}
+
+#[test]
+fn the_tagged_speaker_form_reads_only_what_it_writes() {
+    for speaker in [LineSpeaker::Owner, LineSpeaker::Unknown, person("ada")] {
+        assert_eq!(LineSpeaker::from_tagged(&speaker.tagged()), Some(speaker));
+    }
+    for value in [
+        json!({"kind": "person"}),
+        json!({"kind": "person", "id": ""}),
+        json!({"kind": "owner", "id": "ada"}),
+        json!({"kind": "robot"}),
+        json!("owner"),
+    ] {
+        assert_eq!(LineSpeaker::from_tagged(&value), None, "{value}");
+    }
+}

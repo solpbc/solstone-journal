@@ -31,6 +31,87 @@ pub struct ChangedSegment {
     pub segment_key: String,
 }
 
+/// After a committed change rewrote the speaker labels of `changed`, ask the
+/// journal to think again the recent activities over them. A failed ask is
+/// logged and never fails the change.
+pub fn ask_after_relabel(journal: &Path, changed: &[ChangedSegment]) {
+    let changed = changed
+        .iter()
+        .map(
+            |segment| solstone_core_system::owner_ask::RelabelledSegment {
+                day: segment.day.clone(),
+                stream: segment.stream.clone(),
+                segment_key: segment.segment_key.clone(),
+            },
+        )
+        .collect::<Vec<_>>();
+    solstone_core_system::owner_ask::ask_after_relabel(journal, &changed);
+}
+
+/// A journal for checking which activities a relabel asks again: the owner's
+/// zone is UTC and the clock is fixed at noon on 31 October 2026, so
+/// 20261024 is the oldest day asked and 20261023 is too old.
+#[cfg(test)]
+pub(crate) mod relabel_fixture {
+    use std::path::Path;
+
+    pub(crate) const RECENT: &str = "20261024";
+    pub(crate) const TOO_OLD: &str = "20261023";
+
+    pub(crate) fn now() -> chrono::DateTime<chrono::Utc> {
+        chrono::DateTime::parse_from_rfc3339("2026-10-31T12:00:00Z")
+            .unwrap()
+            .with_timezone(&chrono::Utc)
+    }
+
+    /// Set the owner's zone and add one activity over mic/`segment` on each
+    /// of `days`, named after its day.
+    pub(crate) fn activities(root: &Path, segment: &str, days: &[&str]) {
+        std::fs::create_dir_all(root.join("config")).unwrap();
+        std::fs::write(
+            root.join("config/journal.json"),
+            serde_json::json!({"identity":{"timezone":"UTC"}}).to_string(),
+        )
+        .unwrap();
+        solstone_core_facets::create_facet(root, "work", "Work", "", "", "", None).unwrap();
+        for day in days {
+            let row = serde_json::json!({"id":format!("on_{day}"),"activity":"meeting","stream":"mic","segments":[segment]});
+            let _ = solstone_core_facets::append_activity_record(
+                root,
+                "work",
+                day,
+                row.as_object().unwrap().clone(),
+            )
+            .unwrap();
+        }
+    }
+
+    /// Each ask's day and the activities it names.
+    pub(crate) fn asked(root: &Path) -> Vec<(String, Vec<String>, bool)> {
+        let mut asks = solstone_core_system::owner_ask::read(root)
+            .unwrap()
+            .into_values()
+            .map(|ask| {
+                (
+                    ask.day,
+                    ask.to_seed
+                        .into_iter()
+                        .map(|asked| asked.activity)
+                        .collect(),
+                    ask.thaw,
+                )
+            })
+            .collect::<Vec<_>>();
+        asks.sort();
+        asks
+    }
+
+    /// What a relabel over a recent and a too-old day asks.
+    pub(crate) fn recent_only() -> Vec<(String, Vec<String>, bool)> {
+        vec![(RECENT.to_owned(), vec![format!("on_{RECENT}")], false)]
+    }
+}
+
 /// The admissible people a resolution may name, by id, with the names each
 /// is known by.
 struct People {

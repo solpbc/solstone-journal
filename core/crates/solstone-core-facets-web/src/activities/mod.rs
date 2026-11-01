@@ -26,6 +26,7 @@ use solstone_core_format::content::{Family, produce_chunks_by_shape};
 
 use crate::{Clock, http};
 
+mod lines;
 mod view;
 
 pub(crate) const ACTOR_HEADER: &str = "x-solstone-actor";
@@ -54,6 +55,10 @@ pub fn routes(root: PathBuf, clock: Clock) -> Router {
         .route(
             "/app/activities/api/day/{day}/record/{span_id}/edits/remove",
             post(remove_edit),
+        )
+        .route(
+            "/app/activities/api/day/{day}/record/{span_id}/lines",
+            post(lines::set_lines),
         )
         .route(
             "/app/activities/api/day/{day}/record/{span_id}/mute",
@@ -346,30 +351,49 @@ fn think_again(root: &Path, day: &str, facet: &str, activity: Option<&str>) -> M
         })
         .into_iter()
         .collect::<Vec<_>>();
+    think_again_over(root, day, &activities)
+}
+
+/// [`think_again`] for every activity in `activities`, and the day's briefing.
+fn think_again_over(
+    root: &Path,
+    day: &str,
+    activities: &[solstone_core_system::owner_ask::AskedActivity],
+) -> Map<String, Value> {
     #[cfg(not(test))]
-    let asked = solstone_core_system::owner_ask::think_again(root, day, &activities, true);
+    let asked = solstone_core_system::owner_ask::think_again(root, day, activities, true);
     // Routine tests check the ask itself and never wake work discovery's socket.
     #[cfg(test)]
     let asked = solstone_core_system::owner_ask::record(
         root,
         day,
-        &activities,
+        activities,
         true,
         Utc::now().timestamp_millis(),
     );
     match asked {
         Ok(_) => Map::from_iter([("asked".to_owned(), Value::Bool(true))]),
-        Err(error) => {
-            let reason = match error {
-                solstone_core_system::owner_ask::AskError::Unreadable(_) => "owner_asks_unreadable",
-                _ => "owner_ask_unsaved",
-            };
-            Map::from_iter([
-                ("asked".to_owned(), Value::Bool(false)),
-                ("ask_reason".to_owned(), Value::String(reason.to_owned())),
-            ])
-        }
+        Err(error) => Map::from_iter([
+            ("asked".to_owned(), Value::Bool(false)),
+            (
+                "ask_reason".to_owned(),
+                Value::String(error.reason_code().to_owned()),
+            ),
+        ]),
     }
+}
+
+fn edit_refused(refusal: solstone_core_facets::EditRefusal) -> Response {
+    http::error(
+        refusal.reason_code(),
+        "that edit couldn't be removed.",
+        solstone_core_facets::ActivityRecordStoreError::EditRefused(refusal).to_string(),
+        if refusal == solstone_core_facets::EditRefusal::OutOfRange {
+            StatusCode::NOT_FOUND
+        } else {
+            StatusCode::CONFLICT
+        },
+    )
 }
 
 fn not_asked() -> Map<String, Value> {
@@ -418,6 +442,18 @@ async fn remove_edit(
         .with_timezone(&Utc)
         .format("%Y-%m-%dT%H:%M:%SZ")
         .to_string();
+    if let Some(response) = lines::remove_lines_edit(
+        &root,
+        &facet,
+        &day,
+        &span_id,
+        position,
+        edit_timestamp,
+        edit_actor,
+        &removed_at,
+    ) {
+        return response;
+    }
     match solstone_core_facets::remove_activity_edit(
         &root,
         &facet,
@@ -446,16 +482,9 @@ async fn remove_edit(
         Ok(None) | Err(solstone_core_facets::ActivityRecordStoreError::MissingDayFile { .. }) => {
             not_found(span_id)
         }
-        Err(solstone_core_facets::ActivityRecordStoreError::EditRefused(refusal)) => http::error(
-            refusal.reason_code(),
-            "that edit couldn't be removed.",
-            solstone_core_facets::ActivityRecordStoreError::EditRefused(refusal).to_string(),
-            if refusal == solstone_core_facets::EditRefusal::OutOfRange {
-                StatusCode::NOT_FOUND
-            } else {
-                StatusCode::CONFLICT
-            },
-        ),
+        Err(solstone_core_facets::ActivityRecordStoreError::EditRefused(refusal)) => {
+            edit_refused(refusal)
+        }
         Err(error) => store_error(error),
     }
 }

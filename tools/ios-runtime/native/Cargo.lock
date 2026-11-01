@@ -5686,6 +5686,7 @@ version = "2.0.63"
 dependencies = [
  "axum",
  "chrono",
+ "log",
  "regex",
  "serde",
  "serde_json",
@@ -5696,6 +5697,7 @@ dependencies = [
  "solstone-core-journal-config",
  "solstone-core-journal-io",
  "solstone-core-location",
+ "solstone-core-speaker-id",
  "solstone-core-speaker-resolve",
  "solstone-core-system",
  "tokio",

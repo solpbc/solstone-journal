@@ -22,6 +22,7 @@ mod calendar;
 mod capture_zone;
 mod day;
 mod delete;
+mod line_label;
 mod location;
 mod media_removal;
 mod pending;
@@ -105,6 +106,14 @@ fn router_with_dependencies(
             get(location::list_location_segments),
         )
         .route("/app/transcripts/api/read/{day}", get(assemble::api_read))
+        .route(
+            "/app/transcripts/api/line-label/{day}/{stream}/{segment_key}",
+            post(line_label::set_line_label),
+        )
+        .route(
+            "/app/transcripts/api/line-label/{day}/{stream}/{segment_key}/remove",
+            post(line_label::remove_line_label),
+        )
         .route(
             "/app/transcripts/api/segment/{day}/{stream}/{segment_key}/reprocess",
             post(reprocess::reprocess_segment),

@@ -1012,6 +1012,90 @@ mod tests {
         }
         map
     }
+
+    /// A segment with one embedded statement and no labels yet.
+    fn embedded_segment(root: &Path, day: &str) -> PathBuf {
+        use std::io::{Cursor, Write};
+        let segment = root.join("chronicle").join(day).join("mic/120000_300");
+        fs::create_dir_all(&segment).unwrap();
+        let mut vector = vec![0.0_f32; 256];
+        vector[0] = 1.0;
+        let floats = vector
+            .iter()
+            .flat_map(|value| value.to_le_bytes())
+            .collect::<Vec<_>>();
+        let mut archive = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        let options = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Deflated);
+        archive.start_file("embeddings.npy", options).unwrap();
+        archive
+            .write_all(&solstone_core_npy::write_npy("<f4", "(1, 256)", &floats))
+            .unwrap();
+        archive.start_file("statement_ids.npy", options).unwrap();
+        archive
+            .write_all(&solstone_core_npy::write_npy(
+                "<i4",
+                "(1,)",
+                &1_i32.to_le_bytes(),
+            ))
+            .unwrap();
+        fs::write(
+            segment.join("audio.npz"),
+            archive.finish().unwrap().into_inner(),
+        )
+        .unwrap();
+        segment
+    }
+
+    #[test]
+    fn a_committed_backfill_that_changes_labels_asks_and_a_dry_run_does_not() {
+        use crate::activity_reresolution::relabel_fixture::{
+            RECENT, TOO_OLD, activities, asked, now, recent_only,
+        };
+        for (commit, ask_store_damaged) in [(false, false), (true, false), (true, true)] {
+            let temp = Temp::new();
+            let owner = temp.path().join("entities/owner");
+            fs::create_dir_all(&owner).unwrap();
+            fs::write(
+                owner.join("entity.json"),
+                serde_json::json!({"id":"owner","name":"owner","type":"Person","is_principal":true})
+                    .to_string(),
+            )
+            .unwrap();
+            activities(temp.path(), "120000_300", &[RECENT, TOO_OLD]);
+            let segments = [RECENT, TOO_OLD].map(|day| embedded_segment(temp.path(), day));
+            let ask_store = temp.path().join("health/owner-asks.json");
+            if ask_store_damaged {
+                fs::create_dir_all(ask_store.parent().unwrap()).unwrap();
+                fs::write(&ask_store, "{").unwrap();
+            }
+            let request = crate::backfill_coordinator::StartBackfillRequest {
+                operation_id: Some(format!("bfop-ask-{commit}-{ask_store_damaged}")),
+                commit,
+                reattribute: false,
+                accumulation: false,
+                now_ms: 1,
+            };
+            let status = solstone_core_system::owner_ask::with_fixed_clock(now(), || {
+                crate::backfill_coordinator::run_backfill_blocking(temp.path(), &request).unwrap()
+            });
+            assert_eq!(status.status, BackfillStatusKind::Done, "{commit}");
+            for segment in &segments {
+                assert_eq!(
+                    segment.join("talents/speaker_labels.json").exists(),
+                    commit,
+                    "{commit}"
+                );
+            }
+            if ask_store_damaged {
+                assert_eq!(fs::read_to_string(&ask_store).unwrap(), "{");
+            } else if commit {
+                assert_eq!(asked(temp.path()), recent_only());
+            } else {
+                assert!(!ask_store.exists());
+            }
+        }
+    }
 }
 
 #[cfg(all(test, feature = "full-tests"))]

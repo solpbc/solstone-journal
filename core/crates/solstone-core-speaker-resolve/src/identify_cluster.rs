@@ -241,9 +241,10 @@ pub fn identify_voice(
 }
 
 /// Once a naming has committed, the people already derived from its segments
-/// follow the new labels. This runs after the operation's locks are released,
-/// and a failure here never undoes the naming: it is logged, and the next
-/// naming of those segments tries again.
+/// follow the new labels, and their recent activities are asked to think
+/// again. This runs after the operation's locks are released, and a failure
+/// here never undoes the naming: it is logged, and the next naming of those
+/// segments tries again.
 fn reresolve_after_identify(request: &IdentifyClusterRequest, result: &Value) {
     if result["status"] != "identified" {
         return;
@@ -263,7 +264,20 @@ fn reresolve_after_identify(request: &IdentifyClusterRequest, result: &Value) {
         .map(str::to_owned)
         .into_iter()
         .collect::<Vec<_>>();
-    let changed = members_from_plan(plan)
+    let changed = changed_segments(plan);
+    if let Err(error) = crate::activity_reresolution::reresolve_changed_segments(
+        &request.journal_root,
+        &changed,
+        &named,
+    ) {
+        log::warn!("identify: derived people not re-resolved: {error}");
+    }
+    crate::activity_reresolution::ask_after_relabel(&request.journal_root, &changed);
+}
+
+/// The segments whose labels a naming's plan writes, each once.
+pub(crate) fn changed_segments(plan: &Value) -> Vec<crate::activity_reresolution::ChangedSegment> {
+    members_from_plan(plan)
         .into_iter()
         .map(|member| crate::activity_reresolution::ChangedSegment {
             day: member.day,
@@ -272,14 +286,7 @@ fn reresolve_after_identify(request: &IdentifyClusterRequest, result: &Value) {
         })
         .collect::<BTreeSet<_>>()
         .into_iter()
-        .collect::<Vec<_>>();
-    if let Err(error) = crate::activity_reresolution::reresolve_changed_segments(
-        &request.journal_root,
-        &changed,
-        &named,
-    ) {
-        log::warn!("identify: derived people not re-resolved: {error}");
-    }
+        .collect()
 }
 
 fn identify_from(
@@ -3498,5 +3505,83 @@ mod tests {
         assert_eq!(result["status"], "identified", "{result}");
         assert_eq!(result["operation_state"], "committed");
         assert_eq!(snapshot_files(&sib_b), sib_b_before);
+    }
+
+    #[test]
+    fn a_naming_asks_again_for_activities_on_recent_days_only() {
+        use crate::activity_reresolution::relabel_fixture::{
+            RECENT, TOO_OLD, activities, asked, now, recent_only,
+        };
+        let temp = Temp::new();
+        activities(temp.path(), "120000_300", &[RECENT, TOO_OLD]);
+        let request = IdentifyClusterRequest {
+            journal_root: temp.path().to_path_buf(),
+            cluster_id: 1,
+            name: Some("Target".into()),
+            entity_id: Some("target".into()),
+            resolve_only: false,
+            create_new: false,
+            entity_type: "Person".into(),
+            request_id: "request".into(),
+            reviewed_near_match_entity_ids: Vec::new(),
+            caller: String::new(),
+            actor: None,
+        };
+        let members = [RECENT, TOO_OLD]
+            .map(|day| {
+                member_json(&MemberProvenance {
+                    day: day.into(),
+                    ..member()
+                })
+            })
+            .to_vec();
+        let plan = json!({
+            "plan_schema_version":1,
+            "operation_id":"idop_recent",
+            "request_id":"request",
+            "planned_at":"2026-10-31T00:00:00Z",
+            "request":{"cluster_id":1,"name":"Target","entity_id":"target","resolve_only":false,"create_new":false,"entity_type":"Person","reviewed_near_match_entity_ids":[]},
+            "cluster":{"member_count":members.len(),"members":members},
+            "target":{"entity_id":"target","entity_name":"Target","will_create":false},
+            "entity_identity":{},
+            "direct_voiceprints":{},
+            "segments":[],
+            "retro_confirm":{},
+            "sentinel":{},
+            "keep_separate_assertions":[],
+        });
+        for (suffix, payload) in [
+            (
+                "prepared",
+                EventPayload::Prepared {
+                    request_fingerprint: "a".repeat(64),
+                    prepared_plan: plan,
+                },
+            ),
+            (
+                "committed",
+                EventPayload::Committed {
+                    result: json!({"status":"identified"}),
+                },
+            ),
+        ] {
+            append_event(
+                &identify_ledger_path(temp.path()),
+                &event(
+                    &request,
+                    "idop_recent",
+                    format!("idop_recent:{suffix}"),
+                    payload,
+                ),
+            )
+            .unwrap();
+        }
+        solstone_core_system::owner_ask::with_fixed_clock(now(), || {
+            reresolve_after_identify(
+                &request,
+                &json!({"status":"identified","operation_id":"idop_recent"}),
+            );
+        });
+        assert_eq!(asked(temp.path()), recent_only());
     }
 }

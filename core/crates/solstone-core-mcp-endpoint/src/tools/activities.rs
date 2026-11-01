@@ -408,6 +408,8 @@ pub(crate) fn clean_activity_record_for_wire(mut record: Map<String, Value>) -> 
         for edit in edits.iter_mut().filter_map(Value::as_object_mut) {
             edit.remove(solstone_core_facets::EDIT_SET);
             edit.remove(solstone_core_facets::EDIT_BEFORE);
+            edit.remove(solstone_core_facets::EDIT_LINES);
+            edit.remove(solstone_core_facets::EDIT_SPEAKER);
         }
     }
     record
@@ -1193,11 +1195,13 @@ mod tests {
         let cleaned = clean_activity_record_for_wire(record(serde_json::json!([
             {"timestamp":"t1","actor":"owner:update","fields":["description"],"set":{"description":"retracted"},"before":{"description":"old"},"removed":"t3"},
             {"timestamp":"t2","actor":"owner:update","fields":["description"],"set":{"description":"kept"},"before":{"description":"old"}},
+            {"timestamp":"t4","actor":"owner:lines","fields":[],"note":"","lines":[{"stream":"mic","segment":"120000_300","source":"audio","sentence_id":1,"set_at":"s","prior":null}],"speaker":{"kind":"unknown"}},
         ])));
         assert_eq!(
             Value::Object(cleaned),
             Value::Object(record(serde_json::json!([
                 {"timestamp":"t2","actor":"owner:update","fields":["description"]},
+                {"timestamp":"t4","actor":"owner:lines","fields":[],"note":""},
             ])))
         );
         let plain = record(serde_json::json!([

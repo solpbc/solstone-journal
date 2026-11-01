@@ -56,7 +56,7 @@ pub fn undo_identify_operation(
         return Ok(state_status_result(&state));
     }
 
-    let _trust = hold_entity_trust_lock(journal_root)?;
+    let trust = hold_entity_trust_lock(journal_root)?;
     let Some(state) = current_state(&ledger_path, operation_id)? else {
         return Ok(not_found(operation_id));
     };
@@ -119,6 +119,12 @@ pub fn undo_identify_operation(
     if let Err(error) = append_event(&ledger_path, &event) {
         return undo_recoverable_result(&ledger_path, operation_id, error.to_string());
     }
+    drop(trust);
+    // The undone labels reach recent activities as the naming did.
+    crate::activity_reresolution::ask_after_relabel(
+        journal_root,
+        &crate::identify_cluster::changed_segments(&state.prepared_plan),
+    );
     Ok(report)
 }
 
@@ -546,5 +552,54 @@ mod tests {
         assert_eq!(rows.iter().filter(|row| row.event.event_id == format!("{operation_id}:undo_checkpoint:labels")).count(), 1);
         let state = fold_operation(&rows, operation_id).unwrap().unwrap();
         assert_eq!(state.undo_phase_checkpoints.len(), UNDO_PHASE_ORDER.len());
+    }
+
+    #[test]
+    fn an_undo_asks_again_for_activities_on_recent_days_only() {
+        use crate::activity_reresolution::relabel_fixture::{
+            RECENT, TOO_OLD, activities, asked, now, recent_only,
+        };
+        let temporary = Temp::new();
+        activities(&temporary.0, "120000_300", &[RECENT, TOO_OLD]);
+        let operation_id = "idop_recent";
+        let mut prepared_plan = plan(operation_id);
+        prepared_plan["cluster"]["members"] = json!([RECENT, TOO_OLD].map(|day| json!({
+            "day":day,"stream_layout":"named","stream":"mic","segment_key":"120000_300",
+            "source":"audio","sentence_id":1
+        })));
+        prepared_plan["cluster"]["member_count"] = json!(2);
+        append(
+            &temporary.0,
+            operation_id,
+            EventPayload::Prepared {
+                request_fingerprint: "a".repeat(64),
+                prepared_plan,
+            },
+            "prepared",
+        );
+        for phase in crate::identify_operations::FORWARD_PHASE_ORDER {
+            append(
+                &temporary.0,
+                operation_id,
+                EventPayload::Checkpoint {
+                    phase,
+                    checkpoint: checkpoint(phase),
+                },
+                &format!("checkpoint:{}", phase.as_str()),
+            );
+        }
+        append(
+            &temporary.0,
+            operation_id,
+            EventPayload::Committed {
+                result: json!({"status":"identified"}),
+            },
+            "committed",
+        );
+        let result = solstone_core_system::owner_ask::with_fixed_clock(now(), || {
+            undo_identify_operation(&temporary.0, operation_id, &encoder()).unwrap()
+        });
+        assert_eq!(result["status"], "undone", "{result}");
+        assert_eq!(asked(&temporary.0), recent_only());
     }
 }

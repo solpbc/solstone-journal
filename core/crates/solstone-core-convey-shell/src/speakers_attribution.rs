@@ -491,7 +491,7 @@ pub async fn propagate(Extension(root): Extension<Arc<JournalRoot>>, request: Re
         return response;
     }
     let commit = body.get("commit").and_then(Value::as_bool).unwrap_or(false);
-    let _trust = if commit {
+    let trust = if commit {
         match solstone_core_entity::hold_entity_trust_lock(&root.0) {
             Ok(lock) => Some(lock),
             Err(error) => return write_error(error.to_string(), true),
@@ -526,7 +526,33 @@ pub async fn propagate(Extension(root): Extension<Arc<JournalRoot>>, request: Re
     {
         return write_error(error, true);
     }
+    drop(trust);
+    if commit {
+        ask_after_propagation(&root.0, &result);
+    }
     Json(result).into_response()
+}
+
+/// After a committed propagation, the recent activities over the segments
+/// whose labels changed are asked to think again. A failure is logged and
+/// leaves the propagation standing.
+fn ask_after_propagation(root: &std::path::Path, result: &Value) {
+    let changed = result["segments"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|segment| segment["status"] == "changed")
+        .filter_map(|segment| {
+            Some(
+                solstone_core_speaker_resolve::activity_reresolution::ChangedSegment {
+                    day: segment["day"].as_str()?.to_owned(),
+                    stream: segment["stream"].as_str()?.to_owned(),
+                    segment_key: segment["segment_key"].as_str()?.to_owned(),
+                },
+            )
+        })
+        .collect::<Vec<_>>();
+    solstone_core_speaker_resolve::activity_reresolution::ask_after_relabel(root, &changed);
 }
 
 enum PropagationError {
@@ -1456,5 +1482,62 @@ mod tests {
         .expect("refusal json");
         assert_eq!(body["reason_code"], OWNER_IDENTITY_INVALID_REASON);
         assert_eq!(snapshot_files(&journal.0), before);
+    }
+
+    #[test]
+    fn a_committed_propagation_asks_again_for_recent_activities_over_changed_segments() {
+        let root = tempfile::tempdir().unwrap();
+        fs::create_dir_all(root.path().join("config")).unwrap();
+        fs::write(
+            root.path().join("config/journal.json"),
+            json!({"identity":{"timezone":"UTC"}}).to_string(),
+        )
+        .unwrap();
+        solstone_core_facets::create_facet(root.path(), "work", "Work", "", "", "", None).unwrap();
+        // Today is 20261031: 20261024 is the oldest day rewritten, 20261023 too old.
+        for (day, id, segment) in [
+            ("20261024", "changed", "120000_300"),
+            ("20261024", "unchanged", "121000_300"),
+            ("20261023", "too_old", "120000_300"),
+        ] {
+            let row = json!({"id":id,"activity":"meeting","stream":"mic","segments":[segment]});
+            let _ = solstone_core_facets::append_activity_record(
+                root.path(),
+                "work",
+                day,
+                row.as_object().unwrap().clone(),
+            )
+            .unwrap();
+        }
+        let segment = |status: &str, day: &str, key: &str| json!({"status":status,"day":day,"stream":"mic","segment_key":key});
+        let result = json!({"segments":[
+            segment("changed", "20261024", "120000_300"),
+            segment("unchanged", "20261024", "121000_300"),
+            segment("changed", "20261023", "120000_300"),
+        ]});
+        let now = chrono::DateTime::parse_from_rfc3339("2026-10-31T12:00:00Z")
+            .unwrap()
+            .with_timezone(&chrono::Utc);
+        solstone_core_system::owner_ask::with_fixed_clock(now, || {
+            super::ask_after_propagation(root.path(), &result);
+        });
+        let asks = solstone_core_system::owner_ask::read(root.path())
+            .unwrap()
+            .into_values()
+            .map(|ask| {
+                (
+                    ask.day,
+                    ask.to_seed
+                        .into_iter()
+                        .map(|asked| asked.activity)
+                        .collect::<Vec<_>>(),
+                    ask.thaw,
+                )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            asks,
+            [("20261024".to_owned(), vec!["changed".to_owned()], false)]
+        );
     }
 }

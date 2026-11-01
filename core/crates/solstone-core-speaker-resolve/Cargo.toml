@@ -67,6 +67,7 @@ thiserror.workspace = true
 
 [dev-dependencies]
 filetime = "0.2.29"
+solstone-core-system = { workspace = true, features = ["test-hooks"] }
 tempfile = "3.24.0"
 
 [target.'cfg(unix)'.dependencies]

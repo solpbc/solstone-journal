@@ -166,6 +166,7 @@ pub fn build_view(root: &Path, day: &str, query: Option<&str>) -> Result<Value, 
     let location = solstone_core_location::DayBeside::read(root, day);
     // A damaged ask store reads as nothing updating; the view still shows.
     let asks = solstone_core_system::owner_ask::read(root).unwrap_or_default();
+    let mut answers = super::lines::Answers::default();
     let mut items = Vec::new();
     for ((facet, row), course) in scoped_rows.iter().zip(courses) {
         let is_hidden = row.get("hidden").is_some_and(activity_value_truthy);
@@ -186,6 +187,11 @@ pub fn build_view(root: &Path, day: &str, query: Option<&str>) -> Result<Value, 
                 "updating".to_owned(),
                 Value::Bool(updating(root, day, facet, &id, asks.values())),
             );
+            // An owner answer about who said its lines corrects it while the
+            // answer stands.
+            if item.get("corrected") == Some(&Value::Bool(false)) && answers.hold(root, day, row) {
+                item.insert("corrected".to_owned(), Value::Bool(true));
+            }
         }
         items.push(item);
     }
@@ -503,6 +509,7 @@ fn project_item(
                         "cli:mute" => "command_hide",
                         "cli:unmute" => "command_unhide",
                         "cli:create" => "command_create",
+                        solstone_core_facets::OWNER_LINES_ACTOR => "owner_lines",
                         _ => "other",
                     };
 
@@ -516,6 +523,10 @@ fn project_item(
                     edit_out.insert("position".to_owned(), Value::from(position));
                     edit_out.insert("removable".to_owned(), Value::Bool(edit_removable(obj)));
                     edit_out.insert("removed".to_owned(), Value::Bool(edit_removed(obj)));
+                    if let Some((lines, speaker)) = super::lines::history_fields(obj) {
+                        edit_out.insert("lines".to_owned(), Value::from(lines));
+                        edit_out.insert("speaker".to_owned(), speaker);
+                    }
                     Value::Object(edit_out)
                 })
                 .collect::<Vec<_>>()

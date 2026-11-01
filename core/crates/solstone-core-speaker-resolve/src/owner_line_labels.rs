@@ -48,6 +48,35 @@ pub enum LineSpeaker {
     Unknown,
 }
 
+impl LineSpeaker {
+    /// Read the tagged form a client sends: `{"kind":"owner"}`,
+    /// `{"kind":"person","id":"<entity id>"}` or `{"kind":"unknown"}`.
+    pub fn from_tagged(value: &Value) -> Option<Self> {
+        let object = value.as_object()?;
+        let kind = object.get("kind")?.as_str()?;
+        let extra = |allowed: &[&str]| object.keys().any(|key| !allowed.contains(&key.as_str()));
+        match kind {
+            "owner" if !extra(&["kind"]) => Some(Self::Owner),
+            "unknown" if !extra(&["kind"]) => Some(Self::Unknown),
+            "person" if !extra(&["kind", "id"]) => object
+                .get("id")
+                .and_then(Value::as_str)
+                .filter(|id| !id.trim().is_empty())
+                .map(|id| Self::Person(id.to_owned())),
+            _ => None,
+        }
+    }
+
+    /// The tagged form [`LineSpeaker::from_tagged`] reads.
+    pub fn tagged(&self) -> Value {
+        match self {
+            Self::Owner => serde_json::json!({"kind": "owner"}),
+            Self::Person(id) => serde_json::json!({"kind": "person", "id": id}),
+            Self::Unknown => serde_json::json!({"kind": "unknown"}),
+        }
+    }
+}
+
 /// One transcript line: its segment, its audio source and its statement
 /// ordinal, the coordinate speaker label rows use for it.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -91,6 +120,27 @@ pub enum RestoreOutcome {
     /// The entry is back, with a merged-away speaker named by its survivor.
     Restored,
     /// The segment was deleted, so there is nothing to restore into.
+    SegmentGone,
+}
+
+/// One line to put back once the owner withdraws an answer: only while the
+/// line's entry still carries one of `tokens`, it becomes `restore`, or has
+/// no entry when `restore` is `None`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LineRevert {
+    pub line: OwnerLine,
+    pub tokens: BTreeSet<String>,
+    pub restore: Option<OwnerLineEntry>,
+}
+
+/// What a revert did for one line.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RevertOutcome {
+    /// The entry carried one of the tokens and was put back.
+    Reverted,
+    /// The line has no entry, or one that carries another token; it was left.
+    Left,
+    /// The segment was deleted, so there is nothing to put back.
     SegmentGone,
 }
 
@@ -145,6 +195,31 @@ pub enum OwnerLineLabelError {
     Write(String),
 }
 
+impl OwnerLineLabelError {
+    /// The stable reason code for this refusal.
+    #[must_use]
+    pub fn reason_code(&self) -> &'static str {
+        match self {
+            Self::SegmentUnavailable(_) => "owner_line_segment_unavailable",
+            Self::SourceUnsupported { .. } => "owner_line_source_unsupported",
+            Self::WrongSource { .. } => "owner_line_wrong_source",
+            Self::NoLines => "owner_line_empty",
+            Self::LineNotFound { .. } => "owner_line_not_found",
+            Self::LineIdMismatch { .. } => "owner_line_id_mismatch",
+            Self::PersonNotFound(_)
+            | Self::PersonHidden(_)
+            | Self::PersonMerged { .. }
+            | Self::NotAPerson(_) => "owner_line_person_unavailable",
+            Self::OwnerNotAdmitted => "owner_line_owner_not_admitted",
+            Self::EntityStoreUnreadable(_) => "owner_line_people_unreadable",
+            Self::FileUnreadable(_) => "owner_line_answers_unreadable",
+            Self::MergeRecoveryPending => "owner_line_merge_recovery_pending",
+            Self::Lock(_) => "owner_line_busy",
+            Self::Write(_) => "owner_line_unsaved",
+        }
+    }
+}
+
 type Checkpoint<'a> = &'a dyn Fn() -> Result<(), String>;
 
 /// Label `lines` as spoken by `speaker`, replacing any earlier answer for
@@ -166,10 +241,56 @@ pub fn set_owner_line_labels_checked(
     speaker: &LineSpeaker,
     checkpoint: Checkpoint<'_>,
 ) -> Result<Vec<SetLine>, OwnerLineLabelError> {
+    set_locked(journal, lines, speaker, checkpoint).map(|(results, _, _)| results)
+}
+
+/// [`set_owner_line_labels`], then `then` while the answers are still locked.
+/// When `then` fails, every owner file is put back to its exact prior bytes
+/// and its error is returned inside `Ok`; the outer error is a refused set,
+/// or a put-back that failed.
+pub fn set_owner_line_labels_then<T, E>(
+    journal: &Path,
+    lines: &[OwnerLine],
+    speaker: &LineSpeaker,
+    then: impl FnOnce(&[SetLine]) -> Result<T, E>,
+) -> Result<Result<T, E>, OwnerLineLabelError> {
+    let (results, written, _trust) = set_locked(journal, lines, speaker, &|| Ok(()))?;
+    finish(written, || then(&results))
+}
+
+/// Run `then` with `written` still locked, putting every written segment back
+/// when it fails.
+fn finish<T, E>(
+    written: Vec<Written>,
+    then: impl FnOnce() -> Result<T, E>,
+) -> Result<Result<T, E>, OwnerLineLabelError> {
+    match then() {
+        Ok(value) => Ok(Ok(value)),
+        Err(error) => match put_back(written) {
+            Ok(()) => Ok(Err(error)),
+            Err(failures) => Err(OwnerLineLabelError::Write(format!(
+                "the change that went with these answers failed, and segments couldn't be put back: {failures}"
+            ))),
+        },
+    }
+}
+
+type Locked = (
+    Vec<SetLine>,
+    Vec<Written>,
+    solstone_core_entity::EntityTrustLock,
+);
+
+fn set_locked(
+    journal: &Path,
+    lines: &[OwnerLine],
+    speaker: &LineSpeaker,
+    checkpoint: Checkpoint<'_>,
+) -> Result<Locked, OwnerLineLabelError> {
     if lines.is_empty() {
         return Err(OwnerLineLabelError::NoLines);
     }
-    let _trust = hold_trust(journal)?;
+    let trust = hold_trust(journal)?;
     let speaker = resolve_speaker(journal, speaker)?;
     let set_at = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Nanos, true);
     let mut changes = Vec::new();
@@ -228,8 +349,8 @@ pub fn set_owner_line_labels_checked(
         }
         changes.push(Change { prepared, next });
     }
-    commit(changes, checkpoint)?;
-    Ok(results)
+    let written = commit(changes, checkpoint)?;
+    Ok((results, written, trust))
 }
 
 /// Remove the owner's answers for `lines`. A line with no answer, or a
@@ -344,6 +465,90 @@ pub fn restore_owner_line_labels(
     }
     commit(changes, checkpoint)?;
     Ok(outcomes)
+}
+
+/// Put lines back once the owner withdraws an answer, each only while its
+/// entry still carries one of its tokens. A restored entry is written exactly
+/// as recorded, with a merged-away speaker named by its survivor, and the
+/// person is not checked again. Every segment is checked before any is
+/// written. Returns one outcome per revert, in the order given.
+pub fn revert_owner_line_labels(
+    journal: &Path,
+    reverts: &[LineRevert],
+) -> Result<Vec<RevertOutcome>, OwnerLineLabelError> {
+    revert_owner_line_labels_then(journal, reverts, |outcomes| {
+        Ok::<_, std::convert::Infallible>(outcomes.to_vec())
+    })
+    .map(|result| match result {
+        Ok(outcomes) => outcomes,
+        Err(never) => match never {},
+    })
+}
+
+/// [`revert_owner_line_labels`], then `then` while the answers are still
+/// locked, with the same put-back as [`set_owner_line_labels_then`].
+pub fn revert_owner_line_labels_then<T, E>(
+    journal: &Path,
+    reverts: &[LineRevert],
+    then: impl FnOnce(&[RevertOutcome]) -> Result<T, E>,
+) -> Result<Result<T, E>, OwnerLineLabelError> {
+    let _trust = hold_trust(journal)?;
+    let checkpoint: Checkpoint<'_> = &|| Ok(());
+    let mut outcomes = vec![RevertOutcome::Left; reverts.len()];
+    let mut groups = BTreeMap::<&Path, Vec<usize>>::new();
+    for (index, revert) in reverts.iter().enumerate() {
+        groups
+            .entry(revert.line.segment_dir.as_path())
+            .or_default()
+            .push(index);
+    }
+    let mut changes = Vec::new();
+    for (segment_dir, indices) in groups {
+        let Some(segment) = Segment::capture(segment_dir)? else {
+            for index in indices {
+                outcomes[index] = RevertOutcome::SegmentGone;
+            }
+            continue;
+        };
+        segment
+            .admitted(checkpoint)
+            .map_err(OwnerLineLabelError::SegmentUnavailable)?;
+        let prepared = prepare(segment, checkpoint)?;
+        let mut next = prepared.entries.clone();
+        for index in indices {
+            let revert = &reverts[index];
+            let key = (revert.line.source.as_str(), revert.line.sentence_id);
+            if !find(&next, key).is_some_and(|entry| revert.tokens.contains(&entry.set_at)) {
+                continue;
+            }
+            next.retain(|entry| entry.key() != key);
+            if let Some(restore) = &revert.restore {
+                let mut entry = restore.clone();
+                if let Some(id) = &entry.speaker {
+                    entry.speaker = Some(surviving_id(journal, id)?);
+                }
+                upsert(&mut next, entry);
+            }
+            outcomes[index] = RevertOutcome::Reverted;
+        }
+        changes.push(Change { prepared, next });
+    }
+    let written = commit(changes, checkpoint)?;
+    finish(written, || then(&outcomes))
+}
+
+/// A segment's owner answers as they stand, for showing whether an owner
+/// correction still holds. A segment with none has none.
+pub fn current_owner_line_entries(segment_dir: &Path) -> Result<Vec<OwnerLineEntry>, String> {
+    match solstone_core_speaker_id::owner_line_labels::read_owner_line_labels(segment_dir) {
+        solstone_core_speaker_id::owner_line_labels::OwnerLineLabels::Absent => Ok(Vec::new()),
+        solstone_core_speaker_id::owner_line_labels::OwnerLineLabels::Present(entries) => {
+            Ok(entries)
+        }
+        solstone_core_speaker_id::owner_line_labels::OwnerLineLabels::Unreadable(detail) => {
+            Err(detail)
+        }
+    }
 }
 
 fn hold_trust(
@@ -562,7 +767,10 @@ struct Written {
     prior: Option<Vec<u8>>,
 }
 
-fn commit(changes: Vec<Change>, checkpoint: Checkpoint<'_>) -> Result<(), OwnerLineLabelError> {
+fn commit(
+    changes: Vec<Change>,
+    checkpoint: Checkpoint<'_>,
+) -> Result<Vec<Written>, OwnerLineLabelError> {
     let mut written = Vec::new();
     for change in changes {
         let mut next = change.next;
@@ -577,7 +785,7 @@ fn commit(changes: Vec<Change>, checkpoint: Checkpoint<'_>) -> Result<(), OwnerL
             Err(error) => return Err(roll_back(written, error)),
         }
     }
-    Ok(())
+    Ok(written)
 }
 
 fn write_segment(
@@ -627,6 +835,16 @@ fn write_segment(
 
 /// Put back every segment already written, newest first, and report `error`.
 fn roll_back(written: Vec<Written>, error: OwnerLineLabelError) -> OwnerLineLabelError {
+    match put_back(written) {
+        Ok(()) => error,
+        Err(failures) => OwnerLineLabelError::Write(format!(
+            "{error}; earlier segments couldn't be put back: {failures}"
+        )),
+    }
+}
+
+/// Put back every segment written, newest first, to its exact prior bytes.
+fn put_back(written: Vec<Written>) -> Result<(), String> {
     let mut failures = Vec::new();
     for item in written.into_iter().rev() {
         let guarded = || {
@@ -646,12 +864,9 @@ fn roll_back(written: Vec<Written>, error: OwnerLineLabelError) -> OwnerLineLabe
         }
     }
     if failures.is_empty() {
-        error
+        Ok(())
     } else {
-        OwnerLineLabelError::Write(format!(
-            "{error}; earlier segments couldn't be put back: {}",
-            failures.join("; ")
-        ))
+        Err(failures.join("; "))
     }
 }
 

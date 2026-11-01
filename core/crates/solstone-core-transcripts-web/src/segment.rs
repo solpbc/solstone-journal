@@ -1083,13 +1083,13 @@ fn title_case(value: &str) -> String {
         .map(|first| first.to_uppercase().collect::<String>() + chars.as_str())
         .unwrap_or_default()
 }
-fn valid_stream(value: &str) -> bool {
+pub(crate) fn valid_stream(value: &str) -> bool {
     !value.is_empty()
         && value
             .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
 }
-fn valid_key(value: &str) -> bool {
+pub(crate) fn valid_key(value: &str) -> bool {
     let Some((time, length)) = value.split_once('_') else {
         return false;
     };

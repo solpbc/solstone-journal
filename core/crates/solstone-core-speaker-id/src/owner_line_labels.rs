@@ -153,16 +153,7 @@ pub fn encode_owner_line_labels(entries: &[OwnerLineEntry]) -> Vec<u8> {
     sorted.sort_by(|left, right| left.key().cmp(&right.key()));
     let entries = sorted
         .iter()
-        .map(|entry| {
-            json!({
-                "source": entry.source,
-                "sentence_id": entry.sentence_id,
-                "start": entry.fingerprint.start,
-                "text_sha256": entry.fingerprint.text_sha256,
-                "speaker": entry.speaker,
-                "set_at": entry.set_at,
-            })
-        })
+        .map(owner_line_entry_value)
         .collect::<Vec<_>>();
     let value = json!({"version": OWNER_LINE_LABELS_VERSION, "entries": entries});
     let mut bytes = write_python_compatible_json(&value, 2)
@@ -170,6 +161,23 @@ pub fn encode_owner_line_labels(entries: &[OwnerLineEntry]) -> Vec<u8> {
         .into_bytes();
     bytes.push(b'\n');
     bytes
+}
+
+/// One entry as the file stores it.
+pub fn owner_line_entry_value(entry: &OwnerLineEntry) -> Value {
+    json!({
+        "source": entry.source,
+        "sentence_id": entry.sentence_id,
+        "start": entry.fingerprint.start,
+        "text_sha256": entry.fingerprint.text_sha256,
+        "speaker": entry.speaker,
+        "set_at": entry.set_at,
+    })
+}
+
+/// Read one entry stored as [`owner_line_entry_value`] writes it.
+pub fn owner_line_entry_from_value(value: &Value) -> Result<OwnerLineEntry, String> {
+    entry_from_value(value)
 }
 
 fn entries_from_value(value: &Value) -> Result<Vec<OwnerLineEntry>, String> {

@@ -546,6 +546,8 @@ fn run_backfill_attempt(
 
         let mut batch = Vec::new();
         let mut batch_index = 0;
+        // Segments whose label bytes this attempt changed since the last checkpoint.
+        let mut relabelled = Vec::new();
 
         let uncheckpointed = planned_segments
             .into_iter()
@@ -562,6 +564,10 @@ fn run_backfill_attempt(
             {
                 let registry = ACTIVE_TOKENS.lock().unwrap();
                 if registry.get(&(identity, operation_id.clone())) != Some(&token_id) {
+                    drop(registry);
+                    // Labels already written stay written; a resume finds
+                    // them unchanged and would not ask.
+                    ask_after_checkpoint(&journal_root, &mut relabelled);
                     return;
                 }
             }
@@ -589,11 +595,14 @@ fn run_backfill_attempt(
                             batch_index,
                             std::mem::take(&mut batch),
                         );
+                        ask_after_checkpoint(&journal_root, &mut relabelled);
                     }
                     continue;
                 }
             };
 
+            let labels_path = segment_path.join("talents/speaker_labels.json");
+            let labels_before = state.commit.then(|| std::fs::read(&labels_path).ok());
             let (outcome, error_detail) = execute_backfill_member(
                 &journal_root,
                 &key,
@@ -602,6 +611,15 @@ fn run_backfill_attempt(
                 state.accumulation,
                 now_ms,
             );
+            if let Some(before) = labels_before
+                && std::fs::read(&labels_path).ok() != before
+            {
+                relabelled.push(crate::activity_reresolution::ChangedSegment {
+                    day: key.day.clone(),
+                    stream: key.stream.clone(),
+                    segment_key: key.segment_key.clone(),
+                });
+            }
 
             batch.push(BackfillCheckpointResult {
                 segment: key.clone(),
@@ -618,6 +636,7 @@ fn run_backfill_attempt(
                     batch_index,
                     std::mem::take(&mut batch),
                 );
+                ask_after_checkpoint(&journal_root, &mut relabelled);
             }
         }
 
@@ -625,6 +644,7 @@ fn run_backfill_attempt(
             batch_index += 1;
             let _ = append_batch(&ledger_path, &operation_id, generation, batch_index, batch);
         }
+        ask_after_checkpoint(&journal_root, &mut relabelled);
 
         // Re-fold and complete if 0 errors and 0 pending
         if let Ok(Some(final_state)) = load_and_fold(&ledger_path, &operation_id)
@@ -665,6 +685,19 @@ fn run_backfill_attempt(
 
     drop(execution_lock);
     clear_active_token(identity, &operation_id, token_id);
+}
+
+/// Once a checkpoint is written, ask the journal to think again the recent
+/// activities over the segments whose labels changed before it. A resumed
+/// operation may ask again for a segment; a repeated ask only runs it again.
+fn ask_after_checkpoint(
+    journal_root: &Path,
+    relabelled: &mut Vec<crate::activity_reresolution::ChangedSegment>,
+) {
+    if !relabelled.is_empty() {
+        crate::activity_reresolution::ask_after_relabel(journal_root, relabelled);
+        relabelled.clear();
+    }
 }
 
 fn append_batch(
