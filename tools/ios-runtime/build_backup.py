@@ -35,6 +35,7 @@ SYMBOLS = (
     "restic_bridge_build_identity_v1", "restic_bridge_operation_directories_v1_start",
     "restic_bridge_s3_operation_directories_v1_start", "restic_bridge_wait", "restic_bridge_free",
     "restic_bridge_cancel", "restic_bridge_result_metadata", "sb_s3_owner_file_policy",
+    "restic_bridge_s3_archive_sources_v2_start",
 )
 
 

@@ -43,6 +43,41 @@ fn offload_report_keeps_uncertain_effects_and_unavailable_totals() {
 }
 
 #[test]
+fn native_archive_refusal_stage_is_per_failure_and_never_settles_effects() {
+    use solstone_core_backup::archive_admission::NativeArchiveStartStage;
+    use solstone_core_backup_runtime::ArchiveError;
+    let failures = [
+        Some(NativeArchiveStartStage::StateBinding),
+        None,
+        Some(NativeArchiveStartStage::SourceRoot),
+    ]
+    .map(|stage| {
+        Err(ArchiveFailure {
+            diagnostic: None,
+            error: ArchiveError::NativeStart { status: 1, stage },
+            remote_effects: ArchiveRemoteEffects::NotAttempted,
+        })
+    });
+    let report = archives(&failures);
+    assert_eq!(
+        report[0]["native_start"],
+        json!({"status":1,"refusal_stage":"state_binding"})
+    );
+    assert!(report[1]["native_start"].is_null());
+    assert_eq!(
+        report[2]["native_start"],
+        json!({"status":1,"refusal_stage":"source_root"})
+    );
+    for row in report.as_array().unwrap() {
+        assert_eq!(row["reason"], "archive start refused (status 1)");
+        assert_eq!(row["remote_effects"], json!({"state":"not_attempted"}));
+        assert!(row["diagnostic"].is_null());
+    }
+    assert!(NativeArchiveStartStage::from_code(0).is_none());
+    assert!(NativeArchiveStartStage::from_code(u32::MAX).is_none());
+}
+
+#[test]
 fn failed_archive_stderr_reaches_report_bounded_and_redacted_without_settling_effects() {
     use solstone_core_backup::archive_readback::{
         ArchiveCommandDiagnostic, DirectArchiveEffects, DirectArchiveFailure, ReadbackError,

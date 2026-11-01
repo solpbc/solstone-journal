@@ -27,6 +27,38 @@ typedef struct {
     const char *workspace_path; uint32_t workspace_path_len;
 } restic_s3_request;
 #endif
+#ifndef SOLSTONE_RESTIC_ARCHIVE_START_STAGE_V2
+#define SOLSTONE_RESTIC_ARCHIVE_START_STAGE_V2
+typedef enum {
+    RESTIC_ARCHIVE_START_NONE = 0,
+    RESTIC_ARCHIVE_START_NAMES = 1,
+    RESTIC_ARCHIVE_START_LOGICAL_ROOT = 2,
+    RESTIC_ARCHIVE_START_RESERVATION = 3,
+    RESTIC_ARCHIVE_START_REMOTE_REQUEST = 4,
+    RESTIC_ARCHIVE_START_REMOTE_FIELDS = 5,
+    RESTIC_ARCHIVE_START_REMOTE_CONFIGURATION = 6,
+    RESTIC_ARCHIVE_START_STATE_IDENTITY = 7,
+    RESTIC_ARCHIVE_START_STATE_DESTINATION = 8,
+    RESTIC_ARCHIVE_START_STATE_OPEN = 9,
+    RESTIC_ARCHIVE_START_STATE_PERMISSIONS = 10,
+    RESTIC_ARCHIVE_START_STATE_BINDING = 11,
+    RESTIC_ARCHIVE_START_STATE_RESERVATION = 12,
+    RESTIC_ARCHIVE_START_STATE_LOCK = 13,
+    RESTIC_ARCHIVE_START_STATE_POLICY = 14,
+    RESTIC_ARCHIVE_START_STATE_ROOT = 15,
+    RESTIC_ARCHIVE_START_STATE_CENSUS = 16,
+    RESTIC_ARCHIVE_START_STATE_RECORD = 17,
+    RESTIC_ARCHIVE_START_STATE_PATHS = 18,
+    RESTIC_ARCHIVE_START_APPEND_ONLY = 19,
+    RESTIC_ARCHIVE_START_SOURCE_IDENTITY = 20,
+    RESTIC_ARCHIVE_START_SOURCE_DUPLICATE = 21,
+    RESTIC_ARCHIVE_START_SOURCE_BINDING = 22,
+    RESTIC_ARCHIVE_START_SOURCE_ROOT = 23,
+    RESTIC_ARCHIVE_START_SOURCE_CLOSE = 24,
+    RESTIC_ARCHIVE_START_PUBLICATION = 25,
+    RESTIC_ARCHIVE_START_REJECTION_CLEANUP = 26,
+} restic_archive_start_stage_v2;
+#endif
 */
 import "C"
 
@@ -537,22 +569,71 @@ func dupOwnedFD(fd int) (*os.File, int32) {
 	return file, StatusOk
 }
 
+type archiveStartStage uint32
+
+const (
+	archiveStartNone                archiveStartStage = C.RESTIC_ARCHIVE_START_NONE
+	archiveStartNames               archiveStartStage = C.RESTIC_ARCHIVE_START_NAMES
+	archiveStartLogicalRoot         archiveStartStage = C.RESTIC_ARCHIVE_START_LOGICAL_ROOT
+	archiveStartReservation         archiveStartStage = C.RESTIC_ARCHIVE_START_RESERVATION
+	archiveStartRemoteRequest       archiveStartStage = C.RESTIC_ARCHIVE_START_REMOTE_REQUEST
+	archiveStartRemoteFields        archiveStartStage = C.RESTIC_ARCHIVE_START_REMOTE_FIELDS
+	archiveStartRemoteConfiguration archiveStartStage = C.RESTIC_ARCHIVE_START_REMOTE_CONFIGURATION
+	archiveStartStateIdentity       archiveStartStage = C.RESTIC_ARCHIVE_START_STATE_IDENTITY
+	archiveStartStateDestination    archiveStartStage = C.RESTIC_ARCHIVE_START_STATE_DESTINATION
+	archiveStartStateOpen           archiveStartStage = C.RESTIC_ARCHIVE_START_STATE_OPEN
+	archiveStartStatePermissions    archiveStartStage = C.RESTIC_ARCHIVE_START_STATE_PERMISSIONS
+	archiveStartStateBinding        archiveStartStage = C.RESTIC_ARCHIVE_START_STATE_BINDING
+	archiveStartStateReservation    archiveStartStage = C.RESTIC_ARCHIVE_START_STATE_RESERVATION
+	archiveStartStateLock           archiveStartStage = C.RESTIC_ARCHIVE_START_STATE_LOCK
+	archiveStartStatePolicy         archiveStartStage = C.RESTIC_ARCHIVE_START_STATE_POLICY
+	archiveStartStateRoot           archiveStartStage = C.RESTIC_ARCHIVE_START_STATE_ROOT
+	archiveStartStateCensus         archiveStartStage = C.RESTIC_ARCHIVE_START_STATE_CENSUS
+	archiveStartStateRecord         archiveStartStage = C.RESTIC_ARCHIVE_START_STATE_RECORD
+	archiveStartStatePaths          archiveStartStage = C.RESTIC_ARCHIVE_START_STATE_PATHS
+	archiveStartAppendOnly          archiveStartStage = C.RESTIC_ARCHIVE_START_APPEND_ONLY
+	archiveStartSourceIdentity      archiveStartStage = C.RESTIC_ARCHIVE_START_SOURCE_IDENTITY
+	archiveStartSourceDuplicate     archiveStartStage = C.RESTIC_ARCHIVE_START_SOURCE_DUPLICATE
+	archiveStartSourceBinding       archiveStartStage = C.RESTIC_ARCHIVE_START_SOURCE_BINDING
+	archiveStartSourceRoot          archiveStartStage = C.RESTIC_ARCHIVE_START_SOURCE_ROOT
+	archiveStartSourceClose         archiveStartStage = C.RESTIC_ARCHIVE_START_SOURCE_CLOSE
+	archiveStartPublication         archiveStartStage = C.RESTIC_ARCHIVE_START_PUBLICATION
+	archiveStartRejectionCleanup    archiveStartStage = C.RESTIC_ARCHIVE_START_REJECTION_CLEANUP
+)
+
+func (stage *archiveStartStage) at(value archiveStartStage) {
+	if stage != nil {
+		*stage = value
+	}
+}
+
 func admitArchiveDirectory(fd int, entry *ownedCall) (*os.Root, int32) {
+	return admitArchiveDirectoryDiagnosed(fd, entry, nil)
+}
+
+func admitArchiveDirectoryDiagnosed(fd int, entry *ownedCall, stage *archiveStartStage) (*os.Root, int32) {
+	stage.at(archiveStartSourceIdentity)
 	expected, status := readBorrowedDirectoryIdentity(fd)
 	if status != StatusOk {
 		return nil, status
 	}
+	stage.at(archiveStartSourceDuplicate)
 	file, status := dupOwnedFD(fd)
 	if status != StatusOk {
 		return nil, status
 	}
+	stage.at(archiveStartSourceBinding)
 	if !matchesBorrowedDirectory("archive-source", file, expected) {
 		_ = file.Close()
 		return nil, StatusInvalidArgument
 	}
+	stage.at(archiveStartSourceRoot)
 	root, err := adoptOwnedRoot(fmt.Sprintf("/dev/fd/%d", int(file.Fd())), file, entry)
 	closeErr := file.Close()
 	if err != nil || closeErr != nil {
+		if err == nil {
+			stage.at(archiveStartSourceClose)
+		}
 		if root != nil {
 			_ = root.Close()
 		}
@@ -796,6 +877,11 @@ func restic_bridge_download_exact_v1_start(
 }
 
 func admitArchiveS3(request *C.restic_s3_request, stateFD C.int, operation int32, snapshotRequired bool, entry *ownedCall) (bridgeRequest, int32) {
+	return admitArchiveS3Diagnosed(request, stateFD, operation, snapshotRequired, entry, nil)
+}
+
+func admitArchiveS3Diagnosed(request *C.restic_s3_request, stateFD C.int, operation int32, snapshotRequired bool, entry *ownedCall, stage *archiveStartStage) (bridgeRequest, int32) {
+	stage.at(archiveStartRemoteRequest)
 	if request == nil || request.version != 1 || int32(request.operation) != operation {
 		return bridgeRequest{}, StatusInvalidArgument
 	}
@@ -809,6 +895,7 @@ func admitArchiveS3(request *C.restic_s3_request, stateFD C.int, operation int32
 	} else if request.snapshot_id_len != 0 {
 		return bridgeRequest{}, StatusInvalidArgument
 	}
+	stage.at(archiveStartRemoteFields)
 	fields := [14]requestField{
 		{uint32(request.endpoint_len), request.endpoint != nil},
 		{uint32(request.region_len), request.region != nil},
@@ -844,6 +931,7 @@ func admitArchiveS3(request *C.restic_s3_request, stateFD C.int, operation int32
 		defer zeroBytes(owned)
 		return string(owned)
 	}
+	stage.at(archiveStartRemoteConfiguration)
 	cfg := s3Config{
 		endpoint: readString(request.endpoint, request.endpoint_len),
 		region:   readString(request.region, request.region_len),
@@ -863,12 +951,13 @@ func admitArchiveS3(request *C.restic_s3_request, stateFD C.int, operation int32
 			return bridgeRequest{}, StatusInvalidArgument
 		}
 	}
+	stage.at(archiveStartStateIdentity)
 	stateIdentity, status := readBorrowedDirectoryIdentity(int(stateFD))
 	if status != StatusOk {
 		return bridgeRequest{}, status
 	}
 	statePath := readString(request.state_path, request.state_path_len)
-	owner, err := newS3OwnerExpected(statePath, cfg, entry, stateIdentity)
+	owner, err := newS3OwnerExpectedDiagnosed(statePath, cfg, entry, stateIdentity, stage)
 	if err != nil {
 		if errors.Is(err, errS3OwnerBusy) {
 			return bridgeRequest{}, StatusBusy
@@ -886,6 +975,7 @@ func admitArchiveS3(request *C.restic_s3_request, stateFD C.int, operation int32
 		remote:     &s3RemoteRequest{cfg: cfg, owner: owner},
 	}
 	entry.retain(&req)
+	stage.at(archiveStartStatePaths)
 	if err := pinDataPaths(&req, []*os.File{owner.directory}); err != nil {
 		return req, StatusInvalidArgument
 	}
@@ -912,6 +1002,46 @@ func restic_bridge_s3_archive_sources_v1_start(
 	appendOnly C.uint32_t,
 	outID *C.uint64_t,
 ) (returned C.int32_t) {
+	return startS3ArchiveSources(request, stateFD, sourceFD, logicalRoot, logicalRootLen, namesJSON, namesLen, appendOnly, outID, nil)
+}
+
+//export restic_bridge_s3_archive_sources_v2_start
+func restic_bridge_s3_archive_sources_v2_start(
+	request *C.restic_s3_request,
+	stateFD C.int,
+	sourceFD C.int,
+	logicalRoot *C.char, logicalRootLen C.uint32_t,
+	namesJSON *C.char, namesLen C.uint32_t,
+	appendOnly C.uint32_t,
+	outID *C.uint64_t,
+	outRefusalStage *C.uint32_t,
+) C.int32_t {
+	if outID != nil {
+		*outID = 0
+	}
+	if outRefusalStage == nil {
+		return C.int32_t(StatusInvalidArgument)
+	}
+	*outRefusalStage = 0
+	var stage archiveStartStage
+	returned := startS3ArchiveSources(request, stateFD, sourceFD, logicalRoot, logicalRootLen, namesJSON, namesLen, appendOnly, outID, &stage)
+	if returned != C.int32_t(StatusOk) {
+		*outRefusalStage = C.uint32_t(stage)
+	}
+	return returned
+}
+
+func startS3ArchiveSources(
+	request *C.restic_s3_request,
+	stateFD C.int,
+	sourceFD C.int,
+	logicalRoot *C.char, logicalRootLen C.uint32_t,
+	namesJSON *C.char, namesLen C.uint32_t,
+	appendOnly C.uint32_t,
+	outID *C.uint64_t,
+	stage *archiveStartStage,
+) (returned C.int32_t) {
+	stage.at(archiveStartNames)
 	names, status := archiveBytes(namesJSON, namesLen, maxArchiveNamesPayload)
 	if status != StatusOk {
 		return C.int32_t(status)
@@ -921,29 +1051,39 @@ func restic_bridge_s3_archive_sources_v1_start(
 	if !ok {
 		return C.int32_t(StatusInvalidArgument)
 	}
+	stage.at(archiveStartLogicalRoot)
 	rootName, status := archiveText(logicalRoot, logicalRootLen, maxPathLen, true)
 	if status != StatusOk || !validLogicalRoot(rootName) {
 		return C.int32_t(StatusInvalidArgument)
 	}
+	stage.at(archiveStartReservation)
 	entry, returned := reserveArchiveCall(outID)
 	if entry == nil {
 		return returned
 	}
-	defer func() { returned = C.int32_t(entry.finishAdmission(int32(returned))) }()
-	req, status := admitArchiveS3(request, stateFD, OpArchiveSources, false, entry)
+	defer func() {
+		finished := C.int32_t(entry.finishAdmission(int32(returned)))
+		if finished != returned {
+			stage.at(archiveStartRejectionCleanup)
+		}
+		returned = finished
+	}()
+	req, status := admitArchiveS3Diagnosed(request, stateFD, OpArchiveSources, false, entry, stage)
 	if status != StatusOk {
 		return C.int32_t(status)
 	}
+	stage.at(archiveStartAppendOnly)
 	if status = applyArchiveAppendOnly(&req, appendOnly); status != StatusOk {
 		return C.int32_t(status)
 	}
-	root, status := admitArchiveDirectory(int(sourceFD), entry)
+	root, status := admitArchiveDirectoryDiagnosed(int(sourceFD), entry, stage)
 	if status != StatusOk {
 		return C.int32_t(status)
 	}
 	req.sourceRoot = root
 	req.sourceName = rootName
 	req.archiveNames = parsed
+	stage.at(archiveStartPublication)
 	return publishArchiveCall(entry, req, outID)
 }
 

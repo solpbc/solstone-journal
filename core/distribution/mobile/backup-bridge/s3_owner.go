@@ -160,12 +160,18 @@ func newS3OwnerOwned(path string, cfg s3Config, entry *ownedCall) (_ *s3Owner, r
 }
 
 func newS3OwnerExpected(path string, cfg s3Config, entry *ownedCall, expected *borrowedDirectoryIdentity) (_ *s3Owner, resultErr error) {
+	return newS3OwnerExpectedDiagnosed(path, cfg, entry, expected, nil)
+}
+
+func newS3OwnerExpectedDiagnosed(path string, cfg s3Config, entry *ownedCall, expected *borrowedDirectoryIdentity, stage *archiveStartStage) (_ *s3Owner, resultErr error) {
+	stage.at(archiveStartStateDestination)
 	destination, err := s3DestinationFor(cfg)
 	if err != nil || sanitizePath(path) != nil {
 		return nil, errS3OwnerInvalid
 	}
 	owner := &s3Owner{owned: entry, path: path, destination: destination, lockAcks: make(map[string]bool)}
 	entry.retainOwner(owner)
+	stage.at(archiveStartStateReservation)
 	s3OwnersMu.Lock()
 	if s3Owners[destination] != nil {
 		s3OwnersMu.Unlock()
@@ -179,37 +185,46 @@ func newS3OwnerExpected(path string, cfg s3Config, entry *ownedCall, expected *b
 			_ = owner.Close()
 		}
 	}()
+	stage.at(archiveStartStateOpen)
 	file, err := openOwnedDirectory(path, entry)
 	if err != nil {
 		return nil, errS3OwnerInvalid
 	}
 	owner.directory = file
+	stage.at(archiveStartStatePermissions)
 	var stat unix.Stat_t
 	if unix.Fstat(int(file.Fd()), &stat) != nil || stat.Uid != uint32(os.Geteuid()) || stat.Mode&07777 != 0700 {
 		return nil, errS3OwnerInvalid
 	}
+	stage.at(archiveStartStateBinding)
 	if !matchesBorrowedDirectory("state", file, expected) {
 		return nil, errS3OwnerInvalid
 	}
+	stage.at(archiveStartStateReservation)
 	if err := reserveOwnedPrivateDirectory(file, entry); err != nil {
 		return nil, err
 	}
+	stage.at(archiveStartStateLock)
 	if err := unix.Flock(int(file.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
 		if errors.Is(err, unix.EWOULDBLOCK) || errors.Is(err, unix.EAGAIN) {
 			return nil, errS3OwnerBusy
 		}
 		return nil, errS3OwnerIO
 	}
+	stage.at(archiveStartStatePolicy)
 	if err := s3StateRootPolicy(int(file.Fd())); err != nil {
 		return nil, errS3OwnerPolicy
 	}
+	stage.at(archiveStartStateRoot)
 	owner.root, err = adoptOwnedRoot(path, file, entry)
 	if err != nil {
 		return nil, errS3OwnerInvalid
 	}
+	stage.at(archiveStartStateCensus)
 	if err := owner.census(""); err != nil {
 		return nil, err
 	}
+	stage.at(archiveStartStateRecord)
 	if err := owner.read(); err != nil {
 		return nil, err
 	}

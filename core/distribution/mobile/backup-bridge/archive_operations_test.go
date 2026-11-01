@@ -6,9 +6,39 @@ package main
 import (
 	"bytes"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestArchiveDirectoryAdmissionRetainsBorrowedSource(t *testing.T) {
+	directory := t.TempDir()
+	if err := os.WriteFile(filepath.Join(directory, "clip.m4a"), []byte("retained source"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	borrowed, err := os.Open(directory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer borrowed.Close()
+	entry, status := reserveOwnedCall()
+	if status != StatusOk {
+		t.Fatal(status)
+	}
+	defer entry.finishAdmission(StatusInvalidArgument)
+	root, status := admitArchiveDirectory(int(borrowed.Fd()), entry)
+	if status != StatusOk {
+		t.Fatalf("ordinary retained source descriptor refused: %d", status)
+	}
+	data, err := root.ReadFile("clip.m4a")
+	if err != nil || string(data) != "retained source" {
+		t.Fatalf("admitted root did not retain the selected source: %q %v", data, err)
+	}
+	if _, err := borrowed.Stat(); err != nil {
+		t.Fatal("caller descriptor was closed", err)
+	}
+}
 
 func TestArchiveOpcodesStayOutsideOrdinarySnapshotRestoreAndRetention(t *testing.T) {
 	ops := []int32{OpArchiveSources, OpListNodes, OpReadFile}

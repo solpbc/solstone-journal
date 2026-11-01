@@ -1727,7 +1727,9 @@ pub enum ArchiveError {
     ConfigurationChanged,
     JournalIdentityChanged,
     ToolUnavailable,
-    CredentialsUnavailable { reason: &'static str },
+    CredentialsUnavailable {
+        reason: &'static str,
+    },
     InvalidCredentialExpiry,
     CredentialsExpired,
     DeadlineExceeded,
@@ -1735,8 +1737,13 @@ pub enum ArchiveError {
     Cancelled,
     RepositoryIdentityInvalid,
     RepositoryIdentityChanged,
-    ToolFailed { reason: &'static str },
-    NativeStart { status: i32 },
+    ToolFailed {
+        reason: &'static str,
+    },
+    NativeStart {
+        status: i32,
+        stage: Option<solstone_core_backup::archive_admission::NativeArchiveStartStage>,
+    },
     InvalidSelection,
     SourceUnavailable,
     SnapshotIdentityInvalid,
@@ -1752,7 +1759,7 @@ impl fmt::Display for ArchiveError {
             Self::JournalIdentityChanged => "your journal could not be confirmed",
             Self::ToolUnavailable => "an archive tool is unavailable",
             Self::CredentialsUnavailable { reason } | Self::ToolFailed { reason } => reason,
-            Self::NativeStart { status } => {
+            Self::NativeStart { status, .. } => {
                 return write!(formatter, "archive start refused (status {status})");
             }
             Self::InvalidCredentialExpiry => "archive credentials have an invalid expiry",
@@ -1809,10 +1816,13 @@ pub struct ArchiveFailure {
 
 impl ArchiveFailure {
     #[cfg(any(target_os = "ios", test))]
-    pub(crate) fn native_start(status: i32) -> Self {
+    pub(crate) fn native_start(
+        status: i32,
+        stage: Option<solstone_core_backup::archive_admission::NativeArchiveStartStage>,
+    ) -> Self {
         Self {
             diagnostic: None,
-            error: ArchiveError::NativeStart { status },
+            error: ArchiveError::NativeStart { status, stage },
             remote_effects: ArchiveRemoteEffects::NotAttempted,
         }
     }
@@ -4261,8 +4271,14 @@ mod tests {
         // Both a known busy code and an unknown code survive the same
         // content-free projection used by the retained archive report.
         for status in [6, -173] {
-            let failure = ArchiveFailure::native_start(status);
-            assert_eq!(failure.error, ArchiveError::NativeStart { status });
+            let failure = ArchiveFailure::native_start(status, None);
+            assert_eq!(
+                failure.error,
+                ArchiveError::NativeStart {
+                    status,
+                    stage: None
+                }
+            );
             assert_eq!(failure.remote_effects, ArchiveRemoteEffects::NotAttempted);
             let report = json!({"reason":failure.error.to_string()});
             assert!(

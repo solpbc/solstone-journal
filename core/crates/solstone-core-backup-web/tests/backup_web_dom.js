@@ -345,6 +345,8 @@ function fixture(document) {
   const stallReason = add(offload, 'p', { 'data-offload-stall-reason': '', hidden: '' });
   add(offload, 'p', { 'data-offload-unsupported': '', hidden: '' });
   const offloadForm = add(offload, 'form', { 'data-offload-enable-form': '' });
+  add(offloadForm, 'input', { 'data-offload-budget-input': '', type: 'number', min: '0', step: 'any' });
+  add(offloadForm, 'input', { 'data-offload-floor-input': '', type: 'number', min: '0', step: 'any' });
   const saveOffload = add(offloadForm, 'button', { 'data-action': 'offload-save' });
   add(offloadForm, 'button', { 'data-action': 'offload-enable' });
   const preparation = add(offload, 'div', { 'data-offload-prepare': '', hidden: '' });
@@ -2418,6 +2420,27 @@ asyncCase('preparation reconciles a lost reply and an ephemeral page restart wit
   await settle(48);
   assert.strictEqual(next.disabled, false);
   assert.strictEqual(writes, 1, 'checking and reopening never submit work or approve removal');
+});
+
+asyncCase('saving and enabling preserve exact configured offload byte limits', async () => {
+  for (const [action, budget, floor] of [
+    ['offload-enable', 1074, 1073741824],
+    ['offload-save', 1326067785, 2147483749],
+  ]) {
+    const posted = [];
+    const payload = { success: true, offload: { enabled: action === 'offload-save', budget_bytes: budget, floor_bytes: floor }, days: [] };
+    const harness = createHarness({ respond(call) {
+      if (call.url === '/app/backup/status') return response({ ...status(), enabled: true, recovery_key_confirmed: true });
+      if (call.url === '/app/backup/offload/config') posted.push(JSON.parse(call.request.body));
+      if (['/app/backup/offload/status', '/app/backup/offload/config', '/app/backup/offload/enable'].includes(call.url)) return response(payload);
+      return undefined;
+    } });
+    await ready(harness);
+    click(harness.root.querySelector('[data-action="' + action + '"]'));
+    await settle(48);
+    assert.deepStrictEqual(posted, [{ budget_bytes: budget, floor_bytes: floor }]);
+    harness.detach();
+  }
 });
 
 async function runAsyncCases() {

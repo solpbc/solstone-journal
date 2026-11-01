@@ -126,6 +126,7 @@ import UIKit
       catch { phase = .unavailable; detail = "couldn't save start. free some space, then try again."; return }
     }
     guard !ownerStopped, foreground else { return }
+    recoveryDetail = ""
     revision &+= 1
     let ticket = revision
     let admission = journal_ios_processing_generation()
