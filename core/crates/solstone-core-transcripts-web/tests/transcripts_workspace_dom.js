@@ -284,6 +284,16 @@ class Element {
     }
   }
 
+  insertAdjacentElement(position, element) {
+    if (position === 'afterend' && this.parentElement) {
+      const siblings = this.parentElement.children;
+      element.remove();
+      element.parentElement = this.parentElement;
+      siblings.splice(siblings.indexOf(this) + 1, 0, element);
+    }
+    return element;
+  }
+
   remove() {
     if (this.parentElement) {
       const idx = this.parentElement.children.indexOf(this);
@@ -481,6 +491,7 @@ function seededJournalFormat(labels, says = {}) {
   return format;
 }
 const apiSource = fs.readFileSync(path.join(crateDir, '../solstone-core-convey-shell/assets/static/api.js'), 'utf8');
+const drawerSource = fs.readFileSync(path.join(crateDir, '../solstone-core-convey-shell/assets/static/drawer.js'), 'utf8');
 
 function createTranscriptsDOM() {
   const doc = new Document();
@@ -712,9 +723,30 @@ async function createEnvironment(
 
   const pendingLocationGets = [];
 
+  const posts = [];
   const mockFetch = (url, fetchOpts = {}) => {
     const urlStr = String(url);
     const signal = fetchOpts.signal;
+
+    if (fetchOpts.method === 'POST') {
+      const headers = fetchOpts.headers;
+      const record = {
+        url: urlStr,
+        actor: headers && typeof headers.get === 'function' ? headers.get('x-solstone-actor') : null,
+        body: fetchOpts.body ? JSON.parse(fetchOpts.body) : null,
+      };
+      posts.push(record);
+      const reply = options.postResponse ? options.postResponse(record) : { status: 200, body: { ok: true, asked: true } };
+      return Promise.resolve({ ok: reply.status < 400, status: reply.status, json: async () => reply.body });
+    }
+
+    if (urlStr === '/app/entities/api/journal') {
+      return Promise.resolve({ ok: true, status: 200, json: async () => ({ entities: options.journalPeople || [] }) });
+    }
+
+    if (urlStr === '/app/speakers/api/speakers/known') {
+      return Promise.resolve({ ok: true, status: 200, json: async () => ({ speakers: options.knownSpeakers || [] }) });
+    }
 
     if (fetchOpts.method === 'DELETE') {
       deleteIdCounter++;
@@ -852,7 +884,7 @@ async function createEnvironment(
                 location_readings: payloadOverride?.location_readings,
                 signals: { events: [] },
                 speaker_labels: payloadOverride?.speaker_labels,
-                transcripts_copy: {},
+                transcripts_copy: payloadOverride?.transcripts_copy ?? {},
                 warnings: payloadOverride?.warnings,
                 warning_details: payloadOverride?.warning_details,
               }),
@@ -944,6 +976,9 @@ async function createEnvironment(
       return id;
     },
     clearInterval: (id) => intervals.delete(id),
+    requestAnimationFrame: (callback) => setTimeout(callback, 0),
+    crypto,
+    Headers,
     Date,
     Math,
     Number,
@@ -963,6 +998,7 @@ async function createEnvironment(
 
   const context = vm.createContext(sandbox);
   vm.runInContext(apiSource, context);
+  vm.runInContext(drawerSource, context);
   vm.runInContext(scriptSource, context);
 
   // Flush microtasks for day load
@@ -983,6 +1019,7 @@ async function createEnvironment(
     intervals,
     segmentGetRequests,
     pendingLocationGets,
+    posts,
     setDeleteStatusState: (st) => { deleteStatusState = st; },
     timelineResizeObserver: resizeObserverCallbacks[0],
     zoomResizeObserver: resizeObserverCallbacks[1],
@@ -2228,6 +2265,172 @@ test('an unfinished delete reported on open names its stream by label, keeping t
   const notice = env.notifications.find((item) => String(item.message || '').includes('LABEL-A'));
   assert.ok(notice, 'the outcome names the label');
   assert.ok(notice.message.includes('<span title="room">LABEL-A</span>'), notice.message);
+});
+
+// The speaker picker: the owner's answer for who said one line.
+const segmentCopy = Object.fromEntries(
+  [...fs.readFileSync(path.join(crateDir, 'src/segment.rs'), 'utf8')
+    .matchAll(/\(\s*"(TR_[A-Z_]+)",\s*"((?:[^"\\]|\\.)*)",?\s*\)/g)]
+    .map(([, key, text]) => [key, JSON.parse(`"${text}"`)]),
+);
+assert.ok(segmentCopy.TR_SPEAKER_PICKER_GUESS, 'the transcript copy table is read');
+const PICKER_PEOPLE = [
+  { id: 'romeo', entity_id: 'romeo', name: 'Romeo', type: 'Person', is_principal: false, blocked: false },
+  { id: 'juliet', entity_id: 'juliet', name: 'Juliet', type: 'Person', is_principal: true, blocked: false },
+  { id: 'tybalt', entity_id: 'tybalt', name: 'Tybalt', type: 'Person', is_principal: false, blocked: true },
+  { id: 'verona', entity_id: 'verona', name: 'Verona', type: 'Place', is_principal: false, blocked: false },
+];
+
+function pickerLine(sentence, extra = {}) {
+  return {
+    type: 'audio',
+    time: `11:45:0${sentence}`,
+    timestamp: Date.UTC(2020, 0, 15, 11, 45, sentence),
+    markdown: `line ${sentence}`,
+    sentence_id: sentence,
+    speaker_source: 'audio',
+    has_embedding: true,
+    speaker_actionable: true,
+    ...extra,
+  };
+}
+
+const PICKER_SEGMENT = {
+  speaker_labels: { present: true, loaded: true, source: 'audio', ambiguous: false, who_spoke_present: true },
+  transcripts_copy: segmentCopy,
+  chunks: [
+    pickerLine(1, { speaker_label: { name: 'Benvolio', entity_id: 'benvolio', confidence_state: 'high', is_owner: false } }),
+    pickerLine(2, {
+      speaker_actionable: false,
+      speaker_label: { name: 'Romeo', entity_id: 'romeo', confidence_state: 'high', is_owner: false },
+      owner_line_label: { speaker: 'romeo', set_at: '2020-01-16T10:00:00Z' },
+    }),
+    pickerLine(3, { speaker_voice: { voice_id: 4, entity_id: null, name: null } }),
+    pickerLine(4, {
+      speaker_actionable: false,
+      owner_line_label: { speaker: null, set_at: '2020-01-16T10:00:00Z' },
+    }),
+  ],
+};
+
+async function pickerEnvironment(options = {}) {
+  const env = await createEnvironment(undefined, 'analyzed', false, null, {
+    journalPeople: PICKER_PEOPLE,
+    knownSpeakers: [{ entity_id: 'mercutio', name: 'Mercutio' }],
+    ...options,
+  });
+  getZoomPills(env.doc)[0].dispatchEvent({ type: 'click' });
+  await env.releasePendingSegmentGets('analyzed', options.segment || PICKER_SEGMENT);
+  env.chip = (sentence) => env.doc.querySelector(`[data-action="speaker-picker"][data-sentence-id="${sentence}"]`);
+  env.openPicker = async (sentence) => {
+    const chip = env.chip(sentence);
+    assert.ok(chip, `line ${sentence} offers the picker`);
+    chip.dispatchEvent({ type: 'click' });
+    await new Promise((r) => setTimeout(r, 10));
+    return env.doc.querySelector('.tr-speaker-popover');
+  };
+  env.options = (popover) => popover.querySelectorAll('.tr-speaker-picker-option').map((o) => o.dataset.speakerOption);
+  return env;
+}
+
+test('the picker offers me, any person and someone i don\'t know, with no journal guess to go back to', async () => {
+  const env = await pickerEnvironment();
+  const popover = await env.openPicker(1);
+  assert.deepStrictEqual(env.options(popover), ['owner', 'known', 'unknown', 'someone_else']);
+  assert.strictEqual(popover.querySelector('[data-speaker-option="known"]').dataset.speakerId, 'romeo',
+    'every admitted person but the owner, not only voices the journal grouped');
+  assert.strictEqual(popover.querySelector('[data-speaker-option="guess"]'), null);
+});
+
+test('the picker says the answer fixes this line only and links to the speakers page', async () => {
+  const env = await pickerEnvironment();
+  const popover = await env.openPicker(1);
+  const lineOnly = popover.querySelector('[data-copy-key="TR_SPEAKER_LINE_ONLY"]');
+  assert.ok(lineOnly && lineOnly.querySelector('details.drawer'));
+  assert.ok(lineOnly.querySelector('[data-copy-key="TR_SPEAKER_LINE_ONLY_BODY"]'));
+  const link = lineOnly.querySelector('a[data-copy-key="TR_SPEAKER_LINE_ONLY_LINK"]');
+  assert.strictEqual(link.getAttribute('href'), '/app/speakers/');
+});
+
+test('a line carrying the owner\'s answer shows it, offers the journal\'s guess back and no voice fix', async () => {
+  const env = await pickerEnvironment();
+  assert.ok(env.chip(2).querySelector('.tr-speaker-owner-set'), 'the chip marks the owner\'s answer');
+  assert.ok(env.chip(4).querySelector('.tr-speaker-owner-set'));
+  assert.strictEqual(env.chip(1).querySelector('.tr-speaker-owner-set'), null);
+  const popover = await env.openPicker(2);
+  assert.deepStrictEqual(env.options(popover), ['owner', 'known', 'unknown', 'guess']);
+  assert.strictEqual(popover.querySelector('[data-speaker-handoff]'), null);
+  assert.strictEqual(popover.querySelector('.tr-speaker-picker-scope-input'), null);
+});
+
+for (const [sentence, option, expected] of [
+  [1, 'owner', { kind: 'owner' }],
+  [1, 'known', { kind: 'person', id: 'romeo' }],
+  [1, 'unknown', { kind: 'unknown' }],
+  [2, 'owner', { kind: 'owner' }],
+]) {
+  test(`choosing ${option} on line ${sentence} posts the answer to the line-label route`, async () => {
+    const env = await pickerEnvironment();
+    const popover = await env.openPicker(sentence);
+    const before = env.segmentGetRequests.length;
+    popover.querySelector(`[data-speaker-option="${option}"]`).dispatchEvent({ type: 'click' });
+    await new Promise((r) => setTimeout(r, 10));
+    assert.strictEqual(env.posts.length, 1);
+    assert.strictEqual(env.posts[0].url, '/app/transcripts/api/line-label/20200115/room/114500_300');
+    assert.deepStrictEqual(env.posts[0].body, { source: 'audio', sentence_id: sentence, speaker: expected });
+    assert.strictEqual(env.segmentGetRequests.length, before + 1, 'the segment is read again to show the answer');
+  });
+}
+
+test('"back to your journal\'s guess" removes the owner\'s answer through the line-label route', async () => {
+  const env = await pickerEnvironment();
+  const popover = await env.openPicker(2);
+  popover.querySelector('[data-speaker-option="guess"]').dispatchEvent({ type: 'click' });
+  await new Promise((r) => setTimeout(r, 10));
+  assert.strictEqual(env.posts[0].url, '/app/transcripts/api/line-label/20200115/room/114500_300/remove');
+  assert.deepStrictEqual(env.posts[0].body, { source: 'audio', sentence_id: 2 });
+});
+
+test('a refused line answer shows its copy key beside the line', async () => {
+  const env = await pickerEnvironment({
+    postResponse: () => ({ status: 409, body: { error: 'refused', reason_code: 'owner_line_source_unsupported' } }),
+  });
+  const popover = await env.openPicker(1);
+  popover.querySelector('[data-speaker-option="unknown"]').dispatchEvent({ type: 'click' });
+  await new Promise((r) => setTimeout(r, 10));
+  assert.ok(env.doc.querySelector('.tr-speaker-status[data-copy-key="TR_SPEAKER_LINE_SOURCE"]'));
+});
+
+test('"someone else…" hands off to the speakers page with the line\'s context', async () => {
+  const env = await pickerEnvironment();
+  const popover = await env.openPicker(1);
+  popover.querySelector('[data-speaker-handoff="statement"]').dispatchEvent({ type: 'click' });
+  const target = new URL(env.window.location.href);
+  assert.strictEqual(target.pathname, '/app/speakers/');
+  assert.strictEqual(target.searchParams.get('voice_day'), '20200115');
+  assert.strictEqual(target.searchParams.get('voice_segment_key'), '114500_300');
+  assert.strictEqual(target.searchParams.get('voice_sentence_id'), '1');
+});
+
+test('naming a voice everywhere stays as it was, and unticking it offers the line answers', async () => {
+  const env = await pickerEnvironment();
+  let popover = await env.openPicker(3);
+  const scope = popover.querySelector('.tr-speaker-picker-scope-input');
+  assert.ok(scope && scope.hasAttribute('checked'));
+  assert.deepStrictEqual(env.options(popover), ['known', 'someone_else']);
+  assert.strictEqual(popover.querySelector('[data-speaker-option="known"]').dataset.speakerId, 'mercutio');
+  scope.checked = false;
+  scope.dispatchEvent({ type: 'change', target: scope });
+  popover = env.doc.querySelector('.tr-speaker-popover');
+  assert.deepStrictEqual(env.options(popover), ['owner', 'known', 'unknown', 'someone_else']);
+  const again = popover.querySelector('.tr-speaker-picker-scope-input');
+  again.checked = true;
+  again.dispatchEvent({ type: 'change', target: again });
+  popover = env.doc.querySelector('.tr-speaker-popover');
+  popover.querySelector('[data-speaker-option="known"]').dispatchEvent({ type: 'click' });
+  await new Promise((r) => setTimeout(r, 10));
+  assert.strictEqual(env.posts[0].url, '/app/speakers/api/voice/identify');
+  assert.strictEqual(env.posts[0].body.entity_id, 'mercutio');
 });
 
 // A phone records its screen at 15 frames a second, so a frame id is not a

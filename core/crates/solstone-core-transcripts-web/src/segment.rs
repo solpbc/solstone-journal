@@ -905,8 +905,96 @@ fn audio_duration(entries: &[Map<String, Value>], key: &str) -> f64 {
         .unwrap_or(0.0)
 }
 
+/// The transcript page's speaker strings, by key.
+const TRANSCRIPTS_COPY: &[(&str, &str)] = &[
+    ("TR_SPEAKER_CHANGE_LABEL", "change speaker"),
+    ("TR_SPEAKER_ASSIGN_LABEL", "add speaker"),
+    ("TR_SPEAKER_PICKER_TITLE", "choose speaker"),
+    ("TR_SPEAKER_PICKER_SEARCH_PLACEHOLDER", "find a person"),
+    ("TR_SPEAKER_PICKER_OWNER", "me"),
+    ("TR_SPEAKER_OWNER_NAME", "you"),
+    ("TR_SPEAKER_PICKER_EMPTY", "no people in your journal yet"),
+    ("TR_SPEAKER_SOMEONE_ELSE", "someone else…"),
+    ("TR_SPEAKER_PICKER_NO_RESULTS", "no matching people"),
+    ("TR_SPEAKER_UNKNOWN_CHIP", "unknown voice"),
+    ("TR_SPEAKER_VOICE_CHIP", "voice {number}"),
+    (
+        "TR_SPEAKER_VOICE_ASSISTIVE",
+        "one unnamed voice wherever this number appears",
+    ),
+    (
+        "TR_SPEAKER_VOICE_NAMED_ASSISTIVE",
+        "matches a voice you named",
+    ),
+    ("TR_SPEAKER_VOICE_SCOPE", "everywhere this voice appears"),
+    ("TR_SPEAKER_VOICE_SCOPE_NOTE", "there's no undo"),
+    (
+        "TR_SPEAKER_VOICE_NAMED_COUNT",
+        "{count} sentences now show this name",
+    ),
+    (
+        "TR_SPEAKER_VOICE_NAMED_ONE",
+        "1 sentence now shows this name",
+    ),
+    ("TR_SPEAKER_HEDGE_PROBABLE", "probably {name}"),
+    ("TR_SPEAKER_HEDGE_MAYBE", "maybe {name}?"),
+    ("TR_SPEAKER_CONFIDENCE_HIGH", "high confidence"),
+    ("TR_SPEAKER_CONFIDENCE_UNKNOWN", "confidence unavailable"),
+    ("TR_SPEAKER_MARGIN_OWNER", "close owner match"),
+    ("TR_SPEAKER_MARGIN_ACOUSTIC", "close voice match"),
+    (
+        "TR_SPEAKER_ACTION_UNAVAILABLE",
+        "speaker change unavailable",
+    ),
+    ("TR_SPEAKER_NO_EMBEDDING", "voice sample unavailable"),
+    ("TR_SPEAKER_CORRECT_RETRY", "retry speaker change"),
+    ("TR_SPEAKER_CORRECT_BUSY", "speaker files are busy"),
+    (
+        "TR_SPEAKER_OWNER_TOO_CLOSE",
+        "that voice is too close to yours to save there",
+    ),
+    (
+        "TR_SPEAKER_OWNER_IDENTITY_REQUIRED",
+        "set your identity before tagging yourself",
+    ),
+    ("TR_SPEAKER_ALREADY_CORRECT", "already set"),
+    ("TR_SPEAKER_PROPAGATION_DISMISS", "dismiss"),
+    ("TR_SPEAKER_PICKER_UNKNOWN", "someone i don't know"),
+    ("TR_SPEAKER_PICKER_GUESS", "back to your journal's guess"),
+    ("TR_SPEAKER_LINE_ONLY", "this line only"),
+    (
+        "TR_SPEAKER_LINE_ONLY_BODY",
+        "your answer changes who said this line and nothing else. to teach your journal a voice, or tidy up the voices it knows, go to {link}.",
+    ),
+    ("TR_SPEAKER_LINE_ONLY_LINK", "speakers"),
+    ("TR_SPEAKER_OWNER_SET", "your answer"),
+    ("TR_SPEAKER_OWNER_UNKNOWN_CHIP", "someone you don't know"),
+    ("TR_SPEAKER_LINE_REFUSED", "that answer couldn't be saved"),
+    (
+        "TR_SPEAKER_LINE_SOURCE",
+        "this line can't take an answer about who said it",
+    ),
+    (
+        "TR_SPEAKER_LINE_CHANGED",
+        "this line has changed since it was shown. reload to see it as it is now.",
+    ),
+    (
+        "TR_SPEAKER_LINE_PERSON",
+        "that person can't be chosen. pick someone else, or someone you don't know.",
+    ),
+    (
+        "TR_SPEAKER_LINE_UNREADABLE",
+        "your earlier answers about who spoke here can't be read, so this one wasn't saved",
+    ),
+];
+
 fn copy_payload() -> Value {
-    json!({"TR_SPEAKER_CHANGE_LABEL":"change speaker","TR_SPEAKER_ASSIGN_LABEL":"add speaker","TR_SPEAKER_PICKER_TITLE":"choose speaker","TR_SPEAKER_PICKER_SEARCH_PLACEHOLDER":"find a person","TR_SPEAKER_PICKER_OWNER":"this is me","TR_SPEAKER_OWNER_NAME":"you","TR_SPEAKER_PICKER_EMPTY":"no known voices yet","TR_SPEAKER_SOMEONE_ELSE":"someone else…","TR_SPEAKER_PICKER_NO_RESULTS":"no matching people","TR_SPEAKER_UNKNOWN_CHIP":"unknown voice","TR_SPEAKER_VOICE_CHIP":"voice {number}","TR_SPEAKER_VOICE_ASSISTIVE":"one unnamed voice wherever this number appears","TR_SPEAKER_VOICE_NAMED_ASSISTIVE":"matches a voice you named","TR_SPEAKER_VOICE_SCOPE":"everywhere this voice appears","TR_SPEAKER_VOICE_SCOPE_NOTE":"there's no undo","TR_SPEAKER_VOICE_NAMED_COUNT":"{count} sentences now show this name","TR_SPEAKER_VOICE_NAMED_ONE":"1 sentence now shows this name","TR_SPEAKER_HEDGE_PROBABLE":"probably {name}","TR_SPEAKER_HEDGE_MAYBE":"maybe {name}?","TR_SPEAKER_CONFIDENCE_HIGH":"high confidence","TR_SPEAKER_CONFIDENCE_UNKNOWN":"confidence unavailable","TR_SPEAKER_MARGIN_OWNER":"close owner match","TR_SPEAKER_MARGIN_ACOUSTIC":"close voice match","TR_SPEAKER_ACTION_UNAVAILABLE":"speaker change unavailable","TR_SPEAKER_NO_EMBEDDING":"voice sample unavailable","TR_SPEAKER_CORRECT_RETRY":"retry speaker change","TR_SPEAKER_CORRECT_BUSY":"speaker files are busy","TR_SPEAKER_OWNER_TOO_CLOSE":"that voice is too close to yours to save there","TR_SPEAKER_OWNER_IDENTITY_REQUIRED":"set your identity before tagging yourself","TR_SPEAKER_ALREADY_CORRECT":"already set","TR_SPEAKER_PROPAGATION_OFFER":"{count} more sentences may need this change","TR_SPEAKER_PROPAGATION_APPLY":"apply changes","TR_SPEAKER_PROPAGATION_DISMISS":"dismiss","TR_SPEAKER_PROPAGATION_APPLIED":"changes applied"})
+    Value::Object(
+        TRANSCRIPTS_COPY
+            .iter()
+            .map(|(key, text)| ((*key).to_owned(), Value::String((*text).to_owned())))
+            .collect(),
+    )
 }
 fn warning(
     kind: &str,

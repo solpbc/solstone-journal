@@ -93,7 +93,7 @@ use std::time::Duration;
 
 use axum::Extension;
 use axum::body::Body;
-use axum::extract::Path;
+use axum::extract::{Path, RawQuery};
 use axum::http::{StatusCode, header};
 use axum::response::{IntoResponse, Redirect, Response};
 #[cfg(feature = "host")]
@@ -1695,7 +1695,7 @@ fn router_with_roots(
         }))
         .route(
             "/app/{app}",
-            get(move |app: Path<String>| app_bare(app, include_agents)),
+            get(move |app: Path<String>, query: RawQuery| app_bare(app, query, include_agents)),
         )
         .route("/app/{app}/", get(not_found))
         .route("/app/{app}/{*tail}", get(not_found).fallback(not_found))
@@ -1854,9 +1854,19 @@ async fn streams_labels_api(Extension(journal): Extension<Arc<JournalRoot>>) -> 
     }
 }
 
-async fn app_bare(Path(app): Path<String>, include_agents: bool) -> Response {
+/// A bare app path redirects to the app's root and keeps its query, so a link
+/// that carries context into an app still carries it after the redirect.
+async fn app_bare(
+    Path(app): Path<String>,
+    RawQuery(query): RawQuery,
+    include_agents: bool,
+) -> Response {
     if served_app(&app, include_agents).is_some() {
-        return Redirect::permanent(&format!("/app/{app}/")).into_response();
+        let location = match query.filter(|query| !query.is_empty()) {
+            Some(query) => format!("/app/{app}/?{query}"),
+            None => format!("/app/{app}/"),
+        };
+        return Redirect::permanent(&location).into_response();
     }
     not_found_response()
 }
@@ -2013,6 +2023,35 @@ mod tests {
                 "agents mounted: {include_agents}"
             );
         }
+    }
+
+    #[tokio::test]
+    async fn a_bare_app_redirect_keeps_its_query() {
+        let journal = tempfile::TempDir::new_in("/var/tmp").expect("journal root");
+        fs::create_dir_all(journal.path().join("config")).expect("config directory");
+        fs::write(
+            journal.path().join("config/journal.json"),
+            br#"{"setup":{"completed_at":1700000000000}}"#,
+        )
+        .expect("journal config");
+        let app = super::router_with_hosted_parent(journal.path().to_path_buf(), None, None);
+        let query = "voice_day=20260731&voice_stream=field&voice_segment_key=090000_300&voice_source=audio&voice_sentence_id=3";
+        let response = app
+            .oneshot(
+                Request::get(format!("/app/speakers?{query}"))
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("router responds");
+        assert_eq!(response.status(), StatusCode::PERMANENT_REDIRECT);
+        assert_eq!(
+            response
+                .headers()
+                .get(header::LOCATION)
+                .and_then(|value| value.to_str().ok()),
+            Some(format!("/app/speakers/?{query}").as_str())
+        );
     }
 
     #[tokio::test]
