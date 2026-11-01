@@ -14,8 +14,8 @@ use std::sync::Arc;
 use serde_json::{Value, json};
 
 use super::{
-    ReadOperation, ReadbackError, RepositoryBinding, exact_archive_path, full_hex_identity,
-    parse_bounded_nodes,
+    NativeDiscoveryCheck, NativeDiscoveryDiagnostic, NativeDiscoveryPhase, ReadOperation,
+    ReadbackError, RepositoryBinding, exact_archive_path, full_hex_identity, parse_bounded_nodes,
 };
 use crate::Destination;
 use crate::ios_native::{self as native, Call};
@@ -243,6 +243,7 @@ impl IosReadContext {
         call: Call,
         selection: &str,
         bounded_query: bool,
+        discovery_phase: Option<NativeDiscoveryPhase>,
     ) -> Result<native::Completed, ReadbackError> {
         self.revalidate()?;
         read.revalidate_local()?;
@@ -291,22 +292,39 @@ impl IosReadContext {
                 std::str::from_utf8(&completed.fields.diagnostic).ok()
             );
             return Err(if completed.fields.status == 5 {
-                ReadbackError::IncompleteDiscovery
+                discovery_refusal(
+                    discovery_phase,
+                    NativeDiscoveryCheck::NativeCap,
+                    Some(completed.fields.status),
+                )
             } else {
                 ReadbackError::ToolFailed
             });
         }
         Ok(completed)
     }
-    fn metadata<'a>(&self, completed: &'a native::Completed) -> Result<&'a [u8], ReadbackError> {
-        completed
-            .metadata
-            .as_ref()
-            .ok()
-            .and_then(Option::as_deref)
-            .ok_or(ReadbackError::IncompleteDiscovery)
+    fn metadata<'a>(
+        &self,
+        completed: &'a native::Completed,
+        phase: Option<NativeDiscoveryPhase>,
+    ) -> Result<&'a [u8], ReadbackError> {
+        match &completed.metadata {
+            Ok(Some(bytes)) => Ok(bytes),
+            Ok(None) => Err(discovery_refusal(
+                phase,
+                NativeDiscoveryCheck::Metadata,
+                None,
+            )),
+            Err(status) => Err(discovery_refusal(
+                phase,
+                NativeDiscoveryCheck::Metadata,
+                Some(*status),
+            )),
+        }
     }
     fn resolve(&self, read: &ReadOperation<'_>, selector: &str) -> Result<String, ReadbackError> {
+        let phase = Some(NativeDiscoveryPhase::SnapshotCatalog);
+        let incomplete = discovery_refusal(phase, NativeDiscoveryCheck::Decode, None);
         if selector.is_empty()
             || selector.len() > 64
             || !selector.bytes().all(|c| c.is_ascii_hexdigit())
@@ -321,24 +339,22 @@ impl IosReadContext {
             self.start_metadata(read, 5)?,
             &format!("catalog:{selector}"),
             true,
+            phase,
         )?;
-        let value: Value = serde_json::from_slice(self.metadata(&completed)?)
-            .map_err(|_| ReadbackError::IncompleteDiscovery)?;
+        let value: Value =
+            serde_json::from_slice(self.metadata(&completed, phase)?).map_err(|_| incomplete)?;
         if value["schema"] != "solstone.backup-metadata.v1" || value["kind"] != "snapshot-catalog" {
-            return Err(ReadbackError::IncompleteDiscovery);
+            return Err(incomplete);
         }
-        let rows = value["snapshots"]
-            .as_array()
-            .ok_or(ReadbackError::IncompleteDiscovery)?;
+        let rows = value["snapshots"].as_array().ok_or(incomplete)?;
         if rows.len() != completed.fields.snapshot_count as usize || rows.len() > 4096 {
-            return Err(ReadbackError::IncompleteDiscovery);
+            return Err(incomplete);
         }
         let mut native_ids = BTreeSet::new();
         for field in completed.fields.snapshot_ids.iter().take(rows.len()) {
-            let id = std::str::from_utf8(&field[..64])
-                .map_err(|_| ReadbackError::IncompleteDiscovery)?;
+            let id = std::str::from_utf8(&field[..64]).map_err(|_| incomplete)?;
             if field[64] != 0 || !full_hex_identity(id) || !native_ids.insert(id) {
-                return Err(ReadbackError::IncompleteDiscovery);
+                return Err(incomplete);
             }
         }
         let mut all = BTreeSet::new();
@@ -347,16 +363,16 @@ impl IosReadContext {
             let id = row["id"]
                 .as_str()
                 .filter(|id| full_hex_identity(id))
-                .ok_or(ReadbackError::IncompleteDiscovery)?;
+                .ok_or(incomplete)?;
             if !all.insert(id) {
-                return Err(ReadbackError::IncompleteDiscovery);
+                return Err(incomplete);
             }
             if id.starts_with(selector) {
                 matches.push(id);
             }
         }
         if all != native_ids {
-            return Err(ReadbackError::IncompleteDiscovery);
+            return Err(incomplete);
         }
         if matches.len() != 1 {
             return Err(ReadbackError::SnapshotNodeUnavailable);
@@ -378,9 +394,12 @@ impl IosReadContext {
                 self.start_metadata(read, 2)?,
                 "repository-config",
                 true,
+                Some(NativeDiscoveryPhase::Repository),
             )?;
-            let value: Value = serde_json::from_slice(self.metadata(&completed)?)
-                .map_err(|_| ReadbackError::InvalidRepositoryIdentity)?;
+            let value: Value = serde_json::from_slice(
+                self.metadata(&completed, Some(NativeDiscoveryPhase::Repository))?,
+            )
+            .map_err(|_| ReadbackError::InvalidRepositoryIdentity)?;
             if value["schema"] != "solstone.backup-metadata.v1"
                 || value["kind"] != "repository-config"
                 || value["repository"]["id"]
@@ -405,31 +424,42 @@ impl IosReadContext {
             _ => return Err(ReadbackError::Unsupported),
         };
         let snapshot = self.resolve(read, selector)?;
+        let phase = Some(NativeDiscoveryPhase::SnapshotNodes);
         let completed = self.execute(
             read,
             self.start_list(read, &snapshot)?,
             &format!("nodes:{snapshot}"),
             true,
+            phase,
         )?;
-        let nodes = parse_bounded_nodes(self.metadata(&completed)?)?;
+        let nodes = parse_bounded_nodes(self.metadata(&completed, phase)?)
+            .map_err(|_| discovery_refusal(phase, NativeDiscoveryCheck::Decode, None))?;
         let mut paths = BTreeSet::new();
         let mut bytes = serde_json::to_vec(&json!({"message_type":"snapshot","id":snapshot}))
-            .map_err(|_| ReadbackError::IncompleteDiscovery)?;
+            .map_err(|_| discovery_refusal(phase, NativeDiscoveryCheck::OutputEncoding, None))?;
         bytes.push(b'\n');
         for node in nodes {
             let path = shared_path(&node.path)?;
             if !paths.insert(path.clone()) {
-                return Err(ReadbackError::IncompleteDiscovery);
+                return Err(discovery_refusal(
+                    phase,
+                    NativeDiscoveryCheck::DuplicatePath,
+                    None,
+                ));
             }
             serde_json::to_writer(
                 &mut bytes,
                 &json!({"message_type":"node","type":node.node_type,
                 "path":path,"name":node.name,"size":node.size}),
             )
-            .map_err(|_| ReadbackError::IncompleteDiscovery)?;
+            .map_err(|_| discovery_refusal(phase, NativeDiscoveryCheck::OutputEncoding, None))?;
             bytes.push(b'\n');
             if bytes.len() > super::MAX_QUERY_BYTES {
-                return Err(ReadbackError::IncompleteDiscovery);
+                return Err(discovery_refusal(
+                    phase,
+                    NativeDiscoveryCheck::OutputSize,
+                    None,
+                ));
             }
         }
         Ok(NativeQuery::new(completed, bytes))
@@ -479,13 +509,29 @@ impl IosReadContext {
             call,
             &format!("file:{snapshot}\n{relative}\n{size}\n{target_identity}"),
             false,
+            None,
         )?;
-        let value: Value = serde_json::from_slice(self.metadata(&completed)?)
+        let value: Value = serde_json::from_slice(self.metadata(&completed, None)?)
             .map_err(|_| ReadbackError::IncompleteDiscovery)?;
         if value["drained"].as_u64() != Some(size) {
             return Err(ReadbackError::NativeFailure);
         }
         Ok(NativeQuery::new(completed, Vec::new()))
+    }
+}
+
+fn discovery_refusal(
+    phase: Option<NativeDiscoveryPhase>,
+    check: NativeDiscoveryCheck,
+    status: Option<i32>,
+) -> ReadbackError {
+    match phase {
+        Some(phase) => ReadbackError::IncompleteDiscoveryAt(NativeDiscoveryDiagnostic {
+            phase,
+            check,
+            status,
+        }),
+        None => ReadbackError::IncompleteDiscovery,
     }
 }
 

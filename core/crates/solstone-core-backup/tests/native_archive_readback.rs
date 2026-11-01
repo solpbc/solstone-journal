@@ -10,7 +10,8 @@ use solstone_core_backup::{
     archive_activity::{ArchivePreparationCustody, OwnedArchivePreparationInput},
     archive_admission::{ArchiveBudget, ArchiveCancellation, Clock},
     archive_readback::{
-        HistoricalArchiveFile, OwnedReadOperation, ReadbackError, ios::IosReadContext,
+        HistoricalArchiveFile, NativeDiscoveryCheck, NativeDiscoveryDiagnostic,
+        NativeDiscoveryPhase, OwnedReadOperation, ReadbackError, ios::IosReadContext,
     },
     ios_native::{Call, Options},
 };
@@ -409,6 +410,12 @@ fn actual_incomplete_native_listing_never_selects_partial_candidates() {
     let (mut read, _custody) = fixture.read(None, "daily").unwrap();
     assert!(matches!(
         read.discover_historical_snapshot(&snapshot, &[fixture.file(&digest)]),
-        Err(ReadbackError::IncompleteDiscovery)
+        Err(ReadbackError::IncompleteDiscoveryAt(
+            NativeDiscoveryDiagnostic {
+                phase: NativeDiscoveryPhase::SnapshotNodes,
+                check: NativeDiscoveryCheck::NativeCap,
+                status: Some(5),
+            }
+        ))
     ));
 }

@@ -4,6 +4,45 @@
 use super::*;
 
 #[test]
+fn native_discovery_refusal_keeps_actual_check_without_backfill_or_effects() {
+    use solstone_core_backup::archive_readback::{
+        NativeDiscoveryCheck as Check, NativeDiscoveryDiagnostic, NativeDiscoveryPhase as Phase,
+        ReadbackError,
+    };
+    let old = creation_reason(&OffloadCreationRefusal::Readback(
+        ReadbackError::IncompleteDiscovery,
+    ));
+    assert!(old.get("discovery").is_none());
+    for (phase, check, status) in [
+        (Phase::Repository, Check::NativeCap, Some(5)),
+        (Phase::SnapshotCatalog, Check::Metadata, Some(1)),
+        (Phase::SnapshotNodes, Check::Metadata, None),
+        (Phase::SnapshotNodes, Check::Decode, None),
+        (Phase::SnapshotNodes, Check::DuplicatePath, None),
+        (Phase::SnapshotNodes, Check::OutputEncoding, None),
+        (Phase::SnapshotNodes, Check::OutputSize, None),
+    ] {
+        let diagnostic = NativeDiscoveryDiagnostic {
+            phase,
+            check,
+            status,
+        };
+        let error = ReadbackError::IncompleteDiscoveryAt(diagnostic);
+        let value = creation_reason(&OffloadCreationRefusal::Readback(error));
+        assert_eq!(value["kind"], old["kind"]);
+        assert_eq!(value["reason"], old["reason"]);
+        assert_eq!(value["discovery"], json!(diagnostic));
+        assert_eq!(value.as_object().unwrap().len(), 3);
+    }
+    assert_eq!(
+        creation_reason(&OffloadCreationRefusal::Readback(
+            ReadbackError::IncompleteDiscovery
+        )),
+        old
+    );
+}
+
+#[test]
 fn offload_report_keeps_uncertain_effects_and_unavailable_totals() {
     let failures = vec!["private-path credential-bearing diagnostic".into()];
     let value = ledger(
