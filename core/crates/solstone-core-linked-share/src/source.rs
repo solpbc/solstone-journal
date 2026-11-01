@@ -115,11 +115,9 @@ pub(crate) fn load_segment(
                 .as_ref()
                 .filter(|(source, _)| source == stem)
                 .map(|(_, names)| names);
-            let mut ordinal = 0;
-            source.utterances.extend(rows.iter().filter_map(|row| {
-                let line = solstone_core_transcripts::next_line_coordinate(row, &mut ordinal);
-                utterance(row, line, names)
-            }));
+            source
+                .utterances
+                .extend(rows.iter().filter_map(|row| utterance(row, names)));
         } else if (stem == "screen" || stem.ends_with("_screen")) && !stem.starts_with("tmux_") {
             let Some(rows) = analyzed_rows(&dir.join(file)) else {
                 continue;
@@ -181,19 +179,16 @@ fn segment_labels(dir: &Path, voices: &VoiceNames) -> Option<(String, BTreeMap<i
     Some((source, labels))
 }
 
-/// One spoken row, named from `labels` by its line coordinate `line`.
-fn utterance(
-    row: &Map<String, Value>,
-    line: Option<i64>,
-    labels: Option<&BTreeMap<i64, Voice>>,
-) -> Option<Utterance> {
+fn utterance(row: &Map<String, Value>, labels: Option<&BTreeMap<i64, Voice>>) -> Option<Utterance> {
     let text = ["corrected", "text"]
         .iter()
         .filter_map(|key| row.get(*key).and_then(Value::as_str))
         .map(str::trim)
         .find(|text| !text.is_empty())?
         .to_owned();
-    let voice = line
+    let voice = row
+        .get("sentence_id")
+        .and_then(Value::as_i64)
         .and_then(|id| labels?.get(&id).cloned())
         .unwrap_or(Voice::Unidentified);
     Some(Utterance {
@@ -369,22 +364,6 @@ mod tests {
 
         fs::remove_file(owner_line_labels_path(&dir)).unwrap();
         assert_eq!(voices_of(&dir), before);
-    }
-
-    #[test]
-    fn linked_sharing_names_lines_that_store_no_sentence_id_by_their_ordinal() {
-        let root = tempfile::tempdir().unwrap();
-        let dir = attributed(root.path());
-        let jsonl = fs::read_to_string(dir.join("audio.jsonl")).unwrap();
-        let unnumbered = (1..=3).fold(jsonl, |text, id| {
-            text.replace(&format!("\"sentence_id\":{id},"), "")
-        });
-        assert!(!unnumbered.contains("sentence_id"));
-        fs::write(dir.join("audio.jsonl"), unnumbered).unwrap();
-        assert_eq!(voices_of(&dir), vec![quinn(), Voice::Owner, quinn()]);
-
-        answer(&dir, &[entry(3, Some("owner"))]);
-        assert_eq!(voices_of(&dir), vec![quinn(), Voice::Owner, Voice::Owner]);
     }
 
     #[test]
