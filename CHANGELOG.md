@@ -10,34 +10,19 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - you can now tell your journal an activity isn't right. "that's not right" on an activity, and "this isn't right" on your week, let you say who said its lines, tell it what actually happened in your own words, or say it was a recording or video playing. your journal then writes that activity's story and people again, and that day's daily briefing and that day's memory on your week follow. each correction shows on the activity, and you can remove it.
 - on a transcript, you can now say who said a line: you, a person in your journal, or someone you don't know. the answer is for that line, not its voice, and the activities it's part of are written again. teaching your journal a voice stays on the speakers page.
-- with your own storage, you can now change where your backup lives, or its credentials, without turning backup off. new credentials are saved once they open your backup. switching to a different repository asks first, and says your existing backup stays where it is, untouched. a backblaze b2 bucket that doesn't exist is now refused instead of created, so a mistyped bucket name is caught before the first backup.
-- you can now pause backup and resume it, on the backup page or with `solstone journal backup pause` and `solstone journal backup resume`. while it's paused, no backups, spot-checks, cleanup or media offload run, and the backup page, health and `solstone journal doctor` say it's paused.
 - private troubleshooting evidence now keeps connection details and how far the attempt got when confidential processing refuses a connection.
 - the android development app can review interrupted storage work while your journal stays stopped. it can remove temporary copies after checking that the originals are still complete.
 - browser pages in your journal now show their context: whether the tab was in front and its window focused, whether audio or video was playing, whether the solstone app was paused, how long the tab had been open, the page's language and which browser it was. agents reading your journal see the same line. pages from earlier versions of the solstone extension look as before.
 
 ### Changed
 
-- the description of a calendar on your screen less often guesses whether you accepted or declined an event, and can now leave the response out when the calendar shows none.
-- the description of a code editor on your screen less often invents a conversation with an AI assistant.
-- when a stretch has few enough screens worth describing to cover them all, the screen description now covers every one, so a video or a call on screen only briefly is no longer skipped.
 - your journal now describes time in your browser by the pages you had in front of you. a video playing in a background tab, or a page left open behind another app, is mentioned as open rather than as something you watched or read, and what a page or video shows is now less often written as something you did.
 - each stretch's screen description now does the same: it covers the browser pages you had in front of you and lists the others as open, so what a video in a background tab says or shows is less often written in your activity stories as something you did or planned.
-- an activity's one line, on home and in activities, now comes from the opening of its story, when it has one, which is written from the whole activity, rather than from its last few minutes. a podcast or show that played through an activity is named in that line more often. a title or description you wrote or edited stays as you left it.
 - after you save or remove your voice, or name a voice everywhere, activities from today and the last 7 days get their people and story rewritten to match. older ones stay as written.
-- when you edit an activity's description or details, your journal now writes that activity's story and people again from what you wrote, and that day's daily briefing and that day's memory on your week follow, even after noon the next day. what you write in details is now read as your own account of what happened: where what was heard or on screen disagrees, your journal goes by what you wrote.
 
 ### Fixed
 
 - in older transcripts, lines your journal had already named on the transcript page went unnamed in your activity stories and people. they're now named there too when one of those activities is written again, such as after you correct or edit it.
-- some PDF imports could finish while their progress page still showed them as pending. the page now shows the result of that import.
-
-- in conversations your journal didn't take for a meeting, such as chatting or dictating, lines in your own voice, or from voices already saved in your journal, weren't named. they now are, and your journal catches up on audio you already have.
-- on mac and linux, when a call reached your journal only as your computer's own sound, with no microphone, what the other people said could be told as things you said. in those recordings, lines no voice was matched to are now treated as someone else's, so your stories of those calls less often give their words to you.
-- a stretch when nobody touched your computer could still be described as you browsing whatever was on screen. on windows and linux, when your computer was idle or locked for nearly the whole stretch and little or nothing was said or changed on screen, your journal now treats it as idle and leaves it out of your activities.
-- on arm64 windows computers, the local model check no longer rejects the computer just for its processor type. setup now checks the GPU and memory requirements, as it does on x64 windows. arm64 GPU use remains untested.
-- your journal no longer treats the details of how audio was turned into text, such as the speech model's name or your watch's battery level, as part of what was said. those details stop turning up among the people and things a moment is about, and audio from your phone or watch is less often taken for a meeting.
-- merge suggestions are now set aside when either name is missing from your saved entities.
 - fixed a failure when picking a folder to import in the android development app.
 - a folder you chose to import in the android or ios development app, other than an audio archive, can now be previewed and started from its import page, without choosing it again.
 - the development phone apps can now recover an explicit media offload request after a lost reply, using the request ID saved before sending it. repeating that request does not start another offload; an unknown result stays unknown.
@@ -50,6 +35,31 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - security fix: updated a library used by journals on phones to address a memory-safety flaw.
 - you can choose a file on the import screen in the android and ios owner apps and save it.
 - journals running on a phone now start their local agent connections and close them when you stop the journal. the agents page already offered these connections, but they did not start on phones.
+
+## [2.0.64] - 2026-11-01
+
+### Added
+
+- with your own storage, you can now change where your backup lives, or its credentials, without turning backup off. new credentials are saved once they open your backup. switching to a different repository asks first, and says your existing backup stays where it is, untouched. a Backblaze B2 bucket that doesn't exist is now refused instead of created, so a mistyped bucket name is caught before the first backup.
+- you can now pause backup and resume it, on the backup page or with `solstone journal backup pause` and `solstone journal backup resume`. while it's paused, no backups, spot-checks, cleanup or media offload run, and the backup page, health and `solstone journal doctor` say it's paused.
+
+### Changed
+
+- the description of a calendar on your screen less often guesses whether you accepted or declined an event, and can now leave the response out when the calendar shows none.
+- the description of a code editor on your screen less often invents a conversation with an AI assistant.
+- when a stretch has few screens worth describing, a video or a call on screen only briefly is no longer skipped in the screen description.
+- an activity's one line, on home and in activities, now comes from the opening of its story, which is written from the whole activity rather than its last few minutes. an activity without a story keeps its line. a podcast or show that played through an activity is named in that line more often. a title or description you wrote or edited stays as you left it.
+- when you edit an activity's description or details, your journal now writes that activity's story and people again from what you wrote, and that day's daily briefing and that day's memory on your week follow. what you write in details is now read as your own account of what happened: where a transcript or what was on screen disagrees, your journal goes by what you wrote.
+
+### Fixed
+
+- some PDF imports could finish while their progress page still showed them as pending. the page now shows the result of that import.
+- in conversations your journal didn't take for a meeting, such as chatting or dictating, lines in your own voice, or from voices already saved in your journal, weren't named. they now are, and your journal catches up on audio you already have.
+- on mac and linux, when a call reached your journal only as your computer's own sound, with no microphone, what the other people said could be told as things you said. in those recordings, lines no voice was matched to are now treated as someone else's, so your stories of those calls less often give their words to you.
+- a stretch when nobody touched your computer could still be described as you browsing whatever was on screen. on windows and linux, when your computer was idle or locked for nearly the whole stretch and little or nothing was said or changed on screen, your journal now treats it as idle and leaves it out of your activities.
+- on arm64 windows computers, the local model check no longer rejects the computer just for its processor type. setup now checks the GPU and memory requirements, as it does on x64 windows. arm64 GPU use remains untested.
+- your journal no longer treats the details of how audio was turned into text, such as the speech model's name or your watch's battery level, as part of what was said. those details stop turning up among the people and things a moment is about, and audio from your phone or watch is less often taken for a meeting.
+- merge suggestions are now set aside when either name is missing from your saved entities.
 - setting up backup to Backblaze B2 with a key limited to one bucket now says when the repository names a different bucket, for example when the key's name is typed where the bucket's belongs. it also now says when B2 rejects the credentials themselves. both used to read as "the destination couldn't be reached."
 - for audio from the solstone app on your mac, an agent reading your journal now sees one number for each unnamed voice through a continuous recording, instead of a new number every few minutes.
 - an agent following a link in its search or activity results to a recording's transcript could be told the transcript wasn't found, when your journal hadn't yet worked out who was speaking in that recording. those links now open.

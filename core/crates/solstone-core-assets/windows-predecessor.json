@@ -1,9 +1,9 @@
 {
   "schema_version": 1,
-  "candidate_release": "2.0.63",
+  "candidate_release": "2.0.64",
   "predecessor": {
-    "windows_release": "2.0.62",
-    "source_commit": "5f3e70c0a0ff1d5e9d981d6daa01015a3b772d49",
+    "windows_release": "2.0.63",
+    "source_commit": "3220ba05e97cfacec7f557b031c2253b4f5ac981",
     "groups": [
       {
         "unit": "local-model",
