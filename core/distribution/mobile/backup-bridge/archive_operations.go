@@ -76,7 +76,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -663,7 +662,7 @@ func admitArchiveDirectoryDiagnosed(fd int, entry *ownedCall, stage *archiveStar
 		return nil, StatusInvalidArgument
 	}
 	stage.at(archiveStartSourceRoot)
-	root, err := adoptOwnedRootDiagnosed(fmt.Sprintf("/dev/fd/%d", int(file.Fd())), file, entry, stage)
+	root, err := adoptArchiveSourceRoot(file, entry, stage)
 	closeErr := file.Close()
 	if err != nil || closeErr != nil {
 		if closeErr != nil {
