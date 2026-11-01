@@ -486,6 +486,83 @@ mod native {
         }
     }
 
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn android_rename_publication_preserves_no_replace_and_consumed_stage_custody() {
+        fn rename(
+            source: &platform::Directory,
+            source_name: &OsStr,
+            file: &File,
+            destination: &platform::Directory,
+            name: &OsStr,
+        ) -> io::Result<bool> {
+            platform::publish_renaming(source, source_name, file, destination, name).map(|()| true)
+        }
+
+        let f = Fixture::new();
+        let mut prepared = f.prepared();
+        let stage = prepared.target.stage.diagnostic_path();
+        let identity = prepared.identity();
+        let receipt = prepared.publish_using(&f.destination, OsStr::new("restored.wav"), rename);
+        assert_eq!(receipt.effect, PublicationEffect::Published);
+        assert_eq!(receipt.confirmation, Confirmation::Confirmed);
+        assert_eq!(receipt.identity, Some(identity));
+        assert_eq!(receipt.file_durability, Durability::Synced);
+        assert_eq!(receipt.parent_durability, Durability::Synced);
+        assert_eq!(receipt.cleanup, Cleanup::Complete);
+        assert!(!stage.exists());
+        assert_eq!(
+            fs::read(f.temp.path().join("day/segment/restored.wav")).unwrap(),
+            b"source media"
+        );
+        assert_eq!(
+            fs::read(f.temp.path().join("day/input")).unwrap(),
+            b"source media"
+        );
+
+        // The real no-replace syscall preserves an existing different target
+        // and leaves our private source available for its normal cleanup.
+        fs::write(f.temp.path().join("day/segment/occupied"), b"keep this").unwrap();
+        let mut conflict = f.prepared();
+        let stage = conflict.target.stage.diagnostic_path();
+        let receipt = conflict.publish_using(&f.destination, OsStr::new("occupied"), rename);
+        assert_eq!(receipt.effect, PublicationEffect::Conflict);
+        assert_eq!(
+            fs::read(f.temp.path().join("day/segment/occupied")).unwrap(),
+            b"keep this"
+        );
+        assert_eq!(fs::read(stage.join("payload")).unwrap(), b"source media");
+        assert_eq!(conflict.cleanup(), Cleanup::Complete);
+
+        // A failure after the actual rename must retain Published even though
+        // final confirmation and parent durability have not been established.
+        let mut interrupted = f.prepared();
+        let stage = interrupted.target.stage.diagnostic_path();
+        let (receipt, fired) = run_with_media_hook(
+            MediaPrimitive::AfterPublish,
+            || Err(io::Error::from(io::ErrorKind::PermissionDenied)),
+            || interrupted.publish_using(&f.destination, OsStr::new("interrupted.wav"), rename),
+        );
+        assert!(fired);
+        assert_eq!(receipt.effect, PublicationEffect::Published);
+        assert_eq!(receipt.confirmation, Confirmation::Unverified);
+        assert_eq!(receipt.parent_durability, Durability::Unproven);
+        assert_eq!(receipt.cleanup, Cleanup::Pending);
+        assert!(!stage.join("payload").exists());
+        // Reoccupation of the consumed name cannot earn deletion authority.
+        fs::write(stage.join("payload"), b"competitor").unwrap();
+        assert_ne!(interrupted.cleanup(), Cleanup::Complete);
+        assert_eq!(fs::read(stage.join("payload")).unwrap(), b"competitor");
+        assert_eq!(
+            fs::read(f.temp.path().join("day/segment/interrupted.wav")).unwrap(),
+            b"source media"
+        );
+        assert_eq!(
+            fs::read(f.temp.path().join("day/input")).unwrap(),
+            b"source media"
+        );
+    }
+
     #[test]
     fn publish_confirmed_then_identical_and_conflicting_content() {
         let f = Fixture::new();

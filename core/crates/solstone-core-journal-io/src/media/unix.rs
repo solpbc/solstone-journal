@@ -13,7 +13,9 @@ use std::sync::Arc;
 use nix::fcntl::{AtFlags, OFlag, openat};
 use nix::sys::stat::{Mode, SFlag, fstatat, mkdirat};
 use nix::sys::statvfs::fstatvfs;
-use nix::unistd::{UnlinkatFlags, linkat, unlinkat};
+#[cfg(not(target_os = "android"))]
+use nix::unistd::linkat;
+use nix::unistd::{UnlinkatFlags, unlinkat};
 
 use super::removal::ClaimFailure;
 use super::{JournalRoot, MediaEntry, MediaIdentity, MediaPrimitive, changed, invalid, step};
@@ -592,6 +594,7 @@ pub(super) fn create_file(parent: &Directory, name: &OsStr) -> io::Result<File> 
     )?))
 }
 
+#[cfg(not(target_os = "android"))]
 pub(super) fn publish(
     source: &Directory,
     source_name: &OsStr,
@@ -600,6 +603,32 @@ pub(super) fn publish(
     name: &OsStr,
 ) -> io::Result<()> {
     linkat(source, source_name, destination, name, AtFlags::empty()).map_err(Into::into)
+}
+
+#[cfg(target_os = "android")]
+pub(super) fn publish(
+    source: &Directory,
+    source_name: &OsStr,
+    file: &File,
+    destination: &Directory,
+    name: &OsStr,
+) -> io::Result<()> {
+    publish_renaming(source, source_name, file, destination, name)
+}
+
+#[cfg(any(
+    target_os = "android",
+    all(test, feature = "full-tests", target_os = "linux")
+))]
+pub(super) fn publish_renaming(
+    source: &Directory,
+    source_name: &OsStr,
+    _file: &File,
+    destination: &Directory,
+    name: &OsStr,
+) -> io::Result<()> {
+    crate::atomic::publish_exclusive_stage_between(source, source_name, destination, name)
+        .map_err(Into::into)
 }
 
 pub(super) fn remove_leaf(parent: &Directory, name: &OsStr, _file: &File) -> io::Result<()> {
