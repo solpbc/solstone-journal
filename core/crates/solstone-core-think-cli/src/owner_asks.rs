@@ -564,6 +564,23 @@ fn week_page(journal: &Path, start: &str, reference: i64) -> Page {
     }
 }
 
+fn week_reference(start: &str) -> String {
+    format!("supervisor-owner-week-{start}")
+}
+
+/// Each day a pending ask names, with the queue reference of the run that
+/// re-makes that day's week page. An unreadable store names no day.
+pub(crate) fn asked_days(journal: &Path) -> BTreeMap<String, String> {
+    read_asks(journal)
+        .unwrap_or_default()
+        .into_values()
+        .filter_map(|ask| {
+            let start = week_start(&ask.day).ok()?.format("%Y%m%d").to_string();
+            Some((ask.day, week_reference(&start)))
+        })
+        .collect()
+}
+
 fn week_task(start: &str, saturday: &str, priority: WorkPriority) -> DiscoveredTask {
     DiscoveredTask {
         request: BusTaskRequest {
@@ -571,7 +588,7 @@ fn week_task(start: &str, saturday: &str, priority: WorkPriority) -> DiscoveredT
                 "think", "--day", saturday, "--weekly",
             ]))
             .expect("weekly command"),
-            reference: format!("supervisor-owner-week-{start}"),
+            reference: week_reference(start),
             day: Some(saturday.to_owned()),
             scheduler_name: None,
             queue_if_active_cmd_differs: false,

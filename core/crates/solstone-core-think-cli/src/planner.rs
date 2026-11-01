@@ -49,21 +49,31 @@ const QUEUE_POLL: Duration = Duration::from_secs(1);
 /// A resting worker tells readers a later next pass at most this often.
 const REPROMISE: Duration = Duration::from_secs(60);
 
-/// Days the owner asked to redo whose discovered work is still in the queue.
-fn owner_days_in_queue(journal: &Path, queue: &TaskQueue) -> BTreeSet<String> {
-    let Ok(intents) = work_intent::read(journal) else {
-        return BTreeSet::new();
-    };
-    intents
-        .into_keys()
-        .filter(|day| owner_work_in_queue(queue, day))
-        .collect()
+/// Days the owner asked to redo, or asked to think again after a correction,
+/// whose discovered work is still in the queue. An asked day carries its
+/// week page run's reference, since that run is also the owner's work.
+fn owner_days_in_queue(journal: &Path, queue: &TaskQueue) -> BTreeMap<String, Option<String>> {
+    let mut days = work_intent::read(journal)
+        .map(|intents| {
+            intents
+                .into_keys()
+                .map(|day| (day, None))
+                .collect::<BTreeMap<_, _>>()
+        })
+        .unwrap_or_default();
+    for (day, week) in crate::owner_asks::asked_days(journal) {
+        days.insert(day, Some(week));
+    }
+    days.retain(|day, week| owner_work_in_queue(queue, day, week.as_deref()));
+    days
 }
 
-fn owner_work_in_queue(queue: &TaskQueue, day: &str) -> bool {
+fn owner_work_in_queue(queue: &TaskQueue, day: &str, week: Option<&str>) -> bool {
     let day = format!("-{day}-");
-    queue
-        .any_reference(|reference| reference.starts_with("supervisor-") && reference.contains(&day))
+    queue.any_reference(|reference| {
+        reference.starts_with("supervisor-")
+            && (reference.contains(&day) || Some(reference) == week)
+    })
 }
 
 /// Rest until a wake, the next automatic pass, or the end of an owner's
@@ -362,7 +372,7 @@ impl WorkDiscovery {
                     let owner_done = || {
                         owner_days
                             .iter()
-                            .any(|day| !owner_work_in_queue(&queue, day))
+                            .any(|(day, week)| !owner_work_in_queue(&queue, day, week.as_deref()))
                     };
                     let mut published = backlog.published.take();
                     let told = published
@@ -3847,7 +3857,7 @@ mod tests {
         assert!(queue.contains_reference("supervisor-work-19990102-notes-120000_60"));
         assert_eq!(
             owner_days_in_queue(root.path(), &queue),
-            BTreeSet::from(["19990101".to_owned()])
+            BTreeMap::from([("19990101".to_owned(), None)])
         );
         queue.replace_discovered(Vec::new());
         assert!(owner_days_in_queue(root.path(), &queue).is_empty());
@@ -3922,7 +3932,7 @@ mod tests {
         assert_eq!(passed.recv_timeout(Duration::from_secs(5)).unwrap(), 1);
         // The automatic rest is at least a minute; the owner's work ends sooner.
         assert_eq!(passed.recv_timeout(Duration::from_secs(15)).unwrap(), 2);
-        assert!(!owner_work_in_queue(&queue, "19990101"));
+        assert!(!owner_work_in_queue(&queue, "19990101", None));
         // With no owner work left, the next pass waits for the rest.
         assert!(passed.recv_timeout(Duration::from_secs(3)).is_err());
         worker.stop();

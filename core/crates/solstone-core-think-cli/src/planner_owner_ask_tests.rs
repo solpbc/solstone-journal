@@ -264,6 +264,27 @@ fn an_ask_runs_exactly_its_activity_in_band_two_as_a_full_refresh() {
 }
 
 #[test]
+fn an_asked_day_with_its_activity_work_queued_is_owner_work_until_it_leaves() {
+    let root = journal();
+    let day = days_ago(90);
+    let asked = activity(root.path(), &day, "reading_090000_300", "090000_300");
+    let queue = queue(root.path());
+    plan(root.path(), &queue);
+    assert!(owner_days_in_queue(root.path(), &queue).is_empty());
+    owner_ask::record(root.path(), &day, std::slice::from_ref(&asked), true, 1).unwrap();
+    plan(root.path(), &queue);
+    assert!(queue.contains_reference(&activity_reference(&day, &asked)));
+    assert_eq!(
+        owner_days_in_queue(root.path(), &queue)
+            .keys()
+            .collect::<Vec<_>>(),
+        [&day]
+    );
+    queue.replace_discovered(Vec::new());
+    assert!(owner_days_in_queue(root.path(), &queue).is_empty());
+}
+
+#[test]
 fn an_ask_on_today_keeps_today_in_band_one_and_adds_no_daily_work() {
     let root = journal();
     let day = days_ago(0);
@@ -871,6 +892,15 @@ fn asks_across_an_ended_week_remake_its_page_once_every_day_is_settled() {
     );
     assert_eq!(tasks[0].request.priority.unwrap().band, WorkBand::Waiting);
     assert!(queue.contains_reference(WEEK_TASK));
+    // The page run is the owner's work on every asked day of the week, so
+    // its end starts the pass that sees the page.
+    let owner_days = owner_days_in_queue(root.path(), &queue);
+    assert!(owner_days.contains_key("20260815"), "{owner_days:?}");
+    assert!(
+        owner_days
+            .values()
+            .all(|week| week.as_deref() == Some(WEEK_TASK))
+    );
     assert!(
         week_steps(root.path())
             .iter()
