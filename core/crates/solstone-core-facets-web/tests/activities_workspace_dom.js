@@ -180,6 +180,7 @@ class Element {
   }
   focus() { this.ownerDocument.activeElement = this; }
   play() { this.playing = true; return Promise.resolve(); }
+  pause() { this.playing = false; this.dispatchEvent({ type: 'pause' }); }
   scrollIntoView() {}
 }
 
@@ -422,12 +423,58 @@ test('the owner\'s lines come first and the rest are folded away, each with a pl
   assert.strictEqual(others.querySelector('details.drawer').hasAttribute('open'), false);
   assert.ok(others.querySelector('[data-line-key="room|100000_300|audio|2"]'));
   assert.strictEqual(step.querySelectorAll('[data-line-play]').length, 2);
-  assert.ok(step.querySelector('[data-speaker="owner"]').disabled, 'speakers wait for a ticked line');
-  await env.click(step.querySelector('[data-line-play="room|100000_300|audio|2"]'));
+  const players = step.querySelectorAll('[data-line-play]');
+  assert.ok(players.every((p) => p.getAttribute('data-copy-key') === 'line-play-at'));
+  assert.notStrictEqual(players[0].getAttribute('aria-label'), players[1].getAttribute('aria-label'), 'each player names its own line');
+  const player = step.querySelector('[data-line-play="room|100000_300|audio|2"]');
+  await env.click(player);
   const audio = env.panel().querySelector('[data-lines-audio]');
   assert.strictEqual(audio.getAttribute('src'), SPOKEN.chunks[1].audio_url);
   assert.strictEqual(audio.currentTime, 2);
   assert.ok(audio.playing);
+  assert.strictEqual(player.getAttribute('aria-pressed'), 'true');
+  assert.strictEqual(players[0].getAttribute('aria-pressed'), 'false');
+  await env.click(player);
+  assert.strictEqual(audio.playing, false, 'the playing line\'s button pauses it');
+  assert.strictEqual(player.getAttribute('aria-pressed'), 'false');
+});
+
+test('a line\'s first words leave out a leading source note', async () => {
+  const transcripts = { '100000_300': { ...SPOKEN, chunks: [audioLine(1, '(mic) we should cancel the vendor contract today'), SPOKEN.chunks[2]] } };
+  const env = await createPage({ items: [activity()], transcripts });
+  const step = await openLines(env);
+  const words = step.querySelector('.act-line-words').textContent;
+  assert.ok(words.startsWith('we should'), words);
+});
+
+test('"who said it" asks about the ticked lines by count and refuses an answer with none ticked', async () => {
+  const env = await createPage({ items: [activity()], transcripts: { '100000_300': SPOKEN } });
+  const step = await openLines(env);
+  assert.ok(step.querySelector('[data-lines-question][data-copy-key="lines-question"]'));
+  const lineOnly = keyed(step, 'TR_SPEAKER_LINE_ONLY');
+  assert.ok(lineOnly && lineOnly.querySelector('details.drawer'), 'the line-only note shows, folded');
+  assert.ok(keyed(lineOnly, 'TR_SPEAKER_LINE_ONLY_BODY'));
+  assert.strictEqual(lineOnly.querySelector('a[data-copy-key="TR_SPEAKER_LINE_ONLY_LINK"]').getAttribute('href'), '/app/speakers/');
+  const me = step.querySelector('[data-speaker="owner"]');
+  assert.strictEqual(me.disabled, false, 'speakers stay enabled');
+  await env.click(me);
+  assert.strictEqual(env.posts().length, 0);
+  assert.ok(keyed(env.panel(), 'refusal-line-empty'));
+  tick(env, 1);
+  assert.ok(env.panel().querySelector('[data-lines-question][data-copy-key="lines-question-one"]'));
+  assert.strictEqual(keyed(env.panel(), 'refusal-line-empty'), null, 'ticking a line clears the refusal');
+  tick(env, 2);
+  assert.ok(env.panel().querySelector('[data-lines-question][data-copy-key="lines-question-n"]'));
+});
+
+test('back from the account step keeps what was typed', async () => {
+  const env = await createPage({ items: [activity({ details: 'first account' })] });
+  await env.click(env.panel().querySelector('[data-action-correct]'));
+  await env.click(env.panel().querySelector('[data-correct-answer="what"]'));
+  env.panel().querySelector('textarea[name="details"]').value = 'a better account';
+  await env.click(env.panel().querySelector('[data-correct-back]'));
+  await env.click(env.panel().querySelector('[data-correct-answer="what"]'));
+  assert.strictEqual(env.panel().querySelector('textarea[name="details"]').value, 'a better account');
 });
 
 for (const [choice, speaker] of [['owner', { kind: 'owner' }], ['unknown', { kind: 'unknown' }]]) {
@@ -538,6 +585,7 @@ test('an activity already marked as playing does not offer it again', async () =
 test('"updating…" shows in the summary while the view says the activity is updating', async () => {
   const env = await createPage({ items: [activity({ updating: true, corrected: true })] });
   assert.ok(keyed(env.panel(), 'updating'));
+  assert.ok(env.panel().querySelector('[data-previous-summary]'), 'the summary it had stays under it');
   assert.strictEqual(keyed(env.panel(), 'corrected-by-you'), null);
   env.view = view([activity({ updating: false, corrected: true, summary: 'Nothing was decided.' })]);
   await env.click(env.panel().querySelector('[data-action-correct]'));
@@ -570,6 +618,8 @@ test('history names each correction and remove posts that entry\'s position, tim
     assert.ok(keyed(history, key), key);
   }
   assert.strictEqual(history.querySelectorAll('[data-history-remove]').length, 4, 'only removable entries offer remove');
+  const labels = history.querySelectorAll('[data-history-remove]').map((b) => b.getAttribute('aria-label'));
+  assert.ok(labels.every(Boolean) && new Set(labels).size === labels.length, 'each remove names its own entry');
   await env.click(history.querySelector('[data-history-remove="3"]'));
   const [post] = env.posts();
   assert.strictEqual(post.url, `/app/activities/api/day/${DAY}/record/standup/edits/remove?facet=work`);
