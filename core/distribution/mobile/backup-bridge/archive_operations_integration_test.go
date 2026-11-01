@@ -9,10 +9,58 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
 )
+
+func TestArchiveRootCleanupRefusalRetainsOwnedFault(t *testing.T) {
+	const environment = "SOLSTONE_ARCHIVE_ROOT_CLEANUP_CHILD"
+	if os.Getenv(environment) == "" {
+		ownedRunControlChild(t, "TestArchiveRootCleanupRefusalRetainsOwnedFault", environment, "rejected-root", "ARCHIVE_ROOT_CLEANUP_PROVED")
+		return
+	}
+	pinned, err := os.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pinned.Close()
+	entry, status := reserveOwnedCall()
+	if status != StatusOk {
+		t.Fatal(status)
+	}
+	var closeAttempts int
+	testOwnedClose = func(stage string, resource io.Closer, actual func() error) error {
+		if stage != "adopt-rejected-root" {
+			return actual()
+		}
+		closeAttempts++
+		if err := actual(); err != nil {
+			t.Fatal(err)
+		}
+		return errors.New("synthetic rejected-root close failure")
+	}
+	t.Cleanup(func() { testOwnedClose = nil })
+	stage := archiveStartSourceRoot
+	root, err := adoptOwnedRootDiagnosed(t.TempDir(), pinned, entry, &stage)
+	if root != nil || !errors.Is(err, errOwnedCleanup) || stage != archiveStartSourceRootCleanup || !entry.failed() || closeAttempts != 1 || len(entry.resources) != 1 {
+		t.Fatal("failed cleanup became a path refusal or lost retained custody", root, err, stage, closeAttempts)
+	}
+	stage = archiveStartSourceRoot
+	root, err = adoptOwnedRootDiagnosed(t.TempDir(), pinned, entry, &stage)
+	if root != nil || !errors.Is(err, errOwnedCleanup) || stage != archiveStartSourceRootCustody || closeAttempts != 1 {
+		t.Fatal("faulted ownership permitted another root admission", root, err, stage, closeAttempts)
+	}
+	if _, err := pinned.Stat(); err != nil {
+		t.Fatal("caller descriptor changed", err)
+	}
+	// This disposable child retains the actual faulted entry. It never invokes a
+	// terminal cleanup or clears the permanent native fault to make the test end.
+	fmt.Println("ARCHIVE_ROOT_CLEANUP_PROVED rejected-root")
+}
 
 func TestArchiveStartRefusalStageBelongsToItsCInvocation(t *testing.T) {
 	f := newDirectoryFixture(t, true)

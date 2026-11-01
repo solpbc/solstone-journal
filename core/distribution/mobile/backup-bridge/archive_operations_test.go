@@ -10,7 +10,79 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"golang.org/x/sys/unix"
 )
+
+func TestArchiveRootOpenRefusalIsBounded(t *testing.T) {
+	for _, control := range []struct {
+		err   error
+		stage archiveStartStage
+	}{
+		{unix.EACCES, archiveStartSourceRootOpenDenied},
+		{unix.EPERM, archiveStartSourceRootOpenDenied},
+		{unix.ENOENT, archiveStartSourceRootOpenUnavailable},
+		{unix.ENOTDIR, archiveStartSourceRootOpenUnavailable},
+		{unix.EMFILE, archiveStartSourceRootOpenResource},
+		{unix.ENFILE, archiveStartSourceRootOpenResource},
+		{unix.ENOMEM, archiveStartSourceRootOpenResource},
+		{unix.EIO, archiveStartSourceRootOpenFailed},
+	} {
+		wrapped := &os.PathError{Op: "open", Path: "private synthetic argument", Err: control.err}
+		if got := archiveRootOpenRefusal(wrapped); got != control.stage {
+			t.Fatalf("wrapped native refusal misclassified: %d != %d", got, control.stage)
+		}
+	}
+}
+
+func TestArchiveRootAdmissionRefusalRetainsChecksAndCaller(t *testing.T) {
+	for _, kind := range []string{"missing", "not-directory", "identity", "pinned-stat"} {
+		t.Run(kind, func(t *testing.T) {
+			selected, other := t.TempDir(), t.TempDir()
+			pinned, err := os.Open(selected)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer pinned.Close()
+			path, want := other, archiveStartSourceRootIdentity
+			switch kind {
+			case "missing":
+				path, want = filepath.Join(other, "absent"), archiveStartSourceRootOpenUnavailable
+			case "not-directory":
+				file := filepath.Join(other, "file")
+				if err := os.WriteFile(file, []byte("preserved"), 0600); err != nil {
+					t.Fatal(err)
+				}
+				path, want = filepath.Join(file, "child"), archiveStartSourceRootOpenUnavailable
+			case "pinned-stat":
+				path, want = selected, archiveStartSourceRootPinnedStat
+				if err := pinned.Close(); err != nil {
+					t.Fatal(err)
+				}
+			}
+			entry, status := reserveOwnedCall()
+			if status != StatusOk {
+				t.Fatal(status)
+			}
+			defer entry.finishAdmission(StatusInvalidArgument)
+			stage := archiveStartSourceRoot
+			root, err := adoptOwnedRootDiagnosed(path, pinned, entry, &stage)
+			if root != nil || !errors.Is(err, errPinnedIdentity) || stage != want || entry.failed() {
+				t.Fatalf("refusal changed error/custody: root=%v err=%v stage=%d want=%d", root, err, stage, want)
+			}
+			if kind != "pinned-stat" {
+				if _, err := pinned.Stat(); err != nil {
+					t.Fatal("caller descriptor closed by refusal", err)
+				}
+			}
+			for _, closed := range entry.resources {
+				if !closed.started || closed.err != nil {
+					t.Fatal("rejected root did not complete its existing close")
+				}
+			}
+		})
+	}
+}
 
 func TestArchiveDirectoryAdmissionRetainsBorrowedSource(t *testing.T) {
 	directory := t.TempDir()

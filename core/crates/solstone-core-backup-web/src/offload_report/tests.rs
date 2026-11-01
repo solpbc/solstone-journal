@@ -50,6 +50,8 @@ fn native_archive_refusal_stage_is_per_failure_and_never_settles_effects() {
         Some(NativeArchiveStartStage::StateBinding),
         None,
         Some(NativeArchiveStartStage::SourceRoot),
+        NativeArchiveStartStage::from_code(28),
+        NativeArchiveStartStage::from_code(35),
     ]
     .map(|stage| {
         Err(ArchiveFailure {
@@ -67,6 +69,14 @@ fn native_archive_refusal_stage_is_per_failure_and_never_settles_effects() {
     assert_eq!(
         report[2]["native_start"],
         json!({"status":1,"refusal_stage":"source_root"})
+    );
+    assert_eq!(
+        report[3]["native_start"],
+        json!({"status":1,"refusal_stage":"source_root_open_denied"})
+    );
+    assert_eq!(
+        report[4]["native_start"],
+        json!({"status":1,"refusal_stage":"source_root_cleanup"})
     );
     for row in report.as_array().unwrap() {
         assert_eq!(row["reason"], "archive start refused (status 1)");

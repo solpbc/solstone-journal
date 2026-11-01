@@ -49,6 +49,15 @@ pub enum NativeArchiveStartStage {
     SourceClose,
     Publication,
     RejectionCleanup,
+    SourceRootCustody,
+    SourceRootOpenDenied,
+    SourceRootOpenUnavailable,
+    SourceRootOpenResource,
+    SourceRootOpenFailed,
+    SourceRootStat,
+    SourceRootPinnedStat,
+    SourceRootIdentity,
+    SourceRootCleanup,
 }
 
 impl NativeArchiveStartStage {
@@ -80,6 +89,15 @@ impl NativeArchiveStartStage {
             24 => Some(Self::SourceClose),
             25 => Some(Self::Publication),
             26 => Some(Self::RejectionCleanup),
+            27 => Some(Self::SourceRootCustody),
+            28 => Some(Self::SourceRootOpenDenied),
+            29 => Some(Self::SourceRootOpenUnavailable),
+            30 => Some(Self::SourceRootOpenResource),
+            31 => Some(Self::SourceRootOpenFailed),
+            32 => Some(Self::SourceRootStat),
+            33 => Some(Self::SourceRootPinnedStat),
+            34 => Some(Self::SourceRootIdentity),
+            35 => Some(Self::SourceRootCleanup),
             _ => None,
         }
     }
@@ -112,6 +130,15 @@ impl NativeArchiveStartStage {
             Self::SourceClose => "source_close",
             Self::Publication => "publication",
             Self::RejectionCleanup => "rejection_cleanup",
+            Self::SourceRootCustody => "source_root_custody",
+            Self::SourceRootOpenDenied => "source_root_open_denied",
+            Self::SourceRootOpenUnavailable => "source_root_open_unavailable",
+            Self::SourceRootOpenResource => "source_root_open_resource",
+            Self::SourceRootOpenFailed => "source_root_open_failed",
+            Self::SourceRootStat => "source_root_stat",
+            Self::SourceRootPinnedStat => "source_root_pinned_stat",
+            Self::SourceRootIdentity => "source_root_identity",
+            Self::SourceRootCleanup => "source_root_cleanup",
         }
     }
 }
