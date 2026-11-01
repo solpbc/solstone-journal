@@ -451,10 +451,10 @@ test('"who said it" asks about the ticked lines by count and refuses an answer w
   const env = await createPage({ items: [activity()], transcripts: { '100000_300': SPOKEN } });
   const step = await openLines(env);
   assert.ok(step.querySelector('[data-lines-question][data-copy-key="lines-question"]'));
-  const lineOnly = keyed(step, 'TR_SPEAKER_LINE_ONLY');
+  const lineOnly = keyed(step, 'lines-only');
   assert.ok(lineOnly && lineOnly.querySelector('details.drawer'), 'the line-only note shows, folded');
-  assert.ok(keyed(lineOnly, 'TR_SPEAKER_LINE_ONLY_BODY'));
-  assert.strictEqual(lineOnly.querySelector('a[data-copy-key="TR_SPEAKER_LINE_ONLY_LINK"]').getAttribute('href'), '/app/speakers/');
+  assert.ok(keyed(lineOnly, 'lines-only-body'));
+  assert.strictEqual(lineOnly.querySelector('a[data-copy-key="lines-only-link"]').getAttribute('href'), '/app/speakers/');
   const me = step.querySelector('[data-speaker="owner"]');
   assert.strictEqual(me.disabled, false, 'speakers stay enabled');
   await env.click(me);

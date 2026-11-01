@@ -29,6 +29,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- in older transcripts, lines your journal had already named on the transcript page went unnamed in your activity stories and people. they're now named there too when one of those activities is written again, such as after you correct or edit it.
 - some PDF imports could finish while their progress page still showed them as pending. the page now shows the result of that import.
 
 - in conversations your journal didn't take for a meeting, such as chatting or dictating, lines in your own voice, or from voices already saved in your journal, weren't named. they now are, and your journal catches up on audio you already have.

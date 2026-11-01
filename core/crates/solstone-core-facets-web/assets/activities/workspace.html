@@ -1041,9 +1041,9 @@
     'lines-question-one': 'who said the line you ticked?',
     'lines-question-n': 'who said the {n} lines you ticked?',
     'line-play-at': 'play the line at {time}',
-    'TR_SPEAKER_LINE_ONLY': 'this line only',
-    'TR_SPEAKER_LINE_ONLY_BODY': "your answer is for this line, not its voice. to teach your journal a voice, or tidy up the voices it knows, go to {link}.",
-    'TR_SPEAKER_LINE_ONLY_LINK': 'speakers',
+    'lines-only': 'these lines only',
+    'lines-only-body': "your answer is for the lines you tick, not their voices. to teach your journal a voice, or tidy up the voices it knows, go to {link}.",
+    'lines-only-link': 'speakers',
     'speaker-me': 'me',
     'speaker-person': 'a person',
     'speaker-unknown': "someone i don't know",
@@ -2211,10 +2211,10 @@
   // The same note the transcript's speaker picker gives: an answer here is
   // about these lines, and voices are taught on the speakers page.
   function lineOnlyHtml() {
-    const link = `<a href="/app/speakers/" data-copy-key="TR_SPEAKER_LINE_ONLY_LINK">${esc(STRINGS['TR_SPEAKER_LINE_ONLY_LINK'])}</a>`;
-    const body = esc(STRINGS['TR_SPEAKER_LINE_ONLY_BODY']).replace('{link}', link);
-    const bodyHtml = `<p data-copy-key="TR_SPEAKER_LINE_ONLY_BODY">${body}</p>`;
-    return `<div class="act-line-only" data-copy-key="TR_SPEAKER_LINE_ONLY">${window.Drawer.render({ id: 'line-only', label: STRINGS['TR_SPEAKER_LINE_ONLY'], bodyHtml })}</div>`;
+    const link = `<a href="/app/speakers/" data-copy-key="lines-only-link">${esc(STRINGS['lines-only-link'])}</a>`;
+    const body = esc(STRINGS['lines-only-body']).replace('{link}', link);
+    const bodyHtml = `<p data-copy-key="lines-only-body">${body}</p>`;
+    return `<div class="act-line-only" data-copy-key="lines-only">${window.Drawer.render({ id: 'line-only', label: STRINGS['lines-only'], bodyHtml })}</div>`;
   }
 
   function correctLinesHtml(item) {
