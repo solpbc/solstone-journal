@@ -689,28 +689,6 @@ Source:
 License notice: Apache License 2.0 (Apache-2.0). The text is
 `ced-tiny-model-LICENSE`, beside the engine licenses.
 
-## runtime-downloaded provider artifacts (rerank cross-encoder)
-
-sol pbc retains these artifacts in the download catalog as a dormant pin. They
-are not fetched on POSIX and are not consumed by any product path. They are not
-bundled in this repository.
-
-### rerank cross-encoder ONNX model
-
-Attribution: `Xenova/ms-marco-MiniLM-L-6-v2`, an ONNX export of
-`cross-encoder/ms-marco-MiniLM-L-6-v2`.
-
-Source:
-
-- Model repository: https://huggingface.co/Xenova/ms-marco-MiniLM-L-6-v2
-- Pinned revision: a09144355adeed5f58c8ed011d209bf8ee5a1fec
-- Downloaded files: `onnx/model.onnx`, `tokenizer.json`
-
-License notice: Apache License 2.0 (Apache-2.0).
-
-Apache-2.0 permits sol pbc's redistribution of these model files with its
-required notice and license terms.
-
 ## bundled RF-DETR object-detection assets (rf-detr.cpp)
 
 sol pbc bundles these artifacts in every journal release and installs them from
