@@ -250,7 +250,10 @@ import UIKit
     }
   }
   func show(_ path: String) { route = path; page = UUID() }
-  func pageFailed() { detail = "couldn't open this page. open home or health to try again." }
+  func pageFailed() {
+    guard phase == .running else { return }
+    detail = "couldn't open this page. open home or health to try again."
+  }
   func uploadUnavailable() { detail = "this file couldn't be sent. choose it again, and check the result before retrying." }
 
   private func recoveryCall(_ command: [String: Any]) async throws -> [String: Any] {
