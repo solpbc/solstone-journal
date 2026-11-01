@@ -317,6 +317,33 @@ pub struct ExactArchiveFile {
     pub sha256: String,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NativeDiscoveryPhase {
+    Repository,
+    SnapshotCatalog,
+    SnapshotNodes,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NativeDiscoveryCheck {
+    NativeCap,
+    Metadata,
+    Decode,
+    DuplicatePath,
+    OutputEncoding,
+    OutputSize,
+}
+
+/// Facts from one failed native discovery check, without input or result values.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize)]
+pub struct NativeDiscoveryDiagnostic {
+    pub phase: NativeDiscoveryPhase,
+    pub check: NativeDiscoveryCheck,
+    pub status: Option<i32>,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ReadbackError {
     Admission(AdmissionError),
@@ -332,9 +359,19 @@ pub enum ReadbackError {
     InvalidRepositoryIdentity,
     SnapshotNodeUnavailable,
     IncompleteDiscovery,
+    IncompleteDiscoveryAt(NativeDiscoveryDiagnostic),
     ToolFailed,
     NativeFailure,
     TargetRootChanged,
+}
+
+impl ReadbackError {
+    pub fn discovery_diagnostic(&self) -> Option<&NativeDiscoveryDiagnostic> {
+        match self {
+            Self::IncompleteDiscoveryAt(diagnostic) => Some(diagnostic),
+            _ => None,
+        }
+    }
 }
 
 impl From<AdmissionError> for ReadbackError {
@@ -361,7 +398,9 @@ impl fmt::Display for ReadbackError {
                 Self::RepositoryIdentityChanged => "the backup no longer matches",
                 Self::InvalidRepositoryIdentity => "the backup could not be identified",
                 Self::SnapshotNodeUnavailable => "the archived file could not be confirmed",
-                Self::IncompleteDiscovery => "the archive walk did not account for every node",
+                Self::IncompleteDiscovery | Self::IncompleteDiscoveryAt(_) => {
+                    "the archive walk did not account for every node"
+                }
                 Self::ToolFailed => "the archive read command failed",
                 Self::NativeFailure => "the archived file could not be prepared",
                 Self::TargetRootChanged => "the file could not be prepared in your journal",

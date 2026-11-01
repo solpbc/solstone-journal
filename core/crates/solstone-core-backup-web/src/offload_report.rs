@@ -275,9 +275,7 @@ fn creation_reason(reason: &OffloadCreationRefusal) -> Value {
         OffloadCreationRefusal::Archive(error) => {
             json!({"kind":"archive","reason":error.to_string()})
         }
-        OffloadCreationRefusal::Readback(error) => {
-            json!({"kind":"readback","reason":error.to_string()})
-        }
+        OffloadCreationRefusal::Readback(error) => readback_reason(error),
         OffloadCreationRefusal::Native => json!({"kind":"native"}),
         OffloadCreationRefusal::Metadata => json!({"kind":"metadata"}),
         OffloadCreationRefusal::Entropy => json!({"kind":"entropy"}),
@@ -288,6 +286,13 @@ fn creation_reason(reason: &OffloadCreationRefusal) -> Value {
             json!({"kind":"planning","reason":match reason { OffloadPlanningRefusal::Disabled => json!({"kind":"disabled"}), OffloadPlanningRefusal::Reconciliation => json!({"kind":"reconciliation"}), OffloadPlanningRefusal::Local(_) => json!({"kind":"local","detail_available":true}), OffloadPlanningRefusal::Current(error) => current_reason(error), OffloadPlanningRefusal::Unavailable => json!({"kind":"unavailable"}) }})
         }
     }
+}
+fn readback_reason(error: &solstone_core_backup::archive_readback::ReadbackError) -> Value {
+    let mut value = json!({"kind":"readback","reason":error.to_string()});
+    if let Some(diagnostic) = error.discovery_diagnostic() {
+        value["discovery"] = json!(diagnostic);
+    }
+    value
 }
 fn offer_reason(reason: &OffloadOfferRefusal) -> Value {
     use OffloadOfferRefusal as R;
@@ -306,7 +311,7 @@ fn offer_reason(reason: &OffloadOfferRefusal) -> Value {
         R::Register(_) => "register",
         R::Admission(error) => return json!({"kind":"admission","reason":error.to_string()}),
         R::Io(error) => return json!({"kind":"io","error":error.kind().to_string()}),
-        R::Readback(error) => return json!({"kind":"readback","reason":error.to_string()}),
+        R::Readback(error) => return readback_reason(error),
         R::Cleanup(cleanup) => return json!({"kind":"cleanup","cleanup":cleanup}),
         R::InsufficientSpace {
             available,
@@ -340,7 +345,7 @@ fn creation_finish(reason: &OwnedOffloadCreationFinishRefusal) -> Value {
         R::OfferSettlement => "offer_settlement",
         R::Census(_) => "census",
         R::Obligations(_) => "obligations",
-        R::Readback(error) => return json!({"kind":"readback","reason":error.to_string()}),
+        R::Readback(error) => return readback_reason(error),
         R::Changed(error) => return json!({"kind":"changed","error":error.kind().to_string()}),
         R::Cleanup(cleanup) => return json!({"kind":"cleanup","cleanup":cleanup}),
     };
@@ -353,7 +358,7 @@ fn plan_finish(reason: &OwnedOffloadPlanFinishRefusal) -> Value {
         R::Creation => "creation",
         R::Census(_) => "census",
         R::Obligations(_) => "obligations",
-        R::Readback(error) => return json!({"kind":"readback","reason":error.to_string()}),
+        R::Readback(error) => return readback_reason(error),
     };
     json!({"kind":kind})
 }
