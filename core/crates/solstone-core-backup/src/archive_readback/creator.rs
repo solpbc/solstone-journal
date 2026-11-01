@@ -603,6 +603,48 @@ fn writer_invocation(
     (full, env)
 }
 
+/// Only the selected files are archive inputs; their parent also holds the
+/// child's temporary packs on Android and must never become an input itself.
+#[cfg(not(target_os = "ios"))]
+fn creator_argv(sources: &[ArchiveSource<'_>]) -> Vec<OsString> {
+    let mut argv = vec![
+        "backup".into(),
+        "--force".into(),
+        "--no-cache".into(),
+        "--tag".into(),
+        super::OFFLOAD_ARCHIVE_TAG.into(),
+        "--retry-lock".into(),
+        super::REPOSITORY_RETRY_LOCK.into(),
+    ];
+    argv.extend(
+        sources
+            .iter()
+            .map(|source| source.path().as_os_str().to_owned()),
+    );
+    argv.push("--json".into());
+    argv
+}
+
+#[cfg(any(
+    target_os = "android",
+    all(test, feature = "full-tests", target_os = "linux")
+))]
+fn android_creator_environment(
+    mut env: BTreeMap<OsString, OsString>,
+    sources: &[ArchiveSource<'_>],
+) -> BTreeMap<OsString, OsString> {
+    use std::os::fd::AsRawFd;
+    // Source validation has already established a nonempty descriptor-backed
+    // selection. Keep pack writes inside that retained private stage, using the
+    // same descriptor passed to the child. Never change the parent's environment.
+    let stage = sources[0].descriptor().expect("validated archive source");
+    env.insert(
+        "TMPDIR".into(),
+        format!("/proc/self/fd/{}", stage.as_raw_fd()).into(),
+    );
+    env
+}
+
 impl OwnedReadbackAdmissionError {
     pub fn archive_admission_effects(&self) -> Option<(bool, bool)> {
         match &self.owned {
@@ -947,21 +989,7 @@ impl OwnedArchiveCreator {
         &mut self,
         sources: &[ArchiveSource<'_>],
     ) -> Result<DirectArchiveSnapshot, DirectArchiveFailure> {
-        let mut argv = vec![
-            "backup".into(),
-            "--force".into(),
-            "--no-cache".into(),
-            "--tag".into(),
-            super::OFFLOAD_ARCHIVE_TAG.into(),
-            "--retry-lock".into(),
-            super::REPOSITORY_RETRY_LOCK.into(),
-        ];
-        argv.extend(
-            sources
-                .iter()
-                .map(|source| source.path().as_os_str().to_owned()),
-        );
-        argv.push("--json".into());
+        let argv = creator_argv(sources);
         let facts = sources
             .iter()
             .filter_map(|source| {
@@ -1223,6 +1251,8 @@ impl OwnedArchiveCreator {
             }
             writer_invocation(&custody.capture.write, &self.read.read.env, argv)
         };
+        #[cfg(target_os = "android")]
+        let env = android_creator_environment(env, sources);
         #[cfg(not(target_os = "macos"))]
         let (program, argv) = (self.read.read.tool.program()?.as_os_str().to_owned(), argv);
         #[cfg(target_os = "macos")]
@@ -1388,6 +1418,10 @@ fn parse_summary(output: &[u8]) -> Result<String, ReadbackError> {
     }
     summary.ok_or(ReadbackError::SnapshotNodeUnavailable)
 }
+
+#[cfg(all(test, feature = "full-tests", target_os = "linux"))]
+#[path = "creator_temp_tests.rs"]
+mod android_temp_tests;
 
 #[cfg(all(test, any(unix, windows)))]
 mod operated_writer_tests {
