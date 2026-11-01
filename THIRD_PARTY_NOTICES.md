@@ -1048,7 +1048,7 @@ Attribution: NVIDIA Corporation. sol pbc's changes are marked in the source.
 Source:
 
 - Verifier: https://github.com/solpbc/attestation-sdk, revision
-  ff957aa1012781d18b68973e370a0188b8ef502d, built from source. The build
+  25ea26bc6e3cee09a344f70f29c03481420e8077, built from source. The build
   receipt is at share/provenance/nvattest/receipt.json.
 - CA bundle: https://curl.se/ca/cacert-2026-07-16.pem
   (SHA-256 3ff344e30b9b1ed2971044eabb438a08f2e2245ddb5f8ab1a3ad8b63ab4eaf91)
@@ -1065,11 +1065,11 @@ solstone and are not covered by solstone's AGPL-3.0-only license.
 
 Source:
 
-- Verifier and library: version 1.2.2-sol.6, built by sol pbc from
+- Verifier and library: version 1.2.2-sol.8, built by sol pbc from
   https://github.com/solpbc/attestation-sdk revision
-  fdc3c39958f12ba1055ae5beebc182577f7430b3, based on NVIDIA's upstream
-  revision 73efa3ac1bec28ed7d7f0c0811a6c993e722dbd4. The windows revision
-  above is this revision plus its windows build changes.
+  25ea26bc6e3cee09a344f70f29c03481420e8077, based on NVIDIA's upstream
+  revision 73efa3ac1bec28ed7d7f0c0811a6c993e722dbd4. The windows verifier
+  above is built from the same revision.
 - CA bundle: https://curl.se/ca/cacert-2026-07-16.pem, the same file as on
   windows (SHA-256
   3ff344e30b9b1ed2971044eabb438a08f2e2245ddb5f8ab1a3ad8b63ab4eaf91).
