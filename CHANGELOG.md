@@ -22,6 +22,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- one damaged speaker file in a single recording no longer stops your journal from naming the speakers in other audio still waiting for them. that recording is left as it is.
 - security fix: with confidential processing on, your journal now sends only to machines that booted the service's current published build. the previous build didn't check how its disk was laid out. whoever controlled the disk one of its machines booted from, or could redirect your journal's connection to their own copy of it, could have added a disk area for the machine to spill its memory into. parts of what your journal sent could then have been written to disk unencrypted. if your journal reaches a machine that booted the previous build, it refuses that machine and tries another.
 - fixed a confidential processing connection failure on devices that take longer to verify the service.
 - in older transcripts, lines your journal had already named on the transcript page went unnamed in your activity stories and people. they're now named there too when one of those activities is written again, such as after you correct or edit it.
