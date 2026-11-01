@@ -1736,6 +1736,7 @@ pub enum ArchiveError {
     RepositoryIdentityInvalid,
     RepositoryIdentityChanged,
     ToolFailed { reason: &'static str },
+    NativeStart { status: i32 },
     InvalidSelection,
     SourceUnavailable,
     SnapshotIdentityInvalid,
@@ -1751,6 +1752,9 @@ impl fmt::Display for ArchiveError {
             Self::JournalIdentityChanged => "your journal could not be confirmed",
             Self::ToolUnavailable => "an archive tool is unavailable",
             Self::CredentialsUnavailable { reason } | Self::ToolFailed { reason } => reason,
+            Self::NativeStart { status } => {
+                return write!(formatter, "archive start refused (status {status})");
+            }
             Self::InvalidCredentialExpiry => "archive credentials have an invalid expiry",
             Self::CredentialsExpired => "archive credentials expired",
             Self::DeadlineExceeded => "the archive operation deadline was reached",
@@ -1800,6 +1804,16 @@ pub enum ArchiveRemoteEffects {
 pub struct ArchiveFailure {
     pub error: ArchiveError,
     pub remote_effects: ArchiveRemoteEffects,
+}
+
+impl ArchiveFailure {
+    #[cfg(any(target_os = "ios", test))]
+    pub(crate) fn native_start(status: i32) -> Self {
+        Self {
+            error: ArchiveError::NativeStart { status },
+            remote_effects: ArchiveRemoteEffects::NotAttempted,
+        }
+    }
 }
 
 impl fmt::Display for ArchiveFailure {
@@ -4228,6 +4242,24 @@ mod tests {
     use std::rc::Rc;
     use std::sync::{LazyLock, Mutex};
     use std::time::Duration;
+
+    #[test]
+    fn native_archive_refusal_keeps_status_in_the_existing_report_boundary() {
+        // Both a known busy code and an unknown code survive the same
+        // content-free projection used by the retained archive report.
+        for status in [6, -173] {
+            let failure = ArchiveFailure::native_start(status);
+            assert_eq!(failure.error, ArchiveError::NativeStart { status });
+            assert_eq!(failure.remote_effects, ArchiveRemoteEffects::NotAttempted);
+            let report = json!({"reason":failure.error.to_string()});
+            assert!(
+                report["reason"]
+                    .as_str()
+                    .unwrap()
+                    .contains(&status.to_string())
+            );
+        }
+    }
 
     #[test]
     fn closed_archive_custody_is_send_static() {

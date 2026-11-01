@@ -550,7 +550,7 @@ impl OwnedAdmittedArchive {
         }
         let (session, state, timeout, cancellation) = prepare(self, authority)?;
         let call = start_archive(&session, state.as_ref(), logical_root, source, &payload)
-            .map_err(|_| not_attempted(failed()))?;
+            .map_err(ArchiveFailure::native_start)?;
         let bound = bind_call(
             self,
             authority,

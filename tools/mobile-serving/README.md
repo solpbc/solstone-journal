@@ -94,8 +94,17 @@ After a lost reply, read
 `GET /api/journal/maintenance/backup:offload/requests/{request_id}`. Repeating
 the POST with that ID returns the retained reference without submitting again,
 including after a restart. This uses the existing foreground queue and offload
-worker. Received, accepted and result receipts are immutable files in the
+worker. received, accepted, outcome and result receipts are immutable files in the
 journal root, named `.owner-offload-{request_id}.{phase}.json`.
+
+responses can also carry an `outcome` with the executor's `disposition`, `reason`
+and `generation`. this diagnostic is separate from queue completion and native
+retirement; an old or unrecorded diagnostic remains `null`.
+
+the mobile Backup page uses this action, then links to the existing originals
+review. `GET /api/journal/maintenance/backup:offload/requests` returns
+`{ "request": null }` or the latest retained explicit request under `request`, so
+reopening an ephemeral WebView can recover its identity without submitting work.
 
 `unknown` means no receiving receipt was found. `admission_unknown` means a
 receipt exists but queue admission is unconfirmed. `accepted`, `running` and
