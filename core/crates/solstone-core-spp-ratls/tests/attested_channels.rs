@@ -2926,13 +2926,13 @@ fn proof_boundary_complete_fragmented_and_cut_controls() {
 
 #[test]
 fn signed_exporter_proof_selects_one_complete_application_profile() {
-    use solstone_core_spp_attest::pins::{IMAGE_4_APPLICATION_PCRS, PUBLISHED_QUOTE_PCR_SELECTION};
+    use solstone_core_spp_attest::pins::{IMAGE_5_APPLICATION_PCRS, PUBLISHED_QUOTE_PCR_SELECTION};
     use solstone_core_spp_attest::{
         ApplicationExpectations, ApplicationPcrPolicy, ApplicationPcrProfiles, Policy,
         parse_quote_pcrs,
     };
     use solstone_core_spp_ratls::ratls::verify::verify_exporter_proof;
-    let first = include_bytes!("../../../../tests/fixtures/spp_attest/sealed-post-roll-quote.pcrs")
+    let first = include_bytes!("../../../../tests/fixtures/spp_attest/image5-post-roll-quote.pcrs")
         .to_vec();
     let mut second = first.clone();
     second[274..306].fill(0x33);
@@ -2944,7 +2944,7 @@ fn signed_exporter_proof_selects_one_complete_application_profile() {
         .iter()
         .map(|q| check_pcr_fingerprint(q, &Policy::default()).unwrap())
         .collect();
-    let first_values = IMAGE_4_APPLICATION_PCRS
+    let first_values = IMAGE_5_APPLICATION_PCRS
         .into_iter()
         .collect::<std::collections::BTreeMap<_, _>>();
     let mut second_values = first_values.clone();

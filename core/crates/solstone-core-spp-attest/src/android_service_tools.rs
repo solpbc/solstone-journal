@@ -1635,7 +1635,7 @@ fn validate_private_staging(
 mod tests {
     #[test]
     fn identity_binds_distinct_profiles_to_their_fingerprints() {
-        let first = crate::pins::IMAGE_4_APPLICATION_PCRS;
+        let first = crate::pins::IMAGE_5_APPLICATION_PCRS;
         let mut second = first;
         second[0].1 = [0x33; 32];
         let expected = [("first", &first), ("second", &second)];
