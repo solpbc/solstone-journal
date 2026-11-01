@@ -21,9 +21,9 @@ mod nodes;
 mod seal;
 use creator::ArchivePredecessorCustody;
 pub use creator::{
-    ArchiveEndpointCapture, ArchivePredecessorCapture, ArchiveWriterObservation,
-    ArchiveWriterSourceObservation, DirectArchiveEffects, DirectArchiveFailure,
-    DirectArchiveSnapshot, OwnedArchiveCreator, OwnedArchiveCreatorAdmission,
+    AndroidArchiveWriter, ArchiveEndpointCapture, ArchivePredecessorCapture,
+    ArchiveWriterObservation, ArchiveWriterSourceObservation, DirectArchiveEffects,
+    DirectArchiveFailure, DirectArchiveSnapshot, OwnedArchiveCreator, OwnedArchiveCreatorAdmission,
 };
 pub use nodes::{ArchiveNodeRecord, parse_bounded_nodes};
 pub use seal::{OwnerObservation, same_owner};
@@ -131,7 +131,7 @@ use solstone_core_journal_io::media::RootActivityCarrier;
 
 #[cfg(unix)]
 pub(crate) const RESTIC_MEMBER: &str = "lib/solstone-restic/restic";
-#[cfg(unix)]
+#[cfg(all(unix, not(any(target_os = "android", target_os = "ios"))))]
 pub(crate) const RCLONE_MEMBER: &str = "lib/solstone-rclone/rclone";
 pub const SUPPORTED_RESTIC_VERSION: &str = "0.19.0";
 

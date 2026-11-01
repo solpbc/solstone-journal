@@ -116,6 +116,33 @@ pub trait AndroidAuthority: Send + Sync {
 
 pub struct LiveAndroidAuthority;
 
+#[cfg(not(windows))]
+struct AndroidArchiveWriterAuthority(LiveAndroidAuthority);
+
+#[cfg(not(windows))]
+impl solstone_core_backup::archive_readback::AndroidArchiveWriter
+    for AndroidArchiveWriterAuthority
+{
+    fn resolve_program(
+        &self,
+    ) -> Result<PathBuf, solstone_core_backup::archive_readback::ReadbackError> {
+        use solstone_core_backup::archive_readback::ReadbackError;
+        self.0
+            .revalidate()
+            .map_err(|_| ReadbackError::ToolChanged)?;
+        self.0
+            .resolve_tool(AndroidServiceToolRole::Rclone)
+            .map_err(|_| ReadbackError::ToolUnavailable)
+    }
+}
+
+/// Retain the Android service admission for each operated archive use.
+#[cfg(not(windows))]
+pub fn android_archive_writer_authority()
+-> std::sync::Arc<dyn solstone_core_backup::archive_readback::AndroidArchiveWriter> {
+    std::sync::Arc::new(AndroidArchiveWriterAuthority(LiveAndroidAuthority))
+}
+
 impl AndroidAuthority for LiveAndroidAuthority {
     fn resolve_tool(
         &self,

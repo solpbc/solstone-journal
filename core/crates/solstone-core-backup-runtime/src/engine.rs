@@ -3341,6 +3341,8 @@ fn capture_archive_predecessor(
         read_repository_id: facts.read_repository_id,
         repository_id: facts.repository_id,
         archives: facts.archives,
+        #[cfg(target_os = "android")]
+        android_writer: Some(crate::resolve::android_archive_writer_authority()),
         #[cfg(target_os = "ios")]
         linked: false,
     }

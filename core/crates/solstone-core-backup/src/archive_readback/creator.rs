@@ -18,6 +18,19 @@ pub struct ArchiveEndpointCapture {
     pub global_options: Vec<String>,
 }
 
+/// The existing Android service-tool admission, retained across archive use.
+/// Implementations must revalidate the installed service inputs on every call.
+pub trait AndroidArchiveWriter: Send + Sync {
+    fn resolve_program(&self) -> Result<PathBuf, ReadbackError>;
+
+    fn revalidate_program(&self, program: &std::path::Path) -> Result<(), ReadbackError> {
+        if self.resolve_program()? != program {
+            return Err(ReadbackError::ToolChanged);
+        }
+        Ok(())
+    }
+}
+
 pub struct ArchivePredecessorCapture {
     pub restic_path: PathBuf,
     pub write: ArchiveEndpointCapture,
@@ -29,8 +42,33 @@ pub struct ArchivePredecessorCapture {
     pub read_repository_id: Option<String>,
     pub repository_id: Option<String>,
     pub archives: Vec<ArchiveWriterObservation>,
+    #[cfg(target_os = "android")]
+    pub android_writer: Option<Arc<dyn AndroidArchiveWriter>>,
     #[cfg(target_os = "ios")]
     pub linked: bool,
+}
+
+#[cfg(all(unix, not(target_os = "ios")))]
+impl ArchivePredecessorCapture {
+    fn revalidate_operated_program(&self, program: &std::path::Path) -> Result<(), ReadbackError> {
+        #[cfg(target_os = "android")]
+        {
+            self.android_writer
+                .as_ref()
+                .ok_or(ReadbackError::ToolUnavailable)?
+                .revalidate_program(program)
+        }
+        #[cfg(not(target_os = "android"))]
+        {
+            let member =
+                solstone_core_installed_payload::resolve_current_member(super::RCLONE_MEMBER)
+                    .map_err(|_| ReadbackError::ToolUnavailable)?;
+            if program != member.path() {
+                return Err(ReadbackError::ToolChanged);
+            }
+            member.revalidate().map_err(|_| ReadbackError::ToolChanged)
+        }
+    }
 }
 
 pub struct ArchiveWriterObservation {
@@ -177,7 +215,7 @@ impl ArchivePredecessorCustody {
         let endpoints = match binding {
             None => vec![&capture.write, &capture.read],
             Some(binding) => {
-                validate_operated_writer(&capture.write, &capture.read, binding, input)?;
+                validate_operated_writer(capture, binding, input)?;
                 vec![&capture.read]
             }
         };
@@ -362,11 +400,12 @@ impl ArchivePredecessorCustody {
 /// one broker session append-only, at the location the reader reads.
 #[cfg(any(unix, windows))]
 fn validate_operated_writer(
-    write: &ArchiveEndpointCapture,
-    read: &ArchiveEndpointCapture,
+    capture: &ArchivePredecessorCapture,
     binding: &crate::HostedBinding,
     input: &ReadAdmission<'_>,
 ) -> Result<(), ReadbackError> {
+    let write = &capture.write;
+    let read = &capture.read;
     #[cfg(target_os = "ios")]
     {
         let _ = binding;
@@ -386,12 +425,7 @@ fn validate_operated_writer(
         let rclone = operated_writer_program(write, read, binding, &input.password)?;
         #[cfg(unix)]
         {
-            let member =
-                solstone_core_installed_payload::resolve_current_member(super::RCLONE_MEMBER)
-                    .map_err(|_| ReadbackError::ToolUnavailable)?;
-            if std::path::Path::new(rclone) != member.path() {
-                return Err(ReadbackError::ToolChanged);
-            }
+            capture.revalidate_operated_program(std::path::Path::new(rclone))?;
         }
         #[cfg(windows)]
         let _ = rclone;
@@ -1111,10 +1145,20 @@ impl OwnedArchiveCreator {
                 .ok_or(ReadbackError::Unsupported)?;
             if !custody.capture.write.global_options.is_empty() {
                 // Re-admit the operated transport immediately before it can run.
-                solstone_core_installed_payload::resolve_current_member(super::RCLONE_MEMBER)
-                    .map_err(|_| ReadbackError::ToolUnavailable)?
-                    .revalidate()
-                    .map_err(|_| ReadbackError::ToolChanged)?;
+                let binding = self
+                    .prepared_operation()
+                    .configuration()
+                    .binding()
+                    .ok_or(ReadbackError::NotConfigured)?;
+                let program = operated_writer_program(
+                    &custody.capture.write,
+                    &custody.capture.read,
+                    binding,
+                    &custody.capture.read.password,
+                )?;
+                custody
+                    .capture
+                    .revalidate_operated_program(std::path::Path::new(program))?;
             }
             writer_invocation(&custody.capture.write, &self.read.read.env, argv)
         };
