@@ -11,6 +11,13 @@ import UIKit
   @Published var detail = ""
   @Published var page = UUID()
   @Published var route = "/init"
+  @Published var recoveryBusy = false
+  @Published var recoveryReview: OwnerCreatorRecovery.Review?
+  @Published var showRecoveryReview = false
+  @Published var recoveryDetail = ""
+  @Published private(set) var recoveryHeld = true
+  private var recoveryInvalid = false
+  private var recoveryState = OwnerCreatorRecovery()
   private let runner = Runner()
   private var pending: Task<Void, Never>?
   private var revision: UInt64 = 0
@@ -23,6 +30,9 @@ import UIKit
   private var choice: URL? {
     guard let fixture = try? runner.ownerFixture.get() else { return nil }
     return runner.output.appendingPathComponent(fixture.choiceFileName)
+  }
+  private var recoveryFile: URL? {
+    choice?.appendingPathExtension("creator-recovery.json")
   }
 
   private func admitFixture() -> Bool {
@@ -46,7 +56,12 @@ import UIKit
     case .unavailable: return "your journal needs attention"
     }
   }
-  var canStart: Bool { loaded && choiceSaved && !retained && phase != .closed && phase != .starting && phase != .stopping }
+  var canStart: Bool { loaded && choiceSaved && !retained && !recoveryBusy && !recoveryHeld && !recoveryInvalid && phase != .closed && phase != .starting && phase != .stopping }
+  var canReviewRecovery: Bool {
+    loaded && choiceSaved && ownerStopped && !retained && foreground && !recoveryBusy
+      && !recoveryInvalid && (phase == .stopped || phase == .unavailable)
+  }
+  var hasOwnerPage: Bool { retained && (phase == .running || phase == .unavailable) }
 
   private struct Choice: Codable { let stopped: Bool }
   private func saveChoice(_ stopped: Bool) throws {
@@ -74,24 +89,38 @@ import UIKit
     loaded = true
     UIDevice.current.isBatteryMonitoringEnabled = true
     do {
+      guard let recoveryFile else { throw OwnerCreatorRecovery.Refusal.invalidRecord }
+      do { recoveryState = try OwnerCreatorRecovery.load(recoveryFile) }
+      catch { recoveryInvalid = true; throw error }
+      recoveryHeld = try recoveryState.heldIndex() != nil
       if FileManager.default.fileExists(atPath: choice.path) {
         ownerStopped = try JSONDecoder().decode(Choice.self, from: Data(contentsOf: choice)).stopped
       } else {
         try saveChoice(false)
       }
       if ownerStopped { phase = .stopped }
+      else if recoveryHeld {
+        ownerStopped = true
+        choiceSaved = false
+        phase = .unavailable
+        detail = "a storage recovery result is unconfirmed. use stop before checking it."
+      }
       else { start(explicit: false) }
+      if recoveryHeld { recoveryDetail = "an earlier cleanup result is unconfirmed. check current storage before starting." }
     } catch {
       ownerStopped = true
       choiceSaved = false
       phase = .unavailable
-      detail = "couldn't read the start choice. use stop to save it again."
+      detail = "couldn't read the saved start or recovery state. your journal is still stopped."
     }
   }
   func start(explicit: Bool = true) {
     guard admitFixture() else { return }
     if explicit && !canStart { return }
-    guard !retained, phase != .starting, phase != .stopping else { return }
+    guard !retained, !recoveryBusy, !recoveryHeld, !recoveryInvalid,
+      phase != .starting, phase != .stopping else { return }
+    recoveryReview = nil
+    showRecoveryReview = false
     if explicit {
       do { try saveChoice(false) }
       catch { phase = .unavailable; detail = "couldn't save start. free some space, then try again."; return }
@@ -144,6 +173,8 @@ import UIKit
   }
   func stop(restart: Bool = false) {
     guard admitFixture() else { return }
+    recoveryReview = nil
+    showRecoveryReview = false
     phase = .stopping
     detail = "finishing current work. keep this app open."
     UIApplication.shared.isIdleTimerDisabled = foreground && retained
@@ -188,6 +219,8 @@ import UIKit
         if !ownerStopped && !retained { phase = .suspended; start(explicit: false) }
       }
     } else {
+      recoveryReview = nil
+      showRecoveryReview = false
       revision &+= 1
       journal_ios_processing_request_stop()
       UIApplication.shared.isIdleTimerDisabled = false
@@ -218,6 +251,120 @@ import UIKit
   func pageFailed() { detail = "couldn't open this page. open home or health to try again." }
   func uploadUnavailable() { detail = "this file couldn't be sent. choose it again, and check the result before retrying." }
 
+  private func recoveryCall(_ command: [String: Any]) async throws -> [String: Any] {
+    let bytes = try OwnerCreatorRecovery.encode(command)
+    var request = runner.request("creator-recovery", payload: String(decoding: bytes, as: UTF8.self))
+    request.admissionGeneration = command["admission_generation"] as? UInt64
+    let reply = try await runner.servingCall(request, "owner.creator-recovery")
+    guard let native = reply["journal"] as? [String: Any],
+      let result = native["result"] as? [String: Any],
+      let report = result["value"] as? [String: Any],
+      report["request_id"] as? String == command["request_id"] as? String,
+      report["native_epoch"] as? UInt64 == command["admission_generation"] as? UInt64,
+      let root = report["root_observation"] as? String
+    else { throw OwnerCreatorRecovery.Refusal.invalidRecord }
+    try OwnerCreatorRecovery.validate(report, root: root)
+    if let expected = command["root_observation"] as? String, expected != root {
+      throw OwnerCreatorRecovery.Refusal.invalidRecord
+    }
+    return report
+  }
+  private func saveRecovery(_ state: OwnerCreatorRecovery) throws {
+    guard let recoveryFile else { throw OwnerCreatorRecovery.Refusal.invalidRecord }
+    // Fail closed if publication/fsync fails, including before first dispatch.
+    recoveryHeld = true
+    try state.save(recoveryFile)
+    recoveryState = state
+    recoveryHeld = try state.heldIndex() != nil
+  }
+  func reviewRecovery() {
+    guard canReviewRecovery else { return }
+    recoveryBusy = true
+    recoveryReview = nil
+    recoveryDetail = "checking temporary recovery items. keep this app open."
+    let ticket = revision
+    let epoch = journal_ios_processing_generation()
+    let command = OwnerCreatorRecovery.command("observe", epoch: epoch)
+    enqueue { [self] in
+      defer { recoveryBusy = false }
+      guard ticket == revision, ownerStopped, foreground else { return }
+      do {
+        let report = try await recoveryCall(command)
+        guard ticket == revision, foreground else { return }
+        recoveryReview = try OwnerCreatorRecovery.review(report,
+          id: command["request_id"] as! String, epoch: epoch)
+        showRecoveryReview = true
+        recoveryDetail = ""
+      } catch {
+        recoveryDetail = "couldn't complete the storage review. your journal is still stopped."
+      }
+    }
+  }
+  func applyRecovery() {
+    guard canReviewRecovery, let review = recoveryReview,
+      review.count > 0, review.epoch == journal_ios_processing_generation() else { return }
+    recoveryReview = nil
+    showRecoveryReview = false
+    recoveryBusy = true
+    recoveryDetail = "removing temporary recovery items. keep this app open."
+    let command = OwnerCreatorRecovery.command("apply", epoch: review.epoch, review: review)
+    let ticket = revision
+    enqueue { [self] in
+      defer { recoveryBusy = false }
+      guard ticket == revision, ownerStopped, foreground else { return }
+      do {
+        guard let recoveryFile else { throw OwnerCreatorRecovery.Refusal.invalidRecord }
+        var sent = try OwnerCreatorRecovery.load(recoveryFile)
+        let index = sent.attempts.count
+        sent.attempts.append(.init(command: try OwnerCreatorRecovery.encode(command)))
+        try saveRecovery(sent) // Durable unknown outcome before native ingress.
+        let report = try await recoveryCall(command)
+        var received = recoveryState
+        received.attempts[index].result = try OwnerCreatorRecovery.encode(report)
+        try saveRecovery(received)
+        recoveryDetail = report["local_complete"] as? Bool == true
+          ? (recoveryHeld
+            ? "temporary recovery items removed. an earlier local result is still unconfirmed. check current storage before starting."
+            : "temporary recovery items removed. your journal is still stopped. start it separately when you are ready.")
+          : "cleanup is incomplete. keep stopped and review current storage."
+      } catch {
+        recoveryDetail = "cleanup is incomplete or unconfirmed. keep stopped and check current storage."
+      }
+    }
+  }
+  func reconcileRecovery() {
+    guard canReviewRecovery, recoveryHeld else { return }
+    recoveryBusy = true
+    recoveryReview = nil
+    recoveryDetail = "checking current local storage. no cleanup request is being repeated."
+    let ticket = revision
+    let epoch = journal_ios_processing_generation()
+    enqueue { [self] in
+      defer { recoveryBusy = false }
+      guard ticket == revision, ownerStopped, foreground else { return }
+      do {
+        // Re-read after a failed receipt save; memory is not receiving evidence.
+        guard let recoveryFile else { throw OwnerCreatorRecovery.Refusal.invalidRecord }
+        recoveryState = try OwnerCreatorRecovery.load(recoveryFile)
+        guard let index = try recoveryState.heldIndex() else {
+          recoveryHeld = false
+          return
+        }
+        let command = try OwnerCreatorRecovery.reconcile(recoveryState.attempts[index], epoch: epoch)
+        let report = try await recoveryCall(command)
+        var received = recoveryState
+        received.attempts[index].reconciliation = try OwnerCreatorRecovery.encode(report)
+        try saveRecovery(received)
+        recoveryDetail = report["current_local_state_reconciled"] as? Bool == true
+          ? "current local storage checked. the earlier request and remote outcome remain unknown. your journal is still stopped."
+          : "current local storage could not be confirmed. keep stopped and review storage."
+      } catch {
+        recoveryHeld = true
+        recoveryDetail = "current local storage is unconfirmed. your journal is still stopped."
+      }
+    }
+  }
+
   private func reclaimOwnerBridge() {
     let cache = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
     cache.path.withCString { cachePath in
@@ -244,16 +391,40 @@ struct OwnerJournalView: View {
           }
         }
         if !owner.detail.isEmpty { Text(owner.detail).font(.caption).foregroundStyle(.secondary) }
-        if owner.phase == .running || owner.phase == .unavailable && !owner.canStart {
+        if owner.canReviewRecovery || owner.recoveryBusy {
+          HStack {
+            Button("review storage recovery") { owner.reviewRecovery() }
+              .disabled(!owner.canReviewRecovery).accessibilityIdentifier("owner-recovery-review")
+            if owner.recoveryHeld {
+              Button("check current storage") { owner.reconcileRecovery() }
+                .disabled(!owner.canReviewRecovery).accessibilityIdentifier("owner-recovery-check")
+            }
+          }
+        }
+        if !owner.recoveryDetail.isEmpty { Text(owner.recoveryDetail).font(.caption).foregroundStyle(.secondary) }
+        if owner.hasOwnerPage {
           HStack {
             Button("home") { owner.show("/") }
             Button("health") { owner.show("/app/health/") }
           }
         }
       }.padding(12).background(.bar)
-      if owner.phase == .running || owner.phase == .unavailable && !owner.canStart {
+      if owner.hasOwnerPage {
         OwnerBrowser(owner: owner).id(owner.page)
       } else { Spacer() }
+    }
+    .alert("review storage recovery", isPresented: $owner.showRecoveryReview) {
+      Button("keep stopped", role: .cancel) { owner.recoveryReview = nil }
+      if let review = owner.recoveryReview, review.count > 0 {
+        Button("remove temporary items", role: .destructive) { owner.applyRecovery() }
+          .accessibilityIdentifier("owner-recovery-apply")
+      }
+    } message: {
+      if let review = owner.recoveryReview {
+        Text(review.count == 0
+          ? "no temporary recovery items remain. this check does not tell us whether an earlier archive request completed."
+          : "temporary recovery items: \(review.count). copied files have matching originals. empty temporary folders may also be removed. this does not tell us whether an earlier archive request completed.")
+      }
     }
     .task {
       owner.scene(scenePhase == .active)

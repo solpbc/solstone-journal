@@ -90,7 +90,7 @@ enum Engine {
           throw NSError(domain: "host-path-is-not-authority", code: 1)
         }
         var request = message
-        if request.op == "open" || request.op == "serve-custody" { request.root = root }
+        if ["open", "serve-custody", "creator-recovery"].contains(request.op) { request.root = root }
         if request.op == "serve-start" {
           guard let payload = Bundle.main.url(forResource: "JournalPayload", withExtension: nil) else {
             throw NSError(domain: "packaged-payload-missing", code: 1)

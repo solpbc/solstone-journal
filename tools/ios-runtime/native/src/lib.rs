@@ -91,6 +91,25 @@ fn admit_processing(v: &Value, state: &AtomicU64) -> Result<u64, String> {
     }
     Ok(generation)
 }
+fn creator_recovery_command(
+    v: &Value,
+    state: &AtomicU64,
+    serving: bool,
+) -> Result<(u64, Value), String> {
+    let generation = admit_processing(v, state)?;
+    if generation & 1 == 0 || serving {
+        return Err("creator recovery requires the stopped journal".into());
+    }
+    let raw = v["payload"].as_str().ok_or("missing recovery command")?;
+    if raw.len() > 256 * 1024 {
+        return Err("creator recovery request too large".into());
+    }
+    let command: Value = serde_json::from_str(raw).map_err(|e| e.to_string())?;
+    if command["admission_generation"].as_u64() != Some(generation) {
+        return Err("creator recovery admission changed".into());
+    }
+    Ok((generation, command))
+}
 fn open_processing_admission(state: &AtomicU64, generation: u64) -> bool {
     state
         .compare_exchange(
@@ -350,7 +369,7 @@ fn run(v: Value) -> Result<Value, String> {
         return Ok(json!({"cancel_requested":true}));
     }
     let mut guard = ROOT.lock().map_err(|e| e.to_string())?;
-    if op == "open" {
+    if matches!(op, "open" | "creator-recovery") {
         let requested = PathBuf::from(v["root"].as_str().ok_or("missing helper-owned root")?);
         if let Some(current) = guard.as_ref() {
             current
@@ -362,7 +381,9 @@ fn run(v: Value) -> Result<Value, String> {
                 return Err("worker already bound to another journal".into());
             }
         } else {
-            std::fs::create_dir_all(&requested).map_err(|e| e.to_string())?;
+            if op == "open" {
+                std::fs::create_dir_all(&requested).map_err(|e| e.to_string())?;
+            }
             *guard = Some(Arc::new(
                 JournalRoot::open(&requested).map_err(|e| e.to_string())?,
             ));
@@ -404,6 +425,24 @@ fn run(v: Value) -> Result<Value, String> {
         None
     };
     match op {
+        "creator-recovery" => {
+            // ROOT and SERVING stay held across the fixed recovery frame. Start
+            // cannot interleave, and a failed drain leaves SERVING populated.
+            let serving = SERVING.lock().map_err(|e| e.to_string())?;
+            let (generation, command) =
+                creator_recovery_command(&v, &PROCESSING_GENERATION, serving.is_some())?;
+            journal_mobile_serving::creator_recovery::run_stopped(
+                Arc::clone(root),
+                &command,
+                &|| {
+                    if PROCESSING_GENERATION.load(Ordering::SeqCst) != generation {
+                        return Err("creator recovery admission changed".into());
+                    }
+                    root.revalidate_canonical_binding()
+                        .map_err(|e| e.to_string())
+                },
+            )
+        }
         "serve-start" => {
             let generation = generation.unwrap();
             admit_processing(&v, &PROCESSING_GENERATION)?;
@@ -1418,6 +1457,23 @@ fn retire_active_before_transport(
 #[cfg(test)]
 mod processing_admission_tests {
     use super::*;
+
+    #[test]
+    fn stopped_recovery_cannot_adopt_a_running_or_changed_lifetime() {
+        let state = AtomicU64::new(1);
+        let command = json!({"op":"creator-recovery", "admission_generation":1});
+        let mut request = json!({"admissionGeneration":1,"payload":command.to_string()});
+        assert!(creator_recovery_command(&request, &state, false).is_ok());
+        assert!(creator_recovery_command(&request, &state, true).is_err());
+        close_processing_admission(&state);
+        assert!(creator_recovery_command(&request, &state, false).is_err());
+        request["admissionGeneration"] = json!(3);
+        assert!(creator_recovery_command(&request, &state, false).is_err());
+        assert!(open_processing_admission(&state, 3));
+        request["admissionGeneration"] = json!(2);
+        request["payload"] = json!(json!({"admission_generation":2}).to_string());
+        assert!(creator_recovery_command(&request, &state, false).is_err());
+    }
 
     #[test]
     fn stop_without_a_bound_journal_cannot_acknowledge_persistence() {

@@ -22,7 +22,7 @@ BACKUP_RESOURCES := Resources/BackupRuntime
 PDFIUM_DIR := $(BUILD_ROOT)/pdfium
 APP := $(BUILD_ROOT)/derived/Build/Products/Debug-iphoneos/JournalRuntimeDev.app
 NATIVE_FEATURES := $(if $(AUDIO_MODELS_DIR),audio) $(if $(filter project-owner.yml,$(PROJECT_SPEC)),owner-app)
-.PHONY: build rust appraisal-rust appraisal-native backup-native pdfium payload project finalize install run check check-owner-fixture
+.PHONY: build rust appraisal-rust appraisal-native backup-native pdfium payload project finalize install run check check-owner-fixture check-owner-recovery
 rust:
 	IPHONEOS_DEPLOYMENT_TARGET=26.0 $(if $(RFDETR_LIB_DIR),RFDETR_LIB_DIR='$(RFDETR_LIB_DIR)') $(if $(PARAKEET_LIB_DIR),PARAKEET_LIB_DIR='$(PARAKEET_LIB_DIR)') $(if $(SOUND_CED_LIB_DIR),SOUND_CED_LIB_DIR='$(SOUND_CED_LIB_DIR)') cargo build --locked --manifest-path native/Cargo.toml --features '$(NATIVE_FEATURES)' --target aarch64-apple-ios --target-dir $(BUILD_ROOT)/rust
 appraisal-rust:
@@ -57,7 +57,12 @@ check-owner-fixture:
 	mkdir -p $(BUILD_ROOT)/diagnostics
 	swiftc Shared/OwnerFixture.swift diagnostics/OwnerFixtureQualification.swift -o $(BUILD_ROOT)/diagnostics/owner-fixture-check
 	$(BUILD_ROOT)/diagnostics/owner-fixture-check
-check: check-owner-fixture
+
+check-owner-recovery:
+	mkdir -p $(BUILD_ROOT)/diagnostics
+	swiftc Shared/OwnerCreatorRecovery.swift diagnostics/OwnerCreatorRecoveryTests.swift -o $(BUILD_ROOT)/diagnostics/owner-recovery-check
+	$(BUILD_ROOT)/diagnostics/owner-recovery-check
+check: check-owner-fixture check-owner-recovery
 	cargo fmt --manifest-path native/Cargo.toml -- --check
 	cargo clippy --locked --manifest-path native/Cargo.toml --all-targets --no-deps -- -D warnings
 	cargo test --locked --manifest-path native/Cargo.toml --features full-tests
