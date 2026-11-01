@@ -126,24 +126,12 @@ impl GpuProfile {
 // Each admitted production pin and its complete profile. This mapping is
 // separate from CPU admission: a profile here never adds its fingerprint to
 // pins.rs, and the integrity test refuses an admitted pin without a profile.
-// Both admitted builds use authenticated, image-carried status proofs.
-const PRODUCTION_PROFILES: &[(&str, ManifestSet, StatusMode)] = &[
-    (
-        "8779bff6e5cd2c9eadc41098fb073a425654bc10d505b4257125b750cd25eebf",
-        ManifestSet::QUALIFIED_595_71_05,
-        StatusMode::OfflineSignedAge,
-    ),
-    (
-        "84edaf3d0205a8280068ab485bf45edfc81f371ab7a7dcccaef8538728ccd8a3",
-        ManifestSet::QUALIFIED_595_71_05,
-        StatusMode::OfflineSignedAge,
-    ),
-    (
-        "0486d5a350467cfa28dea41076659debee9c2fea8c6423828efb53270cbb4641",
-        ManifestSet::QUALIFIED_595_71_05,
-        StatusMode::OfflineSignedAge,
-    ),
-];
+// The admitted build uses authenticated, image-carried status proofs.
+const PRODUCTION_PROFILES: &[(&str, ManifestSet, StatusMode)] = &[(
+    "8779bff6e5cd2c9eadc41098fb073a425654bc10d505b4257125b750cd25eebf",
+    ManifestSet::QUALIFIED_595_71_05,
+    StatusMode::OfflineSignedAge,
+)];
 
 /// The GPU profiles a verifier may select from after CPU verification.
 #[derive(Debug, Clone, PartialEq, Eq)]

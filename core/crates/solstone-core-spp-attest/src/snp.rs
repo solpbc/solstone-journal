@@ -1650,21 +1650,18 @@ mod tests {
         let policy = crate::pins::production_policy();
         assert_eq!(policy.pcr_mode, PcrMode::Pin);
         let profiles = GpuProfiles::production();
-        // Captured quote-PCR bytes for each admitted, reboot-qualified image state.
-        for (fixture, status) in [
-            ("sealed-pre-roll-quote.pcrs", StatusMode::OfflineSignedAge),
-            ("sealed-post-roll-quote.pcrs", StatusMode::OfflineSignedAge),
-            ("image5-post-roll-quote.pcrs", StatusMode::OfflineSignedAge),
-        ] {
-            let mut quote = fixture_bytes(fixture);
-            let fingerprint = check_pcr_fingerprint(&quote, &policy).expect("qualified quote");
-            assert_eq!(profiles.select(&fingerprint).unwrap().status(), status);
-            quote[0] ^= 1;
-            assert!(matches!(
-                check_pcr_fingerprint(&quote, &policy),
-                Err(crate::error::PcrFingerprintError::PinMismatch(_))
-            ));
-        }
+        // Captured quote-PCR bytes for the admitted, reboot-qualified image state.
+        let mut quote = fixture_bytes("image5-post-roll-quote.pcrs");
+        let fingerprint = check_pcr_fingerprint(&quote, &policy).expect("qualified quote");
+        assert_eq!(
+            profiles.select(&fingerprint).unwrap().status(),
+            StatusMode::OfflineSignedAge
+        );
+        quote[0] ^= 1;
+        assert!(matches!(
+            check_pcr_fingerprint(&quote, &policy),
+            Err(crate::error::PcrFingerprintError::PinMismatch(_))
+        ));
     }
 
     #[test]

@@ -9,8 +9,8 @@ is needed on linux or macos.
 
 ## qualified profile
 
-only the existing production pcr fingerprint is mapped. its driver is
-`595.71.05`, with these h100 firmware variants:
+each admitted production pcr fingerprint is mapped, and all of them use the same
+documents. the driver is `595.71.05`, with these h100 firmware variants:
 
 - `NV_GPU_VBIOS_1010_0210_886_96009F0004`: a fresh, non-content attestation
   captured and appraised on 2026-10-01.
@@ -33,13 +33,13 @@ revocation status is checked for its image, and only the verified cpu
 fingerprint selects it:
 
 - `OnlineNonce`: nvattest asks nvidia's ocsp responder with a fresh request
-  nonce during the appraisal. the current production image uses this.
+  nonce during the appraisal. no production profile uses this.
 - `OfflineSignedAge`: the engine carries raw nvidia-signed ocsp responses in a
   separate certificate extension (`status_proofs` in
   [the ra-tls contract](../../../fixtures/ratls-contract.json)). nvattest judges
-  them on this device's clock and makes no nvidia, rim or nras request. no
-  production profile uses this yet; admitting one adds its exact fingerprint,
-  its authenticated manifests and this mode together.
+  them on this device's clock and makes no nvidia, rim or nras request. every
+  production profile uses this. admitting a fingerprint adds it, its
+  authenticated manifests and its mode together.
 
 an admitted pin without a profile, or with a duplicate one, fails before any
 gpu work.
