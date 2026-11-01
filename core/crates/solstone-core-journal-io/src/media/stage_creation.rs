@@ -88,7 +88,6 @@ impl MediaStageCreation {
             directory: None,
             leaf: None,
             removed: false,
-            #[cfg(windows)]
             published: false,
             #[cfg(windows)]
             payload_delete_pending: None,

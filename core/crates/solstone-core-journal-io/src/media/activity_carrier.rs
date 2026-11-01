@@ -442,7 +442,6 @@ impl RootTeardownCarrier {
             directory: Some(directory),
             leaf: None,
             removed: false,
-            #[cfg(windows)]
             published: false,
             #[cfg(windows)]
             payload_delete_pending: None,

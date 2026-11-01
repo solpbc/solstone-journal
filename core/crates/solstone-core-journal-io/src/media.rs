@@ -382,7 +382,8 @@ pub struct MediaStage {
     directory: Option<Arc<MediaDirectory>>,
     leaf: Option<Box<Leaf>>,
     removed: bool,
-    #[cfg(windows)]
+    // A successful no-replace rename consumed the private leaf name. The open
+    // file then owns live destination content and cleanup must never unlink it.
     published: bool,
     #[cfg(windows)]
     payload_delete_pending: Option<OsString>,
@@ -494,7 +495,9 @@ impl MediaStage {
         self.parent.revalidate()?;
         let directory = self.directory.as_ref().ok_or_else(changed)?;
         directory.revalidate()?;
-        if let Some(leaf) = &self.leaf {
+        if !self.published
+            && let Some(leaf) = &self.leaf
+        {
             let identity = leaf.identity.ok_or_else(changed)?;
             platform::check_leaf(&directory.inner, &leaf.name, identity)?;
             step(MediaPrimitive::StageUnlink)?;
@@ -957,6 +960,28 @@ impl PreparedMedia {
     /// Create-only publication. Any postmutation failure preserves Published;
     /// receipts keep effect, confirmation, durability and cleanup independent.
     pub fn publish(&mut self, destination: &MediaDirectory, name: &OsStr) -> PublicationReceipt {
+        self.publish_using(
+            destination,
+            name,
+            |source, source_name, file, destination, name| {
+                platform::publish(source, source_name, file, destination, name)
+                    .map(|()| cfg!(any(target_os = "android", windows)))
+            },
+        )
+    }
+
+    fn publish_using(
+        &mut self,
+        destination: &MediaDirectory,
+        name: &OsStr,
+        publish: impl FnOnce(
+            &platform::Directory,
+            &OsStr,
+            &File,
+            &platform::Directory,
+            &OsStr,
+        ) -> io::Result<bool>,
+    ) -> PublicationReceipt {
         let mut receipt = PublicationReceipt {
             effect: PublicationEffect::NotPublished,
             confirmation: Confirmation::Unverified,
@@ -1028,18 +1053,15 @@ impl PreparedMedia {
                 return Err(changed());
             }
             destination.revalidate()?;
-            match platform::publish(
+            match publish(
                 &directory.inner,
                 &self.target.stage.leaf.as_ref().expect("prepared leaf").name,
                 &self.target.stage.leaf.as_ref().expect("prepared leaf").file,
                 &destination.inner,
                 name,
             ) {
-                Ok(()) => {
-                    #[cfg(windows)]
-                    {
-                        self.target.stage.published = true;
-                    }
+                Ok(consumed_stage_name) => {
+                    self.target.stage.published = consumed_stage_name;
                     receipt.effect = PublicationEffect::Published;
                     receipt.identity = Some(self.identity());
                 }
