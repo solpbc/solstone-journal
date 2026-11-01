@@ -453,7 +453,7 @@
   gap: 1.25rem;
   position: sticky;
   top: 0;
-  height: 100vh;
+  height: calc(100vh - var(--act-panel-top, 0px));
   overflow-y: auto;
 }
 
@@ -1653,7 +1653,22 @@
     }
   }
 
+  // The panel starts below the page header, so a full-height panel would push
+  // its actions below the fold until the page scrolls. Size it to the part of
+  // the viewport below its own top edge.
+  function fitPanel() {
+    const panelArea = document.querySelector('[data-panel-area]');
+    if (!panelArea || !panelArea.getBoundingClientRect) return;
+    const top = Math.max(0, Math.round(panelArea.getBoundingClientRect().top));
+    panelArea.style.setProperty('--act-panel-top', `${top}px`);
+  }
+  if (typeof window.addEventListener === 'function') {
+    window.addEventListener('scroll', fitPanel, { passive: true });
+    window.addEventListener('resize', fitPanel);
+  }
+
   function renderPanel() {
+    fitPanel();
     const panelArea = document.querySelector('[data-panel-area]');
     if (!panelArea) return;
 
