@@ -23,7 +23,7 @@ import UIKit
   private var revision: UInt64 = 0
   private var retained = false
   private var loaded = false
-  private var foreground = true
+  @Published private var foreground = true
   private var ownerStopped = true
   private var choiceSaved = true
   private var servicesPrepared = false
