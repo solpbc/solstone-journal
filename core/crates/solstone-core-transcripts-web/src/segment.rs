@@ -964,7 +964,7 @@ const TRANSCRIPTS_COPY: &[(&str, &str)] = &[
     ("TR_SPEAKER_LINE_ONLY", "this line only"),
     (
         "TR_SPEAKER_LINE_ONLY_BODY",
-        "your answer changes who said this line and nothing else. to teach your journal a voice, or tidy up the voices it knows, go to {link}.",
+        "your answer is for this line, not its voice. to teach your journal a voice, or tidy up the voices it knows, go to {link}.",
     ),
     ("TR_SPEAKER_LINE_ONLY_LINK", "speakers"),
     ("TR_SPEAKER_OWNER_SET", "your answer"),
