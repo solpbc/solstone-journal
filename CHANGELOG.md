@@ -19,6 +19,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - your journal now describes time in your browser by the pages you had in front of you. a video playing in a background tab, or a page left open behind another app, is mentioned as open rather than as something you watched or read, and what a page or video shows is now less often written as something you did.
 - each stretch's screen description now does the same: it covers the browser pages you had in front of you and lists the others as open, so what a video in a background tab says or shows is less often written in your activity stories as something you did or planned.
 - after you save or remove your voice, or name a voice everywhere, activities from today and the last 7 days get their people and story rewritten to match. older ones stay as written.
+- when you import a recording you're in, its summary now tells what you said as yours. it needs your saved voice. a recording with only one voice counts as yours only when most of it sounds like you, so someone who only sounds a bit like you is still told as "a speaker".
 
 ### Fixed
 

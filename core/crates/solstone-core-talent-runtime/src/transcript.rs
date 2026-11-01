@@ -4,8 +4,15 @@
 use std::collections::BTreeSet;
 use std::path::Path;
 
+use chrono::Utc;
 use serde_json::{Map, Value};
+use solstone_core_entity::normalize_embedding;
 use solstone_core_format::content::ConsumedOriginal;
+use solstone_core_journal_io::SegmentLayout;
+use solstone_core_speaker_id::embeddings::load_embeddings_file;
+use solstone_core_speaker_resolve::owner_centroid::load_owner_centroid;
+use solstone_core_speaker_resolve::resolve::{ResolveOutcome, resolve};
+use solstone_core_speaker_resolve::segment_catalog::resolve_exact_dir;
 use solstone_core_talent_config::{get_output_name, get_talent_filter, source_is_enabled};
 use solstone_core_transcripts::{
     EntrySource, MemoryContext, ScreenCut, SourceCounts, Sources, TalentSource, VoiceNames,
@@ -29,6 +36,7 @@ pub(crate) fn sources_from_config(config: &Map<String, Value>) -> Sources {
         percepts: config.get("percepts").is_some_and(source_is_enabled),
         talents: talent_source(config.get("talents")),
         voices: None,
+        heard_owner: None,
     }
 }
 
@@ -79,6 +87,93 @@ pub(crate) fn sources_are_enabled(config: &Map<String, Value>) -> bool {
     config.values().any(source_is_enabled)
 }
 
+/// How closely a line of an imported recording must match the owner's voiceprint
+/// to read You. Live capture names the owner from 0.43, but a recording can be
+/// anyone's: strangers' lines scored up to 0.47 against the founder's voiceprint,
+/// and his own matched lines a median of 0.69.
+const IMPORTED_OWNER_SCORE_MIN: f32 = 0.5;
+
+/// The lines of an imported recording heard as the owner's voice: the owner
+/// voiceprint's own match, never one its margin declined, at the import bar.
+/// Read-only. `None` outside an `import.*` segment with voice embeddings, or
+/// when none are heard.
+fn imported_owner_lines(journal: &Path, composed: &Map<String, Value>) -> Option<BTreeSet<i64>> {
+    let stream = composed
+        .get("stream")
+        .and_then(Value::as_str)
+        .filter(|stream| stream.starts_with("import."))?;
+    let day = composed.get("day").and_then(Value::as_str)?;
+    let segment = composed.get("segment").and_then(Value::as_str)?;
+    if day.is_empty() || segment.is_empty() {
+        return None;
+    }
+    let layout = match composed.get("stream_layout").and_then(Value::as_str) {
+        Some("direct") => SegmentLayout::Direct,
+        _ => SegmentLayout::Named,
+    };
+    let ResolveOutcome::Resolved(resolved) = resolve(
+        journal,
+        day,
+        stream,
+        segment,
+        layout,
+        true,
+        Utc::now().timestamp_millis(),
+    )
+    .ok()?
+    else {
+        return None;
+    };
+    let matched = resolved
+        .labels
+        .iter()
+        .filter(|label| {
+            label.method.as_deref() == Some("owner_centroid")
+                && label.owner_margin_declined != Some(true)
+        })
+        .filter_map(|label| Some((label.sentence_id, label.speaker.as_deref()?)))
+        .collect::<Vec<_>>();
+    let owner_id = matched.first()?.1;
+    let owner = load_owner_centroid(journal, owner_id).ok()??;
+    let source = resolved.source.as_deref()?;
+    let dir = resolve_exact_dir(journal, day, stream, segment, layout).ok()?;
+    let embeddings = load_embeddings_file(&dir.join(format!("{source}.npz"))).ok()??;
+    let score = |sentence_id: i64| {
+        embeddings
+            .statements
+            .iter()
+            .find(|(id, _)| *id == sentence_id)
+            .and_then(|(_, embedding)| normalize_embedding(embedding))
+            .map(|embedding| {
+                embedding
+                    .iter()
+                    .zip(&owner.centroid)
+                    .map(|(left, right)| left * right)
+                    .sum::<f32>()
+            })
+    };
+    let heard = matched
+        .iter()
+        .filter(|(sentence_id, _)| score(*sentence_id) >= Some(IMPORTED_OWNER_SCORE_MIN))
+        .map(|(sentence_id, _)| *sentence_id)
+        .collect::<BTreeSet<_>>();
+    // A recording with one voice is the owner's or it isn't. A stranger's voice
+    // can match a few of its lines, so the owner is heard there only when most
+    // of them match. Several voices keep the per-line match.
+    let one_voice = speaker_evidence(&dir, source).as_deref() != Some("multi");
+    if heard.is_empty() || (one_voice && heard.len() * 2 < resolved.labels.len()) {
+        return None;
+    }
+    Some(heard)
+}
+
+/// The `speaker_evidence` an audio transcript's header records.
+fn speaker_evidence(dir: &Path, source: &str) -> Option<String> {
+    let text = std::fs::read_to_string(dir.join(format!("{source}.jsonl"))).ok()?;
+    let header = serde_json::from_str::<Value>(text.lines().next()?).ok()?;
+    Some(header.get("speaker_evidence")?.as_str()?.to_owned())
+}
+
 pub(crate) fn load_transcript(
     journal: &Path,
     composed: &Map<String, Value>,
@@ -100,6 +195,13 @@ pub(crate) fn load_transcript(
         .is_some_and(|activity| !activity.is_empty())
     {
         sources.voices = voice_names(journal);
+    }
+    // Sense reads an imported recording before its speakers are labelled, and
+    // its import rule gives the owner only the lines labelled You. Hearing the
+    // owner's voice needs no model, so those lines read You here. Live capture
+    // keeps the anonymous numbers it labels from.
+    if composed.get("name").and_then(Value::as_str) == Some("sense") {
+        sources.heard_owner = imported_owner_lines(journal, composed);
     }
     // An activity's segments are read from the stream its record names, when
     // the request names none: another stream can hold the same segment key.
@@ -175,6 +277,7 @@ pub fn activity_span_transcript(
         percepts: false,
         talents: TalentSource::Disabled,
         voices: None,
+        heard_owner: None,
     };
     let (transcript, _counts, _memory) =
         cluster_span_with_memory(journal, day, span, &sources, stream)?;
@@ -424,5 +527,96 @@ mod tests {
             loaded_changed.text.contains("Updated discussion summary."),
             "changed transcript should reflect new activity summary"
         );
+    }
+
+    fn heard_owner_journal(stream: &str, evidence: &str, owner_lines: usize) -> TempDir {
+        heard_owner_journal_at(stream, evidence, owner_lines, 1.0)
+    }
+
+    /// Four lines: the first `owner_lines` score `owner_score` against the
+    /// owner's voiceprint, the rest are a voice orthogonal to it.
+    fn heard_owner_journal_at(
+        stream: &str,
+        evidence: &str,
+        owner_lines: usize,
+        owner_score: f32,
+    ) -> TempDir {
+        let journal = TempDir::new().unwrap();
+        person(
+            journal.path(),
+            "owner",
+            json!({"id": "owner", "name": "Owner", "type": "Person", "is_principal": true}),
+        );
+        let mut owner = vec![0.0; 256];
+        owner[0] = 1.0;
+        solstone_core_speaker_resolve::owner_centroid::write_owner_centroid(
+            journal.path(),
+            "owner",
+            &solstone_core_speaker_resolve::owner_centroid::OwnerCentroidWriteInput {
+                centroid: owner.clone(),
+                cluster_size: 10,
+                timestamp: "2026-08-08T12:00:00Z".to_owned(),
+                evidence_tier: "high".to_owned(),
+            },
+        )
+        .unwrap();
+        let mut stranger = vec![0.0; 256];
+        stranger[1] = 1.0;
+        let segment = journal
+            .path()
+            .join("chronicle/20260808")
+            .join(stream)
+            .join("120000_300");
+        fs::create_dir_all(&segment).unwrap();
+        let ids = [1, 2, 3, 4];
+        let values = (0..4)
+            .map(|index| {
+                if index < owner_lines {
+                    let mut line = vec![0.0; 256];
+                    line[0] = owner_score;
+                    line[2] = (1.0 - owner_score * owner_score).sqrt();
+                    line
+                } else {
+                    stranger.clone()
+                }
+            })
+            .collect::<Vec<_>>();
+        crate::speaker_attribution::tests::write_statement_embeddings(
+            &segment.join("imported_audio.npz"),
+            &ids,
+            &values,
+        );
+        let mut lines =
+            vec![json!({"raw": "imported_audio.m4a", "speaker_evidence": evidence}).to_string()];
+        lines.extend(ids.iter().map(|id| {
+            json!({"start": "12:00:0{id}", "sentence_id": id, "text": "words"}).to_string()
+        }));
+        fs::write(segment.join("imported_audio.jsonl"), lines.join("\n")).unwrap();
+        journal
+    }
+
+    fn heard(journal: &TempDir, stream: &str) -> Option<BTreeSet<i64>> {
+        let composed =
+            json!({"name": "sense", "day": "20260808", "segment": "120000_300", "stream": stream});
+        imported_owner_lines(journal.path(), composed.as_object().unwrap())
+    }
+
+    #[test]
+    fn an_imported_recording_hears_the_owner_only_where_one_voice_is_mostly_theirs() {
+        // One voice: most lines the owner's is the owner's recording.
+        let journal = heard_owner_journal("import.audio", "single", 3);
+        assert_eq!(heard(&journal, "import.audio"), Some([1, 2, 3].into()));
+        // One voice with a few owner-like lines is someone else's.
+        let journal = heard_owner_journal("import.audio", "single", 1);
+        assert_eq!(heard(&journal, "import.audio"), None);
+        // Several voices keep the per-line match.
+        let journal = heard_owner_journal("import.audio", "multi", 1);
+        assert_eq!(heard(&journal, "import.audio"), Some([1].into()));
+        // A line that clears the live bar but not the import bar is not heard.
+        let journal = heard_owner_journal_at("import.audio", "multi", 1, 0.46);
+        assert_eq!(heard(&journal, "import.audio"), None);
+        // Live capture keeps its anonymous numbers.
+        let journal = heard_owner_journal("mic", "single", 4);
+        assert_eq!(heard(&journal, "mic"), None);
     }
 }

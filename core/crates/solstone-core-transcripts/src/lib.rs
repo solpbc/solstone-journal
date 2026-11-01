@@ -59,6 +59,11 @@ pub struct Sources {
     /// Speakers named by voice in rendered transcripts. `None` keeps every
     /// speaker as the anonymous diarization number.
     pub voices: Option<VoiceNames>,
+    /// For a one-segment read made before the segment's speakers are labelled:
+    /// the sentence ids of its audio heard as the owner's voice. Those lines
+    /// read `You`; every other line keeps its diarization number. Used only
+    /// where `voices` names no one.
+    pub heard_owner: Option<BTreeSet<i64>>,
 }
 
 /// The speaker heard on a transcript line when the journal owner's voice is recognized.
@@ -785,7 +790,13 @@ fn process_segment(
         let voiced = sources
             .voices
             .as_ref()
-            .and_then(|voices| segment_voices(&segment.path, voices));
+            .and_then(|voices| segment_voices(&segment.path, voices))
+            .or_else(|| {
+                sources
+                    .heard_owner
+                    .as_ref()
+                    .and_then(|heard| heard_owner_voices(&segment.path, heard))
+            });
         // An activity read keeps one number on one voice through a continuous
         // recording; segment talents keep the diarization numbers they label.
         let run_numbers = sources
@@ -1325,6 +1336,23 @@ fn segment_voices(dir: &Path, voices: &VoiceNames) -> Option<(String, BTreeMap<i
     (!names.is_empty()).then_some((source, names))
 }
 
+/// The segment's audio source with the given sentences named `You`, for a read
+/// made before its speakers are labelled. `None` when none are heard.
+fn heard_owner_voices(
+    dir: &Path,
+    heard: &BTreeSet<i64>,
+) -> Option<(String, BTreeMap<i64, String>)> {
+    if heard.is_empty() {
+        return None;
+    }
+    let source = labelled_audio_source(dir)?;
+    let names = heard
+        .iter()
+        .map(|sentence_id| (*sentence_id, OWNER_VOICE.to_owned()))
+        .collect();
+    Some((source, names))
+}
+
 /// What the owner said in a segment: the text of every sentence `VoiceNames`
 /// names as the owner, by recognized voice or the owner's own answer, in
 /// transcript order.
@@ -1738,6 +1766,7 @@ mod tests {
             percepts,
             talents,
             voices: None,
+            heard_owner: None,
         }
     }
 
@@ -2486,6 +2515,28 @@ mod tests {
 
         // Only the owner's recognized lines are what the owner said.
         assert_eq!(owner_voice_lines(&segment, &voices), vec!["I will send it"]);
+    }
+
+    #[test]
+    fn heard_owner_lines_read_you_before_any_labels() {
+        let root = TempDir::new().unwrap();
+        let segment = segment(&root);
+        fs::write(
+            segment.join("audio.jsonl"),
+            [
+                r#"{"raw":"audio.flac"}"#,
+                r#"{"start":"00:00:01","speaker":1,"sentence_id":1,"text":"Note to self"}"#,
+                r#"{"start":"00:00:02","speaker":2,"sentence_id":2,"text":"Someone else"}"#,
+            ]
+            .join("\n"),
+        )
+        .unwrap();
+        let mut heard = sources(true, false, TalentSource::Disabled);
+        heard.heard_owner = Some([1].into());
+
+        let (markdown, _) = cluster(root.path(), DAY, &heard);
+        assert!(markdown.contains("[00:00:01] You: Note to self"));
+        assert!(markdown.contains("[00:00:02] Speaker 2: Someone else"));
     }
 
     #[test]

@@ -490,6 +490,7 @@ mod tests {
                 percepts: true,
                 talents: TalentSource::Disabled,
                 voices,
+                heard_owner: None,
             },
             Some("watch"),
         )

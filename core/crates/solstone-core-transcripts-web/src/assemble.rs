@@ -54,6 +54,7 @@ pub(crate) async fn api_read(
                     TalentSource::Disabled
                 },
                 voices: None,
+                heard_owner: None,
             };
             let markdown =
                 if let (Some(start), Some(end)) = (query.start.as_deref(), query.end.as_deref()) {

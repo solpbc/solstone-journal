@@ -654,7 +654,7 @@ pub(crate) fn apply_result_cancellable(
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use std::collections::HashMap;
     use std::io::{Cursor, Write};
 
@@ -1229,7 +1229,7 @@ mod tests {
         );
     }
 
-    fn write_statement_embeddings(path: &Path, ids: &[i32], values: &[Vec<f32>]) {
+    pub(crate) fn write_statement_embeddings(path: &Path, ids: &[i32], values: &[Vec<f32>]) {
         let flat = values.iter().flatten().copied().collect::<Vec<_>>();
         let f32_bytes = flat
             .iter()
