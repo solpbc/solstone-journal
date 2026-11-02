@@ -32,19 +32,18 @@ use solstone_core_cli::{
     GrabCommand, GrabOptions, HEALTH_HELP, HEALTH_USAGE, HEARTBEAT_HELP, HEARTBEAT_USAGE,
     INSTALL_MODELS_HELP, INSTALL_MODELS_USAGE, INSTALL_PROVIDER_HELP, INSTALL_PROVIDER_USAGE,
     IndexerClassificationsOptions, IndexerCommand, IndexerCountsOptions, IndexerDrainOptions,
-    IndexerFoldEntityEdgesOptions, IndexerOptions, IndexerPathLookupOptions,
-    IndexerPrunePathsOptions, IndexerPruneStreamOptions, IndexerQueryOptions, IndexerReadOptions,
-    IndexerSearchOptions, InstallCommand, JournalBrainOwnerCommand, JournalConfigCommand,
-    JournalConfigCommitOptions, JournalConfigExpectArg, JournalConfigReadOptions,
-    JournalPathOptions, LocalCommand, MCP_HELP, MCP_USAGE, McpCommand, McpOauthCommand,
-    McpPairingCommand, McpPermissionCommand, McpTokenCommand, NAVIGATE_HELP, NAVIGATE_USAGE,
-    SCHEDULE_HELP, SCHEDULE_USAGE, SENSE_HELP, SENSE_USAGE, SETTINGS_CONVEY_HELP,
-    SETTINGS_CONVEY_USAGE, SETTINGS_HELP, SETTINGS_STATUS_HELP, SETTINGS_USAGE, SPL_HELP,
-    SPL_USAGE, START_HELP, START_USAGE, SUPERVISOR_HELP, SUPERVISOR_USAGE, ScheduleOptions,
-    SenseOptions, SenseReprocessKind, ServiceAction, ServiceOptions, ServiceParseOutcome,
-    SettingsParseError, SpeakerResolveCommand, SplCommand, THINKING_CHATGPT_HELP,
-    THINKING_CHATGPT_MODELS_HELP, THINKING_CHATGPT_MODELS_USAGE, THINKING_CHATGPT_SIGN_IN_HELP,
-    THINKING_CHATGPT_SIGN_IN_USAGE, THINKING_CHATGPT_SIGN_OUT_HELP,
+    IndexerOptions, IndexerPathLookupOptions, IndexerPrunePathsOptions, IndexerPruneStreamOptions,
+    IndexerQueryOptions, IndexerReadOptions, IndexerSearchOptions, InstallCommand,
+    JournalBrainOwnerCommand, JournalConfigCommand, JournalConfigCommitOptions,
+    JournalConfigExpectArg, JournalConfigReadOptions, JournalPathOptions, LocalCommand, MCP_HELP,
+    MCP_USAGE, McpCommand, McpOauthCommand, McpPairingCommand, McpPermissionCommand,
+    McpTokenCommand, NAVIGATE_HELP, NAVIGATE_USAGE, SCHEDULE_HELP, SCHEDULE_USAGE, SENSE_HELP,
+    SENSE_USAGE, SETTINGS_CONVEY_HELP, SETTINGS_CONVEY_USAGE, SETTINGS_HELP, SETTINGS_STATUS_HELP,
+    SETTINGS_USAGE, SPL_HELP, SPL_USAGE, START_HELP, START_USAGE, SUPERVISOR_HELP,
+    SUPERVISOR_USAGE, ScheduleOptions, SenseOptions, SenseReprocessKind, ServiceAction,
+    ServiceOptions, ServiceParseOutcome, SettingsParseError, SpeakerResolveCommand, SplCommand,
+    THINKING_CHATGPT_HELP, THINKING_CHATGPT_MODELS_HELP, THINKING_CHATGPT_MODELS_USAGE,
+    THINKING_CHATGPT_SIGN_IN_HELP, THINKING_CHATGPT_SIGN_IN_USAGE, THINKING_CHATGPT_SIGN_OUT_HELP,
     THINKING_CHATGPT_SIGN_OUT_USAGE, THINKING_CHATGPT_STATUS_HELP, THINKING_CHATGPT_STATUS_USAGE,
     THINKING_CHATGPT_USAGE, THINKING_HELP, THINKING_SET_LANE_HELP, THINKING_SET_LANE_USAGE,
     THINKING_USAGE, TOP_HELP, TOP_USAGE, TRANSCRIBE_HELP, TRANSCRIBE_USAGE, ThinkingCommand,
@@ -107,10 +106,7 @@ use solstone_core_indexer_query::{
     search_counts,
 };
 use solstone_core_indexer_store::db::{prune_by_paths, prune_chunks_by_stream, reset_index};
-use solstone_core_indexer_store::merge::{
-    fingerprint_edge_rows, fold_entity_edges_for_recorded_merge,
-    rebuild_edges_for_recorded_merge_undo,
-};
+use solstone_core_indexer_store::merge::fingerprint_edge_rows;
 use solstone_core_indexer_store::scan::{
     RescanFileStatus, rebuild_edges, rescan_file, scan_journal,
 };
@@ -167,7 +163,7 @@ const PREREQUISITE_RENEWAL_TERMINAL_SCHEMA: &str =
 const PREREQUISITE_RENEWAL_RESULT_SCHEMA: &str = "solstone.brain.prerequisite_renewal.result.v1";
 const PREREQUISITE_RENEWAL_READY_SCHEMA: &str = "solstone.brain.prerequisite_renewal.ready.v1";
 const MAX_LOCAL_GENERATE_STDIN_BYTES: usize = 64 * 1024 * 1024;
-const ZERO_EDGE_HINT: &str = "Zero edges indexed: edges are talent-derived, and the --rescan-full edge phase remains modification-time incremental — run solstone journal indexer --rebuild-edges to force full edge re-extraction.";
+const ZERO_EDGE_HINT: &str = "No new connections were added in this rescan. Run solstone journal indexer --rebuild-edges to bring any still waiting up to date now.";
 struct JournalPathLine {
     label: &'static str,
     path: PathBuf,
@@ -6238,11 +6234,7 @@ fn run_indexer(command: IndexerCommand) -> ExitCode {
         IndexerCommand::Classifications(options) => run_indexer_classifications(options),
         IndexerCommand::PruneStream(options) => run_indexer_prune_stream(options),
         IndexerCommand::PrunePaths(options) => run_indexer_prune_paths(options),
-        IndexerCommand::FoldEntityEdges(options) => run_indexer_fold_entity_edges(options),
         IndexerCommand::EdgeFingerprint(options) => run_indexer_edge_fingerprint(options),
-        IndexerCommand::RebuildEdgesFingerprint(options) => {
-            run_indexer_rebuild_edges_fingerprint(options)
-        }
         IndexerCommand::Drain(options) => run_indexer_drain(options),
     }
 }
@@ -6490,45 +6482,12 @@ fn run_indexer_prune_paths(options: IndexerPrunePathsOptions) -> ExitCode {
     }
 }
 
-fn run_indexer_fold_entity_edges(options: IndexerFoldEntityEdgesOptions) -> ExitCode {
-    let journal = match resolve_indexer_journal_path(options.journal_override) {
-        Ok(line) => line.path,
-        Err(error) => return print_journal_error(error),
-    };
-    match fold_entity_edges_for_recorded_merge(&journal, &options.source_id, &options.target_id) {
-        Ok(report) => {
-            if options.json {
-                print_json(&json!({
-                    "rows_folded": report.rows_folded,
-                    "self_edges_dropped": report.self_edges_dropped,
-                    "fallback_rebuild": report.fallback_rebuild,
-                }));
-            }
-            ExitCode::SUCCESS
-        }
-        Err(error) => print_indexer_mutation_error("fold-entity-edges", error),
-    }
-}
-
 fn run_indexer_edge_fingerprint(options: IndexerReadOptions) -> ExitCode {
-    run_indexer_fingerprint(options, false)
-}
-
-fn run_indexer_rebuild_edges_fingerprint(options: IndexerReadOptions) -> ExitCode {
-    run_indexer_fingerprint(options, true)
-}
-
-fn run_indexer_fingerprint(options: IndexerReadOptions, rebuild: bool) -> ExitCode {
     let journal = match resolve_indexer_journal_path(options.journal_override) {
         Ok(line) => line.path,
         Err(error) => return print_journal_error(error),
     };
-    let result = if rebuild {
-        rebuild_edges_for_recorded_merge_undo(&journal)
-    } else {
-        fingerprint_edge_rows(&journal)
-    };
-    match result {
+    match fingerprint_edge_rows(&journal) {
         Ok(fingerprint) => {
             if options.json {
                 print_json(&json!({"fingerprint": fingerprint}));

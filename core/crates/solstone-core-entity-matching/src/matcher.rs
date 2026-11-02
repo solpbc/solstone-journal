@@ -222,99 +222,132 @@ pub fn find_matching_entity_detailed(
     if detected_name.is_empty() || candidates.is_empty() {
         return EntityNameMatchOutcome::NoMatch;
     }
+    NameMatcher::new(candidates).find_detailed(detected_name, fuzzy_threshold)
+}
 
-    let detected_lower = normalize_resolution_query(detected_name);
-    if let Some(outcome) = ConfidentMatcher::new(candidates).outcome(detected_name) {
-        return outcome;
-    }
+/// Every tier of [`find_matching_entity_detailed`], with the candidates'
+/// lookups built once, so many names can be matched against the same
+/// candidates at the cost of the name rather than of the candidate list.
+pub struct NameMatcher {
+    confident: ConfidentMatcher,
+    /// Each candidate's name, and its normalized form; None when the name is empty.
+    names: Vec<String>,
+    normalized: Vec<Option<String>>,
+    first_word_map: BTreeMap<String, Vec<usize>>,
+    /// Fuzzy keys in first-insertion order, each already token-sorted.
+    fuzzy: Vec<(String, BTreeSet<usize>)>,
+}
 
-    let mut first_word_map: BTreeMap<String, Vec<usize>> = BTreeMap::new();
-    let mut fuzzy_candidates = OrderedFuzzyCandidates::default();
-    for (candidate_index, candidate) in candidates.iter().enumerate() {
-        let name = candidate.name.as_str();
-        if name.is_empty() {
-            continue;
-        }
-        if let Some(first_word) = first_word_key(name) {
-            first_word_map
-                .entry(first_word)
-                .or_default()
-                .push(candidate_index);
-        }
-
-        fuzzy_candidates.insert(name, candidate_index);
-        for aka in &candidate.aka {
-            if !aka.is_empty() {
-                fuzzy_candidates.insert(aka, candidate_index);
+impl NameMatcher {
+    pub fn new(candidates: &[EntityNameCandidate]) -> Self {
+        let mut first_word_map: BTreeMap<String, Vec<usize>> = BTreeMap::new();
+        let mut fuzzy_candidates = OrderedFuzzyCandidates::default();
+        let mut normalized = Vec::with_capacity(candidates.len());
+        for (candidate_index, candidate) in candidates.iter().enumerate() {
+            let name = candidate.name.as_str();
+            if name.is_empty() {
+                normalized.push(None);
+                continue;
             }
-        }
-    }
+            normalized.push(Some(normalize_resolution_query(name)));
+            if let Some(first_word) = first_word_key(name) {
+                first_word_map
+                    .entry(first_word)
+                    .or_default()
+                    .push(candidate_index);
+            }
 
-    if char_len(detected_name) >= 3 {
-        if let Some(matches) = first_word_map.get(&detected_lower)
-            && matches.len() == 1
-        {
-            return matched_outcome(matches[0], MatchTier::FirstWord);
-        }
-
-        if let Some(detected_first) = detected_name.split_whitespace().next() {
-            let detected_first = normalize_resolution_query(detected_first);
-            if detected_first != detected_lower
-                && char_len(&detected_first) >= 3
-                && let Some(matches) = first_word_map.get(&detected_first)
-                && matches.len() == 1
-            {
-                let matched_name = candidates[matches[0]].name.as_str();
-                if single_token_first_word_match(&detected_first, matched_name) {
-                    return matched_outcome(matches[0], MatchTier::FirstWord);
+            fuzzy_candidates.insert(name, candidate_index);
+            for aka in &candidate.aka {
+                if !aka.is_empty() {
+                    fuzzy_candidates.insert(aka, candidate_index);
                 }
             }
         }
+        let fuzzy = fuzzy_candidates
+            .iter()
+            .map(|(key, indices)| (token_sort(key), indices.clone()))
+            .collect();
+        Self {
+            confident: ConfidentMatcher::new(candidates),
+            names: candidates
+                .iter()
+                .map(|candidate| candidate.name.clone())
+                .collect(),
+            normalized,
+            first_word_map,
+            fuzzy,
+        }
     }
 
-    let subset_matches: Vec<usize> = candidates
-        .iter()
-        .enumerate()
-        .filter_map(|(candidate_index, candidate)| {
-            if candidate.name.is_empty() {
-                return None;
+    pub fn find_detailed(
+        &self,
+        detected_name: &str,
+        fuzzy_threshold: f64,
+    ) -> EntityNameMatchOutcome {
+        if detected_name.is_empty() || self.names.is_empty() {
+            return EntityNameMatchOutcome::NoMatch;
+        }
+
+        let detected_lower = normalize_resolution_query(detected_name);
+        if let Some(outcome) = self.confident.outcome(detected_name) {
+            return outcome;
+        }
+
+        if char_len(detected_name) >= 3 {
+            if let Some(matches) = self.first_word_map.get(&detected_lower)
+                && matches.len() == 1
+            {
+                return matched_outcome(matches[0], MatchTier::FirstWord);
             }
-            token_subset_match(
-                &detected_lower,
-                &normalize_resolution_query(&candidate.name),
-            )
-            .then_some(candidate_index)
-        })
-        .collect();
-    if subset_matches.len() == 1 {
-        return matched_outcome(subset_matches[0], MatchTier::TokenSubset);
-    }
 
-    let prefix_matches: Vec<usize> = candidates
-        .iter()
-        .enumerate()
-        .filter_map(|(candidate_index, candidate)| {
-            if candidate.name.is_empty() {
-                return None;
+            if let Some(detected_first) = detected_name.split_whitespace().next() {
+                let detected_first = normalize_resolution_query(detected_first);
+                if detected_first != detected_lower
+                    && char_len(&detected_first) >= 3
+                    && let Some(matches) = self.first_word_map.get(&detected_first)
+                    && matches.len() == 1
+                {
+                    let matched_name = self.names[matches[0]].as_str();
+                    if single_token_first_word_match(&detected_first, matched_name) {
+                        return matched_outcome(matches[0], MatchTier::FirstWord);
+                    }
+                }
             }
-            prefix_token_match(
-                &detected_lower,
-                &normalize_resolution_query(&candidate.name),
-            )
-            .then_some(candidate_index)
-        })
-        .collect();
-    if prefix_matches.len() == 1 {
-        return matched_outcome(prefix_matches[0], MatchTier::Prefix);
-    }
+        }
 
-    if char_len(detected_name) >= 4
-        && let Some(outcome) = extract_one_fuzzy(detected_name, &fuzzy_candidates, fuzzy_threshold)
-    {
-        return outcome;
-    }
+        let subset_matches: Vec<usize> = self
+            .normalized
+            .iter()
+            .enumerate()
+            .filter_map(|(candidate_index, name)| {
+                token_subset_match(&detected_lower, name.as_deref()?).then_some(candidate_index)
+            })
+            .collect();
+        if subset_matches.len() == 1 {
+            return matched_outcome(subset_matches[0], MatchTier::TokenSubset);
+        }
 
-    EntityNameMatchOutcome::NoMatch
+        let prefix_matches: Vec<usize> = self
+            .normalized
+            .iter()
+            .enumerate()
+            .filter_map(|(candidate_index, name)| {
+                prefix_token_match(&detected_lower, name.as_deref()?).then_some(candidate_index)
+            })
+            .collect();
+        if prefix_matches.len() == 1 {
+            return matched_outcome(prefix_matches[0], MatchTier::Prefix);
+        }
+
+        if char_len(detected_name) >= 4
+            && let Some(outcome) = extract_one_fuzzy(detected_name, &self.fuzzy, fuzzy_threshold)
+        {
+            return outcome;
+        }
+
+        EntityNameMatchOutcome::NoMatch
+    }
 }
 
 fn insert_candidate(
@@ -420,14 +453,13 @@ pub fn token_sort_ratio(left: &str, right: &str) -> f64 {
 
 fn extract_one_fuzzy(
     query: &str,
-    fuzzy_candidates: &OrderedFuzzyCandidates,
+    fuzzy_candidates: &[(String, BTreeSet<usize>)],
     fuzzy_threshold: f64,
 ) -> Option<EntityNameMatchOutcome> {
     let sorted_query = token_sort(query);
     let mut best_score = None;
     let mut best_indices = BTreeSet::new();
-    for (candidate, candidate_indices) in fuzzy_candidates.iter() {
-        let sorted_candidate = token_sort(candidate);
+    for (sorted_candidate, candidate_indices) in fuzzy_candidates {
         let score = rapidfuzz::fuzz::ratio(sorted_query.chars(), sorted_candidate.chars()) * 100.0;
         if score >= fuzzy_threshold {
             match best_score {

@@ -1388,9 +1388,7 @@ pub enum IndexerCommand {
     Classifications(IndexerClassificationsOptions),
     PruneStream(IndexerPruneStreamOptions),
     PrunePaths(IndexerPrunePathsOptions),
-    FoldEntityEdges(IndexerFoldEntityEdgesOptions),
     EdgeFingerprint(IndexerReadOptions),
-    RebuildEdgesFingerprint(IndexerReadOptions),
     Drain(IndexerDrainOptions),
 }
 
@@ -1430,14 +1428,6 @@ pub struct IndexerPrunePathsOptions {
     pub journal_override: Option<OsString>,
     pub json: bool,
     pub paths: Vec<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct IndexerFoldEntityEdgesOptions {
-    pub journal_override: Option<OsString>,
-    pub json: bool,
-    pub source_id: String,
-    pub target_id: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -5145,14 +5135,8 @@ fn parse_indexer(args: &[OsString]) -> Result<IndexerCommand, UsageError> {
         [verb, rest @ ..] if verb == OsStr::new("prune-paths") => {
             parse_indexer_prune_paths(rest).map(IndexerCommand::PrunePaths)
         }
-        [verb, rest @ ..] if verb == OsStr::new("fold-entity-edges") => {
-            parse_indexer_fold_entity_edges(rest).map(IndexerCommand::FoldEntityEdges)
-        }
         [verb, rest @ ..] if verb == OsStr::new("edge-fingerprint") => {
             parse_indexer_read(rest).map(IndexerCommand::EdgeFingerprint)
-        }
-        [verb, rest @ ..] if verb == OsStr::new("rebuild-edges-fingerprint") => {
-            parse_indexer_read(rest).map(IndexerCommand::RebuildEdgesFingerprint)
         }
         [verb, rest @ ..] if verb == OsStr::new("drain") => {
             parse_indexer_drain(rest).map(IndexerCommand::Drain)
@@ -5284,18 +5268,6 @@ fn parse_indexer_prune_paths(args: &[OsString]) -> Result<IndexerPrunePathsOptio
         journal_override,
         json,
         paths,
-    })
-}
-
-fn parse_indexer_fold_entity_edges(
-    args: &[OsString],
-) -> Result<IndexerFoldEntityEdgesOptions, UsageError> {
-    let (values, journal_override, json) = parse_indexer_values(args, 2, Some(2))?;
-    Ok(IndexerFoldEntityEdgesOptions {
-        journal_override,
-        json,
-        source_id: values[0].clone(),
-        target_id: values[1].clone(),
     })
 }
 
@@ -7925,23 +7897,6 @@ mod tests {
             )))
         );
         assert_eq!(
-            evaluate_args(&args(&[
-                "indexer",
-                "fold-entity-edges",
-                "source",
-                "target",
-                "--json",
-            ])),
-            Ok(indexer(IndexerCommand::FoldEntityEdges(
-                IndexerFoldEntityEdgesOptions {
-                    journal_override: None,
-                    json: true,
-                    source_id: "source".to_string(),
-                    target_id: "target".to_string(),
-                }
-            )))
-        );
-        assert_eq!(
             evaluate_args(&args(&["indexer", "edge-fingerprint", "--json"])),
             Ok(indexer(IndexerCommand::EdgeFingerprint(
                 IndexerReadOptions {
@@ -7958,8 +7913,6 @@ mod tests {
             &["indexer", "prune-stream"][..],
             &["indexer", "prune-stream", "one", "two"][..],
             &["indexer", "prune-paths"][..],
-            &["indexer", "fold-entity-edges", "source"][..],
-            &["indexer", "fold-entity-edges", "source", "target", "extra"][..],
         ] {
             assert_eq!(evaluate_args(&args(values)), Err(UsageError), "{values:?}");
         }

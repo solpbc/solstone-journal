@@ -1,14 +1,17 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
 use chrono_tz::Tz;
 use serde_json::{Map, Value};
-use solstone_core_entity_matching::{ConfidentMatcher, EntityNameCandidate, find_matching_entity};
+use sha2::{Digest, Sha256};
+use solstone_core_entity_matching::{
+    ConfidentMatcher, EntityNameCandidate, EntityNameMatchOutcome, NameMatcher,
+};
 
 use crate::edges::speaker::SpeakerEntityIndex;
 use crate::edges::{EdgeContext, EdgeError};
@@ -34,10 +37,28 @@ impl EdgeDropCounter {
     }
 }
 
+/// One name a file asked the resolver about, and who it resolved to. An edge
+/// file's rows depend on these answers as much as on its own bytes, so the
+/// index keeps them to tell which files an entity change reaches.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct EdgeLookup {
+    pub facet: String,
+    pub confident: bool,
+    pub name: String,
+    pub entity_id: Option<String>,
+}
+
 pub struct EdgeResolver {
     journal: PathBuf,
     cache: BTreeMap<String, Vec<EntityNameCandidate>>,
     confident: BTreeMap<String, ConfidentMatcher>,
+    matchers: BTreeMap<String, NameMatcher>,
+    /// The journal's entities, read once and shared by every facet.
+    journal_entities: Option<JournalEntities>,
+    // A resolver reads the entities once, so a name resolves the same way for
+    // its whole life: remember each answer instead of matching it again.
+    answers: BTreeMap<(String, bool, String), Option<String>>,
+    file_lookups: BTreeSet<EdgeLookup>,
     drops: EdgeDropCounter,
     owner_timezone: Option<Result<Tz, EdgeError>>,
     speaker_entities: Option<SpeakerEntityIndex>,
@@ -49,6 +70,10 @@ impl EdgeResolver {
             journal: journal.to_path_buf(),
             cache: BTreeMap::new(),
             confident: BTreeMap::new(),
+            matchers: BTreeMap::new(),
+            journal_entities: None,
+            answers: BTreeMap::new(),
+            file_lookups: BTreeSet::new(),
             drops: EdgeDropCounter::default(),
             owner_timezone: None,
             speaker_entities: None,
@@ -57,6 +82,29 @@ impl EdgeResolver {
 
     pub fn begin_file(&mut self) {
         self.drops.reset();
+        self.file_lookups.clear();
+    }
+
+    /// The names the current file looked up since `begin_file`.
+    pub fn take_lookups(&mut self) -> Vec<EdgeLookup> {
+        std::mem::take(&mut self.file_lookups).into_iter().collect()
+    }
+
+    /// Resolve a recorded lookup again against the entities this resolver read.
+    pub fn answer(
+        &mut self,
+        facet: &str,
+        confident: bool,
+        name: &str,
+    ) -> Result<Option<String>, EdgeError> {
+        let context = EdgeContext {
+            path: String::new(),
+            day: String::new(),
+            facet: facet.to_owned(),
+        };
+        let answer = self.resolve_with(&context, name, confident);
+        self.file_lookups.clear();
+        answer
     }
 
     pub fn drops(&self) -> usize {
@@ -96,15 +144,34 @@ impl EdgeResolver {
             self.record_drop();
             return Ok(None);
         }
-        if !self.cache.contains_key(&context.facet) {
-            let candidates = load_candidates(&self.journal, &context.facet).map_err(|error| {
-                EdgeError::Io(format!(
-                    "candidate load failed for facet {:?}: {error}",
-                    context.facet
-                ))
-            })?;
-            self.cache.insert(context.facet.clone(), candidates);
+        let key = (context.facet.clone(), confident, name.to_owned());
+        let answer = match self.answers.get(&key).cloned() {
+            Some(answer) => answer,
+            None => {
+                let answer = self.match_name(context, name, confident)?;
+                self.answers.insert(key, answer.clone());
+                answer
+            }
+        };
+        if answer.is_none() {
+            self.record_drop();
         }
+        self.file_lookups.insert(EdgeLookup {
+            facet: context.facet.clone(),
+            confident,
+            name: name.to_owned(),
+            entity_id: answer.clone(),
+        });
+        Ok(answer)
+    }
+
+    fn match_name(
+        &mut self,
+        context: &EdgeContext,
+        name: &str,
+        confident: bool,
+    ) -> Result<Option<String>, EdgeError> {
+        self.load_facet(&context.facet)?;
         let candidates = self.cache.get(&context.facet).ok_or_else(|| {
             EdgeError::Io(format!("candidate cache missing for {:?}", context.facet))
         })?;
@@ -118,17 +185,65 @@ impl EdgeResolver {
                 .and_then(|index| candidates.get(index))
                 .filter(|candidate| candidate.id.as_deref().is_some_and(|id| !id.is_empty()))
         } else {
-            find_matching_entity(name, candidates, 90.0)
-                .and_then(|result| candidates.get(result.candidate_index))
+            let matcher = self
+                .matchers
+                .entry(context.facet.clone())
+                .or_insert_with(|| NameMatcher::new(candidates));
+            match matcher.find_detailed(name, 90.0) {
+                EntityNameMatchOutcome::Matched {
+                    candidate_index, ..
+                } => candidates.get(candidate_index),
+                _ => None,
+            }
         };
         let entity_id = candidate.and_then(|candidate| candidate.id.as_deref());
-        Ok(match entity_id {
-            Some(entity_id) if !entity_id.is_empty() => Some(entity_id.to_string()),
-            _ => {
-                self.record_drop();
-                None
+        Ok(entity_id
+            .filter(|entity_id| !entity_id.is_empty())
+            .map(str::to_string))
+    }
+
+    fn load_facet(&mut self, facet: &str) -> Result<(), EdgeError> {
+        if self.cache.contains_key(facet) {
+            return Ok(());
+        }
+        let failed = |error: io::Error| {
+            EdgeError::Io(format!(
+                "candidate load failed for facet {facet:?}: {error}"
+            ))
+        };
+        let candidates = if facet.is_empty() {
+            load_journal_candidates(&self.journal).map_err(failed)?
+        } else {
+            if self.journal_entities.is_none() {
+                self.journal_entities = Some(load_journal_entities(&self.journal).map_err(failed)?);
             }
-        })
+            let entities = self
+                .journal_entities
+                .as_ref()
+                .expect("entities were just read");
+            load_facet_candidates_with(&self.journal, facet, entities).map_err(failed)?
+        };
+        self.cache.insert(facet.to_owned(), candidates);
+        Ok(())
+    }
+
+    /// A digest of the entities `facet`'s names resolve against: equal digests
+    /// resolve every name the same way.
+    pub fn candidates_digest(&mut self, facet: &str) -> Result<i64, EdgeError> {
+        self.load_facet(facet)?;
+        Ok(digest_i64(format!("{:?}", self.cache.get(facet))))
+    }
+
+    /// A digest of everything speaker labels and mentions resolve against.
+    pub fn speakers_digest(&mut self) -> Result<i64, EdgeError> {
+        let mut text = String::new();
+        self.speaker_entities()?.describe(&mut text);
+        Ok(digest_i64(text))
+    }
+
+    /// A digest of the owner's timezone, which places segment and event times.
+    pub fn timezone_digest(&mut self) -> Result<i64, EdgeError> {
+        Ok(digest_i64(self.owner_timezone()?.name().to_owned()))
     }
 
     pub fn record_drop(&mut self) {
@@ -202,13 +317,6 @@ impl KnownPeople {
     }
 }
 
-fn load_candidates(journal: &Path, facet: &str) -> io::Result<Vec<EntityNameCandidate>> {
-    if facet.is_empty() {
-        return load_journal_candidates(journal);
-    }
-    load_facet_candidates(journal, facet)
-}
-
 fn load_journal_candidates(journal: &Path) -> io::Result<Vec<EntityNameCandidate>> {
     let mut candidates = Vec::new();
     for (entity_dir, mut entity) in journal_entities_by_folder(journal)? {
@@ -223,10 +331,18 @@ fn load_journal_candidates(journal: &Path) -> io::Result<Vec<EntityNameCandidate
     Ok(candidates)
 }
 
+#[cfg(test)]
 fn load_facet_candidates(journal: &Path, facet: &str) -> io::Result<Vec<EntityNameCandidate>> {
-    let (journal_entities, dirs_by_id) = load_journal_entities(journal)?;
+    load_facet_candidates_with(journal, facet, &load_journal_entities(journal)?)
+}
+
+fn load_facet_candidates_with(
+    journal: &Path,
+    facet: &str,
+    (journal_entities, dirs_by_id): &JournalEntities,
+) -> io::Result<Vec<EntityNameCandidate>> {
     let mut candidates = Vec::new();
-    for (linked_dir, relationship) in facet_link_per_entity(journal, facet, &dirs_by_id)? {
+    for (linked_dir, relationship) in facet_link_per_entity(journal, facet, dirs_by_id)? {
         let mut relationship = relationship;
         relationship.insert("entity_id".to_string(), Value::String(linked_dir.clone()));
         let enriched =
@@ -476,11 +592,19 @@ fn json_truthy(value: Option<&Value>) -> bool {
     }
 }
 
+fn digest_i64(text: String) -> i64 {
+    let digest = Sha256::digest(text.as_bytes());
+    let mut bytes = [0u8; 8];
+    bytes.copy_from_slice(&digest[..8]);
+    i64::from_le_bytes(bytes)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::test_support::reserve_temp_path;
     use serde_json::json;
+    use solstone_core_entity_matching::find_matching_entity;
 
     fn temp_root(name: &str) -> PathBuf {
         reserve_temp_path(&format!("solstone-core-indexer-edge-candidates-{name}"))

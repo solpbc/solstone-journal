@@ -122,6 +122,8 @@ fn observation_save_and_removal_queue_without_the_index_writer() {
     assert!(!db_path(journal.path()).exists());
     drop(lease);
     assert_eq!(drain_now(journal.path()).unwrap().failed, 0);
+    // The entity change queued its connections refresh for the next drain.
+    assert_eq!(drain_now(journal.path()).unwrap().failed, 0);
     assert!(
         chunks(journal.path(), rel)
             .iter()
@@ -998,4 +1000,51 @@ mod calendar_delete {
         assert_eq!(listed(&journal).len(), 1);
         assert_eq!(listed(&journal)[0].0, "20261027");
     }
+}
+
+#[test]
+fn an_entity_change_brings_the_connections_it_reaches_current() {
+    let journal = Journal::new();
+    for (id, name) in [("alice", "Alice Edge"), ("bob", "Bob Edge")] {
+        journal.save(
+            &format!("entities/{id}/entity.json"),
+            &format!(r#"{{"name":"{name}","type":"Person"}}"#),
+        );
+        journal.save(&format!("facets/work/entities/{id}/entity.json"), "{}");
+    }
+    let rel = "facets/work/entities/20260304.jsonl";
+    journal.save(
+        rel,
+        "{\"name\":\"Ally\",\"segments\":[\"s1\"]}\n{\"name\":\"Bob Edge\",\"segments\":[\"s1\"]}\n",
+    );
+    scan_journal(journal.path(), true).unwrap();
+    let edges = |journal: &Journal| -> i64 {
+        open_index(journal.path())
+            .unwrap()
+            .query_row("SELECT count(*) FROM edges WHERE path=?", [rel], |row| {
+                row.get(0)
+            })
+            .unwrap()
+    };
+    assert_eq!(edges(&journal), 0);
+
+    journal.save(
+        "entities/alice/entity.json",
+        r#"{"name":"Alice Edge","type":"Person","aka":["Ally"]}"#,
+    );
+    solstone_core_indexer_todo::enqueue_token(
+        journal.path(),
+        solstone_core_indexer_todo::Token::EntitySearch,
+    )
+    .unwrap();
+    // The entity change marks the day; its refresh waits behind newer work
+    // and runs on the next drain.
+    let report = drain_now(journal.path()).unwrap();
+    assert_eq!((report.processed, report.failed), (1, 0));
+    assert_eq!(edges(&journal), 0);
+    assert_eq!(inspect(journal.path()).unwrap().keys, ["@edges"]);
+    let report = drain_now(journal.path()).unwrap();
+    assert_eq!((report.processed, report.failed), (1, 0));
+    assert_eq!(edges(&journal), 1);
+    assert!(inspect(journal.path()).unwrap().keys.is_empty());
 }

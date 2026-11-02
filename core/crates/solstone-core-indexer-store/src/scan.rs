@@ -17,7 +17,7 @@ use solstone_core_format::segment::{day_of, time_bucket};
 use solstone_core_indexer::discovery::{
     discover_indexable_files, discover_segment_talent_markdown_files,
 };
-use solstone_core_indexer::edges::candidates::EdgeResolver;
+use solstone_core_indexer::edges::candidates::{EdgeLookup, EdgeResolver};
 use solstone_core_indexer::edges::discovery::discover_edge_files;
 use solstone_core_indexer::edges::registry::edge_source_for_rel;
 use solstone_core_indexer::edges::{EdgeValue, NormalizedEdge, extract_file_edges};
@@ -46,12 +46,13 @@ use crate::chunk_sources::{
 use crate::classification::{FacetDeclarationSet, classify_source};
 use crate::classification_batch::{Counts, ResumeCount, classify_one_batch_checked};
 use crate::db::{
-    EDGES_SCHEMA_PATH, EDGES_SCHEMA_VERSION, IndexBuildLifecycle, delete_chunk_classification,
-    mark_index_build_complete, open_index_admitted, prune_authored_chat_paths_admitted,
-    read_chunk_classification_backfill, read_entity_search_watermark, read_index_build_state,
-    read_segment_aggregate_migration, replace_chunk_classification, sqlite_table_exists,
-    write_entity_search_watermark, write_segment_aggregate_migration,
+    EDGES_SCHEMA_PATH, IndexBuildLifecycle, delete_chunk_classification, mark_index_build_complete,
+    open_index_admitted, prune_authored_chat_paths_admitted, read_chunk_classification_backfill,
+    read_entity_search_watermark, read_index_build_state, read_segment_aggregate_migration,
+    replace_chunk_classification, sqlite_table_exists, write_entity_search_watermark,
+    write_segment_aggregate_migration,
 };
+use crate::edge_refresh::STALE_EDGE_MTIME;
 use crate::generation::{ScanReceipt, WRITER_VERSION, record_scan};
 use crate::screen_text::screen_text_source_current;
 #[cfg(test)]
@@ -106,12 +107,17 @@ impl ScanReport {
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct EdgeRebuildReport {
+    /// Edge files refreshed.
     pub files: usize,
     pub rows: usize,
     pub drops: usize,
     pub failed: usize,
     pub skipped: usize,
     pub warnings: Vec<String>,
+    /// Edge files a change of entities, speakers, timezone or extractor marked stale.
+    pub marked: usize,
+    /// Stale edge files left for a later pass.
+    pub remaining: usize,
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -123,6 +129,13 @@ struct EdgeScanReport {
     retained: usize,
     failures: Vec<ScanFailure>,
     warnings: Vec<String>,
+    drops: usize,
+    /// Files skipped for an invalid segment key.
+    skipped: usize,
+    /// Files an input change marked stale this pass.
+    marked: usize,
+    /// Stale files left for a later pass.
+    remaining: usize,
 }
 
 fn discovered_days(files: &BTreeMap<String, PathBuf>) -> HashSet<&str> {
@@ -1188,13 +1201,11 @@ pub(crate) fn rescan_file_admitted(
         )?);
     }
     if edge_source.is_some() {
-        delete_edges_for_path(&tx, &rel)?;
-        let result = process_edge_file(&tx, journal, &rel, &path, &mut edge_resolver)?;
+        let result = replace_edge_file_edges(&tx, journal, &rel, &path, mtime, &mut edge_resolver)?;
         warnings.extend(result.warnings);
         if result.failed {
             return Err(StoreError::EdgeFileFailed(warnings.join("; ")));
         }
-        replace_edge_file_mtime(&tx, &rel, mtime)?;
     }
     tx.commit()?;
     // An unfinished migration catches up here, a batch per file. A finished one
@@ -1206,109 +1217,143 @@ pub(crate) fn rescan_file_admitted(
     Ok(RescanFileStatus::Indexed { warnings })
 }
 
-pub(crate) fn rebuild_edges_guarded<F>(
+/// Mark the edge files a change of entities, speakers, timezone or extractor
+/// reaches, and say how many files wait to be refreshed.
+pub(crate) fn invalidate_edges_admitted(
     journal: &Path,
     admission: &IndexAdmission,
     checkpoint: &dyn Fn() -> Result<(), String>,
-    before_commit: F,
-) -> Result<Option<EdgeRebuildReport>, StoreError>
-where
-    F: FnOnce() -> Result<bool, StoreError>,
-{
+) -> Result<usize, StoreError> {
     let mut conn = open_index_admitted(journal, admission, checkpoint)?;
     let mut resolver = EdgeResolver::new(journal);
+    resolver
+        .preflight_owner_timezone()
+        .map_err(|error| StoreError::Io(std::io::Error::other(error.to_string())))?;
+    crate::edge_refresh::invalidate_edges(&mut conn, journal, &mut resolver, checkpoint)?;
+    crate::edge_refresh::stale_edge_count(&conn)
+}
+
+/// Refresh stale edge files, newest day first, one per transaction, for at
+/// most `budget`. What is left stays stale for the next slice.
+pub(crate) fn refresh_edges_admitted(
+    journal: &Path,
+    admission: &IndexAdmission,
+    checkpoint: &dyn Fn() -> Result<(), String>,
+    budget: std::time::Duration,
+) -> Result<EdgeRebuildReport, StoreError> {
+    refresh_edges_with(
+        journal,
+        admission,
+        &mut EdgeResolver::new(journal),
+        checkpoint,
+        budget,
+    )
+}
+
+fn refresh_edges_with(
+    journal: &Path,
+    admission: &IndexAdmission,
+    resolver: &mut EdgeResolver,
+    checkpoint: &dyn Fn() -> Result<(), String>,
+    budget: std::time::Duration,
+) -> Result<EdgeRebuildReport, StoreError> {
+    let mut conn = open_index_admitted(journal, admission, checkpoint)?;
     let mut report = EdgeRebuildReport::default();
-    let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
     if let Err(error) = resolver.preflight_owner_timezone() {
         report.failed = 1;
         report.warnings.push(error.to_string());
-        tx.rollback()?;
-        return Ok(Some(report));
+        return Ok(report);
     }
-    tx.execute("DELETE FROM edges", [])?;
-    tx.execute("DELETE FROM edge_files", [])?;
-    tx.execute(
-        "REPLACE INTO edge_files(path, mtime) VALUES (?, ?)",
-        params![EDGES_SCHEMA_PATH, EDGES_SCHEMA_VERSION],
+    let refresh = crate::edge_refresh::refresh_stale_edges(
+        &mut conn,
+        journal,
+        resolver,
+        checkpoint,
+        Some(budget),
     )?;
+    report.files = refresh.refreshed;
+    report.rows = refresh.rows_inserted;
+    report.drops = refresh.drops;
+    report.skipped = refresh.skipped;
+    report.failed = refresh.failed.len();
+    report.remaining = refresh.remaining;
+    report.warnings = refresh.warnings;
+    Ok(report)
+}
 
-    let files = discover_edge_files(journal)?;
-    for (rel, path) in files {
-        crate::db::admit_scan_journal(checkpoint)?;
-        let mtime = match file_mtime_secs(&path) {
-            Ok(mtime) => mtime,
-            Err(error) => {
-                report.failed += 1;
-                report
-                    .warnings
-                    .push(format!("mtime read failed for {rel}: {error}"));
-                continue;
-            }
-        };
-        let result = process_edge_file(&tx, journal, &rel, &path, &mut resolver)?;
-        report.files += 1;
-        report.rows += result.rows_inserted;
-        report.drops += result.drops;
-        report.failed += usize::from(result.failed);
-        report.skipped += usize::from(result.invalid_segment);
-        report.warnings.extend(result.warnings);
-        if !result.failed {
-            replace_edge_file_mtime(&tx, &rel, mtime)?;
+/// How long `--rebuild-edges` holds the writer per slice before letting
+/// queued work in.
+const REBUILD_EDGE_SLICE: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// Bring every edge file current: first new, rewritten and removed files,
+/// then stale files in slices that release the writer between them, so
+/// newer work never waits long behind old days. A stop keeps what was done.
+fn rebuild_edges_sliced(
+    journal: &Path,
+    checkpoint: &dyn Fn() -> Result<(), String>,
+) -> Result<EdgeRebuildReport, StoreError> {
+    let admission = IndexAdmission::acquire_checked(journal, "rebuild-edges", checkpoint)?;
+    let mut conn = open_index_admitted(journal, &admission, checkpoint)?;
+    let scan = reconcile_edges_with(&mut conn, journal, false, checkpoint)?;
+    drop(conn);
+    drop(admission);
+    let mut report = EdgeRebuildReport {
+        files: scan.indexed,
+        rows: scan.rows_inserted,
+        drops: scan.drops,
+        failed: scan.failures.len(),
+        skipped: scan.skipped,
+        warnings: scan.warnings,
+        marked: scan.marked,
+        remaining: scan.remaining,
+    };
+    // One resolver for every slice: the entities are read once, and a change
+    // during the rebuild is marked by the next invalidation.
+    let mut resolver = EdgeResolver::new(journal);
+    while report.remaining > 0 {
+        let admission = IndexAdmission::acquire_checked(journal, "rebuild-edges", checkpoint)?;
+        let slice = refresh_edges_with(
+            journal,
+            &admission,
+            &mut resolver,
+            checkpoint,
+            REBUILD_EDGE_SLICE,
+        )?;
+        drop(admission);
+        report.files += slice.files;
+        report.rows += slice.rows;
+        report.drops += slice.drops;
+        report.skipped += slice.skipped;
+        report.warnings.extend(slice.warnings);
+        report.remaining = slice.remaining;
+        report.failed += slice.failed;
+        if slice.files + slice.failed == 0 {
+            break;
         }
+        // Let a writer waiting on the lease in before the next slice.
+        std::thread::sleep(std::time::Duration::from_millis(250));
     }
-    if report.failed > 0 {
-        tx.rollback()?;
-        return Ok(Some(report));
-    }
-    crate::calendar_schedule::relink_all_people(&tx, journal)?;
-    tx.execute(
-        "REPLACE INTO edge_files(path, mtime) VALUES (?, 1)",
-        [CALENDAR_PEOPLE_EDGES_PATH],
-    )?;
-    if !before_commit()? {
-        tx.rollback()?;
-        return Ok(None);
-    }
-    crate::db::admit_scan_journal(checkpoint)?;
-    tx.commit()?;
-    Ok(Some(report))
+    Ok(report)
 }
 
 pub fn rebuild_edges(journal: &Path) -> Result<EdgeRebuildReport, StoreError> {
-    let admission = IndexAdmission::acquire(journal, "rebuild-edges")?;
-    rebuild_edges_guarded(journal, &admission, &|| Ok(()), || Ok(true))
-        .map(|opt| opt.expect("closure returned true"))
+    rebuild_edges_sliced(journal, &|| Ok(()))
 }
 
 pub fn rebuild_edges_with_checkpoint(
     journal: &Path,
     checkpoint: &dyn Fn() -> Result<(), String>,
 ) -> Result<EdgeRebuildReport, StoreError> {
-    let admission = IndexAdmission::acquire_checked(journal, "rebuild-edges", checkpoint)?;
-    let mut refusal = None;
-    let report = rebuild_edges_guarded(journal, &admission, checkpoint, || match checkpoint() {
-        Ok(()) => Ok(true),
-        Err(message) => {
-            refusal = Some(message);
-            Ok(false)
-        }
-    })?;
-    match report {
-        Some(report) => Ok(report),
-        None => Err(StoreError::WriterAdmission {
-            operation: "rebuild-edges",
-            cause: refusal.unwrap_or_else(|| "cancelled".to_owned()),
-        }),
-    }
+    rebuild_edges_sliced(journal, checkpoint)
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
-struct EdgeProcessResult {
-    rows_inserted: usize,
-    drops: usize,
-    failed: bool,
-    invalid_segment: bool,
-    warnings: Vec<String>,
+pub(crate) struct EdgeProcessResult {
+    pub(crate) rows_inserted: usize,
+    pub(crate) drops: usize,
+    pub(crate) failed: bool,
+    pub(crate) invalid_segment: bool,
+    pub(crate) warnings: Vec<String>,
 }
 
 fn reconcile_edges(
@@ -1317,6 +1362,44 @@ fn reconcile_edges(
     full: bool,
     checkpoint: &dyn Fn() -> Result<(), String>,
 ) -> Result<EdgeScanReport, StoreError> {
+    let report = reconcile_edges_with(conn, journal, full, checkpoint)?;
+    if report.remaining > 0
+        && let Err(error) = solstone_core_indexer_todo::enqueue_token(
+            journal,
+            solstone_core_indexer_todo::Token::Edges,
+        )
+    {
+        log::warn!(target: "solstone::indexer", "connections refresh not queued: {error}");
+    }
+    Ok(report)
+}
+
+/// Bring new, rewritten and removed edge files current, and mark the files an
+/// input change reached as stale; `report.remaining` says how many wait.
+fn reconcile_edges_with(
+    conn: &mut Connection,
+    journal: &Path,
+    full: bool,
+    checkpoint: &dyn Fn() -> Result<(), String>,
+) -> Result<EdgeScanReport, StoreError> {
+    let mut resolver = EdgeResolver::new(journal);
+    let mut report = EdgeScanReport::default();
+    if let Err(error) = resolver.preflight_owner_timezone() {
+        report.failures.push(ScanFailure::default());
+        report.warnings.push(error.to_string());
+        return Ok(report);
+    }
+    // Mark what entity, speaker, timezone or extractor changes reach before
+    // reading mtimes, so a marked file is refreshed once, below, and not twice.
+    // Files that need unreadable entities fail on their own; this says why.
+    match crate::edge_refresh::invalidate_edges(conn, journal, &mut resolver, checkpoint) {
+        Ok(invalidation) => report.marked = invalidation.marked,
+        Err(error @ StoreError::WriterAdmission { .. }) => return Err(error),
+        Err(error) => report.warnings.push(format!(
+            "connections not checked against entity changes: {error}"
+        )),
+    }
+
     let files = discover_edge_files(journal)?;
 
     let db_mtimes = edge_file_mtimes(conn)?;
@@ -1335,8 +1418,10 @@ fn reconcile_edges(
                 continue;
             }
         };
-        if db_mtimes.get(rel) != Some(&mtime) {
-            to_index.push((rel.clone(), path.clone(), mtime));
+        // A stale file waits for the bounded refresh below; its bytes are unchanged.
+        match db_mtimes.get(rel) {
+            Some(&stored) if stored == mtime || stored == STALE_EDGE_MTIME => {}
+            _ => to_index.push((rel.clone(), path.clone(), mtime)),
         }
     }
 
@@ -1361,16 +1446,12 @@ fn reconcile_edges(
         }
     }
 
-    let mut resolver = EdgeResolver::new(journal);
-    let mut report = EdgeScanReport {
-        failures: unreadable,
-        ..EdgeScanReport::default()
-    };
-    if let Err(error) = resolver.preflight_owner_timezone() {
-        report.failures.push(ScanFailure::default());
-        report.warnings.push(error.to_string());
-        return Ok(report);
-    }
+    // Newest day first: when a pass stops early, recent days are current.
+    to_index.sort_by(|(a, _, _), (b, _, _)| {
+        (std::cmp::Reverse(day_of(a)), a).cmp(&(std::cmp::Reverse(day_of(b)), b))
+    });
+
+    report.failures.extend(unreadable);
     let (removed, retained_days) = removal_candidates(&db_mtimes, &files, full);
     report.retained = retained_days.values().sum::<usize>();
     report.warnings.extend(
@@ -1408,6 +1489,8 @@ fn reconcile_edges(
         crate::db::admit_scan_journal(checkpoint)?;
         tx.commit()?;
         report.rows_inserted += result.rows_inserted;
+        report.drops += result.drops;
+        report.skipped += usize::from(result.invalid_segment);
         report.warnings.extend(result.warnings);
     }
     for rel in &removed {
@@ -1442,6 +1525,7 @@ fn reconcile_edges(
             params![RETIRED_PLAN_EDGES_PATH, RETIRED_PLAN_EDGES_VERSION],
         )?;
     }
+    report.remaining = crate::edge_refresh::stale_edge_count(conn)?;
     Ok(report)
 }
 
@@ -1476,7 +1560,9 @@ fn retired_plan_edges_rechecked(conn: &Connection) -> Result<bool, StoreError> {
         .is_some())
 }
 
-fn replace_edge_file_edges(
+/// Bring one edge file's rows, lookups and mtime current, inside the caller's
+/// transaction. Rows that come out the same are left as they are.
+pub(crate) fn replace_edge_file_edges(
     conn: &Connection,
     journal: &Path,
     rel: &str,
@@ -1484,7 +1570,6 @@ fn replace_edge_file_edges(
     mtime: i64,
     resolver: &mut EdgeResolver,
 ) -> Result<EdgeProcessResult, StoreError> {
-    delete_edges_for_path(conn, rel)?;
     let result = process_edge_file(conn, journal, rel, path, resolver)?;
     if !result.failed {
         replace_edge_file_mtime(conn, rel, mtime)?;
@@ -1502,53 +1587,135 @@ fn process_edge_file(
     resolver.begin_file();
     let extracted = extract_file_edges(journal, rel, path, resolver);
     let drops = resolver.drops();
-    match extracted {
-        Ok(extracted) => {
-            if let Some(segment) = extracted.invalid_segment {
+    let extracted = match extracted {
+        Ok(extracted) => extracted,
+        Err(error) => {
+            return Ok(EdgeProcessResult {
+                drops,
+                failed: true,
+                warnings: vec![format!("Skipping edge extraction for {rel}: {error}")],
+                ..EdgeProcessResult::default()
+            });
+        }
+    };
+    let (rows, warnings, invalid_segment) = match &extracted.invalid_segment {
+        Some(segment) => (
+            &[][..],
+            vec![format!(
+                "Skipping edge extraction for {rel}: invalid segment key {segment}"
+            )],
+            true,
+        ),
+        None => (&extracted.rows[..], extracted.warnings.clone(), false),
+    };
+    let rows_inserted = if stored_edges_match(conn, rel, rows)? {
+        0
+    } else {
+        conn.execute("DELETE FROM edges WHERE path=?", [rel])?;
+        match insert_normalized_edges(conn, rows) {
+            Ok(inserted) => inserted,
+            Err(error) => {
                 return Ok(EdgeProcessResult {
-                    drops,
-                    invalid_segment: true,
-                    warnings: vec![format!(
-                        "Skipping edge extraction for {rel}: invalid segment key {segment}"
-                    )],
-                    ..EdgeProcessResult::default()
-                });
-            }
-            match insert_normalized_edges(conn, &extracted.rows) {
-                Ok(rows_inserted) => Ok(EdgeProcessResult {
-                    rows_inserted,
-                    drops,
-                    warnings: extracted.warnings,
-                    ..EdgeProcessResult::default()
-                }),
-                Err(error) => Ok(EdgeProcessResult {
                     drops,
                     failed: true,
                     warnings: vec![format!("Skipping edge extraction for {rel}: {error}")],
                     ..EdgeProcessResult::default()
-                }),
+                });
             }
         }
-        Err(error) => Ok(EdgeProcessResult {
-            drops,
-            failed: true,
-            warnings: vec![format!("Skipping edge extraction for {rel}: {error}")],
-            ..EdgeProcessResult::default()
-        }),
+    };
+    replace_edge_lookups(conn, rel, &extracted.lookups)?;
+    Ok(EdgeProcessResult {
+        rows_inserted,
+        drops,
+        invalid_segment,
+        warnings,
+        ..EdgeProcessResult::default()
+    })
+}
+
+/// One edge row as SQLite stores it, comparable across fresh and stored rows.
+fn edge_row_key(values: [SqlValue; 14]) -> String {
+    format!("{values:?}")
+}
+
+fn normalized_edge_key(row: &NormalizedEdge) -> String {
+    edge_row_key([
+        SqlValue::Text(row.src.clone()),
+        SqlValue::Text(row.dst.clone()),
+        SqlValue::Text(row.kind.clone()),
+        SqlValue::Integer(row.directed),
+        edge_value_to_sql(&row.src_name),
+        edge_value_to_sql(&row.dst_name),
+        row.day.clone().map_or(SqlValue::Null, SqlValue::Text),
+        row.facet.clone().map_or(SqlValue::Null, SqlValue::Text),
+        SqlValue::Text(row.source.clone()),
+        SqlValue::Text(row.path.clone()),
+        row.anchor.clone().map_or(SqlValue::Null, SqlValue::Text),
+        edge_value_to_sql(&row.label),
+        edge_value_to_sql(&row.ts),
+        SqlValue::Integer(row.weight),
+    ])
+}
+
+/// Whether `path`'s stored rows are exactly `rows`, so a refresh need not
+/// rewrite them.
+fn stored_edges_match(
+    conn: &Connection,
+    path: &str,
+    rows: &[NormalizedEdge],
+) -> Result<bool, StoreError> {
+    let mut statement = conn.prepare_cached(
+        "SELECT src, dst, kind, directed, src_name, dst_name, day, facet, source, path, anchor, label, ts, weight \
+         FROM edges WHERE path=?",
+    )?;
+    let mut stored = statement
+        .query_map([path], |row| {
+            let mut values: [SqlValue; 14] = std::array::from_fn(|_| SqlValue::Null);
+            for (index, value) in values.iter_mut().enumerate() {
+                *value = row.get(index)?;
+            }
+            Ok(edge_row_key(values))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    if stored.len() != rows.len() {
+        return Ok(false);
     }
+    let mut fresh = rows.iter().map(normalized_edge_key).collect::<Vec<_>>();
+    stored.sort_unstable();
+    fresh.sort_unstable();
+    Ok(stored == fresh)
+}
+
+fn replace_edge_lookups(
+    conn: &Connection,
+    path: &str,
+    lookups: &[EdgeLookup],
+) -> Result<(), StoreError> {
+    conn.prepare_cached("DELETE FROM edge_lookups WHERE path=?")?
+        .execute([path])?;
+    let mut insert = conn.prepare_cached(
+        "INSERT INTO edge_lookups(path, facet, confident, name, entity_id) VALUES (?, ?, ?, ?, ?)",
+    )?;
+    for lookup in lookups {
+        insert.execute(params![
+            path,
+            lookup.facet,
+            lookup.confident,
+            lookup.name,
+            lookup.entity_id
+        ])?;
+    }
+    Ok(())
 }
 
 fn edge_file_mtimes(conn: &Connection) -> Result<BTreeMap<String, i64>, StoreError> {
-    let mut statement = conn
-        .prepare("SELECT path, mtime FROM edge_files WHERE path NOT IN (?, ?, ?) ORDER BY path")?;
-    let rows = statement.query_map(
-        [
-            EDGES_SCHEMA_PATH,
-            RETIRED_PLAN_EDGES_PATH,
-            CALENDAR_PEOPLE_EDGES_PATH,
-        ],
-        |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)),
+    let mut statement = conn.prepare(
+        "SELECT path, mtime FROM edge_files WHERE path NOT LIKE 'edges:%' ORDER BY path",
     )?;
+    let rows = statement.query_map([], |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+    })?;
     let mut mtimes = BTreeMap::new();
     for row in rows {
         let (path, mtime) = row?;
@@ -1557,8 +1724,9 @@ fn edge_file_mtimes(conn: &Connection) -> Result<BTreeMap<String, i64>, StoreErr
     Ok(mtimes)
 }
 
-fn delete_edges_for_path(conn: &Connection, path: &str) -> Result<usize, StoreError> {
+pub(crate) fn delete_edges_for_path(conn: &Connection, path: &str) -> Result<usize, StoreError> {
     let deleted = conn.execute("DELETE FROM edges WHERE path=?", [path])?;
+    conn.execute("DELETE FROM edge_lookups WHERE path=?", [path])?;
     if path != EDGES_SCHEMA_PATH {
         conn.execute("DELETE FROM edge_files WHERE path=?", [path])?;
     }
@@ -2908,13 +3076,30 @@ mod tests {
         .collect()
     }
 
+    /// Edge source files and the scan's own markers; the input digests the
+    /// refresh keeps are left out.
     fn edge_file_paths(conn: &Connection) -> Vec<String> {
-        conn.prepare("SELECT path FROM edge_files ORDER BY path")
+        conn.prepare(
+            "SELECT path FROM edge_files WHERE path NOT IN ('edges:extractor', 'edges:timezone', 'edges:speakers') \
+             AND path NOT LIKE 'edges:candidates:%' ORDER BY path",
+        )
             .expect("prepare edge files")
             .query_map([], |row| row.get::<_, String>(0))
             .expect("query edge files")
             .map(|row| row.expect("edge file row"))
             .collect()
+    }
+
+    /// Record what edges are resolved against as current, as a journal
+    /// scanned by this version would have, so rows a test seeds are not
+    /// refreshed as stale on its first scan.
+    fn record_edge_inputs(conn: &mut Connection, root: &Path) {
+        let _ = crate::edge_refresh::invalidate_edges(
+            conn,
+            root,
+            &mut EdgeResolver::new(root),
+            &|| Ok(()),
+        );
     }
 
     type EdgeValueStorageRow = (
@@ -3529,7 +3714,8 @@ mod tests {
 {"name":"Bob Edge","segments":["s2"]}
 "#,
         );
-        let conn = open_index(&root).expect("open index");
+        let mut conn = open_index(&root).expect("open index");
+        record_edge_inputs(&mut conn, &root);
         conn.execute(
             "INSERT INTO edges(src, dst, kind, directed, source, path, weight) VALUES (?, ?, ?, ?, ?, ?, ?)",
             params![
@@ -3600,7 +3786,8 @@ mod tests {
 {"name":"Bob Edge","segments":["s1"]}
 "#,
         );
-        let conn = open_index(&root).expect("open index");
+        let mut conn = open_index(&root).expect("open index");
+        record_edge_inputs(&mut conn, &root);
         conn.execute(
             "INSERT INTO edges(src, dst, kind, directed, source, path, weight) VALUES (?, ?, ?, ?, ?, ?, ?)",
             params![
@@ -4052,8 +4239,152 @@ mod tests {
         fs::remove_dir_all(root).expect("cleanup edge interruption root");
     }
 
+    fn edge_rowids(conn: &Connection, path: &str) -> Vec<i64> {
+        conn.prepare("SELECT rowid FROM edges WHERE path=? ORDER BY rowid")
+            .expect("prepare edge rowids")
+            .query_map([path], |row| row.get(0))
+            .expect("query edge rowids")
+            .map(|row| row.expect("edge rowid"))
+            .collect()
+    }
+
     #[test]
-    fn rebuild_edges_is_idempotent_and_preserves_content_tables_and_sentinel() {
+    fn a_new_alias_reaches_an_unchanged_day_through_only_the_files_that_named_it() {
+        let root = temp_root("edge-alias-refresh");
+        seed_edge_entity(&root, "alice", "Alice Edge");
+        seed_edge_entity(&root, "bob", "Bob Edge");
+        let named = "facets/work/entities/20260304.jsonl";
+        let other = "facets/work/entities/20260305.jsonl";
+        write(
+            &root,
+            named,
+            r#"{"name":"Ally","segments":["s1"]}
+{"name":"Bob Edge","segments":["s1"]}
+"#,
+        );
+        write(
+            &root,
+            other,
+            r#"{"name":"Alice Edge","segments":["s2"]}
+{"name":"Bob Edge","segments":["s2"]}
+"#,
+        );
+        scan_journal(&root, true).expect("scan before alias");
+        let conn = Connection::open(db_path(&root)).expect("open db");
+        assert!(edge_rowids(&conn, named).is_empty());
+        let other_rows = edge_rowids(&conn, other);
+        assert_eq!(other_rows.len(), 1);
+        drop(conn);
+
+        write(
+            &root,
+            "entities/alice/entity.json",
+            r#"{"name":"Alice Edge","type":"Person","aka":["Ally"]}"#,
+        );
+        // An entity change marks only the file that named the alias, and its
+        // rows stay as they were until a refresh reaches it.
+        let admission = IndexAdmission::acquire(&root, "test").expect("admission");
+        let stale = invalidate_edges_admitted(&root, &admission, &|| Ok(())).expect("invalidate");
+        drop(admission);
+        assert_eq!(stale, 1);
+        let conn = Connection::open(db_path(&root)).expect("open db after marking");
+        assert!(edge_rowids(&conn, named).is_empty());
+        drop(conn);
+
+        let report = rebuild_edges(&root).expect("refresh after alias");
+        assert_eq!((report.files, report.rows, report.remaining), (1, 1, 0));
+        let conn = Connection::open(db_path(&root)).expect("open db after alias");
+        assert_eq!(
+            edge_rows(&conn)
+                .into_iter()
+                .filter(|row| row.4 == named)
+                .map(|row| (row.0, row.1))
+                .collect::<Vec<_>>(),
+            vec![("alice".to_string(), "bob".to_string())]
+        );
+        assert_eq!(edge_rowids(&conn, other), other_rows);
+        drop(conn);
+        fs::remove_dir_all(root).expect("cleanup alias refresh root");
+    }
+
+    #[test]
+    fn a_refresh_that_reads_the_same_rows_leaves_them_unwritten() {
+        let root = temp_root("edge-refresh-unchanged");
+        seed_edge_entity(&root, "alice", "Alice Edge");
+        seed_edge_entity(&root, "bob", "Bob Edge");
+        let rel = "facets/work/entities/20260304.jsonl";
+        write(
+            &root,
+            rel,
+            r#"{"name":"Alice Edge","segments":["s1"]}
+{"name":"Bob Edge","segments":["s1"]}
+"#,
+        );
+        scan_journal(&root, true).expect("scan");
+        let conn = Connection::open(db_path(&root)).expect("open db");
+        let before = edge_rowids(&conn, rel);
+        // A new extractor version refreshes every file.
+        conn.execute(
+            "UPDATE edge_files SET mtime = 0 WHERE path = 'edges:extractor'",
+            [],
+        )
+        .expect("age the extractor marker");
+        drop(conn);
+
+        let report = rebuild_edges(&root).expect("refresh every file");
+        assert_eq!((report.marked, report.files, report.rows), (1, 1, 0));
+        let conn = Connection::open(db_path(&root)).expect("open db after refresh");
+        assert_eq!(edge_rowids(&conn, rel), before);
+        assert!(edge_file_mtime(&conn, rel).is_some_and(|mtime| mtime > 0));
+        drop(conn);
+        fs::remove_dir_all(root).expect("cleanup unchanged refresh root");
+    }
+
+    #[test]
+    fn a_failing_stale_file_goes_back_to_the_scan_and_holds_up_nothing() {
+        let root = temp_root("edge-refresh-failure-handoff");
+        seed_edge_entity(&root, "alice", "Alice Edge");
+        seed_edge_entity(&root, "bob", "Bob Edge");
+        let broken = "20260430/default/090000_300/talents/documents.json";
+        let good = "facets/work/entities/20260304.jsonl";
+        write(&root, &format!("chronicle/{broken}"), "{}");
+        write(
+            &root,
+            good,
+            r#"{"name":"Alice Edge","segments":["s1"]}
+{"name":"Bob Edge","segments":["s1"]}
+"#,
+        );
+        scan_journal(&root, true).expect("scan");
+        // The newest day now fails to read, with bytes the index already
+        // recorded; then a new extractor marks every file stale.
+        let source = root.join(format!("chronicle/{broken}"));
+        write(&root, &format!("chronicle/{broken}"), "{not json");
+        let conn = Connection::open(db_path(&root)).expect("open db");
+        conn.execute(
+            "UPDATE edge_files SET mtime = ? WHERE path = ?",
+            params![file_mtime_secs(&source).expect("broken mtime"), broken],
+        )
+        .expect("record the broken bytes as read");
+        conn.execute(
+            "UPDATE edge_files SET mtime = 0 WHERE path = 'edges:extractor'",
+            [],
+        )
+        .expect("age the extractor marker");
+        drop(conn);
+
+        let report = rebuild_edges(&root).expect("refresh");
+        assert_eq!((report.files, report.failed, report.remaining), (1, 1, 0));
+        let conn = Connection::open(db_path(&root)).expect("open db after refresh");
+        assert_eq!(edge_file_mtime(&conn, broken), Some(0));
+        assert!(edge_file_mtime(&conn, good).is_some_and(|mtime| mtime > 0));
+        assert_eq!(edge_rowids(&conn, good).len(), 1);
+        drop(conn);
+        fs::remove_dir_all(root).expect("cleanup failure handoff root");
+    }
+
+    #[test]
+    fn rebuild_edges_on_a_current_index_reads_nothing_and_preserves_tables() {
         let root = temp_root("edge-rebuild");
         seed_edge_entity(&root, "alice", "Alice Edge");
         seed_edge_entity(&root, "bob", "Bob Edge");
@@ -4076,9 +4407,9 @@ mod tests {
         let before_rows = edge_rows(&conn);
         drop(conn);
 
+        // A scanned journal is current: the rebuild reads nothing again.
         let first = rebuild_edges(&root).expect("first rebuild edges");
-        assert_eq!(first.files, 1);
-        assert_eq!(first.rows, 1);
+        assert_eq!((first.files, first.rows, first.marked), (0, 0, 0));
         let conn = Connection::open(db_path(&root)).expect("open db after rebuild");
         assert_eq!(count(&conn, "SELECT count(*) FROM chunks"), chunk_count);
         assert_eq!(count(&conn, "SELECT count(*) FROM files"), files_count);
@@ -4094,7 +4425,7 @@ mod tests {
         drop(conn);
 
         let second = rebuild_edges(&root).expect("second rebuild edges");
-        assert_eq!(second.rows, 1);
+        assert_eq!((second.files, second.rows, second.marked), (0, 0, 0));
         let conn = Connection::open(db_path(&root)).expect("open db after second rebuild");
         assert_eq!(edge_rows(&conn), before_rows);
         drop(conn);
@@ -4102,7 +4433,7 @@ mod tests {
     }
 
     #[test]
-    fn rebuild_edges_trigger_failure_rolls_back_full_rebuild() {
+    fn rebuild_edges_trigger_failure_keeps_that_files_rows() {
         let root = temp_root("edge-rebuild-trigger-rollback");
         seed_edge_entity(&root, "alice", "Alice Edge");
         seed_edge_entity(&root, "bob", "Bob Edge");
@@ -4114,7 +4445,8 @@ mod tests {
 {"name":"Bob Edge","segments":["fresh"]}
 "#,
         );
-        let conn = open_index(&root).expect("open index");
+        let mut conn = open_index(&root).expect("open index");
+        record_edge_inputs(&mut conn, &root);
         conn.execute(
             "INSERT INTO edges(src, dst, kind, directed, source, path, anchor, weight) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             params![
@@ -4949,7 +5281,8 @@ mod tests {
         write(&root, &format!("chronicle/{removed}"), "{}");
         write(&root, &format!("chronicle/{sibling}"), "{}");
 
-        let conn = open_index(&root).expect("open index");
+        let mut conn = open_index(&root).expect("open index");
+        record_edge_inputs(&mut conn, &root);
         for (rel, src, dst) in [(removed, "alice", "bob"), (sibling, "cora", "dan")] {
             conn.execute(
                 "INSERT INTO edges(src, dst, kind, directed, source, path, weight) VALUES (?, ?, ?, ?, ?, ?, ?)",

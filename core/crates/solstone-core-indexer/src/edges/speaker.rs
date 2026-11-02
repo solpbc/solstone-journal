@@ -17,7 +17,7 @@ use super::{
 };
 use solstone_core_journal::python_strip;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct MentionCandidate {
     entity_id: String,
     entity_name: String,
@@ -464,6 +464,21 @@ fn mentioned_rows(
 }
 
 impl SpeakerEntityIndex {
+    /// Write everything extraction reads from this index, in a stable order.
+    pub(super) fn describe(&self, text: &mut String) {
+        use std::fmt::Write as _;
+        let variants = self
+            .variants
+            .iter()
+            .map(|variant| variant.chars.iter().collect::<String>())
+            .collect::<Vec<_>>();
+        let _ = write!(
+            text,
+            "{:?}{:?}{:?}{:?}",
+            self.admissible_speakers, self.folders_by_id, self.candidates_by_key, variants
+        );
+    }
+
     /// The folder of the entity a label names by id, or the id itself.
     fn folder_of(&self, id: &str) -> String {
         self.folders_by_id

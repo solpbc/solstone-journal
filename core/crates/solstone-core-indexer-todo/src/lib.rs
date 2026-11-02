@@ -23,6 +23,9 @@ pub enum Token {
     ScanFull,
     Reclassify,
     EntitySearch,
+    /// Connections waiting to be brought current after a change they were
+    /// resolved against. Last in line: it runs a short slice and re-queues.
+    Edges,
 }
 
 impl Token {
@@ -31,6 +34,7 @@ impl Token {
             Self::ScanFull => "@scan-full",
             Self::Reclassify => "@reclassify",
             Self::EntitySearch => "@entity-search",
+            Self::Edges => "@edges",
         }
     }
 }
@@ -52,6 +56,7 @@ impl Entry {
             ("scan-full", "@scan-full") => Some(1),
             ("reclassify", "@reclassify") => Some(2),
             ("entity-search", "@entity-search") => Some(3),
+            ("edges", "@edges") => Some(4),
             _ => None,
         }
     }

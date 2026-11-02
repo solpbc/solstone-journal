@@ -9,7 +9,7 @@ mod slug;
 pub use batch::{build_name_resolution_map, find_entity_by_email, is_name_variant_match};
 pub use matcher::{
     ConfidentMatcher, EntityNameCandidate, EntityNameMatch, EntityNameMatchOutcome, MatchTier,
-    char_len, find_matching_entity, find_matching_entity_detailed, first_word_match,
+    NameMatcher, char_len, find_matching_entity, find_matching_entity_detailed, first_word_match,
     prefix_token_match, single_token_first_word_match, token_sort, token_sort_ratio,
     token_subset_match,
 };

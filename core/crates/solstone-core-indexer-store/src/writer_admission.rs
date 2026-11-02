@@ -14,8 +14,6 @@
 //! - `prune_authored_chat_paths` (prune-authored-chat)
 //! - `prune_chunks_by_stream` (prune-stream)
 //! - `rebuild_edges` (rebuild-edges)
-//! - `fold_entity_edges_for_recorded_merge` (fold-entity-edges)
-//! - `rebuild_edges_for_recorded_merge_undo` (rebuild-edges-fingerprint)
 //! - `apply_path_lookup` (path-lookup)
 //! - `apply_classification_batch` (classification-batch, once per batch)
 //! - `reconcile_stale_classifications` (reconcile-classifications)
@@ -751,7 +749,7 @@ pub(crate) mod tests {
             );
 
             type Mutation = fn(&Path) -> Result<(), StoreError>;
-            let mutations: [(&str, Mutation); 14] = [
+            let mutations: [(&str, Mutation); 12] = [
                 ("scan", |j| crate::scan::scan_journal(j, false).map(|_| ())),
                 ("rescan-file", |j| {
                     rescan_file(
@@ -772,13 +770,6 @@ pub(crate) mod tests {
                 }),
                 ("rebuild-edges", |j| {
                     crate::scan::rebuild_edges(j).map(|_| ())
-                }),
-                ("fold-entity-edges", |j| {
-                    crate::merge::fold_entity_edges_for_recorded_merge(j, "source", "target")
-                        .map(|_| ())
-                }),
-                ("rebuild-edges-fingerprint", |j| {
-                    crate::merge::rebuild_edges_for_recorded_merge_undo(j).map(|_| ())
                 }),
                 ("path-lookup", |j| {
                     crate::chunk_sources::apply_path_lookup(j).map(|_| ())

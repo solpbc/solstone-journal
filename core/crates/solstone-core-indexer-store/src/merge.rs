@@ -5,87 +5,15 @@ use std::fmt::Write as _;
 use std::path::Path;
 
 use rusqlite::types::Value;
-use rusqlite::{Connection, Row, params};
 use sha2::{Digest, Sha256};
-use solstone_core_indexer::edges::discovery::discover_edge_files;
 
 use crate::StoreError;
-use crate::db::{open_index_admitted, open_index_reader};
-use crate::scan::rebuild_edges_guarded;
-use crate::writer_admission::IndexAdmission;
+use crate::db::open_index_reader;
 
 const EDGE_COLUMNS: [&str; 14] = [
     "src", "dst", "kind", "directed", "src_name", "dst_name", "day", "facet", "source", "path",
     "anchor", "label", "ts", "weight",
 ];
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct EntityEdgeFoldReport {
-    pub rows_folded: usize,
-    pub self_edges_dropped: usize,
-    pub fallback_rebuild: bool,
-}
-
-pub fn fold_entity_edges_for_recorded_merge(
-    journal: &Path,
-    source_id: &str,
-    target_id: &str,
-) -> Result<EntityEdgeFoldReport, StoreError> {
-    let admission = IndexAdmission::acquire(journal, "fold-entity-edges")?;
-    let mut conn = open_index_admitted(journal, &admission, &|| Ok(()))?;
-    let fallback_rebuild = edge_rows_all_from_sources(&conn, journal)?;
-    let transaction = conn.transaction()?;
-    let rows_folded = transaction.query_row(
-        "SELECT COUNT(*) FROM edges WHERE src=? OR dst=?",
-        params![source_id, source_id],
-        edge_count,
-    )?;
-    transaction.execute(
-        "UPDATE edges SET src=? WHERE src=?",
-        params![target_id, source_id],
-    )?;
-    transaction.execute(
-        "UPDATE edges SET dst=? WHERE dst=?",
-        params![target_id, source_id],
-    )?;
-    let self_edges_dropped = transaction.query_row(
-        "SELECT COUNT(*) FROM edges WHERE src=dst AND src=?",
-        [target_id],
-        edge_count,
-    )?;
-    transaction.execute("DELETE FROM edges WHERE src=dst AND src=?", [target_id])?;
-    transaction.execute(
-        "UPDATE edges
-         SET src=dst, dst=src, src_name=dst_name, dst_name=src_name
-         WHERE directed=0 AND src>dst AND (src=? OR dst=?)",
-        params![target_id, target_id],
-    )?;
-    transaction.commit()?;
-    drop(conn);
-
-    if fallback_rebuild {
-        let rebuild = rebuild_edges_guarded(journal, &admission, &|| Ok(()), || Ok(true))?
-            .expect("closure returned true");
-        if rebuild.failed > 0 {
-            return Err(StoreError::EdgeRebuildFailed(rebuild));
-        }
-    }
-    Ok(EntityEdgeFoldReport {
-        rows_folded,
-        self_edges_dropped,
-        fallback_rebuild,
-    })
-}
-
-pub fn rebuild_edges_for_recorded_merge_undo(journal: &Path) -> Result<String, StoreError> {
-    let admission = IndexAdmission::acquire(journal, "rebuild-edges-fingerprint")?;
-    let rebuild = rebuild_edges_guarded(journal, &admission, &|| Ok(()), || Ok(true))?
-        .expect("closure returned true");
-    if rebuild.failed > 0 {
-        return Err(StoreError::EdgeRebuildFailed(rebuild));
-    }
-    fingerprint_edge_rows(journal)
-}
 
 pub fn fingerprint_edge_rows(journal: &Path) -> Result<String, StoreError> {
     let conn = open_index_reader(journal)?;
@@ -110,23 +38,6 @@ pub fn fingerprint_edge_rows(journal: &Path) -> Result<String, StoreError> {
     }
     payload.push(']');
     Ok(format!("{:x}", Sha256::digest(payload.as_bytes())))
-}
-
-fn edge_rows_all_from_sources(conn: &Connection, journal: &Path) -> Result<bool, StoreError> {
-    let mut statement = conn.prepare("SELECT DISTINCT path FROM edges")?;
-    let paths = statement
-        .query_map([], |row| row.get::<_, String>(0))?
-        .collect::<Result<Vec<_>, _>>()?;
-    if paths.is_empty() {
-        return Ok(false);
-    }
-    let discovered = discover_edge_files(journal)?;
-    Ok(paths.iter().all(|path| discovered.contains_key(path)))
-}
-
-fn edge_count(row: &Row<'_>) -> rusqlite::Result<usize> {
-    let count = row.get::<_, i64>(0)?;
-    usize::try_from(count).map_err(|_| rusqlite::Error::IntegralValueOutOfRange(0, count))
 }
 
 fn append_json_value(output: &mut String, value: Value) -> Result<(), StoreError> {
@@ -210,71 +121,6 @@ mod tests {
             params![src, dst, directed, src_name, dst_name, path],
         )
         .expect("seed edge");
-    }
-
-    #[test]
-    fn folds_edges_drops_self_edges_and_recanonicalizes_undirected_rows() {
-        let root = temp_root("fold");
-        let conn = open_index(&root).expect("open index");
-        insert_edge(&conn, "source", "target", 0, "Source", "Target", "manual");
-        insert_edge(&conn, "source", "alpha", 0, "Source", "Alpha", "manual");
-        drop(conn);
-
-        let report =
-            fold_entity_edges_for_recorded_merge(&root, "source", "target").expect("fold edges");
-        assert_eq!(report.rows_folded, 2);
-        assert_eq!(report.self_edges_dropped, 1);
-        assert!(!report.fallback_rebuild);
-        let conn = open_index(&root).expect("reopen index");
-        let row: (String, String, String, String) = conn
-            .query_row(
-                "SELECT src, dst, src_name, dst_name FROM edges",
-                [],
-                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
-            )
-            .expect("folded row");
-        assert_eq!(
-            row,
-            (
-                "alpha".to_owned(),
-                "target".to_owned(),
-                "Alpha".to_owned(),
-                "Source".to_owned()
-            )
-        );
-        drop(conn);
-        fs::remove_dir_all(root).expect("cleanup root");
-    }
-
-    #[test]
-    fn rebuilds_when_all_current_rows_are_from_discovered_sources() {
-        let root = temp_root("fallback");
-        let source = root.join("facets/work/entities/source/observations.jsonl");
-        fs::create_dir_all(source.parent().expect("source parent")).expect("create source parent");
-        fs::write(&source, "").expect("write source");
-        let conn = open_index(&root).expect("open index");
-        insert_edge(
-            &conn,
-            "source",
-            "target",
-            0,
-            "Source",
-            "Target",
-            "facets/work/entities/source/observations.jsonl",
-        );
-        drop(conn);
-
-        let report = fold_entity_edges_for_recorded_merge(&root, "source", "target")
-            .expect("fold and rebuild edges");
-
-        assert!(report.fallback_rebuild);
-        let conn = open_index(&root).expect("reopen index");
-        let count = conn
-            .query_row("SELECT COUNT(*) FROM edges", [], edge_count)
-            .expect("edge count");
-        assert_eq!(count, 0);
-        drop(conn);
-        fs::remove_dir_all(root).expect("cleanup root");
     }
 
     #[test]

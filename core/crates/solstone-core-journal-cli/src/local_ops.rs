@@ -421,7 +421,7 @@ fn indexer(args: &[OsString]) -> Outcome {
                     report.indexed, report.removed, report.skipped
                 ));
                 if rescan_full && !reset && !rebuild && report.edge_rows_inserted == 0 {
-                    stdout.push_str("Zero edges indexed: edges are talent-derived, and the --rescan-full edge phase remains modification-time incremental — run solstone journal indexer --rebuild-edges to force full edge re-extraction.\n");
+                    stdout.push_str("No new connections were added in this rescan. Run solstone journal indexer --rebuild-edges to bring any still waiting up to date now.\n");
                 }
                 // A full rescan is an operator's repair, so it says when files failed.
                 // A light rescan keeps exit 0: the nightly processing runs it, and a

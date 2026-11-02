@@ -8,6 +8,7 @@ pub mod chunk_sources;
 pub mod classification;
 pub mod classification_batch;
 pub mod db;
+pub mod edge_refresh;
 pub mod generation;
 pub mod merge;
 pub mod migrations;
@@ -55,7 +56,6 @@ pub enum StoreError {
         path: PathBuf,
         detail: String,
     },
-    EdgeRebuildFailed(scan::EdgeRebuildReport),
     PathLookupRequired {
         cause: Option<String>,
     },
@@ -100,9 +100,6 @@ impl fmt::Display for StoreError {
                 "memory original could not be checked at {}; cached index retained; retry when the source is readable: {detail}",
                 path.display()
             ),
-            StoreError::EdgeRebuildFailed(report) => {
-                write!(formatter, "edge rebuild failed: {report:?}")
-            }
             StoreError::PathLookupRequired { cause: None } => {
                 write!(formatter, "indexer path-lookup --apply")
             }

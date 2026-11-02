@@ -75,6 +75,20 @@ ts INTEGER,
 weight INTEGER NOT NULL
 )";
 const CREATE_EDGES_PATH_INDEX: &str = "CREATE INDEX IF NOT EXISTS edges_path ON edges(path)";
+/// The names each edge file resolved and who they resolved to, so an entity
+/// change re-reads only the files whose answers it changes.
+const CREATE_EDGE_LOOKUPS: &str = "\
+CREATE TABLE IF NOT EXISTS edge_lookups(
+path TEXT NOT NULL,
+facet TEXT NOT NULL,
+confident INTEGER NOT NULL,
+name TEXT NOT NULL,
+entity_id TEXT
+)";
+const CREATE_EDGE_LOOKUPS_PATH_INDEX: &str =
+    "CREATE INDEX IF NOT EXISTS edge_lookups_path ON edge_lookups(path)";
+const CREATE_EDGE_LOOKUPS_NAME_INDEX: &str =
+    "CREATE INDEX IF NOT EXISTS edge_lookups_name ON edge_lookups(facet, confident, name)";
 const CREATE_EDGES_SOURCE_ANCHOR_INDEX: &str =
     "CREATE INDEX IF NOT EXISTS edges_source_anchor ON edges(source, anchor)";
 const CREATE_EDGES_SRC_INDEX: &str =
@@ -339,6 +353,7 @@ pub(crate) fn reset_index_admitted(
     tx.execute("DROP INDEX IF EXISTS idx_edges_src", [])?;
     tx.execute("DROP INDEX IF EXISTS idx_edges_dst", [])?;
     tx.execute("DROP TABLE IF EXISTS edges", [])?;
+    tx.execute("DROP TABLE IF EXISTS edge_lookups", [])?;
     tx.execute("DROP TABLE IF EXISTS edge_files", [])?;
     tx.execute("DROP TABLE IF EXISTS files", [])?;
     tx.execute("DROP TABLE IF EXISTS memory_originals", [])?;
@@ -481,6 +496,7 @@ pub(crate) fn prune_by_paths_admitted(
         execute_prune_predicate(&tx, "screen_text_source", &pred)?;
         counts.files += execute_prune_predicate(&tx, "files", &pred)?;
         execute_prune_predicate(&tx, "edges", &pred)?;
+        execute_prune_predicate(&tx, "edge_lookups", &pred)?;
         execute_prune_predicate(&tx, "edge_files", &pred)?;
     }
     let relisted = relist(&tx, journal, &calendar_identities)?;
@@ -767,6 +783,9 @@ fn create_schema(conn: &Connection) -> Result<(), StoreError> {
     conn.execute(CREATE_EDGES_SOURCE_ANCHOR_INDEX, [])?;
     conn.execute(CREATE_EDGES_SRC_INDEX, [])?;
     conn.execute(CREATE_EDGES_DST_INDEX, [])?;
+    conn.execute(CREATE_EDGE_LOOKUPS, [])?;
+    conn.execute(CREATE_EDGE_LOOKUPS_PATH_INDEX, [])?;
+    conn.execute(CREATE_EDGE_LOOKUPS_NAME_INDEX, [])?;
     conn.execute(CREATE_INDEX_BUILD_STATE, [])?;
     conn.execute(CREATE_ENTITY_SEARCH_WATERMARK, [])?;
     conn.execute(CREATE_SEGMENT_AGGREGATE_MIGRATION, [])?;

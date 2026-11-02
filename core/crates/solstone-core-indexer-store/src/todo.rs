@@ -248,6 +248,10 @@ pub fn drain_with_checkpoint(
     Ok(report)
 }
 
+/// How long one queued connections refresh holds the writer before it
+/// re-queues itself behind newer work.
+const EDGE_SLICE: Duration = Duration::from_secs(5);
+
 fn process(
     journal: &Path,
     entry: &Entry,
@@ -285,6 +289,33 @@ fn process(
         }
         Some(3) => {
             crate::scan::update_entity_search_admitted(journal, admission)?;
+            // An entity changed: mark the connections it reaches. The refresh
+            // itself waits its turn behind everything else in the queue.
+            match crate::scan::invalidate_edges_admitted(journal, admission, checkpoint) {
+                Ok(0) => {}
+                Ok(_) => enqueue_token(journal, Token::Edges)?,
+                Err(error @ StoreError::WriterAdmission { .. }) => return Err(error),
+                Err(error) => log::warn!(
+                    target: "solstone::indexer",
+                    "connections not checked after an entity change: {error}"
+                ),
+            }
+            Ok("indexed")
+        }
+        Some(4) => {
+            let report =
+                crate::scan::refresh_edges_admitted(journal, admission, checkpoint, EDGE_SLICE)?;
+            if report.failed > 0 {
+                log::warn!(
+                    target: "solstone::indexer",
+                    "connections refresh left {} file(s) failed: {}",
+                    report.failed,
+                    report.warnings.join("; ")
+                );
+            }
+            if report.files + report.failed > 0 && report.remaining > 0 {
+                enqueue_token(journal, Token::Edges)?;
+            }
             Ok("indexed")
         }
         _ => unreachable!("only known entries are claimed"),

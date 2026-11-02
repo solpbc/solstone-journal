@@ -275,13 +275,13 @@ solstone journal indexer --rescan-full
 
 This is a full historical rescan and can take a while on a large journal.
 
-**connections/edges backfill.** The relationship layer between entities (who is connected to whom, and how) is derived by a separate pass, and extraction is incremental on file modification time. Once a day’s mtimes are recorded, an ordinary rescan will not re-extract its edges even with `--rescan-full`. A weekly schedule rebuilds them on its own. To force it now:
+**connections/edges backfill.** The relationship layer between entities is derived by a separate pass. It re-reads a file when the file changes. When the people in your journal change, it re-reads only the days that mention a name whose match has changed, newest day first, a little at a time. After an upgrade that changes how connections are read, it re-reads every day once, the same way. To bring every connection up to date at once:
 
 ```bash
 solstone journal indexer --rebuild-edges
 ```
 
-Run this if your existing days show no connections and you would rather not wait for the weekly pass.
+Run this if connections you expect are missing from existing days and you would rather not wait. Stopping it partway keeps what it finished.
 
 **if your journal isn't at the default location.** To select an existing journal explicitly, use:
 

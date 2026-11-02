@@ -20,7 +20,7 @@ use chrono::{Datelike, Duration, LocalResult, NaiveDate, NaiveDateTime, Offset, 
 use chrono_tz::Tz;
 use serde_json::{Map, Value};
 
-use crate::edges::candidates::EdgeResolver;
+use crate::edges::candidates::{EdgeLookup, EdgeResolver};
 use crate::edges::registry::{EdgeSourceKind, edge_source_for_rel};
 use crate::metadata::extract_path_metadata;
 use solstone_core_format::segment::{segment_key, segment_parse};
@@ -112,6 +112,8 @@ pub struct EdgeFileRows {
     pub rows: Vec<NormalizedEdge>,
     pub invalid_segment: Option<String>,
     pub warnings: Vec<String>,
+    /// The names this file resolved, with their answers.
+    pub lookups: Vec<EdgeLookup>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -234,6 +236,7 @@ pub fn extract_file_edges(
             rows: Vec::new(),
             invalid_segment: None,
             warnings: Vec::new(),
+            lookups: Vec::new(),
         });
     };
     // Day-rooted edge sources have an exact day/origin/segment shape. Validate
@@ -252,6 +255,7 @@ pub fn extract_file_edges(
             rows: Vec::new(),
             invalid_segment: Some(segment),
             warnings: Vec::new(),
+            lookups: Vec::new(),
         });
     }
 
@@ -298,6 +302,7 @@ pub fn extract_file_edges(
         rows: normalize_edges(rows)?,
         invalid_segment: None,
         warnings,
+        lookups: resolver.take_lookups(),
     })
 }
 

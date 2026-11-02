@@ -7,7 +7,7 @@ use std::{env, fs, path::Path};
 
 use solstone_core_indexer_store::db::open_index;
 
-const EXPECTED_ZERO_EDGE_HINT: &str = "Zero edges indexed: edges are talent-derived, and the --rescan-full edge phase remains modification-time incremental — run solstone journal indexer --rebuild-edges to force full edge re-extraction.";
+const EXPECTED_ZERO_EDGE_HINT: &str = "No new connections were added in this rescan. Run solstone journal indexer --rebuild-edges to bring any still waiting up to date now.";
 
 fn bin() -> &'static str {
     env!("CARGO_BIN_EXE_solstone-core")
@@ -427,12 +427,6 @@ fn indexer_native_mutation_verbs_write_and_report_json() {
         serde_json::from_slice::<serde_json::Value>(&output.stdout).expect("paths JSON"),
         serde_json::json!({"chunks": 1, "files": 1})
     );
-
-    let output = run_indexer_verb(&root, &["fold-entity-edges", "source", "merged", "--json"]);
-    assert_eq!(output.status.code(), Some(0));
-    let fold = serde_json::from_slice::<serde_json::Value>(&output.stdout).expect("fold JSON");
-    assert_eq!(fold["rows_folded"], 1);
-    assert_eq!(fold["self_edges_dropped"], 0);
 
     let output = run_indexer_verb(&root, &["edge-fingerprint", "--json"]);
     assert_eq!(output.status.code(), Some(0));
