@@ -117,6 +117,10 @@ impl IngestNotifier for CallosumIngestNotifier {
         }
         Ok(())
     }
+
+    fn owner_notice(&self, line: &str) {
+        let _ = self.sender.send_line(line);
+    }
 }
 
 #[cfg(test)]
@@ -1430,7 +1434,8 @@ fn record_ingest_activity(
     activity: IngestActivity,
     source: Option<&str>,
 ) {
-    let timestamp = activity_timestamp((state.now_ms)());
+    let now_ms = (state.now_ms)();
+    let timestamp = activity_timestamp(now_ms);
     let mut ledger = AuthorizationLedger::new(&state.journal_root);
     let (operation, result) = match activity {
         IngestActivity::Accepted(segment) => (
@@ -1449,8 +1454,18 @@ fn record_ingest_activity(
             )
         }
     };
-    if result.is_err() {
-        log::warn!("client_activity_write_failed operation={operation}");
+    match result {
+        // The device is still paired and its streak is written: say what the
+        // record now holds, so a missed line is repaired by the next upload.
+        Ok(true) => {
+            if let Some(line) =
+                crate::rejection_notice::announcement(&state.journal_root, cid, now_ms)
+            {
+                state.notifier.owner_notice(&line);
+            }
+        }
+        Ok(false) => {}
+        Err(_) => log::warn!("client_activity_write_failed operation={operation}"),
     }
 }
 
@@ -3899,13 +3914,18 @@ mod tests {
             messages
         }
 
+        /// Owner notices about the device are not ingest notifications.
         async fn no_more_messages(peer: &mut CallosumSocketConnection) {
-            assert!(
-                tokio::time::timeout(Duration::from_millis(200), peer.next_message())
-                    .await
-                    .is_err(),
-                "unexpected ingest notification"
-            );
+            let next = tokio::time::timeout(Duration::from_millis(200), async {
+                loop {
+                    let message = peer.next_message().await.expect("callosum peer");
+                    if message.tract != "owner_notice" {
+                        break message;
+                    }
+                }
+            })
+            .await;
+            assert!(next.is_err(), "unexpected ingest notification: {next:?}");
         }
 
         fn drain_and_find(root: &Path, path: &str, text: &str) {
@@ -5620,5 +5640,177 @@ mod tests {
             assert_eq!(spy.calls.load(Ordering::SeqCst), 1);
             assert_eq!(spy.notices.lock().unwrap()[0].source, "calendar");
         }
+    }
+
+    /// Keeps the owner-notice lines the router announces, in order.
+    #[derive(Default)]
+    struct OwnerNoticeSpy {
+        lines: Mutex<Vec<Value>>,
+    }
+
+    impl OwnerNoticeSpy {
+        fn events(&self) -> Vec<(String, String)> {
+            self.lines
+                .lock()
+                .unwrap()
+                .iter()
+                .map(|line| {
+                    (
+                        line["event"].as_str().unwrap().to_owned(),
+                        line["key"].as_str().unwrap().to_owned(),
+                    )
+                })
+                .collect()
+        }
+    }
+
+    impl solstone_core_ingest_resolve::IngestNotifier for OwnerNoticeSpy {
+        fn notify(
+            &self,
+            _notice: &solstone_core_ingest_resolve::IngestNotice<'_>,
+        ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+            Ok(())
+        }
+
+        fn owner_notice(&self, line: &str) {
+            assert!(line.ends_with('\n'));
+            self.lines
+                .lock()
+                .unwrap()
+                .push(serde_json::from_str(line).unwrap());
+        }
+    }
+
+    async fn upload_with_version(
+        app: &axum::Router,
+        cid: &str,
+        segment: &str,
+        version: &str,
+    ) -> StatusCode {
+        let request = envelope("20260804", segment, json!([{"submitted":"audio.flac"}]));
+        let (content_type, body) = multipart(request, "audio.flac", b"sound");
+        call(
+            app,
+            "POST",
+            "/app/devices/ingest",
+            Some(content_type),
+            body,
+            basis(cid),
+            Some(version),
+            &[],
+        )
+        .await
+        .0
+    }
+
+    #[tokio::test]
+    async fn an_app_too_old_raises_on_the_second_refusal_and_clears_when_an_upload_lands() {
+        let dir = root();
+        let spy = Arc::new(OwnerNoticeSpy::default());
+        let app = api_router_with_notifier(dir.path(), spy.clone());
+        let key = format!("ingest_rejected:{CID_A}");
+
+        assert_eq!(
+            upload_with_version(&app, CID_A, "120000_1", "2").await,
+            StatusCode::UPGRADE_REQUIRED
+        );
+        assert!(spy.events().is_empty(), "one refusal says nothing");
+
+        assert_eq!(
+            upload_with_version(&app, CID_A, "120000_1", "2").await,
+            StatusCode::UPGRADE_REQUIRED
+        );
+        assert_eq!(spy.events(), vec![("raise".to_owned(), key.clone())]);
+        let raised = spy.lines.lock().unwrap()[0].clone();
+        assert_eq!(raised["tract"], "owner_notice");
+        assert_eq!(raised["action"], "/app/health/#registeredClientsCard");
+        assert!(raised["title"].as_str().unwrap().contains("Test device"));
+
+        // While it lasts the router keeps saying so; the episode record keeps
+        // it to one notice.
+        upload_with_version(&app, CID_A, "120000_1", "2").await;
+        assert_eq!(spy.events().len(), 2);
+        assert_eq!(spy.events()[1].0, "raise");
+
+        assert_eq!(
+            upload_with_version(&app, CID_A, "120000_1", "3").await,
+            StatusCode::OK
+        );
+        assert_eq!(spy.events()[2], ("clear".to_owned(), key));
+        assert_eq!(spy.events().len(), 3);
+    }
+
+    #[tokio::test]
+    async fn a_single_refusal_the_next_upload_fixes_never_raises() {
+        let dir = root();
+        let spy = Arc::new(OwnerNoticeSpy::default());
+        let app = api_router_with_notifier(dir.path(), spy.clone());
+        upload_with_version(&app, CID_A, "120000_1", "2").await;
+        assert_eq!(
+            upload_with_version(&app, CID_A, "120000_1", "3").await,
+            StatusCode::OK
+        );
+        assert!(spy.events().iter().all(|(event, _)| event == "clear"));
+    }
+
+    #[tokio::test]
+    async fn refusals_about_the_upload_itself_never_raise() {
+        let dir = root();
+        let spy = Arc::new(OwnerNoticeSpy::default());
+        let app = api_router_with_notifier(dir.path(), spy.clone());
+        let request = envelope(
+            "2026-08-04",
+            "120000_1",
+            json!([{"submitted":"audio.flac"}]),
+        );
+        for _ in 0..4 {
+            let (status, body) = call_upload(&app, request.clone(), "audio.flac", b"sound").await;
+            assert_eq!(status, StatusCode::BAD_REQUEST);
+            assert_eq!(body["reason_code"], "day_invalid");
+        }
+        assert!(spy.events().is_empty());
+    }
+
+    #[tokio::test]
+    async fn an_unpaired_device_announces_nothing() {
+        let dir = root();
+        let spy = Arc::new(OwnerNoticeSpy::default());
+        let app = api_router_with_notifier(dir.path(), spy.clone());
+        let stranger = "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd";
+        for _ in 0..3 {
+            upload_with_version(&app, stranger, "120000_1", "2").await;
+        }
+        assert!(spy.events().is_empty());
+    }
+
+    #[cfg(feature = "full-tests")]
+    #[tokio::test]
+    async fn the_raise_reaches_the_bus_from_the_shipped_router() {
+        let dir = root();
+        let root = dir.path().to_path_buf();
+        let socket = root.join("health/callosum.sock");
+        #[cfg(windows)]
+        let _namespace =
+            solstone_core_callosum::test_fixture::WindowsPipeNamespace::register(&socket);
+        let server = CallosumSocketServer::bind(&socket).await.unwrap();
+        let mut peer = CallosumSocketConnection::new(&socket, Map::new());
+        peer.start();
+        wait_for_callosum_client(&server).await;
+        let app = api_router(&root);
+        upload_with_version(&app, CID_A, "120000_1", "2").await;
+        upload_with_version(&app, CID_A, "120000_1", "2").await;
+        let notice = tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                let message = peer.next_message().await.expect("callosum peer");
+                if message.tract == "owner_notice" {
+                    break message;
+                }
+            }
+        })
+        .await
+        .expect("owner_notice event");
+        assert_eq!(notice.event, "raise");
+        assert_eq!(notice.extra["key"], format!("ingest_rejected:{CID_A}"));
+        assert_eq!(notice.extra["action"], "/app/health/#registeredClientsCard");
     }
 }

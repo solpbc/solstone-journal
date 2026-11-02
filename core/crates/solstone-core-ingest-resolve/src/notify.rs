@@ -22,4 +22,8 @@ pub struct IngestNotice<'a> {
 /// is unaffected.
 pub trait IngestNotifier: Send + Sync {
     fn notify(&self, notice: &IngestNotice<'_>) -> Result<(), Box<dyn Error + Send + Sync>>;
+
+    /// Best effort: put one already framed owner-notice line on the bus. The
+    /// default sends nothing; the fact it carries stays in the journal either way.
+    fn owner_notice(&self, _line: &str) {}
 }

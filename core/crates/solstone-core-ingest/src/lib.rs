@@ -26,9 +26,11 @@ mod health;
 mod listing;
 mod model;
 mod read_routes;
+mod rejection_notice;
 mod router;
 mod stream_identity;
 mod validation;
 
 pub use health::{DeviceDayFault, device_day_listing_faults};
+pub use rejection_notice::notice_key as ingest_rejected_notice_key;
 pub use router::api_router;

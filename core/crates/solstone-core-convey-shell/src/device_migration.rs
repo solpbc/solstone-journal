@@ -43,6 +43,7 @@ pub(crate) fn decide_and_resume(
     let Some(retired_cid) = pending_push_cid(journal, caller_cid, &request.operation_id)? else {
         return Ok(view);
     };
+    crate::paired_device::end_device_notices(journal, &retired_cid);
     if solstone_core_push::remove_cid_registrations(journal, &retired_cid).is_err() {
         return record_push_result(journal, caller_cid, &request.operation_id, false);
     }
