@@ -350,6 +350,12 @@ pub(crate) async fn run(
             sweep_abandoned_scratch(&state.journal);
             state.last_scratch_sweep = Some(tick);
         }
+        super::disk_space::check(
+            &state.journal,
+            &state.server,
+            &mut state.last_disk_space_check,
+            tick,
+        );
         let today = wall.format("%Y%m%d").to_string();
         check_index_todo(
             &state.journal,
@@ -1559,6 +1565,7 @@ mod tests {
             daily: super::super::runtime::DailyState { last_day: None },
             last_activity_settle_scan: Instant::now() - Duration::from_secs(60),
             last_scratch_sweep: None,
+            last_disk_space_check: None,
             last_index_todo_scan: None,
             wedge: solstone_core_system::provider_runtime::WedgeState::default(),
             timing: super::super::runtime::SupervisorTiming {

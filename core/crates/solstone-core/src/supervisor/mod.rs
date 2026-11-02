@@ -4,6 +4,7 @@
 mod admitted_boot;
 mod bus;
 mod config;
+mod disk_space;
 mod host;
 pub mod receipt;
 mod runtime;

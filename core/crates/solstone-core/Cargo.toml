@@ -163,6 +163,7 @@ solstone-core-chatgpt-auth.workspace = true
 solstone-core-backup.workspace = true
 solstone-core-backup-cli.workspace = true
 solstone-core-maintenance.workspace = true
+solstone-core-offload.workspace = true
 solstone-core-doctor.workspace = true
 solstone-core-setup.workspace = true
 solstone-core-indexer-query.workspace = true

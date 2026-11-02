@@ -4231,6 +4231,7 @@ dependencies = [
  "solstone-core-maintenance",
  "solstone-core-mcp-endpoint",
  "solstone-core-npy",
+ "solstone-core-offload",
  "solstone-core-operational-logs",
  "solstone-core-processing-record",
  "solstone-core-reprocess-cli",

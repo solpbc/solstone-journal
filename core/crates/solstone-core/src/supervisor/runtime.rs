@@ -217,6 +217,9 @@ pub(crate) struct SupervisorState {
     /// Last sweep for analysis scratch a killed process left behind; `None` until
     /// the first tick, so a boot sweeps at once.
     pub last_scratch_sweep: Option<Instant>,
+    /// Last read of free space on the journal's disk; `None` until the first
+    /// tick, so a boot reads it at once.
+    pub last_disk_space_check: Option<Instant>,
     pub wedge: WedgeState,
     pub timing: SupervisorTiming,
     pub parent_loss_coordinator: Option<ParentLossCoordinatorSession>,
@@ -2194,6 +2197,7 @@ pub(crate) async fn boot_and_tick(
         last_activity_settle_scan: Instant::now() - Duration::from_secs(60),
         last_index_todo_scan: None,
         last_scratch_sweep: None,
+        last_disk_space_check: None,
         wedge: WedgeState::default(),
         timing: SupervisorTiming::for_app_fixture(fast_fixture_timing),
         parent_loss_coordinator,
