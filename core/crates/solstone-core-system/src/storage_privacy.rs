@@ -6,8 +6,8 @@ use serde::Serialize;
 use std::os::unix::fs::PermissionsExt;
 use std::{fs, io, path::Path};
 
-pub const WARNING: &str = "other accounts on this computer may be able to read your journal. its folder could not be made private here. you can keep it here or move it to a drive that keeps folders private.";
-pub const ACCEPTED: &str = "you chose to keep your journal here, where other accounts on this computer may be able to read it.";
+pub const WARNING: &str = "other accounts on this computer may be able to read your journal. its folder could not be made private on this drive. you can keep it on this drive or move it to a drive that keeps folders private.";
+pub const ACCEPTED: &str = "you chose to keep your journal on this drive, where other accounts on this computer may be able to read it.";
 pub const PRIVATE: &str = "your journal's folder is private to your account on this computer.";
 pub const UNAVAILABLE: &str = "your journal's folder privacy could not be checked.";
 

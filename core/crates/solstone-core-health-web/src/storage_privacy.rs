@@ -45,7 +45,7 @@ fn record_consent(root: &Path, body: &Value) -> Response {
         }
     };
     if status.private || body["filesystem_type"].as_str() != Some(&status.filesystem_type) {
-        return (StatusCode::CONFLICT, Json(json!({"error": "your journal's storage changed. please check it again before choosing."}))).into_response();
+        return (StatusCode::CONFLICT, Json(json!({"error": "your journal's storage changed. please reload this page before choosing."}))).into_response();
     }
     let consent = json!({
         "accepted_at": chrono::Utc::now().to_rfc3339(),

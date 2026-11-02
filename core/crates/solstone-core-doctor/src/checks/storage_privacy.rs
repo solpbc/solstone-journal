@@ -14,11 +14,18 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
             } else {
                 Status::Warn
             },
-            privacy.message,
+            if !privacy.private && !privacy.consented {
+                format!(
+                    "{} to keep it on this drive, choose that on your journal's health page.",
+                    privacy.message
+                )
+            } else {
+                privacy.message.to_owned()
+            },
         ),
         Err(error) => {
             log::warn!("storage privacy: {error}");
-            (Status::Warn, UNAVAILABLE)
+            (Status::Warn, UNAVAILABLE.to_owned())
         }
     };
     Ok(make_result(check, status, message, None::<String>))

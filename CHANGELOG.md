@@ -6,8 +6,6 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-- security fix: your journal's folder is now private to your account on macos and linux. if the drive cannot keep it private, health explains the choice and lets you keep it there.
-
 ### Added
 
 - your journal now lets you know when the disk it's on is running low on space, early enough to free some up, and again once there's space. the notice opens storage settings.
@@ -26,6 +24,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- security fix: on macos and linux, other accounts on this computer can no longer open your journal's folder or read what's in it, when your journal is on a drive that keeps folders private.
 - your journal no longer shows a card each time a file can't be processed. a file it has stopped retrying is still listed under set-aside work on the health page, with a try again button.
 - `solstone call transcripts scan` now lists audio that runs until midnight. a day with audio up to midnight could list no transcripts, or only the stretches before its last one, even though `solstone call transcripts read` still showed every line.
 - when your journal had only you down as a speaker, like a talk you sat in on, it no longer puts your name on other voices' lines. your name goes on a line only when your journal recognizes your voice, or when you labeled the line yourself.

@@ -14,7 +14,7 @@ include!(concat!(env!("OUT_DIR"), "/static_assets.rs"));
 pub(crate) const STORAGE_PRIVACY: &str = r#"<section class="dashboard-card" id="storagePrivacy" aria-labelledby="storagePrivacyTitle" hidden>
       <h2 class="card-title" id="storagePrivacyTitle">journal folder privacy</h2>
       <p data-storage-privacy-message role="status" aria-live="polite"></p>
-      <button type="button" class="action-btn" data-storage-privacy-consent>keep it here</button>
+      <button type="button" class="action-btn" data-storage-privacy-consent>keep it on this drive</button>
       <p data-storage-privacy-result role="status" hidden></p>
     </section>"#;
 #[cfg(not(unix))]
