@@ -164,7 +164,7 @@ fn persistently_failing(latest: &Map<String, Value>) -> bool {
 fn failing_message(reason: Option<&str>) -> &'static str {
     match reason {
         Some("auth_failed") => {
-            "your journal's key couldn't open the backup at your backup destination. open backup to check it."
+            "your journal's key couldn't unlock the backup at your backup destination. open backup to check it."
         }
         Some("repo_missing") => {
             "no backup was found at your backup destination. open backup to check it."
@@ -189,7 +189,7 @@ fn failing_message(reason: Option<&str>) -> &'static str {
         }
         Some("timeout") => "the latest attempt ran out of time. open backup for details.",
         Some("locked") => {
-            "your backup destination is marked as in use by another backup. open backup for details."
+            "your backup destination was busy with backup maintenance. open backup for details."
         }
         _ => "the latest attempt stopped with an error. open backup for details.",
     }
