@@ -684,7 +684,50 @@ impl QueryConnection {
 }
 
 fn visible_rows(clause: &str) -> String {
-    format!("{clause} AND NOT ({AUTHORED_CHAT_PATH_PREDICATE})")
+    format!("{clause} AND NOT ({AUTHORED_CHAT_PATH_PREDICATE}) AND {NOT_AFTER_TODAY}")
+}
+
+/// The journal returns nothing dated after today. A day has arrived once it
+/// has begun anywhere, so no time zone, travel or changed zone setting hides a
+/// real moment. An undated row has no day to be after it. A row dated later
+/// stays in the index and is returned once its day arrives.
+const NOT_AFTER_TODAY: &str = "(day IS NULL OR day <= solstone_today_anywhere())";
+
+/// The latest calendar day anywhere right now, at UTC+14, as `YYYYMMDD`.
+pub(crate) fn today_anywhere(now: chrono::DateTime<chrono::Utc>) -> String {
+    (now + chrono::Duration::hours(14))
+        .date_naive()
+        .format("%Y%m%d")
+        .to_string()
+}
+
+#[cfg(test)]
+thread_local! {
+    /// Lets a test move the clock that readers opened on its thread see.
+    pub(crate) static TEST_NOW: std::cell::Cell<Option<chrono::DateTime<chrono::Utc>>> =
+        const { std::cell::Cell::new(None) };
+}
+
+fn now() -> chrono::DateTime<chrono::Utc> {
+    #[cfg(test)]
+    if let Some(now) = TEST_NOW.with(std::cell::Cell::get) {
+        return now;
+    }
+    chrono::Utc::now()
+}
+
+/// Register `solstone_today_anywhere()`. It is read once, when the reader
+/// opens, so one query sees one day.
+pub(crate) fn register_today_anywhere(connection: &Connection) -> rusqlite::Result<()> {
+    let today = today_anywhere(now());
+    connection.create_scalar_function(
+        "solstone_today_anywhere",
+        0,
+        FunctionFlags::SQLITE_UTF8
+            | FunctionFlags::SQLITE_DETERMINISTIC
+            | FunctionFlags::SQLITE_INNOCUOUS,
+        move |_| Ok(today.clone()),
+    )
 }
 
 /// A query plan returns a possible-name row only when the session's
@@ -996,7 +1039,8 @@ pub fn read_activity_observation(
     let mut clause = String::from(
         "chunks.rowid=? AND chunks.path=? AND chunks.idx=? AND NOT (\
          chunks.path LIKE '________/chat/%/chat.jsonl' OR \
-         chunks.path LIKE 'chronicle/________/chat/%/chat.jsonl')",
+         chunks.path LIKE 'chronicle/________/chat/%/chat.jsonl') \
+         AND (chunks.day IS NULL OR chunks.day <= solstone_today_anywhere())",
     );
     let mut values = vec![
         Value::Integer(i64::try_from(max_bytes).unwrap_or(i64::MAX)),
@@ -1221,6 +1265,8 @@ impl QueryConnection {
             )
             .map_err(|error| classify_sql_error(path.clone(), error))?;
         register_possible_name_admission(&connection, None)
+            .map_err(|error| classify_sql_error(path.clone(), error))?;
+        register_today_anywhere(&connection)
             .map_err(|error| classify_sql_error(path.clone(), error))?;
         Ok(Self {
             connection,

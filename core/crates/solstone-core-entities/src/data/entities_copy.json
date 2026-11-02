@@ -60,7 +60,6 @@
   "ENT_CONN_EVIDENCE_MORE": "showing {k} of {n}. show more",
   "ENT_CONN_EVIDENCE_VIEW_ENTITY": "view entity →",
   "ENT_CONN_EVIDENCE_FAILED": "couldn't load these moments. try again.",
-  "ENT_CONN_UPCOMING": " (upcoming)",
   "ENT_CONN_EMPTY": "no connections recorded yet. they appear when this entity shows up with someone or something else.",
   "ENT_CONN_INDEX_UNAVAILABLE": "connections aren't available right now.",
   "ENT_CONN_INDEX_ACTION": "check system health →",

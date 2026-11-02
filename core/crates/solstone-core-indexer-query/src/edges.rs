@@ -474,6 +474,8 @@ pub fn open_edges_reader(journal: &Path) -> Result<Connection, EdgeQueryError> {
     connection
         .execute_batch("PRAGMA query_only=ON;")
         .map_err(|error| unavailable(path.clone(), error))?;
+    crate::execute::register_today_anywhere(&connection)
+        .map_err(|error| unavailable(path.clone(), error))?;
     Ok(connection)
 }
 
@@ -1050,7 +1052,8 @@ impl FilterSql {
 }
 
 fn build_filters(filters: &EdgeFilters) -> Result<FilterSql, EdgeQueryError> {
-    let mut clauses = Vec::new();
+    // Nothing dated after today anywhere, whatever else is asked for.
+    let mut clauses = vec!["(day IS NULL OR day <= solstone_today_anywhere())".to_string()];
     let mut params = Vec::new();
     let kinds = filters.kinds.clone();
     if let Some(kinds) = &kinds {

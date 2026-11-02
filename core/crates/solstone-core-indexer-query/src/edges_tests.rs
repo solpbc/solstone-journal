@@ -222,12 +222,12 @@ fn network_has_exact_shape_undated_rows_and_truncation() {
 }
 
 #[test]
-fn history_has_exact_shape_boolean_direction_and_keeps_future_rows() {
+fn history_has_exact_shape_boolean_direction_and_leaves_out_future_rows() {
     let mut old = SeedEdge::new("a", "b", "mentioned", Some("20260501"), "same");
     old.directed = 1;
     old.ts = Some(1);
     old.anchor = Some("z");
-    let mut future = SeedEdge::new("b", "a", "mentioned", Some("20270101"), "future");
+    let mut future = SeedEdge::new("b", "a", "mentioned", Some("20990101"), "future");
     future.directed = 1;
     future.ts = Some(2);
     let root = seed("history-shape", &[old, future]);
@@ -253,8 +253,8 @@ fn history_has_exact_shape_boolean_direction_and_keeps_future_rows() {
         json_keys(&response.filters),
         BTreeSet::from(["day_from", "day_to", "facet", "kinds"].map(str::to_string))
     );
-    assert_eq!(response.total, 2);
-    assert_eq!(response.evidence[0].day.as_deref(), Some("20270101"));
+    assert_eq!(response.total, 1);
+    assert_eq!(response.evidence[0].day.as_deref(), Some("20260501"));
     assert!(response.evidence[0].directed);
     assert_eq!(
         json_keys(&response.evidence[0]),
@@ -502,6 +502,49 @@ fn evidence_class_and_future_ranking_cap_match_reference() {
     assert!(classes.contains(&("mixed", "mixed")));
     assert!(classes.contains(&("sem", "semantic")));
     assert!(!classes.iter().any(|(id, _)| *id == "future"));
+    cleanup(root);
+}
+
+#[test]
+fn no_connection_dated_after_today_is_read_whatever_day_is_asked_for() {
+    let root = seed(
+        "after-today",
+        &[
+            SeedEdge::new("self", "past", "attended-with", Some("20260501"), "a"),
+            SeedEdge::new("self", "undated", "works-with", None, "b"),
+            SeedEdge::new("self", "later", "scheduled-with", Some("20990101"), "c"),
+            SeedEdge::new("past", "later", "scheduled-with", Some("20990101"), "d"),
+        ],
+    );
+    // Even a caller whose reference day is in the future.
+    let response = load_entity_network(
+        &root,
+        "self",
+        &default_network("20991231"),
+        None,
+        ATTENDANCE,
+    )
+    .unwrap();
+    let ids = response
+        .neighbors
+        .iter()
+        .map(|item| item.entity_id.as_str())
+        .collect::<BTreeSet<_>>();
+    assert_eq!(ids, BTreeSet::from(["past", "undated"]));
+    let history =
+        load_edge_evidence(&root, "self", "later", &EdgeEvidenceRequest::default()).unwrap();
+    assert_eq!(history.total, 0);
+    assert!(history.evidence.is_empty());
+    let overview =
+        load_network_overview(&root, &default_overview("20991231"), ATTENDANCE, &|_| None).unwrap();
+    assert!(
+        !overview
+            .entities
+            .iter()
+            .any(|item| item.entity_id == "later"),
+        "{:?}",
+        overview.entities
+    );
     cleanup(root);
 }
 

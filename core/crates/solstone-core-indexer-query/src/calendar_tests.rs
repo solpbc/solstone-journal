@@ -12,8 +12,9 @@ use serde_json::json;
 use sha2::{Digest, Sha256};
 
 use crate::{
-    CalendarVersion, ConnectionBoundary, ConnectionScope, ConnectionSearchRequest, Order,
-    OwnerBoundary, SearchHit, SearchRequest, search, search_connection,
+    CalendarVersion, ConnectionBoundary, ConnectionScope, ConnectionSearchRequest, IndexedEntry,
+    Order, OwnerBoundary, QueryBoundary, SearchHit, SearchRequest, coverage, hit_at,
+    read_indexed_entry, search, search_connection,
 };
 
 const GOLDEN: &str = include_str!("../../../fixtures/calendar_notes/golden.jsonl");
@@ -269,4 +270,205 @@ fn whole_journal_connections_see_both_kinds_of_hit_and_facet_connections_neither
             "{day}"
         );
     }
+}
+
+fn set_zone(journal: &Journal, zone: &str) {
+    fs::write(
+        journal.path().join("config/journal.json"),
+        json!({"identity": {"timezone": zone}}).to_string(),
+    )
+    .unwrap();
+}
+
+fn all_day_note(title: &str, event: &str, on: NaiveDate, entered: NaiveDate) -> String {
+    let mut value: serde_json::Value = serde_json::from_str(golden(2)).unwrap();
+    value["title"] = json!(title);
+    value["event"] = json!(event);
+    value["calendar"] = json!("Work");
+    value["start"] = json!(on.format("%Y-%m-%d").to_string());
+    value["end"] = json!((on + chrono::Days::new(1)).format("%Y-%m-%d").to_string());
+    value["changed_at"] = json!(format!("{}T09:00:00Z", entered.format("%Y-%m-%d")));
+    value.to_string()
+}
+
+fn at(instant: &str) {
+    let now = chrono::DateTime::parse_from_rfc3339(instant)
+        .unwrap()
+        .with_timezone(&chrono::Utc);
+    crate::execute::TEST_NOW.with(|cell| cell.set(Some(now)));
+}
+
+fn date(day: &str) -> NaiveDate {
+    NaiveDate::parse_from_str(day, "%Y%m%d").unwrap()
+}
+
+#[test]
+fn today_is_the_latest_day_begun_anywhere() {
+    for (instant, day) in [
+        ("2030-06-10T09:59:59Z", "20300610"),
+        ("2030-06-10T10:00:00Z", "20300611"),
+        ("2030-06-10T23:59:59Z", "20300611"),
+        ("2030-12-31T12:00:00-06:00", "20310101"),
+    ] {
+        let now = chrono::DateTime::parse_from_rfc3339(instant).unwrap();
+        assert_eq!(
+            crate::execute::today_anywhere(now.with_timezone(&chrono::Utc)),
+            day
+        );
+    }
+}
+
+#[test]
+fn nothing_after_today_is_returned_until_that_day_arrives() {
+    let journal = Journal::new();
+    // 08:00 in Denver on the 10th: the 11th has begun at UTC+14, the 12th
+    // has begun nowhere.
+    at("2030-06-10T14:00:00Z");
+    let lines = [
+        all_day_note(
+            "offsite review",
+            "11111111-2222-4333-8444-555555555553",
+            date("20300610"),
+            date("20300610"),
+        ),
+        all_day_note(
+            "offsite checkin",
+            "11111111-2222-4333-8444-555555555552",
+            date("20300612"),
+            date("20300610"),
+        ),
+        all_day_note(
+            "offsite planning",
+            "11111111-2222-4333-8444-555555555551",
+            date("20300620"),
+            date("20300610"),
+        ),
+    ];
+    journal.save("20300610", "090000_300", &[&lines[0], &lines[1], &lines[2]]);
+    journal.scan();
+
+    // Every listing is stored: the rule is applied when the journal is read.
+    let index =
+        rusqlite::Connection::open(solstone_core_indexer_store::db::db_path(journal.path()))
+            .unwrap();
+    let later_rows = index
+        .prepare("SELECT rowid, path, idx, day FROM chunks WHERE day > '20300611' ORDER BY day")
+        .unwrap()
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, i64>(2)?,
+                row.get::<_, String>(3)?,
+            ))
+        })
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    assert_eq!(
+        later_rows
+            .iter()
+            .map(|row| row.3.as_str())
+            .collect::<Vec<_>>(),
+        ["20300612", "20300620"]
+    );
+
+    let read = |journal: &Journal| {
+        let hits = owner(journal, "offsite", None, None);
+        assert!(
+            hits.iter()
+                .all(|hit| hit.metadata.day.as_str() <= "20300611"),
+            "{hits:?}"
+        );
+        calendar_hits(&hits)
+    };
+    // Each note on the day it entered the journal, today's event on today,
+    // and nothing after today, however the days are asked for.
+    let listed = read(&journal);
+    assert_eq!(
+        listed
+            .iter()
+            .filter(|(_, version, _)| *version == CalendarVersion::Recorded)
+            .count(),
+        3
+    );
+    assert_eq!(
+        listed
+            .iter()
+            .filter(|(_, version, _)| *version == CalendarVersion::Latest)
+            .map(|(on, _, _)| on.as_str())
+            .collect::<Vec<_>>(),
+        ["20300610"]
+    );
+    assert!(owner(&journal, "", Some("20300612"), None).is_empty());
+    let range = owner(&journal, "", None, Some(("20300610", "20300630")));
+    assert!(
+        range
+            .iter()
+            .all(|hit| hit.metadata.day.as_str() <= "20300611"),
+        "{range:?}"
+    );
+    let whole =
+        ConnectionBoundary::from_category_tokens(["transcripts"], ConnectionScope::WholeJournal)
+            .unwrap();
+    let agent = search_connection(
+        journal.path(),
+        &whole,
+        &ConnectionSearchRequest {
+            query: "offsite".into(),
+            limit: 50,
+            ..ConnectionSearchRequest::default()
+        },
+        reference(),
+    )
+    .unwrap();
+    assert!(!agent.results.is_empty());
+    assert!(
+        agent
+            .results
+            .iter()
+            .all(|hit| hit.metadata.day.as_str() <= "20300611")
+    );
+    for (row_id, path, idx, _) in &later_rows {
+        assert_eq!(
+            read_indexed_entry(
+                journal.path(),
+                QueryBoundary::Owner,
+                path,
+                *idx,
+                *row_id,
+                1 << 20
+            )
+            .unwrap(),
+            IndexedEntry::NotFound
+        );
+        assert!(!hit_at(journal.path(), QueryBoundary::Owner, path, *idx).unwrap());
+    }
+    assert_eq!(
+        coverage(journal.path(), QueryBoundary::Owner)
+            .unwrap()
+            .end
+            .as_deref(),
+        Some("20300610")
+    );
+
+    // The journal's own zone setting, or a change to it, moves nothing.
+    for zone in ["Pacific/Pago_Pago", "Pacific/Kiritimati", "Europe/Madrid"] {
+        set_zone(&journal, zone);
+        assert_eq!(read(&journal), listed, "{zone}");
+    }
+
+    // The 12th arrives: the same index, no scan in between.
+    at("2030-06-11T14:00:00Z");
+    let arrived = calendar_hits(&owner(&journal, "offsite", Some("20300612"), None));
+    assert_eq!(arrived.len(), 1, "{arrived:?}");
+    assert_eq!(arrived[0].1, CalendarVersion::Latest);
+    assert!(owner(&journal, "", Some("20300620"), None).is_empty());
+    assert_eq!(
+        coverage(journal.path(), QueryBoundary::Owner)
+            .unwrap()
+            .end
+            .as_deref(),
+        Some("20300612")
+    );
 }

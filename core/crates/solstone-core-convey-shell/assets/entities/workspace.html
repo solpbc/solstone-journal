@@ -1685,11 +1685,6 @@ tr:hover .entity-delete-btn {
   line-height: 1.4;
 }
 
-.entity-conn-evidence-row-upcoming {
-  color: var(--ink-faint);
-  font-style: italic;
-}
-
 .entity-conn-evidence-failed {
   color: var(--ink-faint);
   font-size: 0.9em;
@@ -3048,10 +3043,6 @@ function entityConnEvidenceLabel(row) {
   return fallbacks[row?.kind] || entityConnKindWord(row?.kind);
 }
 
-function isEntityConnUpcoming(day, referenceDay) {
-  return /^\d{8}$/.test(day || '') && /^\d{8}$/.test(referenceDay || '') && day > referenceDay;
-}
-
 function formatEntityConnDay(day, referenceDay) {
   if (!day) return '';
   if (!/^\d{8}$/.test(day)) {
@@ -3064,9 +3055,6 @@ function formatEntityConnDay(day, referenceDay) {
     const reference = parseYYYYMMDD(referenceDay);
     if (date.getFullYear() !== reference.getFullYear()) {
       label += " '" + String(date.getFullYear()).slice(-2);
-    }
-    if (isEntityConnUpcoming(day, referenceDay)) {
-      label += ENT_COPY.ENT_CONN_UPCOMING || '';
     }
   }
   return label;
@@ -3513,9 +3501,6 @@ function appendEvidenceRows(list, rows, referenceDay) {
   rows.forEach(row => {
     const item = document.createElement('div');
     item.className = 'entity-conn-evidence-row';
-    if (isEntityConnUpcoming(row.day, referenceDay)) {
-      item.classList.add('entity-conn-evidence-row-upcoming');
-    }
 
     if (/^\d{8}$/.test(row.day || '')) {
       const date = document.createElement('a');

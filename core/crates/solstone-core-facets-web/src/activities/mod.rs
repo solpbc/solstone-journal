@@ -178,6 +178,14 @@ async fn create(
     if source != "user" {
         return invalid("source must be 'user'");
     }
+    // The journal holds what has happened: an activity can't be on a day that
+    // has begun nowhere yet. Anywhere, so no time zone refuses a real today.
+    let today_anywhere = (clock.now().with_timezone(&Utc) + chrono::Duration::hours(14))
+        .format("%Y%m%d")
+        .to_string();
+    if day > today_anywhere {
+        return invalid("day must not be after today");
+    }
     let activity = string(&body, "activity").trim().to_owned();
     let facet = query_value(query.as_deref(), "facet").unwrap_or_default();
     match solstone_core_facets::activity_is_available(&root, &facet, &activity) {
@@ -933,6 +941,43 @@ mod tests {
                 .count(),
             2
         );
+    }
+
+    #[tokio::test]
+    async fn create_refuses_a_day_after_today_and_writes_nothing() {
+        let root = phase_root("established_empty");
+        solstone_core_facets::create_facet(root.path(), "work", "Work", "", "", "", None).unwrap();
+        // 18:00 in Denver on the 10th is already the 11th east of it; the 12th
+        // has begun nowhere.
+        let evening = Clock::new(|| {
+            chrono::DateTime::parse_from_rfc3339("2026-05-10T18:00:00-06:00").expect("clock")
+        });
+        let (status, body) = request(
+            gated(root.path(), evening.clone()),
+            "POST",
+            "/app/activities/api/day/20260512/records?facet=work",
+            Some(create_body(None)),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+        assert_eq!(body["reason_code"], "activity_invalid");
+        assert!(
+            !root
+                .path()
+                .join("facets/work/activities/20260512.jsonl")
+                .exists()
+        );
+        assert!(!root.path().join("facets/work/logs/20260512.jsonl").exists());
+        for day in ["20260510", "20260511"] {
+            let (status, body) = request(
+                gated(root.path(), evening.clone()),
+                "POST",
+                &format!("/app/activities/api/day/{day}/records?facet=work"),
+                Some(create_body(None)),
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK, "{day}: {body}");
+        }
     }
 
     #[tokio::test]

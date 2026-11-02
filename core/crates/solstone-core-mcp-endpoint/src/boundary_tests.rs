@@ -12049,7 +12049,7 @@ fn search_and_fetch_never_serve_a_retired_schedule_plan_among_events() {
     let events = journal.path().join("facets/alpha/events");
     fs::create_dir_all(&events).unwrap();
     fs::write(
-        events.join("20290101.jsonl"),
+        events.join("20260110.jsonl"),
         concat!(
             "{\"title\":\"Qday deadline\",\"type\":\"deadline\",\"agent\":\"schedule\",\"occurred\":false}\n",
             "{\"title\":\"Qday launch\",\"type\":\"milestone\",\"agent\":\"timeline\",\"occurred\":false}\n",

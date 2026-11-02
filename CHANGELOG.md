@@ -22,6 +22,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - on linux, your journal now checks for updates once a day on its own, instead of once a minute for every open journal page. the update status it shows can be up to a day behind; `solstone update --check` checks at that moment and changes nothing.
 - your journal now describes time in your browser by the pages you had in front of you. a video playing in a background tab, or a page left open behind another app, is mentioned as open rather than as something you watched or read, and what a page or video shows is now less often written as something you did.
 - each stretch's screen description now does the same: it covers the browser pages you had in front of you and lists the others as open, so what a video in a background tab says or shows is less often written in your activity stories as something you did or planned.
+- search, agents reading your journal and connections now return nothing dated after today. a calendar event you add for a later day is found on the day it came into your journal, as before, and by its own day once that day arrives. connections no longer show upcoming dates, and an activity can't be created for a day that hasn't started. a day counts as started once it has begun anywhere in the world, so no time zone hides something that already happened.
 
 ### Fixed
 
