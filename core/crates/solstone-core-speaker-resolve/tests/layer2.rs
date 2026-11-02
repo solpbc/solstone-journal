@@ -265,20 +265,22 @@ fn non_person_and_unresolved_names_produce_no_candidate_evidence() {
 }
 
 #[test]
-fn ac5_principal_person_remains_admissible() {
+fn ac5_principal_person_remains_a_candidate_but_takes_no_structural_label() {
     let temporary = TempDir::new();
     write_entity(temporary.path(), "owner", "Avery", Some("Person"), true);
     let settings = ["Avery".to_owned()];
-    let result = apply(
-        &temporary,
-        &[],
-        &settings,
-        &journal_entities(temporary.path()),
-        &HashSet::new(),
-    )
-    .expect("apply layer 2");
-    assert_eq!(result.labels[&1].speaker.as_deref(), Some("owner"));
-    assert!(result.candidate_entity_ids.contains("owner"));
+    for margin_declined in [HashSet::new(), HashSet::from([1])] {
+        let result = apply(
+            &temporary,
+            &[],
+            &settings,
+            &journal_entities(temporary.path()),
+            &margin_declined,
+        )
+        .expect("apply layer 2");
+        assert_eq!(result.labels[&1].speaker, None);
+        assert!(result.candidate_entity_ids.contains("owner"));
+    }
 }
 
 #[test]

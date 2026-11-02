@@ -278,6 +278,41 @@ fn resolve_smoke_applies_owner_and_structural_layers() {
 }
 
 #[test]
+fn a_segment_whose_words_name_only_the_owner_leaves_other_voices_unnamed() {
+    let temporary = TempDir::new();
+    let segment = segment(temporary.path());
+    seed_owner(temporary.path());
+    embeddings(
+        &segment.join("mic_audio.npz"),
+        &[1, 2],
+        &[embedding(1.0, 0.0), embedding(0.0, 1.0)],
+    );
+    fs::write(segment.join("talents/speakers.json"), "[\"Principal\"]").expect("speakers");
+    let outcome = resolve(
+        temporary.path(),
+        "20260808",
+        "mic",
+        "120000_300",
+        SegmentLayout::Named,
+        true,
+        1,
+    )
+    .expect("resolve");
+    let ResolveOutcome::Resolved(output) = outcome else {
+        panic!("expected resolved");
+    };
+    assert_eq!(
+        output
+            .labels
+            .iter()
+            .map(|label| (label.speaker.as_deref(), label.method.as_deref()))
+            .collect::<Vec<_>>(),
+        [(Some("principal"), Some("owner_centroid")), (None, None)]
+    );
+    assert_eq!(output.unmatched, [2]);
+}
+
+#[test]
 fn direct_record_reads_speech_instead_of_named_default_decoy() {
     let temporary = TempDir::new();
     let direct = temporary.path().join("chronicle/20260808/120000_300");

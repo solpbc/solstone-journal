@@ -97,6 +97,9 @@ pub fn apply_structural_heuristics(
         .cloned()
         .collect();
 
+    // What was said never names the owner. Their voice is checked in layer 1,
+    // and every line left here failed it; a voiceprint exists for no one else
+    // to confirm the name against, so it would stay on lines in other voices.
     if inputs.speakers.len() == 1 {
         if let Some(entity) = resolve_entity(
             &inputs,
@@ -105,7 +108,8 @@ pub fn apply_structural_heuristics(
             &resolution_entities,
             &inputs.speakers[0],
             "structural_single_speaker",
-        )? {
+        )? && !entity.is_principal()
+        {
             apply_replacement_labels(
                 &mut labels,
                 inputs.non_owner_sids,
@@ -124,6 +128,7 @@ pub fn apply_structural_heuristics(
             &inputs.setting_names[0],
             "structural_setting",
         )?
+        && !entity.is_principal()
     {
         apply_replacement_labels(
             &mut labels,
