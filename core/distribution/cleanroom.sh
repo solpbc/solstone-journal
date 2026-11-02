@@ -115,10 +115,10 @@ setup_fixture_journal() {
 fresh_journal_loop() {
 	rung=$1
 	journal=/journal
-	segment=$journal/chronicle/20990101/default/120000_001
+	segment=$journal/chronicle/20200101/default/120000_001
 	mkdir -p "$journal/config" "$journal/streams" "$segment/talents"
 	printf '%s\n' '{"setup":{"completed_at":1}}' >"$journal/config/journal.json"
-	printf '%s\n' '{"name":"default","kind":"default","host":null,"platform":null,"created_at":0,"last_day":"20990101","last_segment":"120000_001","seq":1}' >"$journal/streams/default.json"
+	printf '%s\n' '{"name":"default","kind":"default","host":null,"platform":null,"created_at":0,"last_day":"20200101","last_segment":"120000_001","seq":1}' >"$journal/streams/default.json"
 	printf '%s\n' '{"stream":"default","seq":1,"prev_segment":null}' >"$segment/stream.json"
 	printf '%s\n' \
 		'{"raw":"synthetic.flac","model":"fixture","duration":1}' \
@@ -127,7 +127,7 @@ fresh_journal_loop() {
 	printf '%s\n' '# Audio Transcript' '' 'CLEANROOM_SENTINEL_260817' >"$segment/talents/audio.md"
 	export SOLSTONE_JOURNAL=$journal
 	export SOL_SKIP_SUPERVISOR_CHECK=1
-	if solstone journal indexer -q CLEANROOM_SENTINEL_260817 --day 20990101 --stream default --limit 10 \
+	if solstone journal indexer -q CLEANROOM_SENTINEL_260817 --day 20200101 --stream default --limit 10 \
 		>"$journal/initial-query.out" 2>"$journal/initial-query.err"; then
 		refuse "$rung initial query unexpectedly succeeded"
 	fi
@@ -135,18 +135,18 @@ fresh_journal_loop() {
 		|| refuse "$rung did not prove an initially absent index"
 	setup_fixture_journal "$journal"
 	start_supervisor yes
-	solstone journal segment verify 20990101/default/120000_001 --json >"$journal/verify.json"
+	solstone journal segment verify 20200101/default/120000_001 --json >"$journal/verify.json"
 	! grep -F '"passed": false' "$journal/verify.json" >/dev/null \
 		|| refuse "$rung segment verification failed"
 	solstone journal indexer --rescan
-	solstone journal indexer -q CLEANROOM_SENTINEL_260817 --day 20990101 --stream default --limit 10 \
+	solstone journal indexer -q CLEANROOM_SENTINEL_260817 --day 20200101 --stream default --limit 10 \
 		>"$journal/query.out"
 	grep -F 'Total: 1 chunks' "$journal/query.out" >/dev/null \
 		|| refuse "$rung query did not return exactly one chunk"
 	grep -F 'CLEANROOM_SENTINEL_260817' "$journal/query.out" >/dev/null \
 		|| refuse "$rung query lost its sentinel"
 	solstone call journal read \
-		--path chronicle/20990101/default/120000_001/talents/audio.md --max 16384 \
+		--path chronicle/20200101/default/120000_001/talents/audio.md --max 16384 \
 		>"$journal/read.out"
 	grep -F 'CLEANROOM_SENTINEL_260817' "$journal/read.out" >/dev/null \
 		|| refuse "$rung transcript read lost its sentinel"
