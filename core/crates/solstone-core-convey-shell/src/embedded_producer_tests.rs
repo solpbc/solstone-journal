@@ -627,45 +627,85 @@ async fn owner_notices_push_and_show_once_per_episode_and_once_on_clear() {
     );
     observer.start();
     until(|| bus.client_count() > 1).await;
-    // Let both clients finish their subscription before the first send.
-    tokio::time::sleep(Duration::from_millis(200)).await;
+    // A confirmed send returns once the bus has published the line, so lines
+    // sent one after another are handled in that order.
     let sender =
-        solstone_core_callosum::CallosumOneShotSender::new(&socket, Duration::from_secs(2));
-    let raise = json!({"tract":"owner_notice","event":"raise","key":"disk_low:journal",
-        "title":"synthetic start","message":"synthetic body","action":"/app/health"});
-    let clear = json!({"tract":"owner_notice","event":"clear","key":"disk_low:journal",
-        "title":"synthetic end"});
-    for line in [&raise, &raise, &clear, &clear] {
-        sender.send_line(&format!("{line}\n")).unwrap();
-        tokio::time::sleep(Duration::from_millis(100)).await;
-    }
-    let mut cards = Vec::new();
-    let _ = tokio::time::timeout(Duration::from_secs(2), async {
-        loop {
-            let Some(event) = observer.next_event().await else {
-                break;
-            };
-            if let solstone_core_callosum::CallosumReceiveEvent::Envelope { envelope, .. } = event
-                && envelope.tract == "notification"
-                && envelope.event == "show"
-            {
-                cards.push(
-                    envelope.extra["title"]
-                        .as_str()
-                        .unwrap_or_default()
-                        .to_owned(),
-                );
+        solstone_core_callosum::CallosumOneShotSender::new(&socket, Duration::from_secs(10));
+    let send = |line: Value| sender.send_line_confirmed(&format!("{line}\n")).unwrap();
+    let notice = |event: &str, key: &str, title: &str| json!({"tract":"owner_notice","event":event,"key":key,"title":title,"action":"/app/health"});
+    // The next card to arrive, or None when none comes within the window.
+    async fn next_card(
+        observer: &mut solstone_core_callosum::CallosumSocketConnection,
+        window: Duration,
+    ) -> Option<String> {
+        tokio::time::timeout(window, async {
+            loop {
+                let event = observer.next_event().await?;
+                if let solstone_core_callosum::CallosumReceiveEvent::Envelope { envelope, .. } =
+                    event
+                    && envelope.tract == "notification"
+                    && envelope.event == "show"
+                {
+                    return Some(
+                        envelope.extra["title"]
+                            .as_str()
+                            .unwrap_or_default()
+                            .to_owned(),
+                    );
+                }
             }
+        })
+        .await
+        .ok()
+        .flatten()
+    }
+    // Until the subscriber has registered, a line can go unseen. Warm up on
+    // throwaway keys so a late warm-up line cannot touch the episode under test.
+    let mut ready = false;
+    for attempt in 0..100 {
+        send(notice("raise", &format!("warmup:{attempt}"), "warmup"));
+        if next_card(&mut observer, Duration::from_millis(200))
+            .await
+            .is_some()
+        {
+            ready = true;
+            break;
         }
-    })
-    .await;
-    assert_eq!(cards, ["synthetic start", "synthetic end"]);
-    until(|| receiver.count.load(Ordering::Acquire) == 2).await;
-    tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+    assert!(ready, "subscriber never showed a card");
+    // Drain any late warm-up cards before the episode under test.
+    while next_card(&mut observer, Duration::from_millis(300))
+        .await
+        .as_deref()
+        == Some("warmup")
+    {}
+    let pushes_before = receiver.count.load(Ordering::Acquire);
+    send(notice("raise", "disk_low:journal", "synthetic start"));
+    let started = next_card(&mut observer, Duration::from_secs(20)).await;
+    assert_eq!(started.as_deref(), Some("synthetic start"));
+    // Events are handled in arrival order, so each sentinel card proves every
+    // line sent before it was handled: repeats show nothing.
+    send(notice("raise", "disk_low:journal", "synthetic start"));
+    send(notice("clear", "disk_low:journal", "synthetic end"));
+    assert_eq!(
+        next_card(&mut observer, Duration::from_secs(20))
+            .await
+            .as_deref(),
+        Some("synthetic end")
+    );
+    send(notice("clear", "disk_low:journal", "synthetic end"));
+    send(notice("raise", "sentinel:1", "sentinel"));
+    assert_eq!(
+        next_card(&mut observer, Duration::from_secs(20))
+            .await
+            .as_deref(),
+        Some("sentinel")
+    );
+    until(|| receiver.count.load(Ordering::Acquire) >= pushes_before + 3).await;
     assert_eq!(
         receiver.count.load(Ordering::Acquire),
-        2,
-        "one push per edge"
+        pushes_before + 3,
+        "one push per episode edge"
     );
     stop.send_replace(true);
     task.await.unwrap();
