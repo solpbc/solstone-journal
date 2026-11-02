@@ -12042,6 +12042,90 @@ fn get_week_grounded_activities_and_memories() {
 }
 
 #[test]
+fn search_and_fetch_never_serve_a_retired_schedule_plan_among_events() {
+    let journal = base_activity_journal();
+    let events = journal.path().join("facets/alpha/events");
+    fs::create_dir_all(&events).unwrap();
+    fs::write(
+        events.join("20290101.jsonl"),
+        concat!(
+            "{\"title\":\"Qday deadline\",\"type\":\"deadline\",\"agent\":\"schedule\",\"occurred\":false}\n",
+            "{\"title\":\"Qday launch\",\"type\":\"milestone\",\"agent\":\"timeline\",\"occurred\":false}\n",
+        ),
+    )
+    .unwrap();
+    solstone_core_indexer_store::scan::scan_journal(journal.path(), true).unwrap();
+
+    let res = probe(&journal, "search", json!({"query": "Qday"})).unwrap();
+    let results = res["results"].as_array().unwrap();
+    assert_eq!(results.len(), 1, "{res}");
+    assert!(!res.to_string().contains("Qday deadline"), "{res}");
+    let fetched = probe(
+        &journal,
+        "fetch",
+        json!({"reference": results[0]["reference"]}),
+    )
+    .unwrap();
+    assert!(
+        fetched["text"].as_str().unwrap().contains("Qday launch"),
+        "{fetched}"
+    );
+}
+
+#[test]
+fn get_week_novelty_ignores_a_retired_plan_in_the_prior_week() {
+    // Two otherwise equal activities: the earlier one leads unless the prior
+    // week already had it, which makes the other one new.
+    let ranked = |prior: &str| {
+        let journal = base_activity_journal();
+        let prior_dir = journal.path().join("facets/alpha/activities");
+        fs::create_dir_all(&prior_dir).unwrap();
+        fs::write(prior_dir.join("20260303.jsonl"), prior).unwrap();
+        write_activity_line(
+            journal.path(),
+            "alpha",
+            "20260308",
+            "act_standup",
+            "Standup",
+            100,
+            Some("standup"),
+            Some(&["090000_300"]),
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+        write_activity_line(
+            journal.path(),
+            "alpha",
+            "20260309",
+            "act_review",
+            "Review",
+            200,
+            Some("review"),
+            Some(&["090000_300"]),
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+        let res = probe(&journal, "get_week", json!({"week": "20260308"})).unwrap();
+        res["activities"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|activity| activity["title"].as_str().unwrap().to_owned())
+            .collect::<Vec<_>>()
+    };
+    let held = r#"{"id":"prior","title":"Standup","activity":"standup","created_at":1}"#;
+    assert_eq!(ranked(&format!("{held}\n")), ["Review", "Standup"]);
+    let plan = r#"{"id":"plan","title":"Standup","activity":"standup","created_at":1,"source":"anticipated"}"#;
+    assert_eq!(ranked(&format!("{plan}\n")), ["Standup", "Review"]);
+}
+
+#[test]
 fn get_week_empty_sunday() {
     let journal = base_activity_journal();
     let res = probe(&journal, "get_week", json!({"week": "20260315"})).unwrap();

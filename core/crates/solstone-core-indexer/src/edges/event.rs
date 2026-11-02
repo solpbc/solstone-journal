@@ -25,10 +25,7 @@ pub(crate) fn extract_event_edges(
     let mut rows = Vec::new();
 
     for event in entries {
-        // The old schedule writer stored inferred plans alongside event history.
-        if event.get("agent").and_then(Value::as_str) == Some("schedule")
-            && event.get("occurred").and_then(Value::as_bool) == Some(false)
-        {
+        if solstone_core_format::content::is_retired_event_plan(event) {
             continue;
         }
         let title = event.get("title");

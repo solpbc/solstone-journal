@@ -128,7 +128,9 @@ fn project_sunday(
             let rows = solstone_core_facets::read_activity_records_strict(journal, dir, &day_str)
                 .map_err(|_| ToolError::FileUnreadable)?;
             for row in rows {
-                if row.get("hidden").and_then(Value::as_bool).unwrap_or(false) {
+                if row.get("hidden").and_then(Value::as_bool).unwrap_or(false)
+                    || solstone_core_facets::is_retired_plan(&row)
+                {
                     continue;
                 }
                 let k = group_key_for_record(&row);

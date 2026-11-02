@@ -9,9 +9,17 @@ use super::{
     truthy_display,
 };
 
+/// Plans the retired `schedule` talent wrote among event history before
+/// activities existed. They stay in their files but are not indexed or linked.
+/// Other writers' `occurred: false` rows are history and stay.
+pub fn is_retired_event_plan(record: &JsonObject) -> bool {
+    record.get("agent").and_then(Value::as_str) == Some("schedule")
+        && record.get("occurred").and_then(Value::as_bool) == Some(false)
+}
+
 pub(super) fn render(rel: &str, records: &[JsonObject]) -> ProducedChunks {
     let mut chunks = Vec::new();
-    for event in records {
+    for event in records.iter().filter(|event| !is_retired_event_plan(event)) {
         let Some(title) = truthy_display(event, "title") else {
             continue;
         };

@@ -12,6 +12,7 @@ mod day_accumulator;
 mod desktop_activity;
 mod documents;
 mod events;
+pub use events::is_retired_event_plan;
 mod facet_entities;
 mod imports;
 mod morning_briefing;
@@ -693,10 +694,9 @@ pub fn produce_chunks_by_shape(
         },
     };
     if produced.error.is_none() && produced.chunks.is_empty() {
-        for record in records
-            .iter()
-            .filter(|record| has_partial_input(record) && !is_retired_plan(record))
-        {
+        for record in records.iter().filter(|record| {
+            has_partial_input(record) && !is_retired_plan(record) && !is_retired_event_plan(record)
+        }) {
             produced
                 .chunks
                 .push(recorded_chunk(String::new(), 0, record));
@@ -1981,6 +1981,34 @@ mod tests {
                 "chars"
             ]
         );
+    }
+
+    #[test]
+    fn retired_schedule_plans_among_events_are_not_indexed() {
+        let text = concat!(
+            "{\"title\":\"Q-Day\",\"type\":\"deadline\",\"agent\":\"schedule\",\"occurred\":false}\n",
+            "{\"title\":\"Launch\",\"type\":\"milestone\",\"agent\":\"timeline\",\"occurred\":false}\n",
+            "{\"title\":\"Standup\",\"type\":\"meeting\",\"agent\":\"schedule\",\"occurred\":true}\n",
+        );
+        let produced = produce_chunks(Family::Event, "facets/work/events/20290101.jsonl", text);
+        let contents = produced
+            .chunks
+            .iter()
+            .map(|chunk| chunk.content.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(contents.len(), 2, "{contents:?}");
+        assert!(contents[0].contains("### Planned Milestone: Launch"));
+        assert!(contents[1].contains("### Meeting: Standup"));
+        assert!(!contents.iter().any(|content| content.contains("Q-Day")));
+
+        // A file holding only plans renders nothing, partial input included.
+        let only_plan = "{\"title\":\"Q-Day\",\"agent\":\"schedule\",\"occurred\":false,\"partial_input\":{\"reason\":\"clipped\"}}\n";
+        let produced = produce_chunks(
+            Family::Event,
+            "facets/work/events/20290101.jsonl",
+            only_plan,
+        );
+        assert!(produced.chunks.is_empty(), "{:?}", produced.chunks);
     }
 
     #[test]

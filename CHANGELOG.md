@@ -48,6 +48,8 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - you can choose a file on the import screen in the android and ios owner apps and save it.
 - journals running on a phone now start their local agent connections and close them when you stop the journal. the agents page already offered these connections, but they did not start on phones.
 - in search and for agents reading your journal, a name that only appeared on a browser page, like the person a shop is named after, is now listed as on screen, not as someone mentioned. activities already in your journal keep their people as they are. thanks @dvanduzer for the report.
+- plans that older versions of your journal inferred no longer turn up in search, for agents reading your journal or in `solstone call journal search`, including plans dated years ahead. they stay in your journal's folder, and search drops them the next time it checks your journal. an old plan also no longer keeps an activity from counting as new when an agent reads your week.
+- your pulse no longer suggests getting ready for upcoming calendar events. it isn't given your calendar.
 
 ## [2.0.65] - 2026-11-02
 

@@ -574,6 +574,12 @@ fn scan_journal_pass(
     } else {
         tx.rollback()?;
     }
+    let tx = conn.transaction_with_behavior(TransactionBehavior::Deferred)?;
+    if reindex_retired_event_plans_once(&tx, journal)? {
+        commit_scanned(tx, checkpoint)?;
+    } else {
+        tx.rollback()?;
+    }
 
     let db_mtimes = load_file_mtimes(&conn)?;
     let missing_memberships = missing_activity_memberships(&conn)?;
@@ -1527,6 +1533,64 @@ fn reconcile_edges_with(
     }
     report.remaining = crate::edge_refresh::stale_edge_count(conn)?;
     Ok(report)
+}
+
+/// The `index_meta` key marking that event files holding retired schedule
+/// plans were left for a scan to index again.
+const RETIRED_EVENT_PLANS_META: &str = "retired_event_plans";
+
+/// An index written before retired schedule plans stopped being indexed still
+/// holds their entries, and the files that carry them no longer change. Once
+/// per index, leave each such event file for this scan to index again, the way
+/// a calendar owner change does. The files themselves are only read. A file
+/// that cannot be read leaves the mark unset, so a later scan looks again.
+fn reindex_retired_event_plans_once(conn: &Connection, journal: &Path) -> Result<bool, StoreError> {
+    let marked = conn
+        .query_row(
+            "SELECT 1 FROM index_meta WHERE key=?",
+            [RETIRED_EVENT_PLANS_META],
+            |_| Ok(()),
+        )
+        .optional()?
+        .is_some();
+    if marked {
+        return Ok(false);
+    }
+    let paths = conn
+        .prepare(
+            "SELECT path FROM files WHERE path GLOB 'facets/*/events/*.jsonl' AND mtime != -1",
+        )?
+        .query_map([], |row| row.get::<_, String>(0))?
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut every_file_read = true;
+    for rel in paths {
+        let text = match resolve_journal_path(journal, &rel).map(fs::read_to_string) {
+            Ok(Ok(text)) => text,
+            Ok(Err(error)) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            _ => {
+                every_file_read = false;
+                continue;
+            }
+        };
+        if holds_retired_event_plan(&text) {
+            conn.execute("UPDATE files SET mtime=-1 WHERE path=?", [&rel])?;
+        }
+    }
+    if every_file_read {
+        conn.execute(
+            "REPLACE INTO index_meta(key, value) VALUES (?, '1')",
+            [RETIRED_EVENT_PLANS_META],
+        )?;
+    }
+    Ok(true)
+}
+
+fn holds_retired_event_plan(text: &str) -> bool {
+    text.contains("\"schedule\"")
+        && text.lines().any(|line| {
+            serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(line.trim())
+                .is_ok_and(|record| solstone_core_format::content::is_retired_event_plan(&record))
+        })
 }
 
 /// Marks that files holding retired plan records had their edges re-extracted.
@@ -8185,6 +8249,79 @@ not json
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn an_index_holding_legacy_schedule_plans_drops_them_on_one_ordinary_scan() {
+        let root = temp_root("legacy-event-plans");
+        let rel = "facets/work/events/20290101.jsonl";
+        let pinned = |root: &Path| {
+            fs::File::options()
+                .write(true)
+                .open(root.join(rel))
+                .expect("open events")
+                .set_modified(UNIX_EPOCH + std::time::Duration::from_secs(1_700_000_000))
+                .expect("pin mtime");
+        };
+        let rows = |agent: &str| {
+            format!(
+                concat!(
+                    "{{\"title\":\"Q-Day\",\"type\":\"deadline\",\"agent\":\"{}\",\"occurred\":false}}\n",
+                    "{{\"title\":\"Launch\",\"type\":\"milestone\",\"agent\":\"timeline\",\"occurred\":false}}\n",
+                    "{{\"title\":\"Standup\",\"type\":\"meeting\",\"agent\":\"schedule\",\"occurred\":true}}\n",
+                ),
+                agent
+            )
+        };
+        let contents = |root: &Path| {
+            let conn = Connection::open(db_path(root)).expect("open index");
+            let mut statement = conn
+                .prepare("SELECT content FROM chunks WHERE path=? ORDER BY idx")
+                .expect("prepare");
+            statement
+                .query_map([rel], |row| row.get::<_, String>(0))
+                .expect("query")
+                .collect::<Result<Vec<_>, _>>()
+                .expect("contents")
+        };
+
+        // Model an index written before these plans stopped being indexed: it
+        // holds the plan's entry, and the same file now names the old writer.
+        write(&root, rel, &rows("timeline"));
+        pinned(&root);
+        scan_journal(&root, false).expect("first scan");
+        assert_eq!(contents(&root).len(), 3);
+        let source = rows("schedule");
+        write(&root, rel, &source);
+        pinned(&root);
+        let mtime = file_mtime_secs(&root.join(rel)).expect("mtime");
+        let conn = Connection::open(db_path(&root)).expect("open index");
+        conn.execute(
+            "DELETE FROM index_meta WHERE key=?",
+            [RETIRED_EVENT_PLANS_META],
+        )
+        .expect("clear mark");
+        drop(conn);
+
+        let report = scan_journal(&root, false).expect("upgrade scan");
+        assert!(report.failures.is_empty(), "{report:?}");
+        let kept = contents(&root);
+        assert_eq!(kept.len(), 2, "{kept:?}");
+        assert!(
+            kept[0].contains("### Planned Milestone: Launch"),
+            "{kept:?}"
+        );
+        assert!(kept[1].contains("### Meeting: Standup"), "{kept:?}");
+        assert!(!kept.iter().any(|content| content.contains("Q-Day")));
+        // The source is only read.
+        assert_eq!(fs::read_to_string(root.join(rel)).expect("read"), source);
+        assert_eq!(file_mtime_secs(&root.join(rel)).expect("mtime"), mtime);
+
+        // Once: the next scan has nothing to do for the file.
+        let again = scan_journal(&root, false).expect("next scan");
+        assert_eq!(again.indexed, 0, "{again:?}");
+        assert_eq!(contents(&root), kept);
+        fs::remove_dir_all(root).expect("cleanup");
     }
 
     #[test]

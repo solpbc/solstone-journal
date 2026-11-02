@@ -86,9 +86,9 @@ Return a JSON object with exactly these keys:
 - `one_sentence` — one sentence that summarizes the supplied activity.
 - `full_details` — up to 8 sentences describing the current situation shown by the
   evidence. Lead with what matters now; use fewer sentences when little is known.
-- `needs_you` — 0-7 ranked action items as strings. Draw them from upcoming
-  calendar events needing preparation or explicit unresolved needs in the
-  activity evidence. Do not infer urgency from a name or background detail.
+- `needs_you` — 0-7 ranked action items as strings. Draw them only from
+  explicit unresolved needs in the activity evidence. Do not infer urgency from
+  a name or background detail.
 
 ## Voice
 
