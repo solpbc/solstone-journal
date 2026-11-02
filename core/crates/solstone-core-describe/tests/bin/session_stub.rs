@@ -161,6 +161,8 @@ fn main() {
             refused(&id, true, false, Some("brain_refresh_timeout"));
         } else if mode == "blocking_retryable" {
             refused(&id, true, true, Some("binary_missing"));
+        } else if mode == "blocking_owner_action" {
+            refused(&id, false, true, Some("provider_key_missing"));
         } else if mode == "no_engine_configured" {
             no_engine(&id);
         } else if mode == "unknown_code" {

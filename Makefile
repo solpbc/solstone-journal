@@ -903,7 +903,7 @@ check-rust-describe-cli-stubs:
 		fi; \
 		printf '%s\n' "$$output" | grep -F '0 filtered out' >/dev/null; \
 		for test_name in \
-			blocking_and_session_abort_notifications_have_distinct_flat_shapes \
+			only_owner_fixable_refusals_emit_notifications \
 			blocking_or_unknown_refusals_abort_without_an_artifact \
 			describe_runs_one_session_and_promotes_an_analyzed_artifact \
 			detection_failures_latch_after_one_attempt \

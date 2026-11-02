@@ -154,11 +154,21 @@ fn remove_temporary_root(root: &Path) {
 fn notification_listener(root: &Path) -> UnixListener {
     let health = root.join("health");
     fs::create_dir_all(&health).expect("create health directory");
-    UnixListener::bind(health.join("callosum.sock")).expect("bind callosum socket")
+    let listener = UnixListener::bind(health.join("callosum.sock")).expect("bind callosum socket");
+    listener
+        .set_nonblocking(true)
+        .expect("nonblocking listener");
+    listener
 }
 
 fn notification(listener: &UnixListener) -> Value {
     let (mut stream, _) = listener.accept().expect("accept notification");
+    stream
+        .set_nonblocking(false)
+        .expect("blocking notification stream");
+    stream
+        .set_read_timeout(Some(Duration::from_secs(2)))
+        .expect("notification read timeout");
     let mut line = String::new();
     stream.read_to_string(&mut line).expect("read notification");
     serde_json::from_str(line.trim()).expect("valid notification JSON")
@@ -634,8 +644,12 @@ fn session_submits_a_later_request_before_the_first_response() {
 }
 
 #[test]
-fn blocking_and_session_abort_notifications_have_distinct_flat_shapes() {
-    for (mode, is_refusal) in [("blocking_retryable", true), ("exit_after_one", false)] {
+fn only_owner_fixable_refusals_emit_notifications() {
+    for (mode, notice_reason) in [
+        ("blocking_owner_action", Some("provider_key_missing")),
+        ("blocking_retryable", None),
+        ("exit_after_one", None),
+    ] {
         let root = temporary_root(mode);
         let video = copied_video(&root, "mixed_vp8_screen.webm");
         let listener = notification_listener(&root);
@@ -643,26 +657,22 @@ fn blocking_and_session_abort_notifications_have_distinct_flat_shapes() {
             .output()
             .expect("run describe binary");
         assert_eq!(output.status.code(), Some(69), "{mode}");
-        let expected_token = if is_refusal {
-            Some("binary_missing")
-        } else {
-            None
+        let expected_token = match mode {
+            "blocking_owner_action" => Some("provider_key_missing"),
+            "blocking_retryable" => Some("binary_missing"),
+            _ => None,
         };
         assert_stderr_deferred(&output, expected_token);
-        let row = notification(&listener);
-        assert_eq!(row["tract"], "notification");
-        assert_eq!(row["event"], "show");
-        assert!(row.get("work_key").is_some());
-        if is_refusal {
-            assert_eq!(row["reason_code"], "binary_missing");
-            assert_eq!(row["provider"], "stub");
-        } else {
-            assert!(row.get("reason_code").is_none());
-            assert!(row.get("provider").is_none());
+        if let Some(reason) = notice_reason {
+            let row = notification(&listener);
+            assert_eq!(row["tract"], "notification");
+            assert_eq!(row["event"], "show");
+            assert!(row.get("work_key").is_some());
+            assert_eq!(row["reason_code"], reason);
+            for field in ["title", "message"] {
+                assert!(!row[field].as_str().unwrap_or_default().is_empty());
+            }
         }
-        listener
-            .set_nonblocking(true)
-            .expect("nonblocking listener");
         assert!(
             matches!(listener.accept(), Err(error) if error.kind() == std::io::ErrorKind::WouldBlock)
         );
