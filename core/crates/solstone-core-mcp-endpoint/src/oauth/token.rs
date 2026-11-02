@@ -83,7 +83,9 @@ fn authorization_code(
         &oauth.binding(),
     ) {
         Ok(tokens) => {
-            announce_agent_access(oauth, client_id);
+            if let Some(first) = &tokens.first_grant {
+                announce_agent_access(oauth, client_id, first.client_name.as_deref());
+            }
             token_response(tokens)
         }
         Err(
@@ -101,18 +103,12 @@ fn authorization_code(
 
 /// Tell the owner an agent can now reach the journal, once per client.
 ///
-/// A redeemed authorization code is the moment an agent's access begins; a
-/// refresh or a reconnect never reaches here. The notice is keyed by the
-/// client id, so the same agent pairing again, as it must when its access
-/// lapses, is not announced again. Best effort: the grant stands either way.
-fn announce_agent_access(oauth: &OAuthRuntime, client_id: &str) {
-    let name = oauth.store.list_clients().ok().and_then(|clients| {
-        clients
-            .into_iter()
-            .find(|client| client.client_id == client_id)
-            .and_then(|client| client.client_name)
-    });
-    let line = format!("{}\n", agent_access_notice(client_id, name.as_deref()));
+/// Only the store's first grant for a client id reaches here: a refresh, a
+/// reconnect, or the same client pairing again, as it must when its access
+/// lapses, does not. The episode record, keyed by client id, is a second
+/// guard. Best effort: the grant stands either way.
+fn announce_agent_access(oauth: &OAuthRuntime, client_id: &str, name: Option<&str>) {
+    let line = format!("{}\n", agent_access_notice(client_id, name));
     let _ = solstone_core_callosum::CallosumOneShotSender::new(
         oauth.journal_root.join("health/callosum.sock"),
         std::time::Duration::from_secs(2),
@@ -130,7 +126,7 @@ fn agent_access_notice(client_id: &str, name: Option<&str>) -> serde_json::Value
         "event": "raise",
         "key": format!("access:agent:{client_id}"),
         "title": title,
-        "message": "if you connected it, there's nothing to do. if not, disconnect it on the agents page",
+        "message": "if you connected it, there's nothing to do. if not, disconnect it in the agents app.",
         "action": "/app/agents",
     })
 }
@@ -711,13 +707,17 @@ mod notice_tests {
     }
 
     #[test]
-    fn only_a_redeemed_code_announces_an_agent_and_by_its_client() {
+    fn only_a_clients_first_grant_announces_it() {
         let journal = tempfile::Builder::new()
             .prefix("solstone-mcp-token-notice-")
             .tempdir_in(crate::test_scratch())
             .unwrap();
-        let listener = OneShotListener::bind(journal.path().join("health/callosum.sock"));
         let oauth = OAuthRuntime::new(journal.path(), ORIGIN.to_owned());
+        // An agent connected before this journal announced access: its grant
+        // was redeemed with no listener present.
+        let earlier = redeem(&oauth, &issue_code(&oauth, OTHER_URL), OTHER_URL);
+        assert!(earlier["access_token"].is_string(), "{earlier}");
+        let listener = OneShotListener::bind(journal.path().join("health/callosum.sock"));
 
         let first = redeem(&oauth, &issue_code(&oauth, CIMD_URL), CIMD_URL);
         let refresh = first["refresh_token"].as_str().unwrap();
@@ -730,32 +730,21 @@ mod notice_tests {
         assert_eq!(refused["error"], "invalid_grant");
         let again = redeem(&oauth, &issue_code(&oauth, CIMD_URL), CIMD_URL);
         assert!(again["access_token"].is_string(), "{again}");
-        let other = redeem(&oauth, &issue_code(&oauth, OTHER_URL), OTHER_URL);
-        assert!(other["access_token"].is_string(), "{other}");
+        let returning = redeem(&oauth, &issue_code(&oauth, OTHER_URL), OTHER_URL);
+        assert!(returning["access_token"].is_string(), "{returning}");
 
-        // A refresh and a refused code send nothing. Pairing the same client
-        // again repeats its key, which the owner-notice record keeps quiet.
-        let notices = listener.finish(3);
-        let keys = notices
-            .iter()
-            .map(|notice| notice["key"].as_str().unwrap().to_owned())
-            .collect::<Vec<_>>();
-        assert_eq!(
-            keys,
-            [
-                format!("access:agent:{CIMD_URL}"),
-                format!("access:agent:{CIMD_URL}"),
-                format!("access:agent:{OTHER_URL}"),
-            ]
-        );
-        for notice in &notices {
-            assert_eq!(notice["tract"], "owner_notice");
-            assert_eq!(notice["event"], "raise");
-            assert!(notice["title"].as_str().unwrap().contains("Example Agent"));
-            let words = format!("{}{}", notice["title"], notice["message"]);
-            for secret in [first["access_token"].as_str().unwrap(), refresh] {
-                assert!(!words.contains(secret));
-            }
+        // Only the first client's first grant is announced: not its refresh,
+        // a refused code or its second pairing, and not the agent that was
+        // already connected pairing again.
+        let notices = listener.finish(1);
+        let notice = &notices[0];
+        assert_eq!(notice["tract"], "owner_notice");
+        assert_eq!(notice["event"], "raise");
+        assert_eq!(notice["key"], format!("access:agent:{CIMD_URL}"));
+        assert!(notice["title"].as_str().unwrap().contains("Example Agent"));
+        let words = format!("{}{}", notice["title"], notice["message"]);
+        for secret in [first["access_token"].as_str().unwrap(), refresh] {
+            assert!(!words.contains(secret));
         }
     }
 }

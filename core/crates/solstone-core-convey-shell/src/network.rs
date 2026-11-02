@@ -851,7 +851,7 @@ fn device_access_notice(cid: &str, label: &str) -> Value {
         "event": "raise",
         "key": format!("access:device:{cid}"),
         "title": title,
-        "message": "if you paired it, there's nothing to do. if not, unpair it on the network page",
+        "message": "if you paired it, there's nothing to do. if not, unpair it in the network app.",
         "action": "/app/network",
     })
 }

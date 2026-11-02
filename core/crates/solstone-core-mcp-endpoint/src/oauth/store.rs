@@ -96,6 +96,16 @@ pub(crate) struct IssuedTokens {
     #[allow(dead_code)]
     pub(crate) token_id: String,
     pub(crate) expires_in: i64,
+    /// Present only when this exchange is the first grant the store has ever
+    /// held for the client id, in any cohort: no client record with that id
+    /// had redeemed a code before and no grant for it was held. A refresh
+    /// never sets it.
+    pub(crate) first_grant: Option<FirstGrant>,
+}
+
+/// The owner-visible name of a client receiving its first grant.
+pub(crate) struct FirstGrant {
+    pub(crate) client_name: Option<String>,
 }
 
 /// Public view of a registered OAuth client.
@@ -942,6 +952,19 @@ impl OAuthStore {
             let client_record_id = client.id.clone();
             let stored_client_id = client.client_id.clone();
             let revocation_generation = client.revocation_generation;
+            // A redemption sets `last_used_at`, and a client record that has
+            // one is never pruned, so its absence across every record with
+            // this id is the store's own fact that none was granted before.
+            let first_grant =
+                (!store.clients.iter().any(|known| {
+                    known.client_id == stored_client_id && known.last_used_at.is_some()
+                }) && !store
+                    .grants
+                    .iter()
+                    .any(|grant| grant.client_id == stored_client_id))
+                .then(|| FirstGrant {
+                    client_name: client.client_name.clone(),
+                });
             store.grants.push(StoredGrant {
                 id: grant_id.clone(),
                 client_record_id,
@@ -968,6 +991,7 @@ impl OAuthStore {
                 refresh_token: URL_SAFE_NO_PAD.encode(refresh_bytes),
                 token_id: grant_id,
                 expires_in: ACCESS_TTL_SECS,
+                first_grant,
             })
         })?;
         if let Some(permission) = granted_permission
@@ -1071,6 +1095,7 @@ impl OAuthStore {
                                 refresh_token: URL_SAFE_NO_PAD.encode(refresh_bytes),
                                 token_id: store.grants[index].id.clone(),
                                 expires_in: ACCESS_TTL_SECS,
+                                first_grant: None,
                             }),
                         );
                     }
@@ -1126,6 +1151,7 @@ impl OAuthStore {
                         refresh_token: URL_SAFE_NO_PAD.encode(refresh_bytes),
                         token_id: grant.id.clone(),
                         expires_in: ACCESS_TTL_SECS,
+                        first_grant: None,
                     }),
                 )
             },
@@ -2325,6 +2351,74 @@ mod tests {
         assert!(store.read_store().unwrap().pending.is_empty());
         store.generate_pairing_code_with_door("relay").unwrap();
         open_at(&test_binding()).expect("the open code is for this door");
+    }
+
+    #[test]
+    fn only_a_client_ids_first_grant_ever_is_marked_first() {
+        let _guard = NowGuard;
+        let start = Utc.with_ymd_and_hms(2026, 9, 27, 12, 0, 0).unwrap();
+        set_now(start.timestamp());
+        let journal = journal_root();
+        let store = store_in(&journal);
+        let binding = test_binding();
+        let agent = "https://agent.example/cimd.json";
+        let register = |client_id: &str, source: &str| {
+            store
+                .register_client(
+                    client_id,
+                    vec!["http://127.0.0.1/callback".to_owned()],
+                    Some("Agent".to_owned()),
+                    source,
+                )
+                .unwrap()
+        };
+        let client = register(agent, "192.0.2.1");
+        let first = issue_tokens(&store, &client.id, agent, &binding, "relay", None);
+        let marked = first.first_grant.as_ref().expect("first grant is marked");
+        assert_eq!(marked.client_name.as_deref(), Some("Agent"));
+
+        let refreshed = store
+            .refresh_grant(&first.refresh_token, agent, &binding)
+            .unwrap();
+        assert!(refreshed.first_grant.is_none(), "a refresh is not a grant");
+        let again = issue_tokens(&store, &client.id, agent, &binding, "relay", None);
+        assert!(again.first_grant.is_none(), "pairing again while connected");
+
+        for grant in [&first.token_id, &again.token_id] {
+            store.revoke_grant_by_id(grant).unwrap();
+        }
+        let after_disconnect = issue_tokens(&store, &client.id, agent, &binding, "relay", None);
+        assert!(
+            after_disconnect.first_grant.is_none(),
+            "after disconnecting"
+        );
+
+        // Past every refresh lifetime the grants are pruned; the client's
+        // redeemed-code fact remains.
+        set_now(start.timestamp() + super::REFRESH_TTL_SECS + 1);
+        let after_lapse = issue_tokens(&store, &client.id, agent, &binding, "relay", None);
+        assert!(after_lapse.first_grant.is_none(), "after its access lapsed");
+        let held = store.read_store().unwrap().grants;
+        assert_eq!(
+            held.iter()
+                .map(|grant| grant.id.as_str())
+                .collect::<Vec<_>>(),
+            [after_lapse.token_id.as_str()],
+            "no earlier grant was left to answer from"
+        );
+
+        let other_cohort = register(agent, "byo:example");
+        assert_ne!(other_cohort.id, client.id);
+        let elsewhere = issue_tokens(&store, &other_cohort.id, agent, &binding, "relay", None);
+        assert!(
+            elsewhere.first_grant.is_none(),
+            "the same client id elsewhere"
+        );
+
+        let other = "https://other.example/cimd.json";
+        let other_client = register(other, "192.0.2.1");
+        let first_other = issue_tokens(&store, &other_client.id, other, &binding, "relay", None);
+        assert!(first_other.first_grant.is_some(), "a different client");
     }
 
     #[test]
