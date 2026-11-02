@@ -164,38 +164,40 @@ fn persistently_failing(latest: &Map<String, Value>) -> bool {
 fn failing_message(reason: Option<&str>) -> &'static str {
     match reason {
         Some("auth_failed") => {
-            "the backup key couldn't open your backup destination. open backup to check it."
+            "your journal's key couldn't open the backup at your backup destination. open backup to check it."
         }
         Some("repo_missing") => {
-            "your backup destination couldn't be found. open backup to check it."
+            "no backup was found at your backup destination. open backup to check it."
         }
         Some("broker_unreachable") => {
             "encrypted backup couldn't be reached. open backup for details."
         }
         Some("rclone_unavailable") => {
-            "encrypted backup can't reach storage from this computer. open backup for details."
+            "encrypted backup is missing a part it needs where your journal runs. open backup for details."
         }
         Some("restic_unavailable") => {
-            "encrypted backup can't run on this computer. open backup for details."
+            "encrypted backup can't run where your journal runs. open backup for details."
         }
         Some("hosted_entitlement_inactive") => {
             "encrypted backup isn't turned on in the services portal. open backup for details."
         }
         Some("binding_invalid") => {
-            "this computer's link to encrypted backup was refused. open backup for details."
+            "your journal's link to encrypted backup was refused. open backup for details."
         }
         Some("repository_unsupported") => {
             "the repository in your backup settings doesn't match its storage. open backup to change it."
         }
         Some("timeout") => "the latest attempt ran out of time. open backup for details.",
-        Some("locked") => "the backup lock was already held. open backup for details.",
+        Some("locked") => {
+            "your backup destination is marked as in use by another backup. open backup for details."
+        }
         _ => "the latest attempt stopped with an error. open backup for details.",
     }
 }
 
 fn working_message(latest: &Map<String, Value>) -> &'static str {
     if latest.get("error_reason").and_then(Value::as_str) == Some("incomplete") {
-        "the latest copy finished, but some files couldn't be read. open backup for details."
+        "the latest backup attempt finished, but some of your journal couldn't be read. open backup for details."
     } else {
         "the latest backup attempt finished. open backup for details."
     }
