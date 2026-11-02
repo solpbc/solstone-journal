@@ -17,7 +17,7 @@ use solstone_core_sol_link::client_status::{
     ClientActivityState, ClientAssessment, ClientInspection, inspect_clients_at,
 };
 use solstone_core_sol_link::ledger::IngestRejection;
-use solstone_core_sol_link::{current_display_label, read_descriptions};
+use solstone_core_sol_link::{StoredClientDescription, current_display_label, read_descriptions};
 
 use crate::model::ReasonCode;
 
@@ -38,6 +38,28 @@ const APP_TOO_OLD: [&str; 3] = [
 ];
 const JOURNAL_TOO_OLD: &str = ReasonCode::ProtocolVersionFuture.as_str();
 
+/// The app id the terminal client reports for itself.
+const TMUX_APP_ID: &str = "solstone-tmux";
+
+/// Which app the owner has to update, from the app id the device reports.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum DeviceApp {
+    Solstone,
+    Tmux,
+}
+
+impl DeviceApp {
+    fn of(stored: Option<&StoredClientDescription>) -> Self {
+        match stored
+            .and_then(|stored| stored.reported.as_ref())
+            .and_then(|reported| reported.app_id.as_deref())
+        {
+            Some(TMUX_APP_ID) => Self::Tmux,
+            _ => Self::Solstone,
+        }
+    }
+}
+
 /// The episode key for one paired device.
 pub fn notice_key(cid: &str) -> String {
     format!("{FAMILY}:{cid}")
@@ -52,11 +74,25 @@ pub fn notice_key(cid: &str) -> String {
 /// sent it. An unavailable pairing identity is only refused for a device with
 /// no pairing row, which has no activity to announce. Health still lists every
 /// one of them.
-fn owner_fix(reason_code: &str) -> Option<&'static str> {
+fn owner_fix(reason_code: &str, app: DeviceApp) -> Option<&'static str> {
     if APP_TOO_OLD.contains(&reason_code) {
-        Some("its solstone app is too old for your journal. update the solstone app on it.")
+        Some(match app {
+            DeviceApp::Solstone => {
+                "its solstone app is too old for your journal. update the solstone app on it."
+            }
+            DeviceApp::Tmux => {
+                "solstone for tmux on it is too old for your journal. update solstone for tmux."
+            }
+        })
     } else if reason_code == JOURNAL_TOO_OLD {
-        Some("its solstone app is newer than your journal. update your journal.")
+        Some(match app {
+            DeviceApp::Solstone => {
+                "its solstone app is newer than your journal. update your journal."
+            }
+            DeviceApp::Tmux => {
+                "solstone for tmux on it is newer than your journal. update your journal."
+            }
+        })
     } else {
         None
     }
@@ -79,7 +115,9 @@ pub(crate) fn announcement(journal: &Path, cid: &str, now_ms: i64) -> Option<Str
     };
     let client = clients.iter().find(|client| client.cid == cid)?;
     let rejections = active_rejections(client);
-    let label = device_label(journal, client);
+    let descriptions = read_descriptions(journal).unwrap_or_default();
+    let stored = descriptions.get(&client.cid);
+    let label = device_label(client, stored);
     let row = if rejections.is_empty() {
         json!({
             "tract": "owner_notice",
@@ -91,7 +129,7 @@ pub(crate) fn announcement(journal: &Path, cid: &str, now_ms: i64) -> Option<Str
         let fix = rejections
             .iter()
             .filter(|rejection| rejection.active_count >= PERSISTENT_STREAK)
-            .find_map(|rejection| owner_fix(&rejection.reason_code))?;
+            .find_map(|rejection| owner_fix(&rejection.reason_code, DeviceApp::of(stored)))?;
         json!({
             "tract": "owner_notice",
             "event": "raise",
@@ -118,9 +156,8 @@ fn active_rejections(client: &ClientAssessment) -> Vec<&IngestRejection> {
         .collect()
 }
 
-fn device_label(journal: &Path, client: &ClientAssessment) -> String {
-    let descriptions = read_descriptions(journal).unwrap_or_default();
-    let label = current_display_label(&client.client_entry, descriptions.get(&client.cid));
+fn device_label(client: &ClientAssessment, stored: Option<&StoredClientDescription>) -> String {
+    let label = current_display_label(&client.client_entry, stored);
     if label.trim().is_empty() {
         "one of your devices".to_owned()
     } else {
@@ -294,5 +331,48 @@ mod tests {
         let title = raised["title"].as_str().unwrap();
         assert!(title.contains("garden phone"), "{title}");
         assert!(!title.contains("kitchen tablet"), "{title}");
+    }
+
+    #[test]
+    fn a_tmux_client_is_told_about_its_own_app() {
+        let journal = journal();
+        std::fs::write(
+            journal.path().join("link/client-descriptions.json"),
+            json!({CID: {"protocol_version": 1, "revision": 1, "updated_at": AT, "owner_label": null,
+                "reported": {"name": null, "platform": null, "device_type": null,
+                    "app_id": TMUX_APP_ID, "app_version": null}}})
+            .to_string(),
+        )
+        .unwrap();
+        for code in [
+            ReasonCode::ProtocolVersionLegacy,
+            ReasonCode::ProtocolVersionFuture,
+        ] {
+            let tmux = owner_fix(code.as_str(), DeviceApp::Tmux).unwrap();
+            assert_ne!(tmux, owner_fix(code.as_str(), DeviceApp::Solstone).unwrap());
+            reject(journal.path(), code.as_str(), None);
+            reject(journal.path(), code.as_str(), None);
+            assert_eq!(row(journal.path()).unwrap()["message"], tmux, "{code:?}");
+            accept(journal.path(), None);
+        }
+    }
+
+    #[test]
+    fn a_device_with_no_or_another_app_id_is_told_about_the_solstone_app() {
+        let journal = journal();
+        let code = ReasonCode::ProtocolVersionLegacy.as_str();
+        reject(journal.path(), code, None);
+        reject(journal.path(), code, None);
+        let solstone = owner_fix(code, DeviceApp::Solstone).unwrap();
+        assert_eq!(row(journal.path()).unwrap()["message"], solstone);
+        std::fs::write(
+            journal.path().join("link/client-descriptions.json"),
+            json!({CID: {"protocol_version": 1, "revision": 1, "updated_at": AT, "owner_label": null,
+                "reported": {"name": null, "platform": null, "device_type": null,
+                    "app_id": "solstone-linux", "app_version": null}}})
+            .to_string(),
+        )
+        .unwrap();
+        assert_eq!(row(journal.path()).unwrap()["message"], solstone);
     }
 }
