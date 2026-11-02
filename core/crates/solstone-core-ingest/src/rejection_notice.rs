@@ -37,7 +37,6 @@ const APP_TOO_OLD: [&str; 3] = [
     ReasonCode::LegacyStreamField.as_str(),
 ];
 const JOURNAL_TOO_OLD: &str = ReasonCode::ProtocolVersionFuture.as_str();
-const PAIRING_UNUSABLE: &str = ReasonCode::PairingIdentityUnavailable.as_str();
 
 /// The episode key for one paired device.
 pub fn notice_key(cid: &str) -> String {
@@ -50,14 +49,14 @@ pub fn notice_key(cid: &str) -> String {
 /// stream and notify failures are not the owner's to fix on the device; a
 /// malformed, conflicting or removed upload is about that upload, not the
 /// device; a missing or unreadable protocol version does not say which app
-/// sent it. Health still lists every one of them.
+/// sent it. An unavailable pairing identity is only refused for a device with
+/// no pairing row, which has no activity to announce. Health still lists every
+/// one of them.
 fn owner_fix(reason_code: &str) -> Option<&'static str> {
     if APP_TOO_OLD.contains(&reason_code) {
-        Some("its app is too old for this journal. update the app on it.")
+        Some("its solstone app is too old for your journal. update the solstone app on it.")
     } else if reason_code == JOURNAL_TOO_OLD {
-        Some("its app is newer than this journal. update your journal.")
-    } else if reason_code == PAIRING_UNUSABLE {
-        Some("its pairing can't be used anymore. pair it again.")
+        Some("its solstone app is newer than your journal. update your journal.")
     } else {
         None
     }
@@ -187,7 +186,6 @@ mod tests {
             ReasonCode::LegacyObserverField,
             ReasonCode::LegacyStreamField,
             ReasonCode::ProtocolVersionFuture,
-            ReasonCode::PairingIdentityUnavailable,
         ] {
             let journal = journal();
             reject(journal.path(), code.as_str(), None);
@@ -219,6 +217,7 @@ mod tests {
             ReasonCode::ForeignStreamBinding,
             ReasonCode::ProtocolVersionRequired,
             ReasonCode::ProtocolVersionMalformed,
+            ReasonCode::PairingIdentityUnavailable,
         ] {
             let journal = journal();
             for _ in 0..5 {
@@ -231,14 +230,20 @@ mod tests {
     #[test]
     fn an_accepted_upload_clears_only_when_no_source_is_still_refused() {
         let journal = journal();
-        reject(journal.path(), PAIRING_UNUSABLE, Some("location"));
-        reject(journal.path(), PAIRING_UNUSABLE, Some("location"));
+        let too_old = ReasonCode::ProtocolVersionLegacy.as_str();
+        reject(journal.path(), too_old, None);
+        reject(journal.path(), too_old, None);
         assert_eq!(row(journal.path()).unwrap()["event"], "raise");
+        reject(
+            journal.path(),
+            ReasonCode::JournalWriteFailed.as_str(),
+            Some("location"),
+        );
 
         // Audio lands, which ends the device-wide streak, but location is
-        // still refused, so the episode still holds.
+        // still refused, so nothing clears the episode yet.
         accept(journal.path(), Some("audio"));
-        assert_eq!(row(journal.path()).unwrap()["event"], "raise");
+        assert!(row(journal.path()).is_none());
 
         accept(journal.path(), Some("location"));
         let cleared = row(journal.path()).expect("clear");

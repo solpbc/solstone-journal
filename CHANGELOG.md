@@ -14,7 +14,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - browser pages in your journal now show their context: whether the tab was in front and its window focused, whether audio or video was playing, whether the solstone app was paused, how long the tab had been open, the page's language and which browser it was. agents reading your journal see the same line. pages from earlier versions of the solstone extension look as before.
 - when backup keeps failing with your current backup settings, several attempts in a row over at least two days, your journal now sends one notification that says why and opens the backup page. it sends one more when an attempt works again, and pausing backup ends it quietly.
 - your journal now tells you when a newly paired device or a newly connected agent can reach it: one notification to the devices where you turned notifications on, and a card in your journal that opens the page where you can unpair or disconnect it. an agent is announced only the first time you connect it, not each time it's paired again.
-- when your journal keeps turning away uploads from one of your devices because its app is too old, its app is newer than your journal, or its pairing can't be used, it now tells you what to update or pair again, and the notice opens the devices list on the health page. it tells you once more when uploads from that device are accepted again.
+- when your journal keeps turning away uploads from one of your devices because its solstone app is too old or newer than your journal, it now tells you what to update, and the notice opens your devices on the health page. it tells you once more when uploads from that device are accepted again.
 
 ### Changed
 
