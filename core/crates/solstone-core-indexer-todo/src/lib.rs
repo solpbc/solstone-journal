@@ -29,7 +29,8 @@ pub enum Token {
 }
 
 impl Token {
-    fn key(self) -> &'static str {
+    /// The key this token is listed under.
+    pub fn key(self) -> &'static str {
         match self {
             Self::ScanFull => "@scan-full",
             Self::Reclassify => "@reclassify",

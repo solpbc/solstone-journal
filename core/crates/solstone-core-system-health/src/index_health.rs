@@ -365,7 +365,10 @@ fn index_health_from(status: &IndexStatus, observations: &IndexingObservations) 
 fn with_work_list(journal: &Path, mut health: IndexHealth) -> IndexHealth {
     match solstone_core_indexer_store::todo::inspect(journal) {
         Ok(todo) => {
-            health.queued = todo.keys.len();
+            // Queued connections refreshes are not search work: search can be
+            // current while they run, a slice at a time, for a long while.
+            let edges = solstone_core_indexer_store::todo::Token::Edges.key();
+            health.queued = todo.keys.iter().filter(|key| *key != edges).count();
             health.failed_deletions = todo.failed_deletions;
             health.pending = health.pending.max(health.queued);
             if health.failed_deletions > 0
@@ -443,6 +446,26 @@ mod tests {
 
     use super::*;
     use crate::indexing_observation::{IndexingAttemptObservation, IndexingDiagnostics};
+
+    #[test]
+    fn a_queued_connections_refresh_leaves_search_current() {
+        let journal = tempfile::tempdir().unwrap();
+        let source = journal.path().join("imports/fixture/summary.md");
+        std::fs::create_dir_all(source.parent().unwrap()).unwrap();
+        std::fs::write(&source, "kestrel").unwrap();
+        solstone_core_indexer_store::scan::scan_journal(journal.path(), true).unwrap();
+        let before = evaluate_index_health(journal.path(), Utc::now());
+        solstone_core_indexer_store::todo::enqueue_token(
+            journal.path(),
+            solstone_core_indexer_store::todo::Token::Edges,
+        )
+        .unwrap();
+        let health = evaluate_index_health(journal.path(), Utc::now());
+        assert_eq!(health.queued, 0);
+        assert_ne!(health.state, IndexHealthState::Behind);
+        assert_eq!(health.state, before.state);
+        assert_eq!(health.text, before.text);
+    }
 
     #[test]
     fn a_dropped_present_failure_keeps_its_reason_until_the_file_indexes() {
