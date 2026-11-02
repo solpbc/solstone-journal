@@ -9,28 +9,52 @@ use solstone_core_callosum::CallosumOneShotSender;
 use solstone_core_format::paths::relative_to_journal;
 use solstone_core_format::segment::{is_date_key, segment_key};
 
-/// Best-effort live callosum notification. Notification failure never changes media handling.
-pub fn blocked(
-    journal: &Path,
-    work_key: &str,
-    reason_code: Option<&str>,
-    provider: Option<&str>,
-    context: Option<&str>,
-) {
-    let key = reason_code
-        .map(|code| format!("observe.describe:{code}"))
-        .unwrap_or_else(|| "observe.describe.session".to_owned());
-    let mut row = json!({"tract":"notification", "event":"show", "key":key, "work_key":work_key});
-    if let Some(code) = reason_code {
-        row["reason_code"] = json!(code);
+/// Best-effort live callosum notification for blocked work the owner has to
+/// fix. Any other reason, or none, sends nothing: the run is still deferred,
+/// its reason logged and its work retried.
+/// Notification failure never changes media handling.
+pub fn blocked(journal: &Path, work_key: &str, reason_code: Option<&str>) {
+    if let Some(row) = blocked_row(work_key, reason_code) {
+        send(journal, &row);
     }
-    if let Some(provider) = provider {
-        row["provider"] = json!(provider);
-    }
-    if let Some(context) = context {
-        row["context"] = json!(context);
-    }
-    send(journal, &row);
+}
+
+fn blocked_row(work_key: &str, reason_code: Option<&str>) -> Option<serde_json::Value> {
+    let code = reason_code?;
+    let message = owner_fix(code)?;
+    Some(json!({
+        "tract": "notification",
+        "event": "show",
+        "app": "thinking",
+        "icon": "eye",
+        "title": "screen descriptions are waiting",
+        "message": message,
+        "action": "/app/thinking",
+        "key": format!("observe.describe:{code}"),
+        "work_key": work_key,
+        "reason_code": code,
+    }))
+}
+
+/// What the owner has to do for a blocked reason that waiting will not clear.
+/// Every other reason returns `None` and stays quiet: loading, installing, a
+/// busy or unreachable engine, and usage limits, which providers also report
+/// for short rate limits that clear on their own.
+fn owner_fix(reason_code: &str) -> Option<&'static str> {
+    Some(match reason_code {
+        "provider_key_invalid" => {
+            "your AI provider turned down your key. check it on the thinking page"
+        }
+        "provider_key_missing" => "your AI provider needs a key. add one on the thinking page",
+        "chatgpt_sign_in_required" => "signed out of ChatGPT. sign in again on the thinking page",
+        "chatgpt_not_eligible" => {
+            "this ChatGPT account can't be used for thinking. pick another provider on the thinking page"
+        }
+        "confidential_access_ended" => {
+            "confidential processing isn't active for this journal. open the thinking page to see why"
+        }
+        _ => return None,
+    })
 }
 
 /// Return the first date-key ancestor, matching Python's `day_from_path` scan.
@@ -95,7 +119,37 @@ const SEND_TIMEOUT: Duration = Duration::from_secs(2);
 mod tests {
     use std::path::Path;
 
-    use super::{day_for_path, segment_for_video_path};
+    use super::{blocked_row, day_for_path, segment_for_video_path};
+
+    #[test]
+    fn a_reason_the_owner_must_fix_gets_a_titled_notice_with_a_route() {
+        let row = blocked_row("work-1", Some("provider_key_invalid")).expect("owner-fixable");
+        assert_eq!(row["tract"], "notification");
+        assert_eq!(row["event"], "show");
+        assert!(!row["title"].as_str().unwrap_or_default().is_empty());
+        assert!(!row["message"].as_str().unwrap_or_default().is_empty());
+        assert_eq!(row["action"], "/app/thinking");
+        assert_eq!(row["key"], "observe.describe:provider_key_invalid");
+        assert_eq!(row["work_key"], "work-1");
+    }
+
+    #[test]
+    fn every_other_reason_or_no_reason_stays_quiet() {
+        for code in [
+            "local_model_loading",
+            "local_model_installing",
+            "install_busy",
+            "provider_unavailable",
+            "provider_quota_exceeded",
+            "chatgpt_usage_limit",
+            "local_endpoint_unreachable",
+            "thinking_engine_not_chosen",
+            "unknown",
+        ] {
+            assert!(blocked_row("work-1", Some(code)).is_none(), "{code}");
+        }
+        assert!(blocked_row("work-1", None).is_none());
+    }
 
     #[test]
     fn day_scan_matches_date_key_ancestors_only() {

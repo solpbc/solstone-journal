@@ -621,7 +621,7 @@ fn run_prepared(
         session = Some(
             factory
                 .spawn(options.jobs, options.explicit_journal)
-                .map_err(|_| blocked(options.journal, work_key, None, None, None))?,
+                .map_err(|_| blocked(options.journal, work_key, None))?,
         );
         let session = session.as_deref().expect("spawned describe session");
         let instruction = request::system_instruction(&options.redact_rules, phone);
@@ -681,7 +681,7 @@ fn run_prepared(
                 let id = req.id.clone().expect("describe request ids are present");
                 let submitted_at = Instant::now();
                 if session.submit(req).is_err() {
-                    return Err(blocked(options.journal, work_key, None, None, None));
+                    return Err(blocked(options.journal, work_key, None));
                 }
                 outstanding.insert(
                     id,
@@ -693,9 +693,9 @@ fn run_prepared(
             }
             let completion = session
                 .recv_timeout(Duration::from_secs(120))
-                .map_err(|_| blocked(options.journal, work_key, None, None, None))?;
+                .map_err(|_| blocked(options.journal, work_key, None))?;
             let SessionCompletion::Response(response) = completion else {
-                return Err(blocked(options.journal, work_key, None, None, None));
+                return Err(blocked(options.journal, work_key, None));
             };
             if matches!(response, GenerateResponse::Cancelled) {
                 let _ = session.close();
@@ -754,13 +754,7 @@ fn run_prepared(
                     let code = refusal.reason_code.as_ref().map(|value| value.as_wire());
                     if refusal.reason == RefusalReason::NoEngineConfigured || refusal.blocking {
                         let _ = session.close();
-                        return Err(blocked(
-                            options.journal,
-                            work_key,
-                            code,
-                            refusal.provider.as_deref(),
-                            Some("observe.describe.frame"),
-                        ));
+                        return Err(blocked(options.journal, work_key, code));
                     }
                     if refusal.retryable && pending.attempt + 1 < MAX_ATTEMPTS {
                         waiting.push_back(Pending {
@@ -934,22 +928,13 @@ fn run_prepared(
             &options.category_overrides,
         ) {
             Ok(selected) => selected,
-            Err(SelectionError::Blocked {
-                reason_code,
-                provider,
-            }) => {
+            Err(SelectionError::Blocked { reason_code }) => {
                 let _ = session_ref.close();
-                return Err(blocked(
-                    options.journal,
-                    work_key,
-                    reason_code.as_deref(),
-                    provider.as_deref(),
-                    Some("observe.extract.selection"),
-                ));
+                return Err(blocked(options.journal, work_key, reason_code.as_deref()));
             }
             Err(SelectionError::Session) => {
                 let _ = session_ref.close();
-                return Err(blocked(options.journal, work_key, None, None, None));
+                return Err(blocked(options.journal, work_key, None));
             }
             Err(SelectionError::Cancelled) => {
                 let _ = session_ref.close();
@@ -1050,20 +1035,14 @@ fn run_prepared(
                         result["error"] = json!(error);
                     }
                 }
-                Err(ExtractionError::Blocked { code, provider }) => {
+                Err(ExtractionError::Blocked { code }) => {
                     let mut diagnostic_rows = final_rows.clone();
                     let mut failed = result.clone();
                     failed["error"] = json!("extraction_failed");
                     diagnostic_rows.push(failed);
                     publish_ocr_diagnostics(&diagnostic_rows)?;
                     let _ = session_ref.close();
-                    return Err(blocked(
-                        options.journal,
-                        work_key,
-                        code.as_deref(),
-                        provider.as_deref(),
-                        Some(&category.context),
-                    ));
+                    return Err(blocked(options.journal, work_key, code.as_deref()));
                 }
                 Err(ExtractionError::Cancelled) => {
                     let _ = session_ref.close();
@@ -1076,7 +1055,7 @@ fn run_prepared(
                     diagnostic_rows.push(failed);
                     publish_ocr_diagnostics(&diagnostic_rows)?;
                     let _ = session_ref.close();
-                    return Err(blocked(options.journal, work_key, None, None, None));
+                    return Err(blocked(options.journal, work_key, None));
                 }
             }
         }
@@ -1148,20 +1127,14 @@ fn run_prepared(
                             result["error"] = json!(error);
                         }
                     }
-                    Err(ExtractionError::Blocked { code, provider }) => {
+                    Err(ExtractionError::Blocked { code }) => {
                         let mut diagnostic_rows = final_rows.clone();
                         let mut failed = result.clone();
                         failed["error"] = json!("extraction_failed");
                         diagnostic_rows.push(failed);
                         publish_ocr_diagnostics(&diagnostic_rows)?;
                         let _ = session_ref.close();
-                        return Err(blocked(
-                            options.journal,
-                            work_key,
-                            code.as_deref(),
-                            provider.as_deref(),
-                            Some(&category.context),
-                        ));
+                        return Err(blocked(options.journal, work_key, code.as_deref()));
                     }
                     Err(ExtractionError::Cancelled) => {
                         let _ = session_ref.close();
@@ -1174,7 +1147,7 @@ fn run_prepared(
                         diagnostic_rows.push(failed);
                         publish_ocr_diagnostics(&diagnostic_rows)?;
                         let _ = session_ref.close();
-                        return Err(blocked(options.journal, work_key, None, None, None));
+                        return Err(blocked(options.journal, work_key, None));
                     }
                 }
             }
@@ -1232,7 +1205,6 @@ fn run_prepared(
 enum ExtractionError {
     Blocked {
         code: Option<String>,
-        provider: Option<String>,
     },
     Failed {
         error: String,
@@ -1536,7 +1508,6 @@ fn extract_category(
                 if refusal.reason == RefusalReason::NoEngineConfigured || refusal.blocking {
                     return Err(ExtractionError::Blocked {
                         code: refusal.reason_code.map(|value| value.as_wire().to_owned()),
-                        provider: refusal.provider,
                     });
                 }
                 if !refusal.retryable {
@@ -1695,14 +1666,8 @@ fn rfdetr_unavailable_detail() -> &'static str {
     }
 }
 
-fn blocked(
-    journal: &Path,
-    work_key: &str,
-    code: Option<&str>,
-    provider: Option<&str>,
-    context: Option<&str>,
-) -> RunError {
-    notify::blocked(journal, work_key, code, provider, context);
+fn blocked(journal: &Path, work_key: &str, code: Option<&str>) -> RunError {
+    notify::blocked(journal, work_key, code);
     RunError::Blocked(code.map(str::to_owned))
 }
 

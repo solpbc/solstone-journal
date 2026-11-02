@@ -104,10 +104,7 @@ pub struct CategorizedFrame {
 
 #[derive(Debug)]
 pub enum SelectionError {
-    Blocked {
-        reason_code: Option<String>,
-        provider: Option<String>,
-    },
+    Blocked { reason_code: Option<String> },
     Session,
     Cancelled,
 }
@@ -174,7 +171,6 @@ pub fn select(
             {
                 return Err(SelectionError::Blocked {
                     reason_code: refusal.reason_code.map(|value| value.as_wire().to_owned()),
-                    provider: refusal.provider,
                 });
             }
             fallback_with_category_caps(frames, max_extractions, overrides)
