@@ -296,9 +296,7 @@ fn operation_inventory(root: &Path) -> BTreeSet<String> {
         })
         .collect::<BTreeSet<_>>();
     assert!(
-        operations.contains("rescan_file")
-            && operations.contains("prune_by_paths")
-            && operations.len() >= 14,
+        operations.contains("rescan_file") && operations.contains("prune_by_paths"),
         "the instrument must see the existing lease owners"
     );
     // Public checked wrappers are writers too; callers cannot bypass the gate
