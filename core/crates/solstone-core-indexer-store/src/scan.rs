@@ -1197,7 +1197,12 @@ pub(crate) fn rescan_file_admitted(
         replace_edge_file_mtime(&tx, &rel, mtime)?;
     }
     tx.commit()?;
-    warnings.extend(migrate_segment_aggregates(&mut conn, journal, &|| Ok(()))?);
+    // An unfinished migration catches up here, a batch per file. A finished one
+    // costs this keyed read: looking for rows a much older binary left behind
+    // reads all of `chunks`, so only the scan looks.
+    if !read_segment_aggregate_migration(&conn)?.is_some_and(|state| state.completed) {
+        warnings.extend(migrate_segment_aggregates(&mut conn, journal, &|| Ok(()))?);
+    }
     Ok(RescanFileStatus::Indexed { warnings })
 }
 
@@ -1661,6 +1666,12 @@ fn migrate_segment_aggregates(
         }
         state.cursor.clear();
         state.completed = false;
+        // Durable before the first segment, which may block: the per-file path
+        // only resumes a migration it can see is unfinished.
+        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        crate::db::admit_scan_journal(checkpoint)?;
+        write_segment_aggregate_migration(&tx, "", false)?;
+        tx.commit()?;
     }
 
     for _ in 0..SEGMENT_AGGREGATE_MIGRATION_BUDGET {
@@ -7966,6 +7977,138 @@ not json
         let report = reconcile_edges(&mut conn, &root, true, &|| Ok(())).unwrap();
         assert!(report.removed >= 1);
         assert_eq!(ghost_edge_count(&conn), 0);
+    }
+
+    /// The statements among `log` whose query plan reads all of `chunks`. A full
+    /// FTS scan has an empty index constraint; a rowid probe is `0:=`.
+    fn whole_chunk_scans(root: &Path, log: &[String]) -> Vec<String> {
+        let conn = Connection::open(db_path(root)).expect("open index");
+        log.iter()
+            .filter(|sql| {
+                let verb = sql.split_whitespace().next().unwrap_or_default();
+                ["SELECT", "INSERT", "UPDATE", "DELETE", "REPLACE"]
+                    .iter()
+                    .any(|planned| verb.eq_ignore_ascii_case(planned))
+            })
+            .filter(|sql| {
+                let mut plan = conn
+                    .prepare(&format!("EXPLAIN QUERY PLAN {sql}"))
+                    .expect("explain traced statement");
+                plan.query_map([], |row| row.get::<_, String>(3))
+                    .expect("query plan")
+                    .map(|step| step.expect("plan step"))
+                    .any(|step| step.contains("chunks VIRTUAL TABLE") && step.ends_with("INDEX 0:"))
+            })
+            .cloned()
+            .collect()
+    }
+
+    #[test]
+    fn indexing_a_file_after_the_migration_finished_does_not_read_all_of_chunks() {
+        let root = temp_root("per-file-no-chunk-scan");
+        for (rel, text) in [
+            (
+                "chronicle/20260717/talents/note.md",
+                "# Note\n\nfirst words",
+            ),
+            (
+                "facets/work/activities/20260717.jsonl",
+                "{\"id\":\"a\",\"activity\":\"coding\",\"description\":\"words\"}\n",
+            ),
+        ] {
+            write(&root, rel, text);
+        }
+        scan_journal(&root, true).expect("scan");
+        let conn = open_index(&root).expect("open index");
+        assert!(
+            read_segment_aggregate_migration(&conn)
+                .expect("read migration")
+                .expect("migration state")
+                .completed
+        );
+        drop(conn);
+
+        for rel in [
+            "20260717/talents/note.md",
+            "facets/work/activities/20260717.jsonl",
+        ] {
+            let (status, log) = crate::db::statement_log::capture(|| {
+                rescan_file(&root, Path::new(rel)).expect("rescan file")
+            });
+            assert!(matches!(status, RescanFileStatus::Indexed { .. }), "{rel}");
+            assert_eq!(
+                whole_chunk_scans(&root, &log),
+                Vec::<String>::new(),
+                "{rel}"
+            );
+        }
+
+        // The instrument sees the statement it is here to keep off this path.
+        let (_, log) = crate::db::statement_log::capture(|| {
+            let mut conn = open_index(&root).expect("open index");
+            migrate_segment_aggregates(&mut conn, &root, &|| Ok(())).expect("migrate")
+        });
+        assert_eq!(
+            whole_chunk_scans(&root, &log),
+            vec!["SELECT EXISTS(SELECT 1 FROM chunks WHERE agent='segment')".to_owned()]
+        );
+    }
+
+    #[test]
+    fn legacy_rows_after_a_finished_migration_wait_for_the_scan_and_then_clear() {
+        let root = temp_root("finished-migration-rearm");
+        let segment = "20260717/default/101500_300";
+        let child = "20260717/default/101500_300/talents/audio.md";
+        let unrelated = "20260717/talents/unrelated.md";
+        write(
+            &root,
+            &format!("chronicle/{child}"),
+            "# Audio\n\nkept words",
+        );
+        write(&root, &format!("chronicle/{unrelated}"), "# Other\n\nwords");
+        scan_journal(&root, true).expect("scan");
+        let legacy = "SELECT count(*) FROM chunks WHERE agent='segment'";
+        let conn = open_index(&root).expect("open index");
+        seed_legacy_segment_aggregate(&conn, segment);
+        drop(conn);
+
+        rescan_file(&root, Path::new(unrelated)).expect("rescan file");
+        let conn = open_index(&root).expect("open index");
+        assert_eq!(count(&conn, legacy), 1);
+        drop(conn);
+
+        scan_journal(&root, false).expect("scan re-arms");
+        let conn = open_index(&root).expect("open index");
+        assert_eq!(count(&conn, legacy), 0);
+        assert!(chunk_content(&conn, child).contains("kept words"));
+        assert!(
+            read_segment_aggregate_migration(&conn)
+                .expect("read migration")
+                .expect("migration state")
+                .completed
+        );
+    }
+
+    #[test]
+    fn a_rearmed_migration_that_blocks_stays_visible_to_the_per_file_path() {
+        let root = temp_root("rearm-blocked");
+        let mut conn = open_index(&root).expect("open index");
+        write_segment_aggregate_migration(&conn, "", true).expect("mark finished");
+        // Talent discovery refuses a path outside the journal, so this segment blocks.
+        seed_legacy_segment_aggregate(&conn, "../outside");
+
+        let warnings = migrate_segment_aggregates(&mut conn, &root, &|| Ok(())).expect("migrate");
+
+        assert!(
+            warnings.iter().any(|warning| warning.contains("retained")),
+            "{warnings:?}"
+        );
+        assert!(
+            !read_segment_aggregate_migration(&conn)
+                .expect("read migration")
+                .expect("migration state")
+                .completed
+        );
     }
 
     #[test]

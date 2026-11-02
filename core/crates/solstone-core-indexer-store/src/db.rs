@@ -227,6 +227,11 @@ fn open_index_connection(
     fs::create_dir_all(&index_dir)?;
     admit_scan_journal(checkpoint)?;
     let mut conn = Connection::open(db_path(journal))?;
+    #[cfg(test)]
+    conn.trace_v2(
+        rusqlite::trace::TraceEventCodes::SQLITE_TRACE_STMT,
+        Some(statement_log::record),
+    );
     admit_scan_journal(checkpoint)?;
     conn.execute_batch(
         "PRAGMA busy_timeout=5000; PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;",
@@ -234,6 +239,36 @@ fn open_index_connection(
     admit_scan_journal(checkpoint)?;
     ensure_schema(&mut conn, checkpoint)?;
     Ok(conn)
+}
+
+/// Every statement the index connections on this thread run, so a test can read
+/// their query plans.
+#[cfg(test)]
+pub(crate) mod statement_log {
+    use std::cell::RefCell;
+
+    thread_local! {
+        static LOG: RefCell<Option<Vec<String>>> = const { RefCell::new(None) };
+    }
+
+    pub(super) fn record(event: rusqlite::trace::TraceEvent<'_>) {
+        if let rusqlite::trace::TraceEvent::Stmt(statement, _) = event {
+            LOG.with_borrow_mut(|log| {
+                if let Some(log) = log {
+                    log.extend(statement.expanded_sql());
+                }
+            });
+        }
+    }
+
+    pub(crate) fn capture<T>(run: impl FnOnce() -> T) -> (T, Vec<String>) {
+        LOG.set(Some(Vec::new()));
+        let result = run();
+        (
+            result,
+            LOG.take().expect("the log stays open during capture"),
+        )
+    }
 }
 
 /// Fixture seeding only; not a production mutation entry point.
