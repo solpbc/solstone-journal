@@ -426,7 +426,7 @@ fn start_gateway_with_proof_writer(
 }
 
 fn start_gateway_with_admission_timeout(
-    config: ServerConfig,
+    mut config: ServerConfig,
     plan: GatewayPlan,
     admission_timeout: Duration,
     mut write_proof: impl FnMut(&mut StreamOwned<ServerConnection, TcpStream>, &[u8]) -> io::Result<()>
@@ -439,6 +439,10 @@ fn start_gateway_with_admission_timeout(
     + Send
     + 'static,
 ) -> Gateway {
+    // No session tickets: a client that rejects at once never reads them, and on
+    // Windows its close then resets the connection before the gateway reads the
+    // proof request it already sent.
+    config.send_tls13_tickets = 0;
     let listener = TcpListener::bind("127.0.0.1:0").expect("loopback listener");
     let port = listener.local_addr().expect("listener address").port();
     listener.set_nonblocking(true).expect("nonblocking accept");
