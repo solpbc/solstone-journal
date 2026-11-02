@@ -157,6 +157,11 @@ const SCANNED_MODULE_SOURCES: &[(&str, &str, &str)] = &[
     ),
     (
         "supervisor",
+        "disk_space",
+        include_str!("../../../solstone-core/src/supervisor/disk_space.rs"),
+    ),
+    (
+        "supervisor",
         "host",
         include_str!("../../../solstone-core/src/supervisor/host.rs"),
     ),
@@ -364,6 +369,11 @@ const SCANNED_MODULE_SOURCES: &[(&str, &str, &str)] = &[
         "convey",
         "network_writes",
         include_str!("../../../solstone-core-convey-shell/src/network_writes.rs"),
+    ),
+    (
+        "convey",
+        "owner_notices",
+        include_str!("../../../solstone-core-convey-shell/src/owner_notices.rs"),
     ),
     (
         "convey",
