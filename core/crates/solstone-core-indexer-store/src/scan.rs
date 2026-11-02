@@ -625,6 +625,16 @@ fn scan_journal_pass(
         }
     }
 
+    // Newest day first, in the order the to-do list serves: a mass rewrite or
+    // a rebuild repairs the days the owner most likely searches first. Files
+    // with no day, and facet files named by theirs, sort by that day or today.
+    let today = chrono::Local::now().format("%Y%m%d").to_string();
+    to_index.sort_by(|(a, _, _), (b, _, _)| {
+        solstone_core_indexer_todo::sort_day(b, &today)
+            .cmp(solstone_core_indexer_todo::sort_day(a, &today))
+            .then_with(|| a.cmp(b))
+    });
+
     let (removed, retained_days) = removal_candidates(&db_mtimes, &files, full);
     let mut pending_chunks = PendingChunkRows::new(
         to_index

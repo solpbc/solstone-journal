@@ -797,7 +797,9 @@ fn a_competing_writer_can_acquire_between_drain_batches() {
         return;
     }
     let journal = Journal::new();
-    for n in 0..BATCH_SIZE + 1 {
+    // One full batch, which a snapshot may bound, and one entry after it.
+    let batch = BATCH_SIZE.min(SNAPSHOT_ENTRIES);
+    for n in 0..batch + 1 {
         let path = NOTE.replace("120000_300", &format!("12{n:04}_300"));
         journal.save(&path, "kestrel batch");
         enqueue_path(journal.path(), Path::new(&path)).unwrap();
@@ -820,7 +822,7 @@ fn a_competing_writer_can_acquire_between_drain_batches() {
         serde_json::from_slice(&fs::read(journal.path().join("drain-report.json")).unwrap())
             .unwrap();
     assert_eq!(report["batches"], 2);
-    assert_eq!(report["processed"], BATCH_SIZE + 1);
+    assert_eq!(report["processed"], batch + 1);
 }
 
 mod calendar_delete {
@@ -1037,14 +1039,361 @@ fn an_entity_change_brings_the_connections_it_reaches_current() {
         solstone_core_indexer_todo::Token::EntitySearch,
     )
     .unwrap();
-    // The entity change marks the day; its refresh waits behind newer work
-    // and runs on the next drain.
+    // The entity change marks the day; its refresh waits behind everything
+    // else and runs once, last, before the drain ends.
     let report = drain_now(journal.path()).unwrap();
-    assert_eq!((report.processed, report.failed), (1, 0));
-    assert_eq!(edges(&journal), 0);
-    assert_eq!(inspect(journal.path()).unwrap().keys, ["@edges"]);
-    let report = drain_now(journal.path()).unwrap();
-    assert_eq!((report.processed, report.failed), (1, 0));
+    assert_eq!((report.processed, report.failed), (2, 0));
     assert_eq!(edges(&journal), 1);
     assert!(inspect(journal.path()).unwrap().keys.is_empty());
+}
+
+/// Keys in the order this drain attempted them today, with each event.
+fn attempts(journal: &Journal) -> Vec<serde_json::Value> {
+    let log = journal
+        .path()
+        .join("chronicle")
+        .join(chrono::Utc::now().format("%Y%m%d").to_string())
+        .join("health/indexer.jsonl");
+    fs::read_to_string(log)
+        .unwrap_or_default()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect()
+}
+
+fn attempts_of(journal: &Journal, key: &str) -> usize {
+    attempts(journal)
+        .iter()
+        .filter(|event| event["path"] == key)
+        .count()
+}
+
+/// `count` queued removals for days long past: a backlog that is cheap to drain.
+fn old_backlog(journal: &Journal, count: usize, tag: &str) {
+    for index in 0..count {
+        let key = format!(
+            "2025{:02}{:02}/desktop/{tag}{index:06}_300/talents/a.md",
+            index % 12 + 1,
+            index % 28 + 1
+        );
+        enqueue_path(journal.path(), Path::new(&key)).unwrap();
+    }
+}
+
+fn forced() -> DrainOptions {
+    DrainOptions {
+        force: true,
+        ..DrainOptions::default()
+    }
+}
+
+#[test]
+fn a_save_during_a_long_backlog_is_served_within_one_snapshot() {
+    let journal = Journal::new();
+    old_backlog(&journal, 3 * SNAPSHOT_ENTRIES, "1");
+    let today = chrono::Local::now().format("%Y%m%d").to_string();
+    let fresh = format!("{today}/desktop/120000_300/talents/activity.md");
+    let saved = std::cell::Cell::new(false);
+    let report = drain_with_checkpoint(journal.path(), forced(), &|| {
+        // Once the first snapshot is under way.
+        if !saved.get() && !attempts(&journal).is_empty() {
+            saved.set(true);
+            journal.save(&fresh, "a fresh kestrel note");
+            enqueue_path(
+                journal.path(),
+                &journal.path().join("chronicle").join(&fresh),
+            )
+            .map_err(|error| error.to_string())?;
+        }
+        Ok(())
+    })
+    .unwrap();
+    assert_eq!(
+        (report.processed, report.failed),
+        (3 * SNAPSHOT_ENTRIES + 1, 0)
+    );
+    let order = attempts(&journal);
+    let position = order
+        .iter()
+        .position(|event| event["path"] == fresh.as_str());
+    // The first snapshot was already fixed; the save leads the next one.
+    assert_eq!(position, Some(SNAPSHOT_ENTRIES));
+    // Every search attempt says how long it waited.
+    assert!(order.iter().all(|event| event["queued_ms"].is_u64()));
+}
+
+#[test]
+fn a_failing_token_is_kept_and_served_once_per_drain_under_a_backlog() {
+    let journal = Journal::new();
+    // Entity search cannot record what it wrote: it fails every time.
+    scan_journal(journal.path(), false).unwrap();
+    open_index(journal.path())
+        .unwrap()
+        .execute_batch("CREATE TRIGGER refuse_entity_search BEFORE INSERT ON entity_search_watermark BEGIN SELECT RAISE(ABORT, 'fixture entity search refusal'); END;")
+        .unwrap();
+    journal.save(
+        "entities/alice/entity.json",
+        r#"{"name":"Alice Kestrel","type":"Person"}"#,
+    );
+    enqueue_token(journal.path(), Token::EntitySearch).unwrap();
+    for attempt in 1..=3 {
+        assert_eq!(drain(journal.path(), forced()).unwrap().failed, 1);
+        assert_eq!(listed(journal.path())[0].attempts, attempt);
+    }
+    // Kept after three failures, waiting an hour, and counted.
+    let kept = listed(journal.path()).pop().unwrap();
+    assert_eq!(kept.key, "@entity-search");
+    assert!(kept.not_before_ms > now_ms() + RETRY_MS);
+    assert_eq!(inspect(journal.path()).unwrap().failed_tokens, 1);
+    // An ordinary drain leaves it waiting.
+    drain(journal.path(), DrainOptions::default()).unwrap();
+    assert_eq!(attempts_of(&journal, "@entity-search"), 3);
+
+    // Under a backlog that keeps growing, a forced drain still serves it,
+    // once, and returns.
+    old_backlog(&journal, 4 * SNAPSHOT_ENTRIES, "1");
+    let added = std::cell::Cell::new(0);
+    let report = drain_with_checkpoint(journal.path(), forced(), &|| {
+        added.set(added.get() + 1);
+        if added.get() % 3 == 0 && added.get() < 60 {
+            let key = format!("20250101/desktop/9{:06}_300/talents/a.md", added.get());
+            enqueue_path(journal.path(), Path::new(&key)).map_err(|error| error.to_string())?;
+        }
+        Ok(())
+    })
+    .unwrap();
+    assert_eq!(report.failed, 1);
+    assert_eq!(attempts_of(&journal, "@entity-search"), 4);
+    assert_eq!(listed(journal.path())[0].attempts, 4);
+}
+
+#[test]
+fn a_kept_token_queued_again_by_its_own_cause_keeps_its_delay() {
+    let journal = Journal::new();
+    let claims = root(journal.path()).join("claimed");
+    fs::create_dir_all(&claims).unwrap();
+    // A producer queues the token again while its third failing run holds it.
+    enqueue_token(journal.path(), Token::Reclassify).unwrap();
+    let mut entry = listed(journal.path()).pop().unwrap();
+    entry.attempts = 2;
+    let claim = claims.join(entry.filename());
+    fs::remove_file(root(journal.path()).join(entry.filename())).unwrap();
+    rewrite(&claim, &entry).unwrap();
+    enqueue_token(journal.path(), Token::Reclassify).unwrap();
+    return_failed(journal.path(), entry.clone(), &claim, "fixture failure").unwrap();
+    let kept = listed(journal.path()).pop().unwrap();
+    assert_eq!(kept.attempts, 3);
+    assert!(kept.not_before_ms > now_ms() + RETRY_MS);
+
+    // A third failure found by claim recovery keeps it too.
+    fs::remove_file(root(journal.path()).join(entry.filename())).unwrap();
+    rewrite(&claim, &entry).unwrap();
+    let report = drain(journal.path(), DrainOptions::default()).unwrap();
+    assert_eq!(report.recovered, 1);
+    let kept = listed(journal.path()).pop().unwrap();
+    assert_eq!((kept.key.as_str(), kept.attempts), ("@reclassify", 3));
+}
+
+#[test]
+fn connections_run_once_and_last_however_often_they_are_queued() {
+    let journal = Journal::new();
+    old_backlog(&journal, 40, "1");
+    enqueue_token(journal.path(), Token::Edges).unwrap();
+    // The refresh re-queues itself; so does this checkpoint, every call.
+    let report = drain_with_checkpoint(journal.path(), forced(), &|| {
+        enqueue_token(journal.path(), Token::Edges).map_err(|error| error.to_string())
+    })
+    .unwrap();
+    assert_eq!(report.failed, 0);
+    let order = attempts(&journal);
+    assert_eq!(attempts_of(&journal, "@edges"), 1);
+    assert_eq!(order.last().unwrap()["path"], "@edges");
+    // A connections refresh waiting is not search lag.
+    assert!(order.last().unwrap().get("queued_ms").is_none());
+    assert_eq!(inspect(journal.path()).unwrap().keys, ["@edges"]);
+}
+
+#[test]
+fn a_stop_by_the_drains_own_budget_spends_no_attempt() {
+    let journal = Journal::new();
+    journal.save(NOTE, "kestrel");
+    enqueue_token(journal.path(), Token::ScanFull).unwrap();
+    let claims = root(journal.path()).join("claimed");
+    // The checkpoint refuses once the token is claimed, as an expiring budget does.
+    let report = drain_with_checkpoint(journal.path(), forced(), &|| {
+        if fs::read_dir(&claims).is_ok_and(|mut entries| entries.next().is_some()) {
+            Err("index work wait expired".into())
+        } else {
+            Ok(())
+        }
+    })
+    .unwrap();
+    assert!(report.timed_out);
+    assert_eq!(report.failed, 0);
+    let entry = listed(journal.path()).pop().unwrap();
+    assert_eq!((entry.key.as_str(), entry.attempts), ("@scan-full", 0));
+    assert_eq!(inspect(journal.path()).unwrap().claimed, 0);
+}
+
+#[test]
+fn a_full_scan_with_one_bad_file_is_done_and_the_file_stays_failed() {
+    let journal = Journal::new();
+    journal.save("imports/fixture/summary.md", "kestrel");
+    fs::write(journal.path().join("imports/fixture/summary.md"), [0xff]).unwrap();
+    enqueue_token(journal.path(), Token::ScanFull).unwrap();
+    let report = drain(journal.path(), forced()).unwrap();
+    assert_eq!((report.processed, report.failed), (1, 0));
+    assert!(listed(journal.path()).is_empty());
+    let status = crate::status::inspect_index(journal.path()).unwrap();
+    assert!(status.failed.contains("imports/fixture/summary.md"));
+    // The daily check tries it again.
+    assert_eq!(scan_journal(journal.path(), false).unwrap().failed, 1);
+}
+
+#[test]
+fn a_catch_all_starts_with_the_newest_day() {
+    let journal = Journal::new();
+    for day in ["20240105", "20261101", "20250610"] {
+        journal.save(
+            &format!("{day}/desktop/120000_300/talents/activity.md"),
+            "kestrel",
+        );
+    }
+    scan_journal(journal.path(), false).unwrap();
+    let first: String = open_index(journal.path())
+        .unwrap()
+        .query_row(
+            "SELECT path FROM chunk_sources ORDER BY rowid LIMIT 1",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert!(first.contains("20261101"), "{first}");
+}
+
+/// Run by hand: `cargo test -p solstone-core-indexer-store --features full-tests
+/// --lib -- --ignored --nocapture high_water`.
+#[test]
+#[ignore]
+fn high_water_list_cost() {
+    let count: usize = std::env::var("HIGH_WATER")
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(300_000);
+    let journal = Journal::new();
+    let started = Instant::now();
+    // Written directly: a producer's durable publication flushes each entry,
+    // which is the producer's cost, not the list's.
+    let directory = root(journal.path());
+    fs::create_dir_all(&directory).unwrap();
+    for index in 0..count {
+        let entry = Entry {
+            key: format!(
+                "2025{:02}{:02}/desktop/1{index:06}_300/talents/a.md",
+                index % 12 + 1,
+                index % 28 + 1
+            ),
+            kind: "path".to_owned(),
+            enqueued_ms: now_ms(),
+            attempts: 0,
+            // Due at any real time, not at time zero: the nothing-due probe
+            // below asks at zero, and forced drains ignore the delay.
+            not_before_ms: 1,
+        };
+        fs::write(
+            directory.join(entry.filename()),
+            serde_json::to_vec(&entry).unwrap(),
+        )
+        .unwrap();
+    }
+    eprintln!("write {count} entries: {:?}", started.elapsed());
+    let time = |label: &str, run: &dyn Fn()| {
+        let started = Instant::now();
+        run();
+        eprintln!("{label}: {:?}", started.elapsed());
+    };
+    time("inspect (Health, status)", &|| {
+        assert_eq!(inspect(journal.path()).unwrap().pending, count);
+    });
+    time("has_due, first entry due", &|| {
+        assert!(has_due(journal.path(), now_ms()).unwrap());
+    });
+    time("has_due, nothing due", &|| {
+        assert!(!has_due(journal.path(), 0).unwrap());
+    });
+    // The drain's own list work for one whole pass at the production
+    // snapshot size: every listing and selection, no index writes.
+    const PRODUCTION_SNAPSHOT: usize = 256;
+    let mut list = WorkList::default();
+    let started = Instant::now();
+    let first = list
+        .next_snapshot(journal.path(), true, true, PRODUCTION_SNAPSHOT)
+        .unwrap();
+    eprintln!(
+        "first snapshot (decodes every entry): {:?}",
+        started.elapsed()
+    );
+    for entry in &first {
+        list.served(entry);
+    }
+    let started = Instant::now();
+    let mut snapshots = 1;
+    loop {
+        let next = list
+            .next_snapshot(journal.path(), true, true, PRODUCTION_SNAPSHOT)
+            .unwrap();
+        if next.is_empty() {
+            break;
+        }
+        snapshots += 1;
+        for entry in &next {
+            list.served(entry);
+        }
+    }
+    eprintln!(
+        "remaining {} snapshots of {PRODUCTION_SNAPSHOT}: {:?} (listing and selection only)",
+        snapshots - 1,
+        started.elapsed()
+    );
+    let started = Instant::now();
+    let report = drain(
+        journal.path(),
+        DrainOptions {
+            force: true,
+            budget: Duration::from_secs(60),
+        },
+    )
+    .unwrap();
+    eprintln!(
+        "60 s forced drain at high water: {} removals applied in {:?}",
+        report.processed,
+        started.elapsed()
+    );
+}
+
+#[test]
+fn a_file_saved_again_after_its_turn_leads_the_next_drain() {
+    let journal = Journal::new();
+    old_backlog(&journal, 4 * SNAPSHOT_ENTRIES, "1");
+    let today = chrono::Local::now().format("%Y%m%d").to_string();
+    let hot = format!("{today}/desktop/120000_300/talents/activity.md");
+    let source = journal.save(&hot, "the note the owner is editing");
+    enqueue_path(journal.path(), &source).unwrap();
+    let saved = std::cell::Cell::new(false);
+    let first = drain_with_checkpoint(journal.path(), forced(), &|| {
+        if !saved.get() && attempts_of(&journal, &hot) == 1 {
+            saved.set(true);
+            enqueue_path(journal.path(), &source).map_err(|error| error.to_string())?;
+            // Past the drain's slice, so it yields at the next snapshot.
+            std::thread::sleep(DRAIN_SLICE + Duration::from_millis(50));
+        }
+        Ok(())
+    })
+    .unwrap();
+    assert!(first.processed < 4 * SNAPSHOT_ENTRIES + 1, "{first:?}");
+    assert!(!first.timed_out);
+    drain(journal.path(), forced()).unwrap();
+    let order = attempts(&journal);
+    assert_eq!(order[0]["path"], hot.as_str());
+    assert_eq!(order[first.processed]["path"], hot.as_str());
 }

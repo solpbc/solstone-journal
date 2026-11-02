@@ -98,6 +98,8 @@ pub(crate) struct SearchIndexSummary {
     pub(crate) last_finished_check_at_ms: Option<i64>,
     pub(crate) check_indexed: usize,
     pub(crate) check_removed: usize,
+    pub(crate) oldest_queued_age_ms: Option<u64>,
+    pub(crate) check_overdue: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -586,6 +588,8 @@ pub(crate) fn build_synthesis_health(
                 last_finished_check_at_ms: search_eval.index.last_finished_check_at_ms,
                 check_indexed: search_eval.index.check_indexed,
                 check_removed: search_eval.index.check_removed,
+                oldest_queued_age_ms: search_eval.index.oldest_queued_age_ms,
+                check_overdue: search_eval.index.check_overdue,
             },
         },
         notes,

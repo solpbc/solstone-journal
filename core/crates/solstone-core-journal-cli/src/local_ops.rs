@@ -502,6 +502,17 @@ fn indexer_status(args: &[OsString]) -> Outcome {
     }
 }
 
+/// A wait as an owner reads it: seconds, then minutes, hours and days.
+#[cfg(not(target_os = "ios"))]
+fn waiting_for(seconds: u64) -> String {
+    match seconds {
+        0..60 => format!("{seconds} s"),
+        60..3_600 => format!("{} min", seconds / 60),
+        3_600..86_400 => format!("{} h {} min", seconds / 3_600, seconds % 3_600 / 60),
+        _ => format!("{} d {} h", seconds / 86_400, seconds % 86_400 / 3_600),
+    }
+}
+
 #[cfg(not(target_os = "ios"))]
 fn indexer_status_report(
     journal: &Path,
@@ -529,12 +540,21 @@ fn indexer_status_report(
         "queued: {}\nremovals still waiting: {}\n",
         health.queued, health.failed_deletions
     ));
+    if let Some(age_ms) = health.oldest_queued_age_ms {
+        report.push_str(&format!(
+            "oldest queued: waiting {}\n",
+            waiting_for(age_ms / 1000)
+        ));
+    }
     match health.last_finished_check_at_ms {
         Some(at_ms) => report.push_str(&format!(
             "last search check: at {at_ms} ms, indexed {}, removed {}\n",
             health.check_indexed, health.check_removed
         )),
         None => report.push_str("last search check: not recorded\n"),
+    }
+    if health.check_overdue {
+        report.push_str("last search check: overdue, it has run since then without finishing\n");
     }
     report.push_str(&status.format_human());
     Ok(report)
@@ -3016,7 +3036,15 @@ mod indexer_status_tests {
         let health = evaluate_index_health(journal, chrono::Utc::now());
         let json: serde_json::Value =
             serde_json::from_str(&indexer_status_report(journal, true).unwrap()).unwrap();
-        assert_eq!(json["health"], serde_json::to_value(&health).unwrap());
+        // How long the oldest entry has waited is read from the clock, so two
+        // readings agree on whether there is one, not on the millisecond.
+        let mut reported = json["health"].clone();
+        let mut expected = serde_json::to_value(&health).unwrap();
+        for value in [&mut reported, &mut expected] {
+            let age = value["oldest_queued_age_ms"].take();
+            value["oldest_queued_age_ms"] = serde_json::json!(age.is_u64());
+        }
+        assert_eq!(reported, expected);
 
         let human = indexer_status_report(journal, false).unwrap();
         assert!(

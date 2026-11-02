@@ -28,6 +28,7 @@ pub const INDEX_TEXT_UNREADABLE: &str = "search can't read its index right now."
 pub const INDEX_TEXT_NEWER_GENERATION: &str =
     "a newer version of solstone last updated search, so this version won't add new changes to it.";
 pub const INDEX_TEXT_REPAIR: &str = "search stopped updating and needs a repair.";
+pub const INDEX_TEXT_CHECK_OVERDUE: &str = "search's daily check hasn't finished in over two days, so some changes may be missing from search.";
 pub const INDEX_TEXT_CLASSIFICATION_STALLED: &str =
     "search stopped sorting some older entries into your facets and needs a repair.";
 
@@ -71,6 +72,9 @@ pub enum IndexFailure {
     /// The index's generation stamp cannot be read; every write refuses.
     StampUnreadable,
     FailedDeletions,
+    /// Queued whole-journal work (a full scan, reclassification, entity
+    /// search) has failed three or more times and is waiting to retry.
+    FailedWork,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -102,6 +106,13 @@ pub struct IndexHealth {
     pub check_indexed: usize,
     #[serde(default)]
     pub check_removed: usize,
+    /// How long the longest-waiting queued search entry has waited.
+    #[serde(default)]
+    pub oldest_queued_age_ms: Option<u64>,
+    /// The daily search check has run since it last finished, more than two
+    /// days ago, without finishing.
+    #[serde(default)]
+    pub check_overdue: bool,
 }
 
 /// Measure the index and fold recent failed updates into one value.
@@ -242,6 +253,8 @@ fn unmeasured() -> IndexHealth {
         last_finished_check_at_ms: None,
         check_indexed: 0,
         check_removed: 0,
+        oldest_queued_age_ms: None,
+        check_overdue: false,
     }
 }
 
@@ -359,6 +372,8 @@ fn index_health_from(status: &IndexStatus, observations: &IndexingObservations) 
         last_finished_check_at_ms: None,
         check_indexed: 0,
         check_removed: 0,
+        oldest_queued_age_ms: None,
+        check_overdue: false,
     }
 }
 
@@ -369,6 +384,9 @@ fn with_work_list(journal: &Path, mut health: IndexHealth) -> IndexHealth {
             // current while they run, a slice at a time, for a long while.
             let edges = solstone_core_indexer_store::todo::Token::Edges.key();
             health.queued = todo.keys.iter().filter(|key| *key != edges).count();
+            health.oldest_queued_age_ms = todo.oldest_enqueued_ms.map(|enqueued| {
+                solstone_core_indexer_store::todo::now_ms().saturating_sub(enqueued)
+            });
             health.failed_deletions = todo.failed_deletions;
             health.pending = health.pending.max(health.queued);
             if health.failed_deletions > 0
@@ -382,6 +400,17 @@ fn with_work_list(journal: &Path, mut health: IndexHealth) -> IndexHealth {
                 health.state = IndexHealthState::Failing;
                 health.failure = Some(IndexFailure::FailedDeletions);
                 health.text = "some removed entries couldn't be taken out of search.".to_owned();
+            } else if todo.failed_tokens > 0
+                && health.failure.is_none_or(|failure| {
+                    matches!(
+                        failure,
+                        IndexFailure::FailedFiles | IndexFailure::ScanFailed
+                    )
+                })
+            {
+                health.state = IndexHealthState::Failing;
+                health.failure = Some(IndexFailure::FailedWork);
+                health.text = INDEX_TEXT_FAILED_FILES.to_owned();
             } else if health.queued > 0 && health.state == IndexHealthState::Ok {
                 health.state = IndexHealthState::Behind;
                 health.text = "search is catching up with your journal.".to_owned();
@@ -400,12 +429,54 @@ fn with_work_list(journal: &Path, mut health: IndexHealth) -> IndexHealth {
                 health.last_finished_check_at_ms = Some(check.finished_at_ms);
                 health.check_indexed = check.indexed;
                 health.check_removed = check.removed;
+                health.check_overdue = check_overdue(
+                    check.finished_at_ms,
+                    last_catch_all_run_ms(journal),
+                    solstone_core_indexer_store::todo::now_ms() as i64,
+                );
             }
             Ok(None) => {}
             Err(error) => log::warn!("last finished search check could not be read: {error}"),
         }
     }
+    if health.check_overdue
+        && health.failure.is_none()
+        && matches!(
+            health.state,
+            IndexHealthState::Ok | IndexHealthState::Behind
+        )
+    {
+        health.state = IndexHealthState::Behind;
+        health.text = INDEX_TEXT_CHECK_OVERDUE.to_owned();
+    }
     health
+}
+
+/// How old the last finished daily check may be before an unfinished run
+/// after it reads as behind.
+const CHECK_OVERDUE_AFTER_MS: i64 = 48 * 3_600_000;
+/// A run that ends this long after the check it finished is a later run.
+const LATER_RUN_MS: i64 = 3_600_000;
+/// The schedule entry that runs the daily search check.
+const CATCH_ALL_ENTRY: &str = "search-catch-all";
+
+/// The daily check is overdue when the last one that finished is more than
+/// two days old and the check has run since without finishing. A journal
+/// that was not running (a laptop shut over a weekend, a phone app not
+/// opened) has no later run, so it never reads overdue for being off; it runs
+/// its check when it next starts.
+fn check_overdue(finished_at_ms: i64, last_run_ms: Option<i64>, now_ms: i64) -> bool {
+    now_ms.saturating_sub(finished_at_ms) > CHECK_OVERDUE_AFTER_MS
+        && last_run_ms.is_some_and(|run| run > finished_at_ms.saturating_add(LATER_RUN_MS))
+}
+
+/// When the scheduler last ended a run of the daily search check, if it
+/// recorded one.
+fn last_catch_all_run_ms(journal: &Path) -> Option<i64> {
+    let bytes = std::fs::read(journal.join("health/scheduler.json")).ok()?;
+    let state: serde_json::Value = serde_json::from_slice(&bytes).ok()?;
+    let seconds = state.get(CATCH_ALL_ENTRY)?.get("last_run")?.as_f64()?;
+    Some((seconds * 1000.0) as i64)
 }
 
 /// Building means the index holds less than half of what it should: nothing
@@ -556,6 +627,142 @@ mod tests {
             with_work_list(journal.path(), unreadable).failure,
             Some(IndexFailure::Unreadable)
         );
+    }
+
+    /// A journal whose last finished daily check ended `age_ms` ago, and a
+    /// scheduler that last ended a run of it `run_age_ms` ago, if at all.
+    fn checked_journal(age_ms: i64, run_age_ms: Option<i64>) -> tempfile::TempDir {
+        let journal = tempfile::tempdir().unwrap();
+        let source = journal.path().join("imports/fixture/summary.md");
+        std::fs::create_dir_all(source.parent().unwrap()).unwrap();
+        std::fs::write(&source, "kestrel").unwrap();
+        solstone_core_indexer_store::scan::scan_journal(journal.path(), false).unwrap();
+        let now = solstone_core_indexer_store::todo::now_ms() as i64;
+        let conn =
+            rusqlite::Connection::open(solstone_core_indexer_store::db::db_path(journal.path()))
+                .unwrap();
+        let value: String = conn
+            .query_row(
+                "SELECT value FROM index_meta WHERE key = 'last_finished_check'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let mut value: serde_json::Value = serde_json::from_str(&value).unwrap();
+        value["finished_at_ms"] = serde_json::json!(now - age_ms);
+        conn.execute(
+            "REPLACE INTO index_meta(key, value) VALUES ('last_finished_check', ?)",
+            [value.to_string()],
+        )
+        .unwrap();
+        if let Some(run_age_ms) = run_age_ms {
+            std::fs::create_dir_all(journal.path().join("health")).unwrap();
+            std::fs::write(
+                journal.path().join("health/scheduler.json"),
+                serde_json::json!({"search-catch-all": {
+                    "last_run": (now - run_age_ms) as f64 / 1000.0,
+                    "last_status": "1",
+                }})
+                .to_string(),
+            )
+            .unwrap();
+        }
+        journal
+    }
+
+    const HOUR: i64 = 3_600_000;
+
+    #[test]
+    fn a_daily_check_that_runs_without_finishing_for_two_days_reads_behind() {
+        let journal = checked_journal(72 * HOUR, Some(2 * HOUR));
+        let health = evaluate_index_health(journal.path(), Utc::now());
+        assert!(health.check_overdue);
+        assert_eq!(health.state, IndexHealthState::Behind);
+        assert_eq!(health.text, INDEX_TEXT_CHECK_OVERDUE);
+    }
+
+    #[test]
+    fn a_journal_that_was_off_or_is_new_does_not_read_overdue() {
+        // Off over a weekend: the last run is the one that finished the check.
+        for run in [Some(72 * HOUR - 60_000), None] {
+            let journal = checked_journal(72 * HOUR, run);
+            let health = evaluate_index_health(journal.path(), Utc::now());
+            assert!(!health.check_overdue, "{run:?}");
+            assert_eq!(health.state, IndexHealthState::Ok, "{run:?}");
+        }
+        // A run that failed after a check under two days old is not yet overdue.
+        let recent = checked_journal(30 * HOUR, Some(2 * HOUR));
+        assert!(!evaluate_index_health(recent.path(), Utc::now()).check_overdue);
+        // A new journal has no finished check to be late on.
+        let fresh = tempfile::tempdir().unwrap();
+        assert!(!evaluate_index_health(fresh.path(), Utc::now()).check_overdue);
+    }
+
+    #[test]
+    fn queue_age_counts_search_work_only() {
+        let journal = checked_journal(HOUR, None);
+        let root = journal.path().join("indexer/todo");
+        let write_entry = |key: &str, kind: &str, enqueued_ms: u64, attempts: u32| {
+            let entry = solstone_core_indexer_store::todo::Entry {
+                key: key.to_owned(),
+                kind: kind.to_owned(),
+                enqueued_ms,
+                attempts,
+                not_before_ms: u64::MAX,
+            };
+            std::fs::create_dir_all(&root).unwrap();
+            std::fs::write(
+                root.join(entry.filename()),
+                serde_json::to_vec(&entry).unwrap(),
+            )
+            .unwrap();
+        };
+        let now = solstone_core_indexer_store::todo::now_ms();
+        // A connections refresh queued a day ago, and a token that has failed
+        // three times, are not lag.
+        write_entry("@edges", "edges", now - 24 * HOUR as u64, 0);
+        write_entry("@reclassify", "reclassify", now - 24 * HOUR as u64, 3);
+        assert_eq!(
+            evaluate_index_health(journal.path(), Utc::now()).oldest_queued_age_ms,
+            None
+        );
+        write_entry("imports/fixture/summary.md", "path", now - 600_000, 0);
+        let age = evaluate_index_health(journal.path(), Utc::now())
+            .oldest_queued_age_ms
+            .unwrap();
+        assert!((600_000..3_600_000).contains(&age), "{age}");
+    }
+
+    #[test]
+    fn queued_work_that_keeps_failing_reads_failing() {
+        let journal = checked_journal(HOUR, None);
+        let root = journal.path().join("indexer/todo");
+        let write_entry = |key: &str, kind: &str, attempts: u32| {
+            let entry = solstone_core_indexer_store::todo::Entry {
+                key: key.to_owned(),
+                kind: kind.to_owned(),
+                enqueued_ms: solstone_core_indexer_store::todo::now_ms(),
+                attempts,
+                not_before_ms: u64::MAX,
+            };
+            std::fs::create_dir_all(&root).unwrap();
+            std::fs::write(
+                root.join(entry.filename()),
+                serde_json::to_vec(&entry).unwrap(),
+            )
+            .unwrap();
+        };
+        // A connections refresh, and a token that has failed only twice, do not.
+        write_entry("@edges", "edges", 3);
+        write_entry("@scan-full", "scan-full", 2);
+        let health = evaluate_index_health(journal.path(), Utc::now());
+        assert_ne!(health.failure, Some(IndexFailure::FailedWork));
+        assert_ne!(health.state, IndexHealthState::Failing);
+        write_entry("@scan-full", "scan-full", 3);
+        let health = evaluate_index_health(journal.path(), Utc::now());
+        assert_eq!(health.failure, Some(IndexFailure::FailedWork));
+        assert_eq!(health.state, IndexHealthState::Failing);
+        assert_eq!(health.text, INDEX_TEXT_FAILED_FILES);
     }
 
     fn status() -> IndexStatus {

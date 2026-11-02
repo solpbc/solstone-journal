@@ -218,10 +218,18 @@ restore operations enqueue `ScanFull`.
 `solstone journal indexer drain` consumes due hints. It reconciles each path with
 the current filesystem, including deleted children of a queued directory. One
 persistent drain lock protects claims and crash recovery, while the SQLite writer
-lease is released between bounded batches. A failed present path is retried three
-times, then left to the daily catch-all. Failed removals remain queued and retry
-hourly after that limit. Unknown entry kinds and fields are preserved for newer
-versions.
+lease is released between bounded batches. The drain reads the list in snapshots
+of up to 256 paths, newest day first, and reads it again before the next, so a
+save made during a long backlog waits for at most one snapshot. Each snapshot
+also serves at most one due corpus token, so a path backlog cannot hold one back;
+the connections refresh (`Edges`) runs only once nothing else is left. Each key is
+served at most once per drain, and a drain that has run two minutes yields when a
+key it served has been saved again, so the next drain serves that save first. A
+failed present path is retried three times, then left to the daily catch-all.
+Failed removals and corpus tokens remain queued and retry hourly after that
+limit, and Health reads failing while a token does. A stop by the drain's own
+budget does not count as a try. Unknown entry kinds and fields are preserved for
+newer versions.
 
 The supervisor checks due hints every 30 seconds without relying on Callosum.
 Daily thinking first runs a forced drain with its own ten-minute budget, then
@@ -229,8 +237,11 @@ continues its talents even if the wait expires, recording pending paths. Its lat
 indexer phase drains hints too. The enabled `search-catch-all` schedule runs a
 light `indexer --rescan` daily with a two-hour cap, separately from daily thinking.
 Mobile hosts supply the same drain capability in process, after thinking and from
-their scheduled loop. Health reports queued work, failed removals, and the age and
-repair counts of the last finished light check. A segment publication receipt
+their scheduled loop. Health reports queued work and how long the oldest has
+waited, failed removals and tokens, and the age and repair counts of the last
+finished light check. It reads behind when that check is over two days old and
+the schedule has run it since without it finishing; a journal that was off has
+no such run and does not read behind for it. A segment publication receipt
 means its saved outputs were queued successfully; search visibility follows later.
 
 ### Calendar listing

@@ -84,8 +84,10 @@ const INDEXER_PHASE_TIMEOUT: Duration = Duration::from_secs(3_600);
 /// `solstone-core` arguments for the bounded search-input drain before daily thinking.
 pub const INDEXER_INPUTS_ARGS: &[&str] =
     &["indexer", "drain", "--force", "--budget-seconds", "600"];
-/// `solstone-core` arguments for the whole-journal indexer phase.
-pub const INDEXER_ARGS: &[&str] = &["indexer", "drain"];
+/// `solstone-core` arguments for the whole-journal indexer phase. The drain
+/// stops itself before the phase timeout: a stop it makes is not counted
+/// against the entry in hand, a kill is.
+pub const INDEXER_ARGS: &[&str] = &["indexer", "drain", "--budget-seconds", "3300"];
 const STATS_PHASE_TIMEOUT: Duration = Duration::from_secs(600);
 
 #[derive(Clone, Copy)]
@@ -3831,11 +3833,11 @@ mod tests {
                 .1
                 .iter()
                 .rev()
-                .take(2)
+                .take(INDEXER_ARGS.len())
                 .rev()
                 .cloned()
                 .collect::<Vec<_>>(),
-            ["indexer", "drain"]
+            INDEXER_ARGS
         );
         assert_eq!(calls[1].0, "journal_stats");
         assert_eq!(calls[1].1.last().map(String::as_str), Some("journal-stats"));
@@ -3877,7 +3879,11 @@ mod tests {
         assert!(result.timed_out);
         let calls = runner.calls.lock().unwrap();
         assert_eq!(calls.len(), 2);
-        assert_eq!(calls[0].1.last().map(String::as_str), Some("drain"));
+        let indexer = INDEXER_ARGS
+            .iter()
+            .map(|arg| arg.to_string())
+            .collect::<Vec<_>>();
+        assert!(calls[0].1.ends_with(&indexer));
         assert_eq!(calls[1].0, "journal_stats");
         assert_eq!(calls[1].1.last().map(String::as_str), Some("journal-stats"));
         // ... and the day still completes.  A whole-corpus statistics scan can

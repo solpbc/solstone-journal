@@ -8,6 +8,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- the health page now says when search's daily check has run but not finished for more than two days, so you know some changes may be missing from search. a journal that was simply off or asleep doesn't count. `solstone journal indexer status` also shows how long the oldest queued update has waited.
 - your journal now lets you know when the disk it's on is running low on space, early enough to free some up, and again once there's space. the notice opens storage settings.
 - private troubleshooting evidence now keeps connection details and how far the attempt got when confidential processing refuses a connection.
 - the android development app can review interrupted storage work while your journal stays stopped. it can remove temporary copies after checking that the originals are still complete.
@@ -33,6 +34,8 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - search now catches up with your journal faster, most on journals with years in them.
 - when you give someone in your journal a new name, alias or email, or a new person joins it, the days that already mentioned them now show the connection, newest days first. this used to wait for a weekly pass that a long journal could run out of time to finish, so on years of history those connections often never appeared.
 - `solstone journal indexer status` now shows the same queued updates, waiting removals and last search check as the health page. before, it could say search was up to date while updates were waiting.
+- search now works through a long backlog newest days first, so today's changes no longer wait for the rest of it. a full rescan now starts with your newest days.
+- search no longer gives up after three failed tries at work that covers your whole journal, like sorting entries into your facets. it keeps trying every hour, and the health page shows it as failing until it works.
 - opening a search result after its file was indexed again now shows what's indexed there today, with a note that it may not match the result, instead of saying it's no longer indexed. agents reading your journal get the same note.
 - the entities page and the more page are easier to read at night: their text now sits on a panel, not directly on the night sky.
 - home now sits centered beside the side rail instead of off to the left.

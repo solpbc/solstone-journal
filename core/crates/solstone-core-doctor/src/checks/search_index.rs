@@ -20,6 +20,12 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
             Status::Warn,
             Some("run solstone journal indexer --rescan-full"),
         ),
+        // The daily check has run since it last finished, two days ago or
+        // more, without finishing: its own errors say why.
+        (IndexHealthState::Behind, None) if health.check_overdue => (
+            Status::Warn,
+            Some("run solstone journal indexer --rescan and check its errors"),
+        ),
         _ => (Status::Ok, None),
     };
     Ok(make_result(check, status, health.text, fix))
@@ -35,6 +41,9 @@ fn fix_for(failure: IndexFailure) -> Option<&'static str> {
         }
         IndexFailure::FailedFiles => Some(
             "search retries these updates at its daily check; run solstone journal indexer status for details",
+        ),
+        IndexFailure::FailedWork => Some(
+            "search retries this work every hour; run solstone journal indexer status for details",
         ),
         IndexFailure::FailedDeletions => Some(
             "search keeps retrying these removals; run solstone journal indexer status for details",

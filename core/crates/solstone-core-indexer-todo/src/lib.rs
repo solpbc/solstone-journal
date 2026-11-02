@@ -67,6 +67,36 @@ impl Entry {
     }
 }
 
+/// The day a journal-relative key belongs to: its first `YYYYMMDD` folder,
+/// or a `YYYYMMDD` file name (`facets/<f>/activities/<day>.jsonl`). Keys with
+/// no day (entities, config, facet entity files) have none.
+#[must_use]
+pub fn key_day(key: &str) -> Option<&str> {
+    use solstone_core_format::segment::is_date_key;
+    let key = key.strip_prefix("chronicle/").unwrap_or(key);
+    let mut parts = key.split('/').peekable();
+    while let Some(part) = parts.next() {
+        if is_date_key(part) {
+            return Some(part);
+        }
+        if parts.peek().is_none() {
+            let stem = part.split('.').next().unwrap_or(part);
+            if is_date_key(stem) {
+                return Some(stem);
+            }
+        }
+    }
+    None
+}
+
+/// The day a key sorts under when newer days go first. A key with no day,
+/// or one dated after `today`, sorts as `today`: current-state files and
+/// future-dated listings wait behind nothing older.
+#[must_use]
+pub fn sort_day<'a>(key: &'a str, today: &'a str) -> &'a str {
+    key_day(key).map_or(today, |day| day.min(today))
+}
+
 fn valid_key(key: &str) -> bool {
     !key.is_empty()
         && !key.contains('\\')
@@ -306,26 +336,36 @@ pub fn rewrite(path: &Path, entry: &Entry) -> io::Result<()> {
 }
 
 pub fn entry_paths(directory: &Path) -> io::Result<Vec<PathBuf>> {
+    entry_paths_iter(directory)?.collect()
+}
+
+/// The list's entry files, read from the directory as they are needed.
+fn entry_paths_iter(directory: &Path) -> io::Result<impl Iterator<Item = io::Result<PathBuf>>> {
     let entries = match fs::read_dir(directory) {
-        Ok(entries) => entries,
-        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Ok(entries) => Some(entries),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => None,
         Err(error) => return Err(error),
     };
-    let mut paths = Vec::new();
-    for entry in entries {
-        let entry = entry?;
+    Ok(entries.into_iter().flatten().filter_map(|entry| {
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(error) => return Some(Err(error)),
+        };
         let name = entry.file_name();
-        let Some(name) = name.to_str() else { continue };
+        let name = name.to_str()?;
         // Temp files, set-asides and the claims directory never count as work.
-        if name.len() == 69
-            && name.ends_with(".json")
-            && name.as_bytes()[..64].iter().all(u8::is_ascii_hexdigit)
-            && entry.file_type()?.is_file()
+        if name.len() != 69
+            || !name.ends_with(".json")
+            || !name.as_bytes()[..64].iter().all(u8::is_ascii_hexdigit)
         {
-            paths.push(entry.path());
+            return None;
         }
-    }
-    Ok(paths)
+        match entry.file_type() {
+            Ok(kind) if kind.is_file() => Some(Ok(entry.path())),
+            Ok(_) => None,
+            Err(error) => Some(Err(error)),
+        }
+    }))
 }
 
 fn decode(value: serde_json::Value, path: &Path) -> Option<Entry> {
@@ -356,15 +396,16 @@ pub fn read_entry(path: &Path, repair: bool) -> io::Result<Option<Entry>> {
 }
 
 /// Read-only: a future kind, delayed retry, or torn temp cannot trigger a task.
+/// Stops at the first due entry, without listing the whole directory first.
 pub fn has_due(journal: &Path, at_ms: u64) -> io::Result<bool> {
-    for path in entry_paths(&root(journal))? {
-        if read_entry(&path, false)?.is_some_and(|entry| entry.not_before_ms <= at_ms) {
+    for path in entry_paths_iter(&root(journal))? {
+        if read_entry(&path?, false)?.is_some_and(|entry| entry.not_before_ms <= at_ms) {
             return Ok(true);
         }
     }
     // A crashed drain may have left the only hint in claimed/.
-    for path in entry_paths(&root(journal).join("claimed"))? {
-        if read_entry(&path, false)?.is_some() {
+    for path in entry_paths_iter(&root(journal).join("claimed"))? {
+        if read_entry(&path?, false)?.is_some() {
             return Ok(true);
         }
     }
@@ -377,6 +418,24 @@ pub struct TodoStatus {
     pub claimed: usize,
     pub failed_deletions: usize,
     pub keys: Vec<String>,
+    /// When the longest-waiting search entry was first queued. Queued
+    /// connections refreshes are not search work, and entries that have
+    /// failed three times are counted as failed instead; both are left out.
+    #[serde(default)]
+    pub oldest_enqueued_ms: Option<u64>,
+    /// Search tokens (whole-journal scans, reclassification, entity search)
+    /// that have failed three or more times and are waiting to retry.
+    #[serde(default)]
+    pub failed_tokens: usize,
+}
+
+impl Entry {
+    /// Whether this entry is search work, as opposed to a queued connections
+    /// refresh, which runs a slice at a time while search is current.
+    #[must_use]
+    pub fn is_search_work(&self) -> bool {
+        self.key != Token::Edges.key()
+    }
 }
 
 /// Read the actual list, including claims, without changing it.
@@ -395,6 +454,18 @@ pub fn inspect(journal: &Path) -> io::Result<TodoStatus> {
                 }
                 if entry.kind == "path" && entry.attempts >= 3 && path_absent(journal, &entry.key) {
                     status.failed_deletions += 1;
+                }
+                if entry.kind != "path" && entry.is_search_work() && entry.attempts >= 3 {
+                    status.failed_tokens += 1;
+                }
+                // Entries that have failed three times read as failed on
+                // Health, not as lag; a kept one keeps its first enqueue time.
+                if entry.is_search_work() && entry.attempts < 3 {
+                    status.oldest_enqueued_ms = Some(
+                        status
+                            .oldest_enqueued_ms
+                            .map_or(entry.enqueued_ms, |oldest| oldest.min(entry.enqueued_ms)),
+                    );
                 }
                 status.keys.push(entry.key);
             }
