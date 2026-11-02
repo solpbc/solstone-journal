@@ -774,19 +774,32 @@ pub(crate) fn publish_exclusive_stage(
     stage: &OsStr,
     name: &OsStr,
 ) -> Result<(), Errno> {
+    publish_exclusive_stage_between(directory, stage, directory, name)
+}
+
+#[cfg(any(
+    target_os = "android",
+    all(test, feature = "full-tests", target_os = "linux")
+))]
+pub(crate) fn publish_exclusive_stage_between(
+    source: &impl AsFd,
+    stage: &OsStr,
+    destination: &impl AsFd,
+    name: &OsStr,
+) -> Result<(), Errno> {
     use std::ffi::CString;
     use std::os::fd::AsRawFd;
     use std::os::unix::ffi::OsStrExt;
     let from = CString::new(stage.as_bytes()).map_err(|_| Errno::EINVAL)?;
     let to = CString::new(name.as_bytes()).map_err(|_| Errno::EINVAL)?;
-    // SAFETY: the retained directory and both NUL-terminated names live for this call.
+    // SAFETY: both retained directories and NUL-terminated names live for this call.
     #[allow(unsafe_code)]
     let result = unsafe {
         libc::syscall(
             libc::SYS_renameat2,
-            directory.as_fd().as_raw_fd(),
+            source.as_fd().as_raw_fd(),
             from.as_ptr(),
-            directory.as_fd().as_raw_fd(),
+            destination.as_fd().as_raw_fd(),
             to.as_ptr(),
             libc::RENAME_NOREPLACE,
         )

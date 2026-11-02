@@ -8,8 +8,6 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- you can now tell your journal an activity isn't right. "that's not right" on an activity, and "this isn't right" on your week, let you say who said its lines, tell it what actually happened in your own words, or say it was a recording or video playing. your journal then writes that activity's story and people again, and that day's daily briefing and that day's memory on your week follow. each correction shows on the activity, and you can remove it.
-- on a transcript, you can now say who said a line: you, a person in your journal, or someone you don't know. the answer is for that line, not its voice, and the activities it's part of are written again. teaching your journal a voice stays on the speakers page.
 - private troubleshooting evidence now keeps connection details and how far the attempt got when confidential processing refuses a connection.
 - the android development app can review interrupted storage work while your journal stays stopped. it can remove temporary copies after checking that the originals are still complete.
 - browser pages in your journal now show their context: whether the tab was in front and its window focused, whether audio or video was playing, whether the solstone app was paused, how long the tab had been open, the page's language and which browser it was. agents reading your journal see the same line. pages from earlier versions of the solstone extension look as before.
@@ -18,14 +16,9 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - your journal now describes time in your browser by the pages you had in front of you. a video playing in a background tab, or a page left open behind another app, is mentioned as open rather than as something you watched or read, and what a page or video shows is now less often written as something you did.
 - each stretch's screen description now does the same: it covers the browser pages you had in front of you and lists the others as open, so what a video in a background tab says or shows is less often written in your activity stories as something you did or planned.
-- after you save or remove your voice, or name a voice everywhere, activities from today and the last 7 days get their people and story rewritten to match. older ones stay as written.
 
 ### Fixed
 
-- one damaged speaker file in a single recording no longer stops your journal from naming the speakers in other audio still waiting for them. that recording is left as it is.
-- security fix: with confidential processing on, your journal now sends only to machines that booted the service's current published build. the previous build didn't check how its disk was laid out. whoever controlled the disk one of its machines booted from, or could redirect your journal's connection to their own copy of it, could have added a disk area for the machine to spill its memory into. parts of what your journal sent could then have been written to disk unencrypted. if your journal reaches a machine that booted the previous build, it refuses that machine and tries another.
-- fixed a confidential processing connection failure on devices that take longer to verify the service.
-- in older transcripts, lines your journal had already named on the transcript page went unnamed in your activity stories and people. they're now named there too when one of those activities is written again, such as after you correct or edit it.
 - fixed a failure when picking a folder to import in the android development app.
 - a folder you chose to import in the android or ios development app, other than an audio archive, can now be previewed and started from its import page, without choosing it again.
 - the development phone apps can now recover an explicit media offload request after a lost reply, using the request ID saved before sending it. repeating that request does not start another offload; an unknown result stays unknown.
@@ -38,6 +31,26 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - security fix: updated a library used by journals on phones to address a memory-safety flaw.
 - you can choose a file on the import screen in the android and ios owner apps and save it.
 - journals running on a phone now start their local agent connections and close them when you stop the journal. the agents page already offered these connections, but they did not start on phones.
+
+## [2.0.65] - 2026-11-02
+
+### Added
+
+- you can now tell your journal an activity isn't right. "that's not right" on an activity, and "this isn't right" on your week, let you say who said its lines, tell it what actually happened in your own words, or say it was a recording or video playing. your journal then writes that activity's story and people again, and that day's daily briefing and that day's memory on your week follow. each correction shows on the activity, and you can remove it.
+- on a transcript, you can now say who said a line: you, a person in your journal, or someone you don't know. the answer is for that line, not its voice, and the activities it's part of are written again. teaching your journal a voice stays on the speakers page.
+
+### Changed
+
+- after you save or remove your voice, or name a voice everywhere, activities from today and the last 7 days get their people and story rewritten to match. older ones stay as written.
+- when you import a recording you're in, its summary now tells what you said as yours. it needs your saved voice. a recording with only one voice counts as yours only when most of it sounds like you, so someone who only sounds a bit like you is still told as "a speaker".
+
+### Fixed
+
+- security fix: with confidential processing on, your journal now sends only to machines that booted the service's current published build. the previous build didn't check how its disk was laid out. whoever controlled the disk one of its machines booted from, or could redirect your journal's connection to their own copy of it, could have added a disk area for the machine to spill its memory into. parts of what your journal sent could then have been written to disk unencrypted. if your journal reaches a machine that booted the previous build, it refuses that machine and tries another. if you use confidential processing, install this update.
+- after an update, while your journal named the speakers in older audio, it could skip noting the people and things that came up in other recordings it was working on at the same time. it now pauses between older recordings so that noting gets its turn.
+- one damaged speaker file in a single recording no longer stops your journal from naming the speakers in other audio still waiting for them. that recording is left as it is.
+- fixed a confidential processing connection failure on devices that take longer to verify the service.
+- in older transcripts, lines your journal had already named on the transcript page went unnamed in your activity stories and people. they're now named there too when one of those activities is written again, such as after you correct or edit it.
 
 ## [2.0.64] - 2026-11-01
 
