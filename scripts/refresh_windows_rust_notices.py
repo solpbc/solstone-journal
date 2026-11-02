@@ -1618,6 +1618,54 @@ def acquire_registry_upgrade(row: dict[str, Any], vendor: Path, fetch: Any = htt
     (directory / ".cargo-checksum.json").write_text(json.dumps(checks, sort_keys=True))
 
 
+def source_header_references(
+    old_row: dict[str, Any], old_files: dict[str, bytes], new_files: dict[str, bytes],
+    new_lock_row: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """Carry each indexed source-file header across an upgrade whose bytes did not move.
+
+    Some crates keep their terms in file headers, so the index holds a byte range
+    of the source file rather than a whole licence file. Those ranges move to the
+    new archive only when their bytes are identical and no file gained, lost or
+    changed a copyright statement, so nothing new needs a notice.
+    """
+    headers = [ref for ref in old_row["notice_references"] if "byte_end_exclusive" in ref]
+    if not headers:
+        return []
+    identity = old_row["identity"]
+
+    def copyright_lines(files: dict[str, bytes]) -> dict[str, list[bytes]]:
+        found = {name: [line for line in data.splitlines() if b"copyright" in line.lower()]
+                 for name, data in files.items() if name != ".cargo-checksum.json"}
+        return {name: lines for name, lines in found.items() if lines}
+
+    if copyright_lines(old_files) != copyright_lines(new_files):
+        raise RefreshError(f"upgraded package copyright statements changed: {identity}")
+    carried = []
+    for reference in headers:
+        member = reference["source"]["member"]
+        span = slice(reference["byte_start_inclusive"], reference["byte_end_exclusive"])
+        old, new = old_files.get(member), new_files.get(member)
+        if (old is None or new is None
+                or sha256_bytes(old) != reference["source_sha256"]
+                or sha256_bytes(old[span]) != reference["sha256"]
+                or new[span] != old[span]):
+            raise RefreshError(f"upgraded package source header changed: {identity}: {member}")
+        carried.append({
+            **reference,
+            "source": {
+                **reference["source"],
+                "archive_sha256": new_lock_row["checksum"],
+                "source_url": (
+                    "https://static.crates.io/crates/"
+                    f"{new_lock_row['name']}/{new_lock_row['name']}-{new_lock_row['version']}.crate"
+                ),
+            },
+            "source_sha256": sha256_bytes(new),
+        })
+    return carried
+
+
 def upgraded_package_rows(
     prior: Path, index: dict[str, Any],
     upgrades: list[tuple[dict[str, Any], dict[str, Any]]],
@@ -1675,13 +1723,17 @@ def upgraded_package_rows(
                 fetch,
             )
             row = generated[0]
+            row["notice_references"] = sorted(
+                row["notice_references"] + source_header_references(old_row, old_files, new_files, right),
+                key=lambda reference: reference["source"]["member"],
+            )
             def references(package: dict[str, Any]) -> list[tuple[str, str, int]]:
                 return sorted((ref["source"]["member"], ref["sha256"], ref["bytes"])
                               for ref in package["notice_references"])
             if not references(old_row) or references(old_row) != references(row):
                 raise RefreshError(f"upgraded package indexed notice texts changed or absent: {identity}")
             for reference in old_row["notice_references"]:
-                if reference["source"]["kind"] == "cargo-registry-archive":
+                if reference["source"]["kind"] == "cargo-registry-archive" and "byte_end_exclusive" not in reference:
                     raw = old_files.get(reference["source"]["member"])
                     if raw is None or len(raw) != reference["bytes"] or sha256_bytes(raw) != reference["sha256"]:
                         raise RefreshError(f"prior indexed notice does not match acquired source: {identity}")

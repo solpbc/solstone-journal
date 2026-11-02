@@ -1,5 +1,5 @@
 {
-  "cargo_lock_sha256": "7bc8f12f189a5dc197c251c21b07872eede6d9b9782a0b73b12fe9b653022a08",
+  "cargo_lock_sha256": "6c31cbaa8555de50cdb3cc23053a75c40923f7821bbd5393e1293c6ac95e8949",
   "filter_platform": "x86_64-unknown-linux-gnu",
   "notice_texts": [
     {
@@ -10641,17 +10641,17 @@
       ]
     },
     {
-      "identity": "pulldown-cmark@0.13.4 (registry+https://github.com/rust-lang/crates.io-index)",
+      "identity": "pulldown-cmark@0.13.6 (registry+https://github.com/rust-lang/crates.io-index)",
       "license_expression": "MIT",
       "notice_references": [
         {
           "bytes": 1089,
           "sha256": "c4f10f55904bdb9f27d3fbf94c354926d6cfe8b982276e556238c258941b243b",
           "source": {
-            "archive_sha256": "e9f068eba8e7071c5f9511831b44f32c740d5adf574e990f946ddb53db2f314e",
+            "archive_sha256": "3db2be46835f013dd3f4fa7f5f7402c537787b54ebb6fe2b94bbdd7e2669bb7b",
             "kind": "cargo-registry-archive",
             "member": "LICENSE",
-            "source_url": "https://static.crates.io/crates/pulldown-cmark/pulldown-cmark-0.13.4.crate"
+            "source_url": "https://static.crates.io/crates/pulldown-cmark/pulldown-cmark-0.13.6.crate"
           }
         },
         {
@@ -10660,10 +10660,10 @@
           "bytes": 1195,
           "sha256": "58167c01aadb00f35aed80246d3ce38664708e841349f95452ed9cb2da8aa4e3",
           "source": {
-            "archive_sha256": "e9f068eba8e7071c5f9511831b44f32c740d5adf574e990f946ddb53db2f314e",
+            "archive_sha256": "3db2be46835f013dd3f4fa7f5f7402c537787b54ebb6fe2b94bbdd7e2669bb7b",
             "kind": "cargo-registry-archive",
             "member": "src/entities.rs",
-            "source_url": "https://static.crates.io/crates/pulldown-cmark/pulldown-cmark-0.13.4.crate"
+            "source_url": "https://static.crates.io/crates/pulldown-cmark/pulldown-cmark-0.13.6.crate"
           },
           "source_sha256": "1602f3c4d22c0b0e3a4a08467a50bf9d0c27aadf2e5661b15a2cda20da0895a9"
         },
@@ -10673,10 +10673,10 @@
           "bytes": 1187,
           "sha256": "7f1465e53c315aeb515f6841801198148c452426934d8326df551477ee9b5759",
           "source": {
-            "archive_sha256": "e9f068eba8e7071c5f9511831b44f32c740d5adf574e990f946ddb53db2f314e",
+            "archive_sha256": "3db2be46835f013dd3f4fa7f5f7402c537787b54ebb6fe2b94bbdd7e2669bb7b",
             "kind": "cargo-registry-archive",
             "member": "src/html.rs",
-            "source_url": "https://static.crates.io/crates/pulldown-cmark/pulldown-cmark-0.13.4.crate"
+            "source_url": "https://static.crates.io/crates/pulldown-cmark/pulldown-cmark-0.13.6.crate"
           },
           "source_sha256": "853b3b211276555ffc66fd583a3e071f61ee8fad0f2864c428947b7bd36a2fa3"
         },
@@ -10686,10 +10686,10 @@
           "bytes": 3181,
           "sha256": "9c25e324debefc9e048e7e0de86f5face7566461330f514387d4a5c68f626904",
           "source": {
-            "archive_sha256": "e9f068eba8e7071c5f9511831b44f32c740d5adf574e990f946ddb53db2f314e",
+            "archive_sha256": "3db2be46835f013dd3f4fa7f5f7402c537787b54ebb6fe2b94bbdd7e2669bb7b",
             "kind": "cargo-registry-archive",
             "member": "src/lib.rs",
-            "source_url": "https://static.crates.io/crates/pulldown-cmark/pulldown-cmark-0.13.4.crate"
+            "source_url": "https://static.crates.io/crates/pulldown-cmark/pulldown-cmark-0.13.6.crate"
           },
           "source_sha256": "f916b7bf0c3035776d6d5f8f62c4619855b291ba245b0ee1f46f980c59ce3919"
         },
@@ -10699,10 +10699,10 @@
           "bytes": 1141,
           "sha256": "d258eacf368df3bc44dba5c083801279e19cc9a769e1b21fee6cbb537ff66504",
           "source": {
-            "archive_sha256": "e9f068eba8e7071c5f9511831b44f32c740d5adf574e990f946ddb53db2f314e",
+            "archive_sha256": "3db2be46835f013dd3f4fa7f5f7402c537787b54ebb6fe2b94bbdd7e2669bb7b",
             "kind": "cargo-registry-archive",
             "member": "src/linklabel.rs",
-            "source_url": "https://static.crates.io/crates/pulldown-cmark/pulldown-cmark-0.13.4.crate"
+            "source_url": "https://static.crates.io/crates/pulldown-cmark/pulldown-cmark-0.13.6.crate"
           },
           "source_sha256": "6793cd0a2b1df6423d7cc8587b74a8e86261d5f7be9a8869cb69eda140b03501"
         },
@@ -10712,10 +10712,10 @@
           "bytes": 1176,
           "sha256": "9f0e5e18fae985714cda2066b4e6b584f4574f9134f2a922e5e749841790a657",
           "source": {
-            "archive_sha256": "e9f068eba8e7071c5f9511831b44f32c740d5adf574e990f946ddb53db2f314e",
+            "archive_sha256": "3db2be46835f013dd3f4fa7f5f7402c537787b54ebb6fe2b94bbdd7e2669bb7b",
             "kind": "cargo-registry-archive",
             "member": "src/main.rs",
-            "source_url": "https://static.crates.io/crates/pulldown-cmark/pulldown-cmark-0.13.4.crate"
+            "source_url": "https://static.crates.io/crates/pulldown-cmark/pulldown-cmark-0.13.6.crate"
           },
           "source_sha256": "570babf9ab7dc14d7e687f46a0baa089214a864b7615a16ff379dc88bb693561"
         },
@@ -10725,12 +10725,12 @@
           "bytes": 1158,
           "sha256": "8b07a8d7254fc2b6402bd6d35f4a62005de48126082d042197b56ea6993fc0b4",
           "source": {
-            "archive_sha256": "e9f068eba8e7071c5f9511831b44f32c740d5adf574e990f946ddb53db2f314e",
+            "archive_sha256": "3db2be46835f013dd3f4fa7f5f7402c537787b54ebb6fe2b94bbdd7e2669bb7b",
             "kind": "cargo-registry-archive",
             "member": "src/parse.rs",
-            "source_url": "https://static.crates.io/crates/pulldown-cmark/pulldown-cmark-0.13.4.crate"
+            "source_url": "https://static.crates.io/crates/pulldown-cmark/pulldown-cmark-0.13.6.crate"
           },
-          "source_sha256": "76fca0f94731d660cf022e948ff119daed1bdf446e813e4a86faa742700483a5"
+          "source_sha256": "a97c96cb69e416c87c9652cf85b8714b734fd10347b36370719f7cdd73c23983"
         },
         {
           "byte_end_exclusive": 1233,
@@ -10738,10 +10738,10 @@
           "bytes": 1233,
           "sha256": "6c678ec93d0dacfc2df84ae298d32bc2a82819cf5bd4bf64bef42d56f887dad0",
           "source": {
-            "archive_sha256": "e9f068eba8e7071c5f9511831b44f32c740d5adf574e990f946ddb53db2f314e",
+            "archive_sha256": "3db2be46835f013dd3f4fa7f5f7402c537787b54ebb6fe2b94bbdd7e2669bb7b",
             "kind": "cargo-registry-archive",
             "member": "src/puncttable.rs",
-            "source_url": "https://static.crates.io/crates/pulldown-cmark/pulldown-cmark-0.13.4.crate"
+            "source_url": "https://static.crates.io/crates/pulldown-cmark/pulldown-cmark-0.13.6.crate"
           },
           "source_sha256": "b591c2b353ba60b88661597f853b4986df87bee6b53045ab94ae562848457be4"
         },
@@ -10751,10 +10751,10 @@
           "bytes": 1174,
           "sha256": "2eff81329d9f5847a9b9162327d34b664ba8f3b89f3cb16b74eea4ffda3245ba",
           "source": {
-            "archive_sha256": "e9f068eba8e7071c5f9511831b44f32c740d5adf574e990f946ddb53db2f314e",
+            "archive_sha256": "3db2be46835f013dd3f4fa7f5f7402c537787b54ebb6fe2b94bbdd7e2669bb7b",
             "kind": "cargo-registry-archive",
             "member": "src/scanners.rs",
-            "source_url": "https://static.crates.io/crates/pulldown-cmark/pulldown-cmark-0.13.4.crate"
+            "source_url": "https://static.crates.io/crates/pulldown-cmark/pulldown-cmark-0.13.6.crate"
           },
           "source_sha256": "2cdcb3cc76bc3d6947eec066eefe4582b660dd52da71d048f6dc515665291840"
         }

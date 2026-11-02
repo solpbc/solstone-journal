@@ -3,8 +3,8 @@
 [advisories]
 yanked = "deny"
 ignore = [
-    # 2026-10-26: mobile-serving reaches the same bounded hostname precheck as
-    # the workspace. See deny.toml for the call-site rationale and revisit rule.
+    # 2026-10-26: mobile-serving and the android and ios native runtimes reach the
+    # same bounded hostname precheck as the workspace. See deny.toml for the call-site rationale and revisit rule.
     { id = "RUSTSEC-2026-0119", reason = "hickory-proto 0.24.4 only encodes bounded single-question stub lookups in the shared hostname precheck; revisit on resolver or query-surface changes" },
     # 2026-10-26: paste 1.0.15 is a build-time macro dependency of pulp/gemm
     # in OCR and native inference. No patched release exists. Replacing that

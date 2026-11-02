@@ -1,7 +1,7 @@
 [advisories]
 yanked = "deny"
-# cargo-deny here is `make audit`, not `make ci` / `ci-full`. The weekly fleet
-# audit is the only place this section is evaluated.
+# cargo-deny here is `make audit`, not `make ci` / `ci-full`. Each release cut
+# and the weekly fleet audit evaluate this section.
 ignore = [
     # Product engineering compatibility exception, 2026-09-28: hickory-proto
     # 0.24.4 via hickory-resolver 0.24.4. RUSTSEC-2026-0119 affects versions

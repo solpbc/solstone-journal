@@ -1085,9 +1085,9 @@ class RegistryUpgrade(unittest.TestCase):
             with self.assertRaises(refresh.RefreshError):
                 refresh.require_explained_notice_closure(left, right, ["app"])
 
-    def fixture(self, root, expression="MIT", new_expression=None, new_text=b"same licence\n", extra=None, git_move=False):
+    def fixture(self, root, expression="MIT", new_expression=None, new_text=b"same licence\n", extra=None, git_move=False, old_header=None):
         data, files = self.crate(expression=new_expression or expression, text=new_text, extra=extra)
-        old_data, old_files = self.crate("1.0.0", expression)
+        old_data, old_files = self.crate("1.0.0", expression, extra={"src/lib.rs": old_header + b"fn old() {}\n"} if old_header else None)
         old, new = self.row(checksum=refresh.sha256_bytes(old_data)), self.row("1.0.1", refresh.sha256_bytes(data))
         outside = {**package("outside", source=SOURCE), "checksum": "b" * 64}
         git_old = package("transport", source="git+https://example.invalid/transport#" + "a" * 40)
@@ -1121,6 +1121,15 @@ class RegistryUpgrade(unittest.TestCase):
                 p.write_bytes(content)
             (directory / ".cargo-checksum.json").write_text(json.dumps({"package": row["checksum"], "files": {n: refresh.sha256_bytes(b) for n, b in source_files.items()}}))
         rows, members, texts = refresh.added_package_rows([old], {(old["name"], old["version"]): {"license": expression}}, vendor, frozenset({("digest", "1.0.0")}))
+        if old_header:
+            digest = refresh.sha256_bytes(old_header)
+            rows[0]["notice_references"].append({
+                "byte_start_inclusive": 0, "byte_end_exclusive": len(old_header), "bytes": len(old_header), "sha256": digest,
+                "source": {"archive_sha256": old["checksum"], "kind": "cargo-registry-archive", "member": "src/lib.rs",
+                           "source_url": "https://static.crates.io/crates/digest/digest-1.0.0.crate"},
+                "source_sha256": refresh.sha256_bytes(old_files["src/lib.rs"]),
+            })
+            texts[digest] = old_header
         notices, spans = refresh.render_notices(texts)
         (root / refresh.NOTICES_RELATIVE_PATH).write_bytes(notices)
         archive = root / "prior.tar.gz"
@@ -1170,6 +1179,35 @@ class RegistryUpgrade(unittest.TestCase):
                 self.assertEqual({n: observed[n] for n in survivors}, survivors)
                 self.assertFalse(any(n.startswith("vendor/digest-1.0.0/") for n in observed))
                 self.assertIn("vendor/digest-1.0.1/.cargo-checksum.json", observed)
+
+    def test_an_unchanged_source_header_carries_across_the_upgrade(self):
+        header = b"// Copyright the authors\n\n"
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            archive, metadata, data, _ = self.fixture(root, old_header=header, extra={"src/lib.rs": header + b"fn new() {}\n"})
+            before = (root / refresh.NOTICES_RELATIVE_PATH).read_bytes()
+            result = self.run_refresh(root, archive, metadata, data)
+            self.assertIsNone(result["new_notices"])
+            self.assertEqual(result["new_index"]["notices_sha256"], refresh.sha256_bytes(before))
+            row = result["new_index"]["packages"][0]
+            carried = [ref for ref in row["notice_references"] if "byte_end_exclusive" in ref]
+            self.assertEqual([ref["sha256"] for ref in carried], [refresh.sha256_bytes(header)])
+            self.assertEqual(carried[0]["source"]["archive_sha256"], row["archive_sha256"])
+            self.assertIn("digest-1.0.1.crate", carried[0]["source"]["source_url"])
+            self.assertEqual(carried[0]["source_sha256"], refresh.sha256_bytes(header + b"fn new() {}\n"))
+
+    def test_a_moved_header_or_copyright_statement_refuses(self):
+        header = b"// Copyright the authors\n\n"
+        for extra, message in (
+            ({"src/lib.rs": b"// Copyright others\n\n" + b"fn new() {}\n"}, "copyright statements changed"),
+            ({"src/lib.rs": header + b"fn new() {}\n", "src/new.rs": b"// Copyright others\n"}, "copyright statements changed"),
+            ({"src/lib.rs": b"// Copyright the authors\nfn new() {}\n"}, "source header changed"),
+        ):
+            with self.subTest(extra=extra), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                archive, metadata, data, _ = self.fixture(root, old_header=header, extra=extra)
+                with self.assertRaisesRegex(refresh.RefreshError, message):
+                    self.run_refresh(root, archive, metadata, data)
 
     def test_licence_and_acquisition_refusals_leave_published_inputs_untouched(self):
         for changes in ({"new_expression": "ISC"}, {"new_text": b"changed\n"},
