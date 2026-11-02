@@ -8,6 +8,7 @@
 //! key, and reads the versions. It runs no downloaded code.
 
 use std::path::Path;
+use std::sync::Mutex;
 
 use minisign::PublicKey;
 
@@ -80,6 +81,56 @@ impl PlatformCatalogue for RealPlatformCatalogue {
             )
         })?;
         verified_listing(&HttpCatalogueBytes, &key, lane, version)
+    }
+}
+
+/// The answer a scheduled check last got. Reading it never touches the network,
+/// so what reads it leaves no trace at the update origin.
+#[derive(Debug, Default)]
+pub struct StoredCatalogue {
+    answer: Mutex<Option<StoredAnswer>>,
+}
+
+#[derive(Debug)]
+struct StoredAnswer {
+    lane: String,
+    listing: Result<CatalogueListing, CatalogueRefusal>,
+}
+
+impl StoredCatalogue {
+    pub const fn new() -> Self {
+        Self {
+            answer: Mutex::new(None),
+        }
+    }
+
+    /// Ask `source` and keep what it says, a refusal included. Returns whether
+    /// it answered with a verified listing.
+    pub fn refresh(&self, source: &dyn PlatformCatalogue, lane: &str) -> bool {
+        let listing = source.listing(lane, None);
+        let verified = listing.is_ok();
+        *self.answer.lock().unwrap_or_else(|p| p.into_inner()) = Some(StoredAnswer {
+            lane: lane.to_owned(),
+            listing,
+        });
+        verified
+    }
+}
+
+impl PlatformCatalogue for StoredCatalogue {
+    fn listing(
+        &self,
+        lane: &str,
+        version: Option<&str>,
+    ) -> Result<CatalogueListing, CatalogueRefusal> {
+        let answer = self.answer.lock().unwrap_or_else(|p| p.into_inner());
+        match answer.as_ref() {
+            Some(answer) if version.is_none() && answer.lane == lane => answer.listing.clone(),
+            _ => Err(CatalogueRefusal::new(
+                "update-check-pending",
+                "the journal has not checked for updates yet.",
+            )),
+        }
     }
 }
 
@@ -259,6 +310,44 @@ mod tests {
             }
             Ok(bytes)
         }
+    }
+
+    struct Answers(Mutex<Vec<Result<CatalogueListing, CatalogueRefusal>>>);
+
+    impl PlatformCatalogue for Answers {
+        fn listing(&self, _: &str, _: Option<&str>) -> Result<CatalogueListing, CatalogueRefusal> {
+            self.0.lock().unwrap().remove(0)
+        }
+    }
+
+    #[test]
+    fn the_stored_answer_is_the_newest_one_for_its_lane() {
+        let listing = CatalogueListing {
+            platform_version: "2.0.65-r1".to_owned(),
+            journal_version: "2.0.65".to_owned(),
+        };
+        let refusal = CatalogueRefusal::new("signature-invalid", "refused");
+        let origin = Answers(Mutex::new(vec![Ok(listing.clone()), Err(refusal.clone())]));
+        let stored = StoredCatalogue::new();
+        let code = |answer: Result<CatalogueListing, CatalogueRefusal>| answer.unwrap_err().code;
+
+        assert_eq!(
+            code(stored.listing("release", None)),
+            "update-check-pending"
+        );
+
+        assert!(stored.refresh(&origin, "release"));
+        assert_eq!(stored.listing("release", None), Ok(listing));
+        // It answers only for the lane it holds, and only about the latest release.
+        assert_eq!(code(stored.listing("dev", None)), "update-check-pending");
+        assert_eq!(
+            code(stored.listing("release", Some("2.0.65-r1"))),
+            "update-check-pending"
+        );
+
+        // A refused catalogue replaces a good answer instead of hiding behind it.
+        assert!(!stored.refresh(&origin, "release"));
+        assert_eq!(stored.listing("release", None), Err(refusal));
     }
 
     fn key_id(key: &PublicKey) -> String {

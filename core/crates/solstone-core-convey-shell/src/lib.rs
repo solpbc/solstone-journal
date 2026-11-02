@@ -738,6 +738,7 @@ async fn bind_embedded_router(
     }
     let _ = door.ensure_started().await;
     let local_network_task = tokio::spawn(local_network::watch(door.clone()));
+    system::start_update_check();
     let (link_health_task, service_token_renewal_task) = start_relay_health_tasks(
         service_root.clone(),
         cache,
@@ -967,6 +968,7 @@ pub async fn bind_with_authorization(
         tokio::spawn(async move { serve_loopback(listeners, loopback_router).await });
     let _ = door.ensure_started().await;
     let local_network_task = tokio::spawn(local_network::watch(door.clone()));
+    system::start_update_check();
     let door_outcome = door.clone_outcome().expect("door start records an outcome");
     Ok(ConveyServeHandle {
         loopback_ipv4,

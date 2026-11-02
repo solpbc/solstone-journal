@@ -14,7 +14,9 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-pub use catalogue::{CatalogueListing, CatalogueRefusal, PlatformCatalogue, RealPlatformCatalogue};
+pub use catalogue::{
+    CatalogueListing, CatalogueRefusal, PlatformCatalogue, RealPlatformCatalogue, StoredCatalogue,
+};
 pub use command::{CommandMode, CommandParseError, UpdateArgs, parse_args, render_help};
 pub use delegate::{
     InstallerOutput, InstallerRunner, PlatformInvocation, RealInstallerRunner, StdinMode,
@@ -198,6 +200,23 @@ pub fn check(
         lane_override,
         None,
     )
+}
+
+/// Refresh `stored` from `source` for this install's lane, and report whether
+/// it now holds a verified listing. A copy with no owned install has no lane,
+/// so it fetches nothing.
+pub fn refresh_stored_catalogue(
+    stored: &StoredCatalogue,
+    source: &dyn PlatformCatalogue,
+    probe: &dyn PackageProbe,
+    executable: &Path,
+    data_dir: &Path,
+    etc_dir: &Path,
+) -> bool {
+    match classify_ownership(executable, data_dir, etc_dir, probe) {
+        OwnershipResult::Positive(pos) => stored.refresh(source, &pos.lane),
+        _ => false,
+    }
 }
 
 struct InstallerLease<'a> {

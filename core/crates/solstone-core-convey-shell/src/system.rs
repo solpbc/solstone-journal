@@ -15,6 +15,81 @@ use solstone_core_home::readers::get_capture_health;
 /// lists it here.
 const CAPABILITIES: &[&str] = &["calendar_notes"];
 
+/// What the journal's own update check last learned. The status route reads
+/// only this, so no page or device reading it causes a request to the update
+/// origin.
+#[cfg(target_os = "linux")]
+static UPDATE_LISTING: solstone_core_update::StoredCatalogue =
+    solstone_core_update::StoredCatalogue::new();
+
+/// How long a verified answer stands.
+#[cfg(target_os = "linux")]
+const UPDATE_CHECK_EVERY: std::time::Duration = std::time::Duration::from_secs(24 * 60 * 60);
+
+/// How often to look at the clock, which is also how soon a failed check is
+/// retried. Sleep alone would stretch a day on a machine that suspends.
+#[cfg(target_os = "linux")]
+const UPDATE_CHECK_TICK: std::time::Duration = std::time::Duration::from_secs(15 * 60);
+
+/// Start the update check, once per process, on a schedule of its own: its
+/// requests follow this process and the clock, never whether a page is open.
+pub(crate) fn start_update_check() {
+    #[cfg(target_os = "linux")]
+    {
+        static STARTED: std::sync::Once = std::sync::Once::new();
+        STARTED.call_once(|| {
+            let spawned = std::thread::Builder::new()
+                .name("update-check".to_owned())
+                .spawn(run_update_check);
+            if let Err(error) = spawned {
+                log::warn!("update check did not start: {error}");
+            }
+        });
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn run_update_check() {
+    let mut verified_at = None;
+    loop {
+        if update_check_due(verified_at, std::time::SystemTime::now()) && refresh_update_listing() {
+            verified_at = Some(std::time::SystemTime::now());
+        }
+        std::thread::sleep(UPDATE_CHECK_TICK);
+    }
+}
+
+/// A clock set back past the last answer counts as due, rather than holding
+/// the answer until the clock catches up.
+#[cfg(target_os = "linux")]
+fn update_check_due(
+    verified_at: Option<std::time::SystemTime>,
+    now: std::time::SystemTime,
+) -> bool {
+    verified_at.is_none_or(|at| {
+        now.duration_since(at)
+            .map_or(true, |age| age >= UPDATE_CHECK_EVERY)
+    })
+}
+
+#[cfg(target_os = "linux")]
+fn refresh_update_listing() -> bool {
+    let (Some(data_dir), Ok(executable)) = (
+        solstone_core_update::owner_data_dir(),
+        std::env::current_exe(),
+    ) else {
+        return false;
+    };
+    solstone_core_update::refresh_stored_catalogue(
+        &UPDATE_LISTING,
+        &solstone_core_update::RealPlatformCatalogue,
+        &solstone_core_update::RealPackageProbe,
+        &executable,
+        &data_dir,
+        std::path::Path::new("/etc"),
+    )
+}
+
 /// The status body every platform answers with; only how the version is
 /// worked out differs between them.
 fn status_body(version: Value, capture: Value) -> Value {
@@ -46,9 +121,8 @@ pub async fn status(journal_root: PathBuf) -> Response {
                 }
             };
             let etc_dir = std::path::Path::new("/etc");
-            let catalogue = solstone_core_update::RealPlatformCatalogue;
             let probe = solstone_core_update::RealPackageProbe;
-            linux_version_status(&catalogue, &probe, exe, &data_dir, etc_dir)
+            linux_version_status(&UPDATE_LISTING, &probe, exe, &data_dir, etc_dir)
         })
         .await
         .unwrap_or_else(|_| {
@@ -191,6 +265,104 @@ mod update_tests {
             assert_eq!(status.target, cli.target);
             assert_eq!(status.latest_platform_version, cli.latest_platform_version);
         }
+    }
+
+    /// Stands in for the update origin and counts what reaches it.
+    struct CountingOrigin(std::sync::atomic::AtomicUsize);
+    impl PlatformCatalogue for CountingOrigin {
+        fn listing(
+            &self,
+            lane: &str,
+            version: Option<&str>,
+        ) -> Result<CatalogueListing, CatalogueRefusal> {
+            self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Catalogue(true).listing(lane, version)
+        }
+    }
+
+    #[test]
+    fn status_reads_never_reach_the_update_origin_and_only_an_owned_install_checks() {
+        use std::sync::atomic::{AtomicUsize, Ordering::SeqCst};
+        let dir = tempfile::tempdir().unwrap();
+        let prefix = dir.path().join("prefix");
+        let entry = "2.0.48-0123456789ab";
+        let version = prefix.join("versions").join(entry);
+        std::fs::create_dir_all(version.join("bin")).unwrap();
+        std::fs::write(version.join("bin/solstone"), "fixture").unwrap();
+        std::fs::write(
+            version.join(".archive-sha256"),
+            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        )
+        .unwrap();
+        std::fs::write(version.join(".release"), "version=2.0.48\n").unwrap();
+        std::fs::write(
+            prefix.join("install-receipt"),
+            "role=journal\nsignature_verification=verified\nservice_policy=start\n",
+        )
+        .unwrap();
+        std::os::unix::fs::symlink(format!("versions/{entry}"), prefix.join("current")).unwrap();
+        let data = dir.path().join("data");
+        std::fs::create_dir_all(&data).unwrap();
+        std::fs::write(data.join("install.conf"), format!("[solstone]\nschema_version=1\norigin=https://updates.solstone.app\nplatform_version=2.0.48-r1\nlane=release\nroute=tree\nphase=complete\nprefix={}\n[component:journal]\nroute=tree\nstatus=installed\n", prefix.display())).unwrap();
+        let etc = dir.path().join("etc");
+        let executable = prefix.join("current/bin/solstone");
+        let origin = CountingOrigin(AtomicUsize::new(0));
+        let stored = StoredCatalogue::new();
+
+        // A copy with no owned install asks nobody.
+        let empty = dir.path().join("empty");
+        std::fs::create_dir_all(&empty).unwrap();
+        let elsewhere = dir.path().join("elsewhere/solstone");
+        assert!(!refresh_stored_catalogue(
+            &stored, &origin, &Probe, &elsewhere, &empty, &etc
+        ));
+        assert_eq!(origin.0.load(SeqCst), 0);
+
+        // Until the first check answers, status says so without asking.
+        let status = linux_version_status(&stored, &Probe, &executable, &data, &etc);
+        assert_eq!(status.availability, Availability::Unknown);
+        assert_eq!(status.code.as_deref(), Some("update-check-pending"));
+        assert_eq!(status.current.as_deref(), Some("2.0.48"));
+
+        // One check, then any number of reads from tabs and devices.
+        assert!(refresh_stored_catalogue(
+            &stored,
+            &origin,
+            &Probe,
+            &executable,
+            &data,
+            &etc
+        ));
+        for _ in 0..100 {
+            let status = linux_version_status(&stored, &Probe, &executable, &data, &etc);
+            assert_eq!(status.availability, Availability::Available);
+            assert_eq!(status.latest.as_deref(), Some("2.0.49"));
+        }
+        assert_eq!(origin.0.load(SeqCst), 1);
+
+        // Local facts stay current between checks: a hold shows at once.
+        set_hold(&data).unwrap();
+        let status = linux_version_status(&stored, &Probe, &executable, &data, &etc);
+        assert_eq!(status.hold, HoldState::Held);
+        assert_eq!(origin.0.load(SeqCst), 1);
+    }
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod update_schedule_tests {
+    use super::{UPDATE_CHECK_EVERY, update_check_due};
+    use std::time::{Duration, SystemTime};
+
+    #[test]
+    fn a_verified_answer_stands_for_a_day_and_nothing_else_does() {
+        let at = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+        assert!(update_check_due(None, at));
+        assert!(!update_check_due(
+            Some(at),
+            at + UPDATE_CHECK_EVERY - Duration::from_secs(1)
+        ));
+        assert!(update_check_due(Some(at), at + UPDATE_CHECK_EVERY));
+        assert!(update_check_due(Some(at), at - Duration::from_secs(1)));
     }
 }
 
