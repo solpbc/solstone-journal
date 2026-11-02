@@ -165,8 +165,13 @@ fn recovery_details(stderr: &[u8]) -> String {
         .strip_suffix('\n')
         .expect("final newline")
         .split('\n')
+        .skip_while(|line| *line != RECOVERY_HEADER)
         .collect();
-    assert_eq!(lines.len(), 3, "recovery has exactly three lines");
+    assert_eq!(
+        lines.len(),
+        3,
+        "recovery block has exactly three lines: {rendered}"
+    );
     assert_eq!(lines[0], RECOVERY_HEADER);
     assert_eq!(lines[1], RECOVERY_SETUP);
     lines[2]
