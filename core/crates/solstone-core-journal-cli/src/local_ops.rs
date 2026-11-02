@@ -496,25 +496,48 @@ fn indexer_status(args: &[OsString]) -> Outcome {
         Ok(journal) => journal,
         Err(outcome) => return outcome,
     };
-    let status = match solstone_core_indexer_store::status::inspect_index(&journal) {
-        Ok(status) => status,
-        Err(error) => return failure("indexer status", &error.to_string(), EXIT_IO),
-    };
+    match indexer_status_report(&journal, json_output) {
+        Ok(report) => success(report),
+        Err(error) => failure("indexer status", &error.to_string(), EXIT_IO),
+    }
+}
+
+#[cfg(not(target_os = "ios"))]
+fn indexer_status_report(
+    journal: &Path,
+    json_output: bool,
+) -> Result<String, solstone_core_indexer_store::StoreError> {
+    let status = solstone_core_indexer_store::status::inspect_index(journal)?;
     let observations =
-        solstone_core_system_health::read_indexing_observations(&journal, chrono::Utc::now());
-    let health = solstone_core_system_health::index_health_from(&status, &observations);
+        solstone_core_system_health::read_indexing_observations(journal, chrono::Utc::now());
+    let health =
+        solstone_core_system_health::evaluate_index_health_of(journal, &status, &observations);
     if json_output {
         let mut value = status.to_json_value();
         value["health"] = serde_json::to_value(&health).expect("serialize index health");
-        success(format!("{value}\n"))
-    } else {
-        success(format!(
-            "health: {} ({})\n{}",
-            health.state.as_str(),
-            health.text,
-            status.format_human()
-        ))
+        return Ok(format!("{value}\n"));
     }
+    let mut report = format!("health: {} ({})\n", health.state.as_str(), health.text);
+    if let Some(failure) = health.failure {
+        let failure = serde_json::to_value(failure).expect("serialize index failure");
+        report.push_str(&format!(
+            "failure: {}\n",
+            failure.as_str().expect("index failures are strings")
+        ));
+    }
+    report.push_str(&format!(
+        "queued: {}\nremovals still waiting: {}\n",
+        health.queued, health.failed_deletions
+    ));
+    match health.last_finished_check_at_ms {
+        Some(at_ms) => report.push_str(&format!(
+            "last search check: at {at_ms} ms, indexed {}, removed {}\n",
+            health.check_indexed, health.check_removed
+        )),
+        None => report.push_str("last search check: not recorded\n"),
+    }
+    report.push_str(&status.format_human());
+    Ok(report)
 }
 
 #[cfg(not(target_os = "ios"))]
@@ -2957,6 +2980,115 @@ mod facet_merge_tests {
         assert!(
             leftovers.is_empty(),
             "staging artifacts remain: {leftovers:?}"
+        );
+    }
+}
+
+#[cfg(all(test, not(target_os = "ios")))]
+mod indexer_status_tests {
+    use std::fs;
+    use std::path::{Path, PathBuf};
+
+    use solstone_core_indexer_store::{scan::scan_journal, todo};
+    use solstone_core_system_health::{IndexFailure, IndexHealth, evaluate_index_health};
+
+    use super::indexer_status_report;
+    use crate::test_support::reserve_temp_path;
+
+    struct TempJournal(PathBuf);
+
+    impl TempJournal {
+        fn new() -> Self {
+            Self(reserve_temp_path(
+                "solstone-core-journal-cli-indexer-status",
+            ))
+        }
+    }
+
+    impl Drop for TempJournal {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    /// The command's JSON and human reports, each checked against Health's value.
+    fn assert_reports_agree_with_health(journal: &Path) -> IndexHealth {
+        let health = evaluate_index_health(journal, chrono::Utc::now());
+        let json: serde_json::Value =
+            serde_json::from_str(&indexer_status_report(journal, true).unwrap()).unwrap();
+        assert_eq!(json["health"], serde_json::to_value(&health).unwrap());
+
+        let human = indexer_status_report(journal, false).unwrap();
+        assert!(
+            human.starts_with(&format!(
+                "health: {} ({})\n",
+                health.state.as_str(),
+                health.text
+            )),
+            "{human}"
+        );
+        assert!(
+            human.contains(&format!(
+                "queued: {}\nremovals still waiting: {}\n",
+                health.queued, health.failed_deletions
+            )),
+            "{human}"
+        );
+        let at_ms = health.last_finished_check_at_ms.expect("a finished check");
+        assert!(
+            human.contains(&format!(
+                "last search check: at {at_ms} ms, indexed {}, removed {}\n",
+                health.check_indexed, health.check_removed
+            )),
+            "{human}"
+        );
+        health
+    }
+
+    fn with_a_finished_check(journal: &Path) {
+        let source = journal.join("chronicle/20260717/talents/note.md");
+        fs::create_dir_all(source.parent().unwrap()).unwrap();
+        fs::write(&source, "# Note\n\nsome words").unwrap();
+        scan_journal(journal, false).unwrap();
+    }
+
+    #[test]
+    fn status_reports_the_queue_and_last_check_health_reads() {
+        let journal = TempJournal::new();
+        with_a_finished_check(&journal.0);
+        todo::enqueue_path(&journal.0, Path::new("20260717/talents/note.md")).unwrap();
+
+        let health = assert_reports_agree_with_health(&journal.0);
+
+        assert_eq!(health.queued, 1);
+        assert_eq!(health.failure, None);
+    }
+
+    #[test]
+    fn status_reports_a_failed_deletion_the_way_health_does() {
+        let journal = TempJournal::new();
+        with_a_finished_check(&journal.0);
+        todo::enqueue_path(&journal.0, Path::new("20260101/talents/gone.md")).unwrap();
+        let entry_path = fs::read_dir(journal.0.join("indexer/todo"))
+            .unwrap()
+            .next()
+            .unwrap()
+            .unwrap()
+            .path();
+        let mut entry: todo::Entry =
+            serde_json::from_slice(&fs::read(&entry_path).unwrap()).unwrap();
+        entry.attempts = 3;
+        entry.not_before_ms = u64::MAX;
+        fs::write(entry_path, serde_json::to_vec(&entry).unwrap()).unwrap();
+
+        let health = assert_reports_agree_with_health(&journal.0);
+
+        assert_eq!(health.failed_deletions, 1);
+        assert_eq!(health.failure, Some(IndexFailure::FailedDeletions));
+        assert!(
+            indexer_status_report(&journal.0, false)
+                .unwrap()
+                .contains("failure: failed_deletions\n")
         );
     }
 }

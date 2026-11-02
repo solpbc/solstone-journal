@@ -115,7 +115,7 @@ pub fn evaluate_index_health_with(
     observations: &IndexingObservations,
 ) -> IndexHealth {
     match inspect_index(journal) {
-        Ok(status) => with_work_list(journal, index_health_from(&status, observations)),
+        Ok(status) => evaluate_index_health_of(journal, &status, observations),
         Err(error) => {
             log::warn!("search index status unavailable: {error}");
             with_work_list(journal, unmeasured())
@@ -213,7 +213,7 @@ pub fn evaluate_index_health_recent(
         }
     };
     match reused.map_or_else(|| measure(journal), Ok) {
-        Ok(status) => with_work_list(journal, index_health_from(&status, observations)),
+        Ok(status) => evaluate_index_health_of(journal, &status, observations),
         Err(error) => {
             log::warn!("search index status unavailable: {error}");
             with_work_list(journal, unmeasured())
@@ -245,9 +245,21 @@ fn unmeasured() -> IndexHealth {
     }
 }
 
-/// The health value for a measured status and the recorded update outcomes.
+/// As [`evaluate_index_health_with`], for a caller that already measured the
+/// index: measuring walks the journal, so a caller that needs the status too
+/// measures once.
 #[must_use]
-pub fn index_health_from(status: &IndexStatus, observations: &IndexingObservations) -> IndexHealth {
+pub fn evaluate_index_health_of(
+    journal: &Path,
+    status: &IndexStatus,
+    observations: &IndexingObservations,
+) -> IndexHealth {
+    with_work_list(journal, index_health_from(status, observations))
+}
+
+/// The part of the health value that the measured status and the recorded
+/// update outcomes decide. Every surface also needs the work list.
+fn index_health_from(status: &IndexStatus, observations: &IndexingObservations) -> IndexHealth {
     let behind = |path: &String| {
         status.stale.contains(path) || status.missing.contains(path) || status.failed.contains(path)
     };
