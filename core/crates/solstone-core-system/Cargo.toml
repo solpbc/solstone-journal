@@ -48,7 +48,7 @@ log = { workspace = true }
 [target.'cfg(unix)'.dependencies]
 # `feature` enables sysconf/SysconfVar for Linux process start-time identity.
 # `fs` is already unified from the workspace; name it here for lifecycle fd APIs.
-nix = { workspace = true, features = ["event", "feature", "fs", "hostname", "process", "signal"] }
+nix = { workspace = true, features = ["event", "feature", "fs", "hostname", "mount", "process", "signal"] }
 solstone-core-journal-config = { workspace = true }
 solstone-core-brain = { workspace = true }
 solstone-core-local = { workspace = true }

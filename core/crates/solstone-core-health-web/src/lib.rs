@@ -24,6 +24,8 @@ mod host;
 mod journal_data;
 mod logs;
 pub mod search_index;
+#[cfg(unix)]
+mod storage_privacy;
 mod talent_failures;
 mod work_view;
 
@@ -61,7 +63,10 @@ pub fn routes_with_clock(journal_root: PathBuf, clock: Clock) -> Router {
     let work_retry_root = journal_root.clone();
     let speech_root = journal_root.clone();
     let speech_clock = clock.clone();
-    Router::new()
+    let router = Router::new();
+    #[cfg(unix)]
+    let router = router.merge(storage_privacy::routes(journal_root.clone()));
+    router
         .route("/app/health/", get(assets::shell))
         .route("/app/health/workspace", get(assets::workspace))
         .route("/app/health/static/{*name}", get(assets::static_asset))
@@ -172,7 +177,11 @@ async fn state(root: PathBuf, clock: Clock) -> Response {
             .unwrap_or((false, false));
         let (items, ok) = talent_failures::today(&root);
         let count = items.len();
-        Json(json!({
+        #[cfg(unix)]
+        let storage_privacy = storage_privacy::snapshot(&root);
+        #[cfg(not(unix))]
+        let storage_privacy = serde_json::Value::Null;
+        let mut payload = json!({
             "work": {
                 "inventory": work.ok().flatten().map(work_view::summarize),
                 "error": work_error,
@@ -211,8 +220,9 @@ async fn state(root: PathBuf, clock: Clock) -> Response {
                 "count": count,
                 "label": errors_today_label(count, ok),
             },
-        }))
-        .into_response()
+        });
+        if !storage_privacy.is_null() { payload["storage_privacy"] = storage_privacy; }
+        Json(payload).into_response()
     })
     .await
 }

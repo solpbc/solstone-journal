@@ -187,6 +187,8 @@ const JOURNAL_APP_EXECUTABLE: &str = "journal-app.exe";
 /// Run the same-device journal command surface as its own process identity.
 #[must_use]
 pub fn run(args: Vec<OsString>) -> ExitCode {
+    #[cfg(unix)]
+    solstone_core_system::storage_privacy::set_private_umask();
     // Admission belongs to process entry, including local commands that never
     // exec a native sibling. Exec preserves this PID and its acknowledged identity.
     #[cfg(unix)]

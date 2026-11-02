@@ -50,16 +50,16 @@ fn unreadable(_: &CheckContext) -> WindowsServiceRegistration {
 }
 
 #[test]
-fn every_check_runs_on_windows_but_the_two_macos_only_questions() {
+fn platform_specific_questions_stay_off_windows() {
     for battery in [Battery::Journal, Battery::JournalReadiness] {
         for entry in registry::entries(battery) {
-            let macos_only = matches!(
+            let unix_only = matches!(
                 entry.check.name,
-                "supervisor_conflict" | "launchd_stale_plist"
+                "supervisor_conflict" | "launchd_stale_plist" | "storage_privacy"
             );
             assert_eq!(
                 entry.check.platforms.contains(&Platform::Windows),
-                !macos_only,
+                !unix_only,
                 "{} Windows gating",
                 entry.check.name
             );

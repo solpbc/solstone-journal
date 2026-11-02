@@ -144,11 +144,17 @@ fn ac3_replays_all_captured_health_cases_through_the_shell() {
                                         .runtime_kind,
                                     Some(SttRuntimeKind::LinuxCpp | SttRuntimeKind::MacosCoreml)
                                 );
-                                wanted =
-                                    Value::String(include_str!("../assets/workspace.html").replace(
-                                        "{{SPEECH_SETUP_APPLICABLE}}",
-                                        if applicable { "true" } else { "false" },
-                                    ))
+                                wanted = Value::String(
+                                    include_str!("../assets/workspace.html")
+                                        .replace(
+                                            "{{SPEECH_SETUP_APPLICABLE}}",
+                                            if applicable { "true" } else { "false" },
+                                        )
+                                        .replace(
+                                            "{{STORAGE_PRIVACY}}",
+                                            crate::assets::STORAGE_PRIVACY,
+                                        ),
+                                )
                             }
                             _ => {}
                         }
@@ -198,6 +204,12 @@ fn ac3_replays_all_captured_health_cases_through_the_shell() {
                     // summary file reads the awaiting-engine verdict (search makes
                     // no claim); a phase with one carries `not_yet: null`.
                     if case["name"].as_str() == Some("api_state") && expected["status"] == 200 {
+                        #[cfg(unix)]
+                        {
+                            assert!(actual["storage_privacy"]["private"].is_boolean());
+                            assert!(actual["storage_privacy"]["consented"].is_boolean());
+                            actual.as_object_mut().unwrap().remove("storage_privacy");
+                        }
                         let summary_exists = root.path().join("stats.json").exists();
                         let backlog = wanted["backlog"].as_object_mut().expect("backlog");
                         if summary_exists {

@@ -6,6 +6,8 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+- security fix: your journal's folder is now private to your account on macos and linux. if the drive cannot keep it private, health explains the choice and lets you keep it there.
+
 ### Added
 
 - your journal now lets you know when the disk it's on is running low on space, early enough to free some up, and again once there's space. the notice opens storage settings.

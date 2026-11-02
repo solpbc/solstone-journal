@@ -10,6 +10,7 @@ publish = false
 workspace = true
 
 [dependencies]
+log.workspace = true
 solstone-core-backup.workspace = true
 serde.workspace = true
 serde_json.workspace = true

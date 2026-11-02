@@ -256,6 +256,8 @@ fn run_supervisor(
         }
     };
     #[cfg(unix)]
+    solstone_core_system::storage_privacy::apply_private_root(&journal);
+    #[cfg(unix)]
     let _service_capture = match service_capture::start_if_managed(&journal, options.hosted_parent)
     {
         Ok(capture) => capture,
@@ -495,6 +497,8 @@ fn run_service(outcome: ServiceParseOutcome) -> ExitCode {
 }
 
 fn main() -> ExitCode {
+    #[cfg(unix)]
+    solstone_core_system::storage_privacy::set_private_umask();
     let args: Vec<_> = env::args_os().skip(1).collect();
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     if let Some(code) = solstone_core_backup::owned_dns::dispatch(&args) {

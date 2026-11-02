@@ -477,7 +477,14 @@ pub fn ensure_journal_dir_with_label(
             error: io::Error::new(io::ErrorKind::NotFound, "empty path"),
         });
     }
-    fs::create_dir_all(path).map_err(|error| EnsureJournalDirError {
+    let mut builder = fs::DirBuilder::new();
+    builder.recursive(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        builder.mode(0o700);
+    }
+    builder.create(path).map_err(|error| EnsureJournalDirError {
         source: source.to_string(),
         path: path.to_path_buf(),
         error,

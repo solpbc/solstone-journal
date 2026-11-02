@@ -10,6 +10,16 @@ const SHELL: &[u8] = include_bytes!("../../solstone-core-convey-shell/assets/sta
 const WORKSPACE: &str = include_str!("../assets/workspace.html");
 include!(concat!(env!("OUT_DIR"), "/static_assets.rs"));
 
+#[cfg(unix)]
+pub(crate) const STORAGE_PRIVACY: &str = r#"<section class="dashboard-card" id="storagePrivacy" aria-labelledby="storagePrivacyTitle" hidden>
+      <h2 class="card-title" id="storagePrivacyTitle">journal folder privacy</h2>
+      <p data-storage-privacy-message role="status" aria-live="polite"></p>
+      <button type="button" class="action-btn" data-storage-privacy-consent>keep it here</button>
+      <p data-storage-privacy-result role="status" hidden></p>
+    </section>"#;
+#[cfg(not(unix))]
+pub(crate) const STORAGE_PRIVACY: &str = "";
+
 pub async fn shell() -> Response<Body> {
     asset_response(SHELL, "text/html; charset=utf-8")
 }
@@ -23,6 +33,7 @@ pub async fn workspace() -> Response<Body> {
         "{{SPEECH_SETUP_APPLICABLE}}",
         if applicable { "true" } else { "false" },
     );
+    let html = html.replace("{{STORAGE_PRIVACY}}", STORAGE_PRIVACY);
     Response::builder()
         .header(header::CONTENT_TYPE, "text/html; charset=utf-8")
         .body(Body::from(html))

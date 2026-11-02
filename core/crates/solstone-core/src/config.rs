@@ -629,7 +629,7 @@ fn run_switch(c: &JournalChange, service: &dyn ServiceCommandRunner) -> u8 {
             return 1;
         }
     };
-    if let Err(e) = fs::create_dir_all(&c.target_path) {
+    if let Err(e) = solstone_core_journal::ensure_journal_dir_with_label(&c.target_path, "config") {
         eprintln!(
             "solstone journal config: refused: cannot create {}: {e}",
             c.target_path.display()

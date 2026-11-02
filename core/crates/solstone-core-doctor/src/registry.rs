@@ -301,6 +301,25 @@ const CHECK_TASK_QUEUE_HOLDS: Check = Check {
     platforms: ALL,
 };
 pub static JOURNAL: &[RegistryEntry] = &[
+    #[cfg(unix)]
+    RegistryEntry {
+        check: Check {
+            name: "storage_privacy",
+            severity: Severity::Advisory,
+            platforms: &[Platform::Linux, Platform::Darwin],
+        },
+        runner: |c| {
+            checks::storage_privacy::run(
+                c,
+                Check {
+                    name: "storage_privacy",
+                    severity: Severity::Advisory,
+                    platforms: &[Platform::Linux, Platform::Darwin],
+                },
+            )
+        },
+        deferred: None,
+    },
     RegistryEntry {
         check: CHECK_BACKUP_STATUS,
         runner: backup_status,

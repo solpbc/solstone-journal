@@ -5587,6 +5587,7 @@ name = "solstone-core-doctor"
 version = "2.0.65"
 dependencies = [
  "chrono",
+ "log",
  "nix 0.30.1",
  "plist",
  "rustix",
@@ -5790,6 +5791,7 @@ dependencies = [
  "solstone-core-facets",
  "solstone-core-indexer-store",
  "solstone-core-journal-config",
+ "solstone-core-journal-config-write",
  "solstone-core-journal-io",
  "solstone-core-reprocess-cli",
  "solstone-core-system",

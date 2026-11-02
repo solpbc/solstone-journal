@@ -28,7 +28,7 @@ pub fn render_systemd_unit(
         .collect::<Vec<_>>()
         .join("\n");
     format!(
-        "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\nStartLimitIntervalSec=120\nStartLimitBurst=10\n\n[Service]\nType=notify\nTimeoutStartSec={SERVICE_START_TIMEOUT_SECONDS}\nExecStart={} journal start {}\nRestart=on-failure\nRestartSec=5\nKillMode=control-group\nTimeoutStopSec={SERVICE_STOP_TIMEOUT_SECONDS}\nLimitNOFILE={SERVICE_FILE_DESCRIPTOR_LIMIT}\n{environment_lines}\n\n[Install]\nWantedBy=default.target\n",
+        "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\nStartLimitIntervalSec=120\nStartLimitBurst=10\n\n[Service]\nUMask=0077\nType=notify\nTimeoutStartSec={SERVICE_START_TIMEOUT_SECONDS}\nExecStart={} journal start {}\nRestart=on-failure\nRestartSec=5\nKillMode=control-group\nTimeoutStopSec={SERVICE_STOP_TIMEOUT_SECONDS}\nLimitNOFILE={SERVICE_FILE_DESCRIPTOR_LIMIT}\n{environment_lines}\n\n[Install]\nWantedBy=default.target\n",
         render_exec_token(launcher_path),
         render_exec_token(port),
     )

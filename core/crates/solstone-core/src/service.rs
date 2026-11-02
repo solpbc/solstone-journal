@@ -951,6 +951,7 @@ fn systemd_managed(bytes: &[u8], launcher: &Path) -> bool {
         "After",
         "StartLimitIntervalSec",
         "StartLimitBurst",
+        "UMask",
         "Type",
         "TimeoutStartSec",
         "ExecStart",
@@ -1037,6 +1038,7 @@ fn systemd_managed(bytes: &[u8], launcher: &Path) -> bool {
         && singleton
             .get("TimeoutStartSec")
             .is_none_or(|value| *value == "120")
+        && singleton.get("UMask").is_none_or(|value| *value == "0077")
         && singleton.get("Restart") == Some(&"on-failure")
         && singleton.get("RestartSec") == Some(&"5")
         && safety_fields

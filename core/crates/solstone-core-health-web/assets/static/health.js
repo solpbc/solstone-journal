@@ -30,6 +30,7 @@
     "HEALTH_GLANCE_BRAIN_ATTENTION": "{headline}",
     "HEALTH_GLANCE_CHECKIN_STALE": "a journal run on {name} stopped checking in with your journal.",
     "HEALTH_GLANCE_CHECKINS_STALE": "{n} journal runs stopped checking in with your journal: {names}.",
+    "HEALTH_GLANCE_STORAGE_PRIVACY": "{message}",
     "HEALTH_GLANCE_SERVICE_ATTENTION": "1 service needs attention: {service_names}.",
     "HEALTH_GLANCE_SERVICES_ATTENTION": "{n} services need attention: {service_names}.",
     "HEALTH_GLANCE_SERVICES_UNREACHABLE": "the journal's services couldn't be reached. check that your journal is running.",
@@ -882,6 +883,7 @@
     clearHealthStateError();
     try {
       const payload = await getJson('/app/health/api/state');
+      renderStoragePrivacy(payload.storage_privacy);
       renderWorkProgress(payload.work);
       state.searchIndex = payload.search_index || null;
       renderBacklogState(payload.backlog, payload.search_index);
@@ -892,6 +894,34 @@
       // This independent detail must not compete with the initial index read.
       loadMediaBacklog();
     }
+  }
+
+  function renderStoragePrivacy(privacy) {
+    state.storagePrivacy = privacy || null;
+    const section = document.getElementById('storagePrivacy');
+    if (!section) return;
+    section.hidden = !privacy || privacy.private;
+    if (!privacy || privacy.private) return;
+    section.querySelector('[data-storage-privacy-message]').textContent = privacy.message;
+    const button = section.querySelector('[data-storage-privacy-consent]');
+    button.hidden = privacy.consented || privacy.unavailable;
+    section.style.background = privacy.consented ? '' : 'var(--warn-wash)';
+    button.onclick = async () => {
+      const result = section.querySelector('[data-storage-privacy-result]');
+      button.disabled = true;
+      result.hidden = true;
+      try {
+        const saved = await getJson('/app/health/api/storage-privacy/consent', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ filesystem_type: privacy.filesystem_type }),
+        });
+        renderStoragePrivacy(saved);
+        updateStatusSummary();
+      } catch (error) {
+        result.textContent = error.error || 'your choice could not be saved. please try again.';
+        result.hidden = false;
+      } finally { button.disabled = false; }
+    };
   }
 
   let timeoutFired = false;
@@ -1377,6 +1407,11 @@
       return { key: 'HEALTH_GLANCE_SERVICES_UNREACHABLE', vars: {} };
     }
 
+    if (state.storagePrivacy && !state.storagePrivacy.private && !state.storagePrivacy.consented) {
+      return { key: 'HEALTH_GLANCE_STORAGE_PRIVACY', vars: { message: state.storagePrivacy.message },
+        action: { href: '#storagePrivacy', label: 'review folder privacy' } };
+    }
+
     if (state.crashed.size > 0) {
       const names = Array.from(state.crashed.keys()).sort();
       return {
@@ -1487,6 +1522,7 @@
   }
 
   const GLANCE_ATTENTION_KEYS = new Set([
+    'HEALTH_GLANCE_STORAGE_PRIVACY',
     'HEALTH_GLANCE_BACKUP',
     'HEALTH_GLANCE_SERVICES_UNREACHABLE',
     'HEALTH_GLANCE_SERVICE_ATTENTION',

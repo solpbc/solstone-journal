@@ -493,6 +493,44 @@ test('failing search prevents an otherwise healthy headline; catching up does no
   assert.strictEqual(quietClient.key, 'HEALTH_GLANCE_CLIENT_SILENT');
 });
 
+test('folder privacy needs an explicit choice and quiets only after it is saved', async () => {
+  const { context, doc } = createEnvironment();
+  const section = doc.createElement('section');
+  section.id = 'storagePrivacy';
+  const message = doc.createElement('p'); message.setAttribute('data-storage-privacy-message', '');
+  const button = doc.createElement('button'); button.setAttribute('data-storage-privacy-consent', '');
+  const result = doc.createElement('p'); result.setAttribute('data-storage-privacy-result', '');
+  section.appendChild(message); section.appendChild(button); section.appendChild(result); doc.body.appendChild(section);
+  context.state = {};
+  context.updateStatusSummary = () => {};
+  const source = loadHealthSource();
+  vm.runInContext(sourceBlock(source, 'function renderStoragePrivacy(', 'let timeoutFired'), context);
+  const privacy = { private: false, consented: false, filesystem_type: 'fat', message: 'unprotected' };
+  context.privacy = privacy;
+  let posts = 0;
+  context.getJson = async (url, options) => {
+    posts += 1;
+    assert.strictEqual(url, '/app/health/api/storage-privacy/consent');
+    assert.strictEqual(options.method, 'POST');
+    assert.deepStrictEqual(JSON.parse(options.body), { filesystem_type: 'fat' });
+    return { ...privacy, consented: true, message: 'chosen' };
+  };
+  vm.runInContext('renderStoragePrivacy(privacy)', context);
+  assert.strictEqual(section.hidden, false);
+  assert.strictEqual(button.hidden, false);
+  assert.strictEqual(posts, 0);
+  await button.onclick();
+  assert.strictEqual(posts, 1);
+  assert.strictEqual(button.hidden, true);
+  assert.strictEqual(context.state.storagePrivacy.consented, true);
+  vm.runInContext('renderStoragePrivacy(privacy)', context);
+  context.getJson = async () => { throw { error: 'save failed' }; };
+  await button.onclick();
+  assert.strictEqual(result.hidden, false);
+  assert.strictEqual(button.hidden, false);
+  assert.strictEqual(context.state.storagePrivacy.consented, false);
+});
+
 test('loaded search status reaches the headline and survives a later state-read error', async () => {
   const { context } = createEnvironment();
   const source = loadHealthSource();
