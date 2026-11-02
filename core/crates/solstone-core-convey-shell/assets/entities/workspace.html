@@ -1939,11 +1939,11 @@ body.presentation-mode .entity-desc { color: var(--ink-soft); }
 .journal-entity-filter{display:flex;gap:10px;align-items:center;margin:12px 0}.journal-entity-filter select,.journal-entity-pages button{font:inherit;min-height:46px;padding:10px 14px;border:1px solid var(--hairline-2);background:var(--paper);border-radius:8px;color:inherit}.journal-entity-pages{display:flex;gap:16px;margin:24px 0}.journal-entity-pages button{cursor:pointer}.journal-entity-pages button:disabled{opacity:.5}.journal-entity-filter{min-width:0}.journal-entity-filter select{flex:1;min-width:0;max-width:100%}.journal-entity-filter select:focus-visible,.journal-entity-pages button:focus-visible{outline:2px solid var(--focus);outline-offset:3px}
 
 /* Journal-wide browse: folders, dense rows, tidy-up groups */
-.journal-browse { display: grid; grid-template-columns: 13rem minmax(0, 1fr); gap: 1.25em; align-items: start; }
+.journal-browse { display: grid; grid-template-columns: 13rem minmax(0, 1fr); gap: 1.25em; align-items: start; background: var(--panel); border-radius: 14px; padding: 1em; }
 .journal-folders { display: flex; flex-direction: column; gap: 2px; position: sticky; top: 0.5em; }
 .journal-folder { display: flex; justify-content: space-between; gap: 0.5em; align-items: baseline; width: 100%; padding: 0.4em 0.6em; border: 0; border-radius: var(--radius-sm, 6px); background: transparent; color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
 .journal-folder:hover { background: var(--cream); }
-.journal-folder[aria-current="true"] { background: var(--cream-bright); font-weight: 600; }
+.journal-folder[aria-current="true"] { background: var(--cream); font-weight: 600; }
 .journal-folder:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
 .journal-folder-count { color: var(--ink-faint); font-variant-numeric: tabular-nums; font-size: 0.85em; }
 .journal-folder-heading { margin: 0.9em 0.6em 0.2em; font-size: 0.75em; color: var(--ink-faint); text-transform: none; letter-spacing: 0; }

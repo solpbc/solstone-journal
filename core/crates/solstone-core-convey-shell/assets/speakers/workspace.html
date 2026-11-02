@@ -1,6 +1,14 @@
 <style>
 /* Speakers app styles - all classes prefixed with .spk- */
 
+.spk-date-host {
+  margin: 16px 24px 0;
+}
+
+@media (max-width: 600px) {
+  .spk-date-host { margin: 12px 12px 0; }
+}
+
 .spk-wrap {
   max-width: 1200px;
   margin: 0 auto;
@@ -1317,7 +1325,7 @@
 }
 </style>
 
-<div data-date-nav></div>
+<div class="spk-date-host" data-date-nav></div>
 
 <div id="speakersDayView" hidden>
 <div class="spk-wrap">

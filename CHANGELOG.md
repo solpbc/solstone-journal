@@ -20,6 +20,8 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- the entities page and the more page are easier to read at night: their text now sits on a panel, not directly on the night sky.
+- home now sits centered beside the side rail instead of off to the left.
 - fixed a failure when picking a folder to import in the android development app.
 - a folder you chose to import in the android or ios development app, other than an audio archive, can now be previewed and started from its import page, without choosing it again.
 - the development phone apps can now recover an explicit media offload request after a lost reply, using the request ID saved before sending it. repeating that request does not start another offload; an unknown result stays unknown.
