@@ -3262,6 +3262,18 @@ mod tests {
         let _ = fs::remove_dir_all(&root);
         fs::create_dir_all(root.join("home")).unwrap();
         fs::create_dir_all(root.join("cwd")).unwrap();
+        // Windows owner storage ignores the home directory and resolves the
+        // account's LocalAppData, so without this every fixture would register
+        // in the build account's real registry. The override is thread-local and
+        // each test runs on its own thread, so it is kept for the rest of the test.
+        #[cfg(windows)]
+        {
+            let local_app_data = root.join("local-app-data");
+            fs::create_dir_all(&local_app_data).unwrap();
+            std::mem::forget(solstone_core_installation_identity::TestLocalAppData::new(
+                local_app_data,
+            ));
+        }
         let resolution = ResolutionContext {
             home_dir: root.join("home"),
             current_dir: root.join("cwd"),

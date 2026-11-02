@@ -688,6 +688,13 @@ mod tests {
         std::fs::create_dir_all(&journal).unwrap();
         let sentinel = journal.join("owner-history");
         std::fs::write(&sentinel, b"keep this history").unwrap();
+        // Windows owner storage ignores the home directory; keep it in the fixture.
+        #[cfg(windows)]
+        let _local_app_data = {
+            let local_app_data = directory.path().join("local-app-data");
+            std::fs::create_dir_all(&local_app_data).unwrap();
+            solstone_core_installation_identity::TestLocalAppData::new(local_app_data)
+        };
         let owner =
             OwnerBase::at_home(directory.path().to_path_buf(), PlatformTag::current()).unwrap();
         let root_token = root_token_from_path(&root).unwrap();

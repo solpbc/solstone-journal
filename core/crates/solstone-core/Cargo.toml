@@ -250,3 +250,6 @@ zip = { version = "=9.0.3", default-features = false, features = ["deflate"] }
 
 [target.'cfg(unix)'.dev-dependencies]
 nix = { workspace = true, features = ["ptrace", "signal"] }
+
+[target.'cfg(windows)'.dev-dependencies]
+solstone-core-installation-identity = { workspace = true, features = ["test-hooks"] }
