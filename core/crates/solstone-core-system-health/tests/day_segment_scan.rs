@@ -446,7 +446,7 @@ fn long_imported_conversation_transcripts_are_analyzed() {
 }
 
 #[test]
-fn midnight_range_wraps_while_segment_end_clamps() {
+fn midnight_range_ends_at_24_while_segment_end_clamps() {
     let temporary = TempDir::new().unwrap();
     let root = temporary.path();
     let late = segment(root, Some("late"), "234500_900");
@@ -455,7 +455,7 @@ fn midnight_range_wraps_while_segment_end_clamps() {
     write(&crossing, "audio.jsonl", "{}\n{\"start\":0}\n");
 
     let (audio_ranges, _, segments) = scan_day(&FilesystemSegmentSource, root, DAY, now()).unwrap();
-    assert_eq!(audio_ranges, [("23:45".into(), "00:00".into())]);
+    assert_eq!(audio_ranges, [("23:45".into(), "24:00".into())]);
     assert_eq!(
         segments
             .iter()

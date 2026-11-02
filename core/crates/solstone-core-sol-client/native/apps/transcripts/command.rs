@@ -501,8 +501,9 @@ fn pending_slot_range(start: &str) -> (String, String) {
     let slot_minute = minute - (minute % 15);
     let mut end_hour = hour;
     let mut end_minute = slot_minute + 15;
+    // The last slot of the day ends at `24:00`, matching the day's ranges.
     if end_minute >= 60 {
-        end_hour = (end_hour + 1) % 24;
+        end_hour += 1;
         end_minute -= 60;
     }
     (
@@ -685,4 +686,16 @@ fn stdout(lines: Vec<String>) -> CommandOutput {
 
 fn stderr(value: impl AsRef<str>) -> CommandOutput {
     CommandOutput::failure(format!("{}\n", value.as_ref()), 1)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{pending_slot_range, slot_overlaps_range};
+
+    #[test]
+    fn a_pending_segment_in_the_last_slot_attaches_to_a_range_ending_at_midnight() {
+        let (start, end) = pending_slot_range("23:50");
+        assert_eq!((start.as_str(), end.as_str()), ("23:45", "24:00"));
+        assert!(slot_overlaps_range((&start, &end), ("21:00", "24:00")));
+    }
 }

@@ -710,11 +710,13 @@ fn slots_to_ranges(slots: Vec<u64>) -> Vec<TimeRange> {
             previous = current;
             continue;
         }
-        ranges.push((format_time(start), format_time((previous + 900) % 86_400)));
+        ranges.push((format_time(start), format_time(previous + 900)));
         start = current;
         previous = current;
     }
-    ranges.push((format_time(start), format_time((previous + 900) % 86_400)));
+    // A range that runs to midnight ends at `24:00`, never `00:00`: an end
+    // before its start overlaps no segment, so readers would drop the range.
+    ranges.push((format_time(start), format_time(previous + 900)));
     ranges
 }
 

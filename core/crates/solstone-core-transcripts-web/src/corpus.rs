@@ -1731,6 +1731,55 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn audio_that_runs_to_midnight_keeps_its_range() {
+        let root = TempDir::new().expect("journal");
+        config(root.path());
+        for key in ["093000_300", "120000_300", "235000_300"] {
+            segment(
+                root.path(),
+                DAY,
+                "watch",
+                key,
+                &[("audio.jsonl", b"{}\n{\"start\":0}\n")],
+            );
+        }
+        segment(
+            root.path(),
+            DAY,
+            "watch",
+            "001000_300",
+            &[("audio.jsonl", b"{}\n{\"start\":0}\n")],
+        );
+
+        let (status, _, body) =
+            response(app(root.path()), "/app/transcripts/api/day/20260731").await;
+
+        assert_eq!(status, StatusCode::OK);
+        let day = serde_json::from_slice::<Value>(&body).unwrap();
+        let ranges = day["audio"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|range| {
+                (
+                    range["start"].as_str().unwrap().to_owned(),
+                    range["end"].as_str().unwrap().to_owned(),
+                    range["streams"].clone(),
+                )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            ranges,
+            [
+                ("00:00".into(), "00:15".into(), json!(["watch"])),
+                ("09:30".into(), "09:45".into(), json!(["watch"])),
+                ("12:00".into(), "12:15".into(), json!(["watch"])),
+                ("23:45".into(), "24:00".into(), json!(["watch"])),
+            ]
+        );
+    }
+
+    #[tokio::test]
     async fn short_audio_is_visible_while_zero_duration_audio_is_not() {
         let root = TempDir::new().expect("journal");
         config(root.path());
