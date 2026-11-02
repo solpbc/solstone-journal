@@ -7,15 +7,19 @@ use std::path::{Path, PathBuf};
 
 use solstone_core_journal_io::durability::{ArtifactId, DurabilityClass, artifacts};
 
-/// Journal files that are deliberately absent from the durability registry
-/// because their owner reads them with its own strict reader, but that another
-/// crate may observe by path without a durable read or a repair.
-const OWNER_STRICT_OBSERVED_PATHS: [&str; 1] = [
+/// Journal files read under their owning module's policy instead of the
+/// shared durable readers. Other crates may observe these paths without
+/// performing a durable read or repair.
+const OWNER_MANAGED_PATHS: [&str; 2] = [
     // Provider install status: the installer reads it strictly and leaves a
     // damaged record in place; the thinking status reads it only to tell
     // whether a local model download is under way, and an unreadable record
     // reads as no download.
     "health/providers/local.json",
+    // Push episode bookkeeping: owner_notice treats an unreadable record as
+    // empty under its lock. Losing it can repeat a notice; no owner intent
+    // or journal content is lost.
+    "health/owner-notices.json",
 ];
 
 const NO_SEMANTIC_VARIANTS: [ArtifactId; 12] = [
@@ -279,7 +283,7 @@ pub fn undeclared_journal_literal(src: &str) -> Vec<String> {
     let known_paths: Vec<&str> = artifacts()
         .iter()
         .map(|a| a.path)
-        .chain(OWNER_STRICT_OBSERVED_PATHS)
+        .chain(OWNER_MANAGED_PATHS)
         .collect();
 
     for line in src.lines() {
