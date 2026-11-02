@@ -4,10 +4,10 @@
 //! Low free space on the journal's disk, announced as an owner notice.
 //!
 //! Every few minutes the supervisor reads the free and total space of the
-//! filesystem holding the journal. Below the journal's own free-space floor
-//! for that disk (the same rule that suggests the offload floor) it raises
-//! `disk_low:journal`, early enough that the owner can still free space or
-//! move the journal before writes start failing. It clears only once free
+//! filesystem holding the journal. Below the journal's minimum free-space
+//! floor (the offload minimum, capped at a quarter of a small disk) it raises
+//! `disk_low:journal`, early enough that the owner can still free space
+//! before writes start failing. It clears only once free
 //! space is well back above the floor, so a disk hovering at the line notifies
 //! once. Between the two points it announces nothing and the current episode
 //! stands. A read that fails is not a reading: nothing is announced.
@@ -17,9 +17,7 @@ use std::time::{Duration, Instant};
 
 use serde_json::{Map, Value, json};
 use solstone_core_callosum::CallosumSocketServer;
-use solstone_core_offload::measurement::{
-    device_free_bytes, device_total_bytes, suggest_offload_defaults,
-};
+use solstone_core_offload::measurement::{MIN_FLOOR_BYTES, device_free_bytes, device_total_bytes};
 
 use super::bus::emit;
 
@@ -30,7 +28,7 @@ const TRACT: &str = "owner_notice";
 const KEY: &str = "disk_low:journal";
 const ACTION: &str = "/app/settings#storage";
 const LOW_TITLE: &str = "your journal's disk is running low on space";
-const LOW_MESSAGE: &str = "free up some space on it, or move your journal to a larger disk.";
+const LOW_MESSAGE: &str = "free up some space on it.";
 const BACK_TITLE: &str = "your journal's disk has space again";
 
 /// Free and total bytes on the filesystem holding the journal.
@@ -66,10 +64,14 @@ pub(super) fn read(journal: &Path) -> Option<Space> {
     }
 }
 
-/// Raise below the floor; clear at or above the floor plus half again; say
+/// Raise below the floor, the offload minimum or a quarter of the disk if that
+/// is less; clear at or above the floor plus half again; say
 /// nothing in between, or for a disk whose size is unknown.
 pub(super) fn level(space: Space) -> Option<Level> {
-    let floor = suggest_offload_defaults(space.total).ok()?.floor_bytes;
+    if space.total == 0 {
+        return None;
+    }
+    let floor = MIN_FLOOR_BYTES.min(space.total / 4);
     let clear = floor.saturating_add(floor / 2);
     if space.free < floor {
         Some(Level::Low)
@@ -161,9 +163,10 @@ mod tests {
     fn a_disk_hovering_at_the_line_announces_one_episode() {
         // Readings that cross the raise point back and forth without
         // reaching the clear point never produce a clear, so the episode
-        // record sees one start and no end.
-        let at = on_disk(100 * GB);
-        let readings = [25, 19, 21, 19, 22, 20, 19, 29, 31, 29, 31];
+        // record sees one start and no end. On a 2 TB disk, 150 GB free is
+        // plenty: offload's own floor there is 200 GB, and it acts on its own.
+        let at = on_disk(2_000 * GB);
+        let readings = [150, 25, 19, 21, 19, 22, 20, 19, 29, 31, 29, 31];
         let levels = readings
             .iter()
             .filter_map(|free| at(free * GB))
@@ -177,24 +180,29 @@ mod tests {
             })
             .flatten()
             .collect::<Vec<_>>();
-        assert_eq!(edges, [Level::Low, Level::Back]);
+        assert_eq!(edges, [Level::Back, Level::Low, Level::Back]);
     }
 
     #[test]
     fn the_floor_follows_the_disk_size() {
-        // Large disks keep a tenth, small ones a quarter.
+        // Large disks keep the same 20 GB floor; small ones a quarter.
         let large = on_disk(2_000 * GB);
-        assert_eq!(large(200 * GB - 1), Some(Level::Low));
-        assert_eq!(large(200 * GB), None);
-        assert_eq!(large(300 * GB), Some(Level::Back));
+        assert_eq!(large(20 * GB - 1), Some(Level::Low));
+        assert_eq!(large(20 * GB), None);
+        assert_eq!(large(30 * GB - 1), None);
+        assert_eq!(large(30 * GB), Some(Level::Back));
+        assert_eq!(large(200 * GB), Some(Level::Back));
         let small = on_disk(40 * GB);
         assert_eq!(small(10 * GB - 1), Some(Level::Low));
+        assert_eq!(small(10 * GB), None);
+        assert_eq!(small(15 * GB - 1), None);
         assert_eq!(small(15 * GB), Some(Level::Back));
     }
 
     #[test]
     fn an_unknown_disk_size_says_nothing() {
         assert_eq!(level(Space { free: 0, total: 0 }), None);
+        assert_eq!(level(Space { free: GB, total: 0 }), None);
     }
 
     #[test]
@@ -245,10 +253,11 @@ mod socket_tests {
         }
         tokio::time::sleep(Duration::from_millis(200)).await;
 
-        let total = 100 * GB;
+        let total = 2_000 * GB;
         let space = |free| Some(Space { free, total });
-        // Low, low again, a failed read, hovering between the two points,
-        // back, and a due check whose read fails on a missing path.
+        // Plenty, low, low again, a failed read, hovering between the two
+        // points, back, and a due check whose read fails on a missing path.
+        announce(&server, space(150 * GB));
         announce(&server, space(5 * GB));
         announce(&server, space(19 * GB));
         announce(&server, None);
@@ -270,11 +279,12 @@ mod socket_tests {
             }
         })
         .await;
-        // Each reading is re-announced; the episode record turns the two
-        // raises into one notice.
+        // Each reading is re-announced; the episode record ignores the first
+        // clear, with no episode open, and turns the two raises into one.
         assert_eq!(
             seen,
             [
+                ("clear".to_owned(), json!(KEY)),
                 ("raise".to_owned(), json!(KEY)),
                 ("raise".to_owned(), json!(KEY)),
                 ("clear".to_owned(), json!(KEY)),
