@@ -287,11 +287,14 @@ fn speakers_model_ready(_: &str) -> Result<PathBuf, solstone_core_transcribe::Tr
 }
 
 fn poison_battery_context(root: &Path) -> CheckContext {
-    fs::create_dir_all(root.join("journal")).expect("create poison-battery journal");
+    let journal_path = root.join("journal");
+    fs::create_dir_all(&journal_path).expect("create poison-battery journal");
+    fs::set_permissions(&journal_path, fs::Permissions::from_mode(0o700))
+        .expect("make poison-battery journal private");
     CheckContext {
         home_dir: root.join("home"),
         install_bin_dir: root.join("install/bin"),
-        journal_path: root.join("journal"),
+        journal_path,
         callosum_socket_path: root.join("journal/health/callosum.sock"),
         platform: Platform::Linux,
         now: chrono::Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap(),
@@ -352,6 +355,7 @@ fn run_poison_battery_child(root: &Path) {
             ("disk_space", Status::Skip),
             ("config_dir_readable", Status::Ok),
             ("journal_dir_writable", Status::Ok),
+            ("storage_privacy", Status::Ok),
             ("supervisor_conflict", Status::Skip),
             ("service_identity", Status::Skip),
             ("service_running", Status::Skip),
