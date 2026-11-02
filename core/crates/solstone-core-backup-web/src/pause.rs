@@ -56,5 +56,9 @@ async fn change(deps: BackupWebDeps, pause: bool) -> axum::response::Response {
     if solstone_core_backup::set_backup_paused(&deps.journal_root, paused_at).is_err() {
         return internal_error();
     }
+    if pause {
+        // A pause ends a backup failure notice without a word.
+        solstone_core_backup_runtime::owner_notice::observe(&deps.journal_root);
+    }
     crate::get_status(deps).await
 }

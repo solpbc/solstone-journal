@@ -120,7 +120,15 @@ pub fn backup_paused_at(config: &Map<String, Value>) -> Option<i64> {
 pub fn set_backup_paused(journal: &Path, paused_at: Option<i64>) -> Result<(), BackupError> {
     mutate_backup_section(journal, |backup| match paused_at {
         Some(_) if backup_paused_at(backup).is_some() => Ok((false, ())),
-        Some(time) => set_value(backup, "paused_at", Value::from(time)),
+        Some(time) => {
+            // A pause interrupts a run of failed attempts: after resume, a
+            // failure has to persist again before it counts as one.
+            if let Some(latest) = backup.get_mut("last_backup").and_then(Value::as_object_mut) {
+                latest.remove(FAILED_ATTEMPTS);
+                latest.remove(FAILING_SINCE);
+            }
+            set_value(backup, "paused_at", Value::from(time))
+        }
         None => Ok((backup.remove("paused_at").is_some(), ())),
     })
 }
@@ -621,6 +629,13 @@ pub fn backup_setup_fingerprint(
     )
 }
 
+/// On an attempt that failed at a known setup, how many attempts in a row have
+/// failed at that same setup.
+pub const FAILED_ATTEMPTS: &str = "failed_attempts";
+/// On an attempt that failed at a known setup, when the first of that run of
+/// failed attempts was made.
+pub const FAILING_SINCE: &str = "failing_since";
+
 pub fn record_backup_result(
     journal: &Path,
     status: &str,
@@ -646,6 +661,32 @@ pub fn record_backup_result(
         );
     }
     mutate_backup_section(journal, |backup| {
+        // A failure at a known setup continues the prior run of failures at the
+        // same setup, or starts one. Anything else ends it: a success, a failure
+        // that cannot be tied to a setup, or a different setup.
+        if status == "error"
+            && let Some(fingerprint) = setup_fingerprint
+        {
+            let prior = backup
+                .get("last_backup")
+                .and_then(Value::as_object)
+                .filter(|prior| {
+                    prior.get("status").and_then(Value::as_str) == Some("error")
+                        && prior.get("setup_fingerprint").and_then(Value::as_str)
+                            == Some(fingerprint)
+                });
+            let continued = prior.and_then(|prior| {
+                let count = prior.get(FAILED_ATTEMPTS).and_then(Value::as_u64)?;
+                let since = prior.get(FAILING_SINCE).filter(|since| since.is_i64())?;
+                Some((count, since.clone()))
+            });
+            let (count, since) = match continued {
+                Some((count, since)) => (count.saturating_add(1), since),
+                None => (1, map["time"].clone()),
+            };
+            map.insert(FAILED_ATTEMPTS.into(), Value::from(count));
+            map.insert(FAILING_SINCE.into(), since);
+        }
         // Keep the successful operation's whole result, including incomplete-copy
         // caveats. This is history, not proof of present coverage or verification.
         let last_success = if status == "ok" {

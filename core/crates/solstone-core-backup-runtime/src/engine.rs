@@ -1098,7 +1098,7 @@ fn unreadable_sources(output: &crate::runner::ResticResult) -> Option<Unreadable
     })
 }
 
-fn record_backup(
+pub(crate) fn record_backup(
     journal: &Path,
     clock: &dyn Clock,
     result: &BackupResult,
@@ -1108,7 +1108,15 @@ fn record_backup(
     if run_backup_record_failure_hook(journal) {
         return;
     }
-    let _ = record_backup_result(
+    let prior_setup = get_backup_config(journal).ok().and_then(|config| {
+        config
+            .get("last_backup")
+            .and_then(|latest| latest.get("setup_fingerprint"))
+            .and_then(Value::as_str)
+            .filter(|value| value.len() == 64 && value.bytes().all(|b| b.is_ascii_hexdigit()))
+            .map(str::to_owned)
+    });
+    let recorded = record_backup_result(
         journal,
         &result.status,
         json!(clock.now_unix()),
@@ -1123,6 +1131,9 @@ fn record_backup(
         result.detail.as_deref(),
         setup_fingerprint,
     );
+    if recorded.is_ok() {
+        crate::owner_notice::observe_attempt(journal, prior_setup.as_deref(), setup_fingerprint);
+    }
 }
 
 /// Whether this journal has backup turned on. A journal without it needs no
@@ -1185,12 +1196,16 @@ pub fn prepare(journal: &Path, clock: &dyn Clock) -> Result<AdmittedCapability, 
             unreadable: None,
             detail: None,
         }),
-        Err(BackupAdmissionTerminal::Paused) => Err(BackupResult {
-            status: "skipped".into(),
-            snapshot_id: None,
-            error_reason: None,
-            unreadable: None,
-            detail: Some("paused".into()),
+        Err(BackupAdmissionTerminal::Paused) => Err({
+            // Paused work is never an attempt; it only ends a failure notice.
+            crate::owner_notice::observe(journal);
+            BackupResult {
+                status: "skipped".into(),
+                snapshot_id: None,
+                error_reason: None,
+                unreadable: None,
+                detail: Some("paused".into()),
+            }
         }),
         Err(BackupAdmissionTerminal::Unresolved) => Err(BackupResult {
             status: "error".into(),

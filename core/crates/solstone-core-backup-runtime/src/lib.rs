@@ -34,6 +34,7 @@ pub mod hosted_runtime;
 pub mod ios_callable;
 #[cfg(any(target_os = "ios", test))]
 mod ios_linked_command;
+pub mod owner_notice;
 pub mod repo;
 pub mod resolve;
 pub mod restore;

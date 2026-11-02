@@ -39,6 +39,7 @@ tempfile = "3.24.0"
 ureq = { workspace = true, features = ["rustls"] }
 solstone-core-installed-payload.workspace = true
 solstone-core-backup.workspace = true
+solstone-core-callosum.workspace = true
 solstone-core-body-rebuild.workspace = true
 solstone-core-indexer-store.workspace = true
 solstone-core-journal-io.workspace = true

@@ -65,8 +65,8 @@ pub use keys::{
 pub use merge::merge_backup_config;
 pub use rotation_binding::{RotationBindingExclusion, hold_rotation_binding_at_root};
 pub use state::{
-    PendingExecution, PendingKeyRevocation, backup_paused_at, backup_setup_fingerprint,
-    candidate_binding, clear_backup_config, clear_backup_config_at_root,
+    FAILED_ATTEMPTS, FAILING_SINCE, PendingExecution, PendingKeyRevocation, backup_paused_at,
+    backup_setup_fingerprint, candidate_binding, clear_backup_config, clear_backup_config_at_root,
     clear_backup_config_if_unchanged, clear_pending_key_revocation_at_root, credential_binding,
     destination_from_config, generate_and_store_keys, get_backup_config, get_destination, get_keys,
     record_backup_result, record_offload_result, record_prune_result, record_restore_result,

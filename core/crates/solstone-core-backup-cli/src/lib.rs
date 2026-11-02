@@ -1089,6 +1089,10 @@ fn pause_command(journal: &Path, services: &BackupServices<'_>, pause: bool) -> 
     if let Err(error) = set_backup_paused(journal, paused_at) {
         return runtime_error(error.to_string());
     }
+    if pause {
+        // A pause ends a backup failure notice without a word.
+        solstone_core_backup_runtime::owner_notice::observe(journal);
+    }
     success(if pause {
         "backup paused. run `solstone journal backup resume` to start it again.\n".to_owned()
     } else {

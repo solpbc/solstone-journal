@@ -5143,6 +5143,7 @@ dependencies = [
  "socket2",
  "solstone-core-backup",
  "solstone-core-body-rebuild",
+ "solstone-core-callosum",
  "solstone-core-distribution",
  "solstone-core-indexer-store",
  "solstone-core-installed-payload",
